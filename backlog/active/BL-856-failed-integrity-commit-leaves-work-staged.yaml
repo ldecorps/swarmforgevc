@@ -208,3 +208,6 @@ notes: |
   index/HEAD/worktree mismatch on a real, successful-but-verify-rejected
   commit) - restoring the fix made both the unit and acceptance suites green
   again.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-08, by: architect, blamed: coder, class: behavior, commit: 4ad363eed5, evidence: backlog/evidence/BL-856-architect-bounce-20260808.md }

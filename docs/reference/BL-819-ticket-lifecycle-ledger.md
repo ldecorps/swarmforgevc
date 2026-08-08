@@ -100,10 +100,10 @@ never blocks the ticket's actual handoff or close.
 ## Boundary: what this duty is not
 
 This ledger records; it does not narrate, gate, or decide. Recording is
-separable from the closing-ceremony consumer that will eventually read it —
-that consumer is a later slice (BL-820), blocked on a shift-close hook that
-does not exist yet. Until then, the ledger accumulates real data from the
-moment it lands, so the eventual ceremony has history to read instead of
+separable from the closing-ceremony consumer that reads it — that consumer
+is [BL-820's closing-ceremony lean pass](BL-820-closing-ceremony-lean-pass.md),
+run from `./finish-shift` at shift close. The ledger accumulates real data
+from the moment it lands, so the ceremony has history to read rather than
 starting empty.
 
 This duty does not change, replace, or extend:

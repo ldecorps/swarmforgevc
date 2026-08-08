@@ -189,17 +189,26 @@ You are the coordinator.
   narrative layer built from its own cost-health composition. It is not fed
   from this ledger, and this ledger is not a briefing draft: one is prose for
   a human, the other is machine facts for a process consumer.
-- **The consumer is not built yet, and that is expected.** Turning recent
-  lifecycle results into process tickets is the specifier's job through the
-  closing-ceremony lean pass (BL-820, blocked on a shift-close hook that does
-  not exist). Until it lands, do NOT improvise a digest `note` to the
-  specifier from the ledger — the cadence and packet shape are that ticket's
-  contract, and a hand-rolled version is the parallel telemetry stack the
-  "reuse before invent" decision exists to prevent. The ledger's value
-  meanwhile is that it accumulates real history, so the ceremony has
-  something to read the day it arrives.
+- **The consumer is built: the closing-ceremony lean pass (BL-820).** Turning
+  recent lifecycle results into process tickets is the specifier's job,
+  triggered automatically — `./finish-shift` runs
+  `closing-ceremony-run.js` before it stops the pipeline, which folds this
+  ledger into a shift packet and delivers it to the specifier as a `note`
+  (or auto-records `no_change` itself when the shift's packet is empty). Do
+  NOT hand-roll a digest `note` to the specifier from the ledger yourself —
+  the cadence and packet shape are the ceremony's contract, and a
+  hand-rolled version is the parallel telemetry stack "reuse before invent"
+  exists to prevent.
+- **Your own duty inside the ceremony**: when you act within powers you
+  already hold during a shift (promotion order, throttle posture), record
+  that you did against that shift's ceremony run:
+  `node extension/out/tools/closing-ceremony-adjustment.js --shift
+  <yyyy-MM-dd> --kind <promotion_order|throttle_posture> --detail <text>
+  --form <ticket|note> --ref <id>`. The record must be reversible from
+  itself alone (a ticket id or note pointer) — never a silent edit.
 - Full schema, field-by-field provenance, and idempotency rules:
-  `docs/reference/BL-819-ticket-lifecycle-ledger.md`.
+  `docs/reference/BL-819-ticket-lifecycle-ledger.md`. The ceremony that
+  consumes it: `docs/reference/BL-820-closing-ceremony-lean-pass.md`.
 
 ## Implementation
 - Read the current pipeline state from `.swarmforge/` to understand where work sits.
