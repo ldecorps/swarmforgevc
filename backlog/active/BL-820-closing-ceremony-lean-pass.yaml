@@ -88,7 +88,7 @@ description: |
   daily briefing sweep, BL-762 drops out of `depends_on` and this slice
   unblocks immediately.
 
-acceptance: specs/features/BL-820-closing-ceremony-lean-pass.feature.draft
+acceptance: specs/features/BL-820-closing-ceremony-lean-pass.feature
 
 # BL-633. One property the scenarios cannot express.
 invariants:

@@ -53,6 +53,12 @@ fi
 TARGET="${1:-$SCRIPT_DIR}"
 TARGET="$(cd "$TARGET" && pwd)"
 
+# BL-820: the closing-ceremony lean pass, named step, runs before the shift
+# fully winds down - while ancillaries and the pipeline are still up, so the
+# ledger snapshot is as fresh as possible and the specifier's own pane can
+# still receive the delivery note before its session stops.
+finish_shift_run_closing_ceremony "$TARGET"
+
 finish_shift_keep_snapshot "$TARGET"
 before_running="$finish_shift_keep_running"
 

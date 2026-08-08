@@ -53,6 +53,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lifecycle_matrix.sh"
 source "$SCRIPT_DIR/stop_ancillary_services.sh"
 
+# BL-820: the closing-ceremony lean pass - a named step invoked before the
+# shift fully winds down (called from ./finish-shift ahead of
+# kill_pipeline_swarm.sh, while ancillaries and the pipeline are still up).
+# Wraps the compiled extension/out/tools/closing-ceremony-run.js CLI, which
+# owns the real behavior (fold BL-819's ledger into a shift packet, deliver
+# it to the specifier via swarm_handoff.sh, or auto-record an explicit
+# no-change outcome for an empty shift). A missing compile is a loud skip,
+# never a bedtime failure - the ceremony is additive to bedtime's own
+# contract (BL-762), not a new way for it to fail closed.
+finish_shift_run_closing_ceremony() {
+  local root="$1"
+  local cli="$root/extension/out/tools/closing-ceremony-run.js"
+  if [[ ! -f "$cli" ]]; then
+    echo "finish-shift: closing-ceremony CLI not compiled ($cli) - skipping lean pass" >&2
+    return 0
+  fi
+  if ! node "$cli" --target "$root"; then
+    echo "finish-shift: closing-ceremony lean pass exited non-zero - continuing bedtime" >&2
+  fi
+}
+
 finish_shift_stop_ancillaries() {
   local root="$1" component
   stop_ancillary_init "$root"

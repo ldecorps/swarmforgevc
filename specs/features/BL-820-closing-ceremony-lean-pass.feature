@@ -7,11 +7,9 @@ Feature: Closing-ceremony lean pass
   # explicit reasoned no-change. The human's words: "a silent ceremony is a
   # failed ceremony." The packet reaches the specifier, not only the briefing.
   #
-  # PARKED AS .feature.draft per BL-233: this slice is not built and is
-  # additionally blocked on a shift-close hook that does not exist yet
-  # (depends_on BL-762). A live *.feature here would have no step handlers and
-  # would hard-fail the acceptance runner for every other ticket. The coder
-  # renames this to .feature and lands its step handlers in the same parcel.
+  # Unparked (BL-233): BL-762 (finish-shift) and BL-819 (the ledger this
+  # reads) are both done. Step handlers:
+  # specs/pipeline/steps/bl820ClosingCeremonyLeanPassSteps.js.
 
   Background:
     Given a shift with a lifecycle ledger holding that shift's tickets
