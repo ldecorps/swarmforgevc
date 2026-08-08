@@ -121,3 +121,6 @@ notes: |
   lands here, in this slice's own documenter pass.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-08, by: QA, blamed: cleaner, class: behavior, commit: 62ef213b, evidence: backlog/evidence/BL-820-closing-ceremony-lean-pass-bounce-20260808.md }
