@@ -15,6 +15,11 @@
 %% poll loop: it pushes local main to origin on a bounded retry/backoff, and
 %% alarms (never force-pushes) on divergence or exhausted retries, so the
 %% swarm's own work reaches origin without a human remembering to push.
+%% BL-839 added a master-checkout-vs-main drift sweep to the same handoffd.bb
+%% cadence (report-only, same alarm channel as the flow watchdog). BL-819
+%% added a coordinator-owned ticket lifecycle ledger (.swarmforge/lean/),
+%% shelled from the pane at the two points a parcel already changes hands:
+%% handoff completion and the close-commit path.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -54,6 +59,7 @@ flowchart TB
     QABOUNCES["qa_bounces/ (BL-454: legacy QA-only bounce records,\n*.jsonl, read-only since BL-635)"]
     BOUNCES["bounces/ (BL-635: go-forward bounce records\nby any reviewing role, *.jsonl)"]
     QADEFER["qa_deferrals/ (BL-532: deferral records, *.jsonl)"]
+    LEANDIR["lean/ (BL-819: coordinator-owned ticket\nlifecycle ledger, *.jsonl + per-ticket snapshot)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
@@ -100,8 +106,9 @@ flowchart TB
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
-  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nnotifies via tmux send-keys| SOCKET
+  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
+  PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
   DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip)| TARGETREPO
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
@@ -118,5 +125,5 @@ flowchart TB
   class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,PANEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
-  class ROLESTSV,HANDOFFS,DAEMONDIR,BACKLOGDIR state;
+  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,BACKLOGDIR state;
   class TARGETREPO,GH gh;
