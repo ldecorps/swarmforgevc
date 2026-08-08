@@ -9,7 +9,7 @@ severity: high
 priority: 40
 direction: agent-surfaced
 depends_on: []
-assigned_to: null
+assigned_to: coder
 mutation_cost: medium
 
 invariants:
