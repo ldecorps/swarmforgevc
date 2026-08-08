@@ -78,19 +78,30 @@ fi
 mkdir -p "$ACTIVE_DIR"
 
 # Effective depth cap (Article 3.5 / BL-432 folds auto-throttle when present).
+# BL-853: -1 (or any negative value) is the documented no-limit sentinel,
+# never a real ceiling - accept a SIGNED integer at every step (the
+# unsigned ^[0-9]+$ check used to discard the sentinel as "malformed" and
+# fall through to a tighter cap no operator configured). This script parses
+# no config and declares no depth default of its own: every value below
+# comes from the shared depth library via its own CLIs, and the one literal
+# fallback at the very end mirrors backlog-depth-lib/default-max-depth for
+# the sole case where bb itself cannot be run at all.
 CAP=""
 if [[ -f "$SCRIPT_DIR/effective_backlog_depth_cli.bb" ]]; then
   CAP="$(bb "$SCRIPT_DIR/effective_backlog_depth_cli.bb" "$ROOT" 2>/dev/null | tr -d '[:space:]' || true)"
 fi
-if [[ -z "$CAP" || ! "$CAP" =~ ^[0-9]+$ ]]; then
-  CAP="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$ROOT" 2>/dev/null | tr -d '[:space:]' || echo 1)"
+if [[ -z "$CAP" || ! "$CAP" =~ ^-?[0-9]+$ ]]; then
+  CONF_PATH="$(bb "$SCRIPT_DIR/backlog_depth_conf_path_cli.bb" "$ROOT" 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ -n "$CONF_PATH" ]]; then
+    CAP="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$CONF_PATH" 2>/dev/null | tr -d '[:space:]' || true)"
+  fi
 fi
-if [[ -z "$CAP" || ! "$CAP" =~ ^[0-9]+$ ]]; then
-  CAP=1
+if [[ -z "$CAP" || ! "$CAP" =~ ^-?[0-9]+$ ]]; then
+  CAP=5
 fi
 
 ACTIVE_COUNT="$(find "$ACTIVE_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
-if (( ACTIVE_COUNT >= CAP )); then
+if (( CAP >= 0 )) && (( ACTIVE_COUNT >= CAP )); then
   echo "Error: active_backlog_max_depth gate: active count $ACTIVE_COUNT >= cap $CAP — no open slot" >&2
   exit 2
 fi

@@ -18,6 +18,13 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
+;; BL-853: depth-refusal below needs the documented no-limit sentinel
+;; (any negative max-depth means unlimited) - reuse backlog-depth-lib's own
+;; predicate rather than re-deriving "negative means unlimited" a second
+;; time here, which is exactly the kind of divergent copy this file's own
+;; header comment (above) warns against.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+
 ;; ── ticket field reading ──────────────────────────────────────────────────
 ;; Same "small live-glue duplicated across independent pure libs" idiom as
 ;; ambulance_lib.bb / ticket_status_lib.bb / chase_sweep_lib.bb's own private
@@ -137,8 +144,15 @@
 ;; produces the named reason the acceptance scenarios assert on, and so a
 ;; future caller of `evaluate` below cannot skip it by construction.
 
-(defn depth-refusal [active-count max-depth]
-  (when (>= active-count max-depth)
+(defn depth-refusal
+  "BL-853: a negative max-depth is the documented no-limit sentinel
+   (backlog-depth-lib/no-limit?), never a real ceiling to compare
+   active-count against - this gate must allow at every active-count under
+   it, exactly like backlog-depth-lib's own depth-exceeded?/under-depth-cap?
+   already do for their call sites."
+  [active-count max-depth]
+  (when (and (not (backlog-depth-lib/no-limit? max-depth))
+             (>= active-count max-depth))
     {:gate "active_backlog_max_depth"
      :reason (format "active count %d >= cap %d - no open slot" active-count max-depth)}))
 

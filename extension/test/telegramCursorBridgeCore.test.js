@@ -454,6 +454,31 @@ test('cursor bridge: pilot while busy is rejected as busy', () => {
   assert.deepEqual(gateBusy({ action: 'pilot', ticket: 'BL-696' }, true), { action: 'busy' });
 });
 
+test('cursor bridge: /pilot safe dispatches start and list variants', () => {
+  assert.deepEqual(decideInboundAction(event('/pilot safe'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-start',
+  });
+  assert.deepEqual(decideInboundAction(event('/pilot safe --list'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-list',
+  });
+  assert.deepEqual(decideInboundAction(event('/pilot safe list'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-list',
+  });
+  assert.deepEqual(decideInboundAction(event('/PILOT SAFE'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-start',
+  });
+  // Explicit ticket ids still take the plain pilot path (BL-722 safe-04).
+  assert.deepEqual(decideInboundAction(event('/pilot BL-650'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot',
+    ticket: 'BL-650',
+  });
+});
+
+test('cursor bridge: pilot safe start while busy is rejected as busy, list is not', () => {
+  assert.deepEqual(gateBusy({ action: 'pilot-safe-start' }, true), { action: 'busy' });
+  assert.deepEqual(gateBusy({ action: 'pilot-safe-list' }, true), { action: 'pilot-safe-list' });
+});
+
 test('cursor bridge: /expedite parses default and explicit ticket', () => {
   assert.deepEqual(decideInboundAction(event('/expedite'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
     action: 'expedite',
@@ -825,6 +850,7 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '/dequeue N — remove queued question #N',
       '/update — short summary of agent / expedite / swarm activity (works while busy)',
       '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
+      '/pilot safe [--list] — auto-pick (or list) the safe pilot pool: approved, low-mutation, specced defects',
       '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
       '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
