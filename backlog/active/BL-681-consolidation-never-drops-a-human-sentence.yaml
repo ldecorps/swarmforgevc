@@ -81,7 +81,7 @@ description: |
   the clause and its home are settled, and this ticket is ordinary pipeline
   work from here.
 
-acceptance: specs/features/BL-681-consolidation-never-drops-a-human-sentence.feature.draft
+acceptance: specs/features/BL-681-consolidation-never-drops-a-human-sentence.feature
 
 out_of_scope: |
   - The consolidation mechanics themselves (N:1, 1:N, the epic-top-priority
