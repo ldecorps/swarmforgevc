@@ -387,7 +387,8 @@ const DOMAINS = [
   require('./bl650FlowWatchdogActiveTimeClockSteps'),
   require('./bl722PilotSafeDefectsSteps'),
   require('./bl852ChaseSweepRespectsAmbulanceHoldSteps'),
-  require('./bl847ResourceSamplerMeasuresAgentSteps')
+  require('./bl847ResourceSamplerMeasuresAgentSteps'),
+  require('./bl853PromotionPathHonoursNoLimitDepthSentinelSteps')
 ];
 
 function registerSteps(registry) {

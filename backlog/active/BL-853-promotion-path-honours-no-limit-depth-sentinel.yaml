@@ -207,7 +207,7 @@ notes: |
      confirm a promotion attempt with 1 ticket active still refuses with the
      unchanged named reason, then restore `-1`.
 
-acceptance: specs/features/BL-853-promotion-path-honours-no-limit-depth-sentinel.feature.draft
+acceptance: specs/features/BL-853-promotion-path-honours-no-limit-depth-sentinel.feature
 
 approval_context: >
   No human ruling needed. Written `approved` on the BL-847/BL-852

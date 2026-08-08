@@ -25,6 +25,13 @@ chmod +x "$ROOT/swarmforge/scripts/promote_and_route_next.sh"
 # shells out to for every gate decision — must travel with the copy.
 cp "$SCRIPTS/promotion_gates_cli.bb" "$ROOT/swarmforge/scripts/promotion_gates_cli.bb"
 cp "$SCRIPTS/promotion_gates_lib.bb" "$ROOT/swarmforge/scripts/promotion_gates_lib.bb"
+# BL-853: promotion_gates_lib.bb's depth-refusal now load-files
+# backlog_depth_lib.bb (for the shared no-limit? sentinel predicate), which
+# in turn load-files swarm_identity_lib.bb — both must travel with the copy
+# too, or the isolated fixture's promotion_gates_lib.bb throws
+# FileNotFoundException the moment it is loaded.
+cp "$SCRIPTS/backlog_depth_lib.bb" "$ROOT/swarmforge/scripts/backlog_depth_lib.bb"
+cp "$SCRIPTS/swarm_identity_lib.bb" "$ROOT/swarmforge/scripts/swarm_identity_lib.bb"
 
 cat > "$ROOT/swarmforge/scripts/route_backlog_to_coder.sh" <<'EOF'
 #!/usr/bin/env bash
