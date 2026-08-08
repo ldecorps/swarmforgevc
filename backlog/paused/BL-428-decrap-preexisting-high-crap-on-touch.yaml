@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 epic: code-quality-gates
 severity: low
-priority: 39
+priority: 40
 direction: swarm-proposed
 depends_on: []
 source: "backlog/INTAKE-operator-question-1784129181700.md — the hardener asked via Telegram (Operator SUP, 2026-07-15) whether to file a follow-up tech-debt ticket to decrap the ~88 pre-existing high-CRAP functions its CRAP run flagged during BL-417 (the changed file itself was in bounds: resolveIconState CRAP=4.00, resolveIconStickerId CRAP=1.00, both <=6). Delegated to the specifier to evaluate whether a dedicated decrap ticket is worth scoping and at what priority. Specifier disposition 2026-07-15: file THIS low-priority standing tracker; do NOT scope a big-bang 88-function sweep."

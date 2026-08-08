@@ -5,7 +5,7 @@ type: defect
 status: todo
 epic: swarm-behaviour-trends
 severity: medium
-priority: 93
+priority: 94
 direction: human-requested
 depends_on: [BL-664]
 assigned_to: specifier

@@ -25,7 +25,7 @@ approval_context: |
   drafted; NOT final until a human reviews it (human_approval: pending).
 
 severity: medium
-priority: 118
+priority: 119
 direction: human-requested
 depends_on:
   - BL-547

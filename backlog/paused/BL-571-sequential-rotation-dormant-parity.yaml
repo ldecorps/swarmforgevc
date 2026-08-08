@@ -5,7 +5,7 @@ type: defect
 status: todo
 epic: swarm-reliability
 severity: medium
-priority: 99
+priority: 100
 direction: swarm-surfaced
 depends_on: [BL-537]
 assigned_to: specifier
