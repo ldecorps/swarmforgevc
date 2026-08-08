@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6a9c3c5afdbfab030e095fd39ebc6297e1616928cba96d67df5c27ecc6930b7e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-07T23:48:36.715482Z","feature_name":"A hotfix is not an official swarm deal until it is certified, and the human is asked first","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-848-hotfix-swarm-certification-recurring-check.feature","background_hash":"b7e5e79e56817a96fc7ef95967f6120cf0b56cfe79a8b4120cf51707abae8c61","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a hotfix whose review is still short of a human decision is never certified","scenario_hash":"2672b5772e54f5d7d71de8f354432997884c8d65775434a641c6289e8357b148","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-07T23:48:36.715482Z"},{"index":4,"name":"only a recorded human decision closes an entry","scenario_hash":"138b1661828a49419f30013d6f1fe319d2ad0e5b72367d1aabfa731303a5a54d","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-07T23:48:36.715482Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A hotfix is not an official swarm deal until it is certified, and the human is asked first
   Operator hotfixes land straight on main, outside the pipeline. Today nothing
   tracks them: BL-810's hotfix was certified only because a human happened to
