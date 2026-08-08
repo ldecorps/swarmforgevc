@@ -72,7 +72,7 @@ restarting anything.
 
 ## Where the hold applies
 
-Three live decision points, all wired, or the mode would be a dark marker:
+Four live decision points, all wired, or the mode would be a dark marker:
 
 1. **Delivery** (`handoffd.bb`'s poll) — a held parcel simply is not delivered
    this poll; it stays in the sender's `outbox/` and is re-tried next poll.
@@ -84,10 +84,26 @@ Three live decision points, all wired, or the mode would be a dark marker:
    [BL-576's aged-note rule](BL-576-aged-note-actionability-mono-router.md)
    rather than forking it: ambulance filters the candidate set first, aging
    still decides among whatever survives that filter.
+4. **Chase sweep** (`chase_sweep_lib.bb`'s `sweep-role-inbox!`, BL-852) — a
+   held parcel already sitting in `inbox/new/` draws no chase wake-up, no
+   `.chase.json` write, no forced respawn, and no dead-letter; its on-disk
+   footprint (parcel and sidecars) stays byte-identical across any number of
+   sweeps. The counter is **frozen, not reset** — a hold can no longer
+   inflate it, so on release the parcel resumes its ladder from the count it
+   genuinely reached, and (mtime also untouched) is immediately past
+   `chaseTimeoutSeconds` and draws a chase on the very next sweep. A held
+   parcel already in `completed/`/`abandoned/` is still reaped, never held —
+   provably-finished residue is not work being protected, and holding it
+   would leave the ambulance guarding litter. Reuses the same
+   `handoff-lib/default-ambulance-held?` predicate as the other three sites,
+   never a second notion of held.
 
 Work already claimed into a role's `in_process/` before the mode engaged is
 **not** retracted — a mid-turn claim always finishes. Engaging an ambulance
 decides what happens next, never what happens to a turn already in flight.
+`sweep-in-process!` nudges are per-role, not per-parcel, and stay unaffected
+by the hold — this is pre-existing dormancy behavior, not something the
+ambulance changes.
 
 ## The marker
 
@@ -140,4 +156,5 @@ bb swarmforge/scripts/test/ambulance_lib_property_runner.bb
 bb swarmforge/scripts/test/ambulance_wiring_property_runner.bb
 bash swarmforge/scripts/test/test_ambulance_cli.sh
 bash swarmforge/scripts/test/test_handoffd_ambulance_wiring.sh
+bb swarmforge/scripts/test/bl852_chase_sweep_ambulance_hold_property_runner.bb
 ```
