@@ -355,6 +355,7 @@ const DOMAINS = [
   require('./bl729CommitClaimCheckSteps'),
   require('./bl680ConsolidationAuthoritySteps'),
   require('./bl681ConsolidationNeverDropsHumanSentenceSteps'),
+  require('./bl574PromptEngineFragmentsAdaptersSteps'),
   require('./bl771PricingTableSharedTmpdirSteps'),
   require('./bl720EnvRestoreGuardSteps'),
   require('./bl760DuplicateChainGuardSteps'),
