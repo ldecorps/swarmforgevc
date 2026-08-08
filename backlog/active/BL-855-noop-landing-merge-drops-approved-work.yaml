@@ -11,12 +11,13 @@ direction: agent-surfaced
 depends_on: []
 assigned_to: coder
 mutation_cost: medium
+# documenter, pre-QA gate: fd7689666c below is the coordinator's BL-762
+# promotion bookkeeping commit on swarm/coder - it mentions "BL-855" only in
+# prose explaining an orthogonality-scope decision (a zero-diff rename of a
+# BL-762 ticket file). No BL-855 deliverable content; verified via
+# `git show --stat fd7689666c`.
 abandoned_commits:
-  - fd7689666c  # documenter, pre-QA gate false positive: coordinator's BL-762
-    # promotion bookkeeping commit on swarm/coder, mentions "BL-855" only in
-    # prose explaining an orthogonality-scope decision; zero-diff rename of
-    # a BL-762 ticket file, no BL-855 deliverable content (verified via
-    # `git show --stat fd7689666c`).
+  - fd7689666c
 
 invariants:
   - "A merge commit that took NONE of what its second parent offered is never pushed silently: it is refused and surfaced with its reason, however well-formed its message and however genuinely QA-approved its second parent. Authorization is not effect."
