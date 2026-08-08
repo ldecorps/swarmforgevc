@@ -87,6 +87,94 @@ test('listSafePilotDefects filters and ranks', () => {
   assert.match(formatSafePilotListMessage(listed), /BL-200/);
 });
 
+test('featureExists via listSafePilotDefects: an absolute acceptance path pointing at a real .feature file counts', () => {
+  const root = mkTmpDir('sf-safe-abs-');
+  const featDir = path.join(root, 'specs', 'features');
+  fs.mkdirSync(featDir, { recursive: true });
+  const absFeature = path.join(featDir, 'BL-600-x.feature');
+  fs.writeFileSync(absFeature, 'Feature: BL-600\n');
+  const dir = path.join(root, 'backlog', 'paused');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'BL-600.yaml'),
+    [
+      'id: BL-600',
+      'title: "abs path"',
+      'type: defect',
+      'status: todo',
+      'severity: high',
+      'priority: 1',
+      'human_approval: approved',
+      'mutation_cost: low',
+      `acceptance: ${absFeature}`,
+      '',
+    ].join('\n')
+  );
+  const listed = listSafePilotDefects(root);
+  assert.deepEqual(
+    listed.tickets.map((t) => t.id),
+    ['BL-600']
+  );
+});
+
+test('featureExists via listSafePilotDefects: a .feature.draft is never treated as a real feature, whether named by acceptance or found by directory scan', () => {
+  const root = mkTmpDir('sf-safe-draft-');
+  const featDir = path.join(root, 'specs', 'features');
+  fs.mkdirSync(featDir, { recursive: true });
+  // Directory scan candidate: a draft file only, no promoted .feature.
+  fs.writeFileSync(path.join(featDir, 'BL-700-x.feature.draft'), 'Feature: BL-700\n');
+  const dir = path.join(root, 'backlog', 'paused');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'BL-700.yaml'),
+    [
+      'id: BL-700',
+      'title: "draft only"',
+      'type: defect',
+      'status: todo',
+      'severity: high',
+      'priority: 1',
+      'human_approval: approved',
+      'mutation_cost: low',
+      // acceptance field itself also names a .draft, exercising the
+      // acceptance-field guard's own draft exclusion too.
+      'acceptance: specs/features/BL-700-x.feature.draft',
+      '',
+    ].join('\n')
+  );
+  const listed = listSafePilotDefects(root);
+  assert.deepEqual(listed.tickets, []);
+});
+
+test('featureExists via listSafePilotDefects: specs/features/ unreadable (not a directory) degrades to false, not a throw', () => {
+  const root = mkTmpDir('sf-safe-unreadable-');
+  const specsDir = path.join(root, 'specs');
+  fs.mkdirSync(specsDir, { recursive: true });
+  // "specs/features" exists as a FILE, not a directory: fs.existsSync is
+  // true, but fs.readdirSync on it throws ENOTDIR - exercises the catch.
+  fs.writeFileSync(path.join(specsDir, 'features'), 'not a directory');
+  const dir = path.join(root, 'backlog', 'paused');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'BL-800.yaml'),
+    [
+      'id: BL-800',
+      'title: "unreadable features dir"',
+      'type: defect',
+      'status: todo',
+      'severity: high',
+      'priority: 1',
+      'human_approval: approved',
+      'mutation_cost: low',
+      'acceptance: specs/features/BL-800-x.feature',
+      '',
+    ].join('\n')
+  );
+  assert.doesNotThrow(() => listSafePilotDefects(root));
+  const listed = listSafePilotDefects(root);
+  assert.deepEqual(listed.tickets, []);
+});
+
 test('empty safe pool', () => {
   const root = mkTmpDir('sf-safe-empty-');
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });

@@ -45,11 +45,23 @@ function asPriority(v: unknown): number {
   return Number.isFinite(n) ? n : 999;
 }
 
-function featureExists(repoRoot: string, id: string, acceptance: string): boolean {
-  if (acceptance && acceptance.endsWith('.feature') && !acceptance.endsWith('.feature.draft')) {
-    const abs = path.isAbsolute(acceptance) ? acceptance : path.join(repoRoot, acceptance);
-    if (fs.existsSync(abs)) return true;
+// Pure-ish (fs.existsSync only): true when the ticket's own `acceptance:`
+// field names a real, non-draft .feature file that exists on disk (absolute
+// or relative to repoRoot). Split from featureExists purely to keep each
+// half's own CRAP within the project's <= 6 gate (BL-722 hardener pass).
+function acceptanceFieldNamesRealFeature(repoRoot: string, acceptance: string): boolean {
+  if (!acceptance || !acceptance.endsWith('.feature') || acceptance.endsWith('.feature.draft')) {
+    return false;
   }
+  const abs = path.isAbsolute(acceptance) ? acceptance : path.join(repoRoot, acceptance);
+  return fs.existsSync(abs);
+}
+
+// Directory-scan fallback: true when specs/features/ contains a real
+// (non-draft) .feature file named exactly `<id>.feature` or prefixed
+// `<id>-` - the same fallback featureExists always used, isolated here for
+// the same CRAP reason as its sibling above.
+function specsFeaturesDirHasId(repoRoot: string, id: string): boolean {
   const dir = path.join(repoRoot, 'specs', 'features');
   if (!fs.existsSync(dir)) return false;
   const prefix = `${id}-`;
@@ -63,10 +75,77 @@ function featureExists(repoRoot: string, id: string, acceptance: string): boolea
   }
 }
 
+function featureExists(repoRoot: string, id: string, acceptance: string): boolean {
+  if (acceptanceFieldNamesRealFeature(repoRoot, acceptance)) return true;
+  return specsFeaturesDirHasId(repoRoot, id);
+}
+
 function normalizeId(id: string): string {
   const m = id.trim().match(/^(BL|GH)-(\d+)$/i);
   if (!m) return id.trim().toUpperCase();
   return `${m[1].toUpperCase()}-${m[2]}`;
+}
+
+// Pure: the metadata half of the safe-filter guard chain - type=defect,
+// approved, mutation_cost=low, not needs_design - split from
+// qualifyingSafeDefect below purely to keep each function's own CRAP within
+// the project's <= 6 gate (BL-722 hardener pass); same guard order and same
+// "any failure disqualifies" semantics as the original inline chain.
+function matchesSafeDefectMetadata(doc: Record<string, unknown>): boolean {
+  if (asString(doc.type) !== 'defect') return false;
+  if (asString(doc.status) === 'needs_design') return false;
+  if (asString(doc.human_approval) !== 'approved') return false;
+  if (asString(doc.mutation_cost) !== 'low') return false;
+  return true;
+}
+
+// Pure (given a parsed yaml doc): the safe-filter guard chain for one
+// candidate ticket - type=defect, approved, mutation_cost=low, not
+// needs_design, a real (non-draft) .feature - isolated so
+// listSafePilotDefects's own CRAP stays within the project's <= 6 gate
+// (BL-722 hardener pass). Returns null on any guard failure, exactly the
+// same "skip this candidate" outcome as the original inline `continue`s.
+function qualifyingSafeDefect(
+  doc: Record<string, unknown>,
+  repoRoot: string,
+  folder: string,
+  fileName: string
+): SafePilotDefect | null {
+  if (!matchesSafeDefectMetadata(doc)) return null;
+  const id = normalizeId(asString(doc.id));
+  if (!id) return null;
+  const acceptance = asString(doc.acceptance);
+  if (!featureExists(repoRoot, id, acceptance)) return null;
+  return {
+    id,
+    title: asString(doc.title) || id,
+    severity: asString(doc.severity) || 'unset',
+    priority: asPriority(doc.priority),
+    mutationCost: 'low',
+    fileName: `${folder}/${fileName}`,
+  };
+}
+
+function compareSafeDefects(a: SafePilotDefect, b: SafePilotDefect): number {
+  const sa = SEV_RANK[a.severity] ?? 9;
+  const sb = SEV_RANK[b.severity] ?? 9;
+  if (sa !== sb) return sa - sb;
+  if (a.priority !== b.priority) return a.priority - b.priority;
+  return a.id.localeCompare(b.id);
+}
+
+function safeDefectsInFolder(repoRoot: string, folder: string): SafePilotDefect[] {
+  const dir = path.join(repoRoot, 'backlog', folder);
+  if (!fs.existsSync(dir)) return [];
+  const tickets: SafePilotDefect[] = [];
+  for (const fileName of fs.readdirSync(dir)) {
+    if (!fileName.endsWith('.yaml')) continue;
+    const doc = readYamlFront(path.join(dir, fileName));
+    if (!doc) continue;
+    const ticket = qualifyingSafeDefect(doc, repoRoot, folder, fileName);
+    if (ticket) tickets.push(ticket);
+  }
+  return tickets;
 }
 
 export function listSafePilotDefects(
@@ -76,40 +155,8 @@ export function listSafePilotDefects(
   const folderMode = opts?.folder ?? 'paused';
   const folders =
     folderMode === 'paused+active' ? (['paused', 'active'] as const) : ([folderMode] as const);
-  const tickets: SafePilotDefect[] = [];
-  for (const folder of folders) {
-    const dir = path.join(repoRoot, 'backlog', folder);
-    if (!fs.existsSync(dir)) continue;
-    for (const fileName of fs.readdirSync(dir)) {
-      if (!fileName.endsWith('.yaml')) continue;
-      const full = path.join(dir, fileName);
-      const doc = readYamlFront(full);
-      if (!doc) continue;
-      if (asString(doc.type) !== 'defect') continue;
-      if (asString(doc.status) === 'needs_design') continue;
-      if (asString(doc.human_approval) !== 'approved') continue;
-      if (asString(doc.mutation_cost) !== 'low') continue;
-      const id = normalizeId(asString(doc.id));
-      if (!id) continue;
-      const acceptance = asString(doc.acceptance);
-      if (!featureExists(repoRoot, id, acceptance)) continue;
-      tickets.push({
-        id,
-        title: asString(doc.title) || id,
-        severity: asString(doc.severity) || 'unset',
-        priority: asPriority(doc.priority),
-        mutationCost: 'low',
-        fileName: `${folder}/${fileName}`,
-      });
-    }
-  }
-  tickets.sort((a, b) => {
-    const sa = SEV_RANK[a.severity] ?? 9;
-    const sb = SEV_RANK[b.severity] ?? 9;
-    if (sa !== sb) return sa - sb;
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return a.id.localeCompare(b.id);
-  });
+  const tickets: SafePilotDefect[] = folders.flatMap((folder) => safeDefectsInFolder(repoRoot, folder));
+  tickets.sort(compareSafeDefects);
   if (tickets.length === 0) {
     return {
       tickets: [],
