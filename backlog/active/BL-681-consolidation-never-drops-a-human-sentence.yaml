@@ -99,3 +99,6 @@ notes: |
 
   Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
   wires handlers in the same commit.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-08, by: documenter, blamed: coder, class: acceptance, commit: 2f76114c41, evidence: backlog/evidence/BL-681-bounce-20260808.md }
