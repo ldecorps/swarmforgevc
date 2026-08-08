@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#
+# finish-shift — the bedtime verb (BL-762).
+#
+# Scope: stops the token-burning ancillaries (babysitterd, operator runtime,
+# onboarder) and the full pipeline (agent sessions + handoffd), while
+# leaving the phone path — the Telegram front desk (Let's Talk bridge) and
+# remote tunnels — reachable. Idempotent. Verifies both halves: refuses to
+# report success while a component it should have stopped still shows a
+# live process, or a component that WAS running before finish-shift ran is
+# no longer running after (BL-637's "verify, don't trust exit codes"
+# posture, extended to bedtime's own keep-set).
+#
+# Bedtime and lights-out are two different intentions: this is bedtime.
+# The full stack stop (also tears down the phone path) is unchanged:
+#
+#   ./stop-swarm.sh
+#
+# Usage:
+#   ./finish-shift [target-path]   # defaults to this repo's root
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KILL_PIPELINE="$SCRIPT_DIR/swarmforge/scripts/kill_pipeline_swarm.sh"
+source "$SCRIPT_DIR/swarmforge/scripts/finish_shift_lib.sh"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+finish-shift — the bedtime verb: stop the pack, keep the phone path up.
+
+Scope: bedtime
+Stops: babysitterd, operator runtime, onboarder, then the full pipeline
+       (agent sessions + handoffd).
+Left running: the Telegram front desk (Let's Talk bridge) and remote
+       tunnels — so Bubble keeps reaching the swarm's origin instead of
+       showing a Cloudflare 530 / DNS error.
+
+Full stack stop (also tears down the phone path): ./stop-swarm.sh
+
+Usage:
+  ./finish-shift [target-path]   # defaults to this repo's root
+EOF
+  exit 0
+fi
+
+if [[ $# -gt 1 ]]; then
+  echo "ERROR: unexpected extra argument: $2" >&2
+  echo "Usage: ./finish-shift [target-path]" >&2
+  exit 2
+fi
+
+TARGET="${1:-$SCRIPT_DIR}"
+TARGET="$(cd "$TARGET" && pwd)"
+
+finish_shift_keep_snapshot "$TARGET"
+before_running="$finish_shift_keep_running"
+
+finish_shift_stop_ancillaries "$TARGET"
+kill_rc=0
+bash "$KILL_PIPELINE" "$TARGET" || kill_rc=$?
+
+if finish_shift_verify "$TARGET" "$before_running"; then
+  echo "REFUSE: finish-shift left the stack in an unexpected state:" >&2
+  if [[ -n "$finish_shift_verify_survivors" ]]; then
+    echo "  still running (should be stopped): $(tr '\n' ' ' <<< "$finish_shift_verify_survivors")" >&2
+  fi
+  if [[ -n "$finish_shift_verify_unexpectedly_stopped" ]]; then
+    echo "  stopped unexpectedly (was up, should stay up): $(tr '\n' ' ' <<< "$finish_shift_verify_unexpectedly_stopped")" >&2
+  fi
+  exit 1
+fi
+
+if [[ "$kill_rc" -ne 0 ]]; then
+  echo "REFUSE: pipeline stop exited $kill_rc; not reporting a finished bedtime stop" >&2
+  exit "$kill_rc"
+fi
+
+echo "finish-shift SUCCESS — pack stopped, phone path still up"
