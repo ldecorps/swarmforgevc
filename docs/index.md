@@ -62,6 +62,7 @@ here.
 - [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
 - [A role's answer (and a steer) now reaches the rotating resident's pane](how-to/BL-846-role-answer-reaches-the-rotating-residents-pane.md) — how pane resolution now follows the resident-identity marker, fixing the deadlock where an answer or steer for the role the resident is currently running as could never be delivered.
 - [Token-Burn Exhaustion Warning in the Morning Briefing](how-to/BL-619-token-burn-briefing-warning.md) — recording a usage-percentage anchor, what the warning looks like, the weekly-reset config, and troubleshooting a missing or wrong projection.
+- [Bedtime vs. lights-out: which stop verb to run](how-to/BL-762-finish-shift-bedtime-vs-lights-out.md) — the keep-vs-kill table `./finish-shift` and `./stop-swarm.sh` both read, and why bedtime leaves the phone path up.
 
 ## Reference
 

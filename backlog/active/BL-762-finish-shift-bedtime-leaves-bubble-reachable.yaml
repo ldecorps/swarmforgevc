@@ -183,3 +183,6 @@ approval_context: >
   from the intake: the front desk and tunnels stay up because they are the phone
   path, and babysitterd goes because it would relaunch what bedtime just
   stopped.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-08, by: QA, blamed: coder, class: unit, commit: b37451751c, evidence: backlog/evidence/BL-681-BL-762-qa-bounce-20260808.md }
