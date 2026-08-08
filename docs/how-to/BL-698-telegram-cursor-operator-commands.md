@@ -18,6 +18,7 @@ Confirm + env-reload note: [BL-702 how-to](BL-702-operator-confirm-env-reload.md
 ## Batch pilot verbs (BL-703)
 
 - `/pilot BL-xxx` — Cursor wears all hats offline for one ticket. Refuses while swarm is live; offers **Stop & run** (drain-stop, wait until clear, then pilot).
+- `/pilot safe` / `/pilot safe --list` — auto-pick (or list) the safe pilot pool: approved, low-mutation, specced defects, not `needs_design`. Empty pool refuses rather than widening the filter. See [BL-722 how-to](BL-722-pilot-safe-defects.md).
 - `/autopilot` / `/autopilot dry` — queue already-specced high/critical or `type: defect` tickets; pilot sequentially via a durable batch lock.
 - `/land` / `/land dry` — pilot in-flight (`backlog/active/` or parcel-holding) tickets clear; then ask drain-stop each time.
 - `/hydrate` / `/mint` — specifier-only wake; refuse if a full-pack role is up (before confirm); stop on handoff to coder (prompt contract).
