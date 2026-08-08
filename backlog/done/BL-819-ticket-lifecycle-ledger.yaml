@@ -88,7 +88,7 @@ description: |
   data from the moment it lands, so whenever the ceremony does arrive it has
   history to read rather than starting empty.
 
-acceptance: specs/features/BL-819-ticket-lifecycle-ledger.feature.draft
+acceptance: specs/features/BL-819-ticket-lifecycle-ledger.feature
 
 # BL-633. Two properties the scenarios cannot express.
 invariants:
