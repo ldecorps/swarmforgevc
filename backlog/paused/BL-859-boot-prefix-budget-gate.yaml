@@ -100,7 +100,11 @@ description: |
   (43999 / 44000 / 44001) are in the acceptance table because that comparison
   is exactly where the hardener's mutants will live.
 
-acceptance: specs/features/BL-859-boot-prefix-budget-gate.feature
+  The acceptance file ships as `.feature.draft` because it has no handlers
+  yet. Materialize it to a live `.feature` in the SAME parcel that lands the
+  handlers, and point this ticket's `acceptance:` at the live path (BL-233).
+
+acceptance: specs/features/BL-859-boot-prefix-budget-gate.feature.draft
 
 notes: |
   E2E QA procedure: with the real tree at or under budget, run the gate and

@@ -132,7 +132,14 @@ description: |
   handlers either way; per BL-233 they must land in this same parcel or the
   acceptance runner hard-fails on unhandled scenarios.
 
-acceptance: specs/features/BL-858-boot-prefix-back-under-cap.feature
+  The acceptance file ships as `.feature.draft` because it has no handlers
+  yet. Materialize it to a live `.feature` in the SAME parcel that lands the
+  handlers, and point this ticket's `acceptance:` at the live path — exactly
+  as BL-618 did (cbfec354). Landing handlers without materializing leaves the
+  contract unexecuted; materializing without handlers is the QA bounce BL-618
+  already took (ad7074f9).
+
+acceptance: specs/features/BL-858-boot-prefix-back-under-cap.feature.draft
 
 notes: |
   E2E QA procedure: on the fix commit run
