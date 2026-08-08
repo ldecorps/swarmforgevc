@@ -144,6 +144,11 @@
                     :send-push-alarm! (fn [_] {:success true})
                     :send-divergence-alarm! (fn [_ _] {:success true})
                     :qa-gate-facts! (fn [] scenario)
+                    ;; BL-855: this property predates the no-op-merge gate -
+                    ;; the harmless "nothing offered" default keeps it out
+                    ;; of the way, mirroring approved-qa-gate-facts' own
+                    ;; role for the pre-existing sweep! tests.
+                    :noop-merge-gate-facts! (fn [] {:facts-complete? true :ahead-commits []})
                     :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}
           _ (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
           expected-refuse? (oracle-lacks-qa-approval? scenario)
@@ -178,6 +183,7 @@
                           ;; that plainly lacks QA approval - the bug this
                           ;; whole ticket exists to prevent
                           :qa-gate-facts! (fn [] {:qa-ref-exists? true :tip-is-qa-ancestor? true})
+                          :noop-merge-gate-facts! (fn [] {:facts-complete? true :ahead-commits []})
                           :log! (fn [& _parts] nil)}
         lacking-approval-scenario {:qa-ref-exists? true :facts-complete? true :tip-is-qa-ancestor? false
                                     :ahead-commits [{:sha "shaX" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}]
@@ -236,6 +242,167 @@
           (System/exit 1)))))
 
 (non-vacuity-check-bounce2)
+
+;; ── BL-855: PROPERTY test over push_sweep_lib.bb, covering the ticket's
+;;    own 3 declared invariants (coder-authored first, per BL-654):
+;;
+;;   1. A merge commit that took NONE of what its second parent offered is
+;;      never pushed silently: refused and surfaced with its reason,
+;;      however genuinely QA-approved its second parent (authorization is
+;;      not effect).
+;;   2. A merge that legitimately had nothing to take (second parent
+;;      already an ancestor, or zero differing paths) is never flagged.
+;;   3. The verdict is computed from git objects alone - it never reads
+;;      from an adapter fact that stands in for "the working tree changed
+;;      this answer" (checked structurally below: noop-merge-decision's
+;;      own signature accepts no working-tree input at all, so any
+;;      generated scenario - however it varies the dirty-tree stand-in
+;;      fact - can never move the verdict).
+;;
+;; Independent oracle, built without calling noop-landing-merge?/
+;; noop-merge-decision themselves - same posture as the BL-630 property
+;; above and ambulance_lib_property_runner.bb's own P1. ─────────────────────
+
+;; ── generator: an ahead-commits seq mixing merge and non-merge entries,
+;;    with :tree-equals-parent1? and :offered-paths varied independently
+;;    and on equal footing (BL-654 generator-reach: the no-op shape - true
+;;    AND non-empty offered-paths together - must be as reachable as any
+;;    other combination, not a rare corner of a wide independent draw). ────
+(def offered-path-pool ["swarmforge/scripts/x.bb" "extension/src/y.ts" "android/app/z.kt"])
+
+(defn gen-offered-paths [s]
+  (let [[n s1] (gen-int s 3)] ; 0..2 paths
+    (reduce (fn [[acc sx] _]
+              (let [[p sy] (gen-pick sx offered-path-pool)] [(conj acc p) sy]))
+            [[] s1] (range n))))
+
+(defn gen-noop-ahead-commit [s idx]
+  (let [[merge? s1] (gen-bool s)
+        [tree-equals-parent1? s2] (gen-bool s1)
+        [offered-paths s3] (gen-offered-paths s2)]
+    [{:sha (str "noop-sha" idx)
+      :second-parent-sha (str "noop-p2-" idx)
+      :merge? merge?
+      :tree-equals-parent1? tree-equals-parent1?
+      :offered-paths offered-paths}
+     s3]))
+
+(defn gen-noop-ahead-commits [s]
+  (let [[n s1] (gen-int s 4)] ; 0..3 commits
+    (reduce (fn [[acc sx] i]
+              (let [[c sy] (gen-noop-ahead-commit sx i)] [(conj acc c) sy]))
+            [[] s1] (range n))))
+
+;; qa-ancestor?/dirty-tree stand-in facts are generated too (invariant 1 and
+;; 3) but noop-merge-decision's own fact shape has nowhere to consult them -
+;; they ride along on each ahead-commit only so a mutant that DID start
+;; reading them would have something to read.
+(defn gen-noop-scenario [s]
+  (let [[facts-complete? s1] (gen-bool s)
+        [qa-approved-second-parent? s2] (gen-bool s1)
+        [dirty-working-tree? s3] (gen-bool s2)
+        [ahead-commits s4] (gen-noop-ahead-commits s3)
+        ;; Fold the two stand-in facts onto every merge entry, exactly as a
+        ;; real CLI fact-gatherer would tag a commit whose second parent
+        ;; happens to be QA-approved, or whose paths happen to also be
+        ;; dirty in the working tree - neither is a real field
+        ;; noop-merge-decision's contract reads (see invariant 3 above).
+        ahead-commits' (mapv (fn [c] (assoc c :qa-ancestor? qa-approved-second-parent?
+                                             :dirty-working-tree? dirty-working-tree?))
+                              ahead-commits)]
+    [{:facts-complete? facts-complete? :ahead-commits ahead-commits'} s4]))
+
+;; ── independent oracle: a fresh restatement of the no-op-landing-merge
+;;    rule, built without calling noop-landing-merge?/noop-merge-decision.
+;;    Deliberately ignores :qa-ancestor?/:dirty-working-tree? (invariants 1
+;;    and 3): the real verdict must too. ─────────────────────────────────
+(defn- oracle-noop-hit? [{:keys [merge? tree-equals-parent1? offered-paths]}]
+  (and merge? tree-equals-parent1? (seq offered-paths)))
+
+(defn oracle-noop-refuse? [{:keys [facts-complete? ahead-commits]}]
+  (or (not facts-complete?)
+      (boolean (some oracle-noop-hit? ahead-commits))))
+
+(check-all "push_sweep_lib no-op-landing-merge invariant: a total drop is always refused (even QA-approved/dirty-tree), a genuine nothing-to-take is never flagged"
+  gen-noop-scenario
+  (fn [scenario]
+    (let [decision (push-sweep-lib/noop-merge-decision scenario)
+          expected-refuse? (oracle-noop-refuse? scenario)]
+      (cond
+        (and expected-refuse? (not (:refuse? decision)))
+        (str "INVARIANT 1 VIOLATION: oracle says a no-op landing merge is present but noop-merge-decision did not refuse; decision=" (pr-str decision))
+
+        (and (not expected-refuse?) (:refuse? decision))
+        (str "INVARIANT 2 VIOLATION: oracle says nothing was silently dropped but noop-merge-decision refused anyway (cries wolf); decision=" (pr-str decision))
+
+        :else true))))
+
+;; ── non-vacuity: prove this property actually fails against a
+;;    deliberately broken implementation (BL-654's own generator-reach
+;;    rule - a property that can never fail is worth nothing). Simulate
+;;    the pre-fix bug directly: a decision function that unconditionally
+;;    treats every :merge? true commit as trivial/exempt, exactly like
+;;    qa-gate-decision's own trivial-merge? exemption already does for
+;;    combined-diff - the exact shape that let f28a84ad's empty combined
+;;    diff slip through unscrutinized. ────────────────────────────────────
+(defn- bug-shaped-noop-merge-decision
+  "Verbatim restatement of the bug this ticket exists to prevent: treats
+   EVERY merge commit as exempt (mirrors qa-gate-decision's own
+   trivial-merge? exemption, which is exactly what let f28a84ad's empty
+   combined diff pass unscrutinized)."
+  [{:keys [facts-complete?] :or {facts-complete? true}}]
+  (if-not facts-complete?
+    {:refuse? true :reason :gather-failed :offending []}
+    {:refuse? false :reason nil :offending []}))
+
+(defn- non-vacuity-check-noop-merge []
+  (let [f28a84ad-shaped-scenario
+        {:facts-complete? true
+         :ahead-commits [{:sha "f28a84ad" :merge? true :second-parent-sha "11ae7ac3"
+                           :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]}
+        real-decision (push-sweep-lib/noop-merge-decision f28a84ad-shaped-scenario)
+        buggy-decision (bug-shaped-noop-merge-decision f28a84ad-shaped-scenario)]
+    (if (and (:refuse? real-decision) (not (:refuse? buggy-decision)))
+      (println "non-vacuity confirmed: noop-merge-decision refuses the f28a84ad-shaped no-op merge that an unconditional merge-exemption would have waved through")
+      (do (println (str "NON-VACUITY FAILURE (BL-855 no-op-merge mutant): expected the real decision to refuse and the buggy one to approve; got real=" (pr-str real-decision) " buggy=" (pr-str buggy-decision)))
+          (System/exit 1)))))
+
+(non-vacuity-check-noop-merge)
+
+;; ── non-vacuity, invariant 3: prove the generator/oracle pairing would
+;;    actually catch a mutant that let a working-tree stand-in flag flip
+;;    the verdict, not merely hope 500 random draws happen to hit that
+;;    shape (same posture as the BL-630 property's own bounce #2 check
+;;    above). A no-op landing merge whose :dirty-working-tree? happens to
+;;    be true must still refuse. ─────────────────────────────────────────
+(defn- dirty-tree-swayed-noop-merge-decision
+  "A mutant that lets a working-tree stand-in flag suppress the verdict -
+   exactly the bug invariant 3 forbids: the shared, chronically-dirty,
+   hot-synced master checkout must never change the answer."
+  [{:keys [ahead-commits facts-complete?] :or {facts-complete? true}}]
+  (if-not facts-complete?
+    {:refuse? true :reason :gather-failed :offending []}
+    (let [hits (filter (fn [c] (and (push-sweep-lib/noop-landing-merge? c)
+                                     (not (:dirty-working-tree? c))))
+                        ahead-commits)]
+      (if (seq hits)
+        {:refuse? true :reason :noop-landing-merge :offending (mapv :sha hits)}
+        {:refuse? false :reason nil :offending []}))))
+
+(defn- non-vacuity-check-dirty-tree []
+  (let [dirty-tree-noop-scenario
+        {:facts-complete? true
+         :ahead-commits [{:sha "f28a84ad" :merge? true :second-parent-sha "11ae7ac3"
+                           :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))
+                           :dirty-working-tree? true}]}
+        real-decision (push-sweep-lib/noop-merge-decision dirty-tree-noop-scenario)
+        mutant-decision (dirty-tree-swayed-noop-merge-decision dirty-tree-noop-scenario)]
+    (if (and (:refuse? real-decision) (not (:refuse? mutant-decision)))
+      (println "non-vacuity confirmed: noop-merge-decision refuses a no-op landing merge regardless of a dirty-working-tree stand-in flag, unlike a mutant that lets it suppress the verdict")
+      (do (println (str "NON-VACUITY FAILURE (BL-855 dirty-tree mutant): expected the real decision to refuse and the mutant to approve; got real=" (pr-str real-decision) " mutant=" (pr-str mutant-decision)))
+          (System/exit 1)))))
+
+(non-vacuity-check-dirty-tree)
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "push_sweep_lib qa-gate property: " runs " runs"))
