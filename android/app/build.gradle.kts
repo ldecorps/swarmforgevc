@@ -8,11 +8,14 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.swarmforge.floatcompanion"
+        // Fresh id: sideload cannot update over an older install signed with a
+        // different debug key (generic "App not installed"). Distinct from both
+        // legacy ids: com.swarmforge.floatcompanion and com.swarmforge.bubble.
+        applicationId = "com.swarmforge.float"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "0.3.8-home-handsfree"
+        versionCode = 30
+        versionName = "0.3.14-echo-ptt"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

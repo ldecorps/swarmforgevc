@@ -3,7 +3,6 @@ package com.swarmforge.floatcompanion
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.IOException
-import java.io.OutputStreamWriter
 import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
@@ -51,21 +50,28 @@ object BridgeClient {
     private fun friendlyTunnelMessage(code: Int): String =
         "Bridge tunnel unreachable (HTTP $code) — pairing URL may be stale."
 
-    fun submitTextTurn(baseUrl: String, token: String, text: String): TurnResult =
-        postTurn(baseUrl, token, JSONObject().put("text", text))
+    fun submitTextTurn(
+        baseUrl: String,
+        token: String,
+        text: String,
+        connectionSink: ((HttpURLConnection) -> Unit)? = null
+    ): TurnResult =
+        postTurn(baseUrl, token, JSONObject().put("text", text), connectionSink)
 
     fun submitAudioTurn(
         baseUrl: String,
         token: String,
         audioBase64: String,
-        mimeType: String
+        mimeType: String,
+        connectionSink: ((HttpURLConnection) -> Unit)? = null
     ): TurnResult =
         postTurn(
             baseUrl,
             token,
             JSONObject()
                 .put("audioBase64", audioBase64)
-                .put("mimeType", mimeType)
+                .put("mimeType", mimeType),
+            connectionSink
         )
 
     fun newSession(baseUrl: String, token: String): Pair<Boolean, String?> {
@@ -99,13 +105,23 @@ object BridgeClient {
         }
     }
 
-    private fun postTurn(baseUrl: String, token: String, body: JSONObject): TurnResult {
+    private fun postTurn(
+        baseUrl: String,
+        token: String,
+        body: JSONObject,
+        connectionSink: ((HttpURLConnection) -> Unit)? = null
+    ): TurnResult {
         val url = URL("${baseUrl.trimEnd('/')}/lets-talk/turn")
         val conn = openAuth(url, token)
+        connectionSink?.invoke(conn)
         return try {
             conn.requestMethod = "POST"
             conn.doOutput = true
-            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body.toString()) }
+            val payload = body.toString().toByteArray(Charsets.UTF_8)
+            // Stream large PTT payloads so the write is not buffered entirely
+            // in memory before the request starts (helps avoid silent stalls).
+            conn.setFixedLengthStreamingMode(payload.size)
+            conn.outputStream.use { it.write(payload) }
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()

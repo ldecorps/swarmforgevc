@@ -60,7 +60,6 @@ here.
 - [`/pilot safe` — auto-pick a low-blast defect for offline pilot](how-to/BL-722-pilot-safe-defects.md) — the safe-pool filter (approved, low-mutation, specced defect, not needs_design), its ranking, and the empty-pool refusal.
 - [Certifying an operator hotfix](how-to/BL-848-certify-an-operator-hotfix.md) — declaring a hand-landed hotfix with the `Hotfix-Certification: pending` trailer, the ledger state machine, and why no hotfix becomes an official swarm deal on green tests alone.
 - [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
-- [A role's answer (and a steer) now reaches the rotating resident's pane](how-to/BL-846-role-answer-reaches-the-rotating-residents-pane.md) — how pane resolution now follows the resident-identity marker, fixing the deadlock where an answer or steer for the role the resident is currently running as could never be delivered.
 - [Token-Burn Exhaustion Warning in the Morning Briefing](how-to/BL-619-token-burn-briefing-warning.md) — recording a usage-percentage anchor, what the warning looks like, the weekly-reset config, and troubleshooting a missing or wrong projection.
 
 ## Reference

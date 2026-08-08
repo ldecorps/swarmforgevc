@@ -55,6 +55,7 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             return
         }
         engine = eng
+        binding.versionText.text = appVersionLabel()
 
         binding.recordBtn.setOnClickListener {
             if (!hasMicPermission()) {
@@ -269,7 +270,9 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         suppressToggleCallbacks = false
 
         val thinking = snapshot.phase == TalkEngine.Phase.THINKING
-        binding.recordBtn.isEnabled = !snapshot.pausedAll && !thinking
+        // Record stays enabled during THINKING so the user can abort a stuck
+        // bridge wait (PTT timeout / hung turn) instead of sitting disabled.
+        binding.recordBtn.isEnabled = !snapshot.pausedAll
         binding.sendTurn.isEnabled =
             !snapshot.pausedAll && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
         binding.turnInput.isEnabled =
@@ -305,6 +308,16 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
 
     private fun requestMic() {
         ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+    }
+
+    /** Same debug line as the pairing screen (often skipped via auto-start). */
+    private fun appVersionLabel(): String {
+        val ver = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (_: Exception) {
+            "?"
+        }
+        return "BL-707 v$ver"
     }
 
     companion object {

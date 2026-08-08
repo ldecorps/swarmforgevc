@@ -774,7 +774,7 @@ export function formatHelpMessage(): string {
     '/resume — soft confirm; allow promotion again',
     '/syncenv /compile /pull — soft confirm (one Confirm tap)',
     '/stop /start /restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
-    '/doctor /tunnel — read-only checks',
+    '/doctor /tunnel /conf — read-only checks',
     '/confirm-off — clear a pending Confirm',
     '/log [expedite|redeploy|bridge] — tail the active or named operator log',
     '/help — this message',

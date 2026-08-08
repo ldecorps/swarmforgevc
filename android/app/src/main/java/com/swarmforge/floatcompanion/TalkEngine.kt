@@ -7,6 +7,8 @@ import android.util.Log
 import android.widget.Toast
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.net.HttpURLConnection
 
 /**
  * Voice session that outlives [TalkPanelActivity].
@@ -35,6 +37,9 @@ class TalkEngine(private val appContext: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
     private val alive = AtomicBoolean(true)
+    /** Bumps when a newer turn supersedes an in-flight HTTP call (PTT / text). */
+    private val turnGeneration = AtomicInteger(0)
+    @Volatile private var inFlightConn: HttpURLConnection? = null
 
     private var phase = Phase.READY
     private var handsFree = CompanionPrefs.isHandsFree(appContext)
@@ -60,7 +65,9 @@ class TalkEngine(private val appContext: Context) {
         replyPlayer = ReplyAudioPlayer(appContext) {
             mainHandler.post { onPlaybackDone() }
         }
-        replyPlayer?.setVolume(volumePercent / 100f)
+        // Reply voice stays at full app gain so phone system volume owns loudness
+        // (BL-765 volume split). Slider only scales hold music.
+        replyPlayer?.setVolume(1f)
         holdMusic.setVolume(volumePercent / 100f)
         holdMusic.setPreferredSong(preferredSong.ifBlank { null })
         recorder = AudioTurnRecorder(appContext.cacheDir) {
@@ -95,6 +102,7 @@ class TalkEngine(private val appContext: Context) {
     fun shutdown() {
         if (!alive.getAndSet(false)) return
         clearAutoListen()
+        abortInFlightTurn()
         recorder?.cancel()
         holdMusic.stop()
         replyPlayer?.shutdown()
@@ -139,9 +147,8 @@ class TalkEngine(private val appContext: Context) {
     fun setVolumePercent(percent: Int) {
         volumePercent = percent.coerceIn(0, 100)
         CompanionPrefs.setVolumePercent(appContext, volumePercent)
-        val gain = volumePercent / 100f
-        holdMusic.setVolume(gain)
-        replyPlayer?.setVolume(gain)
+        // Hold music only — reply voice follows the phone volume (USAGE_ASSISTANT / TTS).
+        holdMusic.setVolume(volumePercent / 100f)
         publish()
     }
 
@@ -191,6 +198,7 @@ class TalkEngine(private val appContext: Context) {
             muted = true
             handsFree = false
             clearAutoListen()
+            abortInFlightTurn()
             if (recorder?.isRecording == true) recorder?.cancel()
             replyPlayer?.stopNow()
             holdMusic.stop()
@@ -225,7 +233,15 @@ class TalkEngine(private val appContext: Context) {
                 startRecording(auto = false)
             }
             Phase.RECORDING -> stopRecording(manual = true)
-            else -> Unit
+            Phase.THINKING -> {
+                // Allow barge-out of a stuck bridge wait so PTT is not wedged
+                // behind a 120s timeout from a prior turn.
+                abortInFlightTurn()
+                holdMusic.stop()
+                holdMusicTitle = null
+                setPhase(Phase.READY)
+                startRecording(auto = false)
+            }
         }
     }
 
@@ -285,10 +301,12 @@ class TalkEngine(private val appContext: Context) {
         setPhase(Phase.THINKING)
         val base = CompanionPrefs.getBaseUrl(appContext)
         val token = CompanionPrefs.getToken(appContext)
+        val gen = beginTurn()
         io.execute {
-            val result = BridgeClient.submitTextTurn(base, token, trimmed)
+            val result = BridgeClient.submitTextTurn(base, token, trimmed, ::attachInFlight)
             mainHandler.post {
-                if (!alive.get()) return@post
+                if (!alive.get() || gen != turnGeneration.get()) return@post
+                clearInFlight()
                 if (result.ok) {
                     onTurnOk(result)
                 } else {
@@ -344,7 +362,12 @@ class TalkEngine(private val appContext: Context) {
                 setPhase(Phase.READY)
                 scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_AFTER_ERROR_MS)
             }
-            else -> submitAudio(capture.audioBase64, capture.mimeType, sttAttempt = 0)
+            else -> {
+                if (capture.reason == "max-listen") {
+                    Toast.makeText(appContext, R.string.record_max_reached, Toast.LENGTH_SHORT).show()
+                }
+                submitAudio(capture.audioBase64, capture.mimeType, sttAttempt = 0)
+            }
         }
     }
 
@@ -354,10 +377,12 @@ class TalkEngine(private val appContext: Context) {
         setPhase(Phase.THINKING)
         val base = CompanionPrefs.getBaseUrl(appContext)
         val token = CompanionPrefs.getToken(appContext)
+        val gen = if (sttAttempt == 0) beginTurn() else turnGeneration.get()
         io.execute {
-            val result = BridgeClient.submitAudioTurn(base, token, audioBase64, mimeType)
+            val result = BridgeClient.submitAudioTurn(base, token, audioBase64, mimeType, ::attachInFlight)
             mainHandler.post {
-                if (!alive.get()) return@post
+                if (!alive.get() || gen != turnGeneration.get()) return@post
+                clearInFlight()
                 if (result.ok) {
                     onTurnOk(result)
                 } else if (
@@ -370,6 +395,32 @@ class TalkEngine(private val appContext: Context) {
                 }
             }
         }
+    }
+
+    private fun beginTurn(): Int {
+        try {
+            inFlightConn?.disconnect()
+        } catch (_: Exception) {
+        }
+        inFlightConn = null
+        return turnGeneration.incrementAndGet()
+    }
+
+    private fun abortInFlightTurn() {
+        turnGeneration.incrementAndGet()
+        try {
+            inFlightConn?.disconnect()
+        } catch (_: Exception) {
+        }
+        inFlightConn = null
+    }
+
+    private fun attachInFlight(conn: HttpURLConnection) {
+        inFlightConn = conn
+    }
+
+    private fun clearInFlight() {
+        inFlightConn = null
     }
 
     private fun onTurnOk(result: BridgeClient.TurnResult) {
@@ -400,8 +451,16 @@ class TalkEngine(private val appContext: Context) {
     private fun onPlaybackDone() {
         if (!alive.get()) return
         if (phase == Phase.SPEAKING || phase == Phase.THINKING) {
+            // BL-826: onPlaybackDone can fire from THINKING (a stale signal
+            // from a player callback queued before a new turn started) —
+            // that path never actually played audio, so it must not wait
+            // out a quiet tail that has nothing to be quiet after.
+            val realPlaybackOccurred = phase == Phase.SPEAKING
             setPhase(Phase.READY)
-            scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS)
+            scheduleHandsFreeListen(
+                AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS,
+                followsPlayback = realPlaybackOccurred
+            )
         }
     }
 
@@ -427,18 +486,77 @@ class TalkEngine(private val appContext: Context) {
         }
     }
 
-    private fun scheduleHandsFreeListen(delayMs: Long) {
+    /**
+     * BL-826: the single funnel every hands-free re-arm route passes
+     * through — post-speech, error, THINKING, and recovery alike — so no
+     * route to the mic can bypass [HandsFreeReArmGate]. [followsPlayback]
+     * is true only when real playback just occurred (onPlaybackDone from
+     * SPEAKING); every other caller has no tail to wait out and the gate
+     * arms as soon as the existing [delayMs] cooldown elapses, preserving
+     * today's timing for those paths.
+     */
+    private fun scheduleHandsFreeListen(delayMs: Long, followsPlayback: Boolean = false) {
         clearAutoListen()
         if (!alive.get() || pausedAll || !handsFree) return
-        val r = Runnable {
-            // BL-716: ERROR now included — a connection failure lands there (not READY),
-            // and hands-free must still resume the listen loop once it clears.
-            if (alive.get() && !pausedAll && handsFree && (phase == Phase.READY || phase == Phase.ERROR)) {
-                startRecording(auto = true)
+        // The tail clock starts now (the playback-done moment), not after
+        // delayMs. When there is no tail to await, the first (and often
+        // only) tick still fires at delayMs, preserving today's cooldown
+        // timing for those paths. When a tail IS being awaited
+        // (followsPlayback), the first sample must land at the same cadence
+        // as every later one (BL-826 bounce) — sampling at the wider delayMs
+        // instead leaves a blind window in which continuous audio ending
+        // shortly before that first sample goes completely unobserved.
+        val waitStartedAt = System.currentTimeMillis()
+        val poll = HandsFreeListenPoll(waitStartedAt, followsPlayback)
+        val r = Runnable { poll.run() }
+        autoListenRunnable = r
+        mainHandler.postDelayed(r, HandsFreeReArmGate.firstPollDelayMs(delayMs, followsPlayback))
+    }
+
+    /** Mutable poll state for one hands-free re-arm wait; see
+     *  [scheduleHandsFreeListen]. Lives only for the duration of that wait —
+     *  a new call to [scheduleHandsFreeListen] (via [clearAutoListen])
+     *  discards it. */
+    private inner class HandsFreeListenPoll(
+        private val waitStartedAt: Long,
+        private val followsPlayback: Boolean
+    ) {
+        private var lastAudioActivityAt = waitStartedAt
+
+        fun run() {
+            // BL-716: ERROR included — a connection failure lands there (not
+            // READY), and hands-free must still resume the listen loop once
+            // it clears.
+            if (!alive.get() || pausedAll || !handsFree) return
+            if (phase != Phase.READY && phase != Phase.ERROR) return
+            val now = System.currentTimeMillis()
+            val playbackActive = followsPlayback && replyPlayer?.isAudioActive() == true
+            if (playbackActive) lastAudioActivityAt = now
+            val decision = HandsFreeReArmGate.decide(
+                HandsFreeReArmGate.Input(
+                    nowMs = now,
+                    waitStartedAt = waitStartedAt,
+                    hasPlaybackToAwait = followsPlayback,
+                    playbackActive = playbackActive,
+                    lastAudioActivityAt = lastAudioActivityAt
+                )
+            )
+            when (decision) {
+                is HandsFreeReArmGate.Decision.Arm -> {
+                    // Stuck-playback ceiling: force-stop residual TTS before arming
+                    // so a slow OEM voice cannot seed the next turn.
+                    if (followsPlayback && replyPlayer?.isAudioActive() == true) {
+                        replyPlayer?.stopNow()
+                    }
+                    startRecording(auto = true)
+                }
+                is HandsFreeReArmGate.Decision.NotYet -> {
+                    val r = Runnable { run() }
+                    autoListenRunnable = r
+                    mainHandler.postDelayed(r, (decision.recheckAtMs - now).coerceAtLeast(1L))
+                }
             }
         }
-        autoListenRunnable = r
-        mainHandler.postDelayed(r, delayMs)
     }
 
     private fun clearAutoListen() {

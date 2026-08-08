@@ -141,6 +141,56 @@ export function formatTunnelReport(repoRoot: string): string {
   }
 }
 
+/**
+ * Effective swarmforge.conf path (BL-313): pack override from
+ * `.swarmforge/swarm-identity`, else tracked `swarmforge/swarmforge.conf`.
+ * Mirrors backlog_depth_lib/conf-file-path so /conf shows the same file the
+ * running swarm actually reads.
+ */
+export function resolveEffectiveConfPath(repoRoot: string): string {
+  const identityPath = path.join(repoRoot, '.swarmforge', 'swarm-identity');
+  const fallback = path.join(repoRoot, 'swarmforge', 'swarmforge.conf');
+  if (!fs.existsSync(identityPath)) {
+    return fallback;
+  }
+  try {
+    const persisted = fs
+      .readFileSync(identityPath, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const tab = line.indexOf('\t');
+        if (tab < 0) {
+          return undefined;
+        }
+        return { key: line.slice(0, tab), value: line.slice(tab + 1) };
+      })
+      .find((row) => row?.key === 'active_backlog_max_depth_conf_path')?.value;
+    if (persisted && persisted.trim().length > 0) {
+      const trimmed = persisted.trim();
+      return path.isAbsolute(trimmed) ? trimmed : path.join(repoRoot, trimmed);
+    }
+  } catch {
+    // corrupt identity → tracked default
+  }
+  return fallback;
+}
+
+/** Print the effective swarm configure (path + body). */
+export function formatConfReport(repoRoot: string): string {
+  const confPath = resolveEffectiveConfPath(repoRoot);
+  if (!fs.existsSync(confPath)) {
+    return `conf: missing ${confPath}`;
+  }
+  try {
+    const body = fs.readFileSync(confPath, 'utf8');
+    return [`conf: ${confPath}`, '', body.replace(/\s+$/, '')].join('\n');
+  } catch (err) {
+    return `conf: failed to read ${confPath} (${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
 function ensureLockPath(repoRoot: string): string {
   return path.join(repoRoot, '.swarmforge', 'operator', 'cursor-remote-ensure.lock');
 }
@@ -559,6 +609,9 @@ export function executeOperatorVerb(
   }
   if (v === '/tunnel') {
     return { text: formatTunnelReport(repoRoot), wroteBounceSentinel: false };
+  }
+  if (v === '/conf') {
+    return { text: formatConfReport(repoRoot), wroteBounceSentinel: false };
   }
   if (v === '/ensure') {
     return { text: runEnsure(repoRoot, { principalId: opts?.principalId }), wroteBounceSentinel: false };

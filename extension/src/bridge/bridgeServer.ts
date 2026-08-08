@@ -1243,6 +1243,65 @@ function requestPath(req: http.IncomingMessage): string {
   return req.url ?? '/';
 }
 
+// Sideload APKs: publish-apk.sh copies versioned debug builds into
+// `.swarmforge/operator/public/`. bubble.musicalsifu.com terminates on this
+// bridge, so those files must be served here (pre-auth — phones cannot set
+// Authorization when opening a download link). Basename-only, fixed prefix.
+const SIDELOAD_APK_PATH = /^\/swarmforge-float-companion-[A-Za-z0-9._-]+\.apk$/;
+
+function sideloadApkPublicDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'public');
+}
+
+function tryServeSideloadApk(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  url: string
+): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return false;
+  }
+  const pathname = (url.split('?')[0] ?? '').split('#')[0] ?? '';
+  if (!SIDELOAD_APK_PATH.test(pathname)) {
+    return false;
+  }
+  const fileName = path.basename(pathname);
+  const publicRoot = path.resolve(sideloadApkPublicDir(targetPath));
+  const resolved = path.resolve(path.join(publicRoot, fileName));
+  const rootPrefix = publicRoot.endsWith(path.sep) ? publicRoot : publicRoot + path.sep;
+  if (!resolved.startsWith(rootPrefix)) {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
+    return true;
+  }
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
+    return true;
+  }
+  if (!stat.isFile()) {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
+    return true;
+  }
+  res.writeHead(200, {
+    'content-type': 'application/vnd.android.package-archive',
+    'content-length': stat.size,
+    'content-disposition': `attachment; filename="${fileName}"`,
+    'cache-control': 'no-store',
+  });
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+  fs.createReadStream(resolved).pipe(res);
+  return true;
+}
+
 function queryToken(url: string): string | undefined {
   return parseQueryCredential(url);
 }
@@ -1565,6 +1624,11 @@ export function startBridge(
         const speechSetting = parseLetsTalkSpeechLanguage(process.env.LETS_TALK_SPEECH_LANGUAGE);
         const speechLocale = speechLocaleForLanguage(speechSetting === 'auto' ? 'en' : speechSetting);
         serveMiniAppHtml(res, getLetsTalkUiHtml(speechLocale));
+        return;
+      }
+
+      // Public sideload APKs (no bearer) — must stay ahead of the 401 gate.
+      if (tryServeSideloadApk(req, res, targetPath, url)) {
         return;
       }
 

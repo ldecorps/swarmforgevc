@@ -1,0 +1,197 @@
+id: BL-857
+title: "Test sandboxes launch cloudflared against the production tunnel name and orphan it, because the reap is scoped to a pidfile inside the sandbox's own deleted tree"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 3
+direction: human-requested
+depends_on: [BL-762]
+assigned_to: coder
+mutation_cost: medium
+
+acceptance: specs/features/BL-857-one-owner-for-the-production-tunnel-name.feature
+
+invariants:
+  - "Exactly one process may own the production tunnel name at a time; any other process bound to it is an orphan by definition, whatever launched it."
+  - "A tunnel's ownership record outlives the tree that launched it — deleting a sandbox never destroys the only record of a live process."
+  - "Reaping is scoped to the production tunnel name; a cloudflared serving any other name is never touched."
+
+source: |
+  `.swarmforge/operator/INTAKE-kill-all-leaves-cloudflared-bubble-orphans.md`
+  — human via Cursor 2026-08-08, "new intake, not minted", with the incident
+  measured the same day. Raw intake archived by this spec.
+
+  The human's requested outcome, verbatim:
+
+  > 1. kill-all / stop-swarm (or a dedicated ancillary stop) reaps every
+  >    `cloudflared ... swarmforge-bubble` that is **not** the single operator
+  >    instance (pidfile / known binary path under `~/.local/bin` or
+  >    `.swarmforge/operator`).
+  > 2. BL-787 (and similar) test runners must tear down any cloudflared they
+  >    start — no disowned survivors under `/var/folders/.../bl787-*`.
+  > 3. Prefer one durable ownership rule over "kill PIDs after the fact" as the
+  >    only fix (tests register ownership; stop path uses that registry).
+
+  And the goal, verbatim:
+
+  > - After kill-all / stop-swarm / test teardown, at most **one** real
+  >   `swarmforge-bubble` cloudflared remains (the operator named tunnel).
+  > - Property / vitest sandboxes must not leave live tunnels bound to the
+  >   production tunnel name.
+  > - Host load and Bubble turn timeouts must not be driven by N duplicate
+  >   cloudflared processes fighting one named tunnel.
+
+description: |
+  ## The incident (measured by the human, 2026-08-08)
+
+  Thirteen `cloudflared ... run swarmforge-bubble` processes on the live host.
+  Twelve were orphans from `bl787-nodefault-prop-*` property-test sandboxes;
+  one was the real `~/.local/bin/cloudflared` operator tunnel. The same shift,
+  host load peaked around 350-400 and Bubble turns timed out at the Android
+  client's `BridgeClient readTimeout = 120_000` while the bridge itself was
+  serving. Ops cleared the twelve; `https://bubble.musicalsifu.com/lets-talk`
+  stayed HTTP 200 and load fell into the 30s.
+
+  ## Root cause — narrower than "kill-all misses them"
+
+  Confirmed by reading the two scripts, 2026-08-08:
+
+  - `launch_resident_spy_tunnel.sh:38` — `OP="$ROOT/.swarmforge/operator"`,
+    and the pidfile is `$OP/resident-spy-cloudflared.pid`.
+  - `stop_ancillary_services.sh:12` — `OP_DIR="$ROOT/.swarmforge/operator"`,
+    and line 138 reaps exactly that one pidfile via `signal_pid_file`, which
+    returns 0 silently when the file is absent.
+
+  Both paths are ROOT-RELATIVE and there is exactly ONE pidfile. A sandbox runs
+  with its own `$ROOT`, so its pidfile is written inside its own temp tree. The
+  live stop path reads only the live root's pidfile and therefore cannot see it
+  even in principle — and when the sandbox's temp tree is deleted, the only
+  record of that pid is destroyed while the process keeps running, still bound
+  to the production tunnel name.
+
+  That is why "kill PIDs after the fact" cannot be the whole fix, exactly as the
+  human's item 3 says: by the time anyone looks, the evidence of ownership is
+  already gone.
+
+  ## The fix
+
+  One durable ownership rule, per the human's item 3, with two halves that fall
+  out of it:
+
+  - **Ownership outlives the launching tree.** Every launcher records the
+    tunnel it started — which name, which pid, which owner — somewhere tied to
+    the HOST, not to the caller's `$ROOT`. A sandbox that vanishes then leaves a
+    record behind, which is what makes its orphan reapable at all.
+  - **The production tunnel name has exactly one owner.** A launch from outside
+    the operator root does not get to bind it. This is the prevention half: the
+    incident needs a sandbox to be able to run `run swarmforge-bubble` in the
+    first place, and it should not be able to.
+
+  Reaping then follows from the records rather than from pattern-matching a
+  process list: anything bound to the production tunnel name that no live
+  record claims as the operator instance is an orphan, and stale records (whose
+  pid has exited) claim nothing.
+
+  ## Constraints
+
+  - **Sequenced behind BL-762.** That ticket is in flight and edits
+    `stop_ancillary_services.sh` and the stop verbs directly. These two must not
+    be worked concurrently — same file, same area (Concurrent Work
+    Orthogonality). `depends_on: [BL-762]` records that; it is a scheduling
+    constraint, not a functional one.
+  - **Do not re-decide which verb keeps tunnels up.** BL-762 owns the
+    keep-vs-kill matrix: bedtime keeps the tunnels, lights-out stops them.
+    Orphan reaping is orthogonal to it — an orphan is reaped regardless of verb,
+    because no verb ever wanted twelve of them. Scenario 02 pins only that the
+    operator instance is not mistaken for an orphan.
+  - **Never reap by bare process name.** Scope every kill to the production
+    tunnel name and to records; a `pkill cloudflared` would take an unrelated
+    tunnel with it (the project's existing "scope pkill to your worktree" rule,
+    one level out).
+  - Keep the decision logic — which records are live, which processes are
+    orphans — pure and unit-testable, with the process list and the kill as
+    injected edges. Fixtures must not kill real processes.
+  - Register step handlers scoped to this feature (BL-425).
+
+  ## Scope
+
+  - `swarmforge/scripts/launch_resident_spy_tunnel.sh` — record ownership
+    host-side; refuse the production tunnel name from a non-operator root.
+  - `swarmforge/scripts/stop_ancillary_services.sh` — reap from records rather
+    than the single root-relative pidfile.
+  - The BL-787 property-test runner and any sibling that launches a tunnel —
+    tear down what it starts (the human's item 2).
+  - `swarmforge/scripts/test/` — unit coverage for the orphan/live decision.
+  - `specs/pipeline/steps/` — this feature file's handlers, in this parcel.
+
+  ## Out of scope
+
+  - Changing which lifecycle verb keeps tunnels up. BL-762.
+  - The Android client's 120s read timeout. It surfaced the symptom
+    ("Bridge connection timed out" while the bridge was up); it did not cause
+    it, and shortening it would hide this class of fault rather than fix it.
+  - The earlier "kill-all does not seem to kill all (cores stay busy)" report
+    in general. This ticket covers the cloudflared share of it, which is the
+    part that was measured; if cores stay busy after this lands, that is its
+    own ticket with its own evidence.
+
+qa_e2e_procedure: |
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-857-one-owner-for-the-production-tunnel-name.feature`
+     — all scenarios green.
+  2. Unit runner for the orphan/live decision green.
+  3. Fixture, per the intake's own acceptance shape: start two or more
+     fake/orphan tunnel stand-ins bound to the production tunnel name plus one
+     "operator" stand-in; run the stop path; only the operator stand-in
+     remains.
+  4. Run the BL-787 property tests. During the run, confirm no process binds
+     the production tunnel name from the sandbox. After teardown, confirm
+     `pgrep -lf swarmforge-bubble` shows at most the one operator tunnel.
+  5. Delete a sandbox tree while its tunnel stand-in is still running, then run
+     the stop path: the orphan is still reaped, because the record is not in
+     the deleted tree.
+  6. Start a cloudflared bound to a DIFFERENT tunnel name, run the stop path,
+     and confirm it is untouched.
+  7. Manual, on a dirty host: after a full kill-all, `pgrep -lf
+     swarmforge-bubble` shows at most the one operator tunnel (or zero if park
+     or stop was intended), and `https://bubble.musicalsifu.com/lets-talk`
+     still returns 200 when the operator tunnel is meant to be up.
+
+approval_context: >
+  One decision worth a tap: whether a run outside the operator root should be
+  REFUSED the production tunnel name outright (scenario 03), or merely be
+  required to clean up after itself.
+
+  I specced the refusal, because the cleanup half alone cannot hold: the
+  incident's twelve orphans were disowned precisely when their trees were
+  deleted, so any rule that depends on the sandbox tidying up fails in exactly
+  the case that produced the bug. Refusal makes the failure impossible rather
+  than recoverable. The cost is that a test wanting a real tunnel must use its
+  own name — which is what it should have been doing.
+
+  Firm, not up for debate here: your three requested outcomes, quoted verbatim
+  in `source:`. The refusal is how item 3's "one durable ownership rule" is
+  cashed out, not a substitute for it.
+
+notes: |
+  Sequencing matters more than usual here: BL-762 is ACTIVE and edits
+  `stop_ancillary_services.sh`, which this ticket also edits. Do not promote
+  this into a slot alongside it.
+
+  Live host at spec time carried exactly one cloudflared — the real operator
+  tunnel at `~/.local/bin/cloudflared` — so the twelve orphans are cleared and
+  the harm is currently latent. It recurs whenever the property tests run, so
+  the absence of orphans right now is not evidence against the defect.
+
+  The intake also names an earlier human report ("kill-all does not seem to
+  kill all, cores stay busy") as related. That is deliberately left broader
+  than this ticket: only the cloudflared share of it was measured.
+
+  Specifier 2026-08-08: feature file lints clean. IR-DRY reports three
+  medium-confidence possible-synonym findings, all reviewed and kept — every
+  one pairs assertions that are OPPOSITES ("is still running" against "is no
+  longer running") or differently scoped ("no tunnel from that run" against
+  "that tunnel"). The wording is deliberately parallel so the contrast between
+  reaped and spared is legible; the checker is matching tokens, not meaning.

@@ -221,3 +221,10 @@ notes: |
   speech/hands-free (and related tunnel/TTS flakiness) will take a long time;
   swarm should pull non-Bubble-speech work instead. Remains approved; re-promote
   when the human is ready to finish validation.
+
+  2026-08-08 human via Let's Talk device retest: steps 1–2 (long reply /
+  loud speaker) passed — single answer, no self-restart. Step 3 failed —
+  after a normal reply, ~30s silence, Bubble relaunched itself (self-listen
+  loop). Human chose option 1: stop silence testing and launch the fix.
+  Operator revoked Bubble-speech deprioritize policy; ticket returned hold →
+  paused for ordinary promotion. BL-844 / BL-845 remain in hold.

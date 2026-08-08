@@ -4,6 +4,8 @@ const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   formatSyncenvReport,
+  formatConfReport,
+  resolveEffectiveConfPath,
   writeOperatorBounceSentinel,
   executeOperatorVerb,
   writeOperatorPauseState,
@@ -40,6 +42,46 @@ test('BL-702: syncenv reports presence without values', () => {
   assert.match(report, /FOO: present/);
   assert.doesNotMatch(report, /super-secret/);
   assert.doesNotMatch(report, /=bar/);
+});
+
+test('/conf prints effective swarmforge.conf path and body', () => {
+  const root = mkTmpDir('conf-default-');
+  fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'swarmforge', 'swarmforge.conf'),
+    'config active_backlog_max_depth 3\nconfig swarm_name primary\n',
+    'utf8'
+  );
+  const confPath = resolveEffectiveConfPath(root);
+  assert.equal(confPath, path.join(root, 'swarmforge', 'swarmforge.conf'));
+  const report = formatConfReport(root);
+  assert.match(report, new RegExp(`^conf: ${confPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm'));
+  assert.match(report, /config active_backlog_max_depth 3/);
+  assert.match(report, /config swarm_name primary/);
+  const executed = executeOperatorVerb(root, '/conf');
+  assert.equal(executed.wroteBounceSentinel, false);
+  assert.equal(executed.text, report);
+});
+
+test('/conf honors swarm-identity pack override path', () => {
+  const root = mkTmpDir('conf-override-');
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'custom'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'swarm-identity'),
+    'swarm_name\tprimary\nactive_backlog_max_depth_conf_path\tcustom/override.conf\n',
+    'utf8'
+  );
+  fs.writeFileSync(path.join(root, 'custom', 'override.conf'), 'config active_backlog_max_depth -1\n', 'utf8');
+  const report = formatConfReport(root);
+  assert.match(report, /custom[/\\]override\.conf/);
+  assert.match(report, /config active_backlog_max_depth -1/);
+});
+
+test('/conf reports missing file', () => {
+  const root = mkTmpDir('conf-missing-');
+  const report = formatConfReport(root);
+  assert.match(report, /^conf: missing /);
 });
 
 test('BL-702: restart writes bounce sentinel', () => {
