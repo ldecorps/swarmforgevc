@@ -393,7 +393,8 @@ const DOMAINS = [
   require('./bl773CoordinatorRoleAskSteps'),
   require('./bl839MasterCheckoutDriftSteps'),
   require('./bl822HostLoadAnomalySteps'),
-  require('./bl848HotfixCertificationSteps')
+  require('./bl848HotfixCertificationSteps'),
+  require('./bl846ResidentPaneAnswerResolutionSteps')
 ];
 
 function registerSteps(registry) {
