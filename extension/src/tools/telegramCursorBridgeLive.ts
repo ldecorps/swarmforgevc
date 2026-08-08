@@ -119,6 +119,7 @@ import {
   gatePilotAgainstExpediteLock,
   landSleepButtons,
 } from './telegramCursorBridgePilot';
+import { listSafePilotDefects, pickSafePilotDefect, formatSafePilotListMessage } from './pilotSafeDefects';
 import {
   formatRedeployFailureMessage,
   formatRedeployStartMessage,
@@ -850,6 +851,16 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
     const text = result.ok ? formatMiniAppRedeployStartMessage(result) : formatMiniAppRedeployFailureMessage(result);
     await postInboundReply(ctx, topicId, text, replyTo);
     return false;
+  },
+  'pilot-safe-list': (ctx, topicId, replyTo) =>
+    handleSimpleInboundAction(ctx, topicId, formatSafePilotListMessage(listSafePilotDefects(ctx.repoRoot)), replyTo),
+  'pilot-safe-start': async (ctx, topicId, replyTo, resetAgent) => {
+    const picked = pickSafePilotDefect(ctx.repoRoot);
+    if ('empty' in picked) {
+      return handleSimpleInboundAction(ctx, topicId, `Safe pilot pool empty.\n${picked.reason}`, replyTo);
+    }
+    await postInboundReply(ctx, topicId, picked.rationale, replyTo);
+    return handlePilotInboundAction(ctx, topicId, picked.ticket.id, replyTo, resetAgent);
   },
 };
 
