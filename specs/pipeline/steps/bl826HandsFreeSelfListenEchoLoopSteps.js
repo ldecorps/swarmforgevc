@@ -8,9 +8,11 @@
 // the REAL gradlew :app:testDebugUnitTest task — a stubbed runner would prove
 // nothing about whether HandsFreeReArmGateTest actually exercises each
 // decision.
-const path = require('node:path');
-const fs = require('node:fs');
-const { runGradle, readJUnitResults } = require('./lib/androidGradle');
+const {
+  registerAndroidModuleBackground,
+  registerJvmUnitSuiteRun,
+  registerKnownValueLookup,
+} = require('./lib/androidJvmDecisionSteps');
 
 const FEATURE_NAME = 'Bubble does not open the mic onto its own voice';
 const TEST_REPORT_DIR = 'testDebugUnitTest';
@@ -48,60 +50,13 @@ const KNOWN_DECISIONS = {
 };
 
 function registerSteps(registry) {
-  // ── Background ───────────────────────────────────────────────────────
-  registry.defineScoped(
-    /^the Bubble Android module$/,
-    (ctx) => {
-      ctx.repoRoot = path.join(__dirname, '..', '..', '..');
-      ctx.androidDir = path.join(ctx.repoRoot, 'android');
-      if (!fs.existsSync(path.join(ctx.androidDir, 'gradlew'))) {
-        throw new Error(`expected android/gradlew under ${ctx.androidDir}`);
-      }
-    },
-    FEATURE_NAME
-  );
-
-  // ── When ──────────────────────────────────────────────────────────────
-  registry.defineScoped(
-    /^the JVM unit suite is run$/,
-    (ctx) => {
-      ctx.result = runGradle(ctx.repoRoot, [':app:testDebugUnitTest', '--console=plain']);
-      ctx.junitResults = readJUnitResults(ctx.androidDir, TEST_REPORT_DIR);
-    },
-    FEATURE_NAME
-  );
-
-  // ── BL-826 hands-free-self-listen-echo-loop-01 (Then, Scenario Outline) ─
-  registry.defineScoped(
-    /^it exercises (.+)$/,
-    (ctx, decision) => {
-      const known = KNOWN_DECISIONS[decision];
-      if (!known) {
-        throw new Error(
-          `unknown <decision> example "${decision}" - expected one of: ${Object.keys(KNOWN_DECISIONS).join(', ')}`
-        );
-      }
-      if (ctx.result.status !== 0) {
-        throw new Error(
-          `expected gradlew :app:testDebugUnitTest to exit 0, got ${ctx.result.status}. output:\n` +
-            `${ctx.result.stdout}\n${ctx.result.stderr}`
-        );
-      }
-      const matches = ctx.junitResults.filter(
-        (r) => r.classname.includes(known.classSubstring) && r.name.includes(known.nameSubstring)
-      );
-      if (matches.length === 0) {
-        throw new Error(
-          `expected a passed test in ${known.classSubstring} naming "${known.nameSubstring}" for decision ` +
-            `"${decision}", found none among: ${JSON.stringify(ctx.junitResults)}`
-        );
-      }
-      if (matches.some((r) => !r.passed)) {
-        throw new Error(`expected the matching test(s) for "${decision}" to have passed: ${JSON.stringify(matches)}`);
-      }
-    },
-    FEATURE_NAME
-  );
+  registerAndroidModuleBackground(registry, FEATURE_NAME, __dirname);
+  registerJvmUnitSuiteRun(registry, FEATURE_NAME, TEST_REPORT_DIR);
+  // BL-826 hands-free-self-listen-echo-loop-01 (Then, Scenario Outline).
+  // requireZeroStatus=true: unlike BL-769's lookup, this is the only Then
+  // step in the scenario, so it must itself confirm the gradlew run
+  // succeeded before trusting any JUnit result.
+  registerKnownValueLookup(registry, FEATURE_NAME, KNOWN_DECISIONS, 'decision', true);
 }
 
 module.exports = { registerSteps };
