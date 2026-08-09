@@ -14,12 +14,21 @@
 ;;   promotion_gates_cli.bb evaluate <root> <ticket-file> <held:true|false> <max-depth>
 ;;     -> "ALLOW" on stdout, exit 0
 ;;     -> "REFUSE|<gate>|<reason>" on stdout, exit 2
+;;     -> BL-854: when the candidate's epic overlaps an active ticket's, ALSO
+;;        prints one "ADVISORY|orthogonality|epic <epic> is also active on
+;;        <BL-id>[, <BL-id>...]" line to STDERR, ONLY when the candidate is
+;;        otherwise ALLOWed - stdout's ALLOW/REFUSE contract is byte-identical
+;;        to before; the advisory is a distinct, additional signal on the
+;;        distinct stream, never parsed by any pre-existing caller.
 ;;
 ;;   promotion_gates_cli.bb select <root> <max-depth> <file>...
 ;;     -> the winning candidate's path on stdout, exit 0 (Article 3.2.4
 ;;        expedite-lane ranking over whichever of the given files pass
 ;;        `evaluate`; a candidate `evaluate` refuses is dropped from the
-;;        ranking, never crashes the whole selection)
+;;        ranking, never crashes the whole selection). BL-854: prints the
+;;        WINNER's orthogonality advisory (if any) to stderr, once - never
+;;        one per rejected candidate, which would bury the signal it exists
+;;        to raise.
 ;;     -> "NONE" on stdout, exit 1 (no given file is an eligible candidate)
 ;;
 ;;   promotion_gates_cli.bb route-target <root> <ticket-file>
@@ -48,6 +57,11 @@
       (do (println (str f "\thold")) (System/exit 0))
       (do (println "NOT_FOUND") (System/exit 1)))))
 
+(defn- print-advisory! [advisory]
+  (when advisory
+    (binding [*out* *err*]
+      (println (promotion-gates-lib/advisory-line advisory)))))
+
 (defn- cmd-evaluate [[root ticket-file held-str max-depth-str]]
   (when (or (nil? root) (nil? ticket-file) (nil? held-str) (nil? max-depth-str)) (usage!))
   (let [content (slurp ticket-file)
@@ -59,6 +73,7 @@
                  :active-count (promotion-gates-lib/active-count root)
                  :max-depth max-depth
                  :active-epics (promotion-gates-lib/active-epics root)})]
+    (print-advisory! (:advisory result))
     (if (:ok result)
       (do (println "ALLOW") (System/exit 0))
       (do (println (str "REFUSE|" (:gate result) "|" (:reason result))) (System/exit 2)))))
@@ -74,11 +89,13 @@
                                         {:content content :held? false
                                          :active-count active-count :max-depth max-depth
                                          :active-epics active-epics})]
-                            (when (:ok result) {:file f :content content})))
+                            (when (:ok result) {:file f :content content :advisory (:advisory result)})))
                         files)
         winner (promotion-gates-lib/rank-candidates eligible)]
     (if winner
-      (do (println (:file winner)) (System/exit 0))
+      (do (print-advisory! (:advisory winner))
+          (println (:file winner))
+          (System/exit 0))
       (do (println "NONE") (System/exit 1)))))
 
 (defn- cmd-route-target [[root ticket-file]]

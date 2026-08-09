@@ -217,7 +217,7 @@ notes: |
      still refuse with their unchanged named reasons.
   5. Count paused tickets refused on the orthogonality gate: expect 0.
 
-acceptance: specs/features/BL-854-orthogonality-advises-instead-of-blocking.feature.draft
+acceptance: specs/features/BL-854-orthogonality-advises-instead-of-blocking.feature
 
 approval_context: >
   One decision, and it is a policy call rather than a bug fix, which is why

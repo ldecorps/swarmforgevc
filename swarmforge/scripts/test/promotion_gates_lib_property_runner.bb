@@ -57,6 +57,38 @@
 ;; every candidate reads as non-expedited and rank-candidates falls through
 ;; to pure priority order) and failed as expected before this file was
 ;; finalized; restored before commit.
+;;
+;; BL-854 (declared invariants; see the coder role's Invariants section - a
+;; declared invariant's property test is coder-authored first):
+;;   1. "Orthogonality never refuses a promotion" - P1 below was widened so
+;;      `expected` no longer includes an orthogonality branch (evaluate must
+;;      never refuse on it), and P7 directly asserts no result ever carries
+;;      :gate "orthogonality". Non-vacuity: P1 was run against evaluate with
+;;      orthogonality-advisory reinstated into the refusal `or` chain (the
+;;      pre-BL-854 shape) and failed on every colliding-epic-under-cap case,
+;;      as expected; P7 likewise failed against that same reinstated build.
+;;      Restored before commit.
+;;   2. "An advisory is evidence-bearing... names each active ticket it
+;;      fired on" - P8 quantifies evaluate's :advisory over the SAME
+;;      active-epics map gen-context draws, independently recomputing the
+;;      expected ids (never calling orthogonality-advisory back) and
+;;      asserting the advisory is present iff there is real overlap, and
+;;      when present names EXACTLY that epic's ids, no more, no fewer.
+;;      Non-vacuity: run against orthogonality-advisory with `(first ids)`
+;;      substituted for the full ids vector (advisory drops every id but the
+;;      first) and failed on every multi-id overlap, as expected. Restored
+;;      before commit.
+;;   3. "No other verdict changes: human_approval, depth, hold, and Article
+;;      3.2.4 ranking stay byte-identical to today" - human-approval-refusal,
+;;      depth-refusal, hold-refusal, expedited?, and rank-candidates are not
+;;      touched by this ticket's diff at all, so P1 (hold/approval/depth
+;;      precedence), P4 (expedite ranking), P5, and P6 continue to exercise
+;;      the exact same, unmodified code paths as before BL-854 - this is a
+;;      structural fact about which functions BL-854's diff touches, not a
+;;      new input/output relationship a property could quantify over any
+;;      more directly than "these functions' source is unchanged", per the
+;;      coder role's own carve-out for a declared invariant that "quantifies
+;;      over prose or process rather than a pure, testable module".
 
 (ns promotion-gates-lib-property-runner
   (:require [babashka.fs :as fs]))
@@ -102,12 +134,19 @@
           (when epic? (str "epic: " epic "\n")))
      s3]))
 
+;; BL-854: active-epics is now epic -> ids (see promotion_gates_lib.bb's own
+;; reader), not a bare epic set - the generator draws a small id alphabet per
+;; epic so P8 (advisory evidence-bearing) below has more than one id to prove
+;; it names ALL of them, not just the first.
+(def active-id-alphabet ["BL-900" "BL-901" "BL-902"])
+
 (defn gen-active-epics [s]
   (let [[n s1] (gen-int s 3)]
     (reduce (fn [[acc sx] _]
-              (let [[e sy] (gen-pick sx epic-alphabet)]
-                [(conj acc e) sy]))
-            [#{} s1] (range n))))
+              (let [[e sy] (gen-pick sx epic-alphabet)
+                    [id sz] (gen-pick sy active-id-alphabet)]
+                [(update acc e (fnil conj []) id) sz]))
+            [{} s1] (range n))))
 
 ;; WEIGHTED, per the recorded "uniform draw passed hundreds of runs against a
 ;; live defect because it never reached the interesting state" trap
@@ -118,14 +157,33 @@
 ;; 10% floor - before this shape draw was added. A third of contexts are now
 ;; a GUARANTEED-compliant shape (mirrors gen-probe's own "fully stopped"
 ;; bucket), so the :ok branch is genuinely, not just theoretically, covered.
+;;
+;; BL-854 P8 needed a FOURTH, similarly guaranteed shape: a genuinely
+;; independent draw makes "epic overlaps AND that epic maps to 2+ distinct
+;; active ids" a rare conjunction on its own (measured: the naive draw's own
+;; multi-id branch was exercised on 0/500 runs - it hid a real gap, the
+;; :ids [(first ids)] mutation described in this file's header passed
+;; cleanly against the undertuned generator before this shape was added).
+;; shape 3 below forces exactly that case so P8's multi-id assertion is
+;; genuinely exercised, not just theoretically reachable.
 (defn gen-context [s]
-  (let [[shape s0] (gen-int s 3)]
-    (if (zero? shape)
+  (let [[shape s0] (gen-int s 4)]
+    (cond
+      (zero? shape)
       (let [[epic? s1] (gen-bool s0)
             [epic s2] (gen-pick s1 epic-alphabet)]
         [{:content (str "human_approval: approved\n" (when epic? (str "epic: " epic "-solo\n")))
-          :held? false :active-count 0 :max-depth 3 :active-epics #{}}
+          :held? false :active-count 0 :max-depth 3 :active-epics {}}
          s2])
+
+      (= 3 shape)
+      (let [[epic s1] (gen-pick s0 epic-alphabet)]
+        [{:content (str "human_approval: approved\nepic: " epic "\n")
+          :held? false :active-count 1 :max-depth 3
+          :active-epics {epic ["BL-900" "BL-901"]}}
+         s1])
+
+      :else
       (let [[content s1] (gen-content s0)
             [held? s2] (gen-bool s1)
             [active-count s3] (gen-int s2 4)
@@ -217,27 +275,70 @@
 
 (defn- candidate-tie-key [c] [(:priority c) (:id c)])
 
-;; ── P1: evaluate refuses iff at least one gate fails, naming the FIRST by
-;;        fixed precedence (held -> human_approval -> depth -> orthogonality) ─
+;; ── P1: evaluate refuses iff a BLOCKING gate fails, naming the FIRST by
+;;        fixed precedence (held -> human_approval -> depth). BL-854:
+;;        orthogonality is no longer in this chain at all - see P7 below for
+;;        its own invariant (it never refuses, whatever the epic overlap) ──
 
-(check-all "P1 evaluate composition: refuses iff a gate fails, names the first one"
+(check-all "P1 evaluate composition: refuses iff a blocking gate fails, names the first one"
   gen-context
-  (fn [{:keys [content held? active-count max-depth active-epics] :as ctx}]
+  (fn [{:keys [content held? active-count max-depth] :as ctx}]
     (let [result (promotion-gates-lib/evaluate ctx)
           hold (promotion-gates-lib/hold-refusal held?)
           approval (promotion-gates-lib/human-approval-refusal content)
           depth (promotion-gates-lib/depth-refusal active-count max-depth)
-          ortho (promotion-gates-lib/orthogonality-refusal (promotion-gates-lib/read-epic content) active-epics)
-          expected (:gate (or hold approval depth ortho))]
+          expected (:gate (or hold approval depth))]
       (cond
         (and (nil? expected) (not (:ok result)))
-        (str "no gate fails but evaluate refused: " (pr-str result))
+        (str "no blocking gate fails but evaluate refused: " (pr-str result))
 
         (and expected (:ok result))
         (str "gate " expected " fails but evaluate returned ok")
 
         (and expected (not= expected (:gate result)))
         (str "expected first-failing gate " expected " but evaluate named " (:gate result))
+
+        :else true))))
+
+;; ── P7 (BL-854 invariant 1): orthogonality never refuses a promotion - for
+;;        every candidate, whatever the epic overlap, evaluate's refusal (if
+;;        any) is never :gate "orthogonality" ───────────────────────────────
+
+(check-all "P7 orthogonality never refuses: evaluate's :gate is never \"orthogonality\""
+  gen-context
+  (fn [ctx]
+    (let [result (promotion-gates-lib/evaluate ctx)]
+      (if (= "orthogonality" (:gate result))
+        (str "evaluate refused on orthogonality: " (pr-str result) " - it must only ever advise")
+        true))))
+
+;; ── P8 (BL-854 invariant 2): the orthogonality advisory is evidence-bearing
+;;        - present iff the candidate's epic genuinely overlaps an active
+;;        ticket's, and when present names EXACTLY the ids active-epics maps
+;;        that epic to, no more, no fewer. Independent oracle: recomputes
+;;        expected overlap/ids directly from active-epics, never by calling
+;;        orthogonality-advisory back (same non-circularity discipline as
+;;        P4's expected-expedited?) ────────────────────────────────────────
+
+(check-all "P8 orthogonality advisory: present iff real overlap, names exactly the overlapping ids"
+  gen-context
+  (fn [{:keys [content active-epics] :as ctx}]
+    (let [result (promotion-gates-lib/evaluate ctx)
+          epic (promotion-gates-lib/read-epic content)
+          expected-ids (vec (sort (get active-epics epic)))
+          advisory (:advisory result)]
+      (cond
+        (not (:ok result))
+        true ; a blocking-gate refusal never reaches the advisory branch (P1)
+
+        (and (empty? expected-ids) advisory)
+        (str "no real overlap for epic " (pr-str epic) " but an advisory fired: " (pr-str advisory))
+
+        (and (seq expected-ids) (nil? advisory))
+        (str "epic " epic " overlaps active ids " expected-ids " but no advisory fired")
+
+        (and (seq expected-ids) (not= expected-ids (:ids advisory)))
+        (str "advisory ids " (pr-str (:ids advisory)) " do not exactly match the overlapping ids " (pr-str expected-ids))
 
         :else true))))
 
@@ -409,6 +510,18 @@
     (report! "COVERAGE P4 expedited-present branch" 7 {:with-expedited with-expedited :floor floor} "the expedited-present branch is barely exercised"))
   (when (< without floor)
     (report! "COVERAGE P4 none-expedited branch" 7 {:without without :floor floor} "the none-expedited branch is barely exercised")))
+
+(let [multi-id (loop [i 0 s 7 m 0]
+                 (if (= i runs)
+                   m
+                   (let [[{:keys [content active-epics]} s'] (gen-context s)
+                         epic (promotion-gates-lib/read-epic content)
+                         ids (get active-epics epic)]
+                     (recur (inc i) s' (if (> (count ids) 1) (inc m) m)))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: multi-id-advisory=" multi-id))
+  (when (< multi-id floor)
+    (report! "COVERAGE P8 multi-id advisory branch" 7 {:multi-id multi-id :floor floor} "the multi-id advisory branch is barely exercised")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "promotion_gates_lib properties: " runs " runs each"))
