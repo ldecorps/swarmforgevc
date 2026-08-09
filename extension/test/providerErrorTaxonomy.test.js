@@ -56,6 +56,30 @@ test('two differently-worded rate-limit failures from different providers map to
   assert.equal(providerA.category, 'unavailable');
 });
 
+// BL-840: "overloaded" alone left the shared trailing \b unable to match
+// "overloaded_error" (`_` is a word character, so d->_ is not a boundary).
+// The plain word "overloaded" (no trailing underscore) already matched
+// before this fix, so it alone cannot prove the fix took - assert on the
+// underscore-suffixed form specifically.
+test('BL-840: "overloaded_error" (trailing underscore) maps to unavailable, not unknown', () => {
+  const result = classifyProviderError('overloaded_error');
+  assert.equal(result.category, 'unavailable');
+});
+
+// BL-840: a bare 529 was previously unrecognized (only 429/503 were in the
+// pattern). This is the exact incident text that prompted the fix.
+test('BL-840: the real incident text (529 + overloaded_error) maps to unavailable', () => {
+  const result = classifyProviderError(
+    'API Error: 529 {"type":"error","error":{"type":"overloaded_error"}}',
+  );
+  assert.equal(result.category, 'unavailable');
+});
+
+test('BL-840: a bare 529 with no other unavailable-class text still maps to unavailable', () => {
+  const result = classifyProviderError('API Error: 529');
+  assert.equal(result.category, 'unavailable');
+});
+
 // BL-207 unknown-fallback-03: an unmapped backend error becomes "unknown"
 // with its raw detail attached, never a crash.
 test('BL-207 unknown-fallback-03: an unrecognized error falls back to unknown with detail attached, never throws', () => {
