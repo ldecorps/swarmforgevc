@@ -14,6 +14,10 @@
 # Usage: setup_bubble_named_tunnel.sh [project-root] [--allow-pending-dns]
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./tunnel_ownership_lib.sh
+source "$SCRIPT_DIR/tunnel_ownership_lib.sh"
+
 ROOT="."
 ALLOW_PENDING_DNS=0
 for arg in "$@"; do
@@ -164,6 +168,13 @@ SWARMFORGE_NAMED_TUNNEL_HOSTNAME=$HOSTNAME
 SWARMFORGE_CLOUDFLARED_CONFIG=$CONFIG_YML
 EOF
 info "wrote $ENV_OUT"
+
+# BL-857: this one-shot, human-run setup is the deliberate bootstrap point
+# for "which root may bind the production tunnel name" - write-once, so a
+# later run (or a different root entirely) never silently re-appoints
+# itself. Moving the operator root is a deliberate edit of the recorded
+# file, never something a script does automatically.
+tunnel_register_operator_root "$ROOT"
 
 cat >&2 <<EOF
 setup_bubble_named_tunnel: done.

@@ -1,0 +1,111 @@
+id: BL-868
+title: "DEFECT — the property lane wires no setupFiles, so BL-420's temp sweep and BL-720's env-restore guard never run for any property test"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 4
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+description: >
+  `extension/vitest.config.mjs` registers two isolation guards as setupFiles:
+  `tmpDirSetup.js` (BL-420, sweeps every directory `mkTmpDir()` created) and
+  `envRestoreGuardSetup.js` (BL-720, fails loudly the moment a test leaves
+  `process.env` different from what it found).
+
+  `extension/vitest.properties.config.mjs` registers no setupFiles at all. It
+  is a deliberately minimal config that "does not share vitest.config.mjs's
+  worker/coverage settings" — but it also silently dropped both guards. The
+  property lane therefore runs 64 property files with neither.
+
+  Two consequences, both verified on the operator host.
+
+  LEAKED TEMP DIRECTORIES. `mkTmpDir()` pushes each directory onto a `pending`
+  list drained by an `afterEach` that the property lane never registers, so
+  every directory a property test creates survives forever. Counted 2026-08-09
+  from four property-only prefixes alone (`bl787-`, `bl861-`, `bl622-`,
+  `bl805-`): 1527 orphaned directories totalling 435 MB. Those four are 4 of
+  64 property files, so the true figure is larger. The host's temp directory
+  now holds 75301 entries — large enough that a single `du -sh` on it did not
+  complete within 2 minutes.
+
+  UNGUARDED ENVIRONMENT. BL-720 exists because `poolOptions.forks.isolate:
+  false` shares `process.env` across every file in a worker, making a leak
+  silently reorder later files' verdicts. That reasoning applies to the
+  property lane unchanged, but the guard that enforces it is not loaded there.
+  A property test may leave the environment modified with nothing to catch it.
+
+  The fix is to give the property lane the same guards. The mechanism is small;
+  the risk is that turning them on may immediately fail property files that are
+  already leaking — which is the point, but makes the blast radius unknown
+  until the guards run.
+
+invariants:
+  - "A property test leaves the host no state it did not find — no temp directory it created and no process.env key it changed survives the run."
+  - "Every Vitest configuration that executes test files registers the shared isolation guards; a lane cannot exist without them."
+
+acceptance: specs/features/BL-868-property-lane-isolation-guards.feature
+
+qa_e2e_procedure: |
+  1. Record the pre-run count of fixture temp directories:
+     `ls -d "${TMPDIR:-/tmp}"/bl*-* 2>/dev/null | wc -l`
+  2. `cd extension && npm run test:properties`
+  3. Re-count. The number must be unchanged — the run must add none.
+  4. Confirm the env guard is live in this lane: temporarily add a property
+     test that sets a `process.env` key and does not restore it. The run must
+     FAIL and the failure must name that key. Remove the probe afterwards.
+  5. Confirm no verdict changed for already-clean property files: the set of
+     passing files before and after this ticket must be identical apart from
+     files this ticket deliberately fixes.
+
+approval_context: >
+  Two things need your decision before this is built.
+
+  FIRST — turning the guards on may fail property files that are leaking
+  today. That is the ticket working as intended, but the count is unknown
+  until the guards actually run, so the slice size is genuinely uncertain.
+  Preference sought: fix whatever the guards surface inside this ticket, or
+  land the guards and file each surfaced leak as its own follow-up?
+
+  SECOND — this ticket deliberately does NOT delete the 1527+ directories
+  (435 MB) already on disk, and no scenario asks anything to remove them. The
+  fix stops the leak; disposing of the existing backlog is your call, not the
+  swarm's. This is stated explicitly because on 2026-08-08 an agent launched
+  an `rm -rf` of this host's system temp directory and it had to be killed by
+  PID. Those directories sit in the same tree. If you want them cleared, say
+  so and it becomes a separate operator action with an explicit path.
+
+source: |
+  Found by the specifier 2026-08-09 while probing the hardender's BL-787
+  note (see BL-867). The note reported ambient env leaking INTO a fixture;
+  reading the two Vitest configs to confirm which guards should have caught
+  it revealed the property lane registers none.
+
+  BL-720 built the guard for the outbound direction (a test mutating
+  process.env and not restoring it). Nothing wired it into this lane.
+
+notes: |
+  Split from the same hardender note as BL-867 (1:N intake split). BL-867 is
+  the proven single-file defect and is independently valuable; this ticket is
+  the lane-level gap. Kept separate per BL-634 envelope discipline because the
+  mechanisms differ (fixture code vs Vitest config wiring) and this one
+  carries the cascade risk described in `approval_context`.
+
+  Scope: `extension/vitest.properties.config.mjs`, plus whatever the guards
+  surface subject to the approval question above.
+
+  `vitest.config.mjs` explicitly EXCLUDES `**/*.property.test.js`, so the two
+  lanes genuinely never overlap — no property file picks the guards up by
+  accident through the unit or Stryker runs.
+
+  Evidence commands, re-runnable:
+    ls -d "${TMPDIR:-/tmp}"/bl787-* "${TMPDIR:-/tmp}"/bl861-* \
+          "${TMPDIR:-/tmp}"/bl622-* "${TMPDIR:-/tmp}"/bl805-* | wc -l
+    grep -n setupFiles extension/vitest.config.mjs
+    grep -c setupFiles extension/vitest.properties.config.mjs   # => 0

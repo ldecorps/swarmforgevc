@@ -29,16 +29,26 @@
 ;;   2. cwd-inside-root?    - a live agent's cwd resolves inside this repo's
 ;;                            own .swarmforge/ root; an orphan's cwd is
 ;;                            deleted or points elsewhere.
-;;   3. remote-control-agent? - candidate SCOPE: only SwarmForge-* remote-
+;;   3. cwd-resolved?       - BL-849: cwd resolution (Darwin: `lsof`) can
+;;                            fail open (missing/slow/denied) - an
+;;                            UNRESOLVED cwd is not the same claim as
+;;                            "resolved and confirmed outside root", and
+;;                            must never be treated as proof of safety.
+;;                            Defaults true so every pre-BL-849 caller (the
+;;                            existing decision acceptance runner, which
+;;                            always resolves a real cwd) is unaffected.
+;;   4. remote-control-agent? - candidate SCOPE: only SwarmForge-* remote-
 ;;                              control claude processes are ever eligible.
-;;   4. has-children?       - doing work - never reap.
-;;   5. stale?               - too young could be an in-progress dry-run
+;;   5. has-children?       - doing work - never reap.
+;;   6. stale?               - too young could be an in-progress dry-run
 ;;                            (e.g. an active FES bring-up); protects it.
 (defn reapable?
-  [{:keys [in-live-window-set? cwd-inside-root? remote-control-agent? has-children? stale?]}]
+  [{:keys [in-live-window-set? cwd-inside-root? cwd-resolved? remote-control-agent? has-children? stale?]
+    :or {cwd-resolved? true}}]
   (cond
     in-live-window-set? false
     cwd-inside-root? false
+    (not cwd-resolved?) false
     (not remote-control-agent?) false
     has-children? false
     (not stale?) false

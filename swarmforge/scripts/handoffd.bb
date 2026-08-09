@@ -34,6 +34,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_outage_evidence_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -1080,16 +1081,44 @@
       :alert (send-auth-persist-alert! role max-attempts)
       :none nil)))
 
+(defn- provider-outage-observe-min-interval-ms []
+  (provider-outage-evidence-lib/parse-observe-min-interval-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
+(defn observe-pane-provider-outage!
+  "BL-840: feed one pane snapshot (the SAME one observe-pane-auth! above
+   already captured - no second tmux capture) into the provider-outage
+   evidence store when its text classifies :unavailable
+   (agent_runtime_lib.bb's classify-provider-error). Attributed to role-info's
+   own configured provider (:agent - the BL-208 lookup), never guessed;
+   a role with no configured provider records nothing, since there is
+   nothing to attribute it to. Throttled by
+   provider_outage_observe_min_interval_ms inside record-provider-outage!
+   itself; never throws out to the caller."
+  [role role-info pane]
+  (when (and (not (str/blank? pane))
+             (= :unavailable (:category (agent-runtime-lib/classify-provider-error pane))))
+    (when-let [provider (:agent role-info)]
+      (try
+        (provider-outage-evidence-lib/record-provider-outage!
+         (str state-dir) role provider pane (System/currentTimeMillis)
+         (provider-outage-observe-min-interval-ms))
+        (catch Exception e (log! "provider-outage-observe-error" role (.getMessage e)))))))
+
 (defn observe-standing-role-auth!
   "Walk every role that still has a live tmux session and feed its pane into
-   the auth-class observer. Same live-session gate and 20-line scrollback
-   window as observe-standing-role-loops! above."
+   the auth-class observer AND (BL-840) the provider-outage evidence
+   observer - the same 20-line scrollback capture serves both, never a
+   second tmux capture. Same live-session gate and window as
+   observe-standing-role-loops! above."
   [roles socket]
   (doseq [[role role-info] roles]
     (let [session (:session role-info)]
       (when (and session (handoff-lib/session-exists? socket session))
         (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
-          (observe-pane-auth! role-info socket pane))))))
+          (observe-pane-auth! role-info socket pane)
+          (observe-pane-provider-outage! role role-info pane))))))
 
 (def last-chase-rotate-at-ms (atom 0))
 
@@ -1677,6 +1706,18 @@
         (log! "flow-watchdog-telegram-error" (.getMessage e))
         false))))
 
+(defn flow-watchdog-provider-outage-evidence-for
+  "BL-840: resolves role -> its configured provider (:agent - the same
+   BL-208 lookup :log-telemetry! above uses) and reads that provider's
+   recorded evidence lines. A role with no configured provider gets no
+   evidence, never a guess. Read failures already degrade to [] inside
+   provider-outage-evidence-lib itself (invariant 1) - no try/catch needed
+   here."
+  [roles role]
+  (if-let [provider (:agent (get roles role))]
+    (provider-outage-evidence-lib/evidence-for-provider (str state-dir) provider)
+    []))
+
 (defn flow-watchdog-sweep! [roles socket]
   (flow-watchdog-lib/run-sweep!
    (role-inboxes-for-flow-watchdog roles)
@@ -1684,7 +1725,8 @@
    (str project-root)
    daemon-dir
    {:live-session? (fn [role] (flow-watchdog-live-session? roles socket role))
-    :emit-alarm! flow-watchdog-emit-alarm!}))
+    :emit-alarm! flow-watchdog-emit-alarm!
+    :provider-outage-evidence-for (fn [role] (flow-watchdog-provider-outage-evidence-for roles role))}))
 
 
 ;; ── BL-839: master-checkout-vs-main drift sweep - report only ──────────────
