@@ -56,6 +56,13 @@ Telegram topic, including numbered choice polls when the reply lists options.
    `docs/how-to/BL-705-lets-talk-more-chiptunes.md`.
 4. The transcript appears under the playback bar; state returns to **ready**.
 
+A turn never ends in silence after hold music stops (BL-717): if the agent's
+reply has nothing pronounceable to say — blank, or reduced to nothing once
+punctuation-only text is stripped for speech — the bridge substitutes an
+explicit fallback line for playback instead of returning a silent success. A
+reply that does have real text is never replaced; only the case with truly
+nothing to speak falls back.
+
 The browser captures audio only. Speech-to-text runs on the bridge host so the
 Mini App CSP is never widened beyond `connect-src 'self'`.
 
