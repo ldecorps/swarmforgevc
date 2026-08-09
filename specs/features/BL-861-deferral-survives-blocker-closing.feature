@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=be0687144574119ad7ec1233e2acdc4fcf1dfb2e7826db6a73c27c533e4246ca
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-09T07:47:50.380848Z","feature_name":"a sibling deferral survives its blocker closing","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-861-deferral-survives-blocker-closing.feature","background_hash":"d080e5ac4755b95f9a4b47e97b28744cba7ce377222d3a92e2d405f29662b7c4","implementation_hash":"unknown","scenarios":[{"index":5,"name":"a ticket blocked by several tickets reports each blocker on its own state","scenario_hash":"278c471723ff632710e3df7bbd6db16bb3a2a21736bd74330103c25995ba0838","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-09T07:47:50.380848Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a sibling deferral survives its blocker closing
 
   # BL-861 (live victim BL-574): under BL-532 a sibling with no failing check of its own is
