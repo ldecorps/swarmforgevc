@@ -16,6 +16,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   'backlog/topics/BL-590.json',
   'backlog/topics/BL-624.json',
   'backlog/topics/BL-625.json',
+  'backlog/topics/BL-643.json',
   'backlog/topics/BL-684.json',
   'backlog/topics/BL-714.json',
   'docs/design/BL-659-traceability-explorer-mockup.html',
