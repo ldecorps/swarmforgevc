@@ -19,6 +19,7 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LAUNCH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'launch_resident_spy_tunnel.sh');
 const SETUP = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'setup_bubble_named_tunnel.sh');
 const STOP = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'stop_ancillary_services.sh');
+const OWNERSHIP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'tunnel_ownership_lib.sh');
 
 const FEATURE_NAME = 'Bubble reaches the bridge on a fixed named-tunnel URL';
 const TUNNEL_UUID = '22222222-2222-2222-2222-222222222222';
@@ -155,6 +156,14 @@ function registerSteps(registry) {
         PATH: `${ctx.binDir}:${process.env.PATH}`,
         BRIDGE_PORT: String(BRIDGE_PORT),
       };
+      // BL-857: named-tunnel mode now refuses any root that is not the
+      // registered operator root. This fixture's own isolated HOME
+      // represents a real operator's root registering itself the same way
+      // setup_bubble_named_tunnel.sh does for a live deployment - it is
+      // never the sandbox-binds-the-production-name case BL-857 forbids,
+      // since the registry here lives entirely inside this test's own
+      // throwaway HOME, never the real operator's.
+      spawnSync('bash', [OWNERSHIP_LIB, 'register-operator-root', ctx.root], { env: ctx.env });
     },
     FEATURE_NAME
   );
