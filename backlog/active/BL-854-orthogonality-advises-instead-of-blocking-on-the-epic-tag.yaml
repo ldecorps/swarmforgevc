@@ -27,6 +27,11 @@ source: |
   false-positive + depth -1 fallback bug - spec fix". The depth half is
   BL-853. Probed against the live backlog 2026-08-08 01:20Z.
 
+  Human confirmation 2026-08-09 (briefing 2026-08-08 ask #3): the BL-852
+  orthogonality override and the BL-852/BL-853 depth-cap hand-promotes were
+  the right call. See backlog/answers-archive/ANSWER-2026-08-09-coordinator-gate-overrides.md.
+  Overrides remain exceptional pending this ticket.
+
   ## The coordinator has already written the bug report
 
   Commit `3fbe05e9`, promoting BL-852 **over the gate's refusal**:
