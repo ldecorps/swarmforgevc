@@ -405,7 +405,8 @@ const DOMAINS = [
   require('./bl826HandsFreeSelfListenEchoLoopSteps'),
   require('./bl717SilentReturnAfterHoldMusicSteps'),
   require('./bl854OrthogonalityAdvisesInsteadOfBlockingSteps'),
-  require('./bl643NonPipelineAgentsSteps')
+  require('./bl643NonPipelineAgentsSteps'),
+  require('./bl861DeferralSurvivesBlockerClosingSteps')
 ];
 
 function registerSteps(registry) {
