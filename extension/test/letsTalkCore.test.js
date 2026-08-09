@@ -280,16 +280,18 @@ test('letsTalk: replyTextForSpeechSynthesis strips markdown for TTS', () => {
   assert.equal(replyTextForSpeechSynthesis('foo__bar'), 'foo bar');
 });
 
-test('letsTalk: resolveSpeakableReply falls back when a non-blank reply transforms to blank speech', () => {
-  // BL-717 D1: a reply that is only markdown-active punctuation (e.g. "|" or
-  // "###") is non-blank, so the old blank-replyText check never fired, but
-  // replyTextForSpeechSynthesis strips it down to nothing pronounceable.
+test('letsTalk: resolveSpeakableReply falls back on speechText only when a non-blank reply transforms to blank speech', () => {
+  // BL-717 D1 (revised per architect bounce 2026-08-09): a reply that is only
+  // markdown-active punctuation (e.g. "|" or "###") is non-blank, so the old
+  // blank-replyText check never fired, but replyTextForSpeechSynthesis strips
+  // it down to nothing pronounceable. Invariant 2 forbids replacing a
+  // non-blank replyText with the fallback line, so only speechText falls back.
   for (const punctuationOnly of ['|', '###', '***', '~~~', '[]', '`']) {
     const resolved = resolveSpeakableReply(punctuationOnly);
     assert.equal(
       resolved.replyText,
-      LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT,
-      `replyText for ${JSON.stringify(punctuationOnly)} should fall back, not surface unspeakable punctuation`
+      punctuationOnly,
+      `replyText for ${JSON.stringify(punctuationOnly)} is non-blank and must never be replaced by the fallback`
     );
     assert.equal(
       resolved.speechText,
