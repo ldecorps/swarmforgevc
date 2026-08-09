@@ -1,0 +1,124 @@
+id: BL-865
+title: "EPIC — Bubble offline-first: the bridge is the sync source, versioned JSON packages are the contract, and grooming queues on device; do not promote directly, tracks children"
+milestone: M8
+type: epic
+status: todo
+epic: bubble-offline-sync
+human_approval: pending
+priority: 25
+direction: human-intake
+depends_on: []
+assigned_to: coordinator
+mutation_cost: low
+
+decomposes_into: [BL-866]
+
+remaining_slices:
+  - "BL-866 — bridge side (MINTED): companion-manifest + versioned JSON package catalog, the contract everything else reads"
+  - "NOT YET MINTED — Bubble side: fetch/cache the packages network-first, serve reads offline after one successful sync, show 'as of <generation>'"
+  - "NOT YET MINTED — native Kotlin panels for backlog/docs over the shared JSON shapes (BL-659 corpus goals retarget here)"
+  - "NOT YET MINTED — offline groom mutation outbox: drafts queue on device and sync when the bridge is up"
+  - "NOT YET MINTED — Mini App -> Bubble capability migration, one ticket per surface"
+
+approval_context: >
+  Two things to confirm before this epic is promoted.
+
+  1. **Only the foundation slice is minted.** The other four are named above
+     with their scope but have no ticket yet, deliberately: each one's
+     acceptance depends on the package contract BL-866 defines, and minting
+     them now would fix their scenarios against a format that does not exist.
+     They get minted once BL-866 lands. Say so if you would rather see all
+     five specced up front.
+
+  2. **BL-659 retarget is NOT applied yet.** This intake says the PWA
+     knowledge-explorer's corpus goals "retarget here" as native Kotlin, and
+     that Pages PWA is maintain-only, not a feature destination. BL-659 is
+     paused, so retargeting it is allowed at spec time — but it changes what an
+     already-approved ticket builds, so I am flagging it rather than rewriting
+     it silently. Confirm and I will retarget BL-659 (or retire it in favour of
+     the native-Kotlin slice) in a follow-up pass.
+
+  Open question 3 from the intake is still unanswered and assumed YES: showing
+  "as of <cache time>" honesty on cached data. Say if that is wrong.
+
+source: |
+  Raw intake `backlog/INTAKE-phone-wire-format-and-offline.md`, parked by the
+  specifier 2026-07-30 pending human lane picks, unparked from
+  `backlog/hold/` by the human 2026-08-09 with the blocking lanes answered
+  ("LANES SETTLED ... Ready for specifier mint ... specifier owns drain").
+  Drained by the specifier 2026-08-09.
+
+  Human lane picks carried verbatim (Article 5.3):
+
+  - **Q1 — Offline grooming:** "Device mutation outbox — offline backlog
+    drafts queue on device and sync when the bridge is up. Not
+    read-only-first."
+  - **Q4 — Sync source while online:** "Bridge only (not Pages artifacts, not
+    both)."
+  - **Q5 — PWA merge shape:** "Native Kotlin over the same JSON packages (not
+    WebView reuse)."
+
+  Human framing, verbatim:
+
+  - "Protobuf to normalize messaging? Or REST?"
+  - "Minimal service when offline (tube, plane — docs + backlog groom)?"
+  - "PWA merges into the bubble; then: one app, migrate PWA and Telegram Mini
+    App into it."
+  - Origin story: Bubble started as a chatbox, became a native app to float,
+    expands into the full operator phone. The human closed "maybe two apps?"
+    with: "No — one app."
+
+  Pinned 2026-08-09: REST + versioned JSON packages, NOT protobuf. Protobuf is
+  deferred, not rejected — revisit only on measured pain (size, schema drift,
+  streaming). No JSON pain has been reported (intake Q7).
+
+description: |
+  ## Why
+
+  Bubble is the sole phone client (the human closed "one app"). The Pages PWA
+  and the Telegram Mini App become migration feedstock and temporary
+  fallbacks, not feature destinations. For Bubble to be the operator phone it
+  has to work in a tube or a plane: read the backlog and docs offline, and let
+  the human groom while disconnected.
+
+  The human settled the three lanes that were blocking this: the sync source is
+  the **bridge** (not Pages artifacts), the wire format stays **REST + versioned
+  JSON packages** (not protobuf), and the merged PWA pieces are **native
+  Kotlin** over those same JSON shapes (not a reused WebView).
+
+  ## The shape
+
+  Offline is a package + on-device store + outbox problem, which is why
+  protobuf does not buy it:
+
+  - **Packages.** Backlog, docs tree / corpus slices, chiptunes, flags — each a
+    versioned JSON package with a generation, listed in a companion-manifest.
+  - **Read path.** Fetch from the bridge while online (bubble start, idle, Wi-Fi
+    preference), network-first then cache. After one successful sync, reads work
+    offline, labelled "as of <generation>".
+  - **Write path.** Grooming while offline queues real mutations in a device
+    outbox and syncs when the bridge is up — not read-only scratch.
+
+  ## Probe finding (2026-08-09)
+
+  The bridge has no package catalog today. `/lets-talk/manifest.json`
+  (`bridgeServer.ts:1642`) is a PWA web-app manifest served as
+  `application/manifest+json` — an install descriptor for the browser, unrelated
+  to a package manifest. The companion-manifest is genuinely new surface, not an
+  extension of that route.
+
+  ## Not in scope for this epic
+
+  - Protobuf / gRPC. Deferred by the human pending measured pain.
+  - Growing the Telegram WebView as a home for new operator UX (maintain-only).
+  - A second phone client, in any form.
+
+notes: |
+  Related existing work: BL-659 (`pwa-knowledge-explorer`) holds the offline
+  corpus goals this intake retargets to native Kotlin in Bubble; BL-707 is
+  Bubble itself; BL-696/BL-707 Let's Talk is already native (the Mini App
+  Let's Talk migration was completed 2026-07-30, so it is NOT a remaining
+  slice here).
+
+  The 2026-08-07 standing order deprioritizing Bubble speech/voice work does
+  NOT cover this epic — nothing here is speech, voice or hands-free.
