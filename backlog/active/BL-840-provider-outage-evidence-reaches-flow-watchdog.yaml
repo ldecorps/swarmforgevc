@@ -199,6 +199,19 @@ notes: |
   The classifier finding (529 -> `:unknown`) is mine, found while probing before
   speccing; the architect's note did not have it.
 
+  Coder 2026-08-09: implemented as specced. New provider_outage_evidence_lib.bb
+  (mirrors availability_ledger_lib.bb's monthly-JSONL shape) is both writer
+  (record-provider-outage!, throttled per role) and reader
+  (evidence-for-provider, filtered by provider). Wired both required_wiring
+  entries live in handoffd.bb: observe-pane-provider-outage! rides the SAME
+  pane capture observe-pane-auth! already takes inside
+  observe-standing-role-auth! (called every chase sweep); flow-watchdog-sweep!
+  now supplies :provider-outage-evidence-for via the BL-208 role->provider
+  lookup. Fixed the 529/overloaded_error classifier gap in both languages.
+  16/16 acceptance subtests pass; 3 declared-invariant property tests, each
+  verified non-vacuous by sabotage. Full writeup:
+  backlog/evidence/BL-840-coder-pass.md.
+
 source: |
   architect `note` (priority 00), 2026-08-06T23:01Z:
   "BL-650 spec gap: provider-outage evidence unwired in handoffd.bb prod"
