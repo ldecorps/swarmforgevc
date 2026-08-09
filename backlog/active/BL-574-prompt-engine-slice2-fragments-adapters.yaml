@@ -9,7 +9,7 @@ severity: medium
 priority: 13
 direction: swarm-surfaced
 depends_on: [BL-546]
-assigned_to: specifier
+assigned_to: QA
 mutation_cost: medium
 invariants:
   - "Composed prompt output is byte-identical with the fragment cache cold, warm, or invalidated — caching may change latency, never content."
