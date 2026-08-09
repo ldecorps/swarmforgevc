@@ -12,9 +12,12 @@
 #     priority/id order, but see promotion_gates below for the real ranking
 #   - promotion_gates (BL-663; promotion_gates_cli.bb / promotion_gates_lib.bb)
 #     is the one chokepoint for: human_approval, Article 3.2.4 expedite
-#     ordering, active_backlog_max_depth, orthogonality, and the hold marker —
-#     every promotion (auto-pick AND by-name) is refused with a named reason
-#     when any of these do not hold
+#     ordering, active_backlog_max_depth, and the hold marker — every
+#     promotion (auto-pick AND by-name) is refused with a named reason when
+#     any of these do not hold. Orthogonality (BL-854) never refuses; it
+#     prints an ADVISORY|orthogonality|... line to stderr instead, naming
+#     every active ticket sharing the candidate's epic — see gates_evaluate
+#     below for why that reaches this script's own stderr unmodified.
 #   - assignee/spec-stage routing also goes through promotion_gates:
 #     assigned_to: specifier is never rewritten and routes to the specifier;
 #     every other ticket routes to coder via route_backlog_to_coder.sh
@@ -145,7 +148,15 @@ is_buildable() {
 # promotion_gates: the BL-663 chokepoint (promotion_gates_cli.bb) is the ONE
 # place human_approval / Article 3.2.4 expedite ordering / depth /
 # orthogonality / hold marker are decided — both invocation modes below call
-# it, never a locally-reimplemented check.
+# it, never a locally-reimplemented check. BL-854: promotion_gates_cli.bb
+# writes any orthogonality ADVISORY line to ITS OWN stderr, never stdout —
+# neither call site below redirects stderr, so command substitution
+# ($(...), which only ever captures stdout) leaves that ADVISORY line to
+# fall straight through to this script's own stderr (and whatever is
+# watching it — operator terminal, coordinator log) unmodified. That is what
+# "print the advisory for the ticket it actually promotes" means here: do
+# not add a `2>...` redirect to any promotion_gates_cli.bb call below, or
+# the advisory goes dark exactly where the file-overlap judgement is made.
 gates_evaluate() {
   local file="$1" held="$2"
   bb "$SCRIPT_DIR/promotion_gates_cli.bb" evaluate "$ROOT" "$file" "$held" "$CAP"

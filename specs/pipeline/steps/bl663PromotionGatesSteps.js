@@ -230,14 +230,6 @@ function registerSteps(registry) {
         epic: 'bl663-depth-candidate-epic',
         human_approval: 'approved',
       });
-    } else if (gate === 'orthogonality') {
-      writeTicket(ctx, 'BL-9671', 'active', { type: 'feature', priority: 1, epic: 'bl663-collide-epic' });
-      writeTicket(ctx, TICKET_ID, 'paused', {
-        type: 'feature',
-        priority: 50,
-        epic: 'bl663-collide-epic',
-        human_approval: 'approved',
-      });
     } else if (gate === 'hold marker') {
       // promote_and_route_next.sh requires backlog/paused/ to exist at all
       // (its own leading sanity check), even for a by-name lookup that

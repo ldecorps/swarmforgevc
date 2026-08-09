@@ -403,7 +403,8 @@ const DOMAINS = [
   require('./bl851SideloadApkPreauthSteps'),
   require('./bl858BootPrefixCapSteps'),
   require('./bl826HandsFreeSelfListenEchoLoopSteps'),
-  require('./bl717SilentReturnAfterHoldMusicSteps')
+  require('./bl717SilentReturnAfterHoldMusicSteps'),
+  require('./bl854OrthogonalityAdvisesInsteadOfBlockingSteps')
 ];
 
 function registerSteps(registry) {
