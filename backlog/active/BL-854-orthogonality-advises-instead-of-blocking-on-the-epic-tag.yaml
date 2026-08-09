@@ -245,3 +245,6 @@ out_of_scope: |
   - Changing the constitution's Concurrent Work Orthogonality rule itself.
     This ticket makes the code match the rule as written; the rule already
     assigns the judgement to the coordinator.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-09, by: architect, blamed: coder, class: behavior, commit: fba2c3c26a, evidence: backlog/evidence/BL-854-orthogonality-advises-instead-of-blocking-on-the-epic-tag-bounce-20260809.md }
