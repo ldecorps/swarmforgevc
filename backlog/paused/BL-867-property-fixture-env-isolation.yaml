@@ -1,0 +1,122 @@
+id: BL-867
+title: "DEFECT — the BL-787 named-tunnel property file inherits the host's real env, so its verdict depends on who runs it"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 3
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+description: >
+  `extension/test/bl787NamedTunnelInvariants.property.test.js` builds every
+  fixture subprocess environment as `{ ...process.env, <case vars> }`. It only
+  ever ADDS variables; it never removes one. The operator host genuinely
+  exports `SWARMFORGE_NAMED_TUNNEL` / `SWARMFORGE_NAMED_TUNNEL_HOSTNAME` /
+  `SWARMFORGE_CLOUDFLARED_CONFIG` so the live resident-spy tunnel can run, so
+  every case that means one of those to be ABSENT receives the operator's real
+  value instead.
+
+  Two distinct faults follow, one visible and one silent.
+
+  VISIBLE — invariant 2 ("absent named-tunnel identity fails loud and never
+  falls back to a concrete operator domain") fails on this host. Reproduced
+  directly against the real script: with the operator's hostname leaked and
+  `SWARMFORGE_NAMED_TUNNEL_ZONE=testdomain.invalid`,
+  `check_bubble_named_tunnel_dns.sh` sails past its own guard, exits 2 (a
+  DNS verdict, not the intended identity refusal), and its output names the
+  missing variable 0 times while echoing the operator's own domain twice.
+  Both of the scenario's assertions therefore fail — including the
+  `musicalsifu` check, whose entire job is to catch a hardcoded operator
+  default creeping back into a tracked file. That regression guard is now
+  inverted: it fires for a reason unrelated to the defect it guards, so a
+  future genuine default-regression is indistinguishable from ambient
+  contamination.
+
+  SILENT — invariant 3's `mode: 'quick'` half is vacuous on this host and
+  nobody would see it. The quick case deliberately leaves
+  `SWARMFORGE_NAMED_TUNNEL` unset, but the spread supplies the real one, and
+  `launch_resident_spy_tunnel.sh` branches on `[[ -n "$NAMED_TUNNEL" ]]`
+  (lines 224 and 233). Three of that property's six runs take the NAMED path
+  while asserting they are testing the quick path. They still pass — a false
+  green, which is worse than the visible failure.
+
+  The scripts under test are correct. The fix is test isolation: every fixture
+  subprocess must receive only the variables its case names.
+
+invariants:
+  - "The property file's verdict is a function of the repository under test alone — no ambient host environment variable can change any case's outcome."
+  - "Every generated case exercises the mode and identity state it names: no case silently degenerates into another branch because the host supplied a value the case left unset."
+
+acceptance: specs/features/BL-867-property-fixture-env-isolation.feature
+
+qa_e2e_procedure: |
+  On the operator host, which exports the live named-tunnel identity:
+
+  1. Confirm the contamination is present in the shell under test:
+     `set -a && . .swarmforge/operator/named-tunnel.env && set +a`
+     then `env | grep SWARMFORGE_NAMED_TUNNEL` shows the real hostname.
+  2. From that same shell, run the property lane:
+     `cd extension && npm run test:properties`
+     `bl787NamedTunnelInvariants.property.test.js` must pass.
+  3. Re-run from a stripped shell:
+     `env -u SWARMFORGE_NAMED_TUNNEL -u SWARMFORGE_NAMED_TUNNEL_HOSTNAME \
+        -u SWARMFORGE_NAMED_TUNNEL_ZONE -u SWARMFORGE_CLOUDFLARED_CONFIG \
+        npm run test:properties`
+     Same verdict as step 2 — that equality is the ticket.
+  4. Prove the quick-mode case is no longer vacuous: with the identity
+     exported, make invariant 3's quick case assert the observed URL is a
+     `trycloudflare.com` URL. It must pass. Temporarily reintroducing the
+     spread must make it FAIL, not pass — if it still passes, the case is
+     still taking the named branch.
+
+approval_context: >
+  This is a test-isolation fix; no production script changes. The scripts
+  behaved correctly throughout — only the fixture lied to them.
+
+  One judgement call worth your sign-off: scenario 02 keeps a clean-host row
+  even though a correct fix makes the exported and absent hosts identical by
+  construction, which arguably makes that row cheap. It is kept because it is
+  the direct expression of invariant 1 and it guards against a "fix" that
+  only works when the host happens to be contaminated.
+
+  IR-DRY reports one remaining `possible-synonym` finding, pairing the
+  Background's "a host environment exporting the operator's live named-tunnel
+  identity" with scenario 02's "the named-tunnel identity is removed from the
+  host environment". These are semantic OPPOSITES — a setup and its
+  deliberate override — matched only on shared vocabulary. Judged not-real
+  and recorded here so it is not re-litigated downstream.
+
+source: |
+  Surfaced by the hardender during the BL-861 pass (note to specifier,
+  2026-08-09T08:14:59Z): "BL-787 property test leaks real
+  SWARMFORGE_NAMED_TUNNEL_HOSTNAME env, fails here". Root-cause and
+  evidence recorded in `backlog/evidence/BL-861-hardener-pass-20260809.md`,
+  which correctly declined to fold the fix into BL-861's scope.
+
+  Specifier probe 2026-08-09 confirmed the reported failure and found the
+  additional unreported vacuous-quick-mode fault described above.
+
+notes: |
+  Not a BL-861 regression — BL-787 landed before it and this file touches no
+  BL-861 code.
+
+  Scope is exactly one file:
+  `extension/test/bl787NamedTunnelInvariants.property.test.js`. Invariant 1
+  sets both identity variables explicitly and is unaffected.
+
+  The two other contamination vectors were checked and are NOT in scope
+  because they are already contained: the launcher and setup script both
+  resolve `$OP/named-tunnel.env` under the ROOT they are handed, which is the
+  fixture directory, and `check_bubble_named_tunnel_dns.sh` reads no file at
+  all. Ambient `process.env` is the only live vector.
+
+  RELATED, deliberately NOT folded in: BL-868 covers the property lane
+  running without the isolation guards the unit lane wires. That is a
+  different mechanism (Vitest config wiring) with its own cascade risk, split
+  out per BL-634 envelope discipline.

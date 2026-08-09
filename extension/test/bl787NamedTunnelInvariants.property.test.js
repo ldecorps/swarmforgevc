@@ -22,6 +22,17 @@ const LAUNCH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'launch_resident_sp
 const SETUP = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'setup_bubble_named_tunnel.sh');
 const CHECK_DNS = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_bubble_named_tunnel_dns.sh');
 const STOP = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'stop_ancillary_services.sh');
+const OWNERSHIP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'tunnel_ownership_lib.sh');
+
+// BL-857: named-tunnel mode now refuses any root that is not the
+// registered operator root. Every fixture below launches with its own
+// isolated HOME (never the real developer $HOME), so registering that
+// same dir as ITS operator root exercises the real launcher's intended
+// named-tunnel behavior without ever being the sandbox-binds-the-
+// production-name case BL-857 forbids.
+function registerOperatorRoot(dir) {
+  spawnSync('bash', [OWNERSHIP_LIB, 'register-operator-root', dir], { env: { ...process.env, HOME: dir } });
+}
 
 function isAlive(pid) {
   try {
@@ -79,6 +90,7 @@ test(
       fs.mkdirSync(binDir, { recursive: true });
       const opDir = path.join(dir, '.swarmforge', 'operator');
       fs.mkdirSync(opDir, { recursive: true });
+      registerOperatorRoot(dir);
 
       const lines = noiseLines.slice();
       const pos = Math.min(insertAt, lines.length);
@@ -189,6 +201,7 @@ test('property (invariant 2): absent named-tunnel identity fails loud and never 
         bin = 'bash';
         args = [LAUNCH, dir];
         env.SWARMFORGE_NAMED_TUNNEL = 'swarmforge-bubble';
+        registerOperatorRoot(dir);
         if (noiseFlag) {
           const opDir = path.join(dir, '.swarmforge', 'operator');
           fs.mkdirSync(opDir, { recursive: true });
@@ -256,6 +269,7 @@ test(
         const opDir = path.join(dir, '.swarmforge', 'operator');
         fs.mkdirSync(opDir, { recursive: true });
         fs.writeFileSync(path.join(opDir, 'bridge-token'), 'test-token');
+        registerOperatorRoot(dir);
 
         const fakeCloudflared = path.join(binDir, 'cloudflared');
         fs.writeFileSync(
