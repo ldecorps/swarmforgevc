@@ -1,6 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 9, 2026 (BL-854: the orthogonality promotion gate
+**Last Updated:** August 9, 2026 (BL-717: a Let's Talk turn no longer ends in
+silence after hold music stops. Bridge side — `promptAgentAndSynthesize` and
+`clientTtsTurnSuccess` (`extension/src/bridge/letsTalkRoutes.ts`) now route
+every reply through `resolveSpeakableReply` (`letsTalkCore.ts`), which
+substitutes an explicit fallback line for speech whenever the agent's reply
+has nothing pronounceable to say — either the raw reply is blank, or it is
+non-blank but reduces to nothing once markdown-active punctuation is stripped
+for speech synthesis (e.g. a reply that is just `"|"` or `"###"`). The
+displayed `replyText` mirrors a non-blank reply unconditionally and is never
+overwritten by the fallback — only the spoken `speechText` falls back, fixed
+in a second bounce after the first cut over-corrected and replaced both.
+Device side — `ReplyAudioPlayer.kt` extracts its play()/failure-recovery
+branch logic into a pure, JVM-unit-tested `ReplyPlaybackDecision` (Testability
+Boundary — Bubble) and wires every terminal branch — no speakable content,
+a playback error, a TTS synthesis error, and watchdog expiry — through a
+bounded one-shot recovery attempt instead of the old silent `complete()`. See
+the new "The reply always plays something after hold music stops" section in
+`docs/how-to/BL-707-android-floating-overlay-companion.md` and the note added
+to the "Record a Turn" section of `docs/how-to/BL-696-miniapp-lets-talk-cursor-audio.md`.
+Previously August 9, 2026 — BL-854: the orthogonality promotion gate
 demotes epic-overlap from a refusal to a non-blocking, ticket-naming advisory
 on stderr — see "The orthogonality gate advises on epic overlap instead of
 refusing on it" below. Previously August 8, 2026 — BL-856: `commit_integrity_lib.bb`'s
