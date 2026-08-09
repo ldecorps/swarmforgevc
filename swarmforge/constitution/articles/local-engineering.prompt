@@ -29,118 +29,71 @@ shared article remains in force.
   swarmforge.setTarget, swarmforge.initTarget).
 
 ## Architecture Rules
-1. Two layers: tile-as-view, tmux-as-substrate. Tiles are TypeScript/webview
-   VIEWS; tmux is the process SUBSTRATE running the agents. These are layers,
-   not alternatives. Do NOT spawn agent processes directly from TypeScript to
-   bypass tmux — if a task starts to feel like rebuilding process orchestration,
-   stop: that is the signal the line was crossed.
-2. Swarm machinery relationship. The swarm machinery under `swarmforge/` in this
-   repo is a **maintained fork** of unclebob/swarm-forge, not an unmodified
-   dependency. Local modifications are deliberate and tracked; upstream changes
-   enter only through the drift-watch review (`upstream-watch.json`,
-   `docs/upstream-deviations.md`), never by automatic fetch. The bootstrap
-   wrapper must fetch helper scripts from a pinned by-SHA tarball, not a
-   floating branch head.
+1. Two layers: tile-as-view, tmux-as-substrate — layers, not alternatives.
+   Do NOT spawn agent processes directly from TypeScript to bypass tmux — if
+   a task starts to feel like rebuilding process orchestration, stop; that
+   is the signal the line was crossed.
+2. Swarm machinery relationship. `swarmforge/` is a **maintained fork** of
+   unclebob/swarm-forge, not an unmodified dependency — upstream changes
+   enter only through drift-watch review, never automatic fetch. The
+   bootstrap wrapper fetches helper scripts from a pinned by-SHA tarball,
+   not a floating branch head.
 3. Webview storage restriction. No localStorage, sessionStorage, or any browser
    storage in the webview. UI state lives in memory or persists via the
    extension host (workspace state / files).
 4. Secrets. Tokens and keys (e.g. a GitHub token for opening PRs) live in the
    extension host environment only. Never written into the target working
    directory or any commit.
-5. Two phone-viewable surfaces, one boundary — pick correctly at spec time.
-   TWO web surfaces are phone-viewable and are NOT interchangeable: (a) the
-   STATIC backlog-dashboard PWA (`pwa/index.html` -> `pwa/app.js`), a pure
-   renderer fetching `./backlog.json` — a git-SHA-reproducible PROJECTION
-   with NO bridge/host connectivity, NO auth, NO write path; and (b) the LIVE
-   holistic UI (`extension/src/bridge/holisticUiHtml.ts`, served by
-   `bridge/bridgeServer.ts`) with token auth, live endpoints, and control
-   actions. Only git-SHA-derivable data may ride the static PWA; route any
-   live/machine-local/write-path need to the LIVE holistic UI instead —
-   confirm which surface a request means before speccing. (Recurred 3x in
-   2026-07-10: BL-252 suite-duration trend, BL-265 gate-answer view, BL-257
-   slices 3-4 changed-since-visit + live trends.) See
-   **local-engineering-detailed.prompt** for the fuller narrative.
-6. Epics have icons representing musical forms, on TWO distinct surfaces
-   with two distinct realisations — never one implementation assumed to
-   cover both: the PWA/fleet-console/bot-avatar surfaces carry the owned
-   orchestra FORM marks (Symphony/Concerto/Suite/Fugue/Overture —
-   `docs/branding/icon-system.md` §4d); Telegram topic icons stand in with
-   the closest stock PERFORMANCE sticker instead, since
-   `getForumTopicIconStickers` offers no notation/instrument glyphs. See
-   **local-engineering-detailed.prompt** for the BL-449 platform-wall
-   rationale.
+5. Two phone-viewable surfaces, one boundary. TWO web surfaces are
+   phone-viewable and NOT interchangeable: (a) the STATIC backlog-dashboard
+   PWA, a pure `./backlog.json` renderer with NO bridge/host connectivity,
+   NO auth, NO write path; and (b) the LIVE holistic UI (token auth, live
+   endpoints, control actions). Only git-SHA-derivable data rides the static
+   PWA; route any live/machine-local/write-path need to the LIVE holistic UI
+   instead — confirm which surface a request means before speccing.
+   (Recurred 3x in 2026-07-10: BL-252 suite-duration trend, BL-265
+   gate-answer view, BL-257 slices 3-4 changed-since-visit + live trends.)
+   See **local-engineering-detailed.prompt** for the full pre-trim wording.
+6. Epics have icons representing musical forms, on TWO distinct surfaces —
+   never one implementation assumed to cover both: PWA/fleet-console/
+   bot-avatar carry the owned orchestra FORM marks (`docs/branding/icon-system.md`
+   §4d); Telegram topic icons stand in with the closest stock PERFORMANCE
+   sticker (`getForumTopicIconStickers` offers no notation glyphs). See
+   **local-engineering-detailed.prompt** for the full pre-trim wording and
+   BL-449 rationale.
 7. Interface vs incarnation — two naming layers, deliberately. Architecture
-   and forward-looking prose may name the INTERFACES: **messaging** (the
-   human chat channel / chat adapter) and **host agent** (the IDE seat that
-   drives Remote verbs, pairing, and pack staffing). Everyday operator speech
-   names the live INCARNATIONS: **Telegram** (messaging) and **Cursor** (host
-   agent). The phone app's product name is **Bubble** (native Android under
-   `android/`; BL-707) — do not introduce a parallel brand (Float Companion,
-   companion app, overlay app) in new prose, though historical ticket titles
-   and the `floatcompanion` package id may stay. Doc style: "the host agent
-   (today: Cursor) …", "messaging (today: Telegram) …", "the phone app is
-   **Bubble** …". A proposal to rename identifiers, env vars, files, or
-   how-tos to erase Telegram/Cursor "for purity" is OUT OF POLICY: the
-   specifier does not spec it and the coordinator does not promote it, unless
-   the human explicitly asks for a second messaging app or a second
-   host-agent backend AND a shim plan. Dual-name shims belong at adapter
-   edges when a real second incarnation lands — never as a vocabulary chore.
-   (Human directive 2026-07-30, `backlog/INTAKE-messaging-host-agent-interface-vs-incarnation.md`.)
+   names the INTERFACES (**messaging**, **host agent**); everyday speech
+   names the live INCARNATIONS (**Telegram**, **Cursor**). The phone app is
+   **Bubble** (native Android under `android/`; BL-707) — do not introduce a
+   parallel brand in new prose. A proposal to rename identifiers/files to
+   erase Telegram/Cursor "for purity" is OUT OF POLICY absent a real second
+   incarnation AND a shim plan (human directive 2026-07-30). See
+   **local-engineering-detailed.prompt** for the full doc-style guidance and
+   the intake this rule came from.
 
 ## Testability Boundary — Bubble (Android) (BL-769)
-Per the shared Design And Testability rule, this project's environmentally
-unsuitable boundary includes — alongside the VS Code Extension API surface,
-the webview execution context, and live tmux/PTY interaction — the **Android
-device surface**: Activities and Services as running components, the overlay
-window, audio capture and playback, and real network I/O against a live
-tunnel.
-
-Every Bubble behavior lands on one side of a stated line — none is left with
-neither:
-- **Pure logic** (no `android.*` framework type in the function's own
-  signature: parsing, classification, data transforms) is covered by the
-  plain-JUnit JVM unit suite under `android/app/src/test/`, run via
-  `./gradlew :app:testDebugUnitTest` with no emulator and no connected
-  device. Push framework types to the thin device edge (e.g. the Activity
-  converts `android.net.Uri` to `String` before calling the parser) — the
-  same thin-edge rule this article already applies to the VS Code API and
-  the webview. Robolectric and emulator-backed `androidTest` are
-  deliberately not adopted; introducing either is its own ticket, never a
-  drive-by test dependency.
-- **Device-surface behavior** is verified by a recorded manual procedure
-  noted in the ticket. The Node acceptance runner cannot execute Kotlin:
-  never ship a Bubble feature file whose scenarios have no runnable binding —
-  bind them to step handlers that drive the gradle unit suite (as
-  BL-769's do), or record the manual procedure the ticket will be verified
-  by.
-
-How-to: `docs/how-to/BL-769-android-jvm-unit-suite.md`.
+Unsuitable boundary also includes the **Android device surface**. **Pure
+logic** (no `android.*` type in the signature) → plain-JUnit JVM suite
+(`./gradlew :app:testDebugUnitTest`, no emulator). **Device-surface
+behavior** → a recorded manual procedure in the ticket; never ship a Bubble
+feature file with no runnable binding. Robolectric/`androidTest` deliberately
+not adopted. See **local-engineering-detailed.prompt** for the full rule
+text. How-to: `docs/how-to/BL-769-android-jvm-unit-suite.md`.
 
 ## Diagrams (this project)
-Per the shared Diagrams rule, the diagrams this project maintains are:
-1. **Architecture diagram** — the two-layer system: extension host,
-   webview(s), the tmux substrate, `.swarmforge/` state, handoffd and the
-   queue helpers, and the boundaries between them (what talks to what, and
-   over which channel: postMessage, files, tmux socket, git).
-2. **Swarm workflow flow diagram** — the CURRENT parcel flow: intake at the
-   backlog root, specifier speccing to paused/, coordinator promotion and
-   assignment, the specifier→coder→cleaner→architect→hardender→documenter→QA
-   chain, QA approval, merge-up broadcast to worktree roles, and coordinator
-   integration on `main` (close ticket, promote next). When the pipeline
-   topology or backlog flow changes, this diagram changes in the same
-   parcel.
-Both live under `docs/diagrams/` as Mermaid sources.
+Per the shared Diagrams rule: (1) an **architecture diagram** (extension
+host, webview(s), tmux substrate, `.swarmforge/` state, handoffd/queue
+helpers, and the channels between them), and (2) a **swarm workflow flow
+diagram** (the current parcel flow, updated in the same parcel as any
+topology change). Both live under `docs/diagrams/` as Mermaid sources. See
+**local-engineering-detailed.prompt** for the full pre-trim wording.
 
 ## Key Integration Surface
-Prove these against a real swarm install, in order, before UI polish:
-1. Launch a swarm against a target path by shelling to ./swarm.
-2. Discover the tmux socket (.swarmforge/tmux-socket) and enumerate
-   sessions/windows/panes.
-3. Tail one pane's output into a webview tile, live.
-4. Send keystrokes INTO a pane (fiddliest cross-platform piece — tackle early).
-5. Read .swarmforge/ state to know which stage holds the work.
-6. Open a PR from the dev branch into the target's main via git + GitHub CLI/API.
-
-If any of these cannot be done from outside the swarm machinery, note it clearly
-as a candidate change to the fork (via the normal backlog), rather than working
-around it ad hoc.
+Prove these against a real swarm install, in order, before UI polish: launch
+via `./swarm`; discover the tmux socket and enumerate sessions/windows/panes;
+tail a pane live into a webview tile; send keystrokes INTO a pane (fiddliest
+cross-platform piece — tackle early); read `.swarmforge/` state for the
+holding stage; open a PR via git + GitHub CLI/API. Anything undoable from
+outside the swarm machinery is a candidate fork change (normal backlog), not
+an ad-hoc workaround. See **local-engineering-detailed.prompt** for the full
+pre-trim wording.

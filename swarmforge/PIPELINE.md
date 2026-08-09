@@ -10,14 +10,13 @@ the substance of your stage; this file is only the flow between stages.
 specifier ─► coder ─► cleaner ─► architect ─► hardender ─► documenter ─► QA (integrate) ─► coordinator (bookkeep)
 ```
 
-The **coordinator** sits outside the forward chain: it controls intake, routes
-the first parcel to the specifier, tracks which stage holds the parcel, unblocks
-stalls, and — after QA approval — performs backlog bookkeeping (move ticket to
-`done/`, promote the next item). It does NOT merge to `main` or push — QA lands
-the approved commit on `main` itself (BL-247). An active ticket with no `assigned_to` is nudged to the coordinator by `handoffd`'s unassigned-active sweep (see `swarmforge/handoff-protocol.md`); the daemon never assigns for it.
+The **coordinator** sits outside the forward chain (duties in full: Article
+1.1, `01_roles.md`, same boot prefix). An active ticket with no `assigned_to`
+is nudged to the coordinator by `handoffd`'s unassigned-active sweep (see
+`swarmforge/handoff-protocol.md`); the daemon never assigns for it.
 
-The **specifier** writes specifications only. It does not merge, close tickets,
-or promote backlog items.
+The **specifier** writes specifications only (Article 1.2) — it does not
+merge, close tickets, or promote backlog items.
 
 ## Roles, worktrees, receive mode
 
@@ -32,46 +31,35 @@ or promote backlog items.
 | **documenter** | `documenter` | task | **QA** |
 | **QA** | `QA` | task | **coordinator** *(approval + merge-up broadcast)*; lands the approved commit on `main` |
 
-- The specifier works on **master** but only for spec/prompt files — not integration merges.
-- Every other pipeline role works only in its own `.worktrees/<role>` branch.
-- **QA** is the integration point: after the merge-up broadcast it lands the approved commit on `main` and pushes origin (BL-247).
-- The coordinator never commits domain code and runs no git merge/push; after QA it does backlog bookkeeping only (move ticket, promote next).
+- The specifier works on **master** but only for spec/prompt files — not
+  integration merges; every other role works only in its own
+  `.worktrees/<role>` branch. See **pipeline-detailed.md** for the
+  full pre-trim wording.
 
 ## How a parcel moves
 
-1. The **specifier** writes the spec into `backlog/paused/` and notifies the
-   **coordinator**. The specifier does not activate work itself.
-2. The **coordinator** promotes an eligible item into `backlog/active/` (respecting
-   `active_backlog_max_depth`) and routes it to the **specifier** or **coder** as
-   appropriate for the pack.
-3. Each stage does its work in its own worktree, commits, then sends a
-   `git_handoff` (priority `00`) to the next role in the chain, preserving the
-   parcel's stable task name.
-4. After the **cleaner**, the **architect** reviews architecture, the
-   **hardender** does mutation hardening, the **documenter** updates docs, and
-   **QA** runs the final gate.
-5. **QA** is the last quality gate. On pass it:
-   - Broadcasts a `note` to every pipeline worktree role (`coder`, `cleaner`,
-     `architect`, `hardender`, `documenter`) instructing each to **merge its own
-     branch up to QA's approved commit** — not to `main`.
-   - **Lands the approved commit on `main`** itself and pushes origin (same
-     session), and closes the GitHub issue if the ticket is `GH-`-seeded
-     (BL-247: QA is the integration point).
-   - Sends a `git_handoff` or `note` to the **coordinator** with the QA-approved
-     commit and task id so it does the backlog bookkeeping.
-6. The **coordinator** then (backlog bookkeeping only — no git merge/push):
-   - Moves the backlog item from `backlog/active/` to `backlog/done/`.
-   - Rechecks `active_backlog_max_depth` and promotes the next paused item if a
-     slot is open.
-   - **Routes** that promoted item in the same turn (mono-router: Work note to
-     coder / `promote_and_route_next.sh` / `route_backlog_to_coder.sh`).
-     Promote without route leaves the resident on `NO_TASK` until a chase or
-     human intervenes. handoffd may nudge the coordinator with
-     `open slot + paused work - promote+route` when active is under cap and
-     paused work exists; the coordinator still owns the promote.
-7. A role must **not** forward a `git_handoff` when the received commit produces
-   no functional project change. It completes the inbound task instead (see
-   `handoff-protocol.md`).
+1. The **specifier** writes the spec to `backlog/paused/` and notifies the
+   **coordinator** (does not activate work itself).
+2. The **coordinator** promotes an eligible item into `backlog/active/`
+   (respecting `active_backlog_max_depth`) and routes it to the specifier or
+   coder as appropriate for the pack.
+3. Each stage works in its own worktree, commits, then sends a `git_handoff`
+   (priority `00`) to the next role, preserving the stable task name.
+4. Cleaner → architect (architecture review) → hardender (mutation
+   hardening) → documenter (docs) → QA (final gate). See
+   **pipeline-detailed.md** for steps 1-4's full pre-trim wording.
+5. **QA** is the last quality gate. On pass it broadcasts a merge-up `note` to
+   every worktree role, **lands the approved commit on `main`** itself
+   (pushes origin, closes a `GH-`-seeded issue; BL-247), then sends the
+   coordinator the approved commit + task id.
+6. The **coordinator** (bookkeeping only — no git merge/push): moves the item
+   `active/` → `done/`, rechecks the depth cap, and **routes** the next
+   promoted item in the SAME turn (mono-router: Work note to coder /
+   `promote_and_route_next.sh` / `route_backlog_to_coder.sh`) — promote
+   without route strands the resident on `NO_TASK`.
+7. A role must **not** forward a `git_handoff` when the received commit
+   produces no functional change — it completes the inbound task instead
+   (see `handoff-protocol.md`).
 
 ## Sending and receiving
 
@@ -84,119 +72,42 @@ or promote backlog items.
 
 ## Mono-router idle and open slots
 
-Mono-router packs (`config rotation sequential`, e.g. `perplexity-mono-router`,
-`cerebras-mono-router`, `codex-mono-router`) keep **one resident** process
-(usually **coder** as home) and rotate other pipeline roles in on demand. The
-coordinator remains a separate always-on pane.
+Mono-router packs keep **one resident** process (usually **coder** as home)
+that rotates other pipeline roles in on demand, with the coordinator as a
+separate always-on pane. On `NO_TASK`: STOP (no re-poll/`/loop`); rotate to
+**specifier** if root intakes exist; else if a slot is open and paused work
+exists, send **one** `note` asking the coordinator to promote+route, then
+idle for a wake — promotion stays coordinator-owned. See
+**pipeline-detailed.md** for the full pre-trim wording.
 
-When the home resident runs `ready_for_next.sh` and gets `NO_TASK`:
+### Aged-note rotation (BL-576), `rule_proposal` actionability (BL-795), and non-home stranding after QA merge-up (BL-550)
 
-1. **Stop.** Do not re-poll, invent a `/loop`, or burn tokens waiting.
-2. If `backlog/*.yaml` root intakes exist → rotate to **specifier**.
-3. Else if `backlog/active/` is empty and `backlog/paused/` has eligible work →
-   send **one** `note` to the coordinator asking it to promote and route, then
-   idle for a wake.
-4. The coordinator, on wake with capacity under `active_backlog_max_depth`,
-   promotes and routes — it does not wait for a human chat turn.
-
-Promotion is still coordinator-owned (file move `paused/` → `active/`); there
-is no separate daemon that fills open slots on its own. handoffd's open-slot
-nudge only wakes the coordinator; `promote_and_route_next.sh` is the
-preferred one-shot for that wake.
-
-### Aged-note rotation (BL-576)
-
-Under `config rotation router`, a solo `type: note` to a dormant role (such as
-a design kickoff to the specifier) stays non-actionable for `note_actionable_after_ms`
-(default 20 minutes) to prevent broadcast thrash when five-role merge-up notes land.
-Once aged past the threshold, the note becomes actionable: the handoff daemon's
-chase sweep will rotate the resident to that dormant role to drain it.
-
-**Key mechanics:**
-
-- **Fresh notes are protected.** A note delivered while the resident is mid-parcel
-  drains on the normal pipeline before it ages in — no rotation.
-- **Age clock is the parcel header** (`enqueued_at` first, then `created_at`),
-  never file mtime (worktree syncs touch files).
-- **Dormant-note delivery wake is suppressed.** When a note lands in a dormant role's
-  mailbox while the resident is elsewhere, no wake is sent to the resident. The chase
-  sweep will rotate when it ages in. This removes wasted `NO_TASK` turns.
-- **Newest actionable mail still wins.** If an aged note and a git_handoff are
-  both actionable, the newest (by created_at) is rotated to first.
-- **One rotation per sweep.** Busy gates, cooldown, and per-sweep resident budget
-  all apply. A five-role broadcast eventually drains one role per sweep with
-  automatic `ROTATE_HOME` return between drains.
-
-**Configuration:** See `docs/how-to/BL-576-aged-note-actionability-mono-router.md`
-for how to tune `note_actionable_after_ms` (default 1200000 ms / 20 minutes) for
-your workflow.
-
-### `rule_proposal` is immediately actionable, chase redirects to preferred (BL-795)
-
-Unlike a plain `note`, a directed `rule_proposal` (Article 5.1) is actionable
-for mono-router rotation the moment it lands — it never waits out
-`note_actionable_after_ms`, because it targets one role, not a broadcast. If
-you send a `rule_proposal` to a dormant specifier, expect the resident to
-rotate to it on the next chase sweep, not in ~20 minutes.
-
-Also: a chase poke that lands on a role other than the currently-preferred one
-now redirects the resident onto the preferred role instead of dropping the
-poke, and a stuck-holder alert keeps attempting a resume wake after it fires
-rather than abandoning a dormant holder for good. Full mechanics:
-`swarmforge/handoff-protocol.md` ("Mono-router rule_proposal actionability and
-chase redirect (BL-795)").
-
-### Non-home role after QA merge-up (BL-550)
-
-On mono-router packs with `config rotation router`, QA's merge-up `note` is
-broadcast to **all five** pipeline worktree roles at once. The single resident
-rotates through each role to process its copy; without an explicit return path
-it strands in the last non-home role and never sees the next coder handoff.
-
-**Pack prompt rule:** as a non-home role (cleaner, architect, hardender,
-documenter), after `done_with_current.sh` on any note — including merge-up —
-if your inbox is empty, call `rotate_to_role.sh <home>` proactively (`coder`
-for `openrouter-kimi-sonnet-mono-router`; home role comes from
-`config rotation_home` in swarmforge.conf).
-
-**Tool backstop:** when a non-home role runs `ready_for_next.sh` with an empty
-mailbox (`inbox/new/` and `inbox/in_process/`), the helper prints
-`ROTATE_HOME` (not `NO_TASK`) and the `.sh` wrapper execs
-`rotate_to_role.sh` for the configured home role. The home role itself never
-self-rotates; non-home roles with work still in `in_process/` keep `TASK`.
+A solo `note` to a dormant role stays non-actionable until
+`note_actionable_after_ms` (default 20 min) ages it in, to avoid broadcast
+thrash on a five-role merge-up — a directed `rule_proposal` is different, it
+is actionable immediately. A non-home role must `rotate_to_role.sh <home>`
+proactively once its inbox is empty after a merge-up note, or it strands
+(tool backstop: `ROTATE_HOME`, not `NO_TASK`). Full mechanics for all three:
+**pipeline-detailed.md**, `swarmforge/handoff-protocol.md`,
+`docs/how-to/BL-576-aged-note-actionability-mono-router.md`.
 
 
 ## Endless-loop hard stop
 
-If a role's pane shows a repeated `ready_for_next` → `NO_TASK` spin (the pane
-keeps changing, so ordinary stuck-activity detection never fires), the handoff
-daemon **halts the whole swarm** after three consecutive chase observations (~15s) of
-that pattern — alerting on **Telegram** (standing Operator topic) **and email**, then running `kill_all_swarm.sh`. This is
-deliberate: burning tokens on an idle loop has no upside. Fix the idle path,
-then relaunch with `./swarm`.
+A repeated `ready_for_next` → `NO_TASK` spin (the pane keeps changing, so
+ordinary stuck-activity detection never fires) makes the handoff daemon
+**halt the whole swarm** after three consecutive chase observations (~15s) —
+alerting on Telegram and email, then `kill_all_swarm.sh`. Deliberate: burning
+tokens on an idle loop has no upside. Fix the idle path, then `./swarm`.
 
 
 ## Same gates, no machinery: the expeditor (BL-567)
 
-Everything above assumes the swarm is running — handoffd delivering parcels, the
-resident rotating, the coordinator bookkeeping. When the defect is IN that
-machinery, the fix cannot ride the pipeline it is repairing.
-
-`swarmforge/scripts/expedite.sh <BL-id>` walks ONE ticket through this exact chain
-with the whole stack stopped. Same role hats, same gates, same evidence bar; the
-transport and liveness layers are replaced by plain control flow. It reads only
-durable data under git and never touches handoffd, the mailboxes, tmux, rotation or
-the coordinator — though it does stop and restart them, which is the opposite of
-depending on them.
-
-Two consequences worth knowing before you reach for it:
-
-- **Initiation blocks.** It parks whatever is in `backlog/active/` to
-  `backlog/hold/` (never `paused/`, which would auto-promote it back), stops the
-  full stack, then verifies rather than trusting the stop's exit code.
-- **The restart does not block.** The ticket is done when QA stamps it and the yaml
-  moves; a failed restart is reported loudly but never retracts that verdict —
-  because the start path may itself be what was under repair.
-
-How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`.
-Rationale: `docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md`.
+When the defect is IN the swarm's own delivery machinery, the fix cannot ride
+the pipeline it is repairing. `swarmforge/scripts/expedite.sh <BL-id>` walks
+ONE ticket through the same role hats and gates with the stack stopped,
+reading only durable git data. It parks active work to `backlog/hold/` first
+(never `paused/`) and a failed restart never retracts a QA-stamped verdict.
+Full mechanics: **pipeline-detailed.md**,
+`docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`,
+`docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md`.
