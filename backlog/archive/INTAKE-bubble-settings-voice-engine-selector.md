@@ -101,3 +101,36 @@ Related (context, not blockers)
 - Explicit: "Voix open ai ca suffit. Je ne veux pas changer le cerveau."
 - Explicit: put the selector in Bubble Settings; put the swarm on notice;
   do not hotfix.
+
+## Specifier disposition 2026-08-09 — DRAINED
+
+Minted as epic **BL-862** (`bubble-voice-engine`, M8) with two slices split on
+the Bubble testability boundary:
+
+- **BL-863** — bridge side: a durable `local|openai` preference under
+  `.swarmforge/operator/`, resolution moved into the per-turn path so a change
+  applies with no bounce, and a loud named failure when the selected engine is
+  unusable. Node-unit testable, no device.
+- **BL-864** — Bubble side: the Settings selector that writes the preference,
+  opens on the engine actually in use, and shows the bridge's refusal reason.
+  JVM-testable state logic plus a recorded manual device procedure.
+
+All four locked human decisions carried verbatim into BL-862 and repeated on
+the slice that owns each. The two quoted directives ("Voix open ai ca suffit.
+Je ne veux pas changer le cerveau." / "put the selector in Bubble Settings; put
+the swarm on notice; do not hotfix.") travel on all three tickets.
+
+The four calls this file delegated to the specifier are answered in BL-862's
+`approval_context`: durable bridge-side preference (not env-only), hot-swap
+rather than bounce, Mini App parity deferred to a follow-up, selector gated
+behind a bubble-config capability flag.
+
+Probe finding that changed the spec: the silent fallback this intake warns
+about **already exists** — both branches of `resolveLetsTalkAudioAdapters` end
+in `?? {}`, so an unusable engine yields empty adapters that read as success.
+BL-863 owns that as a fix, not merely as a constraint on new code. And hot-swap
+is not free: `startBridge` resolves adapters once at construction
+(`bridgeServer.ts:1578`), so BL-863 must move resolution into the turn path.
+
+Not minted, per the intake's own framing: Mini App parity, and any change to
+the agent/brain.

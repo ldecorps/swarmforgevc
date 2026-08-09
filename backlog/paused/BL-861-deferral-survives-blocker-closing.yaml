@@ -1,0 +1,138 @@
+id: BL-861
+title: "A sibling deferral is never released when its blocker closes, and the check it recorded stops being runnable at that exact moment — BL-574 stranded on main with no QA verdict"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 6
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "one existing CLI plus one store-side lookup; no duplication or structure to refactor at this size"
+
+invariants:
+  - "A recorded deferral check stays runnable after its blocker closes: no accepted check may read a path that closing the blocker itself moves."
+  - "Blocker state is derived from a single shared lookup — a ticket reported releasable by the status command is never reported blocked by the listing, and vice versa."
+
+required_wiring:
+  - "docs/how-to/BL-532-sibling-bounce-deferral-runbook.md::list::a stranded-deferral listing nobody is told to run is never run — the BL-419 shape"
+
+approval_context: >
+  Sign-off wanted on severity `high`. The argument for high: this silently
+  strands a COMPLETED ticket. BL-574's code has been on `main` since
+  2026-08-08, both its blockers passed QA and closed, and it still holds one
+  of three active slots with no QA verdict and no runnable path to earn one.
+  That is capacity loss plus a broken release signal, not a cosmetic gap. The
+  argument for medium: there is a manual workaround (QA can verify the sibling
+  by hand and clear the deferral), and it has bitten once.
+
+  Also confirm scope: this ticket fixes the deferral LIFECYCLE (refuse a
+  check that cannot outlive the close, report a closed blocker as releasable,
+  make stranded deferrals listable). It deliberately does NOT auto-clear a
+  deferral — releasing a sibling stays QA's explicit verdict, per BL-532.
+  Say so if you would rather it auto-cleared.
+
+source: |
+  Specifier probe, 2026-08-09, while working a coordinator "Work BL-574" note.
+  BL-574 reached the specifier only because of a stale `assigned_to: specifier`;
+  it needs no spec work. Probing why it was still active surfaced this defect.
+
+  Measured state at probe time:
+
+  - `qa-sibling-check.js status --ticket BL-574` emits two DEFERRED lines,
+    BLOCKED_BY BL-681 and BL-762.
+  - Both blockers passed QA (`backlog/evidence/BL-681-BL-762-qa-pass-20260808.md`)
+    and closed: both YAMLs are now under `backlog/done/`.
+  - BL-574's own commits are ancestors of `main` (coder `495d5df7`, documenter
+    `c785a890`), so the work shipped.
+  - The check recorded against BL-681 is
+    `test -f $(grep '^acceptance:' backlog/active/BL-681-consolidation-never-drops-a-human-sentence.yaml | sed 's/^acceptance: *//')`.
+    That path no longer exists — closing BL-681 moved it to `backlog/done/`.
+    Running the check as recorded fails, and it fails for a reason unrelated
+    to what it was meant to prove.
+  - Nothing sweeps the store: `grep -rln 'qa_deferrals|siblingDeferralStore'`
+    matches only the three source files that implement it
+    (`extension/src/metrics/siblingDeferralStore.ts`,
+    `extension/src/quality/siblingDeferral.ts`,
+    `extension/src/tools/qa-sibling-check.ts`). No daemon, no watchdog, no
+    chase sweep reads it, so nothing notices a blocker has closed.
+
+description: |
+  ## Problem
+
+  BL-532's sibling deferral is correct in what it prevents (a clean sibling is
+  deferred, never bounced) but has no lifecycle tie to the blocker it names.
+  A deferral is released only by QA explicitly running `clear`. Two gaps follow.
+
+  **The recorded check can stop being runnable at exactly the wrong moment.**
+  `--check` is free-form text. QA can legitimately write a check that reads the
+  blocker's own ticket file under `backlog/active/`. Closing the blocker MOVES
+  that file to `backlog/done/` — so the one command the runbook tells QA to
+  re-run to release the sibling ("When the blocking ticket is fixed and re-sent
+  to QA, QA re-runs the check that was failing") breaks precisely when the
+  blocker closes. The failure is also misleading: it fails on a missing path,
+  not on the condition it was recorded to test.
+
+  **Nothing notices the blocker closed.** No sweep, watchdog, or daemon reads
+  the deferral store. A sibling whose blockers have all closed is released in
+  fact but still deferred on paper, and stays that way until a human happens to
+  run `status` against a ticket they already suspect. There is no way to ask
+  "which deferrals are stranded?"
+
+  Together these strand a finished ticket: it holds an active slot, has no QA
+  verdict, and the recorded release path cannot run.
+
+  ## Wanted
+
+  - **Refuse a check that cannot outlive the close.** At `defer` time, reject a
+    `--check` that reads the blocker's own ticket path under the active backlog,
+    telling QA why (the path moves when the blocker closes). Checks that do not
+    depend on that path are recorded unchanged.
+  - **Report a closed blocker as releasable.** When a blocker has closed,
+    `status` says the sibling is releasable and names where the blocker closed,
+    instead of emitting a check that cannot run. A sibling with any still-open
+    blocker keeps reporting deferred, naming that blocker.
+  - **Make stranded deferrals discoverable.** A listing over open deferrals
+    surfaces those whose blockers have already closed, without having to name
+    the ticket in advance.
+
+  Releasing a deferral stays QA's explicit act (`clear`). This ticket makes the
+  state honest and discoverable; it does not auto-clear.
+
+  ## Not in scope
+
+  - Auto-clearing a deferral, or having a daemon issue a QA verdict.
+  - Re-verifying BL-574 itself. That is a QA re-entry the coordinator routes
+    separately; this ticket stops the next sibling from stranding the same way.
+
+acceptance: specs/features/BL-861-deferral-survives-blocker-closing.feature
+
+qa_e2e_procedure: |
+  With the swarm running, against a scratch deferral store:
+
+  1. `qa-sibling-check.js defer --ticket <T> --blocked-by <B> --check "test -f
+     backlog/active/<B>.yaml" ...` — expect a refusal naming the moving path.
+  2. Re-run with `--check "cd extension && npx vitest run <some>.test.js"` —
+     expect the deferral recorded.
+  3. `qa-sibling-check.js status --ticket <T>` — expect DEFERRED naming <B>.
+  4. Move `backlog/active/<B>.yaml` to `backlog/done/` (simulating close).
+  5. `qa-sibling-check.js status --ticket <T>` — expect releasable, naming
+     where <B> closed, and NO unrunnable check line.
+  6. `qa-sibling-check.js list` — expect <T> listed as stranded.
+  7. Confirm the real store is untouched: `.swarmforge/qa_deferrals/` unchanged.
+
+notes: |
+  Live victim is BL-574, which is spec-complete, built, and on `main` but still
+  sits in `backlog/active/` with no QA verdict. BL-574 needs a QA re-entry and
+  a corrected `assigned_to:` — both coordinator-routed, reported by note
+  2026-08-09, and deliberately NOT folded into this ticket.
+
+  BL-574's stale `assigned_to: specifier` is a second, separate recurrence
+  (same field misrouted BL-574 and BL-762 to the specifier on 2026-08-08). If
+  it recurs again it wants its own ticket; it is noted here only so the
+  coincidence is not mistaken for one bug.
