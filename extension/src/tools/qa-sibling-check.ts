@@ -8,18 +8,29 @@
  * Usage:
  *   node qa-sibling-check.js status --ticket <id>
  *     exit 0  VERIFY <ticket>
- *     exit 3  DEFERRED <ticket> BLOCKED_BY <blocker> CHECK <command>   (one line per open blocker)
+ *     exit 3  DEFERRED <ticket> BLOCKED_BY <blocker> CHECK <command>        (one line per still-open blocker)
+ *     exit 4  RELEASABLE <ticket> BLOCKED_BY <blocker> CLOSED_AT <path>     (one line per closed blocker; BL-861)
  *   node qa-sibling-check.js defer --ticket <id> --blocked-by <id> --class <failureClass> --check "<command>" --commit <10-hex>
+ *     exit 0  {"recorded": true|false}
+ *     exit 4  REFUSED: --check reads the blocker's own path under backlog/active/ (BL-861 - that
+ *             path moves to backlog/done/ the moment the blocker closes, exactly when the
+ *             recorded check should be releasing the sibling)
  *   node qa-sibling-check.js clear --ticket <id> --blocked-by <id> --commit <10-hex>
+ *   node qa-sibling-check.js list
+ *     exit 0  NONE
+ *     exit 4  RELEASABLE <ticket> BLOCKED_BY <blocker> CLOSED_AT <path>     (one line per closed
+ *             blocker of every stranded ticket - BL-861: released in fact, still deferred on
+ *             paper, discoverable without naming the ticket in advance)
  *
- * Exit 2 is reserved for usage errors, so a caller can tell "deferred" from
- * "you typed it wrong". The tool never EXECUTES a recorded blocker command -
- * it is read from the store and printed for QA to re-run itself; executing
- * it would turn a data store into an arbitrary-command sink.
+ * Exit 2 is reserved for usage errors, so a caller can tell "deferred"/
+ * "releasable" from "you typed it wrong". The tool never EXECUTES a recorded
+ * blocker command - it is read from the store and printed for QA to re-run
+ * itself; executing it would turn a data store into an arbitrary-command sink.
  */
-import { isKnownFailureClass, decideDisposition, openBlockersForTicket, QaBounceFailureClass, SiblingDeferralRecord } from '../quality/siblingDeferral';
+import { checkReadsBlockerActivePath, isKnownFailureClass, QaBounceFailureClass, SiblingDeferralRecord } from '../quality/siblingDeferral';
 import { KNOWN_FAILURE_CLASSES } from '../quality/qaBounce';
-import { appendSiblingDeferralRecordIfNew, readSiblingDeferralRecords } from '../metrics/siblingDeferralStore';
+import { appendSiblingDeferralRecordIfNew } from '../metrics/siblingDeferralStore';
+import { computeTicketDeferralStatus, listStrandedDeferrals } from '../metrics/siblingDeferralStatus';
 import { printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
 const TICKET_PATTERN = /^BL-\d+$/i;
@@ -49,11 +60,18 @@ interface ClearArgs {
   commit: string;
 }
 
-export type QaSiblingCheckArgs = StatusArgs | DeferArgs | ClearArgs;
+// BL-861: no ticket named in advance - lists every deferral released in
+// fact but still deferred on paper (stranded).
+interface ListArgs {
+  command: 'list';
+}
+
+export type QaSiblingCheckArgs = StatusArgs | DeferArgs | ClearArgs | ListArgs;
 
 const STATUS_FLAGS = ['--ticket'] as const;
 const DEFER_FLAGS = ['--ticket', '--blocked-by', '--class', '--check', '--commit'] as const;
 const CLEAR_FLAGS = ['--ticket', '--blocked-by', '--commit'] as const;
+const LIST_FLAGS = [] as const;
 
 // Pure - parses `--flag value` pairs (any order) into a lookup, or null on
 // any unrecognized flag / a flag with no following value.
@@ -122,6 +140,11 @@ function parseClearArgs(rest: string[]): ClearArgs | null {
   return { command: 'clear', ticket: ticket.toUpperCase(), blockedBy: blockedBy.toUpperCase(), commit };
 }
 
+function parseListArgs(rest: string[]): ListArgs | null {
+  const flags = parseFlags(rest, LIST_FLAGS);
+  return flags ? { command: 'list' } : null;
+}
+
 export function parseArgs(argv: string[]): QaSiblingCheckArgs | null {
   const [command, ...rest] = argv;
   if (command === 'status') {
@@ -133,6 +156,9 @@ export function parseArgs(argv: string[]): QaSiblingCheckArgs | null {
   if (command === 'clear') {
     return parseClearArgs(rest);
   }
+  if (command === 'list') {
+    return parseListArgs(rest);
+  }
   return null;
 }
 
@@ -140,36 +166,44 @@ const USAGE =
   'Usage: qa-sibling-check.js status --ticket <id>\n' +
   '       qa-sibling-check.js defer --ticket <id> --blocked-by <id> --class <failureClass> --check "<command>" --commit <hex>\n' +
   '       qa-sibling-check.js clear --ticket <id> --blocked-by <id> --commit <hex>\n' +
+  '       qa-sibling-check.js list\n' +
   `  --class: ${KNOWN_FAILURE_CLASSES.join('|')}\n`;
 
+function printReleasableLines(report: { ticket: string; closedBlockers: { blockedBy: string; closedAt: string }[] }): void {
+  for (const blocker of report.closedBlockers) {
+    console.log(`RELEASABLE ${report.ticket} BLOCKED_BY ${blocker.blockedBy} CLOSED_AT ${blocker.closedAt}`);
+  }
+}
+
 function runStatus(mainWorktreePath: string, args: StatusArgs): void {
-  const records = readSiblingDeferralRecords(mainWorktreePath);
-  const openBlockers = openBlockersForTicket(records, args.ticket);
-  const disposition = decideDisposition(openBlockers, null);
-  if (disposition.kind === 'verify') {
+  const report = computeTicketDeferralStatus(mainWorktreePath, args.ticket);
+  if (report.kind === 'verify') {
     console.log(`VERIFY ${args.ticket}`);
     process.exitCode = 0;
     return;
   }
-  // decideDisposition is only ever called here with no observed failure, so
-  // it can only return 'verify' (handled above) or 'defer' - 'bounce' needs
-  // an observedFailure, which status never supplies.
-  //
-  // hardener note: a mutant forcing this condition to `true` is an accepted-
-  // equivalent - 'verify' already returned above, and decideDisposition
-  // cannot produce 'bounce' without an observedFailure (see its own
-  // `if (!observedFailure) return { kind: 'defer', ... }` branch), so by this
-  // line `disposition.kind` is already 'defer' on every reachable path. No
-  // input reaches an externally observable difference (BL-234 precedent).
-  if (disposition.kind === 'defer') {
-    for (const blocker of disposition.blockers) {
-      console.log(`DEFERRED ${args.ticket} BLOCKED_BY ${blocker.blockedBy} CHECK ${blocker.check}`);
-    }
-    process.exitCode = 3;
+  if (report.kind === 'releasable') {
+    printReleasableLines(report);
+    process.exitCode = 4;
+    return;
   }
+  // report.kind === 'deferred': at least one blocker's ticket is still open.
+  for (const blocker of report.openBlockers) {
+    console.log(`DEFERRED ${args.ticket} BLOCKED_BY ${blocker.blockedBy} CHECK ${blocker.check}`);
+  }
+  process.exitCode = 3;
 }
 
 function runDefer(mainWorktreePath: string, args: DeferArgs): void {
+  if (checkReadsBlockerActivePath(args.check, args.blockedBy)) {
+    process.stderr.write(
+      `REFUSED: --check reads ${args.blockedBy}'s own path under backlog/active/ - closing ${args.blockedBy} ` +
+        `moves that file to backlog/done/, so the recorded check would stop being runnable at exactly the ` +
+        `moment it should release ${args.ticket}. Record a check that does not depend on ${args.blockedBy}'s ticket path.\n`
+    );
+    process.exitCode = 4;
+    return;
+  }
   const record: SiblingDeferralRecord = {
     ticket: args.ticket,
     blockedBy: args.blockedBy,
@@ -181,6 +215,19 @@ function runDefer(mainWorktreePath: string, args: DeferArgs): void {
   };
   const recorded = appendSiblingDeferralRecordIfNew(mainWorktreePath, record);
   printJsonToStdout({ recorded });
+}
+
+function runList(mainWorktreePath: string): void {
+  const stranded = listStrandedDeferrals(mainWorktreePath);
+  if (stranded.length === 0) {
+    console.log('NONE');
+    process.exitCode = 0;
+    return;
+  }
+  for (const report of stranded) {
+    printReleasableLines(report);
+  }
+  process.exitCode = 4;
 }
 
 function runClear(mainWorktreePath: string, args: ClearArgs): void {
@@ -207,8 +254,10 @@ export async function main(): Promise<void> {
     runStatus(mainWorktreePath, args);
   } else if (args.command === 'defer') {
     runDefer(mainWorktreePath, args);
-  } else {
+  } else if (args.command === 'clear') {
     runClear(mainWorktreePath, args);
+  } else {
+    runList(mainWorktreePath);
   }
 }
 
