@@ -6,6 +6,7 @@ const {
   openBlockersForTicket,
   isRedundantSiblingDeferralWrite,
   decideDisposition,
+  checkReadsBlockerActivePath,
 } = require('../out/quality/siblingDeferral');
 
 // BL-532: the pure sibling-deferral decision core - no filesystem, no clock.
@@ -226,4 +227,33 @@ test('a deferral carrying the widened class spec-gap suppresses only its own sig
   ];
   const disposition = decideDisposition(openBlockers, { failureClass: 'unit', check: 'npm test' });
   assert.deepEqual(disposition, { kind: 'bounce' });
+});
+
+// ── checkReadsBlockerActivePath (BL-861) ──────────────────────────────────
+
+test('a check reading the blocker file under backlog/active/ is refused', () => {
+  assert.equal(
+    checkReadsBlockerActivePath("test -f backlog/active/BL-681-consolidation-never-drops-a-human-sentence.yaml", 'BL-681'),
+    true
+  );
+});
+
+test('the refusal is case-insensitive on both the path and the ticket id', () => {
+  assert.equal(checkReadsBlockerActivePath('cat Backlog/Active/bl-681-foo.yaml', 'BL-681'), true);
+});
+
+test('a check naming a DIFFERENT ticket under backlog/active/ is not refused', () => {
+  assert.equal(checkReadsBlockerActivePath('test -f backlog/active/BL-999-other.yaml', 'BL-681'), false);
+});
+
+test('a check naming the blocker id but not backlog/active/ is not refused', () => {
+  assert.equal(checkReadsBlockerActivePath('npx vitest run BL-681.test.js', 'BL-681'), false);
+});
+
+test('a check naming backlog/active/ but not the blocker id is not refused', () => {
+  assert.equal(checkReadsBlockerActivePath('ls backlog/active/', 'BL-681'), false);
+});
+
+test('an ordinary test-suite check is not refused', () => {
+  assert.equal(checkReadsBlockerActivePath('npm run test', 'BL-681'), false);
 });
