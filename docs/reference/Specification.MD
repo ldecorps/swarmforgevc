@@ -1,6 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 9, 2026 (BL-861: a sibling deferral (BL-532) now
+**Last Updated:** August 10, 2026 (BL-857: the production Bubble tunnel
+name now has exactly one owner. A property-test sandbox launching
+`cloudflared ... run swarmforge-bubble` used to track its pid in a pidfile
+inside its own `$ROOT`; deleting the sandbox tree destroyed the only record
+of that still-running pid while it stayed bound to the production hostname
+— thirteen live `cloudflared` processes were found on the host in one
+incident, twelve of them exactly this class of orphan. `tunnel_ownership_lib.sh`
+now keeps a host-level registry (`$HOME/.swarmforge/tunnels`, independent of
+any `$ROOT`) of the one registered operator root and the current owner pid
+of each named tunnel; `launch_resident_spy_tunnel.sh` refuses a named tunnel
+outright from any non-operator root (quick tunnels are unaffected), and
+`stop_ancillary_services.sh`'s `stop_tunnels` reaps from that registry
+rather than the single root-relative pidfile, so a sandbox's abandoned
+tunnel is reapable even after its tree is gone — scoped strictly to the
+production tunnel name, never a bare `pkill cloudflared`. See the new
+"Tunnel ownership and orphan reaping (BL-857)" section in
+`docs/how-to/named-tunnel-bubble-musicalsifu.md`.
+Previously August 9, 2026 — BL-861: a sibling deferral (BL-532) now
 survives its blocker closing. `qa-sibling-check.js status`/`list` resolve
 blocker closure from the single shared `backlog/done/` lookup
 (`computeTicketDeferralStatus`/`resolveBlockerClosure`,

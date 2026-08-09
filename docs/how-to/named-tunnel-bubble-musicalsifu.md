@@ -136,6 +136,59 @@ Mini App link:
 echo "https://bubble.musicalsifu.com/resident-spy?token=$(cat .swarmforge/operator/bridge-token)"
 ```
 
+## Tunnel ownership and orphan reaping (BL-857)
+
+The production tunnel name has **exactly one owner**. This closed a real
+incident: a property-test sandbox launching `cloudflared ... run
+swarmforge-bubble` used to track its pid in a pidfile inside its own `$ROOT`
+— once the sandbox's temp tree was deleted, that pid kept running, still
+bound to the production hostname, with no record left anywhere the live stop
+path could find it. Twelve such orphans were found live on the host in one
+sweep, alongside the one real operator tunnel.
+
+**Ownership now lives at the host level**, independent of any `$ROOT`:
+`swarmforge/scripts/tunnel_ownership_lib.sh`, registry directory
+`$HOME/.swarmforge/tunnels` (override for tests via
+`SWARMFORGE_TUNNEL_REGISTRY_DIR`).
+
+- `operator-root` — the one filesystem root allowed to bind a named tunnel,
+  written once on the first `setup_bubble_named_tunnel.sh` run and never
+  auto-overwritten (moving it is a deliberate human edit of the file, same
+  posture as the primary-swarm Telegram creds file).
+- `<name>.owner` — `"<pid> <root>"` for whichever process most recently
+  started serving tunnel `<name>`, overwritten on every successful launch.
+
+**A run outside the registered operator root is refused a named tunnel
+outright**, not merely asked to clean up after itself — a test/sandbox root
+that has never registered as operator gets:
+
+```
+launch_resident_spy_tunnel: refusing named tunnel 'swarmforge-bubble' — this
+root (...) is not the registered operator root (...).
+  Named-tunnel mode is reserved for the operator instance. Run
+  setup_bubble_named_tunnel.sh once from the real operator root to register
+  it, or omit SWARMFORGE_NAMED_TUNNEL to use a quick tunnel.
+```
+
+Quick tunnels (no `SWARMFORGE_NAMED_TUNNEL`) are unaffected — any root may
+still request an ephemeral `*.trycloudflare.com` URL.
+
+**Reaping now follows the records, not the one root-relative pidfile.**
+`stop_ancillary_services.sh`'s `stop_tunnels` step still signals the
+operator's own local pidfile, then additionally runs
+`tunnel_reap_orphans <name>` — scoped strictly to processes whose command
+line names the production tunnel name after a `run` token (never a bare
+substring match, and never a host-wide `pkill cloudflared`). A process is
+protected from the reap only if it is the local pidfile's still-live pid or
+the registry's still-live recorded owner; a stale registry entry (its pid
+already exited) claims nothing and is not treated as blocking. A
+`cloudflared` bound to any other tunnel name is never touched.
+
+This means: after `stop-swarm.sh` / kill-all / a property-test teardown, at
+most one real `swarmforge-bubble` cloudflared remains on the host — the
+operator's own — regardless of how many sandboxes started and abandoned one
+in between.
+
 ## Verify
 
 ```bash
@@ -203,3 +256,5 @@ and `cloudflared` / the bridge go dark with it.
 | Bubble still on trycloudflare URL | `named-tunnel.env` missing; kill old quick-tunnel pid and relaunch |
 | Tunnel dies with lid closed | `caffeinate` is not enough — run `sudo pmset -c disablesleep 1` |
 | Idle sleep kills tunnel (lid open) | pidfile missing / `SWARMFORGE_SKIP_CAFFEINATE=1`; relaunch tunnel |
+| `refusing named tunnel ... not the registered operator root` | Expected from any non-operator root (a test sandbox, a second checkout). Use a quick tunnel there, or register that root as operator via `setup_bubble_named_tunnel.sh` if it genuinely should own the production name |
+| Orphan `cloudflared ... run swarmforge-bubble` survives a sandbox/teardown | Run `stop_ancillary_services.sh` (or `bash swarmforge/scripts/tunnel_ownership_lib.sh reap-orphans swarmforge-bubble`) — reaping reads the host registry, not the deleted sandbox's own pidfile |
