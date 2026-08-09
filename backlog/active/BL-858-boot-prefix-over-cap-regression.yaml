@@ -171,3 +171,6 @@ out_of_scope: |
   - Fixing reference/ staleness in role worktrees — that is BL-640.
   - Trimming role prompts or pack overlays (only the boot-inlined
     constitution/article surface the gate measures).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-09, by: QA, blamed: coder, class: acceptance, commit: 5fa430db, evidence: backlog/evidence/BL-858-bounce-20260809.md }
