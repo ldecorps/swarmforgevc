@@ -8,7 +8,7 @@ human_approval: approved
 severity: high
 priority: 94
 direction: agent-proposed
-assigned_to: none
+assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-840-provider-outage-evidence-reaches-flow-watchdog.feature
