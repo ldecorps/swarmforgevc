@@ -105,13 +105,17 @@
 ;; Candidate SCOPE: only SwarmForge-* remote-control claude processes are
 ;; ever surfaced - never a bare `pgrep claude` pattern-to-kill (BL-367's own
 ;; forbidden shape). Enumerates via process_table_lib (/proc or ProcessHandle).
+;; BL-849: nil (enumeration unavailable) propagates through untouched -
+;; never coerced into [], which would read as "swept 0, clean host" to
+;; every downstream consumer including the audit log.
 (defn- scan-candidate-pids! []
   (try
-    (->> (process-table-lib/list-processes!)
-         (filter (fn [{:keys [cmdline]}] (remote-control-cmdline? cmdline)))
-         (map :pid)
-         vec)
-    (catch Exception _ [])))
+    (when-let [procs (process-table-lib/list-processes!)]
+      (->> procs
+           (filter (fn [{:keys [cmdline]}] (remote-control-cmdline? cmdline)))
+           (map :pid)
+           vec))
+    (catch Exception _ nil)))
 
 ;; Test-only override: a wiring test supplies the EXACT pids it spawned
 ;; itself, never triggering the real process-table scan above (which could
@@ -162,6 +166,37 @@
 (defn- now-iso []
   (.format java.time.format.DateTimeFormatter/ISO_INSTANT (java.time.Instant/now)))
 
+(defn- sweep-candidates! [project-root adapters candidates log!]
+  (let [threshold-ms (stale-threshold-ms)
+        window-pids ((:live-window-pid-set! adapters))
+        reaped (atom 0)]
+    (doseq [pid candidates]
+      (let [cwd ((:cwd! adapters) pid)
+            ;; BL-849: cwd! is best-effort (Darwin resolves it via `lsof`,
+            ;; which can be missing/slow/denied) - a nil cwd is "could not
+            ;; verify", never "confirmed outside the repo root", so it must
+            ;; fail closed (cwd-resolved? false) rather than silently
+            ;; falling through cwd-inside-root?'s own `and` into "false",
+            ;; which used to read identically to a genuinely-elsewhere cwd.
+            cwd-resolved? (some? cwd)
+            cwd-inside-root? (boolean (and cwd (str/starts-with? cwd (str project-root "/.swarmforge"))))
+            remote-control? (remote-control-cmdline? ((:cmdline! adapters) pid))
+            has-children? ((:has-children?! adapters) pid)
+            age-ms ((:age-ms! adapters) pid)
+            stale? (>= age-ms threshold-ms)
+            in-window? (contains? window-pids pid)]
+        (when (orphan-agent-reaper-lib/reapable?
+               {:in-live-window-set? in-window?
+                :cwd-inside-root? cwd-inside-root?
+                :cwd-resolved? cwd-resolved?
+                :remote-control-agent? remote-control?
+                :has-children? has-children?
+                :stale? stale?})
+          ((:kill-pid! adapters) pid)
+          ((:audit! adapters) (str (now-iso) " reaped pid=" pid " cwd=" cwd " age_ms=" age-ms))
+          (swap! reaped inc))))
+    (log! (str "swept " (count candidates) " candidate(s), reaped " @reaped))))
+
 (defn sweep!
   "adapters is {:list-candidate-pids! fn :cmdline! fn :cwd! fn
    :has-children?! fn :age-ms! fn :live-window-pid-set! fn :kill-pid! fn
@@ -170,29 +205,16 @@
    the pure orphan-agent-reaper-lib/reapable? predicate; kills and
    audit-logs only a candidate that clears every gate. Never a
    pattern-to-kill: enumeration only SURFACES candidates, the kill decision
-   is per-pid through the pure predicate."
+   is per-pid through the pure predicate.
+
+   BL-849 (invariant 1): when :list-candidate-pids! returns nil (the
+   process table could not be enumerated this tick), reports that plainly
+   and skips the sweep entirely rather than logging \"swept 0, reaped 0\" -
+   indistinguishable from a genuinely clean host."
   ([project-root] (sweep! project-root (default-adapters project-root)))
   ([project-root adapters]
    (let [log! (or (:log! adapters) default-log!)
-         threshold-ms (stale-threshold-ms)
-         window-pids ((:live-window-pid-set! adapters))
-         candidates ((:list-candidate-pids! adapters))
-         reaped (atom 0)]
-     (doseq [pid candidates]
-       (let [cwd ((:cwd! adapters) pid)
-             cwd-inside-root? (boolean (and cwd (str/starts-with? cwd (str project-root "/.swarmforge"))))
-             remote-control? (remote-control-cmdline? ((:cmdline! adapters) pid))
-             has-children? ((:has-children?! adapters) pid)
-             age-ms ((:age-ms! adapters) pid)
-             stale? (>= age-ms threshold-ms)
-             in-window? (contains? window-pids pid)]
-         (when (orphan-agent-reaper-lib/reapable?
-                {:in-live-window-set? in-window?
-                 :cwd-inside-root? cwd-inside-root?
-                 :remote-control-agent? remote-control?
-                 :has-children? has-children?
-                 :stale? stale?})
-           ((:kill-pid! adapters) pid)
-           ((:audit! adapters) (str (now-iso) " reaped pid=" pid " cwd=" cwd " age_ms=" age-ms))
-           (swap! reaped inc))))
-     (log! (str "swept " (count candidates) " candidate(s), reaped " @reaped)))))
+         candidates ((:list-candidate-pids! adapters))]
+     (if (nil? candidates)
+       (log! "process table unavailable this sweep — skipping (cannot distinguish a clean host from a blind reaper)")
+       (sweep-candidates! project-root adapters candidates log!)))))
