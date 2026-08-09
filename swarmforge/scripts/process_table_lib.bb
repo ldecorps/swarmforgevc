@@ -45,7 +45,11 @@
       (catch Exception _ ""))))
 
 (defn list-pids!
-  "All numeric pids visible on this host."
+  "All numeric pids visible on this host, or nil when the process table
+   could not be enumerated. BL-849: nil is never conflated with an empty
+   vector - a caller distinguishing 'nothing to reap' from 'I cannot see
+   the process table' depends on that distinction surviving here, the
+   root of every candidate scan."
   []
   (try
     (if (procfs-available?)
@@ -55,26 +59,31 @@
       (->> (iterator-seq (.iterator (java.lang.ProcessHandle/allProcesses)))
            (map #(.pid %))
            vec))
-    (catch Exception _ [])))
+    (catch Exception _ nil)))
 
 (defn list-processes!
-  "Return [{:pid Long :cmdline String}] for processes with a non-blank cmdline."
+  "Return [{:pid Long :cmdline String}] for processes with a non-blank
+   cmdline, or nil when the process table could not be enumerated (BL-849 -
+   see list-pids!'s docstring; the /proc branch propagates list-pids!'s own
+   nil via when-let rather than `keep`-ing over it, which would otherwise
+   silently degrade a failed read into an empty-but-successful result)."
   []
   (try
     (if (procfs-available?)
-      (->> (list-pids!)
-           (keep (fn [pid]
-                   (let [cmd (cmdline-from-procfs pid)]
-                     (when-not (str/blank? cmd)
-                       {:pid pid :cmdline cmd}))))
-           vec)
+      (when-let [pids (list-pids!)]
+        (->> pids
+             (keep (fn [pid]
+                     (let [cmd (cmdline-from-procfs pid)]
+                       (when-not (str/blank? cmd)
+                         {:pid pid :cmdline cmd}))))
+             vec))
       (->> (iterator-seq (.iterator (java.lang.ProcessHandle/allProcesses)))
            (keep (fn [ph]
                    (let [cmd (cmdline-from-handle ph)]
                      (when-not (str/blank? cmd)
                        {:pid (.pid ph) :cmdline cmd}))))
            vec))
-    (catch Exception _ [])))
+    (catch Exception _ nil)))
 
 (defn age-ms!
   "Process age via ProcessHandle startInstant when available; else 0.

@@ -406,7 +406,10 @@ const DOMAINS = [
   require('./bl717SilentReturnAfterHoldMusicSteps'),
   require('./bl854OrthogonalityAdvisesInsteadOfBlockingSteps'),
   require('./bl643NonPipelineAgentsSteps'),
-  require('./bl861DeferralSurvivesBlockerClosingSteps')
+  require('./bl861DeferralSurvivesBlockerClosingSteps'),
+  require('./bl857TunnelOwnershipOneOwnerSteps'),
+  require('./bl849DarwinOrphanJanitorHotfixSteps'),
+  require('./bl840ProviderOutageEvidenceReachesFlowWatchdogSteps')
 ];
 
 function registerSteps(registry) {

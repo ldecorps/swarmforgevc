@@ -43,16 +43,20 @@
 (defn- proc-cmdline! [pid]
   (process-table-lib/cmdline! pid))
 
+;; BL-849: nil (enumeration unavailable) propagates through untouched -
+;; never coerced into [], which would read as "swept 0, clean host" to
+;; every downstream consumer including the audit log.
 (defn- scan-candidate-pids! []
   (try
-    (->> (process-table-lib/list-processes!)
-         (filter (fn [{:keys [cmdline]}]
-                   (or (orphan-janitor-lib/operator-runtime-cmdline? cmdline)
-                       (orphan-janitor-lib/hung-acceptance-cmdline? cmdline)
-                       (orphan-janitor-lib/tmp-ancillary-cmdline? cmdline))))
-         (map :pid)
-         vec)
-    (catch Exception _ [])))
+    (when-let [procs (process-table-lib/list-processes!)]
+      (->> procs
+           (filter (fn [{:keys [cmdline]}]
+                     (or (orphan-janitor-lib/operator-runtime-cmdline? cmdline)
+                         (orphan-janitor-lib/hung-acceptance-cmdline? cmdline)
+                         (orphan-janitor-lib/tmp-ancillary-cmdline? cmdline))))
+           (map :pid)
+           vec))
+    (catch Exception _ nil)))
 
 (defn list-candidate-pids! []
   (if-let [override (System/getenv "SWARMFORGE_ORPHAN_JANITOR_CANDIDATE_PIDS")]
@@ -102,17 +106,13 @@
    :audit! (fn [line] (append-audit! (audit-log-file project-root) line))
    :log! default-log!})
 
-(defn sweep!
-  ([project-root] (sweep! project-root (default-adapters project-root)))
-  ([project-root adapters]
-   (let [log! (or (:log! adapters) default-log!)
-         runtime-threshold (operator-runtime-stale-threshold-ms)
-         acceptance-threshold (acceptance-stale-threshold-ms)
-         ancillary-threshold (ancillary-stale-threshold-ms)
-         window-pids ((:live-window-pid-set! adapters))
-         live-runtime ((:live-runtime-pid! adapters))
-         candidates ((:list-candidate-pids! adapters))
-         reaped (atom 0)]
+(defn- sweep-candidates! [adapters candidates log!]
+  (let [runtime-threshold (operator-runtime-stale-threshold-ms)
+        acceptance-threshold (acceptance-stale-threshold-ms)
+        ancillary-threshold (ancillary-stale-threshold-ms)
+        window-pids ((:live-window-pid-set! adapters))
+        live-runtime ((:live-runtime-pid! adapters))
+        reaped (atom 0)]
      (doseq [pid candidates]
        (let [cmd ((:cmdline! adapters) pid)
              age ((:age-ms! adapters) pid)
@@ -159,4 +159,18 @@
                 (str (now-iso) " reaped-tmp-ancillary pid=" pid
                      " root=" root " age_ms=" age))
                (swap! reaped inc))))))
-     (log! (str "swept " (count candidates) " candidate(s), reaped " @reaped)))))
+     (log! (str "swept " (count candidates) " candidate(s), reaped " @reaped))))
+
+(defn sweep!
+  ([project-root] (sweep! project-root (default-adapters project-root)))
+  ([project-root adapters]
+   (let [log! (or (:log! adapters) default-log!)
+         candidates ((:list-candidate-pids! adapters))]
+     ;; BL-849 (invariant 1): a nil candidate list means the process table
+     ;; could not be enumerated this tick - report that plainly and skip
+     ;; the sweep entirely, never "swept 0, reaped 0", which reads
+     ;; identically to a genuinely clean host and was the exact shape of
+     ;; the silent no-op this ticket reviews.
+     (if (nil? candidates)
+       (log! "process table unavailable this sweep — skipping (cannot distinguish a clean host from a blind reaper)")
+       (sweep-candidates! adapters candidates log!)))))

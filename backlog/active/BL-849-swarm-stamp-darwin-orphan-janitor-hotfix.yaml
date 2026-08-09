@@ -9,7 +9,7 @@ severity: high
 priority: 23
 direction: human-requested
 depends_on: []
-assigned_to: null
+assigned_to: coder
 mutation_cost: medium
 
 invariants:
@@ -95,7 +95,7 @@ description: |
   host `.swarmforge/tmux/...` alone. `operator_runtime` restarted on the new
   code and its ticks are no longer stuck at `swept 0`.
 
-acceptance: specs/features/BL-849-swarm-stamp-darwin-orphan-janitor-hotfix.feature.draft
+acceptance: specs/features/BL-849-swarm-stamp-darwin-orphan-janitor-hotfix.feature
 
 out_of_scope: |
   - Re-implementing the janitor from scratch; this stamps the landed diff.
@@ -144,3 +144,19 @@ notes: |
   4. **Linux is not regressed.** The `/proc` path must still enumerate; if no
      Linux host is available, say so explicitly in the QA evidence rather
      than recording it as passed.
+
+  Coder 2026-08-09: reviewed the landed diff against both declared
+  invariants. Invariant 2 (decapitation guard) CONFIRMED holding as landed,
+  no fix needed. Invariant 1 (silent-zero-on-enumeration-failure) REFUTED
+  as landed - `catch Exception _ []` in list-pids!/list-processes! and both
+  sweep libs' scan-candidate-pids! coerced a failed enumeration into an
+  empty vector, indistinguishable from a clean host. Fixed narrowly (nil
+  propagates through instead; sweep! reports "process table unavailable"
+  and skips rather than logging "swept 0"). Also found and fixed, tied to
+  review goal 3: orphan_agent_reaper_lib.bb's reapable? treated an
+  unresolved cwd (what a missing/slow/denied Darwin `lsof` produces) as
+  "confirmed outside root" rather than "unknown" - now fails closed via a
+  new :cwd-resolved? gate (default true, BL-486 callers unaffected).
+  Promoted the draft feature to live with step handlers; 8/8 acceptance
+  subtests pass. Full writeup: backlog/evidence/BL-849-coder-pass.md. No
+  follow-up tickets needed - both findings were narrow enough to fix here.

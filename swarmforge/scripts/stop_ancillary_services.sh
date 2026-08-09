@@ -33,6 +33,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 source "$SCRIPT_DIR/lifecycle_matrix.sh"
+source "$SCRIPT_DIR/tunnel_ownership_lib.sh"
 
 # Sets the globals every stop_* function below reads: ROOT, OP_DIR, BB_DIR,
 # LEGACY_BB_DIR. Callers that source this file (finish_shift_lib.sh) must
@@ -183,6 +184,24 @@ stop_tunnels() {
   signal_pid_file "$OP_DIR/resident-spy-cloudflared.pid"
   # Paired with launch_resident_spy_tunnel.sh ensure_tunnel_caffeinate (macOS idle).
   signal_pid_file "$OP_DIR/resident-spy-caffeinate.pid"
+  reap_named_tunnel_orphans
+}
+
+# BL-857: the pidfile above is root-relative and therefore blind to any
+# cloudflared bound to the production tunnel name whose launching tree (a
+# property-test sandbox, most often) has since been deleted - the exact
+# incident this ticket fixes. Resolves which name to scope reaping to the
+# same way the launcher resolves it (env var, else THIS root's own
+# named-tunnel.env); a root never configured for a named tunnel has
+# nothing to reap and this is a no-op.
+reap_named_tunnel_orphans() {
+  local name="${SWARMFORGE_NAMED_TUNNEL:-}"
+  local env_file="$OP_DIR/named-tunnel.env"
+  if [[ -z "$name" && -f "$env_file" ]]; then
+    name="$(sed -n 's/^SWARMFORGE_NAMED_TUNNEL=//p' "$env_file" | tail -1)"
+  fi
+  [[ -n "$name" ]] || return 0
+  tunnel_reap_orphans "$name" "$OP_DIR/resident-spy-cloudflared.pid"
 }
 
 # Dispatches a lifecycle_matrix.sh component NAME to its stop function - the

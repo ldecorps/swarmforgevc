@@ -16,6 +16,10 @@
 #   $URL/resident-spy?token=$(cat .swarmforge/operator/bridge-token)
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./tunnel_ownership_lib.sh
+source "$SCRIPT_DIR/tunnel_ownership_lib.sh"
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'EOF'
 launch_resident_spy_tunnel.sh — lifecycle start entry point.
@@ -63,6 +67,20 @@ CF_CONFIG="${SWARMFORGE_CLOUDFLARED_CONFIG:-$HOME/.cloudflared/config.yml}"
 # window, which would otherwise cost 45 real seconds per property-test run.
 NAMED_WAIT_ATTEMPTS="${SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS:-45}"
 NAMED_WAIT_INTERVAL="${SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL:-1}"
+
+# BL-857: named mode binds the production tunnel name, which has exactly
+# one owner - a run from outside the registered operator root is refused
+# outright rather than merely asked to clean up after itself, because the
+# incident this fixes (sandboxes orphaning cloudflared bound to
+# swarmforge-bubble) happens precisely when a sandbox's tree is deleted
+# before it can clean up. Quick tunnels (no NAMED_TUNNEL) are unaffected -
+# any root may still request an ephemeral trycloudflare.com URL.
+if [[ -n "$NAMED_TUNNEL" ]] && ! tunnel_is_operator_root "$ROOT"; then
+  recorded_root="$(tunnel_read_operator_root)"
+  echo "launch_resident_spy_tunnel: refusing named tunnel '$NAMED_TUNNEL' — this root ($ROOT) is not the registered operator root (${recorded_root:-none recorded yet})." >&2
+  echo "  Named-tunnel mode is reserved for the operator instance. Run setup_bubble_named_tunnel.sh once from the real operator root to register it, or omit SWARMFORGE_NAMED_TUNNEL to use a quick tunnel." >&2
+  exit 1
+fi
 
 # BL-787: named mode requires an explicit hostname — the operator's own
 # domain never ships as a script default, and its absence fails loud instead
@@ -227,6 +245,17 @@ else
   else
     start_quick_tunnel
   fi
+fi
+
+# BL-857: host-level ownership record, independent of $ROOT, so this
+# process stays reapable even if the tree that launched it is later
+# deleted. Recorded regardless of edge-registration success below (a hung
+# or misconfigured named tunnel is still a live process bound to the name
+# and still needs to be reapable) and unconditionally overwritten on every
+# successful/observed launch, so the registry always tracks whichever pid
+# most recently claimed the name.
+if [[ -n "$NAMED_TUNNEL" ]]; then
+  tunnel_record_owner "$NAMED_TUNNEL" "$(cat "$PID_FILE")" "$ROOT"
 fi
 
 URL=""

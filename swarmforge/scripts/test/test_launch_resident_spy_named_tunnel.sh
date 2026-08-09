@@ -6,6 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCH="$SCRIPT_DIR/../launch_resident_spy_tunnel.sh"
 STOP="$SCRIPT_DIR/../stop_ancillary_services.sh"
+OWNERSHIP_LIB="$SCRIPT_DIR/../tunnel_ownership_lib.sh"
 
 fail=0
 note() { printf '%s\n' "$*"; }
@@ -18,6 +19,13 @@ register_tmp_dir "$ROOT"
 OP="$ROOT/.swarmforge/operator"
 mkdir -p "$OP" "$ROOT/bin"
 echo "test-token" > "$OP/bridge-token"
+
+# BL-857: named mode now refuses any root that is not the registered
+# operator root. This fixture's HOME is $ROOT itself, so registering $ROOT
+# here (into that same isolated HOME's registry) represents "this is a real
+# operator launching from its own root" - the refusal is tested separately
+# in test_launch_resident_spy_tunnel_operator_root_refusal.sh.
+HOME="$ROOT" bash "$OWNERSHIP_LIB" register-operator-root "$ROOT"
 
 # Fake cloudflared: named mode logs a Registered line (unless
 # FAKE_CLOUDFLARED_NEVER_REGISTER is set - named-03); quick mode prints
