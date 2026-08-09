@@ -17,27 +17,21 @@
    `priority:` value. Within the expedited set, rule 2's priority ordering
    applies unchanged.
    - **Transition**: the predicate also matches legacy `type: bug` tickets
-     while any still carry that type (58 at incorporation, 2026-07-25 — all in
-     `backlog/done/`, matched in case one is re-promoted). `bug` is retired
-     for new tickets: always write `type: defect`. Drop `bug` from the
-     predicate only once no ticket carries it.
+     while any still carry that type. `bug` is retired for new tickets —
+     always write `type: defect`. Drop `bug` from the predicate only once no
+     ticket carries it. See **expedite-defects-amendment-2026-07-25.md** §3.1
+     for the legacy-count evidence.
    - **Missing `severity:` fails CLOSED**: a defect with no `severity:` field
      is NOT expedited — absence must never buy priority. The coordinator
      surfaces such tickets for triage rather than guessing a severity.
-   - **Ordering only**: expedite reorders the queue; it never creates an extra
-     active slot (rule 1), never overrides orthogonality (rule 3 — an
-     expedited ticket that overlaps in-flight work is skipped like any other),
-     never changes the mutation-heavy scheduling window (3.4), and never
-     bypasses the circuit breaker (3.5) — under a throttled cap of `1`/`0`,
-     expedited tickets fit in the reduced capacity or wait.
+   - **Ordering only**: expedite reorders the queue only — never an extra
+     active slot (rule 1), never overrides orthogonality (rule 3), the
+     mutation-heavy window (3.4), or the circuit breaker (3.5); under a
+     throttled cap of `1`/`0`, expedited tickets fit the reduced capacity or wait.
    - **Two `priority:` scales — never conflate**: this rule concerns the
-     ticket YAML `priority:` (promotion order out of `paused/`) only.
-     Expediting a ticket never bumps its handoff `priority:` to `00` — handoff
-     priority (HANDOFF-PROTOCOL.md) reflects message routing, not work
-     urgency, and the `00` lane is reserved for genuinely blocking decisions.
-   - Adoption record and rationale:
-     `articles/reference/expedite-defects-amendment-2026-07-25.md`
-     (operator directive 2026-07-25).
+     ticket YAML `priority:` (promotion order) only. Expediting a ticket
+     never bumps its handoff `priority:` to `00` — that lane is reserved for
+     genuinely blocking decisions. See **expedite-defects-amendment-2026-07-25.md**.
 
 ## 3.3 Coordinator Duties
 1. **Intake Control** – New specs land in `backlog/paused/` (written by specifier).
@@ -52,15 +46,11 @@
 - Defer **mutation-heavy** tickets (large code changes) to overnight.
 
 ## 3.5 Health-Based Intake Throttling (Circuit Breaker)
-- When swarm health signals spike — QA-bounce rate, BL-098 chase/nudge
-  telemetry, daemon errors, or degraded transport (BL-121) rising meaningfully
-  above their trend baseline — the coordinator lowers `active_backlog_max_depth`
-  to throttle intake rather than keep feeding a malfunctioning pipeline:
-  - **Degraded** (signals elevated, pipeline still moving): drop to `1` —
-    stabilize one ticket at a time.
-  - **Severe** (pipeline stalled or transport down): drop to `0` — freeze new
-    promotion entirely until the fault is cleared.
-- Restore the prior cap once the signals return to baseline; do not leave the
-  throttle engaged after recovery.
-- Rationale: piling tickets into a broken pipeline compounds recovery work.
-  (Operator directive 2026-07-09.)
+- When swarm health signals spike (QA-bounce rate, BL-098 chase/nudge
+  telemetry, daemon errors, degraded transport BL-121) meaningfully above
+  trend baseline, the coordinator lowers `active_backlog_max_depth`: drop to
+  `1` if **degraded** (signals elevated, pipeline moving), `0` if **severe**
+  (stalled/transport down). Restore the prior cap once signals normalize —
+  never leave the throttle engaged after recovery. See
+  **03-backlog-detailed.md** for the full pre-trim wording (operator
+  directive 2026-07-09).
