@@ -6,6 +6,12 @@ const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/qa-sibling-check');
 const { readSiblingDeferralRecords } = require('../out/metrics/siblingDeferralStore');
 
+function writeTicketYaml(root, folder, id, milestone) {
+  const dir = milestone ? path.join(root, 'backlog', folder, milestone) : path.join(root, 'backlog', folder);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${id}-some-slug.yaml`), `id: ${id}\ntitle: "some ticket"\n`);
+}
+
 // BL-532: the CLI QA runs to disposition a batch parcel - status/defer/clear
 // over the sibling-deferral store.
 
@@ -199,6 +205,16 @@ test('parseArgs rejects an unknown subcommand even when its arguments would othe
   assert.equal(parseArgs(['nonsense', ...clearArgs().slice(1)]), null);
 });
 
+// BL-861: the `list` subcommand.
+
+test('parseArgs accepts a bare list invocation', () => {
+  assert.deepEqual(parseArgs(['list']), { command: 'list' });
+});
+
+test('parseArgs rejects list with an unrecognized flag (list takes none)', () => {
+  assert.equal(parseArgs(['list', '--ticket', 'BL-477']), null);
+});
+
 // ── status: exit codes ────────────────────────────────────────────────────
 
 test('status on an unknown ticket (no deferral ever recorded) exits 0 VERIFY', async () => {
@@ -255,6 +271,45 @@ test('clearing one of two blockers leaves status naming only the remaining one',
   assert.equal(result.logs[0], 'DEFERRED BL-477 BLOCKED_BY BL-480 CHECK npm test');
 });
 
+// ── status: BL-861 releasable (blocker closed) ────────────────────────────
+
+test('status on a ticket whose sole blocker has closed exits 4 RELEASABLE, naming where it closed, with no unrunnable check', async () => {
+  const root = mkRepo();
+  writeTicketYaml(root, 'active', 'BL-469');
+  await runCli(root, deferArgs());
+  writeTicketYaml(root, 'done', 'BL-469'); // simulate close: move active -> done
+  fs.rmSync(path.join(root, 'backlog', 'active', 'BL-469-some-slug.yaml'));
+  const result = await runCli(root, ['status', '--ticket', 'BL-477']);
+  assert.equal(result.exitCode, 4);
+  assert.equal(result.logs.length, 1);
+  assert.equal(result.logs[0], `RELEASABLE BL-477 BLOCKED_BY BL-469 CLOSED_AT ${path.join('backlog', 'done', 'BL-469-some-slug.yaml')}`);
+  assert.ok(!result.logs[0].includes('CHECK'));
+});
+
+test('status on a ticket blocked by one closed and one open blocker stays DEFERRED, naming only the open one', async () => {
+  const root = mkRepo();
+  writeTicketYaml(root, 'done', 'BL-469');
+  writeTicketYaml(root, 'active', 'BL-480');
+  await runCli(root, deferArgs({ blockedBy: 'BL-469' }));
+  await runCli(root, deferArgs({ blockedBy: 'BL-480', check: 'npm test' }));
+  const result = await runCli(root, ['status', '--ticket', 'BL-477']);
+  assert.equal(result.exitCode, 3);
+  assert.equal(result.logs.length, 1);
+  assert.equal(result.logs[0], 'DEFERRED BL-477 BLOCKED_BY BL-480 CHECK npm test');
+});
+
+test('status on a ticket blocked by two, both closed, exits 4 and names both', async () => {
+  const root = mkRepo();
+  writeTicketYaml(root, 'done', 'BL-469');
+  writeTicketYaml(root, 'done', 'BL-480');
+  await runCli(root, deferArgs({ blockedBy: 'BL-469' }));
+  await runCli(root, deferArgs({ blockedBy: 'BL-480', check: 'npm test' }));
+  const result = await runCli(root, ['status', '--ticket', 'BL-477']);
+  assert.equal(result.exitCode, 4);
+  assert.equal(result.logs.length, 2);
+  assert.ok(result.logs.every((l) => l.startsWith('RELEASABLE BL-477 BLOCKED_BY')));
+});
+
 // ── defer / clear: durable record, never touches qa_bounces ──────────────
 
 test('defer records exactly one line and never touches qa_bounces/', async () => {
@@ -279,6 +334,32 @@ test('clear records exactly one line and prints {recorded: true}', async () => {
   const result = await runCli(root, clearArgs());
   assert.equal(JSON.parse(result.stdout).recorded, true);
   assert.equal(readSiblingDeferralRecords(root).length, 2);
+});
+
+// ── defer: BL-861 refuses a check that would not survive the blocker closing ──
+
+test('defer refuses a --check reading the blocker file under backlog/active/, naming the moving path, and records nothing', async () => {
+  const root = mkRepo();
+  const result = await runCli(root, deferArgs({ check: 'test -f backlog/active/BL-469-some-slug.yaml' }));
+  assert.equal(result.exitCode, 4);
+  assert.match(result.stderr, /REFUSED/);
+  assert.match(result.stderr, /BL-469/);
+  assert.match(result.stderr, /backlog\/active\//);
+  assert.equal(readSiblingDeferralRecords(root).length, 0);
+});
+
+test('defer accepts a --check naming a different ticket\'s active-backlog path (only the blocker\'s own path is refused)', async () => {
+  const root = mkRepo();
+  const result = await runCli(root, deferArgs({ check: 'test -f backlog/active/BL-999-other.yaml' }));
+  assert.equal(result.exitCode, 0);
+  assert.equal(JSON.parse(result.stdout).recorded, true);
+});
+
+test('defer accepts an ordinary test-suite check unchanged', async () => {
+  const root = mkRepo();
+  const result = await runCli(root, deferArgs({ check: 'npm run test' }));
+  assert.equal(result.exitCode, 0);
+  assert.equal(JSON.parse(result.stdout).recorded, true);
 });
 
 // ── usage errors: exit code 2 ─────────────────────────────────────────────
@@ -312,15 +393,45 @@ test('an unknown subcommand exits 2', async () => {
   assert.equal(result.exitCode, 2);
 });
 
+// ── list: BL-861 stranded deferrals, discoverable without naming a ticket ──
+
+test('list on a store with no deferrals prints NONE and exits 0', async () => {
+  const root = mkRepo();
+  const result = await runCli(root, ['list']);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.logs[0], 'NONE');
+});
+
+test('list on a store with only an open deferral prints NONE (nothing stranded yet)', async () => {
+  const root = mkRepo();
+  writeTicketYaml(root, 'active', 'BL-469');
+  await runCli(root, deferArgs());
+  const result = await runCli(root, ['list']);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.logs[0], 'NONE');
+});
+
+test('list surfaces a stranded ticket whose blocker has closed, without it being named in the invocation', async () => {
+  const root = mkRepo();
+  writeTicketYaml(root, 'done', 'BL-469');
+  await runCli(root, deferArgs());
+  const result = await runCli(root, ['list']);
+  assert.equal(result.exitCode, 4);
+  assert.equal(result.logs.length, 1);
+  assert.equal(result.logs[0], `RELEASABLE BL-477 BLOCKED_BY BL-469 CLOSED_AT ${path.join('backlog', 'done', 'BL-469-some-slug.yaml')}`);
+});
+
 // ── exit codes are distinct ────────────────────────────────────────────────
 
-test('exit codes: 0 verify, 3 deferred, 2 usage', async () => {
+test('exit codes: 0 verify, 3 deferred, 4 releasable/refused, 2 usage', async () => {
   const root = mkRepo();
   const verify = await runCli(root, ['status', '--ticket', 'BL-999']);
   assert.equal(verify.exitCode, 0);
   await runCli(root, deferArgs());
   const deferred = await runCli(root, ['status', '--ticket', 'BL-477']);
   assert.equal(deferred.exitCode, 3);
+  const refused = await runCli(root, deferArgs({ ticket: 'BL-478', check: 'test -f backlog/active/BL-469-x.yaml' }));
+  assert.equal(refused.exitCode, 4);
   const usage = await runCli(root, ['status']);
   assert.equal(usage.exitCode, 2);
 });
