@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-intelligence-layer
 human_approval: approved
-priority: 110
+priority: 111
 direction: human-requested
 depends_on: []
 mutation_cost: high

@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: github-auto-intake
-priority: 25
+priority: 26
 depends_on: []
 decomposes_into: [BL-560]
 source: |

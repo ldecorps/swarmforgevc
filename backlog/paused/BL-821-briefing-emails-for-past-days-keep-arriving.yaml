@@ -5,7 +5,7 @@ status: todo
 type: defect
 severity: medium
 epic: swarm-reliability
-priority: 51
+priority: 52
 direction: human-requested
 human_approval: approved
 depends_on: []

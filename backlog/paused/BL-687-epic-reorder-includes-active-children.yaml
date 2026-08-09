@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarmforge-console
 human_approval: approved
-priority: 31
+priority: 32
 direction: human-requested
 mutation_cost: medium
 depends_on: [BL-686]

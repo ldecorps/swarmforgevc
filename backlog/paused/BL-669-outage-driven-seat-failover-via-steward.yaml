@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarm-intelligence-layer
 severity: medium
-priority: 90
+priority: 91
 direction: human-requested
 depends_on: []
 assigned_to: specifier

@@ -5,7 +5,7 @@ type: chore
 severity: low
 status: todo
 epic: fleet-topology
-priority: 29
+priority: 30
 direction: swarm-proposed
 depends_on: []
 source: "Coordinator directive 2026-07-17 (note 00_20260717T232701Z_000575 to specifier): 'Retro-ticket 7dd4d14e (keep, tested) - spec swarm_ensure.bb wiring too.' Carries out the constitution's An-Approval-Authorizes-Only-Its-Ticket's-Work rule (workflow.prompt / BL-506): commit 7dd4d14e added 514 lines of remote_control_health*.bb / remote_control_respawn.bb operator tooling with NO backlog ticket, riding onto main as an ancestor of BL-506's QA-approved commit. That rule requires such already-landed ticket-less work to be 'retroactively ticketed or reverted'; the coordinator chose KEEP (the tooling is real, tested, and useful), so this ticket is its ticket of record plus the one wiring slice that was designed but never landed."

@@ -1253,27 +1253,22 @@ function sideloadApkPublicDir(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'public');
 }
 
-// BL-851 review goal 1: path.resolve is lexical only - it never touches the
-// filesystem. A symlink whose own name lives inside publicRoot and matches
+// A symlink whose own name lives inside publicRoot and matches
 // SIDELOAD_APK_PATH resolves (lexically) to a path under publicRoot even
-// when its target does not, so the prefix check alone cannot catch it.
-// fs.statSync/createReadStream both follow symlinks, so without the
-// lstat/isSymbolicLink check below, planting such a symlink under
-// .swarmforge/operator/public/ would serve any file on the host,
-// unauthenticated. Returns the resolved path only for a REGULAR file that
-// is itself not a symlink and resolves under publicRoot; null means "do not
-// serve" (caller decides whether that means fall-through or 404).
-export function resolveSideloadApkFile(pathname: string, publicRoot: string): string | null {
-  if (!SIDELOAD_APK_PATH.test(pathname)) {
-    return null;
-  }
-  const fileName = path.basename(pathname);
+// when its target does not, so the prefix check alone cannot catch it -
+// resolveSideloadApkFile's lstat/isSymbolicLink check below is what does.
+function isWithinPublicRoot(resolvedPath: string, publicRoot: string): boolean {
   const resolvedRoot = path.resolve(publicRoot);
-  const resolved = path.resolve(path.join(resolvedRoot, fileName));
   const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
-  if (!resolved.startsWith(rootPrefix)) {
-    return null;
-  }
+  return resolvedPath.startsWith(rootPrefix);
+}
+
+// fs.statSync/createReadStream both follow symlinks, so without this
+// lstat/isSymbolicLink check, planting a symlink under
+// .swarmforge/operator/public/ would serve any file on the host,
+// unauthenticated. Returns the lstat only for a REGULAR file that is
+// itself not a symlink; null means "do not serve".
+function statRegularNonSymlinkFile(resolved: string): fs.Stats | null {
   let lstat: fs.Stats;
   try {
     lstat = fs.lstatSync(resolved);
@@ -1283,7 +1278,56 @@ export function resolveSideloadApkFile(pathname: string, publicRoot: string): st
   if (lstat.isSymbolicLink() || !lstat.isFile()) {
     return null;
   }
+  return lstat;
+}
+
+// BL-851 review goal 1: path.resolve is lexical only - it never touches the
+// filesystem, so the containment check and the symlink check are two
+// separate, both-required guards (see the two helpers above). Returns the
+// resolved path only when both hold; null means "do not serve" (caller
+// decides whether that means fall-through or 404).
+export function resolveSideloadApkFile(pathname: string, publicRoot: string): string | null {
+  if (!SIDELOAD_APK_PATH.test(pathname)) {
+    return null;
+  }
+  const fileName = path.basename(pathname);
+  const resolvedRoot = path.resolve(publicRoot);
+  const resolved = path.resolve(path.join(resolvedRoot, fileName));
+  if (!isWithinPublicRoot(resolved, publicRoot)) {
+    return null;
+  }
+  if (!statRegularNonSymlinkFile(resolved)) {
+    return null;
+  }
   return resolved;
+}
+
+function isEligibleSideloadRequestMethod(method: string | undefined): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
+function extractSideloadRequestPathname(url: string): string {
+  return (url.split('?')[0] ?? '').split('#')[0] ?? '';
+}
+
+function writeSideloadApkFileResponse(
+  res: http.ServerResponse,
+  resolved: string,
+  method: string | undefined
+): void {
+  const fileName = path.basename(resolved);
+  const stat = fs.statSync(resolved);
+  res.writeHead(200, {
+    'content-type': 'application/vnd.android.package-archive',
+    'content-length': stat.size,
+    'content-disposition': `attachment; filename="${fileName}"`,
+    'cache-control': 'no-store',
+  });
+  if (method === 'HEAD') {
+    res.end();
+    return;
+  }
+  fs.createReadStream(resolved).pipe(res);
 }
 
 function tryServeSideloadApk(
@@ -1292,10 +1336,10 @@ function tryServeSideloadApk(
   targetPath: string,
   url: string
 ): boolean {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  if (!isEligibleSideloadRequestMethod(req.method)) {
     return false;
   }
-  const pathname = (url.split('?')[0] ?? '').split('#')[0] ?? '';
+  const pathname = extractSideloadRequestPathname(url);
   if (!SIDELOAD_APK_PATH.test(pathname)) {
     return false;
   }
@@ -1305,19 +1349,7 @@ function tryServeSideloadApk(
     res.end(JSON.stringify({ error: 'not_found' }));
     return true;
   }
-  const fileName = path.basename(resolved);
-  const stat = fs.statSync(resolved);
-  res.writeHead(200, {
-    'content-type': 'application/vnd.android.package-archive',
-    'content-length': stat.size,
-    'content-disposition': `attachment; filename="${fileName}"`,
-    'cache-control': 'no-store',
-  });
-  if (req.method === 'HEAD') {
-    res.end();
-    return true;
-  }
-  fs.createReadStream(resolved).pipe(res);
+  writeSideloadApkFileResponse(res, resolved, req.method);
   return true;
 }
 

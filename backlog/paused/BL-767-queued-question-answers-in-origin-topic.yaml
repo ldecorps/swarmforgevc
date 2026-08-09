@@ -7,7 +7,7 @@ status: todo
 epic: swarmforge-console
 human_approval: approved
 assigned_to: none
-priority: 24
+priority: 25
 direction: normal
 depends_on: [BL-764]
 mutation_cost: medium
