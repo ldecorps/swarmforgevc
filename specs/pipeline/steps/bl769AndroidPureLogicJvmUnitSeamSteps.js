@@ -15,8 +15,12 @@
 // fixtureReaper was built for.
 const fs = require('node:fs');
 const path = require('node:path');
-const { runGradle, readJUnitResults } = require('./lib/androidGradle');
 const { onAbnormalExit } = require('./lib/fixtureReaper');
+const {
+  registerAndroidModuleBackground,
+  registerJvmUnitSuiteRun,
+  registerKnownValueLookup,
+} = require('./lib/androidJvmDecisionSteps');
 
 const FEATURE_NAME = "Bubble's pure logic is verified by a JVM unit suite that runs without a device";
 const TEST_REPORT_DIR = 'testDebugUnitTest';
@@ -58,18 +62,7 @@ function removeCanary(ctx) {
 }
 
 function registerSteps(registry) {
-  // ── Background ───────────────────────────────────────────────────────
-  registry.defineScoped(
-    /^the Bubble Android module$/,
-    (ctx) => {
-      ctx.repoRoot = path.join(__dirname, '..', '..', '..');
-      ctx.androidDir = path.join(ctx.repoRoot, 'android');
-      if (!fs.existsSync(path.join(ctx.androidDir, 'gradlew'))) {
-        throw new Error(`expected android/gradlew under ${ctx.androidDir}`);
-      }
-    },
-    FEATURE_NAME
-  );
+  registerAndroidModuleBackground(registry, FEATURE_NAME, __dirname);
 
   // ── android-pure-logic-jvm-unit-seam-02 (Given) ──────────────────────
   registry.defineScoped(
@@ -100,14 +93,7 @@ class ${CANARY_CLASS_NAME} {
   );
 
   // ── When (shared by all three scenarios) ─────────────────────────────
-  registry.defineScoped(
-    /^the JVM unit suite is run$/,
-    (ctx) => {
-      ctx.result = runGradle(ctx.repoRoot, [':app:testDebugUnitTest', '--console=plain']);
-      ctx.junitResults = readJUnitResults(ctx.androidDir, TEST_REPORT_DIR);
-    },
-    FEATURE_NAME
-  );
+  registerJvmUnitSuiteRun(registry, FEATURE_NAME, TEST_REPORT_DIR);
 
   // ── android-pure-logic-jvm-unit-seam-01 (Then) ───────────────────────
   registry.defineScoped(
@@ -154,30 +140,7 @@ class ${CANARY_CLASS_NAME} {
   );
 
   // ── android-pure-logic-jvm-unit-seam-03 (Then, Scenario Outline) ─────
-  registry.defineScoped(
-    /^it exercises (.+)$/,
-    (ctx, behavior) => {
-      const known = KNOWN_BEHAVIORS[behavior];
-      if (!known) {
-        throw new Error(
-          `unknown <behavior> example "${behavior}" - expected one of: ${Object.keys(KNOWN_BEHAVIORS).join(', ')}`
-        );
-      }
-      const matches = ctx.junitResults.filter(
-        (r) => r.classname.includes(known.classSubstring) && r.name.includes(known.nameSubstring)
-      );
-      if (matches.length === 0) {
-        throw new Error(
-          `expected a passed test in ${known.classSubstring} naming "${known.nameSubstring}" for behavior ` +
-            `"${behavior}", found none among: ${JSON.stringify(ctx.junitResults)}`
-        );
-      }
-      if (matches.some((r) => !r.passed)) {
-        throw new Error(`expected the matching test(s) for "${behavior}" to have passed: ${JSON.stringify(matches)}`);
-      }
-    },
-    FEATURE_NAME
-  );
+  registerKnownValueLookup(registry, FEATURE_NAME, KNOWN_BEHAVIORS, 'behavior', false);
 }
 
 module.exports = { registerSteps };
