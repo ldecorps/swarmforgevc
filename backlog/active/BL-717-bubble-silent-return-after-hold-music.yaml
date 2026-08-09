@@ -112,6 +112,7 @@ notes: |
   design constraint over the whole terminal-branch set, not as five separate
   patches — a property test over the branch enumeration fits better than more
   example scenarios.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
+  - { at: 2026-08-09, by: cleaner, blamed: coder, class: unit, commit: 5835629336, evidence: backlog/evidence/BL-717-bubble-silent-return-after-hold-music-bounce-20260809.md }
   - { at: 2026-08-09, by: architect, blamed: coder, class: behavior, commit: 6bed2963ab, evidence: backlog/evidence/BL-717-bubble-silent-return-after-hold-music-architect-bounce-20260809.md }
