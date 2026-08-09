@@ -1,6 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 10, 2026 (BL-857: the production Bubble tunnel
+**Last Updated:** August 10, 2026 (BL-849: swarm stamp-off of the Darwin
+orphan-janitor hotfix (`f9cf29c2`, hand-landed 2026-08-07 after
+`operator_runtime` had been ticking "swept 0, reaped 0" every cycle on the
+production Mac host while roughly thirty disposable front-desk/bridge
+processes and stale worktree `babysitterd`/tmux sessions sat live — three
+Linux-only assumptions: candidate scans read `/proc` only, disposable-root
+matching never recognized Darwin's `$TMPDIR`, and the ancillary patterns
+missed `babysitterd.sh` and an absolute `tmux` path). Reviewing the landed
+diff (a REVIEW ticket, not a rewrite, per the BL-811 posture) confirmed
+invariant 2 (the decapitation guard — no host-repo path may ever match, the
+disposable-root extract stays mandatory) holds as landed, and REFUTED
+invariant 1 as landed: `process_table_lib.bb`'s enumeration and both sweep
+libs' `scan-candidate-pids!` wrapped their whole body in
+`catch Exception _ []`, so a failed enumeration was silently indistinguishable
+from a clean host — the exact shape that hid the original incident. Fixed by
+returning/propagating `nil` (never `[]`) on enumeration failure, so `sweep!`
+now reports "process table unavailable — skipping" instead of a false clean
+sweep. Also found and fixed, tied to the review's cwd-resolution goal:
+`orphan_agent_reaper_lib.bb`'s `reapable?` treated an unresolved cwd (what a
+missing/slow/denied Darwin `lsof` produces) as "confirmed outside root"
+rather than "unknown" — now fails closed via a new `:cwd-resolved?` gate
+(default `true`, so existing BL-486 callers are unaffected). No new
+human-facing command or setting; same internal-hygiene review class as
+BL-811, and the workflow it stamps is documented in
+`docs/how-to/BL-848-certify-an-operator-hotfix.md`.
+Previously August 10, 2026 — BL-857: the production Bubble tunnel
 name now has exactly one owner. A property-test sandbox launching
 `cloudflared ... run swarmforge-bubble` used to track its pid in a pidfile
 inside its own `$ROOT`; deleting the sandbox tree destroyed the only record
