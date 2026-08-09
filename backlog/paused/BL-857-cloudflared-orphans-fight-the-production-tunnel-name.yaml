@@ -176,9 +176,14 @@ approval_context: >
   cashed out, not a substitute for it.
 
 notes: |
-  Sequencing matters more than usual here: BL-762 is ACTIVE and edits
-  `stop_ancillary_services.sh`, which this ticket also edits. Do not promote
-  this into a slot alongside it.
+  Sequencing hold LIFTED by coordinator 2026-08-09: BL-762 (which edited
+  `stop_ancillary_services.sh`) landed on main at 628e6e8a and closed
+  (6e4d976e) — the guarding overlap no longer exists, so this promotes
+  normally now (Article 3.2 rule 2, "re-evaluate holds on every recheck").
+  Original hold text preserved below for provenance: "Sequencing matters
+  more than usual here: BL-762 is ACTIVE and edits
+  `stop_ancillary_services.sh`, which this ticket also edits. [Former
+  instruction against promoting alongside it, now resolved.]"
 
   Live host at spec time carried exactly one cloudflared — the real operator
   tunnel at `~/.local/bin/cloudflared` — so the twelve orphans are cleared and
