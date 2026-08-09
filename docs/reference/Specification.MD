@@ -1,6 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 9, 2026 (BL-717: a Let's Talk turn no longer ends in
+**Last Updated:** August 9, 2026 (BL-861: a sibling deferral (BL-532) now
+survives its blocker closing. `qa-sibling-check.js status`/`list` resolve
+blocker closure from the single shared `backlog/done/` lookup
+(`computeTicketDeferralStatus`/`resolveBlockerClosure`,
+`extension/src/metrics/siblingDeferralStatus.ts`) instead of replaying the
+recorded `--check`, and report a ticket `RELEASABLE` (exit 4), naming where
+each closed blocker landed, once every one of its recorded blockers has
+closed — a still-open blocker keeps the ticket `DEFERRED` (exit 3) and names
+only that blocker. `defer` now refuses (exit 4) a `--check` that reads the
+blocker's own path under `backlog/active/`, since closing the blocker moves
+that path to `backlog/done/` at exactly the moment the check should be
+proving the release. The new `list` subcommand surfaces every stranded
+deferral — released in fact, still deferred on paper — without naming a
+ticket in advance, closing the gap that let BL-574 (built, on `main` since
+2026-08-08, both its blockers closed) hold an active slot with no QA verdict
+until a human happened to probe it by hand. Releasing a deferral is still
+QA's explicit `clear`; this ticket does not auto-clear. See the updated
+`docs/how-to/BL-532-sibling-bounce-deferral-runbook.md` ("Stranded
+Deferrals" and the `--check` refusal note).
+Previously August 9, 2026 — BL-717: a Let's Talk turn no longer ends in
 silence after hold music stops. Bridge side — `promptAgentAndSynthesize` and
 `clientTtsTurnSuccess` (`extension/src/bridge/letsTalkRoutes.ts`) now route
 every reply through `resolveSpeakableReply` (`letsTalkCore.ts`), which
