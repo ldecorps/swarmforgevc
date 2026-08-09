@@ -101,6 +101,19 @@ Tap the bubble. You get a **Let's Talk**-style panel:
 
 Grant **microphone** when Android asks (first Record).
 
+## The reply always plays something after hold music stops (BL-717)
+
+Hold music stopping with nothing spoken afterward used to be indistinguishable
+from a turn that was still running. It no longer happens: whenever a turn has
+no speakable content to play — no audio and no TTS text — or the playback/TTS
+attempt itself fails, or the recovery watchdog expires, the app makes one
+bounded recovery attempt instead of silently completing the turn. Combined
+with the bridge-side fallback line for a reply with nothing pronounceable to
+say (same ticket — see the "Record a Turn" note in the
+[main Let's Talk how-to](BL-696-miniapp-lets-talk-cursor-audio.md)), a turn
+now always ends in either the real reply or an audible failure — never
+open-ended silence.
+
 ## When the bridge host is unreachable (BL-716)
 
 If the paired tunnel hostname stops resolving, or the tunnel edge itself is
