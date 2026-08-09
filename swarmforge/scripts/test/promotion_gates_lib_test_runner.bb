@@ -103,13 +103,21 @@
   (assert= "at cap refuses naming active_backlog_max_depth" "active_backlog_max_depth" (:gate r)))
 (assert-nil "over cap by config change still passes when count < cap" (promotion-gates-lib/depth-refusal 3 5))
 
-;; ── orthogonality-refusal ─────────────────────────────────────────────────
+;; ── orthogonality-advisory (BL-854: never refuses, names the tickets) ────
 
-(assert-nil "no candidate epic passes" (promotion-gates-lib/orthogonality-refusal nil #{"epic-a"}))
-(assert-nil "epic not in the active set passes" (promotion-gates-lib/orthogonality-refusal "epic-b" #{"epic-a"}))
-(assert-nil "empty active set always passes (the depth=1 common case)" (promotion-gates-lib/orthogonality-refusal "epic-a" #{}))
-(let [r (promotion-gates-lib/orthogonality-refusal "epic-a" #{"epic-a" "epic-c"})]
-  (assert= "colliding epic refuses naming orthogonality" "orthogonality" (:gate r)))
+(assert-nil "no candidate epic yields no advisory" (promotion-gates-lib/orthogonality-advisory nil {"epic-a" ["BL-1"]}))
+(assert-nil "epic not in the active map yields no advisory" (promotion-gates-lib/orthogonality-advisory "epic-b" {"epic-a" ["BL-1"]}))
+(assert-nil "empty active map always yields no advisory (the depth=1 common case)" (promotion-gates-lib/orthogonality-advisory "epic-a" {}))
+(let [r (promotion-gates-lib/orthogonality-advisory "epic-a" {"epic-a" ["BL-1" "BL-3"] "epic-c" ["BL-2"]})]
+  (assert= "colliding epic produces an advisory naming orthogonality" "orthogonality" (:gate r))
+  (assert= "the advisory names every id sharing the epic, not just one" ["BL-1" "BL-3"] (:ids r))
+  (assert= "the advisory carries the colliding epic" "epic-a" (:epic r)))
+
+;; ── advisory-line ─────────────────────────────────────────────────────────
+
+(assert= "advisory-line formats gate|reason with every id joined"
+         "ADVISORY|orthogonality|epic swarm-reliability is also active on BL-900, BL-901"
+         (promotion-gates-lib/advisory-line {:epic "swarm-reliability" :ids ["BL-900" "BL-901"]}))
 
 ;; ── hold-refusal ──────────────────────────────────────────────────────────
 
@@ -121,38 +129,54 @@
 (assert= "held short-circuits before any other gate"
          {:ok false :gate "hold marker" :reason "ticket is parked in backlog/hold/, never auto-promoted"}
          (promotion-gates-lib/evaluate {:content "human_approval: pending\n" :held? true
-                                         :active-count 0 :max-depth 5 :active-epics #{}}))
+                                         :active-count 0 :max-depth 5 :active-epics {}}))
 
 (assert= "human_approval refusal surfaces before depth/orthogonality"
          "human_approval"
          (:gate (promotion-gates-lib/evaluate {:content "human_approval: pending\nepic: e\n" :held? false
-                                                :active-count 0 :max-depth 5 :active-epics #{"e"}})))
+                                                :active-count 0 :max-depth 5 :active-epics {"e" ["BL-1"]}})))
 
 (assert= "depth refusal surfaces when at cap"
          "active_backlog_max_depth"
          (:gate (promotion-gates-lib/evaluate {:content "human_approval: approved\n" :held? false
-                                                :active-count 5 :max-depth 5 :active-epics #{}})))
+                                                :active-count 5 :max-depth 5 :active-epics {}})))
 
-(assert= "orthogonality refusal surfaces when depth has room but the epic collides"
-         "orthogonality"
-         (:gate (promotion-gates-lib/evaluate {:content "human_approval: approved\nepic: shared\n" :held? false
-                                                :active-count 1 :max-depth 5 :active-epics #{"shared"}})))
+(let [r (promotion-gates-lib/evaluate {:content "human_approval: approved\nepic: shared\n" :held? false
+                                        :active-count 1 :max-depth 5 :active-epics {"shared" ["BL-9"]}})]
+  (assert-true "BL-854 invariant 1: an epic collision with room under cap still allows (never refuses)"
+               (:ok r))
+  (assert= "the allow carries an orthogonality advisory naming the colliding ticket"
+           {:gate "orthogonality" :epic "shared" :ids ["BL-9"]}
+           (:advisory r)))
 
 (assert-true "a fully compliant candidate passes"
              (:ok (promotion-gates-lib/evaluate {:content "human_approval: approved\nepic: solo\n" :held? false
-                                                  :active-count 0 :max-depth 5 :active-epics #{}})))
+                                                  :active-count 0 :max-depth 5 :active-epics {}})))
+
+(assert-nil "a compliant candidate whose epic has no active overlap carries no advisory"
+            (:advisory (promotion-gates-lib/evaluate {:content "human_approval: approved\nepic: solo\n" :held? false
+                                                        :active-count 0 :max-depth 5 :active-epics {}})))
 
 ;; ── active-count / active-epics (impure readers) ─────────────────────────
 
 (let [root (mk-root)]
   (assert= "active-count on a missing backlog/active/ is zero" 0 (promotion-gates-lib/active-count root))
-  (assert= "active-epics on a missing backlog/active/ is empty" #{} (promotion-gates-lib/active-epics root)))
+  (assert= "active-epics on a missing backlog/active/ is empty" {} (promotion-gates-lib/active-epics root)))
 
 (let [root (mk-root)]
   (write-active! root "BL-1" "id: BL-1\nepic: alpha\n")
   (write-active! root "BL-2" "id: BL-2\nepic: beta\n")
   (assert= "active-count reflects both files" 2 (promotion-gates-lib/active-count root))
-  (assert= "active-epics collects every distinct epic" #{"alpha" "beta"} (promotion-gates-lib/active-epics root)))
+  (assert= "active-epics maps each distinct epic to its own ticket id"
+           {"alpha" ["BL-1"] "beta" ["BL-2"]}
+           (promotion-gates-lib/active-epics root)))
+
+(let [root (mk-root)]
+  (write-active! root "BL-3" "id: BL-3\nepic: shared\n")
+  (write-active! root "BL-4" "id: BL-4\nepic: shared\n")
+  (assert= "active-epics names every id sharing one epic, sorted"
+           {"shared" ["BL-3" "BL-4"]}
+           (promotion-gates-lib/active-epics root)))
 
 (if (seq @failures)
   (do

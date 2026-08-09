@@ -5,6 +5,7 @@ const path = require('node:path');
 const { startBridge, effectiveBubbleMirrorTopicId, formatBubbleMirrorText, mirrorLetsTalkTurnToBubble } = require('../out/bridge/bridgeServer');
 const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
 const { processLetsTalkTurn } = require('../out/bridge/letsTalkRoutes');
+const { LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT } = require('../out/bridge/letsTalkCore');
 const { splitTelegramChunks } = require('../out/tools/telegramCursorBridgeCore');
 const TOKEN = 'lets-talk-bridge-token';
 const SAMPLE_AUDIO = Buffer.from('audio-chunk').toString('base64');
@@ -421,6 +422,83 @@ test('processLetsTalkTurn: onTurnSuccess failure is ignored', async () => {
     }
   );
   assert.equal(result.success, true);
+});
+
+// BL-717 hold-music-speech-03: the bridge never reports success with
+// nothing to say — an empty agent reply must surface as fallback speakable
+// text, not a `success: true` turn the phone has nothing to play.
+test('processLetsTalkTurn: empty agent reply in client-TTS mode returns fallback speakable text, not blank success', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: '', agentId: 'agent-1' });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+  assert.ok(result.replySpeechText && result.replySpeechText.trim().length > 0);
+});
+
+test('processLetsTalkTurn: whitespace-only agent reply is treated as empty', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: '   \n  ', agentId: 'agent-1' });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+});
+
+test('processLetsTalkTurn: empty agent reply in server-TTS mode synthesizes fallback text, not blank success', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: '', agentId: 'agent-1' });
+  const synthesized = [];
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      synthesizeSpeech: async (text) => {
+        synthesized.push(text);
+        return { kind: 'ok', audio: Buffer.from(`audio:${text}`) };
+      },
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+  assert.ok(result.replyAudioBase64 && result.replyAudioBase64.length > 0);
+  assert.equal(synthesized.length, 1);
+  assert.match(synthesized[0], /anything to say/i);
+});
+
+// BL-717 hold-music-speech-04: the fallback never replaces a real reply.
+test('processLetsTalkTurn: a non-empty agent reply is never replaced by the fallback', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: 'the real answer', agentId: 'agent-1' });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, 'the real answer');
+  assert.notEqual(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
 });
 
 test('effectiveBubbleMirrorTopicId keeps dedicated Bubble topic', () => {

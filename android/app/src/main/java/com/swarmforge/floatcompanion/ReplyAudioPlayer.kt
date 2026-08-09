@@ -23,6 +23,10 @@ class ReplyAudioPlayer(
     private var mediaPlayer: MediaPlayer? = null
     private val ttsReady = AtomicBoolean(false)
     private val finished = AtomicBoolean(true)
+    /** BL-717: true once the one-shot fallback/failure-line speech attempt
+     *  for the current turn has been used — bounds every terminal branch to
+     *  at most one recovery attempt (see [ReplyPlaybackDecision]). */
+    private val recoveryAttempted = AtomicBoolean(true)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var watchdog: Runnable? = null
     private var speakPoll: Runnable? = null
@@ -48,21 +52,43 @@ class ReplyAudioPlayer(
     fun play(result: BridgeClient.TurnResult, muted: Boolean) {
         stopNow()
         finished.set(false)
-        if (muted) {
-            complete()
-            return
+        val locale = result.speechLocale
+        when (
+            val action = ReplyPlaybackDecision.decideInitial(
+                ReplyPlaybackDecision.InitialInput(
+                    muted = muted,
+                    audioBase64 = result.replyAudioBase64,
+                    replySpeechText = result.replySpeechText,
+                    replyText = result.replyText,
+                    fallbackText = context.getString(R.string.reply_nothing_to_say)
+                )
+            )
+        ) {
+            is ReplyPlaybackDecision.InitialAction.Muted -> complete()
+            is ReplyPlaybackDecision.InitialAction.PlayAudio -> playBase64(action.base64, locale)
+            is ReplyPlaybackDecision.InitialAction.Speak -> speak(action.text, locale)
+            is ReplyPlaybackDecision.InitialAction.SpeakFallback -> {
+                // The nothing-to-say line is itself the one-shot recovery
+                // budget's attempt — if it also fails, complete() rather
+                // than chase a second fallback.
+                recoveryAttempted.set(true)
+                speak(action.text, locale)
+            }
         }
-        val audioB64 = result.replyAudioBase64
-        if (!audioB64.isNullOrBlank()) {
-            playBase64(audioB64)
-            return
-        }
-        val speech = result.replySpeechText?.ifBlank { null }
-            ?: result.replyText.ifBlank { null }
-        if (speech != null) {
-            speak(speech, result.speechLocale)
-        } else {
-            complete()
+    }
+
+    /**
+     * BL-717: a playback/synthesis error, a failed TTS speak() call, or a
+     * watchdog expiry all funnel here. Speaks a generic failure line ONCE
+     * (never masking real content the human could still hear) and then
+     * completes — never a silent finish, never an unbounded retry chain.
+     */
+    private fun onTerminalFailure(localeTag: String?) {
+        clearWatchdogs()
+        val wasRecovery = recoveryAttempted.getAndSet(true)
+        when (val action = ReplyPlaybackDecision.decideAfterFailure(wasRecovery, context.getString(R.string.reply_playback_failure))) {
+            ReplyPlaybackDecision.RecoveryAction.Complete -> complete()
+            is ReplyPlaybackDecision.RecoveryAction.SpeakFailureLine -> speak(action.text, localeTag)
         }
     }
 
@@ -74,32 +100,16 @@ class ReplyAudioPlayer(
      * actual speaker output).
      */
     fun isAudioActive(): Boolean {
-        if (!finished.get()) {
-            val mp = mediaPlayer
-            if (mp != null) {
-                return try {
-                    mp.isPlaying
-                } catch (_: Exception) {
-                    true
-                }
-            }
-            val engine = tts
-            if (engine != null && ttsReady.get()) {
-                return try {
-                    engine.isSpeaking
-                } catch (_: Exception) {
-                    true
-                }
-            }
-            // speak()/playBase64 started but engine has not reported yet
-            return true
-        }
+        // When a turn is still in flight (!finished) and neither engine has
+        // reported yet, assume active; once finished, assume inactive. Used
+        // both as the query-can't-tell fallback and as the final default.
+        val fallback = !finished.get()
         val mp = mediaPlayer
         if (mp != null) {
             return try {
                 mp.isPlaying
             } catch (_: Exception) {
-                false
+                fallback
             }
         }
         val engine = tts
@@ -107,15 +117,17 @@ class ReplyAudioPlayer(
             return try {
                 engine.isSpeaking
             } catch (_: Exception) {
-                false
+                fallback
             }
         }
-        return false
+        return fallback
     }
 
     fun stopNow() {
         clearWatchdogs()
         finished.set(true)
+        // Reset the one-shot recovery budget for whatever plays next.
+        recoveryAttempted.set(false)
         try {
             mediaPlayer?.stop()
         } catch (_: Exception) {
@@ -169,7 +181,7 @@ class ReplyAudioPlayer(
         speakPoll = null
     }
 
-    private fun armWatchdog(ms: Long) {
+    private fun armWatchdog(ms: Long, localeTag: String?) {
         val r = Runnable {
             // Slow OEM voices (voix lente) routinely outlive a ~180wpm estimate.
             // Never complete() while TTS is still speaking — that opens the mic
@@ -186,17 +198,17 @@ class ReplyAudioPlayer(
             }
             if (stillSpeaking || mpPlaying) {
                 Log.w(TAG, "playback watchdog deferred — audio still active after ${ms}ms")
-                armWatchdog(8_000L)
+                armWatchdog(8_000L, localeTag)
                 return@Runnable
             }
             Log.w(TAG, "playback watchdog fired after ${ms}ms")
-            complete()
+            onTerminalFailure(localeTag)
         }
         watchdog = r
         mainHandler.postDelayed(r, ms)
     }
 
-    private fun playBase64(b64: String) {
+    private fun playBase64(b64: String, localeTag: String?) {
         try {
             val bytes = Base64.decode(b64, Base64.DEFAULT)
             val tmp = File(context.cacheDir, "sf-reply-${System.currentTimeMillis()}.ogg")
@@ -218,7 +230,7 @@ class ReplyAudioPlayer(
             mp.setOnErrorListener { _, _, _ ->
                 tmp.delete()
                 mediaPlayer = null
-                complete()
+                onTerminalFailure(localeTag)
                 true
             }
             mp.prepare()
@@ -226,11 +238,11 @@ class ReplyAudioPlayer(
                 mp.setVolume(volumeGain, volumeGain)
             } catch (_: Exception) {
             }
-            armWatchdog((mp.duration.takeIf { it > 0 } ?: 8_000).toLong() + 2_000)
+            armWatchdog((mp.duration.takeIf { it > 0 } ?: 8_000).toLong() + 2_000, localeTag)
             mp.start()
         } catch (e: Exception) {
             Log.w(TAG, "reply audio play failed", e)
-            complete()
+            onTerminalFailure(localeTag)
         }
     }
 
@@ -238,7 +250,7 @@ class ReplyAudioPlayer(
         val engine = tts
         if (engine == null || !ttsReady.get()) {
             Log.w(TAG, "TTS not ready — skipping speech")
-            complete()
+            onTerminalFailure(localeTag)
             return
         }
         if (!localeTag.isNullOrBlank()) {
@@ -254,22 +266,22 @@ class ReplyAudioPlayer(
             }
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
-                complete()
+                onTerminalFailure(localeTag)
             }
             override fun onError(utteranceId: String?, errorCode: Int) {
-                complete()
+                onTerminalFailure(localeTag)
             }
         })
         val words = text.split(Regex("\\s+")).size.coerceAtLeast(1)
         // Slow system voices (~80–100 wpm) need more headroom than ~180 wpm.
-        armWatchdog((words * 750L + 5_000L).coerceIn(8_000L, 90_000L))
+        armWatchdog((words * 750L + 5_000L).coerceIn(8_000L, 90_000L), localeTag)
 
         val params = Bundle()
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volumeGain)
         val status = engine.speak(text, TextToSpeech.QUEUE_FLUSH, params, "sf-reply")
         if (status != TextToSpeech.SUCCESS) {
             Log.w(TAG, "TTS speak() returned $status")
-            complete()
+            onTerminalFailure(localeTag)
             return
         }
         // OEM engines sometimes skip onDone — poll isSpeaking.

@@ -8,11 +8,12 @@ import {
   decideSttOutcome,
   formatLetsTalkAgentPrompt,
   isLetsTalkTurnRequestShape,
-  replyTextForSpeechSynthesis,
+  resolveSpeakableReply,
   resolveTurnSpeechLanguage,
   speechLocaleForLanguage,
   sttFailureForOutcome,
   unprocessableAudioMessage,
+  type LetsTalkSpeakableReply,
   type LetsTalkSpeechLanguageSetting,
 } from './letsTalkCore';
 import type { SynthesizeSpeech, TranscribeAudio } from './letsTalkAudio';
@@ -65,7 +66,7 @@ async function promptAgentForTranscript(
 
 function clientTtsTurnSuccess(
   transcript: string,
-  replyText: string,
+  reply: LetsTalkSpeakableReply,
   agentId: string,
   speechLocale: string
 ): LetsTalkTurnSuccess {
@@ -73,8 +74,8 @@ function clientTtsTurnSuccess(
     success: true,
     state: 'ready',
     transcript,
-    replyText,
-    replySpeechText: replyTextForSpeechSynthesis(replyText),
+    replyText: reply.replyText,
+    replySpeechText: reply.speechText,
     clientTts: true,
     speechLocale,
     agentId,
@@ -91,13 +92,19 @@ async function promptAgentAndSynthesize(
   if ('success' in agentResult) {
     return agentResult;
   }
-  const { replyText, agentId } = agentResult;
+  const { agentId } = agentResult;
+  // BL-717: never hand the phone a successful turn with nothing to say -
+  // including when the raw reply is non-blank but reduces to nothing
+  // pronounceable after speech-transform stripping (resolveSpeakableReply
+  // covers both cases in one place, so client-TTS and server-TTS can't
+  // drift out of sync on what counts as "no real speakable reply").
+  const reply = resolveSpeakableReply(agentResult.replyText);
   if (!deps.synthesizeSpeech) {
     return deps.clientTts
-      ? clientTtsTurnSuccess(transcript, replyText, agentId, speechLocale)
+      ? clientTtsTurnSuccess(transcript, reply, agentId, speechLocale)
       : { success: false, reason: 'text-to-speech is not configured', recoverable: true, state: 'ready' };
   }
-  const tts = await deps.synthesizeSpeech(replyTextForSpeechSynthesis(replyText));
+  const tts = await deps.synthesizeSpeech(reply.speechText);
   if (tts.kind !== 'ok') {
     return { success: false, reason: 'text-to-speech failed', recoverable: true, state: 'ready' };
   }
@@ -105,7 +112,7 @@ async function promptAgentAndSynthesize(
     success: true,
     state: 'ready',
     transcript,
-    replyText,
+    replyText: reply.replyText,
     replyAudioBase64: tts.audio.toString('base64'),
     speechLocale,
     agentId,

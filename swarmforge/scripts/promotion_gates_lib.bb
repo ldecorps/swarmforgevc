@@ -156,19 +156,48 @@
     {:gate "active_backlog_max_depth"
      :reason (format "active count %d >= cap %d - no open slot" active-count max-depth)}))
 
-;; ── gate: orthogonality ──────────────────────────────────────────────────
+;; ── advisory: orthogonality ──────────────────────────────────────────────
 ;; No ticket field declares file/module scope, so this uses `epic:` - already
 ;; mandatory on every non-epic-tracker ticket (backlog-schema.md hygiene rule
 ;; 1) - as the scope proxy: two tickets sharing an epic are the concrete
 ;; "tightly coupled area" the Concurrent Work Orthogonality workflow rule
-;; means. Naturally a no-op whenever backlog/active/ is empty (the common
-;; active_backlog_max_depth=1 regime), matching that rule's own "applies when
-;; the cap is above 1" carve-out without a separate special case.
+;; means. BL-854: measured against the live backlog, the epic proxy is far
+;; too coarse to REFUSE on (112 of 204 paused tickets blocked behind a single
+;; active defect, and the coordinator was already overriding it by hand every
+;; time by comparing the tickets' real declared file paths - the judgement
+;; the constitution's Concurrent Work Orthogonality rule assigns to the
+;; coordinator, not to this automated layer, which has no scope data to rule
+;; on). This is now an ADVISORY, never a refusal (invariant 1): it names
+;; every active ticket sharing the epic (invariant 2) so the coordinator can
+;; check real file overlap without re-deriving which tickets collided.
+;; Naturally produces no advisory whenever backlog/active/ is empty (the
+;; common active_backlog_max_depth=1 regime), matching the constitution
+;; rule's own "applies when the cap is above 1" carve-out without a separate
+;; special case.
 
-(defn orthogonality-refusal [candidate-epic active-epics]
-  (when (and candidate-epic (contains? (set active-epics) candidate-epic))
-    {:gate "orthogonality"
-     :reason (format "epic %s already has an active ticket in flight" candidate-epic)}))
+(defn orthogonality-advisory
+  "{:gate \"orthogonality\" :epic .. :ids [..]} naming every active ticket
+   sharing candidate-epic (active-epics: epic -> ids map, see the
+   active-epics reader below), or nil when candidate-epic is nil or shares
+   no active ticket. Never a refusal - the caller (evaluate, below) merges
+   this into an :ok true result, it never gates it. Sorts ids itself rather
+   than trusting the caller to have pre-sorted them (the real active-epics
+   reader below does, but this function's own output must be deterministic
+   on its own terms - an operator-visible advisory line whose id order
+   depended on map-building order would be needlessly flaky to read and to
+   test)."
+  [candidate-epic active-epics]
+  (when candidate-epic
+    (when-let [ids (seq (get active-epics candidate-epic))]
+      {:gate "orthogonality" :epic candidate-epic :ids (vec (sort ids))})))
+
+(defn advisory-line
+  "The one-line ADVISORY|orthogonality|... text written to stderr - the
+   human signal half of the evaluate/select stdout|stderr split (BL-854):
+   stdout keeps its pre-existing ALLOW/REFUSE contract untouched, this line
+   is additional and never parsed by any existing caller."
+  [{:keys [epic ids]}]
+  (format "ADVISORY|orthogonality|epic %s is also active on %s" epic (str/join ", " ids)))
 
 ;; ── gate: hold marker ────────────────────────────────────────────────────
 ;; backlog/hold/ is a sibling of backlog/paused/, never scanned by auto-pick -
@@ -186,19 +215,23 @@
 ;; ── the chokepoint ────────────────────────────────────────────────────────
 
 (defn evaluate
-  "{:ok true} or {:ok false :gate .. :reason ..} for ONE candidate against
-   every blocking gate (human_approval, active_backlog_max_depth,
-   orthogonality, hold marker - assignee/spec-stage is not a promotion
-   blocker; see route-target above). First failing gate wins, in a fixed
-   order, so the refusal is deterministic even when more than one gate would
-   fire. held? is checked first: a held ticket's other fields are irrelevant,
-   it is not a promotion candidate at all."
+  "{:ok true} (optionally carrying :advisory) or {:ok false :gate .. :reason
+   ..} for ONE candidate against every BLOCKING gate (human_approval,
+   active_backlog_max_depth, hold marker - assignee/spec-stage is not a
+   promotion blocker; see route-target above). First failing gate wins, in a
+   fixed order, so the refusal is deterministic even when more than one gate
+   would fire. held? is checked first: a held ticket's other fields are
+   irrelevant, it is not a promotion candidate at all. BL-854 invariant 1:
+   orthogonality is never in this refusal chain - once every blocking gate
+   passes, the result is always :ok true, optionally carrying an
+   orthogonality :advisory (never instead of :ok true)."
   [{:keys [content held? active-count max-depth active-epics]}]
   (or (some->> (hold-refusal held?) (merge {:ok false}))
       (some->> (human-approval-refusal content) (merge {:ok false}))
       (some->> (depth-refusal active-count max-depth) (merge {:ok false}))
-      (some->> (orthogonality-refusal (read-epic content) active-epics) (merge {:ok false}))
-      {:ok true}))
+      (merge {:ok true}
+             (when-let [advisory (orthogonality-advisory (read-epic content) active-epics)]
+               {:advisory advisory}))))
 
 ;; ── active/-scanning readers (the small impure half) ─────────────────────
 
@@ -209,7 +242,19 @@
 (defn active-count [root]
   (count (active-yaml-files root)))
 
-(defn active-epics [root]
+(defn active-epics
+  "Map of epic string -> sorted vector of active ticket ids sharing that
+   epic, read from every backlog/active/*.yaml under root. BL-854: the
+   orthogonality advisory must NAME the overlapping tickets (invariant 2),
+   so this reads id alongside epic rather than a bare epic set - a file
+   whose own id: cannot be read falls back to its filename so a malformed
+   ticket still contributes a locatable name to the advisory instead of
+   silently vanishing from it."
+  [root]
   (->> (active-yaml-files root)
-       (keep (fn [f] (read-epic (slurp (str f)))))
-       set))
+       (keep (fn [f]
+               (let [content (slurp (str f))]
+                 (when-let [epic (read-epic content)]
+                   [epic (or (read-id content) (fs/file-name f))]))))
+       (reduce (fn [m [epic id]] (update m epic (fnil conj []) id)) {})
+       (reduce-kv (fn [m epic ids] (assoc m epic (vec (sort ids)))) {})))
