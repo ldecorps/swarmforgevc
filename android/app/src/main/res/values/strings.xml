@@ -50,4 +50,6 @@
     <string name="no_speech">No speech detected.</string>
     <string name="no_audio">No audio captured.</string>
     <string name="connection_error_hint">Check pairing in Settings → Edit pairing.</string>
+    <string name="reply_nothing_to_say">I don\'t have anything to say about that.</string>
+    <string name="reply_playback_failure">Sorry, something went wrong there.</string>
 </resources>

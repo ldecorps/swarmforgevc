@@ -5,6 +5,11 @@ import type { SttResult } from '../tools/telegramFrontDeskBotCore';
 
 export const LETS_TALK_STT_RETRY_BUDGET = 3;
 
+// BL-717: the bridge must never answer a successful turn with nothing to
+// say. When the agent's reply text is blank, this is spoken/shown instead —
+// the phone always gets either the real reply or this explicit fallback.
+export const LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT = "I don't have anything to say about that.";
+
 export type LetsTalkSttOutcome = 'prompt' | 'retry' | 'unprocessable';
 
 export type LetsTalkTurnPhase = 'ready' | 'thinking' | 'speaking' | 'error';

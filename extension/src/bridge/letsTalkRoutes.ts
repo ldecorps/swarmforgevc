@@ -8,6 +8,7 @@ import {
   decideSttOutcome,
   formatLetsTalkAgentPrompt,
   isLetsTalkTurnRequestShape,
+  LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT,
   replyTextForSpeechSynthesis,
   resolveTurnSpeechLanguage,
   speechLocaleForLanguage,
@@ -91,7 +92,11 @@ async function promptAgentAndSynthesize(
   if ('success' in agentResult) {
     return agentResult;
   }
-  const { replyText, agentId } = agentResult;
+  const { agentId } = agentResult;
+  // BL-717: never hand the phone a successful turn with nothing to say.
+  const replyText = agentResult.replyText.trim().length > 0
+    ? agentResult.replyText
+    : LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT;
   if (!deps.synthesizeSpeech) {
     return deps.clientTts
       ? clientTtsTurnSuccess(transcript, replyText, agentId, speechLocale)

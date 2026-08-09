@@ -11,7 +11,7 @@ direction: normal
 depends_on: []
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "No terminal branch of a hold-music turn is silent: every path that ends the working interval speaks either the real reply or an explicit failure line — including branches added later."
