@@ -320,7 +320,11 @@ export function resolveSpeakableReply(agentReplyText: string): LetsTalkSpeakable
   }
   const speechText = replyTextForSpeechSynthesis(agentReplyText);
   if (speechText.trim().length === 0) {
-    return fallback;
+    // The reply itself is non-blank; only its speech form collapsed to
+    // nothing pronounceable. Substitute the fallback into speechText only —
+    // replyText, the displayed text, is a real reply and must survive
+    // (invariant 2: never mask/replace a reply that could have played).
+    return { replyText: agentReplyText, speechText: fallback.speechText };
   }
   return { replyText: agentReplyText, speechText };
 }
