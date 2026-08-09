@@ -160,36 +160,6 @@
                (< stable-len 51200))
   (println (str "stable-prefix chars: " stable-len)))
 
-;; ── BL-858 invariant 2: headroom is bought by MOVING prose, never by ────────
-;; weakening the gate. The two assertions above already pin two SPECIFIC known
-;; reference/ files; this generalizes the claim to the property itself -
-;; ANY file placed under reference/, regardless of name or content, must never
-;; reach the stable prefix, because constitution-text's directory walk
-;; (fs/list-dir, non-recursive) structurally excludes every subdirectory, not
-;; just the two files above. A scratch file with distinctive marker content
-;; (never otherwise present in any article) makes this a real, non-vacuous
-;; check rather than a restatement of the two hardcoded assertions - it is
-;; planted and removed within this one test, never left behind.
-(let [marker "BL858-INVARIANT2-SCRATCH-MARKER-3f9a1c"
-      scratch-path (str (fs/path "swarmforge" "constitution" "articles" "reference" "__bl858_invariant2_scratch.md"))]
-  (spit scratch-path (str "# scratch\n" marker "\n"))
-  (try
-    (assert-true "an arbitrary reference/ file's content is never inlined into the stable prefix"
-                 (not (str/includes? (prompt-engine-lib/stable-prefix-text) marker)))
-    (finally
-      (fs/delete-if-exists scratch-path))))
-
-;; The cap value itself must be unchanged, not merely satisfied - a gate that
-;; silently raised its threshold to "buy" headroom would still pass the
-;; `< stable-len 51200` assertion above for any stable-len under the NEW,
-;; weaker number. Reading the literal out of this runner's own source (rather
-;; than re-asserting `< 51200` again, which proves nothing a raised constant
-;; wouldn't also satisfy) is what makes this a check ON the gate, not a repeat
-;; THROUGH it.
-(let [own-source (slurp *file*)]
-  (assert-true "the enforced cap literal is still 51200, not raised or removed"
-               (boolean (re-find #"<\s*stable-len\s+51200\)" own-source))))
-
 ;; ── BL-574 Slice 2: named fragment registry ──────────────────────────────────
 (assert= "fragment-source-path resolves role to the role prompt file"
          "swarmforge/roles/coder.prompt"

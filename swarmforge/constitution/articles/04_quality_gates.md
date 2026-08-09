@@ -7,32 +7,69 @@
 4. **QA** – Final approval before merge.
 
 ## 4.2 Merge Criteria
-- All gates pass; no regressions; documentation updated. QA integrates on
-  `main` (lands the commit + pushes); coordinator bookkeeps only — no git
-  merge/push (BL-247). See **complete-review-inventory-amendment-2026-07-27.md**
-  §9 for the full pre-trim wording.
+- All gates must pass.
+- No regressions in existing functionality.
+- Documentation updated.
+- QA integrates on `main` (lands the approved commit + pushes origin); the coordinator then does backlog bookkeeping only — no git merge/push (BL-247).
 
 ## 4.3 Rejection Protocol
-- A failed gate routes back to the role that OWNS the fix (the stage whose
-  domain has the defect, or whose required pass is missing) — never
-  reflexively to the coder (a doc-only defect goes to the documenter;
-  BL-425, BL-576, BL-575). Failure class labels the metric; ownership drives
-  routing (full table: QA role prompt's bounce evidence contract). WHERE a
-  bounce goes is this section; WHEN it is complete enough to send is 4.4
-  below. See **complete-review-inventory-amendment-2026-07-27.md** §9 for
-  the full pre-trim wording.
+- If a gate fails, the parcel is routed back to the role that OWNS the fix —
+  the stage whose domain contains the defect, or whose required pass is
+  missing entirely — with bounce evidence explaining the issue. Never
+  reflexively to the coder: a doc-only defect or a missing documenter pass
+  goes to the documenter (BL-425, BL-576, BL-575). Failure class labels the
+  metric; ownership drives the routing. The full routing table lives in the
+  QA role prompt's bounce evidence contract.
+- WHERE a bounce goes is this section; WHEN it is complete enough to send is
+  4.4 below.
 
 ## 4.4 Complete Review Inventory — One Bounce Per Review Pass
-- A reviewing role never bounces at the FIRST defect (**first-failure stop**,
-  BL-590) — finish the full checklist, send **one** bounce with **every**
-  defect. Complete means run-or-blocked (never assumed-clean): a blocked
-  check is recorded BLOCKED BY its blocker, never passing/omitted. One
-  evidence file, items `D1..Dn` (class, blamed role, remediation pointer); a
-  clean sweep records NONE and is COMMITTED (forward names that commit,
-  never the bare received hash — BL-536, gate BL-806). Multi-stage blame:
-  bounce to the EARLIEST role, inventory travels, each stage clears its own
-  items. Spec gaps leave by `note` (priority `00`, specifier+coordinator —
-  never a parcel). BL-532 sibling deferral and `rule_proposal` are unchanged
-  exceptions; a fix introducing new defects is a legitimate new bounce. See
-  **complete-review-inventory-amendment-2026-07-27.md** for the full
-  pre-trim wording, adoption record, and operator directive 2026-07-27.
+- A reviewing role (cleaner, architect, hardender, documenter, QA) must not
+  send a parcel back at the FIRST defect it sees. Before any send-back it
+  finishes its own full review checklist and sends **one** bounce carrying
+  **every** defect that pass found — never one per defect, per property, or
+  per site. The forbidden pattern has a name: **first-failure stop**. It turns
+  N defects into N round-trips (BL-590: seven architect send-backs, one slice).
+- **Complete means run-or-blocked, never assumed-clean.** A check you cannot
+  execute because an earlier defect blocks it (unit behind a compile failure,
+  mutation behind a red suite) is recorded as BLOCKED BY that defect — never as
+  passing, never silently omitted. The pass is complete when every check the
+  role owns is either run or explicitly blocked.
+- **One evidence file, one inventory.** The bounce evidence file lists every
+  defect as its own item `D1..Dn` with: **class**
+  (`compile|unit|integration|acceptance|behavior|invariant-unencoded|spec-gap`),
+  **blamed role** (whose output introduced it — 4.3 ownership), and a
+  **remediation pointer** (file, function, scenario/property id) — plus the
+  blocked-check list. A full sweep that found nothing records an explicit NONE
+  and forwards.
+- **A clean pass leaves a commit, or it is indistinguishable from a skipped
+  stage.** The explicit-NONE inventory of a clean pass is COMMITTED to the
+  reviewing role's own branch as
+  `backlog/evidence/<ticket>-<role>-pass-<YYYYMMDD>.md`, and the forward names
+  THAT commit — never the bare received hash. A review stage that forwards
+  exactly the commit it received leaves no trace in the parcel's lineage (a
+  fast-forward merge creates no commit), so downstream audit cannot tell a
+  completed pass from a stage that never ran: BL-536 (2026-08-04) burned a
+  full QA bounce + re-entry cycle re-running architect and hardener passes
+  that had in fact run but committed nothing. Mechanical gate: BL-806.
+- **One bounce, many owners.** When one inventory blames several stages, the
+  single `git_handoff` goes to the EARLIEST blamed role (4.3) and the inventory
+  travels with the parcel; any stage that later holds that parcel must clear
+  the items blamed on IT before forwarding.
+- **Spec gaps leave by `note`, and are not a second bounce.** A `spec-gap` item
+  goes as a `note` (priority `00`) to specifier AND coordinator in the same
+  pass — the specifier specifies only (Article 1.2), so it is never sent a
+  parcel. If EVERY item is a spec gap there is nothing to bounce: complete the
+  inbound task, send the note, and the specifier amends the spec on `main` and
+  notifies the holder to merge and rebuild ("Amending An In-Flight Ticket's
+  Spec").
+- **Unchanged, and not exceptions**: BL-532 sibling deferral (a sibling with no
+  failing check of its own is deferred, never bounced); a `rule_proposal` is a
+  separate channel and never splits a bounce.
+- **A genuinely new bounce is still allowed**: when the fix introduces new
+  defects, or unblocks a check recorded BLOCKED and it then fails. Recording
+  blocked checks is what keeps that case distinguishable from a
+  first-failure-stop regression.
+- Adoption record and rationale:
+  `articles/reference/complete-review-inventory-amendment-2026-07-27.md`
+  (operator directive 2026-07-27).
