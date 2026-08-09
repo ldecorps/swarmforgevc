@@ -100,32 +100,16 @@ class ReplyAudioPlayer(
      * actual speaker output).
      */
     fun isAudioActive(): Boolean {
-        if (!finished.get()) {
-            val mp = mediaPlayer
-            if (mp != null) {
-                return try {
-                    mp.isPlaying
-                } catch (_: Exception) {
-                    true
-                }
-            }
-            val engine = tts
-            if (engine != null && ttsReady.get()) {
-                return try {
-                    engine.isSpeaking
-                } catch (_: Exception) {
-                    true
-                }
-            }
-            // speak()/playBase64 started but engine has not reported yet
-            return true
-        }
+        // When a turn is still in flight (!finished) and neither engine has
+        // reported yet, assume active; once finished, assume inactive. Used
+        // both as the query-can't-tell fallback and as the final default.
+        val fallback = !finished.get()
         val mp = mediaPlayer
         if (mp != null) {
             return try {
                 mp.isPlaying
             } catch (_: Exception) {
-                false
+                fallback
             }
         }
         val engine = tts
@@ -133,10 +117,10 @@ class ReplyAudioPlayer(
             return try {
                 engine.isSpeaking
             } catch (_: Exception) {
-                false
+                fallback
             }
         }
-        return false
+        return fallback
     }
 
     fun stopNow() {
