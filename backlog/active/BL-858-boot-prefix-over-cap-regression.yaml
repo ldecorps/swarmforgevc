@@ -139,7 +139,7 @@ description: |
   contract unexecuted; materializing without handlers is the QA bounce BL-618
   already took (ad7074f9).
 
-acceptance: specs/features/BL-858-boot-prefix-back-under-cap.feature.draft
+acceptance: specs/features/BL-858-boot-prefix-back-under-cap.feature
 
 notes: |
   E2E QA procedure: on the fix commit run
