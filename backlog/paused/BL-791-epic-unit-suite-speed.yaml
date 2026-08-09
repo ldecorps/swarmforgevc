@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: unit-suite-speed
-human_approval: pending
+human_approval: approved
 priority: 6
 direction: human-requested
 depends_on: []

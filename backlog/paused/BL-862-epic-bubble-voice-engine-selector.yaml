@@ -1,0 +1,114 @@
+id: BL-862
+title: "EPIC — Bubble Settings voice-engine selector: pick Local or OpenAI STT/TTS from the phone, brain stays Cursor; do not promote directly, tracks children"
+milestone: M8
+type: epic
+status: todo
+epic: bubble-voice-engine
+human_approval: pending
+priority: 20
+direction: human-intake
+depends_on: []
+assigned_to: coordinator
+mutation_cost: low
+
+decomposes_into: [BL-863, BL-864]
+
+remaining_slices:
+  - "BL-863 — bridge side: durable voice-engine preference, per-turn resolution, loud failure when the selected engine is unusable"
+  - "BL-864 — Bubble side: Settings selector that writes the preference and shows the bridge's refusal reason"
+
+approval_context: >
+  Sign-off wanted on the four calls the intake explicitly delegated to the
+  specifier ("defaults welcome if human silent"). I picked:
+
+  1. Persistence — a durable bridge-side preference file under
+     `.swarmforge/operator/`, NOT env-only, so a Settings tap survives without
+     editing shell profiles. `LETS_TALK_AUDIO_ENGINE` stays as the bootstrap
+     default when no preference has been written.
+  2. Hot-swap, not bounce — engine resolution reads the preference per turn,
+     so a Settings tap applies to the next turn with no bridge restart. This
+     is the intake's stated preference and the current code already resolves
+     adapters per call.
+  3. Mini App parity is a FOLLOW-UP, not in this epic. Android Settings is the
+     asked surface; the intake calls Mini App parity nice-to-have.
+  4. The selector is gated behind a bubble-config capability flag
+     (`features.voiceEngineSwitch`) per the BL-765 remote-config shape.
+
+  Say so if you would rather env stayed authoritative, or want Mini App
+  parity folded in.
+
+source: |
+  Raw intake `backlog/INTAKE-bubble-settings-voice-engine-selector.md`
+  (human via Cursor, 2026-08-08), drained by the specifier 2026-08-09.
+
+  Operator directives quoted verbatim from that intake, carried through to
+  the slices per Article 5.3:
+
+  - "Voix open ai ca suffit. Je ne veux pas changer le cerveau."
+  - "put the selector in Bubble Settings; put the swarm on notice; do not
+    hotfix."
+
+  The four LOCKED human decisions (not specifier calls, not negotiable):
+
+  1. **Voice only.** STT/TTS engine switch. Do NOT change the agent session /
+     brain to OpenAI GPT — replies keep coming from the Cursor bridge agent.
+  2. **UI home:** the Bubble Settings dialog, the same surface as hold music /
+     mute / volume.
+  3. **No hotfix.** This rides a minted BL through the normal pipeline. No
+     Cursor hand-patch that bypasses certification.
+  4. **Secrets stay on the host.** The phone must never store or transmit
+     `OPENAI_API_KEY`. Selecting OpenAI with no key on the host must fail
+     loudly with a usable reason — never a silent fallback that looks like
+     success.
+
+description: |
+  ## Why
+
+  Switching Let's Talk voice today needs `LETS_TALK_AUDIO_ENGINE=openai` plus
+  `OPENAI_API_KEY` in the bridge host environment and a bridge bounce. That is
+  invisible for day-to-day phone use. Settings already owns the talk
+  preferences (hold music, mute, volume) but has no voice control.
+
+  ## Probe findings that shape the slices (2026-08-09)
+
+  - **Hot-swap is not free today.** `resolveLetsTalkAudioAdapters`
+    (`extension/src/bridge/letsTalkAudio.ts`) is per-call, but its only live
+    caller resolves it ONCE at bridge startup — `bridgeServer.ts:1578`, inside
+    `startBridge`, spreading the result into `createLetsTalkWriteRoutes` at
+    construction. Adapters are therefore frozen for the life of the process.
+    Delivering decision 2 (hot-swap, no bounce) means moving resolution into
+    the per-turn path; that restructuring is real work and belongs to BL-863,
+    not a free consequence of the existing shape.
+  - **The silent-fallback failure the human forbids already exists.** Both
+    branches end in `?? {}`: `adaptersFromOpenAi` returns `undefined` when the
+    key is missing and `adaptersFromLocalEngine` likewise, so an unusable
+    engine currently degrades to an empty adapter set rather than saying so.
+    Locked decision 4 is therefore a FIX, not just a new-code constraint —
+    BL-863 owns it.
+  - `letsTalkBubbleConfig.ts` is boolean feature flags served bridge -> phone
+    and is **read-only in that direction**. A voice-engine preference set from
+    the phone is a NEW phone -> bridge write path; it does not fit the config
+    object and must not be bolted onto it.
+
+  ## Slices
+
+  - **BL-863 (bridge)** — a durable voice-engine preference, resolution that
+    honors it per turn, and a loud, named failure when the selected engine is
+    unusable. Fully testable in the Node unit suite; no device needed.
+  - **BL-864 (Bubble)** — the Settings selector that writes the preference and
+    renders the bridge's refusal reason. Device surface, so it lands with a
+    JVM-testable seam plus a recorded manual procedure per the Bubble
+    testability boundary.
+
+  BL-864 depends on BL-863: the phone needs somewhere to write to.
+
+notes: |
+  Standing order tension the coordinator must see BEFORE promoting: the
+  2026-08-07 order deprioritizes Bubble speech/voice/hands-free work (BL-844,
+  BL-845 remain held). This epic IS voice work, but it comes from a later,
+  explicit human request (2026-08-08) that asks to "put the swarm on notice".
+  A direct human directive supersedes the standing deprioritization; recorded
+  here so promotion is a deliberate call and not an accident.
+
+  Not in scope for this epic: switching the agent/brain to OpenAI GPT, Mini App
+  Let's Talk parity, and any change to Cursor Remote session sharing.

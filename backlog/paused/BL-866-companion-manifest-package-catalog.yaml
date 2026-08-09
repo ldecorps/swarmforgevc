@@ -1,0 +1,112 @@
+id: BL-866
+title: "Offline-first foundation (bridge): a companion-manifest advertising versioned JSON packages with generations, so a phone can refresh only what changed"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-offline-sync
+human_approval: pending
+severity: medium
+priority: 26
+direction: human-intake
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "A served package body and the generation it carries always agree — a client caching by generation never holds content from a different generation."
+  - "The manifest never advertises a package the bridge cannot serve, and a package that became unreadable is refused rather than served empty."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::companion-manifest::a catalog no bridge route exposes is unreachable — the phone's only sync source is this bridge"
+
+approval_context: >
+  Sign-off is carried by the epic BL-865 (bridge as sync source, REST + JSON
+  over protobuf, only the foundation minted so far). Nothing extra is asked
+  here.
+
+source: |
+  Foundation slice of epic BL-865, from raw intake
+  `backlog/INTAKE-phone-wire-format-and-offline.md`, unparked by the human
+  2026-08-09 with lanes settled. Drained by the specifier 2026-08-09.
+
+  Human lane picks this slice OWNS, verbatim (Article 5.3):
+
+  - **Q4 — Sync source while online:** "Bridge only (not Pages artifacts, not
+    both)."
+  - Pinned 2026-08-09: "REST + versioned JSON packages; Bubble fetches from the
+    bridge (companion-manifest + package catalog). Pages may still *produce*
+    artifacts as build feedstock, but the phone's online sync source is the
+    bridge."
+
+  Human framing carried from the intake: "Protobuf to normalize messaging? Or
+  REST?" — answered REST, protobuf deferred pending measured pain.
+
+  Probed 2026-08-09 against `main`: the bridge has no package catalog.
+  `/lets-talk/manifest.json` (`extension/src/bridge/bridgeServer.ts:1642`) is a
+  PWA web-app install descriptor served as `application/manifest+json`,
+  unrelated to a package manifest. The bridge's other routes serve HTML consoles
+  and state snapshots, not versioned cacheable packages.
+
+description: |
+  ## What this slice adds
+
+  The bridge gains the contract every later offline slice reads:
+
+  - **A companion-manifest.** One authorized request lists each available
+    package — backlog, docs tree, and the other corpus slices as they arrive —
+    with its **generation** and its **format version**.
+  - **Packages served against that generation.** A package body always carries
+    the generation the manifest advertised for it, so a client that caches by
+    generation can trust what it holds.
+  - **Cheap refresh.** A client that names the generation it already holds is
+    told the package is unchanged and receives no body. This is what makes the
+    refresh silent, and it is what keeps the BL-659 corpus (~2-3 MB compressed)
+    affordable to keep current on a phone.
+  - **Honest availability.** A package whose source cannot be read is not
+    advertised; one that became unreadable after being advertised is refused
+    with a reason rather than served as an empty package. An unknown package
+    name is refused clearly.
+  - **Authorized only.** The manifest and the packages sit behind the bridge's
+    existing client authorization, like the other bridge endpoints.
+
+  Bridge-side only, and fully covered by the Node unit suite — no device, no
+  emulator, no phone-side work in this slice.
+
+  ## Not in scope
+
+  - The phone-side fetch, cache, offline read path and "as of <generation>"
+    labelling — a later slice of BL-865.
+  - The offline groom mutation outbox — a later slice of BL-865.
+  - Native Kotlin panels / the BL-659 retarget — a later slice of BL-865, and
+    the retarget itself is still awaiting the human's confirmation on BL-865.
+  - Protobuf. Deferred by the human; this slice is the REST + JSON contract.
+
+acceptance: specs/features/BL-866-companion-manifest-package-catalog.feature
+
+qa_e2e_procedure: |
+  Against a running bridge with a real target repo:
+
+  1. Request the companion manifest with a valid token — expect each available
+     package listed with a generation and a format version.
+  2. Request the backlog package — expect a body carrying the generation the
+     manifest advertised.
+  3. Re-request naming that generation — expect an unchanged answer and no
+     body on the wire (check the response size, not just the status).
+  4. Change the backlog on disk so the generation moves, re-request naming the
+     old generation — expect the new body at the new generation.
+  5. Make a package source unreadable, request the manifest — expect it absent
+     from the listing while the others remain; request it directly — expect a
+     refusal with a reason, not an empty package.
+  6. Repeat step 1 with no token and with a bad token — expect refusals.
+
+notes: |
+  The generation is the cache key the whole epic depends on: the phone-side
+  slice caches by it, the outbox slice will reconcile against it. Whatever
+  identifies a generation must change whenever the package content changes, or
+  a phone will hold stale data believing it is current — worth the architect's
+  attention on this slice specifically.
+
+  Format version is carried from the start, deliberately: the intake notes that
+  with REST + JSON "schema discipline is social (`format`/`version`) not
+  generated", so the version field is the discipline this contract does have.

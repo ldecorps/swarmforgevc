@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 29
 direction: queue-jump
 depends_on: [BL-789]
