@@ -1,0 +1,118 @@
+id: BL-864
+title: "Voice-engine slice B (Bubble): a Local/OpenAI selector in the Settings dialog that shows the engine actually in use and surfaces the bridge's refusal reason"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-voice-engine
+human_approval: pending
+severity: medium
+priority: 22
+direction: human-intake
+depends_on: [BL-863]
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "The phone sends an engine NAME only: no credential is stored on the device or included in what it sends — the OpenAI key never leaves the bridge host."
+  - "The selector never shows an engine as selected that the bridge has not accepted — displayed state follows the bridge's answer, never the tap."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/TalkPanelActivity.kt::showSettingsDialog::a selector not added to the Settings dialog is unreachable — the human asked for this surface specifically"
+
+approval_context: >
+  Sign-off is carried by the epic BL-862. Nothing extra is asked here.
+
+source: |
+  Slice B of epic BL-862, from raw intake
+  `backlog/INTAKE-bubble-settings-voice-engine-selector.md` (human via Cursor,
+  2026-08-08), drained by the specifier 2026-08-09.
+
+  Operator directives carried verbatim from that intake (Article 5.3):
+
+  - "Voix open ai ca suffit. Je ne veux pas changer le cerveau."
+  - "put the selector in Bubble Settings; put the swarm on notice; do not
+    hotfix."
+
+  Locked human decisions this slice OWNS: "UI home: Bubble Settings dialog
+  (same surface as hold music / mute / volume) — a clear Local vs OpenAI
+  selector", and the phone half of "Secrets stay on the host. The phone must
+  never store or transmit `OPENAI_API_KEY`."
+
+  Probed 2026-08-09: the dialog is
+  `TalkPanelActivity.showSettingsDialog` (`TalkPanelActivity.kt:119`, opened
+  from the settings button at line 80) over `dialog_settings.xml`, and today
+  carries hold music, mute and hold-music volume only.
+
+description: |
+  ## What this slice adds
+
+  The Settings dialog gains a Local / OpenAI voice-engine selector, on the same
+  surface as the existing talk preferences:
+
+  - **It opens on the truth.** The selector shows the engine the bridge reports
+    as actually in use, not a locally cached guess.
+  - **Choosing writes through.** A choice is sent to the bridge as an engine
+    name. Nothing credential-shaped is sent, and nothing credential-shaped is
+    kept on the device.
+  - **A refusal is visible and does not stick.** If the bridge refuses — the
+    OpenAI key is missing on the host — the reason is shown and the selector
+    keeps showing the engine that still works. The same holds when the bridge
+    cannot be reached: the failure is shown and the tap is not presented as
+    applied.
+  - **An unserviceable engine is offered disabled, with its reason**, using
+    BL-863's serviceability answer, so the human sees why rather than meeting a
+    choice that fails.
+  - **Gated.** The selector appears only when the bubble-config capability flag
+    is on (BL-765 shape); with it off, the other talk settings are unaffected.
+
+  Replies keep coming from the Cursor bridge agent. This slice changes which
+  voice a turn is spoken and heard in, nothing about who answers.
+
+  ## Testability (Bubble boundary)
+
+  Per the Bubble testability boundary, this slice must not leave its behavior
+  on the device side of the line:
+
+  - The selector's STATE decisions — which engine reads as selected, which is
+    disabled, what reason text is shown, what is sent on a tap — belong in a
+    pure Kotlin function with no `android.*` type in its own signature, covered
+    by the JVM unit suite (`./gradlew :app:testDebugUnitTest`). Every scenario
+    in the feature file is expressible there.
+  - Only the dialog wiring itself (inflating the control, attaching it to
+    `showSettingsDialog`) is device-surface, and is verified by the recorded
+    manual procedure below.
+  - No mutation/CRAP/DRY gate exists for `.kt`: the hardener applies the
+    documented unit-test-gap fallback and must record that it did.
+
+  ## Not in scope
+
+  - The bridge-side preference, resolution and serviceability answer — BL-863.
+  - Mini App Let's Talk parity (epic BL-862 defers it).
+  - Switching the brain to OpenAI GPT. Explicitly forbidden by the human.
+
+acceptance: specs/features/BL-864-bubble-settings-voice-engine-selector.feature
+
+qa_e2e_procedure: |
+  Recorded manual device procedure (device-surface half), with Bubble paired
+  to a bridge host that has `OPENAI_API_KEY` set:
+
+  1. Open Settings — expect a voice-engine selector beside hold music / mute /
+     volume, opened on the engine currently in use.
+  2. Choose OpenAI. Take a Let's Talk turn — expect OpenAI voice, and a reply
+     that still comes from the Cursor agent.
+  3. Force-stop and relaunch Bubble, open Settings — expect OpenAI still shown.
+  4. Unset `OPENAI_API_KEY` on the host and bounce the bridge. Open Settings —
+     expect OpenAI offered disabled with the missing-key reason.
+  5. With Local selected, stop the bridge and choose OpenAI — expect a visible
+     unreachable-bridge failure and the selector still showing Local.
+  6. Turn the capability flag off, reopen Settings — expect no selector and the
+     other talk settings intact.
+
+notes: |
+  Depends on BL-863 for the write target and the serviceability answer; do not
+  start this slice before BL-863 lands or the phone has nothing to write to.
+
+  Scenario 04 (offered disabled, pre-emptive) and scenario 03 (refused at write
+  time) are deliberately both present: they are different moments in the flow,
+  and BL-863 exposes both a serviceability query and a store that can refuse.

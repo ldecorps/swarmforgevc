@@ -1,0 +1,119 @@
+id: BL-863
+title: "Voice-engine slice A (bridge): a durable Local/OpenAI preference resolved per turn, and an unusable engine that fails loudly instead of returning empty adapters"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-voice-engine
+human_approval: pending
+severity: medium
+priority: 21
+direction: human-intake
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "The preference carries an engine NAME only: no credential is ever written to the store or accepted from the wire — the OpenAI key stays in the bridge host environment."
+  - "Resolution never yields an empty adapter set — every resolve either returns usable adapters or fails with a reason naming the engine and what is missing."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::letsTalkAudio::resolution must move into the per-turn path; left at startup (today's line 1578) the preference is read once and hot-swap silently does not work"
+
+approval_context: >
+  Sign-off is carried by the epic BL-862 (persistence shape, hot-swap, flag,
+  Mini App deferral). Nothing extra is asked here.
+
+  One thing worth knowing before approving: making the selected engine apply
+  without a bounce is not a free consequence of the current code. `startBridge`
+  resolves adapters once at construction, so this slice has to move that
+  resolution into the per-turn path. That is the bulk of the slice's risk.
+
+source: |
+  Slice A of epic BL-862, from raw intake
+  `backlog/INTAKE-bubble-settings-voice-engine-selector.md` (human via Cursor,
+  2026-08-08), drained by the specifier 2026-08-09.
+
+  Operator directives carried verbatim from that intake (Article 5.3):
+
+  - "Voix open ai ca suffit. Je ne veux pas changer le cerveau."
+  - "put the selector in Bubble Settings; put the swarm on notice; do not
+    hotfix."
+
+  Locked human decision this slice OWNS: "Secrets stay on the host. The phone
+  must never store or transmit `OPENAI_API_KEY`. OpenAI mode requires the key
+  already present in the bridge environment; if missing, selecting OpenAI must
+  fail loudly with a usable reason (not silent fallback that looks like
+  success)."
+
+  Probed 2026-08-09 against `main`:
+
+  - `extension/src/bridge/letsTalkAudio.ts:194` `resolveLetsTalkAudioAdapters`
+    branches on `parseLetsTalkAudioEngine(env.engine)`; both branches end in
+    `?? {}`. `adaptersFromOpenAi` returns `undefined` when the key is missing
+    (line 177-180), and the local branch likewise. So an unusable engine
+    ALREADY degrades to an empty adapter set that reads as success — the exact
+    failure mode the human forbade.
+  - The only live caller is `extension/src/bridge/bridgeServer.ts:1578`, inside
+    `startBridge`, spreading the result into `createLetsTalkWriteRoutes` at
+    construction — adapters are frozen for the process lifetime.
+  - `extension/src/bridge/letsTalkBubbleConfig.ts` is boolean flags served
+    bridge -> phone and read-only in that direction; a phone-set preference is
+    a new write path and must not be bolted onto that config object.
+
+description: |
+  ## What this slice adds
+
+  The bridge gains a durable Let's Talk voice-engine preference and starts
+  honoring it per turn:
+
+  - **A preference store.** A durable bridge-side record of the chosen engine
+    (`local` or `openai`) under `.swarmforge/operator/`. It holds an engine
+    name and nothing else — storing anything credential-shaped is refused.
+  - **Precedence.** A stored preference wins. With none stored,
+    `LETS_TALK_AUDIO_ENGINE` in the host environment remains the bootstrap
+    default. An unreadable preference falls back to that bootstrap and says it
+    was unreadable — it never falls through to no engine at all.
+  - **Per-turn resolution.** Resolution moves out of `startBridge`
+    construction and into the turn path, so a preference written between turns
+    applies to the next turn with no bridge restart.
+  - **Loud failure.** When the selected engine cannot be served — OpenAI with
+    no `OPENAI_API_KEY` on the host, or Local with no local speech engine —
+    resolution fails with a reason naming the engine and what is missing. The
+    `?? {}` silent degradation goes away on both branches.
+  - **A serviceability answer.** The bridge can be asked whether an engine is
+    serviceable before it is chosen, so BL-864's selector can disable an option
+    with a reason instead of offering a choice that will fail.
+
+  The agent session is untouched: replies keep coming from the Cursor bridge
+  agent. This slice changes which STT/TTS adapters a turn uses, nothing else.
+
+  ## Not in scope
+
+  - Any Bubble/Android UI — that is BL-864.
+  - Mini App Let's Talk parity (epic BL-862 defers it).
+  - Switching the brain to OpenAI GPT. Explicitly forbidden by the human.
+
+acceptance: specs/features/BL-863-voice-engine-preference-bridge.feature
+
+qa_e2e_procedure: |
+  On a bridge host with `OPENAI_API_KEY` set:
+
+  1. With no preference stored and `LETS_TALK_AUDIO_ENGINE=local`, take a
+     Let's Talk turn — expect the local engine, reply still from Cursor.
+  2. Write the preference to `openai`. Take another turn WITHOUT bouncing the
+     bridge — expect OpenAI transcription/TTS on that turn.
+  3. Unset `OPENAI_API_KEY`, bounce, keep the preference at `openai`. Take a
+     turn — expect a visible failure naming the engine and the missing key,
+     NOT a silent turn with no audio.
+  4. Corrupt the preference file. Take a turn — expect the bootstrap engine
+     from the environment, plus a report that the preference was unreadable.
+  5. Confirm the preference file contains an engine name and no credential.
+
+notes: |
+  BL-864 (Bubble Settings selector) depends on this slice: the phone needs a
+  write target and a serviceability answer before it can offer the choice.
+
+  The `?? {}` fix is a behavior change to an existing path, not only new code.
+  Any caller relying on "resolution always returns an object" will now see a
+  failure instead — worth the architect's attention.

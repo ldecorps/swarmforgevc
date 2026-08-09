@@ -9,7 +9,7 @@ priority: 99
 direction: normal
 mutation_cost: low
 acceptance: specs/features/BL-801-tmp-cleanup-registry-survives-subshell.feature.draft
-human_approval: pending
+human_approval: approved
 
 approval_context: >
   New feature draft needs review. Two deliberate calls to sign off or overturn:
