@@ -42,6 +42,8 @@ const {
   isAutoSpeechLanguageSetting,
   isBlankTranscript,
   normalizeTranscriptForLanguageDetection,
+  resolveSpeakableReply,
+  LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT,
 } = require('../out/bridge/letsTalkCore');
 
 test('letsTalk: valid turn request shape', () => {
@@ -276,6 +278,40 @@ test('letsTalk: replyTextForSpeechSynthesis strips markdown for TTS', () => {
   assert.equal(replyTextForSpeechSynthesis('-  spaced item'), 'spaced item');
   assert.equal(replyTextForSpeechSynthesis('a**b'), 'a b');
   assert.equal(replyTextForSpeechSynthesis('foo__bar'), 'foo bar');
+});
+
+test('letsTalk: resolveSpeakableReply falls back when a non-blank reply transforms to blank speech', () => {
+  // BL-717 D1: a reply that is only markdown-active punctuation (e.g. "|" or
+  // "###") is non-blank, so the old blank-replyText check never fired, but
+  // replyTextForSpeechSynthesis strips it down to nothing pronounceable.
+  for (const punctuationOnly of ['|', '###', '***', '~~~', '[]', '`']) {
+    const resolved = resolveSpeakableReply(punctuationOnly);
+    assert.equal(
+      resolved.replyText,
+      LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT,
+      `replyText for ${JSON.stringify(punctuationOnly)} should fall back, not surface unspeakable punctuation`
+    );
+    assert.equal(
+      resolved.speechText,
+      replyTextForSpeechSynthesis(LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT),
+      `speechText for ${JSON.stringify(punctuationOnly)} should be the transformed fallback line`
+    );
+    assert.ok(resolved.speechText.trim().length > 0, 'the fallback speechText must itself be non-blank');
+  }
+});
+
+test('letsTalk: resolveSpeakableReply falls back on a blank reply, same as before BL-717 D1', () => {
+  for (const blank of ['', '   ', '\n\t  ']) {
+    const resolved = resolveSpeakableReply(blank);
+    assert.equal(resolved.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+    assert.equal(resolved.speechText, replyTextForSpeechSynthesis(LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT));
+  }
+});
+
+test('letsTalk: resolveSpeakableReply passes a real reply through untouched', () => {
+  const resolved = resolveSpeakableReply('**Ready** to try.');
+  assert.equal(resolved.replyText, '**Ready** to try.', 'a real reply must never be replaced by the fallback');
+  assert.equal(resolved.speechText, 'Ready to try.');
 });
 
 test('letsTalk: speech language parsing and agent prompt', () => {

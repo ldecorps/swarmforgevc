@@ -295,6 +295,36 @@ export function replyTextForSpeechSynthesis(text: string): string {
   return speech.trim();
 }
 
+export interface LetsTalkSpeakableReply {
+  replyText: string;
+  speechText: string;
+}
+
+// BL-717: a non-blank agent reply can still reduce to nothing pronounceable
+// once replyTextForSpeechSynthesis strips markdown/formatting characters —
+// e.g. a reply that is literally "|" or "###". That is the same silent-turn
+// failure this ticket exists to close, one layer downstream of the blank-
+// replyText check: "no real speakable reply is available" (the ticket's own
+// invariant 2 wording) covers this case too, not just an empty agentReplyText.
+// This is the one place both the client-TTS and server-TTS paths decide
+// whether a reply is genuinely speakable, so neither can drift out of sync
+// with the other the way clientTtsTurnSuccess's own separate substitution
+// used to.
+export function resolveSpeakableReply(agentReplyText: string): LetsTalkSpeakableReply {
+  const fallback = {
+    replyText: LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT,
+    speechText: replyTextForSpeechSynthesis(LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT),
+  };
+  if (agentReplyText.trim().length === 0) {
+    return fallback;
+  }
+  const speechText = replyTextForSpeechSynthesis(agentReplyText);
+  if (speechText.trim().length === 0) {
+    return fallback;
+  }
+  return { replyText: agentReplyText, speechText };
+}
+
 /** Slashes in paths, URLs, and "and/or" are read aloud as "slash" by speechSynthesis. */
 export function replaceMultiSegmentPathsForSpeech(speech: string): string {
   return speech.replace(/\b[\w@$]*[A-Za-z][\w@$.-]*(?:\/[\w@$.-]+)+\b/g, (path) => path.replace(/\//g, ' '));
