@@ -1,8 +1,4 @@
 Feature: A reaper that cannot see the process table says so, instead of reporting a clean host
-  DRAFT — parked per BL-233. Promote to a live `.feature` only in the same
-  parcel as its step handlers; `specs/pipeline/runtime.js` throws on the first
-  unmatched step.
-
   On 2026-08-07 `operator_runtime` logged `orphan-janitor-sweep swept 0
   candidate(s), reaped 0` on every tick while ~30 disposable front-desk bots,
   worktree `babysitterd.sh` processes and stale `bl647.sock` tmux sessions ran
