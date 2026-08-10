@@ -235,8 +235,17 @@ test(
         delete env.TELEGRAM_BOT_TOKEN;
         delete env.TELEGRAM_CHAT_ID;
         delete env.RESEND_API_KEY;
-        const child = spawn('bb', [HANDOFFD, root], { detached: true, stdio: 'ignore', env });
-        child.unref();
+        // BL-789 architect bounce: no detached/unref here, deliberately -
+        // this is the one property test in extension/test/ that spawns a
+        // real, long-running daemon, and there is no fixtureReaper-style
+        // safety net in this tree for it to register with (that lib lives
+        // under specs/pipeline/steps/, a different module tree). Keeping
+        // the child in this process's group and holding a live handle
+        // (never unref'd) means an interrupted/killed/timed-out Vitest
+        // worker takes the child down with it instead of orphaning it - the
+        // exact failure class the architect found live (an hour-old orphan
+        // handoffd.bb from an earlier interrupted run of this test).
+        const child = spawn('bb', [HANDOFFD, root], { stdio: 'ignore', env });
 
         try {
           await waitFor(() => {
