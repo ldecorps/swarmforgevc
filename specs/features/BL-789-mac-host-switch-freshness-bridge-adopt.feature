@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=cd09c995e5007c0e271499785dc089fe119caa81aecedc4014693b784f6ec937
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-10T22:47:52.700982Z","feature_name":"Freshness and bridge supervision survive a cron environment and a slow host","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-789-mac-host-switch-freshness-bridge-adopt.feature","background_hash":"4f9069c57bd37c83cd2105ff127ba44c0f1d13a85622a2dd512238ace9fbe53d","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A deliberately disabled daemon is never restarted","scenario_hash":"c98fcb8bdfec4492b913d938ea2c62c007e909e362b53c68171bd21b2206cdb8","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-10T22:47:52.700982Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Freshness and bridge supervision survive a cron environment and a slow host
 
   The 2026-08-02 Mac host-switch hotfix fixed three false failure modes by hand:
