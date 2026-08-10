@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-10T05:47:17.758604Z","feature_name":"The routing skip trail records what a hop actually skipped","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-623-routing-skip-trail-records-actual-hop.feature","background_hash":"46ade7548f28d869073369d8ab1ee4b97350d1e65039e1c687394d47e15f3c0a","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: The routing skip trail records what a hop actually skipped
 
   # BL-623, operator hawk-watch defect 2026-07-24 on the FIRST production

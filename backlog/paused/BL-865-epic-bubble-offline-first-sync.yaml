@@ -4,7 +4,7 @@ milestone: M8
 type: epic
 status: todo
 epic: bubble-offline-sync
-human_approval: pending
+human_approval: approved
 priority: 25
 direction: human-intake
 depends_on: []

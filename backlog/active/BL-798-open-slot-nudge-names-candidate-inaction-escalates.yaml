@@ -6,7 +6,7 @@ severity: high
 status: todo
 epic: swarm-reliability
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 97
 direction: human-requested
 depends_on: []
@@ -126,3 +126,6 @@ notes: |
   3. On a live mono-router: leave one approved ticket in paused/ with an
      open slot; observe the coordinator either promotes+routes or records
      a concrete blocking reason — never an uncaused clear.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-10, by: architect, blamed: coder, class: invariant-unencoded, commit: 6c97e2eeee, evidence: backlog/evidence/BL-798-architect-bounce-20260810.md }

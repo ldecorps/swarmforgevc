@@ -26,6 +26,12 @@
 ;; BL-528: claim-without-progress detection.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "claim_progress_lib.bb")))
 
+;; BL-798: reuses promotion-gates-lib's own Article 3.2.4 ranking (expedited
+;; defects first, then priority) for the open-slot nudge's candidate — never
+;; a second, divergent ranking, exactly what promotion_gates_lib.bb's own
+;; header comment warns against.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "promotion_gates_lib.bb")))
+
 ;; ── sidecar files (exact JSON shapes/paths as inboxChaser.ts) ───────────────
 
 (defn sidecar-path [handoff-file-path]
@@ -886,10 +892,25 @@
   (* 5 60 1000))
 
 (defn open-slot-nudge-message
-  "Fixed message — kept under the 80-char handoff limit. No ticket id: the
-   trail/cooldown is phrase + optional cooldown file, not BL-222's id set."
-  []
-  open-slot-nudge-phrase)
+  "0-arg: the old fixed, ticketless phrase (kept for callers with no
+   candidate yet known — the trail/cooldown dedup keys off this phrase as a
+   prefix regardless of arity, see open-slot-nudge-pending? below).
+   1-arg (BL-798 invariant 1): names the top Article-3.2.4 candidate and its
+   approval state — never a ticketless generic poke once a candidate is
+   known. nil candidate falls back to the plain phrase (defensive only:
+   decide-open-slot-nudge? already requires a positive paused-eligible-count
+   before this is ever called with a real candidate in production).
+   Truncated to the 80-char handoff `message:` limit, same discipline as
+   unassigned-active-note-message."
+  ([] open-slot-nudge-phrase)
+  ([candidate]
+   (if (nil? candidate)
+     open-slot-nudge-phrase
+     (let [msg (str open-slot-nudge-phrase ": " (:id candidate)
+                    (when-not (:approved? candidate) " awaiting approval"))]
+       (if (<= (count msg) dispatch-gap-note-max-length)
+         msg
+         (subs msg 0 dispatch-gap-note-max-length))))))
 
 (defn decide-open-slot-nudge?
   "Pure decision: capacity under cap, at least one eligible paused ticket,
@@ -933,9 +954,112 @@
        (<= 0 (- now-ms last-sent-ms) cooldown-ms)))
 
 (defn open-slot-nudge-draft-lines
-  "Note to the coordinator only — never promotes or routes to coder."
-  []
-  ["type: note"
-   "to: coordinator"
-   "priority: 00"
-   (str "message: " (open-slot-nudge-message))])
+  "Note to the coordinator only — never promotes or routes to coder. 1-arg
+   names the top candidate (BL-798 invariant 1); 0-arg keeps the prior
+   ticketless phrase for callers with no candidate."
+  ([] (open-slot-nudge-draft-lines nil))
+  ([candidate]
+   ["type: note"
+    "to: coordinator"
+    "priority: 00"
+    (str "message: " (open-slot-nudge-message candidate))]))
+
+;; ── BL-798: candidate ranking + promotion-inaction escalation ──────────────
+;; SUP-1 (2026-08-03): a ticketless nudge was treated as noise and cleared
+;; without ever promoting. Two fixes: (1) name the top Article-3.2.4
+;; candidate so every nudge is concrete, never identical-looking; (2) track
+;; repeated unacted nudges for the SAME candidate and escalate past a
+;; bounded count rather than repeating forever. Mirrors
+;; provider_auth_observe_lib.bb's own episode-state shape exactly
+;; (bounded-count-then-alert-once, pure, restart-safe to keep in-memory).
+
+(defn read-paused-candidates
+  "Every backlog/paused/*.yaml as {:file :content} — the shape
+   promotion-gates-lib/rank-candidates expects."
+  [paused-dir]
+  (if-not (fs/exists? paused-dir)
+    []
+    (->> (fs/list-dir paused-dir)
+         (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")))
+         (map (fn [f] {:file f :content (slurp (str f))}))
+         vec)))
+
+(defn top-open-slot-candidate
+  "The single Article-3.2.4-best candidate among ALL paused candidates —
+   {:id .. :approved? bool}, or nil when candidates is empty. Approval state
+   is reported, never used to filter: a sole pending-approval candidate is
+   still named as the top candidate, flagged awaiting approval rather than
+   silently skipped (BL-798 scenario 03)."
+  [candidates]
+  (when-let [winner (promotion-gates-lib/rank-candidates candidates)]
+    (let [content (:content winner)]
+      {:id (or (promotion-gates-lib/read-id content) (fs/file-name (:file winner)))
+       :approved? (= "approved" (promotion-gates-lib/read-human-approval content))})))
+
+(def open-slot-escalation-default-threshold
+  "BL-798 approval_context default: 3 unacted nudges for the same top
+   candidate escalates. Amendable via swarmforge.conf."
+  3)
+
+(defn parse-open-slot-escalation-threshold
+  "Pure: `config open_slot_escalation_threshold <n>` from conf text. Honors
+   a POSITIVE integer only — absent, malformed, zero, and negative all
+   degrade to the default (mirrors provider-auth-observe-lib/parse-max-
+   attempts's own degrade-to-default failure mode)."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config open_slot_escalation_threshold"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) n open-slot-escalation-default-threshold)))
+
+(defn next-open-slot-escalation-state
+  "Advance the per-candidate unacted-nudge count. A different (or newly nil)
+   top candidate resets the count — it tracks repeated nudges for the SAME
+   unpromoted candidate, not a lifetime total; promoting the prior top
+   candidate (or a higher-ranked one appearing) must not carry its
+   predecessor's count forward."
+  [prev candidate-id]
+  (cond
+    (nil? candidate-id) nil
+    (= candidate-id (:candidate-id prev)) (update prev :count inc)
+    :else {:candidate-id candidate-id :count 1 :escalated false}))
+
+(defn decide-open-slot-escalation
+  "Pure decision for one nudge-worthy sweep tick. Returns {:state ..
+   :action ..}, action one of :nudge | :escalate | :none.
+   - No candidate: :none.
+   - Below threshold: :nudge, counted.
+   - At/above threshold, not yet escalated for this candidate: :escalate
+     once (invariant 2/3 — reaches the operator).
+   - At/above threshold, already escalated: :none — no repeat escalation
+     and no further identical silent nudge (BL-798 scenario 04), quiet
+     until the candidate changes."
+  ([prev candidate-id] (decide-open-slot-escalation prev candidate-id open-slot-escalation-default-threshold))
+  ([prev candidate-id threshold]
+   (let [state (next-open-slot-escalation-state prev candidate-id)]
+     (cond
+       (nil? state) {:state state :action :none}
+       (< (:count state) threshold) {:state state :action :nudge}
+       (not (:escalated state)) {:state (assoc state :escalated true) :action :escalate}
+       :else {:state state :action :none}))))
+
+(defn open-slot-escalation-reason
+  "Standing evidence text — same role as loop_detect_lib's format-halt-
+   reason / provider-auth-observe-lib's format-alert-reason."
+  [candidate-id nudge-count]
+  (str "Open-slot promotion inaction: '" candidate-id "' has been the top "
+       "eligible paused candidate through " nudge-count " unacted open-slot "
+       "nudges with the slot still open (BL-798). Promote it or record why "
+       "it is blocked."))
+
+(defn open-slot-escalation-telegram-text
+  "Standing Operator-topic text (telegram-reply-outbox.jsonl threadId OPERATOR)."
+  [candidate-id nudge-count]
+  (str "⚠️ Open slot unfilled through " nudge-count " nudges — top candidate `"
+       candidate-id "` still not promoted."))
+
+(defn open-slot-escalation-email-subject
+  [candidate-id]
+  (str "SwarmForge: promotion inaction on " candidate-id " - open slot unfilled"))

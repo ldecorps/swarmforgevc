@@ -1,0 +1,128 @@
+id: BL-871
+title: "DEFECT — the property lane runs an uncapped worker pool, so a full test:properties run fails a different arbitrary file each time"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 4
+direction: swarm-surfaced
+depends_on: [BL-868]
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+description: >
+  `extension/vitest.properties.config.mjs` declares `globals`, `environment`,
+  `include` and `testTimeout` and nothing else. It sets no `pool`, no
+  `poolOptions`, no worker ceiling and no per-worker heap limit, so a full
+  `npm run test:properties` run of the 65 property files takes Vitest's
+  defaults: one fork per CPU with unbounded heap.
+
+  The unit lane does the opposite, deliberately. `vitest.config.mjs` reads
+  `MAX_WORKERS` and `PER_WORKER_HEAP_MB` from the shared
+  `out/tools/vitest-worker-memory-budget` module and passes them through
+  `resolveWorkerPoolSize`, which shrinks the fork count to what the running
+  host's real RAM can hold. That module exists because an uncapped run
+  ballooned four workers to ~13GB and drove the kernel OOM-killer into a
+  spiral that killed swarm agents twice in one day (BL-422), and because the
+  caps were later found never to have been checked against the actual host
+  (BL-792).
+
+  On this 4-CPU, 8192MB host the two lanes therefore diverge exactly where
+  it matters: the unit lane runs 3 forks capped at 1280MB each, and the
+  property lane runs 4 forks with no heap limit at all — more concurrency
+  and less bounding, over files that spawn real subprocesses.
+
+  The observable result is a full-suite run whose failures move. Across
+  repeated runs the coder saw `bl760DuplicateChainGuard` time out, then
+  `bl787NamedTunnelInvariants` invariant 1 fail, then a third file,
+  `bl805RotateGateOnUnfinishedInProcessParcel`, fail in place of the second.
+  Each of those files passes 3-for-3 when run alone. The suite's verdict is
+  a function of host load rather than of the code under test, which is what
+  makes a verification lane worthless.
+
+  The config's own comment says it "deliberately does not share
+  vitest.config.mjs's worker/coverage settings, since a small, separate
+  command has no need of them". That was true of a small lane. It is a
+  65-file lane now, and the sentence is what needs correcting along with the
+  config.
+
+invariants:
+  - "The property lane's verdict for a given file does not depend on how many other property files are running alongside it."
+  - "Neither lane carries its own copy of the worker ceiling or heap numbers: both read the one shared budget module, so a change to the caps cannot apply to one lane and not the other."
+
+acceptance: specs/features/BL-871-property-lane-worker-pool-cap.feature
+
+qa_e2e_procedure: |
+  On this host, which is where the flakiness reproduces:
+
+  1. Establish the baseline before the fix if it has not already landed:
+     run `npm run test:properties` twice from `extension/`. Record which
+     files fail each time. The two failing sets differ — that difference is
+     the defect.
+  2. After the fix, run `npm run test:properties` three times. All 65 files
+     must pass every run, and no file may time out.
+  3. Confirm the numbers are not duplicated: grep
+     `vitest.properties.config.mjs` for a literal worker count or heap size.
+     There must be none; both must come from the shared budget module.
+  4. Confirm the unit lane is untouched: `npm test` behaves as before, and
+     `vitest.config.mjs`'s resolved pool size on this host is unchanged.
+  5. Confirm mutation runs are unaffected. Stryker's vitest-runner hardcodes
+     `pool: 'threads'` with `maxThreads: 1` and reads `poolOptions.threads`,
+     so a forks-pool cap must not reach it — verify a mutation run still
+     starts and reports normally.
+
+approval_context: >
+  Two things worth your sign-off.
+
+  First, this ticket is deliberately narrow. The property lane also runs
+  with Vitest's per-file isolation left on, where the unit lane sets
+  `isolate: false` after BL-445 profiling showed that reset dominated its
+  run time. Bringing the two lanes to parity there would probably speed the
+  property lane up as well, but it is a performance change resting on the
+  unit lane's own precondition (every test restores what it stubs), which
+  has not been established for the property files. Left out; mention it if
+  you want it folded in.
+
+  Second, `depends_on: [BL-868]`. BL-868 is adding `setupFiles` to this
+  exact file and is in flight. Both edits are one-liners in the same eight-
+  line config, so running them concurrently buys a merge conflict for
+  nothing.
+
+  Scenario 04 is a full-suite run, which is slower than the rest of the
+  lane. It earns its place: scenarios 01-03 can all pass on a config that
+  still flakes, because they check the declaration rather than the outcome.
+
+source: |
+  Reported by the coder as a note to specifier, 2026-08-10T01:58:25Z, during
+  the BL-868 pass, with evidence in `backlog/evidence/BL-868-coder-pass.md`.
+  The coder correctly declined to fold it into BL-868 — it is a different
+  mechanism — and established independence properly: the same class of
+  flakiness reproduces with BL-868's `setupFiles` wiring stashed back out,
+  and a DIFFERENT file failed on that run, which is the finding that makes
+  contention rather than any single file the cause.
+
+  Specifier probe 2026-08-10 confirmed the structural divergence between the
+  two configs and measured this host at 4 CPUs and 8192MB.
+
+notes: |
+  Scope is one file, `extension/vitest.properties.config.mjs`, plus its
+  stale comment, plus whatever unit test asserts the shared-module property
+  (mirroring `vitestWorkerMemoryBudget.test.js`, which already pins the unit
+  lane's numbers). `vitest-worker-memory-budget.ts` itself needs no change:
+  `resolveWorkerPoolSize` already takes a ceiling and a per-worker heap as
+  parameters.
+
+  `npm run test:properties` runs `npm run compile` first, so `out/` exists
+  by the time the config loads and the same `createRequire` bridge the unit
+  config uses works unchanged here. That is worth confirming rather than
+  assuming, since this config is ESM and the budget module is CommonJS.
+
+  The file count is 65 as measured on 2026-08-10; the coder's evidence says
+  67. The discrepancy does not affect the fix and is not worth chasing.
+
+  bl760, bl787 and bl805 need no changes of their own — they are the files
+  that happened to lose the contention. BL-867 separately fixes a genuine
+  env-isolation fault in bl787 that is unrelated to this contention.

@@ -9,14 +9,14 @@
 - commit: f9cf29c29b
   subject: "Land Darwin orphan-janitor fix and file swarm stamp-off intake."
   detected_at: 2026-08-07
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-849
   human_decision: null
   decided_at: null
 - commit: f175bc56d1
   subject: "Park local WIP for host switch: drain router depth, Bubble chiptunes, pilot-safe defects, answer archive."
   detected_at: 2026-08-07
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-860
   human_decision: null
   decided_at: null

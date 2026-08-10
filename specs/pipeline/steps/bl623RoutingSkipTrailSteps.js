@@ -29,6 +29,17 @@ const DEFAULT_SKIP_REASONS = [
   '',
 ].join('\n');
 
+// BL-800: "the parcel is delivered to QA" collides with
+// bl606RequiredStagesRoutingSteps.js's earlier, unscoped generic pattern
+// /^the parcel is delivered to (.+)$/ (registered first in steps/index.js),
+// whose handler asserts on ctx.bounceHandoff - undefined for this feature's
+// scenarios 02/04, which never send a bounce. Registered via defineScoped,
+// pinned to this exact Feature: title (bl413StaleSandboxSweepSteps.js's own
+// identical note is the precedent for this fix), so it is only ever
+// preferred when THIS feature is running; bl606's own scenarios and its
+// generic pattern are completely unaffected.
+const FEATURE_NAME = 'The routing skip trail records what a hop actually skipped';
+
 function git(root, args) {
   execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 }
@@ -272,11 +283,15 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the parcel is delivered to QA$/, (ctx) => {
-    if (ctx.lastHandoff.to !== 'QA') {
-      throw new Error(`expected delivery to QA, got ${ctx.lastHandoff.to}`);
-    }
-  });
+  registry.defineScoped(
+    /^the parcel is delivered to QA$/,
+    (ctx) => {
+      if (ctx.lastHandoff.to !== 'QA') {
+        throw new Error(`expected delivery to QA, got ${ctx.lastHandoff.to}`);
+      }
+    },
+    FEATURE_NAME
+  );
 
   // ── Then: skip record content ────────────────────────────────────────────
   registry.define(

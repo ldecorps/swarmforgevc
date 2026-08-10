@@ -157,3 +157,5 @@ description: |
     reasoning; this slice repairs the one contract known to be red.
   - The acceptance contract itself: the feature file's scenarios are correct
     as written and do not change here.
+
+assigned_to: coder
