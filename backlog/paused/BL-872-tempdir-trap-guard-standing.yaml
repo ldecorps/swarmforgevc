@@ -9,7 +9,7 @@ priority: 115
 direction: normal
 mutation_cost: low
 acceptance: specs/features/BL-872-tempdir-trap-guard-standing.feature.draft
-human_approval: pending
+human_approval: approved
 
 approval_context: >
   New feature draft needs review, plus two deliberate calls to sign off or
