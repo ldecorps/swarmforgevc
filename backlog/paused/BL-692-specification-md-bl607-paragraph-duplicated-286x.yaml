@@ -14,6 +14,7 @@ mutation_cost: low
 
 invariants:
   - "The repair removes only copies of the one duplicated paragraph: every other line of Specification.MD survives byte-identical and in the same relative order, including the ~100 lines markdown requires to repeat (code fences, horizontal rules, table separators, diagram glyphs)."
+  - "When a duplicated paragraph exists in more than one textual variant, the surviving copy is the CORRECT variant — never whichever variant is most numerous, and never simply the first of a run."
 
 approval_context: >
   Reported by the documenter 2026-07-27 as a priority-00 note. Diagnosis below
@@ -70,6 +71,30 @@ source: |
   `## Out of Scope (v1)`. Verified by comparing all 1,509 non-blank
   non-duplicate lines against the pre-corruption revision: byte-identical.
 
+  ## Re-measured 2026-08-10, unrepaired, on `main` at 622b11b6f3
+
+  Fourteen days and ~25 further documenter commits later the corruption is
+  still live and has grown with the file. Every diagnosis above still holds;
+  only the magnitudes moved:
+
+  | quantity | 2026-07-27 (as specced) | 2026-08-10 (now) |
+  |---|---|---|
+  | file size | 1,361,287 bytes / 2,802 lines | **1,447,994 bytes / 3,360 lines** |
+  | copies of the paragraph | 286 | **286** |
+  | mangled / correct variants | 284 / 2 | **284 / 2** |
+  | span of the corrupted region | 1,948 → EOF | **2,486 → EOF** |
+  | real non-blank lines interleaved in that region | — | **161** |
+
+  The two CORRECT-variant copies are lines **2486 and 2491**. The BL-354
+  paragraph sits at line 2483 and the BL-283 coordinator-handoff paragraph at
+  2497, so the position scenario 03 asserts is still the right one.
+
+  **The interleaving risk, measured:** the file's final lines are junk copies
+  sitting *between* real bullets of the closing `## Out of Scope (v1)`
+  section. Deleting the line range 2486→EOF wholesale destroys 161 lines of
+  real content including both closing sections. This is the single largest
+  risk in the ticket.
+
 description: |
   Delete 285 of the 286 copies. Keep the one whose CLI example is correct, in
   the position it already occupies in the chronological narrative — between
@@ -84,6 +109,23 @@ description: |
   needing a hand-drawn region boundary, and the two incidental spots carry no
   meaning.
 
+  ## Constraints
+
+  - **Prove nothing was lost, against a pinned blob.** Scenario 05's
+    preservation check reads the pre-fix file from git, not from the working
+    tree. Pin the sha of the commit immediately preceding the dedupe commit
+    (its own parent) and **assert the pinned blob really does contain the 286
+    copies**, so a wrong or drifted pin fails loudly instead of vacuously
+    passing over an already-clean blob. At the time of this amendment `main`
+    is `622b11b6f3` and 286 copies are verified present there.
+  - **Removal only — do not rewrite surviving prose.** This is not a
+    documenter pass: no rewording, resectioning, or "while I'm here" edits to
+    the 161 surviving interleaved paragraphs. The only non-deletion content
+    change permitted in the whole diff is keeping the correct variant at the
+    surviving copy. Review should expect a deletion-shaped diff.
+  - **Do not delete by line range.** See the interleaving risk in `source:`.
+    Select the copies by their content, not their position.
+
   ## Why medium, stated plainly
 
   Not critical, not high: nothing at runtime reads this file, no safety or
@@ -92,6 +134,12 @@ description: |
   learn what was built — and it is currently 61% garbage and unreadable at
   the point of corruption. Every agent that reads it pays 2.7x the tokens for
   it. Contained, real, and cheap to fix: medium.
+
+  This severity was independently re-derived and put to the human a second
+  time in BL-873 (now retired into this ticket), which argued explicitly that
+  raising it to `high` would put a documentation cleanup ahead of live
+  reliability work in the expedite lane and read as severity inflation. The
+  human approved `medium` on that reading too.
 
   ## The generalisable bit
 
@@ -104,14 +152,43 @@ description: |
 acceptance: specs/features/BL-692-specification-md-duplicate-paragraph-repair.feature.draft
 
 out_of_scope: |
-  - The recurrence guard. That is BL-693 — a repeated-paragraph gate wired
-    into the documenter's pass. Do not build it here.
+  - The recurrence guard. That is BL-693 — a standing duplicate-paragraph
+    guard riding the suite every parcel runs. Do not build it here.
   - Reverting or re-writing `7fa17fecd`'s BL-607 documentation. The surviving
     copy is good prose; only its 285 clones are the defect.
-  - Re-auditing the eleven doc commits layered on top. They are sound; they
-    simply did not notice what they were building on.
+  - Re-auditing the doc commits layered on top. They are sound; they simply
+    did not notice what they were building on.
   - Any other file. The duplication is confined to
-    `docs/reference/Specification.MD`.
+    `docs/reference/Specification.MD`, re-confirmed by measurement 2026-08-10:
+    scanning every markdown file under `docs/` for a repeated line over 200
+    characters finds exactly this one file and exactly these two variant
+    groups, and nothing else in the tree.
+  - Reconciling the specification's content against out-of-band commits.
+    That is `spec-drift-realignment` / BL-564, not this deletion.
+  - Splitting Specification.MD into smaller documents. Worth considering once
+    it is ~620 KB rather than 1.45 MB; a separate decision either way.
+
+qa_e2e: |
+  1. `grep -c "Pipeline role clarifying questions into per-role topics (BL-607)"
+     docs/reference/Specification.MD` prints `1` (it prints `286` on the
+     commit this ticket was written against, and still did on 622b11b6f3).
+  2. `grep -c "options ''\[opt1,opt2\]''" docs/reference/Specification.MD`
+     prints `0`, and the one surviving copy carries
+     `--options '["opt1","opt2"]'`.
+  3. Content preservation, the load-bearing check: extract every distinct
+     trimmed non-blank line from the pre-fix blob
+     (`git show <pinned-parent-sha>:docs/reference/Specification.MD`) and from
+     the current file, and confirm the two sets are identical — no paragraph
+     was dropped along with the copies. Confirm the pinned blob itself really
+     holds 286 copies, so the comparison cannot pass vacuously.
+  4. Confirm by eye that the document still ends with
+     `## Gaps & Things Still Missing` and `## Out of Scope (v1)` intact, and
+     that no junk copy remains wedged between their bullets.
+  5. Confirm the file is roughly 620 KB rather than 1.45 MB — a cheap sanity
+     signal that the removal actually happened at scale.
+  6. No run of two consecutive blank lines remains anywhere in the file —
+     `grep -c -Pzo '\n\n\n' docs/reference/Specification.MD` (or any
+     equivalent scan) finds none.
 
 notes: |
   Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
@@ -127,3 +204,31 @@ notes: |
   Deliberately left unset: `required_stages_routing_enabled` is off by
   default and BL-606 routing is under hawk-watch, so the safe full-chain
   default applies until an operator says otherwise.
+
+  ## Consolidation record 2026-08-10 — BL-873 retired into this ticket
+
+  BL-873 ("docs duplicate paragraph guard", specced 2026-08-10, human-approved)
+  independently re-diagnosed this same corruption from a fresh documenter note
+  and bundled the repair AND the recurrence guard into one slice. Three tickets
+  for one defect; the coordinator called it. Reconciled under the specifier's
+  consolidation authority (BL-680) and Article 5.3 — all three were paused, so
+  spec-time consolidation applies and no in-flight ticket was rewritten.
+
+  **Outcome:** the BL-692/BL-693 split is KEPT (the earlier-approved shape, and
+  the better one: this repair is a delicate deletion over a 1.45 MB file with
+  161 interleaved real paragraphs, and should not be enlarged by building a new
+  guard in the same parcel — BL-634 envelope). BL-873 is retired as superseded.
+
+  **What BL-873 contributed, folded in above:** (a) the re-measurement table
+  and the interleaving risk stated as a measured constraint; (b) the pinned-blob
+  preservation check with its own anti-vacuous-pass assertion, replacing a
+  brittle absolute-line-count criterion that had already drifted wrong (the old
+  scenario 07 asserted 2,249 lines; the file is now 3,360); (c) the
+  removal-only / no-rewording constraint; (d) the `qa_e2e` procedure.
+
+  **Human decisions carried forward from BL-873's approval, neither dropped:**
+  severity stays `medium` on the explicit anti-inflation reasoning recorded in
+  the description; and the human's approval of a bundled one-slice shape is
+  noted here rather than silently discarded — it was approved, but so was the
+  earlier split, and the split is the shape chosen for the reasons above. No
+  new human approval is required for either ticket: both shapes were approved.

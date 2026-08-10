@@ -1,16 +1,60 @@
 id: BL-873
-title: "DEFECT — one botched documenter insertion wedged 286 copies of the same paragraph through the last third of Specification.MD, 284 of them carrying a quote-mangled command example, and nothing in the tree looks for repeated documentation prose"
+title: "SUPERSEDED by BL-692 + BL-693 — DEFECT — one botched documenter insertion wedged 286 copies of the same paragraph through the last third of Specification.MD, 284 of them carrying a quote-mangled command example, and nothing in the tree looks for repeated documentation prose"
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: superseded
 epic: code-quality-gates
 priority: 150
 direction: normal
 mutation_cost: low
-acceptance: specs/features/BL-873-docs-duplicate-paragraph-guard.feature.draft
-human_approval: pending
 
+superseded_by: [BL-692, BL-693]
+
+superseded_note: |
+  RETIRED 2026-08-10 as a duplicate. This ticket independently re-diagnosed the
+  corruption already specced on 2026-07-27 as BL-692 (the repair) + BL-693 (the
+  standing guard), both human-approved and paused since. Three tickets for one
+  defect; the coordinator caught it before any of them were promoted
+  ("BL-873 dupes BL-692+BL-693 - reconcile, don't 3x-build").
+
+  Reconciled under the specifier's consolidation authority (BL-680) and
+  Article 5.3. All three were paused, so spec-time consolidation applies and no
+  in-flight ticket was rewritten. The BL-692/BL-693 split is kept — this repair
+  is a delicate deletion over a 1.45 MB file with 161 interleaved real
+  paragraphs, and enlarging that parcel with a new guard fights the BL-634 slice
+  envelope.
+
+  Nothing in this ticket was discarded. Everything it contributed was folded
+  into the two survivors, and each records where it came from:
+    - BL-692 gains the 2026-08-10 re-measurement table, the interleaving risk
+      as a measured constraint, the pinned-blob preservation check with its
+      anti-vacuous-pass assertion (replacing a criterion that had drifted
+      wrong — it asserted 2,249 lines; the file is now 3,360), the
+      removal-only / no-rewording constraint, and the qa_e2e procedure.
+    - BL-693 gains this ticket's guard incarnation in full: a standing Vitest
+      guard in extension/test/ riding the suite every parcel runs, the measured
+      200-character substantiality threshold that needs no exemption list, and
+      the required_wiring declaration pinning the test path. It replaces an
+      earlier documenter-invoked Babashka gate, for this ticket's own reason —
+      a gate someone must remember to run can be forgotten, which is the
+      failure being prevented.
+
+  Both human decisions recorded in this ticket's approval_context survive
+  verbatim in their new homes, neither trimmed: severity stays medium on the
+  anti-inflation reasoning (now in BL-692's description), and the human's
+  approval of a bundled one-slice shape is recorded in both survivors' notes
+  rather than silently discarded. No new human approval is needed — the split
+  shape was approved 2026-07-27 and this ticket's guard design 2026-08-10; the
+  amendments carry both forward and invent no third design.
+
+  Its feature draft (specs/features/BL-873-docs-duplicate-paragraph-guard.feature.draft)
+  is removed in the same commit; its scenarios now live in BL-693's draft.
+
+  Coordinator: this file needs retiring out of backlog/paused/ into
+  backlog/done/M8/ — a specifier does not move items to done/.
+acceptance: specs/features/BL-693-repeated-paragraph-gate.feature.draft  # retired: this ticket's own draft was removed and its scenarios folded into BL-693's
+human_approval: approved
 approval_context: >
   New feature draft needs review, plus two calls to sign off or overturn.
   (1) Severity is deliberately medium, not high — nothing is broken at runtime,
