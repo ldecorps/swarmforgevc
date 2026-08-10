@@ -5,8 +5,8 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-human_approval: pending
-priority: 2
+human_approval: approved
+priority: 3
 direction: swarm-surfaced
 depends_on: []
 assigned_to: coder

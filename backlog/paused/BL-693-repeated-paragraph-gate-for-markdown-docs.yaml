@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: code-quality-gates
 human_approval: approved
-priority: 180
+priority: 191
 direction: swarm-proposed
 depends_on: [BL-692]
 assigned_to: specifier
