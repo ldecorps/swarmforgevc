@@ -525,6 +525,21 @@
     (let [normalized (->> raw-options (keep normalize-ask-option) vec)]
       (when (seq normalized) normalized))))
 
+;; GH-26: role_ask.bb's own per-role pending-question guard. A marker in
+;; state "undeliverable" (deliverRoleQuestion's own rewrite on an
+;; undeliverable drop - telegramFrontDeskBotCore.ts) never blocks a fresh
+;; ask: the question never actually reached the role's topic, so treating
+;; it as still-pending would wedge the role in "already-pending" forever
+;; behind a guard protecting a question nobody ever saw. marker is the
+;; already-parsed marker map, or nil when no marker file exists at all -
+;; nil never blocks (nothing pending). Any OTHER marker (ordinary pending,
+;; or unreadable/corrupt content the caller degrades to {}) still blocks -
+;; unreadable content fails CLOSED, the same conservative "still blocks"
+;; posture the bare file-existence check had before this ticket.
+(defn role-ask-blocked?
+  [marker]
+  (and (some? marker) (not= "undeliverable" (:state marker))))
+
 (defn answer-text-from-messages
   "The human's own LATEST reply text out of a thread's messages - the
    plain-text 'answer' to pair alongside :pending-question in the
@@ -675,6 +690,25 @@
    :pending_events (or pending-count 0)
    :queue_consuming (queue-consuming? llm-running? pending-count)
    :oldest_pending_event_age_ms oldest-pending-age-ms})
+
+;; GH-26: undeliverable role-question markers surfaced into status.json, the
+;; SAME "read a dedicated per-source file/dir, merge into the one per-tick
+;; status.json write" pattern :tunnel (read-tunnel-status) already
+;; establishes - operator_runtime.bb's own impure directory scan is the
+;; caller; this is the pure filter/shape step. markers = {role -> marker-map
+;; or nil}, as read from .swarmforge/operator/role-awaiting/*.json by the
+;; caller. A role whose marker is missing/unparseable (nil/{}) or in any
+;; state OTHER than "undeliverable" is omitted entirely - only an in-flight,
+;; not-yet-re-asked undeliverable drop is ever surfaced, mirroring
+;; operator-lib/role-ask-blocked?'s own "only the literal 'undeliverable'
+;; state is exempt" reading of the SAME marker shape.
+(defn render-role-questions-undeliverable
+  [markers]
+  (into {}
+        (keep (fn [[role marker]]
+                (when (= "undeliverable" (:state marker))
+                  [role (select-keys marker [:question :options :asked_at_ms])])))
+        markers))
 
 ;; ── BL-333: front-desk starvation detection + edge-triggered alarm ─────────
 ;; Both trigger conditions matter independently (the ticket's own words: "3

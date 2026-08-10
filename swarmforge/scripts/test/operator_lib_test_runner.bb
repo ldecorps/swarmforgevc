@@ -568,6 +568,43 @@
          [{:label "staging"}]
          (operator-lib/ask-options ["staging" 42]))
 
+;; ── GH-26: role-ask-blocked? - role_ask.bb's per-role pending-question
+;;    guard, pulled out pure so it is unit-testable without a real fs ──────
+(assert-true "no marker at all (nil) never blocks a fresh ask"
+             (not (operator-lib/role-ask-blocked? nil)))
+(assert-true "an ordinary pending marker (no :state key) blocks - unchanged pre-GH-26 behavior"
+             (operator-lib/role-ask-blocked? {:question "which env?" :asked_at_ms 1000}))
+(assert-true "a marker in state :undeliverable never blocks - the role may ask again immediately"
+             (not (operator-lib/role-ask-blocked? {:question "which env?" :state "undeliverable"})))
+(assert-true "unreadable/corrupt marker content ({}) fails CLOSED - still blocks"
+             (operator-lib/role-ask-blocked? {}))
+(assert-true "a marker in some OTHER state string still blocks - only the literal \"undeliverable\" state is exempt"
+             (operator-lib/role-ask-blocked? {:state "pending"}))
+
+;; ── GH-26: render-role-questions-undeliverable - the pure shaping step
+;;    behind status.json's :role_questions_undeliverable. Previously only
+;;    covered indirectly through test_operator_runtime_tick.sh's tick!
+;;    integration; unit-tested directly here since it is a pure module. ───
+(assert= "no markers at all -> empty map"
+         {}
+         (operator-lib/render-role-questions-undeliverable {}))
+(assert= "an ordinary pending marker (no :state) is omitted"
+         {}
+         (operator-lib/render-role-questions-undeliverable {"coder" {:question "which branch?" :asked_at_ms 2000}}))
+(assert= "a corrupt/unreadable marker ({}) is omitted - same fail-closed reading as role-ask-blocked?"
+         {}
+         (operator-lib/render-role-questions-undeliverable {"coder" {}}))
+(assert= "an undeliverable marker keeps only :question/:options/:asked_at_ms - :state itself is dropped from the surfaced shape"
+         {"specifier" {:question "which env?" :asked_at_ms 1000}}
+         (operator-lib/render-role-questions-undeliverable {"specifier" {:question "which env?" :asked_at_ms 1000 :state "undeliverable"}}))
+(assert= "options are preserved when present"
+         {"specifier" {:question "which env?" :options [{:label "staging"}]}}
+         (operator-lib/render-role-questions-undeliverable {"specifier" {:question "which env?" :options [{:label "staging"}] :state "undeliverable"}}))
+(assert= "two roles pending simultaneously - only the undeliverable one surfaces, the selector is not exercised by a single-candidate fixture alone"
+         {"specifier" {:question "which env?"}}
+         (operator-lib/render-role-questions-undeliverable {"specifier" {:question "which env?" :state "undeliverable"}
+                                                             "coder" {:question "which branch?"}}))
+
 ;; answer-text-from-messages: the human's own latest reply text.
 (assert= "the human's latest non-operator message is the answer text"
          "use staging"

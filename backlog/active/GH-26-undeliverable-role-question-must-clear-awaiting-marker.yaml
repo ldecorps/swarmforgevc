@@ -64,7 +64,7 @@ out_of_scope: |
     once; this ticket adds marker + status handling, not replay changes.
   - Auto-creating missing role topics in role-topic-map.json.
 
-acceptance: specs/features/GH-26-undeliverable-role-question-clears-marker.feature.draft
+acceptance: specs/features/GH-26-undeliverable-role-question-clears-marker.feature
 
 notes: |
   QA e2e procedure: with the front-desk bot live, remove a test role's
