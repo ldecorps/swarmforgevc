@@ -1,0 +1,82 @@
+Feature: Shell tests backdate file mtimes portably on both BSD and GNU userlands
+
+  The suite under swarmforge/scripts/test/ is the ONLY quality gate for the
+  Babashka/Clojure layer (engineering.prompt, Startup Tools). Six of its tests
+  backdate a fixture's mtime using GNU-only relative-time syntax
+  (`touch -d "2 hours ago"`, `date -d "90 seconds ago"`), which stock BSD
+  userland rejects outright. macOS is a declared target OS and is the host the
+  swarm actually runs on, so those six tests are red there today.
+
+  The fix is one shared portable helper plus a standing guard, mirroring the
+  existing `portable_stat_lib.sh` (BSD/GNU split behind one function) and
+  BL-872's standing-guard placement.
+
+  # BL-874 portable-relative-mtime-01
+  Scenario Outline: the helper backdates a file by a relative interval on either userland
+    Given a file whose mtime is the current time
+    And the host provides only the <userland> date and touch implementations
+    When the helper is asked to backdate that file by "<interval>"
+    Then the call succeeds
+    And the file's mtime is <seconds> seconds earlier than it was, within a 2 second tolerance
+
+    Examples:
+      | userland | interval      | seconds |
+      | BSD      | 2 hours ago   | 7200    |
+      | BSD      | 90 seconds ago| 90      |
+      | GNU      | 2 hours ago   | 7200    |
+      | GNU      | 90 seconds ago| 90      |
+
+  # BL-874 portable-relative-mtime-02
+  Scenario Outline: each previously red test passes on a BSD userland
+    Given the test script "<test>"
+    When it is run on a host with only BSD date and touch on PATH
+    Then it exits zero
+    And its output contains no "illegal time specification" or "illegal option" error
+
+    Examples:
+      | test                                                       |
+      | test_operator_runtime_sandbox_sweep.sh                     |
+      | test_operator_runtime_sandbox_sweep_bounded_progress.sh    |
+      | test_operator_runtime_fixture_reaper_sweep.sh              |
+      | test_operator_runtime_fixture_reaper_sweep_bounded_progress.sh |
+      | test_operator_runtime_tick.sh                              |
+      | test_handoffd_stuck_escalation_email_wiring.sh             |
+
+  # BL-874 portable-relative-mtime-03
+  Scenario: the remediated tree has zero GNU-only relative-time invocations
+    Given the tree under swarmforge/scripts after remediation
+    When the portable-time guard scans it
+    Then it reports zero violations
+
+  # BL-874 portable-relative-mtime-04
+  Scenario Outline: the guard flags a newly introduced GNU-only relative-time call
+    Given a file under swarmforge/scripts containing <invocation>
+    When the portable-time guard scans it
+    Then it reports that file as a violation
+    And it names the offending line
+
+    Examples:
+      | invocation                  |
+      | touch -d "2 hours ago" f    |
+      | touch -d "-5 minutes" f     |
+      | date -d "90 seconds ago"    |
+      | date --date="yesterday"     |
+
+  # BL-874 portable-relative-mtime-05
+  Scenario Outline: the guard does not flag portable absolute forms
+    Given a file under swarmforge/scripts containing <invocation>
+    When the portable-time guard scans it
+    Then it reports zero violations
+
+    Examples:
+      | invocation                       |
+      | touch -t 202601010000 f          |
+      | touch -r reference_file f        |
+      | touch -d "2026-08-10T10:00:00" f |
+
+  # BL-874 portable-relative-mtime-06
+  Scenario: the guard runs in the suite every parcel already runs
+    Given a file under swarmforge/scripts is edited to introduce a GNU-only relative-time call
+    When the extension unit suite is run
+    Then the suite fails
+    And it names the introducing file

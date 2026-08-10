@@ -2,13 +2,14 @@ Feature: Specification.MD keeps one copy of the BL-607 paragraph, not 286
 
   One commit appended the same ~2,900-character paragraph 286 times through
   the tail of docs/reference/Specification.MD, taking the file from 503 KB to
-  1.36 MB. 284 of those copies also carry a shell-mangled CLI example, so the
+  1.45 MB. 284 of those copies also carry a shell-mangled CLI example, so the
   two copies that are correct are the minority — a dedupe that keeps the most
   common copy keeps the broken one.
 
-  The repair deletes 285 copies and nothing else. Markdown legitimately
-  repeats code fences, horizontal rules and table separators; those must
-  survive untouched.
+  The junk copies are interleaved, not trailing: 161 lines of real content sit
+  among them, including both of the document's closing sections. The repair
+  deletes 285 copies and nothing else. Markdown legitimately repeats code
+  fences, horizontal rules and table separators; those must survive untouched.
 
   Background:
     Given a Specification.MD holding 286 copies of one paragraph
@@ -55,11 +56,23 @@ Feature: Specification.MD keeps one copy of the BL-607 paragraph, not 286
     Then no run of two consecutive blank lines remains in the document
 
   # BL-692 spec-dup-repair-07
-  Scenario: the repaired document is the measured size
-    When the duplicate-paragraph repair runs
-    Then the document is 2249 lines long
+  Scenario: the pre-fix revision the comparison reads is the corrupted one
+    Given the pinned pre-fix revision of the document read from git
+    When that revision is inspected before any comparison is trusted
+    Then it holds 286 copies of that paragraph
 
   # BL-692 spec-dup-repair-08
+  Scenario Outline: the closing sections survive the interleaved deletion
+    Given the junk copies are wedged between the bullets of <section>
+    When the duplicate-paragraph repair runs
+    Then <section> survives with every bullet in its original order
+
+    Examples:
+      | section                        |
+      | Gaps & Things Still Missing    |
+      | Out of Scope (v1)             |
+
+  # BL-692 spec-dup-repair-09
   Scenario: repairing an already-repaired document changes nothing
     When the duplicate-paragraph repair runs
     And the duplicate-paragraph repair runs again
