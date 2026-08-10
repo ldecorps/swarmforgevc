@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 3
 direction: swarm-surfaced
 depends_on: []

@@ -15,6 +15,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // BL-868: this lane silently ran without the two shared isolation
+    // guards vitest.config.mjs wires (BL-420's temp-dir sweep, BL-720's
+    // env-restore guard) - a property test's mkTmpDir() calls were never
+    // swept and a leaked process.env key had nothing to catch it. Same two
+    // setupFiles, same paths, as vitest.config.mjs.
+    setupFiles: ['./test/helpers/tmpDirSetup.js', './test/helpers/envRestoreGuardSetup.js'],
     include: ['test/**/*.property.test.js'],
     testTimeout: 20000,
   },

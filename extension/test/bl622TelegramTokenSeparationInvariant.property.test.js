@@ -3,7 +3,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, mkSharedTmpDir } = require('./helpers/tmpDir');
 
 // BL-622 invariant (declared on the ticket, coder-authored per BL-654):
 // "Ambient-env Telegram creds resolve only for the one recorded primary
@@ -58,7 +58,14 @@ function rmQuiet(dir) {
 // source - swarm names/tokens are test-controlled here, but argv passing is
 // the robust pattern regardless). Prints the conflicting swarm name, or the
 // literal string "NONE".
-const CONFLICT_CHECK_SCRIPT = path.join(mkTmpDir('bl622-prop-script-'), 'conflict_check.bb');
+//
+// BL-868: this directory is created once at module load and read by every
+// test in this file, so it must survive past the FIRST test's own teardown -
+// mkTmpDir's per-test afterEach sweep (now wired into the property lane)
+// would otherwise delete it before the second test runs. mkSharedTmpDir is
+// the tmpDir.js helper built for exactly this "created once in setup,
+// referenced by multiple tests" shape; it sweeps at afterAll instead.
+const CONFLICT_CHECK_SCRIPT = path.join(mkSharedTmpDir('bl622-prop-script-'), 'conflict_check.bb');
 fs.writeFileSync(
   CONFLICT_CHECK_SCRIPT,
   [
