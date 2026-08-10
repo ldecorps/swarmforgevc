@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { isolatedEnv } = require('./helpers/namedTunnelEnvIsolation');
 
 // BL-787 invariants (property authorship rests with the coder, first pass -
 // BL-654). Drives the REAL launch_resident_spy_tunnel.sh /
@@ -130,8 +131,7 @@ test(
         const result = spawnSync('bash', [LAUNCH, dir], {
           encoding: 'utf8',
           timeout: 15000,
-          env: {
-            ...process.env,
+          env: isolatedEnv({
             CLOUDFLARED: fakeCloudflared,
             HOME: dir,
             SWARMFORGE_NAMED_TUNNEL: 'swarmforge-bubble',
@@ -140,7 +140,7 @@ test(
             SWARMFORGE_SKIP_CAFFEINATE: '1',
             SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS: '40',
             SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL: '0.05',
-          },
+          }),
         });
 
         const stateFile = path.join(opDir, 'resident-spy-tunnel.json');
@@ -193,7 +193,7 @@ test('property (invariant 2): absent named-tunnel identity fails loud and never 
       const hostnameAbsent = missing === 'hostname' || missing === 'both';
       const zoneAbsent = missing === 'zone' || missing === 'both';
 
-      const env = { ...process.env, HOME: dir };
+      const env = isolatedEnv({ HOME: dir });
       let bin;
       let args;
 
@@ -302,12 +302,11 @@ test(
         );
         fs.chmodSync(fakeCaffeinate, 0o755);
 
-        const env = {
-          ...process.env,
+        const env = isolatedEnv({
           CLOUDFLARED: fakeCloudflared,
           CAFFEINATE: fakeCaffeinate,
           HOME: dir,
-        };
+        });
         if (keepalive === 'skip') {
           env.SWARMFORGE_SKIP_CAFFEINATE = '1';
         }
@@ -341,7 +340,12 @@ test(
           const stopResult = spawnSync('bash', [STOP, dir], {
             encoding: 'utf8',
             timeout: 15000,
-            env: { ...process.env, HOME: dir },
+            // isolatedEnv here isn't just correctness: stop_ancillary_services.sh's
+            // reap_named_tunnel_orphans reads ambient SWARMFORGE_NAMED_TUNNEL to
+            // scope a pgrep-based reap (BL-857) - an inherited real operator
+            // tunnel name would scope this fixture's teardown to the LIVE
+            // production tunnel, not just skew the assertion.
+            env: isolatedEnv({ HOME: dir }),
           });
           assert.equal(stopResult.status, 0, `expected stop_ancillary_services.sh to exit 0: ${stopResult.stderr}`);
 
