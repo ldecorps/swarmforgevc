@@ -8,7 +8,7 @@ epic: swarm-reliability
 priority: 110
 direction: normal
 mutation_cost: low
-acceptance: specs/features/BL-801-tmp-cleanup-registry-survives-subshell.feature.draft
+acceptance: specs/features/BL-801-tmp-cleanup-registry-survives-subshell.feature
 human_approval: approved
 
 approval_context: >
