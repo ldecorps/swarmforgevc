@@ -1,0 +1,114 @@
+id: BL-875
+title: "DEFECT — a stray tracked package-lock.json at the repo root (no package.json beside it) turns any accidental root `npm install` into an unexplained one-line diff that rides along in the next commit"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 140
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-875-stray-root-package-lock-removed.feature.draft
+human_approval: pending
+
+approval_context: >
+  Small slice, one call to sign off. The obvious fix — delete the file — is
+  NOT sufficient on its own: npm recreates a lockfile when none exists, so
+  deleting alone converts a tracked-diff trap into an untracked-stray trap.
+  This ticket therefore pairs the deletion with a root-anchored .gitignore
+  entry. Confirm you want the file gone rather than a real root package.json
+  introduced; a root manifest is the other way to close this, and would be a
+  bigger, different change.
+
+source: |
+  Rule proposal from hardener to specifier, 2026-08-10 (handoff
+  50_20260810T152507Z_000081_from_hardender_to_specifier): "Repo root has a
+  stray package-lock.json, no package.json. npm run from root fails ENOENT but
+  rewrites lockfile name to $PWD basename. cd extension/ first; git restore a
+  name-only root diff." Rationale given: "Hit this directly (GH-26 pass): a
+  cd-mistake left an unexplained root package-lock.json diff that nearly rode
+  along in the hardening commit."
+
+  The proposal was ACCEPTED as a working convention and landed in
+  local-engineering.prompt. This ticket is the durable fix behind it, so the
+  convention can eventually be retired rather than remembered by seven roles.
+
+invariants:
+  - "extension/package-lock.json remains tracked — build_freshness_lib.bb keys its deployed-surface check on that exact path, so an unanchored ignore rule silently breaks build freshness."
+  - "After this change, no npm invocation run from the repo root can produce a git-visible change there, tracked or untracked."
+
+description: |
+  ## What
+
+  `/package-lock.json` is tracked, 91 bytes, and contentless:
+
+      { "name": "swarmforgevc", "lockfileVersion": 3,
+        "requires": true, "packages": {} }
+
+  There is no `/package.json`. Nothing reads the root lockfile — a repo-wide
+  grep on 2026-08-10 found references only to `extension/package-lock.json`
+  (`swarmforge/scripts/build_freshness_lib.bb:65` and its test runner). It
+  entered incidentally, not deliberately (`git log -- package-lock.json` shows
+  it arriving via "Commit in-flight main changes before BL-144 merge").
+
+  ## Why deleting it is not enough
+
+  Verified on this host, 2026-08-10, in a scratch directory:
+
+  | starting state | command | result |
+  |---|---|---|
+  | lockfile present, no package.json | `npm install` | exits non-zero, lockfile `"name"` rewritten to cwd basename |
+  | lockfile present, no package.json | `npm run <script>` | exits ENOENT, lockfile untouched |
+  | lockfile present, no package.json | `npm ci` | fails, lockfile untouched |
+  | NO lockfile, no package.json | `npm install` | exits 254, **creates** an 88-byte lockfile named after the cwd |
+
+  So the last row is the trap: deleting the tracked file just converts a
+  tracked-diff hazard into an untracked-stray hazard — and an untracked stray
+  is arguably worse, because "never delete what you did not create" then makes
+  every other role hesitate over it.
+
+  Note the hardener's report named `npm run` as the rewriting command; the
+  actual culprit is `npm install`. That matters because the shared Engineering
+  Rules explicitly instruct roles to run `npm install` after syncing main when
+  package.json changed — so the hazardous command is one roles are told to run.
+
+  ## Scope
+
+  - Remove `/package-lock.json` from the index.
+  - Add a root-anchored `/package-lock.json` entry to the root `.gitignore`.
+    Anchored, not bare: a bare `package-lock.json` line would also ignore
+    `extension/package-lock.json`.
+  - Once this lands, the local-engineering.prompt convention added alongside
+    it can be trimmed to just the `cd extension/` habit; the documenter should
+    not remove it in this parcel, since the rule is still true for any
+    worktree that has not merged the fix.
+
+  ## Out of scope
+
+  - Introducing a real root `package.json` / npm workspace. That is a
+    plausible alternative fix and a much larger change; if the human prefers
+    it, this ticket is superseded rather than amended.
+
+  ## e2e QA procedure
+
+  1. `git ls-files package-lock.json` returns nothing; `git ls-files
+     extension/package-lock.json` returns the path.
+  2. `git check-ignore -v package-lock.json` matches; `git check-ignore -v
+     extension/package-lock.json` does NOT match (exit 1).
+  3. From the repo root run `npm install`; it fails. Then `git status
+     --porcelain` must be empty — this is the assertion that actually proves
+     the trap is closed, and it fails if the ignore entry was forgotten.
+  4. Run the extension unit suite from `extension/` and confirm the
+     build-freshness tests still pass (guards the anchoring invariant).
+
+notes: |
+  - Verified unreferenced before proposing removal; the only consumer of a
+    path by that name is build_freshness_lib.bb, and it names the
+    `extension/` copy explicitly.
+  - IR-DRY reports one remaining `possible-synonym` (medium, 0.5) between
+    `git tracking the path is <tracked>` and `git ignoring the path is
+    <ignored>`. Reviewed and kept deliberately: they sit in the same Scenario
+    Outline and assert two different git queries (`ls-files` vs
+    `check-ignore`) that merely share sentence shape. Merging them would
+    collapse the very distinction the anchoring invariant turns on. Do not
+    "normalize" it away.

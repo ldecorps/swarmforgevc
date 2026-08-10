@@ -1,5 +1,5 @@
 id: BL-693
-title: "A repeated-paragraph gate for markdown docs, wired into the documenter's pass, so a botched append cannot ship 285 junk paragraphs undetected again"
+title: "A standing repeated-paragraph guard over the docs tree, riding the suite every parcel runs, so a botched append cannot ship 285 junk paragraphs undetected again"
 milestone: M8
 type: feature
 status: todo
@@ -13,6 +13,7 @@ mutation_cost: low
 
 invariants:
   - "No line whose content is markdown structure rather than prose — code fence, horizontal rule, table separator, list marker, blockquote marker, diagram glyph — is ever reported as a duplicate, however many times it repeats."
+  - "A substantial paragraph repeated within one docs file turns the guard red inside the parcel that introduces it, not weeks later — the guard runs as part of the suite a role already runs every parcel, never as a step someone must remember to invoke."
 
 approval_context: >
   Prevention half of BL-692, split out so that repair can land as the small
@@ -38,52 +39,144 @@ source: |
   other repeat above 5 was markdown structure. Exact-match on prose lines
   separates the defect from legitimate markdown cleanly.
 
+  ## Re-measured 2026-08-10 on `main` at 622b11b6f3 — 17 days unguarded
+
+  The corruption is still live, and the count of documenter commits that
+  edited around it without noticing is now ~25 rather than eleven. That is
+  the case for this ticket, restated with a bigger number.
+
+  A threshold sweep over the whole tree: scanning every markdown file under
+  `docs/` for a trimmed line over **200 characters** appearing more than once
+  in the same file finds **exactly one offending file** —
+  `docs/reference/Specification.MD` — with **exactly two duplicate groups**,
+  which are precisely BL-692's two variants. Nothing else in the tree trips
+  it. So the guard goes green on the deduplicated tree with **no exemption
+  list at all**, and the 200-character threshold is a measured number, not a
+  guess.
+
 description: |
-  A gate in the shape of the existing `gherkin_lint_gate` trio —
-  `swarmforge/scripts/doc_dup_gate_lib.bb` (the logic, unit-tested),
-  `doc_dup_gate_cli.bb`, and a `doc_dup_gate.sh` wrapper — that takes one or
-  more markdown paths and exits non-zero when any prose line appears more
-  than once in the same file.
+  A standing guard that scans the docs tree and fails when any *substantial*
+  prose line appears more than once inside the same file. It rides the test
+  suite a role already runs every parcel — the same posture as
+  `extension/test/tmpDirMigrationGuard.test.js` and BL-872's guard — rather
+  than being a script someone must remember to invoke.
 
   A failure names the file, the repeated text (truncated), the number of
   occurrences, and the line numbers, so the reader can act without opening a
-  1.36 MB file.
+  1.45 MB file.
 
-  Structural markdown is exempt: fences, horizontal rules, table separator
-  rows, list markers, blockquote markers, and box-drawing diagram lines all
-  legitimately repeat. That exemption set is open-ended, which is why it is
-  stated as an invariant rather than enumerated only in scenarios — a
-  property test over generated markdown is the right encoding.
+  Structural markdown is exempt by construction: fences, horizontal rules,
+  table separator rows, list markers, blockquote markers and box-drawing
+  diagram lines are all short, and the substantiality threshold excludes them
+  without an enumerated allowlist. That exemption set is open-ended, which is
+  why it is stated as an invariant rather than enumerated only in scenarios —
+  a property test over generated markdown is the right encoding.
+
+  ## Constraints
+
+  - **Threshold.** "Substantial" means a trimmed line over ~200 characters.
+    That number was measured against the real tree twice (2026-07-27 and
+    again 2026-08-10): at 200 characters it finds exactly the two duplicate
+    groups BL-692 removes and nothing else. Tune the number if evidence
+    demands, but **do not buy green with a per-file or per-paragraph
+    exemption list** — an exemption is how this class of defect gets
+    grandfathered in and stops being caught.
+  - **Within-file only.** Repetition of the same line across two different
+    docs files is NOT a duplicate and must not fail the guard. This repo
+    deliberately restates sections across documents; a cross-file scan would
+    light up on legitimate content. See `out_of_scope`.
+  - **Surface, do not delete.** If the guard turns up duplicates in files
+    other than Specification.MD, report them for triage. This ticket
+    authorises building the guard, not removing anything — BL-692 authorises
+    removing the BL-607 copies and nothing else.
 
   ## Wiring
 
-  The documenter runs it over the doc files its pass touched, before
-  committing. That instruction goes in `swarmforge/roles/documenter.prompt`,
-  mirroring how `gherkin_lint_gate.sh` is named in `specifier.prompt` — and
-  it is declared in `required_wiring:` so the pre-QA gate refuses a handoff
-  that ships the mechanism without the call site.
+  The guard is a Vitest test in `extension/test/` — the suite every parcel
+  already runs — so there is no invocation step to forget and no prompt
+  instruction that can go stale. Its path is fixed by `required_wiring:`
+  below, so the pre-QA gate refuses a handoff that ships duplicate-detection
+  logic without the standing assertion that actually runs it.
+
+  This replaces an earlier design for this same ticket, which put the logic in
+  a `doc_dup_gate_lib.bb` / `doc_dup_gate_cli.bb` / `doc_dup_gate.sh` trio
+  invoked by the documenter, with the invocation named in
+  `swarmforge/roles/documenter.prompt`. That shape was rejected on
+  reconciliation for one reason: a gate the documenter must remember to run
+  can be forgotten, and being forgotten for 17 days by ~25 consecutive
+  documenter passes is the exact failure this ticket exists to prevent. A
+  factored, unit-tested library behind the test is still welcome; what is not
+  acceptable is a mechanism whose only caller is an instruction in prose.
 
 acceptance: specs/features/BL-693-repeated-paragraph-gate.feature.draft
 
 required_wiring:
-  - "swarmforge/roles/documenter.prompt::doc_dup_gate.sh::the gate is worthless unless the documenter is told to run it; a lib with no caller is the BL-419 shape"
+  - "extension/test/docsDuplicateParagraphGuard.test.js::docs::the zero-duplicate assertion must sit in the suite every parcel runs — its absence is exactly why one botched insertion went unnoticed for 17 days. The filename is fixed by this declaration."
 
 out_of_scope: |
   - Near-duplicate / fuzzy matching. Exact line match is what the evidence
     supports; similarity scoring invites false positives over a corpus that
     legitimately repeats boilerplate.
   - Cross-file duplication. Sections are deliberately restated across docs
-    here; only within-file repetition is the defect.
+    here; only within-file repetition is the defect. Measured: a cross-file
+    scan of this tree is not a usable signal.
   - Repairing BL-692's corruption. That is BL-692, and it must land first —
-    hence `depends_on`.
-  - Making the gate blocking anywhere other than the documenter's own pass.
-    Adding it to `swarm_handoff.bb` or a commit hook is a separate decision
-    about core transport, not this slice.
+    hence `depends_on`. Until it does, the real-tree scenario is red by
+    design.
+  - Guarding anything outside `docs/`. Prose lives elsewhere too (role
+    prompts, constitution articles); extending the scan there is a separate
+    decision with a different false-positive profile.
+  - Wiring the check into `swarm_handoff.bb` or a commit hook. Making it
+    blocking at the transport layer is a separate decision about core
+    transport, not this slice.
+
+qa_e2e: |
+  1. Run the extension Vitest suite and confirm the new guard test is
+     COLLECTED and green on the deduplicated tree.
+  2. Break-then-fix proof, over the SAME suite command a role already runs
+     every parcel — not a hand-picked file path: paste any long paragraph
+     from a docs file a second time into that file, re-run the suite, and
+     watch it go red naming the file, the truncated text, the occurrence
+     count, and both line numbers. Remove the paste; green again.
+  3. Confirm a short repeated line does not trip it: add a duplicate `---`
+     and a duplicate `## Gaps` heading to a docs file, re-run, still green.
+  4. Confirm within-file scoping: put the same long paragraph in two
+     DIFFERENT docs files, re-run, still green.
+  5. Confirm no exemption list was introduced to reach green — grep the guard
+     for per-file or per-paragraph allowlists; there should be none.
 
 notes: |
   Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
   wires handlers in the same commit.
 
-  Lint gate clean. IR-DRY leaves one medium finding, reviewed and kept:
-  `the gate runs on both` vs `the gate runs on it` differ by arity — one
-  file versus two — which is exactly what scenarios 04 and 05 test.
+  Lint gate clean. IR-DRY leaves two low-scoring `possible-synonym` findings,
+  both reviewed and deliberately kept — they differ by arity and by which
+  file is dirty, which is exactly what scenarios 04 and 05 assert: one file
+  repeating a line (fails) versus two files sharing one (passes) versus a
+  clean file paired with a dirty one (fails, and must name the second). Do
+  not normalise them; collapsing any pair erases a behaviour under test.
+
+  ## Consolidation record 2026-08-10 — BL-873 retired into this ticket
+
+  BL-873 ("docs duplicate paragraph guard", specced 2026-08-10, human-approved)
+  independently re-diagnosed BL-692's corruption from a fresh documenter note
+  and bundled the repair AND this guard into one slice. Three tickets for one
+  defect; the coordinator called it. Reconciled under the specifier's
+  consolidation authority (BL-680) and Article 5.3 — all three were paused, so
+  spec-time consolidation applies and no in-flight ticket was rewritten. The
+  BL-692/BL-693 split is kept; BL-873 is retired as superseded.
+
+  **What BL-873 contributed, folded in above and it is the substantive change
+  to this ticket:** the guard's incarnation moves from a documenter-invoked
+  Babashka gate trio to a standing Vitest guard in `extension/test/`, with the
+  measured 200-character substantiality threshold that removes the need for any
+  exemption list, and the `required_wiring:` declaration that pins the test's
+  path. The rejected earlier design and the reason are recorded in the
+  description rather than deleted, so the decision stays walkable.
+
+  **Approval:** no new human approval is required. The human approved this
+  ticket's split shape on 2026-07-27 and approved BL-873's Vitest-in-suite
+  incarnation on 2026-08-10; this amendment carries both forward rather than
+  inventing a third design. BL-873's other approved call — severity `medium`
+  on explicit anti-inflation reasoning — is recorded on BL-692, which is the
+  ticket that carries a severity.
