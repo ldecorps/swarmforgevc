@@ -6,7 +6,7 @@ severity: high
 status: todo
 epic: swarm-reliability
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 97
 direction: human-requested
 depends_on: []
