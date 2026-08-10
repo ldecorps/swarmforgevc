@@ -6,7 +6,7 @@ status: todo
 epic: swarm-behaviour-trends
 human_approval: approved
 severity: low
-priority: 172
+priority: 183
 direction: human-requested
 depends_on: []
 assigned_to: specifier

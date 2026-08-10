@@ -6,7 +6,7 @@ status: todo
 epic: bubble-voice-engine
 human_approval: approved
 severity: medium
-priority: 22
+priority: 37
 direction: human-intake
 depends_on: [BL-863]
 assigned_to: coder

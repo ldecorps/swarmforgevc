@@ -411,7 +411,8 @@ const DOMAINS = [
   require('./bl849DarwinOrphanJanitorHotfixSteps'),
   require('./bl840ProviderOutageEvidenceReachesFlowWatchdogSteps'),
   require('./bl867PropertyFixtureEnvIsolationSteps'),
-  require('./bl868PropertyLaneIsolationGuardsSteps')
+  require('./bl868PropertyLaneIsolationGuardsSteps'),
+  require('./bl869MultiTicketCloseGuardSteps')
 ];
 
 function registerSteps(registry) {

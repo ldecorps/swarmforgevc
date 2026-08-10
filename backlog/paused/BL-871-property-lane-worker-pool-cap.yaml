@@ -5,8 +5,8 @@ type: defect
 severity: medium
 status: todo
 epic: code-quality-gates
-human_approval: pending
-priority: 4
+human_approval: approved
+priority: 6
 direction: swarm-surfaced
 depends_on: [BL-868]
 assigned_to: coder

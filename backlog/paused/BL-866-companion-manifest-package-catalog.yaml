@@ -6,7 +6,7 @@ status: todo
 epic: bubble-offline-sync
 human_approval: approved
 severity: medium
-priority: 26
+priority: 44
 direction: human-intake
 depends_on: []
 assigned_to: coder

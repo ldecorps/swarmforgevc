@@ -6,7 +6,7 @@ status: todo
 epic: swarm-behaviour-trends
 human_approval: approved
 severity: medium
-priority: 138
+priority: 149
 direction: human-requested
 depends_on: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-605]
 assigned_to: specifier

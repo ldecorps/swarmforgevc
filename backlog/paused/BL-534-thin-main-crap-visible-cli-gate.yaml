@@ -5,7 +5,7 @@ type: chore
 status: todo
 epic: swarm-reliability
 assigned_to: specifier
-priority: 84
+priority: 98
 mutation_cost: low
 direction: human-requested
 depends_on: []

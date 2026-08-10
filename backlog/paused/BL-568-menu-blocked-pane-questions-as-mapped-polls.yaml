@@ -6,7 +6,7 @@ status: needs_design
 epic: swarm-reliability
 human_approval: approved
 severity: medium
-priority: 132
+priority: 143
 direction: human-requested
 depends_on: [BL-425, BL-466, BL-566]
 assigned_to: specifier
