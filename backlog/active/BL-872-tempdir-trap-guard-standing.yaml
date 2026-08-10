@@ -168,3 +168,5 @@ qa_e2e: |
      — including when the harness exits non-zero.
   5. Confirm SIGKILL remains documented as out of scope (BL-413 backstop), not
      silently assumed handled.
+
+assigned_to: coder
