@@ -1,6 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 10, 2026 (BL-849: swarm stamp-off of the Darwin
+**Last Updated:** August 10, 2026 (BL-840: provider-outage subtraction had
+never fired in production. BL-650 shipped the flow watchdog's active-time
+clock with three interval classes — control-pause, swarm-stop, and
+provider-outage — but `flow-watchdog-sweep!`, the only production caller,
+never supplied a `:provider-outage-evidence-for` adapter, so it silently
+defaulted to `(constantly [])`: every waiting parcel kept accruing full
+wall-clock age through a provider outage, the exact live false-alarm source
+the human's original ruling ("il faut tenir compte des outages indépendants
+de la swarm dans les calculs de temps effectifs") was meant to close. Worse,
+the classifier the fix would have wired never even recognized the incident
+text that prompted that ruling — `529`/`overloaded_error` classified
+`:unknown`. This ticket extends the `:unavailable` classifier pattern (TS
+and Babashka twins, asserted for parity), adds a new
+`provider_outage_evidence_lib.bb` (mirrors BL-823's availability-ledger
+shape) that records a throttled evidence line from the SAME pane
+scrollback capture BL-536's auth observer already takes on every chase
+sweep, and wires `flow-watchdog-sweep!` to supply real evidence, attributed
+by provider (not by observing pane) so mono-router's dormant roles are
+covered too. See the new "Effective Age and Provider-Outage Evidence
+(BL-650/BL-840)" section under Flow Watchdog below.
+Previously August 10, 2026 — BL-849: swarm stamp-off of the Darwin
 orphan-janitor hotfix (`f9cf29c2`, hand-landed 2026-08-07 after
 `operator_runtime` had been ticking "swept 0, reaped 0" every cycle on the
 production Mac host while roughly thirty disposable front-desk/bridge
@@ -1290,15 +1310,17 @@ wall clock, the same safe default BL-650 already uses everywhere else.
 heartbeat), or `"open"` (no closing record yet; `:end-ms` is `nil`, never a
 guessed timestamp). It spans month-file boundaries and skips blank,
 malformed, or unparseable-timestamp lines rather than crashing the fold or
-inventing a record. This is BL-823's only reader; nothing calls `fold` yet —
-that first caller is BL-650.
+inventing a record. This is BL-823's only reader — `fold`'s caller is
+BL-650's `evaluate-effective-age`, in the Flow Watchdog section below.
 
 ### See Also
 
 - **BL-617** — Nightly Cooldown Window: its `writeControlPauseState` writer
   now also appends to this ledger on every pause/resume.
-- **BL-650** (not yet built, `depends_on: [BL-823]`) — the flow watchdog fix
-  that will subtract these intervals from parcel-age math.
+- **BL-650** — the flow watchdog's active-time clock: `evaluate-effective-age`
+  subtracts these ledger intervals, plus provider-outage intervals (BL-840),
+  from a waiting parcel's effective age. See "Effective Age and Provider-Outage
+  Evidence (BL-650/BL-840)" below.
 
 ## Flow Watchdog (BL-577)
 
@@ -1333,9 +1355,14 @@ Configure the flow watchdog in `swarmforge.conf`:
 ```
 config flow_watchdog_warn_ms 900000           # global fallback warn at 15 minutes (default)
 config flow_watchdog_escalate_ms 3600000      # global fallback escalate at 1 hour (default)
+config provider_outage_observe_min_interval_ms 60000   # BL-840: throttle for provider-outage evidence writes (default)
 ```
 
-These are the **global fallback thresholds**. Per-spec thresholds are resolved outside `decide-tier` from a calibrated percentile table (`.swarmforge/daemon/flow-watchdog-thresholds.json`), keyed by the alarm's own `(from→to, type)` identity:
+These are the **global fallback thresholds**. `provider_outage_observe_min_interval_ms`
+is a separate knob governing how often a standing provider-outage banner is
+recorded as evidence (see "Effective Age and Provider-Outage Evidence
+(BL-650/BL-840)" below) — it does not affect warn/escalate thresholds
+themselves. Per-spec thresholds are resolved outside `decide-tier` from a calibrated percentile table (`.swarmforge/daemon/flow-watchdog-thresholds.json`), keyed by the alarm's own `(from→to, type)` identity:
 
 - **Warn tier (≈ p67):** fires when age exceeds the 67th percentile of historical mailbox residence for that spec — roughly the slowest third of cases
 - **Escalate tier (≈ p97):** fires when age exceeds the 97th percentile — roughly the slowest 3%
@@ -1391,12 +1418,68 @@ The flow watchdog is a pure decision core (`swarmforge/scripts/flow_watchdog_lib
 5. **Expedite:** if the role is live but the parcel is in `new/`, nudge or wake it (the chase daemon already does this, but an explicit nudge helps)
 6. Once the parcel is claimed and progresses, the watchdog's state entry clears and no further alarms fire for that parcel
 
+### Effective Age and Provider-Outage Evidence (BL-650/BL-840)
+
+`flow_watchdog_lib.bb`'s `evaluate-effective-age` is the active-time clock
+the sweep feeds into `decide-tier` instead of raw wall-clock age. It
+subtracts two independent interval classes from a waiting parcel's span:
+BL-823's availability-ledger intervals (`control-pause`, `swarm-stop`) and
+BL-650's own `provider-outage-intervals` (gap-grouped at
+`default-provider-outage-max-gap-ms`, 10 minutes). Both classes were built
+and hardened at the pure-function level by BL-650/BL-823; BL-840 is what
+supplies the second class with a real, production evidence source —
+`flow-watchdog-sweep!` previously called `evaluate-effective-age` with no
+`:provider-outage-evidence-for` adapter at all, so it silently defaulted to
+`(constantly [])` and no parcel had ever had a millisecond of provider outage
+subtracted, live false-alarm source and all.
+
+**The evidence source rides an observation the daemon already makes.**
+`observe-standing-role-auth!` already captures ~20 lines of every live
+role's pane scrollback on every chase sweep for BL-536's auth-class
+observer; BL-840 feeds the SAME snapshot (no second tmux capture) to
+`observe-pane-provider-outage!`, which records a line whenever the text
+classifies `:unavailable` per `classify-provider-error`
+(`agent_runtime_lib.bb`, cross-language twin
+`extension/src/swarm/providerErrorTaxonomy.ts` — the two are asserted for
+parity and must stay in parity). The `:unavailable` pattern was extended to
+recognize `529` / `overloaded_error` as part of this ticket: the incident
+text that prompted the human's original outage-subtraction ruling
+(`"API Error: 529 {...\"type\":\"overloaded_error\"}"`) classified `:unknown`
+before this fix, so wiring the adapter alone would not have caught it.
+
+**Storage** — `provider_outage_evidence_lib.bb` mirrors
+`availability_ledger_lib.bb`'s shape exactly: one lib, sole writer and sole
+reader of `.swarmforge/telemetry/provider-outage-<YYYY-MM>.jsonl`. Each line
+records the observation timestamp, the provider, the observing role, and the
+observed text.
+
+**Throttled write** — at most one line per role per
+`provider_outage_observe_min_interval_ms` (`swarmforge.conf`, default
+`60000`; a positive-integer knob, any other value degrading to the
+default). 60s sits well inside the 10-minute gap-grouping window, so a
+standing multi-hour outage banner still reconstructs as one contiguous
+interval rather than one line per sweep.
+
+**Attribution is by provider, not by pane.** An outage observed on one
+role's pane is applied to every role configured with that same provider
+(the existing BL-208 role→provider lookup), never only to the role whose
+pane produced the observation — the load-bearing case under mono-router,
+where only the resident has a standing pane and every dormant role's
+parcel would otherwise go unsubtracted.
+
+**Fail closed.** A missing, empty, or unparseable evidence file — or any
+error reading it — subtracts nothing; wall-clock effective age is the safe
+fallback, and the sweep completes without error. This is subtraction only:
+there is no alarm-suppression path, and an outage never mutes what the
+watchdog would otherwise say.
+
 ### See Also
 
 - **BL-349** — Stuck-Role Escalation Email: agent liveness alarm (different from flow monitoring)
 - **BL-537** — Session heal: auto-recovery for hung sessions (one class of flow-stall cause)
 - **BL-576** — Aged-Note Actionability: fixing a specific flow-stall root cause (prescriptive actions for old notes)
-- **BL-823** — Swarm Availability Ledger: records pause and stop-to-start intervals this watchdog still measures in raw wall-clock time; BL-650 (not yet built) will subtract them here
+- **BL-823** — Swarm Availability Ledger: records pause and stop-to-start intervals; BL-650's `evaluate-effective-age` subtracts them (see "Effective Age and Provider-Outage Evidence" above)
+- **BL-840** — Provider-Outage Evidence Reaches Flow Watchdog: supplies BL-650's previously-unwired provider-outage adapter with a real production evidence source (see above)
 - **BL-839** — Master-Checkout Drift Alarm: a different sweep in the same `handoffd.bb` cadence, reusing this same Telegram Operator outbox, but alarming on a different question (does the master checkout's own working tree still match `main`, not parcel age) — see [the runbook](../how-to/BL-839-master-checkout-drift-alarm.md)
 
 ## Per-Agent Lifecycle Control
