@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=518b391aa4ffed5e155a0b198085f7695e8ed32e49941fe904439c6c22b9fbf4
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-10T15:20:32.389857Z","feature_name":"an undeliverable role question never leaves the asking role wedged","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/GH-26-undeliverable-role-question-clears-marker.feature","background_hash":"d631a6e5d1dc9e1d7344c79cc21ed38c88bc623d1924e721277a77175238d2c1","implementation_hash":"unknown","scenarios":[{"index":0,"name":"an undeliverable question rewrites the awaiting marker instead of dropping silently","scenario_hash":"d36c1620e5ef74c6cc698e43cec776a3727e973dfcd70bbcf94844cec4bcc82e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-10T15:20:32.389857Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: an undeliverable role question never leaves the asking role wedged
 
   # GH-26: deliverRoleQuestion silently drops a question when the role has

@@ -87,4 +87,37 @@ pass "malformed --options degrades to a plain-message question, never crashes th
 rm -rf "$ROOT3"
 trap - EXIT
 
+# ── GH-26: a marker in state "undeliverable" (deliverRoleQuestion's own
+# rewrite on an undeliverable drop) never blocks a fresh ask - the role may
+# ask again immediately, and the marker is overwritten (state cleared) ────
+ROOT4="$(tmp_root)"
+trap 'rm -rf "$ROOT4"' EXIT
+AWAITING4="$ROOT4/.swarmforge/operator/role-awaiting/specifier.json"
+mkdir -p "$(dirname "$AWAITING4")"
+printf '{"question":"which environment?","asked_at_ms":1000,"state":"undeliverable"}' > "$AWAITING4"
+
+OUT6="$(bb "$CLI" "$ROOT4" --role specifier --question "a fresh question")"
+echo "$OUT6" | grep -q '"asked":true' || fail "expected an undeliverable-state marker to never block a fresh ask, got: $OUT6"
+grep -q "a fresh question" "$AWAITING4" || fail "expected the marker to be overwritten with the new question"
+grep -q '"state"' "$AWAITING4" && fail "expected the rewritten marker to carry no state field (a fresh ordinary pending ask), got: $(cat "$AWAITING4")"
+pass "GH-26: an undeliverable-state marker never blocks a fresh ask, and is overwritten by it"
+rm -rf "$ROOT4"
+trap - EXIT
+
+# ── GH-26: an ORDINARY pending marker (no state field at all, the shape
+# role_ask.bb itself writes on every successful ask) still blocks exactly
+# as before this ticket - only the literal "undeliverable" state is exempt
+ROOT5="$(tmp_root)"
+trap 'rm -rf "$ROOT5"' EXIT
+AWAITING5="$ROOT5/.swarmforge/operator/role-awaiting/specifier.json"
+mkdir -p "$(dirname "$AWAITING5")"
+printf '{"question":"which environment?","asked_at_ms":1000}' > "$AWAITING5"
+
+OUT7="$(bb "$CLI" "$ROOT5" --role specifier --question "a second question")"
+echo "$OUT7" | grep -q '"asked":false' || fail "expected an ordinary pending marker (no state) to still block, got: $OUT7"
+grep -q '"asked_at_ms":1000' "$AWAITING5" || fail "expected the ordinary pending marker to be left untouched"
+pass "GH-26: an ordinary pending marker (no state field) still blocks, unchanged from before this ticket"
+rm -rf "$ROOT5"
+trap - EXIT
+
 echo "ALL PASS"

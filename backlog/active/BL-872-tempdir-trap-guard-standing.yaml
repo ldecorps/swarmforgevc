@@ -1,0 +1,172 @@
+id: BL-872
+title: "DEFECT — BL-459's cleanup-trap lock rotted: 18 files under swarmforge/scripts create temp roots with no cleanup (one of them the production pre-QA gate lib), because the guard's real-tree assertion lives in a directory no standing gate runs"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 115
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-872-tempdir-trap-guard-standing.feature.draft
+human_approval: approved
+
+approval_context: >
+  New feature draft needs review, plus two deliberate calls to sign off or
+  overturn. (1) This ticket carries BOTH halves — remediating the 18 violating
+  files AND giving the guard a standing home — in one slice, on the grounds
+  that shipping only the remediation guarantees a third round of the same rot
+  (BL-420 -> BL-459 -> this). Split them if you disagree. (2) The standing home
+  proposed is the extension Vitest suite, mirroring BL-420's own
+  extension/test/tmpDirMigrationGuard.test.js, because that is the one suite
+  every parcel provably runs; the alternative considered and rejected was
+  bolting the check onto swarm_handoff.bb's pre-QA gate, which would have
+  needed a bb->node hop or a second copy of the scan rules.
+
+source: |
+  Coordinator note to specifier, 2026-08-10 (handoff
+  20260810T101745Z_000234_from_coordinator): "BL-459 regressed: acceptance now
+  fails, 4 pre-existing files lack cleanup trap". Reproduced by the specifier
+  on this host the same day against a clean `main` working tree — the real
+  count is 18, not 4 (the note saw only the 4 shell files; 14 babashka files
+  are flagged too).
+
+invariants:
+  - "Every file under swarmforge/scripts that creates a temp root removes it on both a clean and a failing exit — files added after this ticket included, not just the 18 remediated here."
+  - "The rules that decide whether a temp-root creator is guarded exist in exactly one module; no gate, suite, or harness re-implements them."
+  - "A newly added unguarded temp-root creator turns a gate red inside the parcel that introduces it, not a later one."
+
+required_wiring:
+  - "extension/test/tempDirTrapGuard.test.js::swarmforge/scripts::the zero-violation assertion must sit in the suite every parcel runs (the BL-420 tmpDirMigrationGuard.test.js precedent). The filename is fixed by this declaration; its absence is exactly the defect."
+  - "swarmforge/scripts/pre_qa_gate_gather_lib.bb::delete-tree::the one non-test violator — production machinery leaking two temp roots per pre-QA gate evaluation — must actually be remediated, not merely reported."
+
+description: |
+  ## What
+
+  BL-459 shipped a static regression guard
+  (`specs/pipeline/steps/lib/tempDirTrapGuard.js`) that flags any `.sh`/`.bb`
+  file under `swarmforge/scripts` creating a temp root (`mktemp -d` /
+  `fs/create-temp-dir`) without a cleanup mechanism. It is the shell/babashka
+  sibling of BL-420's extension-side `rawMkdtempGuard`.
+
+  The guard works. What rotted is where its verdict is CONSUMED. Both consumers
+  are lagging:
+
+  - `specs/features/BL-459-shell-bb-tempdir-cleanup-trap.feature` scenario 02 —
+    runs only when someone runs BL-459's own acceptance.
+  - `specs/pipeline/test/tempDirTrapGuard.test.js` — already contains a
+    `the real swarmforge/scripts tree has zero temp-dir-trap violations`
+    assertion, and it is RED (13/14 pass, 0.37s). Nothing runs it: node's
+    `--test` over that directory is invoked ad hoc by roles naming individual
+    files, never by a standing gate. Its BL-420 sibling, by contrast, lives in
+    `extension/test/` and rides the Vitest suite every parcel runs.
+
+  So for three weeks the lock was decorative. Measured on a clean `main`
+  working tree, 2026-08-10 — **18 violations**, not the 4 the coordinator's
+  80-char note could carry:
+
+      swarmforge/scripts/pre_qa_gate_gather_lib.bb                              (PRODUCTION)
+      swarmforge/scripts/test/babysitter_assess_lib_test_runner.bb
+      swarmforge/scripts/test/bl809_claim_risk_sweep_harness.bb
+      swarmforge/scripts/test/bl809_worktree_head_property_runner.bb
+      swarmforge/scripts/test/bl839_master_checkout_drift_property_runner.bb
+      swarmforge/scripts/test/bl840_provider_outage_evidence_acceptance_runner.bb
+      swarmforge/scripts/test/bl849_orphan_janitor_acceptance_runner.bb
+      swarmforge/scripts/test/bounded_delete_sweep_lib_test_runner.bb
+      swarmforge/scripts/test/bridge_supervisor_env_test_runner.bb
+      swarmforge/scripts/test/cache_warm_test_runner.bb
+      swarmforge/scripts/test/chase_activity_nudge_test_runner.bb
+      swarmforge/scripts/test/chase_sweep_alert_resume_property_runner.bb
+      swarmforge/scripts/test/pre_qa_gate_gather_lib_acceptance_contract_test_runner.bb
+      swarmforge/scripts/test/provider_outage_evidence_lib_test_runner.bb
+      swarmforge/scripts/test/test_claim_progress_sweep.sh
+      swarmforge/scripts/test/test_github_intake_write.sh
+      swarmforge/scripts/test/test_lifecycle_script_scope.sh
+      swarmforge/scripts/test/test_operator_runtime_sandbox_sweep_bounded_progress.sh
+
+  Regression window: BL-519 (2026-07-18, two days after BL-459 landed) through
+  BL-849 (2026-08-09).
+
+  ## Why it matters beyond a red scenario
+
+  `swarmforge/scripts/pre_qa_gate_gather_lib.bb` is not a test harness. It
+  creates two `fs/create-temp-dir` roots per pre-QA gate evaluation — one for a
+  Gherkin parse, one it fills with a copy of the tracked `specs/pipeline` tree
+  at the cited commit — and cleans up neither. That gate runs on every
+  documenter -> QA handoff, so the swarm's own machinery has been feeding the
+  /tmp accumulation BL-413 and BL-459 were both filed to stop.
+
+  ## Scope
+
+  1. **Remediate all 18**, each using the mechanism already established for its
+     kind — shell: source `swarmforge/scripts/test/lib/tmp_cleanup.sh` and call
+     `register_tmp_dir`; babashka: the shutdown-hook pattern the 11 already-clean
+     runners use (`handoff_lib_test_runner.bb` is the reference). Extracting a
+     shared babashka helper is ALLOWED but not required; if extracted, it must
+     not churn the already-clean files beyond mechanical substitution.
+  2. **Give the guard a standing home** — a Vitest test in `extension/test/`
+     asserting zero violations over the real `swarmforge/scripts` tree, exactly
+     as `extension/test/tmpDirMigrationGuard.test.js` does for BL-420. One
+     implementation of the scan rules only (invariant 2): the new test calls
+     `scanForTempDirTrapViolations`, it does not restate the regexes. Relocating
+     the module is fine if the existing callers move with it; duplicating it is
+     not.
+
+  ## Constraints
+
+  - **Register in the parent shell.** The 4 shell files must not adopt the
+    `ROOT="$(make_root)"` command-substitution pattern — that is precisely the
+    registration-loss defect BL-801 is in flight to fix. Registering directly in
+    the parent shell is correct whichever order the two tickets land, so this
+    ticket does not depend on BL-801. Prefer landing BL-801 first anyway; the
+    file scopes are disjoint (BL-801 touches only the lib and its new unit test).
+  - **Do not weaken the guard to buy a green scan.** Adding an exemption, or a
+    cleanup mechanism that satisfies the regex without actually deleting the
+    root, fails scenario 03 by design.
+  - **SIGKILL/OOM stays out of scope**, unchanged from BL-459: a trap cannot
+    catch it, and BL-413's periodic /tmp sweep is the backstop.
+  - Scenario 03 asserts residue only. It must run its chosen harness with the
+    harness's own pass/fail treated as irrelevant, so an unrelated breakage in
+    that harness cannot turn this ticket's acceptance red for the wrong reason.
+  - `specs/features/BL-459-*.feature` scenario 02 must go green as a consequence
+    of the remediation; do not edit BL-459's feature file to accommodate this
+    work.
+
+  ## Not in scope
+
+  - Fixing `tmp_cleanup.sh` itself (BL-801 owns that).
+  - Sweeping the existing /tmp stock (BL-413 owns that).
+  - The 11 babashka runners and ~49 shell files already carrying a cleanup
+    mechanism — leave them alone.
+
+notes: |
+  The acceptance contract ships as `.feature.draft` (BL-233): its step handlers
+  do not exist yet, and a live `*.feature` with no handlers makes the acceptance
+  runner throw. The coder renames it to `.feature` and updates this ticket's
+  `acceptance:` field in the same parcel that lands the handlers.
+
+  Epic choice: `swarm-reliability`, keeping the tempdir-cleanup family
+  (BL-413 / BL-420 / BL-459 / BL-801) in one orbit so an epic consolidation
+  sweep sees them together. The "a gate that rotted" half would read equally
+  well under `code-quality-gates` (BL-541); noted here rather than split.
+
+qa_e2e: |
+  1. `node -e "console.log(require('./specs/pipeline/steps/lib/tempDirTrapGuard')
+     .scanForTempDirTrapViolations('./swarmforge/scripts').length)"` from the
+     repo root prints `0`.
+  2. `node specs/pipeline/cli.js specs/features/BL-459-shell-bb-tempdir-cleanup-trap.feature`
+     passes 5/5 (it fails 1/5 on the commit this ticket was written against).
+  3. Standing-gate proof, the load-bearing one: run the extension Vitest suite
+     and confirm the new guard test is COLLECTED and green. Then plant a
+     throwaway `.bb` file under `swarmforge/scripts/test/` containing a bare
+     `fs/create-temp-dir` and no cleanup, re-run the SAME suite command a role
+     already runs every parcel (not a hand-picked file path), and watch it go
+     red naming that file. Remove the plant; green again. A guard that only
+     goes red when invoked by name has not been fixed.
+  4. Residue proof per kind: run one remediated shell harness and one
+     remediated babashka runner, and confirm no new `/tmp` root survives either
+     — including when the harness exits non-zero.
+  5. Confirm SIGKILL remains documented as out of scope (BL-413 backstop), not
+     silently assumed handled.
+
+assigned_to: coder

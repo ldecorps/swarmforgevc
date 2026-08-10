@@ -1,0 +1,141 @@
+id: BL-873
+title: "DEFECT — one botched documenter insertion wedged 286 copies of the same paragraph through the last third of Specification.MD, 284 of them carrying a quote-mangled command example, and nothing in the tree looks for repeated documentation prose"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 150
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-873-docs-duplicate-paragraph-guard.feature.draft
+human_approval: pending
+
+approval_context: >
+  New feature draft needs review, plus two calls to sign off or overturn.
+  (1) Severity is deliberately medium, not high — nothing is broken at runtime,
+  no gate fails, and the swarm operates normally; the cost is ~825 KB of
+  duplicate prose in a document project.prompt tells agents to read, plus a
+  wrong `role_ask.bb` example in 284 of 286 copies. Raising it to high would
+  put a documentation cleanup ahead of live reliability work in the expedite
+  lane, which reads as severity inflation. Overturn if you disagree.
+  (2) As with BL-872, this carries both the cleanup and a standing guard in one
+  slice: the corruption survived 17 days precisely because no gate looks for
+  repeated documentation prose.
+
+source: |
+  Documenter note to specifier and coordinator, 2026-08-10 (handoff
+  20260810T105618Z_000072_from_documenter): "Spec.MD has ~286 duplicate BL-607
+  paragraphs (L2486-3358) - needs own ticket". Reproduced and root-caused by
+  the specifier on this host the same day.
+
+invariants:
+  - "Deduplication removes only copies: every paragraph that appeared at least once in the original still appears, exactly once, in the same relative order."
+  - "When a paragraph was duplicated in more than one textual variant, the surviving copy is the correct variant — never whichever variant is most numerous."
+  - "A substantial paragraph repeated anywhere in the docs tree turns a gate red inside the parcel that introduces it, not weeks later."
+
+required_wiring:
+  - "extension/test/docsDuplicateParagraphGuard.test.js::docs::the zero-duplicate assertion must sit in the suite every parcel runs — its absence is exactly why one botched insertion went unnoticed for 17 days. The filename is fixed by this declaration."
+
+description: |
+  ## What
+
+  `docs/reference/Specification.MD` is 3358 lines / 1,445,459 bytes, and roughly
+  60% of it is one paragraph repeated. Commit `7fa17fecd` (2026-07-24,
+  "Document BL-607: pipeline roles can raise clarifying questions into their own
+  Telegram topics") added **573 lines in a single commit** — 287 copies of the
+  BL-607 paragraph plus their blank-line separators. 286 copies survive today,
+  spanning lines 2486-3358.
+
+  Three facts shape the fix:
+
+  1. **The copies are interleaved, not trailing.** Between lines 2486 and EOF
+     sit 159 lines of real, unique content — the BL-283 coordinator-handoff
+     paragraph, the whole Concierge/front-desk/pipeline-board history, and the
+     document's closing `## Gaps & Things Still Missing` and
+     `## Out of Scope (v1)` sections. Deleting the line range wholesale destroys
+     all of it. This is the single largest risk in the ticket.
+  2. **The majority variant is the wrong text.** 284 copies render the example
+     as `--options ''[opt1,opt2]'' `; only 2 (lines 2486 and 2491) carry the
+     correct `--options '["opt1","opt2"]'`. A dedupe that keeps the most common
+     variant, or simply keeps the first of a run, has a good chance of keeping
+     mangled shell quoting in a reference document that agents are pointed at.
+  3. **Nothing looks for this.** A repeated-prose check over `docs/` does not
+     exist, so 17 days and ~25 later documenter commits passed with every author
+     editing around an 825 KB blob of duplicate text.
+
+  ## Scope
+
+  1. **Deduplicate `docs/reference/Specification.MD`** — reduce the BL-607
+     paragraph to one copy, in the correct variant, at its correct position in
+     document order, leaving all 159 interleaved real paragraphs and both
+     closing sections intact and in order.
+  2. **Add a standing duplicate-paragraph guard** — a Vitest test in
+     `extension/test/` that scans the docs tree and fails on any substantial
+     paragraph appearing more than once, mirroring how
+     `extension/test/tmpDirMigrationGuard.test.js` and BL-872's guard ride the
+     suite every parcel runs.
+
+  ## Constraints
+
+  - **Threshold.** "Substantial" means a trimmed line over ~200 characters. That
+    rule was measured against the current tree: at 200 chars it finds exactly
+    the two duplicate groups this ticket removes and nothing else, so the guard
+    goes green on the deduplicated tree with no exemption list. Short repeated
+    lines — `---`, headings, bullets, table rows — must not be flagged
+    (scenario 03). Tune the number if evidence demands, but do not buy green
+    with a per-file or per-paragraph exemption.
+  - **Prove nothing was lost.** Scenario 04 compares the deduplicated file
+    against the pre-fix blob read from git. Pin the sha of the commit
+    immediately preceding the dedupe commit, and have the handler assert the
+    pinned blob really does contain the 286 copies, so a wrong pin fails loudly
+    instead of vacuously passing. At spec time `main` is `a1ecb91e93`.
+  - **Do not rewrite surviving prose.** This is a removal, not a documenter
+    pass: no rewording, resectioning, or "while I'm here" edits to the 159
+    surviving paragraphs. A diff whose only content change is deletion (plus the
+    one variant correction at the kept copy) is what review should expect.
+  - The guard scans `docs/`. If it turns up duplicates in files other than
+    Specification.MD, surface them rather than silently deleting — this ticket
+    authorises removing the BL-607 copies, nothing else.
+
+  ## Not in scope
+
+  - Reconciling the specification's content against out-of-band commits
+    (`spec-drift-realignment`, BL-564 owns that).
+  - Splitting Specification.MD into smaller documents. Worth considering once
+    it is 620 KB rather than 1.4 MB, but that is a separate decision.
+  - Auditing what else commit `7fa17fecd` may have touched: its diff is confined
+    to this one file.
+
+notes: |
+  The acceptance contract ships as `.feature.draft` (BL-233): its step handlers
+  do not exist yet, and a live `*.feature` with no handlers makes the acceptance
+  runner throw. The coder renames it to `.feature` and updates this ticket's
+  `acceptance:` field in the same parcel that lands the handlers.
+
+  IR-DRY leaves one `possible-synonym` finding on this feature, between
+  scenario 02's "repeats one substantial paragraph" and scenario 03's "repeats
+  the short line". Reviewed and kept deliberately: the contrast between the two
+  is precisely what scenario 03 asserts, so normalizing them would erase the
+  behaviour under test.
+
+qa_e2e: |
+  1. `grep -c "Pipeline role clarifying questions into per-role topics (BL-607)"
+     docs/reference/Specification.MD` prints `1` (it prints `286` on the commit
+     this ticket was written against).
+  2. `grep -c "options ''\[opt1,opt2\]''" docs/reference/Specification.MD`
+     prints `0`, and the one surviving copy carries
+     `--options '["opt1","opt2"]'`.
+  3. Content preservation, the load-bearing check: extract every distinct
+     trimmed non-blank line from the pre-fix blob
+     (`git show <pinned-sha>:docs/reference/Specification.MD`) and from the
+     current file, and confirm the two sets are identical — no paragraph was
+     dropped along with the copies. Confirm by eye that the document still ends
+     with `## Gaps & Things Still Missing` and `## Out of Scope (v1)` intact.
+  4. Standing-gate proof: run the extension Vitest suite, confirm the new guard
+     test is COLLECTED and green. Then paste any long paragraph in a docs file
+     a second time, re-run the SAME suite command a role already runs every
+     parcel (not a hand-picked file path), and watch it go red naming the file
+     and both line numbers. Remove the paste; green again.
+  5. Confirm the file is roughly 620 KB rather than 1.4 MB — a cheap sanity
+     signal that the removal actually happened at scale.

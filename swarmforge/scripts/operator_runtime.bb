@@ -145,6 +145,12 @@
 (def inflight-file (fs/path op-dir "events.inflight.jsonl"))
 (def cooldown-file (fs/path op-dir "cooldown.json"))
 (def last-check-file (fs/path op-dir "last-swarm-check"))
+;; GH-26: role_ask.bb's own per-role pending-question markers - read-only
+;; from this side (role_ask.bb owns writing a fresh ask, deliverRoleQuestion/
+;; markRoleQuestionUndeliverable - telegram-front-desk-bot.ts - owns the
+;; undeliverable rewrite). Scanned every tick so an undeliverable drop is
+;; surfaced into status.json, mirroring tunnel/telegram-console below.
+(def role-awaiting-dir (fs/path op-dir "role-awaiting"))
 ;; BL-848: last-hotfix-cert-file mirrors last-check-file's own tiny-epoch-ms
 ;; file convention; hotfix-cert-state-file is the gitignored RUNTIME view
 ;; (per-entry resurfacing cooldown) - losing it costs one recomputation,
@@ -1809,6 +1815,27 @@
     (try (json/parse-string (slurp (str telegram-console-status-file)) true)
          (catch Exception _ nil))))
 
+;; GH-26: scans role-awaiting-dir for every <role>.json marker, parses each
+;; (unreadable/corrupt content degrades to {} - operator-lib/
+;; render-role-questions-undeliverable's own filter drops a {}, since it has
+;; no :state "undeliverable"), then hands the whole {role -> marker} map to
+;; the pure shaping step. {} when the directory doesn't exist yet (no role
+;; has ever asked a question) or nothing in it is undeliverable - omitted
+;; from status.json entirely by tick!'s own cond-> below, the SAME "absent
+;; means nothing to report" convention read-tunnel-status/
+;; read-telegram-console-status above already use.
+(defn read-role-questions-undeliverable []
+  (if-not (fs/exists? role-awaiting-dir)
+    {}
+    (->> (fs/list-dir role-awaiting-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".json"))
+         (map (fn [f]
+                [(str/replace (fs/file-name f) #"\.json$" "")
+                 (try (json/parse-string (slurp (str f)) true)
+                      (catch Exception _ {}))]))
+         (into {})
+         operator-lib/render-role-questions-undeliverable)))
+
 ;; ── out-of-cycle poll (BL-481) ──────────────────────────────────────────────
 
 (defn poll!
@@ -2022,6 +2049,7 @@
           pending-count (count pending)
           tunnel (read-tunnel-status)
           telegram-console (read-telegram-console-status)
+          role-questions-undeliverable (read-role-questions-undeliverable)
           miniapp-watchdog (miniapp-watchdog-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
@@ -2076,6 +2104,7 @@
                                :oldest-pending-age-ms oldest-pending-age-ms})
                        tunnel (assoc :tunnel tunnel)
                        telegram-console (assoc :telegram_console telegram-console)
+                       (seq role-questions-undeliverable) (assoc :role_questions_undeliverable role-questions-undeliverable)
                        true (assoc :miniapp_watchdog miniapp-watchdog)
                        true (assoc :build_sha own-build-sha)
                        true (assoc :front_desk

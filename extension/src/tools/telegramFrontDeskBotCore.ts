@@ -2665,6 +2665,17 @@ export interface ReplyRelayAdapters {
   // or the map itself missing/unparseable) degrades to dropping the
   // question rather than crashing the relay - see deliverRoleQuestion.
   roleTopicIdFor?: (role: string) => Promise<number | undefined>;
+  // GH-26: on that SAME undeliverable path, rewrites the role's awaiting
+  // marker to state "undeliverable" (keeping the original
+  // question/asked_at_ms/options fields for forensics, never deleting the
+  // marker outright) instead of leaving it in its original pending shape -
+  // role_ask.bb's already-pending guard treats that state as NOT pending,
+  // so the role is free to ask again immediately rather than wedging in
+  // "already-pending" forever on a silent drop. Optional so every
+  // ReplyRelayAdapters fixture written before GH-26 keeps working
+  // unchanged - an omitted adapter simply leaves the marker untouched (see
+  // deliverRoleQuestion's own undefined-topicId branch below).
+  markRoleQuestionUndeliverable?: (role: string, question: string, options: AskOption[] | undefined) => Promise<void>;
 }
 
 // BL-426 slice 1: when the delivery's threadId is marked voice-originated,
@@ -2829,6 +2840,12 @@ async function deliverRoleQuestion(role: string, text: string, options: AskOptio
   const topicId = await adapters.roleTopicIdFor?.(role);
   if (topicId === undefined) {
     console.error(`telegramFrontDeskBotCore: undeliverable roleQuestion for role "${role}" - no Telegram topic mapped; dropping without delivery`);
+    // GH-26: fires BEFORE this function returns (and so strictly before
+    // relayOneRecord's own ackReply below) - the awaiting marker must never
+    // survive an undeliverable drop unchanged, or the role wedges in
+    // "already-pending" forever behind a guard that thinks its question is
+    // still in flight.
+    await adapters.markRoleQuestionUndeliverable?.(role, text, options);
     return;
   }
   await deliverAskMessage(topicId, roleAskThreadId(role), text, options, adapters);
