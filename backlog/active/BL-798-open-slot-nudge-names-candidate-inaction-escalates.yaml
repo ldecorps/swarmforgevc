@@ -126,6 +126,43 @@ notes: |
   3. On a live mono-router: leave one approved ticket in paused/ with an
      open slot; observe the coordinator either promotes+routes or records
      a concrete blocking reason — never an uncaused clear.
+
+  ## Invariant 3's prose half landed OUT OF BAND (specifier, 2026-08-10)
+
+  The architect's review (evidence
+  `backlog/evidence/BL-798-architect-bounce-20260810.md`, item 5) accepted
+  invariant 3's non-encodability carve-out but flagged that its actual
+  deliverable — the `swarmforge/roles/coordinator.prompt` never-clear-
+  without-cause duty named in this ticket's own "Live integration points" —
+  had not landed, and that `required_stages` structurally cannot deliver it
+  (`specifier` is not a valid stage: schema allows coder/cleaner/architect/
+  hardender/documenter/qa only, and the specifier is pre-pipeline by design).
+  Routed to the specifier by `note` per Article 4.4.
+
+  Delivered directly on `main` as section "## Never Clear An Open-Slot Nudge
+  Without A Cause (BL-798 invariant 3, SUP-1)" in `coordinator.prompt`. It is
+  written against the mechanism THIS parcel builds (verified at coder commit
+  `6c97e2eeee`): the nudge message shape `open slot + paused work -
+  promote+route: <BL-id>[ awaiting approval]`, and the
+  `decide-open-slot-escalation` state machine's post-escalation quiet.
+
+  Two points for QA, both derived from reading the built code rather than
+  restating the invariant:
+  - The sweep fires only when `active-count < cap`, so "cap reached" cannot
+    honestly be the blocking reason for a nudge that was delivered.
+  - After `:escalate`, `handoffd.bb`'s `open-slot-nudge-sweep!` sends the
+    coordinator NOTHING further for that candidate (action `:none`) until the
+    top candidate changes — so nudges going silent is not evidence the
+    condition cleared.
+
+  Durable-record location (specifier's call, amendable): the named
+  candidate's own ticket YAML `notes:`, committed. Chosen because it needs no
+  new machinery, is git-walkable into `done/`, and travels with the ticket;
+  explicitly NOT the BL-819 lifecycle ledger, which is instrument-written
+  only and has no instrument for a promotion non-decision.
+
+  This changes NO scenario and adds NO step-handler work — the acceptance
+  contract is untouched.
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-10, by: architect, blamed: coder, class: invariant-unencoded, commit: 6c97e2eeee, evidence: backlog/evidence/BL-798-architect-bounce-20260810.md }
