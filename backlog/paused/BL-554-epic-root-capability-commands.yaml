@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: root-capability-commands
-priority: 163
+priority: 174
 depends_on: []
 decomposes_into: [BL-555]
 human_approval: approved
