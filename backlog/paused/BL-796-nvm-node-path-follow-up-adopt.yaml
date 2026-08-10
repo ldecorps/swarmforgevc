@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 47
+priority: 1
 direction: queue-jump
 depends_on: [BL-789]
 mutation_cost: low
@@ -199,3 +199,11 @@ notes: |
      order), never re-authored here.
   8. Source the lib in a bare `sh -eu` shell and diff `env` before/after:
      only PATH changed.
+
+  ## 2026-08-10 JumpQ (human)
+
+  Human asked to queue-jump this ticket with its prerequisite BL-789 so the
+  untracked `operator_path_lib.sh` stop being left-unstaged noise on every
+  agent pass. Retagged `priority: 1` (was 47); `direction: queue-jump`
+  already set. Stays behind BL-789 (`depends_on`); promote only after
+  BL-789 closes.
