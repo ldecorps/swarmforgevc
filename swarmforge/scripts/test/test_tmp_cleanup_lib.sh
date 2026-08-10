@@ -268,6 +268,31 @@ if [[ $PROPERTY_FAILURES -eq 0 ]]; then
   pass "05: every (depth=1..4, count=0..5) combination exits 0, raises no unbound-variable error, and sweeps every registered root"
 fi
 
+# ── 06: the registry FILE itself (not just the roots it names) is removed
+#    on exit - a dropped `rm -f` on the registry would leave a small file
+#    behind on every single run, forever, and no other assertion above
+#    would catch it since they only check the registered ROOTS ────────────
+
+FIXTURE6="$WORKDIR/fixture_registry_file.sh"
+cat > "$FIXTURE6" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+source "$LIB"
+make_root() { local d; d="\$(mktemp -d)"; register_tmp_dir "\$d"; printf '%s' "\$d"; }
+ROOT="\$(make_root)"
+echo "REGISTRY=\$__SWARMFORGE_TMP_CLEANUP_REGISTRY"
+EOF
+chmod +x "$FIXTURE6"
+
+OUT6="$(bash "$FIXTURE6")"
+CODE6=$?
+REGISTRY6="$(echo "$OUT6" | sed -n 's/^REGISTRY=//p')"
+
+[[ $CODE6 -eq 0 ]] || fail "06: fixture should exit 0, got $CODE6"
+[[ -n "$REGISTRY6" ]] || fail "06: fixture never printed its own registry path"
+[[ -f "$REGISTRY6" ]] && fail "06: registry file itself still exists after the fixture exited: $REGISTRY6"
+[[ ! -f "$REGISTRY6" ]] && pass "06: the registry file itself (not only the roots it named) is removed on exit"
+
 # ── report ────────────────────────────────────────────────────────────────
 if [[ $FAILURES -gt 0 ]]; then
   echo "$FAILURES failure(s)"
