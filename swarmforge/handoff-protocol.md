@@ -540,6 +540,61 @@ changed nothing. Because blocking can wedge a ticket if a stale parcel is
 left behind, the refusal always names the `redo_from.sh` command that clears
 it.
 
+## Multi-Ticket Close Guard (BL-869)
+
+`ticket_close_guard_lib.bb`'s closed-ticket check (referenced above as the
+Duplicate-Chain Guard's sibling) validates a close commit — an active/ →
+done/ move in `backlog/` — against a QA approval before
+`commit_integrity_cli.bb` is allowed to commit it. Article 2.6 requires a
+QA note closing several tickets in one commit to name every satisfied id;
+until this ticket, the guard read only the first.
+
+**Fault A (reported).** `qa-approved-ticket?` matched a QA note's ticket ids
+with a first-match regex. A real note reading `QA approved
+BL-857,BL-849,BL-840 @ 0bae185f9b, landed on main. Bookkeep all 3.` credited
+BL-857 alone; closing BL-849 or BL-840 in the same commit was refused with
+"no QA git_handoff or note to coordinator referencing this ticket" — against
+a note that plainly named them.
+
+**Fault B (found while probing, not reported).** `parse-close-move` paired
+`(first (filter active))` with `(first (filter done))`, collapsing a
+multi-ticket close to a single `{:ticket-id ...}`. A commit moving three
+tickets active → done validated only the first; the other two committed
+with **no approval check at all** — the guard's entire purpose, silently
+bypassed. Worse, when the first active/done path in the commit happened to
+name two *different* tickets, the id match failed, `parse-close-move`
+returned `nil`, and `validate-close-allowed` reported `{:allowed true}` as
+if the commit were ordinary — every ticket in it unvalidated. Fault B also
+truncated two downstream per-ticket side effects in `commit_integrity_cli.bb`
+to that one resolved id: `abandon-inflight-for-ticket!` (tickets 2..N kept
+live in-flight handoffs in other roles' mailboxes after being closed) and
+`record-lean-ledger!` (the BL-819 lifecycle ledger silently dropped every
+ticket after the first).
+
+**Fix.** `parse-close-move` now pairs each `active/` path with the
+`done/` path that shares its own ticket id — regardless of either path's
+position in the commit — and returns one entry per ticket. `qa-approved-
+ticket?` reads a QA note or `git_handoff`'s **every** named id (via a new
+sibling all-ids extractor, `pipeline_stage_lib.bb::extract-ticket-ids` /
+`ticket-ids-from-headers`) instead of the first-match single-id
+`extract-ticket-id` — which is left untouched, since seven other live
+callers (`duplicate_chain_guard_lib`, `done_with_current_task`,
+`swarm_handoff` twice, `pre_qa_gate_gather_lib`, and this guard's own
+path-based helper) depend on its single-id, first-token contract.
+`validate-close-allowed` now checks every ticket the commit closes
+independently and reports `:ticket-ids` (every ticket closed) alongside
+`:blocked-ticket-ids` (only the ones still missing QA sign-off), so a
+partially-approved multi-ticket close names precisely what is still
+blocking it — the message no longer reads as if an already-approved ticket
+in the same commit were also rejected. `commit_integrity_cli.bb` now runs
+`abandon-inflight-for-ticket!` and `record-lean-ledger!` once per closed
+ticket instead of once per commit, and its blocked-close message lists
+every failing ticket, not just the first one the old code happened to look
+at.
+
+`chase_sweep_lib.bb` keeps its own, separate `extract-ticket-id` (unrelated
+to this guard, not in scope here) — the two are siblings by name only.
+
 ## QA-Edge Durability Gate (BL-531, BL-761)
 
 When `swarm_handoff.sh` sends a `git_handoff` to QA, it runs a durability gate
@@ -1105,6 +1160,54 @@ ticket id). Two complementary closes run from that scan, both via the normal
    writes `assigned_to` itself; intake and routing remain the coordinator's
    exclusive duty. Once that nudge note exists as a trail, the item is not
    re-nudged.
+
+### Open-slot nudge sweep (BL-798)
+
+Before this ticket, `open-slot-nudge-draft-lines` sent the coordinator a
+fixed, ticketless phrase — `open slot + paused work - promote+route` —
+whenever `backlog/active/` was under cap and `backlog/paused/` had eligible
+work. Every nudge looked identical, so a live incident (SUP-1, 2026-08-03)
+saw the coordinator treat the Nth identical nudge as noise and clear it
+without ever promoting a candidate: three approved defects starved ~2.5h on
+an idle swarm.
+
+On the same sweep cadence as the dispatch-gap sweep above
+(`chase_sweep_lib.bb` / `handoffd.bb::open-slot-nudge-sweep!`), when
+`decide-open-slot-nudge?` finds capacity under `active_backlog_max_depth`, at
+least one eligible paused ticket, no pending open-slot note already sitting
+in the coordinator's mailbox, and the cooldown has elapsed
+(`open-slot-nudge-cooldown-ms`, default 5 minutes):
+
+1. **Name the top candidate.** `top-open-slot-candidate` ranks every
+   `backlog/paused/*.yaml` by Article 3.2.4 ordering (expedited defects
+   first, fail-closed on missing `severity:`, then ticket priority) and
+   reports its `human_approval` state. The nudge message becomes `open slot
+   + paused work - promote+route: <BL-id>[ awaiting approval]` — never the
+   bare ticketless phrase once a real candidate exists (the 0-arg form
+   survives only as a defensive fallback for a nil candidate, which
+   production never actually calls with one).
+2. **Track unacted nudges per candidate.** `decide-open-slot-escalation`
+   keeps a bounded counter for the SAME top candidate across sweeps (a
+   different or newly-promoted candidate resets it). Below the escalation
+   threshold — default 3, configurable via `config
+   open_slot_escalation_threshold <n>` in `swarmforge.conf` — each tick
+   sends the named nudge above.
+3. **Escalate past the threshold, then go quiet.** At or above the
+   threshold, the first tick sends a standing operator alert instead of
+   another nudge (Telegram OPERATOR topic + email,
+   `send-open-slot-escalation-alert!`), naming the candidate and how many
+   nudges it survived unacted. Every tick after that is silent (`:none`)
+   for that candidate — no repeat escalation, no further identical nudge —
+   until a new top candidate appears. A quiet sweep is therefore not
+   evidence the starvation cleared; it means the same candidate is still
+   waiting and the operator has already been told once.
+
+The coordinator's own "never clear an open-slot nudge without recording a
+cause" duty — promote the named candidate, or durably record the specific
+blocking reason (cap reached, no eligible candidate, orthogonality conflict,
+throttle engaged) — is documented in `swarmforge/roles/coordinator.prompt`,
+not here; it is a coordinator judgment call, never something this sweep
+enforces or promotes on its own.
 
 ### Push sweep
 
