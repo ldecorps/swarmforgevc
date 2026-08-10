@@ -4696,6 +4696,96 @@ test('BL-708: the undeliverable-roleQuestion trace is surfaced strictly BEFORE t
   errorSpy.mockRestore();
 });
 
+// ── GH-26: an undeliverable roleQuestion must also rewrite the role's
+// awaiting marker (via markRoleQuestionUndeliverable) so the asking role
+// never wedges in "already-pending" forever behind a guard that thinks its
+// question is still in flight. ───────────────────────────────────────────
+
+test('GH-26: an undeliverable roleQuestion rewrites the awaiting marker via markRoleQuestionUndeliverable, naming the role/question/options', async () => {
+  const marked = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody","options":[{"label":"staging"}]}\n\n',
+      ]),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => undefined,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => {},
+      markRoleQuestionUndeliverable: async (role, question, options) => {
+        marked.push({ role, question, options });
+      },
+    },
+    new Set()
+  );
+  assert.deepEqual(marked, [{ role: 'nobody', question: 'which environment?', options: [{ label: 'staging' }] }]);
+  errorSpy.mockRestore();
+});
+
+test('GH-26: markRoleQuestionUndeliverable fires strictly BEFORE ackReply - never a silent ack over an unrewritten marker', async () => {
+  const order = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody"}\n\n',
+      ]),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => undefined,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => order.push('ack'),
+      markRoleQuestionUndeliverable: async () => order.push('mark'),
+    },
+    new Set()
+  );
+  assert.deepEqual(order, ['mark', 'ack']);
+  errorSpy.mockRestore();
+});
+
+test('GH-26: a deliverable roleQuestion never calls markRoleQuestionUndeliverable', async () => {
+  const marked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-specifier","text":"anything else?","roleQuestion":"specifier"}\n\n']),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => 1595,
+      resolveDelivery: () => {
+        throw new Error('resolveDelivery should never be consulted for a roleQuestion record');
+      },
+      ackReply: async () => {},
+      markRoleQuestionUndeliverable: async (role, question, options) => marked.push({ role, question, options }),
+    },
+    new Set()
+  );
+  assert.deepEqual(marked, []);
+});
+
+test('GH-26: markRoleQuestionUndeliverable absent from the adapters fixture never crashes the relay (optional-adapter convention)', async () => {
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  const acked = [];
+  await assert.doesNotReject(() =>
+    relaySseReplies(
+      '',
+      {
+        readChunk: mkChunkReader([
+          'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody"}\n\n',
+        ]),
+        sendReply: async () => {},
+        roleTopicIdFor: async () => undefined,
+        resolveDelivery: () => ({ kind: 'undeliverable' }),
+        ackReply: async (id) => acked.push(id),
+      },
+      new Set()
+    )
+  );
+  assert.deepEqual(acked, ['r1']);
+  errorSpy.mockRestore();
+});
+
 test('BL-607: a roleQuestion record is never delivered through deliverAgentQuestion\'s Agent Questions topic path, even when both adapters are wired', async () => {
   const posted = [];
   const agentTopicCalls = [];

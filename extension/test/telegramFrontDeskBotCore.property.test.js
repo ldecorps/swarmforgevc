@@ -358,3 +358,84 @@ test('property: an undeliverable roleQuestion always surfaces exactly one trace 
     { numRuns: 200 }
   );
 });
+
+// ── GH-26: an undeliverable roleQuestion must ALSO rewrite the role's own
+// awaiting marker (markRoleQuestionUndeliverable) - never leaving it in its
+// original pending shape, which is what wedges the asking role in
+// "already-pending" forever behind a guard that thinks its question is
+// still in flight. Generalizes BL-708's own mapped/unmapped property above
+// to also assert the marker-rewrite side: exactly one call, naming the SAME
+// role/question/options the record carried (forensics preserved
+// byte-for-byte, GH-26's approval_context choice 1), strictly before
+// ackReply; a deliverable roleQuestion never calls it at all.
+//
+// Non-vacuous: removing the markRoleQuestionUndeliverable call from
+// deliverRoleQuestion's undefined-topicId branch fails this property on the
+// first unmapped case generated - confirmed manually before restoring the
+// fix.
+//
+// Generator reach: mappedArb independently forces both the unmapped branch
+// (marker must be rewritten) and the mapped branch (marker must be left
+// alone) on every run; optionsOrNilArb independently forces both an
+// options-carrying and a bare question, so all four (mapped x has-options)
+// combinations are reachable by construction, not by sampling luck. Runs
+// ONLY via `npm run test:properties`.
+const questionTextArb = fc.string({ minLength: 1, maxLength: 60 });
+const optionsOrNilArb = fc.option(optionsArb, { nil: undefined });
+
+test('property: an undeliverable roleQuestion always rewrites the awaiting marker (exactly once, forensics preserved) BEFORE ackReply; a deliverable one never touches it', async () => {
+  await fc.assert(
+    fc.asyncProperty(undeliverableRoleArb, mappedArb, topicIdArb, questionTextArb, optionsOrNilArb, async (role, mapped, topicId, text, options) => {
+      const order = [];
+      const marked = [];
+      const record = { id: 'r1', threadId: `role-ask-${role}`, text, roleQuestion: role, ...(options ? { options } : {}) };
+      const sse = `event: telegram-reply\ndata: ${JSON.stringify(record)}\n\n`;
+      // options travels the SAME JSON round trip real records do (outbox
+      // JSONL -> SSE -> JSON.parse in relayOneRecord) before deliverRoleQuestion
+      // ever sees it - normalizing the expectation the same way makes this
+      // an apples-to-apples comparison regardless of fast-check's own
+      // internal representation of a generated record (e.g. a null-prototype
+      // object, which JSON never distinguishes from a plain one).
+      const expectedOptions = options === undefined ? undefined : JSON.parse(JSON.stringify(options));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await relaySseReplies(
+          '',
+          {
+            readChunk: mkSingleChunkReader(sse),
+            sendReply: async () => {
+              order.push('send');
+            },
+            roleTopicIdFor: async () => (mapped ? topicId : undefined),
+            resolveDelivery: () => {
+              throw new Error('resolveDelivery must never be consulted for a roleQuestion record');
+            },
+            ackReply: async () => {
+              order.push('ack');
+            },
+            markRoleQuestionUndeliverable: async (r, q, o) => {
+              marked.push({ role: r, question: q, options: o });
+              order.push('mark');
+            },
+          },
+          new Set()
+        );
+
+        if (mapped) {
+          assert.deepEqual(marked, [], 'a deliverable roleQuestion must never rewrite the awaiting marker');
+          assert.deepEqual(order, ['send', 'ack']);
+        } else {
+          assert.deepEqual(
+            marked,
+            [{ role, question: text, options: expectedOptions }],
+            'the marker rewrite must name the SAME role/question/options the record carried'
+          );
+          assert.deepEqual(order, ['mark', 'ack'], 'the marker rewrite must fire strictly before the ack');
+        }
+      } finally {
+        errorSpy.mockRestore();
+      }
+    }),
+    { numRuns: 200 }
+  );
+});

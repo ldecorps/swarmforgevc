@@ -568,6 +568,19 @@
          [{:label "staging"}]
          (operator-lib/ask-options ["staging" 42]))
 
+;; ── GH-26: role-ask-blocked? - role_ask.bb's per-role pending-question
+;;    guard, pulled out pure so it is unit-testable without a real fs ──────
+(assert-true "no marker at all (nil) never blocks a fresh ask"
+             (not (operator-lib/role-ask-blocked? nil)))
+(assert-true "an ordinary pending marker (no :state key) blocks - unchanged pre-GH-26 behavior"
+             (operator-lib/role-ask-blocked? {:question "which env?" :asked_at_ms 1000}))
+(assert-true "a marker in state :undeliverable never blocks - the role may ask again immediately"
+             (not (operator-lib/role-ask-blocked? {:question "which env?" :state "undeliverable"})))
+(assert-true "unreadable/corrupt marker content ({}) fails CLOSED - still blocks"
+             (operator-lib/role-ask-blocked? {}))
+(assert-true "a marker in some OTHER state string still blocks - only the literal \"undeliverable\" state is exempt"
+             (operator-lib/role-ask-blocked? {:state "pending"}))
+
 ;; answer-text-from-messages: the human's own latest reply text.
 (assert= "the human's latest non-operator message is the answer text"
          "use staging"

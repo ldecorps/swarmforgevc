@@ -83,6 +83,7 @@ const {
   roleAwaitingAnswerPath,
   readRoleAwaitingAnswer,
   clearRoleAwaitingAnswer,
+  markRoleQuestionUndeliverable,
   roleTopicIdFor,
   roleAnswerFilePointerPath,
   composeRoleAnswerNoteMessage,
@@ -2218,6 +2219,50 @@ test('BL-607: clearRoleAwaitingAnswer removes the pending marker so a later read
 test('BL-607: clearRoleAwaitingAnswer on an already-absent marker never throws', () => {
   const root = mkTmpRoot();
   assert.doesNotThrow(() => clearRoleAwaitingAnswer(root, 'specifier'));
+});
+
+// ── GH-26: markRoleQuestionUndeliverable - the real writer behind
+// ReplyRelayAdapters' own adapter of the same name (deliverRoleQuestion's
+// undeliverable-drop path, telegramFrontDeskBotCore.ts). Rewrites the
+// marker with state "undeliverable" instead of deleting it, preserving
+// whatever the file already held for forensics. ───────────────────────────
+
+test('GH-26: markRoleQuestionUndeliverable rewrites an existing marker to state undeliverable, preserving its original fields', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'which env?', asked_at_ms: 1000, options: [{ label: 'staging' }] }));
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', [{ label: 'staging' }]);
+  const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'specifier'), 'utf8'));
+  assert.deepEqual(raw, { question: 'which env?', asked_at_ms: 1000, options: [{ label: 'staging' }], state: 'undeliverable' });
+});
+
+test('GH-26: markRoleQuestionUndeliverable is scoped PER ROLE - a different role\'s marker is untouched', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'coder', JSON.stringify({ question: 'which branch?' }));
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', undefined);
+  const coderRaw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'coder'), 'utf8'));
+  assert.deepEqual(coderRaw, { question: 'which branch?' });
+});
+
+test('GH-26: role_ask.bb\'s already-pending guard treats the rewritten marker as NOT pending (readRoleAwaitingAnswer still resolves it - the guard lives in role_ask.bb/operator_lib.bb, not here)', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'which env?', asked_at_ms: 1000 }));
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', undefined);
+  assert.deepEqual(readRoleAwaitingAnswer(root, 'specifier'), { question: 'which env?', asked_at_ms: 1000, state: 'undeliverable' });
+});
+
+test('GH-26: markRoleQuestionUndeliverable with no existing marker file synthesizes one from its own question/options params', () => {
+  const root = mkTmpRoot();
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', [{ label: 'staging' }]);
+  const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'specifier'), 'utf8'));
+  assert.deepEqual(raw, { question: 'which env?', options: [{ label: 'staging' }], state: 'undeliverable' });
+});
+
+test('GH-26: markRoleQuestionUndeliverable on a malformed existing marker still writes a valid undeliverable marker (readRoleAwaitingAnswer\'s own degrade-to-undefined posture, never a crash)', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', 'not json');
+  assert.doesNotThrow(() => markRoleQuestionUndeliverable(root, 'specifier', 'which env?', undefined));
+  const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'specifier'), 'utf8'));
+  assert.deepEqual(raw, { question: 'which env?', state: 'undeliverable' });
 });
 
 // ── BL-607: resolveAskOptions' role branch - a role-ask threadId resolves

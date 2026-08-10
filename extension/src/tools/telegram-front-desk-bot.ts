@@ -1111,6 +1111,25 @@ export function clearRoleAwaitingAnswer(targetPath: string, role: string): void 
   }
 }
 
+// GH-26: the real production writer behind ReplyRelayAdapters'
+// markRoleQuestionUndeliverable (telegramFrontDeskBotCore.ts's
+// deliverRoleQuestion, on the undefined-topicId drop). Rewrites the marker
+// in place rather than deleting it - preserving whatever the file already
+// held (asked_at_ms, the original question/options role_ask.bb wrote) for
+// forensics - and merges in state: "undeliverable", the fact
+// operator_lib.bb's role-ask-blocked? treats as NOT pending. question/
+// options are used only as a fallback for the (should not happen in
+// practice - role_ask.bb always writes the marker before this record can
+// even reach the relay) case where no marker file exists at all, so the
+// rewrite still records SOMETHING rather than silently doing nothing.
+export function markRoleQuestionUndeliverable(targetPath: string, role: string, question: string, options: AskOption[] | undefined): void {
+  const existing = readRoleAwaitingAnswer(targetPath, role);
+  const marker = { question, options, ...existing, state: 'undeliverable' };
+  const p = roleAwaitingAnswerPath(targetPath, role);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify(marker));
+}
+
 // BL-607: role -> Telegram topic id, the forward-direction sibling of
 // roleTopicMapStore.ts's own roleForTopic (topic id -> role) - a plain
 // object-key lookup, so an unknown role or a missing/unparseable map
@@ -2338,6 +2357,14 @@ async function connectAndRelayReplies(
       // telegramFrontDeskBotCore.ts) - the forward role->topic lookup,
       // entirely distinct from agentQuestionsTopicId above.
       roleTopicIdFor: (role) => Promise.resolve(roleTopicIdFor(targetPath, role)),
+      // GH-26: the undeliverable-drop counterpart to roleTopicIdFor above -
+      // see deliverRoleQuestion (telegramFrontDeskBotCore.ts) and
+      // markRoleQuestionUndeliverable's own comment for the marker-rewrite
+      // this performs.
+      markRoleQuestionUndeliverable: (role, question, options) => {
+        markRoleQuestionUndeliverable(targetPath, role, question, options);
+        return Promise.resolve();
+      },
       ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
     },
     seenIds
