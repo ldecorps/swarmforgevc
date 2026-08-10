@@ -5,7 +5,7 @@ type: chore
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 5
+priority: 7
 direction: queue-jump
 depends_on: []
 mutation_cost: low

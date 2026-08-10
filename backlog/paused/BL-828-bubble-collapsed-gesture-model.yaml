@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarmforge-console
 human_approval: approved
-priority: 104
+priority: 115
 direction: human-requested
 assigned_to: none
 depends_on: [BL-769]

@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: spec-drift-realignment
 human_approval: approved
-priority: 161
+priority: 172
 direction: swarm-proposed
 depends_on: []
 assigned_to: specifier

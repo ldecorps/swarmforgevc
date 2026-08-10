@@ -6,7 +6,7 @@ status: todo
 epic: swarm-reliability
 human_approval: approved
 severity: low
-priority: 177
+priority: 188
 direction: human-requested
 depends_on: [BL-579]
 assigned_to: specifier

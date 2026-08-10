@@ -11,7 +11,7 @@ approval_context: >
   reuse-or-create/collision-guard mechanics are firmed up by the coder per
   the description's "Design directions", not settled here.
 severity: medium
-priority: 103
+priority: 114
 direction: human-requested
 depends_on: []
 assigned_to: specifier

@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: bubble-live-screen
-priority: 130
+priority: 141
 depends_on: [BL-769]
 mutation_cost: high
 decomposes_into: [BL-775, BL-569]

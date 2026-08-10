@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 28
+priority: 0
 direction: queue-jump
 depends_on: []
 mutation_cost: low
@@ -187,3 +187,12 @@ notes: |
   6. Confirm `docs/index.md` links the hotfix how-to.
   7. Confirm `stop_ancillary_services.sh` is untouched by this parcel (BL-787
      owns it).
+
+  ## 2026-08-10 JumpQ (human)
+
+  Human asked to queue-jump this ticket (and BL-796 behind it) so the
+  untracked `operator_path_lib.sh` adopt chain stops rotting as agent
+  worktree noise. Retagged `priority: 0` (was 46); `direction: queue-jump`
+  already set. Promote BL-789 next when an active slot frees — do not
+  displace in-flight high-severity actives. BL-796 stays paused at
+  priority 1 until this lands (`depends_on: [BL-789]`).

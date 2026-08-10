@@ -6,7 +6,7 @@ status: todo
 epic: quota-budget-manager
 human_approval: approved
 severity: low
-priority: 158
+priority: 169
 direction: human-requested
 depends_on: [BL-552]
 source: "Backlog root intake 003-adaptive-quota-budget-manager.md, drained by specifier 2026-07-22."
