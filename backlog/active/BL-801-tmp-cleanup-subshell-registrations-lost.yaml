@@ -1,0 +1,179 @@
+id: BL-801
+title: "DEFECT — tmp_cleanup.sh loses registrations made inside command-substitution helpers: temp roots leak on every host, and on macOS bash 3.2 the empty-registry EXIT trap turns passing tests red"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 110
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-801-tmp-cleanup-registry-survives-subshell.feature.draft
+human_approval: approved
+
+approval_context: >
+  New feature draft needs review. Two deliberate calls to sign off or overturn:
+  (1) this MERGES the hardener's two proposed tickets — the every-host temp-root
+  leak and the bash-3.2 false-red exit — into one, on same-root-cause /
+  same-fix-locus grounds (BL-680 consolidation; rationale in notes). Split it
+  back out if you disagree. (2) The spec requires the fix to live in the shared
+  lib with all ~49 sourcing test files left unchanged — the lib adapts to the
+  established convention, not the other way round.
+
+invariants:
+  - "A temp root passed to register_tmp_dir is swept on the registering script's exit regardless of the shell depth (direct, subshell, command substitution) the call ran at."
+  - "A test script whose assertions all pass exits 0 on every supported bash — macOS /bin/bash 3.2.57 included — whatever the cleanup registry's state."
+  - "One script's exit sweeps only its own registrations; it never removes roots belonging to a different, still-running test process."
+
+required_wiring:
+  - "swarmforge/scripts/test/lib/tmp_cleanup.sh::register_tmp_dir::the fix keeps the entry point all ~49 sourcing tests already call — no parallel new API leaving the existing convention broken"
+  - "swarmforge/scripts/test/test_tmp_cleanup_lib.sh::register_tmp_dir::the lib gains its own unit test (it has none today) covering subshell registration, empty-registry exit, and concurrent-process isolation"
+
+source: |
+  Hardener note during the BL-785 hardening pass, 2026-08-04 (handoff
+  20260804T070240Z_000013_from_hardender): "Hardener finding: tmp_cleanup.sh
+  loses registrations, see BL-785 evidence file". Evidence file:
+  backlog/evidence/BL-785-hardener-findings.md, committed on the hardener
+  branch at fe0f420f (not yet on main — it rides the BL-785 parcel).
+  Reproduced and root-confirmed by the specifier on this host the same day.
+
+description: |
+  ## What
+
+  `swarmforge/scripts/test/lib/tmp_cleanup.sh` (BL-459) keeps its cleanup
+  registry in a parent-shell array (`__SWARMFORGE_TMP_DIRS_TO_CLEAN`), appended
+  to by `register_tmp_dir` and swept by a single EXIT trap. The convention used
+  across the shell test suite (49 files source the lib) is:
+
+      make_root() { local d; d="$(mktemp -d)"; register_tmp_dir "$d"; printf '%s' "$d"; }
+      ROOT="$(make_root)"
+
+  `$(make_root)` runs the helper in a command-substitution subshell, so the
+  append mutates the subshell's copy of the array and is discarded when the
+  subshell exits. Two observable defects, one root cause:
+
+  1. **Every-host leak.** Roots registered this way are never in the parent's
+     array, so the EXIT trap never sweeps them. Scripts whose only
+     registrations are subshelled sweep nothing at all.
+  2. **Mac false-red.** With the parent array genuinely empty, bash < 4.4
+     raises `unbound variable` on `"${arr[@]}"` under `set -u` — and macOS
+     ships /bin/bash 3.2.57. Under `set -euo pipefail` (the header of the real
+     test files) the trap failure makes a FULLY PASSING test exit 1.
+
+  Specifier repro on this host (2026-08-04): a fixture with a subshell-only
+  registration prints its pass banner, exits 1, and leaves its mktemp root
+  behind. `swarmforge/scripts/test/test_daemon_log_freshness.sh` — which
+  predates BL-785 — reproduces identically ("ALL CHECKS PASSED" then
+  `unbound variable`, exit 1). BL-785's two new test files inherit the same
+  behavior by following the established convention faithfully; the defect is
+  the convention's supporting lib, not any one test.
+
+  ## Why it matters
+
+  A shell test's exit code is the pipeline's verification signal. Today on the
+  live host it lies: `bash <file>; echo $?` reports failure on a passing
+  suite. That false-bounces clean parcels — the BL-785 hardening pass already
+  had to fall back to reading output banners instead of exit codes, and
+  BL-789's QA e2e step 1 runs `test_daemon_log_freshness.sh` expecting green,
+  which today exits 1 despite passing. The leak side quietly accumulates
+  un-swept mktemp roots on every host and every bash version — precisely the
+  residue BL-459 built this lib to prevent.
+
+  ## The fix
+
+  Make the lib deliver its documented contract under the established call
+  convention: registrations survive whatever shell depth `$(make_root)` runs
+  them at, and the trap is a harmless no-op on an empty registry on every
+  supported bash. The fix lives in the shared lib; the 49 sourcing files keep
+  calling `register_tmp_dir` unchanged. Mechanism choice is the implementer's,
+  bounded by the invariants — with one honest consequence stated up front: no
+  parent-shell array can observe a subshell's append, so satisfying invariant
+  1 without touching call sites requires a registry visible across subshell
+  boundaries (e.g. keyed to the top-level test process), and invariant 3 rules
+  out any naive registry shared between concurrently running test processes.
+
+  ## Scope
+
+  - `swarmforge/scripts/test/lib/tmp_cleanup.sh` — the registry and trap.
+  - `swarmforge/scripts/test/test_tmp_cleanup_lib.sh` (new) — the lib's own
+    unit test, which does not exist today.
+  - Step handlers for this feature's scenarios when the draft materializes.
+
+  ## Out of scope
+
+  - The 49 sourcing test files: no call-site edits. Their convention is the
+    contract this fix restores.
+  - BL-413's periodic /tmp sweep (SIGKILL/OOM residue — a trap cannot catch
+    those; the lib's documented boundary is unchanged).
+  - BL-789's adoption body, including `test_daemon_log_freshness.sh`'s own
+    content — this ticket only makes that file's exit code truthful.
+  - Installing a newer bash on the host: the lib must work on stock
+    /bin/bash 3.2, not assume Homebrew bash.
+
+notes: |
+  ## Consolidation record (BL-680)
+
+  The hardener's evidence proposed two tickets on their merits: (a) the
+  every-host leak (resource hygiene), (b) the bash-3.2 false-red (broken
+  verification signal on this host). Merged N:1 here: one root cause (registry
+  kept in a parent-shell array), one fix locus (the one 33-line lib), and any
+  subshell-visible registry fix necessarily resolves both. Two tickets would
+  edit the same file — never concurrently promotable under orthogonality — and
+  would mint an artificial dependency between them. The source finding quotes
+  no operator directive, so nothing required verbatim preservation. Flagged in
+  approval_context for the human to overturn.
+
+  ## Severity rationale
+
+  `high`: a broken safety/health signal on the live host — a passing shell
+  suite exits 1, indistinguishable from a real failure to any exit-code check.
+  It already cost the BL-785 hardening pass a workaround and would false-fail
+  BL-789's QA e2e step 1 today. The leak alone would be `medium`; the signal
+  breakage is what expedites this.
+
+  ## Scheduling note for the coordinator
+
+  Promote ahead of BL-789 (the severity ordering — high vs medium — already
+  does this among defects): BL-789's QA procedure trusts
+  `test_daemon_log_freshness.sh`'s exit code, which lies until BL-801 lands.
+  If BL-789 reaches QA first anyway, QA must judge that file by its output
+  banner, not its exit code. File overlap with in-flight work: none known —
+  BL-785 (active) touches freshness scripts and its own new test files; it
+  does not edit the shared lib.
+
+  ## Acceptance contract is runnable (BL-761)
+
+  Every scenario drives throwaway fixture scripts with the host's /bin/bash —
+  no daemons, no network, no live swarm paths, no real timers. Scenario 04's
+  two-process ordering must use explicit synchronization (a fifo or flag
+  file), never sleeps. Parked as `.feature.draft` until the parcel wires its
+  step handlers (BL-233); the YAML `acceptance:` points at the draft.
+
+  ## IR-DRY findings — reviewed, deliberately kept
+
+  Three medium-confidence findings, each a real difference rather than drift:
+
+  - "exit code is 0" vs "exit code is <expected-exit>" — the same
+    parameterized step reused concretely; one handler serves both.
+  - "the first fixture's temp root no longer exists" vs "the temp root
+    created inside the helper no longer exists" — different referents (the
+    two-process isolation scenario vs the helper-created root).
+  - "the fixture's ONLY registration happens inside a helper" vs "registers
+    ANOTHER temp root inside a helper" — opposite cardinality preconditions;
+    the mixed scenario exists precisely because a direct registration must
+    not mask the loss of the subshelled one.
+
+  ## e2e procedure for QA
+
+  1. On this host: `bash swarmforge/scripts/test/test_daemon_log_freshness.sh;
+     echo $?` → "ALL CHECKS PASSED", exit 0, no "unbound variable" on stderr.
+  2. Scenario-01 shape by hand: a fixture whose only registration is inside
+     `$(make_root)`; after exit, the root is gone from the filesystem.
+  3. `bash swarmforge/scripts/test/test_tmp_cleanup_lib.sh` → green, exit 0.
+  4. `grep -rl register_tmp_dir swarmforge/scripts/test/*.sh | wc -l` → count
+     unchanged (49), and the parcel diff shows no sourcing test file edited.
+  5. Two concurrent fixtures with explicit sync: the first's exit sweeps only
+     its own root; the second's survives until its own exit.
+  6. Spot-check a handful of the sourcing suite's files (including
+     `test_freshness_stop_marker_lib.sh` if BL-785 has landed it) with real
+     exit codes checked.
