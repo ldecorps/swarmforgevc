@@ -196,6 +196,7 @@ notes: |
   already set. Promote BL-789 next when an active slot frees — do not
   displace in-flight high-severity actives. BL-796 stays paused at
   priority 1 until this lands (`depends_on: [BL-789]`).
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-10, by: architect, blamed: coder, class: behavior, commit: 6d0a3120f2, evidence: backlog/evidence/BL-789-mac-host-switch-freshness-bridge-adopt-bounce-20260810.md }
+  - { at: 2026-08-10, by: architect, blamed: coder, class: behavior, commit: ac7174a19c, evidence: backlog/evidence/BL-789-mac-host-switch-freshness-bridge-adopt-fixtureReaper-bounce-followup-20260810.md }
