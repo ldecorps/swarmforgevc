@@ -41,6 +41,20 @@ second `role_ask.bb` call for a role that already has one pending returns
 role's pending question — the specifier having a question pending never
 blocks the coordinator's, and vice versa.
 
+**An undeliverable question never wedges the guard (GH-26).** If the role's
+Telegram topic can't be resolved (missing/unparseable `role-topic-map.json`
+entry), the question never reaches Telegram, and `deliverRoleQuestion`
+rewrites the role's awaiting marker to `state: "undeliverable"` instead of
+leaving it in its original pending shape (the original question, options,
+and ask time are kept for forensics, never deleted). `role_ask.bb`'s guard
+treats that state as NOT pending, so the role's next `role_ask.bb` call is
+accepted immediately and overwrites the marker — the guard never protects a
+question that nobody ever saw. The drop is also surfaced in the operator's
+`status.json` under `role_questions_undeliverable` (keyed by role), the same
+pattern `tunnel.state: auth_lost` already uses for a different degraded
+condition. Any other marker state (ordinary pending, or unreadable/corrupt
+content) still blocks, fail-closed.
+
 ## No polling, and asking is never a reason to exit
 
 The coordinator records whatever context it needs to resume (which ticket,
