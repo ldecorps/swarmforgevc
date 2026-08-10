@@ -5,7 +5,8 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-assigned_to: specifier
+assigned_to: coder
+human_approval: pending
 priority: 34
 direction: normal
 depends_on: []
@@ -30,6 +31,31 @@ notes: |
   in the ticket (script renaming, --help scope wording, the new full-stack
   survivor scan) is correct. Linked pilot-process defect: BL-731.
 
+  --- specifier pass, 2026-08-10 ---
+
+  Line numbers in the source block have drifted since it was written: the
+  unscoped check is at kill_pipeline_swarm.sh:282 (reported as :271) and the
+  correctly-scoped reaping loop is at :241 (reported as :230). Both were
+  confirmed present on main on 2026-08-10; the defect is live and unchanged.
+
+  Two patterns need anchoring, not one. The line reads
+  `pgrep -fl 'handoffd\.bb|copilot.*SwarmForge'` — the copilot arm is
+  unscoped for the same reason and is covered by scenario 01's last two
+  rows. Whether that arm still matches any real process today was not
+  established and does not need to be: leaving an unscoped pattern in place
+  because it is probably dead is how this defect got here.
+
+  Testability: the survivor check must be exercisable from a fixture process
+  snapshot rather than by spawning real daemons.
+  `stack_survivor_scan.sh` already sets the precedent with its
+  `SWARMFORGE_SURVIVOR_PS_FILE` env seam; an equivalent seam here keeps the
+  shell tests off broad live `ps` patterns, which engineering.prompt
+  forbids diffing against.
+
+  IR-DRY reports one finding, pairing the parameterized exit-status step
+  with its literal use in scenario 03. Same step, one literal argument —
+  reuse rather than duplication. Judged not-real.
+
 description: |
   ## What
 
@@ -46,3 +72,55 @@ description: |
   false survivors. specs/features/BL-637-*.feature and
   test_lifecycle_script_scope.sh must both pass in that same multi-worktree
   condition, not just in isolation.
+
+invariants:
+  - "The teardown's survivor verdict is a function of processes belonging to the root being torn down: no process of any other root can change it."
+  - "The scanning process's own command line can never appear in its own survivor report."
+
+acceptance: specs/features/BL-730-pipeline-teardown-survivor-scope.feature
+
+qa_e2e_procedure: |
+  The repro condition is two worktrees, so verify with two:
+
+  1. With a sibling worktree's `handoffd.bb` genuinely running, run
+     `kill_pipeline_swarm.sh` in THIS worktree. Before the fix it prints
+     "WARNING survivors remain" and exits 1; after, it must print the clean
+     slate line and exit 0, and the sibling's daemon must still be running
+     afterwards.
+  2. In that SAME multi-worktree condition — not in isolation, which is the
+     whole point of the original bounce — run the BL-637 acceptance feature
+     and `swarmforge/scripts/test/test_lifecycle_script_scope.sh`. Both must
+     pass. Test 02 of that shell script is the one that failed.
+  3. Prove the check still catches a real survivor: leave this root's own
+     `handoffd.bb` running, run the teardown, and confirm it warns, names
+     that process, and exits non-zero.
+  4. Confirm the self-match guard: run the teardown from a shell whose own
+     argv mentions handoffd.bb with no real survivor present. It must exit
+     zero.
+
+approval_context: >
+  The defect and the fix direction were settled by the BL-723 review; what
+  needs your sign-off is one correction to the ticket's own suggestion.
+
+  The description offers two options: anchor the check to $ROOT, "or reuse
+  the scoped stack_survivor_scan.sh helper this same ticket built". Reading
+  that helper, the second option does not hold. `stack_survivor_scan.sh`
+  scans for `babysitterd.sh` and `--remote-control Operator` only. It does
+  not look for `handoffd.bb` at all, and it is not $ROOT-scoped — it does
+  not take a root, because babysitterd and Operator are host-wide
+  singletons for which root-scoping is meaningless. Reusing it verbatim
+  would change WHAT the teardown checks for, not just its scope, and would
+  silently stop checking for the daemon this ticket is about.
+
+  So this spec takes the first option: anchor to $ROOT, matching the reaping
+  loop 40 lines above it, which already reads `handoffd\.bb.*$ROOT` and
+  which I confirmed matches the live argv shape
+  (`bb <root>/swarmforge/scripts/handoffd.bb <root>`).
+
+  What IS worth borrowing from that helper is its technique, not its body:
+  its header comment explains it parses `ps -eo pid=,args=` rather than
+  `pgrep -f` precisely so the auditing shell's own argv cannot invent
+  phantom survivors. The line being fixed here hand-rolls that guard as
+  `| grep -v pgrep`. Invariant 2 and scenario 03 pin the property either
+  approach must satisfy, without mandating which one.
+
