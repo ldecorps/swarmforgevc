@@ -410,7 +410,8 @@ const DOMAINS = [
   require('./bl857TunnelOwnershipOneOwnerSteps'),
   require('./bl849DarwinOrphanJanitorHotfixSteps'),
   require('./bl840ProviderOutageEvidenceReachesFlowWatchdogSteps'),
-  require('./bl867PropertyFixtureEnvIsolationSteps')
+  require('./bl867PropertyFixtureEnvIsolationSteps'),
+  require('./bl868PropertyLaneIsolationGuardsSteps')
 ];
 
 function registerSteps(registry) {
