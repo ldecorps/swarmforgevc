@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=1e2fed0724d111648c88ee5881c3e2e246add6fb47468ad25f787cbe84455669
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-10T10:33:23.463647Z","feature_name":"BL-801 shared tmp cleanup registry survives command-substitution registration","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-801-tmp-cleanup-registry-survives-subshell.feature","background_hash":"abb26f271c5561ca6da00874c674b5b5a18d38181540c6f8c35d7d98efa848ed","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a root registered inside a command-substitution helper is swept on either exit path","scenario_hash":"956ceb785eda3fafb26d5c18d7d5f7d271c5fbf61d2c25fea586f486b46bbd65","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-10T10:33:23.463647Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-801 shared tmp cleanup registry survives command-substitution registration
   The shared shell test helper swarmforge/scripts/test/lib/tmp_cleanup.sh must
   sweep every registered temp root on the registering script's exit regardless

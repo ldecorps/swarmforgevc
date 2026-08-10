@@ -62,6 +62,7 @@ here.
 - [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
 - [Token-Burn Exhaustion Warning in the Morning Briefing](how-to/BL-619-token-burn-briefing-warning.md) — recording a usage-percentage anchor, what the warning looks like, the weekly-reset config, and troubleshooting a missing or wrong projection.
 - [Bedtime vs. lights-out: which stop verb to run](how-to/BL-762-finish-shift-bedtime-vs-lights-out.md) — the keep-vs-kill table `./finish-shift` and `./stop-swarm.sh` both read, and why bedtime leaves the phone path up.
+- [Diagnosing a wake with attribution records](how-to/BL-870-wake-attribution.md) — the `wake-attribution-<YYYY-MM>.jsonl` log every landed or skipped wake now writes, its fields, and how to read a false-wake report from it.
 
 ## Reference
 
