@@ -32,7 +32,14 @@ const { spawnSync, spawn } = require('node:child_process');
 // during this review). Each spawn site below registers its own kill as an
 // abnormal-exit callback the moment it has a pid to kill, in addition to
 // the existing happy-path cleanup in its scenario's own terminal step.
-const { onAbnormalExit } = require('./lib/fixtureReaper');
+// BL-789 architect bounce (follow-up): scenario 05's own trigger of a real
+// front_desk_supervisor.bb tick spawns a FOURTH detached bridge process
+// (ctx.postTickStatus.bridge.pid) that onAbnormalExit above does not cover -
+// it is written to front-desk-supervisor.status.json, the exact shape
+// track()/reap() already read. track(ctx.bridgeRoot) covers it via that
+// existing path, same as frontDeskHeadlessLauncherSteps.js does for its own
+// fixture roots.
+const { onAbnormalExit, track } = require('./lib/fixtureReaper');
 
 const FEATURE_NAME = 'Freshness and bridge supervision survive a cron environment and a slow host';
 
@@ -328,6 +335,12 @@ function registerSteps(registry) {
     /^an unrelated process is listening on the bridge port$/,
     async (ctx) => {
       ctx.bridgeRoot = mkTmp('bl789-bridge-');
+      // Covers the supervisor's OWN freshly-spawned bridge later in this
+      // scenario (ctx.postTickStatus.bridge.pid) - a process this file never
+      // spawns itself, so no onAbnormalExit callback here has its pid to
+      // close over. track() lets reap() find it fresh from
+      // front-desk-supervisor.status.json at signal/exit time instead.
+      track(ctx.bridgeRoot);
       ctx.bridgePort = pickIsolatedPort();
       // Real, unrelated node process - never matches "start-bridge-headless"
       // in its own cmdline, so bridge-entrypoint-holder? must say no.
