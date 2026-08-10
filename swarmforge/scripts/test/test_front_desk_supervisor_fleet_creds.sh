@@ -20,7 +20,7 @@ make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/extension/out/tools"
-  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
+  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/process_table_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
      "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" "$d/"
   cat > "$d/extension/out/tools/start-bridge-headless.js" <<'EOF'
 setInterval(() => {}, 1000);

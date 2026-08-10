@@ -25,10 +25,25 @@ if ! command -v crontab >/dev/null 2>&1; then
   exit 1
 fi
 
+# BL-789 (2026-08-02 Mac host-switch hotfix): cron's own PATH is
+# /usr/bin:/bin - missing bb/node - so the checker's restart of handoffd
+# failed with "bb: No such file or directory" and it was reported down
+# forever. Resolve the interpreter's OWN directory now, while we still have
+# the installer's normal (interactive-ish) PATH, and bake it into the
+# crontab line itself, alongside a curated fallback list - the checker also
+# self-establishes this same fallback list (defense in depth: correct even
+# if invoked outside cron), but baking it into the crontab line means a
+# freshly-cut cron environment never depends on that running in time.
+INTERPRETER_DIR=""
+if command -v bb >/dev/null 2>&1; then
+  INTERPRETER_DIR="$(cd "$(dirname "$(command -v bb)")" && pwd)"
+fi
+CRON_PATH_DIRS="${INTERPRETER_DIR:+$INTERPRETER_DIR:}/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin:/usr/bin:/bin"
+
 # Cron line: every 2 minutes, POSIX sh, FRESHNESS_ROOT set, logs to daemon dir.
 LOG_DIR="$ROOT/.swarmforge/daemon"
 mkdir -p "$LOG_DIR"
-CRON_CMD="FRESHNESS_ROOT=$ROOT /bin/sh $CHECKER >>$LOG_DIR/freshness-check.cron.log 2>&1"
+CRON_CMD="PATH=$CRON_PATH_DIRS FRESHNESS_ROOT=$ROOT /bin/sh $CHECKER >>$LOG_DIR/freshness-check.cron.log 2>&1"
 CRON_LINE="*/2 * * * * $CRON_CMD $MARKER"
 
 existing="$(crontab -l 2>/dev/null || true)"

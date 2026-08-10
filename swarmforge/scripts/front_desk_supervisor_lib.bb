@@ -33,7 +33,8 @@
 ;; gets (a new :status "stalled", reusing the "waiting" recovery clause
 ;; verbatim) - see poll-heartbeat-stale? and check-one!'s own docstring
 ;; below for the shape.
-(ns front-desk-supervisor-lib)
+(ns front-desk-supervisor-lib
+  (:require [clojure.string :as str]))
 
 ;; attempt is 1-indexed: the count of attempts made so far, including the
 ;; one that just crashed. Pure so the bound/backoff math is testable
@@ -168,6 +169,45 @@
 ;; shared copy both callers build their kill-pid! adapter from - a second,
 ;; hand-rolled ProcessHandle SIGTERM/SIGKILL copy in the relay supervisor
 ;; would silently drift from this one the next time either needs a fix.
+;; BL-789 (2026-08-02 Mac host-switch hotfix): the bridge EADDRINUSE crash
+;; loop - an orphan start-bridge-headless.js held the port while our tracked
+;; pid was dead, so every tick's respawn attempt failed with EADDRINUSE,
+;; gave up, and re-armed, over and over. Adoption must verify HEALTH, not
+;; just a listening socket - a stale/hung process holding the port is not
+;; safe to adopt just because its cmdline matches ours.
+(defn bridge-entrypoint-holder?
+  "True when cmdline looks like OUR OWN start-bridge-headless.js entrypoint
+   for THIS project-root - both the entrypoint pattern AND project-root must
+   appear, not just the first. A port collision between two independent
+   swarms on the same host would otherwise pass the entrypoint check alone
+   (the other swarm's bridge is a REAL start-bridge-headless.js too) and
+   wrongly adopt a process that answers for a different repo entirely -
+   mirrors start_bridge_headless.sh's own established `*\"$ROOT\"*` orphan
+   check for exactly this reason."
+  [cmdline project-root]
+  (boolean (and cmdline
+                (str/includes? cmdline "start-bridge-headless")
+                (str/includes? cmdline project-root))))
+
+(defn decide-bridge-port-action
+  "holder: {:pid <n> :cmdline <str-or-nil>} describing whatever process (if
+   any) currently holds the bridge port, or nil when nothing does. healthy?:
+   a PRECOMPUTED boolean - the caller already probed the holder (e.g. an
+   HTTP round-trip against its own health route) - this function performs
+   no I/O of its own, same pure/adapter-injected convention as check-one!'s
+   own heartbeat-stale?. project-root: this swarm's own root, checked
+   against the holder's cmdline so a same-port collision with an unrelated
+   swarm is never adopted.
+   Returns :spawn (nothing on the port - proceed with our own spawn),
+   :adopt (a healthy bridge of our own already holds it - use its pid, no
+   new process), or :free (an unrelated process, another swarm's own
+   bridge, or an unhealthy bridge, holds it - free the port, then spawn)."
+  [holder healthy? project-root]
+  (cond
+    (nil? holder) :spawn
+    (and (bridge-entrypoint-holder? (:cmdline holder) project-root) healthy?) :adopt
+    :else :free))
+
 (defn make-kill-pid! [grace-ms]
   (fn [pid]
     (when pid

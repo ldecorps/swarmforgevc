@@ -17,12 +17,24 @@
 #   FRESHNESS_ANNOUNCE_CMD   override announce; receives message as $1
 #   FRESHNESS_KILL_CMD       override kill; receives pid as $1
 #   FRESHNESS_START_CMD      override restart; receives start-script + root as $1 $2
+#   FRESHNESS_EXTRA_PATH_DIRS  colon-separated dirs prepended to PATH (test seam;
+#                              production default is a curated bin list, see below)
 #   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID  for default announce
+#
+# BL-789 (2026-08-02 Mac host-switch hotfix): cron's own PATH is
+# /usr/bin:/bin, missing bb/node, so a restart's `nohup bb ...` failed with
+# "bb: No such file or directory" and the daemon was reported down forever.
+# We establish our OWN PATH here (exported, so every child this script
+# spawns - kill/start commands - inherits it too) rather than trusting
+# whatever PATH cron/the caller happened to have.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
+FRESHNESS_EXTRA_PATH_DIRS=${FRESHNESS_EXTRA_PATH_DIRS:-"/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin"}
+PATH="${FRESHNESS_EXTRA_PATH_DIRS}:${PATH:-/usr/bin:/bin}"
+export PATH
 ROOT=${FRESHNESS_ROOT:?FRESHNESS_ROOT is required}
 CONF=${FRESHNESS_CONF:-"$SCRIPT_DIR/daemon_log_freshness.conf"}
 NOW=${FRESHNESS_NOW_EPOCH:-$(date +%s)}
@@ -170,6 +182,19 @@ process_daemon() {
     return 0
   fi
 
+  # BL-789: babysitterd deliberately never started this session
+  # (SWARMFORGE_SKIP_BABYSITTERD=1, the same var start_ancillary_services.sh
+  # honours) leaves no stop-marker above - nothing ever ran to stop. Without
+  # this, cron restarted a daemon nobody wanted running every cool-off
+  # window and warned each time. This is a SEPARATE predicate from
+  # freshness_is_stopped on purpose: that one records an explicit runtime
+  # stop event (a process that ran and was told to stop); this one is a
+  # launch-time policy readable with no process ever having run at all -
+  # different moments in the daemon's lifecycle, both must be consulted.
+  if [ "$name" = "babysitterd" ] && [ "${SWARMFORGE_SKIP_BABYSITTERD:-}" = "1" ]; then
+    return 0
+  fi
+
   log_path="$ROOT/$log_rel"
   pid_path="$ROOT/$pid_rel"
   start_script="$SCRIPT_DIR/$start_name"
@@ -195,10 +220,15 @@ process_daemon() {
   do_announce "FRESHNESS_VIOLATION restart daemon=${name} age_secs=${age} threshold=${threshold}"
 }
 
-# Load telegram env files when present (production cron path).
+# Load project + telegram env files when present (production cron path).
+# BL-789: swarm.env is where a normal swarm start sets
+# SWARMFORGE_SKIP_BABYSITTERD - cron starts with none of this operator's
+# shell env, so without loading it here the skip could only ever be seen
+# via an already-exported var, never the file a real swarm start writes.
 for env_file in \
   "$ROOT/.swarmforge/telegram.env" \
-  "$ROOT/.swarmforge/operator/telegram.env"; do
+  "$ROOT/.swarmforge/operator/telegram.env" \
+  "$ROOT/.swarmforge/swarm.env"; do
   if [ -f "$env_file" ]; then
     # shellcheck disable=SC1090
     set -a
