@@ -17,6 +17,13 @@
   (when-not expr
     (swap! failures conj (str "FAIL: " msg))))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (let [now 1000000
       cfg claim-progress-lib/default-config
       base {:role "coder"
@@ -83,6 +90,7 @@
 
 (defn- bl809-make-git-worktree []
   (let [dir (fs/create-temp-dir {:prefix "bl809-worktree-"})]
+    (swap! created-temp-dirs conj dir)
     (process/sh ["git" "init" "-q"] {:dir (str dir)})
     (process/sh ["git" "config" "user.email" "bl809@example.com"] {:dir (str dir)})
     (process/sh ["git" "config" "user.name" "BL-809"] {:dir (str dir)})

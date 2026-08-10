@@ -8,7 +8,7 @@ epic: swarm-reliability
 priority: 115
 direction: normal
 mutation_cost: low
-acceptance: specs/features/BL-872-tempdir-trap-guard-standing.feature.draft
+acceptance: specs/features/BL-872-tempdir-trap-guard-standing.feature
 human_approval: approved
 
 approval_context: >
