@@ -26,16 +26,33 @@
   (pipeline-stage-lib/extract-ticket-id (fs/file-name path)))
 
 (defn parse-close-move
-  "When paths include an active/ -> done/ move for the same ticket, returns
-   {:ticket-id :active-path :done-path}. nil for ordinary commits."
+  "Returns a seq of {:ticket-id :active-path :done-path}, one entry per
+   ticket whose active/ -> done/ move appears in paths - a close commit is
+   a SET of tickets, and every layer of this guard must treat it as one
+   (BL-869). Pairs each active/ path with the done/ path that shares its
+   own ticket id, regardless of where either falls in paths - the old
+   `(first (filter active))` / `(first (filter done))` shape silently
+   collapsed a multi-ticket close to its first pair (fault B: an
+   interleaved path order could even pair one ticket's active path with a
+   DIFFERENT ticket's done path, fail the id match, and return nil - a
+   multi-ticket close read as `{:allowed true}`, no validation at all).
+   Entries are ordered by the position of their active/ path in paths.
+   nil for a commit with no active->done pairing (ordinary commits)."
   [paths]
-  (let [active (first (filter #(str/includes? % "backlog/active/") paths))
-        done (first (filter #(str/includes? % "backlog/done/") paths))]
-    (when (and active done)
-      (let [active-id (ticket-id-from-backlog-path active)
-            done-id (ticket-id-from-backlog-path done)]
-        (when (and active-id done-id (= active-id done-id))
-          {:ticket-id active-id :active-path active :done-path done})))))
+  (let [done-by-id (into {}
+                          (keep (fn [p]
+                                  (when (str/includes? p "backlog/done/")
+                                    (when-let [id (ticket-id-from-backlog-path p)]
+                                      [id p]))))
+                          paths)]
+    (seq
+     (distinct
+      (keep (fn [p]
+              (when (str/includes? p "backlog/active/")
+                (when-let [id (ticket-id-from-backlog-path p)]
+                  (when-let [done-p (get done-by-id id)]
+                    {:ticket-id id :active-path p :done-path done-p}))))
+            paths)))))
 
 (defn- coordinator-mailbox-handoffs [root]
   (when-let [coordinator (handoff-lib/load-role-info "coordinator" root)]
@@ -45,8 +62,9 @@
 
 (defn qa-approved-ticket?
   "True when coordinator's mailbox shows QA passed this ticket (git_handoff
-   or note with a matching ticket id). Coder/architect bookkeeping notes do
-   not qualify — from must be QA."
+   or note NAMING this ticket id among possibly several - Article 2.6 batch
+   forwards - not just the first id the note happens to name; BL-869 fault
+   A). Coder/architect bookkeeping notes do not qualify — from must be QA."
   [root ticket-id]
   (boolean
    (some (fn [file]
@@ -56,21 +74,30 @@
                  message (salvage-lib/header-field file "message")]
              (and (= "QA" from)
                   (contains? #{"git_handoff" "note"} typ)
-                  (= ticket-id
-                     (pipeline-stage-lib/ticket-id-from-headers {:task task :message message})))))
+                  (contains? (set (pipeline-stage-lib/ticket-ids-from-headers {:task task :message message}))
+                             ticket-id))))
          (or (coordinator-mailbox-handoffs root) []))))
 
 (defn validate-close-allowed
-  "Returns {:allowed true :ticket-id ...} or {:allowed false :reason kw
-   :ticket-id ...}. Close moves require QA approval. The coordinator runs
-   `git mv` before commit_integrity_cli, so a ticket may already appear under
-   backlog/done/ on disk during a legitimate close — do not treat that as
-   :already-done."
+  "Returns {:allowed true :ticket-ids [...]} or {:allowed false :reason kw
+   :ticket-ids [...] :blocked-ticket-ids [...]}, or {:allowed true} for a
+   commit with no active->done move at all. Every ticket a close commit
+   moves is validated independently (BL-869) - :ticket-ids names every
+   ticket the commit closed, :blocked-ticket-ids only the ones that failed
+   approval, so a partially-approved multi-ticket close names precisely
+   the tickets still missing QA sign-off, not the whole set. The
+   coordinator runs `git mv` before commit_integrity_cli, so a ticket may
+   already appear under backlog/done/ on disk during a legitimate close —
+   do not treat that as :already-done."
   [root paths]
-  (if-let [close (parse-close-move paths)]
-    (if (qa-approved-ticket? root (:ticket-id close))
-      {:allowed true :ticket-id (:ticket-id close)}
-      {:allowed false :reason :missing-qa-approval :ticket-id (:ticket-id close)})
+  (if-let [closes (parse-close-move paths)]
+    (let [ticket-ids (mapv :ticket-id closes)
+          blocked (->> closes
+                       (remove #(qa-approved-ticket? root (:ticket-id %)))
+                       (mapv :ticket-id))]
+      (if (seq blocked)
+        {:allowed false :reason :missing-qa-approval :ticket-ids ticket-ids :blocked-ticket-ids blocked}
+        {:allowed true :ticket-ids ticket-ids}))
     {:allowed true}))
 
 (defn ticket-done?

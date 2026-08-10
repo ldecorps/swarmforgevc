@@ -77,13 +77,19 @@
     (cond-> {:project-root project-root :paths paths :message message}
       max-retries (assoc :max-retries max-retries))))
 
-(defn close-guard-failure-message [{:keys [reason ticket-id]}]
-  (case reason
-    :missing-qa-approval
-    (str "commit_integrity_cli: CLOSE BLOCKED for " ticket-id
-         " — no QA git_handoff or note to coordinator referencing this ticket. "
-         "Coder/architect bookkeeping notes do not authorize close; wait for QA approval.")
-    (str "commit_integrity_cli: CLOSE BLOCKED for " ticket-id " (" (name reason) ").")))
+(defn close-guard-failure-message
+  "BL-869: names the tickets that actually FAILED validation
+   (:blocked-ticket-ids), not every ticket the commit touched - a
+   partially-approved multi-ticket close must not read as if the already-
+   approved ticket were also rejected."
+  [{:keys [reason blocked-ticket-ids ticket-ids]}]
+  (let [names (str/join "," (or (seq blocked-ticket-ids) ticket-ids))]
+    (case reason
+      :missing-qa-approval
+      (str "commit_integrity_cli: CLOSE BLOCKED for " names
+           " — no QA git_handoff or note to coordinator referencing this ticket. "
+           "Coder/architect bookkeeping notes do not authorize close; wait for QA approval.")
+      (str "commit_integrity_cli: CLOSE BLOCKED for " names " (" (name reason) ")."))))
 
 (defn -main [args]
   (let [project-root (first args)
@@ -95,16 +101,18 @@
         (println (close-guard-failure-message close-check)))
       (System/exit 1))
     (let [result (commit-integrity-lib/commit-with-integrity! request)
-          abandoned (when (and (:success result) (:ticket-id close-check))
-                      (ticket-close-guard-lib/abandon-inflight-for-ticket!
-                       project-root (:ticket-id close-check)))]
-      (when (and (:success result) (:ticket-id close-check))
-        (record-lean-ledger! project-root (:ticket-id close-check)))
+          ticket-ids (when (:success result) (:ticket-ids close-check))
+          abandoned (vec (mapcat #(ticket-close-guard-lib/abandon-inflight-for-ticket! project-root %)
+                                  ticket-ids))]
+      (doseq [ticket-id ticket-ids]
+        (record-lean-ledger! project-root ticket-id))
       (when (seq abandoned)
         (binding [*out* *err*]
           (println (str "commit_integrity_cli: abandoned " (count abandoned)
-                        " in-flight handoff(s) for " (:ticket-id close-check)))))
+                        " in-flight handoff(s) for " (str/join "," ticket-ids)))))
       (println (json/generate-string (cond-> result
+                                       (seq ticket-ids)
+                                       (assoc :closed-ticket-ids ticket-ids)
                                        (seq abandoned)
                                        (assoc :abandoned-handoffs (count abandoned)))))
       (when-not (:success result)
