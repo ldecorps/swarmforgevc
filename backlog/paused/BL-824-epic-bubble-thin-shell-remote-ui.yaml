@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: bubble-thin-shell
-priority: 26
+priority: 25
 direction: human-requested
 depends_on: [BL-765, BL-769]
 mutation_cost: high
