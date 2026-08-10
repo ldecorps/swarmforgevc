@@ -409,7 +409,8 @@ const DOMAINS = [
   require('./bl861DeferralSurvivesBlockerClosingSteps'),
   require('./bl857TunnelOwnershipOneOwnerSteps'),
   require('./bl849DarwinOrphanJanitorHotfixSteps'),
-  require('./bl840ProviderOutageEvidenceReachesFlowWatchdogSteps')
+  require('./bl840ProviderOutageEvidenceReachesFlowWatchdogSteps'),
+  require('./bl867PropertyFixtureEnvIsolationSteps')
 ];
 
 function registerSteps(registry) {
