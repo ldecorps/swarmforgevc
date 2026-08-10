@@ -187,6 +187,85 @@ check "06: escalation announce invoked" \
   'grep -q "FRESHNESS_VIOLATION escalate daemon=handoffd" "$ROOT/announces.log"'
 pass "06: cool-off escalates without hammering restarts"
 
+# ── BL-789: SWARMFORGE_SKIP_BABYSITTERD honoured by the real checker ──────
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 700))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 700)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
+SWARMFORGE_SKIP_BABYSITTERD=1 run_checker "$ROOT" "$NOW"
+kill "$FAKE_PID" 2>/dev/null || true
+check "BL-789: SKIP_BABYSITTERD=1 skips the restart" '[[ ! -f "$ROOT/starts.log" ]]'
+check "BL-789: SKIP_BABYSITTERD=1 issues no kill" '[[ ! -f "$ROOT/kills.log" ]]'
+check "BL-789: SKIP_BABYSITTERD=1 leaves no incident record" '[[ ! -s "$ROOT/.swarmforge/daemon/freshness-incidents.log" ]]'
+check "BL-789: SKIP_BABYSITTERD=1 issues no announce/warning" '[[ ! -f "$ROOT/announces.log" ]]'
+pass "BL-789: a deliberately-skipped babysitterd is never restarted"
+
+ROOT="$(make_root)"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
+SWARMFORGE_SKIP_BABYSITTERD=0 run_checker "$ROOT" "$NOW"
+kill "$FAKE_PID" 2>/dev/null || true
+check "BL-789: SKIP_BABYSITTERD=0 still restarts babysitterd" \
+  'grep -q "start_babysitterd.sh" "$ROOT/starts.log"'
+pass "BL-789: SKIP_BABYSITTERD=0 leaves the restart path unchanged"
+
+# The skip must be readable from .swarmforge/swarm.env (a normal swarm
+# start's own env file), not only an already-exported var — cron starts
+# with none of this operator's shell env.
+ROOT="$(make_root)"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+printf 'SWARMFORGE_SKIP_BABYSITTERD=1\n' > "$ROOT/.swarmforge/swarm.env"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
+run_checker "$ROOT" "$NOW"
+kill "$FAKE_PID" 2>/dev/null || true
+check "BL-789: SKIP_BABYSITTERD read from .swarmforge/swarm.env skips the restart" \
+  '[[ ! -f "$ROOT/starts.log" ]]'
+pass "BL-789: swarm.env's own SKIP_BABYSITTERD is honoured with no exported var"
+
+# ── BL-789: the checker resolves its own interpreter, not the caller's PATH ─
+ROOT="$(make_root)"
+STUB_DIR="$ROOT/stub-interpreter-dir"
+mkdir -p "$STUB_DIR"
+cat > "$STUB_DIR/bb" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$STUB_DIR/bb"
+STALE_TS2="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS2" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+PATH=/usr/bin:/bin \
+FRESHNESS_EXTRA_PATH_DIRS="$STUB_DIR" \
+FRESHNESS_ROOT="$ROOT" \
+FRESHNESS_CONF="$CONF" \
+FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
+FRESHNESS_ANNOUNCE_CMD="true" \
+FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
+FRESHNESS_START_CMD="command -v bb >> \"$ROOT/resolved-bb.log\" 2>&1 || true" \
+  /bin/sh "$CHECKER"
+kill "$FAKE_PID" 2>/dev/null || true
+check "BL-789: interpreter resolved under a minimal cron PATH via the checker's own PATH" \
+  'grep -qF "$STUB_DIR/bb" "$ROOT/resolved-bb.log"'
+pass "BL-789: the freshness path resolves bb from a PATH it establishes itself"
+
 # ── installer references the checker (required_wiring) ────────────────────
 check "install_freshness_cron.sh references freshness_check / daemon_log_freshness_check" \
   'grep -q "daemon_log_freshness_check.sh" "$INSTALLER" && grep -q "freshness_check" "$INSTALLER"'
@@ -214,6 +293,41 @@ PATH="$FAKE_CRON:$PATH" CRONTAB_STORE="$CRONTAB_STORE" bash "$INSTALLER" "$ROOT"
 LINE_COUNT="$(grep -c 'swarmforge-BL-675-freshness-check' "$CRONTAB_STORE" || true)"
 check "installer is idempotent (one marker line)" '[[ "$LINE_COUNT" -eq 1 ]]'
 pass "installer schedules freshness_check idempotently"
+
+# ── BL-789: the installed crontab line carries its own PATH ───────────────
+ROOT="$(make_root)"
+PATH_CRON="$ROOT/bin"
+mkdir -p "$PATH_CRON"
+PATH_STORE="$ROOT/path-crontab.txt"
+: > "$PATH_STORE"
+cat > "$PATH_CRON/crontab" <<'EOF'
+#!/usr/bin/env bash
+store="${CRONTAB_STORE:?}"
+if [[ "${1:-}" == "-l" ]]; then
+  cat "$store" 2>/dev/null || true
+  exit 0
+fi
+cat > "$store"
+EOF
+chmod +x "$PATH_CRON/crontab"
+# A fake bb sitting in a dir the installer can only see because it's on ITS
+# OWN PATH at install time (never baked in blind) - proves "the
+# interpreter's directory" in the crontab PATH= is genuinely resolved, not
+# a hardcoded guess.
+INTERP_DIR="$ROOT/interpreter-dir"
+mkdir -p "$INTERP_DIR"
+cat > "$INTERP_DIR/bb" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$INTERP_DIR/bb"
+PATH="$PATH_CRON:$INTERP_DIR:$PATH" CRONTAB_STORE="$PATH_STORE" bash "$INSTALLER" "$ROOT" >/dev/null
+check "BL-789: crontab line sets a PATH=" 'grep -qE "PATH=[^ ]*" "$PATH_STORE"'
+check "BL-789: crontab PATH contains the resolved interpreter's directory" \
+  "grep -qF \"$INTERP_DIR\" \"\$PATH_STORE\""
+check "BL-789: crontab line still names the project root" \
+  "grep -qF \"FRESHNESS_ROOT=$ROOT \" \"\$PATH_STORE\""
+pass "BL-789: the installed crontab line carries its own PATH, including the interpreter's directory"
 
 # ── BL-783: two roots on one host must not clobber each other's line ──────
 ROOT_A="$(make_root)"
@@ -353,6 +467,21 @@ check "required_wiring: babysitterd.sh emits a heartbeat line every tick" \
   'grep -q "heartbeat" "$SRC/babysitterd.sh"'
 check "required_wiring: handoffd logs heartbeat every cycle (every-cycles=1)" \
   'grep -q "heartbeat-log-every-cycles 1" "$SRC/handoffd.bb"'
+
+# ── BL-789: heartbeat emitted at cycle START, not only at cycle end ───────
+# A slow Mac cycle (140-232s observed) must never be indistinguishable from
+# a wedged one: the heartbeat write must land BEFORE poll-once!/the sweeps
+# run, in addition to the existing end-of-cycle write. Positional (not just
+# "heartbeat is mentioned somewhere") - a regression that keeps a single
+# end-of-cycle-only write would still pass a mere grep for the token.
+LOOP_LINE="$(grep -n '(loop \[cycle 0\]' "$SRC/handoffd.bb" | head -n1 | cut -d: -f1)"
+HB_FIRST_LINE="$(tail -n "+$LOOP_LINE" "$SRC/handoffd.bb" | grep -n '(spit (str heartbeat-file)' | head -n1 | cut -d: -f1)"
+POLL_ONCE_LINE="$(tail -n "+$LOOP_LINE" "$SRC/handoffd.bb" | grep -n '(poll-once!)' | head -n1 | cut -d: -f1)"
+check "BL-789: within the main cycle loop, a heartbeat write appears before poll-once!" \
+  '[[ -n "$LOOP_LINE" && -n "$HB_FIRST_LINE" && -n "$POLL_ONCE_LINE" && "$HB_FIRST_LINE" -lt "$POLL_ONCE_LINE" ]]'
+HB_WRITE_COUNT="$(grep -c '(spit (str heartbeat-file)' "$SRC/handoffd.bb" || true)"
+check "BL-789: heartbeat is written twice per cycle (start AND end), not just once" \
+  '[[ "$HB_WRITE_COUNT" -ge 2 ]]'
 
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-675 daemon-log-freshness: ALL CHECKS PASSED"

@@ -323,6 +323,44 @@
   (assert= "supervisor-kills-superseded-child-04: the still-alive gave-up pid is killed before re-arm spawns its replacement"
            [1881442] @kill-calls))
 
+;; ── decide-bridge-port-action (pure) — BL-789 mac-host-switch-freshness-bridge-adopt-04/05 ─
+;; Orphan EADDRINUSE crash loop: something already holds the bridge port
+;; when the supervisor decides it needs to (re)spawn. Adoption must verify
+;; HEALTH, never just a listening socket (BL-789 approval_context scope
+;; note 2) - healthy? is a precomputed boolean, same "no I/O inside the pure
+;; decision" convention as check-one!'s own heartbeat-stale?.
+
+(def repo-root "/repo")
+
+(assert= "bl789-04: nothing on the port -> spawn as normal"
+         :spawn
+         (front-desk-supervisor-lib/decide-bridge-port-action nil false repo-root))
+
+(assert= "bl789-04: our own healthy bridge already on the port -> adopt, no second spawn"
+         :adopt
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 4242 :cmdline "node /repo/extension/out/tools/start-bridge-headless.js /repo 8765"} true repo-root))
+
+(assert= "bl789-05: an unrelated process on the port -> free it, then spawn"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 9999 :cmdline "python3 -m http.server 8765"} false repo-root))
+
+(assert= "bl789: our own entrypoint holds the port but fails the health probe (hung/dead) -> free, never adopt on cmdline match alone"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 4242 :cmdline "node /repo/extension/out/tools/start-bridge-headless.js /repo 8765"} false repo-root))
+
+(assert= "bl789: an unrelated process that happens to answer health probes is never adopted (cmdline match required too)"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 9999 :cmdline "python3 -m http.server 8765"} true repo-root))
+
+(assert= "bl789: a DIFFERENT swarm's own healthy bridge on a port collision is never adopted (project-root must match too)"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 5555 :cmdline "node /other-repo/extension/out/tools/start-bridge-headless.js /other-repo 8765"} true repo-root))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
