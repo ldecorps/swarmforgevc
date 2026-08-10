@@ -1,0 +1,7017 @@
+{
+  "schemaVersion": 1,
+  "dateIso": "2026-08-10",
+  "agents": [
+    {
+      "role": "coder",
+      "tokens": {
+        "value": 188834,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 100909
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 319775
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 979096
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 1239454
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 1139508
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 1240490
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 1191066
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 1861433
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 1019057
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 188834
+            }
+          ],
+          "currentValue": 188834,
+          "priorValue": 1019057,
+          "delta": -830223,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 18.936989099999995,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 8.718862649999998
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 45.67682594999997
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 110.94366809999994
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 130.72920450000004
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 120.60533384999997
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 136.54171755000004
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 144.32256914999968
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 263.7100914000004
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 144.06696495
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 18.936989099999995
+            }
+          ],
+          "currentValue": 18.936989099999995,
+          "priorValue": 144.06696495,
+          "delta": -125.12997585000001,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "coordinator+specifier",
+      "tokens": {
+        "value": 122629,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 19675
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 327097
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 654991
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 783379
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 769734
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 994093
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 640265
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 689866
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 288698
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 122629
+            }
+          ],
+          "currentValue": 122629,
+          "priorValue": 288698,
+          "delta": -166069,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 17.966376099999998,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 2.3538201499999993
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 55.13685235000005
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 107.62002209999999
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 154.85665070000007
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 121.35213854999998
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 140.2667880499999
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 109.74247964999998
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 116.03205285000026
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 50.71898474999992
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 17.966376099999998
+            }
+          ],
+          "currentValue": 17.966376099999998,
+          "priorValue": 50.71898474999992,
+          "delta": -32.75260864999992,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "cleaner",
+      "tokens": {
+        "value": 10274,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 43208
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 64211
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 98671
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 67621
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 87608
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 66561
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 119701
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 58874
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 10274
+            }
+          ],
+          "currentValue": 10274,
+          "priorValue": 58874,
+          "delta": -48600,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 2.8003093500000005,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 7.061999400000004
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 12.805940700000003
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 18.6704139
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 17.692886549999994
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 21.972002100000005
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 12.771400800000004
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 24.707024250000007
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 11.147306249999998
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 2.8003093500000005
+            }
+          ],
+          "currentValue": 2.8003093500000005,
+          "priorValue": 11.147306249999998,
+          "delta": -8.346996899999997,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "architect",
+      "tokens": {
+        "value": 25689,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 82448
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 183165
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 205959
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 167517
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 240627
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 169583
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 292417
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 138295
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 25689
+            }
+          ],
+          "currentValue": 25689,
+          "priorValue": 138295,
+          "delta": -112606,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 3.374263200000001,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 8.4407034
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 19.326901349999996
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 27.43790580000001
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 26.687347200000037
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 30.278495250000034
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 21.698491800000006
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 41.34315134999993
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 23.46028995
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 3.374263200000001
+            }
+          ],
+          "currentValue": 3.374263200000001,
+          "priorValue": 23.46028995,
+          "delta": -20.08602675,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "hardender",
+      "tokens": {
+        "value": 29833,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 36351
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 229025
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 247510
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 160072
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 191749
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 195460
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 346943
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 171195
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 29833
+            }
+          ],
+          "currentValue": 29833,
+          "priorValue": 171195,
+          "delta": -141362,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 5.2090209,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 4.86176385
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 30.86638350000003
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 34.45426575000002
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 27.77635455000001
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 27.61244145
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 28.464598949999974
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 49.58136510000005
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 27.7082973
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 5.2090209
+            }
+          ],
+          "currentValue": 5.2090209,
+          "priorValue": 27.7082973,
+          "delta": -22.499276400000003,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "documenter",
+      "tokens": {
+        "value": 26503,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 12217
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 60241
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 184193
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 87690
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 127051
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 44213
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 281189
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 86729
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 26503
+            }
+          ],
+          "currentValue": 26503,
+          "priorValue": 86729,
+          "delta": -60226,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 3.541016099999999,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 1.5171285
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 8.88565545
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 26.733534300000006
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 16.83452669999999
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 20.92592774999999
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 8.327906700000002
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 42.82189004999994
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 14.992485299999995
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 3.541016099999999
+            }
+          ],
+          "currentValue": 3.541016099999999,
+          "priorValue": 14.992485299999995,
+          "delta": -11.451469199999996,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "QA",
+      "tokens": {
+        "value": 73192,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 50435
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 158656
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 445280
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 274853
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 233906
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 220873
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 574934
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 191584
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 73192
+            }
+          ],
+          "currentValue": 73192,
+          "priorValue": 191584,
+          "delta": -118392,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 10.688065350000004,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 8.515532250000001
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 20.24255099999998
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 63.8338287
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 46.812713099999975
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 32.05031715000001
+            },
+            {
+              "periodStart": "2026-08-07T00:00:00.000Z",
+              "value": 84.83659784999999
+            },
+            {
+              "periodStart": "2026-08-08T00:00:00.000Z",
+              "value": 77.5696899000001
+            },
+            {
+              "periodStart": "2026-08-09T00:00:00.000Z",
+              "value": 31.39338419999998
+            },
+            {
+              "periodStart": "2026-08-10T00:00:00.000Z",
+              "value": 10.688065350000004
+            }
+          ],
+          "currentValue": 10.688065350000004,
+          "priorValue": 31.39338419999998,
+          "delta": -20.705318849999976,
+          "direction": "down"
+        }
+      }
+    }
+  ],
+  "topExpensiveTickets": [
+    {
+      "ticketId": "BL-826",
+      "costUsd": 84.31697685000005
+    },
+    {
+      "ticketId": "BL-848",
+      "costUsd": 43.58220165
+    },
+    {
+      "ticketId": "BL-761",
+      "costUsd": 33.300332100000006
+    },
+    {
+      "ticketId": "BL-762",
+      "costUsd": 32.11271685
+    },
+    {
+      "ticketId": "BL-773",
+      "costUsd": 28.250656050000003
+    }
+  ],
+  "flowBalance": {
+    "speccedPerDay": {
+      "value": 3,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-06-29T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-06-30T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-07-01T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-07-03T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-04T00:00:00.000Z",
+            "value": 17
+          },
+          {
+            "periodStart": "2026-07-05T00:00:00.000Z",
+            "value": 26
+          },
+          {
+            "periodStart": "2026-07-06T00:00:00.000Z",
+            "value": 20
+          },
+          {
+            "periodStart": "2026-07-07T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 41
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 36
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 33
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 35
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 43
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 40
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 14
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 48
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 38
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 30
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 49
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 20
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 3
+          }
+        ],
+        "currentValue": 3,
+        "priorValue": 8,
+        "delta": -5,
+        "direction": "down"
+      }
+    },
+    "closedPerDay": {
+      "value": 4,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-06-29T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-06-30T00:00:00.000Z",
+            "value": 15
+          },
+          {
+            "periodStart": "2026-07-01T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 24
+          },
+          {
+            "periodStart": "2026-07-03T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-05T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-06T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-07T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-08T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 32
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 54
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 42
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 18
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 36
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 25
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 42
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 50
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 12
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 6
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 17
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 4
+          }
+        ],
+        "currentValue": 4,
+        "priorValue": 8,
+        "delta": -4,
+        "direction": "down"
+      }
+    },
+    "rework": {
+      "roundsPerClose": {
+        "QA": {
+          "value": 0.21428571428571427,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-27",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-03",
+                "value": 0.21428571428571427
+              }
+            ],
+            "currentValue": 0.21428571428571427,
+            "priorValue": 0,
+            "delta": 0.21428571428571427,
+            "direction": "up"
+          }
+        },
+        "architect": {
+          "value": 0.125,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-27",
+                "value": 0.021739130434782608
+              },
+              {
+                "periodStart": "2026-08-03",
+                "value": 0.125
+              }
+            ],
+            "currentValue": 0.125,
+            "priorValue": 0.021739130434782608,
+            "delta": 0.10326086956521739,
+            "direction": "up"
+          }
+        },
+        "cleaner": {
+          "value": 0.017857142857142856,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-27",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-03",
+                "value": 0.017857142857142856
+              }
+            ],
+            "currentValue": 0.017857142857142856,
+            "priorValue": 0,
+            "delta": 0.017857142857142856,
+            "direction": "up"
+          }
+        },
+        "documenter": {
+          "value": 0.05357142857142857,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-27",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-03",
+                "value": 0.05357142857142857
+              }
+            ],
+            "currentValue": 0.05357142857142857,
+            "priorValue": 0,
+            "delta": 0.05357142857142857,
+            "direction": "up"
+          }
+        },
+        "hardender": {
+          "value": 0.017857142857142856,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-27",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-08-03",
+                "value": 0.017857142857142856
+              }
+            ],
+            "currentValue": 0.017857142857142856,
+            "priorValue": 0,
+            "delta": 0.017857142857142856,
+            "direction": "up"
+          }
+        }
+      },
+      "bouncesPerDay": {
+        "QA": [
+          {
+            "periodStart": "2026-08-04",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-07",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-08",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-08-09",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-10",
+            "value": 0
+          }
+        ],
+        "architect": [
+          {
+            "periodStart": "2026-08-04",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-07",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-08-08",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-09",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-08-10",
+            "value": 0
+          }
+        ],
+        "cleaner": [
+          {
+            "periodStart": "2026-08-04",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-09",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-10",
+            "value": 0
+          }
+        ],
+        "documenter": [
+          {
+            "periodStart": "2026-08-04",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-07",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-08-09",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-10",
+            "value": 0
+          }
+        ],
+        "hardender": [
+          {
+            "periodStart": "2026-08-04",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-09",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-10",
+            "value": 0
+          }
+        ]
+      },
+      "maxRounds": {
+        "ticket": "BL-835",
+        "rounds": 2,
+        "by": "architect"
+      }
+    }
+  },
+  "reliability": {
+    "chases": {
+      "value": 18,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 353
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 1374
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 177
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 72
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 87
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 68
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 234
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 57
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 29
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 18
+          }
+        ],
+        "currentValue": 18,
+        "priorValue": 29,
+        "delta": -11,
+        "direction": "down"
+      }
+    },
+    "nudges": {
+      "value": 4,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 27
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 378
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 1081
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 65
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 100
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 65
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 60
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 658
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 40
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 71
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 4
+          }
+        ],
+        "currentValue": 4,
+        "priorValue": 71,
+        "delta": -67,
+        "direction": "down"
+      }
+    },
+    "respawns": {
+      "value": 6,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 84
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 18
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 80
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 14
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 166
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 168
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 44
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 6
+          }
+        ],
+        "currentValue": 6,
+        "priorValue": 44,
+        "delta": -38,
+        "direction": "down"
+      }
+    },
+    "failedDeliveries": {
+      "value": 0,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 0
+          }
+        ],
+        "currentValue": 0,
+        "priorValue": null,
+        "delta": null,
+        "direction": "unknown"
+      }
+    },
+    "daemonRestarts": {
+      "value": 0,
+      "trend": {
+        "series": [],
+        "currentValue": null,
+        "priorValue": null,
+        "delta": null,
+        "direction": "unknown"
+      }
+    }
+  },
+  "resourceAnomalies": [
+    {
+      "role": "coder",
+      "rssBytes": 410353664,
+      "cpuPercent": 6.4,
+      "rssTrend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 1033216
+          },
+          {
+            "periodStart": "2026-07-19T01:00:00.000Z",
+            "value": 1246412.8
+          },
+          {
+            "periodStart": "2026-07-19T02:00:00.000Z",
+            "value": 1170773.3333333333
+          },
+          {
+            "periodStart": "2026-07-19T23:00:00.000Z",
+            "value": 1258291.2
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 1329624.6153846155
+          },
+          {
+            "periodStart": "2026-07-20T01:00:00.000Z",
+            "value": 1242033.2307692308
+          },
+          {
+            "periodStart": "2026-07-20T02:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T03:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T04:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T05:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T06:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T07:00:00.000Z",
+            "value": 867840
+          },
+          {
+            "periodStart": "2026-07-20T08:00:00.000Z",
+            "value": 878182.4
+          },
+          {
+            "periodStart": "2026-07-20T09:00:00.000Z",
+            "value": 852650.6666666666
+          },
+          {
+            "periodStart": "2026-07-20T10:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T11:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T12:00:00.000Z",
+            "value": 979316.3636363636
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
+            "value": 856405.3333333334
+          },
+          {
+            "periodStart": "2026-07-20T14:00:00.000Z",
+            "value": 858670.5454545454
+          },
+          {
+            "periodStart": "2026-07-20T15:00:00.000Z",
+            "value": 597643.6363636364
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-07-20T17:00:00.000Z",
+            "value": 854357.3333333334
+          },
+          {
+            "periodStart": "2026-07-20T21:00:00.000Z",
+            "value": 823296
+          },
+          {
+            "periodStart": "2026-07-20T22:00:00.000Z",
+            "value": 879274.6666666666
+          },
+          {
+            "periodStart": "2026-07-20T23:00:00.000Z",
+            "value": 843776
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 843776
+          },
+          {
+            "periodStart": "2026-07-21T01:00:00.000Z",
+            "value": 835584
+          },
+          {
+            "periodStart": "2026-07-21T02:00:00.000Z",
+            "value": 797354.6666666666
+          },
+          {
+            "periodStart": "2026-07-21T03:00:00.000Z",
+            "value": 413696
+          },
+          {
+            "periodStart": "2026-07-21T04:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-07-21T05:00:00.000Z",
+            "value": 847872
+          },
+          {
+            "periodStart": "2026-07-21T06:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-21T07:00:00.000Z",
+            "value": 540672
+          },
+          {
+            "periodStart": "2026-07-21T08:00:00.000Z",
+            "value": 446464
+          },
+          {
+            "periodStart": "2026-07-21T09:00:00.000Z",
+            "value": 446464
+          },
+          {
+            "periodStart": "2026-07-21T10:00:00.000Z",
+            "value": 819572.3636363636
+          },
+          {
+            "periodStart": "2026-07-21T11:00:00.000Z",
+            "value": 933888
+          },
+          {
+            "periodStart": "2026-07-21T12:00:00.000Z",
+            "value": 843776
+          },
+          {
+            "periodStart": "2026-07-21T13:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-07-21T14:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-07-21T15:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-07-21T16:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-07-21T17:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-07-21T18:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-07-21T19:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-07-21T20:00:00.000Z",
+            "value": 672563.2
+          },
+          {
+            "periodStart": "2026-07-21T21:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-08-01T23:00:00.000Z",
+            "value": 839680
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 302731.63636363635
+          },
+          {
+            "periodStart": "2026-08-02T01:00:00.000Z",
+            "value": 754346.6666666666
+          },
+          {
+            "periodStart": "2026-08-02T02:00:00.000Z",
+            "value": 414813.0909090909
+          },
+          {
+            "periodStart": "2026-08-02T03:00:00.000Z",
+            "value": 1056395.6363636365
+          },
+          {
+            "periodStart": "2026-08-02T04:00:00.000Z",
+            "value": 930474.6666666666
+          },
+          {
+            "periodStart": "2026-08-02T05:00:00.000Z",
+            "value": 622592
+          },
+          {
+            "periodStart": "2026-08-02T06:00:00.000Z",
+            "value": 284262.4
+          },
+          {
+            "periodStart": "2026-08-02T07:00:00.000Z",
+            "value": 338106.1818181818
+          },
+          {
+            "periodStart": "2026-08-02T08:00:00.000Z",
+            "value": 892928
+          },
+          {
+            "periodStart": "2026-08-02T10:00:00.000Z",
+            "value": 438272
+          },
+          {
+            "periodStart": "2026-08-02T19:00:00.000Z",
+            "value": 1271515.4285714286
+          },
+          {
+            "periodStart": "2026-08-02T20:00:00.000Z",
+            "value": 1342743.2727272727
+          },
+          {
+            "periodStart": "2026-08-02T21:00:00.000Z",
+            "value": 1345194.6666666667
+          },
+          {
+            "periodStart": "2026-08-02T22:00:00.000Z",
+            "value": 962560
+          },
+          {
+            "periodStart": "2026-08-02T23:00:00.000Z",
+            "value": 962560
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 962560
+          },
+          {
+            "periodStart": "2026-08-03T01:00:00.000Z",
+            "value": 962560
+          },
+          {
+            "periodStart": "2026-08-03T02:00:00.000Z",
+            "value": 962560
+          },
+          {
+            "periodStart": "2026-08-03T11:00:00.000Z",
+            "value": 1384448
+          },
+          {
+            "periodStart": "2026-08-03T12:00:00.000Z",
+            "value": 1170432
+          },
+          {
+            "periodStart": "2026-08-03T13:00:00.000Z",
+            "value": 1033309.0909090909
+          },
+          {
+            "periodStart": "2026-08-03T14:00:00.000Z",
+            "value": 1211050.6666666667
+          },
+          {
+            "periodStart": "2026-08-03T15:00:00.000Z",
+            "value": 1250304
+          },
+          {
+            "periodStart": "2026-08-03T16:00:00.000Z",
+            "value": 519447.2727272727
+          },
+          {
+            "periodStart": "2026-08-03T17:00:00.000Z",
+            "value": 429738.6666666667
+          },
+          {
+            "periodStart": "2026-08-03T18:00:00.000Z",
+            "value": 980433.4545454546
+          },
+          {
+            "periodStart": "2026-08-03T19:00:00.000Z",
+            "value": 750685.0909090909
+          },
+          {
+            "periodStart": "2026-08-03T20:00:00.000Z",
+            "value": 1045504
+          },
+          {
+            "periodStart": "2026-08-03T21:00:00.000Z",
+            "value": 1285802.6666666667
+          },
+          {
+            "periodStart": "2026-08-03T22:00:00.000Z",
+            "value": 1182626.9090909092
+          },
+          {
+            "periodStart": "2026-08-03T23:00:00.000Z",
+            "value": 1080320
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 1162581.3333333333
+          },
+          {
+            "periodStart": "2026-08-04T01:00:00.000Z",
+            "value": 1130154.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T02:00:00.000Z",
+            "value": 1107409.4545454546
+          },
+          {
+            "periodStart": "2026-08-04T03:00:00.000Z",
+            "value": 1188522.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T04:00:00.000Z",
+            "value": 1117866.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T05:00:00.000Z",
+            "value": 1159850.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T06:00:00.000Z",
+            "value": 1236247.2727272727
+          },
+          {
+            "periodStart": "2026-08-04T07:00:00.000Z",
+            "value": 1380693.3333333333
+          },
+          {
+            "periodStart": "2026-08-04T08:00:00.000Z",
+            "value": 1163605.3333333333
+          },
+          {
+            "periodStart": "2026-08-04T09:00:00.000Z",
+            "value": 1307368.7272727273
+          },
+          {
+            "periodStart": "2026-08-04T10:00:00.000Z",
+            "value": 995328
+          },
+          {
+            "periodStart": "2026-08-04T11:00:00.000Z",
+            "value": 1111722.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T12:00:00.000Z",
+            "value": 1210709.3333333333
+          },
+          {
+            "periodStart": "2026-08-04T13:00:00.000Z",
+            "value": 965632
+          },
+          {
+            "periodStart": "2026-08-04T14:00:00.000Z",
+            "value": 919365.8181818182
+          },
+          {
+            "periodStart": "2026-08-04T15:00:00.000Z",
+            "value": 1064618.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T16:00:00.000Z",
+            "value": 1236650.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T17:00:00.000Z",
+            "value": 1268270.5454545454
+          },
+          {
+            "periodStart": "2026-08-04T18:00:00.000Z",
+            "value": 982698.6666666666
+          },
+          {
+            "periodStart": "2026-08-04T19:00:00.000Z",
+            "value": 609280
+          },
+          {
+            "periodStart": "2026-08-04T20:00:00.000Z",
+            "value": 1097728
+          },
+          {
+            "periodStart": "2026-08-04T21:00:00.000Z",
+            "value": 1062912
+          },
+          {
+            "periodStart": "2026-08-04T22:00:00.000Z",
+            "value": 1085440
+          },
+          {
+            "periodStart": "2026-08-04T23:00:00.000Z",
+            "value": 1041066.6666666666
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 1145390.5454545454
+          },
+          {
+            "periodStart": "2026-08-05T01:00:00.000Z",
+            "value": 1182999.2727272727
+          },
+          {
+            "periodStart": "2026-08-05T02:00:00.000Z",
+            "value": 1053013.3333333333
+          },
+          {
+            "periodStart": "2026-08-05T03:00:00.000Z",
+            "value": 1224704
+          },
+          {
+            "periodStart": "2026-08-05T04:00:00.000Z",
+            "value": 894976
+          },
+          {
+            "periodStart": "2026-08-05T05:00:00.000Z",
+            "value": 1038894.5454545454
+          },
+          {
+            "periodStart": "2026-08-05T06:00:00.000Z",
+            "value": 1269077.3333333333
+          },
+          {
+            "periodStart": "2026-08-05T07:00:00.000Z",
+            "value": 923834.1818181818
+          },
+          {
+            "periodStart": "2026-08-05T08:00:00.000Z",
+            "value": 951091.2
+          },
+          {
+            "periodStart": "2026-08-05T09:00:00.000Z",
+            "value": 948906.6666666666
+          },
+          {
+            "periodStart": "2026-08-05T10:00:00.000Z",
+            "value": 907077.8181818182
+          },
+          {
+            "periodStart": "2026-08-05T11:00:00.000Z",
+            "value": 1062912
+          },
+          {
+            "periodStart": "2026-08-05T12:00:00.000Z",
+            "value": 1136453.8181818181
+          },
+          {
+            "periodStart": "2026-08-05T13:00:00.000Z",
+            "value": 1135709.0909090908
+          },
+          {
+            "periodStart": "2026-08-05T14:00:00.000Z",
+            "value": 1019904
+          },
+          {
+            "periodStart": "2026-08-05T15:00:00.000Z",
+            "value": 1103872
+          },
+          {
+            "periodStart": "2026-08-05T16:00:00.000Z",
+            "value": 1115973.8181818181
+          },
+          {
+            "periodStart": "2026-08-05T17:00:00.000Z",
+            "value": 1050282.6666666667
+          },
+          {
+            "periodStart": "2026-08-05T18:00:00.000Z",
+            "value": 1165312
+          },
+          {
+            "periodStart": "2026-08-05T19:00:00.000Z",
+            "value": 1241088
+          },
+          {
+            "periodStart": "2026-08-05T20:00:00.000Z",
+            "value": 1235968
+          },
+          {
+            "periodStart": "2026-08-05T21:00:00.000Z",
+            "value": 1169594.1818181819
+          },
+          {
+            "periodStart": "2026-08-05T22:00:00.000Z",
+            "value": 1220949.3333333333
+          },
+          {
+            "periodStart": "2026-08-05T23:00:00.000Z",
+            "value": 1059746.9090909092
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 981674.6666666666
+          },
+          {
+            "periodStart": "2026-08-06T01:00:00.000Z",
+            "value": 1120442.1818181819
+          },
+          {
+            "periodStart": "2026-08-06T02:00:00.000Z",
+            "value": 1234602.6666666667
+          },
+          {
+            "periodStart": "2026-08-06T03:00:00.000Z",
+            "value": 1039360
+          },
+          {
+            "periodStart": "2026-08-06T04:00:00.000Z",
+            "value": 1031447.2727272727
+          },
+          {
+            "periodStart": "2026-08-06T05:00:00.000Z",
+            "value": 802133.3333333334
+          },
+          {
+            "periodStart": "2026-08-06T06:00:00.000Z",
+            "value": 1124165.8181818181
+          },
+          {
+            "periodStart": "2026-08-06T07:00:00.000Z",
+            "value": 1013077.3333333334
+          },
+          {
+            "periodStart": "2026-08-06T08:00:00.000Z",
+            "value": 1282792.7272727273
+          },
+          {
+            "periodStart": "2026-08-06T09:00:00.000Z",
+            "value": 1080661.3333333333
+          },
+          {
+            "periodStart": "2026-08-06T10:00:00.000Z",
+            "value": 959208.7272727273
+          },
+          {
+            "periodStart": "2026-08-06T11:00:00.000Z",
+            "value": 1171083.6363636365
+          },
+          {
+            "periodStart": "2026-08-06T12:00:00.000Z",
+            "value": 905216
+          },
+          {
+            "periodStart": "2026-08-06T13:00:00.000Z",
+            "value": 1068683.6363636365
+          },
+          {
+            "periodStart": "2026-08-06T14:00:00.000Z",
+            "value": 1111505.4545454546
+          },
+          {
+            "periodStart": "2026-08-06T15:00:00.000Z",
+            "value": 948037.8181818182
+          },
+          {
+            "periodStart": "2026-08-06T16:00:00.000Z",
+            "value": 1203541.3333333333
+          },
+          {
+            "periodStart": "2026-08-06T17:00:00.000Z",
+            "value": 918869.3333333334
+          },
+          {
+            "periodStart": "2026-08-06T18:00:00.000Z",
+            "value": 1142039.2727272727
+          },
+          {
+            "periodStart": "2026-08-06T19:00:00.000Z",
+            "value": 1333061.8181818181
+          },
+          {
+            "periodStart": "2026-08-06T20:00:00.000Z",
+            "value": 1289557.3333333333
+          },
+          {
+            "periodStart": "2026-08-06T21:00:00.000Z",
+            "value": 1257844.3636363635
+          },
+          {
+            "periodStart": "2026-08-06T22:00:00.000Z",
+            "value": 1111505.4545454546
+          },
+          {
+            "periodStart": "2026-08-06T23:00:00.000Z",
+            "value": 405094.4
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 937301.3333333334
+          },
+          {
+            "periodStart": "2026-08-07T01:00:00.000Z",
+            "value": 989742.5454545454
+          },
+          {
+            "periodStart": "2026-08-07T02:00:00.000Z",
+            "value": 1005226.6666666666
+          },
+          {
+            "periodStart": "2026-08-07T03:00:00.000Z",
+            "value": 847499.6363636364
+          },
+          {
+            "periodStart": "2026-08-07T04:00:00.000Z",
+            "value": 813056
+          },
+          {
+            "periodStart": "2026-08-07T05:00:00.000Z",
+            "value": 538810.1818181818
+          },
+          {
+            "periodStart": "2026-08-07T06:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-08-07T07:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-08-07T08:00:00.000Z",
+            "value": 649402.1818181818
+          },
+          {
+            "periodStart": "2026-08-07T09:00:00.000Z",
+            "value": 901461.3333333334
+          },
+          {
+            "periodStart": "2026-08-07T10:00:00.000Z",
+            "value": 865894.4
+          },
+          {
+            "periodStart": "2026-08-07T11:00:00.000Z",
+            "value": 1016490.6666666666
+          },
+          {
+            "periodStart": "2026-08-07T12:00:00.000Z",
+            "value": 1028840.7272727273
+          },
+          {
+            "periodStart": "2026-08-07T13:00:00.000Z",
+            "value": 1047458.9090909091
+          },
+          {
+            "periodStart": "2026-08-07T14:00:00.000Z",
+            "value": 976554.6666666666
+          },
+          {
+            "periodStart": "2026-08-07T15:00:00.000Z",
+            "value": 1014318.5454545454
+          },
+          {
+            "periodStart": "2026-08-07T16:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-07T20:00:00.000Z",
+            "value": 911018.6666666666
+          },
+          {
+            "periodStart": "2026-08-07T21:00:00.000Z",
+            "value": 1174186.6666666667
+          },
+          {
+            "periodStart": "2026-08-07T22:00:00.000Z",
+            "value": 1232896
+          },
+          {
+            "periodStart": "2026-08-07T23:00:00.000Z",
+            "value": 1362106.1818181819
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 1278771.2
+          },
+          {
+            "periodStart": "2026-08-08T01:00:00.000Z",
+            "value": 1144832
+          },
+          {
+            "periodStart": "2026-08-08T02:00:00.000Z",
+            "value": 1157678.5454545454
+          },
+          {
+            "periodStart": "2026-08-08T03:00:00.000Z",
+            "value": 1210709.3333333333
+          },
+          {
+            "periodStart": "2026-08-08T04:00:00.000Z",
+            "value": 1028096
+          },
+          {
+            "periodStart": "2026-08-08T05:00:00.000Z",
+            "value": 1286516.3636363635
+          },
+          {
+            "periodStart": "2026-08-08T06:00:00.000Z",
+            "value": 1087260.4444444445
+          },
+          {
+            "periodStart": "2026-08-08T07:00:00.000Z",
+            "value": 753664
+          },
+          {
+            "periodStart": "2026-08-08T08:00:00.000Z",
+            "value": 675157.3333333334
+          },
+          {
+            "periodStart": "2026-08-08T09:00:00.000Z",
+            "value": 939739.4285714285
+          },
+          {
+            "periodStart": "2026-08-08T10:00:00.000Z",
+            "value": 917504
+          },
+          {
+            "periodStart": "2026-08-08T11:00:00.000Z",
+            "value": 976337.4545454546
+          },
+          {
+            "periodStart": "2026-08-08T12:00:00.000Z",
+            "value": 218913587.2
+          },
+          {
+            "periodStart": "2026-08-08T13:00:00.000Z",
+            "value": 398869224.72727275
+          },
+          {
+            "periodStart": "2026-08-08T14:00:00.000Z",
+            "value": 351070617.6
+          },
+          {
+            "periodStart": "2026-08-08T15:00:00.000Z",
+            "value": 416330100.3636364
+          },
+          {
+            "periodStart": "2026-08-08T16:00:00.000Z",
+            "value": 408651776
+          },
+          {
+            "periodStart": "2026-08-08T17:00:00.000Z",
+            "value": 485823488
+          },
+          {
+            "periodStart": "2026-08-08T18:00:00.000Z",
+            "value": 485538133.3333333
+          },
+          {
+            "periodStart": "2026-08-08T19:00:00.000Z",
+            "value": 482087656.72727275
+          },
+          {
+            "periodStart": "2026-08-08T20:00:00.000Z",
+            "value": 470674432
+          },
+          {
+            "periodStart": "2026-08-08T21:00:00.000Z",
+            "value": 425820160
+          },
+          {
+            "periodStart": "2026-08-08T22:00:00.000Z",
+            "value": 478495402.6666667
+          },
+          {
+            "periodStart": "2026-08-08T23:00:00.000Z",
+            "value": 428581205.3333333
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 475315541.3333333
+          },
+          {
+            "periodStart": "2026-08-09T01:00:00.000Z",
+            "value": 383210216.72727275
+          },
+          {
+            "periodStart": "2026-08-09T02:00:00.000Z",
+            "value": 401063563.6363636
+          },
+          {
+            "periodStart": "2026-08-09T03:00:00.000Z",
+            "value": 477257045.3333333
+          },
+          {
+            "periodStart": "2026-08-09T04:00:00.000Z",
+            "value": 397572654.54545456
+          },
+          {
+            "periodStart": "2026-08-09T05:00:00.000Z",
+            "value": 429725882.1818182
+          },
+          {
+            "periodStart": "2026-08-09T06:00:00.000Z",
+            "value": 415758677.3333333
+          },
+          {
+            "periodStart": "2026-08-09T07:00:00.000Z",
+            "value": 417590954.6666667
+          },
+          {
+            "periodStart": "2026-08-09T08:00:00.000Z",
+            "value": 410218123.6363636
+          },
+          {
+            "periodStart": "2026-08-09T09:00:00.000Z",
+            "value": 371290794.6666667
+          },
+          {
+            "periodStart": "2026-08-09T11:00:00.000Z",
+            "value": 266256384
+          },
+          {
+            "periodStart": "2026-08-09T16:00:00.000Z",
+            "value": 249946567.1111111
+          },
+          {
+            "periodStart": "2026-08-09T17:00:00.000Z",
+            "value": 419840455.1111111
+          },
+          {
+            "periodStart": "2026-08-09T18:00:00.000Z",
+            "value": 463633314.90909094
+          },
+          {
+            "periodStart": "2026-08-09T19:00:00.000Z",
+            "value": 504842426.1818182
+          },
+          {
+            "periodStart": "2026-08-09T20:00:00.000Z",
+            "value": 477938346.6666667
+          },
+          {
+            "periodStart": "2026-08-09T21:00:00.000Z",
+            "value": 500267566.54545456
+          },
+          {
+            "periodStart": "2026-08-09T22:00:00.000Z",
+            "value": 494512469.3333333
+          },
+          {
+            "periodStart": "2026-08-09T23:00:00.000Z",
+            "value": 440787285.3333333
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 499495656.72727275
+          },
+          {
+            "periodStart": "2026-08-10T01:00:00.000Z",
+            "value": 409890474.6666667
+          },
+          {
+            "periodStart": "2026-08-10T02:00:00.000Z",
+            "value": 532037632
+          },
+          {
+            "periodStart": "2026-08-10T03:00:00.000Z",
+            "value": 427067578.1818182
+          },
+          {
+            "periodStart": "2026-08-10T04:00:00.000Z",
+            "value": 388704938.6666667
+          }
+        ],
+        "currentValue": 388704938.6666667,
+        "priorValue": 427067578.1818182,
+        "delta": -38362639.5151515,
+        "direction": "down"
+      },
+      "cpuTrend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-19T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-19T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-19T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T01:00:00.000Z",
+            "value": 0.37692307692307697
+          },
+          {
+            "periodStart": "2026-07-20T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T16:00:00.000Z",
+            "value": 0.008333333333333333
+          },
+          {
+            "periodStart": "2026-08-06T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T12:00:00.000Z",
+            "value": 14.49
+          },
+          {
+            "periodStart": "2026-08-08T13:00:00.000Z",
+            "value": 11.063636363636364
+          },
+          {
+            "periodStart": "2026-08-08T14:00:00.000Z",
+            "value": 9.190000000000001
+          },
+          {
+            "periodStart": "2026-08-08T15:00:00.000Z",
+            "value": 14.145454545454545
+          },
+          {
+            "periodStart": "2026-08-08T16:00:00.000Z",
+            "value": 10.66
+          },
+          {
+            "periodStart": "2026-08-08T17:00:00.000Z",
+            "value": 11.016666666666667
+          },
+          {
+            "periodStart": "2026-08-08T18:00:00.000Z",
+            "value": 12.608333333333334
+          },
+          {
+            "periodStart": "2026-08-08T19:00:00.000Z",
+            "value": 11.554545454545453
+          },
+          {
+            "periodStart": "2026-08-08T20:00:00.000Z",
+            "value": 11.975
+          },
+          {
+            "periodStart": "2026-08-08T21:00:00.000Z",
+            "value": 9.736363636363636
+          },
+          {
+            "periodStart": "2026-08-08T22:00:00.000Z",
+            "value": 14.483333333333334
+          },
+          {
+            "periodStart": "2026-08-08T23:00:00.000Z",
+            "value": 19.01666666666667
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 13.45833333333333
+          },
+          {
+            "periodStart": "2026-08-09T01:00:00.000Z",
+            "value": 10.590909090909092
+          },
+          {
+            "periodStart": "2026-08-09T02:00:00.000Z",
+            "value": 11.245454545454546
+          },
+          {
+            "periodStart": "2026-08-09T03:00:00.000Z",
+            "value": 12.299999999999999
+          },
+          {
+            "periodStart": "2026-08-09T04:00:00.000Z",
+            "value": 12.054545454545455
+          },
+          {
+            "periodStart": "2026-08-09T05:00:00.000Z",
+            "value": 9.399999999999999
+          },
+          {
+            "periodStart": "2026-08-09T06:00:00.000Z",
+            "value": 14.366666666666667
+          },
+          {
+            "periodStart": "2026-08-09T07:00:00.000Z",
+            "value": 10.808333333333332
+          },
+          {
+            "periodStart": "2026-08-09T08:00:00.000Z",
+            "value": 10.718181818181819
+          },
+          {
+            "periodStart": "2026-08-09T09:00:00.000Z",
+            "value": 7.733333333333334
+          },
+          {
+            "periodStart": "2026-08-09T11:00:00.000Z",
+            "value": 5.2
+          },
+          {
+            "periodStart": "2026-08-09T16:00:00.000Z",
+            "value": 2.5888888888888886
+          },
+          {
+            "periodStart": "2026-08-09T17:00:00.000Z",
+            "value": 8.800000000000002
+          },
+          {
+            "periodStart": "2026-08-09T18:00:00.000Z",
+            "value": 7.536363636363637
+          },
+          {
+            "periodStart": "2026-08-09T19:00:00.000Z",
+            "value": 5.372727272727273
+          },
+          {
+            "periodStart": "2026-08-09T20:00:00.000Z",
+            "value": 6.8166666666666655
+          },
+          {
+            "periodStart": "2026-08-09T21:00:00.000Z",
+            "value": 12.490909090909089
+          },
+          {
+            "periodStart": "2026-08-09T22:00:00.000Z",
+            "value": 10.75
+          },
+          {
+            "periodStart": "2026-08-09T23:00:00.000Z",
+            "value": 10.391666666666666
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 10.763636363636364
+          },
+          {
+            "periodStart": "2026-08-10T01:00:00.000Z",
+            "value": 10.016666666666667
+          },
+          {
+            "periodStart": "2026-08-10T02:00:00.000Z",
+            "value": 10.266666666666667
+          },
+          {
+            "periodStart": "2026-08-10T03:00:00.000Z",
+            "value": 16.845454545454547
+          },
+          {
+            "periodStart": "2026-08-10T04:00:00.000Z",
+            "value": 10.666666666666666
+          }
+        ],
+        "currentValue": 10.666666666666666,
+        "priorValue": 16.845454545454547,
+        "delta": -6.178787878787881,
+        "direction": "down"
+      }
+    },
+    {
+      "role": "coordinator",
+      "rssBytes": 294821888,
+      "cpuPercent": 1.5,
+      "rssTrend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 1107968
+          },
+          {
+            "periodStart": "2026-07-19T01:00:00.000Z",
+            "value": 1101824
+          },
+          {
+            "periodStart": "2026-07-19T02:00:00.000Z",
+            "value": 890197.3333333334
+          },
+          {
+            "periodStart": "2026-07-19T23:00:00.000Z",
+            "value": 811827.2
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 804706.4615384615
+          },
+          {
+            "periodStart": "2026-07-20T01:00:00.000Z",
+            "value": 874653.5384615385
+          },
+          {
+            "periodStart": "2026-07-20T02:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T03:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T04:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T05:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T06:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T07:00:00.000Z",
+            "value": 849920
+          },
+          {
+            "periodStart": "2026-07-20T08:00:00.000Z",
+            "value": 872448
+          },
+          {
+            "periodStart": "2026-07-20T09:00:00.000Z",
+            "value": 852650.6666666666
+          },
+          {
+            "periodStart": "2026-07-20T10:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T11:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-20T12:00:00.000Z",
+            "value": 1004264.7272727273
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
+            "value": 856405.3333333334
+          },
+          {
+            "periodStart": "2026-07-20T14:00:00.000Z",
+            "value": 858670.5454545454
+          },
+          {
+            "periodStart": "2026-07-20T15:00:00.000Z",
+            "value": 597643.6363636364
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-07-20T17:00:00.000Z",
+            "value": 854357.3333333334
+          },
+          {
+            "periodStart": "2026-07-20T21:00:00.000Z",
+            "value": 823296
+          },
+          {
+            "periodStart": "2026-07-20T22:00:00.000Z",
+            "value": 863573.3333333334
+          },
+          {
+            "periodStart": "2026-07-20T23:00:00.000Z",
+            "value": 843776
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 843776
+          },
+          {
+            "periodStart": "2026-07-21T01:00:00.000Z",
+            "value": 835584
+          },
+          {
+            "periodStart": "2026-07-21T02:00:00.000Z",
+            "value": 797354.6666666666
+          },
+          {
+            "periodStart": "2026-07-21T03:00:00.000Z",
+            "value": 413696
+          },
+          {
+            "periodStart": "2026-07-21T04:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-07-21T05:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-07-21T06:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-07-21T07:00:00.000Z",
+            "value": 708608
+          },
+          {
+            "periodStart": "2026-07-21T08:00:00.000Z",
+            "value": 908288
+          },
+          {
+            "periodStart": "2026-07-21T09:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-21T10:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-21T11:00:00.000Z",
+            "value": 964900.5714285715
+          },
+          {
+            "periodStart": "2026-07-21T12:00:00.000Z",
+            "value": 848616.7272727273
+          },
+          {
+            "periodStart": "2026-07-21T13:00:00.000Z",
+            "value": 856746.6666666666
+          },
+          {
+            "periodStart": "2026-07-21T14:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-21T15:00:00.000Z",
+            "value": 906922.6666666666
+          },
+          {
+            "periodStart": "2026-07-21T16:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-21T17:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-21T18:00:00.000Z",
+            "value": 851968
+          },
+          {
+            "periodStart": "2026-07-21T19:00:00.000Z",
+            "value": 905898.6666666666
+          },
+          {
+            "periodStart": "2026-07-21T20:00:00.000Z",
+            "value": 678707.2
+          },
+          {
+            "periodStart": "2026-07-21T21:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-08-01T23:00:00.000Z",
+            "value": 837290.6666666666
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 334010.1818181818
+          },
+          {
+            "periodStart": "2026-08-02T01:00:00.000Z",
+            "value": 12288
+          },
+          {
+            "periodStart": "2026-08-02T02:00:00.000Z",
+            "value": 10053.818181818182
+          },
+          {
+            "periodStart": "2026-08-02T03:00:00.000Z",
+            "value": 11543.272727272728
+          },
+          {
+            "periodStart": "2026-08-02T04:00:00.000Z",
+            "value": 12288
+          },
+          {
+            "periodStart": "2026-08-02T05:00:00.000Z",
+            "value": 12288
+          },
+          {
+            "periodStart": "2026-08-02T06:00:00.000Z",
+            "value": 12288
+          },
+          {
+            "periodStart": "2026-08-02T07:00:00.000Z",
+            "value": 12288
+          },
+          {
+            "periodStart": "2026-08-02T08:00:00.000Z",
+            "value": 12288
+          },
+          {
+            "periodStart": "2026-08-02T10:00:00.000Z",
+            "value": 12288
+          },
+          {
+            "periodStart": "2026-08-02T19:00:00.000Z",
+            "value": 872448
+          },
+          {
+            "periodStart": "2026-08-02T20:00:00.000Z",
+            "value": 867979.6363636364
+          },
+          {
+            "periodStart": "2026-08-02T21:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-02T22:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-02T23:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-03T01:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-03T02:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-03T11:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-03T12:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-03T13:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-03T14:00:00.000Z",
+            "value": 798037.3333333334
+          },
+          {
+            "periodStart": "2026-08-03T15:00:00.000Z",
+            "value": 794624
+          },
+          {
+            "periodStart": "2026-08-03T16:00:00.000Z",
+            "value": 437154.9090909091
+          },
+          {
+            "periodStart": "2026-08-03T17:00:00.000Z",
+            "value": 401408
+          },
+          {
+            "periodStart": "2026-08-03T18:00:00.000Z",
+            "value": 950272
+          },
+          {
+            "periodStart": "2026-08-03T19:00:00.000Z",
+            "value": 307572.36363636365
+          },
+          {
+            "periodStart": "2026-08-03T20:00:00.000Z",
+            "value": 287744
+          },
+          {
+            "periodStart": "2026-08-03T21:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-03T22:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-03T23:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T01:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T02:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T03:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T04:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T05:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T06:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T07:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T08:00:00.000Z",
+            "value": 278528
+          },
+          {
+            "periodStart": "2026-08-04T09:00:00.000Z",
+            "value": 669882.1818181818
+          },
+          {
+            "periodStart": "2026-08-04T10:00:00.000Z",
+            "value": 1066666.6666666667
+          },
+          {
+            "periodStart": "2026-08-04T11:00:00.000Z",
+            "value": 921600
+          },
+          {
+            "periodStart": "2026-08-04T12:00:00.000Z",
+            "value": 831488
+          },
+          {
+            "periodStart": "2026-08-04T13:00:00.000Z",
+            "value": 670720
+          },
+          {
+            "periodStart": "2026-08-04T14:00:00.000Z",
+            "value": 188416
+          },
+          {
+            "periodStart": "2026-08-04T15:00:00.000Z",
+            "value": 173397.33333333334
+          },
+          {
+            "periodStart": "2026-08-04T16:00:00.000Z",
+            "value": 143360
+          },
+          {
+            "periodStart": "2026-08-04T17:00:00.000Z",
+            "value": 143360
+          },
+          {
+            "periodStart": "2026-08-04T18:00:00.000Z",
+            "value": 127658.66666666667
+          },
+          {
+            "periodStart": "2026-08-04T19:00:00.000Z",
+            "value": 114688
+          },
+          {
+            "periodStart": "2026-08-04T20:00:00.000Z",
+            "value": 884363.6363636364
+          },
+          {
+            "periodStart": "2026-08-04T21:00:00.000Z",
+            "value": 823296
+          },
+          {
+            "periodStart": "2026-08-04T22:00:00.000Z",
+            "value": 815104
+          },
+          {
+            "periodStart": "2026-08-04T23:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-05T01:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-05T02:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-05T03:00:00.000Z",
+            "value": 798720
+          },
+          {
+            "periodStart": "2026-08-05T04:00:00.000Z",
+            "value": 814694.4
+          },
+          {
+            "periodStart": "2026-08-05T05:00:00.000Z",
+            "value": 831488
+          },
+          {
+            "periodStart": "2026-08-05T06:00:00.000Z",
+            "value": 823296
+          },
+          {
+            "periodStart": "2026-08-05T07:00:00.000Z",
+            "value": 823296
+          },
+          {
+            "periodStart": "2026-08-05T08:00:00.000Z",
+            "value": 803225.6
+          },
+          {
+            "periodStart": "2026-08-05T09:00:00.000Z",
+            "value": 753664
+          },
+          {
+            "periodStart": "2026-08-05T10:00:00.000Z",
+            "value": 753664
+          },
+          {
+            "periodStart": "2026-08-05T11:00:00.000Z",
+            "value": 753664
+          },
+          {
+            "periodStart": "2026-08-05T12:00:00.000Z",
+            "value": 753664
+          },
+          {
+            "periodStart": "2026-08-05T13:00:00.000Z",
+            "value": 750312.7272727273
+          },
+          {
+            "periodStart": "2026-08-05T14:00:00.000Z",
+            "value": 954368
+          },
+          {
+            "periodStart": "2026-08-05T15:00:00.000Z",
+            "value": 904874.6666666666
+          },
+          {
+            "periodStart": "2026-08-05T16:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-05T17:00:00.000Z",
+            "value": 843434.6666666666
+          },
+          {
+            "periodStart": "2026-08-05T18:00:00.000Z",
+            "value": 821248
+          },
+          {
+            "periodStart": "2026-08-05T19:00:00.000Z",
+            "value": 819200
+          },
+          {
+            "periodStart": "2026-08-05T20:00:00.000Z",
+            "value": 466261.3333333333
+          },
+          {
+            "periodStart": "2026-08-05T21:00:00.000Z",
+            "value": 434176
+          },
+          {
+            "periodStart": "2026-08-05T22:00:00.000Z",
+            "value": 430080
+          },
+          {
+            "periodStart": "2026-08-05T23:00:00.000Z",
+            "value": 430080
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 430080
+          },
+          {
+            "periodStart": "2026-08-06T01:00:00.000Z",
+            "value": 430080
+          },
+          {
+            "periodStart": "2026-08-06T02:00:00.000Z",
+            "value": 430080
+          },
+          {
+            "periodStart": "2026-08-06T03:00:00.000Z",
+            "value": 430080
+          },
+          {
+            "periodStart": "2026-08-06T04:00:00.000Z",
+            "value": 430080
+          },
+          {
+            "periodStart": "2026-08-06T05:00:00.000Z",
+            "value": 422229.3333333333
+          },
+          {
+            "periodStart": "2026-08-06T06:00:00.000Z",
+            "value": 417792
+          },
+          {
+            "periodStart": "2026-08-06T07:00:00.000Z",
+            "value": 417792
+          },
+          {
+            "periodStart": "2026-08-06T08:00:00.000Z",
+            "value": 417792
+          },
+          {
+            "periodStart": "2026-08-06T09:00:00.000Z",
+            "value": 410624
+          },
+          {
+            "periodStart": "2026-08-06T10:00:00.000Z",
+            "value": 405504
+          },
+          {
+            "periodStart": "2026-08-06T11:00:00.000Z",
+            "value": 405504
+          },
+          {
+            "periodStart": "2026-08-06T12:00:00.000Z",
+            "value": 405504
+          },
+          {
+            "periodStart": "2026-08-06T13:00:00.000Z",
+            "value": 405504
+          },
+          {
+            "periodStart": "2026-08-06T14:00:00.000Z",
+            "value": 405504
+          },
+          {
+            "periodStart": "2026-08-06T15:00:00.000Z",
+            "value": 383162.1818181818
+          },
+          {
+            "periodStart": "2026-08-06T16:00:00.000Z",
+            "value": 364544
+          },
+          {
+            "periodStart": "2026-08-06T17:00:00.000Z",
+            "value": 363861.3333333333
+          },
+          {
+            "periodStart": "2026-08-06T18:00:00.000Z",
+            "value": 356352
+          },
+          {
+            "periodStart": "2026-08-06T19:00:00.000Z",
+            "value": 356352
+          },
+          {
+            "periodStart": "2026-08-06T20:00:00.000Z",
+            "value": 356352
+          },
+          {
+            "periodStart": "2026-08-06T21:00:00.000Z",
+            "value": 356352
+          },
+          {
+            "periodStart": "2026-08-06T22:00:00.000Z",
+            "value": 356352
+          },
+          {
+            "periodStart": "2026-08-06T23:00:00.000Z",
+            "value": 226918.4
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 147456
+          },
+          {
+            "periodStart": "2026-08-07T01:00:00.000Z",
+            "value": 147456
+          },
+          {
+            "periodStart": "2026-08-07T02:00:00.000Z",
+            "value": 147456
+          },
+          {
+            "periodStart": "2026-08-07T03:00:00.000Z",
+            "value": 147456
+          },
+          {
+            "periodStart": "2026-08-07T04:00:00.000Z",
+            "value": 146090.66666666666
+          },
+          {
+            "periodStart": "2026-08-07T05:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T06:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T07:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T08:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T09:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T10:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T11:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T12:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T13:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T14:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T15:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T16:00:00.000Z",
+            "value": 131072
+          },
+          {
+            "periodStart": "2026-08-07T20:00:00.000Z",
+            "value": 908970.6666666666
+          },
+          {
+            "periodStart": "2026-08-07T21:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-07T22:00:00.000Z",
+            "value": 860160
+          },
+          {
+            "periodStart": "2026-08-07T23:00:00.000Z",
+            "value": 831488
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 792985.6
+          },
+          {
+            "periodStart": "2026-08-08T01:00:00.000Z",
+            "value": 446464
+          },
+          {
+            "periodStart": "2026-08-08T02:00:00.000Z",
+            "value": 446464
+          },
+          {
+            "periodStart": "2026-08-08T03:00:00.000Z",
+            "value": 446464
+          },
+          {
+            "periodStart": "2026-08-08T04:00:00.000Z",
+            "value": 446464
+          },
+          {
+            "periodStart": "2026-08-08T05:00:00.000Z",
+            "value": 446464
+          },
+          {
+            "periodStart": "2026-08-08T06:00:00.000Z",
+            "value": 433265.77777777775
+          },
+          {
+            "periodStart": "2026-08-08T07:00:00.000Z",
+            "value": 405048.8888888889
+          },
+          {
+            "periodStart": "2026-08-08T08:00:00.000Z",
+            "value": 344746.6666666667
+          },
+          {
+            "periodStart": "2026-08-08T09:00:00.000Z",
+            "value": 317732.5714285714
+          },
+          {
+            "periodStart": "2026-08-08T10:00:00.000Z",
+            "value": 315392
+          },
+          {
+            "periodStart": "2026-08-08T11:00:00.000Z",
+            "value": 315392
+          },
+          {
+            "periodStart": "2026-08-08T12:00:00.000Z",
+            "value": 163837952
+          },
+          {
+            "periodStart": "2026-08-08T13:00:00.000Z",
+            "value": 148073378.9090909
+          },
+          {
+            "periodStart": "2026-08-08T14:00:00.000Z",
+            "value": 230723174.4
+          },
+          {
+            "periodStart": "2026-08-08T15:00:00.000Z",
+            "value": 193306251.63636363
+          },
+          {
+            "periodStart": "2026-08-08T16:00:00.000Z",
+            "value": 124447129.6
+          },
+          {
+            "periodStart": "2026-08-08T17:00:00.000Z",
+            "value": 280771584
+          },
+          {
+            "periodStart": "2026-08-08T18:00:00.000Z",
+            "value": 173292544
+          },
+          {
+            "periodStart": "2026-08-08T19:00:00.000Z",
+            "value": 111153524.36363636
+          },
+          {
+            "periodStart": "2026-08-08T20:00:00.000Z",
+            "value": 233299968
+          },
+          {
+            "periodStart": "2026-08-08T21:00:00.000Z",
+            "value": 234525416.72727272
+          },
+          {
+            "periodStart": "2026-08-08T22:00:00.000Z",
+            "value": 284045653.3333333
+          },
+          {
+            "periodStart": "2026-08-08T23:00:00.000Z",
+            "value": 183016448
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 205927424
+          },
+          {
+            "periodStart": "2026-08-09T01:00:00.000Z",
+            "value": 212347066.1818182
+          },
+          {
+            "periodStart": "2026-08-09T02:00:00.000Z",
+            "value": 127609018.18181819
+          },
+          {
+            "periodStart": "2026-08-09T03:00:00.000Z",
+            "value": 186304512
+          },
+          {
+            "periodStart": "2026-08-09T04:00:00.000Z",
+            "value": 200540160
+          },
+          {
+            "periodStart": "2026-08-09T05:00:00.000Z",
+            "value": 146445032.72727272
+          },
+          {
+            "periodStart": "2026-08-09T06:00:00.000Z",
+            "value": 158011392
+          },
+          {
+            "periodStart": "2026-08-09T07:00:00.000Z",
+            "value": 169911296
+          },
+          {
+            "periodStart": "2026-08-09T08:00:00.000Z",
+            "value": 155464052.36363637
+          },
+          {
+            "periodStart": "2026-08-09T09:00:00.000Z",
+            "value": 266802517.33333334
+          },
+          {
+            "periodStart": "2026-08-09T11:00:00.000Z",
+            "value": 277078016
+          },
+          {
+            "periodStart": "2026-08-09T16:00:00.000Z",
+            "value": 234517845.33333334
+          },
+          {
+            "periodStart": "2026-08-09T17:00:00.000Z",
+            "value": 328815047.1111111
+          },
+          {
+            "periodStart": "2026-08-09T18:00:00.000Z",
+            "value": 189383028.36363637
+          },
+          {
+            "periodStart": "2026-08-09T19:00:00.000Z",
+            "value": 240130978.9090909
+          },
+          {
+            "periodStart": "2026-08-09T20:00:00.000Z",
+            "value": 218193920
+          },
+          {
+            "periodStart": "2026-08-09T21:00:00.000Z",
+            "value": 212577931.63636363
+          },
+          {
+            "periodStart": "2026-08-09T22:00:00.000Z",
+            "value": 203452416
+          },
+          {
+            "periodStart": "2026-08-09T23:00:00.000Z",
+            "value": 182435840
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 297451147.6363636
+          },
+          {
+            "periodStart": "2026-08-10T01:00:00.000Z",
+            "value": 213661013.33333334
+          },
+          {
+            "periodStart": "2026-08-10T02:00:00.000Z",
+            "value": 316907861.3333333
+          },
+          {
+            "periodStart": "2026-08-10T03:00:00.000Z",
+            "value": 151667805.0909091
+          },
+          {
+            "periodStart": "2026-08-10T04:00:00.000Z",
+            "value": 206570837.33333334
+          }
+        ],
+        "currentValue": 206570837.33333334,
+        "priorValue": 151667805.0909091,
+        "delta": 54903032.24242425,
+        "direction": "up"
+      },
+      "cpuTrend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-19T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-19T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-19T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T23:00:00.000Z",
+            "value": 0.05833333333333333
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T17:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T18:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T19:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T13:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T14:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T16:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T20:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T21:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T22:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-07T23:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T01:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T02:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T03:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T04:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T05:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T06:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T07:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T08:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T09:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T10:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T11:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-08T12:00:00.000Z",
+            "value": 0.16
+          },
+          {
+            "periodStart": "2026-08-08T13:00:00.000Z",
+            "value": 0.31818181818181823
+          },
+          {
+            "periodStart": "2026-08-08T14:00:00.000Z",
+            "value": 1.0699999999999998
+          },
+          {
+            "periodStart": "2026-08-08T15:00:00.000Z",
+            "value": 0.4090909090909091
+          },
+          {
+            "periodStart": "2026-08-08T16:00:00.000Z",
+            "value": 0.51
+          },
+          {
+            "periodStart": "2026-08-08T17:00:00.000Z",
+            "value": 1.8749999999999998
+          },
+          {
+            "periodStart": "2026-08-08T18:00:00.000Z",
+            "value": 0.25833333333333336
+          },
+          {
+            "periodStart": "2026-08-08T19:00:00.000Z",
+            "value": 0.4636363636363636
+          },
+          {
+            "periodStart": "2026-08-08T20:00:00.000Z",
+            "value": 0.225
+          },
+          {
+            "periodStart": "2026-08-08T21:00:00.000Z",
+            "value": 2.472727272727273
+          },
+          {
+            "periodStart": "2026-08-08T22:00:00.000Z",
+            "value": 0.34166666666666673
+          },
+          {
+            "periodStart": "2026-08-08T23:00:00.000Z",
+            "value": 0.8583333333333333
+          },
+          {
+            "periodStart": "2026-08-09T00:00:00.000Z",
+            "value": 1.4333333333333333
+          },
+          {
+            "periodStart": "2026-08-09T01:00:00.000Z",
+            "value": 3.3181818181818183
+          },
+          {
+            "periodStart": "2026-08-09T02:00:00.000Z",
+            "value": 0.2454545454545455
+          },
+          {
+            "periodStart": "2026-08-09T03:00:00.000Z",
+            "value": 2.3583333333333334
+          },
+          {
+            "periodStart": "2026-08-09T04:00:00.000Z",
+            "value": 1.290909090909091
+          },
+          {
+            "periodStart": "2026-08-09T05:00:00.000Z",
+            "value": 0.45454545454545453
+          },
+          {
+            "periodStart": "2026-08-09T06:00:00.000Z",
+            "value": 1.4166666666666667
+          },
+          {
+            "periodStart": "2026-08-09T07:00:00.000Z",
+            "value": 1.1833333333333333
+          },
+          {
+            "periodStart": "2026-08-09T08:00:00.000Z",
+            "value": 0.5727272727272728
+          },
+          {
+            "periodStart": "2026-08-09T09:00:00.000Z",
+            "value": 0.6666666666666666
+          },
+          {
+            "periodStart": "2026-08-09T11:00:00.000Z",
+            "value": 4.4
+          },
+          {
+            "periodStart": "2026-08-09T16:00:00.000Z",
+            "value": 1.2999999999999998
+          },
+          {
+            "periodStart": "2026-08-09T17:00:00.000Z",
+            "value": 3.6999999999999997
+          },
+          {
+            "periodStart": "2026-08-09T18:00:00.000Z",
+            "value": 0.4636363636363637
+          },
+          {
+            "periodStart": "2026-08-09T19:00:00.000Z",
+            "value": 0.5636363636363636
+          },
+          {
+            "periodStart": "2026-08-09T20:00:00.000Z",
+            "value": 0.375
+          },
+          {
+            "periodStart": "2026-08-09T21:00:00.000Z",
+            "value": 0.2545454545454545
+          },
+          {
+            "periodStart": "2026-08-09T22:00:00.000Z",
+            "value": 0.3999999999999999
+          },
+          {
+            "periodStart": "2026-08-09T23:00:00.000Z",
+            "value": 0.1416666666666667
+          },
+          {
+            "periodStart": "2026-08-10T00:00:00.000Z",
+            "value": 0.13636363636363638
+          },
+          {
+            "periodStart": "2026-08-10T01:00:00.000Z",
+            "value": 0.6916666666666665
+          },
+          {
+            "periodStart": "2026-08-10T02:00:00.000Z",
+            "value": 3.033333333333333
+          },
+          {
+            "periodStart": "2026-08-10T03:00:00.000Z",
+            "value": 0.409090909090909
+          },
+          {
+            "periodStart": "2026-08-10T04:00:00.000Z",
+            "value": 0.7833333333333333
+          }
+        ],
+        "currentValue": 0.7833333333333333,
+        "priorValue": 0.409090909090909,
+        "delta": 0.3742424242424243,
+        "direction": "up"
+      }
+    }
+  ],
+  "resourceSamplesObserved": true,
+  "suiteDurationTrend": {
+    "hasLocalData": true,
+    "dailySeries": [
+      {
+        "periodStart": "2026-07-05T00:00:00.000Z",
+        "value": 109595.28571428571
+      },
+      {
+        "periodStart": "2026-07-06T00:00:00.000Z",
+        "value": 346265.5833333333
+      },
+      {
+        "periodStart": "2026-07-07T00:00:00.000Z",
+        "value": 84620.69230769231
+      },
+      {
+        "periodStart": "2026-07-08T00:00:00.000Z",
+        "value": 74131
+      },
+      {
+        "periodStart": "2026-07-09T00:00:00.000Z",
+        "value": 49406.72727272727
+      },
+      {
+        "periodStart": "2026-08-02T00:00:00.000Z",
+        "value": 179514.5
+      },
+      {
+        "periodStart": "2026-08-03T00:00:00.000Z",
+        "value": 328258.7727272727
+      },
+      {
+        "periodStart": "2026-08-04T00:00:00.000Z",
+        "value": 315580.6666666667
+      },
+      {
+        "periodStart": "2026-08-05T00:00:00.000Z",
+        "value": 532294.75
+      },
+      {
+        "periodStart": "2026-08-06T00:00:00.000Z",
+        "value": 491087.6
+      },
+      {
+        "periodStart": "2026-08-07T00:00:00.000Z",
+        "value": 322360.5
+      },
+      {
+        "periodStart": "2026-08-08T00:00:00.000Z",
+        "value": 274830.5789473684
+      },
+      {
+        "periodStart": "2026-08-09T00:00:00.000Z",
+        "value": 270600.44444444444
+      },
+      {
+        "periodStart": "2026-08-10T00:00:00.000Z",
+        "value": 220289
+      }
+    ],
+    "trend": {
+      "series": [
+        {
+          "periodStart": "2026-07-05T00:00:00.000Z",
+          "value": 109595.28571428571
+        },
+        {
+          "periodStart": "2026-07-06T00:00:00.000Z",
+          "value": 346265.5833333333
+        },
+        {
+          "periodStart": "2026-07-07T00:00:00.000Z",
+          "value": 84620.69230769231
+        },
+        {
+          "periodStart": "2026-07-08T00:00:00.000Z",
+          "value": 74131
+        },
+        {
+          "periodStart": "2026-07-09T00:00:00.000Z",
+          "value": 49406.72727272727
+        },
+        {
+          "periodStart": "2026-08-02T00:00:00.000Z",
+          "value": 179514.5
+        },
+        {
+          "periodStart": "2026-08-03T00:00:00.000Z",
+          "value": 328258.7727272727
+        },
+        {
+          "periodStart": "2026-08-04T00:00:00.000Z",
+          "value": 315580.6666666667
+        },
+        {
+          "periodStart": "2026-08-05T00:00:00.000Z",
+          "value": 532294.75
+        },
+        {
+          "periodStart": "2026-08-06T00:00:00.000Z",
+          "value": 491087.6
+        },
+        {
+          "periodStart": "2026-08-07T00:00:00.000Z",
+          "value": 322360.5
+        },
+        {
+          "periodStart": "2026-08-08T00:00:00.000Z",
+          "value": 274830.5789473684
+        },
+        {
+          "periodStart": "2026-08-09T00:00:00.000Z",
+          "value": 270600.44444444444
+        },
+        {
+          "periodStart": "2026-08-10T00:00:00.000Z",
+          "value": 220289
+        }
+      ],
+      "currentValue": 220289,
+      "priorValue": 270600.44444444444,
+      "delta": -50311.44444444444,
+      "direction": "down"
+    },
+    "warn": true
+  },
+  "costPerTicket": {
+    "average": {
+      "value": 14.713869494117644,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 15.370106152500004
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 14.713869494117644
+          }
+        ],
+        "currentValue": 14.713869494117644,
+        "priorValue": 15.370106152500004,
+        "delta": -0.65623665838236,
+        "direction": "down"
+      }
+    },
+    "sampleCount": 54,
+    "excludedCount": 551,
+    "series": [
+      {
+        "periodStart": "2026-07-30T00:00:00.000Z",
+        "value": 15.370106152500004
+      },
+      {
+        "periodStart": "2026-08-06T00:00:00.000Z",
+        "value": 14.713869494117644
+      }
+    ],
+    "basis": "Average of each DELIVERED ticket's total cost, summed across every role that held it (BL-312's non-double-counted totals). Includes rework: every bounce/re-hold's usage counts toward the ticket, not just its first pass. Excludes usage outside any recorded holding window ('unattributed') and tickets with no priced model available for any of their usage - those are counted separately (see excluded count), never as $0."
+  },
+  "topExpensiveOriginsByHorizon": {
+    "3h": [
+      {
+        "key": {
+          "role": "specifier",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      },
+      {
+        "key": {
+          "role": "coordinator",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 2,
+        "unknownCostCount": 2
+      }
+    ],
+    "24h": [
+      {
+        "key": {
+          "role": "architect",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 3,
+        "unknownCostCount": 3
+      },
+      {
+        "key": {
+          "role": "coordinator",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 3,
+        "unknownCostCount": 3
+      },
+      {
+        "key": {
+          "role": "specifier",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 2,
+        "unknownCostCount": 2
+      },
+      {
+        "key": {
+          "role": "coder",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 3,
+        "unknownCostCount": 3
+      },
+      {
+        "key": {
+          "role": "cleaner",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 3,
+        "unknownCostCount": 3
+      }
+    ],
+    "7d": [
+      {
+        "key": {
+          "role": "front-desk-operator",
+          "trigger": "reap"
+        },
+        "costUsd": 0.17388810000000002,
+        "invocationCount": 5,
+        "unknownCostCount": 0
+      },
+      {
+        "key": {
+          "role": "coordinator",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 57,
+        "unknownCostCount": 57
+      },
+      {
+        "key": {
+          "role": "coder",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 32,
+        "unknownCostCount": 32
+      },
+      {
+        "key": {
+          "role": "documenter",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 30,
+        "unknownCostCount": 30
+      },
+      {
+        "key": {
+          "role": "cleaner",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 26,
+        "unknownCostCount": 26
+      }
+    ]
+  },
+  "originCostTrendSeries": [
+    {
+      "key": {
+        "role": "coordinator",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785731419267,
+          "bucketEndMs": 1785753019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019267,
+          "bucketEndMs": 1785774619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619267,
+          "bucketEndMs": 1785796219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219267,
+          "bucketEndMs": 1785817819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819267,
+          "bucketEndMs": 1785839419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419267,
+          "bucketEndMs": 1785861019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019267,
+          "bucketEndMs": 1785882619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619267,
+          "bucketEndMs": 1785904219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219267,
+          "bucketEndMs": 1785925819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819267,
+          "bucketEndMs": 1785947419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419267,
+          "bucketEndMs": 1785969019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019267,
+          "bucketEndMs": 1785990619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785990619267,
+          "bucketEndMs": 1786012219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786012219267,
+          "bucketEndMs": 1786033819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786033819267,
+          "bucketEndMs": 1786055419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786055419267,
+          "bucketEndMs": 1786077019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786077019267,
+          "bucketEndMs": 1786098619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786098619267,
+          "bucketEndMs": 1786120219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786120219267,
+          "bucketEndMs": 1786141819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786141819267,
+          "bucketEndMs": 1786163419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786163419267,
+          "bucketEndMs": 1786185019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786185019267,
+          "bucketEndMs": 1786206619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786206619267,
+          "bucketEndMs": 1786228219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786228219267,
+          "bucketEndMs": 1786249819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786249819267,
+          "bucketEndMs": 1786253419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786253419267,
+          "bucketEndMs": 1786257019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786257019267,
+          "bucketEndMs": 1786260619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786260619267,
+          "bucketEndMs": 1786264219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786264219267,
+          "bucketEndMs": 1786267819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786267819267,
+          "bucketEndMs": 1786271419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786271419267,
+          "bucketEndMs": 1786275019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786275019267,
+          "bucketEndMs": 1786278619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786278619267,
+          "bucketEndMs": 1786282219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786282219267,
+          "bucketEndMs": 1786285819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786285819267,
+          "bucketEndMs": 1786289419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786289419267,
+          "bucketEndMs": 1786293019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786293019267,
+          "bucketEndMs": 1786296619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786296619267,
+          "bucketEndMs": 1786300219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786300219267,
+          "bucketEndMs": 1786303819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786303819267,
+          "bucketEndMs": 1786307419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786307419267,
+          "bucketEndMs": 1786311019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786311019267,
+          "bucketEndMs": 1786314619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786314619267,
+          "bucketEndMs": 1786318219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786318219267,
+          "bucketEndMs": 1786321819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786321819267,
+          "bucketEndMs": 1786325419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786325419267,
+          "bucketEndMs": 1786326319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786326319267,
+          "bucketEndMs": 1786327219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786327219267,
+          "bucketEndMs": 1786328119267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786328119267,
+          "bucketEndMs": 1786329019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329019267,
+          "bucketEndMs": 1786329919267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329919267,
+          "bucketEndMs": 1786330819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786330819267,
+          "bucketEndMs": 1786331719267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786331719267,
+          "bucketEndMs": 1786332619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786332619267,
+          "bucketEndMs": 1786333519267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786333519267,
+          "bucketEndMs": 1786334419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786334419267,
+          "bucketEndMs": 1786335319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786335319267,
+          "bucketEndMs": 1786336219267,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "coder",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785731419267,
+          "bucketEndMs": 1785753019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019267,
+          "bucketEndMs": 1785774619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619267,
+          "bucketEndMs": 1785796219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219267,
+          "bucketEndMs": 1785817819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819267,
+          "bucketEndMs": 1785839419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419267,
+          "bucketEndMs": 1785861019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019267,
+          "bucketEndMs": 1785882619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619267,
+          "bucketEndMs": 1785904219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219267,
+          "bucketEndMs": 1785925819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819267,
+          "bucketEndMs": 1785947419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419267,
+          "bucketEndMs": 1785969019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019267,
+          "bucketEndMs": 1785990619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785990619267,
+          "bucketEndMs": 1786012219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786012219267,
+          "bucketEndMs": 1786033819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786033819267,
+          "bucketEndMs": 1786055419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786055419267,
+          "bucketEndMs": 1786077019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786077019267,
+          "bucketEndMs": 1786098619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786098619267,
+          "bucketEndMs": 1786120219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786120219267,
+          "bucketEndMs": 1786141819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786141819267,
+          "bucketEndMs": 1786163419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786163419267,
+          "bucketEndMs": 1786185019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786185019267,
+          "bucketEndMs": 1786206619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786206619267,
+          "bucketEndMs": 1786228219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786228219267,
+          "bucketEndMs": 1786249819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786249819267,
+          "bucketEndMs": 1786253419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786253419267,
+          "bucketEndMs": 1786257019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786257019267,
+          "bucketEndMs": 1786260619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786260619267,
+          "bucketEndMs": 1786264219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786264219267,
+          "bucketEndMs": 1786267819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786267819267,
+          "bucketEndMs": 1786271419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786271419267,
+          "bucketEndMs": 1786275019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786275019267,
+          "bucketEndMs": 1786278619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786278619267,
+          "bucketEndMs": 1786282219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786282219267,
+          "bucketEndMs": 1786285819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786285819267,
+          "bucketEndMs": 1786289419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786289419267,
+          "bucketEndMs": 1786293019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786293019267,
+          "bucketEndMs": 1786296619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786296619267,
+          "bucketEndMs": 1786300219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786300219267,
+          "bucketEndMs": 1786303819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786303819267,
+          "bucketEndMs": 1786307419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786307419267,
+          "bucketEndMs": 1786311019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786311019267,
+          "bucketEndMs": 1786314619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786314619267,
+          "bucketEndMs": 1786318219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786318219267,
+          "bucketEndMs": 1786321819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786321819267,
+          "bucketEndMs": 1786325419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786325419267,
+          "bucketEndMs": 1786326319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786326319267,
+          "bucketEndMs": 1786327219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786327219267,
+          "bucketEndMs": 1786328119267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786328119267,
+          "bucketEndMs": 1786329019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329019267,
+          "bucketEndMs": 1786329919267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329919267,
+          "bucketEndMs": 1786330819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786330819267,
+          "bucketEndMs": 1786331719267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786331719267,
+          "bucketEndMs": 1786332619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786332619267,
+          "bucketEndMs": 1786333519267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786333519267,
+          "bucketEndMs": 1786334419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786334419267,
+          "bucketEndMs": 1786335319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786335319267,
+          "bucketEndMs": 1786336219267,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "front-desk-operator",
+        "trigger": "reap",
+        "script": "launch_front_desk_operator.sh"
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785731419267,
+          "bucketEndMs": 1785753019267,
+          "costUsd": 0.03345
+        },
+        {
+          "bucketStartMs": 1785753019267,
+          "bucketEndMs": 1785774619267,
+          "costUsd": 0.035051
+        },
+        {
+          "bucketStartMs": 1785774619267,
+          "bucketEndMs": 1785796219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219267,
+          "bucketEndMs": 1785817819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819267,
+          "bucketEndMs": 1785839419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419267,
+          "bucketEndMs": 1785861019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019267,
+          "bucketEndMs": 1785882619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619267,
+          "bucketEndMs": 1785904219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219267,
+          "bucketEndMs": 1785925819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819267,
+          "bucketEndMs": 1785947419267,
+          "costUsd": 0.0260301
+        },
+        {
+          "bucketStartMs": 1785947419267,
+          "bucketEndMs": 1785969019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019267,
+          "bucketEndMs": 1785990619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785990619267,
+          "bucketEndMs": 1786012219267,
+          "costUsd": 0.034956
+        },
+        {
+          "bucketStartMs": 1786012219267,
+          "bucketEndMs": 1786033819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786033819267,
+          "bucketEndMs": 1786055419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786055419267,
+          "bucketEndMs": 1786077019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786077019267,
+          "bucketEndMs": 1786098619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786098619267,
+          "bucketEndMs": 1786120219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786120219267,
+          "bucketEndMs": 1786141819267,
+          "costUsd": 0.044400999999999996
+        },
+        {
+          "bucketStartMs": 1786141819267,
+          "bucketEndMs": 1786163419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786163419267,
+          "bucketEndMs": 1786185019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786185019267,
+          "bucketEndMs": 1786206619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786206619267,
+          "bucketEndMs": 1786228219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786228219267,
+          "bucketEndMs": 1786249819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786249819267,
+          "bucketEndMs": 1786253419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786253419267,
+          "bucketEndMs": 1786257019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786257019267,
+          "bucketEndMs": 1786260619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786260619267,
+          "bucketEndMs": 1786264219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786264219267,
+          "bucketEndMs": 1786267819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786267819267,
+          "bucketEndMs": 1786271419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786271419267,
+          "bucketEndMs": 1786275019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786275019267,
+          "bucketEndMs": 1786278619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786278619267,
+          "bucketEndMs": 1786282219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786282219267,
+          "bucketEndMs": 1786285819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786285819267,
+          "bucketEndMs": 1786289419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786289419267,
+          "bucketEndMs": 1786293019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786293019267,
+          "bucketEndMs": 1786296619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786296619267,
+          "bucketEndMs": 1786300219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786300219267,
+          "bucketEndMs": 1786303819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786303819267,
+          "bucketEndMs": 1786307419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786307419267,
+          "bucketEndMs": 1786311019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786311019267,
+          "bucketEndMs": 1786314619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786314619267,
+          "bucketEndMs": 1786318219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786318219267,
+          "bucketEndMs": 1786321819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786321819267,
+          "bucketEndMs": 1786325419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786325419267,
+          "bucketEndMs": 1786326319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786326319267,
+          "bucketEndMs": 1786327219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786327219267,
+          "bucketEndMs": 1786328119267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786328119267,
+          "bucketEndMs": 1786329019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329019267,
+          "bucketEndMs": 1786329919267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329919267,
+          "bucketEndMs": 1786330819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786330819267,
+          "bucketEndMs": 1786331719267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786331719267,
+          "bucketEndMs": 1786332619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786332619267,
+          "bucketEndMs": 1786333519267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786333519267,
+          "bucketEndMs": 1786334419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786334419267,
+          "bucketEndMs": 1786335319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786335319267,
+          "bucketEndMs": 1786336219267,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "documenter",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785731419267,
+          "bucketEndMs": 1785753019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019267,
+          "bucketEndMs": 1785774619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619267,
+          "bucketEndMs": 1785796219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219267,
+          "bucketEndMs": 1785817819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819267,
+          "bucketEndMs": 1785839419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419267,
+          "bucketEndMs": 1785861019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019267,
+          "bucketEndMs": 1785882619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619267,
+          "bucketEndMs": 1785904219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219267,
+          "bucketEndMs": 1785925819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819267,
+          "bucketEndMs": 1785947419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419267,
+          "bucketEndMs": 1785969019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019267,
+          "bucketEndMs": 1785990619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785990619267,
+          "bucketEndMs": 1786012219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786012219267,
+          "bucketEndMs": 1786033819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786033819267,
+          "bucketEndMs": 1786055419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786055419267,
+          "bucketEndMs": 1786077019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786077019267,
+          "bucketEndMs": 1786098619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786098619267,
+          "bucketEndMs": 1786120219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786120219267,
+          "bucketEndMs": 1786141819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786141819267,
+          "bucketEndMs": 1786163419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786163419267,
+          "bucketEndMs": 1786185019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786185019267,
+          "bucketEndMs": 1786206619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786206619267,
+          "bucketEndMs": 1786228219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786228219267,
+          "bucketEndMs": 1786249819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786249819267,
+          "bucketEndMs": 1786253419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786253419267,
+          "bucketEndMs": 1786257019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786257019267,
+          "bucketEndMs": 1786260619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786260619267,
+          "bucketEndMs": 1786264219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786264219267,
+          "bucketEndMs": 1786267819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786267819267,
+          "bucketEndMs": 1786271419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786271419267,
+          "bucketEndMs": 1786275019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786275019267,
+          "bucketEndMs": 1786278619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786278619267,
+          "bucketEndMs": 1786282219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786282219267,
+          "bucketEndMs": 1786285819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786285819267,
+          "bucketEndMs": 1786289419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786289419267,
+          "bucketEndMs": 1786293019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786293019267,
+          "bucketEndMs": 1786296619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786296619267,
+          "bucketEndMs": 1786300219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786300219267,
+          "bucketEndMs": 1786303819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786303819267,
+          "bucketEndMs": 1786307419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786307419267,
+          "bucketEndMs": 1786311019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786311019267,
+          "bucketEndMs": 1786314619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786314619267,
+          "bucketEndMs": 1786318219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786318219267,
+          "bucketEndMs": 1786321819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786321819267,
+          "bucketEndMs": 1786325419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786325419267,
+          "bucketEndMs": 1786326319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786326319267,
+          "bucketEndMs": 1786327219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786327219267,
+          "bucketEndMs": 1786328119267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786328119267,
+          "bucketEndMs": 1786329019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329019267,
+          "bucketEndMs": 1786329919267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329919267,
+          "bucketEndMs": 1786330819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786330819267,
+          "bucketEndMs": 1786331719267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786331719267,
+          "bucketEndMs": 1786332619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786332619267,
+          "bucketEndMs": 1786333519267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786333519267,
+          "bucketEndMs": 1786334419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786334419267,
+          "bucketEndMs": 1786335319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786335319267,
+          "bucketEndMs": 1786336219267,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "cleaner",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785731419267,
+          "bucketEndMs": 1785753019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019267,
+          "bucketEndMs": 1785774619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619267,
+          "bucketEndMs": 1785796219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219267,
+          "bucketEndMs": 1785817819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819267,
+          "bucketEndMs": 1785839419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419267,
+          "bucketEndMs": 1785861019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019267,
+          "bucketEndMs": 1785882619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619267,
+          "bucketEndMs": 1785904219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219267,
+          "bucketEndMs": 1785925819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819267,
+          "bucketEndMs": 1785947419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419267,
+          "bucketEndMs": 1785969019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019267,
+          "bucketEndMs": 1785990619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785990619267,
+          "bucketEndMs": 1786012219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786012219267,
+          "bucketEndMs": 1786033819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786033819267,
+          "bucketEndMs": 1786055419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786055419267,
+          "bucketEndMs": 1786077019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786077019267,
+          "bucketEndMs": 1786098619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786098619267,
+          "bucketEndMs": 1786120219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786120219267,
+          "bucketEndMs": 1786141819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786141819267,
+          "bucketEndMs": 1786163419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786163419267,
+          "bucketEndMs": 1786185019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786185019267,
+          "bucketEndMs": 1786206619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786206619267,
+          "bucketEndMs": 1786228219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786228219267,
+          "bucketEndMs": 1786249819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786249819267,
+          "bucketEndMs": 1786253419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786253419267,
+          "bucketEndMs": 1786257019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786257019267,
+          "bucketEndMs": 1786260619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786260619267,
+          "bucketEndMs": 1786264219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786264219267,
+          "bucketEndMs": 1786267819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786267819267,
+          "bucketEndMs": 1786271419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786271419267,
+          "bucketEndMs": 1786275019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786275019267,
+          "bucketEndMs": 1786278619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786278619267,
+          "bucketEndMs": 1786282219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786282219267,
+          "bucketEndMs": 1786285819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786285819267,
+          "bucketEndMs": 1786289419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786289419267,
+          "bucketEndMs": 1786293019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786293019267,
+          "bucketEndMs": 1786296619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786296619267,
+          "bucketEndMs": 1786300219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786300219267,
+          "bucketEndMs": 1786303819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786303819267,
+          "bucketEndMs": 1786307419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786307419267,
+          "bucketEndMs": 1786311019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786311019267,
+          "bucketEndMs": 1786314619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786314619267,
+          "bucketEndMs": 1786318219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786318219267,
+          "bucketEndMs": 1786321819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786321819267,
+          "bucketEndMs": 1786325419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786325419267,
+          "bucketEndMs": 1786326319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786326319267,
+          "bucketEndMs": 1786327219267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786327219267,
+          "bucketEndMs": 1786328119267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786328119267,
+          "bucketEndMs": 1786329019267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329019267,
+          "bucketEndMs": 1786329919267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786329919267,
+          "bucketEndMs": 1786330819267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786330819267,
+          "bucketEndMs": 1786331719267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786331719267,
+          "bucketEndMs": 1786332619267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786332619267,
+          "bucketEndMs": 1786333519267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786333519267,
+          "bucketEndMs": 1786334419267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786334419267,
+          "bucketEndMs": 1786335319267,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1786335319267,
+          "bucketEndMs": 1786336219267,
+          "costUsd": 0
+        }
+      ]
+    }
+  ],
+  "hostLoad": {
+    "severe": false,
+    "ratio": 1.3548583984375,
+    "sustainedMinutes": 0
+  }
+}
