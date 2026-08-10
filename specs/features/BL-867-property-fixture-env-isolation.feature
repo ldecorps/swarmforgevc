@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=dc0f850d75050e37e72d9ed0be4999330eb34e71f31f6ac7ddf27281d9576a9b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-10T03:26:27.542749Z","feature_name":"BL-867 the BL-787 named-tunnel property file is isolated from the host environment","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-867-property-fixture-env-isolation.feature","background_hash":"342d30b2fcc672968ee474b57f79a32219e87b8102364126c11e4c1648749ead","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a case that means the named-tunnel identity to be absent observes it absent","scenario_hash":"00c64c7cc7794a9f3c88a44c7dd463805cba0534b582be136c6a4a344269843f","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-10T03:26:27.542749Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-867 the BL-787 named-tunnel property file is isolated from the host environment
 
   The BL-787 property file spreads the host's real process.env into every
