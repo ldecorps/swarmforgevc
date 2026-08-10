@@ -35,6 +35,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_outage_evidence_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_attribution_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -861,6 +862,45 @@
     (fs/create-dirs (fs/parent file))
     (spit (str file) (str line "\n") :append true)))
 
+;; BL-870: durable per-wake attribution - one JSON line for every wake the
+;; daemon's own wake path (notify!/notify-in-process-resume! via
+;; chase-poke-and-notify!, and the claim-idle probe injector) injects OR
+;; withholds, naming the role, the deciding sweep, and the handoff that
+;; motivated it (or an explicit absent marker). Same monthly-file/JSONL
+;; shape as chaser-telemetry-file above, kept as its own file rather than
+;; folded into that log because chaser telemetry today only ever records
+;; the cases that DID something (chase/nudge/respawn/...); this must also
+;; cover the skipped half, which chaser telemetry never has.
+(defn wake-attribution-file [at-ms]
+  (fs/path state-dir "telemetry"
+           (str "wake-attribution-"
+                (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM")
+                         (.atZone (java.time.Instant/ofEpochMilli at-ms) java.time.ZoneOffset/UTC))
+                ".jsonl")))
+
+(defn record-wake-attribution!
+  "Never throws - a failure to record must never block the wake it is
+   describing (invariant 2: attribution is observation only). role-info is
+   the full roles.tsv row (record-wake-attribution! reads its own mailbox
+   fresh via wake-attribution-lib/motivating-handoff), not just the role
+   name."
+  [role-info sweep dir-key outcome & {:keys [skip-reason]}]
+  (try
+    (let [at-ms (System/currentTimeMillis)
+          handoff-id (wake-attribution-lib/motivating-handoff role-info dir-key)
+          record (wake-attribution-lib/build-attribution
+                  {:role (:role role-info) :sweep sweep :handoff-id handoff-id
+                   :outcome outcome :at-ms at-ms :skip-reason skip-reason})
+          line (json/generate-string
+                (assoc record :at
+                       (.format (java.time.format.DateTimeFormatter/ISO_INSTANT)
+                                (java.time.Instant/ofEpochMilli at-ms))))
+          file (wake-attribution-file at-ms)]
+      (fs/create-dirs (fs/parent file))
+      (spit (str file) (str line "\n") :append true))
+    (catch Exception e
+      (log! "wake-attribution-error" (:role role-info) (.getMessage e)))))
+
 ;; ── BL-349: stuck-escalation email - the daemon's missing leg ───────────
 ;; write-escalation! (chase_sweep_lib.bb) only ever wrote a file; the only
 ;; code that EMAILED it lived in the VS Code extension host
@@ -1333,8 +1373,17 @@
    next role in the same sweep (architect starvation, 2026-07-23). A
    not-preferred poke now REDIRECTS to the preferred role (chase-rotate-to!)
    rather than consuming nothing and dropping the opportunity.
-   Returns true only when a wake or successful rotate was performed."
-  [socket roles role resident-wake-suppressed? notify-fn!]
+   Returns true only when a wake or successful rotate was performed.
+
+   BL-870: `sweep` (wake-attribution-lib/sweep-inbox-item or
+   sweep-stuck-in-process) and `mailbox-dir-key` (:new or :in_process) are
+   supplied by the two callers below purely so a wake or skip can be
+   attributed - neither is consulted by chase-poke-plan above, so they
+   cannot change :mode (invariant 2). :rotate is not attributed here: it
+   respawns the pane rather than injecting wake text into an existing one,
+   so it is not a case this ticket's 'no wake text reaches a pane without
+   attribution' invariant covers."
+  [socket roles role resident-wake-suppressed? notify-fn! sweep mailbox-dir-key]
   (let [action (chase-poke-action roles socket role)
         ri (get roles role)
         wake-sess (handoff-lib/wake-session socket (:session ri))
@@ -1357,6 +1406,9 @@
                :resident-woken-this-sweep? @resident-wake-suppressed?})]
     (case (:mode plan)
       :skip (do (log! (str "chase-wake-skip-" (name (:skip-reason plan))) role)
+                (record-wake-attribution! ri sweep mailbox-dir-key
+                                           wake-attribution-lib/outcome-skipped
+                                           :skip-reason (name (:skip-reason plan)))
                 false)
       :rotate (let [performed (boolean (:ok (chase-rotate-to! socket roles role)))]
                 (when performed (reset! resident-wake-suppressed? true))
@@ -1364,6 +1416,8 @@
       :wake (do (when (:resident-budget? plan)
                   (reset! resident-wake-suppressed? true))
                 (notify-fn! socket (:session ri) (:agent ri))
+                (record-wake-attribution! ri sweep mailbox-dir-key
+                                           wake-attribution-lib/outcome-landed)
                 true))))
 
 (defn- head-commit-10
@@ -1431,7 +1485,8 @@
                                       (try
                                         (chase-poke-and-notify!
                                          socket roles role resident-wake-suppressed?
-                                         (fn [s sess agent] (notify! s sess agent)))
+                                         (fn [s sess agent] (notify! s sess agent))
+                                         wake-attribution-lib/sweep-inbox-item :new)
                                         (catch Exception e
                                           (log! "chase-wake-error" role (.getMessage e))
                                           false))))
@@ -1442,7 +1497,8 @@
                                                   (chase-poke-and-notify!
                                                    socket roles role resident-wake-suppressed?
                                                    (fn [s sess agent]
-                                                     (notify-in-process-resume! s sess agent)))
+                                                     (notify-in-process-resume! s sess agent))
+                                                   wake-attribution-lib/sweep-stuck-in-process :in_process)
                                                   (catch Exception e
                                                     (log! "chase-in-process-resume-error" role (.getMessage e))
                                                     false))))
@@ -1518,14 +1574,22 @@
                   (fn [role message]
                     (when-not (tmux-inject-disabled?)
                       (try
-                        (if (resident-pane-busy? socket)
-                          (log! "claim-idle-probe-skip-busy" role)
-                          (when-let [ri (get roles role)]
-                            (let [session (handoff-lib/wake-session socket (:session ri))]
-                              (agent-runtime-inject/notify-agent!
-                               socket session (or (:agent ri) "claude")
-                               :log-fn (fn [tag sess detail] (log! tag sess detail))
-                               :text message))))
+                        (let [ri (get roles role)]
+                          (if (resident-pane-busy? socket)
+                            (do (log! "claim-idle-probe-skip-busy" role)
+                                (when ri
+                                  (record-wake-attribution!
+                                   ri wake-attribution-lib/sweep-claim-idle-probe :in_process
+                                   wake-attribution-lib/outcome-skipped :skip-reason "busy")))
+                            (when ri
+                              (let [session (handoff-lib/wake-session socket (:session ri))]
+                                (agent-runtime-inject/notify-agent!
+                                 socket session (or (:agent ri) "claude")
+                                 :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                 :text message)
+                                (record-wake-attribution!
+                                 ri wake-attribution-lib/sweep-claim-idle-probe :in_process
+                                 wake-attribution-lib/outcome-landed)))))
                         (catch Exception e (log! "claim-idle-probe-error" role (.getMessage e))))))
                   :on-claim-idle-bounce!
                   (fn [role _fp progress]
