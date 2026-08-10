@@ -21,6 +21,18 @@
 (def subcommand (first *command-line-args*))
 (def payload (when-let [raw (second *command-line-args*)] (json/parse-string raw true)))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn- mk-tmp-dir []
+  (let [d (fs/create-temp-dir)]
+    (swap! created-temp-dirs conj d)
+    d))
+
 (defn- collecting-adapters [candidates-fn]
   (let [logs (atom [])]
     {:logs logs
@@ -91,7 +103,7 @@
 (def nul-byte (str (char 0)))
 
 (defmethod run "procfs-cmdline-parses" [_]
-  (let [tmp (fs/create-temp-dir)
+  (let [tmp (mk-tmp-dir)
         cmdline-file (fs/path tmp "cmdline")
         argv ["bash" "/tmp/tmp.fixture/.swarmforge/babysitter/launch.sh"]
         nul-joined (str (str/join nul-byte argv) nul-byte)]

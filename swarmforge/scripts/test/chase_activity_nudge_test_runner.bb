@@ -22,6 +22,13 @@
   (when actual
     (swap! failures conj (str "FAIL: " msg "\n  expected falsey, got: " (pr-str actual)))))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (chase-sweep-lib/reset-pane-activity!)
 
 ;; ── 01: first observation after daemon start is NOT fresh activity ─────────
@@ -52,6 +59,7 @@
 ;; where a dormant role's in_process can sit forever while chase wakes the
 ;; resident.
 (let [dir (str (fs/create-temp-dir {:prefix "sfvc-nudge-no-clear-"}))
+      _ (swap! created-temp-dirs conj dir)
       _ (fs/create-dirs (fs/path dir "in_process"))
       path (str (fs/path dir "in_process" "00_item.handoff"))
       escalations (atom [])

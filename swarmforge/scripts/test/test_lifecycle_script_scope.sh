@@ -5,6 +5,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 SCRIPTS="$ROOT/swarmforge/scripts"
+# BL-872: registers every mktemp path below with the shared EXIT trap
+# (lib/tmp_cleanup.sh) so a failing assertion (set -euo pipefail exiting
+# before that section's own trailing rm) still gets it cleaned up.
+source "$SCRIPTS/test/lib/tmp_cleanup.sh"
 PASS=0
 FAIL=0
 
@@ -34,6 +38,7 @@ check_help_scope "kill_pipeline_swarm.sh" "pipeline-only"
 
 # ── 02: legacy shim still reaches real kill + writes audit ────────────────
 FIX="$(mktemp -d /tmp/bl637-kill.XXXXXX)"
+register_tmp_dir "$FIX"
 mkdir -p "$FIX/.swarmforge/daemon"
 # Dry path: run --help via shim proves delegation; for audit, invoke real body
 # against empty fixture (idempotent).
@@ -70,6 +75,7 @@ fi
 source "$SCRIPTS/stack_survivor_scan.sh"
 
 PS_BB="$(mktemp /tmp/bl637-ps-bb.XXXXXX)"
+register_tmp_dir "$PS_BB"
 cat > "$PS_BB" <<'EOF'
   1 init
 1234 bash ./.swarmforge/operator/babysitterd.sh /tmp/proj
@@ -84,6 +90,7 @@ fi
 rm -f "$PS_BB"
 
 PS_OP="$(mktemp /tmp/bl637-ps-op.XXXXXX)"
+register_tmp_dir "$PS_OP"
 cat > "$PS_OP" <<'EOF'
   1 init
 5678 claude --dangerously-skip-permissions --remote-control Operator --model x
@@ -101,6 +108,7 @@ rm -f "$PS_OP"
 # when the only "match" would be the scanner itself — fixture has no real
 # babysitterd/Operator besides a decoy mentioning the needle in a comment-like argv.
 PS_NONE="$(mktemp /tmp/bl637-ps-none.XXXXXX)"
+register_tmp_dir "$PS_NONE"
 cat > "$PS_NONE" <<'EOF'
   1 init
 9999 sleep 3600
@@ -117,6 +125,7 @@ unset SWARMFORGE_SURVIVOR_PS_FILE
 
 # End-to-end stop-swarm with injected survivor snapshot: stub ancillary+kill
 STOP_FIX="$(mktemp -d /tmp/bl637-stop.XXXXXX)"
+register_tmp_dir "$STOP_FIX"
 mkdir -p "$STOP_FIX/swarmforge/scripts" "$STOP_FIX/.swarmforge/daemon"
 cp "$SCRIPTS/stack_survivor_scan.sh" "$STOP_FIX/swarmforge/scripts/"
 # Minimal stop-swarm clone using stubs
@@ -133,6 +142,7 @@ chmod +x "$STOP_FIX/swarmforge/scripts/"*.sh
 # Use real stop-swarm but override SCRIPT_DIR by copying it into fixture
 # Simpler: source survivor scan + simulate stop-swarm tail.
 PS_LIVE="$(mktemp /tmp/bl637-ps-live.XXXXXX)"
+register_tmp_dir "$PS_LIVE"
 cat > "$PS_LIVE" <<'EOF'
   1 init
 4242 bash /tmp/x/.swarmforge/operator/babysitterd.sh /tmp/x
