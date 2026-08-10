@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "A daemon the operator has deliberately disabled is never restarted by the freshness path, however often that path runs."
