@@ -82,6 +82,13 @@
 ;; fresh episode.
 (def auth-observe-states (atom {}))
 
+;; BL-798: open-slot promotion-inaction escalation state (chase_sweep_lib's
+;; own {:candidate-id :count :escalated} shape). Same in-memory-atom
+;; rationale as loop-detect-states/auth-observe-states above — a daemon
+;; restart losing the unacted-nudge count is safe, the next sweep tick just
+;; resumes counting from 0 for whichever candidate is still top.
+(def open-slot-escalation-state (atom nil))
+
 (defn usage []
   (binding [*out* *err*]
     (println "Usage: handoffd.bb <project-root>"))
@@ -1632,15 +1639,46 @@
     [(str (handoff-lib/mailbox-dir coord :new))
      (str (handoff-lib/mailbox-dir coord :in_process))]))
 
-(defn nudge-coordinator-open-slot! []
-  (let [draft (write-scratch-draft! (chase-sweep-lib/open-slot-nudge-draft-lines))
+(defn nudge-coordinator-open-slot! [candidate]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/open-slot-nudge-draft-lines candidate))
         env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
         result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
     (if (zero? (:exit result))
       (do
         (write-open-slot-last-sent! (System/currentTimeMillis))
-        (log! "open-slot-nudge"))
+        (log! "open-slot-nudge" (:id candidate)))
       (log! "open-slot-nudge-error" (str (:err result))))))
+
+;; BL-798: promotion-inaction escalation — reuses the SAME operator alert
+;; channel send-auth-persist-alert! (BL-536) already established (Telegram
+;; OPERATOR topic outbox + email via daemon-alarm-lib), notify-only, never
+;; halts the swarm.
+(defn send-open-slot-escalation-alert! [candidate-id nudge-count]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+        subject (chase-sweep-lib/open-slot-escalation-email-subject candidate-id)
+        tg-text (chase-sweep-lib/open-slot-escalation-telegram-text candidate-id nudge-count)
+        reason (chase-sweep-lib/open-slot-escalation-reason candidate-id nudge-count)]
+    (log! "open-slot-escalation" candidate-id reason)
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+            :append true)
+      (log! "open-slot-escalation-telegram" candidate-id)
+      (catch Exception e (log! "open-slot-escalation-telegram-error" (.getMessage e))))
+    (try
+      (daemon-alarm-lib/send-configured-email!
+       project-root conf-file subject reason
+       {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+      (log! "open-slot-escalation-email" candidate-id)
+      (catch Exception e (log! "open-slot-escalation-email-error" (.getMessage e))))))
+
+(defn- open-slot-escalation-threshold []
+  (chase-sweep-lib/parse-open-slot-escalation-threshold
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
 
 (defn open-slot-nudge-sweep! [roles]
   (try
@@ -1656,7 +1694,19 @@
       (when (chase-sweep-lib/decide-open-slot-nudge?
              active-count cap paused-count
              {:pending-nudge? pending? :within-cooldown? cool?})
-        (nudge-coordinator-open-slot!)))
+        ;; BL-798: name the top Article-3.2.4 candidate (invariant 1) and
+        ;; escalate repeated unacted nudges for the SAME candidate rather
+        ;; than repeating a ticketless poke forever (invariant 2).
+        (let [candidates (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
+              candidate (chase-sweep-lib/top-open-slot-candidate candidates)
+              decision (chase-sweep-lib/decide-open-slot-escalation
+                        @open-slot-escalation-state (:id candidate)
+                        (open-slot-escalation-threshold))]
+          (reset! open-slot-escalation-state (:state decision))
+          (case (:action decision)
+            :nudge (nudge-coordinator-open-slot! candidate)
+            :escalate (send-open-slot-escalation-alert! (:id candidate) (:count (:state decision)))
+            :none nil))))
     (catch Exception e
       (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
 
