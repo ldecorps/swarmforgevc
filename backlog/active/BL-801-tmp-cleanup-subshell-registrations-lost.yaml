@@ -177,3 +177,5 @@ notes: |
   6. Spot-check a handful of the sourcing suite's files (including
      `test_freshness_stop_marker_lib.sh` if BL-785 has landed it) with real
      exit codes checked.
+
+assigned_to: coder
