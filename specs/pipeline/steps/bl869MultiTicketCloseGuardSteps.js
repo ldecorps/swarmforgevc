@@ -128,19 +128,32 @@ function seedActiveTicketsAndCommit(root, ids) {
   git(root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', `seed ${ids.join(',')}`]);
 }
 
+function firstOfState(paths, state) {
+  const marker = `backlog/${state}/`;
+  const p = paths.find((candidate) => candidate.includes(marker));
+  return p ? path.basename(p).replace('-fixture.yaml', '') : null;
+}
+
 function buildClosePaths(ids, orderText) {
   const active = ids.map((id) => ticketFixturePath(id, 'active'));
   const done = ids.map((id) => ticketFixturePath(id, 'done'));
+  let paths;
   if (orderText && orderText.startsWith('interleaved')) {
     assert.equal(ids.length, 2, 'interleaved ordering fixture is only defined for exactly two tickets');
     // First active and first done deliberately name DIFFERENT tickets -
     // the exact shape that used to defeat `(first (filter active))` /
     // `(first (filter done))`'s same-id check (BL-869 fault B).
-    return [active[0], active[1], done[1], done[0]];
-  }
-  const paths = [];
-  for (let i = 0; i < ids.length; i += 1) {
-    paths.push(active[i], done[i]);
+    paths = [active[0], active[1], done[1], done[0]];
+    assert.notEqual(
+      firstOfState(paths, 'active'),
+      firstOfState(paths, 'done'),
+      'interleaved fixture drifted: first active and first done path must name different tickets, or this scenario silently stops exercising fault B',
+    );
+  } else {
+    paths = [];
+    for (let i = 0; i < ids.length; i += 1) {
+      paths.push(active[i], done[i]);
+    }
   }
   return paths;
 }

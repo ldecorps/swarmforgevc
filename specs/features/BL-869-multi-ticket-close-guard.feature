@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-10T08:01:12.483922Z","feature_name":"A close commit is validated and credited once per ticket it closes","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-869-multi-ticket-close-guard.feature","background_hash":"d06e2c5f6cd99c8cf2a0d50a3a529333273f2be3069d7ab4d43779aae929092d","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: A close commit is validated and credited once per ticket it closes
 
   Background:
