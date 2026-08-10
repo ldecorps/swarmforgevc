@@ -23,6 +23,16 @@ const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
 const { spawnSync, spawn } = require('node:child_process');
+// BL-789 architect bounce: scenarios 4/5/6 spawn real detached+unref'd
+// processes (fake bridge servers, a real handoffd.bb) whose only prior
+// cleanup lived in each scenario's own terminal Then step - an earlier
+// assertion throwing, or the runner itself being interrupted/killed/timed
+// out, leaked them exactly like the BL-458 incident onAbnormalExit was
+// built to catch (a live orphaned handoffd.bb, over an hour old, was found
+// during this review). Each spawn site below registers its own kill as an
+// abnormal-exit callback the moment it has a pid to kill, in addition to
+// the existing happy-path cleanup in its scenario's own terminal step.
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const FEATURE_NAME = 'Freshness and bridge supervision survive a cron environment and a slow host';
 
@@ -308,6 +318,7 @@ function registerSteps(registry) {
       const entrypoint = path.join(ctx.bridgeRoot, 'extension', 'out', 'tools', 'start-bridge-headless.js');
       const child = spawnDetached('node', [entrypoint, ctx.bridgeRoot, String(ctx.bridgePort)]);
       ctx.preExistingBridgePid = child.pid;
+      onAbnormalExit(() => killPid(ctx.preExistingBridgePid));
       await waitFor(() => portOpen(ctx.bridgePort), 5000);
     },
     FEATURE_NAME
@@ -325,6 +336,7 @@ function registerSteps(registry) {
         `require('http').createServer((q,r)=>{r.writeHead(200);r.end('unrelated')}).listen(${ctx.bridgePort})`,
       ]);
       ctx.unrelatedPid = child.pid;
+      onAbnormalExit(() => killPid(ctx.unrelatedPid));
       await waitFor(() => portOpen(ctx.bridgePort), 5000);
     },
     FEATURE_NAME
@@ -477,6 +489,14 @@ function registerSteps(registry) {
       delete env.RESEND_API_KEY;
       const child = spawnDetached('bb', [HANDOFFD, ctx.hdRoot], { env });
       ctx.hdPid = child.pid;
+      onAbnormalExit(() => {
+        try {
+          fs.writeFileSync(path.join(ctx.hdRoot, '.swarmforge', 'daemon', 'stop'), '');
+        } catch {
+          // best-effort - the kill below is what actually matters
+        }
+        killPid(ctx.hdPid);
+      });
 
       // Proof a cycle has genuinely begun (not just that the process exists).
       await waitFor(() => fs.existsSync(ctx.hdLogFile) && fs.readFileSync(ctx.hdLogFile, 'utf8').includes('-start'), 15000, 100);
