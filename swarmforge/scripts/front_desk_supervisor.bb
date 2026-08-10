@@ -87,6 +87,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
@@ -318,6 +319,67 @@
                      :extra-env {"BRIDGE_TOKEN" (System/getenv "BRIDGE_TOKEN")}}
                     "node" (str bridge-entrypoint) project-root (str bridge-port)))
 
+;; ── BL-789: bridge port adopt-or-free (real I/O; decide-bridge-port-action
+;; in front_desk_supervisor_lib.bb is the pure decision this drives) ────────
+;; Only ever consulted when check-one! has ALREADY decided a (re)spawn is
+;; needed (our own tracked pid is dead/never-started) - a healthy "running"
+;; entry never reaches this at all, so this never fights a bridge we already
+;; know is ours and alive.
+(defn- bridge-port-holder-pid! []
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true} "lsof" "-ti" (str "tcp:" bridge-port) "-sTCP:LISTEN")]
+      (when (zero? exit)
+        (some-> (first (str/split-lines (str/trim out))) not-empty parse-long)))
+    (catch Exception _ nil)))
+
+;; Same /lets-talk health route + curl convention start_bridge_headless.sh
+;; already uses to tell "listening" from "actually serving".
+(defn- bridge-port-healthy?! []
+  (try
+    (let [{:keys [exit]} (process/sh {:continue true} "curl" "-sf" "--max-time" "2"
+                                      (str "http://127.0.0.1:" bridge-port "/lets-talk"))]
+      (zero? exit))
+    (catch Exception _ false)))
+
+;; BL-789: kill-pid! (front-desk-supervisor-lib/make-kill-pid!, used for our
+;; OWN spawned bridge/bot children elsewhere in this file) is built on
+;; java.lang.ProcessHandle - which on this JVM only reliably signals a
+;; process that IS this bb process's own child. The port-holder freed here
+;; is by definition NOT our child (an orphan or an unrelated process) -
+;; ProcessHandle.destroy() on such a pid is a silent no-op (confirmed: the
+;; target stays alive). Shell to the real `kill` binary instead, the same
+;; TERM-then-verify convention daemon_log_freshness_check.sh's own
+;; kill_daemon() and start_bridge_headless.sh's own orphan-reap already use.
+(defn- free-foreign-pid! [pid]
+  (process/sh {:continue true} "kill" "-TERM" (str pid))
+  (Thread/sleep 300)
+  (let [{:keys [exit]} (process/sh {:continue true} "kill" "-0" (str pid))]
+    (when (zero? exit)
+      (process/sh {:continue true} "kill" "-KILL" (str pid))
+      (Thread/sleep 100))))
+
+(defn maybe-adopt-or-spawn-bridge! []
+  (let [holder-pid (bridge-port-holder-pid!)
+        holder (when holder-pid
+                 {:pid holder-pid :cmdline (process-table-lib/cmdline! holder-pid)})
+        healthy? (boolean (and holder-pid (bridge-port-healthy?!)))
+        action (front-desk-supervisor-lib/decide-bridge-port-action holder healthy? project-root)]
+    (case action
+      :adopt
+      (do (log! "adopt" "bridge" "pid=" (str holder-pid) "already healthy on port" (str bridge-port))
+          holder-pid)
+
+      :free
+      (do
+        (when holder-pid
+          (log! "free-port" "bridge" "pid=" (str holder-pid)
+                "cmdline=" (or (:cmdline holder) "") "port" (str bridge-port))
+          (free-foreign-pid! holder-pid))
+        (.pid (:proc (spawn-bridge!))))
+
+      :spawn
+      (.pid (:proc (spawn-bridge!))))))
+
 (defn spawn-bot! []
   (when-let [err (ensure-current-build!)]
     (log! "degraded-respawn" "bot" "stale build re-armed -" err))
@@ -335,7 +397,7 @@
                     "node" (str bot-entrypoint) (str "http://127.0.0.1:" bridge-port) project-root))
 
 (def process-specs
-  [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!)))) :heartbeat-stale? (fn [_ _] false)}
+  [{:key :bridge :spawn-pid! (fn [] (maybe-adopt-or-spawn-bridge!)) :heartbeat-stale? (fn [_ _] false)}
    {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))
     :heartbeat-stale? (fn [now entry]
                         (front-desk-supervisor-lib/poll-heartbeat-stale?
