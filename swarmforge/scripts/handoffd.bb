@@ -2764,6 +2764,16 @@
               ;; (BL-061).
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
+                  ;; BL-789 (2026-08-02 Mac host-switch hotfix): a heartbeat
+                  ;; ALSO lands here, before any of this cycle's work runs -
+                  ;; not only at the end below. Mac cycles have been observed
+                  ;; at 140-232s; without a start-of-cycle pulse a merely-slow
+                  ;; cycle and a genuinely wedged one both look identical to
+                  ;; the freshness checker (silence past threshold) until the
+                  ;; whole cycle finishes.
+                  (spit (str heartbeat-file) (str (now) "\n"))
+                  (when (zero? (mod cycle heartbeat-log-every-cycles))
+                    (log! "heartbeat" (str "cycle=" cycle "-start")))
                   (poll-once!)
                   (try
                     (canary-sweep!)
