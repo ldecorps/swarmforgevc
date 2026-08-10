@@ -1,0 +1,134 @@
+id: BL-874
+title: "DEFECT — six tests in the Babashka layer's ONLY quality gate are red on macOS: they backdate mtimes with GNU-only relative time (`touch -d \"2 hours ago\"`, `date -d`), which stock BSD userland rejects"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 118
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-874-portable-relative-mtime-in-shell-tests.feature.draft
+human_approval: pending
+
+approval_context: >
+  New feature draft needs review, plus one deliberate scope call to sign off or
+  overturn. This ticket carries BOTH halves — remediating the six red tests AND
+  giving a portable-time guard a standing home — in one slice, on the grounds
+  that BL-613's architect already documented the failure mode as "the
+  established convention across sibling tests", so remediation alone guarantees
+  it grows back the next time someone copies a neighbouring test. Split them if
+  you disagree. The standing home proposed is the extension Vitest suite,
+  mirroring BL-872's approved placement (`extension/test/tempDirTrapGuard.test.js`),
+  because that is the one suite every parcel provably runs.
+
+  Note for the coordinator, not the human: this ticket and the ACTIVE BL-872
+  both touch `swarmforge/scripts/test/test_operator_runtime_sandbox_sweep_bounded_progress.sh`
+  (3 `mktemp -d`, 0 traps — almost certainly one of BL-872's 18 violators).
+  That is a Concurrent Work Orthogonality conflict; promote this after BL-872
+  lands, or accept the overlap deliberately.
+
+source: |
+  Architect note to specifier, 2026-08-10 (handoff
+  00_20260810T145839Z_000089_from_architect_to_specifier): "Please ticket:
+  BL-310 area, macOS BSD touch rejects touch -d GNU syntax".
+
+  The "BL-310 area" is `test_operator_runtime_tick.sh:565` — the
+  `swarm-seed-race-02` case, which backdates a pid file to step past BL-310's
+  launch grace window.
+
+  Deferred deliberately once before: BL-613's architect pass
+  (`backlog/evidence/BL-613-architect-pass-20260724.md`, 2026-07-24) found the
+  same defect, ruled it out of that ticket's scope, and wrote "If worth
+  closing, it is its own portability ticket." This is that ticket.
+
+invariants:
+  - "Any test that backdates a file's mtime does so through one shared portable helper; no test re-implements the BSD/GNU split inline."
+  - "A newly added GNU-only relative-time invocation under swarmforge/scripts turns a gate red inside the parcel that introduces it, not a later one."
+  - "The same relative input yields the same resulting mtime on BSD and on GNU userlands — making macOS green at GNU/Linux's expense is a failure, not a trade."
+
+required_wiring:
+  - "swarmforge/scripts/test/test_operator_runtime_sandbox_sweep.sh::<helper-name>::the helper must actually be called here, not merely exist"
+  - "swarmforge/scripts/test/test_operator_runtime_sandbox_sweep_bounded_progress.sh::<helper-name>::same"
+  - "swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep.sh::<helper-name>::same"
+  - "swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep_bounded_progress.sh::<helper-name>::same"
+  - "swarmforge/scripts/test/test_operator_runtime_tick.sh::<helper-name>::same — this is the BL-310 seed-race site the architect reported"
+  - "swarmforge/scripts/test/test_handoffd_stuck_escalation_email_wiring.sh::<helper-name>::same — this site fails twice, on `date -d` then on the empty `touch -d`"
+  - "extension/test/portableTimeGuard.test.js::swarmforge/scripts::the zero-violation assertion must sit in the suite every parcel runs (the BL-872 / BL-420 precedent). Its absence is exactly what let this rot for three weeks."
+
+description: |
+  ## What
+
+  Six tests under `swarmforge/scripts/test/` backdate a fixture file's mtime
+  using GNU relative-time syntax. Stock BSD `touch` accepts only
+  `YYYY-MM-DDThh:mm:SS` after `-d`, and stock BSD `date` has no `-d` at all.
+  All six exit non-zero on macOS.
+
+  Reproduced by the specifier on this host against a clean `main`, 2026-08-10
+  (no GNU coreutils on PATH):
+
+  | test | line | invocation | observed |
+  |---|---|---|---|
+  | `test_operator_runtime_sandbox_sweep.sh` | 40 | `touch -d "2 hours ago"` | exit 1, `illegal time specification` |
+  | `test_operator_runtime_sandbox_sweep_bounded_progress.sh` | 29 | `touch -d "2 hours ago"` | exit 1, same |
+  | `test_operator_runtime_fixture_reaper_sweep.sh` | 36 | `touch -d "2 hours ago"` | exit 1, same |
+  | `test_operator_runtime_fixture_reaper_sweep_bounded_progress.sh` | 35 | `touch -d "2 hours ago"` | exit 1, same |
+  | `test_operator_runtime_tick.sh` | 565 | `touch -d "-5 minutes"` | exit 1, same |
+  | `test_handoffd_stuck_escalation_email_wiring.sh` | 64-65 | `date -d "90 seconds ago"` then `touch -d "$PAST_TIME"` | exit 1, `date: illegal option -- d` |
+
+  The last one fails twice: `date -d` errors, leaving `PAST_TIME` empty, so the
+  `touch -d ""` that follows would fail even on a host where `date -d` worked.
+
+  ## Why it matters
+
+  `swarmforge/scripts/test/` is the *sole* gate for the Babashka/Clojure layer —
+  engineering.prompt's Startup Tools rule states plainly that this layer has no
+  mutation, CRAP or DRY tooling and is "gated ONLY by their own unit-test
+  suite". macOS is a declared target OS (local-engineering.prompt, Tech Stack)
+  and is the host this swarm runs on. So the one safety signal that layer has is
+  partly dark on the machine that needs it.
+
+  ## Constraints
+
+  - Do not add a GNU coreutils dependency. The fix must work on stock macOS
+    userland, which is what engineering.prompt's "stock macOS /bin/bash 3.2"
+    rule already commits us to.
+  - `swarmforge/scripts/portable_stat_lib.sh` is the shape to follow: one
+    function, the platform split hidden inside it, callers unaware. Reuse that
+    file or add a sibling — implementer's call.
+  - Portable forms already in use in this very suite, for reference, not as a
+    prescription: `test_handoffd_supervisor.sh:172` uses `touch -t 202601010000`
+    (absolute), and BSD `date -v-2H "+%Y%m%d%H%M.%S"` was verified working on
+    this host and emits exactly `touch -t` format.
+  - Behavior of the six tests must not change — each still asserts what it
+    asserted before; only the mechanism for reaching the backdated mtime moves.
+
+  ## Out of scope
+
+  - Other portability gaps in the suite. Only GNU-only *relative time* is in
+    scope here. If a test fails on macOS for an unrelated reason, that is its
+    own ticket.
+  - Auditing `date`/`touch` outside `swarmforge/scripts`. A repo-wide grep on
+    2026-08-10 found no other live sites (`extension/`, `specs/` are clean; the
+    only other hits are prose in `backlog/evidence/BL-613-*`).
+
+  ## e2e QA procedure
+
+  1. Confirm no GNU coreutils on PATH: `which gtouch gdate` returns nothing.
+  2. Run each of the six scripts directly with `bash <path>`; every one exits 0.
+  3. Confirm the backdating still bites, not just that it stopped erroring:
+     in `test_operator_runtime_tick.sh`, the `swarm-seed-race-02` check must
+     still report `ok` — that check only passes if the pid file really was aged
+     past the grace window, so a helper that silently no-ops turns it red.
+  4. Introduce `touch -d "2 hours ago" x` into a scratch file under
+     `swarmforge/scripts/`, run the extension unit suite, and confirm it fails
+     naming that file; remove the scratch file and confirm the suite is green.
+
+notes: |
+  - Third occurrence of the same class of rot in this area (BL-420 -> BL-459 ->
+    BL-872 for temp-dir traps; this is the time-manipulation sibling). The
+    common cause each time is a check with no standing consumer, which is why
+    the guard half is in scope rather than deferred.
+  - BL-613 evidence trail: `backlog/evidence/BL-613-architect-sendback-20260724.md`
+    (cleaner's rationale for the rewrite) and
+    `backlog/evidence/BL-613-architect-pass-20260724.md` §2 (the deferral).
