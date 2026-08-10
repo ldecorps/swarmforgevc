@@ -260,18 +260,23 @@
    tool ran but the text is not parseable Gherkin (this gate treats THAT the
    same as an unreadable declaration: a feature file this repo's own runner
    could never execute either - the ticket's own contract is broken, not the
-   tooling)."
-  [project-root feature-text]
+   tooling).
+   BL-872: the temp dir it writes into is registered onto created-dirs
+   (caller-owned atom) rather than deleted here - the returned ir-path
+   points INSIDE it, and run-contract-step-resolver below still has to read
+   that file after this function returns."
+  [project-root feature-text created-dirs]
   (let [vendor-dir (str (fs/path project-root "swarmforge" "vendor" "aps"))]
     (if-not (fs/exists? vendor-dir)
       :vendor-missing
-      (let [tmp-dir (str (fs/create-temp-dir))
-            feature-path (str (fs/path tmp-dir "contract.feature"))
-            ir-path (str (fs/path tmp-dir "ir.json"))]
-        (spit feature-path feature-text)
-        (let [res (process/sh {:continue true :dir vendor-dir} "bb" "gherkin-parser" feature-path ir-path)]
-          (when (and (git-ok? res) (fs/exists? ir-path))
-            ir-path))))))
+      (let [tmp-dir (str (fs/create-temp-dir))]
+        (swap! created-dirs conj tmp-dir)
+        (let [feature-path (str (fs/path tmp-dir "contract.feature"))
+              ir-path (str (fs/path tmp-dir "ir.json"))]
+          (spit feature-path feature-text)
+          (let [res (process/sh {:continue true :dir vendor-dir} "bb" "gherkin-parser" feature-path ir-path)]
+            (when (and (git-ok? res) (fs/exists? ir-path))
+              ir-path)))))))
 
 (defn- list-tracked-paths-at-commit [project-root cited-commit subpath]
   (let [res (run-git project-root ["ls-tree" "-r" "--name-only" cited-commit "--" subpath])]
@@ -290,10 +295,14 @@
    must never mistake for an unrunnable contract. Returns the materialized
    specs/pipeline dir (absolute path), or nil when the commit's own tree
    cannot even be listed - the caller treats that the same as an unloadable
-   registry."
-  [project-root cited-commit]
+   registry.
+   BL-872: tmp-root is registered onto created-dirs (caller-owned atom)
+   rather than deleted here - run-contract-step-resolver below still has to
+   read the materialized tree after this function returns."
+  [project-root cited-commit created-dirs]
   (when-let [paths (list-tracked-paths-at-commit project-root cited-commit "specs/pipeline")]
     (let [tmp-root (str (fs/create-temp-dir))]
+      (swap! created-dirs conj tmp-root)
       (doseq [path paths]
         (let [res (run-git project-root ["show" (str cited-commit ":" path)])]
           (when (git-ok? res)
@@ -331,35 +340,46 @@
    shape acceptance-contract-gate-lib/evaluate expects (minus :ticket-id,
    which the caller merges in). yaml-content nil (no ticket yaml on this
    checkout) is the caller's job to warn about - this function is only
-   called when yaml-content is present."
+   called when yaml-content is present.
+   BL-872: parse-feature-ir!/materialize-pipeline-tree-at-commit! each
+   create ONE temp root and register it onto created-dirs rather than
+   deleting it themselves - their own results (ir-path/pipeline-dir) are
+   read by run-contract-step-resolver's subprocess AFTER they return, so
+   cleanup cannot happen until this whole evaluation is done. The try/finally
+   here is that one cleanup point, covering every cond branch (including an
+   early return that only ever created the FIRST of the two roots)."
   [project-root cited-commit yaml-content]
-  (let [raw-declaration (read-yaml-field yaml-content "acceptance")
-        feature-text (feature-text-at-commit project-root cited-commit raw-declaration)
-        parse-result (when feature-text (parse-feature-ir! project-root feature-text))]
-    (cond
-      (nil? feature-text)
-      {:declaration-readable? false}
+  (let [created-dirs (atom [])]
+    (try
+      (let [raw-declaration (read-yaml-field yaml-content "acceptance")
+            feature-text (feature-text-at-commit project-root cited-commit raw-declaration)
+            parse-result (when feature-text (parse-feature-ir! project-root feature-text created-dirs))]
+        (cond
+          (nil? feature-text)
+          {:declaration-readable? false}
 
-      (= :vendor-missing parse-result)
-      {:declaration-readable? true :registry-loadable? false
-       :registry-load-error "the vendored APS parser (swarmforge/vendor/aps) is not present on this checkout"}
-
-      (nil? parse-result)
-      {:declaration-readable? false}
-
-      :else
-      (let [ir-path parse-result
-            pipeline-dir (materialize-pipeline-tree-at-commit! project-root cited-commit)]
-        (if-not pipeline-dir
+          (= :vendor-missing parse-result)
           {:declaration-readable? true :registry-loadable? false
-           :registry-load-error "specs/pipeline could not be listed at the cited commit"}
-          (let [{:keys [loadable unresolved error]} (run-contract-step-resolver project-root pipeline-dir ir-path)]
-            (if-not loadable
-              {:declaration-readable? true :registry-loadable? false :registry-load-error error}
-              {:declaration-readable? true :registry-loadable? true
-               :unresolved-steps (mapv (fn [{:keys [scenario exampleIndex stepText]}]
-                                          {:scenario scenario :example-index exampleIndex :step-text stepText})
-                                        unresolved)})))))))
+           :registry-load-error "the vendored APS parser (swarmforge/vendor/aps) is not present on this checkout"}
+
+          (nil? parse-result)
+          {:declaration-readable? false}
+
+          :else
+          (let [ir-path parse-result
+                pipeline-dir (materialize-pipeline-tree-at-commit! project-root cited-commit created-dirs)]
+            (if-not pipeline-dir
+              {:declaration-readable? true :registry-loadable? false
+               :registry-load-error "specs/pipeline could not be listed at the cited commit"}
+              (let [{:keys [loadable unresolved error]} (run-contract-step-resolver project-root pipeline-dir ir-path)]
+                (if-not loadable
+                  {:declaration-readable? true :registry-loadable? false :registry-load-error error}
+                  {:declaration-readable? true :registry-loadable? true
+                   :unresolved-steps (mapv (fn [{:keys [scenario exampleIndex stepText]}]
+                                              {:scenario scenario :example-index exampleIndex :step-text stepText})
+                                            unresolved)}))))))
+      (finally
+        (doseq [d @created-dirs] (try (fs/delete-tree d) (catch Exception _ nil)))))))
 
 ;; ── top-level: gather + evaluate for a git_handoff draft ─────────────────
 

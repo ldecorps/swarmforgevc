@@ -15,6 +15,18 @@
   (when-not expr
     (swap! failures conj (str "FAIL: " msg))))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn- mk-tmp-dir []
+  (let [d (str (fs/create-temp-dir))]
+    (swap! created-temp-dirs conj d)
+    d))
+
 ;; ── warm-decision (pure) ────────────────────────────────────────────────────
 (assert= "identical hashes reuse the cache" :reuse-cache
          (cache-warm-lib/warm-decision "abc123" "abc123"))
@@ -41,7 +53,7 @@
  (string? (cache-warm-lib/stable-prefix-content-hash)))
 
 ;; ── decide-and-record-warm! (impure orchestration, redirectable state-dir) ──
-(let [state-dir (str (fs/create-temp-dir))
+(let [state-dir (mk-tmp-dir)
       r1 (cache-warm-lib/decide-and-record-warm! state-dir "test-pack" :model-routing-text "model=x")
       r2 (cache-warm-lib/decide-and-record-warm! state-dir "test-pack" :model-routing-text "model=x")
       r3 (cache-warm-lib/decide-and-record-warm! state-dir "test-pack" :model-routing-text "model=z")]
@@ -58,7 +70,7 @@
   (fs/delete-tree state-dir))
 
 ;; ── stable-text override (BL-519 constitution-changed-05, no real disk edit) ─
-(let [state-dir (str (fs/create-temp-dir))
+(let [state-dir (mk-tmp-dir)
       r1 (cache-warm-lib/decide-and-record-warm! state-dir "test-pack" :model-routing-text "model=x" :stable-text "STABLE_V1")
       r2 (cache-warm-lib/decide-and-record-warm! state-dir "test-pack" :model-routing-text "model=x" :stable-text "STABLE_V1")
       r3 (cache-warm-lib/decide-and-record-warm! state-dir "test-pack" :model-routing-text "model=x" :stable-text "STABLE_V2")]
@@ -67,7 +79,7 @@
            :rewarm (:decision r3))
   (fs/delete-tree state-dir))
 
-(let [state-dir (str (fs/create-temp-dir))]
+(let [state-dir (mk-tmp-dir)]
   (cache-warm-lib/decide-and-record-warm! state-dir "pack-a" :model-routing-text "model=x")
   (let [pack-b-first (cache-warm-lib/decide-and-record-warm! state-dir "pack-b" :model-routing-text "model=x")]
     (assert= "packs are tracked independently - a different pack name has its own prior-hash state"

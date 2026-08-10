@@ -21,6 +21,10 @@ Thresholds and paths live in one place:
 
 Both daemons emit a timestamped, content-free `heartbeat` line on every loop
 tick, so a healthy quiet period (cooldown pause, no work) never looks dead.
+`handoffd` writes it **twice per cycle — at the start AND the end** (BL-789):
+observed Mac cycles run 140-232s, close to/past the 120s threshold, so a
+start-of-cycle pulse is what keeps a merely-slow cycle from looking
+identical to a wedged one until the whole cycle finishes.
 
 ## Install
 
@@ -47,9 +51,32 @@ project roots on the same host each keep their own line — installing for one
 root never removes a sibling root's line.
 
 Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in
-`.swarmforge/telegram.env` or `.swarmforge/operator/telegram.env` for
-announces. If those are unset, the checker still restarts and records; it
-only skips the Telegram send.
+`.swarmforge/telegram.env`, `.swarmforge/operator/telegram.env`, or
+`.swarmforge/swarm.env` for announces. If those are unset, the checker still
+restarts and records; it only skips the Telegram send.
+
+## Cron PATH and SKIP_BABYSITTERD (BL-789, Mac host-switch hotfix)
+
+Cron's own PATH is `/usr/bin:/bin` — missing `bb`/`node`. Two consequences,
+fixed 2026-08-02 (adopted/reviewed under BL-789; see
+[the hotfix how-to](hotfix-2026-08-02-mac-host-switch-freshness-bridge.md)):
+
+- **The installed crontab line bakes its own `PATH=`**, including the
+  interpreter's own directory (resolved via `command -v bb` at install
+  time) plus a curated fallback list. **The checker also self-establishes
+  the same fallback list independently** (`FRESHNESS_EXTRA_PATH_DIRS`,
+  default `/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$HOME/.npm-global/bin`,
+  prepended to whatever PATH it inherited) — defense in depth, so a
+  restart's `nohup bb ...` resolves `bb` even if invoked outside cron
+  entirely.
+- **`SWARMFORGE_SKIP_BABYSITTERD=1` is honoured by the checker itself**, not
+  only `start_ancillary_services.sh`. A babysitterd deliberately never
+  started this session leaves no BL-785 stop-marker (nothing ever ran to
+  stop) — without this, cron restarted a daemon nobody wanted running every
+  cool-off window. This is a genuinely separate predicate from
+  `freshness_is_stopped` below: one is a launch-time policy (readable with
+  no process ever having run), the other an explicit runtime-stop event —
+  both are consulted, on purpose.
 
 ## What happens on a stale heartbeat
 
@@ -119,6 +146,7 @@ FRESHNESS_NOW_EPOCH=$(date +%s) \
 | `FRESHNESS_ANNOUNCE_CMD` | Override announce (`$1` = message) |
 | `FRESHNESS_KILL_CMD` | Override kill (`$1` = pid) |
 | `FRESHNESS_START_CMD` | Override restart (`$1` = script, `$2` = root) |
+| `FRESHNESS_EXTRA_PATH_DIRS` | Override the checker's self-established PATH prefix (BL-789; test seam) |
 
 ## Verify
 

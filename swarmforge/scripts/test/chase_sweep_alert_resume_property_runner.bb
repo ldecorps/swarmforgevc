@@ -43,6 +43,16 @@
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 500))
 (def failures (atom []))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that). Load-bearing here
+;; specifically: run-once! creates a fresh temp root on EVERY one of up to
+;; 500 property iterations, so a single mid-run throw without this hook
+;; would otherwise strand however many roots preceded it.
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (def now-ms (.toEpochMilli (java.time.Instant/parse "2026-08-03T20:00:00Z")))
 (def role "coder")
 (def config {:chaseIntervalSeconds 5 :stuckInProcessTimeoutSeconds 60 :maxChases 3})
@@ -66,6 +76,7 @@
 
 (defn- run-once! [{:keys [nudge-count idle-margin]}]
   (let [root (str (fs/create-temp-dir))
+        _ (swap! created-temp-dirs conj root)
         ip-dir (str (fs/path root "in_process"))
         item-path (str (fs/path ip-dir "item.handoff"))
         idle-seconds (+ (:stuckInProcessTimeoutSeconds config) idle-margin)

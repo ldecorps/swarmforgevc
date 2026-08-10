@@ -46,6 +46,18 @@
   (when-not expr
     (swap! failures conj (str "FAIL: " msg))))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn- mk-tmp-dir [prefix]
+  (let [d (fs/create-temp-dir {:prefix prefix})]
+    (swap! created-temp-dirs conj d)
+    d))
+
 (def ^:private rng (java.util.Random. 809))
 (defn- rbool [] (.nextBoolean rng))
 (defn- rint [bound] (.nextInt rng (int bound)))
@@ -54,7 +66,7 @@
 ;; ── P1: successful-head-read-is-never-blank ─────────────────────────────
 
 (defn- make-git-worktree-with-commits [n]
-  (let [dir (fs/create-temp-dir {:prefix "bl809-prop-"})]
+  (let [dir (mk-tmp-dir "bl809-prop-")]
     (process/sh ["git" "init" "-q"] {:dir (str dir)})
     (process/sh ["git" "config" "user.email" "bl809@example.com"] {:dir (str dir)})
     (process/sh ["git" "config" "user.name" "BL-809"] {:dir (str dir)})
@@ -68,8 +80,7 @@
   ;; git init with NO commits at all: `git rev-parse HEAD` genuinely fails
   ;; (unborn HEAD) — the real "git actually failed" case this invariant's
   ;; converse depends on.
-  (fs/create-temp-dir {:prefix "bl809-prop-unborn-"})
-  )
+  (mk-tmp-dir "bl809-prop-unborn-"))
 
 (def p1-branches-hit (atom #{}))
 
