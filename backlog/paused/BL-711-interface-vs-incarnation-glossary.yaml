@@ -5,7 +5,7 @@ type: feature
 severity: low
 status: todo
 epic: swarmforge-console
-priority: 184
+priority: 195
 direction: human-requested
 depends_on: []
 mutation_cost: low

@@ -6,7 +6,7 @@ status: todo
 epic: bubble-note-composer
 human_approval: approved
 assigned_to: none
-priority: 117
+priority: 127
 direction: human-requested
 depends_on: [BL-769, BL-790]
 mutation_cost: medium

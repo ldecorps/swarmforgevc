@@ -6,7 +6,7 @@ status: todo
 epic: bubble-screens
 human_approval: approved
 assigned_to: none
-priority: 123
+priority: 134
 direction: human-requested
 depends_on: [BL-829, BL-833]
 mutation_cost: medium

@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: bubble-thin-shell
 human_approval: approved
-priority: 133
+priority: 144
 direction: human-requested
 assigned_to: none
 depends_on: [BL-765, BL-769]

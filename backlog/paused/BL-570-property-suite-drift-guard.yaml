@@ -6,7 +6,7 @@ status: todo
 epic: code-quality-gates
 human_approval: approved
 severity: medium
-priority: 146
+priority: 157
 direction: agent-proposed
 depends_on: []
 assigned_to: specifier
