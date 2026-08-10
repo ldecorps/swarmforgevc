@@ -1,0 +1,145 @@
+id: BL-869
+title: "DEFECT — a close commit is validated and credited for only ONE ticket, so multi-ticket QA approvals both strand tickets and skip the guard"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 3
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+description: >
+  `ticket_close_guard_lib.bb` resolves exactly one ticket id per close, from
+  two places, and both collapse a multi-ticket close down to a single id.
+  The reported symptom is only the first of two opposite faults.
+
+  FAULT A — false BLOCK (reported). `qa-approved-ticket?` compares the
+  ticket being closed against
+  `pipeline-stage-lib/ticket-id-from-headers`, which is `re-find` — the
+  FIRST id-shaped token in the note. Probed directly against the live note
+  text "QA approved BL-857,BL-849,BL-840 @ 0bae185f9b, landed on main.
+  Bookkeep all 3.": extraction returns "BL-857" and nothing else, while
+  `re-seq` over the same pattern returns all three. So closing BL-857
+  succeeds and closing BL-849 or BL-840 is refused with "no QA git_handoff
+  or note to coordinator referencing this ticket" — against a note that
+  plainly names them. Article 2.6 requires QA's note to name every
+  satisfied id; it did, and the tool that reads it credits one.
+
+  FAULT B — false ALLOW (NOT reported; found while probing). `parse-close-move`
+  takes `(first (filter active))` and `(first (filter done))` and returns a
+  single `{:ticket-id ...}`. Probed with a commit moving three tickets
+  active -> done: it returns BL-840 alone. The other two tickets are
+  committed with NO QA-approval validation at all — the guard's entire
+  purpose, silently bypassed for N-1 tickets. Probed again with paths
+  ordered so the first active and first done name different tickets: it
+  returns nil, and `validate-close-allowed` then reports `{:allowed true}`
+  as if this were an ordinary commit — every ticket unvalidated.
+
+  Fault B also truncates two downstream side effects in
+  `commit_integrity_cli.bb`, both keyed to that one id:
+  `abandon-inflight-for-ticket!` (tickets 2..N keep live handoffs in flight
+  after being closed) and `record-lean-ledger!` (BL-819's lifecycle ledger,
+  and therefore BL-820's closing ceremony, silently loses every ticket
+  after the first).
+
+  Both faults are one shape: a close is a set of tickets, and every layer
+  treats it as one.
+
+invariants:
+  - "Every ticket whose active-to-done move appears in a close commit is validated independently: a commit closing N tickets performs N approval checks, never fewer."
+  - "Adding a further ticket id to a QA note never withdraws credit from an id the note already named."
+  - "Every post-close side effect keyed to a ticket id runs once for each ticket the commit closed."
+
+acceptance: specs/features/BL-869-multi-ticket-close-guard.feature
+
+required_wiring:
+  - "swarmforge/scripts/commit_integrity_cli.bb::abandon-inflight-for-ticket!::must run once per closed ticket, not once per commit"
+  - "swarmforge/scripts/commit_integrity_cli.bb::record-lean-ledger!::must run once per closed ticket, not once per commit"
+
+qa_e2e_procedure: |
+  Against the live repository, with no swarm restart needed:
+
+  1. Reproduce fault A as it happened. Place a note from QA in the
+     coordinator's `inbox/new/` whose `message` names three ticket ids
+     comma-separated. Ask the close guard about the SECOND id. Before the
+     fix it answers no; after, yes.
+  2. Reproduce fault B. Stage an active-to-done move for two tickets in one
+     commit where only the FIRST has a QA note. Before the fix the commit is
+     allowed (the second ticket rides through unvalidated); after, it is
+     blocked and the message names the second ticket.
+  3. Repeat step 2 with the path list ordered so the first active path and
+     the first done path name different tickets. Before the fix this is
+     allowed unconditionally; after, it is validated per ticket regardless
+     of path order.
+  4. With both tickets approved, run the real close through
+     `commit_integrity_cli.bb`. Confirm on disk that in-flight handoffs for
+     BOTH tickets moved to `abandoned/`, and that the lifecycle ledger holds
+     a close record for BOTH.
+  5. Confirm no regression in the single-ticket path: close one ordinary
+     ticket end to end exactly as the coordinator does today.
+
+approval_context: >
+  Two judgement calls worth your sign-off.
+
+  First, the shape of the fix. `extract-ticket-id`'s single-match,
+  first-token contract has seven live callers outside this guard
+  (duplicate_chain_guard_lib, done_with_current_task, swarm_handoff x2,
+  pre_qa_gate_gather_lib, ticket_close_guard_lib's own path-based helper),
+  every one of which reads a `task` header that names exactly one ticket by
+  contract. This ticket therefore adds a SIBLING (all-ids) extractor and
+  leaves `extract-ticket-id` untouched, as the intake itself suggested —
+  scenario 05 pins that contract so a later "tidy-up" cannot quietly widen
+  it.
+
+  Second, and more consequential: fault B means the close guard has not
+  actually been guarding multi-ticket closes. In practice the coordinator
+  has been closing one ticket per commit — partly BECAUSE fault A forced it
+  to — so there is no evidence of a ticket having been closed unapproved.
+  Worth knowing that the exposure existed rather than discovering it later.
+
+  IR-DRY reports four remaining near-duplicate findings, all of them the
+  same parameterized step carrying different ticket-id arguments (a note
+  approving "BL-857" against one approving "BL-857,BL-849"). The checker
+  normalizes `<placeholders>` but not quoted literals, so varying the data
+  across scenarios always registers. Collapsing them further would mean
+  merging an allowed close with a blocked one into one outline, which costs
+  more clarity than it buys. Judged not-real and recorded here so it is not
+  re-litigated downstream.
+
+source: |
+  Raw intake from the coordinator, `backlog/BL-869-close-guard-multi-ticket-
+  note-only-reads-first-id.md`, drained 2026-08-10. QA approved BL-857,
+  BL-849 and BL-840 in one commit (0bae185f9b) and sent one compliant
+  multi-ticket note; closing the second and third ticket was refused. The
+  coordinator's stopgap was to ask QA for two extra single-ticket notes.
+
+  Specifier probe 2026-08-10 confirmed fault A exactly as reported and found
+  fault B, which the intake does not mention.
+
+notes: |
+  Scope is three files: `swarmforge/scripts/pipeline_stage_lib.bb` (new
+  sibling extractor only), `swarmforge/scripts/ticket_close_guard_lib.bb`
+  (`parse-close-move`, `qa-approved-ticket?`, `validate-close-allowed`),
+  and `swarmforge/scripts/commit_integrity_cli.bb` (per-ticket side effects
+  and the blocked-close message).
+
+  `chase_sweep_lib.bb` has its OWN `extract-ticket-id` (line 694), a
+  separate sibling with its own tests. It is not in scope and must not be
+  changed here.
+
+  The blocked-close message currently names a single ticket; with N tickets
+  it must name the ones that failed, not the first one it looked at —
+  scenario 03 covers this.
+
+  The acceptance scenarios name the approved tickets as a list and leave the
+  step handler to build the realistic note text around them. Build it in the
+  shape the live note actually had, quoted verbatim in the description
+  above: ids comma-separated, followed by a commit hash and trailing prose.
+  The surrounding prose is what makes the first-match extraction plausible
+  in the first place, so a handler that emits a bare id list would test a
+  weaker case than the one that failed.
