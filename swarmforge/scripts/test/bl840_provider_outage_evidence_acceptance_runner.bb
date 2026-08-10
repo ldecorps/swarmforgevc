@@ -19,6 +19,18 @@
 (def subcommand (first *command-line-args*))
 (def payload (when-let [raw (second *command-line-args*)] (json/parse-string raw true)))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn- mk-tmp-dir []
+  (let [d (str (fs/create-temp-dir))]
+    (swap! created-temp-dirs conj d)
+    d))
+
 (defn- parse-ms [iso] (.toEpochMilli (java.time.Instant/parse iso)))
 
 ;; Observes one pane snapshot the same way handoffd.bb's
@@ -34,7 +46,7 @@
 (defmulti run identity)
 
 (defmethod run "observe-and-count" [_]
-  (let [tmp (str (fs/create-temp-dir))
+  (let [tmp (mk-tmp-dir)
         role (:role payload)
         provider (:provider payload)
         text (:text payload)
@@ -47,7 +59,7 @@
 ;; bl840-03: a pre-seeded evidence line, then one more observation at a
 ;; given time - count lines recorded BY THAT SECOND observation only.
 (defmethod run "observe-after-seed" [_]
-  (let [tmp (str (fs/create-temp-dir))
+  (let [tmp (mk-tmp-dir)
         role (:role payload)
         provider (:provider payload)
         seeded-at-ms (parse-ms (:seededAt payload))
@@ -65,7 +77,7 @@
 ;; fixed - returns the resulting line count so a property test can compare
 ;; it against an independently-computed expected count.
 (defmethod run "throttle-sequence" [_]
-  (let [tmp (str (fs/create-temp-dir))
+  (let [tmp (mk-tmp-dir)
         role (:role payload)
         provider (:provider payload)
         min-interval-ms (:minIntervalMs payload)
@@ -85,7 +97,7 @@
   (spit path (str (apply str (for [[k v] headers] (str k ": " v "\n"))) "\nbody\n")))
 
 (defmethod run "sweep-parcel" [_]
-  (let [root (str (fs/create-temp-dir))
+  (let [root (mk-tmp-dir)
         state-dir (str (fs/path root ".swarmforge"))
         daemon-dir (fs/path state-dir "daemon")
         new-dir (fs/path root "coder" "inbox" "new")

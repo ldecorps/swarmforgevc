@@ -12,6 +12,18 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn- mk-tmp-dir []
+  (let [d (str (fs/create-temp-dir))]
+    (swap! created-temp-dirs conj d)
+    d))
+
 ;; ── next-window: the core bounded-scan-wedge fix ───────────────────────────
 
 (assert= "next-window: empty listing returns an empty window, cursor unchanged"
@@ -56,7 +68,7 @@
 
 ;; ── read-cursor / write-cursor! (real, isolated tmp files) ─────────────────
 
-(let [dir (str (fs/create-temp-dir))
+(let [dir (mk-tmp-dir)
       path (str (fs/path dir "cursor"))]
   (assert= "read-cursor: a missing file resolves to nil, never a crash" nil (bounded-delete-sweep-lib/read-cursor path))
   (bounded-delete-sweep-lib/write-cursor! path "sfvc-abc")
@@ -66,7 +78,7 @@
 
 ;; ── read-count / write-count! ───────────────────────────────────────────────
 
-(let [dir (str (fs/create-temp-dir))
+(let [dir (mk-tmp-dir)
       path (str (fs/path dir "streak"))]
   (assert= "read-count: a missing file resolves to 0, never a crash" 0 (bounded-delete-sweep-lib/read-count path))
   (bounded-delete-sweep-lib/write-count! path 7)

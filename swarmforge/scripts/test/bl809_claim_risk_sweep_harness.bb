@@ -19,8 +19,20 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "babysitter_assess_lib.bb")))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn- mk-tmp-dir [prefix]
+  (let [d (fs/create-temp-dir {:prefix prefix})]
+    (swap! created-temp-dirs conj d)
+    d))
+
 (defn- make-git-worktree []
-  (let [dir (fs/create-temp-dir {:prefix "bl809-acceptance-"})]
+  (let [dir (mk-tmp-dir "bl809-acceptance-")]
     (process/sh ["git" "init" "-q"] {:dir (str dir)})
     (process/sh ["git" "config" "user.email" "bl809@example.com"] {:dir (str dir)})
     (process/sh ["git" "config" "user.name" "BL-809"] {:dir (str dir)})
@@ -78,7 +90,7 @@
       (println (json/generate-string {:severity (:severity assessment)})))
 
     "unreadable-head"
-    (let [broken-dir (fs/create-temp-dir {:prefix "bl809-nongit-"})
+    (let [broken-dir (mk-tmp-dir "bl809-nongit-")
           broken (assess broken-dir "deadbeef00")
           healthy-dir (make-git-worktree)
           healthy-head (real-head healthy-dir)

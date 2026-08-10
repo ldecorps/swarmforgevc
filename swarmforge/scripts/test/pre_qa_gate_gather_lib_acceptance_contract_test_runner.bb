@@ -36,6 +36,13 @@
 (defn assert-false [msg actual]
   (when actual (swap! failures conj (str "FAIL: " msg "\n  expected falsy, got: " (pr-str actual)))))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 ;; ── fixture repo construction ────────────────────────────────────────────
 
 (defn- git! [dir & args]
@@ -60,6 +67,7 @@
   [{:keys [steps-index-js feature-text feature-path mutate-after! skip-vendor?]
     :or {feature-path "specs/features/fixture.feature"}}]
   (let [root (str (fs/create-temp-dir {:prefix "aps-gather-acceptance-contract-"}))]
+    (swap! created-temp-dirs conj root)
     (git! root "init" "-q")
     (write-file! (fs/path root "specs" "pipeline" "stepRegistry.js")
                  (slurp (str (fs/path repo-root "specs" "pipeline" "stepRegistry.js"))))
