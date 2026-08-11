@@ -142,3 +142,5 @@ notes: |
   - BL-802 is the precedent for the fallback shape on the sibling `/proc/meminfo`
     read (`babysitter_check.bb`): try the Linux path, fall back to a native
     facility, degrade loudly.
+
+assigned_to: coder

@@ -748,29 +748,34 @@
 ;; that cd'd there, and removing the root out from under an open fd is the
 ;; same class of danger this whole ticket exists to prevent. The set below
 ;; is every REAL absolute path any live process's cwd OR any of its open
-;; file descriptors currently resolves to, read via proc-fd-scan-lib (Linux/
-;; WSL - this whole ticket exists because of a WSL2/VHDX-on-C: host). Read
-;; ONCE per sweep pass, not once per candidate entry - iterating /proc is
-;; the only non-trivial cost here; membership testing afterward is a cheap
-;; set lookup per entry. A non-file fd (a socket/pipe - /proc's own
-;; "socket:[12345]"/"pipe:[12345]" pseudo-target) never matches a real
-;; directory prefix, so it is harmless noise, not a false positive. Returns
-;; an empty set (never throws) when /proc is unavailable (e.g. macOS) -
-;; paired with live-process-rooted-in?'s own "cannot determine -> not live"
-;; default, which is the SAFE direction only because the allowlist/
-;; staleness checks still gate removal independently; liveness alone is
-;; never the only guard.
+;; file descriptors currently resolves to, read via proc-fd-scan-lib's
+;; live-pid-paths! (BL-877: /proc on Linux/WSL, a single `lsof` call on
+;; Darwin - the platform split lives there, not here). Read ONCE per sweep
+;; pass, not once per candidate entry - the scan itself is the only
+;; non-trivial cost; membership testing afterward is a cheap set lookup per
+;; entry.
+;;
+;; BL-877 invariant 1: nil (never coerced to #{}) when NEITHER facility is
+;; reachable - "cannot determine" must never read as "confirmed nothing is
+;; live". sandbox-sweep!'s 0-arity default below treats nil as "assume
+;; every candidate is live" (the opposite of the old #{} default), because
+;; for THIS caller the dangerous direction is deleting a root a live
+;; process still needs - the allowlist/staleness checks alone are not
+;; enough to make "silently assume nothing is live" a safe default once a
+;; real "I cannot tell" state exists to distinguish from it.
 (defn- live-process-paths! []
-  (try
-    (->> (fs/list-dir "/proc")
-         (mapcat (fn [pid-dir] (cons (proc-fd-scan-lib/process-cwd-path pid-dir)
-                                     (proc-fd-scan-lib/process-open-paths pid-dir))))
-         (remove nil?)
-         set)
-    (catch Exception _ #{})))
+  (when-let [pid->paths (proc-fd-scan-lib/live-pid-paths!)]
+    (set (mapcat val pid->paths))))
 
+;; BL-877: entry-path is resolved to its REAL path before matching - on
+;; macOS $TMPDIR/mktemp roots live under /var/..., a symlink to
+;; /private/var/..., and lsof (like /proc's own fs/real-path reads in
+;; proc-fd-scan-lib) reports the RESOLVED path. Comparing the unresolved
+;; entry-path against resolved live-process paths would never match on
+;; this userland - invariant 2's "same verdict on macOS as on Linux" fails
+;; silently (everything looks unrooted) without this.
 (defn- live-process-rooted-in? [paths entry-path]
-  (let [entry-str (str entry-path)]
+  (let [entry-str (try (str (fs/real-path entry-path)) (catch Exception _ (str entry-path)))]
     (boolean (some #(or (= % entry-str) (str/starts-with? % (str entry-str "/"))) paths))))
 
 (defn- sandbox-sweep-remove-entry! [entry-path]
@@ -803,13 +808,22 @@
    tick, never a crash. BL-460: bounds DELETES per tick via
    bounded-delete-sweep-lib's persisted cursor, not the scan - a reapable
    entry ordered after sandbox-sweep-max-per-tick is still reaped within a
-   bounded number of ticks, never re-scanning the same dead window forever."
+   bounded number of ticks, never re-scanning the same dead window forever.
+
+   BL-877 invariant 1: when live-process-paths! returns nil (liveness could
+   not be determined at all on this host - neither /proc nor lsof reachable),
+   :live-process-rooted-in? answers true for EVERY candidate rather than
+   consulting an empty set - the sweep records why via log! and, this pass,
+   keeps everything a real answer might have removed rather than guessing."
   ([]
-   (let [paths (live-process-paths!)]
+   (let [paths (live-process-paths!)
+         determined? (some? paths)]
+     (when-not determined?
+       (log! "sandbox-sweep" "liveness could not be determined this pass (no /proc, no lsof) - treating every candidate as potentially live"))
      (sandbox-sweep!
       {:list-entries! sandbox-sweep-list-entries!
        :entry-age-ms! sandbox-sweep-entry-age-ms!
-       :live-process-rooted-in? (fn [entry-path] (live-process-rooted-in? paths entry-path))
+       :live-process-rooted-in? (fn [entry-path] (if determined? (live-process-rooted-in? paths entry-path) true))
        :remove-entry! sandbox-sweep-remove-entry!})))
   ([adapters]
    (let [root (sandbox-sweep-root)
