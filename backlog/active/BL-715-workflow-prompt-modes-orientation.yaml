@@ -10,7 +10,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "workflow.prompt names the normal live swarm as default and teaches queue-jump, ambulance, and expeditor as three distinct modes that do not replace that path."
