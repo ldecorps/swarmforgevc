@@ -40,6 +40,18 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const SWARM_HANDOFF = path.join(SCRIPTS_DIR, 'swarm_handoff.bb');
 
+// BL-871 QA bounce D2 (2026-08-11): each of the 40 runs below shells out to
+// real git (fixture init/commit) and a real `bb` process. The worker-pool
+// cap those tickets added bounds Vitest's OWN fork count and heap, not the
+// real child-process CPU those forks consume - three forks each shelling
+// out to real subprocesses can still oversubscribe this host's 4 real CPUs.
+// Under that contention QA measured this file's properties actually
+// finishing (not hanging) at up to 162757ms against the vitest.properties
+// lane's global 20000ms testTimeout - a false failure, not a real one (this
+// file passes 3-for-3 when run alone). 240000ms leaves comfortable headroom
+// above the worst measured run.
+const SUBPROCESS_HEAVY_TIMEOUT_MS = 240000;
+
 const ROLES = ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 
 function processEnvAllowlist() {
@@ -135,15 +147,47 @@ function taskFor(digits, slug) {
 
 // ── Invariant 1: at most one live parcel per ticket id; a duplicate send is refused ──
 
-test('property: a send is always refused when any OTHER role already holds a live (new/ or in_process/) git_handoff for the same ticket id', () => {
-  fc.assert(
-    fc.property(
-      senderRoleArb,
-      digitsArb,
-      slugArb,
-      slugArb,
-      stateArb,
-      (sender, digits, heldSlug, sentSlug, state) => {
+test(
+  'property: a send is always refused when any OTHER role already holds a live (new/ or in_process/) git_handoff for the same ticket id',
+  () => {
+    fc.assert(
+      fc.property(
+        senderRoleArb,
+        digitsArb,
+        slugArb,
+        slugArb,
+        stateArb,
+        (sender, digits, heldSlug, sentSlug, state) => {
+          const others = ROLES.filter((r) => r !== sender);
+          const blockingRole = others[0];
+          const recipient = others[others.length - 1];
+          const { root, commit } = mkFixture();
+          const heldTask = taskFor(digits, heldSlug);
+          const sentTask = taskFor(digits, sentSlug);
+          seedParcel(root, blockingRole, state, 'blocker.handoff', heldTask, commit);
+          const draft = `type: git_handoff\nto: ${recipient}\npriority: 50\ntask: ${sentTask}\ncommit: ${commit}\n`;
+          const result = runSwarmHandoff(root, sender, draft);
+          assert.equal(
+            result.status,
+            2,
+            `expected refusal (exit 2) for duplicate ticket BL-${digits}; held="${heldTask}" sent="${sentTask}" blocker=${blockingRole} sender=${sender} state=${state}, got exit ${result.status}: ${combinedOutput(result)}`,
+          );
+          assert.match(combinedOutput(result), /HANDOFF INVALID/);
+        },
+      ),
+      { numRuns: 40 },
+    );
+  },
+  SUBPROCESS_HEAVY_TIMEOUT_MS,
+);
+
+// ── Invariant 2: a refused send is inert ────────────────────────────────
+
+test(
+  'property: a refused send writes nothing to the sender\'s outbox/sent, delivers nothing to the recipient, and injects no wake',
+  () => {
+    fc.assert(
+      fc.property(senderRoleArb, digitsArb, slugArb, slugArb, stateArb, (sender, digits, heldSlug, sentSlug, state) => {
         const others = ROLES.filter((r) => r !== sender);
         const blockingRole = others[0];
         const recipient = others[others.length - 1];
@@ -153,51 +197,27 @@ test('property: a send is always refused when any OTHER role already holds a liv
         seedParcel(root, blockingRole, state, 'blocker.handoff', heldTask, commit);
         const draft = `type: git_handoff\nto: ${recipient}\npriority: 50\ntask: ${sentTask}\ncommit: ${commit}\n`;
         const result = runSwarmHandoff(root, sender, draft);
-        assert.equal(
-          result.status,
-          2,
-          `expected refusal (exit 2) for duplicate ticket BL-${digits}; held="${heldTask}" sent="${sentTask}" blocker=${blockingRole} sender=${sender} state=${state}, got exit ${result.status}: ${combinedOutput(result)}`,
+
+        assert.equal(result.status, 2, `expected the send to be refused, got: ${combinedOutput(result)}`);
+        assert.deepEqual(listHandoffFiles(outboxDir(root, sender)), [], "sender's outbox must be empty after a refusal");
+        assert.deepEqual(listHandoffFiles(sentDir(root, sender)), [], "sender's sent must be empty after a refusal");
+        assert.deepEqual(
+          listHandoffFiles(mailboxDir(root, recipient, 'new')),
+          [],
+          "recipient's new/ must receive no parcel after a refusal",
         );
-        assert.match(combinedOutput(result), /HANDOFF INVALID/);
-      },
-    ),
-    { numRuns: 40 },
-  );
-});
-
-// ── Invariant 2: a refused send is inert ────────────────────────────────
-
-test('property: a refused send writes nothing to the sender\'s outbox/sent, delivers nothing to the recipient, and injects no wake', () => {
-  fc.assert(
-    fc.property(senderRoleArb, digitsArb, slugArb, slugArb, stateArb, (sender, digits, heldSlug, sentSlug, state) => {
-      const others = ROLES.filter((r) => r !== sender);
-      const blockingRole = others[0];
-      const recipient = others[others.length - 1];
-      const { root, commit } = mkFixture();
-      const heldTask = taskFor(digits, heldSlug);
-      const sentTask = taskFor(digits, sentSlug);
-      seedParcel(root, blockingRole, state, 'blocker.handoff', heldTask, commit);
-      const draft = `type: git_handoff\nto: ${recipient}\npriority: 50\ntask: ${sentTask}\ncommit: ${commit}\n`;
-      const result = runSwarmHandoff(root, sender, draft);
-
-      assert.equal(result.status, 2, `expected the send to be refused, got: ${combinedOutput(result)}`);
-      assert.deepEqual(listHandoffFiles(outboxDir(root, sender)), [], "sender's outbox must be empty after a refusal");
-      assert.deepEqual(listHandoffFiles(sentDir(root, sender)), [], "sender's sent must be empty after a refusal");
-      assert.deepEqual(
-        listHandoffFiles(mailboxDir(root, recipient, 'new')),
-        [],
-        "recipient's new/ must receive no parcel after a refusal",
-      );
-      assert.doesNotMatch(combinedOutput(result), /HANDOFF (DELIVERED|QUEUED)/);
-      assert.equal(
-        fs.existsSync(path.join(root, '.swarmforge', 'handoffs', 'inject-traffic.log')),
-        false,
-        'no wake/inject attempt should have been reached for a refused send',
-      );
-    }),
-    { numRuns: 40 },
-  );
-});
+        assert.doesNotMatch(combinedOutput(result), /HANDOFF (DELIVERED|QUEUED)/);
+        assert.equal(
+          fs.existsSync(path.join(root, '.swarmforge', 'handoffs', 'inject-traffic.log')),
+          false,
+          'no wake/inject attempt should have been reached for a refused send',
+        );
+      }),
+      { numRuns: 40 },
+    );
+  },
+  SUBPROCESS_HEAVY_TIMEOUT_MS,
+);
 
 // ── Invariant 3: ticket identity is exact ticket-id equality, never a prefix/substring match ──
 //
@@ -207,36 +227,40 @@ test('property: a refused send writes nothing to the sender\'s outbox/sent, deli
 // BL-90). Every generated pair is a collision candidate by construction, in
 // both directions.
 
-test('property: a held parcel for a DIFFERENT ticket id never blocks a send, even when one id is a digit-prefix of the other', () => {
-  fc.assert(
-    fc.property(
-      senderRoleArb,
-      fc.integer({ min: 1, max: 99 }),
-      fc.integer({ min: 0, max: 9 }),
-      stateArb,
-      fc.boolean(),
-      (sender, base, extraDigit, state, heldIsLonger) => {
-        const others = ROLES.filter((r) => r !== sender);
-        const blockingRole = others[0];
-        const recipient = others[others.length - 1];
-        const idA = String(base);
-        const idB = `${base}${extraDigit}`;
-        assert.notEqual(idA, idB, 'generator invariant: appending a digit must change the id string');
+test(
+  'property: a held parcel for a DIFFERENT ticket id never blocks a send, even when one id is a digit-prefix of the other',
+  () => {
+    fc.assert(
+      fc.property(
+        senderRoleArb,
+        fc.integer({ min: 1, max: 99 }),
+        fc.integer({ min: 0, max: 9 }),
+        stateArb,
+        fc.boolean(),
+        (sender, base, extraDigit, state, heldIsLonger) => {
+          const others = ROLES.filter((r) => r !== sender);
+          const blockingRole = others[0];
+          const recipient = others[others.length - 1];
+          const idA = String(base);
+          const idB = `${base}${extraDigit}`;
+          assert.notEqual(idA, idB, 'generator invariant: appending a digit must change the id string');
 
-        const { root, commit } = mkFixture();
-        const heldDigits = heldIsLonger ? idB : idA;
-        const sentDigits = heldIsLonger ? idA : idB;
-        seedParcel(root, blockingRole, state, 'blocker.handoff', `BL-${heldDigits}`, commit);
-        const draft = `type: git_handoff\nto: ${recipient}\npriority: 50\ntask: BL-${sentDigits}\ncommit: ${commit}\n`;
-        const result = runSwarmHandoff(root, sender, draft);
+          const { root, commit } = mkFixture();
+          const heldDigits = heldIsLonger ? idB : idA;
+          const sentDigits = heldIsLonger ? idA : idB;
+          seedParcel(root, blockingRole, state, 'blocker.handoff', `BL-${heldDigits}`, commit);
+          const draft = `type: git_handoff\nto: ${recipient}\npriority: 50\ntask: BL-${sentDigits}\ncommit: ${commit}\n`;
+          const result = runSwarmHandoff(root, sender, draft);
 
-        assert.notEqual(
-          result.status,
-          2,
-          `expected BL-${heldDigits} (held) not to block BL-${sentDigits} (sent) - distinct ids - got refused: ${combinedOutput(result)}`,
-        );
-      },
-    ),
-    { numRuns: 40 },
-  );
-});
+          assert.notEqual(
+            result.status,
+            2,
+            `expected BL-${heldDigits} (held) not to block BL-${sentDigits} (sent) - distinct ids - got refused: ${combinedOutput(result)}`,
+          );
+        },
+      ),
+      { numRuns: 40 },
+    );
+  },
+  SUBPROCESS_HEAVY_TIMEOUT_MS,
+);

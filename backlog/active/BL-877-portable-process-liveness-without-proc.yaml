@@ -1,0 +1,146 @@
+id: BL-877
+title: "DEFECT — process-liveness detection scans /proc, which macOS does not have: both the sandbox sweep's keep-guard and the fixture reaper's orphan-kill are inert on the swarm's own host, and the three tests that would say so are red"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 118
+direction: normal
+mutation_cost: medium
+acceptance: specs/features/BL-877-portable-process-liveness-without-proc.feature.draft
+human_approval: approved
+approval_context: >
+  One deliberate scope call to sign off or overturn, plus a new feature draft.
+
+  The call: this ticket fixes the PRODUCTION liveness probe (a real macOS
+  facility behind the existing shared primitive), rather than marking the three
+  tests skipped-on-macOS. Skipping is cheaper and is defensible on the argument
+  that both consumers already degrade in their documented-safe direction. It is
+  rejected here because degrading is not the same as being correct: on macOS the
+  sandbox sweep's live-process guard never fires at all, and the fixture reaper
+  never kills an orphan — the exact job it exists for — and a skipped test would
+  make that permanent and invisible. That is the same "a check with no standing
+  consumer rots" failure BL-420 -> BL-459 -> BL-872 -> BL-874 has now produced
+  four times. Overturn this if you want the cheap fix.
+
+  Deliberately NOT in this ticket: the other /proc readers found by the same
+  grep (`babysitter_check.bb`'s /proc/meminfo, already handled by BL-802;
+  `cursor_bridge_supervisor.bb`'s /proc/<pid>/cmdline; `check_swarm_detached.bb`
+  via read_proc_sigignore.sh). They are separate call sites with separate
+  fallbacks and would push this past one slice.
+
+source: |
+  Coder note to specifier, 2026-08-11 (handoff
+  60_20260811T005234Z_000155_from_coder): "2 macOS gaps surfaced via BL-874:
+  /proc dep (BL-413), setsid dep (BL-349)". This is the first of the two; the
+  `setsid` half is BL-878.
+
+  Surfaced, not caused, by BL-874: before that fix the three tests below died at
+  their `touch -d` line and never reached these checks. Full evidence in
+  `backlog/evidence/BL-874-coder-pass-20260811.md` ("Verification", step 2),
+  which reproduced the failures twice — once under host load ~40, once under ~7,
+  same result — so this is not flakiness.
+
+  Independently re-probed by the specifier on this host, 2026-08-11: `ls /proc`
+  -> `No such file or directory`; `/usr/sbin/lsof` present.
+
+invariants:
+  - "Liveness is never silently assumed absent: a host where no liveness facility works surfaces that, rather than returning an empty set that reads as 'no process is live'."
+  - "A live process rooted in a candidate directory produces the same keep/kill verdict on macOS as on Linux."
+  - "One shared liveness primitive serves both the sandbox sweep and the fixture reaper; neither re-implements the platform split inline."
+
+required_wiring:
+  - "swarmforge/scripts/operator_runtime.bb::proc-fd-scan-lib::the sandbox sweep's keep-guard must consume the shared primitive, not its own inline scan"
+  - "swarmforge/scripts/fixture_reaper_sweep_lib.bb::proc-fd-scan-lib::same, for the reaper's orphan-kill — the two consumers share one implementation"
+
+description: |
+  ## What
+
+  Process liveness is detected by listing `/proc` and reading each pid's cwd and
+  open fds (`swarmforge/scripts/proc_fd_scan_lib.bb`, the shared primitive). On
+  macOS `/proc` does not exist, the `fs/list-dir` throws, and both callers catch
+  it and return empty:
+
+  | caller | on Linux | on macOS (degraded) |
+  |---|---|---|
+  | `operator_runtime.bb` `live-process-paths!` (~line 763) | set of paths held by live processes; a stale sandbox rooted by one is KEPT | `#{}` — nothing is ever seen as live, so a stale-by-mtime sandbox **is deleted out from under a live process** |
+  | `fixture_reaper_sweep_lib.bb` `live-process-paths!` (~line 107) | pid -> paths map; pids rooted in a reaped root are KILLED | `{}` — no pid is ever rooted, so the tree is deleted but **the orphaned process keeps running** |
+
+  Note the two degrade in OPPOSITE directions, and each file's own comment
+  argues its own direction is the safe one. Both comments are locally true and
+  neither is the point: on the declared host OS the guard simply never fires.
+
+  Three tests assert the Linux-only behaviour and are red on macOS:
+
+  - `swarmforge/scripts/test/test_operator_runtime_sandbox_sweep.sh` — "a stale
+    known-prefix sandbox with a live process rooted in it is kept" (line 93)
+  - `swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep.sh`
+  - `swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep_bounded_progress.sh`
+    — "the remaining orphaned process is killed too" (line 92)
+
+  ## Why it matters
+
+  macOS is a declared target OS (local-engineering.prompt, Tech Stack) and is
+  the host this swarm runs on. `swarmforge/scripts/test/` is the sole gate for
+  the Babashka layer (engineering.prompt, Startup Tools: no mutation, CRAP or
+  DRY there). So a safety guard is inert on the machine that needs it, and the
+  one signal that would say so is a test nobody on this host can pass.
+
+  The sandbox-sweep direction is the sharper of the two: deleting a directory a
+  live process is rooted in is a real fault, currently held off only by the
+  independent staleness threshold and allowlist.
+
+  ## Constraints
+
+  - No GNU/Linux-only dependency and no new package manager install. Stock macOS
+    userland only, per engineering.prompt's "stock macOS /bin/bash 3.2" rule.
+  - Keep ONE implementation. `proc_fd_scan_lib.bb` is already the shared
+    primitive with two consumers; the platform split belongs inside it, callers
+    unaware — the same shape `portable_stat_lib.sh` and BL-874's
+    `portable_time_lib.sh` follow.
+  - Reference, not prescription: `/usr/sbin/lsof` is present on this host and
+    reports both cwd and open files per pid (`lsof -a -d cwd`, `lsof -F pn`).
+    The implementer chooses the facility; cost matters, because both callers run
+    on a sweep tick, and the existing code is careful to scan ONCE per pass
+    rather than once per candidate. Preserve that.
+  - Behaviour of the three tests must not change — each still asserts what it
+    asserted before. If a scenario genuinely cannot hold on a host with no
+    liveness facility at all, it fails loud there; it is not quietly skipped.
+
+  ## Out of scope
+
+  - The `setsid` gap surfaced by the same coder pass — that is BL-878.
+  - The other `/proc` readers listed in `approval_context` above.
+  - Any change to the staleness thresholds, allowlist, or bounded-delete cursor
+    logic. This ticket restores the liveness input; it does not retune the
+    policy that consumes it.
+
+  ## e2e QA procedure
+
+  1. Confirm the host has no `/proc`: `ls /proc` errors.
+  2. Run the three scripts above with `bash <path>`; every one exits 0.
+  3. Confirm the guard actually bites rather than passing vacuously: in
+     `test_operator_runtime_sandbox_sweep.sh`, the "live process rooted in it is
+     kept" check must pass while the sibling stale-and-unrooted entry is still
+     reaped in the same run — a probe that reports everything as live would keep
+     both and turn that sibling check red.
+  4. Confirm the reaper still kills: the orphaned-process check must observe the
+     process actually gone, not merely absent from a scan.
+
+notes: |
+  - Fourth occurrence of the same class in this area (BL-420 -> BL-459 ->
+    BL-872 for temp-dir traps; BL-874 for GNU-only relative time; this for
+    Linux-only process introspection). The common cause is the same each time: a
+    check whose only consumer is a test that cannot run on this host.
+  - BL-413 (`backlog/done/BL-413-stale-sandbox-sweep.yaml`) is where the
+    `/proc` scan was introduced, 2026-07-16 — a month before BL-874 and
+    unrelated to it. BL-458 extended it from cwd-only to cwd+open-fds after an
+    architect bounce; that bounce's reasoning (a process holding a file open
+    inside a root is as rooted as one that cd'd there) is preserved in
+    `fixture_reaper_sweep_lib.bb`'s comment and must survive this change.
+  - BL-802 is the precedent for the fallback shape on the sibling `/proc/meminfo`
+    read (`babysitter_check.bb`): try the Linux path, fall back to a native
+    facility, degrade loudly.
+
+assigned_to: coder

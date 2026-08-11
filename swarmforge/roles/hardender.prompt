@@ -483,3 +483,26 @@ You are the hardender.
 - The underlying fix — a missing probe degrades to the documented fallback
   chain instead of crashing — is ticketed as BL-797; drop this workaround note
   when it lands.
+
+## A killed property/mutation run leaks its fixture into the lane it was testing (rule_proposal 2026-08-11, accepted)
+- After killing a stalled acceptance, property or mutation run, check
+  `git status --short extension/test/` and delete any untracked
+  `*.property.test.js` the run left behind, BEFORE handing off.
+- Why it does not clean itself up: `extension/test/helpers/propertyLaneFixtureRunner.js`
+  writes a real `<prefix><pid>-<rand>.property.test.js` into `extension/test/`
+  (the property lane's `include` glob is resolved relative to `extension/`, so
+  the fixture must genuinely exist there to be picked up) and removes it in a
+  `finally`. A SIGTERM/SIGKILL to the parent process skips that `finally`.
+- Why the leak is worse than ordinary litter: the orphan MATCHES
+  `test/**/*.property.test.js`, so it silently joins the property lane on every
+  future run — a fixture designed to fail becomes a permanent red. `pgrep`/tmux
+  reap checks do not see it: nothing is still running, only a file remains.
+- Check by GLOB, never by ticket-id prefix. `basenamePrefix` is a caller
+  parameter (default `bl868-fixture-`), so tomorrow's caller leaks under a name
+  today's list does not contain.
+- This is yours to delete under "Clean Up After Yourself" — a fixture your own
+  killed run created is exactly the case that rule covers, not the
+  "never delete what you did not create" exception.
+  (Incident: BL-871/BL-874 pass 2026-08-11 — a Gherkin-mutation run killed
+  after scenario 04 timed out under load 28-48 on 4 cores left an orphaned
+  fixture that pgrep/tmux reap checks missed.)

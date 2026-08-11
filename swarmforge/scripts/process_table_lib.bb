@@ -97,6 +97,26 @@
       0)
     (catch Exception _ 0)))
 
+(defn parent-orphaned?
+  "True when pid has been reparented to init/launchd (ppid 1) or its
+   parent ProcessHandle is missing/dead. Disposable-root front-desk
+   bridge/bot children keep a living supervisor as parent while a test
+   is still running; PPID 1 means that supervisor already exited and
+   left them behind (the exact leftovers that bind host :8765 and trip
+   the production front-desk give-up email before the multi-hour age
+   gate would ever fire)."
+  [pid]
+  (try
+    (if-let [ph (.orElse (java.lang.ProcessHandle/of (long pid)) nil)]
+      (let [parent (.orElse (.parent ph) nil)]
+        (cond
+          (nil? parent) true
+          (= 1 (.pid parent)) true
+          (not (.isAlive parent)) true
+          :else false))
+      true)
+    (catch Exception _ false)))
+
 (defn- cwd-from-procfs
   [pid]
   (try

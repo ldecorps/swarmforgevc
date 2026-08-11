@@ -100,6 +100,7 @@
   {:list-candidate-pids! list-candidate-pids!
    :cmdline! proc-cmdline!
    :age-ms! age-ms!
+   :parent-orphaned?! process-table-lib/parent-orphaned?
    :live-window-pid-set! (fn [] (orphan-agent-reaper-sweep-lib/live-window-pid-set! project-root))
    :live-runtime-pid! (fn [] (live-runtime-pid! project-root))
    :kill-pid! kill-pid!
@@ -112,6 +113,7 @@
         ancillary-threshold (ancillary-stale-threshold-ms)
         window-pids ((:live-window-pid-set! adapters))
         live-runtime ((:live-runtime-pid! adapters))
+        parent-orphaned?! (or (:parent-orphaned?! adapters) (fn [_] false))
         reaped (atom 0)]
      (doseq [pid candidates]
        (let [cmd ((:cmdline! adapters) pid)
@@ -149,15 +151,21 @@
            (orphan-janitor-lib/tmp-ancillary-cmdline? cmd)
            (let [root (orphan-janitor-lib/parse-tmp-ancillary-root cmd)
                  tmp? (orphan-janitor-lib/tmp-project-root? root)
-                 stale? (>= age ancillary-threshold)]
+                 stale? (>= age ancillary-threshold)
+                 parent-orphaned? (boolean (parent-orphaned?! pid))
+                 front-desk? (orphan-janitor-lib/front-desk-bridge-or-bot-cmdline? cmd)]
              (when (orphan-janitor-lib/reapable-tmp-ancillary?
                     {:in-live-window-set? in-window?
                      :tmp-rooted-ancillary? tmp?
-                     :stale? stale?})
+                     :stale? stale?
+                     :parent-orphaned? parent-orphaned?
+                     :front-desk-bridge-or-bot? front-desk?})
                ((:kill-pid! adapters) pid)
                ((:audit! adapters)
                 (str (now-iso) " reaped-tmp-ancillary pid=" pid
-                     " root=" root " age_ms=" age))
+                     " root=" root " age_ms=" age
+                     (when (and front-desk? parent-orphaned? (not stale?))
+                       " reason=parent-orphaned-front-desk")))
                (swap! reaped inc))))))
      (log! (str "swept " (count candidates) " candidate(s), reaped " @reaped))))
 

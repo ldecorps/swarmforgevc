@@ -81,6 +81,34 @@
   (assert= "janitor: a genuine stale tmp-rooted candidate is still reaped"
            [4242] (:kills @calls)))
 
+;; Parent-orphaned disposable-root front-desk bridge must not wait for the
+;; multi-hour ancillary age gate — that was the silent miss behind tonight's
+;; production give-up emails (candidates swept, reaped 0, PPID 1 orphans).
+(let [{:keys [calls adapters]} (make-recorder)
+      adapters (-> adapters
+                   (assoc :list-candidate-pids! (fn [] [8765]))
+                   (assoc :cmdline! (fn [_]
+                                      "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.abc123/extension/out/tools/start-bridge-headless.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.abc123 8765"))
+                   (assoc :age-ms! (fn [_] 60000))
+                   (assoc :parent-orphaned?! (fn [_] true)))]
+  (orphan-janitor-sweep-lib/sweep! "/irrelevant" adapters)
+  (assert= "janitor: young parent-orphaned tmp front-desk bridge is reaped"
+           [8765] (:kills @calls))
+  (assert-true "janitor: audit names the parent-orphaned front-desk reason"
+               (some #(clojure.string/includes? % "reason=parent-orphaned-front-desk")
+                     (:audits @calls))))
+
+(let [{:keys [calls adapters]} (make-recorder)
+      adapters (-> adapters
+                   (assoc :list-candidate-pids! (fn [] [9001]))
+                   (assoc :cmdline! (fn [_]
+                                      "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.abc123/extension/out/tools/start-bridge-headless.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.abc123 8765"))
+                   (assoc :age-ms! (fn [_] 60000))
+                   (assoc :parent-orphaned?! (fn [_] false)))]
+  (orphan-janitor-sweep-lib/sweep! "/irrelevant" adapters)
+  (assert= "janitor: young front-desk bridge with living parent is left alone"
+           [] (:kills @calls)))
+
 ;; ── orphan-agent-reaper-sweep-lib ───────────────────────────────────────
 
 (let [{:keys [calls adapters]} (make-recorder)

@@ -130,13 +130,21 @@ function registerSteps(registry) {
   );
 
   // ── property-lane-worker-pool-cap-04 ─────────────────────────────────
+  // BL-871 QA bounce D1 (2026-08-11): direct timed runs of this exact
+  // command on this exact reference host measured 418.5s and 450.8s END TO
+  // END WHEN PASSING - the prior 300000ms (5min) timeout was shorter than a
+  // real passing run and could never succeed regardless of the property
+  // lane's health. 900000ms (15min) leaves headroom both above that
+  // baseline and above the D2 fix's own raised per-test timeouts on the
+  // subprocess-heavy files (bl760/bl787/bl797) landing back-to-back in one
+  // fork's critical path under contention.
   registry.defineScoped(
     /^the whole property suite is run on this host$/,
     (ctx) => {
       const result = spawnSync('npm', ['run', 'test:properties'], {
         cwd: EXTENSION_DIR,
         encoding: 'utf8',
-        timeout: 300000,
+        timeout: 900000,
       });
       ctx.result = {
         status: result.status,

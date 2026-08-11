@@ -225,6 +225,52 @@
            :tmp-rooted-ancillary? true
            :stale? false}))
 
+(assert= "fresh parent-orphaned front-desk bridge/bot is reaped without age gate"
+         true
+         (orphan-janitor-lib/reapable-tmp-ancillary?
+          {:in-live-window-set? false
+           :tmp-rooted-ancillary? true
+           :stale? false
+           :parent-orphaned? true
+           :front-desk-bridge-or-bot? true}))
+
+(assert= "fresh parent-orphaned babysitter/tmux still needs the age gate"
+         false
+         (orphan-janitor-lib/reapable-tmp-ancillary?
+          {:in-live-window-set? false
+           :tmp-rooted-ancillary? true
+           :stale? false
+           :parent-orphaned? true
+           :front-desk-bridge-or-bot? false}))
+
+(assert= "fresh front-desk with living parent is not reaped"
+         false
+         (orphan-janitor-lib/reapable-tmp-ancillary?
+          {:in-live-window-set? false
+           :tmp-rooted-ancillary? true
+           :stale? false
+           :parent-orphaned? false
+           :front-desk-bridge-or-bot? true}))
+
+(assert= "stale front-desk with living parent still reaped via age gate"
+         true
+         (orphan-janitor-lib/reapable-tmp-ancillary?
+          {:in-live-window-set? false
+           :tmp-rooted-ancillary? true
+           :stale? true
+           :parent-orphaned? false
+           :front-desk-bridge-or-bot? true}))
+
+(assert= "front-desk bridge cmdline recognised"
+         true
+         (orphan-janitor-lib/front-desk-bridge-or-bot-cmdline?
+          "node /tmp/tmp.VMn06cue6u/extension/out/tools/start-bridge-headless.js /tmp/tmp.VMn06cue6u 9001"))
+
+(assert= "non-front-desk ancillary cmdline not recognised as bridge/bot"
+         false
+         (orphan-janitor-lib/front-desk-bridge-or-bot-cmdline?
+          "tmux -S /tmp/tmp.jIAp73PXra/.swarmforge/babysitter/babysitter-tmux.sock new-session"))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (System/exit 1))

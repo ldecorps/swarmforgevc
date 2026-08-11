@@ -126,3 +126,6 @@ notes: |
   bl760, bl787 and bl805 need no changes of their own — they are the files
   that happened to lose the contention. BL-867 separately fixes a genuine
   env-isolation fault in bl787 that is unrelated to this contention.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-11, by: QA, blamed: coder, class: behavior, commit: eeb0f9501, evidence: backlog/evidence/BL-871-bounce-20260811.md }
