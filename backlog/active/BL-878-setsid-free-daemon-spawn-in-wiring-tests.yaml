@@ -8,7 +8,7 @@ epic: code-quality-gates
 priority: 118
 direction: normal
 mutation_cost: low
-acceptance: specs/features/BL-878-setsid-free-daemon-spawn-in-wiring-tests.feature.draft
+acceptance: specs/features/BL-878-setsid-free-daemon-spawn-in-wiring-tests.feature
 human_approval: approved
 approval_context: >
   New feature draft needs review. No scope fork to decide here: the fix shape is
@@ -146,3 +146,5 @@ notes: |
     (`swarmforge/roles/hardender.prompt`) covers fixture files leaked by a
     KILLED run. This ticket covers daemons leaked by a NORMAL run on a host
     missing an assumed tool.
+
+assigned_to: coder
