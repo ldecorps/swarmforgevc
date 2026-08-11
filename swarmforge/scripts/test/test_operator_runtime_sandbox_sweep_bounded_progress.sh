@@ -35,7 +35,10 @@ PROJECT="$(make_project_fixture)"
 register_tmp_dir "$PROJECT"
 SANDBOX_ROOT="$(mktemp -d)"
 register_tmp_dir "$SANDBOX_ROOT"
-old_mtime() { touch -d "2 hours ago" "$1"; }
+# BL-874: BSD touch has no -d relative-time form; portable_time_lib.sh
+# hides the BSD/GNU split behind one shared helper.
+source "$SCRIPT_DIR/../portable_time_lib.sh"
+old_mtime() { portable_touch_relative 2 hours "$1"; }
 
 tick() {
   SWARMFORGE_SANDBOX_SWEEP_ROOT="$SANDBOX_ROOT" \
