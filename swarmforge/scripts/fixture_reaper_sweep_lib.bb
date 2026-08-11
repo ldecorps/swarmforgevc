@@ -87,38 +87,33 @@
 (defn- entry-age-ms! [entry-path]
   (try (- (System/currentTimeMillis) (.toMillis (fs/last-modified-time entry-path))) (catch Exception _ 0)))
 
-;; pid -> its cwd's real absolute path, for every live process, read via
-;; /proc/<pid>/cwd (Linux/WSL). Read ONCE per sweep pass, not once per
-;; candidate root. Returns an empty map (never throws) when /proc is
-;; unavailable - a reaped root then simply has no pids to kill, which is
-;; safe: the tree walk + fs/delete-tree still runs, so a stale root with NO
-;; live process (the common case - a crash, not a still-running orphan)
-;; still gets cleaned up.
+;; pid -> the set of every REAL absolute path its cwd OR any of its open
+;; file descriptors currently resolves to, for every live process -
+;; BL-877's shared proc-fd-scan-lib/live-pid-paths! (/proc on Linux/WSL, a
+;; single `lsof` call on Darwin; the platform split lives there, not here).
+;; Read ONCE per sweep pass, not once per candidate root.
 ;;
-;; Architect bounce (on this same scan's BL-413 sibling in operator_runtime.bb):
-;; liveness checked only cwd - a process with a file open INSIDE a candidate
-;; root (a log it writes to, a lockfile, a socket file on disk) but whose cwd
-;; sits elsewhere is exactly as "rooted in it" as one that cd'd there. Each
-;; pid below maps to the set of every REAL absolute path its cwd OR any of
-;; its open file descriptors currently resolves to, via proc-fd-scan-lib. A
-;; non-file fd (a socket/pipe - /proc's own "socket:[12345]"/"pipe:[12345]"
-;; pseudo-target) never matches a real directory prefix, so it is harmless
-;; noise, not a false positive.
+;; nil (liveness could not be determined at all - neither facility
+;; reachable) is passed through as nil, not coerced to {}: pids-rooted-in
+;; already treats a nil/empty pid->paths identically (no pids found to
+;; kill), which is this caller's own safe direction regardless - a reaped
+;; root with a genuinely undetermined liveness state still gets its tree
+;; deleted (the common case is a crash, not a still-running orphan) but
+;; kills nothing it cannot actually see, same as an ordinary #{} miss. Only
+;; the sandbox-sweep! sibling in operator_runtime.bb needs nil to flip its
+;; OWN default, because ITS dangerous direction is deleting a root a live
+;; process still needs, not this file's "an orphan keeps running one more
+;; tick".
 (defn- live-process-paths! []
-  (try
-    (->> (fs/list-dir "/proc")
-         (keep (fn [p]
-                 (try
-                   (let [pid (try (Long/parseLong (fs/file-name p)) (catch Exception _ nil))]
-                     (when pid
-                       [pid (set (remove nil? (cons (proc-fd-scan-lib/process-cwd-path p)
-                                                     (proc-fd-scan-lib/process-open-paths p))))]))
-                   (catch Exception _ nil))))
-         (into {}))
-    (catch Exception _ {})))
+  (proc-fd-scan-lib/live-pid-paths!))
 
+;; BL-877: entry-path is resolved to its REAL path before matching - same
+;; macOS /var -> /private/var symlink concern as operator_runtime.bb's
+;; live-process-rooted-in? sibling (see its comment). Without this, a
+;; reaped root under a symlinked macOS temp path never matches any live
+;; pid's (resolved) cwd/fd paths, so an orphan is never killed.
 (defn- pids-rooted-in [pid->paths entry-path]
-  (let [entry-str (str entry-path)
+  (let [entry-str (try (str (fs/real-path entry-path)) (catch Exception _ (str entry-path)))
         rooted? (fn [path] (or (= path entry-str) (str/starts-with? path (str entry-str "/"))))]
     (->> pid->paths
          (filter (fn [[_ paths]] (some rooted? paths)))
@@ -146,15 +141,25 @@
   "The real reads/actions sweep! uses when called with no arguments - exposed
    so a caller (operator_runtime.bb) that wants its OWN :log! (writing into
    its own runtime.log instead of stdout) can override just that one key
-   without hand-duplicating every other real adapter here."
+   without hand-duplicating every other real adapter here.
+
+   BL-877: when live-process-paths! returns nil (liveness undetermined -
+   neither /proc nor lsof reachable), that is logged here for visibility,
+   then passed through as :pid->paths nil - pids-rooted-in already treats
+   nil like {} (nothing to kill), which is this reaper's own safe
+   direction regardless of whether liveness was determined or not."
   []
-  {:list-entries! list-entries!
-   :entry-age-ms! entry-age-ms!
-   :pid->paths (live-process-paths!)
-   :kill-pid! kill-pid!
-   :kill-tmux-sockets-under! kill-tmux-sockets-under!
-   :delete-tree! (fn [p] (fs/delete-tree p {:force true}))
-   :log! default-log!})
+  (let [log! default-log!
+        pid->paths (live-process-paths!)]
+    (when (nil? pid->paths)
+      (log! "liveness could not be determined this pass (no /proc, no lsof) - killing nothing this pass"))
+    {:list-entries! list-entries!
+     :entry-age-ms! entry-age-ms!
+     :pid->paths pid->paths
+     :kill-pid! kill-pid!
+     :kill-tmux-sockets-under! kill-tmux-sockets-under!
+     :delete-tree! (fn [p] (fs/delete-tree p {:force true}))
+     :log! log!}))
 
 (defn sweep!
   "adapters is {:list-entries! fn :entry-age-ms! fn :pid->paths map
