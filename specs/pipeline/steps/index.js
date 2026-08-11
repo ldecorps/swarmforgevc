@@ -421,7 +421,8 @@ const DOMAINS = [
   require('./bl871PropertyLaneWorkerPoolCapSteps'),
   require('./bl877PortableProcessLivenessSteps'),
   require('./bl879ParentOrphanedFrontDeskSteps'),
-  require('./bl878SetsidFreeDaemonSpawnSteps')
+  require('./bl878SetsidFreeDaemonSpawnSteps'),
+  require('./bl876BounceHistorySameDayRebounceSteps')
 ];
 
 function registerSteps(registry) {
