@@ -153,6 +153,7 @@ notes: |
   improvise the BL-820 specifier feed before that slice lands. Requested
   outcome 1's third clause is satisfied; no rebuild was needed since the
   ticket was already closed.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-07, by: architect, blamed: coder, class: behavior, commit: a6f61c2895, evidence: backlog/evidence/BL-819-architect-bounce-20260807.md }
+  - { at: 2026-08-07, by: QA, blamed: coder, class: behavior, commit: 8ac82a0e, evidence: backlog/evidence/BL-819-qa-bounce-20260807.md }

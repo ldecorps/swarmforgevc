@@ -1,0 +1,116 @@
+id: BL-882
+title: "DEFECT — handoffd.bb's BL-617 gate comment says sibling sweeps 'keep running unconditionally', misleading readers into a phantom 10x-cadence regression"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+priority: 150
+direction: normal
+mutation_cost: low
+human_approval: pending
+required_stages: [coder, documenter, qa]
+stage_skip_reasons: { cleaner: "comment-prose-only change, nothing to refactor", architect: "no design or behavior change; the gate structure is explicitly frozen by this ticket's own constraint", hardender: "no executable surface changes; Babashka layer has no mutation tooling wired (BL-472 deferred)" }
+acceptance: specs/features/BL-882-handoffd-cadence-comment-accuracy.feature.draft
+
+approval_context: >
+  New feature draft needs review. The judgement call worth your eye: this is
+  deliberately specced as a COMMENT-ONLY reword (severity low, lean
+  [coder, documenter, qa] chain) because the specifier's probe found the code
+  matches every sweep's own ticket ("shares the same cadence") and BL-617's
+  diff (decd25110) moved nothing into the cadence gate — i.e. the coder's
+  reported "BL-617 gated 7 sweeps at 10x slower" is a misreading INDUCED by
+  the comment, not a behavior regression. If you instead believe the seven
+  sweeps SHOULD run every tick, reject this ticket and say so — that would
+  be a different, behavior-changing ticket.
+
+source: |
+  Coder note to specifier, 2026-08-11 (handoff
+  60_20260811T162225Z_000161_from_coder): "BL-878 surfaced handoffd.bb
+  cadence bug: BL-617 gated 7 sweeps at 10x slower". Full report:
+  `backlog/evidence/BL-878-coder-pass-20260811.md`, section "A second,
+  independent, pre-existing defect this pass exposed but did not fix".
+
+  Specifier probe 2026-08-11: the reported behavior regression is NOT real —
+  `git show decd25110` shows BL-617 only wrapped the four wake-sending
+  sweeps in `outbound-wakes-suppressed?` and added `cooldown-sweep!`; the
+  seven sibling sweeps were already inside the `chase-sweep-every-cycles`
+  gate, each placed there deliberately by its own ticket (BL-353/BL-350/
+  BL-356/BL-437/BL-440/BL-423/BL-617 — every one's comment says "shares the
+  same cadence — no separate timeout, per the ticket"). What IS real: the
+  comment's closing clause "and keep running unconditionally" sits two lines
+  above that cadence gate and plainly reads as "every tick", when it means
+  "not suppressed while paused". That wording sent a careful coder into an
+  empirical investigation (manual sleep-bumping, then a wait_for_count
+  helper across five scripts) and produced a false defect report — a
+  measured, recurring comprehension cost, which is what this ticket fixes.
+
+invariants: []
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::pause-exempt, never every-tick::the reworded clause this ticket mandates; exists only once the fix is in the parcel"
+
+description: |
+  ## What
+
+  In `swarmforge/scripts/handoffd.bb`'s main loop, the BL-617 comment
+  introducing the `outbound-wakes-suppressed?` gate (currently at
+  ~lines 2786-2795) ends: "Sibling sweeps below this block (briefing/
+  context-clear/dead-letter/resource/push/fleet-status/answer-drain) are out
+  of this ticket's scope ... and keep running unconditionally."
+
+  "Unconditionally" there means "not suppressed while a pause is active" —
+  which is true. But the sentence sits directly inside
+  `(when (zero? (mod cycle chase-sweep-every-cycles)) ...)`, so its plain
+  reading — these sweeps run every tick — contradicts the code around it.
+  A careful reader took the plain reading (see `source:`).
+
+  ## Fix (mandated wording)
+
+  Replace the closing clause `and keep running unconditionally.` of that
+  comment block with (comment-formatted to match the surrounding style):
+
+      and are exempt ONLY from this pause gate — they
+      still share the chase-sweep-every-cycles gate above
+      (fire every ~10 polled cycles at best, and stretch
+      further under load: sweeps in this block run
+      serially, and whole cycles have been observed at
+      140-232s on Mac — see the BL-789 note at the loop
+      head). "Unconditional" here means pause-exempt,
+      never every-tick (BL-882).
+
+  Minor comment-line rewrapping of the surrounding block to keep the
+  comment column-width consistent is fine; changing any code is not.
+
+  ## Constraints
+
+  - COMMENT-ONLY. The diff to `handoffd.bb` must contain no non-comment
+    line changes: the seven sibling sweeps stay inside the cadence gate and
+    outside the pause gate, exactly as their own tickets specify.
+  - Do not "fix" the cadence itself. If anyone believes a sweep needs a
+    faster cadence, that is a new behavior ticket per sweep, not this one.
+
+  ## Out of scope
+
+  - Any change to sweep scheduling, gate structure, `poll-ms`, or
+    `chase-sweep-every-cycles`.
+  - The wiring tests' wait mechanics — already fixed in BL-878's own pass
+    (`wait_for_count` polling in the five affected scripts).
+
+  ## e2e QA procedure
+
+  1. `git diff <received-parcel-base>..<parcel> -- swarmforge/scripts/handoffd.bb`
+     shows only `;;` comment-line changes.
+  2. Grep the gate's comment block: the bare clause "keep running
+     unconditionally" is gone; the mandated clause (distinctive fragment
+     "pause-exempt, never every-tick") is present.
+  3. Start the daemon against a disposable fixture root (any existing
+     wiring test does this); confirm it still runs one full cycle clean —
+     i.e. the comment edit broke no reader syntax (bb parses the file).
+
+notes: |
+  The other half of the coder's report — per-gated-cycle serialization
+  making cooldown-sweep! (last in the chain) fire latest — is inherent to
+  the shared-cadence single-thread design that BL-222 onward deliberately
+  chose, and is now stated in the mandated comment text rather than left
+  as tribal knowledge.

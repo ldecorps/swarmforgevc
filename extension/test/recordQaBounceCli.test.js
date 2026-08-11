@@ -366,7 +366,11 @@ test('BL-608: recording the identical bounce twice leaves one entry on the ticke
   const root = mkRepo();
   const ticketPath = writeTicketYaml(root, 'BL-340');
   await runCli(root, flagArgs());
-  const second = await runCli(root, flagArgs({ commit: 'deadbeef00' }));
+  // BL-876: the ticket-side natural key now includes commit + by, so a
+  // truly IDENTICAL re-run (matching this test's own name) must repeat the
+  // same commit - varying it here (the pre-BL-876 fixture) is now a
+  // distinct bounce, not a duplicate.
+  const second = await runCli(root, flagArgs());
   assert.equal(second.ticketRecordUpdated, false);
   assert.equal(second.ticketRecordReason, 'duplicate');
   const yamlText = fs.readFileSync(ticketPath, 'utf8');

@@ -15,9 +15,18 @@ const {
 //
 //   #1/#3  bounce_count ALWAYS equals the entry-list length, and entries stay
 //          oldest-first as they accumulate;
-//   #4     re-recording the same bounce (natural key = date + failure class)
-//          is a byte-identical no-op, however long the history already is;
+//   #4     re-recording the same bounce (natural key = date + failure class +
+//          commit + by, widened by BL-876) is a byte-identical no-op,
+//          however long the history already is;
 //   #6     never throws, and never destroys the ticket body it was handed.
+//
+// BL-876 adds two more, declared invariants on that ticket rather than
+// shapes on this one: (1) the ticket record's dedup key is never coarser
+// than the bounce store's own bounceNaturalKey (qaBounce.ts), so any two
+// bounces that key keeps distinct also stay distinct bounce_history entries
+// here; (2) re-applying an already-present entry stays a byte-identical
+// no-op at any history length - widening the key must not degenerate into
+// appending unconditionally. See the two BL-876-labelled tests below.
 //
 // The round-trip (format -> merge -> parse recovers every field verbatim) is
 // what makes the record answerable from the ticket alone - the ticket's whole
@@ -68,7 +77,10 @@ function countInText(text) {
   return match ? Number(match[1]) : null;
 }
 
-const naturalKey = (e) => `${e.at}|${e.failureClass}`;
+// BL-876: mirrors bounceHistory.ts's own entryNaturalKey - must track the
+// source key exactly, or the oldest-first accumulation property below
+// silently stops testing what the module actually does.
+const naturalKey = (e) => `${e.at}|${e.failureClass}|${e.commit}|${e.by}`;
 
 // Applies a sequence of merges, returning the final text. Mirrors what
 // repeated QA bounces on one ticket do to that ticket's own YAML.
@@ -164,6 +176,99 @@ test('merging never throws and never destroys the ticket body it was handed', ()
       // not written over it.
       for (const line of body.split('\n').filter((l) => l.trim() !== '')) {
         assert.ok(text.includes(line), `merge dropped the ticket line: ${JSON.stringify(line)}`);
+      }
+    })
+  );
+});
+
+// ── BL-876 declared invariants (coder-authored, BL-654) ───────────────────
+//
+// Constructed pairs, not independent draws: a `base` bounce and a `variant`
+// that ALWAYS shares base's `at` and `failureClass` (a true collision
+// candidate under the pre-BL-876 date+class-only key - the exact shape
+// BL-819 reproduced) and is derived from base by flipping its commit's
+// first hex digit and/or stepping `by` to the next role in a fixed
+// rotation, never by an independent re-draw. That construction guarantees
+// every generated pair is (a) a coarse-key collision candidate by
+// construction and (b) genuinely distinct under bounceNaturalKey by
+// construction - no reliance on random non-collision.
+const { bounceNaturalKey } = require('../out/quality/qaBounce');
+
+const KNOWN_BY = ['QA', 'specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter'];
+const HEX_DIGITS = '0123456789abcdef';
+
+function flipFirstHexDigit(commit) {
+  const idx = HEX_DIGITS.indexOf(commit[0]);
+  return HEX_DIGITS[(idx + 1) % HEX_DIGITS.length] + commit.slice(1);
+}
+
+function nextBy(by) {
+  const idx = KNOWN_BY.indexOf(by);
+  return KNOWN_BY[(idx + 1) % KNOWN_BY.length];
+}
+
+const collisionBaseArb = fc.record({
+  at: dayArb,
+  failureClass: fc.constantFrom(...KNOWN_CLASSES),
+  blamed: fc.constantFrom(...KNOWN_BLAMED),
+  commit: commitArb,
+  by: fc.constantFrom(...KNOWN_BY),
+  evidence: evidenceArb,
+});
+
+function deriveVariant(base, mutation) {
+  return {
+    ...base,
+    commit: mutation === 'by' ? base.commit : flipFirstHexDigit(base.commit),
+    by: mutation === 'commit' ? base.by : nextBy(base.by),
+  };
+}
+
+test('BL-876 invariant 1: any two bounces bounceNaturalKey keeps distinct also stay distinct bounce_history entries', () => {
+  fc.assert(
+    fc.property(
+      ticketBodyArb,
+      collisionBaseArb,
+      fc.constantFrom('commit', 'by', 'both'),
+      (body, base, mutation) => {
+        const variant = deriveVariant(base, mutation);
+
+        // Sanity: a true same-day/-class collision candidate by construction.
+        assert.equal(variant.at, base.at);
+        assert.equal(variant.failureClass, base.failureClass);
+
+        const ticket = 'BL-876';
+        const storeKeyA = bounceNaturalKey({ ticket, failureClass: base.failureClass, at: base.at, commit: base.commit, by: base.by });
+        const storeKeyB = bounceNaturalKey({ ticket, failureClass: variant.failureClass, at: variant.at, commit: variant.commit, by: variant.by });
+        assert.notEqual(storeKeyA, storeKeyB, 'the constructed pair must be distinct under the bounce store\'s own key');
+
+        const afterBase = mergeBounceHistoryEntry(body, base);
+        const afterVariant = mergeBounceHistoryEntry(afterBase.text, variant);
+        assert.equal(afterVariant.updated, true, 'a store-distinct bounce must not be silently folded away as a duplicate');
+        assert.equal(afterVariant.reason, 'appended');
+        assert.equal(parseBounceHistoryEntries(afterVariant.text).length, 2);
+      }
+    )
+  );
+});
+
+test('BL-876 invariant 2: re-applying an already-present entry is a byte-identical no-op at any history length', () => {
+  const entryArbVariedBy = fc.record({
+    at: dayArb,
+    by: fc.constantFrom(...KNOWN_BY),
+    blamed: fc.constantFrom(...KNOWN_BLAMED),
+    failureClass: fc.constantFrom(...KNOWN_CLASSES),
+    commit: commitArb,
+    evidence: evidenceArb,
+  });
+  fc.assert(
+    fc.property(ticketBodyArb, fc.array(entryArbVariedBy, { minLength: 1, maxLength: 6 }), (body, entries) => {
+      const text = mergeAll(body, entries);
+      for (const entry of entries) {
+        const again = mergeBounceHistoryEntry(text, entry);
+        assert.equal(again.updated, false, 'widening the key must not degenerate into appending an exact re-run');
+        assert.equal(again.reason, 'duplicate');
+        assert.equal(again.text, text);
       }
     })
   );
