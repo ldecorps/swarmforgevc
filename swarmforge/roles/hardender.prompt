@@ -521,3 +521,22 @@ You are the hardender.
   caller's `:log!` override missed it and the line went to stdout instead of
   runtime.log; fix c6799e308f moved the log into `sweep!` after the final
   adapter map is resolved.)
+
+## `setsid cmd &` in a non-interactive script: `$!` IS the daemon — do not add pgroup-kill complexity (rule_proposal 2026-08-11, accepted)
+- BL-878's notes left open whether `kill "$!"` after `setsid cmd &` kills the
+  daemon or only a dead wrapper. Settled: in a plain non-interactive script
+  (job control off, no `set -m`), a backgrounded child stays in the SCRIPT's
+  process group, so it is not a process-group leader — util-linux `setsid`
+  then calls setsid(2) directly and execs the command WITHOUT forking, so `$!`
+  is the daemon's own pid. The `nohup` fallback execs directly too. Both
+  branches of `portable_spawn_daemon_or_fail` already kill the real daemon;
+  do not "harden" them with process-group kills or pid-discovery loops.
+- The guarantee's boundary: it holds ONLY while job control is off. An
+  interactive shell or `set -m` makes the bg job its own group leader, setsid
+  must fork, and `$!` is the (exited) wrapper. When a script's job-control
+  state is in doubt, verify with `ps -o pgid=` rather than assuming either way.
+- Carve-out unchanged: `expedite_cli.bb` deliberately depends on the resulting
+  process GROUP for its negative-pid kill (BL-878 out-of-scope) — this rule
+  never licenses simplifying that.
+  (Confirmed via `ps -o pgid=` twice, 2026-08-11: the hardener's BL-878 pass
+  and an independent specifier probe at acceptance.)

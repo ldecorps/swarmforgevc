@@ -74,11 +74,35 @@ test('mergeBounceHistoryEntry appends a distinct entry after an existing one, ol
 
 test('mergeBounceHistoryEntry is a no-op for an entry whose natural key already exists', () => {
   const first = mergeBounceHistoryEntry(ticketYaml(), entry());
-  const second = mergeBounceHistoryEntry(first.text, entry({ commit: 'deadbeef00' }));
+  // BL-876: the natural key is now date + class + commit + by, so a true
+  // re-run - identical in every field - is what collapses; varying commit
+  // (as this fixture did pre-BL-876) makes it a genuinely distinct bounce.
+  const second = mergeBounceHistoryEntry(first.text, entry());
   assert.equal(second.updated, false);
   assert.equal(second.reason, 'duplicate');
   assert.equal(second.text, first.text);
   assert.equal(parseBounceHistoryEntries(second.text).length, 1);
+});
+
+// ── BL-876: a same-day same-class bounce citing a distinct commit is no ──
+// ── longer folded away - the defect this ticket fixes ────────────────────
+
+test('mergeBounceHistoryEntry appends a same-day same-class bounce that cites a distinct commit', () => {
+  const first = mergeBounceHistoryEntry(ticketYaml(), entry());
+  const second = mergeBounceHistoryEntry(first.text, entry({ commit: 'deadbeef00' }));
+  assert.equal(second.updated, true);
+  assert.equal(second.reason, 'appended');
+  assert.equal(parseBounceHistoryEntries(second.text).length, 2);
+  assert.match(second.text, /bounce_count: 2\n/);
+});
+
+test('mergeBounceHistoryEntry appends a same-day same-class bounce from a distinct bouncing role', () => {
+  const first = mergeBounceHistoryEntry(ticketYaml(), entry());
+  const second = mergeBounceHistoryEntry(first.text, entry({ by: 'architect' }));
+  assert.equal(second.updated, true);
+  assert.equal(second.reason, 'appended');
+  assert.equal(parseBounceHistoryEntries(second.text).length, 2);
+  assert.match(second.text, /bounce_count: 2\n/);
 });
 
 // ── stale/disagreeing bounce_count is never trusted ──────────────────────

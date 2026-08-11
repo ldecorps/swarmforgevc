@@ -8,8 +8,8 @@ epic: swarm-reliability
 priority: 119
 direction: normal
 mutation_cost: low
-acceptance: specs/features/BL-876-bounce-history-keeps-every-distinct-same-day-bounce.feature.draft
-human_approval: pending
+acceptance: specs/features/BL-876-bounce-history-keeps-every-distinct-same-day-bounce.feature
+human_approval: approved
 approval_context: >
   Two things to sign off or overturn.
 
@@ -203,3 +203,8 @@ notes: |
     Outline and the three-bounce scenario, which needs its own second
     `Given`. Merging the identical-bounce case into the outline already took
     the findings from 25 to 12; the rest are structural, not drift.
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-11, by: documenter, blamed: coder, class: acceptance, commit: 3f07b16b45, evidence: backlog/evidence/BL-876-bounce-documenter-20260811.md }
