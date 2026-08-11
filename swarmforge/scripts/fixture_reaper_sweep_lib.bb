@@ -144,22 +144,20 @@
    without hand-duplicating every other real adapter here.
 
    BL-877: when live-process-paths! returns nil (liveness undetermined -
-   neither /proc nor lsof reachable), that is logged here for visibility,
-   then passed through as :pid->paths nil - pids-rooted-in already treats
-   nil like {} (nothing to kill), which is this reaper's own safe
-   direction regardless of whether liveness was determined or not."
+   neither /proc nor lsof reachable), it is passed through as :pid->paths
+   nil rather than coerced - pids-rooted-in already treats nil like {}
+   (nothing to kill), which is this reaper's own safe direction regardless
+   of whether liveness was determined or not. The visibility log for this
+   lives in sweep! itself (see its own comment), not here, so it reaches
+   whichever :log! the caller ends up overriding this map's default with."
   []
-  (let [log! default-log!
-        pid->paths (live-process-paths!)]
-    (when (nil? pid->paths)
-      (log! "liveness could not be determined this pass (no /proc, no lsof) - killing nothing this pass"))
-    {:list-entries! list-entries!
-     :entry-age-ms! entry-age-ms!
-     :pid->paths pid->paths
-     :kill-pid! kill-pid!
-     :kill-tmux-sockets-under! kill-tmux-sockets-under!
-     :delete-tree! (fn [p] (fs/delete-tree p {:force true}))
-     :log! log!}))
+  {:list-entries! list-entries!
+   :entry-age-ms! entry-age-ms!
+   :pid->paths (live-process-paths!)
+   :kill-pid! kill-pid!
+   :kill-tmux-sockets-under! kill-tmux-sockets-under!
+   :delete-tree! (fn [p] (fs/delete-tree p {:force true}))
+   :log! default-log!})
 
 (defn sweep!
   "adapters is {:list-entries! fn :entry-age-ms! fn :pid->paths map
@@ -169,7 +167,16 @@
    scan - a reapable entry ordered after the per-tick cap is still reaped
    within a bounded number of ticks (the window advances and wraps every
    call, regardless of how many examined entries turn out non-reapable),
-   never re-scanning the same dead window forever."
+   never re-scanning the same dead window forever.
+
+   BL-877 bounce fix: the liveness-undetermined visibility log fires HERE,
+   using the already-resolved :log! below, not inside default-adapters -
+   default-adapters returns before a caller's :log! override (assoc'd onto
+   its result) ever takes effect, so logging there means the message goes
+   through default-log! (stdout) even when a caller like operator_runtime.bb
+   overrides :log! to write into its own runtime.log. Every other message
+   this sweep produces already goes through this same resolved log!; this
+   one was the sole exception."
   ([] (sweep! (default-adapters)))
   ([adapters]
    (let [root (sweep-root)
@@ -177,6 +184,8 @@
          threshold-ms (stale-threshold-ms)
          cap (max-per-tick)
          log! (or (:log! adapters) default-log!)]
+     (when (nil? (:pid->paths adapters))
+       (log! "liveness could not be determined this pass (no /proc, no lsof) - killing nothing this pass"))
      (when (fs/exists? root)
        (let [names ((:list-entries! adapters) root)
              cursor (bounded-delete-sweep-lib/read-cursor (cursor-file))
