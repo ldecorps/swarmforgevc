@@ -1,0 +1,148 @@
+id: BL-878
+title: "DEFECT — nine handoffd wiring tests spawn their daemon through `setsid`, which stock macOS does not ship; the daemon never starts and each test dies as a wait-loop timeout rather than a named error"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 118
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-878-setsid-free-daemon-spawn-in-wiring-tests.feature.draft
+human_approval: approved
+approval_context: >
+  New feature draft needs review. No scope fork to decide here: the fix shape is
+  already settled by BL-802 (production, `start_babysitterd.sh`) and by one
+  sibling test in this very suite that already does it correctly
+  (`test_handoffd_role_context_clear_skip_rotation_router.sh:65`), so this is
+  the nine remaining sites being brought to a convention that already exists
+  rather than a new design.
+
+  The one judgement worth your eye is the second invariant: the ticket asks for
+  the missing tool to fail LOUD, not just to be worked around. Without that, the
+  next Linux-only tool to go missing hides in a timeout exactly as this one did
+  for weeks.
+
+source: |
+  Coder note to specifier, 2026-08-11 (handoff
+  60_20260811T005234Z_000155_from_coder): "2 macOS gaps surfaced via BL-874:
+  /proc dep (BL-413), setsid dep (BL-349)". This is the second of the two; the
+  `/proc` half is BL-877.
+
+  Surfaced, not caused, by BL-874: `test_handoffd_stuck_escalation_email_wiring.sh`
+  previously died at its `date -d`/`touch -d` line and never reached the spawn.
+  Coder's observation, `backlog/evidence/BL-874-coder-pass-20260811.md`:
+  `env: setsid: No such file or directory`.
+
+  Re-probed and widened by the specifier on this host, 2026-08-11: the coder's
+  note named one script; a suite-wide grep found TEN unguarded call sites across
+  NINE scripts (below). `command -v setsid` returns non-zero on this host.
+
+invariants:
+  - "A test that backgrounds a daemon leaves no daemon running after its own cleanup, on a host with setsid and on a host without."
+  - "A missing external tool makes a test fail immediately, naming the tool — never as a downstream wait-loop timeout that reads as a slow or flaky daemon."
+
+required_wiring:
+  - "swarmforge/scripts/test/test_handoffd_stuck_escalation_email_wiring.sh::command -v setsid::the site the coder actually hit"
+  - "swarmforge/scripts/test/test_handoffd_answer_file_drain_wiring.sh::command -v setsid::two sites in this file"
+  - "swarmforge/scripts/test/test_handoffd_pause_auto_resume_wiring.sh::command -v setsid::two sites in this file"
+
+description: |
+  ## What
+
+  `setsid` is util-linux and is absent from stock macOS. Ten call sites across
+  nine scripts under `swarmforge/scripts/test/` spawn the handoff daemon through
+  it unguarded:
+
+  | script | line(s) |
+  |---|---|
+  | `test_handoffd_answer_file_drain_wiring.sh` | 75, 131 |
+  | `test_handoffd_cooldown_sweep_wiring.sh` | 82 |
+  | `test_handoffd_dead_letter_notify_wiring.sh` | 77 |
+  | `test_handoffd_pause_auto_resume_wiring.sh` | 84, 140 |
+  | `test_handoffd_push_sweep_wiring.sh` | 85 |
+  | `test_handoffd_resource_sample_wiring.sh` | 85 |
+  | `test_handoffd_role_context_clear_wiring.sh` | 123 |
+  | `test_handoffd_stuck_escalation_email_wiring.sh` | 109 |
+
+  A tenth script, `test_handoffd_role_context_clear_skip_rotation_router.sh:65`,
+  already does it correctly and is the in-suite model:
+
+  ```sh
+  if command -v setsid >/dev/null 2>&1; then
+    env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" setsid bb "$HANDOFFD" "$ROOT" &
+  else
+    env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" nohup bb "$HANDOFFD" "$ROOT" >/dev/null 2>&1 &
+  fi
+  ```
+
+  ## Why the failure is invisible
+
+  The spawn is backgrounded (`... &`), so `env: setsid: No such file or
+  directory` goes to a background job and the script keeps running. The daemon
+  simply never exists, and the test dies later in `wait_for_log`'s polling loop —
+  presenting as a timeout on a slow daemon, not as a missing tool. That is why
+  nine scripts sat dark rather than one obvious red.
+
+  ## Why it matters
+
+  macOS is a declared target OS and is the host this swarm runs on.
+  `swarmforge/scripts/test/` is the sole gate for the Babashka layer
+  (engineering.prompt, Startup Tools). Nine of the handoff daemon's own wiring
+  tests — the tests covering push sweep, dead-letter notify, pause/auto-resume,
+  cooldown sweep, answer-file drain, resource sampling, role context clear and
+  stuck-escalation email — cannot pass here.
+
+  ## Constraints
+
+  - Follow BL-802's established shape (prefer `setsid` when present, else plain
+    `nohup ... &`), and the in-suite precedent quoted above. Do not invent a
+    third spelling of this guard; if it is worth factoring into one shared
+    helper the nine scripts source, that is the implementer's call and is
+    welcome — but the guard's SEMANTICS must not vary between sites.
+  - Cleanup must still reap the daemon in BOTH branches. These scripts kill a
+    single pid (`kill "$DAEMON_PID"`), not a process group, so verify what `$!`
+    actually refers to on each branch — a fix that trades a dark test for a
+    leaked background daemon is not a fix. See the notes below.
+  - Behaviour of the nine scripts must not change: each still asserts what it
+    asserted before, and each still gets a daemon detached enough to survive the
+    subshell that started it.
+
+  ## Out of scope
+
+  - The `/proc` liveness gap surfaced by the same coder pass — that is BL-877.
+  - `swarmforge/scripts/expedite_cli.bb`, which also uses `setsid` (line 97) and
+    deliberately relies on the resulting process GROUP for its negative-pid
+    kill. That is production code with a real semantic dependency on setsid, not
+    a test-only convenience, and needs its own analysis.
+  - `start_babysitterd.sh` — already guarded by BL-802.
+
+  ## e2e QA procedure
+
+  1. Confirm the host has no `setsid`: `command -v setsid` returns non-zero.
+  2. Run each of the nine scripts with `bash <path>`; every one exits 0.
+  3. Confirm no leak: after the full run, no `bb .../handoffd.bb` process
+     remains (check by fixture ROOT, never a bare process-name pattern — see
+     engineering.prompt's guardrail on broad `ps` patterns).
+  4. Confirm the loud-failure property: stub a PATH with the daemon's own
+     interpreter removed, run one script, and confirm it fails naming the
+     missing tool rather than sitting out its `wait_for_log` timeout.
+  5. Linux parity: on a host WITH `setsid`, the same nine scripts still exit 0
+     and still take the `setsid` branch.
+
+notes: |
+  - `$!` subtlety, for the implementer and the reviewer: with `setsid cmd &`,
+    `$!` is the pid of `setsid` itself, which may or may not be the pid of the
+    daemon depending on whether setsid forks (it execs directly when it is not
+    already a process-group leader). With `nohup cmd &` it is the daemon's own
+    pid. So the two branches can differ in what `kill "$DAEMON_PID"` actually
+    kills. This is exactly the kind of difference that leaves an orphaned
+    background daemon behind, which is why it is an invariant and a QA step
+    rather than a footnote.
+  - BL-349 (`backlog/done/BL-349-stuck-escalation-email-headless.yaml`,
+    2026-07-13) is where the pattern entered the suite; BL-802 is where the
+    production side was fixed and is the precedent this ticket follows.
+  - Related but distinct: the hardener's accepted rule of 2026-08-11
+    (`swarmforge/roles/hardender.prompt`) covers fixture files leaked by a
+    KILLED run. This ticket covers daemons leaked by a NORMAL run on a host
+    missing an assumed tool.
