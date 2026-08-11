@@ -1,6 +1,10 @@
 # Raw intake — parent-orphaned tmp front-desk bridge/bot skipped the age gate; human-landed fix needs swarm stamp
 
-Status: new intake, not minted. Capture only (human via Cursor 2026-08-10
+Status: **ARCHIVED** — minted as **BL-879**
+(`backlog/paused/BL-879-swarm-stamp-parent-orphaned-front-desk-hotfix.yaml`),
+ledger entry 36ea0109e9 linked. Specifier 2026-08-11.
+
+Was: new intake, not minted. Capture only (human via Cursor 2026-08-10
 ~21:30 CEST, landed 2026-08-11). **Operator hotfix already in the tree** —
 same posture as BL-811 / BL-849: commit makes it reviewable; this intake
 asks the swarm to stamp it off through a high-severity review ticket, not

@@ -8,7 +8,7 @@ epic: code-quality-gates
 priority: 118
 direction: normal
 mutation_cost: medium
-acceptance: specs/features/BL-877-portable-process-liveness-without-proc.feature.draft
+acceptance: specs/features/BL-877-portable-process-liveness-without-proc.feature
 human_approval: approved
 approval_context: >
   One deliberate scope call to sign off or overturn, plus a new feature draft.
@@ -144,3 +144,6 @@ notes: |
     facility, degrade loudly.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-11, by: hardender, blamed: coder, class: behavior, commit: 61976261d, evidence: backlog/evidence/BL-877-bounce-20260811.md }

@@ -20,6 +20,10 @@ note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
 
 make_project_fixture() {
+  # NOTE: called as `x="$(make_project_fixture)"` at the call site, which
+  # runs this function in a subshell - appending to TMP_DIRS in here would
+  # only mutate the subshell's copy and silently fail to register the dir.
+  # The caller appends the returned path to TMP_DIRS itself.
   local d; d="$(mktemp -d)"
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
   copy_operator_runtime_sandbox "$SRC" "$d/swarmforge/scripts"
@@ -30,10 +34,13 @@ source "$SCRIPT_DIR/../portable_time_lib.sh"
 old_mtime() { portable_touch_relative 2 hours "$1"; }
 
 LIVE_PIDS=()
+# BL-801: guard the empty-array case under stock macOS bash 3.2's `set -u`.
+TMP_DIRS=()
 cleanup() {
   for p in "${LIVE_PIDS[@]:-}"; do
     [[ -n "$p" ]] && kill -TERM "$p" 2>/dev/null || true
   done
+  rm -rf ${TMP_DIRS[@]+"${TMP_DIRS[@]}"}
 }
 trap cleanup EXIT
 
@@ -49,7 +56,9 @@ run_tick() {
 
 # ── undetermined: neither /proc (already absent) nor lsof (forced absent) ──
 PROJECT="$(make_project_fixture)"
+TMP_DIRS+=("$PROJECT")
 REAP_ROOT="$(mktemp -d)"
+TMP_DIRS+=("$REAP_ROOT")
 STALE_ORPHAN="$REAP_ROOT/aps-stale-orphan"
 mkdir -p "$STALE_ORPHAN"
 
@@ -73,10 +82,6 @@ check "undetermined: the stale root itself is still removed (the reaper's own sa
   '[[ ! -e "$STALE_ORPHAN" ]]'
 check "undetermined: the reaper records its own distinct liveness-undetermined message" \
   'grep -q "liveness could not be determined this pass (no /proc, no lsof) - killing nothing this pass" "$RUNTIME_LOG"'
-
-kill -TERM "$ORPHAN_PID" 2>/dev/null || true
-LIVE_PIDS=()
-rm -rf "$PROJECT" "$REAP_ROOT"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "operator_runtime fixture-reaper-sweep liveness-undetermined: ALL CHECKS PASSED"
