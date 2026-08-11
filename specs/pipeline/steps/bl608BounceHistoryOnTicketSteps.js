@@ -112,9 +112,12 @@ function registerSteps(registry) {
   });
 
   registry.define(/^that same bounce is recorded again$/, (ctx) => {
-    // Same date + failure class -> same natural key as the first recording,
-    // even with a different commit hex - the idempotency case.
-    ctx.result = runCli(ctx, { commit: 'deadbeef00' });
+    // BL-876: the ticket-side natural key is now date + class + commit + by
+    // (matching the bounce store's own bounceNaturalKey), so "that same
+    // bounce" must be identical in every field - including commit - to
+    // collapse to one entry. Varying commit here (the pre-BL-876 fixture)
+    // was itself the defect: a distinct commit is a distinct bounce now.
+    ctx.result = runCli(ctx, { commit: 'abc1234567' });
   });
 
   registry.define(/^a later distinct bounce is recorded against the ticket$/, (ctx) => {

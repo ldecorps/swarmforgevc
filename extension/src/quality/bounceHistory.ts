@@ -31,11 +31,16 @@ const ENTRY_LINE = /^ {2}- \{ at: ([^,]+), by: ([^,]+), blamed: ([^,]+), class: 
 const BOUNCE_COUNT_LINE = /^bounce_count:[^\n]*\n?/m;
 const BOUNCE_HISTORY_BLOCK = /^bounce_history:[ \t]*\n(?:^ {2}-\s*\{[^\n]*\}[ \t]*\n?)*/m;
 
-// Idempotency key: date + failure class, mirroring qaBounceNaturalKey's own
-// dateOnly + failureClass contract (ticket is implicit - this is always one
-// ticket's own file).
-function entryNaturalKey(entry: Pick<BounceHistoryEntry, 'at' | 'failureClass'>): string {
-  return `${entry.at}|${entry.failureClass}`;
+// BL-876: date + failure class + commit + by, mirroring bounceNaturalKey's
+// own dateOnly|failureClass|commit|by contract (qaBounce.ts) minus `ticket`,
+// which is implicit - this is always one ticket's own file. Deliberately
+// NOT qaBounceNaturalKey's coarser date+failureClass-only key: that key
+// left a second same-day same-class bounce (a different reviewing role, or
+// the same role citing a different commit after rework) silently folded
+// into the first as a `duplicate` no-op, understating bounce_count and
+// dropping the entry the lifecycle ledger reads.
+function entryNaturalKey(entry: Pick<BounceHistoryEntry, 'at' | 'failureClass' | 'commit' | 'by'>): string {
+  return `${entry.at}|${entry.failureClass}|${entry.commit}|${entry.by}`;
 }
 
 export function formatBounceHistoryEntry(entry: BounceHistoryEntry): string {
@@ -84,11 +89,11 @@ function appendBlock(text: string, entries: BounceHistoryEntry[]): string {
 // Pure: merges one new bounce entry into a ticket's raw YAML text.
 // bounce_count is always recomputed from the resulting list - a stale or
 // tampered on-disk count is never trusted. A duplicate on the natural key
-// (date + failure class) is a no-op, matching qaBounceNaturalKey's own
-// idempotency contract. Never throws: a ticket whose YAML doesn't even
-// parse is reported unparseable so the caller can degrade (BL-608's
-// best-effort, never-blocking requirement) without risking corrupting an
-// already-broken file further.
+// (date + failure class + commit + by, BL-876) is a no-op, matching the
+// bounce store's own bounceNaturalKey idempotency contract. Never throws: a
+// ticket whose YAML doesn't even parse is reported unparseable so the
+// caller can degrade (BL-608's best-effort, never-blocking requirement)
+// without risking corrupting an already-broken file further.
 export function mergeBounceHistoryEntry(yamlText: string, entry: BounceHistoryEntry): BounceHistoryMergeResult {
   if (!isParseableYaml(yamlText)) {
     return { text: yamlText, updated: false, reason: 'unparseable' };
