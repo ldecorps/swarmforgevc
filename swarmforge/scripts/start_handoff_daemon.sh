@@ -19,6 +19,13 @@ fi
 WORKING_DIR="${1:?usage: start_handoff_daemon.sh <project-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
+# BL-796: prepend resolved bb/node (including nvm-only node) onto PATH
+# before anything below launches handoffd - a cron/minimal-PATH invocation
+# that finds bb but not node fails every node-driven sweep silently (BL-789
+# found bb missing; node was the still-missing half).
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/operator_path_lib.sh"
+swarmforge_prepend_operator_bins
 DAEMON_DIR="$WORKING_DIR/.swarmforge/daemon"
 HANDOFFD_LOG="$DAEMON_DIR/handoffd.log"
 HANDOFFD_BB="${HANDOFFD_BB:-$SCRIPT_DIR/handoffd.bb}"

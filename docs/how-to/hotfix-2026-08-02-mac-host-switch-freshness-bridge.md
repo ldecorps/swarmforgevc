@@ -83,6 +83,47 @@ descriptions above, rather than replaying a stale diff:
    disagrees (it is entirely independent of the freshness/bridge fixes
    above).
 
+## Follow-up 2026-08-03 — nvm node on PATH
+
+The 2026-08-02 bake above found `bb` but not nvm-only `node`, so a freshness
+restart handed handoffd a PATH on which every `process/sh ["node" …]` sweep
+failed with `Cannot run program "node" ... No such file or directory` — the
+daemon looked alive while its node-driven sweeps silently did nothing. Fixed
+by hand the next day; adopted here as BL-796 with two corrections:
+
+- **`swarmforge/scripts/operator_path_lib.sh`** (new, tracked here for the
+  first time) — two shared POSIX-sh helpers: `swarmforge_nvm_node_bin_dir`
+  (resolve an nvm-installed node's bin dir, preferring
+  `~/.nvm/alias/default`, else the newest version BY VERSION ORDER — the
+  hand fix's `ls | tail -1` picked the lexicographically-last directory,
+  which ranks `v9.11.2` after `v22.1.0`) and `swarmforge_prepend_operator_bins`
+  (prepend operator bins + resolved bb/node onto PATH, never shadowing a
+  binary the caller's own PATH already resolves).
+- **`swarmforge/scripts/start_handoff_daemon.sh`** — sources the lib and
+  prepends before either `nohup bb ...` launch, so any restart path hands
+  handoffd (and its supervisor) a PATH with node on it.
+- **`swarmforge/scripts/daemon_log_freshness_check.sh`** — sources the lib
+  and calls `swarmforge_prepend_operator_bins` on top of its existing
+  `FRESHNESS_EXTRA_PATH_DIRS` bake, so a restart it triggers resolves node
+  too.
+- **`swarmforge/scripts/install_freshness_cron.sh`** — calls
+  `swarmforge_nvm_node_bin_dir` directly (the SAME resolver the runtime
+  prepend falls back to — one resolver, not two independently reimplemented
+  ones) to bake a node directory into the installed crontab's `PATH=` when
+  node is nvm-only.
+
+Verify:
+
+```bash
+bash swarmforge/scripts/test/test_daemon_log_freshness.sh
+bash specs/pipeline/scripts/run_acceptance.sh \
+  specs/features/BL-796-nvm-node-path-follow-up-adopt.feature
+npm run test:properties -- test/bl796NvmNodePathFollowUpAdoptInvariants.property.test.js
+```
+
+Acceptance feature:
+`specs/features/BL-796-nvm-node-path-follow-up-adopt.feature`.
+
 ## Verify
 
 ```bash
