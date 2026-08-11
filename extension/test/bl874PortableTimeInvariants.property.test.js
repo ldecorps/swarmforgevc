@@ -166,3 +166,23 @@ test(
   },
   60000
 );
+
+// ─── Hardener addition: portable_relative_touch_stamp's unsupported-unit
+// error path had zero coverage anywhere in the repo - none of the six
+// call sites this ticket fixed ever pass anything but
+// seconds/minutes/hours, so the defensive `case *)` branch was live,
+// untested production code. Confirms it fails loudly (nonzero exit, no
+// mtime written) rather than silently no-oping or writing a garbage
+// stamp for a caller typo. ────────────────────────────────────────────
+test('portable_relative_touch_stamp rejects an unsupported unit rather than silently miscomputing', () => {
+  const dir = mkTmpDir('bl874-portable-time-badunit-');
+  const file = path.join(dir, 'f');
+  fs.writeFileSync(file, '');
+  const before = fs.statSync(file).mtimeMs;
+
+  const result = backdateViaSharedLib(file, 5, 'fortnights');
+
+  assert.notEqual(result.status, 0, 'expected a nonzero exit for an unsupported unit');
+  assert.match(result.stderr, /unsupported unit/);
+  assert.equal(fs.statSync(file).mtimeMs, before, "expected the file's mtime to be untouched on error");
+});
