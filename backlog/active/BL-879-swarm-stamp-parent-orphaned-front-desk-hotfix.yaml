@@ -9,7 +9,7 @@ priority: 23
 direction: human-requested
 depends_on: []
 mutation_cost: low
-acceptance: specs/features/BL-879-swarm-stamp-parent-orphaned-front-desk-hotfix.feature.draft
+acceptance: specs/features/BL-879-swarm-stamp-parent-orphaned-front-desk-hotfix.feature
 
 human_approval: approved
 approval_context: >
