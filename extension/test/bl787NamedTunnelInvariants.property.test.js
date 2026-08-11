@@ -8,6 +8,21 @@ const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { isolatedEnv } = require('./helpers/namedTunnelEnvIsolation');
 
+// BL-871 QA bounce D2 (2026-08-11): invariants 1 and 3 below launch real
+// background subprocesses (fake cloudflared/caffeinate scripts that
+// themselves fork a `sleep 30 &` and `wait`) via spawnSync, then assert on
+// their real liveness/teardown. The property lane's worker-pool cap bounds
+// Vitest's own fork count and heap, not the real child-process CPU those
+// forks consume - under contention from other forks doing the same, QA
+// measured invariant 1's existing 60000ms budget insufficient (it not only
+// timed out but did so late, since the synchronous spawnSync calls block
+// the event loop that would otherwise report the timeout promptly). Raised
+// to comfortably exceed that; invariant 3 shares the identical
+// launch/stop-real-background-process shape and the same original 60000ms
+// budget, so it carries the same risk even though it was not the one QA's
+// particular 3 runs happened to catch.
+const SUBPROCESS_HEAVY_TIMEOUT_MS = 240000;
+
 // BL-787 invariants (property authorship rests with the coder, first pass -
 // BL-654). Drives the REAL launch_resident_spy_tunnel.sh /
 // setup_bubble_named_tunnel.sh / check_bubble_named_tunnel_dns.sh /
@@ -128,9 +143,20 @@ test(
       fs.writeFileSync(path.join(cfDir, 'cred.json'), '{}');
 
       try {
+        // BL-871 QA bounce D2 (2026-08-11): this property failed under host
+        // contention not via the outer vitest timeout but via a genuine
+        // assertion - the launcher's own poll loop, budgeted here to 40
+        // attempts * 0.05s = 2s (vs. the real launcher's own 45-attempt *
+        // 1s = 45s default; see launch_resident_spy_tunnel.sh) to keep the
+        // property fast, could not observe the fake cloudflared's
+        // already-written log content within 2s of real time under load.
+        // Widened to a 20s budget (200 * 0.1s) - still 2x faster than
+        // production's default, comfortably inside SUBPROCESS_HEAVY_TIMEOUT_MS
+        // across 10 numRuns, but tolerant of scheduling delay under
+        // contention. The outer spawnSync timeout is raised to match.
         const result = spawnSync('bash', [LAUNCH, dir], {
           encoding: 'utf8',
-          timeout: 15000,
+          timeout: 30000,
           env: isolatedEnv({
             CLOUDFLARED: fakeCloudflared,
             HOME: dir,
@@ -138,8 +164,8 @@ test(
             SWARMFORGE_NAMED_TUNNEL_HOSTNAME: 'bubble.example.com',
             SWARMFORGE_CLOUDFLARED_CONFIG: configYml,
             SWARMFORGE_SKIP_CAFFEINATE: '1',
-            SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS: '40',
-            SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL: '0.05',
+            SWARMFORGE_NAMED_TUNNEL_WAIT_ATTEMPTS: '200',
+            SWARMFORGE_NAMED_TUNNEL_WAIT_INTERVAL: '0.1',
           }),
         });
 
@@ -164,7 +190,7 @@ test(
       { numRuns: 10 }
     );
   },
-  60000
+  SUBPROCESS_HEAVY_TIMEOUT_MS
 );
 
 // ── Invariant 2 ──────────────────────────────────────────────────────────
@@ -323,7 +349,11 @@ test(
         }
 
         try {
-          const launchResult = spawnSync('bash', [LAUNCH, dir], { encoding: 'utf8', timeout: 15000, env });
+          // BL-871 QA bounce D2 follow-up (2026-08-11): same mechanism as
+          // invariant 1's fix above - under contention it's this inner
+          // spawnSync timeout, not the outer test timeout, that can kill
+          // the real launch/stop subprocess. Doubled to match.
+          const launchResult = spawnSync('bash', [LAUNCH, dir], { encoding: 'utf8', timeout: 30000, env });
           assert.equal(
             launchResult.status,
             0,
@@ -339,7 +369,7 @@ test(
 
           const stopResult = spawnSync('bash', [STOP, dir], {
             encoding: 'utf8',
-            timeout: 15000,
+            timeout: 30000,
             // isolatedEnv here isn't just correctness: stop_ancillary_services.sh's
             // reap_named_tunnel_orphans reads ambient SWARMFORGE_NAMED_TUNNEL to
             // scope a pgrep-based reap (BL-857) - an inherited real operator
@@ -361,5 +391,5 @@ test(
       { numRuns: 6 }
     );
   },
-  60000
+  SUBPROCESS_HEAVY_TIMEOUT_MS
 );
