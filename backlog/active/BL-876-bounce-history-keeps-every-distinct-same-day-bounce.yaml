@@ -205,3 +205,6 @@ notes: |
     the findings from 25 to 12; the rest are structural, not drift.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-11, by: documenter, blamed: coder, class: acceptance, commit: 3f07b16b45, evidence: backlog/evidence/BL-876-bounce-documenter-20260811.md }
