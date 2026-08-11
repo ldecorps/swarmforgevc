@@ -47,12 +47,12 @@ invariants:
   - "The same relative input yields the same resulting mtime on BSD and on GNU userlands — making macOS green at GNU/Linux's expense is a failure, not a trade."
 
 required_wiring:
-  - "swarmforge/scripts/test/test_operator_runtime_sandbox_sweep.sh::<helper-name>::the helper must actually be called here, not merely exist"
-  - "swarmforge/scripts/test/test_operator_runtime_sandbox_sweep_bounded_progress.sh::<helper-name>::same"
-  - "swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep.sh::<helper-name>::same"
-  - "swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep_bounded_progress.sh::<helper-name>::same"
-  - "swarmforge/scripts/test/test_operator_runtime_tick.sh::<helper-name>::same — this is the BL-310 seed-race site the architect reported"
-  - "swarmforge/scripts/test/test_handoffd_stuck_escalation_email_wiring.sh::<helper-name>::same — this site fails twice, on `date -d` then on the empty `touch -d`"
+  - "swarmforge/scripts/test/test_operator_runtime_sandbox_sweep.sh::portable_touch_relative::the helper must actually be called here, not merely exist"
+  - "swarmforge/scripts/test/test_operator_runtime_sandbox_sweep_bounded_progress.sh::portable_touch_relative::same"
+  - "swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep.sh::portable_touch_relative::same"
+  - "swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep_bounded_progress.sh::portable_touch_relative::same"
+  - "swarmforge/scripts/test/test_operator_runtime_tick.sh::portable_touch_relative::same — this is the BL-310 seed-race site the architect reported"
+  - "swarmforge/scripts/test/test_handoffd_stuck_escalation_email_wiring.sh::portable_touch_relative::same — this site fails twice, on `date -d` then on the empty `touch -d`"
   - "extension/test/portableTimeGuard.test.js::swarmforge/scripts::the zero-violation assertion must sit in the suite every parcel runs (the BL-872 / BL-420 precedent). Its absence is exactly what let this rot for three weeks."
 
 description: |
@@ -131,5 +131,20 @@ notes: |
   - BL-613 evidence trail: `backlog/evidence/BL-613-architect-sendback-20260724.md`
     (cleaner's rationale for the rewrite) and
     `backlog/evidence/BL-613-architect-pass-20260724.md` §2 (the deferral).
+  - SPEC AMENDMENT 2026-08-11 (specifier, after a documenter bounce): the six
+    `required_wiring:` entries above shipped carrying the literal placeholder
+    `<helper-name>`, left unresolved because the helper's name was the
+    implementer's call. The pre-QA gate matches a wiring pattern as a plain
+    substring (`pre_qa_gate_lib.bb`, `str/includes?`), so a placeholder can
+    never match and the gate blocked the documenter's forward to QA on all six
+    entries. Resolved to the name the implementation actually chose,
+    `portable_touch_relative` (`swarmforge/scripts/portable_time_lib.sh`),
+    verified present at the documenter's commit 9e4e2f55b in all six test
+    files. No behavioral change to the ticket — the implementation was already
+    correct; only this field was unmatchable. Lesson: a `required_wiring:`
+    pattern must be a literal string that will exist, never a placeholder to be
+    filled in later; when the name is genuinely the implementer's call, scope
+    the pattern to something already fixed (the sourced lib filename) instead.
+    Evidence: `backlog/evidence/BL-874-spec-bounce-20260811.md`.
 
 assigned_to: coder

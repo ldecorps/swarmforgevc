@@ -241,6 +241,20 @@ You are the specifier.
   documenter's handoff to QA if the named path/pattern is absent at the
   commit being sent — dogfood this on any ticket building a mechanism that
   itself needs a call site, the same way BL-531 declares its own.
+- **A `pattern` is matched as a plain substring, so it must be a literal that
+  will exist — NEVER a placeholder (BL-874).** `pre_qa_gate_lib.bb` tests
+  `(str/includes? content pattern)` against the target file at the cited
+  commit; there is no expansion step, so `path::<helper-name>::why` can never
+  match and fails the gate on every entry that carries it. When the identifier
+  is genuinely the implementer's call at spec time, anchor the pattern to
+  something ALREADY fixed — the lib filename the call sites must source, an
+  existing function they must reach — rather than a name that does not yet
+  exist. Writing "`<placeholder>` — fill this in later" is not deferring a
+  decision; it is arming a gate against a string nobody will ever write.
+  (BL-874 blocked the documenter's forward to QA on six entries at once, and
+  the fix reached its own worktree only via a `note` — the gate reads
+  `required_wiring:` from the SENDER's checkout, so a `main` commit alone does
+  not clear it.)
 
 ## A prompt/constitution deliverable is YOURS to land, and no gate will remind you (BL-798)
 - When a ticket's deliverable includes prose in a file you own — a
