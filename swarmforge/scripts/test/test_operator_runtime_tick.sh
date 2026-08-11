@@ -589,7 +589,10 @@ rm -rf "$F"
 # ── 22: grace window elapsed (pid-file mtime backdated) -> hibernates as before
 F="$(make_roster_fixture)"
 : > "$F/.swarmforge/operator/runtime.pid"
-touch -d "-5 minutes" "$F/.swarmforge/operator/runtime.pid"
+# BL-874: BSD touch has no -d relative-time form; portable_time_lib.sh
+# hides the BSD/GNU split behind one shared helper.
+source "$SCRIPT_DIR/../portable_time_lib.sh"
+portable_touch_relative 5 minutes "$F/.swarmforge/operator/runtime.pid"
 OUT22="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
 check "swarm-seed-race-02: hibernates once the grace window has elapsed" \
   '[[ -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ ! -s "$F/.swarmforge/roles.tsv" ]]'
