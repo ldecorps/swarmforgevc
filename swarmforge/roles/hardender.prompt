@@ -506,3 +506,18 @@ You are the hardender.
   (Incident: BL-871/BL-874 pass 2026-08-11 — a Gherkin-mutation run killed
   after scenario 04 timed out under load 28-48 on 4 cores left an orphaned
   fixture that pgrep/tmux reap checks missed.)
+
+## A builder's side effect fires on its own defaults — a post-return override never sees it (rule_proposal 2026-08-11, accepted)
+- When a factory/builder performs a side effect keyed off a value it RETURNS
+  (e.g. logging through an adapter in the returned map), that effect runs with
+  the builder's DEFAULT — a caller that assoc's an override after the call gets
+  the override everywhere EXCEPT that already-fired effect.
+- Fix pattern: move the side effect to the call site that resolves the FINAL
+  value — fire it post-resolve, never inside the builder.
+- Distinct from BL-863 (a construction-time caller freezing a pure per-call
+  resolver): there a binding was captured too early; here the effect itself
+  fires before the override exists at all.
+  (Incident: BL-877 D1 — default-adapters logged during construction, so the
+  caller's `:log!` override missed it and the line went to stdout instead of
+  runtime.log; fix c6799e308f moved the log into `sweep!` after the final
+  adapter map is resolved.)

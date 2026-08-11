@@ -8,7 +8,7 @@ epic: code-quality-gates
 priority: 118
 direction: normal
 mutation_cost: medium
-acceptance: specs/features/BL-877-portable-process-liveness-without-proc.feature.draft
+acceptance: specs/features/BL-877-portable-process-liveness-without-proc.feature
 human_approval: approved
 approval_context: >
   One deliberate scope call to sign off or overturn, plus a new feature draft.
