@@ -9,9 +9,9 @@ priority: 23
 direction: human-requested
 depends_on: []
 mutation_cost: low
-acceptance: specs/features/BL-879-swarm-stamp-parent-orphaned-front-desk-hotfix.feature.draft
+acceptance: specs/features/BL-879-swarm-stamp-parent-orphaned-front-desk-hotfix.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   The human landed this fix by hand (Cursor 2026-08-10, committed 2026-08-11 as
   36ea0109e9) and asked for a swarm stamp-off rather than a rewrite — the same
@@ -162,3 +162,5 @@ notes: |
      and confirm a young front-desk fixture is NOT reaped (age gate governs).
   5. Both unit runners green; record the Babashka degraded-gate fallback
      explicitly in the QA evidence.
+
+assigned_to: coder
