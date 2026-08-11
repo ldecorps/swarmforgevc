@@ -55,6 +55,13 @@ notes: |
   BL-878 (also severity high, approved, priority 118 vs this ticket's 53 —
   but priority ordering only applies within the eligible/approved set).
 
+  2026-08-11 20:3x (coordinator): open-slot nudge recurred, same top
+  candidate — still blocked, still no `human_approval` field. Between the
+  sweep firing and this recheck, the open slot it named was already filled
+  by BL-876 (promoted 20:29:34, routed to coder), so active/ is back at
+  cap (3/3) as of this note; no promotion possible here either way this
+  cycle. Awaiting human approval remains the standing blocker.
+
 description: |
   ## What
 
