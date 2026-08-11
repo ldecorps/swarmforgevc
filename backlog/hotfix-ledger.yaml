@@ -24,6 +24,6 @@
   subject: "Land parent-orphaned front-desk janitor fix and file swarm stamp-off intake."
   detected_at: 2026-08-11
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-879
   human_decision: null
   decided_at: null

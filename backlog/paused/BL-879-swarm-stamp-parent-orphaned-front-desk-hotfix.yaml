@@ -1,0 +1,164 @@
+id: BL-879
+title: "Swarm stamp-off: parent-orphaned front-desk leftovers held host :8765 until the age gate fired; verify the human-landed fast-reap fix"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 23
+direction: human-requested
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-879-swarm-stamp-parent-orphaned-front-desk-hotfix.feature.draft
+
+human_approval: pending
+approval_context: >
+  The human landed this fix by hand (Cursor 2026-08-10, committed 2026-08-11 as
+  36ea0109e9) and asked for a swarm stamp-off rather than a rewrite — the same
+  posture as BL-811 and BL-849. What needs sign-off is only the DISPOSITION:
+  that reviewing the landed diff, rather than re-implementing it, is the right
+  call, and that `high` is the right severity for fixture orphans the janitor
+  already saw but would not kill before they stole the production bridge port.
+  The technical decisions in the intake are locked and are not being reopened.
+
+source: |
+  backlog/INTAKE-parent-orphaned-front-desk-janitor-stamp.md (human via Cursor
+  2026-08-10 ~21:30 CEST, landed 2026-08-11), archived to
+  backlog/archive/ on mint by the specifier 2026-08-11.
+
+  Hotfix under review: commit 36ea0109e9 on main, "Land parent-orphaned
+  front-desk janitor fix and file swarm stamp-off intake". This is ledger
+  entry 3 of BL-848's backlog/hotfix-ledger.yaml.
+
+invariants:
+  - "No ancillary reap ever skips the disposable-root requirement: a process without an extractable disposable root is never reaped, parent-orphaned or not, so host-repo front-desk processes can never match."
+  - "The fast path fires only on a provably gone supervisor: a living parent, or a parent probe that errors or is unwired, falls back to the ordinary age gate — probe failure never reads as orphaned."
+  - "Only the front-desk bridge/bot class skips the age gate: babysitter, tmux, and every other ancillary class still require staleness regardless of parent state."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate. This
+  ticket is that gate. It is a REVIEW ticket, not a rewrite ticket — confirm
+  or refute the landed diff, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed
+
+  Front-desk supervisor give-up emails fired at ~20:18 and ~21:05 CEST on
+  2026-08-10: the production bridge crash-looped on port 8765, hit the
+  5-restart cap, emailed, and re-armed. The process table held many
+  disposable-root `tmp.*/start-bridge-headless.js` + matching
+  `telegram-front-desk-bot.js` leftovers with PPID 1. The janitor sweep WAS
+  enumerating them (non-zero candidates — BL-849's enumeration fix works) but
+  logged `reaped 0` every cycle: `reapable-tmp-ancillary?` required `stale?`,
+  and the ~2h ancillary age gate is far too slow for a fixed host bridge port.
+  Fixture supervisors die and leave children reparented to launchd within
+  minutes.
+
+  ## What landed (files to review, all in commit 36ea0109e9)
+
+  - `swarmforge/scripts/process_table_lib.bb` — new `parent-orphaned?`
+    (PPID 1, dead parent, or missing ProcessHandle → true; any exception →
+    false).
+  - `swarmforge/scripts/orphan_janitor_lib.bb` — new
+    `front-desk-bridge-or-bot-cmdline?` (factored out of
+    `tmp-ancillary-cmdline?`); `reapable-tmp-ancillary?` takes
+    `parent-orphaned?` + `front-desk-bridge-or-bot?` and skips the age gate
+    only when both hold, AFTER the live-window and disposable-root checks.
+  - `swarmforge/scripts/orphan_janitor_sweep_lib.bb` — wires the probe as a
+    `:parent-orphaned?!` adapter (defaulting to constantly-false when
+    unwired) and audits `reason=parent-orphaned-front-desk` when the fast
+    path is the deciding factor.
+  - Tests: `orphan_janitor_lib_test_runner.bb`,
+    `orphan_sweep_enumeration_unavailable_test_runner.bb`.
+
+  ## Review goals
+
+  1. Confirm the decapitation guards hold across the new fast path
+     (invariant 1). This is the highest-risk surface in the diff:
+     `front-desk-bridge-or-bot-cmdline?` ALONE also matches the host front
+     desk — its own docstring says callers MUST still require a disposable
+     root. Verify every caller does, and that the fast-path check sits
+     strictly after the disposable-root and live-window checks.
+  2. Confirm `parent-orphaned?` semantics (invariant 2): exception → false
+     fails closed for the fast path; adapter unwired → constantly false.
+     Also weigh the missing-ProcessHandle → true branch: a pid that exits
+     between enumeration and probe reads as orphaned — confirm this cannot
+     widen the pid-reuse race window beyond what the existing stale path
+     already accepts.
+  3. Confirm scope (invariant 3): babysitter/tmux ancillaries never take the
+     fast path — PPID 1 is normal for those, and a living-parent fixture
+     bridge (a still-running acceptance test) stays protected by `stale?`.
+  4. Confirm the audit reason fires exactly when the fast path decided the
+     reap (front-desk AND parent-orphaned AND not stale), so incident
+     forensics can tell a fast reap from an age-gate reap.
+  5. Open narrow follow-up tickets for anything found; do not widen here.
+
+  ## Live verification the human already performed
+
+  Recorded as context, NOT as a substitute for the swarm's own pass: both
+  unit runners green after the change; a one-shot sweep reaped the tmp
+  fixture bridges/bots while the host bridge/bot PIDs survived and port 8765
+  stayed with the production bridge; `operator_runtime` was restarted onto
+  the new code that evening (then lost when an auto-pull autostashed the
+  dirty tree — commit 36ea0109e9 restores it).
+
+out_of_scope: |
+  - Re-implementing the janitor; this stamps the landed diff.
+  - Fast-reaping parent-orphaned babysitter/tmux (PPID 1 is normal there;
+    the age gate stays).
+  - Re-opening BL-849's Darwin enumeration / silent-zero work.
+  - Killing the human's interactive Cursor / Telegram bridge sessions.
+  - Broader fixture_reaper allowlist work.
+
+notes: |
+  Related, do not conflate: BL-849 (done — Darwin process-table stamp-off;
+  this is a follow-on on the same janitor surface: enumeration works, the age
+  gate was the remaining gap), BL-789 (done — freshness/bridge orphans
+  fighting the production front desk; the 2026-08-10 give-up emails are the
+  same failure class with a narrower root cause), BL-486 (done — orphan agent
+  reaper; out of scope here).
+
+  Locked human decisions, carried verbatim from the intake:
+  1. Treat this as **swarm-review stamp-off of a landed hotfix**, not a
+     greenfield implement ticket (same posture as BL-811 / BL-849).
+  2. Severity **high** — production front-desk give-up emails from fixture
+     orphans the janitor already sees but will not kill in time.
+  3. Decapitation guards stay: never match host-repo paths; disposable-root
+     extract remains mandatory; living-parent fixture bridges stay protected
+     by the ordinary `stale?` path.
+
+  ## Acceptance is parked as a draft, deliberately
+
+  `acceptance:` points at a `.feature.draft`. The parent-state Given steps
+  ("its parent process is gone/alive/not determinable") have no step handlers
+  yet, and shipping a live `.feature` without them hard-fails
+  `specs/pipeline/runtime.js` on the first unmatched step (BL-233). The coder
+  promotes the draft to a live `.feature` in the same parcel as its handlers
+  — same as BL-849 did. Where a step already has a BL-849 handler (sweep
+  setup, candidate/reap assertions), reuse it rather than minting a synonym.
+
+  ## Degraded gate, recorded up front
+
+  The whole diff is Babashka: no mutation/CRAP/DRY is wired for that layer
+  (engineering.prompt, Startup Tools) — the gate is the unit runners under
+  `swarmforge/scripts/test/` plus the promoted acceptance scenarios. A
+  hardening pass must record that fallback, never imply mutation ran.
+
+  ## E2E QA procedure (specifier, 2026-08-11)
+
+  1. **The fast path really fires.** On this Darwin host, with the production
+     front desk live, plant a synthetic disposable-root parent-orphaned
+     bridge fixture (PPID 1, minutes old) and run a one-shot sweep: it is
+     reaped in that same sweep — no age wait — and the audit line carries
+     `reason=parent-orphaned-front-desk`.
+  2. **Decapitation guard.** With the host bot, bridge, `operator_runtime`,
+     host babysitterd and host tmux socket all live, confirm every one
+     survives that same sweep and port 8765 stays with the production
+     bridge. Run this before trusting any reap count.
+  3. **A living parent protects.** Start a fixture supervisor with a child
+     bridge, sweep, confirm the child survives while its parent lives.
+  4. **Probe failure is not orphanhood.** Force the parent probe to error
+     and confirm a young front-desk fixture is NOT reaped (age gate governs).
+  5. Both unit runners green; record the Babashka degraded-gate fallback
+     explicitly in the QA evidence.
