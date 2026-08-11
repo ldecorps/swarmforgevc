@@ -8,7 +8,7 @@ epic: swarm-reliability
 priority: 119
 direction: normal
 mutation_cost: low
-acceptance: specs/features/BL-876-bounce-history-keeps-every-distinct-same-day-bounce.feature.draft
+acceptance: specs/features/BL-876-bounce-history-keeps-every-distinct-same-day-bounce.feature
 human_approval: approved
 approval_context: >
   Two things to sign off or overturn.
