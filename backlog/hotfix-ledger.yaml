@@ -20,3 +20,10 @@
   stamp_ticket: BL-860
   human_decision: null
   decided_at: null
+- commit: 36ea0109e9
+  subject: "Land parent-orphaned front-desk janitor fix and file swarm stamp-off intake."
+  detected_at: 2026-08-11
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
