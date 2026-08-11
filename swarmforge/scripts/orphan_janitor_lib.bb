@@ -52,6 +52,17 @@
   (let [c (or cmdline "")]
     (boolean (re-find #"\.generated\.test\.js(?:\s|$)" c))))
 
+(defn front-desk-bridge-or-bot-cmdline?
+  "True for the headless bridge or front-desk bot entrypoints. Alone this
+   also matches the host front desk — callers MUST still require a
+   disposable root (tmp-ancillary-cmdline? / tmp-project-root?) before
+   treating the process as reapable."
+  [cmdline]
+  (let [c (or cmdline "")]
+    (boolean
+     (or (re-find #"/extension/out/tools/start-bridge-headless\.js" c)
+         (re-find #"/extension/out/tools/telegram-front-desk-bot\.js" c)))))
+
 (defn tmp-ancillary-cmdline?
   "Front-desk / babysitter leftovers under a disposable checkout. Requires
    an extractable disposable root so host bridge/bot/babysitterd never match.
@@ -66,8 +77,7 @@
               (re-find #"/\.swarmforge/babysitter/launch\.sh(?:\s|$)" c)
               (re-find #"babysitterd\.sh(?:\s|$)" c)
               (re-find #"(?:^|[\s/])tmux(?:\s|$)" c)
-              (re-find #"/extension/out/tools/start-bridge-headless\.js" c)
-              (re-find #"/extension/out/tools/telegram-front-desk-bot\.js" c)
+              (front-desk-bridge-or-bot-cmdline? c)
               (and (re-find #"(?:^|\s)claude(?:\s|$)" c)
                    (re-find #"(?:^|\s)-n\s+Babysitter(?:\s|$)" c)))))))
 
@@ -102,10 +112,18 @@
     :else true))
 
 ;; Pure: disposable-root babysitter/bridge/bot/claude-Babysitter leftovers.
+;; Front-desk bridge/bot that have already lost their supervisor (PPID 1 /
+;; dead parent) skip the multi-hour age gate: they contend for the host's
+;; fixed bridge port and produce production give-up emails within minutes,
+;; while a still-parented fixture (live acceptance) stays protected by the
+;; ordinary stale? path. Detached babysitter/tmux leftovers still require
+;; stale? — PPID 1 is normal for those.
 (defn reapable-tmp-ancillary?
-  [{:keys [in-live-window-set? tmp-rooted-ancillary? stale?]}]
+  [{:keys [in-live-window-set? tmp-rooted-ancillary? stale?
+           parent-orphaned? front-desk-bridge-or-bot?]}]
   (cond
     in-live-window-set? false
     (not tmp-rooted-ancillary?) false
+    (and front-desk-bridge-or-bot? parent-orphaned?) true
     (not stale?) false
     :else true))
