@@ -1,0 +1,139 @@
+id: BL-880
+title: "A stale acceptance: pointer is refused at the FIRST git_handoff hop, not five stages later at the QA edge"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+priority: 35
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-880-stale-acceptance-pointer-refused-at-first-hop.feature.draft
+
+human_approval: approved
+approval_context: >
+  What needs sign-off: arming a narrow, existence-only acceptance-pointer
+  check on EVERY pipeline git_handoff hop (coder onward), where BL-761
+  deliberately armed the full contract evaluation only on the
+  documenter-to-QA edge. The early check is strictly additive - it keys on
+  nothing but "the declared single-line acceptance: path exists at the cited
+  commit", so a legitimately parked .feature.draft never blocks
+  mid-pipeline. Firm: the QA edge's BL-761 semantics stay unchanged; blank/
+  inline declarations stay a QA-edge concern; required_wiring early-arming
+  is out of scope (different read mechanics, BL-874).
+
+source: |
+  Coordinator note 2026-08-11 ("3rd stale-acceptance-draft hit
+  (BL-874/877/879) - worth a ticket"), received by the specifier while
+  processing the documenter's BL-879 pointer-fix note. BL-877 and BL-879
+  are the two direct hits: the coder promoted the parked .feature.draft to
+  a live .feature but left the ticket YAML's acceptance: pointer citing the
+  removed draft; each time a downstream role hand-fixed spec-owned YAML and
+  noted the specifier. BL-874 is the same failure CLASS on a different
+  field (required_wiring placeholders, refused only at the QA edge after
+  four stages of travel).
+
+invariants:
+  - "Before the QA edge, a refusal keys ONLY on existence of a declared single-line acceptance: path at the cited commit - draft-ness, step resolution, and declaration style never refuse a pre-QA hop."
+  - "Only a readable tree with the declared path absent fails CLOSED before the QA edge; any infrastructure failure (unreadable commit or tree, git unavailable) fails OPEN as a warning."
+  - "The documenter-to-QA edge's BL-761 contract evaluation is unchanged: the early check adds refusals at earlier hops and never removes or weakens a QA-edge finding."
+
+description: |
+  ## What
+
+  Extend the send-side gate in `swarmforge/scripts/swarm_handoff.bb` so a
+  `git_handoff` from ANY pipeline role is refused when the named ticket's
+  YAML declares a single-line `acceptance:` path that does not exist at the
+  cited commit. Today that exact condition already fails CLOSED - but only
+  on the documenter-to-QA edge (BL-761's acceptance-contract gate,
+  `pre_qa_gate_gather_lib.bb` / `acceptance_contract_gate_lib.bb`), so a
+  stale pointer minted at the coder rides through cleaner, architect,
+  hardender, and documenter before anything mechanical objects.
+
+  ## Why now
+
+  Twice in two days (BL-877, BL-879) a parcel promoted its parked
+  `.feature.draft` to a live `.feature` without flipping the ticket's
+  `acceptance:` pointer. Each time the miss was caught late by a downstream
+  role hand-editing spec-owned YAML inside the parcel. The guidance half is
+  already landed - the coder prompt now states promotion is two edits in
+  one commit (main commit 91cea1f5e) - this ticket is the mechanical half
+  that stops the class regardless of prompt-following.
+
+  ## Shape
+
+  - The early check is EXISTENCE ONLY: one `git show <commit>:<path>` class
+    probe. No parsing, no step resolution, no draft-ness policing - a
+    parked `.feature.draft` that exists at the commit passes every pre-QA
+    hop even though its steps have no handlers yet (that is the legitimate
+    BL-233 parked state).
+  - Blank, multi-line (inline Gherkin), or absent declarations are NOT
+    refused early - the QA edge already owns those judgements with full
+    context (BL-761 fails them closed there today).
+  - Fail posture mirrors the existing gate's split: path absent in a
+    readable tree -> finding, refuse; infrastructure trouble (commit or
+    tree unreadable) -> warning, send proceeds.
+  - A refusal names the ticket id, the declared path, and the probed
+    commit, so the sender can fix and re-send without archaeology.
+  - Reuse the existing gather/evaluate seams rather than a parallel
+    implementation; the QA-edge path must keep calling the full BL-761
+    evaluation exactly as today.
+
+out_of_scope: |
+  - Re-litigating BL-761's QA-edge semantics (step resolution, fail-open
+    registry posture, inline-declaration handling) - unchanged.
+  - Early-arming the required_wiring check (BL-874's field): it reads the
+    SENDER's checkout, not the cited commit - different mechanics, its own
+    ticket if wanted.
+  - Step-handler resolution at any pre-QA hop.
+  - Retro-auditing already-closed tickets for stale pointers.
+
+notes: |
+  Related: BL-761 (built the QA-edge acceptance-contract gate this extends
+  forward), BL-531 (required_wiring gate on the same edge), BL-874 (gate
+  read-side lesson: patterns/paths are judged at the cited commit or
+  sender checkout - a main-only fix does not clear a sender's stale copy),
+  BL-877/BL-879 (the two stale-pointer incidents), BL-233 (why drafts are
+  parked at all).
+
+  The guidance half of this fix is already on main: coder.prompt now
+  states that promoting a parked .feature.draft is two edits in one commit
+  - the file move AND the acceptance: pointer flip (commit 91cea1f5e,
+  specifier 2026-08-11). This slice is the enforcement half.
+
+  No required_wiring: declared - the mechanism lands inside
+  swarm_handoff.bb's existing send path, which every handoff already
+  exercises; there is no separate call site whose absence could strand it
+  (and BL-874 showed what an over-armed placeholder entry costs).
+
+  ## Acceptance is parked as a draft, deliberately
+
+  `acceptance:` points at a `.feature.draft`. The hop/recipient Given
+  steps have no handlers yet; the coder promotes the draft to a live
+  `.feature` in the same parcel as its handlers AND flips this pointer in
+  the same commit (coder.prompt, 91cea1f5e). Where a step already has a
+  BL-761-era handler (gate setup, refusal/warning assertions), reuse it
+  rather than minting a synonym.
+
+  ## Degraded gate, recorded up front
+
+  The diff is Babashka: no mutation/CRAP/DRY is wired for that layer
+  (engineering.prompt, Startup Tools) - the gate is the unit runners under
+  swarmforge/scripts/test/ plus the promoted acceptance scenarios. A
+  hardening pass must record that fallback, never imply mutation ran.
+
+  ## E2E QA procedure (specifier, 2026-08-11)
+
+  1. In a sandbox checkout (swarmforge/scripts/test/lib/
+     operator_runtime_sandbox.sh posture), mint a fixture ticket whose
+     acceptance: cites a path absent at the cited commit; draft a
+     git_handoff to cleaner and run swarm_handoff.sh: the send is REFUSED
+     and the message names the ticket id, path, and commit.
+  2. Flip the fixture pointer to a path that exists as a .feature.draft at
+     the commit; re-send: the send proceeds (no step resolution attempted).
+  3. Repeat with recipient QA and a resolvable-but-unhandled scenario:
+     the full BL-761 acceptance-contract finding still refuses - the QA
+     edge is unchanged.
+  4. Simulate infrastructure failure (unreadable cited commit): the
+     pre-QA-hop send proceeds with a warning.
+  5. Both pre-QA-gate unit runners green; record the Babashka
+     degraded-gate fallback explicitly in the QA evidence.
