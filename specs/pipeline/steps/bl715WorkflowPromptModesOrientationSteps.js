@@ -15,6 +15,21 @@
 // downstream stage that re-runs this suite (cleaner, architect, hardener,
 // documenter, QA), not just the coder's own authoring pass - it does not
 // hardcode a commit sha the way a diff-range check would have to.
+//
+// BL-654 stated reason (all three of BL-715's declared invariants): none
+// admits a fast-check property-test encoding. A property test quantifies a
+// claim over a GENERATED state space; every one of these invariants
+// quantifies over a single fixed artifact instead - one governance
+// article's committed text, or one ticket's committed file list - with no
+// varying input to generate over. That is exactly BL-654's
+// non-encodability hatch ("some invariants quantify over prose/process,
+// not a pure module"). The deterministic Gherkin scenarios this file drives
+// (BL-715 modes-01..05, specifier-authored, this file wired by the coder)
+// are the substitute: each is non-vacuous (fails against a broken/missing
+// orientation - the collision and scope bugs caught during authoring above
+// are the demonstration - and passes against the correct one) and re-runs
+// at every downstream gate via the acceptance suite, same as any other
+// stage's re-verification.
 
 const path = require('node:path');
 const fs = require('node:fs');
