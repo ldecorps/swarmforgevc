@@ -9,7 +9,7 @@ priority: 119
 direction: normal
 mutation_cost: low
 acceptance: specs/features/BL-876-bounce-history-keeps-every-distinct-same-day-bounce.feature.draft
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two things to sign off or overturn.
 
@@ -203,3 +203,5 @@ notes: |
     Outline and the three-bounce scenario, which needs its own second
     `Given`. Merging the identical-bounce case into the outline already took
     the findings from 25 to 12; the rest are structural, not drift.
+
+assigned_to: coder
