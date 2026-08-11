@@ -423,7 +423,8 @@ const DOMAINS = [
   require('./bl879ParentOrphanedFrontDeskSteps'),
   require('./bl878SetsidFreeDaemonSpawnSteps'),
   require('./bl876BounceHistorySameDayRebounceSteps'),
-  require('./bl796NvmNodePathFollowUpAdoptSteps')
+  require('./bl796NvmNodePathFollowUpAdoptSteps'),
+  require('./bl715WorkflowPromptModesOrientationSteps')
 ];
 
 function registerSteps(registry) {

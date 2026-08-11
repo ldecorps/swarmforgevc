@@ -4,6 +4,42 @@ On-demand elaboration for `workflow.prompt`. Read when your task touches
 in-flight spec amendments, parcel lineage, bounce hygiene, QA bounce history,
 or coordinator promotion orthogonality — not on every boot.
 
+## How Work Moves — The Escalation Ladder (BL-715)
+Companion to `workflow.prompt`'s "How Work Moves" summary — same three
+specials, full pointers, and an explicit map of every place this
+constitution still says the bare word "expedite" instead of queue-jump or
+the expeditor.
+
+| rung | name | mechanism | doc |
+|---|---|---|---|
+| — | normal live swarm | full pipeline chain, live, every gate in order | `swarmforge/PIPELINE.md` |
+| 1 | queue-jump | promotion-order only — Article 3.2.4 expedited-defects rule; paused-pager "Set highest priority, expedite" button | Article 3.2.4 (`03_backlog.md`) |
+| 2 | ambulance | live pipeline, one ticket's parcels move, everything else holds in place | `docs/how-to/BL-655-ambulance-mode-the-hold.md` |
+| 3 | expeditor | swarm stopped, one ticket driven offline through the same role gates | `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`, `docs/reference/BL-567-expeditor-manual.md`, `docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md` |
+
+Reach for ambulance only when the pipeline is healthy and one ticket needs to
+go first without waiting its turn; reach for the expeditor only when the
+pipeline itself is the casualty. queue-jump never stops or holds anything —
+it only reorders `backlog/paused/`.
+
+Legacy "expedite" wording, disambiguated below into queue-jump or the
+expeditor — none of these names change in this ticket (out of scope:
+renaming `/expedite` or the paused-pager button; this table exists so a
+seat that greps "expedite" and lands on any of them can resolve which of
+the three modes it actually means):
+- Article 3.2.4 "Expedited Defects" and `workflow.prompt`'s Concurrent Work
+  Orthogonality "expedited defects first" / "expedite ordering" — name
+  **queue-jump**.
+- The paused-pager UI's `#expedite` button ("Set highest priority,
+  expedite", `pausedPagerUiHtml.ts`) — **queue-jump** (sets priority,
+  promotes; does not stop the swarm or hold other parcels).
+- The Telegram `/expedite` and `/reexpedite` commands
+  (`telegramCursorBridgeExpedite.ts`, `expedite_with_progress.sh`,
+  `reexpedite_from_wip.sh`) — the **expeditor**.
+- `swarmforge/scripts/expedite.sh` / `expedite_cli.bb` / `expedite_lib.bb`
+  and every file under that name — the **expeditor**'s own implementation,
+  not queue-jump.
+
 ## Amending An In-Flight Ticket's Spec (BL-317/BL-325, 2026-07-13)
 - A ticket's spec can legitimately change WHILE it is in flight — a reviewer finds a
   gap, the specifier sharpens the contract. Committing that amendment to `main` is
