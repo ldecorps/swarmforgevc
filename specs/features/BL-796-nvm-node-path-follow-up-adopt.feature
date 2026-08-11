@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-11T22:38:36.293782Z","feature_name":"Daemon and cron start paths resolve node as well as bb","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-796-nvm-node-path-follow-up-adopt.feature","background_hash":"e7df52af11106c59bd978c43672ece54439cf08df5af23a27314b2272a43e6b0","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Daemon and cron start paths resolve node as well as bb
 
   The 2026-08-02 PATH bake found bb but not nvm-only node, so a freshness

@@ -13,6 +13,8 @@ ROOT="${1:?usage: install_freshness_cron.sh <project-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKER="$SCRIPT_DIR/daemon_log_freshness_check.sh"
 MARKER="# swarmforge-BL-675-freshness-check root=[$ROOT]"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/operator_path_lib.sh"
 
 if [[ ! -f "$CHECKER" ]]; then
   echo "install_freshness_cron.sh: freshness_check missing at $CHECKER" >&2
@@ -38,7 +40,20 @@ INTERPRETER_DIR=""
 if command -v bb >/dev/null 2>&1; then
   INTERPRETER_DIR="$(cd "$(dirname "$(command -v bb)")" && pwd)"
 fi
-CRON_PATH_DIRS="${INTERPRETER_DIR:+$INTERPRETER_DIR:}/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin:/usr/bin:/bin"
+
+# BL-796: bake a node directory too - bb-only baking left a freshness
+# restart's `nohup bb ...` resolving bb but still failing every node-driven
+# sweep when node is nvm-only. swarmforge_nvm_node_bin_dir is the SAME
+# resolver swarmforge_prepend_operator_bins (the runtime prepend) falls
+# back to - one nvm resolver, not two independently-reimplemented ones.
+NODE_DIR=""
+if command -v node >/dev/null 2>&1; then
+  NODE_DIR="$(cd "$(dirname "$(command -v node)")" && pwd)"
+else
+  NODE_DIR="$(swarmforge_nvm_node_bin_dir || true)"
+fi
+
+CRON_PATH_DIRS="${INTERPRETER_DIR:+$INTERPRETER_DIR:}${NODE_DIR:+$NODE_DIR:}/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin:/usr/bin:/bin"
 
 # Cron line: every 2 minutes, POSIX sh, FRESHNESS_ROOT set, logs to daemon dir.
 LOG_DIR="$ROOT/.swarmforge/daemon"
