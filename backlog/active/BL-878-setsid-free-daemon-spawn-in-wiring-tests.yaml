@@ -146,3 +146,5 @@ notes: |
     (`swarmforge/roles/hardender.prompt`) covers fixture files leaked by a
     KILLED run. This ticket covers daemons leaked by a NORMAL run on a host
     missing an assumed tool.
+
+assigned_to: coder
