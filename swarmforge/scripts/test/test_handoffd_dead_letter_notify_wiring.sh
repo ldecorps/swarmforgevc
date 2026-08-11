@@ -16,6 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
+source "$SCRIPT_DIR/../portable_daemon_spawn_lib.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -73,14 +74,32 @@ TMUX
 chmod +x "$FAKE_BIN/tmux"
 
 LOG_FILE="$ROOT/.swarmforge/daemon/handoffd.log"
-env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u RESEND_API_KEY \
-  PATH="$FAKE_BIN:$PATH" setsid bb "$HANDOFFD" "$ROOT" &
+portable_spawn_daemon_or_fail bb \
+  env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u RESEND_API_KEY \
+  PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT"
 DAEMON_PID=$!
 
 wait_for_log() {
   local pattern="$1" timeout_s="$2" waited=0
   while (( waited < timeout_s * 4 )); do
     [[ -f "$LOG_FILE" ]] && grep -q "$pattern" "$LOG_FILE" 2>/dev/null && return 0
+    sleep 0.25
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# BL-878: this shared gated cadence (chase-sweep-every-cycles=10, ~10s+ at
+# poll-ms=1000, more when several subprocess-spawning sibling sweeps run
+# ahead of this one in the same gated cycle) makes a blind sleep an
+# unreliable wait for "fired a second time" - same pre-existing race
+# test_handoffd_push_sweep_wiring.sh's own "an already-published main stays
+# quiet on a later cycle" comment already documents. Poll the count instead
+# of guessing a fixed sleep.
+wait_for_count() {
+  local file="$1" min_count="$2" timeout_s="$3" waited=0
+  while (( waited < timeout_s * 4 )); do
+    [[ -f "$file" ]] && [[ "$(wc -l < "$file")" -ge "$min_count" ]] && return 0
     sleep 0.25
     waited=$((waited + 1))
   done
@@ -102,9 +121,8 @@ grep -q 'dead-letter-notify.*"reason":"no-new-dead-letters"' "$LOG_FILE" \
 pass "the CLI's own decision JSON is logged verbatim by the sweep"
 
 # ── the sweep repeats on the shared chase-sweep cadence, not just once ────
-sleep 6
-CALL_COUNT="$(wc -l < "$ROOT/notify-dead-letters-calls.log")"
-[[ "$CALL_COUNT" -ge 2 ]] || fail "expected the sweep to fire on more than one poll cycle, got $CALL_COUNT calls"
+wait_for_count "$ROOT/notify-dead-letters-calls.log" 2 25 \
+  || fail "expected the sweep to fire on more than one poll cycle within 25s, got $(wc -l < "$ROOT/notify-dead-letters-calls.log" 2>/dev/null || echo 0) calls"
 pass "the dead-letter-notify sweep shares the daemon's chase-sweep cadence, not a one-shot"
 
 # ── the sweep never threw ──────────────────────────────────────────────────

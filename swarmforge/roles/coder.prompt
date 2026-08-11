@@ -21,6 +21,12 @@ You are the coder.
   the existing registry doesn't yet resolve). This is in addition to, not
   instead of, your own unit tests. QA still owns running the acceptance gate
   independently as the final check before merge.
+- Promoting a parked `.feature.draft` (BL-233) is TWO edits in ONE commit:
+  (1) move the draft to its live `specs/features/*.feature` alongside the
+  step handlers you add for it, and (2) flip the ticket YAML's `acceptance:`
+  pointer to the promoted path. The rename alone leaves the ticket citing a
+  file that no longer exists — BL-877 and BL-879 both shipped exactly that,
+  and a downstream role had to re-fix the pointer by hand each time.
 
 ## Invariants (BL-654)
 - If the ticket YAML declares `invariants:` entries, first authorship of each

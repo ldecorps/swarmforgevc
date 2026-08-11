@@ -420,7 +420,8 @@ const DOMAINS = [
   require('./bl789MacHostSwitchFreshnessBridgeAdoptSteps'),
   require('./bl871PropertyLaneWorkerPoolCapSteps'),
   require('./bl877PortableProcessLivenessSteps'),
-  require('./bl879ParentOrphanedFrontDeskSteps')
+  require('./bl879ParentOrphanedFrontDeskSteps'),
+  require('./bl878SetsidFreeDaemonSpawnSteps')
 ];
 
 function registerSteps(registry) {
