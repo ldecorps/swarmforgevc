@@ -417,7 +417,8 @@ const DOMAINS = [
   require('./bl801TmpCleanupRegistrySteps'),
   require('./gh26RoleQuestionUndeliverableClearsMarkerSteps'),
   require('./bl872TempdirTrapGuardStandingSteps'),
-  require('./bl789MacHostSwitchFreshnessBridgeAdoptSteps')
+  require('./bl789MacHostSwitchFreshnessBridgeAdoptSteps'),
+  require('./bl871PropertyLaneWorkerPoolCapSteps')
 ];
 
 function registerSteps(registry) {

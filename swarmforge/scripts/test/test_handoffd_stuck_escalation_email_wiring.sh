@@ -61,8 +61,11 @@ mkdir -p "$ROOT/.swarmforge" "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/.swar
 # BL-613: backdate past the 60s stuck threshold BEFORE the daemon's first
 # chase-sweep! tick ever observes this role - see the nudgeCount comment
 # below for why this is required, not optional.
-PAST_TIME=$(date -d "90 seconds ago" "+%Y-%m-%d %H:%M:%S")
-touch -d "$PAST_TIME" "$ROOT/.swarmforge/handoffs/outbox" "$ROOT/.swarmforge/handoffs/sent"
+# BL-874: BSD date/touch have no -d relative-time form; portable_time_lib.sh
+# hides the BSD/GNU split behind one shared helper. Both files share one
+# computed timestamp so they stay backdated to the same instant.
+source "$SCRIPT_DIR/../portable_time_lib.sh"
+portable_touch_relative 90 seconds "$ROOT/.swarmforge/handoffs/outbox" "$ROOT/.swarmforge/handoffs/sent"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
 
