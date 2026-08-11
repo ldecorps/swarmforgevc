@@ -48,6 +48,13 @@ notes: |
   shortfall, on top of the coder's BL-730/731 and the cleaner's BL-736/737.
   Linked pilot-process defect: BL-747.
 
+  2026-08-11 (coordinator): open-slot nudge named this candidate; not
+  promoted — no `human_approval` field set (fails closed per Article
+  3.2.4), so this defect is not expedited and awaits human approval.
+  Separately, the slot itself was filled in the same recheck cycle by
+  BL-878 (also severity high, approved, priority 118 vs this ticket's 53 —
+  but priority ordering only applies within the eligible/approved set).
+
 description: |
   ## What
 

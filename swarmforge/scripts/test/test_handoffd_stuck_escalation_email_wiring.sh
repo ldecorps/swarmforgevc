@@ -36,6 +36,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
+# BL-878: the `command -v setsid` present/absent guard (setsid when
+# available, nohup fallback otherwise) lives in portable_spawn_daemon_or_fail
+# below, not duplicated inline per-site.
+source "$SCRIPT_DIR/../portable_daemon_spawn_lib.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -107,9 +111,10 @@ EOF
 LOG_FILE="$ROOT/.swarmforge/daemon/handoffd.log"
 FORCE_SUCCESS='{"success": true, "status": 200}'
 
-env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" \
+portable_spawn_daemon_or_fail bb \
+  env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" \
   ESCALATION_ALARM_FORCE_RESULT="$FORCE_SUCCESS" \
-  setsid bb "$HANDOFFD" "$ROOT" &
+  bb "$HANDOFFD" "$ROOT"
 DAEMON_PID=$!
 
 wait_for_log() {

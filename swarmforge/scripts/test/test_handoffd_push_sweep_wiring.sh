@@ -14,6 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
+source "$SCRIPT_DIR/../portable_daemon_spawn_lib.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -81,8 +82,9 @@ TMUX
 chmod +x "$FAKE_BIN/tmux"
 
 LOG_FILE="$ROOT/.swarmforge/daemon/handoffd.log"
-env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u RESEND_API_KEY \
-  PATH="$FAKE_BIN:$PATH" setsid bb "$HANDOFFD" "$ROOT" &
+portable_spawn_daemon_or_fail bb \
+  env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u RESEND_API_KEY \
+  PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT"
 DAEMON_PID=$!
 
 wait_for_log() {
