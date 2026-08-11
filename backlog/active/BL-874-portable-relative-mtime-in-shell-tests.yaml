@@ -9,8 +9,7 @@ priority: 118
 direction: normal
 mutation_cost: low
 acceptance: specs/features/BL-874-portable-relative-mtime-in-shell-tests.feature.draft
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   New feature draft needs review, plus one deliberate scope call to sign off or
   overturn. This ticket carries BOTH halves — remediating the six red tests AND
@@ -132,3 +131,5 @@ notes: |
   - BL-613 evidence trail: `backlog/evidence/BL-613-architect-sendback-20260724.md`
     (cleaner's rationale for the rewrite) and
     `backlog/evidence/BL-613-architect-pass-20260724.md` §2 (the deferral).
+
+assigned_to: coder

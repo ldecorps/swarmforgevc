@@ -1,0 +1,205 @@
+id: BL-876
+title: "DEFECT — a ticket's own bounce_history silently drops a second same-day bounce of the same failure class: its dedup key is date+class, coarser than the bounce store's date+class+commit+by, so the ledger under-reports rework"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 119
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-876-bounce-history-keeps-every-distinct-same-day-bounce.feature.draft
+human_approval: pending
+approval_context: >
+  Two things to sign off or overturn.
+
+  (1) The proposed key. `bounceHistory.ts` should key on
+  date + class + commit + by — the bounce store's own key
+  (`bounceNaturalKey`) minus `ticket`, which is implicit in a ticket's own
+  file. That keeps a true CLI re-run a no-op while letting genuinely
+  distinct same-day bounces coexist. The alternative, dropping dedup
+  entirely, is explicitly NOT proposed — invariant 2 exists to forbid it.
+
+  (2) Repairing BL-819's own record. BL-819 sits in `backlog/done/` with
+  `bounce_count: 1` when two bounces provably happened, so the lifecycle
+  ledger it built will mis-report its own history forever. This ticket asks
+  for that one-line repair (exact line in `notes:`). It is a hand edit to a
+  closed ticket's YAML, which the schema says is CLI-managed — a deliberate
+  deviation, called out here rather than done quietly. Say the word and it
+  is dropped from scope.
+
+source: |
+  Architect note to specifier, 2026-08-10 (handoff
+  00_20260810T215334Z_000094_from_architect_to_specifier): "Please ticket:
+  bounceHistory.ts ticket-side dedup key drops same-day re-bounce".
+
+invariants:
+  - "The ticket record's dedup key is never coarser than the bounce store's: any two bounces `bounceNaturalKey` keeps as distinct records also remain distinct entries in that ticket's `bounce_history`."
+  - "Re-applying an entry already present is a byte-identical no-op at any history length — widening the key must not degenerate into appending unconditionally."
+
+description: |
+  ## What
+
+  `extension/src/quality/bounceHistory.ts` dedups a ticket's own
+  `bounce_history:` entries on `at | failureClass` — a date and a failure
+  class, nothing else:
+
+  ```
+  function entryNaturalKey(entry) { return `${entry.at}|${entry.failureClass}`; }
+  ```
+
+  The JSONL bounce store keys the same events far more finely
+  (`qaBounce.ts`, `bounceNaturalKey`): `ticket | date | class | commit | by`.
+  So a second bounce on the same ticket, same day, same failure class — a
+  different reviewing role, or the same role citing a different commit after
+  a rework — is a distinct record in the store and a silent `duplicate`
+  no-op in the ticket's own file. `bounce_count` under-reports to match.
+
+  BL-635 chose that split deliberately and wrote the reason down in
+  `qaBounce.ts:91-98`: the finer store key exists precisely because "the SAME
+  ticket can legitimately bounce more than once in a single day (BL-590: four
+  architect send-backs in one day), each citing its own commit — none of those
+  may collapse into the others". The same sentence justifies the ticket-side
+  key, which was nonetheless left coarse in the same breath. That is the
+  defect: one durable record honours the rule and the other does not.
+
+  ## Reproduced, not inferred
+
+  Running the shipped code against BL-819's real ticket YAML as it stood at
+  commit `ef2ff7a43` (the architect's bounce already recorded), with QA's
+  real bounce entry from `.swarmforge/bounces/2026-08.jsonl`:
+
+  ```
+  mergeBounceHistoryEntry(<BL-819 yaml @ ef2ff7a43>, {
+    at: 2026-08-07, by: QA, blamed: coder, class: behavior,
+    commit: 8ac82a0e, evidence: backlog/evidence/BL-819-qa-bounce-20260807.md })
+  -> updated: false  reason: duplicate
+  ```
+
+  That is what happened live. BL-819 was still in `backlog/active/` (it moved
+  to `done/` on 2026-08-08), its evidence file
+  `backlog/evidence/BL-819-qa-bounce-20260807.md` exists and is committed at
+  `8ac82a0e8`, and the JSONL holds both bounces. The ticket closed carrying
+  `bounce_count: 1` and only the architect's entry. QA's send-back — commit
+  and evidence pointer — never reached the ticket's own record.
+
+  Three same-day same-class collisions already exist in the four days of
+  `.swarmforge/bounces/2026-08.jsonl`:
+
+  | ticket | date | class | the two bounces |
+  |---|---|---|---|
+  | BL-819 | 2026-08-07 | behavior | architect `a6f61c28e3`, QA `8ac82a0e` |
+  | BL-681 | 2026-08-08 | acceptance | documenter `2f76114c41`, QA `b37451751c` |
+  | BL-789 | 2026-08-10 | behavior | architect `6d0a3120f2`, architect `ac7174a19c` |
+
+  BL-681 escaped only by accident: the documenter (`a88d7764f`) and QA
+  (`edb4c2dd8`) each wrote `bounce_count: 1` from the same parent in
+  different worktrees, and the later merge happened to keep both lines. Not a
+  working dedup — a lucky conflict resolution.
+
+  ## Why it matters
+
+  The lifecycle ledger reads the ticket YAML and *deliberately not* the JSONL.
+  `extension/src/metrics/leanLedgerComposeBounce.ts` says so in its own header:
+  the aggregate store "carries no evidence path at all", so `bounce_history`
+  is the instrument. That makes the loss unrecoverable downstream — the truth
+  survives in the JSONL where no consumer looks.
+
+  The chain is: `record-bounce` -> ticket `bounce_history` ->
+  `composeBounceEvents` (BL-819 ledger) -> BL-820's closing-ceremony packet
+  -> the specifier's lean pass. A ticket that bounced twice for one failure
+  class reads as having bounced once, so the bounce-class hotspots that pass
+  is built to find are understated by exactly the repeated bounces that
+  identify the worst tickets. BL-590's four-in-a-day is the shape this hurts
+  most, and it is not rare: it is the normal shape of a hard ticket.
+
+  It is also silent. `reason: 'duplicate'` is a legitimate, expected value on
+  a genuine re-run, so nothing distinguishes correct idempotency from data
+  loss in the CLI's JSON output.
+
+  ## Constraints
+
+  - The entry format does not change. `by` and `commit` are already parsed
+    fields on every entry (`ENTRY_LINE`), so the finer key is derivable from
+    what is already on disk — no migration, no legacy-entry special case.
+  - Both CLIs reach this through one path (`record-bounce.ts` and the legacy
+    `record-qa-bounce.ts` both call `updateTicketBounceHistory`), so one fix
+    covers both. Neither CLI's flags change.
+  - `bounce_count` stays recomputed from the list, never trusted from disk.
+  - The `unparseable` degrade stays: a ticket whose YAML does not parse is
+    still reported, never thrown on, never further corrupted.
+
+  ## Tests that must change, deliberately
+
+  These currently assert the defect. Updating them is authorised by this
+  ticket — they are not to be worked around:
+
+  - `extension/test/bounceHistory.test.js:74` — "no-op for an entry whose
+    natural key already exists" varies `commit` and expects `duplicate`. Under
+    the fix that pair is distinct. Change the fixture so the re-recorded entry
+    is identical in every field; the test's intent (a true re-run collapses)
+    is correct and must survive.
+  - `extension/test/bounceHistory.property.test.js:71` — the local
+    `naturalKey` mirror must track the source key, or the oldest-first
+    accumulation property silently stops testing anything.
+  - `specs/features/BL-608-bounce-history-on-ticket.feature` scenario `-02`
+    ("Recording the same bounce twice leaves one entry") stays true as
+    written and must keep passing.
+
+  ## Out of scope
+
+  - The bounce store's own key (`bounceNaturalKey`, `qaBounceNaturalKey`).
+    Both are correct; this ticket moves the ticket-side key toward them, not
+    the reverse.
+  - BL-789's missing entries. It has two recorded bounces and no
+    `bounce_history` block at all, and no evidence files under
+    `backlog/evidence/` — consistent with `--evidence` having been omitted,
+    which takes the `not-attempted` path and never reaches the merge. A
+    different gap; ticket it separately if it recurs.
+  - The concurrent-worktree write that BL-681 exposed (two roles each
+    computing `bounce_count: 1` from the same parent). Real, but a merge
+    problem, not a key problem.
+
+  ## e2e QA procedure
+
+  1. On a scratch ticket in `backlog/active/`, run `record-bounce` twice for
+     the same day and failure class with different `--commit` values, passing
+     `--evidence` both times. Confirm the ticket YAML carries 2 entries and
+     `bounce_count: 2`, and that both CLI runs print
+     `ticketRecordUpdated: true`.
+  2. Repeat with identical `--commit` but different `--by`. Confirm 2 entries.
+  3. Run the exact same invocation twice. Confirm the second prints
+     `ticketRecordUpdated: false`, `ticketRecordReason: duplicate`, and that
+     the file is byte-identical (`git diff --quiet`).
+  4. Replay the BL-819 reproduction in this ticket's description against the
+     fixed code and confirm it now returns `updated: true`.
+  5. Run `composeBounceEvents` for that scratch ticket and confirm it emits
+     one event per entry, each with its own commit and evidence path.
+
+notes: |
+  - Repair BL-819's own record as part of this parcel. Add to
+    `backlog/done/BL-819-ticket-lifecycle-ledger.yaml` after the existing
+    entry, and set `bounce_count: 2`:
+
+    ```
+      - { at: 2026-08-07, by: QA, blamed: coder, class: behavior, commit: 8ac82a0e, evidence: backlog/evidence/BL-819-qa-bounce-20260807.md }
+    ```
+
+    Every field is taken from `.swarmforge/bounces/2026-08.jsonl` and the
+    committed evidence file; nothing is reconstructed by guess. Do not touch
+    BL-681 (already carries both) or BL-789 (see Out of scope).
+
+  - Aside, deliberately not acted on: BL-819's architect entry cites commit
+    `a6f61c2895` while the JSONL record for the same bounce says
+    `a6f61c28e3` — same 8-char prefix, different 10-char hash. Whatever
+    produced that disagreement is not this ticket's defect and the entry is
+    left exactly as it stands.
+
+  - Gherkin parked as `.feature.draft` per BL-233; the coder promotes it to
+    `.feature` and wires step handlers in the same commit.
+
+  - IR-DRY reviewed: 12 remaining near-duplicate findings are all
+    outline-placeholder vs concrete-literal pairs between the Scenario
+    Outline and the three-bounce scenario, which needs its own second
+    `Given`. Merging the identical-bounce case into the outline already took
+    the findings from 25 to 12; the rest are structural, not drift.
