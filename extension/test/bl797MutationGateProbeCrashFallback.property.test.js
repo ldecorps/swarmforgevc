@@ -38,6 +38,17 @@ const GATE = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'mutation_cooldown_ga
 const BB_BIN = execFileSync('bash', ['-lc', 'command -v bb'], { encoding: 'utf8' }).trim();
 const GIT_BIN = execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8' }).trim();
 
+// BL-871 QA bounce D2 (2026-08-11): each of the 27 combos below spawns a
+// real `bb` process against the fixture repo. The property lane's
+// worker-pool cap bounds Vitest's own fork count/heap, not the real
+// child-process CPU those forks consume - under contention from other
+// forks doing the same, QA measured this file's existing 120000ms budget
+// insufficient on one of three repeated runs (a different property file
+// failed on each of the other two, the "moving failure" this ticket
+// exists to fix). Raised to match the other subprocess-heavy property
+// files' post-fix budget.
+const SUBPROCESS_HEAVY_TIMEOUT_MS = 240000;
+
 const PROBE_STATES = ['success', 'fail', 'absent'];
 const ALL_COMBOS = [];
 for (const nproc of PROBE_STATES) {
@@ -93,10 +104,16 @@ test(
             writeStub(binDir, 'sysctl', combo.sysctl, `echo ${sysctlCores}`);
             writeStub(binDir, 'uptime', combo.uptime, `echo "load average: ${uptimeLoad}, 0.10, 0.05"`);
 
+            // BL-871 QA bounce D2 follow-up (2026-08-11): under real host
+            // contention this inner spawnSync timeout, not the outer
+            // vitest test timeout, was what killed the `bb` process
+            // (SIGTERM -> exit 143) for one of the 27 combos while the
+            // property as a whole was still comfortably inside its
+            // SUBPROCESS_HEAVY_TIMEOUT_MS budget. Doubled to match.
             const result = spawnSync(BB_BIN, [GATE, root, file], {
               encoding: 'utf8',
               env: { PATH: binDir },
-              timeout: 15000,
+              timeout: 30000,
             });
 
             assert.equal(
@@ -126,5 +143,5 @@ test(
       );
     }
   },
-  120000
+  SUBPROCESS_HEAVY_TIMEOUT_MS
 );
