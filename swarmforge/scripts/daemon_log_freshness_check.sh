@@ -35,6 +35,14 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FRESHNESS_EXTRA_PATH_DIRS=${FRESHNESS_EXTRA_PATH_DIRS:-"/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin"}
 PATH="${FRESHNESS_EXTRA_PATH_DIRS}:${PATH:-/usr/bin:/bin}"
 export PATH
+# BL-796: layer node resolution (including nvm-only node) on top of the
+# curated PATH above via the ONE shared resolver start_handoff_daemon.sh and
+# install_freshness_cron.sh also use - a restart's `nohup bb ...` finding bb
+# here but not node fails identically to the BL-789 fault this file already
+# guards against.
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/operator_path_lib.sh"
+swarmforge_prepend_operator_bins
 ROOT=${FRESHNESS_ROOT:?FRESHNESS_ROOT is required}
 CONF=${FRESHNESS_CONF:-"$SCRIPT_DIR/daemon_log_freshness.conf"}
 NOW=${FRESHNESS_NOW_EPOCH:-$(date +%s)}

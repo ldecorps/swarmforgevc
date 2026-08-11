@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: [BL-789]
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "Every daemon these scripts launch inherits a PATH on which both bb and node resolve, however minimal the caller's PATH was."

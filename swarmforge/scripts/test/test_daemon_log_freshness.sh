@@ -11,6 +11,8 @@ CHECKER="$SRC/daemon_log_freshness_check.sh"
 INSTALLER="$SRC/install_freshness_cron.sh"
 CONF="$SRC/daemon_log_freshness.conf"
 BABYSITTERD_SH="$SRC/babysitterd.sh"
+LIB="$SRC/operator_path_lib.sh"
+START_SCRIPT="$SRC/start_handoff_daemon.sh"
 
 fail=0
 note() { printf '%s\n' "$*"; }
@@ -24,7 +26,21 @@ check() {
 }
 pass() { note "PASS: $*"; }
 
-chmod +x "$CHECKER" "$INSTALLER"
+chmod +x "$CHECKER" "$INSTALLER" "$START_SCRIPT"
+
+# Build a fake ~/.nvm tree (versions + optional alias) under a fresh temp
+# HOME, so swarmforge_nvm_node_bin_dir has something real to resolve without
+# touching this host's own nvm install.
+make_fake_nvm_home() {
+  local d
+  d="$(mktemp -d)"
+  register_tmp_dir "$d"
+  mkdir -p "$d/.nvm/versions/node/v9.11.2/bin" "$d/.nvm/versions/node/v22.1.0/bin"
+  printf '#!/bin/sh\nexit 0\n' > "$d/.nvm/versions/node/v9.11.2/bin/node"
+  printf '#!/bin/sh\nexit 0\n' > "$d/.nvm/versions/node/v22.1.0/bin/node"
+  chmod +x "$d/.nvm/versions/node/v9.11.2/bin/node" "$d/.nvm/versions/node/v22.1.0/bin/node"
+  printf '%s' "$d"
+}
 
 make_root() {
   local d
@@ -459,6 +475,160 @@ FRESHNESS_START_CMD="printf started\\\\n >> \"$ROOT/starts.log\"" \
   /bin/sh "$CHECKER" 2>"$ROOT/stderr.log" || true
 check "harden: refuses to kill pid 1" 'grep -q "refusing to kill protected pid=1" "$ROOT/stderr.log"'
 pass "harden: protected-pid guard"
+
+# ── BL-796: nvm-node-path-follow-up-adopt ──────────────────────────────────
+# operator_path_lib.sh is adopted (tracked) with two corrections: version-
+# order (not lexicographic) newest-version fallback, and ONE nvm resolver
+# shared by the runtime prepend and the install-time crontab bake.
+
+# ── BL-796 scenario 01: a freshness restart hands the daemon a PATH that
+#    resolves node (nvm-only, PATH=/usr/bin:/bin) ─────────────────────────
+ROOT="$(make_root)"
+FAKE_HOME="$(make_fake_nvm_home)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+RESOLVED_NODE_LOG="$ROOT/resolved-node.log"
+PATH=/usr/bin:/bin \
+HOME="$FAKE_HOME" \
+FRESHNESS_ROOT="$ROOT" \
+FRESHNESS_CONF="$CONF" \
+FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
+FRESHNESS_ANNOUNCE_CMD="true" \
+FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
+FRESHNESS_START_CMD="command -v node >> \"$RESOLVED_NODE_LOG\" 2>&1 || true" \
+  /bin/sh "$CHECKER"
+kill "$FAKE_PID" 2>/dev/null || true
+check "BL-796-01: freshness restart resolves node from the nvm-only fake HOME" \
+  'grep -qF "$FAKE_HOME/.nvm/versions/node" "$RESOLVED_NODE_LOG"'
+pass "BL-796-01: a freshness restart hands the daemon a PATH that resolves node"
+
+# ── BL-796 scenario 02: the daemon start script pins node before launching
+#    the daemon (PATH resolves bb but not real node) ──────────────────────
+ROOT="$(make_root)"
+FAKE_HOME="$(make_fake_nvm_home)"
+FAKE_BB_DIR="$ROOT/fake-bb"
+mkdir -p "$FAKE_BB_DIR"
+cat > "$FAKE_BB_DIR/bb" <<'FAKEBB'
+#!/bin/sh
+script="$1"
+root="$2"
+daemon_dir="$root/.swarmforge/daemon"
+case "$script" in
+  *supervisor*)
+    echo $$ > "$daemon_dir/handoffd-supervisor.pid"
+    ;;
+  *)
+    command -v node > "$root/resolved-node-start.log" 2>&1 || true
+    echo $$ > "$daemon_dir/handoffd.pid"
+    ;;
+esac
+sleep 3
+FAKEBB
+chmod +x "$FAKE_BB_DIR/bb"
+PATH="$FAKE_BB_DIR:/usr/bin:/bin" \
+HOME="$FAKE_HOME" \
+HANDOFFD_BB="$ROOT/fake-handoffd.bb" \
+HANDOFFD_SUPERVISOR_BB="$ROOT/fake-handoffd-supervisor.bb" \
+  bash "$START_SCRIPT" "$ROOT" > "$ROOT/start-out.log" 2>&1
+check "BL-796-02: start_handoff_daemon.sh claims the handoffd pid file" \
+  '[[ -f "$ROOT/.swarmforge/daemon/handoffd.pid" ]]'
+check "BL-796-02: the launched daemon resolves node from the nvm-only fake HOME" \
+  'grep -qF "$FAKE_HOME/.nvm/versions/node" "$ROOT/resolved-node-start.log"'
+pass "BL-796-02: the daemon start script pins node before launching the daemon"
+[[ -f "$ROOT/.swarmforge/daemon/handoffd.pid" ]] && kill "$(cat "$ROOT/.swarmforge/daemon/handoffd.pid")" 2>/dev/null || true
+[[ -f "$ROOT/.swarmforge/daemon/handoffd-supervisor.pid" ]] && kill "$(cat "$ROOT/.swarmforge/daemon/handoffd-supervisor.pid")" 2>/dev/null || true
+
+# ── BL-796 scenario 03: the installed crontab line bakes a node directory
+#    when node is nvm-only ─────────────────────────────────────────────────
+ROOT="$(make_root)"
+FAKE_HOME="$(make_fake_nvm_home)"
+NVM_CRON="$ROOT/bin"
+mkdir -p "$NVM_CRON"
+NVM_STORE="$ROOT/nvm-crontab.txt"
+: > "$NVM_STORE"
+cat > "$NVM_CRON/crontab" <<'EOF'
+#!/usr/bin/env bash
+store="${CRONTAB_STORE:?}"
+if [[ "${1:-}" == "-l" ]]; then
+  cat "$store" 2>/dev/null || true
+  exit 0
+fi
+cat > "$store"
+EOF
+chmod +x "$NVM_CRON/crontab"
+PATH="$NVM_CRON:/usr/bin:/bin" HOME="$FAKE_HOME" CRONTAB_STORE="$NVM_STORE" bash "$INSTALLER" "$ROOT" >/dev/null
+check "BL-796-03: crontab PATH bakes the resolved nvm node bin directory" \
+  "grep -qF \"$FAKE_HOME/.nvm/versions/node\" \"\$NVM_STORE\""
+pass "BL-796-03: the installed crontab line bakes a node directory when node is nvm-only"
+
+# ── BL-796 scenario 04: the nvm default alias wins over a newer installed
+#    version ─────────────────────────────────────────────────────────────
+FAKE_HOME="$(make_fake_nvm_home)"
+mkdir -p "$FAKE_HOME/.nvm/alias"
+printf 'v9.11.2\n' > "$FAKE_HOME/.nvm/alias/default"
+ALIAS_RESULT="$(HOME="$FAKE_HOME" sh -c ". \"$LIB\"; swarmforge_nvm_node_bin_dir")"
+check "BL-796-04: the alias-pinned version (v9.11.2) wins over the newer v22.1.0" \
+  '[[ "$ALIAS_RESULT" == "$FAKE_HOME/.nvm/versions/node/v9.11.2/bin" ]]'
+pass "BL-796-04: the nvm default alias wins over a newer installed version"
+
+# ── BL-796 scenario 05: without an alias the newest version wins BY VERSION
+#    ORDER, not lexicographically (v22.1.0 over v9.11.2) ──────────────────
+FAKE_HOME="$(make_fake_nvm_home)"
+NO_ALIAS_RESULT="$(HOME="$FAKE_HOME" sh -c ". \"$LIB\"; swarmforge_nvm_node_bin_dir")"
+check "BL-796-05: no alias picks the newest version BY VERSION ORDER (v22.1.0, not the lexicographically-last v9.11.2)" \
+  '[[ "$NO_ALIAS_RESULT" == "$FAKE_HOME/.nvm/versions/node/v22.1.0/bin" ]]'
+pass "BL-796-05: without an alias the newest version wins by version order"
+
+# ── BL-796 scenario 06: a node already on the caller's PATH is never
+#    shadowed by the nvm fallback ──────────────────────────────────────────
+FAKE_HOME="$(make_fake_nvm_home)"
+REAL_NODE_DIR="$(mktemp -d)"
+register_tmp_dir "$REAL_NODE_DIR"
+printf '#!/bin/sh\nexit 0\n' > "$REAL_NODE_DIR/node"
+chmod +x "$REAL_NODE_DIR/node"
+SHADOW_RESULT="$(HOME="$FAKE_HOME" PATH="$REAL_NODE_DIR:/usr/bin:/bin" sh -c ". \"$LIB\"; swarmforge_prepend_operator_bins; command -v node")"
+check "BL-796-06: the caller's own node wins, the nvm fallback is never consulted" \
+  '[[ "$SHADOW_RESULT" == "$REAL_NODE_DIR/node" ]]'
+pass "BL-796-06: a node already on the caller PATH is never shadowed by the nvm fallback"
+
+# ── BL-796 invariant 2: sourcing the lib changes nothing but PATH ─────────
+# Both snapshots taken inside the SAME `sh -c` process, so the diff reflects
+# only what sourcing the lib changed - comparing against the outer bash's
+# own `env` would also pick up bash-vs-sh environment noise (SHLVL, etc.)
+# that has nothing to do with the lib.
+INV2_TMP="$(mktemp -d)"
+register_tmp_dir "$INV2_TMP"
+sh -c '
+env | sort | grep -v "^PATH=" > "'"$INV2_TMP"'/before.env"
+pwd > "'"$INV2_TMP"'/before.pwd"
+. "'"$LIB"'"
+swarmforge_prepend_operator_bins
+env | sort | grep -v "^PATH=" > "'"$INV2_TMP"'/after.env"
+pwd > "'"$INV2_TMP"'/after.pwd"
+'
+check "BL-796: sourcing the lib and prepending mutates no env var but PATH" \
+  'diff -q "$INV2_TMP/before.env" "$INV2_TMP/after.env" >/dev/null'
+check "BL-796: sourcing the lib and prepending leaves the working directory unchanged" \
+  'diff -q "$INV2_TMP/before.pwd" "$INV2_TMP/after.pwd" >/dev/null'
+pass "BL-796: sourcing the PATH lib changes nothing but PATH"
+
+# ── BL-796 wiring: each caller literally invokes the shared resolver ──────
+check "required_wiring: start_handoff_daemon.sh sources operator_path_lib.sh" \
+  'grep -q "operator_path_lib.sh" "$START_SCRIPT"'
+check "required_wiring: daemon_log_freshness_check.sh calls swarmforge_prepend_operator_bins" \
+  'grep -q "swarmforge_prepend_operator_bins" "$CHECKER"'
+check "required_wiring: install_freshness_cron.sh calls swarmforge_nvm_node_bin_dir" \
+  'grep -q "swarmforge_nvm_node_bin_dir" "$INSTALLER"'
+pass "BL-796: each of the three callers wires through the shared PATH lib"
 
 # ── wiring: handoffd + babysitterd emit heartbeat ────────────────────────
 check "required_wiring: handoffd.bb mentions heartbeat" \
