@@ -11,6 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
+source "$SCRIPT_DIR/../portable_daemon_spawn_lib.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -120,7 +121,7 @@ LOG_FILE="$ROOT/.swarmforge/daemon/handoffd.log"
 # subprocess harness like Node's spawnSync), which was observed to
 # occasionally stop the daemon after its very first tick under some
 # invocation contexts.
-env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" setsid bb "$HANDOFFD" "$ROOT" &
+portable_spawn_daemon_or_fail bb env -u RESEND_API_KEY PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT"
 DAEMON_PID=$!
 
 wait_for_log() {
@@ -147,10 +148,15 @@ pass "context-clear-all-roles-01: a non-coordinator role (coder) is cleared afte
 
 grep -c "send-keys -t swarmforge-coder -l /clear" "$CALL_LOG" | grep -q '^1$' \
   || fail "01: expected exactly one /clear sent to coder's session, got: $(cat "$CALL_LOG" 2>/dev/null)"
-grep -q "send-keys -t swarmforge-coder -l Re-read swarmforge/constitution.prompt" "$CALL_LOG" \
-  || fail "01: expected the startup re-read instruction sent to coder's session"
+# BL-878: BL-519 replaced the pre-BL-519 "Re-read constitution.prompt"
+# instruction with the launch-kickoff text (closing_context_clear_lib.bb's
+# startup-reread-instruction) - this assertion was never updated to match
+# and has been dark (never run to completion) since setsid blocked this
+# whole script from ever reaching it.
+grep -q "send-keys -t swarmforge-coder -l Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ready_for_next.sh." "$CALL_LOG" \
+  || fail "01: expected the startup kickoff instruction sent to coder's session"
 CLEAR_LINE="$(grep -n "send-keys -t swarmforge-coder -l /clear" "$CALL_LOG" | head -1 | cut -d: -f1)"
-REREAD_LINE="$(grep -n "send-keys -t swarmforge-coder -l Re-read swarmforge/constitution.prompt" "$CALL_LOG" | head -1 | cut -d: -f1)"
+REREAD_LINE="$(grep -n "send-keys -t swarmforge-coder -l Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ready_for_next.sh." "$CALL_LOG" | head -1 | cut -d: -f1)"
 [[ "$CLEAR_LINE" -lt "$REREAD_LINE" ]] || fail "01: expected /clear before the startup re-read instruction"
 pass "context-clear-all-roles-01: /clear was injected, then the startup re-read instruction immediately after"
 
