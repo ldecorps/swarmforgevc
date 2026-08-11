@@ -422,7 +422,8 @@ const DOMAINS = [
   require('./bl877PortableProcessLivenessSteps'),
   require('./bl879ParentOrphanedFrontDeskSteps'),
   require('./bl878SetsidFreeDaemonSpawnSteps'),
-  require('./bl876BounceHistorySameDayRebounceSteps')
+  require('./bl876BounceHistorySameDayRebounceSteps'),
+  require('./bl796NvmNodePathFollowUpAdoptSteps')
 ];
 
 function registerSteps(registry) {
