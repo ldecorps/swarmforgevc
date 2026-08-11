@@ -15,7 +15,16 @@ fail=0
 note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
 
+# BL-801: guard the empty-array case under stock macOS bash 3.2's `set -u`.
+TMP_DIRS=()
+cleanup() { rm -rf ${TMP_DIRS[@]+"${TMP_DIRS[@]}"}; }
+trap cleanup EXIT
+
 make_project_fixture() {
+  # NOTE: called as `x="$(make_project_fixture)"` at every call site, which
+  # runs this function in a subshell - appending to TMP_DIRS in here would
+  # only mutate the subshell's copy and silently fail to register the dir.
+  # Callers must append the returned path to TMP_DIRS themselves.
   local d; d="$(mktemp -d)"
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
   copy_operator_runtime_sandbox "$SRC" "$d/swarmforge/scripts"
@@ -39,7 +48,9 @@ run_tick() {
 
 # ── control: the real facility (lsof) determines liveness normally ────────
 CONTROL_PROJECT="$(make_project_fixture)"
+TMP_DIRS+=("$CONTROL_PROJECT")
 CONTROL_ROOT="$(mktemp -d)"
+TMP_DIRS+=("$CONTROL_ROOT")
 CONTROL_STALE="$CONTROL_ROOT/sfvc-stale-idle"
 mkdir -p "$CONTROL_STALE"
 old_mtime "$CONTROL_STALE"
@@ -49,7 +60,9 @@ check "control: a stale sandbox with nothing rooted in it is reaped when livenes
 
 # ── undetermined: neither /proc (already absent) nor lsof (forced absent) ──
 PROJECT="$(make_project_fixture)"
+TMP_DIRS+=("$PROJECT")
 SANDBOX_ROOT="$(mktemp -d)"
+TMP_DIRS+=("$SANDBOX_ROOT")
 STALE="$SANDBOX_ROOT/sfvc-stale-idle"
 mkdir -p "$STALE"
 old_mtime "$STALE"
@@ -61,8 +74,6 @@ check "undetermined: a stale sandbox with nothing rooted in it is KEPT when live
   '[[ -e "$STALE" ]]'
 check "undetermined: the sweep records that liveness could not be determined" \
   'grep -q "liveness could not be determined this pass" "$RUNTIME_LOG"'
-
-rm -rf "$CONTROL_PROJECT" "$CONTROL_ROOT" "$PROJECT" "$SANDBOX_ROOT"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "operator_runtime sandbox-sweep liveness-undetermined: ALL CHECKS PASSED"
