@@ -34,4 +34,30 @@ function runAsPropertyLaneFixture(source, { basenamePrefix = 'bl868-fixture-', t
   }
 }
 
-module.exports = { runAsPropertyLaneFixture };
+// BL-871 invariant 1: "The property lane's verdict for a given file does
+// not depend on how many other property files are running alongside it."
+// Proving the pool cap is what makes that true requires running MULTIPLE
+// real fixture files through the REAL vitest.properties.config.mjs in a
+// SINGLE `vitest run` invocation - runAsPropertyLaneFixture above only ever
+// targets one file, which cannot exercise pool sizing across files at all.
+function runManyAsPropertyLaneFixtures(sources, { basenamePrefix = 'bl871-fixture-', timeout = 60000, env } = {}) {
+  const files = sources.map((source, index) => {
+    const filename = `${basenamePrefix}${process.pid}-${Math.random().toString(36).slice(2)}-${index}.property.test.js`;
+    const filePath = path.join(TEST_DIR, filename);
+    fs.writeFileSync(filePath, source);
+    return { filePath, relPath: `test/${filename}` };
+  });
+  try {
+    const result = spawnSync('npx', ['vitest', 'run', '--config', 'vitest.properties.config.mjs', ...files.map((f) => f.relPath)], {
+      cwd: EXTENSION_DIR,
+      encoding: 'utf8',
+      timeout,
+      env: env || process.env,
+    });
+    return { status: result.status, output: `${result.stdout || ''}${result.stderr || ''}` };
+  } finally {
+    files.forEach((f) => fs.rmSync(f.filePath, { force: true }));
+  }
+}
+
+module.exports = { runAsPropertyLaneFixture, runManyAsPropertyLaneFixtures };
