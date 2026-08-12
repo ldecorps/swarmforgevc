@@ -27,3 +27,17 @@
   stamp_ticket: BL-879
   human_decision: null
   decided_at: null
+- commit: 602c7d014c
+  subject: "Land Cursor-agent hotfix: handoffd_supervisor's orphan reaper now catches property-lane vitest orphans too"
+  detected_at: 2026-08-12
+  state: pending
+  stamp_ticket: BL-886
+  human_decision: null
+  decided_at: null
+- commit: 1ecbe049fe
+  subject: "Land Cursor-agent hotfix: orphan janitor reaps hung property-lane vitest trees; fixture runner cleans up on abnormal exit"
+  detected_at: 2026-08-12
+  state: pending
+  stamp_ticket: BL-886
+  human_decision: null
+  decided_at: null
