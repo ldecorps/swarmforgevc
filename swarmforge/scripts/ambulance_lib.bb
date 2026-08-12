@@ -37,30 +37,35 @@
     (some (fn [line] (when (str/starts-with? line prefix) (str/trim (subs line (count prefix)))))
           (str/split-lines content))))
 
-(defn ticket-has-file?
-  "True when some YAML file ANYWHERE under backlog/ (active/paused/done/hold,
-   and any nested milestone subdir - fs/glob \"**.yaml\" matches at any
-   depth, same idiom ticket_status_lib.bb already relies on) declares this
-   exact id. A marker naming a ticket with no file anywhere would hold
-   EVERYTHING forever - precisely the deadlock the operator ruled out - so
-   the read side (read-ambulance-state below) treats that as mode OFF rather
-   than trusting the marker.
+(defn- dir-has-ticket-id?
+  "True when some YAML file ANYWHERE under dir (fs/glob \"**.yaml\" matches
+   at any nested depth, same idiom ticket_status_lib.bb already relies on)
+   declares this exact id. Shared by ticket-has-file? (searches the whole
+   backlog/ tree) and ticket-location below (searches one subdir at a time).
 
    BL-813: fs/glob lists a path, then this fn slurps it - a file that moves
    or is deleted between those two steps (e.g. a ticket promoted active/ ->
    done/ mid-poll) threw FileNotFoundException and crashed the daemon. Each
-   candidate's slurp+field-read is now its own try/catch: a vanished entry
-   just doesn't match (`some` moves on to the next glob hit, or to false),
-   never a crash."
+   candidate's slurp+field-read is its own try/catch: a vanished entry just
+   doesn't match (`some` moves on to the next glob hit, or to false), never
+   a crash."
+  [dir ticket-id]
+  (boolean
+   (and (fs/exists? dir)
+        (some (fn [path]
+                (try
+                  (= ticket-id (read-yaml-field (slurp (str path)) "id"))
+                  (catch Exception _ false)))
+              (fs/glob dir "**.yaml")))))
+
+(defn ticket-has-file?
+  "True when some YAML file ANYWHERE under backlog/ (active/paused/done/hold,
+   and any nested milestone subdir) declares this exact id. A marker naming a
+   ticket with no file anywhere would hold EVERYTHING forever - precisely the
+   deadlock the operator ruled out - so the read side (read-ambulance-state
+   below) treats that as mode OFF rather than trusting the marker."
   [project-root ticket-id]
-  (let [backlog-dir (fs/path project-root "backlog")]
-    (boolean
-     (and (fs/exists? backlog-dir)
-          (some (fn [path]
-                  (try
-                    (= ticket-id (read-yaml-field (slurp (str path)) "id"))
-                    (catch Exception _ false)))
-                (fs/glob backlog-dir "**.yaml"))))))
+  (dir-has-ticket-id? (fs/path project-root "backlog") ticket-id))
 
 (defn- read-raw-marker
   "nil for a missing/unreadable/unparseable marker file - never a crash.
@@ -178,16 +183,8 @@
    just doesn't match that subdir - same BL-813 per-candidate try/catch
    fail-open shape as ticket-has-file? above, never a crash."
   [project-root ticket-id]
-  (let [has-in-subdir?
-        (fn [subdir]
-          (let [dir (fs/path project-root "backlog" subdir)]
-            (boolean
-             (and (fs/exists? dir)
-                  (some (fn [path]
-                          (try
-                            (= ticket-id (read-yaml-field (slurp (str path)) "id"))
-                            (catch Exception _ false)))
-                        (fs/glob dir "**.yaml"))))))]
+  (let [has-in-subdir? (fn [subdir]
+                          (dir-has-ticket-id? (fs/path project-root "backlog" subdir) ticket-id))]
     (cond
       (has-in-subdir? "done") :done
       (has-in-subdir? "hold") :hold
