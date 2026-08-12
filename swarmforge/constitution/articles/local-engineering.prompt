@@ -27,11 +27,16 @@ shared article remains in force.
   the Android device surface — see "Testability Boundary — Bubble" below).
 - Command IDs namespaced under `swarmforge.` (swarmforge.run, swarmforge.stop,
   swarmforge.setTarget, swarmforge.initTarget).
-- **npm runs from `extension/`, never the repo root.** The root's tracked
-  `package-lock.json` is a stray artifact (BL-875 removes it); until then,
-  `npm install` from the root rewrites its `"name"` before failing ENOENT
-  (BL-506 breach). Recover with `git restore -- package-lock.json`, never
-  `git stash`. See **local-engineering-detailed.prompt**.
+- **npm runs from `extension/`, never the repo root.** The root has no
+  `package.json`; the tracked `package-lock.json` sitting there is a stray,
+  unreferenced artifact (BL-875 removes it). Until it is gone, `npm install`
+  from the root fails ENOENT — but rewrites that lockfile's `"name"` to the
+  cwd basename FIRST, leaving an unexplained one-line root diff that rides
+  along in your commit and breaches "An Approval Authorizes Only Its Ticket's
+  Work" (BL-506). Verified 2026-08-10: `npm install` rewrites it, `npm run`
+  and `npm ci` do not. Recover with `git restore -- package-lock.json`, never
+  `git stash` (stash is repo-wide across every worktree). Reported by the
+  hardener from a live GH-26 near-miss.
 
 ## Architecture Rules
 1. Two layers: tile-as-view, tmux-as-substrate — layers, not alternatives.

@@ -79,3 +79,6 @@ The 51 currently-live orphans have NOT been killed — the human's ask was
 about extending the janitor (a durable fix), not an immediate manual
 cleanup. If an immediate one-off cleanup is also wanted, that's a
 separate, explicit ask.
+
+---
+MINTED 2026-08-12 by the specifier as BL-885 (backlog/paused/BL-885-orphan-janitor-reclaims-leaked-caffeinate.yaml). The verbatim human ask survives in that ticket's source field (Article 5.3).

@@ -30,6 +30,7 @@ const DOMAINS = [
   require('./webhookSecretFixtureSteps'),
   require('./providerErrorTaxonomySteps'),
   require('./gherkinMutationSteps'),
+  require('./bl884GherkinMutationRunnerFailsLoudSteps'),
   require('./swarmMutationCostPrepassSteps'),
   require('./providerObservabilityParitySteps'),
   require('./pwaLabelCatalogSteps'),
@@ -427,8 +428,7 @@ const DOMAINS = [
   require('./bl715WorkflowPromptModesOrientationSteps'),
   require('./bl859BootPrefixBudgetGateSteps'),
   require('./bl679AmbulanceModePerimeterSteps'),
-  require('./bl880StaleAcceptancePointerRefusedAtFirstHopSteps'),
-  require('./bl883BootPrefixBudgetTrimSteps')
+  require('./bl880StaleAcceptancePointerRefusedAtFirstHopSteps')
 ];
 
 function registerSteps(registry) {

@@ -47,10 +47,13 @@
   hardcoded timeouts via env seams and redirect a backgrounded daemon's
   stdout/stderr to a file. See **engineering-detailed.prompt** for the full
   pre-trim wording.
-- An `Unhandled Error`/`Unhandled Rejection` in `test:properties` output
-  fails the lane unless it is the known benign `[vitest-worker]: Timeout
-  calling "onTaskUpdate"` artifact — grep and allowlist exactly that
-  message. See **engineering-detailed.prompt** (BL-871).
+- An `Unhandled Error`/`Unhandled Rejection` block in `test:properties`
+  captured output fails the lane unless it is the known benign
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` birpc-heartbeat artifact —
+  grep the output, allowlist exactly that message. Vitest's
+  `dangerouslyIgnoreUnhandledErrors` is all-or-nothing (`_checkUnhandledErrors`
+  has no per-message filter), so without this grep gate the flag masks every
+  future distinct unhandled error too (BL-871; architect rule, 2026-08-11).
 
 ## Acceptance Pipeline
 - APS pinned (see Startup Tools). Features in `specs/features/`; pipeline in

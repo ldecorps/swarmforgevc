@@ -167,16 +167,3 @@ neither:
   by.
 
 How-to: `docs/how-to/BL-769-android-jvm-unit-suite.md`.
-
-## npm runs from `extension/`, never the repo root — pre-BL-883 boot wording (BL-883 split)
-
-- **npm runs from `extension/`, never the repo root.** The root has no
-  `package.json`; the tracked `package-lock.json` sitting there is a stray,
-  unreferenced artifact (BL-875 removes it). Until it is gone, `npm install`
-  from the root fails ENOENT — but rewrites that lockfile's `"name"` to the
-  cwd basename FIRST, leaving an unexplained one-line root diff that rides
-  along in your commit and breaches "An Approval Authorizes Only Its Ticket's
-  Work" (BL-506). Verified 2026-08-10: `npm install` rewrites it, `npm run`
-  and `npm ci` do not. Recover with `git restore -- package-lock.json`, never
-  `git stash` (stash is repo-wide across every worktree). Reported by the
-  hardener from a live GH-26 near-miss.
