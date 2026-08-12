@@ -145,6 +145,14 @@ You are the hardender.
   (Lesson, 2026-07-06: BL-139 hardening at load 100–250 on 4 cores — a
   concurrency=1, 2-file --mutate dry run still timed out after 5 min, not
   just full-suite runs.)
+- Clearing a crashed Stryker run's `.stryker-tmp` also deletes the sandbox
+  sibling symlinks, which live at `.stryker-tmp/<name>` — re-run
+  `node extension/scripts/ensureStrykerSandboxSiblings.js` (or retry via the
+  npm `mutation` script, which wires it in) before any direct `stryker run`,
+  or the dry run ENOENTs on a missing repo-root sibling and reads like a
+  regression. (Proposed by the hardender, BL-863 hardening 2026-08-13: an
+  orphaned-sandbox cleanup followed by a direct `stryker run` crashed ENOENT
+  on the missing `swarmforge/` sibling, costing a retry.)
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
