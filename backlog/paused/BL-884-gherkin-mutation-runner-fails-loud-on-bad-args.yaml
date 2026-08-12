@@ -1,0 +1,119 @@
+id: BL-884
+title: "run_gherkin_mutation.sh silently accepts a mis-ordered call: a level in the steps-module slot makes every mutant die by MODULE_NOT_FOUND crash and the manifest reads clean with zero real assertions run"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 30
+direction: pipeline-reported
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "a few lines of arg validation in one bash script plus one node test file; nothing to refactor"
+  architect: "no new architecture — input validation at an existing CLI boundary, per the shared fail-loud guardrails"
+  hardender: "bash-only change: shell has no mutation/CRAP/DRY wiring (BL-472 deferred); gated by its own node test in extension/test/, the degraded fallback recorded per engineering rules"
+  documenter: "the usage comment in the script is the doc surface and is updated in the same parcel"
+
+invariants:
+  - "The runner never starts a mutation run it cannot assert in: a steps-module path that is not an existing file, or a level outside {full, hard, soft}, exits non-zero with a usage message before any mutant runs and writes no manifest."
+
+approval_context: >
+  Sign-off wanted on making the runner REFUSE bad arguments rather than
+  keep today's permissive defaults. The trap is real and nearly shipped an
+  unverified gate (BL-715, 2026-08-12): a 3-arg call put the level in the
+  steps-module slot, every mutant crashed MODULE_NOT_FOUND, and the crash
+  counted as a kill — a 6/6-killed manifest with zero assertions run,
+  caught only because tested_at was not in HEAD. The hardener prompt rule
+  (accepted alongside this spec) covers discipline; this is the script-side
+  half so the failure is impossible, not just discouraged.
+
+source: |
+  Hardener rule_proposal, 2026-08-12 (priority 50): "run_gherkin_mutation.sh
+  takes 4 positionals; pass all 4. Skip steps-module and level fills that
+  slot - mutants 'kill' via MODULE_NOT_FOUND crash, a false-clean manifest
+  with zero real assertions run." Rationale cites the BL-715 near-miss.
+
+  Verified by the specifier against the script the same turn:
+  specs/pipeline/scripts/run_gherkin_mutation.sh:34 defaults
+  STEPS_MODULE="${3:-...}" and line 38 path-normalizes whatever string sits
+  in slot 3 without checking it exists, so "hard" resolves to
+  "$PWD/hard" and the run proceeds; LEVEL="${4:-soft}" likewise accepts any
+  string.
+
+description: |
+  ## Problem
+
+  `specs/pipeline/scripts/run_gherkin_mutation.sh <feature-file> [work-dir]
+  [steps-module-path] [level]` validates none of its optional positionals.
+  Two silent failure modes:
+
+  - A mis-ordered call (`... <feature> <workdir> hard`) puts a LEVEL string
+    in the steps-module slot; the script path-normalizes it to a
+    nonexistent file and every mutated example crashes MODULE_NOT_FOUND.
+    The harness counts the crash as a kill, so the manifest reads fully
+    killed while zero real assertions ran — a quality gate silently
+    vacated, the opposite of the script's own BL-638 "never a silent pass"
+    contract.
+  - An unrecognized level string (slot 4) is passed through rather than
+    rejected, so a typo like "ful" silently runs the soft default.
+
+  ## Behavior wanted
+
+  Before any mutant runs, the script exits non-zero with a usage message
+  naming the offending argument when:
+  - the steps-module path (explicit or defaulted) is not an existing file;
+  - the level is not exactly one of `full`, `hard`, `soft`.
+
+  On such an exit no manifest is written or updated. The existing exit-code
+  contract is preserved: 0 real pass, 1 fail, 2 inapplicable; argument
+  rejection must be distinguishable from all three in the message, and must
+  not reuse 0 or 2. Valid 4-positional calls behave exactly as today.
+
+  ## Guard test placement (constraint, not preference)
+
+  The regression test is a node test in `extension/test/` that spawns the
+  script (bad steps-module, bad level, and a control call) and asserts exit
+  codes and stderr. `specs/pipeline/test/` is run by no standing gate — a
+  guard parked there rots silently; `extension/test/` is the per-parcel
+  suite. Shell has no mutation/CRAP/DRY wiring (BL-472 deferred), so this
+  test IS the gate — record that degraded fallback in the parcel rather
+  than implying mutation ran.
+
+  The acceptance file ships as `.feature.draft` (no handlers yet).
+  Materialize it to a live `.feature` in the SAME parcel that lands the
+  handlers and point this ticket's `acceptance:` at the live path (BL-233).
+
+acceptance: specs/features/BL-884-gherkin-mutation-runner-fails-loud-on-bad-args.feature.draft
+
+notes: |
+  E2E QA procedure: from the repo root run the script three ways — (1)
+  `run_gherkin_mutation.sh <any-live-feature> <tmpdir> hard` and confirm a
+  non-zero exit whose stderr names the steps-module slot, with no manifest
+  written under the work dir; (2) a 4-positional call with level `bogus`
+  and confirm the level rejection; (3) a correct 4-positional soft call on
+  a small feature and confirm behavior identical to before the change
+  (exit 0/1/2 contract intact). Then confirm the node guard test exists in
+  extension/test/ and fails if the validation is reverted.
+
+  Severity medium, not high: the live hole is already mitigated by the
+  accepted hardener prompt rule (pass all 4 positionals; treat unseen
+  kills as unverified), and firing requires a mis-ordered call — but the
+  BL-715 near-miss shows the mitigation is discipline, not mechanism.
+
+  Adjacent, deliberately out of scope: the deeper question of whether a
+  runner-crash "kill" should ever be indistinguishable from an
+  assertion kill in the manifest (crash-vs-assert classification in
+  finalize_gherkin_mutation.js / mutationWorker.js). Worth its own ticket
+  if the pattern recurs; this slice only makes the known bad-args entry to
+  that state impossible.
+
+out_of_scope: |
+  - Distinguishing crash-kills from assertion-kills inside the mutation
+    harness or manifest schema.
+  - Any change to the vendored APS tools (pinned; never reimplement).
+  - Validating the feature-file or work-dir arguments beyond what the
+    script already does.

@@ -1,0 +1,186 @@
+id: BL-883
+title: "Boot prefix over the 44000 budget again: 46947 chars three days after BL-858 landed at 43757 — BL-858's live acceptance scenario is RED on main while BL-859's gate is still in flight"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 2
+direction: pipeline-reported
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "prose-move-only change; no code to refactor"
+  architect: "no new architecture — the BL-433 split mechanism BL-618 and BL-858 already ran, under the same acceptance contract"
+  hardender: "no executable logic changes beyond one commit-pinned step handler; the char-count and verbatim-move scenarios are the whole verification surface"
+  documenter: "the change IS documentation restructuring; pointers to absorbed prose are acceptance-gated in the parcel itself"
+
+invariants:
+  - "No normative rule text is lost: every passage removed from a boot-inlined article appears verbatim in exactly one reference file, and its slim article retains a pointer naming that file."
+  - "Headroom is bought by moving prose, never by weakening a gate: the 51200 cap and the 44000 budget values are unchanged and no reference/ file body enters the boot prefix."
+  - "Landing headroom is enforced, not aspirational: the fix commit's composed prefix is at most 42000 chars — at least 2000 under the budget — asserted by a commit-pinned acceptance scenario, not only by prose instruction."
+
+approval_context: >
+  Sign-off wanted on the 42000-char LANDING TARGET, not the mechanism. The
+  mechanism (BL-433 prose split into articles/reference/) is twice-approved
+  (BL-618, BL-858) and carried over unchanged; the 44000 budget and 51200 cap
+  are untouched.
+
+  What is new: both prior trims landed nearly AT their binding threshold
+  (BL-618: 291 chars of headroom; BL-858: 243 chars under the budget) because
+  the threshold was the only number with acceptance teeth, and both re-busted
+  within days. This ticket therefore makes the landing headroom itself a
+  commit-pinned acceptance scenario: land at or under 42000, leaving >= 2000
+  chars for amendments while BL-859's authoring-time gate (in flight) lands
+  and takes over enforcement. The pin is to the fix commit, so this scenario
+  stays green forever and never manufactures a new live red threshold below
+  the budget.
+
+  If you would rather see a larger trim, a restructure, or a budget change,
+  say so and this is respecced — those are materially different parcels.
+
+source: |
+  Coordinator note (priority 00, 2026-08-12 01:22Z):
+  "Boot prefix 46947>44000 again (3rd time, BL-858 sc.); new trim ticket
+  needed".
+
+  Verified by the specifier the same turn:
+  `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` prints
+  "stable-prefix chars: 46947" and "ALL PASS" — the runner's own 51200 cap
+  is green; the red gate is BL-858's live acceptance scenario
+  `headroom-budget-02` ("at most 44000 characters"), whose handler at
+  `specs/pipeline/steps/bl858BootPrefixCapSteps.js:188` parses the live
+  runner output and throws at 46947.
+
+description: |
+  ## Problem
+
+  The boot stable prefix (constitution + articles + PIPELINE, inlined into
+  every agent launch) is 46947 chars against the 44000-char budget — the
+  third overrun of a boot-prefix threshold (BL-618: 53408 > 51200 cap;
+  BL-858: 65138 > 51200 cap; now 46947 > 44000 budget). Unlike the prior two
+  this is a BUDGET bust, not a cap bust: the bb runner still reports ALL
+  PASS at 51200, but BL-858's landed acceptance feature
+  (`specs/features/BL-858-boot-prefix-back-under-cap.feature`, scenario
+  `headroom-budget-02`) is a LIVE assertion at 44000 and is RED on main
+  right now. Every parcel gating on the acceptance suite sees a
+  pre-existing failure — the exact "normalized red" condition BL-859's own
+  description warns is how a real red gets waved through. Severity high for
+  that reason: a landed safety signal is broken on main.
+
+  ## Why it regressed — predicted, not surprising
+
+  BL-858 landed at 43757 chars (243 under budget) on 2026-08-09 and its own
+  description said landing without BL-859's authoring-time gate "buys
+  roughly a week at the observed growth rate". Five amendment commits since
+  (617e202ef..main) added +3190 composed chars in three days (~1063/day):
+
+      workflow.prompt          8604 -> 10482  (+1878)
+      local-engineering.prompt 5861 -> 6584   (+723)
+      engineering.prompt       5477 -> 5986   (+509)
+      03_backlog.md            3340 -> 3450   (+110)
+
+  BL-859 (the gate that would have charged each amendment at authoring
+  time) is in flight with the coder but not landed. This ticket is the trim
+  that restores green and gives BL-859 an under-budget tree to land on; it
+  does not replace BL-859.
+
+  ## Fix mechanism (established, not novel)
+
+  The BL-433 split mechanism exactly as BL-618 and BL-858 ran it: move
+  incident-backed elaboration prose out of the boot-inlined articles into
+  `swarmforge/constitution/articles/reference/` (read on demand, never
+  inlined), leaving each slim article's normative rules intact plus a
+  one-line pointer to the absorbing reference file. Primary donors are the
+  three files carrying the fresh growth above — the recent amendments'
+  incident narratives (BL-715 seat orientation, BL-875 lockfile incident,
+  the test:properties allowlist rationale) are elaboration of exactly the
+  kind the reference/ corpus absorbs — plus older inline elaboration still
+  in workflow.prompt (the largest boot file at 10482 chars).
+
+  ## Landing target: at or under 42000 chars, with teeth
+
+  46947 - 42000 = ~4950 chars to move. 42000 is chosen to leave >= 2000
+  chars under the budget — a few days of amendments at the observed rate,
+  enough for BL-859 to land and take over — while displacing as little
+  guaranteed-at-boot guidance as possible. Both prior trims prove that only
+  a number with acceptance teeth gets honored (BL-618 landed 291 over its
+  prose instruction to leave "comfortable headroom"; BL-858 landed 243
+  under the only asserted number), so 42000 is asserted by scenario
+  `landing-headroom-02`, PINNED to this parcel's fix commit: measure the
+  fix commit's tree THROUGH the real composer (prompt_engine_lib /
+  the bb runner run against a materialized checkout of that commit — never
+  a re-derived second implementation that can drift from what boot pays).
+  Commit-pinning is deliberate: the scenario stays green regardless of
+  later growth, so this parcel adds no third live threshold that would red
+  below the budget. The durable live gates remain BL-858's 44000 and
+  BL-618's 51200 only.
+
+  ## Step handlers — the established reuse discipline
+
+  Reuse the commit-agnostic steps as-is by binding their exact text: "the
+  prompt engine test runner executes", "the runner reports ALL PASS" (both
+  bl618StablePrefixCapSteps.js), "the stable prefix length is at most
+  44000 characters" (bl858BootPrefixCapSteps.js:188), the parameterized
+  passage-search/pointer/diff-comparison When/Then steps, and the two
+  cap-value steps. Add a NEW steps file for this parcel's own Given texts
+  ("the repository at the BL-883 fix commit", "...the BL-883 parcel
+  removed...", etc.) scoped to this parcel's own fix commit, plus the new
+  commit-pinned `landing-headroom-02` handler. Do NOT edit BL-618's or
+  BL-858's FIX_COMMIT constants — that silently rewrites a landed ticket's
+  acceptance contract. Note the Background text must differ from BL-858's
+  ("the repository at the parcel's fix commit" is bound to BL-858's commit).
+
+  The acceptance file ships as `.feature.draft` because its Given steps
+  have no handlers yet. Materialize it to a live `.feature` in the SAME
+  parcel that lands the handlers and point this ticket's `acceptance:` at
+  the live path (BL-233); landing handlers without materializing leaves the
+  contract unexecuted, materializing without handlers is BL-618's QA bounce.
+
+acceptance: specs/features/BL-883-boot-prefix-budget-rebust-trim.feature.draft
+
+notes: |
+  E2E QA procedure: on the fix commit run
+  `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` — expect
+  "ALL PASS" and a printed "stable-prefix chars:" value at or under 42000;
+  run the acceptance suite and confirm this ticket's feature, BL-858's, and
+  BL-618's are ALL green (BL-858's `headroom-budget-02` un-reds as a side
+  effect of the trim — it is a live budget assertion, and its going green
+  is the point of the parcel); sample two moved passages and confirm each
+  is findable verbatim under `articles/reference/` with its slim article
+  still pointing there; boot one role via its launch script and confirm the
+  slim articles still arrive in the system prefix.
+
+  Sequencing with BL-859 (active, in flight): prefer landing BL-883 first
+  so BL-859's real-tree e2e check ("gate exits 0 on an under-budget tree")
+  is runnable as written. If BL-859 reaches QA first, its gate exiting
+  NON-zero against the real 46947-char tree is the gate's CORRECT verdict,
+  not a defect — BL-859's notes carry a 2026-08-12 amendment saying
+  exactly this; do not bounce BL-859 for it.
+
+  Interim practice until BL-859 lands: the specifier runs the bb runner
+  before committing any boot-inlined article change and refuses to land an
+  amendment that pushes the prefix over 44000 without moving equivalent
+  prose out in the same commit. This is BL-859's rule adopted as manual
+  discipline ahead of its gate; it does not change BL-859's scope.
+
+  Adjacent, deliberately not merged: BL-640 (paused) covers reference/
+  amendments not reaching roles' stale worktrees; this parcel widens its
+  blast radius but does not cause or fix it. The constitution/prompt files
+  are specifier-owned surface: the specifier reviews the choice of moved
+  passages at the QA-evidence stage if disputed, but the mechanical move
+  rides the normal pipeline under the acceptance contract (BL-858
+  precedent).
+
+out_of_scope: |
+  - Raising, lowering, or removing the 51200 cap or the 44000 budget.
+  - Rewriting any rule's meaning — this parcel moves prose, it does not
+    edit policy.
+  - Building or altering the authoring-time budget gate — that is BL-859,
+    in flight.
+  - Fixing reference/ staleness in role worktrees — that is BL-640.
+  - Trimming role prompts or pack overlays (only the boot-inlined
+    constitution/article surface the runner measures).

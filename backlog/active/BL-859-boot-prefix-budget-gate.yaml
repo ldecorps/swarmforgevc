@@ -147,6 +147,19 @@ notes: |
   here, so as not to fold unrelated content-diet work into this ticket's diff
   (BL-506).
 
+  Amendment 2026-08-12 (specifier; bookkeeping-only — nothing this parcel
+  BUILDS changes): the tree regrew over budget while this ticket was in
+  flight (46947 > 44000; the trim is BL-883, paused pending approval). The
+  e2e's first step ("with the real tree at or under budget ... confirm exit
+  0") is therefore not runnable as written until BL-883 lands. If this
+  parcel reaches QA before BL-883: the gate exiting NON-zero against the
+  real tree, reporting 46947, the 44000 budget, and the characters-to-move
+  figure, is its CORRECT verdict and must not be bounced as a defect; the
+  parity check (gate's measured size == the bb runner's printed
+  "stable-prefix chars:") remains verifiable either way, as do the
+  synthetic-tree scenarios. If BL-883 lands first, run the e2e exactly as
+  originally written.
+
 out_of_scope: |
   - Raising, lowering, or removing the 51200 cap.
   - Doing the trim itself — that is BL-858.
