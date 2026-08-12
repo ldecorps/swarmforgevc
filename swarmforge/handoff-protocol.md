@@ -789,6 +789,58 @@ The one deliberate exception to "fail open" is a malformed `required_wiring`
 entry: the author is present and the fix is a one-line edit, so that fails
 closed (manifest class).
 
+## First-Hop Acceptance-Pointer Gate (BL-880)
+
+Check D above (the acceptance-contract gate) is armed only at the
+documenter→QA edge, so a stale `acceptance:` pointer minted at the coder —
+naming a `.feature`/`.feature.draft` path that no longer exists at the
+cited commit — rode through cleaner, architect, hardender, and documenter
+before anything mechanical objected. BL-877 and BL-879 hit exactly this: a
+parked draft was promoted to a live feature file, but the ticket YAML's
+`acceptance:` pointer was left citing the removed draft, and each time a
+downstream role hand-fixed spec-owned YAML mid-parcel.
+
+This gate closes that gap by running a much narrower, **existence-only**
+probe at **every** pre-QA `git_handoff` hop (coder onward), independent of
+Check D:
+
+- **Arms** for any `git_handoff` whose task name resolves to a ticket ID,
+  **except** one addressed to QA — that edge keeps calling Check D
+  unchanged, whose fuller evaluation already subsumes this exact
+  condition; arming both would just double-report the same defect under
+  two finding classes.
+- **Checks existence only** — one `git show <cited-commit>:<path>` class
+  probe against the ticket's single-line `acceptance:` declaration. No
+  Gherkin parsing, no step resolution, no draft-ness policing: a
+  legitimately parked `.feature.draft` (BL-233) passes every pre-QA hop as
+  long as it exists at the cited commit.
+- **Skips silently** (no findings, no warnings, no git/fs work at all) when
+  the declaration is blank/absent, multi-line (inline Gherkin), or the bare
+  YAML block-scalar indicator a multi-line declaration's first line
+  collapses to (`|`, `>`, with optional chomping suffix) — those shapes
+  stay a QA-edge-only concern, judged there with full context.
+- **Fails open** with a warning when the cited commit's tree cannot be
+  read at all (infrastructure trouble) — the send proceeds.
+- **Fails closed** with a finding when the tree is readable but the
+  declared path is absent there — the send is refused.
+
+The gate prints each finding as:
+```
+PRE_QA_GATE_FAIL acceptance-pointer <ticket-id> declared acceptance: path "<path>" does not exist at cited commit <commit>
+```
+naming the ticket id, the declared path, and the probed commit so the
+sender can fix and re-send without archaeology. Remedy: flip the ticket's
+`acceptance:` pointer to the correct path (or promote the parked
+`.feature.draft` in the same commit) and re-send.
+
+Implementation: `swarm_handoff.bb`'s `pointer-gate-errors` calls
+`pre_qa_gate_gather_lib.bb::pointer-findings-for-git-handoff`, which gathers
+facts (`gather-acceptance-pointer-facts`) and hands them to the pure
+decision function `acceptance_pointer_gate_lib.bb::evaluate`. The gate
+reuses the existing gather/evaluate seams rather than a parallel
+implementation, and the QA-edge path keeps calling Check D's full
+evaluation exactly as before.
+
 ## Dynamic Routing via Specifier-Declared required_stages (BL-606)
 
 When the `required_stages_routing_enabled` config flag is true (default false),
