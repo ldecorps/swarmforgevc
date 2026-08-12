@@ -64,6 +64,7 @@ here.
 - [Bedtime vs. lights-out: which stop verb to run](how-to/BL-762-finish-shift-bedtime-vs-lights-out.md) — the keep-vs-kill table `./finish-shift` and `./stop-swarm.sh` both read, and why bedtime leaves the phone path up.
 - [Diagnosing a wake with attribution records](how-to/BL-870-wake-attribution.md) — the `wake-attribution-<YYYY-MM>.jsonl` log every landed or skipped wake now writes, its fields, and how to read a false-wake report from it.
 - [Hotfix record: 2026-08-02 Mac host-switch (freshness + bridge)](how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md) — the three false/misleading failure modes from the Linux→Mac host switch (handoffd reported down forever, babysitterd restart spam, bridge EADDRINUSE crash loop), adopted and reviewed under BL-789.
+- [The Boot-Prefix Budget Gate — Understanding the Check](how-to/BL-859-boot-prefix-budget-gate.md) — the specifier's authoring-time gate against boot-prefix growth, the 44000/51200 two-threshold split, and remediation on failure.
 
 ## Reference
 
