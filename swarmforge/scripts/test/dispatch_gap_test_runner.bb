@@ -291,6 +291,16 @@
          true
          (chase-sweep-lib/decide-open-slot-nudge? 1 3 5 {}))
 
+;; ── BL-679 ambulance-perimeter-04: the promotion freeze suppresses the nudge ──
+
+(assert= "ambulance-perimeter-04: an otherwise-eligible open slot fires no nudge while ambulance is engaged"
+         false
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 3 {:ambulance-active? true}))
+
+(assert= "ambulance-active? false (or omitted) leaves the decision unaffected - default is backward-compatible"
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 3 {})
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 3 {:ambulance-active? false}))
+
 (assert= "open-slot message stays within 80-char handoff limit"
          true
          (<= (count (chase-sweep-lib/open-slot-nudge-message))
@@ -418,6 +428,43 @@
   (assert= "read-paused-candidates + top-open-slot-candidate: expedited wins from real files"
            {:id "BL-40" :approved? true}
            (chase-sweep-lib/top-open-slot-candidate
+            (chase-sweep-lib/read-paused-candidates paused-dir))))
+
+;; ── BL-679 ambulance-perimeter-05: top-expedited-paused-candidate ────────────
+
+(assert= "top-expedited-paused-candidate: names the expedited defect, ignoring a better-priority non-expedited feature"
+         "BL-10"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-10\ntype: defect\nseverity: high\npriority: 50\n"}
+           {:content "id: BL-11\ntype: feature\npriority: 5\n"}]))
+
+(assert= "top-expedited-paused-candidate: nil when none are expedited"
+         nil
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-11\ntype: feature\npriority: 5\n"}]))
+
+(assert= "top-expedited-paused-candidate: nil for an empty candidate seq"
+         nil
+         (chase-sweep-lib/top-expedited-paused-candidate []))
+
+(assert= "top-expedited-paused-candidate: a defect with missing severity: fails CLOSED, not named"
+         nil
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-12\ntype: defect\npriority: 1\n"}]))
+
+(assert= "top-expedited-paused-candidate: priority breaks ties among multiple expedited candidates"
+         "BL-14"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
+           {:content "id: BL-14\ntype: bug\nseverity: critical\npriority: 5\n"}]))
+
+(let [tmp (mk-tmp)
+      paused-dir (str (fs/path tmp "paused"))]
+  (write-paused-ticket! paused-dir "BL-661" "defect" "critical" "80" "approved")
+  (write-paused-ticket! paused-dir "BL-41" "feature" nil "1" "approved")
+  (assert= "read-paused-candidates + top-expedited-paused-candidate: expedited defect named from real paused/ files, queued not promoted"
+           "BL-661"
+           (chase-sweep-lib/top-expedited-paused-candidate
             (chase-sweep-lib/read-paused-candidates paused-dir))))
 
 ;; ── open-slot-nudge-message / draft-lines name the candidate ──────────────

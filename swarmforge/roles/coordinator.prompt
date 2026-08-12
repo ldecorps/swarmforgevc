@@ -112,6 +112,32 @@ You are the coordinator.
   bump its handoffs to `00` — handoff priority is message routing, not work
   urgency; the `00` lane stays reserved for genuinely blocking decisions.
 
+## Ambulance Mode Freezes Promotion (BL-679)
+- Before EVERY promotion decision — intake, post-QA recheck, open-slot nudge
+  — check `ambulance_cli.bb <root> status`. While `"active": true`, promote
+  NOTHING from `backlog/paused/` into `backlog/active/`, by any means (the
+  ordinary promote+route path, a manual by-name promotion, or anything else).
+  handoffd's own open-slot nudge already stops firing while the mode is
+  engaged (BL-679 code-level suppression), but that only covers the
+  automated nudge path — this rule binds YOUR OWN promotion decisions too,
+  including ones no nudge ever asked for.
+- **Even an expedited critical/high defect queues like everything else** —
+  this is the ONE place the mode outranks Article 3.2.4, and it is
+  deliberate: the human chose the ambulance knowingly, and only a human
+  lifts it. Do not promote it around the freeze no matter how urgent it
+  looks; it stays in `backlog/paused/` for the ride's duration.
+- Depth is NOT touched by the freeze — do not lower `active_backlog_max_depth`
+  to "enforce" it; the freeze is a promotion gate, not a capacity throttle
+  (Article 3.5's circuit breaker is a separate, orthogonal mechanism).
+- The mode releases itself automatically (a daemon sweep, BL-679 piece 3)
+  once the ambulance ticket reaches `backlog/done/`, moves to
+  `backlog/hold/`, or vanishes from `backlog/` entirely — the last two cases
+  announce loudly (an ESCALATE-tier Telegram OPERATOR-topic alarm) since
+  they are the deadlock case the operator explicitly ruled out. You do not
+  need to poll for this: just re-check `ambulance_cli.bb status` at your
+  next promotion decision as usual — a stale "still engaged" belief self-
+  corrects at that check, not through any action of yours.
+
 ## Never Clear An Open-Slot Nudge Without A Cause (BL-798 invariant 3, SUP-1)
 - handoffd's open-slot nudge (`message: open slot + paused work -
   promote+route: <BL-id>`, plus ` awaiting approval` when that candidate is not

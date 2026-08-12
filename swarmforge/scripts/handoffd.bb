@@ -651,6 +651,17 @@
 (def print-preferred-rotate-target-only?
   (some #{"--print-preferred-rotate-target"} *command-line-args*))
 
+;; BL-679: same one-shot-and-exit posture as --poll-once above, for one full
+;; deterministic daemon cycle - delivery (poll-once!, so a bounce note
+;; naming the ambulance ticket is observably delivered in the same pass) plus
+;; the three sweeps this ticket added/modified (open-slot-nudge-sweep!'s
+;; ambulance suppression, flow-watchdog-sweep!'s ambulance mute, and the new
+;; ambulance-auto-exit-sweep!) - no real 10s chase-cadence wait, for the
+;; acceptance suite's "the handoff daemon runs one sweep" / "the flow
+;; watchdog sweep runs" steps.
+(def sweep-once-only?
+  (some #{"--sweep-once"} *command-line-args*))
+
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
 (defn pid-alive? [pid]
@@ -1754,10 +1765,14 @@
           now-ms (System/currentTimeMillis)
           cool? (chase-sweep-lib/within-open-slot-cooldown?
                  (read-open-slot-last-sent-ms) now-ms
-                 chase-sweep-lib/open-slot-nudge-cooldown-ms)]
+                 chase-sweep-lib/open-slot-nudge-cooldown-ms)
+          ;; BL-679: the promotion freeze - no new item is promoted from
+          ;; paused/ while the mode is engaged, so the nudge that would ask
+          ;; the coordinator to do exactly that must not fire either.
+          ambulance-active? (boolean (:active (ambulance-lib/read-ambulance-state (str project-root))))]
       (when (chase-sweep-lib/decide-open-slot-nudge?
              active-count cap paused-count
-             {:pending-nudge? pending? :within-cooldown? cool?})
+             {:pending-nudge? pending? :within-cooldown? cool? :ambulance-active? ambulance-active?})
         ;; BL-798: name the top Article-3.2.4 candidate (invariant 1) and
         ;; escalate repeated unacted nudges for the SAME candidate rather
         ;; than repeating a ticketless poke forever (invariant 2).
@@ -1841,6 +1856,32 @@
    {:live-session? (fn [role] (flow-watchdog-live-session? roles socket role))
     :emit-alarm! flow-watchdog-emit-alarm!
     :provider-outage-evidence-for (fn [role] (flow-watchdog-provider-outage-evidence-for roles role))}))
+
+
+;; ── BL-679 piece 3: ambulance auto-exit sweep - shares the chase-sweep
+;;    cadence, runs UNCONDITIONALLY (same rationale as flow-watchdog-sweep!/
+;;    master-checkout-drift-sweep! above): invariant 2 ("no marker state can
+;;    leave the swarm holding everything with nothing able to move") must
+;;    hold even while an unrelated pause suppresses outbound wakes - an
+;;    already-delivered-or-abandoned ambulance ticket must still release,
+;;    never wait out a pause it has nothing to do with. Thin wrapper only:
+;;    ambulance-lib/auto-exit! owns the real read/classify/release decision
+;;    (fs-only, no daemon dependency, directly unit/property-testable); this
+;;    adds the two genuinely impure duties a real sweep needs - the daemon
+;;    log line, and the release announcement over the SAME durable Telegram
+;;    OPERATOR-topic outbox every other unsuppressable alarm in this cadence
+;;    writes to (flow-watchdog-emit-alarm!) - and never touches engage!.
+(defn ambulance-auto-exit-sweep! []
+  (try
+    (when-let [{:keys [ticket case]} (ambulance-lib/auto-exit! (str project-root))]
+      (let [queued (chase-sweep-lib/top-expedited-paused-candidate
+                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir))
+            text (ambulance-lib/auto-exit-announcement-text
+                  {:ticket ticket :case case :queued-expedited-defect-id queued})]
+        (log! "ambulance-auto-exit" ticket (name case))
+        (flow-watchdog-emit-alarm! text)))
+    (catch Exception e
+      (log! "ambulance-auto-exit-sweep-error" (.getMessage e)))))
 
 
 ;; ── BL-839: master-checkout-vs-main drift sweep - report only ──────────────
@@ -2743,6 +2784,17 @@
         (println (or target "none"))
         (log! "print-preferred-rotate-target done" (or target "none")))
 
+      sweep-once-only?
+      (do
+        ;; Each call isolated exactly like the real main-loop cadence block
+        ;; below - one sweep's failure must never mask another's, in a test
+        ;; harness no less than in the live daemon.
+        (try (poll-once!) (catch Exception e (log! "poll-once-error" (.getMessage e))))
+        (try (open-slot-nudge-sweep! roles) (catch Exception e (log! "open-slot-nudge-sweep-error" (.getMessage e))))
+        (try (flow-watchdog-sweep! roles socket) (catch Exception e (log! "flow-watchdog-sweep-error" (.getMessage e))))
+        (try (ambulance-auto-exit-sweep!) (catch Exception e (log! "ambulance-auto-exit-sweep-error" (.getMessage e))))
+        (log! "sweep-once done"))
+
       :else
       (let [claim (claim-pid-file!)]
         (if-let [conflicting (and (vector? claim) (second claim))]
@@ -2832,6 +2884,16 @@
                       (master-checkout-drift-sweep!)
                       (catch Exception e
                         (log! "master-checkout-drift-sweep-error" (.getMessage e))))
+                    ;; BL-679: ambulance auto-exit sweep shares the same
+                    ;; cadence, runs UNCONDITIONALLY for the same reason
+                    ;; flow-watchdog-sweep!/master-checkout-drift-sweep!
+                    ;; above do - invariant 2 (a starved ambulance must
+                    ;; release, never wait out an unrelated pause) must hold
+                    ;; regardless of any pause/wake-suppression state.
+                    (try
+                      (ambulance-auto-exit-sweep!)
+                      (catch Exception e
+                        (log! "ambulance-auto-exit-sweep-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try
