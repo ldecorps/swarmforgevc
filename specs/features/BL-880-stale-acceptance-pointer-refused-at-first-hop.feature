@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-12T07:06:57.085228Z","feature_name":"BL-880 stale acceptance pointer refused at first hop","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-880-stale-acceptance-pointer-refused-at-first-hop.feature","background_hash":"15fe6908c6013681620f6aff0f83cd4b87a8f000bc3ee3e2262449414b1fc8ea","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-880 stale acceptance pointer refused at first hop
   A git_handoff whose ticket declares a single-line acceptance: path that
   does not exist at the cited commit is refused at the FIRST pipeline hop,
