@@ -137,3 +137,5 @@ notes: |
      pre-QA-hop send proceeds with a warning.
   5. Both pre-QA-gate unit runners green; record the Babashka
      degraded-gate fallback explicitly in the QA evidence.
+
+assigned_to: coder
