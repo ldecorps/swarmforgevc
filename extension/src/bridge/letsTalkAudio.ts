@@ -16,6 +16,7 @@ import {
   parseLetsTalkAudioEngine,
   resolveWhisperCppConfig,
   transcribeWithWhisperCpp,
+  type LetsTalkAudioEngine,
   type LetsTalkAudioEnv,
 } from './letsTalkLocalAudio';
 
@@ -191,25 +192,62 @@ function adaptersFromOpenAi(
   };
 }
 
+// BL-863: a resolve either returns usable adapters or fails with a reason
+// naming the engine and what is missing — never the old `?? {}` silent
+// empty-adapter degradation (the exact failure mode the human forbade: an
+// unusable engine that reads as success).
+export type LetsTalkAudioResolution =
+  | { kind: 'ok'; engine?: LetsTalkAudioEngine; adapters: LetsTalkAudioAdapters }
+  | { kind: 'failure'; engine: LetsTalkAudioEngine; reason: string };
+
+function missingLetsTalkAudioEngineReason(engine: LetsTalkAudioEngine): string {
+  return engine === 'openai'
+    ? 'openai audio engine unavailable: the OpenAI key is missing'
+    : 'local audio engine unavailable: the local engine is missing';
+}
+
+function buildAdaptersForEngine(
+  env: LetsTalkAudioEnv,
+  engine: LetsTalkAudioEngine,
+  speech: ReturnType<typeof speechSettingsFromEnv>
+): LetsTalkAudioAdapters | undefined {
+  return engine === 'local' ? adaptersFromLocalEngine(env, speech) : adaptersFromOpenAi(env, speech);
+}
+
+// BL-863: can be asked whether an engine is serviceable BEFORE it is chosen
+// (e.g. so a future selector can disable an unusable option with a reason
+// instead of offering a choice that will fail). Reuses the same
+// adapter-building logic resolution itself uses, so the two can never drift
+// on what counts as "configured".
+export function isLetsTalkAudioEngineServiceable(
+  env: LetsTalkAudioEnv,
+  engine: LetsTalkAudioEngine
+): { serviceable: true } | { serviceable: false; reason: string } {
+  const adapters = buildAdaptersForEngine(env, engine, speechSettingsFromEnv(env));
+  return adapters ? { serviceable: true } : { serviceable: false, reason: missingLetsTalkAudioEngineReason(engine) };
+}
+
 export function resolveLetsTalkAudioAdapters(
   envOrOpenAiKey: LetsTalkAudioEnv | string | undefined,
   overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
-): LetsTalkAudioAdapters {
+): LetsTalkAudioResolution {
   const env = normalizeLetsTalkAudioEnv(envOrOpenAiKey);
   if (overrides?.transcribeAudio || overrides?.synthesizeSpeech) {
-    return adaptersFromOverrides(env, overrides);
+    return { kind: 'ok', adapters: adaptersFromOverrides(env, overrides) };
   }
   const speech = speechSettingsFromEnv(env);
-  if (parseLetsTalkAudioEngine(env.engine) === 'local') {
-    return adaptersFromLocalEngine(env, speech) ?? {};
+  const engine: LetsTalkAudioEngine = parseLetsTalkAudioEngine(env.engine) === 'local' ? 'local' : 'openai';
+  const adapters = buildAdaptersForEngine(env, engine, speech);
+  if (!adapters) {
+    return { kind: 'failure', engine, reason: missingLetsTalkAudioEngineReason(engine) };
   }
-  return adaptersFromOpenAi(env, speech) ?? {};
+  return { kind: 'ok', engine, adapters };
 }
 
 export function resolveLetsTalkAudioAdaptersFromEnv(
   processEnv: NodeJS.ProcessEnv = process.env,
   overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
-): LetsTalkAudioAdapters {
+): LetsTalkAudioResolution {
   return resolveLetsTalkAudioAdapters(letsTalkAudioEnvFromProcessEnv(processEnv), overrides);
 }
 

@@ -5,6 +5,7 @@ const {
   clientTtsFromOverrides,
   extensionForMime,
   isClientTranscriptionError,
+  isLetsTalkAudioEngineServiceable,
   isTransientTranscriptionError,
   openAiTranscriptionLanguage,
   resolveLetsTalkAudioAdapters,
@@ -263,30 +264,40 @@ test('letsTalkAudio: transcribeAudioBytes forwards non-auto language to OpenAI f
   }
 });
 
-test('letsTalkAudio: resolveLetsTalkAudioAdapters honors overrides and missing key', () => {
+test('letsTalkAudio: resolveLetsTalkAudioAdapters honors overrides and reports a named failure on missing key', () => {
   const transcribe = async () => ({ kind: 'ok', transcript: 'x' });
   const synthesize = async () => ({ kind: 'ok', audio: Buffer.from('a') });
   const overridden = resolveLetsTalkAudioAdapters('key', { transcribeAudio: transcribe });
-  assert.equal(overridden.transcribeAudio, transcribe);
-  assert.equal(overridden.synthesizeSpeech, undefined);
-  assert.equal(overridden.clientTts, true);
+  assert.equal(overridden.kind, 'ok');
+  assert.equal(overridden.adapters.transcribeAudio, transcribe);
+  assert.equal(overridden.adapters.synthesizeSpeech, undefined);
+  assert.equal(overridden.adapters.clientTts, true);
 
   const both = resolveLetsTalkAudioAdapters('key', {
     transcribeAudio: transcribe,
     synthesizeSpeech: synthesize,
   });
-  assert.equal(both.clientTts, false);
+  assert.equal(both.adapters.clientTts, false);
 
   const synthOnly = resolveLetsTalkAudioAdapters('key', { synthesizeSpeech: synthesize });
-  assert.equal(synthOnly.clientTts, false);
+  assert.equal(synthOnly.adapters.clientTts, false);
 
-  assert.deepEqual(resolveLetsTalkAudioAdapters(undefined), {});
-  assert.deepEqual(resolveLetsTalkAudioAdapters('   '), {});
+  // BL-863: no OpenAI key and no overrides — a named failure, never the old
+  // silent `{}` that read as success with no adapters at all.
+  const noKey = resolveLetsTalkAudioAdapters(undefined);
+  assert.equal(noKey.kind, 'failure');
+  assert.equal(noKey.engine, 'openai');
+  assert.match(noKey.reason, /the OpenAI key/);
+  const blankKey = resolveLetsTalkAudioAdapters('   ');
+  assert.equal(blankKey.kind, 'failure');
+  assert.equal(blankKey.engine, 'openai');
 
   const live = resolveLetsTalkAudioAdapters('key');
-  assert.equal(typeof live.transcribeAudio, 'function');
-  assert.equal(typeof live.synthesizeSpeech, 'function');
-  assert.equal(live.clientTts, undefined);
+  assert.equal(live.kind, 'ok');
+  assert.equal(live.engine, 'openai');
+  assert.equal(typeof live.adapters.transcribeAudio, 'function');
+  assert.equal(typeof live.adapters.synthesizeSpeech, 'function');
+  assert.equal(live.adapters.clientTts, undefined);
 });
 
 test('letsTalkAudio: openai adapters invoke STT and TTS helpers', async () => {
@@ -301,7 +312,7 @@ test('letsTalkAudio: openai adapters invoke STT and TTS helpers', async () => {
     };
   });
   try {
-    const adapters = resolveLetsTalkAudioAdapters('key');
+    const { adapters } = resolveLetsTalkAudioAdapters('key');
     assert.deepEqual(await adapters.transcribeAudio(Buffer.from('audio'), 'audio/webm'), {
       kind: 'ok',
       transcript: 'heard',
@@ -332,7 +343,7 @@ test('letsTalkAudio: openai adapter omits language hint when speech is auto', as
     json: async () => ({ text: 'hello' }),
   }));
   try {
-    const adapters = resolveLetsTalkAudioAdaptersFromEnv({
+    const { adapters } = resolveLetsTalkAudioAdaptersFromEnv({
       OPENAI_API_KEY: 'key',
       LETS_TALK_SPEECH_LANGUAGE: 'auto',
     });
@@ -350,7 +361,7 @@ test('letsTalkAudio: openai adapter forwards configured speech language', async 
     json: async () => ({ text: 'bonjour' }),
   }));
   try {
-    const adapters = resolveLetsTalkAudioAdaptersFromEnv({
+    const { adapters } = resolveLetsTalkAudioAdaptersFromEnv({
       OPENAI_API_KEY: 'key',
       LETS_TALK_SPEECH_LANGUAGE: 'fr',
     });
@@ -362,11 +373,13 @@ test('letsTalkAudio: openai adapter forwards configured speech language', async 
 });
 
 test('letsTalkAudio: local engine wires whisper STT and client TTS only', async () => {
-  const local = resolveLetsTalkAudioAdaptersFromEnv({
+  const { kind, engine, adapters: local } = resolveLetsTalkAudioAdaptersFromEnv({
     LETS_TALK_AUDIO_ENGINE: 'local',
     WHISPER_MODEL_PATH: '/models/base.bin',
     WHISPER_CPP_BIN: '/bin/whisper-cli',
   });
+  assert.equal(kind, 'ok');
+  assert.equal(engine, 'local');
   assert.equal(typeof local.transcribeAudio, 'function');
   assert.equal(local.synthesizeSpeech, undefined);
   assert.equal(local.clientTts, true);
@@ -377,7 +390,7 @@ test('letsTalkAudio: local engine wires whisper STT and client TTS only', async 
 });
 
 test('letsTalkAudio: local engine with French speech language', async () => {
-  const local = resolveLetsTalkAudioAdaptersFromEnv({
+  const { adapters: local } = resolveLetsTalkAudioAdaptersFromEnv({
     LETS_TALK_AUDIO_ENGINE: 'local',
     WHISPER_MODEL_PATH: '/models/base.bin',
     LETS_TALK_SPEECH_LANGUAGE: 'fr',
@@ -388,8 +401,12 @@ test('letsTalkAudio: local engine with French speech language', async () => {
   assert.ok(stt && typeof stt.kind === 'string');
 });
 
-test('letsTalkAudio: local engine without model path is empty', () => {
-  assert.deepEqual(resolveLetsTalkAudioAdaptersFromEnv({ LETS_TALK_AUDIO_ENGINE: 'local' }), {});
+test('letsTalkAudio: local engine without model path fails naming local and the missing engine', () => {
+  const resolution = resolveLetsTalkAudioAdaptersFromEnv({ LETS_TALK_AUDIO_ENGINE: 'local' });
+  assert.equal(resolution.kind, 'failure');
+  assert.equal(resolution.engine, 'local');
+  assert.match(resolution.reason, /the local engine/);
+  assert.equal(resolution.adapters, undefined);
 });
 
 test('letsTalkAudio: synthesizeSpeechBytes returns failure on network error', async () => {
@@ -439,4 +456,26 @@ test('letsTalkAudio: synthesizeSpeechBytes returns audio bytes on success', asyn
   } finally {
     capture.restore();
   }
+});
+
+test('letsTalkAudio: isLetsTalkAudioEngineServiceable reports openai serviceable with a key', () => {
+  assert.deepEqual(isLetsTalkAudioEngineServiceable({ openaiApiKey: 'key' }, 'openai'), { serviceable: true });
+});
+
+test('letsTalkAudio: isLetsTalkAudioEngineServiceable reports openai not serviceable without a key', () => {
+  const result = isLetsTalkAudioEngineServiceable({}, 'openai');
+  assert.equal(result.serviceable, false);
+  assert.match(result.reason, /the OpenAI key/);
+});
+
+test('letsTalkAudio: isLetsTalkAudioEngineServiceable reports local serviceable with a model path', () => {
+  assert.deepEqual(isLetsTalkAudioEngineServiceable({ whisperModelPath: '/models/base.bin' }, 'local'), {
+    serviceable: true,
+  });
+});
+
+test('letsTalkAudio: isLetsTalkAudioEngineServiceable reports local not serviceable without a model path', () => {
+  const result = isLetsTalkAudioEngineServiceable({}, 'local');
+  assert.equal(result.serviceable, false);
+  assert.match(result.reason, /the local engine/);
 });
