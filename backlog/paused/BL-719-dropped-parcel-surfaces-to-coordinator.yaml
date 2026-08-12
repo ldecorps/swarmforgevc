@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 51
+priority: 52
 direction: normal
 depends_on: []
 mutation_cost: medium

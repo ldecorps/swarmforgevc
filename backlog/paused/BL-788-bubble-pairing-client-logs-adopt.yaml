@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarmforge-console
 human_approval: approved
-priority: 45
+priority: 48
 direction: queue-jump
 depends_on: []
 mutation_cost: low
