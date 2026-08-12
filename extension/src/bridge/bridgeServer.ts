@@ -65,6 +65,7 @@ import {
   isLetsTalkPath,
 } from './letsTalkRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
+import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
@@ -1575,16 +1576,39 @@ export function startBridge(
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
 
-    const letsTalkAudio = resolveLetsTalkAudioAdaptersFromEnv(process.env, {
+    // BL-863: transcribeAudio/synthesizeSpeech overrides (test/mock
+    // injection, e.g. BL-696's step handlers) are resolved once here, same
+    // as before overrides are deterministic and don't change over the
+    // bridge's lifetime. The real, non-override path resolves fresh per
+    // turn via resolveAudioForTurn below (required_wiring: resolution must
+    // live in the turn path, not startup, or a stored engine preference
+    // written between turns would not apply until a restart).
+    const letsTalkOverrides = {
       transcribeAudio: options.letsTalk?.transcribeAudio,
       synthesizeSpeech: options.letsTalk?.synthesizeSpeech,
-    });
+    };
+    const hasLetsTalkOverrides = Boolean(letsTalkOverrides.transcribeAudio || letsTalkOverrides.synthesizeSpeech);
+    const staticLetsTalkAudio = hasLetsTalkOverrides
+      ? resolveLetsTalkAudioAdaptersFromEnv(process.env, letsTalkOverrides)
+      : undefined;
     const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
     // BL-696: POST /lets-talk/turn, POST /lets-talk/new-session (write routes).
     const letsTalkWriteRoutes = createLetsTalkWriteRoutes(
       {
         agentSession: letsTalkAgentSession,
-        ...letsTalkAudio,
+        ...(staticLetsTalkAudio?.kind === 'ok' ? staticLetsTalkAudio.adapters : {}),
+        resolveAudioForTurn: hasLetsTalkOverrides
+          ? undefined
+          : () => {
+              const { resolution, unreadablePreference } = resolveLetsTalkAudioForTurn(targetPath, process.env);
+              if (unreadablePreference) {
+                appendOperatorEvent(targetPath, {
+                  type: 'lets-talk-audio-preference-unreadable',
+                  at: new Date().toISOString(),
+                });
+              }
+              return resolution;
+            },
         onTurnSuccess: (turn) => {
           void mirrorLetsTalkTurnToBubble(targetPath, turn.transcript, turn.replyText).catch((err) => {
             const error = err instanceof Error ? err.message : String(err);
