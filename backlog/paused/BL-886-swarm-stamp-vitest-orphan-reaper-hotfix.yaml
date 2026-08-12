@@ -1,0 +1,179 @@
+id: BL-886
+title: "Swarm stamp-off: property-lane vitest crash-orphans were invisible to the supervisor reaper and janitor sweep; verify the human-landed extension"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 23
+direction: human-requested
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-886-swarm-stamp-vitest-orphan-reaper-hotfix.feature
+
+human_approval: pending
+approval_context: >
+  Disposition (swarm-review stamp-off, not a rewrite) and severity `high` are
+  LOCKED human decisions carried from the intake and are not being reopened.
+  What needs sign-off is one scoping call the specifier made where the intake
+  conflicts with the landed code: the intake's acceptance wish (b) says a
+  live-parented property-lane run is "never touched, however long it runs",
+  but the landed janitor sweep deliberately reaps a live-parented hung vitest
+  tree after the 2.0h stale threshold (reapable-hung-vitest?). The spec scopes
+  (b) to the supervisor's crash-orphan reaper (where it holds by design) and
+  turns the janitor's live-parented stale-reap semantics into a named review
+  question for the architect instead of silently endorsing or forbidding it.
+
+source: |
+  backlog/INTAKE-handoffd-supervisor-vitest-orphan-reaper-stamp.md (human via
+  Cursor, found uncommitted in the master checkout 2026-08-12 ~10:03 CEST,
+  committed for provenance by the coordinator), archived to backlog/archive/
+  on mint by the specifier 2026-08-12.
+
+  Hotfix under review: commits 602c7d014 (handoffd_supervisor.bb) and
+  1ecbe049f (orphan_janitor_lib.bb, orphan_janitor_sweep_lib.bb, two new test
+  files, propertyLaneFixtureRunner.js) — ONE logical unit; review both
+  together.
+
+invariants:
+  - "The supervisor's crash-orphan reaper never touches a property-lane group whose parent is alive — orphanhood, not duration, is its only trigger."
+  - "Neither subsystem's scoping ever widens beyond the host root and registered worktrees: a vitest process whose cmdline and cwd are both outside those paths is never a candidate."
+  - "Fixture-runner cleanup handlers are installed exactly once per process: repeated runAsPropertyLaneFixture calls never stack duplicate exit/SIGINT/SIGTERM listeners."
+
+description: |
+  ## What
+
+  A Cursor-agent hotfix is live on main and has never been through a gate.
+  This ticket is that gate — a REVIEW ticket, not a rewrite ticket (same
+  posture as BL-811/BL-849/BL-879): confirm or refute the landed diff, open
+  narrow follow-ups for anything found.
+
+  ## The failure it fixed
+
+  Host load hit 259/249/203 on a 4-core host during the 2026-08-12 shift,
+  traced substantially to concurrent uncapped property-lane vitest runs
+  (BL-871's own defect, active, complementary — do not conflate). A
+  crash-orphaned property-lane process group was invisible to the
+  supervisor's reaper (the old pattern matched only stryker|node --test) and
+  to the janitor sweep, so interrupted runs accumulated unreaped.
+
+  ## What landed (files to review)
+
+  - `handoffd_supervisor.bb` (602c7d014): job-process-pattern widened to
+    vitest.properties.config.mjs / npm exec vitest / npx vitest / "(vitest"
+    workers; new `job-scope-paths` + `job-in-scope?` (cmdline OR cwd under
+    host root/registered worktrees — the cwd leg is load-bearing, vitest argv
+    often omits the checkout path); `orphaned-job-groups` now uses
+    `process-table-lib/parent-orphaned?` instead of a raw PPID-1 check.
+  - `orphan_janitor_lib.bb` / `orphan_janitor_sweep_lib.bb` (1ecbe049f): new
+    `hung-vitest-cmdline?`, `project-scoped-path?` (roles.tsv-derived path
+    set), `reapable-hung-vitest?` (parent-orphaned → immediate; live-parented
+    → waits out SWARMFORGE_ORPHAN_JANITOR_VITEST_STALE_HOURS, default 2.0h);
+    `sweep-candidates!` signature change (new required project-root first
+    arg) plus a cwd! adapter.
+  - `extension/test/helpers/propertyLaneFixtureRunner.js` (1ecbe049f):
+    generated fixture files tracked in a module-level Set, removed via
+    exit/SIGINT/SIGTERM handlers, not only the finally block.
+
+  ## Review goals (from the intake, plus specifier findings)
+
+  1. Prove the three acceptance properties: (a) a crash-orphaned
+     property-lane group under any covered cmdline shape is reaped where it
+     previously was not; (b) the SUPERVISOR reaper never touches a
+     live-parented run, however long it runs (see approval_context for why
+     this is scoped to the supervisor); (c) neither scoping check widens
+     beyond host root/registered worktrees.
+  2. Confirm `process-table-lib/parent-orphaned?` is the same helper
+     BL-849/BL-877 already hardened for Darwin — the hotfix must reuse it,
+     never re-derive orphan detection a second way.
+  3. NAMED REVIEW QUESTION (architect): `job-in-scope?`
+     (handoffd_supervisor.bb) and `project-scoped-path?`
+     (orphan_janitor_lib.bb) are two independent implementations of the same
+     scoping idea. Rule whether they are legitimately separate (different
+     subsystems, different inputs) or must share one helper before they
+     drift — decide, record, and open a follow-up if consolidation is due.
+  4. NAMED REVIEW QUESTION (architect): the janitor's live-parented
+     stale-reap (2.0h) can kill a legitimately long property run. Weigh it
+     against BL-871's forthcoming pool cap and rule whether the threshold,
+     the fast-path split, or the whole live-parented leg is right.
+  5. Verify `sweep-candidates!`'s new required first arg reached EVERY call
+     site (an internal signature change — grep, do not assume).
+  6. Confirm the two new test files are exercised by a runnable, findable
+     gate. Specifier finding 2026-08-12: `swarmforge/scripts/test/` has NO
+     glob-style standing runner — every runner is invoked explicitly — so
+     "added" is not "wired" (BL-419 shape). The parcel must leave them
+     invoked from a documented per-parcel path, or record their absence as a
+     finding with a follow-up.
+  7. Verify the fixture-runner's install-once guard: repeated
+     runAsPropertyLaneFixture calls in one process must not stack listeners
+     or double-fire cleanup (invariant 3).
+
+out_of_scope: |
+  - BL-871's own pool-cap fix (separate active ticket).
+  - Any change to `process-table-lib.bb` itself — this ticket only consumes
+    its existing `parent-orphaned?`/`cwd!` helpers.
+  - Widening the reaper to any process class beyond Stryker/`node --test`/
+    vitest-property-lane.
+  - The leaked `caffeinate -dims` reclaim — that is BL-885 (depends on this
+    ticket; same janitor files, different process class — do not fold).
+
+required_wiring:
+  - "swarmforge/scripts/orphan_janitor_sweep_lib.bb::reapable-hung-vitest?::the sweep must keep calling the new predicate — guards against a partial revert during review"
+  - "swarmforge/scripts/handoffd_supervisor.bb::job-in-scope?::orphaned-job-groups must keep consulting the scope check — a revert to the bare substring match reopens the scope-widening hole"
+
+notes: |
+  Related, do not conflate: BL-871 (active — pool cap; complementary),
+  BL-885 (paused — caffeinate reclaim, same files, depends on this),
+  BL-108 (done — original crash-orphan reaper this extends), BL-849/BL-877
+  (done — parent-orphaned?/Darwin process-table hardening this reuses).
+
+  Locked human decisions, carried verbatim from the intake:
+  1. Treat this as **swarm-review stamp-off of a landed hotfix**, not a
+     greenfield implement ticket (same posture as BL-811/BL-849/BL-879).
+  2. Severity **high** — a crash-orphaned property-lane run is currently
+     invisible to the daemon's own reaper, compounding the same host-load
+     problem this shift already flagged twice.
+
+  This is a hotfix-ledger stamp candidate (BL-848 posture): both provenance
+  commits should be traceable from backlog/hotfix-ledger.yaml; QA confirms
+  the ledger entry exists or records its absence as a finding.
+
+  IR-DRY disposition (specifier, 2026-08-12): one finding — the janitor
+  outline's parameterized `the tree <outcome>` vs. scenario 05's literal
+  `the tree is reaped`. Identical step vocabulary by design so one handler
+  serves both; not accidental drift.
+
+  ## Acceptance is parked as a draft, deliberately
+
+  `acceptance:` points at intent; the file ships as
+  `specs/features/BL-886-swarm-stamp-vitest-orphan-reaper-hotfix.feature.draft`.
+  The parent-state and signal-delivery Given steps have no step handlers yet,
+  and a live `.feature` without them hard-fails `specs/pipeline/runtime.js`
+  (BL-233). The coder promotes the draft to a live `.feature` in the same
+  parcel as its handlers — reuse BL-849/BL-879 sweep/reap handlers where they
+  already exist rather than minting synonyms.
+
+  ## Degraded gate, recorded up front
+
+  The bb diff has no mutation/CRAP/DRY wired (engineering.prompt, Startup
+  Tools) — the gate is the unit runners plus promoted acceptance scenarios.
+  The JS half (propertyLaneFixtureRunner.js) is a test helper, outside the
+  mutation surface. A hardening pass records the fallback, never implies
+  mutation ran.
+
+  ## E2E QA procedure (specifier, 2026-08-12)
+
+  1. Both new runners green, invoked explicitly:
+     `bb swarmforge/scripts/test/orphan_janitor_lib_test_runner.bb` and
+     `bash swarmforge/scripts/test/test_handoffd_supervisor_job_reaper.sh`.
+  2. Plant a synthetic parent-orphaned fixture group whose root cmdline
+     matches a covered vitest shape and whose cwd is under a registered
+     worktree (BL-879 synthetic-fixture posture); one-shot sweep reaps it and
+     the audit line names the vitest reason.
+  3. A live-parented fixture group survives the same supervisor sweep.
+  4. Decapitation check FIRST on the live host: any real in-flight
+     property-lane run (BL-871 is active) survives; nothing outside the class
+     is touched.
+  5. Verify goal 6: name the standing invocation that runs the two new test
+     files per parcel, or record its absence as a finding + follow-up.
+  6. Record the degraded Babashka gate fallback in the QA evidence.

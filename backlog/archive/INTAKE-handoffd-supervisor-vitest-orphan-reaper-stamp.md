@@ -144,3 +144,6 @@ gap, independent of whether BL-871's pool cap has landed yet.
 2. Severity **high** — a crash-orphaned property-lane run is currently
    invisible to the daemon's own reaper, compounding the same host-load
    problem this shift already flagged twice.
+
+---
+MINTED 2026-08-12 by the specifier as BL-886 (backlog/paused/BL-886-swarm-stamp-vitest-orphan-reaper-hotfix.yaml). Locked human decisions carried verbatim into that ticket's notes (Article 5.3).
