@@ -43,6 +43,12 @@
                   2.0)]
     (long (* hours 3600000))))
 
+(defn caffeinate-stale-threshold-ms []
+  (let [hours (or (some-> (System/getenv "SWARMFORGE_ORPHAN_JANITOR_CAFFEINATE_STALE_HOURS")
+                          (Double/parseDouble))
+                  2.0)]
+    (long (* hours 3600000))))
+
 (defn audit-log-file [project-root]
   (str (fs/path project-root ".swarmforge" "daemon" "orphan-janitor-audit.log")))
 
@@ -63,7 +69,8 @@
                      (or (orphan-janitor-lib/operator-runtime-cmdline? cmdline)
                          (orphan-janitor-lib/hung-acceptance-cmdline? cmdline)
                          (orphan-janitor-lib/hung-vitest-cmdline? cmdline)
-                         (orphan-janitor-lib/tmp-ancillary-cmdline? cmdline))))
+                         (orphan-janitor-lib/tmp-ancillary-cmdline? cmdline)
+                         (orphan-janitor-lib/caffeinate-dims-cmdline? cmdline))))
            (map :pid)
            vec))
     (catch Exception _ nil)))
@@ -77,16 +84,29 @@
          vec)
     (scan-candidate-pids!)))
 
+(defn- live-pid-from-file!
+  "Pid recorded in a single-slot pidfile, if that pid is currently alive.
+   A missing/unreadable pidfile is nil - never treated as an exemption."
+  [pidfile]
+  (when (fs/exists? pidfile)
+    (try
+      (let [pid (Long/parseLong (str/trim (slurp (str pidfile))))]
+        (when (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))
+          pid))
+      (catch Exception _ nil))))
+
 (defn live-runtime-pid!
   "Pid claimed by this project's operator_runtime.bb (runtime.pid), if alive."
   [project-root]
-  (let [f (fs/path project-root ".swarmforge" "operator" "runtime.pid")]
-    (when (fs/exists? f)
-      (try
-        (let [pid (Long/parseLong (str/trim (slurp (str f))))]
-          (when (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))
-            pid))
-        (catch Exception _ nil)))))
+  (live-pid-from-file! (fs/path project-root ".swarmforge" "operator" "runtime.pid")))
+
+(defn live-caffeinate-pid!
+  "Pid tracked by the resident-spy tunnel's single-slot caffeinate pidfile
+   (resident-spy-caffeinate.pid), if alive - the one caffeinate -dims process
+   BL-885's sweep never reaps. A missing/unreadable pidfile exempts nothing:
+   an untracked caffeinate is by definition already leaked."
+  [project-root]
+  (live-pid-from-file! (fs/path project-root ".swarmforge" "operator" "resident-spy-caffeinate.pid")))
 
 (defn- age-ms!
   [pid]
@@ -114,6 +134,7 @@
    :parent-orphaned?! process-table-lib/parent-orphaned?
    :live-window-pid-set! (fn [] (orphan-agent-reaper-sweep-lib/live-window-pid-set! project-root))
    :live-runtime-pid! (fn [] (live-runtime-pid! project-root))
+   :live-caffeinate-pid! (fn [] (live-caffeinate-pid! project-root))
    :kill-pid! kill-pid!
    :audit! (fn [line] (append-audit! (audit-log-file project-root) line))
    :log! default-log!})
@@ -123,8 +144,10 @@
         acceptance-threshold (acceptance-stale-threshold-ms)
         vitest-threshold (vitest-stale-threshold-ms)
         ancillary-threshold (ancillary-stale-threshold-ms)
+        caffeinate-threshold (caffeinate-stale-threshold-ms)
         window-pids ((:live-window-pid-set! adapters))
         live-runtime ((:live-runtime-pid! adapters))
+        live-caffeinate ((or (:live-caffeinate-pid! adapters) (fn [] nil)))
         parent-orphaned?! (or (:parent-orphaned?! adapters) (fn [_] false))
         cwd! (or (:cwd! adapters) (fn [_] nil))
         reaped (atom 0)]
@@ -198,6 +221,22 @@
                      " root=" root " age_ms=" age
                      (when (and front-desk? parent-orphaned? (not stale?))
                        " reason=parent-orphaned-front-desk")))
+               (swap! reaped inc)))
+
+           (orphan-janitor-lib/caffeinate-dims-cmdline? cmd)
+           (let [scoped? (orphan-janitor-lib/project-scoped-path? project-root cmd cwd)
+                 stale? (>= age caffeinate-threshold)
+                 is-live-caffeinate-pid? (= pid live-caffeinate)]
+             (when (orphan-janitor-lib/reapable-leaked-caffeinate?
+                    {:in-live-window-set? in-window?
+                     :caffeinate-dims? true
+                     :project-scoped? scoped?
+                     :stale? stale?
+                     :is-live-caffeinate-pid? is-live-caffeinate-pid?})
+               ((:kill-pid! adapters) pid)
+               ((:audit! adapters)
+                (str (now-iso) " reaped-leaked-caffeinate pid=" pid
+                     " age_ms=" age " reason=leaked-caffeinate"))
                (swap! reaped inc))))))
      (log! (str "swept " (count candidates) " candidate(s), reaped " @reaped))))
 

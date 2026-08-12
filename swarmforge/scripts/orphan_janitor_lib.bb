@@ -13,6 +13,13 @@
 ;;      `tmp.*`, not aps-/sfvc-/bl404-): babysitter tmux/launch, babysitterd.sh
 ;;      pointed at a disposable root, any tmux -S under that root (e.g. BL-647
 ;;      fixture socks), front-desk bridge/bot, and stray `claude -n Babysitter`.
+;;   4. leaked swarm `caffeinate -dims` daemons (BL-885): the resident-spy
+;;      tunnel's idle-sleep-prevention process, tracked by only a single-slot
+;;      pidfile - any crash/overwrite orphans the prior process with nothing
+;;      left to reclaim it. Ownership is proven the same way as hung vitest
+;;      (project-scoped cwd), with the pidfile's live pid as a never-reap
+;;      exemption; no parent-orphaned fast path (PPID 1 is normal for every
+;;      detached caffeinate, tracked or not).
 ;;
 ;; See orphan_janitor_sweep_lib.bb for process-table scan + kill wiring
 ;; (/proc on Linux, ProcessHandle on Darwin). Loaded by
@@ -68,6 +75,14 @@
          (re-find #"(?i)\bnpx vitest\b" c)
          (re-find #"(?i)\(vitest" c)
          (re-find #"(?i)node.*[/\\]vitest[/\\]" c)))))
+
+(defn caffeinate-dims-cmdline?
+  "True only for the exact `caffeinate -dims` invocation
+   ensure_tunnel_caffeinate() spawns - a human's bare `caffeinate`, `-i`,
+   `-d`, or any cmdline carrying extra args past -dims never matches (BL-885
+   invariant 1: exact -dims argv is one of the required ownership signals)."
+  [cmdline]
+  (boolean (re-find #"(?:^|/)caffeinate\s+-dims\s*$" (or cmdline ""))))
 
 (defn front-desk-bridge-or-bot-cmdline?
   "True for the headless bridge or front-desk bot entrypoints. Alone this
@@ -172,5 +187,20 @@
     in-live-window-set? false
     (not tmp-rooted-ancillary?) false
     (and front-desk-bridge-or-bot? parent-orphaned?) true
+    (not stale?) false
+    :else true))
+
+;; Pure: leaked swarm caffeinate -dims daemons (BL-885). Every ownership
+;; signal must hold at once (invariant 1); no parent-orphaned fast path -
+;; PPID 1 is normal for every detached caffeinate, tracked or not, so
+;; staleness is never skipped for this class (invariant 3).
+(defn reapable-leaked-caffeinate?
+  [{:keys [in-live-window-set? caffeinate-dims? project-scoped? stale?
+           is-live-caffeinate-pid?]}]
+  (cond
+    in-live-window-set? false
+    (not caffeinate-dims?) false
+    (not project-scoped?) false
+    is-live-caffeinate-pid? false
     (not stale?) false
     :else true))
