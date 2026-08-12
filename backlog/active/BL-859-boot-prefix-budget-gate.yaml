@@ -156,3 +156,6 @@ out_of_scope: |
     hardening, ticketed separately if wanted.
   - Any change to what prompt_engine_lib composes — this ticket only
     measures it.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-12, by: documenter, blamed: coder, class: behavior, commit: 998277f5b6, evidence: backlog/evidence/BL-859-bounce-20260812.md }
