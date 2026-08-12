@@ -17,9 +17,47 @@ const { spawnSync } = require('node:child_process');
 const EXTENSION_DIR = path.join(__dirname, '..', '..');
 const TEST_DIR = path.join(EXTENSION_DIR, 'test');
 
+const trackedFixturePaths = new Set();
+let abnormalExitHandlersInstalled = false;
+
+function untrackFixturePath(filePath) {
+  trackedFixturePaths.delete(filePath);
+}
+
+function removeTrackedFixture(filePath) {
+  untrackFixturePath(filePath);
+  fs.rmSync(filePath, { force: true });
+}
+
+function removeAllTrackedFixtures() {
+  for (const filePath of [...trackedFixturePaths]) {
+    removeTrackedFixture(filePath);
+  }
+}
+
+function installAbnormalExitHandlersOnce() {
+  if (abnormalExitHandlersInstalled) {
+    return;
+  }
+  abnormalExitHandlersInstalled = true;
+  process.on('exit', removeAllTrackedFixtures);
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      removeAllTrackedFixtures();
+      process.exit(1);
+    });
+  }
+}
+
+function trackFixturePath(filePath) {
+  installAbnormalExitHandlersOnce();
+  trackedFixturePaths.add(filePath);
+}
+
 function runAsPropertyLaneFixture(source, { basenamePrefix = 'bl868-fixture-', timeout = 30000, env } = {}) {
   const filename = `${basenamePrefix}${process.pid}-${Math.random().toString(36).slice(2)}.property.test.js`;
   const filePath = path.join(TEST_DIR, filename);
+  trackFixturePath(filePath);
   fs.writeFileSync(filePath, source);
   try {
     const result = spawnSync('npx', ['vitest', 'run', '--config', 'vitest.properties.config.mjs', `test/${filename}`], {
@@ -30,7 +68,7 @@ function runAsPropertyLaneFixture(source, { basenamePrefix = 'bl868-fixture-', t
     });
     return { status: result.status, output: `${result.stdout || ''}${result.stderr || ''}` };
   } finally {
-    fs.rmSync(filePath, { force: true });
+    removeTrackedFixture(filePath);
   }
 }
 
@@ -44,6 +82,7 @@ function runManyAsPropertyLaneFixtures(sources, { basenamePrefix = 'bl871-fixtur
   const files = sources.map((source, index) => {
     const filename = `${basenamePrefix}${process.pid}-${Math.random().toString(36).slice(2)}-${index}.property.test.js`;
     const filePath = path.join(TEST_DIR, filename);
+    trackFixturePath(filePath);
     fs.writeFileSync(filePath, source);
     return { filePath, relPath: `test/${filename}` };
   });
@@ -56,7 +95,7 @@ function runManyAsPropertyLaneFixtures(sources, { basenamePrefix = 'bl871-fixtur
     });
     return { status: result.status, output: `${result.stdout || ''}${result.stderr || ''}` };
   } finally {
-    files.forEach((f) => fs.rmSync(f.filePath, { force: true }));
+    files.forEach((f) => removeTrackedFixture(f.filePath));
   }
 }
 
