@@ -149,6 +149,11 @@ notes: |
   promoted+routed to specifier at 2026-08-12T03:09:02Z. Re-check this ticket
   for expedited (severity: high) promotion once approved.
 
+  Coordinator 2026-08-12T06:08Z: open-slot nudge recurred, still
+  `human_approval: pending` — not promoted. Slot filled instead by BL-880
+  (orthogonal, approved), promoted+routed to coder at 2026-08-12T06:09:59Z.
+  Still the top expedited candidate once approved.
+
   E2E QA procedure: on the fix commit run
   `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` — expect
   "ALL PASS" and a printed "stable-prefix chars:" value at or under 42000;

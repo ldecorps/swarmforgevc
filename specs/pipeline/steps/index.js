@@ -426,7 +426,8 @@ const DOMAINS = [
   require('./bl796NvmNodePathFollowUpAdoptSteps'),
   require('./bl715WorkflowPromptModesOrientationSteps'),
   require('./bl859BootPrefixBudgetGateSteps'),
-  require('./bl679AmbulanceModePerimeterSteps')
+  require('./bl679AmbulanceModePerimeterSteps'),
+  require('./bl880StaleAcceptancePointerRefusedAtFirstHopSteps')
 ];
 
 function registerSteps(registry) {
