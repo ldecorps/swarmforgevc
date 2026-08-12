@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-12T01:32:29.016197Z","feature_name":"A boot-prefix budget gate the specifier runs before committing an amendment","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-859-boot-prefix-budget-gate.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: A boot-prefix budget gate the specifier runs before committing an amendment
 
   # BL-859: the 51200-char boot-prefix cap is enforced only by
@@ -11,6 +15,26 @@ Feature: A boot-prefix budget gate the specifier runs before committing an amend
   # so the band between budget and cap absorbs amendments landing between
   # gate runs.
 
+  # Hardener (BL-234 equivalent-mutant note, 2026-08-12): a soft Gherkin
+  # mutation pass single-value-mangles each <chars>/<exit_code> example cell
+  # (8 mutants: 5 killed, 3 survived). All 4 exit_code-field mutants (m2, m4,
+  # m6, m8) were killed - the scenario's own `Then the gate exits
+  # <exit_code>` step catches every one. The 3 survivors are all chars-field
+  # mutants that stay on the SAME side of the 44000 boundary as the original
+  # value: row 1 (43999 -> 43991, still <= 44000), row 3 (44001 -> 44003,
+  # still > 44000), row 4 (65138 -> 65130, still > 44000). verdict()'s
+  # :exit-code is a step function - `(if (> size budget) 1 0)` - so any two
+  # sizes on the same side of the boundary are indistinguishable to this
+  # scenario's only assertion (exit_code), regardless of implementation.
+  # Exact-size fidelity (does measure() report precisely the padded tree's
+  # target size, not merely "close enough to stay on the right side of
+  # 44000") is already exhaustively covered at the unit layer by
+  # boot_prefix_budget_gate_lib_test_runner.bb, which asserts the measured
+  # size equals the exact target chars for these same four boundary values
+  # (43999/44000/44001/65138) plus others - forcing this acceptance scenario
+  # to also assert exact size would test measurement fidelity a second time,
+  # not this feature's own claim (verdict follows measured size). No
+  # artificial assertion was added to force the 3 survivors to die.
   # BL-859 budget-verdict-01
   Scenario Outline: the gate's verdict follows the measured boot prefix size
     Given a constitution tree whose boot prefix measures <chars> characters

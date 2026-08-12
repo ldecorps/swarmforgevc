@@ -282,6 +282,22 @@ You are the specifier.
   "Amending An In-Flight Ticket's Spec" — stating explicitly whether anything
   they build changes, so a bookkeeping-only amendment does not read as a rebuild.
 
+## Run the boot prefix budget gate before a boot-inlined article change (BL-859)
+- Before committing any change to a boot-inlined file —
+  `swarmforge/constitution.prompt`, a top-level file directly under
+  `swarmforge/constitution/articles/` (not `reference/`), or
+  `swarmforge/PIPELINE.md` — run the boot prefix budget gate via
+  `swarmforge/scripts/boot_prefix_budget_gate.sh` as a required step. It
+  measures the SAME stable boot prefix every agent pays on respawn (through
+  `prompt_engine_lib`'s own composer, never a re-derived estimate) and fails
+  loud with the measured size, the 44000-char budget, and how many
+  characters must move once you are over it. This catches the growth at the
+  moment you author it instead of leaving it for an unrelated parcel to
+  discover, weeks later, as a normalized red it is told to ignore (BL-618 at
+  53408 chars, BL-858 at 65138 — twice already). A failing gate means move
+  equivalent prose to `swarmforge/constitution/articles/reference/` (or trim)
+  in the SAME commit — never commit over budget and defer the trim.
+
 ## Rule Proposals (incoming)
 - Any agent may send you a `rule_proposal` handoff (BL-035): a proposed rule
   (`body`, one crisp sentence) plus a `rationale`, targeted by `scope`:

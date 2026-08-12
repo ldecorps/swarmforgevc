@@ -160,6 +160,38 @@
                (< stable-len 51200))
   (println (str "stable-prefix chars: " stable-len)))
 
+;; ── BL-859: constitution-text/pipeline-text/stable-prefix-text take an ─────
+;; optional tree-root argument, reading that same composed shape from a
+;; synthetic tree instead of the real repo. This is what lets the boot-prefix
+;; budget gate measure a synthetic tree THROUGH this exact composer (never a
+;; second implementation that can drift from it) without mutating the real
+;; constitution tree - the injected-root testability invariant BL-859 declares.
+(let [d (str (fs/create-temp-dir {:prefix "prompt-engine-root-arg-test-"}))]
+  (try
+    (fs/create-dirs (fs/path d "swarmforge" "constitution" "articles" "reference"))
+    (spit (str (fs/path d "swarmforge" "constitution.prompt")) "SYNTHETIC-ROOT-MARKER-CONST")
+    (spit (str (fs/path d "swarmforge" "constitution" "articles" "01_a.md")) "SYNTHETIC-ROOT-MARKER-ARTICLE")
+    (spit (str (fs/path d "swarmforge" "constitution" "articles" "reference" "deep.md")) "SYNTHETIC-ROOT-MARKER-REFERENCE")
+    (spit (str (fs/path d "swarmforge" "PIPELINE.md")) "SYNTHETIC-ROOT-MARKER-PIPELINE")
+
+    (assert-true "constitution-text with an explicit root reads that tree, not the real repo"
+                 (str/includes? (prompt-engine-lib/constitution-text d) "SYNTHETIC-ROOT-MARKER-ARTICLE"))
+    (assert-true "constitution-text with an explicit root does not see the real repo's constitution"
+                 (not (str/includes? (prompt-engine-lib/constitution-text d) "# SwarmForge Constitution")))
+    (assert-true "pipeline-text with an explicit root reads that tree's PIPELINE.md"
+                 (str/includes? (prompt-engine-lib/pipeline-text d) "SYNTHETIC-ROOT-MARKER-PIPELINE"))
+    (assert-true "stable-prefix-text with an explicit root composes constitution then pipeline from that tree"
+                 (let [t (prompt-engine-lib/stable-prefix-text d)]
+                   (and (str/includes? t "SYNTHETIC-ROOT-MARKER-CONST")
+                        (str/includes? t "SYNTHETIC-ROOT-MARKER-ARTICLE")
+                        (str/includes? t "SYNTHETIC-ROOT-MARKER-PIPELINE"))))
+    (assert-true "stable-prefix-text with an explicit root still excludes reference/ bodies"
+                 (not (str/includes? (prompt-engine-lib/stable-prefix-text d) "SYNTHETIC-ROOT-MARKER-REFERENCE")))
+    (assert-true "the real repo's own stable-prefix-text is unaffected by the synthetic tree existing on disk"
+                 (str/includes? (prompt-engine-lib/stable-prefix-text) "# SwarmForge Constitution"))
+    (finally
+      (fs/delete-tree d))))
+
 ;; ── BL-858 invariant 2: headroom is bought by MOVING prose, never by ────────
 ;; weakening the gate. The two assertions above already pin two SPECIFIC known
 ;; reference/ files; this generalizes the claim to the property itself -
