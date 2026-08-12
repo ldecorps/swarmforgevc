@@ -540,3 +540,20 @@ You are the hardender.
   never licenses simplifying that.
   (Confirmed via `ps -o pgid=` twice, 2026-08-11: the hardener's BL-878 pass
   and an independent specifier probe at acceptance.)
+
+## A shell test unsets every SWARMFORGE_* var its tested script reads — at the top, never inherited (rule_proposal 2026-08-12, accepted)
+- The pane a test runs in is a launch environment, not a clean room: under
+  mono-router every resident pane carries standing exports (e.g.
+  `SWARMFORGE_SKIP_BABYSITTERD=1`). A shell test that lets the tested script
+  read an inherited `SWARMFORGE_*` var is asserting against the pane's
+  configuration, not the fixture's.
+- Rule: at the top of the test file, `unset` (or `env -u`) EVERY
+  `SWARMFORGE_*` variable the tested script reads, before any fixture conf is
+  sourced — grep the script under test for `SWARMFORGE_` to enumerate them;
+  the shared engineering rule's `env -u SWARMFORGE_CONFIG` is the special
+  case, this is the general one.
+- The failure mode is silent: the test does not error, it no-ops. (Incident:
+  `test_daemon_log_freshness.sh` 02b — three checks FAILed while the banner
+  still said PASS, because the script honoured the pane's standing
+  `SWARMFORGE_SKIP_BABYSITTERD=1`; fixed in-place by the `unset` at the top
+  of that test, which is the pattern to copy.)
