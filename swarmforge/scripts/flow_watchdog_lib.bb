@@ -693,14 +693,42 @@
   "Assembles decide-tier's structurally-constrained input map from an age-ms,
    warn/escalate thresholds, and durable state. Kept separate from
    decide-tier itself so the acceptance-05 structural guarantee lives on the
-   decision fn alone, never on this convenience wrapper."
-  [age-ms warn-ms escalate-ms state parcel-id]
-  (decide-tier
-   {:age-ms age-ms
-    :warn-ms warn-ms
-    :escalate-ms escalate-ms
-    :highest-tier-alarmed (highest-tier-alarmed state parcel-id)
-    :snoozed? (snoozed? state parcel-id)}))
+   decision fn alone, never on this convenience wrapper.
+
+   ambulance-held? (BL-679, default false) composes at THIS caller, per the
+   ticket's own instruction: decide-tier gains no ambulance branch - its
+   allowed-key set stays the five keys acceptance-05 pins. A parcel an
+   engaged ambulance holds is honest snooze territory (an ambulance IS a
+   durable, visible, human-written acknowledgement that these parcels are
+   waiting - the same thing a snooze means), ORed with any pre-existing
+   human-ack snooze so either mechanism mutes on its own. The ambulance
+   ticket's OWN parcels are never held in the first place (ambulance-lib/
+   parcel-held?'s positive-attribution rule), so this never mutes them."
+  ([age-ms warn-ms escalate-ms state parcel-id]
+   (evaluate-parcel-tier age-ms warn-ms escalate-ms state parcel-id false))
+  ([age-ms warn-ms escalate-ms state parcel-id ambulance-held?]
+   (decide-tier
+    {:age-ms age-ms
+     :warn-ms warn-ms
+     :escalate-ms escalate-ms
+     :highest-tier-alarmed (highest-tier-alarmed state parcel-id)
+     :snoozed? (or (snoozed? state parcel-id) (boolean ambulance-held?))})))
+
+(defn parcel-ambulance-held?
+  "BL-679: true when the given already-resolved ambulance-state (read ONCE
+   per sweep by run-sweep! below, via ambulance-lib/read-ambulance-state -
+   never per-parcel, and never handoff-lib's separately-managed global
+   target-root, since run-sweep! already threads its own explicit
+   project-root through) holds the parcel at file-path, via the SAME
+   attribution predicate every other BL-655 hold site consults
+   (ambulance-lib/parcel-held?, the BL-852 reuse shape) - never a second,
+   drifting notion of held. A vanished or mid-write file (fails to slurp)
+   falls through to not-held, mirroring chase_sweep_lib.bb's own BL-813
+   fail-open shape for exactly this race."
+  [ambulance-state file-path]
+  (try
+    (ambulance-lib/parcel-held? ambulance-state (handoff-lib/parse-envelope (slurp (str file-path))))
+    (catch Exception _ false)))
 
 ;; ── impure sweep application ─────────────────────────────────────────────────
 ;; adapters keys: :live-session? (fn [role] bool), :emit-alarm! (fn [text] ->
@@ -751,6 +779,9 @@
         state-dir (fs/parent daemon-dir)
         ledger-intervals (try (availability-ledger-lib/fold state-dir) (catch Exception _ []))
         provider-evidence-for (or (:provider-outage-evidence-for adapters) (constantly []))
+        ;; BL-679: read once per sweep, never per-parcel - the SAME marker
+        ;; snapshot applies to every parcel this sweep evaluates.
+        ambulance-state (ambulance-lib/read-ambulance-state project-root)
         parcels (vec (mapcat
                       (fn [{:keys [role new-dir in-process-dir]}]
                         (concat
@@ -772,7 +803,8 @@
                          :provider-evidence (provider-evidence-for (:role parcel))})
                    age-ms (:effective-age-ms eff)
                    {:keys [warn-ms escalate-ms]} (resolve-thresholds parcel specs global)
-                   tier (evaluate-parcel-tier age-ms warn-ms escalate-ms acc-state (:id parcel))]
+                   held? (parcel-ambulance-held? ambulance-state (:file-path parcel))
+                   tier (evaluate-parcel-tier age-ms warn-ms escalate-ms acc-state (:id parcel) held?)]
                (if (= tier :none)
                  acc-state
                  (let [live? (boolean ((:live-session? adapters) (:role parcel)))
