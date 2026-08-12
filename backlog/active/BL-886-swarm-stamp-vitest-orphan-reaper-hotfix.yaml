@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: low
 acceptance: specs/features/BL-886-swarm-stamp-vitest-orphan-reaper-hotfix.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Disposition (swarm-review stamp-off, not a rewrite) and severity `high` are
   LOCKED human decisions carried from the intake and are not being reopened.
