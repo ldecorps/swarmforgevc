@@ -424,7 +424,8 @@ const DOMAINS = [
   require('./bl878SetsidFreeDaemonSpawnSteps'),
   require('./bl876BounceHistorySameDayRebounceSteps'),
   require('./bl796NvmNodePathFollowUpAdoptSteps'),
-  require('./bl715WorkflowPromptModesOrientationSteps')
+  require('./bl715WorkflowPromptModesOrientationSteps'),
+  require('./bl859BootPrefixBudgetGateSteps')
 ];
 
 function registerSteps(registry) {
