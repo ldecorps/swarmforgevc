@@ -138,3 +138,6 @@ notes: |
   ids to BL-539 decomposes_into in the next clean pass on that tracker.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-12, by: QA, blamed: coder, class: unit, commit: c78a8edf7, evidence: backlog/evidence/BL-887-consolidate-process-scope-predicate-bounce-20260812.md }
