@@ -1,5 +1,34 @@
 # Workflow Rules
 
+## How Work Moves — Normal Live Swarm, Queue-Jump, Ambulance, Expeditor (BL-715)
+- **The normal live swarm is the default path** for every ticket: the full
+  pipeline chain (specifier → coder → cleaner → architect → hardener →
+  documenter → QA) running live, one resident process per role, moving every
+  parcel through every gate in order. Three named specials exist for
+  situations that path doesn't fit — **none of them replaces that path**;
+  each is a deliberate, temporary departure that walks back into, or hands
+  off to, the normal live swarm once its job is done.
+- **queue-jump** — promotes sooner then walks the normal live pipeline. It
+  reorders only *when* a ticket is promoted out of `backlog/paused/`, never
+  *how* it runs afterward. Article 3.2.4's expedited-defects rule and the
+  paused-pager's "Set highest priority, expedite" button are both
+  queue-jump — "expedite" there names queue-jump, not a separate mode.
+- **ambulance** — holds other parcels on a live stack for one ticket. Every
+  daemon, alarm, and Telegram topic stays up; only the designated ticket's
+  parcels move, until released. See
+  `docs/how-to/BL-655-ambulance-mode-the-hold.md`.
+- **expeditor** — drives one ticket with the swarm stopped. Reach for it
+  only when the pipeline itself is the casualty, via
+  `swarmforge/scripts/expedite.sh`; the Telegram `/expedite` command
+  triggers this same expeditor, not queue-jump. See
+  `docs/reference/BL-567-expeditor-manual.md`.
+- **queue-jump is not ambulance. queue-jump is not the expeditor. ambulance
+  is not the expeditor.** Three distinct mechanisms for three distinct
+  problems — see **workflow-detailed.prompt** for the full escalation
+  ladder and every legacy "expedite" reference this constitution still
+  carries, mapped to whichever of the two (queue-jump or the expeditor) it
+  actually names.
+
 ## Handoff transport (tmux primary, mailbox backup)
 - Agents send work via `swarm_handoff.sh` only — never direct tmux commands.
   A successful handoff delivers to `inbox/new/` and injects a tmux wake; the
