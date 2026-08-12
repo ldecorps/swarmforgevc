@@ -48,28 +48,34 @@ export function readLetsTalkAudioEnginePreference(targetPath: string): LetsTalkA
 
 export type LetsTalkAudioEnginePreferenceWrite = { ok: true } | { ok: false; reason: string };
 
+function isPlainRecord(candidate: unknown): candidate is Record<string, unknown> {
+  return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+}
+
 // Strict single-key allowlist: exactly {engine: 'local'|'openai'} and
 // nothing else. A credential-carrying candidate (e.g. {engine, openaiApiKey})
 // is refused WHOLESALE rather than stripped down to its engine field, so a
 // caller can never smuggle a credential through under a differently-named
-// key — the existing preference file (if any) is left untouched either way.
+// key.
+function isEngineOnlyRecord(record: Record<string, unknown>): record is { engine: LetsTalkAudioEngine } {
+  const keys = Object.keys(record);
+  return keys.length === 1 && keys[0] === 'engine' && (record.engine === 'local' || record.engine === 'openai');
+}
+
 export function writeLetsTalkAudioEnginePreference(
   targetPath: string,
   candidate: unknown
 ): LetsTalkAudioEnginePreferenceWrite {
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+  if (!isPlainRecord(candidate)) {
     return { ok: false, reason: 'preference must be an object with only an engine field' };
   }
-  const record = candidate as Record<string, unknown>;
-  const keys = Object.keys(record);
-  const engine = record.engine;
-  if (keys.length !== 1 || keys[0] !== 'engine' || (engine !== 'local' && engine !== 'openai')) {
+  if (!isEngineOnlyRecord(candidate)) {
     return {
       ok: false,
       reason: 'preference must carry only an engine name of "local" or "openai" — no other fields are accepted',
     };
   }
-  atomicWrite(letsTalkAudioEnginePreferencePath(targetPath), JSON.stringify({ engine }));
+  atomicWrite(letsTalkAudioEnginePreferencePath(targetPath), JSON.stringify({ engine: candidate.engine }));
   return { ok: true };
 }
 

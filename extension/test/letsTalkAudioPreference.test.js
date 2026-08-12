@@ -45,6 +45,15 @@ test('writeLetsTalkAudioEnginePreference: refuses a credential-only candidate ev
   assert.deepEqual(readLetsTalkAudioEnginePreference(root), { kind: 'none' });
 });
 
+test('writeLetsTalkAudioEnginePreference: refuses a non-object candidate (null, primitive, or array)', () => {
+  const root = mkRoot();
+  for (const candidate of [null, undefined, 'openai', 42, ['openai']]) {
+    const result = writeLetsTalkAudioEnginePreference(root, candidate);
+    assert.equal(result.ok, false, `expected ${JSON.stringify(candidate)} to be refused`);
+  }
+  assert.deepEqual(readLetsTalkAudioEnginePreference(root), { kind: 'none' });
+});
+
 test('writeLetsTalkAudioEnginePreference: refuses an invalid engine name, store unchanged', () => {
   const root = mkRoot();
   writeLetsTalkAudioEnginePreference(root, { engine: 'openai' });
