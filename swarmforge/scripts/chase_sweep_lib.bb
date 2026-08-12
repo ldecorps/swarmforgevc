@@ -915,15 +915,19 @@
 (defn decide-open-slot-nudge?
   "Pure decision: capacity under cap, at least one eligible paused ticket,
    no pending open-slot note still sitting in coordinator new/in_process,
-   and not within the post-send cooldown window."
-  [active-count cap paused-eligible-count {:keys [pending-nudge? within-cooldown?]
-                                           :or {pending-nudge? false within-cooldown? false}}]
+   not within the post-send cooldown window, and (BL-679) the mode is not
+   engaged - ambulance's promotion freeze holds paused/ in place for the
+   ride's duration, so the nudge that would otherwise ask the coordinator to
+   fill an open slot must not fire while it is."
+  [active-count cap paused-eligible-count {:keys [pending-nudge? within-cooldown? ambulance-active?]
+                                           :or {pending-nudge? false within-cooldown? false ambulance-active? false}}]
   (and (number? active-count)
        (number? cap)
        (< active-count cap)
        (pos? (long (or paused-eligible-count 0)))
        (not pending-nudge?)
-       (not within-cooldown?)))
+       (not within-cooldown?)
+       (not ambulance-active?)))
 
 (defn count-backlog-yaml
   "Count *.yaml tickets in a backlog folder (active/ or paused/). Ignores
@@ -995,6 +999,19 @@
     (let [content (:content winner)]
       {:id (or (promotion-gates-lib/read-id content) (fs/file-name (:file winner)))
        :approved? (= "approved" (promotion-gates-lib/read-human-approval content))})))
+
+(defn top-expedited-paused-candidate
+  "BL-679: the id of the single Article-3.2.4-best EXPEDITED (defect/bug,
+   severity critical|high) candidate among paused candidates, or nil when
+   none are expedited. The promotion freeze holds an expedited defect filed
+   mid-ambulance in paused/ like everything else (the one place the mode
+   outranks Article 3.2.4) - this is what the auto-exit sweep's release
+   announcement consults to name it FIRST, rather than let it go silently
+   unmentioned among everything else that queued."
+  [candidates]
+  (when-let [winner (promotion-gates-lib/rank-candidates
+                     (filter #(promotion-gates-lib/expedited? (:content %)) candidates))]
+    (or (promotion-gates-lib/read-id (:content winner)) (fs/file-name (:file winner)))))
 
 (def open-slot-escalation-default-threshold
   "BL-798 approval_context default: 3 unacted nudges for the same top

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=86927256254b3fc226510446d99725cf3f954ead5035262136acd1c46be7f8e3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-12T05:07:07.722222Z","feature_name":"Ambulance mode's perimeter — quiet, frozen, and self-releasing","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-679-ambulance-mode-perimeter.feature","background_hash":"f0ae6031941d3ef71b1786d7ba31f1f80acb26b022a965f1796e2c72429ffb91","implementation_hash":"unknown","scenarios":[{"index":5,"name":"the mode releases itself when the ticket leaves the pipeline","scenario_hash":"6fb342f962f63d496ef35dfe2d3f5ed723c6ef1eab03e0bd07ef1cea179f6ce6","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-12T05:07:07.722222Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Ambulance mode's perimeter — quiet, frozen, and self-releasing
 
   BL-655 delivers the hold. This is what makes it a mode a human reaches for:

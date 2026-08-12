@@ -160,6 +160,66 @@
                                           :highest-tier-alarmed nil :snoozed? false
                                           :role "cleaner" :type "note" :dormant? true}))
 
+;; ── BL-679 ambulance-perimeter-01/02/03: evaluate-parcel-tier composes the
+;;    mute at the CALLER, decide-tier itself stays untouched ─────────────────
+
+(assert= "evaluate-parcel-tier with no ambulance-held? arg behaves exactly as before (arity-4 unchanged)"
+         (flow-watchdog-lib/evaluate-parcel-tier 100 60 600 {} "p")
+         (flow-watchdog-lib/evaluate-parcel-tier 100 60 600 {} "p" false))
+
+(assert= "ambulance-perimeter-01: a held parcel past escalate mutes to :none"
+         :none
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {} "p660" true))
+
+(assert= "ambulance-held? true is honest snooze territory - decide-tier itself never sees a fourth key"
+         (flow-watchdog-lib/decide-tier {:age-ms 99999 :warn-ms 60 :escalate-ms 600
+                                          :highest-tier-alarmed nil :snoozed? true})
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {} "p660" true))
+
+(assert= "ambulance-perimeter-02: ambulance-held? false alarms exactly as before (the ambulance ticket's own parcel)"
+         :escalate
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {} "p654" false))
+
+(assert= "a pre-existing human-ack snooze and ambulance-held? both mute independently (OR, not AND)"
+         :none
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {:p {:snoozed true}} "p" false))
+
+;; ambulance-perimeter-03 (tier-decision-input-keys unchanged by this ticket)
+;; is already covered by the acceptance-05 assertions above - decide-tier
+;; itself is never touched by this file's BL-679 changes, so no new
+;; assertion is needed; re-asserting the same five-key set here would only
+;; duplicate acceptance-05, not add coverage.
+
+;; ── BL-679: parcel-ambulance-held? - the impure wrapper run-sweep! consults ──
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "backlog" "active"))
+  (spit (str (fs/path root "backlog" "active" "BL-654-fixture.yaml"))
+        "id: BL-654\ntitle: \"fixture\"\nstatus: active\n")
+  (fs/create-dirs (fs/path root ".swarmforge" "operator"))
+  (spit (str (fs/path root ".swarmforge" "operator" "control-ambulance.json"))
+        (json/generate-string {:active true :ticket "BL-654"}))
+  (let [ambulance-state (ambulance-lib/read-ambulance-state (str root))
+        held-file (str (fs/path root "held.handoff"))
+        own-file (str (fs/path root "own.handoff"))
+        unattributed-file (str (fs/path root "unattributed.handoff"))
+        missing-file (str (fs/path root "missing.handoff"))]
+    (spit held-file "from: specifier\nto: coder\npriority: 50\ntype: git_handoff\ntask: BL-660\ncommit: 0000000000\ncreated_at: 2026-08-12T00:00:00Z\n\npayload\n")
+    (spit own-file "from: specifier\nto: coder\npriority: 50\ntype: git_handoff\ntask: BL-654\ncommit: 0000000000\ncreated_at: 2026-08-12T00:00:00Z\n\npayload\n")
+    (spit unattributed-file "from: specifier\nto: coder\npriority: 50\ntype: note\nmessage: no ticket id here\n\npayload\n")
+    (assert= "parcel-ambulance-held? true for a parcel attributed to a DIFFERENT ticket while engaged"
+             true
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state held-file))
+    (assert= "parcel-ambulance-held? false for the ambulance ticket's own parcel (never muted)"
+             false
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state own-file))
+    (assert= "parcel-ambulance-held? false for an unattributed parcel (fails open, same as ambulance-lib/parcel-held?)"
+             false
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state unattributed-file))
+    (assert= "parcel-ambulance-held? false (fail-open) for a vanished/unreadable file - never a crash"
+             false
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state missing-file))))
+
 ;; ── decide-verb (pure) ───────────────────────────────────────────────────────
 
 (assert= "no live session -> rotate, regardless of mailbox"
@@ -408,6 +468,44 @@
   (assert= "acceptance-04: the state entry itself is cleared, not just left stale"
            nil
            (get (flow-watchdog-lib/read-state daemon-dir) :p4)))
+
+;; ── BL-679 ambulance-perimeter-01/02: run-sweep! end-to-end through a REAL
+;;    engaged marker - held parcels stop alarming, the ambulance ticket's
+;;    own parcel alarms exactly as it does today ─────────────────────────────
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "cleaner" "inbox" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])
+      inboxes [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
+      adapters {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))}]
+  (fs/create-dirs (fs/path root "backlog" "active"))
+  (spit (str (fs/path root "backlog" "active" "BL-654-fixture.yaml"))
+        "id: BL-654\ntitle: \"fixture\"\nstatus: active\n")
+  (fs/create-dirs (fs/path root ".swarmforge" "operator"))
+  (spit (str (fs/path root ".swarmforge" "operator" "control-ambulance.json"))
+        (json/generate-string {:active true :ticket "BL-654"}))
+  (write-handoff! (str (fs/path new-dir "held.handoff"))
+                   [["id" "held660"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
+                    ["task" "BL-660"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+  (write-handoff! (str (fs/path new-dir "own.handoff"))
+                   [["id" "own654"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
+                    ["task" "BL-654"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+  (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir adapters)
+  (assert= "ambulance-perimeter-01: exactly one alarm - the held BL-660 parcel never alarms"
+           1
+           (count @alarms))
+  (assert= "ambulance-perimeter-02: the one alarm names the ambulance ticket's own escalating parcel"
+           true
+           (clojure.string/includes? (first @alarms) "own654"))
+  (assert= "ambulance-perimeter-01: the held parcel's durable state records no tier (never alarmed)"
+           nil
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :held660)))
+  (assert= "ambulance-perimeter-02: the ambulance ticket's own parcel records an escalate tier, same as any non-held parcel"
+           "escalate"
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :own654))))
 
 ;; acceptance-06: an old-header, fresh-mtime parcel still alarms (mtime never
 ;; consulted - the fixture file's own mtime is "now", far fresher than its

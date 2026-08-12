@@ -138,15 +138,67 @@ path (`{:active false :reason "ticket ... has no YAML file under
 backlog/"}`) exactly as if the ticket had never existed — never a thrown
 exception. See BL-144's death-alarm doc for the incident this fixed.
 
-## Known cost of this slice
+## The perimeter (BL-679): quiet, frozen, self-releasing
 
-The perimeter — flow-watchdog quiet for held parcels, the coordinator's
-promotion freeze, and automatic release when the ticket lands in `done/` — is
-a separate ticket (BL-679), not yet shipped as of this writing. Until it
-lands, a held parcel keeps aging on the flow-watchdog's wall clock, so a long
-ambulance run will emit one WARN and later one ESCALATE per held parcel. This
-is noisy, not wrong (the watchdog only re-alarms on a tier change), and the
-parcel itself is never touched.
+BL-655 above delivers the hold itself. Three more pieces — shipped as
+BL-679 — are what turn that hold into a mode a human would actually reach
+for at 01:15, rather than one that alarms at them and has to be remembered
+and released by hand.
+
+### 1. Held parcels stop alarming
+
+A parcel the ambulance holds is muted through the flow-watchdog's existing
+snooze channel — the same channel a human's own snooze uses — rather than a
+new branch on the tier decision. `decide-tier`'s input map stays exactly
+the five keys it always accepted; the caller (`evaluate-parcel-tier`) is
+what ORs the ambulance hold in alongside any pre-existing snooze. A long
+ambulance run no longer emits a WARN or ESCALATE for every parcel the human
+deliberately held.
+
+**The ambulance ticket's own parcels are never muted.** They alarm exactly
+as they do today — a stalled ambulance is the one thing the human most
+needs to hear about.
+
+### 2. The backlog stops filling behind the ride
+
+While engaged, nothing is promoted from `backlog/paused/` into
+`backlog/active/`:
+
+- The daemon's own open-slot nudge (the "open slot + paused work -
+  promote+route" wake) does not fire.
+- The coordinator checks `ambulance_cli.bb status` before every promotion
+  decision — intake, post-QA recheck, or a manual by-name promotion — and
+  promotes nothing while the mode reads `"active": true`.
+
+`active_backlog_max_depth` is untouched either way — the freeze is a
+promotion gate, not a capacity throttle, so releasing it never has a cap to
+restore.
+
+**An expedited critical/high defect filed mid-ambulance queues like
+everything else.** This is the one place the mode outranks Article 3.2.4,
+deliberately: the human chose the ambulance knowingly, and only a human
+lifts it. It does not go unmentioned, though — see the release
+announcement below.
+
+### 3. The mode releases itself when the patient leaves the pipeline
+
+A sweep on the daemon's existing cadence (`ambulance-auto-exit-sweep!`, part
+of the same loop as the flow-watchdog sweep) checks where the ambulance
+ticket's YAML currently sits and reacts:
+
+| ticket location | outcome | announcement |
+|---|---|---|
+| `backlog/done/` | release, case **delivered** | routine: the ride is over, every held parcel resumes moving |
+| `backlog/hold/`, or vanished from `backlog/` entirely | release, case **abandoned** | 🚨 **loud** (ESCALATE-tier) — this is the deadlock case the operator ruled out: holding everything for a ticket nobody is working is worse than no mode |
+| `backlog/active/` (or, defensively, `backlog/paused/`) | mode **holds** | nothing — a bounce is normal ambulance lineage, still in flight |
+
+If a critical/high defect queued during the ride without ever being
+promoted (piece 2 above), the release announcement names it **first**,
+ahead of the release line itself, so it is not lost among everything else
+that queued.
+
+Exit is one-directional — nothing here, or anywhere else in the swarm, may
+ever *engage* an ambulance. Every engage is still a human act.
 
 ## Verifying it works
 
@@ -154,7 +206,15 @@ parcel itself is never touched.
 bb swarmforge/scripts/test/ambulance_lib_test_runner.bb
 bb swarmforge/scripts/test/ambulance_lib_property_runner.bb
 bb swarmforge/scripts/test/ambulance_wiring_property_runner.bb
+bb swarmforge/scripts/test/bl679_ambulance_perimeter_property_runner.bb
+bb swarmforge/scripts/test/flow_watchdog_test_runner.bb
+bb swarmforge/scripts/test/dispatch_gap_test_runner.bb
 bash swarmforge/scripts/test/test_ambulance_cli.sh
+bash swarmforge/scripts/test/test_chase_sweep.sh
 bash swarmforge/scripts/test/test_handoffd_ambulance_wiring.sh
+bash swarmforge/scripts/test/test_handoffd_chase_sweep_wiring.sh
 bb swarmforge/scripts/test/bl852_chase_sweep_ambulance_hold_property_runner.bb
 ```
+
+The perimeter's own acceptance scenarios live in
+`specs/features/BL-679-ambulance-mode-perimeter.feature` (11/11 passing).
