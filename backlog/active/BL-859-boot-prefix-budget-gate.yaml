@@ -104,7 +104,7 @@ description: |
   yet. Materialize it to a live `.feature` in the SAME parcel that lands the
   handlers, and point this ticket's `acceptance:` at the live path (BL-233).
 
-acceptance: specs/features/BL-859-boot-prefix-budget-gate.feature.draft
+acceptance: specs/features/BL-859-boot-prefix-budget-gate.feature
 
 notes: |
   E2E QA procedure: with the real tree at or under budget, run the gate and
@@ -122,6 +122,66 @@ notes: |
   land first with the budget check reporting non-zero as its correct verdict
   — but then the bb suite and this gate are both red until BL-858 lands, so
   BL-858 first is the cleaner order.
+
+  Coder addendum (2026-08-12): the real tree has drifted back OVER the new
+  44000 budget since BL-858 landed. BL-858's own QA pass (2026-08-09) measured
+  `stable-prefix chars: 43757`; this parcel's baseline measurement (taken
+  before any of this ticket's own edits) is 46947 — the several constitution
+  amendments landing between those two points (Article 3.3 fix, BL-681/5.3
+  ratification, BL-795, BL-806, BL-769, BL-708..713 root-intake specs, BL-715)
+  added the 3190-char difference. `swarmforge/scripts/boot_prefix_budget_gate.sh`
+  therefore correctly reports FAIL (46947/44000, move 2947) against the real
+  repo right now — that is the gate working as designed, not a defect in this
+  parcel. But it also means the E2E QA procedure's first step ("with the real
+  tree at or under budget, confirm exit 0") will NOT hold today: exit 1 against
+  the live tree is the CURRENTLY correct verdict, not a bug in this build.
+  Confirmed the same drift already reds BL-858's own regression canary
+  (`specs/features/BL-858-boot-prefix-back-under-cap.feature`, scenario "the
+  boot prefix lands inside the headroom budget, not merely under the cap" now
+  fails: "expected the stable prefix at or under 44000 chars, got 46947").
+  This is pre-existing drift unrelated to this parcel's diff (verified: the
+  46947 baseline was measured before any of this ticket's edits, and none of
+  this ticket's changes touch constitution/PIPELINE content). Out of BL-859's
+  own scope per "Doing the trim itself — that is BL-858" below; flagging to
+  the coordinator via `note` for a follow-up trim ticket rather than fixing it
+  here, so as not to fold unrelated content-diet work into this ticket's diff
+  (BL-506).
+
+  Amendment 2026-08-12 (specifier; bookkeeping-only — nothing this parcel
+  BUILDS changes): the tree regrew over budget while this ticket was in
+  flight (46947 > 44000; the trim is BL-883, paused pending approval). The
+  e2e's first step ("with the real tree at or under budget ... confirm exit
+  0") is therefore not runnable as written until BL-883 lands. If this
+  parcel reaches QA before BL-883: the gate exiting NON-zero against the
+  real tree, reporting 46947, the 44000 budget, and the characters-to-move
+  figure, is its CORRECT verdict and must not be bounced as a defect; the
+  parity check (gate's measured size == the bb runner's printed
+  "stable-prefix chars:") remains verifiable either way, as do the
+  synthetic-tree scenarios. If BL-883 lands first, run the e2e exactly as
+  originally written.
+  Coder addendum (2026-08-12): the real tree has drifted back OVER the new
+  44000 budget since BL-858 landed. BL-858's own QA pass (2026-08-09) measured
+  `stable-prefix chars: 43757`; this parcel's baseline measurement (taken
+  before any of this ticket's own edits) is 46947 — the several constitution
+  amendments landing between those two points (Article 3.3 fix, BL-681/5.3
+  ratification, BL-795, BL-806, BL-769, BL-708..713 root-intake specs, BL-715)
+  added the 3190-char difference. `swarmforge/scripts/boot_prefix_budget_gate.sh`
+  therefore correctly reports FAIL (46947/44000, move 2947) against the real
+  repo right now — that is the gate working as designed, not a defect in this
+  parcel. But it also means the E2E QA procedure's first step ("with the real
+  tree at or under budget, confirm exit 0") will NOT hold today: exit 1 against
+  the live tree is the CURRENTLY correct verdict, not a bug in this build.
+  Confirmed the same drift already reds BL-858's own regression canary
+  (`specs/features/BL-858-boot-prefix-back-under-cap.feature`, scenario "the
+  boot prefix lands inside the headroom budget, not merely under the cap" now
+  fails: "expected the stable prefix at or under 44000 chars, got 46947").
+  This is pre-existing drift unrelated to this parcel's diff (verified: the
+  46947 baseline was measured before any of this ticket's edits, and none of
+  this ticket's changes touch constitution/PIPELINE content). Out of BL-859's
+  own scope per "Doing the trim itself — that is BL-858" below; flagging to
+  the coordinator via `note` for a follow-up trim ticket rather than fixing it
+  here, so as not to fold unrelated content-diet work into this ticket's diff
+  (BL-506).
 
   Amendment 2026-08-12 (specifier; bookkeeping-only — nothing this parcel
   BUILDS changes): the tree regrew over budget while this ticket was in
@@ -145,3 +205,6 @@ out_of_scope: |
     hardening, ticketed separately if wanted.
   - Any change to what prompt_engine_lib composes — this ticket only
     measures it.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-12, by: documenter, blamed: coder, class: behavior, commit: 998277f5b6, evidence: backlog/evidence/BL-859-bounce-20260812.md }

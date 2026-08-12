@@ -23,11 +23,13 @@
 (def ^:private lib-dir (fs/parent (fs/canonicalize *file*)))
 (def ^:private repo-root (fs/parent (fs/parent lib-dir)))
 
-(defn- repo-file [rel-path]
-  (str (fs/path repo-root rel-path)))
+(defn- repo-file
+  ([rel-path] (repo-file repo-root rel-path))
+  ([root rel-path] (str (fs/path root rel-path))))
 
-(defn- slurp-repo [rel-path]
-  (slurp (repo-file rel-path)))
+(defn- slurp-repo
+  ([rel-path] (slurp-repo repo-root rel-path))
+  ([root rel-path] (slurp (repo-file root rel-path))))
 
 (def constitution-articles-dir-rel "swarmforge/constitution/articles")
 
@@ -119,31 +121,37 @@
    not be forced to maintain a full mirror of unrelated content just
    because bootstrap-text now reads real files instead of emitting inert
    path strings."
-  [rel-path]
-  (if (fs/exists? (repo-file rel-path))
-    (slurp-repo rel-path)
-    (str "[[missing file: " rel-path "]]")))
+  ([rel-path] (inline-repo-file-or-note repo-root rel-path))
+  ([root rel-path]
+   (if (fs/exists? (repo-file root rel-path))
+     (slurp-repo root rel-path)
+     (str "[[missing file: " rel-path "]]"))))
 
 (defn constitution-text
   "swarmforge/constitution.prompt plus every *top-level* article/prompt file in
    swarmforge/constitution/articles/ (sorted), in deterministic order.
    Subdirectories (e.g. articles/reference/) are on-demand only — not inlined
-   at boot, to keep the BL-519 stable prefix within context budget."
-  []
-  (let [articles-dir (repo-file constitution-articles-dir-rel)
-        article-paths (if (fs/exists? articles-dir)
-                        (->> (fs/list-dir articles-dir)
-                             (map str)
-                             (filter #(and (fs/regular-file? %)
-                                           (not (str/starts-with? (fs/file-name %) "."))))
-                             sort)
-                        [])]
-    (str/join "\n"
-              (into [(inline-repo-file-or-note "swarmforge/constitution.prompt")]
-                    (map slurp article-paths)))))
+   at boot, to keep the BL-519 stable prefix within context budget.
+   root, when given, reads this same shape from a different tree instead of
+   the real repo (BL-859: lets the boot-prefix budget gate measure a
+   synthetic tree through this exact composer, not a re-derived copy)."
+  ([] (constitution-text repo-root))
+  ([root]
+   (let [articles-dir (repo-file root constitution-articles-dir-rel)
+         article-paths (if (fs/exists? articles-dir)
+                         (->> (fs/list-dir articles-dir)
+                              (map str)
+                              (filter #(and (fs/regular-file? %)
+                                            (not (str/starts-with? (fs/file-name %) "."))))
+                              sort)
+                         [])]
+     (str/join "\n"
+               (into [(inline-repo-file-or-note root "swarmforge/constitution.prompt")]
+                     (map slurp article-paths))))))
 
-(defn pipeline-text []
-  (inline-repo-file-or-note "swarmforge/PIPELINE.md"))
+(defn pipeline-text
+  ([] (pipeline-text repo-root))
+  ([root] (inline-repo-file-or-note root "swarmforge/PIPELINE.md")))
 
 ;; ── BL-574 Slice 2: named fragment registry + content-hash cache ───────────
 ;; Fragments are composed BY REFERENCE: editing a fragment file changes the
@@ -259,9 +267,10 @@
 
 (defn stable-prefix-text
   "The cacheable, stable-shared chunk: constitution (recursively expanded)
-   then PIPELINE, in that order, ahead of any role-specific content."
-  []
-  (str (constitution-text) "\n" (pipeline-text)))
+   then PIPELINE, in that order, ahead of any role-specific content. root,
+   when given, composes this same shape from a synthetic tree (BL-859)."
+  ([] (stable-prefix-text repo-root))
+  ([root] (str (constitution-text root) "\n" (pipeline-text root))))
 
 (defn stable-bootstrap-prefix
   "The full byte-identical prefix a generic-style compose emits before any
