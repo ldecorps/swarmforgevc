@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fafa91ca468d85fa76391a6308cadaaf077137b133cf485d37ab386d6cff984d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-12T14:21:48.896036Z","feature_name":"BL-886 stamp: property-lane vitest crash-orphan reaping across supervisor, janitor, and fixture runner","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-886-swarm-stamp-vitest-orphan-reaper-hotfix.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the supervisor reaps a crash-orphaned property-lane group under any covered cmdline shape","scenario_hash":"5db8743982ea715f1377dbd5676e7a562c5fec24d76b81d0814be136bcd922da","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-12T14:21:48.896036Z"},{"index":3,"name":"the janitor sweep gates hung vitest trees on parenthood and staleness","scenario_hash":"4388833b8d6ab024e2c52e4166a438676dcb7b14ce85c012b362c345bb9ecb21","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-12T14:21:48.896036Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-886 stamp: property-lane vitest crash-orphan reaping across supervisor, janitor, and fixture runner
   Review-stamp of human-landed commits 602c7d014 + 1ecbe049f (one logical
   unit): the supervisor's crash-orphan reaper and the janitor's periodic

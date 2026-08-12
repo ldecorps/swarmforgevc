@@ -2,10 +2,10 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const fc = require('fast-check');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 // BL-886 declared invariant 3 (property authorship rests with the coder,
 // first pass - BL-654): "Fixture-runner cleanup handlers are installed
@@ -68,7 +68,7 @@ function childSource() {
 }
 
 function runChild(callCount) {
-  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl886-listener-guard-prop-'));
+  const scratchDir = mkTmpDir('bl886-listener-guard-prop-');
   const resultFile = path.join(scratchDir, 'result.json');
   const childScript = path.join(scratchDir, 'child.js');
   fs.writeFileSync(childScript, childSource());
