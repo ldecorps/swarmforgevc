@@ -3,6 +3,14 @@
 # heartbeat emission. All seams injected — no real timers, no live swarm
 # paths, no killing this test process.
 set -euo pipefail
+# A caller shell that already exports SWARMFORGE_SKIP_BABYSITTERD=1 (e.g. a
+# mono-router resident pane, which never runs babysitterd standalone) leaks
+# it into run_checker and silently short-circuits process_daemon's
+# babysitterd branch via the launch-time-policy check, turning 02b's
+# kill/restart assertions into a no-op with no failure signal beyond the
+# checks that read the never-written kills/starts logs. Scenarios that mean
+# to exercise the var set it explicitly per-invocation.
+unset SWARMFORGE_SKIP_BABYSITTERD
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
