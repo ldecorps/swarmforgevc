@@ -104,7 +104,18 @@
 ;;    path?'s own internal fs/canonicalize output - avoids a Darwin
 ;;    /var -> /private/var symlink mismatch that would otherwise make an
 ;;    embedded-path cmdline miss. ──────────────────────────────────────────
+(def created-temp-dirs (atom []))
+;; BL-887 QA bounce (temp-dir-trap): shutdown hook mirrors this directory's
+;; other property runners (e.g. bl809_worktree_head_property_runner.bb) -
+;; fires on both a clean run and an uncaught exception, never on
+;; SIGKILL/OOM (BL-413's periodic /tmp sweep is the backstop for that). The
+;; explicit (fs/delete-tree root) below still runs on the happy path; this
+;; hook only covers the path where something throws before reaching it.
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (def root (str (fs/real-path (fs/create-temp-dir))))
+(swap! created-temp-dirs conj root)
 (def worktree (str (fs/path root ".worktrees" "coder")))
 (fs/create-dirs (fs/path root ".swarmforge"))
 (fs/create-dirs worktree)
