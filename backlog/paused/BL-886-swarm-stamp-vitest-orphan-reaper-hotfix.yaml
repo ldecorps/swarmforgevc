@@ -122,6 +122,11 @@ required_wiring:
   - "swarmforge/scripts/handoffd_supervisor.bb::job-in-scope?::orphaned-job-groups must keep consulting the scope check — a revert to the bare substring match reopens the scope-widening hole"
 
 notes: |
+  Coordinator 2026-08-12T11:16Z: open-slot nudge named this ticket top
+  candidate, but human_approval is still `pending` — not promoted (approval
+  gate). The open slot was instead filled by BL-884 (orthogonal, approved),
+  promoted+routed to coder at 2026-08-12T11:16:06Z.
+
   Related, do not conflate: BL-871 (active — pool cap; complementary),
   BL-885 (paused — caffeinate reclaim, same files, depends on this),
   BL-108 (done — original crash-orphan reaper this extends), BL-849/BL-877
