@@ -557,3 +557,19 @@ You are the hardender.
   still said PASS, because the script honoured the pane's standing
   `SWARMFORGE_SKIP_BABYSITTERD=1`; fixed in-place by the `unset` at the top
   of that test, which is the pattern to copy.)
+
+## run_gherkin_mutation.sh takes 4 positionals — pass ALL 4, never let level fill the steps-module slot (rule_proposal 2026-08-12, accepted)
+- Signature: `run_gherkin_mutation.sh <feature-file> [work-dir]
+  [steps-module-path] [level]`. A call that skips steps-module (e.g.
+  `... <feature> <workdir> hard`) puts the level in the steps-module slot;
+  the script resolves it to a nonexistent path and every mutated run then
+  crashes MODULE_NOT_FOUND — and a crash counts as a "kill", so the manifest
+  reads clean (e.g. 6/6 killed) with ZERO real assertions run.
+- Rule: always pass all four positionals explicitly (use
+  `specs/pipeline/steps/index.js` when you mean the default), and treat a
+  mutation manifest whose kills you did not see assert as unverified — a
+  too-fast, all-killed run after a CLI change is a probe signal, not a pass.
+  (Incident: BL-715, 2026-08-12 — a mis-ordered call wrote a bogus
+  6/6-killed manifest from crash-fake kills, caught only because
+  `tested_at` was not in HEAD; nearly forwarded an unverified gate as
+  passed. Durable script-side fail-loud fix: BL-884.)
