@@ -156,6 +156,24 @@ function resolveTurnDeps(deps: LetsTalkRouteDeps): { deps: LetsTalkRouteDeps } |
   return { deps: { ...deps, ...resolution.adapters } };
 }
 
+// Both the text-turn and audio-turn paths in processLetsTalkTurn end the
+// same way: deliver a successful turn to onTurnSuccess, best-effort, without
+// letting a mirror-delivery failure fail the turn itself. Extracted so
+// processLetsTalkTurn carries this branching once instead of twice.
+async function deliverTurnSuccessIfNeeded(
+  result: LetsTalkTurnSuccess | LetsTalkTurnFailure,
+  turnDeps: LetsTalkRouteDeps
+): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
+  if (result.success && turnDeps.onTurnSuccess) {
+    try {
+      await turnDeps.onTurnSuccess(result);
+    } catch {
+      // Mirror delivery is best-effort and must not fail the turn itself.
+    }
+  }
+  return result;
+}
+
 async function transcribeTurnAudio(
   bytes: Buffer,
   mimeType: string | undefined,
@@ -181,28 +199,11 @@ async function transcribeTurnAudio(
   };
 }
 
-export async function processLetsTalkTurn(
-  body: { audioBase64?: string; mimeType?: string; text?: string },
-  deps: LetsTalkRouteDeps,
+async function handleLetsTalkAudioTurn(
+  body: { audioBase64?: string; mimeType?: string },
+  turnDeps: LetsTalkRouteDeps,
   sttAttempts?: { transientFailuresBeforeSuccess: number }
 ): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
-  const turnDepsResult = resolveTurnDeps(deps);
-  if ('failure' in turnDepsResult) {
-    return turnDepsResult.failure;
-  }
-  const turnDeps = turnDepsResult.deps;
-  const textTurn = typeof body.text === 'string' ? body.text.trim() : '';
-  if (textTurn.length > 0) {
-    const result = await promptAgentAndSynthesize(textTurn, turnDeps);
-    if (result.success && turnDeps.onTurnSuccess) {
-      try {
-        await turnDeps.onTurnSuccess(result);
-      } catch {
-        // Mirror delivery is best-effort and must not fail the turn itself.
-      }
-    }
-    return result;
-  }
   const audioBase64 = body.audioBase64 ?? '';
   const bytes = decodeLetsTalkAudio(audioBase64);
   if (!bytes) {
@@ -218,14 +219,25 @@ export async function processLetsTalkTurn(
     return sttResult;
   }
   const result = await promptAgentAndSynthesize(sttResult.transcript, turnDeps);
-  if (result.success && turnDeps.onTurnSuccess) {
-    try {
-      await turnDeps.onTurnSuccess(result);
-    } catch {
-      // Mirror delivery is best-effort and must not fail the turn itself.
-    }
+  return deliverTurnSuccessIfNeeded(result, turnDeps);
+}
+
+export async function processLetsTalkTurn(
+  body: { audioBase64?: string; mimeType?: string; text?: string },
+  deps: LetsTalkRouteDeps,
+  sttAttempts?: { transientFailuresBeforeSuccess: number }
+): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
+  const turnDepsResult = resolveTurnDeps(deps);
+  if ('failure' in turnDepsResult) {
+    return turnDepsResult.failure;
   }
-  return result;
+  const turnDeps = turnDepsResult.deps;
+  const textTurn = typeof body.text === 'string' ? body.text.trim() : '';
+  if (textTurn.length > 0) {
+    const result = await promptAgentAndSynthesize(textTurn, turnDeps);
+    return deliverTurnSuccessIfNeeded(result, turnDeps);
+  }
+  return handleLetsTalkAudioTurn(body, turnDeps, sttAttempts);
 }
 
 export function createLetsTalkWriteRoutes(

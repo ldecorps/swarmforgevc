@@ -156,6 +156,18 @@ test('resolveLetsTalkAudioForTurn: an unreadable preference falls back to the ho
   assert.equal(resolution.engine, 'local');
 });
 
+test('resolveLetsTalkAudioForTurn: no preference and no (or garbage) engine env var bootstraps to openai', () => {
+  const root = mkRoot();
+  for (const env of [{}, { LETS_TALK_AUDIO_ENGINE: 'not-a-real-engine' }]) {
+    const { resolution } = resolveLetsTalkAudioForTurn(root, env);
+    assert.equal(resolution.kind, 'failure', `expected env ${JSON.stringify(env)} to bootstrap to openai and fail for want of a key`);
+    assert.equal(resolution.engine, 'openai');
+  }
+  const { resolution } = resolveLetsTalkAudioForTurn(root, { OPENAI_API_KEY: 'sk-live' });
+  assert.equal(resolution.kind, 'ok');
+  assert.equal(resolution.engine, 'openai');
+});
+
 test('resolveLetsTalkAudioForTurn: overrides bypass engine selection entirely and always succeed', () => {
   const root = mkRoot();
   writeLetsTalkAudioEnginePreference(root, { engine: 'openai' });

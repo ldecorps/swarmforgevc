@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a06ce1cee317ccf1988f63978717da95a7fc929450827172b5fc4e19199acbb2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-12T21:56:56.020907Z","feature_name":"the bridge honors a stored voice-engine preference and refuses an unusable engine loudly","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-863-voice-engine-preference-bridge.feature","background_hash":"2b964c8c57bc7d0d2a5f00bbe8206af21f244ae0167855df9bc6675459387df2","implementation_hash":"unknown","scenarios":[{"index":3,"name":"selecting an engine the host cannot serve fails with a usable reason","scenario_hash":"651d6e283e54b392a15f05e91d9ee62cb05652ed4721b7bef91d6290d47f9939","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-12T21:56:56.020907Z"},{"index":4,"name":"the bridge can be asked whether an engine is serviceable before it is chosen","scenario_hash":"273e5735f29299dad6e31eff742f0caefce212bb11347cd6bae9dafbb61c03fd","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-12T21:55:10.329253Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the bridge honors a stored voice-engine preference and refuses an unusable engine loudly
 
   # BL-863 (epic BL-862, from the 2026-08-08 human intake): Let's Talk picks its STT/TTS

@@ -144,7 +144,11 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the reason states (.+) is missing$/,
     (ctx, missingThing) => {
-      assert.match(ctx.turnResult.resolution.reason, new RegExp(escapeRegExp(missingThing), 'i'));
+      // BL-863 hardening: case-sensitive on purpose. A case-insensitive match
+      // let a mutated example value ("the OpenAi key") pass against the real
+      // "the OpenAI key" reason text, silently accepting a wrong-cased proper
+      // noun (two survived Gherkin mutants, m3/m6).
+      assert.match(ctx.turnResult.resolution.reason, new RegExp(escapeRegExp(missingThing)));
       assert.match(ctx.turnResult.resolution.reason, /missing/i);
     },
     FEATURE
