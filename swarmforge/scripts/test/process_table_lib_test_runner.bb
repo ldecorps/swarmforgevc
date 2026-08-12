@@ -61,6 +61,50 @@
   (assert-true "cwd! for self is nil or a non-blank absolute path"
                (or (nil? cwd) (and (not (str/blank? cwd)) (str/starts-with? cwd "/")))))
 
+;; ── BL-887: shared project-scoped-process? predicate ────────────────────
+;; Supervisor semantics: cmdline leg is str/includes? (matches anywhere in
+;; the cmdline, not just as a prefix - the exact leg the janitor's old
+;; starts-with?-only in-path? missed for a vitest WORKER's mid-cmdline
+;; absolute path), cwd leg is str/starts-with? and only consulted when cwd
+;; is non-nil. Nil-safe on both cmd and cwd.
+
+(def bl887-paths ["/host/root" "/host/root/.worktrees/coder"])
+
+(assert-true "cmdline containing a scope path anywhere (not just as a prefix) is in scope"
+             (process-table-lib/project-scoped-process?
+              "node /host/root/.worktrees/coder/node_modules/vitest/dist/worker.js"
+              nil bl887-paths))
+
+(assert-true "cmdline starting with a scope path is in scope (prefix is a special case of includes?)"
+             (process-table-lib/project-scoped-process?
+              "/host/root/.worktrees/coder/some-bin --flag" nil bl887-paths))
+
+(assert-true "cwd starting with a scope path is in scope even with an unrelated cmdline"
+             (process-table-lib/project-scoped-process?
+              "sleep 3600" "/host/root/.worktrees/coder/extension" bl887-paths))
+
+(assert= "cwd merely CONTAINING a scope path (not as a prefix) is never in scope via the cwd leg"
+         false
+         (process-table-lib/project-scoped-process?
+          "sleep 3600" "/somewhere-else/host/root" bl887-paths))
+
+(assert= "cmdline and cwd both outside every scope path is out of scope"
+         false
+         (process-table-lib/project-scoped-process?
+          "sleep 3600" "/tmp/tmp.unrelated" bl887-paths))
+
+(assert= "nil cwd never throws and never matches on its own"
+         false
+         (process-table-lib/project-scoped-process? "sleep 3600" nil bl887-paths))
+
+(assert= "nil cmd never throws and is treated as empty, never a match"
+         false
+         (process-table-lib/project-scoped-process? nil nil bl887-paths))
+
+(assert-true "nil cmd with an in-scope cwd still matches via the cwd leg"
+             (process-table-lib/project-scoped-process?
+              nil "/host/root/.worktrees/coder/extension" bl887-paths))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (System/exit 1))

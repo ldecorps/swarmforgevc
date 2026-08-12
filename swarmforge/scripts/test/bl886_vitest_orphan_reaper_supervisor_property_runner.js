@@ -68,6 +68,34 @@ async function runOne({ cmdline, orphan, inScope }) {
   return { reaped: !alive };
 }
 
+// BL-887 addition: a vitest forked WORKER's cmdline embeds its absolute
+// node_modules/vitest/... path MID-STRING (never as a cmdline prefix - the
+// cmdline always starts with the executable name), matching the shared
+// predicate's cmdline leg (str/includes?) regardless of cwd. Run as its OWN
+// loop, not folded into the CMDLINE_SHAPES matrix above: that matrix's
+// expectedReaped formula is `orphan && inScope`, driven entirely by which
+// cwd is chosen, but this shape is in scope via cmdline alone - folding it
+// in would wrongly expect `inScope=false` (an out-of-scope cwd) to survive
+// when it must still be reaped. Cross-checked against the janitor's own
+// P3/deterministic-regression coverage of the identical shape
+// (bl886_vitest_orphan_reaper_janitor_property_runner.bb) for BL-654
+// invariant 1 ("supervisor and janitor never disagree"): both subsystems
+// are proven, independently and empirically, to classify this exact
+// previously-disagreeing shape as in scope.
+async function runWorkerMidStringCase({ orphan, cwdKind }) {
+  const fixture = supervisorFixture.makeFixtureRoot();
+  const cmdline = `node ${fixture.coderWt}/node_modules/vitest/dist/worker.js (vitest 1)`;
+  const cwd = cwdKind === 'unresolvable' ? supervisorFixture.mkTmp('bl887-prop-unresolvable-') : fixture.coderWt;
+  const proc = orphan
+    ? await supervisorFixture.spawnOrphanFixture({ cwd, cmdline })
+    : supervisorFixture.spawnOwnedFixture({ cwd, cmdline });
+  supervisorFixture.checkOnce(fixture.root, fixture.binDir);
+  const alive = supervisorFixture.pidAlive(proc.pid);
+  supervisorFixture.killFixture(proc.pid);
+  supervisorFixture.cleanupFixtureRoot(fixture);
+  return { reaped: !alive };
+}
+
 async function main() {
   const failures = [];
   let total = 0;
@@ -86,6 +114,22 @@ async function main() {
     }
   }
   console.log(`bl886 supervisor orphanhood+scope properties: ${total}/12 exhaustive real-process combinations`);
+
+  let workerTotal = 0;
+  for (const orphan of [true, false]) {
+    for (const cwdKind of ['unresolvable', 'in-scope']) {
+      workerTotal += 1;
+      const expectedReaped = orphan; // cmdline alone puts it in scope regardless of cwd
+      const { reaped } = await runWorkerMidStringCase({ orphan, cwdKind });
+      if (reaped !== expectedReaped) {
+        failures.push(
+          `FAIL BL-887 worker-mid-string cmdline orphan=${orphan} cwdKind=${cwdKind}: expected reaped=${expectedReaped}, got reaped=${reaped}`
+        );
+      }
+    }
+  }
+  console.log(`bl887 supervisor worker-mid-string-cmdline properties: ${workerTotal}/4 exhaustive real-process combinations`);
+
   if (failures.length > 0) {
     console.log(`${failures.length} PROPERTY FAILURE(S):`);
     for (const f of failures) console.log(f);

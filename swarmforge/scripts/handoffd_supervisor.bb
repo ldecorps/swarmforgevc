@@ -284,13 +284,13 @@
 
 (defn job-in-scope?
   "True when cmdline or cwd is rooted under this project's host root or a
-   registered role worktree."
+   registered role worktree. Delegates classification to
+   process-table-lib/project-scoped-process? (BL-887) so this and the
+   janitor's project-scoped-path? can never disagree."
   [pid cmd]
   (let [paths (job-scope-paths)
         cwd (try (process-table-lib/cwd! pid) (catch Exception _ nil))]
-    (boolean
-     (or (some #(str/includes? (or cmd "") %) paths)
-         (and cwd (some #(str/starts-with? cwd %) paths))))))
+    (process-table-lib/project-scoped-process? cmd cwd paths)))
 
 (defn orphaned-job-groups
   "Every (pid, pgid, cmd) whose command line matches job-process-pattern, is

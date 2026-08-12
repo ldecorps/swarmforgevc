@@ -9,9 +9,9 @@ priority: 25
 direction: pipeline-reported
 depends_on: []
 mutation_cost: low
-acceptance: specs/features/BL-887-consolidate-process-scope-predicate.feature.draft
+acceptance: specs/features/BL-887-consolidate-process-scope-predicate.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two calls need sign-off. (1) Semantics: the consolidation adopts the
   SUPERVISOR's looser predicate (cmdline leg str/includes?, cwd leg
@@ -136,3 +136,5 @@ notes: |
   unrelated uncommitted local change (priority 2->3) in the master checkout,
   so per BL-506 this ticket does not fold an edit into that file. Add both
   ids to BL-539 decomposes_into in the next clean pass on that tracker.
+
+assigned_to: coder
