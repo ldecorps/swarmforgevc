@@ -543,3 +543,203 @@ By coder.
   procedure (`swarmforge/scripts/remote_bounce.sh`), never by exiting.
   See `swarmforge/roles/coordinator.prompt` for the full bounce procedure
   and its durable acknowledgement (`.swarmforge/bounce-ack.json`).
+
+## `workflow.prompt` — pre-BL-883 boot wording, further condensed (BL-883 split)
+
+The BL-858-condensed boot wording, verbatim, before BL-883 slimmed each
+section further to restore landing headroom under the 44000 budget. One
+subsection per `workflow.prompt` header, in the same order.
+
+### How Work Moves — Normal Live Swarm, Queue-Jump, Ambulance, Expeditor (BL-715)
+
+- **The normal live swarm is the default path** for every ticket: the full
+  pipeline chain (specifier → coder → cleaner → architect → hardener →
+  documenter → QA) running live, one resident process per role, moving every
+  parcel through every gate in order. Three named specials exist for
+  situations that path doesn't fit — **none of them replaces that path**;
+  each is a deliberate, temporary departure that walks back into, or hands
+  off to, the normal live swarm once its job is done.
+- **queue-jump** — promotes sooner then walks the normal live pipeline. It
+  reorders only *when* a ticket is promoted out of `backlog/paused/`, never
+  *how* it runs afterward. Article 3.2.4's expedited-defects rule and the
+  paused-pager's "Set highest priority, expedite" button are both
+  queue-jump — "expedite" there names queue-jump, not a separate mode.
+- **ambulance** — holds other parcels on a live stack for one ticket. Every
+  daemon, alarm, and Telegram topic stays up; only the designated ticket's
+  parcels move, until released. See
+  `docs/how-to/BL-655-ambulance-mode-the-hold.md`.
+- **expeditor** — drives one ticket with the swarm stopped. Reach for it
+  only when the pipeline itself is the casualty, via
+  `swarmforge/scripts/expedite.sh`; the Telegram `/expedite` command
+  triggers this same expeditor, not queue-jump. See
+  `docs/reference/BL-567-expeditor-manual.md`.
+- **queue-jump is not ambulance. queue-jump is not the expeditor. ambulance
+  is not the expeditor.** Three distinct mechanisms for three distinct
+  problems — see **workflow-detailed.prompt** for the full escalation
+  ladder and every legacy "expedite" reference this constitution still
+  carries, mapped to whichever of the two (queue-jump or the expeditor) it
+  actually names.
+
+### Handoff transport (tmux primary, mailbox backup)
+
+- Agents send work via `swarm_handoff.sh` only — never direct tmux commands.
+  A successful handoff delivers to `inbox/new/` and injects a tmux wake; the
+  agent runs `ready_for_next.sh` and works the task, silently on the happy
+  path. Only a backup-mailbox delivery (a task you weren't woken for) gets a
+  brief note that unseen mail was picked up.
+
+### Context Clear Requires Startup Re-Read
+
+- On any context clear (`/clear`, an idle-boundary clear, a respawn, or
+  anything else that empties the conversation), immediately re-enter your
+  role loop from a fresh chat — never continue on remembered/summarized chat
+  alone. Under BL-519 the system prefix survives a `/clear` without a
+  respawn, so whoever issues one follows it with the launch kickoff
+  ("...already loaded above via `--append-system-prompt-file`. Begin your
+  role loop now; if idle, run `ready_for_next.sh`."), never a file re-read.
+- `active_backlog_max_depth` (`swarmforge.conf`) governs `backlog/active/`
+  depth; any role whose behavior depends on it must read the CURRENT value
+  at startup and before each promotion decision — never a remembered one.
+  `-1` disables the cap only, not Concurrent Work Orthogonality below. See
+  **workflow-detailed.prompt** for the full pre-trim wording, the kickoff
+  rationale, and the poke-failure incident.
+
+### Backlog Intake Order
+
+- The backlog root (`backlog/` itself) is the human's raw intake queue. The
+  specifier must DRAIN it before any queued items — root takes precedence
+  over `paused/`/`active/` until empty. Draining means: read it, resolve
+  ambiguity, write a proper spec into `backlog/paused/`, remove the raw
+  item. Governs specifier intake order only (coordinator's promotion order
+  is unchanged). See **workflow-detailed.prompt** for the full pre-trim
+  wording.
+
+### Amending An In-Flight Ticket's Spec (BL-317/BL-325)
+
+- A ticket's spec can change WHILE in flight; committing to `main` is NOT
+  enough — every role reads its OWN stale worktree copy until it merges.
+  **The specifier must send a `note` (priority `00`) to whoever HOLDS the
+  parcel**, naming the amendment commit. **The receiving role must merge
+  `main` before continuing** and re-read the ticket after merging. A spec
+  amendment adding SCENARIOS adds step-handler work in the same parcel. See
+  **workflow-detailed.prompt** for the full pre-trim wording and the
+  worktree-staleness incident.
+
+### Concurrent Work Orthogonality
+
+- Applies to the coordinator when `active_backlog_max_depth` > 1: compare a
+  candidate's scope against active/in-flight work before promoting. Prefer
+  an ORTHOGONAL concurrently-active set (never two items touching the same
+  file); skip an overlapping item for the next orthogonal candidate
+  (expedited defects first, Article 3.2.4), leaving the slot empty if none
+  exists. Never overrides the depth cap or expedite ordering. See
+  **workflow-detailed.prompt** for the full pre-trim wording.
+
+### Worktree Discipline
+
+- At startup, discover and remember your assigned branch/worktree; work only
+  there (a `master`-assigned role uses the main checkout, no `.worktrees/`
+  directory). Do not inspect/diff/merge/base work on another branch unless
+  named in a handoff or explicit instruction. Do not run `./swarm` from an
+  agent worktree to repair helper scripts — stop and report the startup
+  failure instead. See **workflow-detailed.prompt** for the full pre-trim
+  wording.
+
+### Forwarded Commits Carry Their Lineage
+
+- A forwarded commit MUST have the received commit as an ancestor
+  (`git merge-base --is-ancestor <received> <yours>`). `merge_and_process`
+  means merge FIRST (plain `git merge`/`--no-ff`, never `reset --hard` or
+  `checkout <commit> -- .`), then work, then forward.
+- Run that ancestry check before every forward; the receiving role re-runs it
+  and refuses parcels that fail. See **workflow-detailed.prompt** for the
+  full pre-trim wording and the BL-090/BL-103/phantom-revert incidents.
+
+### An Approval Authorizes Only Its Ticket's Work (BL-506)
+
+- A parcel carries ONE ticket's task name; QA approval authorizes ONLY that
+  work. Stage ONLY the paths your ticket touched — a worktree's ticket-less
+  changes (hot-sync, stray edits) must stay unstaged or be surfaced, never
+  folded in via `git add -A`. Review stages must reject diffs with
+  out-of-scope functional files. Mirrors "Forwarded Commits Carry Their
+  Lineage" (that stops DROPPING work; this stops ADDING un-authorized work).
+  See **workflow-detailed.prompt** for the full pre-trim wording and the
+  BL-506 incident.
+
+### A Bounce Must Be Reverted Out Of The Bouncing Branch (BL-490/BL-495)
+
+- Bouncing sends a `note` back but does NOT remove the bounced commit from
+  your branch — revert it in the same step as the send-back (MERGE commit:
+  `git revert -m 1 <your-review-merge>`; confirm CONTENT is gone, never
+  verify by ancestry — `is-ancestor` can never be FALSE after a revert).
+  **EXCEPTION: already an ancestor of `main` → do NOT revert**; record why
+  and report the breach to the coordinator instead. An ABANDONED (not
+  reworked) bounced parcel must be reverted from every branch that merged
+  it. See **workflow-detailed.prompt** for the full pre-trim wording and the
+  BL-490/BL-495 incident.
+
+### Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)
+
+- A bounce routes to the role that owns the fix. One reaching you for a
+  defect OUTSIDE your domain: do NOT merge/forward it onward — bounce it on
+  to the owning role (keep the evidence file, stable task name, state why
+  you aren't the fixer; note the coordinator if routing was wrong at the
+  source). Owning it yourself is also wrong (Article 1 independence). See
+  **workflow-detailed.prompt** for the full pre-trim wording and the BL-425
+  incident.
+
+### A Prior QA Bounce Is Not In Your Worktree — Check It Against `main` (BL-340)
+
+- Before you PASS/approve/forward, check whether the ticket was already
+  bounced for a defect still unfixed. **Read bounce history from the `main`
+  REF** (`git log --oneline main -- 'backlog/evidence/<TICKET-ID>*'`), never
+  your worktree files or `origin/main` (lags). If prior evidence exists,
+  confirm the defect is fixed in the commit you hold — stage history is not
+  proof. See **workflow-detailed.prompt** for the full pre-trim wording and
+  the CLI-`main()` re-bounce incident.
+
+### QA merge-up broadcast (worktree roles)
+
+- A pipeline worktree role receiving a merge-up `note` from QA: `git merge
+  <qa-commit>` in your worktree, resolve conflicts as receiver, then
+  `done_with_current.sh` — do not forward, the chain ended at QA. Specifier
+  and coordinator are not merge-up recipients (BL-247). See
+  **workflow-detailed.prompt** for the full pre-trim wording.
+
+### Announcements, Commit Messages, Temporary Files
+
+- Announcements/check-in comments: no role bylines. Every git commit
+  message: include a role byline, `By <role>.` (e.g. "Implement handoff
+  validation\n\nBy coder."). Temporary files: `./tmp/` in your assigned
+  worktree, never `/tmp`. See **workflow-detailed.prompt** for the full
+  pre-trim wording.
+
+### Clean Up After Yourself — Never Delete What You Did Not Create
+
+- Before ending your turn, remove scratch artifacts YOU created this turn
+  (`./tmp/` files, throwaway fixtures) — leave your worktree no messier than
+  you found it.
+- NEVER delete, move, or `git clean` a file you did not create — an
+  untracked file is as likely load-bearing (`.swarmforge/` state,
+  `extension/out/`, another role's drafts, hot-sync edits) as litter.
+- Ticket-less changes you did not make are SURFACED, not swept — leave
+  unstaged per "An Approval Authorizes Only Its Ticket's Work" (BL-506);
+  silent tidying reads as a phantom-revert.
+- `git stash` is repo-wide across every worktree; never bare-reach for it to
+  tidy just one. See **workflow-detailed.prompt** for the full rationale.
+
+### Failure Conditions
+
+- If the expected git layout or assigned worktree is missing, stop and
+  report instead of silently working in the wrong place. See
+  **workflow-detailed.prompt** for the full pre-trim wording.
+
+### Coordinator Session Must Never Exit (BL-107)
+
+- The coordinator's pane exiting tears down the ENTIRE swarm (kills
+  `handoffd` and every role's session). It must never exit for any reason —
+  a restart goes through the bounce procedure
+  (`swarmforge/scripts/remote_bounce.sh`), never exiting. See
+  `swarmforge/roles/coordinator.prompt` for the full procedure and
+  **workflow-detailed.prompt** for this section's pre-trim wording.
+
