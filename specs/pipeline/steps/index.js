@@ -429,7 +429,8 @@ const DOMAINS = [
   require('./bl859BootPrefixBudgetGateSteps'),
   require('./bl679AmbulanceModePerimeterSteps'),
   require('./bl880StaleAcceptancePointerRefusedAtFirstHopSteps'),
-  require('./bl883BootPrefixBudgetTrimSteps')
+  require('./bl883BootPrefixBudgetTrimSteps'),
+  require('./bl886VitestOrphanReaperHotfixSteps')
 ];
 
 function registerSteps(registry) {
