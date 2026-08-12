@@ -6,9 +6,28 @@ const { startBridge, effectiveBubbleMirrorTopicId, formatBubbleMirrorText, mirro
 const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
 const { processLetsTalkTurn } = require('../out/bridge/letsTalkRoutes');
 const { LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT } = require('../out/bridge/letsTalkCore');
+const { writeLetsTalkAudioEnginePreference, letsTalkAudioEnginePreferencePath } = require('../out/bridge/letsTalkAudioPreference');
 const { splitTelegramChunks } = require('../out/tools/telegramCursorBridgeCore');
 const TOKEN = 'lets-talk-bridge-token';
 const SAMPLE_AUDIO = Buffer.from('audio-chunk').toString('base64');
+const LETS_TALK_AUDIO_ENGINE_ENV_KEYS = ['OPENAI_API_KEY', 'WHISPER_MODEL_PATH', 'LETS_TALK_AUDIO_ENGINE'];
+
+// BL-863: runs `fn` with the named env vars cleared, restoring their prior
+// values (present or absent) afterward — isolates the real (non-override)
+// per-turn audio resolution path from whatever the host process happens to
+// have set.
+async function withClearedEnv(keys, fn) {
+  const prev = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  keys.forEach((key) => delete process.env[key]);
+  try {
+    return await fn();
+  } finally {
+    for (const key of keys) {
+      if (prev[key] === undefined) delete process.env[key];
+      else process.env[key] = prev[key];
+    }
+  }
+}
 
 function mkTmp() {
   const target = mkTmpDir('sfvc-lets-talk-bridge-');
@@ -201,6 +220,85 @@ test('lets-talk turn route accepts bearer query param without auth headers', asy
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.success, true);
+  });
+});
+
+// BL-863: with no transcribeAudio/synthesizeSpeech overrides passed to
+// startBridge, the write routes are wired to resolveAudioForTurn (bridgeServer.ts)
+// instead of a static adapter set. This exercises that real wiring end to
+// end over HTTP — every other test in this file supplies overrides and so
+// never touches it.
+test('lets-talk turn resolves audio per turn (no static overrides) and fails loudly when unconfigured', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    await withBridge(target, { agentSession: createMockCursorBridgeAgentSession(target) }, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'hello' }),
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.match(body.reason, /openai/i);
+      assert.match(body.reason, /missing/i);
+    });
+  });
+});
+
+test('lets-talk turn: a stored preference change applies to the next turn without a bridge restart', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    await withBridge(target, { agentSession: createMockCursorBridgeAgentSession(target) }, async (handle) => {
+      const turnBody = async () => {
+        const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: 'hello' }),
+        });
+        return res.json();
+      };
+
+      const openaiWrite = writeLetsTalkAudioEnginePreference(target, { engine: 'openai' });
+      assert.equal(openaiWrite.ok, true);
+      const openaiTurn = await turnBody();
+      assert.equal(openaiTurn.success, false);
+      assert.match(openaiTurn.reason, /openai/i);
+
+      const localWrite = writeLetsTalkAudioEnginePreference(target, { engine: 'local' });
+      assert.equal(localWrite.ok, true);
+      const localTurn = await turnBody();
+      assert.equal(localTurn.success, false);
+      assert.match(localTurn.reason, /local/i);
+    });
+  });
+});
+
+test('lets-talk turn: an unreadable preference falls back to the bootstrap engine and reports itself', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    process.env.LETS_TALK_AUDIO_ENGINE = 'local';
+    const prefPath = letsTalkAudioEnginePreferencePath(target);
+    fs.mkdirSync(path.dirname(prefPath), { recursive: true });
+    fs.writeFileSync(prefPath, '{not json', 'utf8');
+    await withBridge(target, { agentSession: createMockCursorBridgeAgentSession(target) }, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'hello' }),
+      });
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.match(body.reason, /local/i);
+    });
+    const eventsPath = path.join(target, '.swarmforge', 'operator', 'events.jsonl');
+    assert.ok(fs.existsSync(eventsPath));
+    const events = fs
+      .readFileSync(eventsPath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.ok(events.some((event) => event.type === 'lets-talk-audio-preference-unreadable'));
   });
 });
 
