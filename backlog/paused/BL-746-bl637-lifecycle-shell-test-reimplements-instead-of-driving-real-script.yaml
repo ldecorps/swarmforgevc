@@ -94,6 +94,16 @@ notes: |
   ticket was possible either way this cycle. Awaiting human approval
   remains the standing blocker.
 
+  2026-08-12 23:0x (coordinator): open-slot nudge recurred (mailbox note
+  00_20260812T225934Z_000292), same top candidate — still not expedited,
+  still no `human_approval` field, fails closed per Article 3.2.4. By the
+  time this parcel was worked, BL-863 had closed to done/M8 and BL-864 (dep
+  on BL-863, now met, approved, priority 37, same non-held epic) was
+  promoted+routed into the resulting open slot (commit d43ccf6d1, "Promote
+  BL-864"); active/ is back at cap (BL-730, BL-864, BL-871 = 3/3) as of
+  this note. No promotion of this ticket was possible either way this
+  cycle. Awaiting human approval remains the standing blocker.
+
 description: |
   ## What
 
