@@ -66,6 +66,7 @@ import {
 } from './letsTalkRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
 import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
+import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
 import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
@@ -1625,6 +1626,14 @@ export function startBridge(
       requireLetsTalkControlAuth,
       respondJson
     );
+    // BL-864: GET/POST /lets-talk/audio-engine — Bubble Settings reads and
+    // writes the BL-863 voice-engine preference through here.
+    const letsTalkAudioEngineRoutes = createLetsTalkAudioEngineRoutes(
+      targetPath,
+      requireLetsTalkControlAuth,
+      respondJson,
+      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
+    );
 
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
@@ -1707,7 +1716,9 @@ export function startBridge(
         return;
       }
 
-      const writeRoute = [...writeRoutes, ...letsTalkWriteRoutes].find((route) => route.matches(req, url));
+      const writeRoute = [...writeRoutes, ...letsTalkWriteRoutes, ...letsTalkAudioEngineRoutes].find((route) =>
+        route.matches(req, url)
+      );
       if (writeRoute) {
         writeRoute.handle(req, res, targetPath, registry);
         return;

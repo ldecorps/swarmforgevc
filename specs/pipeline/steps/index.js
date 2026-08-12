@@ -433,7 +433,8 @@ const DOMAINS = [
   require('./bl886VitestOrphanReaperHotfixSteps'),
   require('./bl885LeakedCaffeinateReclaimSteps'),
   require('./bl887ConsolidateProcessScopePredicateSteps'),
-  require('./bl863LetsTalkAudioPreferenceSteps')
+  require('./bl863LetsTalkAudioPreferenceSteps'),
+  require('./bl864BubbleSettingsVoiceEngineSelectorSteps')
 ];
 
 function registerSteps(registry) {

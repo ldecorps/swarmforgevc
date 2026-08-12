@@ -31,6 +31,103 @@ object BridgeClient {
     /** Cloudflare quick-tunnel edge codes for "origin (this bridge) is gone". */
     private val TUNNEL_DEAD_HTTP_CODES = setOf(521, 522, 523, 524, 530)
 
+    // BL-864: GET/POST /lets-talk/audio-engine — Bubble Settings' voice-engine
+    // selector reads and writes the BL-863 preference through these.
+
+    data class AudioEngineOptionResult(val serviceable: Boolean, val reason: String? = null)
+
+    data class AudioEngineStatusResult(
+        val ok: Boolean,
+        val enabled: Boolean = false,
+        val engine: String = "",
+        val local: AudioEngineOptionResult = AudioEngineOptionResult(false),
+        val openai: AudioEngineOptionResult = AudioEngineOptionResult(false),
+        val reason: String? = null
+    )
+
+    data class AudioEngineWriteResult(
+        val ok: Boolean,
+        val engine: String = "",
+        val reason: String? = null,
+        val connectionFailure: Boolean = false
+    )
+
+    /**
+     * BL-864 invariant 1 (BL-654 coder-authored property test in
+     * BridgeClientPropertyTest): the phone sends an engine NAME only. This
+     * is the one place the write request body is built — a plain JSONObject
+     * with exactly one key, never string concatenation that could let an
+     * extra field ride along. `internal` (BL-769 precedent) so the JVM unit
+     * suite can exercise it directly.
+     */
+    internal fun audioEnginePreferenceBody(engine: String): JSONObject =
+        JSONObject().put("engine", engine)
+
+    private fun audioEngineOptionFromJson(obj: JSONObject?): AudioEngineOptionResult {
+        if (obj == null) return AudioEngineOptionResult(false)
+        return AudioEngineOptionResult(
+            serviceable = obj.optBoolean("serviceable", false),
+            reason = obj.optString("reason", "").ifBlank { null }
+        )
+    }
+
+    fun fetchAudioEngineStatus(baseUrl: String, token: String): AudioEngineStatusResult {
+        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/audio-engine")
+        val conn = openAuth(url, token)
+        return try {
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            if (code !in 200..299) {
+                return AudioEngineStatusResult(false, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val json = JSONObject(raw)
+            if (!json.optBoolean("success", false)) {
+                return AudioEngineStatusResult(false, reason = json.optString("reason", "status query failed"))
+            }
+            val engines = json.optJSONObject("engines")
+            AudioEngineStatusResult(
+                ok = true,
+                enabled = json.optBoolean("enabled", false),
+                engine = json.optString("engine", ""),
+                local = audioEngineOptionFromJson(engines?.optJSONObject("local")),
+                openai = audioEngineOptionFromJson(engines?.optJSONObject("openai"))
+            )
+        } catch (e: Exception) {
+            AudioEngineStatusResult(false, reason = friendlyConnectionMessage(e))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    fun writeAudioEnginePreference(baseUrl: String, token: String, engine: String): AudioEngineWriteResult {
+        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/audio-engine")
+        val conn = openAuth(url, token)
+        return try {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            val payload = audioEnginePreferenceBody(engine).toString().toByteArray(Charsets.UTF_8)
+            conn.setFixedLengthStreamingMode(payload.size)
+            conn.outputStream.use { it.write(payload) }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            if (code !in 200..299) {
+                return AudioEngineWriteResult(false, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val json = JSONObject(raw)
+            if (!json.optBoolean("success", false)) {
+                return AudioEngineWriteResult(false, reason = json.optString("reason", "engine choice refused"))
+            }
+            AudioEngineWriteResult(true, engine = json.optString("engine", engine))
+        } catch (e: Exception) {
+            AudioEngineWriteResult(false, reason = friendlyConnectionMessage(e), connectionFailure = true)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /**
      * BL-716: a clear, non-raw message for DNS/connect failures — never the exception dump.
      *
