@@ -1,0 +1,159 @@
+id: BL-885
+title: "Orphan janitor reclaims leaked swarm caffeinate -dims daemons (cwd-scoped ownership, pidfile exemption)"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: human-requested
+depends_on: ["BL-886"]
+mutation_cost: low
+acceptance: specs/features/BL-885-orphan-janitor-reclaims-leaked-caffeinate.feature
+
+human_approval: pending
+approval_context: >
+  What needs sign-off is the DESIGN DECISION, which departs from the intake's
+  own leaning with evidence: the intake suggested keying the sweep off the
+  pidfile (stale/mismatched-PID detection), but the pidfile references at most
+  ONE process — the specifier probed the live host (2026-08-12) and confirmed
+  the other 52 leaked caffeinates are unreferenced by anything, so pidfile-only
+  detection structurally cannot reclaim them and fails the verbatim human ask
+  ("catch those"). The spec instead proves ownership the way the janitor
+  already does for vitest trees: exact `-dims` argv AND cwd under the host
+  root/registered worktrees (probe confirmed every leaked one carries such a
+  cwd), with the pidfile's live PID as a never-reap exemption and an age gate
+  for the launch race. Also sign off severity `medium` (contained impact:
+  caffeinate is ~0 CPU; harm is indefinite sleep-prevention plus unbounded
+  slow accumulation). Firm and not reopened: the fix lives in the existing
+  janitor, and the launch path is not changed.
+
+source: |
+  backlog/INTAKE-orphan-janitor-caffeinate-dims-reclaim.md (human via chat
+  with the coordinator, 2026-08-12 ~09:52 CEST), archived to backlog/archive/
+  on mint by the specifier 2026-08-12.
+
+  Human ask, verbatim (Article 5.3 — must survive every reshape):
+  "Can you check what the CPUs are doing? I suspect orphan processes
+  running?" followed by, after the coordinator's findings were reported,
+  "can you extend the correct janitor scope to catch those?"
+
+invariants:
+  - "A caffeinate is reaped only when every ownership signal holds at once: exact `-dims` argv, cwd under the host root or a registered worktree, and PID differing from the pidfile's live PID — any single missing signal keeps it alive."
+  - "An unreadable ownership signal fails closed: a cwd that cannot be determined never reads as project-scoped, so the process is never reaped on it."
+  - "No caffeinate younger than the stale threshold is ever reaped, tracked or not — PPID 1 is normal for every detached caffeinate, so parenthood never buys a fast path for this class."
+
+description: |
+  ## What
+
+  Extend the standing orphan janitor sweep (`orphan_janitor_lib.bb` /
+  `orphan_janitor_sweep_lib.bb`, ticked by `operator_runtime.bb`) with a new
+  reap class: leaked swarm-spawned `caffeinate -dims` daemons.
+
+  ## The leak (traced by the coordinator, verified by the specifier)
+
+  `launch_resident_spy_tunnel.sh`'s `ensure_tunnel_caffeinate()` spawns a
+  detached `caffeinate -dims` tracked by a single-slot pidfile
+  (`$OP/resident-spy-caffeinate.pid`); `stop_ancillary_services.sh` signals
+  that pidfile on clean shutdown. Any crash, force-kill, unclean host-switch,
+  or pidfile overwrite orphans the prior process with NO remaining reference,
+  and nothing rescans for them. Specifier probe 2026-08-12: 53 live orphans
+  (oldest ~4.5 days), all PPID 1, and — decisive for the design — every
+  probed one has cwd under this project (`.worktrees/QA/extension`,
+  `.worktrees/coder/extension`), while the pidfile tracks exactly one live
+  PID (33157 at probe time).
+
+  ## Behavior wanted
+
+  A sweep candidate is reapable iff ALL hold:
+  - cmdline is caffeinate with exactly the `-dims` flag set (a human's bare
+    `caffeinate`, `-i`, `-d` etc. never matches);
+  - cwd is under the host root or a registered role worktree (the janitor's
+    existing project-scoping posture — reuse/share the just-landed
+    `project-scoped-path?` rather than minting a third implementation);
+    an undeterminable cwd fails closed (never reapable);
+  - PID differs from the pidfile's currently-recorded PID when that PID is
+    alive (the tracked one is exempt, always). A missing/unreadable pidfile
+    exempts nothing: an untracked caffeinate is by definition already leaked
+    — nothing will ever signal it on stop;
+  - older than the stale threshold (env-overridable,
+    `SWARMFORGE_ORPHAN_JANITOR_CAFFEINATE_STALE_HOURS`, default 2.0h,
+    mirroring the vitest knob) — protects the spawn→pidfile-write race. NO
+    parent-orphaned fast path for this class: PPID 1 carries no signal here
+    (invariant 3).
+
+  Each reap writes an audit line with reason `leaked-caffeinate` and the pid,
+  same auditing posture as `parent-orphaned-front-desk`.
+
+  Note for the coder: the first live sweep after landing is EXPECTED to
+  reclaim the standing backlog of ~53 leaks — that is the durable fix doing
+  its job, not a manual cleanup, and it is how the e2e QA procedure verifies
+  the ticket.
+
+out_of_scope: |
+  - BL-871's property-lane worker-pool cap (separate, active).
+  - Any change to how/why `caffeinate` is launched (launch path untouched;
+    reclaim-only, per the intake).
+  - Killing anything not provable as swarm-owned under the signals above —
+    in particular any caffeinate whose cwd is outside the project, however
+    old.
+  - A separate manual one-off cleanup of the current 53 (the janitor's first
+    live sweep performs the reclamation durably).
+
+required_wiring:
+  - "swarmforge/scripts/orphan_janitor_sweep_lib.bb::caffeinate::the sweep tick must actually enumerate and decide the new class — a lib-only predicate with no sweep call site repeats the BL-419 shape"
+
+notes: |
+  Related, do not conflate: BL-886 (paused — stamp-off of the vitest
+  orphan-reaper hotfix; SAME files, different process class — hence
+  depends_on, so the two are never concurrently active on one file surface),
+  BL-871 (active — property-lane pool cap), BL-879/BL-849 (done — same
+  janitor surface, front-desk class).
+
+  Design decision record (specifier, 2026-08-12): the intake's open question
+  — pidfile stale-detection vs. process-table match — is settled by probe
+  evidence, not preference. Pidfile-only reaches at most 1 of 53; cwd
+  project-scoping is the janitor's established ownership proof (landed for
+  vitest in 1ecbe049f) and every observed leak carries it. The pidfile's
+  remaining role is the exemption protecting the one legitimately-tracked
+  process.
+
+  IR-DRY disposition (specifier, 2026-08-12): the never-reap cases were
+  merged into one decision-table Scenario Outline (findings 14 → 4). The four
+  remaining findings are the outline's parameterized steps vs. their literal
+  twins in scenarios 01 (audit assertion) and 03 (env override) — identical
+  step vocabulary BY DESIGN so one handler serves all three scenarios; not
+  accidental drift, per the checker's own normalize-only-on-drift guidance.
+
+  ## Acceptance is parked as a draft, deliberately
+
+  `acceptance:` points at intent; the file ships as
+  `specs/features/BL-885-orphan-janitor-reclaims-leaked-caffeinate.feature.draft`.
+  The caffeinate Given steps (pidfile state, cwd probe, argv variants) have no
+  step handlers yet, and a live `.feature` without them hard-fails
+  `specs/pipeline/runtime.js` (BL-233). The coder promotes the draft to a live
+  `.feature` in the same parcel as its handlers, reusing BL-849/BL-879 sweep
+  setup and reap-assertion handlers where they already exist.
+
+  ## Degraded gate, recorded up front
+
+  The diff is Babashka: no mutation/CRAP/DRY is wired for that layer
+  (engineering.prompt, Startup Tools) — the gate is the unit runners under
+  `swarmforge/scripts/test/` plus the promoted acceptance scenarios. A
+  hardening pass must record that fallback, never imply mutation ran.
+
+  ## E2E QA procedure (specifier, 2026-08-12)
+
+  1. Snapshot the process table: `ps -axo pid,ppid,etime,command | grep
+     'caffeinate -dims'` — record count and the pidfile's PID
+     (`.swarmforge/operator/resident-spy-caffeinate.pid`).
+  2. Run a one-shot janitor sweep on the new code.
+  3. Confirm every leaked caffeinate (cwd under project, PID ≠ pidfile) is
+     gone; the pidfile's PID SURVIVES; one audit line per reaped pid carries
+     reason `leaked-caffeinate`.
+  4. Diff the before/after process tables: nothing outside the class was
+     touched (decapitation check — run before trusting any reap count).
+  5. Fail-closed spot check: a fixture candidate with an unreadable cwd
+     survives the same sweep.
+  6. Unit runners green; record the Babashka degraded-gate fallback in the
+     QA evidence.

@@ -140,7 +140,7 @@ description: |
   the live path (BL-233); landing handlers without materializing leaves the
   contract unexecuted, materializing without handlers is BL-618's QA bounce.
 
-acceptance: specs/features/BL-883-boot-prefix-budget-rebust-trim.feature
+acceptance: specs/features/BL-883-boot-prefix-budget-rebust-trim.feature.draft
 
 notes: |
   Coordinator 2026-08-12T03:09Z: open-slot nudge named this ticket top
