@@ -217,6 +217,31 @@
         (conj (mapv pre-qa-gate-lib/format-finding-line findings) pre-qa-gate-remedy)
         []))))
 
+(def pointer-gate-remedy
+  "Flip the ticket's acceptance: pointer to the correct path (or promote the parked .feature.draft in the same commit) and re-send.")
+
+(defn- pointer-gate-errors
+  "BL-880: the early, existence-only acceptance-pointer check. Arms for
+   every git_handoff whose task name resolves to a ticket id, EXCEPT one
+   addressed to QA - that edge keeps calling pre-qa-gate-errors above
+   unchanged, whose fuller BL-761 acceptance-contract evaluation already
+   subsumes this exact check. Infrastructure failures (the cited commit's
+   tree could not be read) print a warning and never block the send - only
+   a positive existence finding does."
+  [type to task-name canonical]
+  (if-not (and (= "git_handoff" type)
+               (not (str/blank? task-name))
+               canonical)
+    []
+    (let [{:keys [findings warnings]}
+          (pre-qa-gate-gather-lib/pointer-findings-for-git-handoff
+           (project-root) {:to to :task-name task-name :cited-commit canonical})]
+      (doseq [w warnings]
+        (binding [*out* *err*] (println (str "ACCEPTANCE_POINTER_GATE WARNING: " w))))
+      (if (seq findings)
+        (conj (mapv pre-qa-gate-lib/format-finding-line findings) pointer-gate-remedy)
+        []))))
+
 (defn validate [headers ordered sender]
   (let [type (get headers "type")
         to (get headers "to")
@@ -289,7 +314,9 @@
                              dup-chain-block
                              (conj (duplicate-chain-guard-lib/refusal-message dup-chain-block))
                              (and (not (str/blank? task-name)) canonical)
-                             (into (pre-qa-gate-errors type to task-name canonical))))
+                             (into (pre-qa-gate-errors type to task-name canonical))
+                             (and (not (str/blank? task-name)) canonical)
+                             (into (pointer-gate-errors type to task-name canonical))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))

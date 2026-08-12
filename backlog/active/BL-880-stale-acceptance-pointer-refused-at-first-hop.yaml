@@ -7,7 +7,7 @@ epic: swarm-reliability
 priority: 35
 depends_on: []
 mutation_cost: low
-acceptance: specs/features/BL-880-stale-acceptance-pointer-refused-at-first-hop.feature.draft
+acceptance: specs/features/BL-880-stale-acceptance-pointer-refused-at-first-hop.feature
 
 human_approval: approved
 approval_context: >

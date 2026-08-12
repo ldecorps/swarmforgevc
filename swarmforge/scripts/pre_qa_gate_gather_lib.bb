@@ -24,6 +24,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_contract_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_pointer_gate_lib.bb")))
 
 ;; ── small git helpers ────────────────────────────────────────────────────
 
@@ -380,6 +381,67 @@
                                             unresolved)}))))))
       (finally
         (doseq [d @created-dirs] (try (fs/delete-tree d) (catch Exception _ nil)))))))
+
+;; ── acceptance-pointer fact-gathering (BL-880) ───────────────────────────
+;; Existence-only counterpart to gather-acceptance-contract-facts above -
+;; the early check armed at every PRE-QA hop. Never parses the feature file,
+;; never loads the step registry - one git object-existence probe, plus one
+;; more to tell "the tree at the cited commit could not be read" (fails
+;; OPEN) apart from "the tree was read fine and the path just is not there"
+;; (fails CLOSED).
+
+(defn- tree-readable-at-commit? [project-root cited-commit]
+  (git-ok? (run-git project-root ["cat-file" "-e" (str cited-commit "^{tree}")])))
+
+(defn- path-exists-at-commit? [project-root cited-commit path]
+  (git-ok? (run-git project-root ["cat-file" "-e" (str cited-commit ":" path)])))
+
+(defn gather-acceptance-pointer-facts
+  "ticket-id's declared acceptance: value, probed for existence ONLY at
+   cited-commit -> {:raw-declaration :tree-readable? :path-exists?}, the
+   shape acceptance-pointer-gate-lib/evaluate expects (minus :ticket-id and
+   :cited-commit, which the caller merges in). tree-readable?/path-exists?
+   are only computed when the declaration is applicable (single-line,
+   non-blank) - evaluate itself never consults them for the inapplicable
+   case, so leaving them nil there is safe. path-exists? stays nil (never
+   probed) when the tree itself could not be read - there is nothing
+   meaningful to probe a path against."
+  [project-root cited-commit yaml-content]
+  (let [raw-declaration (read-yaml-field yaml-content "acceptance")]
+    (if-not (acceptance-pointer-gate-lib/applicable? raw-declaration)
+      {:raw-declaration raw-declaration}
+      (let [tree-readable? (tree-readable-at-commit? project-root cited-commit)]
+        {:raw-declaration raw-declaration
+         :tree-readable? tree-readable?
+         :path-exists? (when tree-readable? (path-exists-at-commit? project-root cited-commit raw-declaration))}))))
+
+(defn pointer-findings-for-git-handoff
+  "The entry point swarm_handoff.bb's validate calls for the BL-880 early,
+   existence-only acceptance-pointer check. `to` is the raw comma-separated
+   recipients header; `task-name` is the draft's task header; `cited-commit`
+   is the already-canonicalized (10-char) commit. Returns {:findings [...]
+   :warnings [...]}.
+
+   Arms for every hop EXCEPT one addressed to QA - that edge keeps calling
+   findings-for-git-handoff above unchanged, whose fuller BL-761
+   acceptance-contract evaluation already subsumes this exact check (a
+   stale pointer fails declaration-readable? there too); arming this ALSO
+   at the QA edge would just double-report the same defect under two
+   finding classes. Skips silently (no findings, no warnings, no git/fs
+   work at all) when addressed to QA, the task name carries no extractable
+   ticket id, or no ticket yaml is found on this checkout."
+  [project-root {:keys [to task-name cited-commit]}]
+  (if (pre-qa-gate-lib/gate-armed? {:type "git_handoff" :to to})
+    {:findings [] :warnings []}
+    (let [ticket-id (pipeline-stage-lib/extract-ticket-id task-name)]
+      (if-not ticket-id
+        {:findings [] :warnings []}
+        (let [yaml-content (find-ticket-yaml-content project-root ticket-id)]
+          (if-not yaml-content
+            {:findings [] :warnings []}
+            (let [facts (gather-acceptance-pointer-facts project-root cited-commit yaml-content)]
+              (acceptance-pointer-gate-lib/evaluate
+               (assoc facts :ticket-id ticket-id :cited-commit cited-commit)))))))))
 
 ;; ── top-level: gather + evaluate for a git_handoff draft ─────────────────
 
