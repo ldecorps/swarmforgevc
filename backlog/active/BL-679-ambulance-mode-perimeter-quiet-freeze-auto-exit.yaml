@@ -108,7 +108,7 @@ description: |
   Exit is one-directional. Nothing here may ever ENGAGE an ambulance; the
   swarm never self-declares one.
 
-acceptance: specs/features/BL-679-ambulance-mode-perimeter.feature.draft
+acceptance: specs/features/BL-679-ambulance-mode-perimeter.feature
 
 out_of_scope: |
   - Everything in BL-655 (marker, lib, CLI, Telegram verbs, the three hold
