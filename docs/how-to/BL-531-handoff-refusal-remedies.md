@@ -1,6 +1,6 @@
-# BL-531/BL-761: Handling Pre-QA Gate Handoff Refusals
+# BL-531/BL-761/BL-880: Handling Pre-QA Gate Handoff Refusals
 
-When you attempt a `git_handoff` to QA and `swarm_handoff.sh` prints `PRE_QA_GATE_FAIL`, your parcel has been refused. This is by design: the gate catches work defects before the expensive QA review. This runbook explains each class of refusal and how to fix it.
+When you attempt a `git_handoff` and `swarm_handoff.sh` prints `PRE_QA_GATE_FAIL`, your parcel has been refused. This is by design: the gate catches work defects before they travel further down the pipeline. Most of these classes (`ancestry`, `wiring`, `manifest`, `acceptance-contract`) are armed only on a handoff addressed to QA; `acceptance-pointer` is armed on every pre-QA hop instead — see its own section below for why. This runbook explains each class of refusal and how to fix it.
 
 ## Refusal Classes
 
@@ -9,8 +9,8 @@ Every refusal line is machine-greppable:
 PRE_QA_GATE_FAIL <class> <ticket-id> <detail>
 ```
 
-where `<class>` is one of: `ancestry`, `wiring`, `manifest`, or
-`acceptance-contract`.
+where `<class>` is one of: `ancestry`, `wiring`, `manifest`,
+`acceptance-contract`, or `acceptance-pointer`.
 
 ## Ancestry Refusals
 
@@ -253,6 +253,45 @@ was never compiled, so `pilotAcceptanceGate` and friends fail to `require()`),
 the gate fails **open** — a `PRE_QA_GATE WARNING`, not a finding, and the send
 goes through. Run `npm run compile` and re-check locally if you want to be
 sure your contract actually resolves before sending.
+
+## Acceptance-Pointer Refusals (BL-880)
+
+**What it means:** Your ticket's single-line `acceptance:` declaration names
+a path that does not exist at the commit you're sending. Unlike the
+Acceptance-Contract check above, this is **not** QA-only — it fires at the
+very first `git_handoff` (coder onward), so a stale pointer is caught before
+it rides five pipeline stages to the QA edge. It checks existence only: it
+never parses the feature file or resolves steps, so a legitimately parked
+`.feature.draft` (BL-233) sails through as long as it exists at the cited
+commit.
+
+**Example output:**
+```
+PRE_QA_GATE_FAIL acceptance-pointer BL-880 declared acceptance: path "specs/features/BL-880-....feature" does not exist at cited commit a1b2c3d9e8
+  remedy: Flip the ticket's acceptance: pointer to the correct path (or promote the parked .feature.draft in the same commit) and re-send.
+```
+
+**How to fix:**
+
+The usual cause is promoting a parked `.feature.draft` to a live `.feature`
+without flipping the ticket YAML's `acceptance:` pointer in the same commit
+(BL-877/BL-879 both hit this). Fix both together:
+
+```bash
+git mv specs/features/BL-880-....feature.draft specs/features/BL-880-....feature
+# edit backlog/active/BL-880-....yaml: acceptance: specs/features/BL-880-....feature
+git add specs/features/BL-880-....feature backlog/active/BL-880-....yaml
+git commit -m "BL-880: promote acceptance draft and flip pointer"
+swarm_handoff.sh ./tmp/handoff.txt
+```
+
+**What does NOT trigger this check:** a blank/absent `acceptance:` field, an
+inline (multi-line) Gherkin declaration, or a recipient of QA — those stay
+the Acceptance-Contract check's concern, judged there with full context
+(step resolution included). If the cited commit's tree can't be read at all
+(infrastructure trouble), this check fails **open** with an
+`ACCEPTANCE_POINTER_GATE WARNING` instead of a finding, and the send
+proceeds.
 
 ## Infrastructure Warnings
 

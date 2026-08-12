@@ -37,6 +37,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -269,25 +270,43 @@
 
 (def job-process-pattern
   "Command-line signature of the long-running job processes this reaper
-   targets: Stryker mutation roots and `node --test` batches (BL-108). Kept
-   narrow and case-insensitive so it never matches an unrelated process."
-  #"(?i)stryker|node --test")
+   targets: Stryker mutation roots, `node --test` batches (BL-108), and the
+   property-lane vitest tree (`vitest.properties.config.mjs`, npm/npx vitest,
+   Vitest worker processes). Kept narrow and case-insensitive so it never
+   matches an unrelated process."
+  #"(?i)stryker|node --test|vitest\.properties\.config\.mjs|\bnpm exec vitest\b|\bnpx vitest\b|\(vitest")
+
+(defn job-scope-paths
+  "Canonical host root plus every registered role worktree. Vitest/npm
+   invocations often omit the checkout path from argv; cwd is checked too."
+  []
+  (distinct (cons canonical-project-root (map canonical-path (worktree-paths)))))
+
+(defn job-in-scope?
+  "True when cmdline or cwd is rooted under this project's host root or a
+   registered role worktree."
+  [pid cmd]
+  (let [paths (job-scope-paths)
+        cwd (try (process-table-lib/cwd! pid) (catch Exception _ nil))]
+    (boolean
+     (or (some #(str/includes? (or cmd "") %) paths)
+         (and cwd (some #(str/starts-with? cwd %) paths))))))
 
 (defn orphaned-job-groups
   "Every (pid, pgid, cmd) whose command line matches job-process-pattern, is
-   rooted under one of this project's swarm worktrees, and has already
-   reparented to launchd/init (ppid 1) - the crash-orphan signal (BL-108
-   supervisor-reaper). A process still parented to anything else is still
-   owned by a live agent run and must never be matched here, however long
-   it runs."
+   rooted under this project's host root or a swarm worktree (argv or cwd), and
+   has already lost its owning parent (process-table-lib/parent-orphaned? -
+   PPID 1, dead parent, or missing ProcessHandle; not raw ppid==1 alone, which
+   misses subreaper hosts). A process still parented to a live supervisor is
+   owned by a live agent run and must never be matched here, however long it
+   runs."
   []
-  (let [worktrees (worktree-paths)]
-    (->> (all-pid-ppid-commands)
-         (filter (fn [[_ ppid _ cmd]]
-                   (and (= 1 ppid)
-                        (re-find job-process-pattern cmd)
-                        (some #(str/includes? cmd %) worktrees))))
-         (map (fn [[pid _ pgid cmd]] [pid pgid cmd])))))
+  (->> (all-pid-ppid-commands)
+       (filter (fn [[pid _ _ cmd]]
+                 (and (process-table-lib/parent-orphaned? pid)
+                      (re-find job-process-pattern cmd)
+                      (job-in-scope? pid cmd))))
+       (map (fn [[pid _ pgid cmd]] [pid pgid cmd]))))
 
 (defn reap-orphaned-job-processes!
   "Reaps crash-orphaned mutation/test-batch process groups (BL-108 defenses

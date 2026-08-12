@@ -5,6 +5,10 @@
 ;;      acceptance dry-runs that never tore down; cwd often already deleted),
 ;;   2. hung `node --test …*.generated.test.js` acceptance runners left
 ;;      parented by WSL /init for many hours,
+;;   2b. hung property-lane vitest trees (`vitest.properties.config.mjs`,
+;;       npm/npx vitest, Vitest workers) under the host repo or a role
+;;       worktree — parent-orphaned roots reap immediately; live-parented
+;;       hangs still require the multi-hour age gate,
 ;;   3. disposable-root ancillaries fixture_reaper never sees (name is
 ;;      `tmp.*`, not aps-/sfvc-/bl404-): babysitter tmux/launch, babysitterd.sh
 ;;      pointed at a disposable root, any tmux -S under that root (e.g. BL-647
@@ -20,7 +24,8 @@
 ;; /var/folders/…/T/…).
 
 (ns orphan-janitor-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 ;; Linux mktemp under /tmp, plus Darwin $TMPDIR (/var/folders/…/T/) checkouts
 ;; left by acceptance / BL-622 primary-launch sandboxes.
@@ -51,6 +56,18 @@
   [cmdline]
   (let [c (or cmdline "")]
     (boolean (re-find #"\.generated\.test\.js(?:\s|$)" c))))
+
+(defn hung-vitest-cmdline?
+  "Property-lane vitest invocations and worker processes. Scoped to the
+   host repo or a role worktree by callers before reaping."
+  [cmdline]
+  (let [c (or cmdline "")]
+    (boolean
+     (or (re-find #"vitest\.properties\.config\.mjs" c)
+         (re-find #"(?i)\bnpm exec vitest\b" c)
+         (re-find #"(?i)\bnpx vitest\b" c)
+         (re-find #"(?i)\(vitest" c)
+         (re-find #"(?i)node.*[/\\]vitest[/\\]" c)))))
 
 (defn front-desk-bridge-or-bot-cmdline?
   "True for the headless bridge or front-desk bot entrypoints. Alone this
@@ -102,12 +119,42 @@
     (not stale?) false
     :else true))
 
+(defn project-scoped-path?
+  "True when cmdline or cwd is under the canonical host root or a registered
+   role worktree (roles.tsv column 3)."
+  [project-root cmd cwd]
+  (let [root (str/trim (or project-root ""))
+        roles-file (fs/path root ".swarmforge" "roles.tsv")
+        worktrees (when (fs/exists? roles-file)
+                    (->> (str/split-lines (slurp (str roles-file)))
+                         (map #(get (str/split % #"\t") 2))
+                         (remove nil?)
+                         vec))
+        canonical (fn [p]
+                    (try (str (fs/canonicalize p)) (catch Exception _ (str p))))
+        paths (distinct (cons (canonical root) (map canonical (or worktrees []))))
+        in-path? (fn [s]
+                   (boolean (and s (some #(str/starts-with? s %) paths))))]
+    (or (in-path? cmd) (in-path? cwd))))
+
 ;; Pure: hung acceptance node --test runners.
 (defn reapable-hung-acceptance?
   [{:keys [in-live-window-set? hung-acceptance? stale?]}]
   (cond
     in-live-window-set? false
     (not hung-acceptance?) false
+    (not stale?) false
+    :else true))
+
+;; Pure: hung property-lane vitest trees under this project.
+(defn reapable-hung-vitest?
+  [{:keys [in-live-window-set? hung-vitest? project-scoped? stale?
+           parent-orphaned?]}]
+  (cond
+    in-live-window-set? false
+    (not hung-vitest?) false
+    (not project-scoped?) false
+    parent-orphaned? true
     (not stale?) false
     :else true))
 
