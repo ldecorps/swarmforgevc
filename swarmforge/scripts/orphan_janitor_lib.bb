@@ -34,6 +34,8 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
+
 ;; Linux mktemp under /tmp, plus Darwin $TMPDIR (/var/folders/…/T/) checkouts
 ;; left by acceptance / BL-622 primary-launch sandboxes.
 (def disposable-root-re
@@ -136,7 +138,9 @@
 
 (defn project-scoped-path?
   "True when cmdline or cwd is under the canonical host root or a registered
-   role worktree (roles.tsv column 3)."
+   role worktree (roles.tsv column 3). Delegates classification to
+   process-table-lib/project-scoped-process? (BL-887) so this and the
+   supervisor's job-in-scope? can never disagree."
   [project-root cmd cwd]
   (let [root (str/trim (or project-root ""))
         roles-file (fs/path root ".swarmforge" "roles.tsv")
@@ -147,10 +151,8 @@
                          vec))
         canonical (fn [p]
                     (try (str (fs/canonicalize p)) (catch Exception _ (str p))))
-        paths (distinct (cons (canonical root) (map canonical (or worktrees []))))
-        in-path? (fn [s]
-                   (boolean (and s (some #(str/starts-with? s %) paths))))]
-    (or (in-path? cmd) (in-path? cwd))))
+        paths (distinct (cons (canonical root) (map canonical (or worktrees []))))]
+    (process-table-lib/project-scoped-process? cmd cwd paths)))
 
 ;; Pure: hung acceptance node --test runners.
 (defn reapable-hung-acceptance?

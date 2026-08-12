@@ -412,6 +412,62 @@
            :stale? false
            :is-live-caffeinate-pid? false}))
 
+;; ── BL-887: project-scoped-path? delegates to the shared predicate ──────
+;; Deliberately proves the CHANGED behavior: the cmdline leg is now
+;; str/includes? (was str/starts-with? via the old private in-path?
+;; closure), so a vitest WORKER whose absolute node_modules/vitest/... path
+;; sits mid-cmdline (never at position 0 - the cmdline always starts with
+;; the executable name) is now in scope even when cwd cannot be resolved
+;; (nil). Before BL-887 this exact case was out of scope and
+;; reapable-hung-vitest?'s project-scoped? gate hard-blocked the reap.
+;; real-path (not canonicalize) so root already matches project-scoped-path?'s
+;; own internal fs/canonicalize output - avoids a Darwin /var -> /private/var
+;; symlink mismatch that would otherwise make an embedded-path cmdline miss.
+(let [root (str (fs/real-path (fs/create-temp-dir)))]
+  (try
+    (let [worktree (str (fs/path root ".worktrees" "coder"))]
+      (fs/create-dirs (fs/path root ".swarmforge"))
+      (fs/create-dirs worktree)
+      (spit (str (fs/path root ".swarmforge" "roles.tsv"))
+            (str "coder\tcoder\t" worktree "\tswarmforge-coder\tCoder\tclaude\ttask\n"))
+
+      (assert= "BL-887: worker cmdline embedding an absolute worktree path mid-string, unresolvable cwd -> in scope"
+               true
+               (orphan-janitor-lib/project-scoped-path?
+                root
+                (str "node " worktree "/node_modules/vitest/dist/worker.js (vitest 1)")
+                nil))
+
+      (assert= "BL-887: worker cmdline embedding an absolute host-root path mid-string, unresolvable cwd -> in scope"
+               true
+               (orphan-janitor-lib/project-scoped-path?
+                root
+                (str "node " root "/node_modules/vitest/dist/worker.js (vitest 1)")
+                nil))
+
+      (assert= "launcher cmdline with no embedded path, cwd under a role worktree -> in scope"
+               true
+               (orphan-janitor-lib/project-scoped-path?
+                root
+                "npm exec vitest run --config vitest.properties.config.mjs"
+                (str worktree "/extension")))
+
+      (assert= "launcher cmdline with no embedded path, unresolvable cwd -> out of scope"
+               false
+               (orphan-janitor-lib/project-scoped-path?
+                root
+                "npm exec vitest run --config vitest.properties.config.mjs"
+                nil))
+
+      (assert= "cmdline and cwd both outside every scope path -> out of scope"
+               false
+               (orphan-janitor-lib/project-scoped-path?
+                root
+                "npm exec vitest run --config vitest.properties.config.mjs"
+                "/tmp/tmp.unrelated-checkout")))
+    (finally
+      (fs/delete-tree root))))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (System/exit 1))

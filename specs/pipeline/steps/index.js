@@ -431,7 +431,8 @@ const DOMAINS = [
   require('./bl880StaleAcceptancePointerRefusedAtFirstHopSteps'),
   require('./bl883BootPrefixBudgetTrimSteps'),
   require('./bl886VitestOrphanReaperHotfixSteps'),
-  require('./bl885LeakedCaffeinateReclaimSteps')
+  require('./bl885LeakedCaffeinateReclaimSteps'),
+  require('./bl887ConsolidateProcessScopePredicateSteps')
 ];
 
 function registerSteps(registry) {

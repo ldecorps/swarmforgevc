@@ -92,6 +92,27 @@
   ["/tmp/tmp.unrelated-checkout" "/Users/someone/other-project" "/home/carillon/a-sibling-repo"
    (str "/somewhere-else" project-root) (str "/opt/parent" worktree-root "-decoy")])
 
+;; ── BL-887: worker cmdline embedding an absolute scope path mid-string ──
+;; A vitest forked WORKER's cmdline puts its absolute node_modules/vitest/...
+;; path mid-string (never at position 0 - the cmdline always starts with the
+;; executable name), and process_table_lib.bb's cwd! is best-effort and can
+;; return nil (plausibly exactly when racing a dying process). Before
+;; BL-887 the janitor's cmdline leg was str/starts-with?-only, so this exact
+;; combination was never in scope and reapable-hung-vitest?'s project-scoped?
+;; gate hard-blocked the reap. Kept as its OWN pool/generator (P3) rather
+;; than folded into cmdline-shape-pool above: that pool is also drawn by P1
+;; (out-of-scope), and this shape is unconditionally in-scope via its
+;; cmdline alone regardless of cwd - folding it in would make P1 wrongly
+;; expect out-of-scope behavior from an always-in-scope cmdline.
+(def worker-mid-string-cmdline
+  (str "node " worktree-root "/node_modules/vitest/dist/worker.js (vitest 1)"))
+
+;; Includes nil - cwd! best-effort can fail to resolve a cwd at all - plus
+;; every out-of-scope cwd, proving the cmdline leg alone is sufficient
+;; regardless of what cwd resolves to (or fails to).
+(def cwd-pool-including-nil-and-out-of-scope
+  (into [nil] out-of-scope-cwd-pool))
+
 (defn- run-sweep-for-one [{:keys [cmdline cwd age-ms parent-orphaned]}]
   (let [kills (atom [])
         audits (atom [])
@@ -143,8 +164,38 @@
         true
         (str "expected reaped=" expect-reaped " got=" reaped? " for " (pr-str scenario))))))
 
+;; ── P3 (BL-887): a worker cmdline embedding an absolute scope path
+;;        mid-string is ALWAYS in scope via the cmdline leg alone, reaped
+;;        iff parent-orphaned or stale, regardless of cwd (nil or
+;;        out-of-scope alike) ───────────────────────────────────────────
+(defn- gen-p3-scenario [s]
+  (let [[cwd s1] (gen-pick s cwd-pool-including-nil-and-out-of-scope)
+        [parent-orphaned s2] (gen-bool s1)
+        [stale? s3] (gen-bool s2)
+        age-ms (if stale? 999999999 1000)]
+    [{:cmdline worker-mid-string-cmdline :cwd cwd :age-ms age-ms
+      :parent-orphaned parent-orphaned :expect-reaped (or parent-orphaned stale?)} s3]))
+
+(check-all "P3 janitor-worker-mid-string-cmdline-in-scope (BL-887): a vitest worker cmdline embedding an absolute scope path mid-string is in scope via the cmdline leg alone, reaped iff parent-orphaned or stale, regardless of cwd"
+  gen-p3-scenario
+  (fn [{:keys [expect-reaped] :as scenario}]
+    (let [{:keys [reaped?]} (run-sweep-for-one scenario)]
+      (if (= expect-reaped reaped?)
+        true
+        (str "expected reaped=" expect-reaped " got=" reaped? " for " (pr-str scenario))))))
+
+;; ── BL-887 deterministic regression: the exact worker-cmdline + nil-cwd +
+;;    parent-orphaned combination from the ticket's demonstrated bug - never
+;;    rely on the random draw alone to exercise this exact fixed gap.
+(let [scenario {:cmdline worker-mid-string-cmdline :cwd nil :age-ms 999999999 :parent-orphaned true}
+      {:keys [reaped?]} (run-sweep-for-one scenario)]
+  (when-not reaped?
+    (swap! failures conj
+           (str "FAIL BL-887 deterministic regression: worker-cmdline + nil-cwd + parent-orphaned combination not reaped: "
+                (pr-str scenario)))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
-(println (str "bl886 janitor scope properties: " runs " runs each (P1/P2)"))
+(println (str "bl886/bl887 janitor scope properties: " runs " runs each (P1/P2/P3), plus 1 deterministic regression"))
 (if (empty? @failures)
   (println "ALL PROPERTIES HOLD")
   (do (println (str (count @failures) " PROPERTY FAILURE(S):"))

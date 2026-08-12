@@ -144,3 +144,14 @@
   (if (procfs-available?)
     (cwd-from-procfs pid)
     (cwd-from-lsof pid)))
+
+(defn project-scoped-process?
+  "True when cmd contains any path in `paths` (str/includes?) or cwd is
+   non-nil and starts with any path in `paths` (str/starts-with?). Nil-safe
+   on both cmd and cwd. Shared 'is this process ours' classification for the
+   handoffd supervisor's crash-orphan reaper and the orphan janitor's
+   stale-process sweep, so the two can never disagree (BL-887)."
+  [cmd cwd paths]
+  (boolean
+   (or (some #(str/includes? (or cmd "") %) paths)
+       (and cwd (some #(str/starts-with? cwd %) paths)))))
