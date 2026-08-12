@@ -9,7 +9,7 @@ severity: medium
 priority: 32
 direction: human-requested
 depends_on: [BL-655]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 
 invariants:
@@ -131,3 +131,29 @@ notes: |
   no step handler, so an unbuilt slice's feature file must not be live). The
   coder promotes the draft to `.feature` in this parcel and wires its
   handlers in the same commit.
+
+  Specifier pre-flight, 2026-08-12 (spec verified current; no scenario
+  changed):
+  - BL-655 is delivered (`backlog/done/BL-655-...`); the dependency is
+    satisfied and the marker/lib/CLI surface this slice consumes is live.
+  - Integration points re-verified against main: `decide-tier` and the
+    five-key `tier-decision-input-keys` guarantee
+    (`flow_watchdog_lib.bb:451-471`), `evaluate-parcel-tier` (`:692`) as the
+    documented composition seam, `flow-watchdog-sweep!` on the daemon
+    cadence (`handoffd.bb:1835`), the open-slot nudge
+    `nudge-coordinator-open-slot!` (`handoffd.bb:1706`, no ambulance
+    awareness yet), and the `ambulance_cli.bb status` verb.
+  - Landed siblings since this spec was written: BL-852 gave the chase-sweep
+    hold-awareness via `handoff-lib/default-ambulance-held?`
+    (`chase_sweep_lib.bb` `item-ambulance-held?`) — reuse that predicate
+    shape for the watchdog mute rather than minting a new one. BL-813
+    hardened vanished-entry READS in `ambulance_lib.bb` only; no auto-exit
+    exists anywhere — piece 3 is fully unbuilt, as are pieces 1 and 2
+    (`flow_watchdog_lib.bb` has zero ambulance references today).
+  - The auto-exit sweep makes handoffd a `release!` writer: update
+    `ambulance_lib.bb`'s "marker's only writers" comment in the same commit.
+  - Gherkin lint gate: clean parse. IR-DRY reviewed: 7 findings, all
+    meaning-bearing, none actioned — the Given/Then same-text in -09 is the
+    deliberate no-op frame; the `<location>` trio (-06/-07/-08) unifies
+    under one parameterized step handler; -01/-02 are the mute/alarm
+    contrast pair, not outline-mergeable without a passthrough Then.

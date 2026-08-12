@@ -250,6 +250,171 @@
              before
              (slurp (str (ambulance-lib/marker-path root))))))
 
+;; ── BL-679 piece 3: ticket-location ─────────────────────────────────────────
+
+(let [root (mk-tmp)]
+  (write-ticket! root "active" "BL-654")
+  (assert= "ticket-location: :active for a ticket filed under backlog/active/"
+           :active
+           (ambulance-lib/ticket-location root "BL-654")))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "paused" "BL-654")
+  (assert= "ticket-location: :paused for a ticket filed under backlog/paused/"
+           :paused
+           (ambulance-lib/ticket-location root "BL-654")))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "hold" "BL-654")
+  (assert= "ticket-location: :hold for a ticket filed under backlog/hold/"
+           :hold
+           (ambulance-lib/ticket-location root "BL-654")))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "done" "BL-654")
+  (assert= "ticket-location: :done for a ticket filed directly under backlog/done/"
+           :done
+           (ambulance-lib/ticket-location root "BL-654")))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "backlog" "done" "M8"))
+  (spit (str (fs/path root "backlog" "done" "M8" "BL-654-demo.yaml"))
+        "id: BL-654\ntitle: \"demo\"\nstatus: done\n")
+  (assert= "ticket-location: :done for a ticket nested one level under a done/ milestone subdir"
+           :done
+           (ambulance-lib/ticket-location root "BL-654")))
+
+(let [root (mk-tmp)]
+  (assert= "ticket-location: nil for a ticket with no file anywhere under backlog/ (vanished)"
+           nil
+           (ambulance-lib/ticket-location root "BL-654")))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "active" "BL-660")
+  (assert= "ticket-location: nil when backlog/ has files, but none for THIS ticket id"
+           nil
+           (ambulance-lib/ticket-location root "BL-654")))
+
+;; ── BL-679 piece 3: decide-auto-exit (pure) ─────────────────────────────────
+
+(assert= "decide-auto-exit: :done releases with case :delivered"
+         {:release? true :case :delivered}
+         (ambulance-lib/decide-auto-exit :done))
+
+(assert= "decide-auto-exit: :hold releases with case :abandoned"
+         {:release? true :case :abandoned}
+         (ambulance-lib/decide-auto-exit :hold))
+
+(assert= "decide-auto-exit: nil (vanished) releases with case :abandoned"
+         {:release? true :case :abandoned}
+         (ambulance-lib/decide-auto-exit nil))
+
+(assert= "decide-auto-exit: :active (still in flight, e.g. a bounce) holds - never releases"
+         {:release? false :case :in-flight}
+         (ambulance-lib/decide-auto-exit :active))
+
+(assert= "decide-auto-exit: :paused (defensive) also holds - never releases"
+         {:release? false :case :in-flight}
+         (ambulance-lib/decide-auto-exit :paused))
+
+;; ── BL-679 piece 3: auto-exit! (fixture-based fs I/O) ───────────────────────
+
+(let [root (mk-tmp)]
+  (assert= "auto-exit!: nil when the mode is not engaged at all - nothing to do"
+           nil
+           (ambulance-lib/auto-exit! root)))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "active" "BL-654")
+  (ambulance-lib/engage! root "BL-654" "cli")
+  (assert= "auto-exit!: nil while the ticket is still in flight (backlog/active/) - the mode holds"
+           nil
+           (ambulance-lib/auto-exit! root))
+  (assert= "auto-exit!: the marker is untouched when the ticket is still in flight"
+           {:active true :ticket "BL-654"}
+           (ambulance-lib/read-ambulance-state root)))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "active" "BL-654")
+  (ambulance-lib/engage! root "BL-654" "cli")
+  (fs/create-dirs (fs/path root "backlog" "done"))
+  (fs/move (fs/path root "backlog" "active" "BL-654-demo.yaml")
+           (fs/path root "backlog" "done" "BL-654-demo.yaml"))
+  (assert= "auto-exit!: releases with {:ticket :case :delivered} once the ticket reaches backlog/done/"
+           {:ticket "BL-654" :case :delivered}
+           (ambulance-lib/auto-exit! root))
+  (assert= "auto-exit!: the marker is actually cleared on disk after a delivered auto-exit"
+           {:active false}
+           (ambulance-lib/read-ambulance-state root)))
+
+(let [root (mk-tmp)]
+  (write-ticket! root "active" "BL-654")
+  (ambulance-lib/engage! root "BL-654" "cli")
+  (fs/create-dirs (fs/path root "backlog" "hold"))
+  (fs/move (fs/path root "backlog" "active" "BL-654-demo.yaml")
+           (fs/path root "backlog" "hold" "BL-654-demo.yaml"))
+  (assert= "auto-exit!: releases with {:ticket :case :abandoned} when the ticket moves to backlog/hold/"
+           {:ticket "BL-654" :case :abandoned}
+           (ambulance-lib/auto-exit! root)))
+
+;; BL-679's central fix: the marker's own raw ticket-has-file? fail-safe
+;; (BL-655, describe-status/read-ambulance-state) already degrades a
+;; vanished-ticket marker to {:active false} on ITS OWN, silently, leaving
+;; the marker byte-unchanged on disk forever. auto-exit! must not be fooled
+;; by that degrade into a no-op - it has to read the RAW marker so it can
+;; actually clear it and report the release for the human-facing announcement.
+(let [root (mk-tmp)]
+  (write-ticket! root "active" "BL-654")
+  (ambulance-lib/engage! root "BL-654" "cli")
+  (fs/delete (fs/path root "backlog" "active" "BL-654-demo.yaml"))
+  (assert= "read-ambulance-state ALREADY reads a vanished-ticket marker as inactive (BL-655's own fail-safe, unchanged by this ticket)"
+           {:active false}
+           (ambulance-lib/read-ambulance-state root))
+  (assert= "auto-exit!: still detects and releases the vanished case, case :abandoned, despite read-ambulance-state's own silent degrade"
+           {:ticket "BL-654" :case :abandoned}
+           (ambulance-lib/auto-exit! root))
+  (assert= "auto-exit!: the marker is genuinely cleared on disk for the vanished case, not merely read as off"
+           (json/generate-string {:active false})
+           (slurp (str (ambulance-lib/marker-path root)))))
+
+(let [root (mk-tmp)]
+  (assert= "auto-exit!: an explicit active:false marker (no engage ever happened) is nil - nothing to release or announce"
+           nil
+           (do (ambulance-lib/release! root) (ambulance-lib/auto-exit! root))))
+
+;; ── BL-679 piece 3: auto-exit-announcement-text (pure) ──────────────────────
+
+(assert= "auto-exit-announcement-text: :delivered names the ticket and backlog/done/, no loud marker"
+         "Ambulance auto-released - BL-654 reached backlog/done/. Every held parcel resumes moving."
+         (ambulance-lib/auto-exit-announcement-text {:ticket "BL-654" :case :delivered}))
+
+(assert= "auto-exit-announcement-text: :abandoned carries the same loud ESCALATE marker format-alarm-text uses"
+         true
+         (clojure.string/includes?
+          (ambulance-lib/auto-exit-announcement-text {:ticket "BL-654" :case :abandoned})
+          "🚨 ESCALATE"))
+
+(assert= "auto-exit-announcement-text: :delivered carries no ESCALATE marker - it is the quiet, routine case"
+         false
+         (clojure.string/includes?
+          (ambulance-lib/auto-exit-announcement-text {:ticket "BL-654" :case :delivered})
+          "ESCALATE"))
+
+(assert= "auto-exit-announcement-text: with no queued expedited defect, the text opens directly with the release line"
+         true
+         (clojure.string/starts-with?
+          (ambulance-lib/auto-exit-announcement-text {:ticket "BL-654" :case :delivered})
+          "Ambulance auto-released"))
+
+(let [text (ambulance-lib/auto-exit-announcement-text
+            {:ticket "BL-654" :case :delivered :queued-expedited-defect-id "BL-661"})]
+  (assert= "auto-exit-announcement-text: a queued expedited defect is named"
+           true
+           (clojure.string/includes? text "BL-661"))
+  (assert= "auto-exit-announcement-text: the queued expedited defect is named BEFORE the release line, not after"
+           true
+           (< (.indexOf text "BL-661") (.indexOf text "Ambulance auto-released"))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

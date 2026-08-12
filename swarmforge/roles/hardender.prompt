@@ -540,3 +540,36 @@ You are the hardender.
   never licenses simplifying that.
   (Confirmed via `ps -o pgid=` twice, 2026-08-11: the hardener's BL-878 pass
   and an independent specifier probe at acceptance.)
+
+## A shell test unsets every SWARMFORGE_* var its tested script reads — at the top, never inherited (rule_proposal 2026-08-12, accepted)
+- The pane a test runs in is a launch environment, not a clean room: under
+  mono-router every resident pane carries standing exports (e.g.
+  `SWARMFORGE_SKIP_BABYSITTERD=1`). A shell test that lets the tested script
+  read an inherited `SWARMFORGE_*` var is asserting against the pane's
+  configuration, not the fixture's.
+- Rule: at the top of the test file, `unset` (or `env -u`) EVERY
+  `SWARMFORGE_*` variable the tested script reads, before any fixture conf is
+  sourced — grep the script under test for `SWARMFORGE_` to enumerate them;
+  the shared engineering rule's `env -u SWARMFORGE_CONFIG` is the special
+  case, this is the general one.
+- The failure mode is silent: the test does not error, it no-ops. (Incident:
+  `test_daemon_log_freshness.sh` 02b — three checks FAILed while the banner
+  still said PASS, because the script honoured the pane's standing
+  `SWARMFORGE_SKIP_BABYSITTERD=1`; fixed in-place by the `unset` at the top
+  of that test, which is the pattern to copy.)
+
+## run_gherkin_mutation.sh takes 4 positionals — pass ALL 4, never let level fill the steps-module slot (rule_proposal 2026-08-12, accepted)
+- Signature: `run_gherkin_mutation.sh <feature-file> [work-dir]
+  [steps-module-path] [level]`. A call that skips steps-module (e.g.
+  `... <feature> <workdir> hard`) puts the level in the steps-module slot;
+  the script resolves it to a nonexistent path and every mutated run then
+  crashes MODULE_NOT_FOUND — and a crash counts as a "kill", so the manifest
+  reads clean (e.g. 6/6 killed) with ZERO real assertions run.
+- Rule: always pass all four positionals explicitly (use
+  `specs/pipeline/steps/index.js` when you mean the default), and treat a
+  mutation manifest whose kills you did not see assert as unverified — a
+  too-fast, all-killed run after a CLI change is a probe signal, not a pass.
+  (Incident: BL-715, 2026-08-12 — a mis-ordered call wrote a bogus
+  6/6-killed manifest from crash-fake kills, caught only because
+  `tested_at` was not in HEAD; nearly forwarded an unverified gate as
+  passed. Durable script-side fail-loud fix: BL-884.)
