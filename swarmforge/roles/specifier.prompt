@@ -282,11 +282,11 @@ You are the specifier.
   "Amending An In-Flight Ticket's Spec" — stating explicitly whether anything
   they build changes, so a bookkeeping-only amendment does not read as a rebuild.
 
-## Boot-prefix budget gate before a boot-inlined article change (BL-859)
+## Run the boot prefix budget gate before a boot-inlined article change (BL-859)
 - Before committing any change to a boot-inlined file —
   `swarmforge/constitution.prompt`, a top-level file directly under
   `swarmforge/constitution/articles/` (not `reference/`), or
-  `swarmforge/PIPELINE.md` — run
+  `swarmforge/PIPELINE.md` — run the boot prefix budget gate via
   `swarmforge/scripts/boot_prefix_budget_gate.sh` as a required step. It
   measures the SAME stable boot prefix every agent pays on respawn (through
   `prompt_engine_lib`'s own composer, never a re-derived estimate) and fails
