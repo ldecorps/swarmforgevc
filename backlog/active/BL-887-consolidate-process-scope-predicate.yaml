@@ -9,7 +9,7 @@ priority: 25
 direction: pipeline-reported
 depends_on: []
 mutation_cost: low
-acceptance: specs/features/BL-887-consolidate-process-scope-predicate.feature.draft
+acceptance: specs/features/BL-887-consolidate-process-scope-predicate.feature
 
 human_approval: approved
 approval_context: >
