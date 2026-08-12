@@ -53,6 +53,66 @@
          (orphan-janitor-lib/hung-acceptance-cmdline?
           "/usr/bin/node /home/carillon/swarmforgevc/specs/pipeline/generated/telegram-cursor-remote-operator-commands.generated.test.js"))
 
+(assert= "hung vitest cmdline detected (properties config)"
+         true
+         (orphan-janitor-lib/hung-vitest-cmdline?
+          "npm exec vitest run --config vitest.properties.config.mjs --reporter=json"))
+
+(assert= "hung vitest worker detected"
+         true
+         (orphan-janitor-lib/hung-vitest-cmdline?
+          "node (vitest 1)"))
+
+(assert= "unrelated node not detected as hung vitest"
+         false
+         (orphan-janitor-lib/hung-vitest-cmdline?
+          "/usr/bin/node /home/carillon/swarmforgevc/extension/dist/foo.js"))
+
+(assert= "hung vitest all gates clear -> reap"
+         true
+         (orphan-janitor-lib/reapable-hung-vitest?
+          {:in-live-window-set? false
+           :hung-vitest? true
+           :project-scoped? true
+           :stale? true
+           :parent-orphaned? false}))
+
+(assert= "parent-orphaned vitest reaped without age gate"
+         true
+         (orphan-janitor-lib/reapable-hung-vitest?
+          {:in-live-window-set? false
+           :hung-vitest? true
+           :project-scoped? true
+           :stale? false
+           :parent-orphaned? true}))
+
+(assert= "fresh vitest with living parent not reaped"
+         false
+         (orphan-janitor-lib/reapable-hung-vitest?
+          {:in-live-window-set? false
+           :hung-vitest? true
+           :project-scoped? true
+           :stale? false
+           :parent-orphaned? false}))
+
+(assert= "vitest outside project scope never reaped"
+         false
+         (orphan-janitor-lib/reapable-hung-vitest?
+          {:in-live-window-set? false
+           :hung-vitest? true
+           :project-scoped? false
+           :stale? true
+           :parent-orphaned? true}))
+
+(assert= "hung vitest in live window never reaped"
+         false
+         (orphan-janitor-lib/reapable-hung-vitest?
+          {:in-live-window-set? true
+           :hung-vitest? true
+           :project-scoped? true
+           :stale? true
+           :parent-orphaned? true}))
+
 (assert= "unrelated node not detected"
          false
          (orphan-janitor-lib/hung-acceptance-cmdline?

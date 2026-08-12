@@ -174,4 +174,54 @@ if pid_alive "$ORPHAN_NODE_PID"; then
 fi
 pass "06: crash-orphaned node --test batch (PPID 1) rooted under a swarm worktree is reaped"
 
+# ── 07: crash-orphaned vitest property-lane root (cwd under worktree, no path
+#     in argv) is reaped — the incident class that overloaded the host when an
+#     npm exec vitest parent died and left a PPID-1 tree running for hours.
+write_fake_vitest_script() {
+  local name="$1"
+  cat > "$CODER_WT/$name" <<'PYEOF'
+import os, sys, time
+pid_file = sys.argv[1]
+worktree_ext = sys.argv[2]
+daemonize = sys.argv[3] == "orphan"
+if daemonize:
+    if os.fork() > 0:
+        sys.exit(0)
+    os.setpgrp()
+os.chdir(worktree_ext)
+with open(pid_file, "w") as f:
+    f.write(str(os.getpid()))
+os.execv("/bin/bash", [
+    "bash", "-c",
+    'exec -a "npm exec vitest run --config vitest.properties.config.mjs" sleep 3600',
+])
+PYEOF
+}
+
+make_fixture
+mkdir -p "$CODER_WT/extension"
+write_fake_vitest_script "run_vitest.py"
+python3 "$CODER_WT/run_vitest.py" "$ROOT/orphan_vitest.pid" "$CODER_WT/extension" orphan >/dev/null 2>&1 &
+for _ in $(seq 1 40); do
+  [[ -s "$ROOT/orphan_vitest.pid" ]] && break
+  sleep 0.1
+done
+[[ -s "$ROOT/orphan_vitest.pid" ]] || fail "07 setup: fake vitest process never wrote its pid file"
+ORPHAN_VITEST_PID="$(cat "$ROOT/orphan_vitest.pid")"
+PPID_NOW=""
+for _ in $(seq 1 40); do
+  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_VITEST_PID" 2>/dev/null | tr -d ' ' || true)"
+  if [[ "$PPID_NOW" == "1" ]]; then break; fi
+  sleep 0.1
+done
+[[ "$PPID_NOW" == "1" ]] || fail "07 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+
+check_once
+
+if pid_alive "$ORPHAN_VITEST_PID"; then
+  kill -9 "$ORPHAN_VITEST_PID"
+  fail "07: crash-orphaned vitest property-lane process was not reaped"
+fi
+pass "07: crash-orphaned vitest property-lane process (cwd under worktree) is reaped"
+
 echo "ALL PASS"

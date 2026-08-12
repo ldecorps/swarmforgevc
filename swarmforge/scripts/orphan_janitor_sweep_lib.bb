@@ -31,6 +31,12 @@
                   2.0)]
     (long (* hours 3600000))))
 
+(defn vitest-stale-threshold-ms []
+  (let [hours (or (some-> (System/getenv "SWARMFORGE_ORPHAN_JANITOR_VITEST_STALE_HOURS")
+                          (Double/parseDouble))
+                  2.0)]
+    (long (* hours 3600000))))
+
 (defn ancillary-stale-threshold-ms []
   (let [hours (or (some-> (System/getenv "SWARMFORGE_ORPHAN_JANITOR_ANCILLARY_STALE_HOURS")
                           (Double/parseDouble))
@@ -43,6 +49,9 @@
 (defn- proc-cmdline! [pid]
   (process-table-lib/cmdline! pid))
 
+(defn- proc-cwd! [pid]
+  (process-table-lib/cwd! pid))
+
 ;; BL-849: nil (enumeration unavailable) propagates through untouched -
 ;; never coerced into [], which would read as "swept 0, clean host" to
 ;; every downstream consumer including the audit log.
@@ -53,6 +62,7 @@
            (filter (fn [{:keys [cmdline]}]
                      (or (orphan-janitor-lib/operator-runtime-cmdline? cmdline)
                          (orphan-janitor-lib/hung-acceptance-cmdline? cmdline)
+                         (orphan-janitor-lib/hung-vitest-cmdline? cmdline)
                          (orphan-janitor-lib/tmp-ancillary-cmdline? cmdline))))
            (map :pid)
            vec))
@@ -99,6 +109,7 @@
   [project-root]
   {:list-candidate-pids! list-candidate-pids!
    :cmdline! proc-cmdline!
+   :cwd! proc-cwd!
    :age-ms! age-ms!
    :parent-orphaned?! process-table-lib/parent-orphaned?
    :live-window-pid-set! (fn [] (orphan-agent-reaper-sweep-lib/live-window-pid-set! project-root))
@@ -107,16 +118,19 @@
    :audit! (fn [line] (append-audit! (audit-log-file project-root) line))
    :log! default-log!})
 
-(defn- sweep-candidates! [adapters candidates log!]
+(defn- sweep-candidates! [project-root adapters candidates log!]
   (let [runtime-threshold (operator-runtime-stale-threshold-ms)
         acceptance-threshold (acceptance-stale-threshold-ms)
+        vitest-threshold (vitest-stale-threshold-ms)
         ancillary-threshold (ancillary-stale-threshold-ms)
         window-pids ((:live-window-pid-set! adapters))
         live-runtime ((:live-runtime-pid! adapters))
         parent-orphaned?! (or (:parent-orphaned?! adapters) (fn [_] false))
+        cwd! (or (:cwd! adapters) (fn [_] nil))
         reaped (atom 0)]
      (doseq [pid candidates]
        (let [cmd ((:cmdline! adapters) pid)
+             cwd (cwd! pid)
              age ((:age-ms! adapters) pid)
              in-window? (contains? window-pids pid)
              is-live-runtime? (= pid live-runtime)]
@@ -146,6 +160,24 @@
                ((:audit! adapters)
                 (str (now-iso) " reaped-hung-acceptance pid=" pid
                      " age_ms=" age))
+               (swap! reaped inc)))
+
+           (orphan-janitor-lib/hung-vitest-cmdline? cmd)
+           (let [scoped? (orphan-janitor-lib/project-scoped-path? project-root cmd cwd)
+                 stale? (>= age vitest-threshold)
+                 parent-orphaned? (boolean (parent-orphaned?! pid))]
+             (when (orphan-janitor-lib/reapable-hung-vitest?
+                    {:in-live-window-set? in-window?
+                     :hung-vitest? true
+                     :project-scoped? scoped?
+                     :stale? stale?
+                     :parent-orphaned? parent-orphaned?})
+               ((:kill-pid! adapters) pid)
+               ((:audit! adapters)
+                (str (now-iso) " reaped-hung-vitest pid=" pid
+                     " age_ms=" age
+                     (when (and parent-orphaned? (not stale?))
+                       " reason=parent-orphaned-vitest")))
                (swap! reaped inc)))
 
            (orphan-janitor-lib/tmp-ancillary-cmdline? cmd)
@@ -181,4 +213,4 @@
      ;; the silent no-op this ticket reviews.
      (if (nil? candidates)
        (log! "process table unavailable this sweep — skipping (cannot distinguish a clean host from a blind reaper)")
-       (sweep-candidates! adapters candidates log!)))))
+       (sweep-candidates! project-root adapters candidates log!)))))
