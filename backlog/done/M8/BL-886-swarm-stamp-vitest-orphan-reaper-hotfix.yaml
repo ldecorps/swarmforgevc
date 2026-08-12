@@ -182,3 +182,5 @@ notes: |
   5. Verify goal 6: name the standing invocation that runs the two new test
      files per parcel, or record its absence as a finding + follow-up.
   6. Record the degraded Babashka gate fallback in the QA evidence.
+
+assigned_to: coder

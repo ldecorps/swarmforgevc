@@ -1,0 +1,138 @@
+id: BL-887
+title: "Consolidate job-in-scope?/project-scoped-path? into one shared process-scope predicate in process_table_lib.bb (BL-886 architect follow-up)"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 25
+direction: pipeline-reported
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-887-consolidate-process-scope-predicate.feature.draft
+
+human_approval: pending
+approval_context: >
+  Two calls need sign-off. (1) Semantics: the consolidation adopts the
+  SUPERVISOR's looser predicate (cmdline leg str/includes?, cwd leg
+  str/starts-with?, OR'd) for BOTH subsystems — after this, the janitor can
+  stale-reap a hung live-parented vitest worker on a cmdline substring match
+  alone, even when its cwd never resolves (previously such a process was
+  never touched). The architect's BL-886 pass ruled this the right direction
+  (the janitor's stricter-on-both version is the one with the demonstrated
+  miss); this ticket asks the human to confirm it. (2) The shared helper's
+  name is FIXED by this spec (project-scoped-process?) so required_wiring
+  patterns stay literal (BL-874). Firm and not reopened: no reaper-class
+  widening, no job-process-pattern change, no stale-threshold change.
+
+source: |
+  Architect note 20260812T141629Z_000109 to specifier+coordinator, from the
+  BL-886 review: NAMED REVIEW QUESTION 1 in
+  backlog/evidence/BL-886-architect-pass-20260812.md ruled the
+  job-in-scope?/project-scoped-path? asymmetry "real drift, not legitimate
+  independence" and routed consolidation to this follow-up ticket (BL-886
+  itself was scoped review-only and closed approved).
+
+required_wiring:
+  - "swarmforge/scripts/handoffd_supervisor.bb::project-scoped-process?::job-in-scope? must delegate its classification to the shared helper"
+  - "swarmforge/scripts/orphan_janitor_lib.bb::project-scoped-process?::project-scoped-path? must delegate to the shared helper instead of its private stricter in-path? closure"
+
+invariants:
+  - "Supervisor and janitor never disagree: for any (cmdline, cwd) pair against the same scope path set, both subsystems produce the same in-scope classification, because both delegate to the single shared predicate."
+  - "Scoping never widens: a process whose cmdline and cwd are both outside the host root and every registered worktree is never classified in scope by either subsystem."
+
+description: |
+  ## What / why
+
+  The handoffd supervisor's crash-orphan reaper and the orphan janitor's
+  vitest sweep each answer "is this process ours?" with a private predicate,
+  and the two have drifted:
+
+  - `handoffd_supervisor.bb` `job-in-scope?` — cmdline leg `str/includes?`,
+    cwd leg `str/starts-with?`, OR'd (paths: canonical host root + roles.tsv
+    worktrees via `job-scope-paths`).
+  - `orphan_janitor_lib.bb` `project-scoped-path?` — BOTH legs
+    `str/starts-with?` via its private `in-path?` closure (paths: host root +
+    roles.tsv column 3, canonicalized).
+
+  Demonstrated consequence (architect, BL-886 pass): a vitest forked WORKER
+  embeds an absolute `node_modules/vitest/...` path mid-cmdline (matches
+  `includes?`, never `starts-with?`), and `process_table_lib.bb`'s `cwd!` is
+  best-effort and can return nil — plausibly exactly when racing a dying
+  process. In that intersection the supervisor classifies in-scope but the
+  janitor does not, and `reapable-hung-vitest?`'s `(not project-scoped?)
+  false` hard-gates the reap: a hung live-parented worker with unresolvable
+  cwd is never reaped by the janitor. The BL-886 janitor property runner
+  never generated that combination (cmdline pool has no embedded-path shape;
+  cwd pools are never nil), so its 300-run suite could not catch it.
+
+  ## Deliverables
+
+  1. One shared predicate `project-scoped-process?` in
+     `swarmforge/scripts/process_table_lib.bb` (ns `process-table-lib`,
+     alongside the already-shared `parent-orphaned?`/`cwd!`), with the
+     supervisor's semantics: in-scope iff the cmdline CONTAINS any scope
+     path (str/includes?) OR the cwd is non-nil and STARTS WITH any scope
+     path (str/starts-with?). Nil-safe on both cmdline and cwd. The helper
+     name is a spec contract (see approval_context); exact arg shape is the
+     implementer's (path set may be passed in or derived — both consumers
+     derive the same root+roles.tsv set today, so sharing the derivation is
+     natural but not mandated).
+  2. `handoffd_supervisor.bb` `job-in-scope?` keeps its `[pid cmd]` shape
+     and delegates classification to the shared helper (behavior unchanged
+     for the supervisor — its semantics are the ones adopted).
+  3. `orphan_janitor_lib.bb` `project-scoped-path?` keeps its name and
+     `[project-root cmd cwd]` signature for existing callers/tests but
+     delegates to the shared helper. Behavior CHANGES here, deliberately:
+     cmdline leg becomes `includes?`, so the worker-cmdline +
+     unresolvable-cwd case is now in scope (scenario 02).
+  4. Close the generator gap: the janitor property runner
+     (`swarmforge/scripts/test/bl886_vitest_orphan_reaper_janitor_property_runner.bb`)
+     gains a cmdline shape embedding an absolute scope path mid-string and
+     nil in its cwd pool, PLUS one deterministic regression case for the
+     worker-cmdline + nil-cwd combination (never rely on the random draw
+     alone to exercise the fixed gap).
+  5. All existing suites stay green (see QA procedure). Property tests stay
+     in their own lane per engineering rules.
+
+  ## e2e QA procedure
+
+  1. `bb swarmforge/scripts/test/orphan_janitor_lib_test_runner.bb` — all pass.
+  2. `bash swarmforge/scripts/test/test_handoffd_supervisor_job_reaper.sh` — all pass.
+  3. `bb swarmforge/scripts/test/bl886_vitest_orphan_reaper_janitor_property_runner.bb`
+     and `node swarmforge/scripts/test/bl886_vitest_orphan_reaper_supervisor_property_runner.js`
+     — all hold, and the janitor runner's output shows the deterministic
+     worker-cmdline + nil-cwd regression case ran.
+  4. Acceptance runner on the promoted BL-887 feature — all scenarios pass.
+  5. `grep -n "project-scoped-process?" swarmforge/scripts/handoffd_supervisor.bb
+     swarmforge/scripts/orphan_janitor_lib.bb swarmforge/scripts/process_table_lib.bb`
+     — definition in process_table_lib.bb, one delegating call site in each
+     consumer, and no surviving private `in-path?` scope logic in the janitor.
+
+  ## Out of scope
+
+  - BL-871's property-lane worker pool cap (active, complementary — do not conflate).
+  - `job-process-pattern` changes or widening the reaper class beyond
+    Stryker / node --test / vitest-property-lane.
+  - The janitor's 2h stale threshold and parent-orphaned fast-path split
+    (BL-886 architect goal-4 ruling: sound as-is, no change due).
+  - BL-885 caffeinate reclaim (separate active ticket).
+
+  ## Severity rationale
+
+  medium: real but contained — the miss needs the narrow worker-cmdline +
+  unresolvable-cwd intersection, is no regression vs pre-BL-886 (that class
+  was previously unreaped unconditionally), and the supervisor still covers
+  the crash-orphaned population; only the janitor's live-parented stale-reap
+  leg goes dark for it.
+
+notes: |
+  Babashka surface: no mutation/CRAP/DRY wired (BL-472 deferred) — gate on
+  the unit/property runners above and record the degraded fallback; never
+  imply mutation ran.
+
+  Epic bookkeeping: BL-887 (and, pre-existing gap, BL-886) is NOT yet listed
+  in BL-539's decomposes_into — the tracker file currently carries an
+  unrelated uncommitted local change (priority 2->3) in the master checkout,
+  so per BL-506 this ticket does not fold an edit into that file. Add both
+  ids to BL-539 decomposes_into in the next clean pass on that tracker.

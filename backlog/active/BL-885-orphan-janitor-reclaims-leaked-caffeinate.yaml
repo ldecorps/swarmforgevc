@@ -11,7 +11,7 @@ depends_on: ["BL-886"]
 mutation_cost: low
 acceptance: specs/features/BL-885-orphan-janitor-reclaims-leaked-caffeinate.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   What needs sign-off is the DESIGN DECISION, which departs from the intake's
   own leaning with evidence: the intake suggested keying the sweep off the
@@ -157,3 +157,5 @@ notes: |
      survives the same sweep.
   6. Unit runners green; record the Babashka degraded-gate fallback in the
      QA evidence.
+
+assigned_to: coder

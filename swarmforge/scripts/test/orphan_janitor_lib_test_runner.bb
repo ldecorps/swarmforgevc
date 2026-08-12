@@ -331,6 +331,87 @@
          (orphan-janitor-lib/front-desk-bridge-or-bot-cmdline?
           "tmux -S /tmp/tmp.jIAp73PXra/.swarmforge/babysitter/babysitter-tmux.sock new-session"))
 
+;; ── BL-885: leaked caffeinate -dims daemons ──────────────────────────────
+
+(assert= "exact caffeinate -dims cmdline detected"
+         true
+         (orphan-janitor-lib/caffeinate-dims-cmdline? "caffeinate -dims"))
+
+(assert= "caffeinate -dims with absolute binary path detected"
+         true
+         (orphan-janitor-lib/caffeinate-dims-cmdline? "/usr/bin/caffeinate -dims"))
+
+(assert= "bare caffeinate (no flags) never matches"
+         false
+         (orphan-janitor-lib/caffeinate-dims-cmdline? "caffeinate"))
+
+(assert= "caffeinate -i never matches -dims"
+         false
+         (orphan-janitor-lib/caffeinate-dims-cmdline? "caffeinate -i"))
+
+(assert= "caffeinate -dims with extra trailing args never matches (exact argv only)"
+         false
+         (orphan-janitor-lib/caffeinate-dims-cmdline? "caffeinate -dims -w 123"))
+
+(assert= "unrelated cmdline never matches caffeinate-dims"
+         false
+         (orphan-janitor-lib/caffeinate-dims-cmdline?
+          "/usr/bin/node /home/carillon/swarmforgevc/extension/dist/foo.js"))
+
+(assert= "leaked caffeinate all gates clear -> reap"
+         true
+         (orphan-janitor-lib/reapable-leaked-caffeinate?
+          {:in-live-window-set? false
+           :caffeinate-dims? true
+           :project-scoped? true
+           :stale? true
+           :is-live-caffeinate-pid? false}))
+
+(assert= "leaked caffeinate in live window never reaped"
+         false
+         (orphan-janitor-lib/reapable-leaked-caffeinate?
+          {:in-live-window-set? true
+           :caffeinate-dims? true
+           :project-scoped? true
+           :stale? true
+           :is-live-caffeinate-pid? false}))
+
+(assert= "non -dims caffeinate cmdline never reaped via this class"
+         false
+         (orphan-janitor-lib/reapable-leaked-caffeinate?
+          {:in-live-window-set? false
+           :caffeinate-dims? false
+           :project-scoped? true
+           :stale? true
+           :is-live-caffeinate-pid? false}))
+
+(assert= "out-of-scope caffeinate never reaped"
+         false
+         (orphan-janitor-lib/reapable-leaked-caffeinate?
+          {:in-live-window-set? false
+           :caffeinate-dims? true
+           :project-scoped? false
+           :stale? true
+           :is-live-caffeinate-pid? false}))
+
+(assert= "the pidfile's live-tracked caffeinate is always exempt, even if stale"
+         false
+         (orphan-janitor-lib/reapable-leaked-caffeinate?
+          {:in-live-window-set? false
+           :caffeinate-dims? true
+           :project-scoped? true
+           :stale? true
+           :is-live-caffeinate-pid? true}))
+
+(assert= "fresh (not stale) caffeinate never reaped, tracked or not (invariant 3: no parent-orphaned fast path)"
+         false
+         (orphan-janitor-lib/reapable-leaked-caffeinate?
+          {:in-live-window-set? false
+           :caffeinate-dims? true
+           :project-scoped? true
+           :stale? false
+           :is-live-caffeinate-pid? false}))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (System/exit 1))

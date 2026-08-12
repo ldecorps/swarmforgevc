@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-12T16:05:54.419336Z","feature_name":"BL-885 orphan janitor reclaims leaked swarm caffeinate daemons","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-885-orphan-janitor-reclaims-leaked-caffeinate.feature","background_hash":"ee465d14f701dfc02c8fd08e39b8214d92a8b3e49bfb51c5cf55ef09e8284569","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-885 orphan janitor reclaims leaked swarm caffeinate daemons
   The resident-spy tunnel spawns a detached `caffeinate -dims` tracked only by
   a single-slot pidfile; any overwrite or unclean shutdown leaks the prior
@@ -22,6 +26,20 @@ Feature: BL-885 orphan janitor reclaims leaked swarm caffeinate daemons
     And the audit log records reason "leaked-caffeinate" for PID 901
 
   # BL-885 leaked-caffeinate-reclaim-02
+  # Hardener note (2026-08-12, BL-234): mutating the <pid> column on rows 2-6
+  # (902->906/894/905/893, 903->898) survives on all five - accepted
+  # equivalent mutants, not a coverage gap. reapable-leaked-caffeinate? (
+  # orphan_janitor_lib.bb) never takes the raw pid; it takes the pre-computed
+  # boolean is-live-caffeinate-pid?, and on every one of these rows a
+  # DIFFERENT gate already decides the outcome before that boolean matters:
+  # row 2 fails caffeinate-dims? (cmdline is "-i"), rows 3-4 fail
+  # project-scoped? (cwd outside/undeterminable), row 5 fails stale? (age
+  # younger), and row 6 has no pidfile to compare against at all (is-live-
+  # caffeinate-pid? is always false when the pidfile is missing). None of
+  # those five gates read the pid's specific digits - only row 1 (pid 900,
+  # the pidfile's own tracked PID) makes the exact value load-bearing, and
+  # mutating IT (900->899) is killed clean, proving the exemption path is
+  # genuinely covered. All other 31 mutants in this outline killed clean.
   Scenario Outline: the sweep decision requires every ownership and age signal at once
     Given the caffeinate pidfile <pidfile-state>
     And a process "<cmdline>" with PID <pid> reparented to launchd
