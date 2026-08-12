@@ -314,9 +314,8 @@
                              dup-chain-block
                              (conj (duplicate-chain-guard-lib/refusal-message dup-chain-block))
                              (and (not (str/blank? task-name)) canonical)
-                             (into (pre-qa-gate-errors type to task-name canonical))
-                             (and (not (str/blank? task-name)) canonical)
-                             (into (pointer-gate-errors type to task-name canonical))))
+                             (-> (into (pre-qa-gate-errors type to task-name canonical))
+                                 (into (pointer-gate-errors type to task-name canonical)))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
