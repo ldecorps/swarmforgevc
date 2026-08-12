@@ -30,6 +30,7 @@ const DOMAINS = [
   require('./webhookSecretFixtureSteps'),
   require('./providerErrorTaxonomySteps'),
   require('./gherkinMutationSteps'),
+  require('./bl884GherkinMutationRunnerFailsLoudSteps'),
   require('./swarmMutationCostPrepassSteps'),
   require('./providerObservabilityParitySteps'),
   require('./pwaLabelCatalogSteps'),

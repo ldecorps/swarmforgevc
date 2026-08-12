@@ -87,7 +87,7 @@ description: |
   Materialize it to a live `.feature` in the SAME parcel that lands the
   handlers and point this ticket's `acceptance:` at the live path (BL-233).
 
-acceptance: specs/features/BL-884-gherkin-mutation-runner-fails-loud-on-bad-args.feature.draft
+acceptance: specs/features/BL-884-gherkin-mutation-runner-fails-loud-on-bad-args.feature
 
 notes: |
   E2E QA procedure: from the repo root run the script three ways — (1)
