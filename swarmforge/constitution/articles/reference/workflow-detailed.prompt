@@ -10,6 +10,9 @@ specials, full pointers, and an explicit map of every place this
 constitution still says the bare word "expedite" instead of queue-jump or
 the expeditor.
 
+The table below is the escalation ladder, ranked from the default up through
+the most drastic special:
+
 | rung | name | mechanism | doc |
 |---|---|---|---|
 | — | normal live swarm | full pipeline chain, live, every gate in order | `swarmforge/PIPELINE.md` |
