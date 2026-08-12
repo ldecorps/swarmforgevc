@@ -143,6 +143,12 @@ description: |
 acceptance: specs/features/BL-883-boot-prefix-budget-rebust-trim.feature.draft
 
 notes: |
+  Coordinator 2026-08-12T03:09Z: open-slot nudge named this ticket top
+  candidate, but human_approval is still `pending` — not promoted (approval
+  gate). The open slot was instead filled by BL-679 (orthogonal, approved),
+  promoted+routed to specifier at 2026-08-12T03:09:02Z. Re-check this ticket
+  for expedited (severity: high) promotion once approved.
+
   E2E QA procedure: on the fix commit run
   `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` — expect
   "ALL PASS" and a printed "stable-prefix chars:" value at or under 42000;
