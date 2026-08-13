@@ -52,6 +52,7 @@ here.
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md)
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
 - [The Host question queue: selection poll, clear-all, and 72h TTL](how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md)
+- [Queued questions answer where they were asked](how-to/BL-767-queued-question-answers-in-origin-topic.md)
 - [Named tunnel Bubble — fixed URL on a Cloudflare zone you own](how-to/named-tunnel-bubble-musicalsifu.md)
 - [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
 - [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks, what a nudge looks like, start/stop/ensure, state layout, and the flipped env skip.

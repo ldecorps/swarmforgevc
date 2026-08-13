@@ -749,6 +749,9 @@ test('BL-718 mirror: choice poll still mirrored with text transcript', async () 
     fs.readFileSync(path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'), 'utf8')
   );
   assert.equal(state.pendingChoicePolls[0].pollId, 'poll-1');
+  // BL-767: the poll's own topic must be recorded so a later answer to it
+  // can be routed back here instead of guessing Bubble-first.
+  assert.equal(state.pendingChoicePolls[0].originTopicId, 91);
 });
 
 // BL-864: GET/POST /lets-talk/audio-engine — the HTTP surface Bubble

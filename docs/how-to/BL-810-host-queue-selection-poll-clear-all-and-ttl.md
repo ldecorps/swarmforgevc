@@ -72,3 +72,6 @@ is ignored: the queue and the outstanding poll are left untouched.
 
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](BL-764-front-desk-shared-token-bridge-fanout.md) —
   the `poll_answer` fan-out this feature rides.
+- [Queued questions answer where they were asked](BL-767-queued-question-answers-in-origin-topic.md) —
+  extends this feature's `originTopicId` (added here for the TTL receipt) to
+  drive the actual queued-question and choice-poll answer routing.

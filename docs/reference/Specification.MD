@@ -1,6 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 13, 2026 (BL-881: the Resident Spy Mini App's
+**Last Updated:** August 13, 2026 (BL-866: the bridge gains a companion-
+manifest + package catalog — `GET /companion-manifest` lists each available
+package (`backlog`, `docs`) with a content-hash generation and format
+version; `GET /companion-package/<name>?generation=<g>` serves that
+package's body, answering `unchanged` with no body when the caller already
+holds the current generation so a phone refresh of the ~2-3 MB BL-659
+corpus stays cheap. A package whose source cannot be read is omitted from
+the manifest rather than advertised, one that becomes unreadable after
+being advertised is refused with a reason (`503`) rather than served
+empty, and an unknown package name is refused (`404`) — both routes sit
+behind the bridge's existing read-authorization gate. Bridge-side only;
+the phone-side fetch/cache is a later slice of epic BL-865 (Bubble
+offline-first sync).); Previously
+August 13, 2026 (BL-881: the Resident Spy Mini App's
 `/resident-pane` poll (previously every 1.5s) outran the bridge's
 synchronous tmux+filesystem live-screen walk under load, so overlapping
 polls piled onto the bridge's single event-loop thread and wedged it — HTML
@@ -2503,6 +2516,7 @@ The bridge exposes:
 - **A read projection** — pipeline stage, per-agent status/heartbeat, completion %, run log — all derived from the same on-disk state, pushed over an event stream (WebSocket/SSE)
 - **A small control surface — narrower than originally scoped here, by deliberate operator posture (BL-240, 2026-07-10):** the ONLY write route the bridge exposes is answering a captured `to: human` gate (`POST /gate-answer {role, answer}`), authenticated, dispatched through the exact same tmux send-keys call the extension uses when the operator types into a tile locally, and refused for any role that isn't currently showing a captured gate. Respawn-an-agent, stop-the-swarm, and switch-a-model remain future work on this surface, not yet implemented — a client cannot do them remotely today.
 - **`GET /gates` — the pending-gate list (BL-265 slice 1).** A read-scoped route listing every role currently showing a captured `to: human` gate (role + question snippet); a role with no pending gate is simply absent, and nothing gated returns an empty list, never an error. `filterPendingGates` (`extension/src/bridge/gateSnapshot.ts`) narrows `computeRoleGateStatesLive`'s per-role snapshot (built for the Telegram narrator, BL-239, which needs the full gated/not-gated set to detect a resolved transition) down to only the gated entries. This closes gap #10's missing read half — the write half (`POST /gate-answer` above) already existed; a client still needs a UI to actually view and answer from, which is slice 2 (holistic UI, `extension/src/bridge/holisticUiHtml.ts`, parked as `specs/features/BL-265-holistic-gate-answer-view.slice-2-ui.feature.draft` until built) — deliberately NOT the static backlog-dashboard PWA, which has no live bridge connection, token, or write path (see the PWA-vs-holistic-UI boundary rule in `local-engineering.prompt`).
+- **`GET /companion-manifest` + `GET /companion-package/<name>` — the companion-manifest and package catalog (BL-866, epic BL-865's foundation slice).** The contract every later offline slice of Bubble's offline-first sync reads: `/companion-manifest` lists each package the bridge can currently serve (`backlog`, sourced from the same `readBacklogFolders` the panel uses; `docs`, the vision-doc tree via `readVisionDocs`) with a **generation** — a `sha256` of the package's own content, truncated to 16 hex chars, computed fresh on every request from the exact content about to be served, so a served body and the generation it carries can never drift apart by separate bookkeeping — and a **format version** (`companionManifest.ts`, `COMPANION_PACKAGE_FORMAT = 'json'`). `/companion-package/<name>?generation=<g>` serves that package: omit `generation` (or name a stale one) and the current body comes back at `200` with the generation in both the JSON body and an `etag` header; name the generation already held and the answer is `304` with an `etag` header and **zero bytes on the wire** — the cheap-refresh path a phone needs to keep the BL-659 corpus (~2-3 MB compressed) current without re-downloading it unchanged. A package whose source cannot be read is left off the manifest rather than advertised (`docs` degrades this way if every vision-doc source is unreadable — `readVisionDocs` already tolerates individual missing docs; zero docs read back is what trips this), and one that was advertised but becomes unreadable by request time is refused `503` with a reason rather than served as an empty package; an unknown package name is refused `404`. Both routes sit behind the bridge's existing `isAuthorizedForRead` gate, same as every other read route. Bridge-side only, fully covered by the Node unit suite — no phone-side fetch, cache, or offline read path yet; that, and the offline mutation outbox, are later slices of epic BL-865.
 - **Auth + tunnel** — token-based; opt-in and encrypted (see the remote-access security gap)
 
 It deliberately does *not* hold or cache authoritative state, run its own watchdog, or duplicate logic. If it dies, the swarm is unaffected and the desktop extension carries on — because neither depends on it.

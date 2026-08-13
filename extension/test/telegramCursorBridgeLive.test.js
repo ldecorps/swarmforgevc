@@ -711,6 +711,9 @@ test('runCursorBridgePollOnce in inbound-queue mode, busy-queued reply acks the 
   // and its identity must actually reach disk (not a no-op persist).
   const persisted = loadJsonFile(statePath);
   assert.equal(persisted.livenessStatus?.renderedText, 'Bridge: busy · 1 waiting');
+  // BL-767 scenario 03: the busy cue also follows the queued question into
+  // its own origin topic (Bubble, 91), not only Cursor Remote (55).
+  assert.equal(persisted.queuedWorkLivenessStatus?.['91']?.renderedText, 'Bridge: busy · 1 waiting');
 });
 
 test('bootstrapCursorBridgeState persists topic id', async () => {
@@ -1898,7 +1901,10 @@ test('runCursorBridgePollOnce sweeps queued prompts older than 72h and posts a r
   assert.ok(posts.some((text) => text.includes('stale prompt')));
 });
 
-test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble topic, never Cursor Remote', async () => {
+// BL-767: the reply must follow the poll's OWN recorded origin topic, never
+// a hardcoded "Bubble first" guess — bubbleTopicId (91) is bound here but the
+// poll was posted in a different topic (77), so the reply must land in 77.
+test('runCursorBridgePollOnce routes a choice-poll answer reply to the topic the poll was posted in, not the bound Bubble topic', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);
   const postCalls = [];
@@ -1907,7 +1913,7 @@ test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble to
     cursorTopicId: 55,
     bubbleTopicId: 91,
     pendingChoicePolls: [
-      { pollId: 'poll-choice-1', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now() },
+      { pollId: 'poll-choice-1', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now(), originTopicId: 77 },
     ],
   };
   const next = await runCursorBridgePollOnce(
@@ -1936,17 +1942,23 @@ test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble to
   );
   assert.equal(next.busy, true);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.ok(postCalls.some((c) => c.topicId === 91 && c.text.includes('Agent started')));
+  assert.ok(postCalls.some((c) => c.topicId === 77 && c.text.includes('Agent started')));
+  assert.ok(!postCalls.some((c) => c.topicId === 91));
   assert.ok(!postCalls.some((c) => c.topicId === 55));
 });
 
-test('runCursorBridgePollOnce routes a choice-poll answer reply to Cursor Remote when no Bubble topic is bound', async () => {
+// BL-767 invariant: "answered in exactly one topic: the one it was asked in,
+// or the Cursor Remote topic when no origin was recorded" — never Bubble as
+// a silent default. bubbleTopicId (91) is bound but the poll predates origin
+// recording, so the reply must fall back to Cursor Remote (55), not Bubble.
+test('runCursorBridgePollOnce routes a choice-poll answer reply to Cursor Remote when the poll has no recorded origin, even with a Bubble topic bound', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);
   const postCalls = [];
   const initialState = {
     updateOffset: 80,
     cursorTopicId: 55,
+    bubbleTopicId: 91,
     pendingChoicePolls: [
       { pollId: 'poll-choice-2', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now() },
     ],
@@ -1978,6 +1990,109 @@ test('runCursorBridgePollOnce routes a choice-poll answer reply to Cursor Remote
   assert.equal(next.busy, true);
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.ok(postCalls.some((c) => c.topicId === 55 && c.text.includes('Agent started')));
+  assert.ok(!postCalls.some((c) => c.topicId === 91));
+});
+
+// BL-767: a choice-poll answer arriving while the bridge is busy must queue
+// with the poll's origin topic preserved, not drop it — otherwise the later
+// drain answers on Cursor Remote regardless of where the poll was posted.
+test('runCursorBridgePollOnce queues a choice-poll answer with its origin topic preserved when the bridge is busy', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    bubbleTopicId: 91,
+    pendingChoicePolls: [
+      { pollId: 'poll-choice-3', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now(), originTopicId: 91 },
+    ],
+  };
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async () => {},
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-choice-3',
+              option_ids: [0],
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    true, // busy
+    0
+  );
+  assert.equal(next.busy, true, 'busy is untouched — nothing new was started');
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 1);
+  assert.equal(persisted.pendingPrompts[0].originTopicId, 91);
+  assert.ok(persisted.pendingPrompts[0].text.includes('I choose option 1'));
+  assert.equal((persisted.pendingChoicePolls ?? []).length, 0, 'the answered poll is cleared');
+});
+
+// BL-767 feature scenario 03, full drain path: a question queued from Bubble
+// carries a standing "N waiting" cue in Bubble (posted earlier, message id
+// 3001 already on disk); once the selection poll picks it and the run
+// completes, that same cue must be EDITED to "0 waiting" in place — not left
+// stuck at 1, and not a fresh message in some other topic.
+test('runCursorBridgePollOnce edits the Bubble queued-work cue to 0 waiting once the drained question finishes', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const telegramCalls = [];
+  const telegramPostFn = async (url, body) => {
+    const parsedBody = JSON.parse(body);
+    telegramCalls.push({ url, body: parsedBody });
+    if (url.endsWith('/sendMessage')) {
+      return { ok: true, status: 200, json: { ok: true, result: { message_id: 9000 + telegramCalls.length } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  let promptedText;
+  deps.agentSession.promptAgent = async (prompt) => {
+    promptedText = prompt;
+    return { replyText: 'done', agentId: deps.agentSession.readAgentId() };
+  };
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    bubbleTopicId: 91,
+    pendingPrompts: [{ id: 'qp-1', text: 'from bubble', createdAtMs: Date.now(), originTopicId: 91 }],
+    pendingPromptPoll: { pollId: 'poll-drain-1', itemIds: ['qp-1'], clearAllOptionIndex: 1 },
+    queuedWorkLivenessStatus: { '91': { topicId: 91, messageId: 3001, renderedText: 'Bridge: busy · 1 waiting' } },
+  };
+  writeJsonFile(deps.statePath, initialState);
+  await runCursorBridgePollOnce(
+    {
+      ...deps,
+      telegramPostFn,
+      post: async () => {},
+      getUpdates: async () => ({
+        success: true,
+        updates: [{ update_id: 81, poll_answer: { poll_id: 'poll-drain-1', option_ids: [0], user: { id: 42 } } }],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(promptedText, 'from bubble');
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 0);
+  const editsToBubbleCue = telegramCalls.filter(
+    (c) => c.url.endsWith('/editMessageText') && c.body.message_id === 3001
+  );
+  assert.ok(
+    editsToBubbleCue.some((c) => c.body.text === 'Bridge: idle · 0 waiting'),
+    `expected an edit of message 3001 to "0 waiting"; got ${JSON.stringify(editsToBubbleCue)}`
+  );
 });
 
 test('runCursorBridgePollOnce uses default postChunks when post override is omitted', async () => {
