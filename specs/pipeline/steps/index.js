@@ -437,7 +437,8 @@ const DOMAINS = [
   require('./bl864BubbleSettingsVoiceEngineSelectorSteps'),
   require('./bl721ApprovalsQjumpLabelAndTelegramVerbSteps'),
   require('./bl763BubbleTunnelHandFixesSwarmStampSteps'),
-  require('./bl730PipelineTeardownSurvivorScopeSteps')
+  require('./bl730PipelineTeardownSurvivorScopeSteps'),
+  require('./bl881ResidentPaneLiveCaptureTtlCacheSteps')
 ];
 
 function registerSteps(registry) {

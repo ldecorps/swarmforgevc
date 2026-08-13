@@ -10,6 +10,8 @@ const {
   orderLiveScreenRoles,
   liveScreenPaneId,
   liveScreenPaneLabel,
+  clearResidentPaneLiveCache,
+  RESIDENT_PANE_CACHE_TTL_MS,
 } = require('../out/bridge/residentPaneLive');
 
 function seedResidentPaneFixture(tmp, { role = 'coder', paneText, model = 'claude-sonnet-5' } = {}) {
@@ -200,6 +202,111 @@ test('liveScreenPaneId labels mono-router coder pane as resident', () => {
   assert.equal(liveScreenPaneLabel(coder, true), 'Resident');
   assert.equal(liveScreenPaneId(coder, false), 'coder');
   assert.equal(liveScreenPaneLabel(coder, false), 'Coder');
+});
+
+function countCapturePaneCalls(fake) {
+  return fake.calls().filter((args) => args.includes('capture-pane')).length;
+}
+
+// BL-881: overlapping /resident-pane polls within the TTL must share one
+// synchronous walk rather than each paying a fresh tmux+filesystem capture.
+test('captureMonoRouterLiveScreen shares one walk for repeated polls within the TTL', () => {
+  const tmp = mkTmpDir('sfvc-mono-live-cache-');
+  const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: 'claude-sonnet-5' });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    clearResidentPaneLiveCache();
+    const t0 = 1_700_000_000_000;
+    captureMonoRouterLiveScreen(tmp, t0);
+    const callsAfterFirst = countCapturePaneCalls(fake);
+    assert.ok(callsAfterFirst > 0);
+
+    captureMonoRouterLiveScreen(tmp, t0 + 1000);
+    assert.equal(countCapturePaneCalls(fake), callsAfterFirst, 'second poll inside the TTL must not re-walk');
+
+    captureMonoRouterLiveScreen(tmp, t0 + RESIDENT_PANE_CACHE_TTL_MS - 1);
+    assert.equal(countCapturePaneCalls(fake), callsAfterFirst, 'poll just under the TTL boundary must not re-walk');
+  } finally {
+    fake.restore();
+    clearResidentPaneLiveCache();
+  }
+});
+
+// BL-881: once the TTL has elapsed, or the cache is explicitly cleared, the
+// next capture must perform a fresh walk (not return the stale snapshot).
+test('captureMonoRouterLiveScreen performs a fresh walk once the TTL expires', () => {
+  const tmp = mkTmpDir('sfvc-mono-live-cache-');
+  const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: 'claude-sonnet-5' });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    clearResidentPaneLiveCache();
+    const t0 = 1_700_000_000_000;
+    captureMonoRouterLiveScreen(tmp, t0);
+    const callsAfterFirst = countCapturePaneCalls(fake);
+
+    captureMonoRouterLiveScreen(tmp, t0 + RESIDENT_PANE_CACHE_TTL_MS);
+    assert.ok(countCapturePaneCalls(fake) > callsAfterFirst, 'poll at/after the TTL boundary must re-walk');
+  } finally {
+    fake.restore();
+    clearResidentPaneLiveCache();
+  }
+});
+
+test('clearResidentPaneLiveCache forces the next capture to re-walk immediately', () => {
+  const tmp = mkTmpDir('sfvc-mono-live-cache-');
+  const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: 'claude-sonnet-5' });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    clearResidentPaneLiveCache();
+    const t0 = 1_700_000_000_000;
+    captureMonoRouterLiveScreen(tmp, t0);
+    const callsAfterFirst = countCapturePaneCalls(fake);
+
+    clearResidentPaneLiveCache();
+    captureMonoRouterLiveScreen(tmp, t0);
+    assert.ok(countCapturePaneCalls(fake) > callsAfterFirst, 'a cleared cache must re-walk even at the same instant');
+  } finally {
+    fake.restore();
+    clearResidentPaneLiveCache();
+  }
+});
+
+// BL-881 constraint: cache key includes targetPath so two roots never share
+// a cached snapshot.
+test('captureMonoRouterLiveScreen keys the cache by targetPath', () => {
+  const tmpA = mkTmpDir('sfvc-mono-live-cache-a-');
+  const tmpB = mkTmpDir('sfvc-mono-live-cache-b-');
+  seedResidentPaneFixture(tmpA, { role: 'coder', model: 'claude-sonnet-5' });
+  seedResidentPaneFixture(tmpB, { role: 'coder', model: 'claude-sonnet-5' });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: 'SwarmForge Coder\n> working' },
+  ]);
+  try {
+    clearResidentPaneLiveCache();
+    const t0 = 1_700_000_000_000;
+    captureMonoRouterLiveScreen(tmpA, t0);
+    const callsAfterA = countCapturePaneCalls(fake);
+
+    captureMonoRouterLiveScreen(tmpB, t0);
+    assert.ok(countCapturePaneCalls(fake) > callsAfterA, 'a different targetPath must not reuse tmpA\'s cached snapshot');
+  } finally {
+    fake.restore();
+    clearResidentPaneLiveCache();
+  }
 });
 
 test('captureResidentPaneLive omits modelLabel when settings file is absent', () => {

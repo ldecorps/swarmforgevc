@@ -748,7 +748,10 @@ export function getResidentSpyUiHtml(): string {
   }
 
   refresh();
-  setInterval(refresh, 1500);
+  // BL-881: paired with RESIDENT_PANE_CACHE_TTL_MS (residentPaneLive.ts) —
+  // polling faster than the walk can finish piled overlapping captures onto
+  // the bridge's single event-loop thread and wedged it.
+  setInterval(refresh, 4000);
   setInterval(tickAge, 500);
   setInterval(function () {
     for (var paneId in claimEnteredByPaneId) {
