@@ -5,6 +5,7 @@ const { startBridge } = require('../out/bridge/bridgeServer');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
+const residentPaneLiveModule = require('../out/bridge/residentPaneLive');
 
 const TOKEN = 'test-token-123';
 
@@ -1170,6 +1171,31 @@ test('serves /resident-pane JSON given a valid bearer token', async () => {
     const body = await res.json();
     assert.equal(body.available, false);
   });
+});
+
+// BL-881 architect bounce: /resident-pane's compute() must thread the
+// server's injected nowMs through to captureMonoRouterLiveScreen, exactly
+// like its /stage-dwell, /burn-rate, and /pipeline-board siblings in the
+// same buildJsonRoutes table (bridgeServer.ts:1550) - the bug was silently
+// falling back to real Date.now() instead, invisible in the response body
+// (no live tmux pane in the fixture), so this asserts the wiring directly.
+test('threads the server-injected nowMs through to captureMonoRouterLiveScreen (BL-881 bounce)', async () => {
+  const target = mkTmp();
+  const FIXED_NOW_MS = Date.parse('2026-08-13T09:00:00.000Z');
+  const spy = vi.spyOn(residentPaneLiveModule, 'captureMonoRouterLiveScreen');
+  try {
+    await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      });
+      assert.equal(res.status, 200);
+      assert.ok(spy.mock.calls.length > 0, 'expected the route to call captureMonoRouterLiveScreen');
+      const [, calledNowMs] = spy.mock.calls[0];
+      assert.equal(calledNowMs, FIXED_NOW_MS, 'expected the route to pass the server-injected nowMs, not fall back to real Date.now()');
+    });
+  } finally {
+    spy.mockRestore();
+  }
 });
 
 // BL-526: Console menu + pipeline STATUS GRID Mini App
