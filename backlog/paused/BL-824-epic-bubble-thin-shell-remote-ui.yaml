@@ -218,3 +218,13 @@ notes: |
   be acted on, commit 181bdb724. active/ is at cap 3/3 as of this note.
   Still not a rejection of BL-824 — its own children (BL-825/BL-829) remain
   the promotable path, not the epic itself.
+
+  2026-08-13 (third time same day): a third open-slot nudge naming this
+  ticket cleared without promotion, same shape as the prior two. BL-767's
+  close reopened the slot (bookkeeping commit ea985ca9d), and
+  promote_and_route_next.sh auto-picked BL-866
+  (companion-manifest-package-catalog) into it before this nudge could be
+  acted on, commit 749e88b97. active/ is at cap 3/3
+  (BL-746/BL-866/BL-871) as of this note. Still not a rejection of
+  BL-824 — its own children (BL-825/BL-829) remain the promotable path, not
+  the epic itself.
