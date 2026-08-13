@@ -9,8 +9,7 @@ priority: 140
 direction: normal
 mutation_cost: low
 acceptance: specs/features/BL-875-stray-root-package-lock-removed.feature.draft
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Small slice, one call to sign off. The obvious fix — delete the file — is
   NOT sufficient on its own: npm recreates a lockfile when none exists, so
