@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "No pre-auth bridge route ever reads a file outside `.swarmforge/operator/public/`, however the request path is spelled or encoded."
