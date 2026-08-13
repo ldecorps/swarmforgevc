@@ -7,11 +7,12 @@ status: todo
 epic: swarm-reliability
 human_approval: approved
 priority: 41
-direction: human-requested
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-881-resident-pane-live-capture-ttl-cache.feature.draft
+assigned_to: coder
+acceptance: specs/features/BL-881-resident-pane-live-capture-ttl-cache.feature
 
 approval_context: >
   New feature draft needs review. Scope fork is already decided: keep and

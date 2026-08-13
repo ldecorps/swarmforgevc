@@ -589,3 +589,48 @@ You are the hardender.
   6/6-killed manifest from crash-fake kills, caught only because
   `tested_at` was not in HEAD; nearly forwarded an unverified gate as
   passed. Durable script-side fail-loud fix: BL-884.)
+
+## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
+- When a self-exclusion (or any check) is guarded by two overlapping
+  mechanisms — e.g. a filename-pattern case-statement AND a pid==self
+  comparison — a single test whose fixture satisfies BOTH proves nothing
+  about either: delete one guard and the other still passes the test, so
+  the deletion mutant survives invisibly.
+- Rule: write one test per mechanism in which THAT mechanism is the only
+  thing standing between the mutant and a failure — a fixture that trips
+  the pid check must NOT also match the filename pattern, and vice versa.
+  Treat a surviving mutant inside any multi-guard conditional as a probe
+  signal that the guards' tests overlap.
+- (Incident: BL-730, 2026-08-13 — the only self-test's argv also matched
+  the case-statement's filename exclusion, so deleting the separate
+  pid==self check survived undetected until a test isolated it.)
+
+## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
+- When a self-exclusion (or any check) is guarded by two overlapping
+  mechanisms — e.g. a filename-pattern case-statement AND a pid==self
+  comparison — a single test whose fixture satisfies BOTH proves nothing
+  about either: delete one guard and the other still passes the test, so
+  the deletion mutant survives invisibly.
+- Rule: write one test per mechanism in which THAT mechanism is the only
+  thing standing between the mutant and a failure — a fixture that trips
+  the pid check must NOT also match the filename pattern, and vice versa.
+  Treat a surviving mutant inside any multi-guard conditional as a probe
+  signal that the guards' tests overlap.
+- (Incident: BL-730, 2026-08-13 — the only self-test's argv also matched
+  the case-statement's filename exclusion, so deleting the separate
+  pid==self check survived undetected until a test isolated it.)
+
+## An acceptance step that greps the ticket's own YAML is a trap for every later note — never quote its trigger phrase while explaining it (rule_proposal 2026-08-13, accepted)
+- A guard scenario that greps the ticket's own YAML for trigger words (e.g.
+  a scope-boundary step asserting the ticket never claims a sibling ticket
+  fixed) reads EVERY field, including notes written long after the guard —
+  so a note that explains the guard by quoting its trigger phrase trips it.
+- Rule: before appending any note to a ticket, check whether its acceptance
+  greps the ticket's own YAML; if so, paraphrase around the trigger words
+  (name the scenario id instead of quoting its needle). An acceptance
+  failure whose match is inside YOUR OWN note is a wording defect, not a
+  behaviour regression — reword, re-run, and do not bounce it upstream.
+- (Incident: BL-763 boundary-01 greps for "BL-716" near
+  closed/fixed/resolved/done; the coder's implementation-summary note
+  describing the guard quoted the claim-phrase and failed acceptance until
+  reworded, 2026-08-13.)
