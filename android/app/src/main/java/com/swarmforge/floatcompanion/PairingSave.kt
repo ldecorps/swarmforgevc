@@ -26,7 +26,13 @@ object PairingSave {
     }
 
     private fun normalizeUrl(raw: String): String {
-        var url = raw.trimEnd('/')
+        // trimEnd('/') can collapse an all-slash raw (e.g. "///") to "". raw
+        // is only ever called non-blank (see merge()'s isNotEmpty guard), so
+        // falling back to the pre-trim raw here keeps this function's output
+        // non-blank too — otherwise a non-blank input would still blank out
+        // the stored credential, violating invariant 3 by a side door.
+        val trimmedSlashes = raw.trimEnd('/')
+        var url = if (trimmedSlashes.isNotEmpty()) trimmedSlashes else raw
         if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
             url = "https://$url"
         }
