@@ -69,6 +69,7 @@ import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
 import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
 import { createLetsTalkMetaRoutes } from './letsTalkMetaRoutes';
+import { getLetsTalkBubbleConfig, isLetsTalkBubbleConfigPath } from './letsTalkBubbleConfig';
 import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
@@ -1566,6 +1567,14 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // GH-23: Context Budget dashboard JSON feed for the Mini App.
       matches: isContextBudgetStatePath,
       compute: (url) => buildContextBudgetState(targetPath, url),
+    },
+    {
+      // BL-763: Bubble capability flags (e.g. bridgeBounceAutoSessionReset)
+      // — the module already existed (BL-864 built it for voiceEngineSwitch,
+      // read internally by letsTalkAudioEngineRoutes.ts) but was never wired
+      // to a served route of its own until now.
+      matches: isLetsTalkBubbleConfigPath,
+      compute: () => getLetsTalkBubbleConfig(targetPath, process.env),
     },
   ];
 }

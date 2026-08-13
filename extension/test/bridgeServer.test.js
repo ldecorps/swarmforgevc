@@ -1649,3 +1649,18 @@ test('GET /lets-talk/meta rejects a request with no bearer token', async () => {
     assert.equal(res.status, 401);
   });
 });
+
+// BL-763: letsTalkBubbleConfig.ts (BL-864) was never wired to a served
+// route until now — this is the wiring's own test, the pure defaults/parse
+// behavior is covered by letsTalkBubbleConfig.test.js already.
+test('GET /lets-talk/bubble-config.json serves the bundled default config, including bridgeBounceAutoSessionReset', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/bubble-config.json`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.features.bridgeBounceAutoSessionReset, true);
+  });
+});
