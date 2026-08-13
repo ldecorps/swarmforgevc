@@ -605,21 +605,6 @@ You are the hardender.
   the case-statement's filename exclusion, so deleting the separate
   pid==self check survived undetected until a test isolated it.)
 
-## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
-- When a self-exclusion (or any check) is guarded by two overlapping
-  mechanisms — e.g. a filename-pattern case-statement AND a pid==self
-  comparison — a single test whose fixture satisfies BOTH proves nothing
-  about either: delete one guard and the other still passes the test, so
-  the deletion mutant survives invisibly.
-- Rule: write one test per mechanism in which THAT mechanism is the only
-  thing standing between the mutant and a failure — a fixture that trips
-  the pid check must NOT also match the filename pattern, and vice versa.
-  Treat a surviving mutant inside any multi-guard conditional as a probe
-  signal that the guards' tests overlap.
-- (Incident: BL-730, 2026-08-13 — the only self-test's argv also matched
-  the case-statement's filename exclusion, so deleting the separate
-  pid==self check survived undetected until a test isolated it.)
-
 ## An acceptance step that greps the ticket's own YAML is a trap for every later note — never quote its trigger phrase while explaining it (rule_proposal 2026-08-13, accepted)
 - A guard scenario that greps the ticket's own YAML for trigger words (e.g.
   a scope-boundary step asserting the ticket never claims a sibling ticket
@@ -634,3 +619,19 @@ You are the hardender.
   closed/fixed/resolved/done; the coder's implementation-summary note
   describing the guard quoted the claim-phrase and failed acceptance until
   reworded, 2026-08-13.)
+
+## A route inlined into bridgeServer.ts's shared dispatcher is EXTRACTED to a boolean handler (mirror tryServeSideloadApk) BEFORE CRAP is measured (rule_proposal 2026-08-13, accepted)
+- The shared request dispatcher in extension/src/bridge/bridgeServer.ts
+  carries pre-existing complexity debt: every if-block inlined into it
+  compounds the whole function's cyclomatic complexity, and CRAP grows
+  superlinearly with that (complexity enters squared, the uncovered
+  fraction cubed) — so individually simple new branches inherit an
+  inflated score from debt they did not create.
+- Rule: when a parcel adds a route to that dispatcher, extract it into its
+  own boolean try-handler (`if (tryX(...)) { return; }`, mirroring
+  tryServeSideloadApk) BEFORE taking the CRAP measurement — the new code
+  then carries its own isolated score instead of inheriting the
+  dispatcher's.
+- (Incident: BL-866, 2026-08-13 — 2 inlined if-blocks pushed the
+  dispatcher's CRAP from ~29.6 to ~39.77; extracting them isolated the new
+  code's own CRAP at 6.00, tests unchanged.)
