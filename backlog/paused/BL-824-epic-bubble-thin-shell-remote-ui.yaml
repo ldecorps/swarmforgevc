@@ -228,3 +228,13 @@ notes: |
   (BL-746/BL-866/BL-871) as of this note. Still not a rejection of
   BL-824 — its own children (BL-825/BL-829) remain the promotable path, not
   the epic itself.
+
+  2026-08-13 (fourth time same day): a fourth open-slot nudge naming this
+  ticket cleared without promotion, same shape as the prior three. BL-866's
+  close reopened the slot (bookkeeping commit 3213a6d6d), and
+  promote_and_route_next.sh auto-picked BL-788
+  (bubble-pairing-client-logs-adopt) into it before this nudge could be
+  acted on, commit d3d2b2c08. active/ is at cap 3/3
+  (BL-746/BL-788/BL-871) as of this note. Still not a rejection of
+  BL-824 — its own children (BL-825/BL-829) remain the promotable path, not
+  the epic itself.

@@ -67,6 +67,7 @@ here.
 - [Hotfix record: 2026-08-02 Mac host-switch (freshness + bridge)](how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md) — the three false/misleading failure modes from the Linux→Mac host switch (handoffd reported down forever, babysitterd restart spam, bridge EADDRINUSE crash loop), adopted and reviewed under BL-789.
 - [The Boot-Prefix Budget Gate — Understanding the Check](how-to/BL-859-boot-prefix-budget-gate.md) — the specifier's authoring-time gate against boot-prefix growth, the 44000/51200 two-threshold split, and remediation on failure.
 - [The Bubble Settings voice-engine selector](how-to/BL-864-bubble-voice-engine-selector.md) — the Local/OpenAI control in Bubble Settings: opens on the truth, never shows a tap the bridge hasn't accepted, and where the pure state machine ends and device wiring begins.
+- [Hotfix record: 2026-08-02 Bubble pairing + client-logs](how-to/hotfix-2026-08-02-bubble-client-logs-and-pairing.md) — the pre-auth `/pair` page, the widened sideload-APK guard, and the pairing-save blank-overwrite fix adopted and reviewed under BL-788, plus the corrections (applicationId, signing, Architecture Rule 7) the original hand-hotfix's narrative no longer matched.
 
 ## Reference
 

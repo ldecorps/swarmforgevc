@@ -85,20 +85,20 @@ object CompanionPrefs {
         }
     }
 
+    // BL-788 invariant 3: delegates the merge decision to PairingSave so a
+    // blank field here (e.g. onPause firing mid-edit, before the human
+    // finished retyping the other box) never overwrites a stored non-blank
+    // credential — only a non-blank input replaces what's stored.
     fun save(ctx: Context, baseUrl: String, token: String, sync: Boolean = false) {
-        var url = baseUrl.trim().trimEnd('/')
-        if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://$url"
-        }
-        val tok = token.trim()
+        val merged = PairingSave.merge(getBaseUrl(ctx), getToken(ctx), baseUrl, token)
         val ed = prefs(ctx).edit()
-            .putString(KEY_BASE_URL, url)
-            .putString(KEY_TOKEN, tok)
+            .putString(KEY_BASE_URL, merged.baseUrl)
+            .putString(KEY_TOKEN, merged.token)
         if (sync) ed.commit() else ed.apply()
         // Mirror outside private storage so values can survive reinstall.
-        if (url.isNotEmpty() || tok.isNotEmpty()) {
+        if (merged.baseUrl.isNotEmpty() || merged.token.isNotEmpty()) {
             try {
-                PairingBackup.write(ctx, url, tok)
+                PairingBackup.write(ctx, merged.baseUrl, merged.token)
             } catch (_: Exception) {
             }
         }
