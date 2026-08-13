@@ -5,8 +5,8 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-human_approval: approved
-assigned_to: specifier
+human_approval: pending
+assigned_to: coder
 priority: 54
 direction: normal
 depends_on: []
@@ -128,6 +128,93 @@ notes: |
   2026-08-13 (human via Cursor): approved — `human_approval: approved`
   set explicitly so Article 3.2.4 expedite-lane eligibility and the
   open-slot nudge stop failing closed on a missing field.
+
+  --- specifier pass, 2026-08-13 ---
+
+  Probed before speccing; the report holds on current main, with line
+  drift: the stop-path reimplementation blocks are
+  test_lifecycle_script_scope.sh:126-222 (STOP_FIX fixture plus three
+  subshell blocks re-deriving the refuse/success branch), not ~118-208.
+  The real script's gates: survivor refuse stop-swarm.sh:84-89 (exit 1),
+  kill_rc refuse :91-94 (exits with the failed kill's OWN code — `exit
+  "$kill_rc"`, not a generic 1), success line :96. Wording mismatch
+  confirmed live: the test greps "SUCCESS — clean slate"; the real script
+  prints "full stack SUCCESS — no known survivors".
+
+  Scope split inside the file — keep vs rewrite: scenarios 04a/05a/04b
+  (lines ~74-124) are UNIT tests of stack_survivor_scan.sh itself and may
+  keep sourcing the lib directly; they are not the reimplementation this
+  ticket removes. Only the stop-PATH blocks (04/05/clean-fixture) must
+  drive the real script. Scenarios 01-03 (--help scope, shim audit,
+  start/stop pairing) are untouched.
+
+  Fixture technique — the seam already exists, no script change needed:
+  stop-swarm.sh resolves all three helpers relative to its own location
+  (SCRIPT_DIR), so copy the real repo-root stop-swarm.sh into the fixture
+  root AT TEST RUNTIME (a byte-identical copy of the current script is
+  "invoking the script itself"), give the fixture's swarmforge/scripts/
+  the real stack_survivor_scan.sh plus the stub stop_ancillary_services.sh
+  and kill_pipeline_swarm.sh that the existing STOP_FIX block already
+  writes, export SWARMFORGE_SURVIVOR_PS_FILE, then run
+  `bash "$STOP_FIX/stop-swarm.sh" "$STOP_FIX"` and assert on its actual
+  stdout/stderr/exit status. For the new kill_rc scenario the stub kill
+  script exits non-zero. Caution: stop-swarm.sh runs the ancillary helper
+  UNGUARDED under `set -e`, so the ancillary stub must exit 0.
+
+  Step handlers for the new feature file's scenarios land in the coder's
+  parcel (BL-233). IR-DRY on the feature file: 5 findings, all the
+  parameterized-step-vs-literal-use / deliberate exact-vs-non-zero shape
+  (same class BL-730 judged not-real); none actioned.
+
+  human_approval deliberately flipped back to pending: this morning's
+  approval unblocked PROMOTION before any feature file existed; the APS
+  ritual requires the new feature file itself to pass human review. See
+  approval_context for the three judgment calls added beyond the already-
+  approved acceptance bullets.
+
+invariants:
+  - "Every stop-path assertion in test_lifecycle_script_scope.sh is made against stdout/stderr/exit status produced by executing the real repo-root stop-swarm.sh; no stop-path scenario derives its expected output from a reimplementation of the script's branching."
+  - "stop-swarm.sh reports its success line only when every refuse gate passes (no survivor found AND the pipeline kill exited zero); on any refuse the success line is absent and the exit status is non-zero."
+
+acceptance: specs/features/BL-746-stop-swarm-real-refuse-gates.feature
+
+required_wiring:
+  - "swarmforge/scripts/test/test_lifecycle_script_scope.sh::full stack SUCCESS — no known survivors::the success-path assertion must use the REAL script's literal success line (the current file greps its own reimplementation's 'SUCCESS — clean slate' instead — the headline defect)"
+  - "swarmforge/scripts/test/test_lifecycle_script_scope.sh::pipeline stop exited::the new kill_rc scenario must assert the real script's kill_rc refuse message, a path no suite currently exercises"
+
+qa_e2e_procedure: |
+  The ticket's claim is that the old suite stayed green while the real
+  script regressed — so prove the rewritten suite goes RED under exactly
+  those regressions, then green on the real script:
+
+  1. Clean run: `swarmforge/scripts/test/test_lifecycle_script_scope.sh`
+     passes end to end on the parcel commit.
+  2. Wording regression: in a scratch working-tree edit (never committed),
+     change stop-swarm.sh:96's success line (e.g. back to "clean slate").
+     Re-run the suite — the success-path scenario must now FAIL. Revert.
+  3. kill_rc regression: delete or neuter the kill_rc refuse block
+     (stop-swarm.sh:91-94), re-run — the kill_rc scenario must FAIL.
+     Revert.
+  4. Survivor regression: invert or short-circuit the survivor-scan refuse
+     (stop-swarm.sh:84-89), re-run — the babysitterd and Operator
+     scenarios must FAIL. Revert.
+  5. Reimplementation audit: in the stop-path blocks of the test file, no
+     inline re-derivation of the refuse/success branch remains; the only
+     surviving direct `source .../stack_survivor_scan.sh` uses are the
+     scanner unit cases (04a/05a/04b).
+  6. BL-746's acceptance feature scenarios pass via their step handlers.
+
+approval_context: >
+  You approved this ticket this morning to unblock promotion; the feature
+  file did not exist yet, so this asks you to look once more, at the
+  Gherkin only. It transcribes the ticket's own acceptance bullets 1:1;
+  the judgment calls I added beyond them: (1) the kill_rc refuse scenario
+  pins EXACT exit-code propagation — stop-swarm.sh exits with the failed
+  kill's own code (two example rows, 7 and 3), which is the script's
+  actual `exit "$kill_rc"` behavior; (2) every refuse scenario asserts
+  two-sided — REFUSE evidence present AND the success line absent, plus
+  the exit status; (3) the scanner unit cases (04a/05a/04b) stay as-is —
+  only the stop-PATH blocks are rewritten to drive the real script.
 
 description: |
   ## What

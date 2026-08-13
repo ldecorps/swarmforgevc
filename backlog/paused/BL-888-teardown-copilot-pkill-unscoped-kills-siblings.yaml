@@ -10,8 +10,7 @@ direction: aligned
 depends_on: []
 assigned_to: unassigned
 mutation_cost: low
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Severity call needs your eyes: medium, not high, because the kill is
   latent today — it fires only when a sibling root is running copilot

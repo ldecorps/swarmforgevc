@@ -8,7 +8,7 @@ epic: swarm-reliability
 priority: 150
 direction: normal
 mutation_cost: low
-human_approval: pending
+human_approval: approved
 required_stages: [coder, documenter, qa]
 stage_skip_reasons: { cleaner: "comment-prose-only change, nothing to refactor", architect: "no design or behavior change; the gate structure is explicitly frozen by this ticket's own constraint", hardender: "no executable surface changes; Babashka layer has no mutation tooling wired (BL-472 deferred)" }
 acceptance: specs/features/BL-882-handoffd-cadence-comment-accuracy.feature.draft

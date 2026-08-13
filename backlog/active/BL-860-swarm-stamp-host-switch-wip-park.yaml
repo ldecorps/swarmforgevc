@@ -8,7 +8,7 @@ human_approval: approved
 priority: 41
 direction: pipeline-reported
 depends_on: []
-assigned_to: null
+assigned_to: coder
 mutation_cost: low
 required_stages: [architect, qa]
 stage_skip_reasons:
