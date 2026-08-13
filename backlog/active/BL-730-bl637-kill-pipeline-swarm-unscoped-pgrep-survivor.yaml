@@ -56,6 +56,28 @@ notes: |
   with its literal use in scenario 03. Same step, one literal argument —
   reuse rather than duplication. Judged not-real.
 
+  --- coder pass, 2026-08-13 ---
+
+  Fixed as scoped: new pipeline_survivor_scan_lib.sh (ps -eo pid=,args=
+  technique, mirrors stack_survivor_scan.sh) replaces the old unscoped
+  pgrep check at kill_pipeline_swarm.sh's end, both handoffd.bb and
+  copilot arms anchored to $ROOT. Confirmed live on the build host before
+  the fix: test_lifecycle_script_scope.sh's test 02 genuinely failed here
+  (13/14) because this repo's OWN live handoffd.bb process false-positived
+  against an unrelated empty test fixture root — the exact repro this
+  ticket describes, not a hypothetical. Fixed: 14/14.
+
+  Discovered but explicitly OUT of this ticket's scope: line 244 (now
+  shifted a few lines from the fix) still has `pkill -f
+  'copilot.*SwarmForge'` — a SEPARATE, unscoped ACTION (not the "remaining"
+  CHECK this ticket's invariants/description are about) that genuinely
+  KILLS copilot processes belonging to ANY sibling worktree, not just
+  $ROOT. This is a more severe version of the same defect class (an
+  actual kill, not just a false warning) but is not named in this
+  ticket's invariants/description, so not touched here per BL-506 scope
+  discipline. Flagging via a separate priority-00 note to
+  specifier/coordinator for its own ticket.
+
 description: |
   ## What
 
