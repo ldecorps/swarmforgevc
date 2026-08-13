@@ -8,7 +8,12 @@
 import * as http from 'http';
 import type { DeviceRegistry } from './deviceRegistry';
 import { getLetsTalkBubbleConfig } from './letsTalkBubbleConfig';
-import { currentLetsTalkAudioEngine, writeLetsTalkAudioEnginePreference } from './letsTalkAudioPreference';
+import {
+  currentLetsTalkAudioEngine,
+  isEngineOnlyRecord,
+  isPlainRecord,
+  writeLetsTalkAudioEnginePreference,
+} from './letsTalkAudioPreference';
 import { isLetsTalkAudioEngineServiceable } from './letsTalkAudio';
 import { letsTalkAudioEnvFromProcessEnv, type LetsTalkAudioEngine } from './letsTalkLocalAudio';
 
@@ -85,20 +90,11 @@ export function isLetsTalkAudioEngineWriteRoute(req: http.IncomingMessage, url: 
   return req.method === 'POST' && (url === '/lets-talk/audio-engine' || url.startsWith('/lets-talk/audio-engine?'));
 }
 
-// Strict single-key allowlist, same posture as writeLetsTalkAudioEnginePreference's
-// isEngineOnlyRecord (BL-863): a candidate carrying anything beyond `engine`
-// is refused wholesale rather than having the extra field stripped, so a
-// credential can never be smuggled through under a differently-named key.
+// Reuses writeLetsTalkAudioEnginePreference's own shape check (BL-863) so a
+// credential-carrying candidate can never be smuggled through this route
+// under a differently-named key while the store's own check drifts apart.
 export function isLetsTalkAudioEngineWriteRequestShape(value: unknown): value is { engine: LetsTalkAudioEngine } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  const keys = Object.keys(value as Record<string, unknown>);
-  if (keys.length !== 1 || keys[0] !== 'engine') {
-    return false;
-  }
-  const engine = (value as Record<string, unknown>).engine;
-  return engine === 'local' || engine === 'openai';
+  return isPlainRecord(value) && isEngineOnlyRecord(value);
 }
 
 export interface LetsTalkAudioEngineRoute {

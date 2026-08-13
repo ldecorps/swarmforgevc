@@ -48,7 +48,7 @@ export function readLetsTalkAudioEnginePreference(targetPath: string): LetsTalkA
 
 export type LetsTalkAudioEnginePreferenceWrite = { ok: true } | { ok: false; reason: string };
 
-function isPlainRecord(candidate: unknown): candidate is Record<string, unknown> {
+export function isPlainRecord(candidate: unknown): candidate is Record<string, unknown> {
   return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
 }
 
@@ -56,8 +56,9 @@ function isPlainRecord(candidate: unknown): candidate is Record<string, unknown>
 // nothing else. A credential-carrying candidate (e.g. {engine, openaiApiKey})
 // is refused WHOLESALE rather than stripped down to its engine field, so a
 // caller can never smuggle a credential through under a differently-named
-// key.
-function isEngineOnlyRecord(record: Record<string, unknown>): record is { engine: LetsTalkAudioEngine } {
+// key. Shared with BL-864's write route so both never drift on what counts
+// as an acceptable body.
+export function isEngineOnlyRecord(record: Record<string, unknown>): record is { engine: LetsTalkAudioEngine } {
   const keys = Object.keys(record);
   return keys.length === 1 && keys[0] === 'engine' && (record.engine === 'local' || record.engine === 'openai');
 }
