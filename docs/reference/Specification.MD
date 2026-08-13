@@ -1,6 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 13, 2026 (BL-866: the bridge gains a companion-
+**Last Updated:** August 14, 2026 (BL-788: adopts the 2026-08-02 hand-built
+Bubble pairing + client-logs hotfix under review (BL-506 adopt-and-review,
+not a revert) — the bridge gains a pre-auth `/pair` page
+(`tryServePairPage`, query-token gated like the sideload APK route):
+renders a plain `intent://pair?...#Intent;scheme=swarmforge-bubble;
+package=<applicationId>;end` link plus copyable bridge-URL/token text, and
+never auto-navigates. The sideload APK route's pre-auth guard is widened to
+claim and 404 any request under the `/swarmforge-float-companion` namespace
+that doesn't match the strict filename pattern, instead of falling through
+to the generic 401 gate. `residentSpyTunnelNotify.ts` gains
+`buildBubblePairingHttpsUrl` / `ResidentSpyTunnelUrls.pairingHttpsUrl`, an
+HTTPS `/pair` URL on the tunnel's own origin, additive to the existing
+pairing deep link. On the Android side, new `PairingSave.kt` (+
+`CompanionPrefs.save` now delegating to it) fixes the pairing merge so a
+blank input field never overwrites a stored non-blank credential; an
+architect-added property test (`PairingSavePropertyTest.kt`) found and
+fixed a real side-door bug the six fixed-example tests missed — an
+all-slash input (non-blank) was silently collapsing to `""` under
+`trimEnd('/')`. The ticket's two sign-off questions (a permanent
+`applicationId` rename, and whether a debug-signed `release` build was
+deliberate) were both already resolved by later, independent operator work
+by the time of review — nothing to correct on either. `AppLog`'s
+ring-buffer/Settings "Copy logs" UI named in the original hand hotfix is
+NOT adopted in this pass: nothing in the ticket's acceptance scenarios,
+invariants, or required wiring references it, so building it now would
+manufacture an inert, ungated contract; left for a follow-up ticket with
+its own acceptance contract. New how-to:
+`docs/how-to/hotfix-2026-08-02-bubble-client-logs-and-pairing.md`, linked
+from the docs index.); Previously
+August 13, 2026 (BL-866: the bridge gains a companion-
 manifest + package catalog — `GET /companion-manifest` lists each available
 package (`backlog`, `docs`) with a content-hash generation and format
 version; `GET /companion-package/<name>?generation=<g>` serves that

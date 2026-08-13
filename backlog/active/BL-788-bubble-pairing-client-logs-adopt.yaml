@@ -221,3 +221,6 @@ notes: |
      where it is still correct (the gradle `namespace`, historical prose), never
      as the install id in a pairing instruction.
   6. Confirm `docs/index.md` links the hotfix how-to.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-13, by: architect, blamed: coder, class: invariant-unencoded, commit: dab934b69d, evidence: backlog/evidence/BL-788-bubble-pairing-client-logs-adopt-bounce-20260813.md }

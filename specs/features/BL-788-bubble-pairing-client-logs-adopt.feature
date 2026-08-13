@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fde5b472b8d12b945bdcc857d39f9b543b0d3eb881bdc83a9d18413f7da4ea40
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-13T22:49:25.265456Z","feature_name":"Bubble pairing and client-log hotfix, adopted under review","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-788-bubble-pairing-client-logs-adopt.feature","background_hash":"ca70446b0c1d84679c4a1db36fcf625feb3524757a6bc9a545feab929014f1cc","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The pre-auth APK route serves only the operator public directory","scenario_hash":"5c1f0e7e234d8e93967d2af710a9ea5e2bb04a32fdd7ae4a19970b3aa6571ade","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-13T22:49:25.265456Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble pairing and client-log hotfix, adopted under review
 
   The 2026-08-02 Mac-host hotfix shipped a pairing and client-log path by hand.
