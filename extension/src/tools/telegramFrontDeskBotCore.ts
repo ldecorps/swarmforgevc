@@ -139,6 +139,11 @@ export type BotUpdateDecision =
   // which no longer identifies a single ticket once one topic carries many).
   | { action: 'approvals-topic-approve'; backlogId: string; text: string }
   | { action: 'approvals-topic-reject'; backlogId: string; reason: string; text: string }
+  // BL-721: a typed "/qjump <id>" reply in the Approvals topic - the same
+  // queue-jump (approve + force-promote + dispatch now) effect as tapping
+  // the ask's Q jump button, reached through the SAME
+  // recordExpediteDecisionAndClose routine, never a second effect path.
+  | { action: 'approvals-topic-qjump'; backlogId: string; text: string }
   // A reply in the Approvals topic that names no recognizable verb+id at
   // all - never silently dropped as a subject post (front-desk-operator-
   // fabricates-backlog-state memory); the orchestration layer surfaces it.
@@ -221,6 +226,9 @@ function decideApprovalsTopicReplyAction(text: string): BotUpdateDecision {
   }
   if (parsed.kind === 'reject') {
     return { action: 'approvals-topic-reject', backlogId: parsed.backlogId, reason: parsed.reason, text };
+  }
+  if (parsed.kind === 'qjump') {
+    return { action: 'approvals-topic-qjump', backlogId: parsed.backlogId, text };
   }
   return { action: 'approvals-topic-unrecognized', text };
 }
@@ -1155,15 +1163,23 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
 // the two backlogId-carrying variants for the compiler - the FULL
 // BotUpdateDecision union (its other branches carry no backlogId at all)
 // cannot narrow that way.
-type ApprovalsTopicReplyDecision = Extract<BotUpdateDecision, { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-unrecognized' }>;
+type ApprovalsTopicReplyDecision = Extract<
+  BotUpdateDecision,
+  { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-qjump' | 'approvals-topic-unrecognized' }
+>;
 
-// Narrows AND collapses the three-way OR below into one call - split out so
+// Narrows AND collapses the four-way OR below into one call - split out so
 // processMessageUpdate's own branch count (one decision point per `if`, plus
 // one per `||`) stays at or below this file's CRAP threshold, the same
 // "extract to keep CRAP down" convention this file already applies (e.g.
 // openTopicIdFor for the open-default/open-for-topic pair above).
 function isApprovalsTopicReplyDecision(decision: BotUpdateDecision): decision is ApprovalsTopicReplyDecision {
-  return decision.action === 'approvals-topic-approve' || decision.action === 'approvals-topic-reject' || decision.action === 'approvals-topic-unrecognized';
+  return (
+    decision.action === 'approvals-topic-approve' ||
+    decision.action === 'approvals-topic-reject' ||
+    decision.action === 'approvals-topic-qjump' ||
+    decision.action === 'approvals-topic-unrecognized'
+  );
 }
 
 // BL-434: the Approvals-topic reply's own delivery - reuses the EXISTING
@@ -1177,11 +1193,32 @@ function isApprovalsTopicReplyDecision(decision: BotUpdateDecision): decision is
 // DELIBERATE DROPS, never delivery FAILURES (the engineering article's own
 // "a deliberate drop is terminal, never a retryable failure" rule) - the
 // offset must advance past either, so neither one ever blocks re-polling.
+// BL-721: a "/qjump <id>" reply's own delivery branch - reuses the EXACT
+// SAME recordExpediteDecisionAndClose routine the Approvals button's Q jump
+// tap already fires (never a second queue-jump path), including its own
+// file-collision safety. Split out from the approve/reject branch below
+// because it returns a richer { changed, collision } shape, not the bare
+// boolean recordApprovalDecisionAndClose returns.
+async function deliverApprovalsTopicQjump(backlogId: string, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const result = await recordExpediteDecisionAndClose(adapters, backlogId);
+  if (!result.changed) {
+    await adapters.notifyApprovalsTopic?.(topicId, `${backlogId} isn't awaiting approval.`);
+    return 'dropped';
+  }
+  if (result.collision) {
+    await adapters.notifyApprovalsTopic?.(topicId, unsafeDispatchToastText(result.collision));
+  }
+  return 'posted';
+}
+
 async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (decision.action === 'approvals-topic-unrecognized') {
     return 'dropped';
   }
   const { backlogId } = decision;
+  if (decision.action === 'approvals-topic-qjump') {
+    return deliverApprovalsTopicQjump(backlogId, topicId, adapters);
+  }
   const changed =
     decision.action === 'approvals-topic-approve'
       ? await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'approved' })

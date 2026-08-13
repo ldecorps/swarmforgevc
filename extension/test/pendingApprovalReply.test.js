@@ -234,6 +234,33 @@ test('BL-434: classification trims surrounding whitespace before matching and af
   assert.deepEqual(classifyApprovalsTopicReply('  approve   BL-433  '), { kind: 'approve', backlogId: 'BL-433' });
 });
 
+// BL-721: "/qjump <id>" - a typed alternative to tapping the Approvals ask's
+// Q jump button, same verb+id grammar as approve/reject above.
+
+test('BL-721: "/qjump <id>" is classified as qjump for that exact ticket id', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/qjump BL-433'), { kind: 'qjump', backlogId: 'BL-433' });
+});
+
+test('BL-721: "/qjump" classification is case-insensitive on the verb', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/QJump BL-433'), { kind: 'qjump', backlogId: 'BL-433' });
+});
+
+test('BL-721: a bare "/qjump" with no id classifies as none - the grammar requires an id', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/qjump'), { kind: 'none' });
+});
+
+test('BL-721: "qjump <id>" with no leading slash classifies as none - the slash prefix is required', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('qjump BL-433'), { kind: 'none' });
+});
+
+test('BL-721: "/qjump <id>" classification trims surrounding whitespace', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('  /qjump   BL-433  '), { kind: 'qjump', backlogId: 'BL-433' });
+});
+
+test('BL-721: "/expedite <id>" (the offline Cursor-bridge verb) is never classified as qjump - queue-jump and the offline expeditor are distinct commands', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/expedite BL-433'), { kind: 'none' });
+});
+
 // ── rejectHumanApprovalText (pure) - BL-409 ────────────────────────────────
 
 test('flips a pending ticket to rejected, recording the reason as a trailing comment', () => {

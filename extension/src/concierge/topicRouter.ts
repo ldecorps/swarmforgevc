@@ -204,13 +204,17 @@ export function messageTextForEvent(event: SwarmEvent): string {
 // Routed through the SAME callback_data namespace/round-trip as the other
 // three (decideCallbackQueryAction's CALLBACK_DATA_PATTERN in
 // telegramFrontDeskBotCore.ts), never a second callback path.
+// BL-721: the Approvals buttons' fourth verb reads "Q jump" now (humans kept
+// confusing "Expedite" with the offline Cursor-bridge expeditor) - the
+// callback_data stays `expedite:<id>` for compatibility with the existing
+// round-trip; only the human-visible label changed.
 function approvalRequestedButtons(backlogId: string): InlineKeyboardButton[][] {
   return [
     [
       { text: 'Approve', callbackData: `approve:${backlogId}` },
       { text: 'Amend', callbackData: `amend:${backlogId}` },
       { text: 'Reject', callbackData: `reject:${backlogId}` },
-      { text: 'Expedite', callbackData: `expedite:${backlogId}` },
+      { text: 'Q jump', callbackData: `expedite:${backlogId}` },
     ],
     // More: full spec + Gherkin in an in-topic follow-up (Telegram alert
     // text is ~200 chars — too small for APS prose). Second row keeps the

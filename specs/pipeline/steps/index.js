@@ -434,7 +434,8 @@ const DOMAINS = [
   require('./bl885LeakedCaffeinateReclaimSteps'),
   require('./bl887ConsolidateProcessScopePredicateSteps'),
   require('./bl863LetsTalkAudioPreferenceSteps'),
-  require('./bl864BubbleSettingsVoiceEngineSelectorSteps')
+  require('./bl864BubbleSettingsVoiceEngineSelectorSteps'),
+  require('./bl721ApprovalsQjumpLabelAndTelegramVerbSteps')
 ];
 
 function registerSteps(registry) {

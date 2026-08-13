@@ -74,10 +74,17 @@ export function classifyApprovalReplyAction(text: string): ApprovalReplyAction {
 // topic "approve" reply require an id it was never meant to carry.
 const APPROVALS_TOPIC_REJECT_PATTERN = /^reject\s+(\S+)(?:\s+([\s\S]+))?$/i;
 const APPROVALS_TOPIC_APPROVE_PATTERN = /^approve\s+(\S+)\s*$/i;
+// BL-721: a typed alternative to tapping the Approvals ask's Q jump button -
+// same queue-jump effect (approve + force-promote + dispatch now), same
+// verb+id grammar as approve/reject above. A slash prefix (unlike bare
+// "approve"/"reject") so it reads as a command, and so it can never collide
+// with a ticket's own reason/note text starting with the word "qjump".
+const APPROVALS_TOPIC_QJUMP_PATTERN = /^\/qjump\s+(\S+)\s*$/i;
 
 export type ApprovalsTopicReplyAction =
   | { kind: 'approve'; backlogId: string }
   | { kind: 'reject'; backlogId: string; reason: string }
+  | { kind: 'qjump'; backlogId: string }
   | { kind: 'none' };
 
 // Pure: reject checked before approve (mirrors classifyApprovalReplyAction's
@@ -95,6 +102,10 @@ export function classifyApprovalsTopicReply(text: string): ApprovalsTopicReplyAc
   const approveMatch = trimmed.match(APPROVALS_TOPIC_APPROVE_PATTERN);
   if (approveMatch) {
     return { kind: 'approve', backlogId: approveMatch[1] };
+  }
+  const qjumpMatch = trimmed.match(APPROVALS_TOPIC_QJUMP_PATTERN);
+  if (qjumpMatch) {
+    return { kind: 'qjump', backlogId: qjumpMatch[1] };
   }
   return { kind: 'none' };
 }
