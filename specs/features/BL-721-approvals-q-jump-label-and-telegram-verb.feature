@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-13T03:41:49.025174Z","feature_name":"Approvals queue-jump is labeled Q jump and reachable by a /qjump front-desk verb","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-721-approvals-q-jump-label-and-telegram-verb.feature","background_hash":"dba2542357e9905821178239ae3e522b2c61f8c09ce9b8e634bb5adc4f590db9","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Approvals queue-jump is labeled Q jump and reachable by a /qjump front-desk verb
 
   Background:
