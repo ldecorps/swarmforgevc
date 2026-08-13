@@ -6,7 +6,7 @@ const { startBridge, effectiveBubbleMirrorTopicId, formatBubbleMirrorText, mirro
 const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
 const { processLetsTalkTurn } = require('../out/bridge/letsTalkRoutes');
 const { LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT } = require('../out/bridge/letsTalkCore');
-const { writeLetsTalkAudioEnginePreference, letsTalkAudioEnginePreferencePath } = require('../out/bridge/letsTalkAudioPreference');
+const { writeLetsTalkAudioEnginePreference, letsTalkAudioEnginePreferencePath, readLetsTalkAudioEnginePreference } = require('../out/bridge/letsTalkAudioPreference');
 const { splitTelegramChunks } = require('../out/tools/telegramCursorBridgeCore');
 const TOKEN = 'lets-talk-bridge-token';
 const SAMPLE_AUDIO = Buffer.from('audio-chunk').toString('base64');
@@ -749,4 +749,114 @@ test('BL-718 mirror: choice poll still mirrored with text transcript', async () 
     fs.readFileSync(path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'), 'utf8')
   );
   assert.equal(state.pendingChoicePolls[0].pollId, 'poll-1');
+});
+
+// BL-864: GET/POST /lets-talk/audio-engine — the HTTP surface Bubble
+// Settings uses to read and write BL-863's voice-engine preference. See
+// specs/features/BL-864-bubble-settings-voice-engine-selector.feature.
+
+test('lets-talk audio-engine status route requires control auth (401 without token)', async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('lets-talk audio-engine status reports the engine in use, enabled flag, and per-engine serviceability', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    writeLetsTalkAudioEnginePreference(target, { engine: 'local' });
+    await withBridge(target, buildMocks(target), async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`);
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.success, true);
+      assert.equal(body.enabled, true);
+      assert.equal(body.engine, 'local');
+      assert.equal(body.engines.openai.serviceable, false);
+      assert.match(body.engines.openai.reason, /missing/i);
+    });
+  });
+});
+
+test('lets-talk audio-engine status reflects the voiceEngineSwitch capability flag off', async () => {
+  const target = mkTmp();
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'operator', 'lets-talk-bubble-config.json'),
+    JSON.stringify({ schemaVersion: 1, revision: 'r1', features: { voiceEngineSwitch: false } })
+  );
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`);
+    const body = await res.json();
+    assert.equal(body.enabled, false);
+  });
+});
+
+test('lets-talk audio-engine write route requires control auth (401 without token)', async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ engine: 'local' }),
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(readLetsTalkAudioEnginePreference(target), { kind: 'none' });
+  });
+});
+
+test('lets-talk audio-engine write accepts a serviceable engine and it applies to the next status read', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    process.env.OPENAI_API_KEY = 'sk-live';
+    await withBridge(target, buildMocks(target), async (handle) => {
+      const writeRes = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ engine: 'openai' }),
+      });
+      assert.equal(writeRes.status, 200);
+      const writeBody = await writeRes.json();
+      assert.deepEqual(writeBody, { success: true, engine: 'openai' });
+
+      const statusRes = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`);
+      const statusBody = await statusRes.json();
+      assert.equal(statusBody.engine, 'openai');
+    });
+  });
+});
+
+// BL-864 refusal-shows-a-reason-and-does-not-stick-03
+test('lets-talk audio-engine write refuses an unserviceable engine with a reason, preference unchanged', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    writeLetsTalkAudioEnginePreference(target, { engine: 'local' });
+    await withBridge(target, buildMocks(target), async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ engine: 'openai' }),
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.match(body.reason, /openai/i);
+      assert.match(body.reason, /missing/i);
+      assert.deepEqual(readLetsTalkAudioEnginePreference(target), { kind: 'stored', engine: 'local' });
+    });
+  });
+});
+
+test('lets-talk audio-engine write rejects a body carrying anything beyond engine (400, wholesale refusal)', async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ engine: 'openai', openaiApiKey: 'sk-smuggled' }),
+    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(readLetsTalkAudioEnginePreference(target), { kind: 'none' });
+  });
 });

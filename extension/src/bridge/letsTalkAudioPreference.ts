@@ -48,7 +48,7 @@ export function readLetsTalkAudioEnginePreference(targetPath: string): LetsTalkA
 
 export type LetsTalkAudioEnginePreferenceWrite = { ok: true } | { ok: false; reason: string };
 
-function isPlainRecord(candidate: unknown): candidate is Record<string, unknown> {
+export function isPlainRecord(candidate: unknown): candidate is Record<string, unknown> {
   return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
 }
 
@@ -56,8 +56,9 @@ function isPlainRecord(candidate: unknown): candidate is Record<string, unknown>
 // nothing else. A credential-carrying candidate (e.g. {engine, openaiApiKey})
 // is refused WHOLESALE rather than stripped down to its engine field, so a
 // caller can never smuggle a credential through under a differently-named
-// key.
-function isEngineOnlyRecord(record: Record<string, unknown>): record is { engine: LetsTalkAudioEngine } {
+// key. Shared with BL-864's write route so both never drift on what counts
+// as an acceptable body.
+export function isEngineOnlyRecord(record: Record<string, unknown>): record is { engine: LetsTalkAudioEngine } {
   const keys = Object.keys(record);
   return keys.length === 1 && keys[0] === 'engine' && (record.engine === 'local' || record.engine === 'openai');
 }
@@ -79,29 +80,46 @@ export function writeLetsTalkAudioEnginePreference(
   return { ok: true };
 }
 
+// Shared by resolveLetsTalkAudioForTurn and BL-864's status route: a stored
+// preference wins; with none stored (or an unreadable one) the host
+// environment's LETS_TALK_AUDIO_ENGINE remains the bootstrap default. Reads
+// the preference file fresh on every call — callers must invoke this from
+// the turn path, not once at bridge startup, or a preference change will
+// not take effect until a restart.
+function selectLetsTalkAudioEngine(
+  targetPath: string,
+  processEnv: NodeJS.ProcessEnv
+): { engine: LetsTalkAudioEngine; unreadablePreference: boolean } {
+  const env = letsTalkAudioEnvFromProcessEnv(processEnv);
+  const preference = readLetsTalkAudioEnginePreference(targetPath);
+  const bootstrapEngine = parseLetsTalkAudioEngine(env.engine) ?? 'openai';
+  const engine = preference.kind === 'stored' ? preference.engine : bootstrapEngine;
+  return { engine, unreadablePreference: preference.kind === 'unreadable' };
+}
+
+// BL-864: the same engine a turn would resolve to (preference-over-bootstrap),
+// without building STT/TTS adapters — what the Bubble Settings selector
+// reports as "the engine actually in use" when the dialog opens.
+export function currentLetsTalkAudioEngine(targetPath: string, processEnv: NodeJS.ProcessEnv): LetsTalkAudioEngine {
+  return selectLetsTalkAudioEngine(targetPath, processEnv).engine;
+}
+
 export interface LetsTalkAudioTurnResolution {
   resolution: LetsTalkAudioResolution;
   /** True when a preference file exists but could not be read as a valid engine name. */
   unreadablePreference: boolean;
 }
 
-// The per-turn entry point: a stored preference wins; with none stored (or
-// an unreadable one) the host environment's LETS_TALK_AUDIO_ENGINE remains
-// the bootstrap default. Reads the preference file fresh on every call —
-// callers must invoke this from the turn path, not once at bridge startup,
-// or a preference change will not take effect until a restart.
 export function resolveLetsTalkAudioForTurn(
   targetPath: string,
   processEnv: NodeJS.ProcessEnv,
   overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
 ): LetsTalkAudioTurnResolution {
   const env = letsTalkAudioEnvFromProcessEnv(processEnv);
-  const preference = readLetsTalkAudioEnginePreference(targetPath);
-  const bootstrapEngine = parseLetsTalkAudioEngine(env.engine) ?? 'openai';
-  const engine = preference.kind === 'stored' ? preference.engine : bootstrapEngine;
+  const { engine, unreadablePreference } = selectLetsTalkAudioEngine(targetPath, processEnv);
   const effectiveEnv: LetsTalkAudioEnv = { ...env, engine };
   return {
     resolution: resolveLetsTalkAudioAdapters(effectiveEnv, overrides),
-    unreadablePreference: preference.kind === 'unreadable',
+    unreadablePreference,
   };
 }

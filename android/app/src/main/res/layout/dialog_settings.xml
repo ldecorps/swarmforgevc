@@ -55,6 +55,50 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
+            android:id="@+id/voiceEngineHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_voice_engine"
+            android:textColor="@color/sf_muted"
+            android:textSize="12sp"
+            android:textAllCaps="true"
+            android:visibility="gone" />
+
+        <RadioGroup
+            android:id="@+id/voiceEngineGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <RadioButton
+                android:id="@+id/voiceEngineLocal"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/voice_engine_local"
+                android:textColor="@color/sf_text" />
+
+            <RadioButton
+                android:id="@+id/voiceEngineOpenAi"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/voice_engine_openai"
+                android:textColor="@color/sf_text" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/voiceEngineMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="@color/sf_muted"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
