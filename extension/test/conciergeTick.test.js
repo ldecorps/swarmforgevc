@@ -559,7 +559,7 @@ test('BL-480: a paused ticket pending approval renders its title/notes in the as
 // baseline but no buttoned ask was ever recorded on the live Approvals
 // topic (failed post then baseline advanced, remint, wiped ask-messages
 // file), the roster can still sync while the human sees only a text index —
-// never Approve/Amend/Reject/Expedite. Reconcile synthesizes the missing
+// never Approve/Amend/Reject/Q jump. Reconcile synthesizes the missing
 // ApprovalRequested so routeApprovalRequestedEvent posts the buttoned ask.
 test('approval ask reconcile: pending already in baseline with no recorded ask posts a buttoned Approvals ask', async () => {
   const { adapters, setFolders, state } = fakeAdapters();
@@ -597,7 +597,7 @@ test('approval ask reconcile: pending already in baseline with no recorded ask p
       { text: 'Approve', callbackData: 'approve:BL-525' },
       { text: 'Amend', callbackData: 'amend:BL-525' },
       { text: 'Reject', callbackData: 'reject:BL-525' },
-      { text: 'Expedite', callbackData: 'expedite:BL-525' },
+      { text: 'Q jump', callbackData: 'expedite:BL-525' },
     ],
     [{ text: 'More', callbackData: 'more:BL-525' }],
   ]);

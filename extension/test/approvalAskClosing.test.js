@@ -47,21 +47,21 @@ test('alreadyDecidedToastText: names the rejected verdict', () => {
   assert.equal(alreadyDecidedToastText('rejected'), 'Already decided: rejected');
 });
 
-// BL-490: an Expedite tap is a decision too - it closes the ask through the
-// SAME routine, with its own "-- Expedited <UTC>" line (never an "Approved"
-// line, so the topic audit trail distinguishes an ordinary approve from a
-// jump-the-queue expedite).
+// BL-490/BL-721: a Q jump (formerly Expedite) tap is a decision too - it
+// closes the ask through the SAME routine, with its own "-- Q jumped <UTC>"
+// line (never an "Approved" line, so the topic audit trail distinguishes an
+// ordinary approve from a jump-the-queue Q jump).
 
-test('decisionLineFor: an expedited verdict records the Expedited verb and the UTC decision time', () => {
+test('decisionLineFor: an expedited verdict records the Q jumped verb and the UTC decision time', () => {
   const nowMs = Date.UTC(2026, 6, 17, 3, 7);
-  assert.equal(decisionLineFor({ kind: 'expedited' }, nowMs), '-- Expedited 2026-07-17 03:07 UTC');
+  assert.equal(decisionLineFor({ kind: 'expedited' }, nowMs), '-- Q jumped 2026-07-17 03:07 UTC');
 });
 
-test('composeDecidedAskText: an expedited verdict appends the Expedited line below the original text', () => {
+test('composeDecidedAskText: an expedited verdict appends the Q jumped line below the original text', () => {
   const original = 'BL-490 needs your approval...';
   const nowMs = Date.UTC(2026, 6, 17, 3, 7);
   const text = composeDecidedAskText(original, { kind: 'expedited' }, nowMs);
-  assert.equal(text, `${original}\n-- Expedited 2026-07-17 03:07 UTC`);
+  assert.equal(text, `${original}\n-- Q jumped 2026-07-17 03:07 UTC`);
 });
 
 // BL-509: an Amend reply is a decision too - unlike approve/reject/expedite
@@ -84,7 +84,15 @@ test('composeDecidedAskText: an amending verdict appends the Amending line below
 test('approvalAskTextShowsDecidedVerdict: recognizes each decided footer shape', () => {
   assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Approved 2026-07-17 03:07 UTC'), true);
   assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Rejected: bad scope'), true);
-  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Expedited 2026-07-17 03:07 UTC'), true);
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Q jumped 2026-07-17 03:07 UTC'), true);
   assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Amending 2026-07-17 03:07 UTC'), true);
   assert.equal(approvalAskTextShowsDecidedVerdict('ask still open'), false);
+});
+
+// BL-721: the button label (and the closing verdict word) changed from
+// "Expedite"/"Expedited" to "Q jump"/"Q jumped" - an ask closed by a build
+// before this ticket landed still carries the OLD "-- Expedited <UTC>"
+// footer, so the reconcile sweep must still recognize it as decided.
+test('approvalAskTextShowsDecidedVerdict: still recognizes the pre-BL-721 "Expedited" footer on an already-closed ask', () => {
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Expedited 2026-07-17 03:07 UTC'), true);
 });
