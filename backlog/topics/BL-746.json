@@ -1,0 +1,1 @@
+{"id":"BL-746","messages":[{"seq":0,"ts":1786615531729,"author":"swarm","type":"outbound","text":"BL-746 🎵 in progress — BL-637's shell test never invokes the real stop-swarm.sh — it re-implements its refuse-gate logic inline, with different wording and a missing exit-code check"}]}
