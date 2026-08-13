@@ -435,7 +435,8 @@ const DOMAINS = [
   require('./bl887ConsolidateProcessScopePredicateSteps'),
   require('./bl863LetsTalkAudioPreferenceSteps'),
   require('./bl864BubbleSettingsVoiceEngineSelectorSteps'),
-  require('./bl721ApprovalsQjumpLabelAndTelegramVerbSteps')
+  require('./bl721ApprovalsQjumpLabelAndTelegramVerbSteps'),
+  require('./bl763BubbleTunnelHandFixesSwarmStampSteps')
 ];
 
 function registerSteps(registry) {

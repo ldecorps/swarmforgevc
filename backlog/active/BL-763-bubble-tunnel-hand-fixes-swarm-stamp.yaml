@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "GET /lets-talk/meta on a live bridge returns a stable instanceId for that process lifetime; a bounce yields a different instanceId."
@@ -19,10 +19,12 @@ invariants:
   - "Hostname rotation / dead trycloudflare DNS is not claimed fixed by this ticket — that remains BL-716; this parcel must not close BL-716 by assertion."
 
 required_wiring:
-  - "extension bridge lets-talk routes::GET /lets-talk/meta::instanceId (+ startedAt)"
-  - "android BridgeClient.fetchBridgeMeta + TalkEngine.syncBridgeInstanceAndSession::bounce detect"
-  - "swarmforge/scripts start_ancillary / start_cursor_bridge / stop_ancillary::Cursor Remote always-on keep/stop contract"
-  - "specs/features/BL-763-bubble-tunnel-hand-fixes-swarm-stamp.feature::acceptance"
+  - "extension/src/bridge/letsTalkMetaRoutes.ts::isLetsTalkMetaRoute::bridge serves GET /lets-talk/meta with instanceId + startedAt"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::fetchBridgeMeta::Android bridge client fetches /lets-talk/meta"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/TalkEngine.kt::syncBridgeInstanceAndSession::bounce detect triggers a single new-session"
+  - "swarmforge/scripts/start_ancillary_services.sh::cursor_bridge::Cursor Remote bridge started when configured and not skipped"
+  - "swarmforge/scripts/swarm_ensure.bb::ensure-cursor-bridge!::swarm ensure repairs Cursor Remote the same way it repairs the front desk"
+  - "specs/features/BL-763-bubble-tunnel-hand-fixes-swarm-stamp.feature::BL-763::acceptance contract present in the parcel"
 
 approval_context: >
   Human via Cursor 2026-07-31 after Bubble screenshot Unable to resolve host
@@ -138,3 +140,83 @@ notes: |
   `launch_front_desk.sh` (or `spawn-bridge!`) forward Let's Talk audio env
   the same way `start_bridge_headless.sh` / `bridge_headless_supervisor.bb`
   already do.
+
+  ## 2026-08-13 spec amendment (coder note: required_wiring malformed, BL-874 class)
+
+  All four original required_wiring entries failed to resolve at the
+  pre-QA gate (BL-874 discipline: a `path::pattern` entry's path must be a
+  single real file the gate can `git show <commit>:<path>`, checked at the
+  cited commit). #1's path "extension bridge lets-talk routes" and #2's
+  "android BridgeClient.fetchBridgeMeta + TalkEngine.syncBridgeInstanceAndSession"
+  and #3's "swarmforge/scripts start_ancillary / start_cursor_bridge /
+  stop_ancillary" are prose area descriptions, not literal files — none
+  exist on disk. #4's path was real (the feature file) but its pattern
+  "acceptance" appears nowhere in the file's text. Re-anchored to six
+  entries, each a real single file this parcel writes/touches with a
+  pattern guaranteed present in it (mirrors BL-721/dc8fa3296's fix). No
+  scope change — same six integration points the original prose named,
+  just literal now. operator_runtime.bb's Cursor Remote liveness sweep
+  (also requested in the 2026-07-31 review notes above) stays in scope for
+  this parcel but is not separately wiring-gated, same posture BL-721 took
+  toward files touched beyond its 3 wiring entries.
+
+  By specifier.
+
+  ## 2026-08-13 coder implementation summary
+
+  All three declared invariants implemented and covered by a coder-authored
+  test (BL-654): (1) extension/src/bridge/letsTalkMetaRoutes.ts serves GET
+  /lets-talk/meta with a randomUUID() instanceId generated once per
+  startBridge() call (real bounce = real new process = fresh call) +
+  startedAt; property test in letsTalkMeta.property.test.js, verified
+  non-vacuous by breaking-then-restoring the implementation. (2)
+  BridgeBounceSession.kt (pure, no android.* types) decides the bounce-
+  reset-once logic; TalkEngine.syncBridgeInstanceAndSession wires it to
+  BridgeClient.fetchBridgeMeta/fetchBubbleConfig/newSession and
+  CompanionPrefs' new lastBridgeInstanceId, called from
+  OverlayService.onCreate before hands-free resumes; property test in
+  BridgeBounceSessionPropertyTest.kt. (3) not a code invariant — recorded as
+  a stated reason instead (this is a scope/process claim, not a pure
+  computable property): the acceptance suite's boundary-01 scenario greps
+  this ticket's own YAML for "BL-716" and fails if it appears next to
+  closed/fixed/resolved/done, so a future edit to this ticket that tried to
+  claim BL-716 fixed would fail the acceptance run, not just violate a
+  convention.
+
+  Also wired: swarm_ensure.bb's ensure-cursor-bridge! (on-demand `./swarm
+  ensure` repair) and operator_runtime.bb's cursor-bridge-watchdog-sweep!
+  (continuous liveness/heartbeat-freshness repair, 120s stall window
+  matching cursor_bridge_supervisor.bb's own) — both requested in the
+  2026-07-31 review notes above, neither separately required_wiring-gated
+  (same posture BL-721 took toward files touched beyond its wiring
+  entries). letsTalkBubbleConfig.ts's GET /lets-talk/bubble-config.json
+  (BL-864 built it, nothing ever served it) is now actually wired — the
+  invariant-2 remote-config precondition needed a real source.
+
+  Explicitly NOT touched, left for the specifier to scope as a sibling: the
+  2026-07-31 evening note above (front-desk-supervisor not forwarding
+  LETS_TALK_*/WHISPER_* env, so speech-to-text silently breaks after any
+  front-desk relaunch) is a real, separate defect this ticket's own
+  invariants/required_wiring never named — building it here would be
+  unscoped work past what this parcel declares. Flagging to
+  coordinator/specifier by note after this handoff rather than either
+  silently building or silently dropping it.
+
+  QA e2e procedure (manual, Testability Boundary — Bubble device surface):
+  with Bubble paired to a LIVE base URL, bounce the headless bridge
+  (bounce_bridge_headless.sh); confirm exactly one "New session started
+  (bridge restarted)" message appears after the instanceId changes, and
+  that turns still work afterward with no repeat message on subsequent
+  opens against the same instance. Separately, with a DEAD hostname in
+  prefs, confirm the failure still surfaces as a host/DNS error (BL-716) —
+  unchanged by this ticket. Automated coverage: `npm test` (extension),
+  `./gradlew :app:testDebugUnitTest` (android, portable JDK 17 now at
+  .swarmforge/jdk-17), `bash specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-763-bubble-tunnel-hand-fixes-swarm-stamp.feature`
+  (6/6, run twice, no flakiness), plus the shell/bb test files touched
+  (test_start_ancillary_services_cursor_bridge_gate.sh,
+  test_start_ancillary_services_freshness_cron.sh, test_swarm_ensure.sh,
+  test_operator_runtime_tick.sh, test_operator_runtime_control_lost.sh —
+  all ALL PASS / PASS).
+
+  By coder.

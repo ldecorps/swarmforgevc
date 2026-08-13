@@ -60,6 +60,11 @@ class OverlayService : Service() {
             startAsForeground(micActive = false)
             talkEngine = TalkEngine(applicationContext)
             showBubble()
+            // BL-763: check for a bridge bounce (and auto-reset the session
+            // once if one happened) on every overlay start, before resuming
+            // hands-free - a stale session id from before a bounce should
+            // never be the one hands-free resumes into.
+            talkEngine?.syncBridgeInstanceAndSession()
             // Resume last mode: hands-free cold-start greets then opens the mic.
             talkEngine?.greetAndResumeHandsFreeIfNeeded()
         } catch (e: Exception) {

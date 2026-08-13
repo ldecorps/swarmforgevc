@@ -98,6 +98,12 @@
   (or (System/getenv "SWARM_ENSURE_BABYSITTERD_CMD")
       (str "bash " (fs/path script-dir "start_babysitterd.sh") " " project-root)))
 
+;; BL-763: same idempotent-start contract as front-desk-start-cmd above -
+;; start_cursor_bridge.sh already no-ops when its supervisor pid is alive.
+(def cursor-bridge-start-cmd
+  (or (System/getenv "SWARM_ENSURE_CURSOR_BRIDGE_CMD")
+      (str "bash " (fs/path script-dir "start_cursor_bridge.sh") " " project-root)))
+
 ;; ── pure decision ────────────────────────────────────────────────────────────
 
 (defn classify
@@ -235,6 +241,12 @@
 
 (defn babysitterd-pid-file [] (fs/path state-dir "babysitterd" "babysitterd.pid"))
 
+;; BL-763: same pid-file-is-the-liveness-source-of-truth shape as front-desk
+;; above - cursor_bridge_supervisor.bb exposes no other externally-callable
+;; health predicate (its own --check-once is for start_cursor_bridge.sh's
+;; own gave-up detection, not general liveness).
+(defn cursor-bridge-pid-file [] (fs/path state-dir "operator" "cursor-bridge-supervisor.pid"))
+
 (defn operator-pid []
   (when (fs/exists? (operator-pid-file))
     (parse-long (str/trim (slurp (str (operator-pid-file)))))))
@@ -256,6 +268,13 @@
 (defn babysitterd-healthy? []
   (pid-alive? (babysitterd-pid)))
 
+(defn cursor-bridge-pid []
+  (when (fs/exists? (cursor-bridge-pid-file))
+    (parse-long (str/trim (slurp (str (cursor-bridge-pid-file)))))))
+
+(defn cursor-bridge-healthy? []
+  (pid-alive? (cursor-bridge-pid)))
+
 (defn ensure-babysitterd! []
   (sh! babysitterd-start-cmd))
 
@@ -264,6 +283,9 @@
 
 (defn ensure-front-desk! []
   (sh! front-desk-start-cmd))
+
+(defn ensure-cursor-bridge! []
+  (sh! cursor-bridge-start-cmd))
 
 (defn env-set? [name]
   (let [v (System/getenv name)]
@@ -293,6 +315,27 @@
    that the sweep is a standard managed daemon, not opt-in behind a marker."
   []
   (not= "1" (System/getenv "SWARMFORGE_SKIP_BABYSITTERD")))
+
+;; BL-763: OR-token variant of telegram-configured? - start_cursor_bridge.sh
+;; itself accepts CURSOR_BRIDGE_BOT_TOKEN OR TELEGRAM_BOT_TOKEN (the shared-
+;; group-bot case), never requiring both.
+;; BL-763: OR-token variant of telegram-configured? - start_cursor_bridge.sh
+;; itself accepts CURSOR_BRIDGE_BOT_TOKEN OR TELEGRAM_BOT_TOKEN (the shared-
+;; group-bot case), never requiring both.
+(defn cursor-bridge-configured?
+  []
+  (and (or (env-set? "CURSOR_BRIDGE_BOT_TOKEN") (env-set? "TELEGRAM_BOT_TOKEN"))
+       (env-set? "TELEGRAM_CHAT_ID")
+       (env-set? "TELEGRAM_PRINCIPAL_USER_ID")))
+
+(defn cursor-bridge-enabled?
+  "Same shape as front-desk-enabled?: ensure when configured, or a prior
+   supervisor pid file exists (repair a previously launched bridge).
+   Explicit skip wins."
+  []
+  (and (not= "1" (System/getenv "SWARMFORGE_SKIP_CURSOR_BRIDGE"))
+       (or (cursor-bridge-configured?)
+           (fs/exists? (cursor-bridge-pid-file)))))
 
 ;; ── launch-contract component (BL-530) ──────────────────────────────────────
 ;; A pack that names a non-default coordinator_agent (aider, codex, ...) must
@@ -528,8 +571,11 @@
         babysitterd-result (when (babysitterd-enabled?)
                              (ensure-component! "babysitterd" babysitterd-healthy? ensure-babysitterd!
                                                  "restarted babysitterd"))
+        cursor-bridge-result (when (cursor-bridge-enabled?)
+                                (ensure-component! "cursor-bridge" cursor-bridge-healthy? ensure-cursor-bridge!
+                                                    "restarted the Cursor Remote bridge"))
         results (concat [extension-result] role-results [daemon-result launch-contract-check]
-                        (remove nil? [operator-result front-desk-result babysitterd-result]))]
+                        (remove nil? [operator-result front-desk-result babysitterd-result cursor-bridge-result]))]
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
 
