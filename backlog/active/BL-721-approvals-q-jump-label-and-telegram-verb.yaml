@@ -17,10 +17,12 @@ invariants:
   - "A Telegram front-desk slash verb /qjump BL-xxx performs the same queue-jump effects as that button for an eligible ticket."
   - "Offline expeditor stays on /expedite (Cursor bridge); /qjump never starts the offline expeditor; queue-jump ≠ expeditor."
 
+acceptance: specs/features/BL-721-approvals-q-jump-label-and-telegram-verb.feature
+
 required_wiring:
-  - "extension/src/concierge/topicRouter.ts::Approvals buttons::Q jump label"
-  - "extension/src/tools/telegramFrontDeskBotCore.ts or front-desk command path::/qjump::queue-jump dispatch"
-  - "specs/features/BL-721-approvals-q-jump-label-and-telegram-verb.feature::acceptance"
+  - "extension/src/concierge/topicRouter.ts::Q jump::Approvals fourth-button label renamed"
+  - "extension/src/tools/telegramFrontDeskBotCore.ts::qjump::front-desk /qjump verb dispatches the queue-jump"
+  - "specs/features/BL-721-approvals-q-jump-label-and-telegram-verb.feature::BL-721::acceptance contract present in the parcel"
 
 description: |
   ## What
@@ -57,3 +59,26 @@ approval_context: >
 source: |
   Human via Let's Talk / Cursor 2026-07-30 after clarifying Expedite-on-Approvals
   is queue-jump, not the expeditor.
+
+notes: |
+  2026-08-13 spec amendment (coder note: required_wiring #2 path malformed):
+  all three required_wiring entries re-anchored per BL-874 discipline —
+  #1's pattern "Approvals buttons" appeared nowhere in topicRouter.ts (now
+  "Q jump", the deliverable label itself); #2's path carried a prose
+  "or front-desk command path" alternative that can never resolve (now the
+  verified live dispatch file, pattern "qjump"); #3's pattern "acceptance"
+  was not guaranteed to appear (now "BL-721", present in scenario-name
+  comments). The acceptance feature file was missing entirely at activation;
+  written in the same amendment and referenced by the new acceptance: field.
+  Feature file formalizes the already-approved invariants verbatim — no
+  scope change; scenarios added mean step handlers land in this same parcel
+  (BL-233).
+
+  QA e2e procedure: with the front-desk bot live, (1) post an approval ask
+  for a throwaway ticket and confirm the fourth button reads "Q jump" with
+  no "Expedite" label anywhere on the ask; (2) tap Q jump and confirm the
+  keyboard closes with a "Q jumped <UTC>" decision line and the ticket is
+  approved + promoted + dispatched; (3) type "/qjump <BL-id>" on the front
+  desk for an eligible paused ticket and confirm the same three effects;
+  (4) confirm no offline expeditor run started (no expedite.sh process /
+  Cursor-bridge /expedite behavior unchanged).
