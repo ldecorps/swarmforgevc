@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarmforge-console
 human_approval: approved
-priority: 59
+priority: 60
 direction: human-requested
 mutation_cost: low
 invariants:
