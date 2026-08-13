@@ -114,6 +114,13 @@ test('buildBubblePairingHttpsUrl falls back to a bearer query param', () => {
   assert.equal(buildBubblePairingHttpsUrl(live), 'https://foo.trycloudflare.com/pair?token=xyz');
 });
 
+test('buildBubblePairingHttpsUrl defaults token to empty string when neither token nor bearer is present', () => {
+  assert.equal(
+    buildBubblePairingHttpsUrl('https://foo.trycloudflare.com/resident-spy'),
+    'https://foo.trycloudflare.com/pair?token='
+  );
+});
+
 test('buildResidentSpyTunnelUrls includes the HTTPS pairing URL', () => {
   const urls = buildResidentSpyTunnelUrls('https://foo.trycloudflare.com', 'abc123');
   assert.equal(urls.pairingHttpsUrl, buildBubblePairingHttpsUrl(urls.liveUrl));

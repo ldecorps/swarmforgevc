@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { startBridge } = require('../out/bridge/bridgeServer');
+const { startBridge, buildPairPageHtml } = require('../out/bridge/bridgeServer');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
@@ -287,6 +287,19 @@ test('serves the pairing page with an intent:// link naming the shipped package 
     assert.match(html, /<code>https:\/\//);
     assert.match(html, new RegExp(`<code>${TOKEN}</code>`));
   });
+});
+
+// BL-788: bridgeUrl comes from the client-controlled Host header (see
+// tryServePairPage's `https://${host}`), so buildPairPageHtml must escape
+// HTML-special characters in both the URL and the token before reflecting
+// them into the page. No prior test drives buildPairPageHtml with a value
+// containing '&', '<', '>' or '"', so a broken/removed escapeHtml call
+// would pass every existing assertion.
+test('buildPairPageHtml escapes HTML-special characters in the bridge URL and token', () => {
+  const html = buildPairPageHtml('https://evil.example/"><script>x</script>&x=1', 'tok<>&"en');
+  assert.doesNotMatch(html, /<script>x<\/script>/);
+  assert.match(html, /<code>https:\/\/evil\.example\/&quot;&gt;&lt;script&gt;x&lt;\/script&gt;&amp;x=1<\/code>/);
+  assert.match(html, /<code>tok&lt;&gt;&amp;&quot;en<\/code>/);
 });
 
 test('rejects a pairing page request with no or the wrong token', async () => {
