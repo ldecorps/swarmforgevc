@@ -1547,7 +1547,7 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     },
     {
       matches: isResidentPanePath,
-      compute: () => captureMonoRouterLiveScreen(targetPath),
+      compute: () => captureMonoRouterLiveScreen(targetPath, nowMs),
     },
     {
       matches: isPipelineBoardPath,

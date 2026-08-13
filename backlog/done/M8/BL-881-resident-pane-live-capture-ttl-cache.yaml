@@ -12,7 +12,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 assigned_to: coder
-acceptance: specs/features/BL-881-resident-pane-live-capture-ttl-cache.feature.draft
+acceptance: specs/features/BL-881-resident-pane-live-capture-ttl-cache.feature
 
 approval_context: >
   New feature draft needs review. Scope fork is already decided: keep and
@@ -102,3 +102,6 @@ notes: |
   Human may commit the three-file draft together with this ticket to
   unblock freshness immediately; otherwise the first pipeline role that
   owns the parcel commits the kept draft as the implementation.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-13, by: architect, blamed: coder, class: behavior, commit: 73a6e5e885, evidence: backlog/evidence/BL-881-bounce-20260813.md }
