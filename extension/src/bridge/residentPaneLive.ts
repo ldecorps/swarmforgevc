@@ -221,7 +221,7 @@ export function captureLiveScreenPanes(targetPath: string): LiveScreenPaneEntry[
   });
 }
 
-export function captureMonoRouterLiveScreen(targetPath: string): MonoRouterLiveScreenSnapshot {
+export function captureMonoRouterLiveScreenUncached(targetPath: string): MonoRouterLiveScreenSnapshot {
   const panes = captureLiveScreenPanes(targetPath);
   const resident =
     panes.find((entry) => entry.id === 'resident')?.pane ??
@@ -236,4 +236,37 @@ export function captureMonoRouterLiveScreen(targetPath: string): MonoRouterLiveS
     coordinator,
     panes,
   };
+}
+
+// BL-881: the Resident Spy Mini App polls /resident-pane faster than this
+// synchronous tmux + filesystem walk can finish under load, so overlapping
+// polls pile onto the bridge's single event-loop thread and wedge it. A
+// short TTL cache lets back-to-back polls for the same targetPath share one
+// walk instead of each paying for their own. Keyed by targetPath so two
+// roots never share a snapshot.
+export const RESIDENT_PANE_CACHE_TTL_MS = 5_000;
+
+interface CachedLiveScreen {
+  snapshot: MonoRouterLiveScreenSnapshot;
+  capturedAtMs: number;
+}
+
+const liveScreenCacheByTargetPath = new Map<string, CachedLiveScreen>();
+
+export function captureMonoRouterLiveScreen(
+  targetPath: string,
+  nowMs: number = Date.now()
+): MonoRouterLiveScreenSnapshot {
+  const cached = liveScreenCacheByTargetPath.get(targetPath);
+  if (cached && nowMs - cached.capturedAtMs < RESIDENT_PANE_CACHE_TTL_MS) {
+    return cached.snapshot;
+  }
+  const snapshot = captureMonoRouterLiveScreenUncached(targetPath);
+  liveScreenCacheByTargetPath.set(targetPath, { snapshot, capturedAtMs: nowMs });
+  return snapshot;
+}
+
+/** Test hook: forces the next captureMonoRouterLiveScreen call to re-walk. */
+export function clearResidentPaneLiveCache(): void {
+  liveScreenCacheByTargetPath.clear();
 }
