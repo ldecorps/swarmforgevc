@@ -589,3 +589,33 @@ You are the hardender.
   6/6-killed manifest from crash-fake kills, caught only because
   `tested_at` was not in HEAD; nearly forwarded an unverified gate as
   passed. Durable script-side fail-loud fix: BL-884.)
+
+## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
+- When a self-exclusion (or any check) is guarded by two overlapping
+  mechanisms — e.g. a filename-pattern case-statement AND a pid==self
+  comparison — a single test whose fixture satisfies BOTH proves nothing
+  about either: delete one guard and the other still passes the test, so
+  the deletion mutant survives invisibly.
+- Rule: write one test per mechanism in which THAT mechanism is the only
+  thing standing between the mutant and a failure — a fixture that trips
+  the pid check must NOT also match the filename pattern, and vice versa.
+  Treat a surviving mutant inside any multi-guard conditional as a probe
+  signal that the guards' tests overlap.
+- (Incident: BL-730, 2026-08-13 — the only self-test's argv also matched
+  the case-statement's filename exclusion, so deleting the separate
+  pid==self check survived undetected until a test isolated it.)
+
+## Overlapping self-exclusion guards each need an ISOLATING test — a combined fixture hides one mechanism's mutant behind the other (rule_proposal 2026-08-13, accepted)
+- When a self-exclusion (or any check) is guarded by two overlapping
+  mechanisms — e.g. a filename-pattern case-statement AND a pid==self
+  comparison — a single test whose fixture satisfies BOTH proves nothing
+  about either: delete one guard and the other still passes the test, so
+  the deletion mutant survives invisibly.
+- Rule: write one test per mechanism in which THAT mechanism is the only
+  thing standing between the mutant and a failure — a fixture that trips
+  the pid check must NOT also match the filename pattern, and vice versa.
+  Treat a surviving mutant inside any multi-guard conditional as a probe
+  signal that the guards' tests overlap.
+- (Incident: BL-730, 2026-08-13 — the only self-test's argv also matched
+  the case-statement's filename exclusion, so deleting the separate
+  pid==self check survived undetected until a test isolated it.)
