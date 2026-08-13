@@ -1,0 +1,104 @@
+id: BL-888
+title: "kill_pipeline_swarm.sh's copilot kill step is unscoped — tearing down one root signals sibling roots' copilot agents"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 130
+direction: aligned
+depends_on: []
+assigned_to: unassigned
+mutation_cost: low
+human_approval: pending
+
+approval_context: >
+  Severity call needs your eyes: medium, not high, because the kill is
+  latent today — it fires only when a sibling root is running copilot
+  agents during this root's teardown, and a live pgrep on 2026-08-13 found
+  no matching process on this host (the current packs launch claude
+  agents). But when it fires it is destructive, not cosmetic: it kills a
+  neighbouring swarm's live agents mid-work, in a swarm nobody asked to
+  stop. If you consider an armed cross-root kill high regardless of current
+  occupancy, flip the field — the spec does not change either way.
+
+source: |
+  Reported by the coder on 2026-08-13 via a spec-gap `note` while holding
+  BL-730 ("unscoped copilot pkill kills siblings, needs ticket").
+
+  Verified by the specifier the same day against `main`:
+  `swarmforge/scripts/kill_pipeline_swarm.sh:244` (step 5) runs
+  `pkill -f 'copilot.*SwarmForge'` with no root anchoring — an actual kill,
+  distinct from the read-only survivor CHECK at :282 that BL-730 (active)
+  fixes and the probes BL-782 (paused) covers. BL-782's out_of_scope says
+  explicitly it "only fixes how the survivor check MATCHES, never what it
+  kills", so this kill was unticketed until now.
+
+  Scoping is feasible: a copilot agent's argv is
+  `copilot ... -C '<role_worktree>' --name 'SwarmForge <role>' ...`
+  (launch_body in swarmforge/scripts/swarmforge.sh, confirmed at :1369), so
+  the command line carries a path under the launching root, the same way
+  handoffd's argv carries the root — which is exactly what the correctly
+  scoped reaping loop at :241 anchors on.
+
+description: |
+  ## What
+
+  Anchor kill_pipeline_swarm.sh step 5's copilot kill to the root being
+  torn down, so it signals only THIS root's copilot agents. A copilot
+  process launched for a different project root — or any host process that
+  merely mentions both words — must never be signaled by this teardown.
+
+  ## How (direction, not mandate)
+
+  The argv shape gives two anchors: the `-C '<worktree>'` path (under
+  $ROOT) and the `--name 'SwarmForge <role>'` marker. Match on the root
+  path, mirroring the reaping loop at :241 (`handoffd\.bb.*$ROOT`). Note
+  the two appear in a fixed order in launch_body (`-C` before `--name`), so
+  a single-regex anchor must not assume the reverse order.
+
+  Prefer splitting match-from-kill: compute the matched pid set with a
+  root-scoped scan that honours a fixture snapshot seam (the
+  SWARMFORGE_SURVIVOR_PS_FILE precedent from stack_survivor_scan.sh), then
+  signal those pids. That keeps the match logic testable from a snapshot,
+  per the same testability note BL-730 carries, and per engineering.prompt's
+  ban on diffing broad live `ps` patterns in tests. Scenario 01/02's
+  end-to-end proof uses harmless fixture processes with crafted argv that
+  the test itself spawns and reaps by pid — never real agents.
+
+invariants:
+  - "A teardown kill step signals only processes belonging to the root being torn down — a process of any other root, or of the operator's own tooling, is never signaled."
+
+acceptance: specs/features/BL-888-teardown-copilot-kill-scope.feature.draft
+
+qa_e2e_procedure: |
+  1. Spawn a harmless long-lived fixture process whose argv contains
+     `copilot`, `-C '<some OTHER root path>'`, and `SwarmForge` (e.g. a
+     sleep wrapper with crafted argv). Run `kill_pipeline_swarm.sh` for
+     THIS root. The fixture must still be alive afterwards and the teardown
+     log must read "no SwarmForge copilot processes". Reap the fixture by
+     pid when done.
+  2. Repeat with the fixture argv naming THIS root's worktree path. The
+     teardown must signal it and log the "signaled" line.
+  3. Run the full BL-637 lifecycle suite
+     (`swarmforge/scripts/test/test_lifecycle_script_scope.sh`) and the
+     BL-730 acceptance feature (if landed by then) to confirm no regression
+     in the neighbouring scoped-scan behaviour of the same file.
+
+out_of_scope: |
+  - The read-only survivor check at kill_pipeline_swarm.sh:282 — that is
+    BL-730's (active) scope.
+  - The liveness/audit probes in test_lifecycle_script_scope.sh and
+    expedite_cli.bb — BL-782's scope.
+  - WHAT the teardown kills conceptually (pipeline-only lifecycle boundary,
+    BL-637) — this ticket narrows the MATCH of one existing kill step only.
+
+notes: |
+  Scheduling: touches the same file as active BL-730 and paused BL-782 —
+  Concurrent Work Orthogonality means this must not be active alongside
+  either. Sequence after BL-730 lands; if BL-782 promotes first, they still
+  conflict on kill_pipeline_swarm.sh and must serialize.
+
+  Related standing lesson: "Scope pkill to your worktree, never a bare tool
+  name" — this is that lesson's own codebase violating it in the teardown
+  path.
