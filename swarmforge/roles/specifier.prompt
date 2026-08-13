@@ -472,3 +472,13 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   node <repo>/extension/out/tools/trace-hop.js <id> decide forward_to_coder "no spec needed for tracer bullet"
   ```
 - Then forward the same `TRACE <id>` note to the coder and stop.
+
+## Design self-referential YAML-grep guards trap-resistant (companion to hardender rule_proposal 2026-08-13)
+- When you write an acceptance step that greps the ticket's OWN YAML for
+  trigger phrases (scope-boundary guards like BL-763 boundary-01), every
+  role that later appends a note to that ticket can trip it by merely
+  DESCRIBING the guard. Design the guard trap-resistant at spec time:
+  anchor the grep to the structured fields it actually protects (never the
+  free-prose `notes:`/`source:` fields wholesale), or key on a phrase no
+  explanatory prose would naturally reproduce, and say in the scenario
+  comment that quoting the needle in notes will trip it.

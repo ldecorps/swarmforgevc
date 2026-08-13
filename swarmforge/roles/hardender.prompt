@@ -619,3 +619,18 @@ You are the hardender.
 - (Incident: BL-730, 2026-08-13 — the only self-test's argv also matched
   the case-statement's filename exclusion, so deleting the separate
   pid==self check survived undetected until a test isolated it.)
+
+## An acceptance step that greps the ticket's own YAML is a trap for every later note — never quote its trigger phrase while explaining it (rule_proposal 2026-08-13, accepted)
+- A guard scenario that greps the ticket's own YAML for trigger words (e.g.
+  a scope-boundary step asserting the ticket never claims a sibling ticket
+  fixed) reads EVERY field, including notes written long after the guard —
+  so a note that explains the guard by quoting its trigger phrase trips it.
+- Rule: before appending any note to a ticket, check whether its acceptance
+  greps the ticket's own YAML; if so, paraphrase around the trigger words
+  (name the scenario id instead of quoting its needle). An acceptance
+  failure whose match is inside YOUR OWN note is a wording defect, not a
+  behaviour regression — reword, re-run, and do not bounce it upstream.
+- (Incident: BL-763 boundary-01 greps for "BL-716" near
+  closed/fixed/resolved/done; the coder's implementation-summary note
+  describing the guard quoted the claim-phrase and failed acceptance until
+  reworded, 2026-08-13.)
