@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "GET /lets-talk/meta on a live bridge returns a stable instanceId for that process lifetime; a bounce yields a different instanceId."
