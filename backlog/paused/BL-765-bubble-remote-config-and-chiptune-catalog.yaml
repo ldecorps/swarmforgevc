@@ -17,9 +17,9 @@ invariants:
   - "Every remote-served payload is versioned and validated before use; an unparseable or wrong-schema payload is rejected whole, never applied field-by-field."
 
 required_wiring:
-  - "extension/src/bridge/letsTalkBubbleConfig.ts::served over GET /lets-talk/bubble-config.json"
-  - "extension/src/bridge/letsTalkChiptunes.ts::served over GET /lets-talk/chiptunes.json"
-  - "android BridgeClient::fetch bubble-config and chiptunes on pair/resume"
+  - "extension/src/bridge/bridgeServer.ts::isLetsTalkChiptunesPath::serve GET /lets-talk/chiptunes.json from the buildJsonRoutes table — the module and its exports landed dead (f175bc56d), same shape BL-763 fixed for bubble-config"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::/lets-talk/chiptunes.json::phone fetches the catalog on pair/resume"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::holdMusic::fetchBubbleConfig applies the full capability document, not only bridgeBounceAutoSessionReset — BL-763's stub explicitly defers the other flags to this ticket; if the coder legitimately parses flags elsewhere, request a spec amendment rather than working around the gate"
 
 approval_context: >
   Retro-ticket for functional work already sitting uncommitted in the master
@@ -78,7 +78,26 @@ source: |
   retroactive contract.
 
 notes: |
-  Adopt candidates already in the dirty master tree — new
+  2026-08-13 amendment (architect note, spec-time re-verify): much of the
+  retro-ticketed work has since LANDED on main — BL-864 shipped
+  `letsTalkBubbleConfig.ts` (full feature document plus the
+  FORCE_ROLLBACK / CONFIG_DISABLED / `.rollback.json` kill-switch) and
+  BL-763 wired `GET /lets-talk/bubble-config.json` into `bridgeServer.ts`
+  (5e6ec763c) plus `BridgeClient.fetchBubbleConfig`, which reads ONLY
+  `bridgeBounceAutoSessionReset` and explicitly defers every other flag to
+  this ticket. `letsTalkChiptunes.ts`/`.json` landed via f175bc56d but are
+  DEAD CODE: no route serves them and no phone code fetches them. The
+  original "adopt from the dirty master tree" posture is stale — the adopt
+  candidates are committed; the coder EXTENDS the landed code (chiptunes
+  route, Android chiptunes fetch + playlist use, full capability-flag
+  application on pair/resume, and the volume-split / version-label items if
+  still absent — verify against main at build time, not against this note).
+  `required_wiring:` was rewritten in the same pass to literal substring
+  patterns per BL-874 — the original three entries were prose-shaped and one
+  path (`android BridgeClient`) was not a file, which would have refused the
+  documenter's send on every entry.
+
+  Original adopt notes (now historical): new
   `extension/src/bridge/letsTalkBubbleConfig.ts`,
   `extension/src/bridge/letsTalkChiptunes.ts`,
   `extension/src/bridge/letsTalkChiptunes.json`, `resolveJsonModule` in
