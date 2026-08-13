@@ -1,29 +1,30 @@
 'use strict';
 
-// BL-721: step handlers for "Approvals Q jump - a renamed button, a typed
-// verb, and separation from the offline expeditor". Drives REAL compiled
-// production code (decideTopicAction/topicRouter.ts for the button half,
+// BL-721: step handlers for "Approvals queue-jump is labeled Q jump and
+// reachable by a /qjump front-desk verb". Drives REAL compiled production
+// code (decideTopicAction/topicRouter.ts for the button half,
 // pollAndForward/telegramFrontDeskBotCore.ts for both the tap-dispatch and
 // typed-verb-dispatch halves, recordApprovalReply/pendingApprovalReply.ts +
 // promoteToActive/backlogWriter.ts for the real fs-backed writers, and
 // parseExpediteTicket/telegramCursorBridgeExpedite.ts for the offline
-// expeditor's own separate parser) against fake Telegram/dispatch adapters
-// - never a hand-rolled reimplementation of the queue-jump rules.
+// expeditor's own separate parser) against fake Telegram/dispatch adapters -
+// never a hand-rolled reimplementation of the queue-jump rules.
 //
-// Self-contained fixture (own Background, own ticket id, own step wording)
-// rather than reusing BL-490's - several of this feature's natural phrasings
-// ("the ticket is in the paused backlog", "the ticket's human_approval is
+// KNOWN STEP-REGISTRY COLLISION (2026-08-13 spec amendment dc8fa3296): this
+// feature's Background and several step texts are VERBATIM IDENTICAL to
+// text bl490ExpediteApprovalButtonSteps.js and bl484DecidedAskClosesItselfSteps.js
+// already register unscoped ("an approval ask was posted in a ticket's
+// Telegram topic", "the posted ask is the BL-410 inline-keyboard approval
+// ask", "the approval ask's buttons are rendered for a ticket", "the ticket
+// is still pending review", "the posted ask's inline keyboard is removed",
+// "the ticket is in the paused backlog", "the ticket's human_approval is
 // recorded as approved", "the ticket is moved into the active backlog", "a
-// routing handoff is injected to start the build immediately", "the posted
-// ask's inline keyboard is removed", "a build is already in flight that
-// edits the same files as the ticket") are VERBATIM IDENTICAL to text
-// bl490ExpediteApprovalButtonSteps.js already registers, and "the ticket is
-// still pending review" to bl484DecidedAskClosesItselfSteps.js - reusing
-// any of them here would silently run THAT file's handler (registered
-// earlier in steps/index.js's DOMAINS order) against a ticket id ('BL-490')
-// this feature's own fixture never writes, failing on a missing file. Every
-// step below is deliberately reworded to be textually distinct (checked by
-// grep across specs/pipeline/steps/*.js before this file was wired in).
+// routing handoff is injected to start the build immediately"). Every step
+// in this file is registered with registry.defineScoped(..., FEATURE)
+// (BL-425) rather than registry.define(...), so this feature's own fixture
+// (TICKET_ID='BL-721') resolves first for its own Feature name instead of
+// silently falling through to another feature's earlier-registered,
+// differently-fixtured handler.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -35,6 +36,8 @@ const { pollAndForward, APPROVALS_SUBJECT_ID } = require(path.join(EXT_DIR, 'out
 const { recordApprovalReply } = require(path.join(EXT_DIR, 'out', 'concierge', 'pendingApprovalReply'));
 const { promoteToActive } = require(path.join(EXT_DIR, 'out', 'panel', 'backlogWriter'));
 const { parseExpediteTicket } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramCursorBridgeExpedite'));
+
+const FEATURE = 'Approvals queue-jump is labeled Q jump and reachable by a /qjump front-desk verb';
 
 const PRINCIPAL_ID = 111;
 const TICKET_ID = 'BL-721';
@@ -64,8 +67,7 @@ function mkCallbackUpdate(data) {
 // The button-tap half - mirrors bl490ExpediteApprovalButtonSteps.js's own
 // tapExpedite shape (same callback_data namespace, same adapter set), a
 // deliberate small duplication rather than a cross-file import of another
-// feature's private helper (see file-level comment on the collision hazard
-// that ruled out reusing its Background/steps instead).
+// feature's private helper.
 function tapQjump(ctx) {
   return pollAndForward(0, PRINCIPAL_ID, {
     chatId: '1',
@@ -112,12 +114,12 @@ function tapQjump(ctx) {
 }
 
 // The typed-verb half - drives the SAME production Approvals-topic reply
-// dispatch a real "/qjump <id>"/"/expedite <id>" reply goes through
-// (decideApprovalsTopicReplyAction -> deliverApprovalsTopicReply /
-// deliverApprovalsTopicQjump in telegramFrontDeskBotCore.ts), wired with the
-// same effect adapters as tapQjump above so BL-721-04's "same effect as the
-// button" claim is checked against real, shared production code, not two
-// independently-hand-rolled fixtures.
+// dispatch a real "/qjump <id>" reply goes through (decideApprovalsTopicReplyAction
+// -> deliverApprovalsTopicQjump in telegramFrontDeskBotCore.ts), wired with
+// the same effect adapters as tapQjump above so scenario 03's "same effect
+// path" claim is checked against real, shared production code. Also tracks
+// forwardCursorBridgeUpdate calls (the offline expeditor's own delivery
+// path) - scenario 04 asserts this never fires for a /qjump message.
 function sendApprovalsTopicText(ctx, text) {
   return pollAndForward(0, PRINCIPAL_ID, {
     chatId: '1',
@@ -157,12 +159,16 @@ function sendApprovalsTopicText(ctx, text) {
       ctx.notified.push({ topicId, text: text2 });
       return true;
     },
+    forwardCursorBridgeUpdate: async () => {
+      ctx.cursorBridgeForwards.push(1);
+      return true;
+    },
   });
 }
 
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
-  registry.define(/^a Q jump-eligible approval ask was posted in a ticket's Telegram topic$/, (ctx) => {
+  registry.defineScoped(/^an approval ask was posted in a ticket's Telegram topic$/, (ctx) => {
     ctx.targetPath = mkTmp();
     writeTicket(ctx.targetPath, 'active', `id: ${TICKET_ID}\ntitle: qjump fixture\nhuman_approval: pending\n`);
     ctx.approvals = [];
@@ -171,86 +177,60 @@ function registerSteps(registry) {
     ctx.editCalls = [];
     ctx.answered = [];
     ctx.notified = [];
+    ctx.cursorBridgeForwards = [];
     ctx.recordedVerdict = undefined;
     ctx.collision = undefined;
-  });
+  }, FEATURE);
 
-  // ── BL-721-01: the button itself (pure, topicRouter) ────────────────────
-  registry.define(/^the Q jump ask's buttons are rendered for the ticket$/, (ctx) => {
+  registry.defineScoped(/^the posted ask is the BL-410 inline-keyboard approval ask$/, () => {
+    // Documented by the Background text itself - approvalRequestedButtons
+    // (topicRouter.ts) is the real production source of the BL-410 buttons,
+    // separately unit/acceptance-tested by BL-410's own feature. Nothing
+    // further to arrange here.
+  }, FEATURE);
+
+  // ── q-jump-approvals-01: the button label itself (pure, topicRouter) ───
+  registry.defineScoped(/^the approval ask's buttons are rendered for a ticket$/, (ctx) => {
     ctx.action = decideTopicAction({ type: 'ApprovalRequested', backlogId: TICKET_ID, payload: {} }, {}, 'qjump fixture');
-  });
+  }, FEATURE);
 
-  registry.define(/^the rendered buttons include a Q jump button, not an Expedite button$/, (ctx) => {
+  registry.defineScoped(/^the rendered buttons include a button labeled "Q jump"$/, (ctx) => {
     const labels = ctx.action.buttons.flat().map((b) => b.text);
     if (!labels.includes('Q jump')) {
-      throw new Error(`expected a Q jump button among the rendered buttons, got: ${JSON.stringify(labels)}`);
+      throw new Error(`expected a button labeled "Q jump" among the rendered buttons, got: ${JSON.stringify(labels)}`);
     }
-    if (labels.includes('Expedite')) {
-      throw new Error(`expected no Expedite button (renamed to Q jump), got: ${JSON.stringify(labels)}`);
-    }
-  });
+  }, FEATURE);
 
-  registry.define(/^the Q jump button carries the expedite verb tagged with the ticket id$/, (ctx) => {
+  registry.defineScoped(/^no rendered button is labeled "Expedite"$/, (ctx) => {
+    const labels = ctx.action.buttons.flat().map((b) => b.text);
+    if (labels.includes('Expedite')) {
+      throw new Error(`expected no button labeled "Expedite" (renamed to Q jump), got: ${JSON.stringify(labels)}`);
+    }
+  }, FEATURE);
+
+  registry.defineScoped(/^the Q jump button carries the expedite verb tagged with the ticket id$/, (ctx) => {
     const qjump = ctx.action.buttons.flat().find((b) => b.text === 'Q jump');
     if (!qjump || qjump.callbackData !== `expedite:${TICKET_ID}`) {
       throw new Error(`expected the Q jump button tagged expedite:${TICKET_ID}, got: ${JSON.stringify(qjump)}`);
     }
-  });
+  }, FEATURE);
 
-  registry.define(/^the Approve, Amend, and Reject buttons are still present alongside Q jump$/, (ctx) => {
-    const labels = ctx.action.buttons.flat().map((b) => b.text);
-    for (const expected of ['Approve', 'Amend', 'Reject', 'Q jump']) {
-      if (!labels.includes(expected)) {
-        throw new Error(`expected ${expected} present, got: ${JSON.stringify(labels)}`);
-      }
-    }
-  });
-
-  // ── BL-721-02: tap still approves + force-promotes + dispatches ────────
-  registry.define(/^the ticket starts out paused, awaiting Q jump$/, (ctx) => {
-    fs.rmSync(ticketPath(ctx.targetPath, 'active'), { force: true });
-    writeTicket(ctx.targetPath, 'paused', `id: ${TICKET_ID}\ntitle: qjump fixture\nhuman_approval: pending\n`);
-  });
-
-  registry.define(/^the Q jump button is tapped for the ticket$/, async (ctx) => {
-    ctx.deliverResult = await tapQjump(ctx);
-  });
-
-  registry.define(/^the ticket's human_approval is approved by the Q jump effect$/, (ctx) => {
-    const folder = fs.existsSync(ticketPath(ctx.targetPath, 'active')) ? 'active' : 'paused';
-    const content = fs.readFileSync(ticketPath(ctx.targetPath, folder), 'utf8');
-    if (!/^human_approval: approved$/m.test(content)) {
-      throw new Error(`expected human_approval: approved, got:\n${content}`);
-    }
-  });
-
-  registry.define(/^the Q jump effect moves the ticket into the active backlog$/, (ctx) => {
-    if (fs.existsSync(ticketPath(ctx.targetPath, 'paused'))) {
-      throw new Error('expected the ticket file no longer in backlog/paused/');
-    }
-    if (!fs.existsSync(ticketPath(ctx.targetPath, 'active'))) {
-      throw new Error('expected the ticket file moved into backlog/active/');
-    }
-  });
-
-  registry.define(/^the Q jump effect dispatches a routing handoff to start the build immediately$/, (ctx) => {
-    if (!ctx.dispatches.includes(TICKET_ID)) {
-      throw new Error(`expected dispatchExpediteBuild to have fired for ${TICKET_ID}, got: ${JSON.stringify(ctx.dispatches)}`);
-    }
-  });
-
-  // ── BL-721-03: tap closes the ask with the renamed decision line ───────
-  registry.define(/^the Q jump ask has not yet been decided$/, (ctx) => {
+  // ── q-jump-approvals-02: tap closes the ask with Q jump vocabulary ─────
+  registry.defineScoped(/^the ticket is still pending review$/, (ctx) => {
     ctx.recordedVerdict = undefined;
-  });
+  }, FEATURE);
 
-  registry.define(/^the Q jump ask's inline keyboard is removed$/, (ctx) => {
+  registry.defineScoped(/^the Q jump button is tapped for the ticket$/, async (ctx) => {
+    ctx.deliverResult = await tapQjump(ctx);
+  }, FEATURE);
+
+  registry.defineScoped(/^the posted ask's inline keyboard is removed$/, (ctx) => {
     if (ctx.editCalls.length !== 1 || ctx.editCalls[0].topicId !== ASK_TOPIC_ID || ctx.editCalls[0].messageId !== ASK_MESSAGE_ID) {
       throw new Error(`expected exactly one editApprovalAskMessage call targeting the persisted ask, got: ${JSON.stringify(ctx.editCalls)}`);
     }
-  });
+  }, FEATURE);
 
-  registry.define(/^a Q jumped decision line with the recorded UTC time is appended to the message$/, (ctx) => {
+  registry.defineScoped(/^a Q jumped decision line with the recorded UTC time is appended to the message$/, (ctx) => {
     const editedText = ctx.editCalls[0].text;
     if (!editedText.startsWith(ORIGINAL_ASK_TEXT)) {
       throw new Error(`expected the original ask text preserved above the decision line, got:\n${editedText}`);
@@ -258,56 +238,64 @@ function registerSteps(registry) {
     if (!/-- Q jumped \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/.test(editedText)) {
       throw new Error(`expected a "-- Q jumped <UTC timestamp>" decision line, got:\n${editedText}`);
     }
-  });
+  }, FEATURE);
 
-  // ── BL-721-04: "/qjump <id>" typed - same effect as the button ─────────
-  registry.define(/^"\/qjump" is typed for the ticket as a reply in the Approvals topic$/, async (ctx) => {
+  // ── q-jump-approvals-03: "/qjump <id>" - same effects as the button ────
+  registry.defineScoped(/^the ticket is in the paused backlog$/, (ctx) => {
+    fs.rmSync(ticketPath(ctx.targetPath, 'active'), { force: true });
+    writeTicket(ctx.targetPath, 'paused', `id: ${TICKET_ID}\ntitle: qjump fixture\nhuman_approval: pending\n`);
+  }, FEATURE);
+
+  registry.defineScoped(/^a \/qjump message naming the ticket is received on the front desk$/, async (ctx) => {
     ctx.deliverResult = await sendApprovalsTopicText(ctx, `/qjump ${TICKET_ID}`);
-  });
+  }, FEATURE);
 
-  // ── BL-721-05: "/qjump <id>" on a same-file collision warns, no dispatch ─
-  registry.define(/^another in-flight build already edits the same files as this ticket$/, (ctx) => {
-    ctx.collision = 'BL-100';
-  });
+  registry.defineScoped(/^the ticket's human_approval is recorded as approved$/, (ctx) => {
+    const folder = fs.existsSync(ticketPath(ctx.targetPath, 'active')) ? 'active' : 'paused';
+    const content = fs.readFileSync(ticketPath(ctx.targetPath, folder), 'utf8');
+    if (!/^human_approval: approved$/m.test(content)) {
+      throw new Error(`expected human_approval: approved, got:\n${content}`);
+    }
+  }, FEATURE);
 
-  registry.define(/^an unsafe-dispatch warning is posted into the Approvals topic$/, (ctx) => {
-    if (ctx.notified.length !== 1 || ctx.notified[0].topicId !== APPROVALS_TOPIC_ID || !/unsafe/i.test(ctx.notified[0].text ?? '')) {
-      throw new Error(`expected an "unsafe" warning posted into the Approvals topic, got: ${JSON.stringify(ctx.notified)}`);
+  registry.defineScoped(/^the ticket is moved into the active backlog$/, (ctx) => {
+    if (fs.existsSync(ticketPath(ctx.targetPath, 'paused'))) {
+      throw new Error('expected the ticket file no longer in backlog/paused/');
     }
-  });
+    if (!fs.existsSync(ticketPath(ctx.targetPath, 'active'))) {
+      throw new Error('expected the ticket file moved into backlog/active/');
+    }
+  }, FEATURE);
 
-  registry.define(/^no dispatch is performed for the ticket, though it is still approved$/, (ctx) => {
-    if (!ctx.approvals.includes(TICKET_ID)) {
-      throw new Error(`expected the ticket still approved despite the collision, got: ${JSON.stringify(ctx.approvals)}`);
+  registry.defineScoped(/^a routing handoff is injected to start the build immediately$/, (ctx) => {
+    if (!ctx.dispatches.includes(TICKET_ID)) {
+      throw new Error(`expected dispatchExpediteBuild to have fired for ${TICKET_ID}, got: ${JSON.stringify(ctx.dispatches)}`);
     }
-    if (ctx.dispatches.includes(TICKET_ID)) {
-      throw new Error('expected NO dispatch when a same-file build is in flight - the in-flight build must never be preempted');
-    }
-  });
+  }, FEATURE);
 
-  // ── BL-721-06: /expedite stays offline-only, never queue-jumps ─────────
-  registry.define(/^"\/expedite" is typed for the ticket as a reply in the Approvals topic$/, async (ctx) => {
-    ctx.deliverResult = await sendApprovalsTopicText(ctx, `/expedite ${TICKET_ID}`);
-  });
+  registry.defineScoped(/^the queue-jump effects are performed through the same effect path the Q jump button uses$/, (ctx) => {
+    // tapQjump and sendApprovalsTopicText wire recordApprovalReply/
+    // promoteTicketIfPaused/dispatchExpediteBuild through the identical
+    // adapter shape - this step confirms all three effects actually fired
+    // for THIS ticket via the typed-verb delivery path, not merely that
+    // the same functions exist.
+    if (!ctx.approvals.includes(TICKET_ID) || !ctx.promotions.includes(TICKET_ID) || !ctx.dispatches.includes(TICKET_ID)) {
+      throw new Error(
+        `expected approve+promote+dispatch to have all fired via the typed verb, got approvals=${JSON.stringify(ctx.approvals)} promotions=${JSON.stringify(ctx.promotions)} dispatches=${JSON.stringify(ctx.dispatches)}`
+      );
+    }
+  }, FEATURE);
 
-  registry.define(/^no approval, promotion, or dispatch side effect is performed for the ticket$/, (ctx) => {
-    if (ctx.approvals.length !== 0) {
-      throw new Error(`expected no approval side effect for /expedite typed in the Approvals topic, got: ${JSON.stringify(ctx.approvals)}`);
+  // ── q-jump-approvals-04: /qjump never starts the offline expeditor ─────
+  registry.defineScoped(/^no offline expeditor run is started$/, (ctx) => {
+    if (ctx.cursorBridgeForwards.length !== 0) {
+      throw new Error(`expected no Cursor-bridge forward (the offline expeditor's own delivery path), got: ${JSON.stringify(ctx.cursorBridgeForwards)}`);
     }
-    if (ctx.promotions.length !== 0) {
-      throw new Error(`expected no promotion side effect, got: ${JSON.stringify(ctx.promotions)}`);
+    const parsed = parseExpediteTicket(`/qjump ${TICKET_ID}`);
+    if (parsed !== undefined) {
+      throw new Error(`expected the offline expeditor's own parser to not recognize a /qjump message, got: ${JSON.stringify(parsed)}`);
     }
-    if (ctx.dispatches.length !== 0) {
-      throw new Error(`expected no dispatch side effect, got: ${JSON.stringify(ctx.dispatches)}`);
-    }
-  });
-
-  registry.define(/^the offline expeditor's own parser still recognizes \/expedite for that ticket, unchanged$/, () => {
-    const parsed = parseExpediteTicket(`/expedite ${TICKET_ID}`);
-    if (parsed !== TICKET_ID) {
-      throw new Error(`expected the offline expeditor's parser to still recognize /expedite ${TICKET_ID}, got: ${JSON.stringify(parsed)}`);
-    }
-  });
+  }, FEATURE);
 }
 
 module.exports = { registerSteps };
