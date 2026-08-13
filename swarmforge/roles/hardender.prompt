@@ -145,6 +145,14 @@ You are the hardender.
   (Lesson, 2026-07-06: BL-139 hardening at load 100–250 on 4 cores — a
   concurrency=1, 2-file --mutate dry run still timed out after 5 min, not
   just full-suite runs.)
+- Clearing a crashed Stryker run's `.stryker-tmp` also deletes the sandbox
+  sibling symlinks, which live at `.stryker-tmp/<name>` — re-run
+  `node extension/scripts/ensureStrykerSandboxSiblings.js` (or retry via the
+  npm `mutation` script, which wires it in) before any direct `stryker run`,
+  or the dry run ENOENTs on a missing repo-root sibling and reads like a
+  regression. (Proposed by the hardender, BL-863 hardening 2026-08-13: an
+  orphaned-sandbox cleanup followed by a direct `stryker run` crashed ENOENT
+  on the missing `swarmforge/` sibling, costing a retry.)
 - Run the project's mutation tool on the changed and new source, one file at a
   time; prefer differential mutation against the manifest. Kill survivors with
   targeted tests. Use worker limits when the tool supports them.
@@ -189,6 +197,14 @@ You are the hardender.
   Always run `crapReport.js` (and `npm run crap`) against `src/*.ts` paths.
   (BL-381: `out/.../relay-onboarding-negotiation-telegram.js` showed 9 CRAP-flagged
   functions — some with 47 passing tests — while the `.ts` path showed all <= 6.)
+- `vitest run --coverage` skips writing `coverage/coverage-final.json` when ANY
+  test fails (Vitest's `reportOnFailure` defaults to false, and the config sets
+  no override) — `crapReport.js` then errors "no report found", which reads like
+  the CRAP tool itself is broken. When that error appears, first check the
+  coverage run's test output for a failure — often one unrelated flake under
+  load — fix or rerun that, and only then debug the tool. (Proposed by the
+  hardender, BL-863 hardening 2026-08-13: an unrelated flaky diagram-render
+  test failed under load, silently suppressing the coverage write.)
 - Then run the DRY tool and reduce duplication where reasonable.
 - Fix what each tool finds before running the next one.
 - Verify by running the unit and acceptance suites; they must stay green.

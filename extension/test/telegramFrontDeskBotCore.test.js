@@ -1712,6 +1712,171 @@ test('BL-434 approvals-standing-topic-02: "reject <id> <reason>" in the Approval
   assert.equal(result.posted, 1);
 });
 
+// ── BL-721: "/qjump <id>" in the Approvals topic - the SAME queue-jump
+// (approve + force-promote + dispatch now) effect as tapping the ask's Q
+// jump button, reached through the SAME recordExpediteDecisionAndClose
+// routine, never a second effect path. ────────────────────────────────────
+
+test('BL-721: "/qjump <id>" in the Approvals topic records approval through the same recordApprovalReply effect a plain Approve tap uses', async () => {
+  const approvals = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async () => {
+      throw new Error('recordRejectionReply should not be called for a qjump reply');
+    },
+  });
+  assert.deepEqual(approvals, ['BL-433']);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-721: "/qjump <id>" force-promotes the ticket via promoteTicketIfPaused', async () => {
+  const promoted = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    promoteTicketIfPaused: async (backlogId) => {
+      promoted.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(promoted, ['BL-433']);
+});
+
+test('BL-721: "/qjump <id>" dispatches the build immediately when no same-file collision is reported', async () => {
+  const dispatched = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    checkExpediteFileCollision: async () => undefined,
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatched.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(dispatched, ['BL-433']);
+});
+
+test('BL-721: "/qjump <id>" on a same-file collision skips dispatch and posts an unsafe-dispatch toast into the Approvals topic, without preempting the in-flight build', async () => {
+  const dispatched = [];
+  const notified = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    checkExpediteFileCollision: async () => 'BL-100',
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatched.push(backlogId);
+      return true;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(dispatched, [], 'expected the in-flight build never preempted - no dispatch on a collision');
+  assert.equal(notified.length, 1);
+  assert.equal(notified[0].topicId, 750);
+  assert.match(notified[0].text, /unsafe/i);
+  assert.match(notified[0].text, /BL-100/);
+  assert.equal(result.posted, 1, 'the ticket is still approved - qjump always "posted" on a real transition, even when dispatch is skipped for safety');
+});
+
+test('BL-721: "/qjump <id>" for a ticket that is NOT currently pending is surfaced, never applied', async () => {
+  const approvals = [];
+  const notified = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-999' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return false;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, ['BL-999']);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /BL-999/);
+  assert.match(notified[0].text, /isn't awaiting approval/);
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1, 'a not-currently-pending id is a deliberate drop, never a retryable failure');
+});
+
+test('BL-721: "/expedite <id>" (the offline Cursor-bridge verb) typed in the Approvals topic is unrecognized, never triggers the queue-jump effect', async () => {
+  const approvals = [];
+  const promoted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/expedite BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    promoteTicketIfPaused: async (backlogId) => {
+      promoted.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, [], 'the offline expeditor verb must never drive the Approvals-topic queue-jump effect');
+  assert.deepEqual(promoted, []);
+  assert.equal(result.dropped, 1);
+});
+
+// BL-721: "/qjump <id>" closes the posted ask exactly the way a Q jump
+// button tap does - proves the typed-reply path routes through the SAME
+// recordExpediteDecisionAndClose routine as processCallbackQuery's
+// dispatchExpediteCallback, never a second, divergent close path.
+test('BL-721: "/qjump <id>" in the Approvals topic closes the posted ask - strips buttons, appends the Q jumped verdict', async () => {
+  const editCalls = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-721' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 42, text: `${backlogId} needs your approval...` }),
+    editApprovalAskMessage: async (topicId, messageId, text) => {
+      editCalls.push({ topicId, messageId, text });
+      return { success: true };
+    },
+  });
+  assert.equal(editCalls.length, 1);
+  assert.equal(editCalls[0].topicId, 800);
+  assert.equal(editCalls[0].messageId, 42);
+  assert.match(editCalls[0].text, /^BL-721 needs your approval\.\.\.\n-- Q jumped \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
+  assert.equal(result.posted, 1);
+});
+
 // BL-484 decided-ask-closes-02: a typed-reply decision closes the posted
 // ask exactly the way a button tap does - proves the Approvals-topic reply
 // path routes through the SAME recordApprovalDecisionAndClose routine as
@@ -2946,7 +3111,7 @@ test('BL-490-VIOLATION: commitExpediteWrites absent degrades to the pre-fix beha
   assert.equal(result.changed, true);
 });
 
-test('recordExpediteDecisionAndClose: closes the ask with an Expedited decision line, not Approved', async () => {
+test('recordExpediteDecisionAndClose: closes the ask with a Q jumped decision line, not Approved', async () => {
   const adapters = expediteFixtureAdapters({
     readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
   });
@@ -2956,7 +3121,7 @@ test('recordExpediteDecisionAndClose: closes the ask with an Expedited decision 
 
   assert.equal(result.changed, true);
   assert.equal(result.collision, undefined);
-  assert.deepEqual(adapters.editCalls, [{ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...\n-- Expedited 2026-07-17 03:07 UTC' }]);
+  assert.deepEqual(adapters.editCalls, [{ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...\n-- Q jumped 2026-07-17 03:07 UTC' }]);
 });
 
 test('recordExpediteDecisionAndClose: a same-file collision is reported and skips dispatch, but still promotes/closes', async () => {
