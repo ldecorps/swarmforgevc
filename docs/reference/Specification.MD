@@ -1,6 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 13, 2026 (BL-864: Let's Talk voice-engine slice B —
+**Last Updated:** August 13, 2026 (BL-721: the Telegram Approvals ask's
+fourth button is relabeled from "Expedite" to "Q jump" — humans kept
+confusing it with the unrelated offline Cursor-bridge expeditor — and a
+typed `/qjump <id>` verb is added to the same Approvals topic reply grammar
+(`approve <id>` / `reject <id> <reason>` from BL-434) as a keyboard-free
+alternative to tapping the button. Both surfaces fire the exact same effect:
+approve (`recordApprovalReply`) + force-promote (BL-490's `promoteToActive`)
++ dispatch now, through one shared `recordExpediteDecisionAndClose` routine
+and its existing file-collision safety — never a second effect path.
+`callback_data` stays on the `expedite:<id>` namespace for compatibility;
+only the human-visible label and the closing decision line changed
+(`-- Q jumped <UTC>`), with `DECIDED_ASK_LINE_PATTERN` still recognizing the
+old `-- Expedited <UTC>` wording so the decided-ask-close reconcile sweep
+keeps working on asks closed before this landed. `classifyApprovalsTopicReply`
+(`pendingApprovalReply.ts`) gains a `/qjump` branch alongside its existing
+`approve`/`reject` parsing; `telegramFrontDeskBotCore.ts` routes it through a
+new `approvals-topic-qjump` decision and `deliverApprovalsTopicQjump`, which
+returns the richer `{changed, collision}` shape `recordExpediteDecisionAndClose`
+needs (unlike the plain boolean `recordApprovalDecisionAndClose` returns for
+approve/reject) — a collision still approves and promotes the ticket but
+skips dispatch, with the same "unsafe — queued behind in-flight `<id>`" toast
+BL-490 already surfaces. The offline expeditor's own `/expedite` verb on the
+Cursor Remote topic (`swarmforge/scripts/expedite.sh`,
+`docs/how-to/BL-698-telegram-cursor-operator-commands.md`) is untouched and
+stays mutually exclusive with `/qjump` — renaming it was explicitly out of
+scope. New human-facing surface: the Approvals ask's fourth button now reads
+"Q jump", and typing `/qjump BL-xxx` in the Approvals topic does the same
+three-effect queue-jump as tapping it.); Previously August 13, 2026 (BL-864:
+Let's Talk voice-engine slice B —
 Bubble Settings gains the phone-facing Local/OpenAI selector that writes
 BL-863's preference: a `GET`/`POST /lets-talk/audio-engine` HTTP surface
 (`letsTalkAudioEngineRoutes.ts`), gated by the bubble-config
