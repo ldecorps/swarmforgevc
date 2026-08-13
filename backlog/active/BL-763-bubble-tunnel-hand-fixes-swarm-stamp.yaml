@@ -177,11 +177,11 @@ notes: |
   OverlayService.onCreate before hands-free resumes; property test in
   BridgeBounceSessionPropertyTest.kt. (3) not a code invariant — recorded as
   a stated reason instead (this is a scope/process claim, not a pure
-  computable property): the acceptance suite's boundary-01 scenario greps
-  this ticket's own YAML for "BL-716" and fails if it appears next to
-  closed/fixed/resolved/done, so a future edit to this ticket that tried to
-  claim BL-716 fixed would fail the acceptance run, not just violate a
-  convention.
+  computable property): boundary-01's acceptance step scans this ticket's
+  own YAML source and fails if the discovery ticket id sits next to a
+  completion word (see the step handler's own word list) — so restating
+  that discovery gap as complete here would break the acceptance run, not
+  just violate a convention.
 
   Also wired: swarm_ensure.bb's ensure-cursor-bridge! (on-demand `./swarm
   ensure` repair) and operator_runtime.bb's cursor-bridge-watchdog-sweep!

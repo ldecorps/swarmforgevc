@@ -80,6 +80,22 @@ SWARMFORGE_PIPELINE_SURVIVOR_PS_FILE="$PS5" pipeline_survivor_scan "/repos/alpha
 check "03: no real survivor + self-mentioning argv -> zero exit" '[[ "$found5" -eq 0 ]]'
 check "03: the report is empty" '[[ -z "$pipeline_survivor_lines" ]]'
 
+# ── BL-730 self-pid exclusion, isolated from the filename-based case
+# exclusion above ─────────────────────────────────────────────────────────
+# Test 03's own argv contains "test_pipeline_survivor_scan.sh", which the
+# case-statement's *pipeline_survivor_scan* pattern already filters out
+# regardless of the separate `[[ "$pid" != "$self" ]]` check -- so it never
+# actually exercises that check in isolation. Build a self-pid line whose
+# command does NOT match any of the case-exclusion filename patterns, so
+# only the pid==self check can be what protects it.
+PS6="$(mktemp -d)"
+register_tmp_dir "$PS6"
+PS6="$PS6/ps.txt"
+printf '  1 init\n%s node some-unrelated-runner handoffd.bb /repos/alpha\n' "$$" > "$PS6"
+SWARMFORGE_PIPELINE_SURVIVOR_PS_FILE="$PS6" pipeline_survivor_scan "/repos/alpha" && found6=1 || found6=0
+check "04: self pid alone (no filename-pattern overlap) -> zero exit" '[[ "$found6" -eq 0 ]]'
+check "04: the report is empty" '[[ -z "$pipeline_survivor_lines" ]]'
+
 # ── property-style coverage (BL-654 coder-authored, invariants 1 and 2) ────
 # Invariant 1: "The teardown's survivor verdict is a function of processes
 # belonging to the root being torn down: no process of any other root can
