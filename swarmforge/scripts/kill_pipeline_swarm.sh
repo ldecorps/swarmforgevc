@@ -74,6 +74,8 @@ source "$SCRIPT_DIR/project_socket_id_lib.sh"
 source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/availability_ledger_lib.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/pipeline_survivor_scan_lib.sh"
 SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
 LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
 # Test-only override, matching swarmforge.sh's own SWARMFORGE_CONFIG
@@ -279,10 +281,9 @@ if [[ -x "$SCRIPT_DIR/collect_daemon_postmortem.sh" ]]; then
   log "postmortem $postmortem"
 fi
 
-remaining="$(pgrep -fl 'handoffd\.bb|copilot.*SwarmForge' 2>/dev/null | grep -v pgrep || true)"
-if [[ -n "$remaining" ]]; then
+if pipeline_survivor_scan "$ROOT"; then
   log "WARNING survivors remain:"
-  printf '%s\n' "$remaining" | tee -a "$AUDIT"
+  printf '%s\n' "$pipeline_survivor_lines" | tee -a "$AUDIT"
   exit 1
 fi
 

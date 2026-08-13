@@ -13,6 +13,8 @@ object CompanionPrefs {
     private const val KEY_MUTE = "mute"
     private const val KEY_VOLUME = "playback_volume_percent"
     private const val KEY_PREFERRED_SONG = "preferred_hold_song"
+    // BL-763: the bridge instanceId last observed by syncBridgeInstanceAndSession.
+    private const val KEY_LAST_BRIDGE_INSTANCE_ID = "last_bridge_instance_id"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
@@ -35,6 +37,10 @@ object CompanionPrefs {
     fun getPreferredSong(ctx: Context): String =
         prefs(ctx).getString(KEY_PREFERRED_SONG, "") ?: ""
 
+    /** Empty string means "never synced" (fresh install, or prefs wiped). */
+    fun getLastBridgeInstanceId(ctx: Context): String =
+        prefs(ctx).getString(KEY_LAST_BRIDGE_INSTANCE_ID, "") ?: ""
+
     fun setHandsFree(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_HANDS_FREE, on).apply()
     }
@@ -53,6 +59,10 @@ object CompanionPrefs {
 
     fun setPreferredSong(ctx: Context, name: String) {
         prefs(ctx).edit().putString(KEY_PREFERRED_SONG, name).apply()
+    }
+
+    fun setLastBridgeInstanceId(ctx: Context, instanceId: String) {
+        prefs(ctx).edit().putString(KEY_LAST_BRIDGE_INSTANCE_ID, instanceId).apply()
     }
 
     /**

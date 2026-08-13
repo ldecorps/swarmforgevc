@@ -1594,3 +1594,73 @@ test('stopping the bridge leaves the swarm state on disk unaffected and a new br
     second.stop();
   }
 });
+
+// BL-763 meta-01: live bridge serves instance metadata.
+test('GET /lets-talk/meta returns a non-empty instanceId, stable across repeated requests', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const first = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/meta`, {
+      headers: replyAckHeaders(),
+    });
+    assert.equal(first.status, 200);
+    const firstBody = await first.json();
+    assert.equal(firstBody.success, true);
+    assert.equal(typeof firstBody.instanceId, 'string');
+    assert.ok(firstBody.instanceId.length > 0);
+    assert.equal(typeof firstBody.startedAt, 'string');
+
+    const second = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/meta`, {
+      headers: replyAckHeaders(),
+    });
+    const secondBody = await second.json();
+    assert.equal(secondBody.instanceId, firstBody.instanceId);
+    assert.equal(secondBody.startedAt, firstBody.startedAt);
+  });
+});
+
+// BL-763 meta-02: bridge bounce (a fresh startBridge() call, same as the
+// stop/start pair above) yields a new instanceId.
+test('GET /lets-talk/meta: a bridge bounce (fresh startBridge call) yields a different instanceId', async () => {
+  const target = mkTmp();
+
+  const first = await startBridge(target, path.join(target, 'runs.jsonl'), TOKEN, {});
+  const firstRes = await fetch(`http://127.0.0.1:${first.port}/lets-talk/meta`, {
+    headers: replyAckHeaders(),
+  });
+  const firstBody = await firstRes.json();
+  first.stop();
+
+  const second = await startBridge(target, path.join(target, 'runs.jsonl'), TOKEN, {});
+  try {
+    const secondRes = await fetch(`http://127.0.0.1:${second.port}/lets-talk/meta`, {
+      headers: replyAckHeaders(),
+    });
+    const secondBody = await secondRes.json();
+    assert.notEqual(secondBody.instanceId, firstBody.instanceId);
+  } finally {
+    second.stop();
+  }
+});
+
+test('GET /lets-talk/meta rejects a request with no bearer token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/meta`);
+    assert.equal(res.status, 401);
+  });
+});
+
+// BL-763: letsTalkBubbleConfig.ts (BL-864) was never wired to a served
+// route until now — this is the wiring's own test, the pure defaults/parse
+// behavior is covered by letsTalkBubbleConfig.test.js already.
+test('GET /lets-talk/bubble-config.json serves the bundled default config, including bridgeBounceAutoSessionReset', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/bubble-config.json`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.features.bridgeBounceAutoSessionReset, true);
+  });
+});

@@ -213,6 +213,18 @@
 (def telegram-console-status-file (fs/path op-dir "telegram-console.status.json"))
 (def miniapp-watchdog-state-file (fs/path op-dir "miniapp-watchdog.json"))
 (def bounce-bridge-headless-script (fs/path script-dir "bounce_bridge_headless.sh"))
+;; BL-763: Cursor Remote supervisor liveness + heartbeat-freshness watchdog.
+;; cursor_bridge_supervisor.bb already restarts its OWN child (the bridge
+;; process) on a stale heartbeat internally - this sweep is a defense-in-
+;; depth layer one level up, for the case the SUPERVISOR PROCESS ITSELF has
+;; died or hung (pid alive but its own tick loop frozen, same failure shape
+;; as the handoffd silent-stall incident): swarm_ensure.bb's
+;; ensure-cursor-bridge! covers the same repair on-demand (`./swarm
+;; ensure`), this sweep covers it continuously without a human running that.
+(def cursor-bridge-supervisor-pid-file (fs/path op-dir "cursor-bridge-supervisor.pid"))
+(def cursor-bridge-heartbeat-file (fs/path op-dir "cursor-bridge-heartbeat.json"))
+(def cursor-bridge-watchdog-state-file (fs/path op-dir "cursor-bridge-watchdog.json"))
+(def start-cursor-bridge-script (fs/path script-dir "start_cursor_bridge.sh"))
 
 ;; The Operator is NOT a swarm agent: it runs on its OWN tmux socket (see
 ;; launch_operator.sh) and its session/RC name deliberately drop the
@@ -281,6 +293,12 @@
 (def miniapp-watchdog-port (or (some-> (System/getenv "BRIDGE_HEADLESS_PORT") parse-long) 8765))
 (def miniapp-watchdog-threshold (env-ms "OPERATOR_MINIAPP_FAILURE_THRESHOLD" 3))
 (def miniapp-watchdog-cooldown-ms (env-ms "OPERATOR_MINIAPP_BOUNCE_COOLDOWN_MS" 120000))
+;; BL-763: Cursor Remote supervisor liveness/heartbeat watchdog. Stall window
+;; matches cursor_bridge_supervisor.bb's own CURSOR_BRIDGE_STALL_MS default
+;; (120000ms) deliberately - same "gone dark" threshold at both layers.
+(def cursor-bridge-watchdog-enabled? (not= "0" (System/getenv "OPERATOR_CURSOR_BRIDGE_WATCHDOG_ENABLED")))
+(def cursor-bridge-watchdog-stall-ms (env-ms "OPERATOR_CURSOR_BRIDGE_STALL_MS" 120000))
+(def cursor-bridge-watchdog-cooldown-ms (env-ms "OPERATOR_CURSOR_BRIDGE_RESTART_COOLDOWN_MS" 120000))
 ;; BL-848: hotfix certification recurrent check - own cadence (R3), never the
 ;; every-30s tick default, plus a per-entry resurfacing cooldown so an open
 ;; entry keeps coming back without spamming every due tick (invariant 2).
@@ -944,6 +962,79 @@
               (not enabled) "disabled"
               (>= consecutive-failures miniapp-watchdog-threshold) "down"
               (pos? consecutive-failures) "degraded"
+              :else "healthy")}))
+
+;; ── BL-763: Cursor Remote supervisor liveness/heartbeat watchdog ───────────
+
+(defn cursor-bridge-supervisor-pid []
+  (when (fs/exists? cursor-bridge-supervisor-pid-file)
+    (try (parse-long (str/trim (slurp (str cursor-bridge-supervisor-pid-file))))
+         (catch Exception _ nil))))
+
+(defn cursor-bridge-supervisor-alive? []
+  (pid-alive? (cursor-bridge-supervisor-pid)))
+
+(defn read-cursor-bridge-heartbeat-ms []
+  (when (fs/exists? cursor-bridge-heartbeat-file)
+    (try (:lastHeartbeatMs (json/parse-string (slurp (str cursor-bridge-heartbeat-file)) true))
+         (catch Exception _ nil))))
+
+;; nil (never a heartbeat yet, e.g. mid-startup) never itself reads stale -
+;; same posture cursor_bridge_supervisor.bb's own poll-heartbeat-stale? takes
+;; with its startup grace window; this outer layer only needs to catch a
+;; heartbeat that WAS advancing and then stopped.
+(defn cursor-bridge-heartbeat-stale? [now]
+  (when-let [last-ms (read-cursor-bridge-heartbeat-ms)]
+    (>= (- now last-ms) cursor-bridge-watchdog-stall-ms)))
+
+(defn read-cursor-bridge-watchdog-state []
+  (if (fs/exists? cursor-bridge-watchdog-state-file)
+    (try
+      (let [raw (json/parse-string (slurp (str cursor-bridge-watchdog-state-file)) true)]
+        {:last-restart-at-ms (when (number? (:last_restart_at_ms raw)) (:last_restart_at_ms raw))})
+      (catch Exception _ {:last-restart-at-ms nil}))
+    {:last-restart-at-ms nil}))
+
+(defn write-cursor-bridge-watchdog-state! [{:keys [last-restart-at-ms]}]
+  (atomic-spit!
+   cursor-bridge-watchdog-state-file
+   (str (json/generate-string {:last_restart_at_ms last-restart-at-ms :updated_at (now-iso)}) "\n")))
+
+(defn restart-cursor-bridge! []
+  (process/sh {:continue true} "bash" (str start-cursor-bridge-script) project-root))
+
+;; Two independent failure modes, same repair: the supervisor pid is gone
+;; entirely, OR it is alive but its heartbeat has gone dark (the frozen-
+;; tick-loop shape the handoffd silent-stall incident taught this codebase
+;; to check for explicitly, rather than trust pid-alive alone). Cooldown
+;; guards against thrashing a restart every tick while the bridge is
+;; genuinely down for a longer reason (dead tunnel, bad creds).
+(defn cursor-bridge-watchdog-sweep! [now]
+  (when cursor-bridge-watchdog-enabled?
+    (let [{:keys [last-restart-at-ms]} (read-cursor-bridge-watchdog-state)
+          cooldown-active? (and last-restart-at-ms
+                                 (< (- now last-restart-at-ms) cursor-bridge-watchdog-cooldown-ms))
+          unhealthy? (or (not (cursor-bridge-supervisor-alive?))
+                          (cursor-bridge-heartbeat-stale? now))]
+      (when (and unhealthy? (not cooldown-active?))
+        (let [{:keys [exit err]} (restart-cursor-bridge!)]
+          (if (zero? exit)
+            (log! "cursor-bridge-watchdog" "restarted")
+            (log! "cursor-bridge-watchdog" "restart-failed" (str "exit=" exit) (str/trim (or err ""))))
+          (write-cursor-bridge-watchdog-state! {:last-restart-at-ms now}))))))
+
+(defn cursor-bridge-watchdog-status []
+  (let [{:keys [last-restart-at-ms]} (read-cursor-bridge-watchdog-state)
+        enabled cursor-bridge-watchdog-enabled?
+        alive? (cursor-bridge-supervisor-alive?)
+        stale? (cursor-bridge-heartbeat-stale? (now-ms))]
+    {:enabled enabled
+     :stall_ms cursor-bridge-watchdog-stall-ms
+     :last_restart_at_ms last-restart-at-ms
+     :state (cond
+              (not enabled) "disabled"
+              (not alive?) "down"
+              stale? "stalled"
               :else "healthy")}))
 
 ;; ── BL-333: front-desk starvation state (runtime-owned, same posture as
@@ -2057,6 +2148,9 @@
     ;; Mini app bridge watchdog: if /lets-talk stays down for N checks,
     ;; auto-bounce headless bridge with cooldown (never thrash).
     (miniapp-watchdog-sweep! now)
+    ;; BL-763: Cursor Remote supervisor liveness/heartbeat watchdog - same
+    ;; best-effort, cooldown-guarded, never-gates-launch posture.
+    (cursor-bridge-watchdog-sweep! now)
 
     (let [llm-running? (operator-running?)
           pending (read-events events-file)
@@ -2065,6 +2159,7 @@
           telegram-console (read-telegram-console-status)
           role-questions-undeliverable (read-role-questions-undeliverable)
           miniapp-watchdog (miniapp-watchdog-status)
+          cursor-bridge-watchdog (cursor-bridge-watchdog-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
                      :provider-state provider-state
@@ -2120,6 +2215,7 @@
                        telegram-console (assoc :telegram_console telegram-console)
                        (seq role-questions-undeliverable) (assoc :role_questions_undeliverable role-questions-undeliverable)
                        true (assoc :miniapp_watchdog miniapp-watchdog)
+                       true (assoc :cursor_bridge_watchdog cursor-bridge-watchdog)
                        true (assoc :build_sha own-build-sha)
                        true (assoc :front_desk
                                    (operator-lib/render-front-desk-status

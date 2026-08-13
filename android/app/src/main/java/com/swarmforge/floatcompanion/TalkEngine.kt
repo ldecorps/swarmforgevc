@@ -335,6 +335,43 @@ class TalkEngine(private val appContext: Context) {
         }
     }
 
+    // BL-763: checks the bridge's own instanceId against the last one this
+    // device saw (CompanionPrefs) and, when it changed and remote config
+    // enables bounce-auto-session-reset, opens exactly one fresh session for
+    // that change (BridgeBounceSession is the pure decision; this method is
+    // just the android.* glue — the two network calls and the pref read/
+    // write around it). Safe to call repeatedly (e.g. on every panel open);
+    // a poll against an unchanged instance is always a no-op.
+    fun syncBridgeInstanceAndSession(callback: ((Boolean) -> Unit)? = null) {
+        val base = CompanionPrefs.getBaseUrl(appContext)
+        val token = CompanionPrefs.getToken(appContext)
+        val lastKnown = CompanionPrefs.getLastBridgeInstanceId(appContext)
+        io.execute {
+            val meta = BridgeClient.fetchBridgeMeta(base, token)
+            if (!meta.ok) {
+                mainHandler.post { if (alive.get()) callback?.invoke(false) }
+                return@execute
+            }
+            val config = BridgeClient.fetchBubbleConfig(base, token)
+            val decision = BridgeBounceSession.decide(lastKnown, meta.instanceId, config.bridgeBounceAutoSessionReset)
+            CompanionPrefs.setLastBridgeInstanceId(appContext, decision.nextKnownInstanceId)
+            if (!decision.shouldResetSession) {
+                mainHandler.post { if (alive.get()) callback?.invoke(false) }
+                return@execute
+            }
+            val (ok, _) = BridgeClient.newSession(base, token)
+            mainHandler.post {
+                if (!alive.get()) return@post
+                if (ok) {
+                    replyText = "New session started (bridge restarted)."
+                    replyIsErrorStyle = true
+                    setPhase(Phase.READY)
+                }
+                callback?.invoke(ok)
+            }
+        }
+    }
+
     // BL-864: the Bubble Settings voice-engine selector always queries the
     // bridge fresh (never a locally cached guess) and writes through it —
     // network I/O stays here with every other BridgeClient call; the

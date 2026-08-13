@@ -9,6 +9,7 @@
 # Env (same as swarmforge.sh):
 #   SWARMFORGE_SKIP_OPERATOR=1
 #   SWARMFORGE_SKIP_FRONT_DESK=1
+#   SWARMFORGE_SKIP_CURSOR_BRIDGE=1
 #   SWARMFORGE_SKIP_ONBOARDER=1
 #   SWARMFORGE_SKIP_BABYSITTERD=1
 #   SWARMFORGE_SKIP_FRESHNESS_CRON=1
@@ -69,6 +70,24 @@ elif [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" && -n "${TELE
   fi
 else
   echo "Telegram front desk skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_PRINCIPAL_USER_ID)."
+fi
+
+# BL-763: Cursor Remote (start_cursor_bridge.sh) is deliberately NOT in
+# LIFECYCLE_COMPONENTS / stop_ancillary_services.sh's stop set — it stays up
+# across an ancillary stop; only an explicit stop_cursor_bridge.sh (or
+# ./swarm-kill) tears it down. Same credential shape start_cursor_bridge.sh
+# itself requires (CURSOR_BRIDGE_BOT_TOKEN or TELEGRAM_BOT_TOKEN, plus chat
+# id + principal user id) so this gate never starts something that script
+# would immediately refuse.
+if [[ "${SWARMFORGE_SKIP_CURSOR_BRIDGE:-}" == "1" ]]; then
+  echo "Skipping Cursor Remote bridge (SWARMFORGE_SKIP_CURSOR_BRIDGE=1)."
+elif [[ -n "${CURSOR_BRIDGE_BOT_TOKEN:-}${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" && -n "${TELEGRAM_PRINCIPAL_USER_ID:-}" ]]; then
+  echo "Starting Cursor Remote bridge..."
+  if ! bash "$SCRIPT_DIR/start_cursor_bridge.sh" "$ROOT"; then
+    echo "WARN: cursor bridge failed to start; run './swarm ensure' after fixing." >&2
+  fi
+else
+  echo "Cursor Remote bridge skipped (set CURSOR_BRIDGE_BOT_TOKEN or TELEGRAM_BOT_TOKEN, plus TELEGRAM_CHAT_ID, TELEGRAM_PRINCIPAL_USER_ID)."
 fi
 
 if [[ "${SWARMFORGE_SKIP_ONBOARDER:-}" == "1" ]]; then
