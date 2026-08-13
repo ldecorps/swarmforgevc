@@ -1,7 +1,9 @@
 const assert = require('node:assert/strict');
 const {
   formatCursorBridgeLivenessLine,
+  formatQueuedWorkLivenessLine,
   syncCursorBridgeLivenessStatus,
+  syncQueuedWorkLivenessCues,
   applyLivenessSyncResult,
 } = require('../out/tools/telegramCursorBridgeLiveness');
 const { parseCursorBridgeState } = require('../out/tools/telegramCursorBridgeCore');
@@ -283,4 +285,179 @@ test('applyLivenessSyncResult never persists a failure outcome', () => {
   applyLivenessSyncResult(deps, { outcome: 'failed-edit', state: { topicId: 1, messageId: 5, renderedText: 'x' } });
   assert.equal(state.livenessStatus, undefined);
   assert.equal(persistedCount(), 0);
+});
+
+// ── BL-767: formatQueuedWorkLivenessLine / syncQueuedWorkLivenessCues ─────
+// The busy cue follows a queued question into its own origin topic, not
+// only Cursor Remote. See approval_context bullet 1 / feature scenario 03.
+
+test('queued-work liveness line: always states its count, even 0', () => {
+  assert.equal(formatQueuedWorkLivenessLine(0), 'Bridge: idle · 0 waiting');
+  assert.equal(formatQueuedWorkLivenessLine(1), 'Bridge: busy · 1 waiting');
+  assert.equal(formatQueuedWorkLivenessLine(3), 'Bridge: busy · 3 waiting');
+});
+
+test('syncQueuedWorkLivenessCues posts a cue in the Bubble topic reporting 1 waiting, then edits it to 0 waiting on drain', async () => {
+  const state = {
+    updateOffset: 0,
+    cursorTopicId: 55,
+    bubbleTopicId: 91,
+    pendingPrompts: [{ id: 'qp-1', text: 'from bubble', createdAtMs: 1, originTopicId: 91 }],
+  };
+  const posts = [];
+  const edits = [];
+  let persisted = 0;
+
+  await syncQueuedWorkLivenessCues({
+    botToken: 't',
+    chatId: 'c',
+    state,
+    persistState: () => {
+      persisted += 1;
+    },
+    postMessage: async (topicId, text) => {
+      posts.push({ topicId, text });
+      return 2001;
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edits.push({ topicId, messageId, text });
+      return true;
+    },
+  });
+
+  assert.deepEqual(posts, [{ topicId: 91, text: 'Bridge: busy · 1 waiting' }]);
+  assert.equal(persisted, 1);
+  assert.equal(state.queuedWorkLivenessStatus['91'].messageId, 2001);
+
+  // Drain: the queue is now empty, but the prior message identity survives
+  // in state so this edits the same message in place, in the same topic.
+  state.pendingPrompts = [];
+  await syncQueuedWorkLivenessCues({
+    botToken: 't',
+    chatId: 'c',
+    state,
+    persistState: () => {
+      persisted += 1;
+    },
+    postMessage: async () => {
+      throw new Error('should edit, not post');
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edits.push({ topicId, messageId, text });
+      return true;
+    },
+  });
+
+  assert.deepEqual(edits, [{ topicId: 91, messageId: 2001, text: 'Bridge: idle · 0 waiting' }]);
+  assert.equal(persisted, 2);
+});
+
+test('syncQueuedWorkLivenessCues is a no-op when nothing is queued off Cursor Remote and no prior cue exists', async () => {
+  const state = { updateOffset: 0, cursorTopicId: 55, pendingPrompts: [{ id: 'qp-1', text: 'x', createdAtMs: 1, originTopicId: 55 }] };
+  await syncQueuedWorkLivenessCues({
+    botToken: 't',
+    chatId: 'c',
+    state,
+    persistState: () => {
+      throw new Error('should not persist');
+    },
+    postMessage: async () => {
+      throw new Error('should not post');
+    },
+    editMessage: async () => {
+      throw new Error('should not edit');
+    },
+  });
+  assert.equal(state.queuedWorkLivenessStatus, undefined);
+});
+
+test('syncQueuedWorkLivenessCues counts per topic independently when two topics both hold queued work', async () => {
+  const state = {
+    updateOffset: 0,
+    cursorTopicId: 55,
+    bubbleTopicId: 91,
+    pendingPrompts: [
+      { id: 'qp-1', text: 'a', createdAtMs: 1, originTopicId: 91 },
+      { id: 'qp-2', text: 'b', createdAtMs: 2, originTopicId: 91 },
+      { id: 'qp-3', text: 'c', createdAtMs: 3, originTopicId: 77 },
+    ],
+  };
+  const posts = [];
+  await syncQueuedWorkLivenessCues({
+    botToken: 't',
+    chatId: 'c',
+    state,
+    persistState: () => {},
+    postMessage: async (topicId, text) => {
+      posts.push({ topicId, text });
+      return posts.length;
+    },
+    editMessage: async () => true,
+  });
+  assert.ok(posts.some((p) => p.topicId === 91 && p.text === 'Bridge: busy · 2 waiting'));
+  assert.ok(posts.some((p) => p.topicId === 77 && p.text === 'Bridge: busy · 1 waiting'));
+});
+
+test('parseCursorBridgeState keeps queuedWorkLivenessStatus and still parses a file that predates it', () => {
+  const withStatus = parseCursorBridgeState({
+    updateOffset: 1,
+    cursorTopicId: 55,
+    queuedWorkLivenessStatus: { '91': { topicId: 91, messageId: 7, renderedText: 'Bridge: busy · 1 waiting' } },
+  });
+  assert.deepEqual(withStatus.queuedWorkLivenessStatus, {
+    '91': { topicId: 91, messageId: 7, renderedText: 'Bridge: busy · 1 waiting' },
+  });
+
+  // Pre-BL-767 state file: field absent entirely — must still parse cleanly.
+  const legacy = parseCursorBridgeState({ updateOffset: 1, cursorTopicId: 55 });
+  assert.equal(legacy.queuedWorkLivenessStatus, undefined);
+});
+
+test('parseCursorBridgeState drops a present-but-malformed queuedWorkLivenessStatus (array or scalar) rather than defaulting it silently to garbage', () => {
+  // An array is typeof 'object' in JS — without an explicit guard it would
+  // pass the object check and its indices ('0', '1', ...) would be read as
+  // topic ids, silently fabricating bogus per-topic cues.
+  assert.equal(
+    parseCursorBridgeState({
+      updateOffset: 1,
+      queuedWorkLivenessStatus: [{ topicId: 91, messageId: 7, renderedText: 'Bridge: busy · 1 waiting' }],
+    }).queuedWorkLivenessStatus,
+    undefined
+  );
+  assert.equal(
+    parseCursorBridgeState({ updateOffset: 1, queuedWorkLivenessStatus: 'not-an-object' }).queuedWorkLivenessStatus,
+    undefined
+  );
+  assert.equal(
+    parseCursorBridgeState({ updateOffset: 1, queuedWorkLivenessStatus: 42 }).queuedWorkLivenessStatus,
+    undefined
+  );
+  assert.equal(
+    parseCursorBridgeState({ updateOffset: 1, queuedWorkLivenessStatus: null }).queuedWorkLivenessStatus,
+    undefined
+  );
+});
+
+test('parseCursorBridgeState keeps only the well-formed entries of a partially-malformed queuedWorkLivenessStatus map', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    queuedWorkLivenessStatus: {
+      '91': { topicId: 91, messageId: 2001, renderedText: 'Bridge: busy · 1 waiting' },
+      '77': 'garbage',
+      '55': { topicId: 'nope', messageId: 'nope', renderedText: '' },
+    },
+  });
+  assert.deepEqual(state.queuedWorkLivenessStatus, {
+    '91': { topicId: 91, messageId: 2001, renderedText: 'Bridge: busy · 1 waiting' },
+  });
+  assert.equal('77' in state.queuedWorkLivenessStatus, false);
+  assert.equal('55' in state.queuedWorkLivenessStatus, false);
+});
+
+test('parseCursorBridgeState omits queuedWorkLivenessStatus entirely when every entry in the map is invalid', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    queuedWorkLivenessStatus: { '91': 'garbage', '77': { topicId: 'nope' } },
+  });
+  assert.equal('queuedWorkLivenessStatus' in state, false);
 });

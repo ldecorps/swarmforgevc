@@ -34,6 +34,7 @@ import {
   shouldResetCursorAgentSession,
   shouldUseCursorBridgeInboundQueue,
   parseCursorBridgeState,
+  resolveDeferredReplyTopicId,
   type CursorBridgeQueuedPrompt,
   type CursorBridgePersistedState,
   type CursorBridgeChoicePoll,
@@ -53,7 +54,7 @@ import {
   writeOperatorBounceSentinel,
   runOperatorStop,
 } from './telegramCursorOperatorExec';
-import { syncCursorBridgeLivenessStatus } from './telegramCursorBridgeLiveness';
+import { syncCursorBridgeLivenessStatus, syncBridgeLivenessCues } from './telegramCursorBridgeLiveness';
 import {
   probeSwarmLiveness,
   isSwarmLive,
@@ -394,7 +395,7 @@ async function sweepExpiredQueuedPrompts(
   const receipt = formatDroppedPromptReceipt(dropped, nowMs);
   const receiptsByTopic = new Map<number, CursorBridgeQueuedPrompt[]>();
   for (const item of dropped) {
-    const topicId = item.originTopicId ?? holder.state.cursorTopicId;
+    const topicId = resolveDeferredReplyTopicId(item.originTopicId, holder.state.cursorTopicId);
     if (topicId === undefined) {
       continue;
     }
@@ -726,7 +727,7 @@ async function handlePromptInboundAction(
       // ctx.state alone (prompts queued during this run were written via the
       // poll-loop holder onto disk).
       await presentQueueSelectionPollAfterIdle(ctx);
-      await syncCursorBridgeLivenessStatus({
+      await syncBridgeLivenessCues({
         botToken: ctx.botToken,
         chatId: ctx.chatId,
         state: ctx.state,
@@ -737,6 +738,7 @@ async function handlePromptInboundAction(
           writeJsonFile(statePath, {
             ...disk,
             livenessStatus: ctx.state.livenessStatus,
+            queuedWorkLivenessStatus: ctx.state.queuedWorkLivenessStatus,
             pendingPrompts: disk.pendingPrompts ?? ctx.state.pendingPrompts,
             pendingPromptPoll: disk.pendingPromptPoll ?? ctx.state.pendingPromptPoll,
           });
@@ -1452,6 +1454,7 @@ async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContex
       pendingPromptPoll: onDisk.pendingPromptPoll,
       cursorTopicId: onDisk.cursorTopicId ?? ctx.state.cursorTopicId,
       livenessStatus: ctx.state.livenessStatus ?? onDisk.livenessStatus,
+      queuedWorkLivenessStatus: onDisk.queuedWorkLivenessStatus ?? ctx.state.queuedWorkLivenessStatus,
     },
   };
   await postQueueSelectionPoll(
@@ -1465,6 +1468,9 @@ async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContex
   ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
   if (holder.state.cursorTopicId !== undefined) {
     ctx.state.cursorTopicId = holder.state.cursorTopicId;
+  }
+  if (holder.state.queuedWorkLivenessStatus !== undefined) {
+    ctx.state.queuedWorkLivenessStatus = holder.state.queuedWorkLivenessStatus;
   }
   if (!fs.existsSync(statePath)) {
     return;
@@ -1542,7 +1548,7 @@ async function processQueuedPollAnswer(
     },
     selected.replyToMessageId,
     handlerCtx.resetAgent,
-    selected.originTopicId ?? holder.state.cursorTopicId
+    resolveDeferredReplyTopicId(selected.originTopicId, holder.state.cursorTopicId)
   );
 }
 
@@ -1580,7 +1586,7 @@ async function processChoicePollAnswer(
   writeJsonFile(deps.statePath, holder.state);
   if (holder.busy || isActiveRunInFlight()) {
     holder.state = clearQueuedPollIfStale(
-      pushQueuedPrompt(holder.state, choicePromptFromPoll(poll, selectedIndex), undefined, undefined, undefined, Date.now())
+      pushQueuedPrompt(holder.state, choicePromptFromPoll(poll, selectedIndex), undefined, undefined, poll.originTopicId, Date.now())
     );
     writeJsonFile(deps.statePath, holder.state);
     return;
@@ -1602,7 +1608,7 @@ async function processChoicePollAnswer(
     },
     undefined,
     handlerCtx.resetAgent,
-    holder.state.bubbleTopicId ?? holder.state.cursorTopicId
+    resolveDeferredReplyTopicId(poll.originTopicId, holder.state.cursorTopicId)
   );
 }
 
@@ -1652,7 +1658,7 @@ async function processInboundUpdates(
           inbound.messageId
         );
       }
-      await syncCursorBridgeLivenessStatus({
+      await syncBridgeLivenessCues({
         botToken: deps.botToken,
         chatId: deps.chatId,
         state: holder.state,
@@ -1690,7 +1696,7 @@ async function processInboundUpdates(
   if (!holder.busy && !isActiveRunInFlight()) {
     await postQueueSelectionPoll(deps, holder, handlerCtx.post);
   }
-  await syncCursorBridgeLivenessStatus({
+  await syncBridgeLivenessCues({
     botToken: deps.botToken,
     chatId: deps.chatId,
     state: holder.state,
