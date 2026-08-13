@@ -412,3 +412,52 @@ test('parseCursorBridgeState keeps queuedWorkLivenessStatus and still parses a f
   const legacy = parseCursorBridgeState({ updateOffset: 1, cursorTopicId: 55 });
   assert.equal(legacy.queuedWorkLivenessStatus, undefined);
 });
+
+test('parseCursorBridgeState drops a present-but-malformed queuedWorkLivenessStatus (array or scalar) rather than defaulting it silently to garbage', () => {
+  // An array is typeof 'object' in JS — without an explicit guard it would
+  // pass the object check and its indices ('0', '1', ...) would be read as
+  // topic ids, silently fabricating bogus per-topic cues.
+  assert.equal(
+    parseCursorBridgeState({
+      updateOffset: 1,
+      queuedWorkLivenessStatus: [{ topicId: 91, messageId: 7, renderedText: 'Bridge: busy · 1 waiting' }],
+    }).queuedWorkLivenessStatus,
+    undefined
+  );
+  assert.equal(
+    parseCursorBridgeState({ updateOffset: 1, queuedWorkLivenessStatus: 'not-an-object' }).queuedWorkLivenessStatus,
+    undefined
+  );
+  assert.equal(
+    parseCursorBridgeState({ updateOffset: 1, queuedWorkLivenessStatus: 42 }).queuedWorkLivenessStatus,
+    undefined
+  );
+  assert.equal(
+    parseCursorBridgeState({ updateOffset: 1, queuedWorkLivenessStatus: null }).queuedWorkLivenessStatus,
+    undefined
+  );
+});
+
+test('parseCursorBridgeState keeps only the well-formed entries of a partially-malformed queuedWorkLivenessStatus map', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    queuedWorkLivenessStatus: {
+      '91': { topicId: 91, messageId: 2001, renderedText: 'Bridge: busy · 1 waiting' },
+      '77': 'garbage',
+      '55': { topicId: 'nope', messageId: 'nope', renderedText: '' },
+    },
+  });
+  assert.deepEqual(state.queuedWorkLivenessStatus, {
+    '91': { topicId: 91, messageId: 2001, renderedText: 'Bridge: busy · 1 waiting' },
+  });
+  assert.equal('77' in state.queuedWorkLivenessStatus, false);
+  assert.equal('55' in state.queuedWorkLivenessStatus, false);
+});
+
+test('parseCursorBridgeState omits queuedWorkLivenessStatus entirely when every entry in the map is invalid', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    queuedWorkLivenessStatus: { '91': 'garbage', '77': { topicId: 'nope' } },
+  });
+  assert.equal('queuedWorkLivenessStatus' in state, false);
+});

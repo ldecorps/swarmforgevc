@@ -57,6 +57,11 @@ dropped its own `· N waiting` count (BL-811): once idle, a queued question's
 actionable surface is the [queue selection poll](BL-810-host-queue-selection-poll-clear-all-and-ttl.md),
 not a second ambient counter.
 
+Any OTHER topic (e.g. Bubble) currently holding queued work gets its own
+standing cue too, so it doesn't go quiet between the queue ack and the
+eventual answer — see
+[Queued questions answer where they were asked](BL-767-queued-question-answers-in-origin-topic.md).
+
 ## `--help`
 
 `node extension/out/tools/telegram-cursor-bridge.js --help` (or `-h`) prints
@@ -79,6 +84,8 @@ process that could steal updates from the real bridge.
 ## Out of scope
 
 - Bubble remote configuration and hold-music catalog (BL-765).
-- The busy-queue "choose next queued question" poll staying Cursor-Remote-only
-  even for Bubble-originated messages — flagged as a likely BL-765 follow-up,
-  not part of this fix.
+- A queued question's answer posting to the Cursor Remote topic regardless of
+  where it was asked — this was flagged as a likely BL-765 follow-up but
+  turned out to be neither BL-765 nor this ticket's mechanism; fixed
+  separately, see
+  [Queued questions answer where they were asked](BL-767-queued-question-answers-in-origin-topic.md).
