@@ -135,3 +135,14 @@ notes: |
   these two — if a third unscoped probe turns up during the pass, it is in
   scope, and the architect should read the slice against the property rather
   than against the two named sites.
+
+  --- specifier cross-reference, 2026-08-13 ---
+
+  BL-730 (active) is delivering the kill_pipeline_swarm.sh:282 survivor-check
+  half of this ticket. On promotion, re-check against main: if BL-730 has
+  landed, re-scope this ticket to the expedite_cli.bb probes (and the
+  multi-worktree verification bar), and keep acceptance item 3's
+  genuine-survivor scenario for what remains. Also: BL-888 (paused) fixes the
+  same file's step-5 copilot KILL scope — all three tickets touch
+  kill_pipeline_swarm.sh or its test suite, so none of them may be active
+  concurrently (Concurrent Work Orthogonality).
