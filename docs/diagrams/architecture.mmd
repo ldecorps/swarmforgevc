@@ -29,6 +29,10 @@
 %% the specifier via a real swarm_handoff.sh note; the coordinator and
 %% specifier each record their own adjustment/outcome back against that
 %% same run.
+%% BL-866 added companionManifest.ts (epic BL-865, Bubble offline-first sync
+%% foundation slice): the bridge's companion-manifest + package catalog,
+%% read-only, serving versioned JSON packages (backlog, docs) by a
+%% content-hash generation so a phone can refresh cheaply.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -49,6 +53,7 @@ flowchart TB
     MSGBUS["messageBus.ts\n(append-only audit log)"]
     PRCREATOR["prCreator.ts"]
     BRIDGE["bridgeServer.ts\n(localhost REST+SSE, in-memory token;\nread routes + a small control-scoped\nwrite surface: gate-answer, telegram-inbound,\nreply-ack)"]
+    COMPANIONMANIFEST["companionManifest.ts\n(BL-866: companion-manifest +\npackage catalog, versioned JSON\nby content-hash generation)"]
     PANEL["swarmPanel.ts / workTreePanel.ts\n(webview controller)"]
   end
 
@@ -100,6 +105,8 @@ flowchart TB
   BRIDGE --> DELIVERYMETRICS
   BRIDGE --> COSTMETRICS
   BRIDGE --> HOLISTICUI
+  BRIDGE --> COMPANIONMANIFEST
+  COMPANIONMANIFEST -->|reads via\nreadBacklogFolders /\nreadVisionDocs| BACKLOGDIR
 
   STATE -->|reads| ROLESTSV
   DELIVERYMETRICS -->|git log,\nreads| BACKLOGDIR
@@ -135,7 +142,7 @@ flowchart TB
   classDef substrate fill:#8250df,color:#fff,stroke:#4c2889;
   classDef state fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef gh fill:#57606a,color:#fff,stroke:#32383f;
-  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,PANEL host;
+  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
   class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR state;
