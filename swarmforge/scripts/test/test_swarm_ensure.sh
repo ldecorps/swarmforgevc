@@ -27,7 +27,8 @@ make_fixture() {
   # box routinely has real TELEGRAM_BOT_TOKEN/CHAT_ID/PRINCIPAL_USER_ID set,
   # per the engineering guard-fires rule) - scenarios that need Telegram
   # configured (05b) export it explicitly AFTER calling make_fixture.
-  unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID || true
+  # BL-763: CURSOR_BRIDGE_BOT_TOKEN scrubbed for the same reason.
+  unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID CURSOR_BRIDGE_BOT_TOKEN || true
 
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
   mkdir -p "$ROOT/.swarmforge/daemon" "$ROOT/.swarmforge/operator" \
@@ -111,6 +112,15 @@ sleep 100 >"$ROOT/fake-front-desk.log" 2>&1 &
 echo \$! > "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"
 EOF
   chmod +x "$FAKE_BIN/fake_front_desk_start.sh"
+
+  # BL-763: cursor bridge is omitted unless a fixture sets CURSOR_BRIDGE_BOT_TOKEN
+  # or TELEGRAM_BOT_TOKEN (+ chat id + principal user id), or a pid file.
+  cat > "$FAKE_BIN/fake_cursor_bridge_start.sh" <<EOF
+#!/usr/bin/env bash
+sleep 100 >"$ROOT/fake-cursor-bridge.log" 2>&1 &
+echo \$! > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
+EOF
+  chmod +x "$FAKE_BIN/fake_cursor_bridge_start.sh"
 }
 
 run_ensure() {
@@ -119,6 +129,7 @@ run_ensure() {
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARM_ENSURE_OPERATOR_CMD="$FAKE_BIN/fake_operator_start.sh" \
   SWARM_ENSURE_FRONT_DESK_CMD="$FAKE_BIN/fake_front_desk_start.sh" \
+  SWARM_ENSURE_CURSOR_BRIDGE_CMD="$FAKE_BIN/fake_cursor_bridge_start.sh" \
   PATH="$FAKE_BIN:$PATH" bb "$ENSURE" "$ROOT"
 }
 
@@ -130,7 +141,8 @@ cleanup_daemon() {
   for pid_file in \
       "$ROOT/.swarmforge/daemon/handoffd.pid" \
       "$ROOT/.swarmforge/operator/runtime.pid" \
-      "$ROOT/.swarmforge/operator/front-desk-supervisor.pid"; do
+      "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" \
+      "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"; do
     pid="$(cat "$pid_file" 2>/dev/null || true)"
     if [[ -n "$pid" && "$pid" != "$$" ]]; then
       kill -9 "$pid" 2>/dev/null || true
@@ -307,6 +319,57 @@ echo "$OUT" | grep -q "front-desk:" \
 unset TELEGRAM_BOT_TOKEN
 cleanup_daemon
 pass "05e: partial Telegram env (only one of three vars set) does not count as configured"
+
+# ── 05f: cursor bridge is repaired when configured via CURSOR_BRIDGE_BOT_TOKEN ─
+make_fixture
+export CURSOR_BRIDGE_BOT_TOKEN="test-token"
+export TELEGRAM_CHAT_ID="1"
+export TELEGRAM_PRINCIPAL_USER_ID="2"
+echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^cursor-bridge: FIXED (restarted the Cursor Remote bridge)$" \
+  || fail "05f: cursor-bridge repair not reported as FIXED naming the action; got: $OUT"
+NEW_CB_PID="$(cat "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid")"
+kill -0 "$NEW_CB_PID" 2>/dev/null || fail "05f: cursor-bridge repair did not leave a live process behind"
+unset CURSOR_BRIDGE_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
+cleanup_daemon
+pass "05f: cursor bridge not running (CURSOR_BRIDGE_BOT_TOKEN configured) is repaired and reported FIXED"
+
+# ── 05g: cursor bridge also repairs off the shared TELEGRAM_BOT_TOKEN ──────
+make_fixture
+export TELEGRAM_BOT_TOKEN="test-token"
+export TELEGRAM_CHAT_ID="1"
+export TELEGRAM_PRINCIPAL_USER_ID="2"
+echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^cursor-bridge: FIXED" \
+  || fail "05g: cursor-bridge repair not reported as FIXED off shared TELEGRAM_BOT_TOKEN; got: $OUT"
+unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
+cleanup_daemon
+pass "05g: cursor bridge also repairs when only the shared TELEGRAM_BOT_TOKEN is set"
+
+# ── 05h: a prior cursor-bridge pid file alone is enough to enable repair ───
+make_fixture
+echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^cursor-bridge: FIXED" \
+  || fail "05h: stale cursor-bridge pid file did not trigger repair; got: $OUT"
+cleanup_daemon
+pass "05h: a prior cursor-bridge pid file enables repair even without any bridge env in this shell"
+
+# ── 05i: SWARMFORGE_SKIP_CURSOR_BRIDGE=1 wins even when configured ─────────
+make_fixture
+export SWARMFORGE_SKIP_CURSOR_BRIDGE=1
+export CURSOR_BRIDGE_BOT_TOKEN="test-token"
+export TELEGRAM_CHAT_ID="1"
+export TELEGRAM_PRINCIPAL_USER_ID="2"
+echo "999999" > "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "cursor-bridge:" \
+  && fail "05i: SWARMFORGE_SKIP_CURSOR_BRIDGE=1 did not suppress cursor-bridge; got: $OUT"
+unset SWARMFORGE_SKIP_CURSOR_BRIDGE CURSOR_BRIDGE_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID
+cleanup_daemon
+pass "05i: SWARMFORGE_SKIP_CURSOR_BRIDGE=1 wins even with credentials present and a stale pid file"
 
 # ── 07a: launch-contract HEALTHY when no swarm-identity file exists at all ─
 make_fixture
