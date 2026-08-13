@@ -1,6 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 13, 2026 (BL-763: stamps the hand Bubble-tunnel-revive
+**Last Updated:** August 13, 2026 (BL-881: the Resident Spy Mini App's
+`/resident-pane` poll (previously every 1.5s) outran the bridge's
+synchronous tmux+filesystem live-screen walk under load, so overlapping
+polls piled onto the bridge's single event-loop thread and wedged it — HTML
+shells timed out too. `captureMonoRouterLiveScreen` (`residentPaneLive.ts`)
+now wraps the walk in a 5s TTL cache keyed by `targetPath` (two roots never
+share a snapshot), with a `clearResidentPaneLiveCache()` test hook and an
+injectable `nowMs` matching the sibling `buildStageDwellState`/
+`buildBurnRateState`/`capturePipelineGridLive` convention; the Mini App's
+own refresh interval (`residentSpyUiHtml.ts`) moves 1.5s → 4s to stay under
+the cache TTL. An architect bounce caught the one wiring gap the coder's
+own convention implied but didn't deliver: `bridgeServer.ts`'s
+`/resident-pane` route was the only one of the four sibling routes in
+`buildJsonRoutes` not threading the server's injected `nowMs` through,
+silently falling back to real `Date.now()` and breaking deterministic-clock
+testing parity for that route alone — fixed with the one-line wire-through
+plus a spy-based regression test. No new route, auth, or user-facing
+setting; the only visible change is that the Mini App Live/Resident Spy
+view now refreshes every 4 seconds instead of 1.5.); Previously
+August 13, 2026 (BL-763: stamps the hand Bubble-tunnel-revive
 fixes that had landed in the working tree with no ticket (BL-506) — bridge
 bounce now makes Bubble open exactly one fresh Let's Talk session, and the
 Cursor Remote bridge now stays up across an ancillary stop. The extension
