@@ -208,3 +208,13 @@ notes: |
   reopened the slot; BL-860 landed in it, commit 4ff36083a). active/ is at
   cap 3/3 as of this note. Not a rejection of BL-824 — it remains top of the
   paused queue for the next open slot.
+
+  2026-08-13 (later same day): a second open-slot nudge naming this ticket
+  cleared without promotion again. BL-860's close (this ticket's own epic
+  flag, "do not promote directly", still applies — BL-767 was the
+  promotion_gates auto-pick, not this epic) reopened the slot, and
+  promote_and_route_next.sh auto-picked BL-767
+  (queued-question-answers-in-origin-topic) into it before this nudge could
+  be acted on, commit 181bdb724. active/ is at cap 3/3 as of this note.
+  Still not a rejection of BL-824 — its own children (BL-825/BL-829) remain
+  the promotable path, not the epic itself.

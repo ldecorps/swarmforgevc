@@ -228,7 +228,7 @@ function extractLetsTalkChoicePoll(replyText: string): LetsTalkChoicePollSpec | 
   return { question: question.slice(0, 280), options: options.map((opt) => opt.slice(0, 100)) };
 }
 
-function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsTalkChoicePollSpec): void {
+function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsTalkChoicePollSpec, originTopicId: number): void {
   const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
   let raw: Record<string, unknown> = {};
   if (fs.existsSync(statePath)) {
@@ -242,7 +242,7 @@ function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsT
     }
   }
   const existing = Array.isArray(raw.pendingChoicePolls) ? raw.pendingChoicePolls : [];
-  const next = [...existing, { pollId, question: spec.question, options: spec.options, createdAtMs: Date.now() }].slice(-20);
+  const next = [...existing, { pollId, question: spec.question, options: spec.options, createdAtMs: Date.now(), originTopicId }].slice(-20);
   raw.pendingChoicePolls = next;
   fs.writeFileSync(statePath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
 }
@@ -270,7 +270,7 @@ async function mirrorLetsTalkChoicePollToBubble(
   if (!sent.success || !sent.pollId) {
     return;
   }
-  appendPendingChoicePoll(targetPath, sent.pollId, spec);
+  appendPendingChoicePoll(targetPath, sent.pollId, spec, topicId);
 }
 
 /** Best-effort mirror of Bubble / Let's Talk turns into the standing Bubble Telegram topic. */
