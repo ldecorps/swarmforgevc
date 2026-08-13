@@ -242,7 +242,9 @@ const VISION_DOCS: VisionDocSpec[] = [
   { id: 'swarmFlowDiagram', title: 'Swarm Flow', kind: 'mermaid', relativePath: 'docs/diagrams/swarm-flow.mmd' },
 ];
 
-function readVisionDocs(targetPath: string): VisionDoc[] {
+// BL-866: also read by companionManifest.ts's docs package - exported so
+// that catalog doesn't duplicate VISION_DOCS's own list of source paths.
+export function readVisionDocs(targetPath: string): VisionDoc[] {
   const docs: VisionDoc[] = [];
   for (const spec of VISION_DOCS) {
     try {

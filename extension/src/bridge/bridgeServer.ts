@@ -70,6 +70,13 @@ import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
 import { createLetsTalkMetaRoutes } from './letsTalkMetaRoutes';
 import { getLetsTalkBubbleConfig, isLetsTalkBubbleConfigPath } from './letsTalkBubbleConfig';
+import {
+  isCompanionManifestPath,
+  isCompanionPackagePath,
+  listCompanionPackages,
+  parseCompanionPackageRequest,
+  readCompanionPackage,
+} from './companionManifest';
 import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
@@ -1757,6 +1764,47 @@ export function startBridge(
       if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
         res.writeHead(401, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+
+      // BL-866: companion-manifest + package catalog. Neither fits the
+      // JsonRoute table (always-200) shape below - a package request needs
+      // 304/404/503 depending on generation/readability - so both are
+      // handled here, same as /events just below.
+      if (isCompanionManifestPath(url)) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ packages: listCompanionPackages(targetPath) }));
+        return;
+      }
+
+      if (isCompanionPackagePath(url)) {
+        const { name, generation } = parseCompanionPackageRequest(url);
+        const result = readCompanionPackage(targetPath, name, generation);
+        if (result.status === 'unknown') {
+          res.writeHead(404, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'unknown_package', name: result.name, reason: result.reason }));
+          return;
+        }
+        if (result.status === 'unreadable') {
+          res.writeHead(503, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'unreadable_package', name: result.name, reason: result.reason }));
+          return;
+        }
+        if (result.status === 'unchanged') {
+          res.writeHead(304, { etag: result.generation });
+          res.end();
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'application/json', etag: result.generation });
+        res.end(
+          JSON.stringify({
+            name: result.name,
+            generation: result.generation,
+            format: result.format,
+            formatVersion: result.formatVersion,
+            data: result.data,
+          })
+        );
         return;
       }
 
