@@ -34,6 +34,9 @@
     <string name="playlist_stop">Stop music</string>
     <string name="mute">Mute</string>
     <string name="volume">Hold music volume</string>
+    <string name="settings_voice_engine">Voice engine</string>
+    <string name="voice_engine_local">Local</string>
+    <string name="voice_engine_openai">OpenAI</string>
     <string name="pause_all">Pause all</string>
     <string name="resume_all">Resume</string>
     <string name="bubble_paused">Paused — long-press to resume</string>
