@@ -4,6 +4,7 @@ const {
   buildConsoleMiniAppUrl,
   consoleUrlFromLiveUrl,
   buildBubblePairingDeepLink,
+  buildBubblePairingHttpsUrl,
   buildResidentSpyTunnelUrls,
   buildResidentSpyTunnelTopicButtons,
   buildResidentSpyTunnelPrivateWebAppButtons,
@@ -98,6 +99,26 @@ test('buildBubblePairingDeepLink changes when the tunnel hostname changes', () =
 test('buildResidentSpyTunnelUrls includes the pairing deep link', () => {
   const urls = buildResidentSpyTunnelUrls('https://foo.trycloudflare.com', 'abc123');
   assert.equal(urls.pairingDeepLink, buildBubblePairingDeepLink(urls.liveUrl));
+});
+
+// BL-788: the bridge's own pre-auth /pair page (always openable in a
+// browser), as distinct from pairingDeepLink's bare custom-scheme URI
+// (which fails silently with no fallback when Bubble is not installed).
+test('buildBubblePairingHttpsUrl builds an HTTPS /pair URL on the tunnel origin, carrying the token', () => {
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc123';
+  assert.equal(buildBubblePairingHttpsUrl(live), 'https://foo.trycloudflare.com/pair?token=abc123');
+});
+
+test('buildBubblePairingHttpsUrl falls back to a bearer query param', () => {
+  const live = 'https://foo.trycloudflare.com/console?bearer=xyz';
+  assert.equal(buildBubblePairingHttpsUrl(live), 'https://foo.trycloudflare.com/pair?token=xyz');
+});
+
+test('buildResidentSpyTunnelUrls includes the HTTPS pairing URL', () => {
+  const urls = buildResidentSpyTunnelUrls('https://foo.trycloudflare.com', 'abc123');
+  assert.equal(urls.pairingHttpsUrl, buildBubblePairingHttpsUrl(urls.liveUrl));
+  assert.match(urls.pairingHttpsUrl, /^https:\/\//);
+  assert.match(urls.pairingHttpsUrl, /token=abc123$/);
 });
 
 test('buildResidentSpyTunnelTopicButtons uses url buttons for group topics', () => {
