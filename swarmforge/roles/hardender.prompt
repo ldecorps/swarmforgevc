@@ -635,3 +635,35 @@ You are the hardender.
 - (Incident: BL-866, 2026-08-13 — 2 inlined if-blocks pushed the
   dispatcher's CRAP from ~29.6 to ~39.77; extracting them isolated the new
   code's own CRAP at 6.00, tests unchanged.)
+
+## A step file that starts a bridge in one step and stops it in another hangs mutation FOREVER — check the try/finally binding BEFORE you run BL-113 (rule_proposal 2026-08-13, accepted)
+- A step file that calls `startBridge` in a Background/Given step, parks the
+  handle on `ctx`, and calls `handle.stop()` only in the terminal `Then` is
+  safe under a green suite and **unsurvivable under mutation**: a mutant's
+  whole job is to make a mid-scenario assertion throw, and the moment one
+  does, the terminal step never runs, the listening server holds the event
+  loop open, and `node --test` waits forever. It presents as an idle-CPU
+  stall, so it reads as host load rather than a harness defect — the most
+  expensive way to lose a shift.
+- Rule: before running BL-113 mutation over a step file that starts a
+  bridge, confirm **start and stop are bound by `try/finally` inside a
+  SINGLE step**. The property is the binding, not a helper name — a
+  `withBridge(…)` wrapper is the common shape (each file defines its own;
+  there is no shared export), but an inline `try { … } finally {
+  handle.stop() }` in one step satisfies it equally, and
+  `specs/pipeline/steps/burnRateSteps.js` is the reference for that form.
+  Grep for `finally` alongside `ctx.bridge`/`ctx.handle`, not for the word
+  `withBridge`.
+- **When the check fails, fix the harness first, then mutate.** Rebinding a
+  leaked handle into a `try/finally` is test-infrastructure repair in your
+  own domain — do it in your parcel and say so in the hardening note. Do not
+  bounce it upstream and do not start the mutation run "to see", which is
+  precisely the run that never returns.
+- (Incident: BL-788 m1, 2026-08-13 — hung 9+ min at idle CPU because
+  `ctx.handle.stop()` sat in a step made unreachable by an earlier mutant's
+  throw. Verified 2026-08-14: of the 22 `startBridge` step files, 7 carry
+  the cross-step hazard with no `finally` at all —
+  `bl674EpicDrilldownUiSteps`, `bl686EpicDrilldownSlugMatchSteps`,
+  `bl763BubbleTunnelHandFixesSwarmStampSteps`,
+  `bl866CompanionManifestPackageCatalogSteps`, `gateAnswerSteps`,
+  `deviceRegistrySteps`, `gatesListSteps` — so expect to hit this again.)
