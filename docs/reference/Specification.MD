@@ -1,6 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 13, 2026 (BL-721: the Telegram Approvals ask's
+**Last Updated:** August 13, 2026 (BL-763: stamps the hand Bubble-tunnel-revive
+fixes that had landed in the working tree with no ticket (BL-506) — bridge
+bounce now makes Bubble open exactly one fresh Let's Talk session, and the
+Cursor Remote bridge now stays up across an ancillary stop. The extension
+bridge gains `GET /lets-talk/meta` (`letsTalkMetaRoutes.ts`), returning a
+`randomUUID()` `instanceId` generated once per `startBridge()` call plus
+`startedAt`, so a real bounce (a new process) yields a new id. Android's
+`BridgeClient.fetchBridgeMeta` polls it; a new, pure `BridgeBounceSession.kt`
+(no `android.*` type in its own signature) decides the reset-once logic,
+wired through `TalkEngine.syncBridgeInstanceAndSession` and
+`CompanionPrefs`' new `lastBridgeInstanceId`, called from
+`OverlayService.onCreate` before hands-free resumes — one new session per
+instance change, never a repeat on a later poll against the same instance.
+`GET /lets-talk/bubble-config.json` (`letsTalkBubbleConfig.ts`, built by
+BL-864 but never served) is now actually wired, which the bounce-detection
+invariant needs to check whether `bounce-auto-session-reset` is enabled.
+Operationally: `start_ancillary_services.sh` now starts the Cursor Remote
+bridge too (credential-gated on the same token/chat/principal-id shape
+`start_cursor_bridge.sh` itself requires; `SWARMFORGE_SKIP_CURSOR_BRIDGE=1`
+opts out) but deliberately stays outside `stop_ancillary_services.sh`'s
+reach, so only `stop_cursor_bridge.sh` or `./swarm-kill` tears it down;
+`swarm_ensure.bb`'s new `ensure-cursor-bridge!` repairs it on `./swarm
+ensure` the same way it already repairs the front desk, and
+`operator_runtime.bb`'s new `cursor-bridge-watchdog-sweep!` gives it the
+same continuous 120s-stall-window liveness repair `cursor_bridge_supervisor.bb`
+already does for itself. Explicitly NOT fixed by this ticket, both flagged
+separately: stale-hostname/DNS discovery when Bubble's paired tunnel goes
+dead (BL-716, unchanged — bounce-meta is not a substitute) and
+front-desk-supervisor not forwarding `LETS_TALK_*`/`WHISPER_*` env to a
+relaunched bridge child, so speech-to-text silently breaks after any
+front-desk relaunch (flagged to specifier/coordinator as a sibling ticket).
+See the updated "Cursor Bridge" row in
+`docs/reference/BL-643-non-pipeline-agents-reference-table.md`.); Previously
+August 13, 2026 (BL-721: the Telegram Approvals ask's
 fourth button is relabeled from "Expedite" to "Q jump" — humans kept
 confusing it with the unrelated offline Cursor-bridge expeditor — and a
 typed `/qjump <id>` verb is added to the same Approvals topic reply grammar
