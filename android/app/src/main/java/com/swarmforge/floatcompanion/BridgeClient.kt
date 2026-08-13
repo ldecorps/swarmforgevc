@@ -171,6 +171,79 @@ object BridgeClient {
             connectionSink
         )
 
+    // BL-763: GET /lets-talk/meta — the bridge process's own instanceId
+    // (+ startedAt), so TalkEngine.syncBridgeInstanceAndSession can detect a
+    // bounce (BridgeBounceSession, the pure decision behind it).
+
+    data class BridgeMetaResult(
+        val ok: Boolean,
+        val instanceId: String = "",
+        val startedAt: String = "",
+        val reason: String? = null
+    )
+
+    fun fetchBridgeMeta(baseUrl: String, token: String): BridgeMetaResult {
+        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/meta")
+        val conn = openAuth(url, token)
+        return try {
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            if (code !in 200..299) {
+                return BridgeMetaResult(false, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val json = JSONObject(raw)
+            if (!json.optBoolean("success", false)) {
+                return BridgeMetaResult(false, reason = json.optString("reason", "meta query failed"))
+            }
+            BridgeMetaResult(
+                ok = true,
+                instanceId = json.optString("instanceId", ""),
+                startedAt = json.optString("startedAt", "")
+            )
+        } catch (e: Exception) {
+            BridgeMetaResult(false, reason = friendlyConnectionMessage(e))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    // BL-763: GET /lets-talk/bubble-config.json — Bubble capability flags,
+    // in particular bridgeBounceAutoSessionReset (invariant 2's remote-config
+    // half). Unread fields are ignored; other flags belong to their own
+    // callers (BL-765).
+
+    data class BubbleConfigResult(
+        val ok: Boolean,
+        val bridgeBounceAutoSessionReset: Boolean = true,
+        val reason: String? = null
+    )
+
+    fun fetchBubbleConfig(baseUrl: String, token: String): BubbleConfigResult {
+        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/bubble-config.json")
+        val conn = openAuth(url, token)
+        return try {
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            if (code !in 200..299) {
+                return BubbleConfigResult(false, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val json = JSONObject(raw)
+            val features = json.optJSONObject("features")
+            BubbleConfigResult(
+                ok = true,
+                bridgeBounceAutoSessionReset = features?.optBoolean("bridgeBounceAutoSessionReset", true) ?: true
+            )
+        } catch (e: Exception) {
+            BubbleConfigResult(false, reason = friendlyConnectionMessage(e))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     fun newSession(baseUrl: String, token: String): Pair<Boolean, String?> {
         val url = URL("${baseUrl.trimEnd('/')}/lets-talk/new-session")
         val conn = openAuth(url, token)
