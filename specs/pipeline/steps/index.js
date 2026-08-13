@@ -440,7 +440,8 @@ const DOMAINS = [
   require('./bl730PipelineTeardownSurvivorScopeSteps'),
   require('./bl881ResidentPaneLiveCaptureTtlCacheSteps'),
   require('./bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps'),
-  require('./bl866CompanionManifestPackageCatalogSteps')
+  require('./bl866CompanionManifestPackageCatalogSteps'),
+  require('./bl788BubblePairingClientLogsAdoptSteps')
 ];
 
 function registerSteps(registry) {
