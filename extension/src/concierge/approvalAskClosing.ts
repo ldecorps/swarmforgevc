@@ -13,7 +13,11 @@
 // recordApprovalReply effect an ordinary Approve tap uses (the ticket's own
 // "step (a) must reuse the EXISTING approval writer" constraint), but the
 // topic's own audit trail must still show which verb decided it, so the
-// closing line reads "-- Expedited <UTC>", never "-- Approved <UTC>".
+// closing line reads "-- Q jumped <UTC>", never "-- Approved <UTC>".
+// BL-721: the verdict word changed from "Expedited" to "Q jumped" (the
+// Approvals button's own label rename); DECIDED_ASK_LINE_PATTERN below
+// still recognizes the old "Expedited " wording too, so an ask closed
+// before this ticket landed is still read as decided.
 // BL-509: 'amending' is a FOURTH, non-terminal verdict - unlike the other
 // three, it is not a final resolution (the specifier flips it back to
 // pending on re-present, slice 3), but it still closes the posted ask the
@@ -35,7 +39,7 @@ export function decisionLineFor(verdict: ApprovalDecisionVerdict, nowMs: number)
     return `-- Approved ${formatUtcStamp(nowMs)}`;
   }
   if (verdict.kind === 'expedited') {
-    return `-- Expedited ${formatUtcStamp(nowMs)}`;
+    return `-- Q jumped ${formatUtcStamp(nowMs)}`;
   }
   if (verdict.kind === 'amending') {
     return `-- Amending ${formatUtcStamp(nowMs)}`;
@@ -53,7 +57,7 @@ export function composeDecidedAskText(originalText: string, verdict: ApprovalDec
 // True when the stored ask text already carries a BL-484 decision footer —
 // used by the decided-ask close reconcile sweep to skip asks Telegram already
 // closed (or that were persisted after a successful edit).
-export const DECIDED_ASK_LINE_PATTERN = /^-- (Approved |Rejected:|Expedited |Amending )/m;
+export const DECIDED_ASK_LINE_PATTERN = /^-- (Approved |Rejected:|Expedited |Q jumped |Amending )/m;
 
 export function approvalAskTextShowsDecidedVerdict(text: string): boolean {
   return DECIDED_ASK_LINE_PATTERN.test(text);
