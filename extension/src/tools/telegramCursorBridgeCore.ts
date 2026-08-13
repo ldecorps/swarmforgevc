@@ -70,6 +70,7 @@ export interface CursorBridgeChoicePoll {
   question: string;
   options: string[];
   createdAtMs: number;
+  originTopicId?: number;
 }
 
 export interface CursorBridgeLivenessStatusState {
@@ -89,6 +90,12 @@ export interface CursorBridgePersistedState {
   pendingChoicePolls?: CursorBridgeChoicePoll[];
   /** Edit-in-place Host liveness line identity. */
   livenessStatus?: CursorBridgeLivenessStatusState;
+  /**
+   * BL-767: per-topic "N waiting" edit-in-place cue identity, keyed by
+   * topic id (stringified — JSON object keys), for every topic OTHER than
+   * cursorTopicId that currently holds (or recently held) queued work.
+   */
+  queuedWorkLivenessStatus?: Record<string, CursorBridgeLivenessStatusState>;
 }
 
 export interface CursorBridgeInboundEvent {
@@ -595,6 +602,21 @@ export function collectAssistantTextFromMessages(messages: readonly unknown[]): 
   return out;
 }
 
+/**
+ * BL-767 invariant #1: a deferred reply (a drained queued prompt, a
+ * choice-poll answer) is posted to exactly one topic — the one it was
+ * asked/posted in, or the Cursor Remote topic when no origin was recorded.
+ * Single source of truth for every deferred-reply site, so they cannot
+ * independently drift into "whichever topic I happen to guess" (BL-767's
+ * root cause was exactly that: sites each wrote their own fallback).
+ */
+export function resolveDeferredReplyTopicId(
+  originTopicId: number | undefined,
+  cursorTopicId: number | undefined
+): number | undefined {
+  return originTopicId ?? cursorTopicId;
+}
+
 export function parseNonNegativeInt(value: unknown, fallback: number): number {
   if (typeof value !== 'number') {
     return fallback;
@@ -628,6 +650,20 @@ function parseLivenessStatus(value: unknown): CursorBridgeLivenessStatusState | 
   assignIfDefined(result, 'topicId', parseOptionalTopicId(record.topicId));
   assignIfDefined(result, 'messageId', parseOptionalTopicId(record.messageId));
   assignIfDefined(result, 'renderedText', parseOptionalNonEmptyString(record.renderedText));
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function parseQueuedWorkLivenessStatus(value: unknown): Record<string, CursorBridgeLivenessStatusState> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const result: Record<string, CursorBridgeLivenessStatusState> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    const parsed = parseLivenessStatus(entry);
+    if (parsed) {
+      result[key] = parsed;
+    }
+  }
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
@@ -690,7 +726,11 @@ function parseChoicePoll(value: unknown): CursorBridgeChoicePoll | undefined {
   if (!pollId || !question || !options || options.length < 2 || createdAtMs < 0) {
     return undefined;
   }
-  return { pollId, question, options, createdAtMs };
+  const poll: CursorBridgeChoicePoll = { pollId, question, options, createdAtMs };
+  if (typeof value.originTopicId === 'number') {
+    poll.originTopicId = value.originTopicId;
+  }
+  return poll;
 }
 
 function buildPersistedState(record: Record<string, unknown>): CursorBridgePersistedState {
@@ -734,6 +774,10 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   const livenessStatus = parseLivenessStatus(record.livenessStatus);
   if (livenessStatus) {
     state.livenessStatus = livenessStatus;
+  }
+  const queuedWorkLivenessStatus = parseQueuedWorkLivenessStatus(record.queuedWorkLivenessStatus);
+  if (queuedWorkLivenessStatus) {
+    state.queuedWorkLivenessStatus = queuedWorkLivenessStatus;
   }
   return state;
 }
