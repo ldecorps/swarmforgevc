@@ -65,6 +65,7 @@ here.
 - [Diagnosing a wake with attribution records](how-to/BL-870-wake-attribution.md) — the `wake-attribution-<YYYY-MM>.jsonl` log every landed or skipped wake now writes, its fields, and how to read a false-wake report from it.
 - [Hotfix record: 2026-08-02 Mac host-switch (freshness + bridge)](how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md) — the three false/misleading failure modes from the Linux→Mac host switch (handoffd reported down forever, babysitterd restart spam, bridge EADDRINUSE crash loop), adopted and reviewed under BL-789.
 - [The Boot-Prefix Budget Gate — Understanding the Check](how-to/BL-859-boot-prefix-budget-gate.md) — the specifier's authoring-time gate against boot-prefix growth, the 44000/51200 two-threshold split, and remediation on failure.
+- [The Bubble Settings voice-engine selector](how-to/BL-864-bubble-voice-engine-selector.md) — the Local/OpenAI control in Bubble Settings: opens on the truth, never shows a tap the bridge hasn't accepted, and where the pure state machine ends and device wiring begins.
 
 ## Reference
 

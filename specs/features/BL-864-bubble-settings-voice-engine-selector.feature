@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5fdf1ca0975ca2c617c89770799d5a1e0b7e0fc82df8c267b8fba537c5f52c3b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-13T00:50:00.161557Z","feature_name":"Bubble Settings offers a Local or OpenAI voice engine and never lies about which one is in use","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-864-bubble-settings-voice-engine-selector.feature","background_hash":"48db5920e98ac5698c8a8006593733b2b462e356e0335cef1aa1fe4c49e4287e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the selector opens on the engine the bridge is actually using","scenario_hash":"3c9d66b9b1bcfb44725af9be63a0e4cb9aaba536599c67924fcd9d19c48be30c","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-13T00:50:00.161557Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble Settings offers a Local or OpenAI voice engine and never lies about which one is in use
 
   # BL-864 (epic BL-862, slice B, depends on BL-863): the Bubble Settings dialog already owns

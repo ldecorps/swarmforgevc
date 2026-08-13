@@ -116,3 +116,6 @@ notes: |
   Scenario 04 (offered disabled, pre-emptive) and scenario 03 (refused at write
   time) are deliberately both present: they are different moments in the flow,
   and BL-863 exposes both a serviceability query and a store that can refuse.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-13, by: architect, blamed: coder, class: behavior, commit: 39af946c10, evidence: backlog/evidence/BL-864-bubble-settings-voice-engine-selector-bounce-20260813.md }

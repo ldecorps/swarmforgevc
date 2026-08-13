@@ -335,6 +335,34 @@ class TalkEngine(private val appContext: Context) {
         }
     }
 
+    // BL-864: the Bubble Settings voice-engine selector always queries the
+    // bridge fresh (never a locally cached guess) and writes through it —
+    // network I/O stays here with every other BridgeClient call; the
+    // dialog only reduces the result to VoiceEngineSelector's plain state.
+    fun fetchVoiceEngineStatus(callback: (BridgeClient.AudioEngineStatusResult) -> Unit) {
+        val base = CompanionPrefs.getBaseUrl(appContext)
+        val token = CompanionPrefs.getToken(appContext)
+        io.execute {
+            val result = BridgeClient.fetchAudioEngineStatus(base, token)
+            mainHandler.post {
+                if (!alive.get()) return@post
+                callback(result)
+            }
+        }
+    }
+
+    fun chooseVoiceEngine(engine: String, callback: (BridgeClient.AudioEngineWriteResult) -> Unit) {
+        val base = CompanionPrefs.getBaseUrl(appContext)
+        val token = CompanionPrefs.getToken(appContext)
+        io.execute {
+            val result = BridgeClient.writeAudioEnginePreference(base, token, engine)
+            mainHandler.post {
+                if (!alive.get()) return@post
+                callback(result)
+            }
+        }
+    }
+
     private fun onRecorderAutoStop() {
         if (pausedAll) return
         if (phase != Phase.RECORDING) return

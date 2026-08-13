@@ -7,6 +7,7 @@ const {
   readLetsTalkAudioEnginePreference,
   writeLetsTalkAudioEnginePreference,
   resolveLetsTalkAudioForTurn,
+  currentLetsTalkAudioEngine,
 } = require('../out/bridge/letsTalkAudioPreference');
 
 // BL-863: durable Let's Talk voice-engine preference + per-turn resolution.
@@ -166,6 +167,40 @@ test('resolveLetsTalkAudioForTurn: no preference and no (or garbage) engine env 
   const { resolution } = resolveLetsTalkAudioForTurn(root, { OPENAI_API_KEY: 'sk-live' });
   assert.equal(resolution.kind, 'ok');
   assert.equal(resolution.engine, 'openai');
+});
+
+// BL-864: currentLetsTalkAudioEngine is the same selection resolveLetsTalkAudioForTurn
+// makes internally, exposed standalone for the Bubble Settings status route
+// (it does not need adapters, only the engine name).
+test('currentLetsTalkAudioEngine: a stored preference wins over the env bootstrap', () => {
+  const root = mkRoot();
+  writeLetsTalkAudioEnginePreference(root, { engine: 'openai' });
+  assert.equal(currentLetsTalkAudioEngine(root, { LETS_TALK_AUDIO_ENGINE: 'local' }), 'openai');
+});
+
+test('currentLetsTalkAudioEngine: with no preference stored the host environment decides', () => {
+  const root = mkRoot();
+  assert.equal(currentLetsTalkAudioEngine(root, { LETS_TALK_AUDIO_ENGINE: 'local' }), 'local');
+});
+
+test('currentLetsTalkAudioEngine: no preference and no engine env var bootstraps to openai', () => {
+  const root = mkRoot();
+  assert.equal(currentLetsTalkAudioEngine(root, {}), 'openai');
+});
+
+test('currentLetsTalkAudioEngine: an unreadable preference falls back to the host environment', () => {
+  const root = mkRoot();
+  fs.mkdirSync(path.dirname(letsTalkAudioEnginePreferencePath(root)), { recursive: true });
+  fs.writeFileSync(letsTalkAudioEnginePreferencePath(root), '{not json', 'utf8');
+  assert.equal(currentLetsTalkAudioEngine(root, { LETS_TALK_AUDIO_ENGINE: 'local' }), 'local');
+});
+
+test('currentLetsTalkAudioEngine: agrees with resolveLetsTalkAudioForTurn on the same inputs', () => {
+  const root = mkRoot();
+  writeLetsTalkAudioEnginePreference(root, { engine: 'local' });
+  const env = { OPENAI_API_KEY: 'sk-live' };
+  const { resolution } = resolveLetsTalkAudioForTurn(root, env);
+  assert.equal(currentLetsTalkAudioEngine(root, env), resolution.engine);
 });
 
 test('resolveLetsTalkAudioForTurn: overrides bypass engine selection entirely and always succeed', () => {

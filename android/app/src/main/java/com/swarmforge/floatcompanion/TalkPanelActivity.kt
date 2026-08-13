@@ -116,12 +116,97 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         }
     }
 
+    // BL-864: reduces a BridgeClient audio-engine result to VoiceEngineSelector's
+    // plain input — the device-surface half of the selector (dialog wiring +
+    // network calls), verified by the recorded manual procedure per the
+    // Bubble testability boundary; the STATE decisions this calls into are
+    // the JVM-tested VoiceEngineSelector.
+    private fun voiceEngineStatusInput(result: BridgeClient.AudioEngineStatusResult): VoiceEngineSelector.StatusInput {
+        val engineInUse = if (result.engine == "openai") {
+            VoiceEngineSelector.Engine.OPENAI
+        } else {
+            VoiceEngineSelector.Engine.LOCAL
+        }
+        return VoiceEngineSelector.StatusInput(
+            enabled = result.enabled,
+            engineInUse = engineInUse,
+            local = VoiceEngineSelector.ServiceabilityInput(result.local.serviceable, result.local.reason),
+            openai = VoiceEngineSelector.ServiceabilityInput(result.openai.serviceable, result.openai.reason)
+        )
+    }
+
     private fun showSettingsDialog(eng: TalkEngine) {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_settings, null)
         val holdMusic = view.findViewById<MaterialCheckBox>(R.id.holdMusic)
         val mute = view.findViewById<MaterialCheckBox>(R.id.mute)
         val volumeSeek = view.findViewById<SeekBar>(R.id.volumeSeek)
         val volumeValue = view.findViewById<android.widget.TextView>(R.id.volumeValue)
+        val voiceEngineHeader = view.findViewById<android.widget.TextView>(R.id.voiceEngineHeader)
+        val voiceEngineGroup = view.findViewById<android.widget.RadioGroup>(R.id.voiceEngineGroup)
+        val voiceEngineLocal = view.findViewById<android.widget.RadioButton>(R.id.voiceEngineLocal)
+        val voiceEngineOpenAi = view.findViewById<android.widget.RadioButton>(R.id.voiceEngineOpenAi)
+        val voiceEngineMessage = view.findViewById<android.widget.TextView>(R.id.voiceEngineMessage)
+        var suppressVoiceEngineCallback = false
+        var voiceEngineState: VoiceEngineSelector.UiState? = null
+
+        fun renderVoiceEngineState(state: VoiceEngineSelector.UiState) {
+            voiceEngineState = state
+            val visibility = if (state.visible) View.VISIBLE else View.GONE
+            voiceEngineHeader.visibility = visibility
+            voiceEngineGroup.visibility = visibility
+            if (!state.visible) {
+                voiceEngineMessage.visibility = View.GONE
+                return
+            }
+            val local = state.options.first { it.engine == VoiceEngineSelector.Engine.LOCAL }
+            val openai = state.options.first { it.engine == VoiceEngineSelector.Engine.OPENAI }
+            suppressVoiceEngineCallback = true
+            voiceEngineLocal.isEnabled = !local.disabled
+            voiceEngineOpenAi.isEnabled = !openai.disabled
+            voiceEngineLocal.isChecked = state.selected == VoiceEngineSelector.Engine.LOCAL
+            voiceEngineOpenAi.isChecked = state.selected == VoiceEngineSelector.Engine.OPENAI
+            suppressVoiceEngineCallback = false
+            val reasonText = state.message ?: listOfNotNull(local.reason, openai.reason).firstOrNull()
+            voiceEngineMessage.text = reasonText
+            voiceEngineMessage.visibility = if (reasonText != null) View.VISIBLE else View.GONE
+        }
+
+        eng.fetchVoiceEngineStatus { result ->
+            val state = if (result.ok) {
+                VoiceEngineSelector.stateForStatus(voiceEngineStatusInput(result))
+            } else {
+                VoiceEngineSelector.UiState(visible = false, selected = null, options = emptyList())
+            }
+            renderVoiceEngineState(state)
+        }
+
+        voiceEngineGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (suppressVoiceEngineCallback) return@setOnCheckedChangeListener
+            val previous = voiceEngineState ?: return@setOnCheckedChangeListener
+            val tapped = if (checkedId == R.id.voiceEngineOpenAi) {
+                VoiceEngineSelector.Engine.OPENAI
+            } else {
+                VoiceEngineSelector.Engine.LOCAL
+            }
+            // The RadioButton is already checked by the OS's own tap handling
+            // before this listener runs. Snap it back to the last confirmed
+            // state synchronously, in the same UI pass, so the tap is never
+            // drawn on screen before the bridge responds — displayed
+            // selection must follow the bridge's answer, never the tap
+            // (BL-864 invariant, BL-864-voice-engine-selector-tap-leak).
+            renderVoiceEngineState(previous)
+            val wireName = if (tapped == VoiceEngineSelector.Engine.OPENAI) "openai" else "local"
+            eng.chooseVoiceEngine(wireName) { result ->
+                val outcome = when {
+                    result.ok -> VoiceEngineSelector.ChoiceOutcome.Accepted(tapped)
+                    result.connectionFailure -> VoiceEngineSelector.ChoiceOutcome.Unreachable(
+                        result.reason ?: "Can't reach the bridge."
+                    )
+                    else -> VoiceEngineSelector.ChoiceOutcome.Refused(result.reason ?: "Choice refused.")
+                }
+                renderVoiceEngineState(VoiceEngineSelector.stateAfterChoice(previous, outcome))
+            }
+        }
 
         fun syncFromEngine() {
             val snap = eng.snapshot()

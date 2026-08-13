@@ -12,6 +12,9 @@ export interface LetsTalkBubbleConfig {
     newSession: boolean;
     pauseAll: boolean;
     bridgeBounceAutoSessionReset: boolean;
+    // BL-864: gates the Bubble Settings Local/OpenAI voice-engine selector,
+    // per the BL-862 epic's locked shape decision.
+    voiceEngineSwitch: boolean;
   };
 }
 
@@ -26,6 +29,7 @@ const DEFAULT_CONFIG: LetsTalkBubbleConfig = {
     newSession: true,
     pauseAll: true,
     bridgeBounceAutoSessionReset: true,
+    voiceEngineSwitch: true,
   },
 };
 
@@ -57,6 +61,7 @@ function parseBubbleConfig(raw: unknown, fallbackRevision: string): LetsTalkBubb
         features.bridgeBounceAutoSessionReset,
         DEFAULT_CONFIG.features.bridgeBounceAutoSessionReset
       ),
+      voiceEngineSwitch: coerceBoolean(features.voiceEngineSwitch, DEFAULT_CONFIG.features.voiceEngineSwitch),
     },
   };
 }
