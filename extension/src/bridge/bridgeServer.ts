@@ -1374,6 +1374,54 @@ function queryToken(url: string): string | undefined {
   return parseQueryCredential(url);
 }
 
+// BL-866: companion-manifest + package catalog. Neither fits the JsonRoute
+// table (always-200) shape below - a package request needs 304/404/503
+// depending on generation/readability - so both are handled by this one
+// boolean-returning dispatcher, same extract-and-return-handled shape as
+// tryServeSideloadApk above. Extracted (rather than left inline in the
+// request listener) to keep that listener's own CRAP from absorbing this
+// block's complexity - this block is independently 100%-covered by
+// companionManifest.test.js and bridgeServer.test.js's own companion-route
+// tests.
+function tryServeCompanionRoutes(res: http.ServerResponse, url: string, targetPath: string): boolean {
+  if (isCompanionManifestPath(url)) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ packages: listCompanionPackages(targetPath) }));
+    return true;
+  }
+  if (!isCompanionPackagePath(url)) {
+    return false;
+  }
+  const { name, generation } = parseCompanionPackageRequest(url);
+  const result = readCompanionPackage(targetPath, name, generation);
+  if (result.status === 'unknown') {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unknown_package', name: result.name, reason: result.reason }));
+    return true;
+  }
+  if (result.status === 'unreadable') {
+    res.writeHead(503, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unreadable_package', name: result.name, reason: result.reason }));
+    return true;
+  }
+  if (result.status === 'unchanged') {
+    res.writeHead(304, { etag: result.generation });
+    res.end();
+    return true;
+  }
+  res.writeHead(200, { 'content-type': 'application/json', etag: result.generation });
+  res.end(
+    JSON.stringify({
+      name: result.name,
+      generation: result.generation,
+      format: result.format,
+      formatVersion: result.formatVersion,
+      data: result.data,
+    })
+  );
+  return true;
+}
+
 // BL-094/BL-241: every route stays header-only EXCEPT the root HTML shell,
 // which a plain browser navigation cannot attach a header to - it
 // additionally accepts the token via query string (see bridgeAuth.ts's own
@@ -1767,44 +1815,9 @@ export function startBridge(
         return;
       }
 
-      // BL-866: companion-manifest + package catalog. Neither fits the
-      // JsonRoute table (always-200) shape below - a package request needs
-      // 304/404/503 depending on generation/readability - so both are
-      // handled here, same as /events just below.
-      if (isCompanionManifestPath(url)) {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ packages: listCompanionPackages(targetPath) }));
-        return;
-      }
-
-      if (isCompanionPackagePath(url)) {
-        const { name, generation } = parseCompanionPackageRequest(url);
-        const result = readCompanionPackage(targetPath, name, generation);
-        if (result.status === 'unknown') {
-          res.writeHead(404, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'unknown_package', name: result.name, reason: result.reason }));
-          return;
-        }
-        if (result.status === 'unreadable') {
-          res.writeHead(503, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'unreadable_package', name: result.name, reason: result.reason }));
-          return;
-        }
-        if (result.status === 'unchanged') {
-          res.writeHead(304, { etag: result.generation });
-          res.end();
-          return;
-        }
-        res.writeHead(200, { 'content-type': 'application/json', etag: result.generation });
-        res.end(
-          JSON.stringify({
-            name: result.name,
-            generation: result.generation,
-            format: result.format,
-            formatVersion: result.formatVersion,
-            data: result.data,
-          })
-        );
+      // BL-866: companion-manifest + package catalog - see
+      // tryServeCompanionRoutes above.
+      if (tryServeCompanionRoutes(res, url, targetPath)) {
         return;
       }
 
