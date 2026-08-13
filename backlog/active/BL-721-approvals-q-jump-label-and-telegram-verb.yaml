@@ -10,7 +10,7 @@ direction: normal
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "The Approvals ask fourth button is labeled Q jump (not Expedite); tapping it still approve + promote + dispatch into the live swarm (BL-490 behavior unchanged)."
