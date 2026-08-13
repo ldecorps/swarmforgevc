@@ -6,6 +6,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import {
   buildBridgeState,
   buildDeliveryMetricsState,
@@ -67,6 +68,7 @@ import {
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
 import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
+import { createLetsTalkMetaRoutes } from './letsTalkMetaRoutes';
 import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
@@ -347,6 +349,11 @@ export interface StartBridgeOptions {
     transcribeAudio?: TranscribeAudio;
     synthesizeSpeech?: SynthesizeSpeech;
   };
+  // BL-763: injectable /lets-talk/meta instanceId, so a test can pin two
+  // startBridge() calls (simulating a bounce) to known, distinct values
+  // instead of asserting only "different" against real randomUUID() output.
+  // Undefined in production - a fresh randomUUID() is generated below.
+  instanceId?: string;
 }
 
 // BL-241: startBridge's auth param generalizes from BL-065's one static
@@ -1634,6 +1641,17 @@ export function startBridge(
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
+    // BL-763: GET /lets-talk/meta — a stable-per-process instanceId (+
+    // startedAt), generated ONCE per startBridge() call so it changes only
+    // on a real bounce (a fresh process re-running this function), never
+    // mid-process. Bubble polls this to detect a bounce and refresh its
+    // session (BL-763 session-01).
+    const letsTalkMetaRoutes = createLetsTalkMetaRoutes(
+      options.instanceId ?? randomUUID(),
+      new Date(options.nowMs ?? Date.now()).toISOString(),
+      requireLetsTalkControlAuth,
+      respondJson
+    );
 
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
@@ -1716,9 +1734,12 @@ export function startBridge(
         return;
       }
 
-      const writeRoute = [...writeRoutes, ...letsTalkWriteRoutes, ...letsTalkAudioEngineRoutes].find((route) =>
-        route.matches(req, url)
-      );
+      const writeRoute = [
+        ...writeRoutes,
+        ...letsTalkWriteRoutes,
+        ...letsTalkAudioEngineRoutes,
+        ...letsTalkMetaRoutes,
+      ].find((route) => route.matches(req, url));
       if (writeRoute) {
         writeRoute.handle(req, res, targetPath, registry);
         return;
