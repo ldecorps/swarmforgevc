@@ -54,7 +54,7 @@ import {
   writeOperatorBounceSentinel,
   runOperatorStop,
 } from './telegramCursorOperatorExec';
-import { syncCursorBridgeLivenessStatus, syncQueuedWorkLivenessCues } from './telegramCursorBridgeLiveness';
+import { syncCursorBridgeLivenessStatus, syncBridgeLivenessCues } from './telegramCursorBridgeLiveness';
 import {
   probeSwarmLiveness,
   isSwarmLive,
@@ -727,7 +727,7 @@ async function handlePromptInboundAction(
       // ctx.state alone (prompts queued during this run were written via the
       // poll-loop holder onto disk).
       await presentQueueSelectionPollAfterIdle(ctx);
-      await syncCursorBridgeLivenessStatus({
+      await syncBridgeLivenessCues({
         botToken: ctx.botToken,
         chatId: ctx.chatId,
         state: ctx.state,
@@ -738,21 +738,6 @@ async function handlePromptInboundAction(
           writeJsonFile(statePath, {
             ...disk,
             livenessStatus: ctx.state.livenessStatus,
-            pendingPrompts: disk.pendingPrompts ?? ctx.state.pendingPrompts,
-            pendingPromptPoll: disk.pendingPromptPoll ?? ctx.state.pendingPromptPoll,
-          });
-        },
-        telegramPostFn: ctx.telegramPostFn,
-      });
-      await syncQueuedWorkLivenessCues({
-        botToken: ctx.botToken,
-        chatId: ctx.chatId,
-        state: ctx.state,
-        persistState: () => {
-          const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
-          const disk = parseCursorBridgeState(loadJsonFile(statePath));
-          writeJsonFile(statePath, {
-            ...disk,
             queuedWorkLivenessStatus: ctx.state.queuedWorkLivenessStatus,
             pendingPrompts: disk.pendingPrompts ?? ctx.state.pendingPrompts,
             pendingPromptPoll: disk.pendingPromptPoll ?? ctx.state.pendingPromptPoll,
@@ -1673,18 +1658,11 @@ async function processInboundUpdates(
           inbound.messageId
         );
       }
-      await syncCursorBridgeLivenessStatus({
+      await syncBridgeLivenessCues({
         botToken: deps.botToken,
         chatId: deps.chatId,
         state: holder.state,
         busy: true,
-        persistState: () => writeJsonFile(deps.statePath, holder.state),
-        telegramPostFn: deps.telegramPostFn,
-      });
-      await syncQueuedWorkLivenessCues({
-        botToken: deps.botToken,
-        chatId: deps.chatId,
-        state: holder.state,
         persistState: () => writeJsonFile(deps.statePath, holder.state),
         telegramPostFn: deps.telegramPostFn,
       });
@@ -1718,18 +1696,11 @@ async function processInboundUpdates(
   if (!holder.busy && !isActiveRunInFlight()) {
     await postQueueSelectionPoll(deps, holder, handlerCtx.post);
   }
-  await syncCursorBridgeLivenessStatus({
+  await syncBridgeLivenessCues({
     botToken: deps.botToken,
     chatId: deps.chatId,
     state: holder.state,
     busy: holder.busy || isActiveRunInFlight(),
-    persistState: () => writeJsonFile(deps.statePath, holder.state),
-    telegramPostFn: deps.telegramPostFn,
-  });
-  await syncQueuedWorkLivenessCues({
-    botToken: deps.botToken,
-    chatId: deps.chatId,
-    state: holder.state,
     persistState: () => writeJsonFile(deps.statePath, holder.state),
     telegramPostFn: deps.telegramPostFn,
   });

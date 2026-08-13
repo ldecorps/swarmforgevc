@@ -158,3 +158,16 @@ export async function syncQueuedWorkLivenessCues(deps: SyncQueuedWorkLivenessCue
   deps.state.queuedWorkLivenessStatus = next;
   deps.persistState();
 }
+
+/**
+ * Runs both standing-cue syncs together: Cursor Remote's own busy/idle line,
+ * then every other topic's queued-work cue. The two call sites this fans out
+ * to (`processInboundUpdates`'s queue-ack branch and its tail) always ran
+ * them back to back, so this is the one place that pairing is spelled out.
+ */
+export async function syncBridgeLivenessCues(
+  deps: Omit<SyncLivenessStatusDeps, 'persistState'> & Omit<SyncQueuedWorkLivenessCuesDeps, 'persistState'> & { persistState: () => void }
+): Promise<void> {
+  await syncCursorBridgeLivenessStatus(deps);
+  await syncQueuedWorkLivenessCues(deps);
+}
