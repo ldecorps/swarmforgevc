@@ -33,9 +33,32 @@ function isJdk17Plus(home) {
   return typeof major === 'number' && major >= 17;
 }
 
-function findJdk17Home() {
+// BL-763: portable-JDK candidates under .swarmforge/jdk-17, same worktree-
+// local-then-main-checkout fallback findAndroidSdkRoot already uses below -
+// this is the "portable JDK 17 + Android SDK under .swarmforge/" one-time
+// setup the BL-707 how-to documents, now checked automatically instead of
+// requiring JAVA_HOME exported by hand before every acceptance run.
+function portableJdk17Candidates(repoRoot) {
+  const macosHomeSuffix = ['Contents', 'Home'];
+  const roots = [repoRoot, resolveMainCheckout(repoRoot)];
+  const candidates = [];
+  for (const root of roots) {
+    const base = path.join(root, '.swarmforge', 'jdk-17');
+    candidates.push(base, path.join(base, ...macosHomeSuffix));
+  }
+  return candidates;
+}
+
+function findJdk17Home(repoRoot) {
   if (process.env.JAVA_HOME && isJdk17Plus(process.env.JAVA_HOME)) {
     return process.env.JAVA_HOME;
+  }
+  if (repoRoot) {
+    for (const candidate of portableJdk17Candidates(repoRoot)) {
+      if (isJdk17Plus(candidate)) {
+        return candidate;
+      }
+    }
   }
   const brewPrefixes = ['/usr/local/opt', '/opt/homebrew/opt'];
   const brewNames = ['openjdk', 'openjdk@17', 'openjdk@21', 'openjdk@18'];
@@ -82,11 +105,11 @@ function ensureLocalProperties(androidDir, sdkRoot) {
 // feature's Background depends on, never silently skipped.
 function runGradle(repoRoot, args, opts = {}) {
   const androidDir = path.join(repoRoot, 'android');
-  const jdkHome = findJdk17Home();
+  const jdkHome = findJdk17Home(repoRoot);
   if (!jdkHome) {
     throw new Error(
-      'no JDK 17+ found (checked JAVA_HOME, Homebrew openjdk, and /usr/libexec/java_home) — ' +
-        'install one to run the Android JVM unit suite'
+      'no JDK 17+ found (checked JAVA_HOME, .swarmforge/jdk-17, Homebrew openjdk, and ' +
+        '/usr/libexec/java_home) — install one to run the Android JVM unit suite'
     );
   }
   const sdkRoot = findAndroidSdkRoot(repoRoot);
