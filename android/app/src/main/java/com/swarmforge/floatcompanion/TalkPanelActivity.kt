@@ -188,6 +188,13 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             } else {
                 VoiceEngineSelector.Engine.LOCAL
             }
+            // The RadioButton is already checked by the OS's own tap handling
+            // before this listener runs. Snap it back to the last confirmed
+            // state synchronously, in the same UI pass, so the tap is never
+            // drawn on screen before the bridge responds — displayed
+            // selection must follow the bridge's answer, never the tap
+            // (BL-864 invariant, BL-864-voice-engine-selector-tap-leak).
+            renderVoiceEngineState(previous)
             val wireName = if (tapped == VoiceEngineSelector.Engine.OPENAI) "openai" else "local"
             eng.chooseVoiceEngine(wireName) { result ->
                 val outcome = when {
