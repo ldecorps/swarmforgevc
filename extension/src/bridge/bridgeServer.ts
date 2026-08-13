@@ -1266,6 +1266,16 @@ function requestPath(req: http.IncomingMessage): string {
 // Authorization when opening a download link). Basename-only, fixed prefix.
 export const SIDELOAD_APK_PATH = /^\/swarmforge-float-companion-[A-Za-z0-9._-]+\.apk$/;
 
+// BL-788: any request under this literal prefix is claimed by the sideload
+// namespace pre-auth, even one that fails SIDELOAD_APK_PATH (a malformed
+// name, a traversal attempt, a percent-encoded one). Before this, such a
+// request fell through to the generic 401 gate - safe only by coincidence
+// (no other route happened to match it either), not because this route
+// deliberately rejected it. Claiming the whole prefix makes the rejection
+// explicit and guarantees it 404s rather than depending on nothing else in
+// the routing table ever matching it.
+export const SIDELOAD_APK_NAMESPACE_PREFIX = '/swarmforge-float-companion';
+
 function sideloadApkPublicDir(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'public');
 }
@@ -1357,8 +1367,13 @@ function tryServeSideloadApk(
     return false;
   }
   const pathname = extractSideloadRequestPathname(url);
-  if (!SIDELOAD_APK_PATH.test(pathname)) {
+  if (!pathname.startsWith(SIDELOAD_APK_NAMESPACE_PREFIX)) {
     return false;
+  }
+  if (!SIDELOAD_APK_PATH.test(pathname)) {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
+    return true;
   }
   const resolved = resolveSideloadApkFile(pathname, sideloadApkPublicDir(targetPath));
   if (!resolved) {
@@ -1372,6 +1387,65 @@ function tryServeSideloadApk(
 
 function queryToken(url: string): string | undefined {
   return parseQueryCredential(url);
+}
+
+// BL-788: applicationId the shipped Bubble build installs under. Single
+// source of truth for the pairing page's intent:// link -
+// bl788BubblePairingInvariants.property.test.js parses
+// android/app/build.gradle.kts's applicationId and asserts it never drifts
+// from this constant (invariant 2: the bridge must never hand the phone a
+// package id the build declares differently).
+export const BUBBLE_APPLICATION_ID = 'com.swarmforge.float';
+
+const PAIR_PAGE_PATH = '/pair';
+
+function isPairPagePath(pathname: string): boolean {
+  return pathname === PAIR_PAGE_PATH;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// BL-788: pre-auth pairing page. A phone that has never paired has no
+// bearer token to send, so - like the sideload APK route above - this is
+// gated by a query-string credential rather than an Authorization header.
+// The intent:// link is a plain, clickable <a> (never an auto-navigating
+// <meta refresh> or script redirect to a bare swarmforge-bubble:// URL):
+// the old hotfix's bare custom-scheme auto-redirect failed silently with no
+// fallback when Bubble was not yet installed. Exported for direct unit
+// testing without needing a live HTTP round trip.
+export function buildPairPageHtml(bridgeUrl: string, token: string): string {
+  const intentHref =
+    `intent://pair?url=${encodeURIComponent(bridgeUrl)}&token=${encodeURIComponent(token)}` +
+    `#Intent;scheme=swarmforge-bubble;package=${BUBBLE_APPLICATION_ID};end`;
+  return [
+    '<!doctype html>',
+    '<html><head><meta charset="utf-8"><title>Pair Bubble</title></head><body>',
+    '<h1>Pair the Bubble app</h1>',
+    `<p><a href="${escapeHtml(intentHref)}">Open in Bubble</a></p>`,
+    "<p>If the button does nothing (Bubble not installed, or the browser blocks intent: links), copy these into Bubble's Settings screen by hand:</p>",
+    `<p>Bridge URL: <code>${escapeHtml(bridgeUrl)}</code></p>`,
+    `<p>Token: <code>${escapeHtml(token)}</code></p>`,
+    '</body></html>',
+  ].join('\n');
+}
+
+function tryServePairPage(res: http.ServerResponse, url: string, host: string | undefined, registry: DeviceRegistry): boolean {
+  const pathname = extractSideloadRequestPathname(url);
+  if (!isPairPagePath(pathname)) {
+    return false;
+  }
+  if (!isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry))) {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unauthorized' }));
+    return true;
+  }
+  const token = primaryTokenOf(registry);
+  const bridgeUrl = `https://${host ?? ''}`;
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(buildPairPageHtml(bridgeUrl, token));
+  return true;
 }
 
 // BL-866: companion-manifest + package catalog. Neither fits the JsonRoute
@@ -1795,6 +1869,13 @@ export function startBridge(
 
       // Public sideload APKs (no bearer) — must stay ahead of the 401 gate.
       if (tryServeSideloadApk(req, res, targetPath, url)) {
+        return;
+      }
+
+      // BL-788: pre-auth pairing page — a phone that has never paired has
+      // no bearer token to send, so this is gated by query token like the
+      // sideload route above, not the Authorization header.
+      if (tryServePairPage(res, url, req.headers.host, registry)) {
         return;
       }
 
