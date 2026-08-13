@@ -93,8 +93,14 @@ an operator console; STT remains reproducible with a pinned local model.
      stored, or an unreadable preference file, the env var above still decides. Selecting an
      engine the host cannot serve — OpenAI with no key, or Local with no local engine — now
      fails the turn loudly with a reason naming the engine and what is missing, instead of the
-     old silent empty-adapter turn. No write path is exposed yet (bridge-internal only); the
-     phone-facing selector is BL-864.
+     old silent empty-adapter turn.
+
+7. **Phone-facing selector (BL-864).** Bubble Settings exposes the write path: `GET`/`POST
+   /lets-talk/audio-engine`, gated by the bubble-config `voiceEngineSwitch` capability flag.
+   The selector opens on the engine the bridge reports as actually in use, offers an
+   unserviceable engine disabled with its reason, and never shows an engine as selected that
+   the bridge has not accepted — a tap does not visibly register until the bridge answers. See
+   [how-to/BL-864-bubble-voice-engine-selector.md](../../how-to/BL-864-bubble-voice-engine-selector.md).
 
 ---
 
