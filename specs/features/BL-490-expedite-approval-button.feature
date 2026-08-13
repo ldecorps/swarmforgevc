@@ -5,10 +5,10 @@ Feature: Expedite an approval ask: approve, force-promote, and dispatch a ticket
     And the posted ask is the BL-410 inline-keyboard approval ask
 
   # BL-490 expedite-approval-01
-  Scenario: The approval ask offers Expedite alongside Approve, Amend, and Reject
+  Scenario: The approval ask offers Q jump (the expedite action) alongside Approve, Amend, and Reject
     When the approval ask's buttons are rendered for a ticket
-    Then the rendered buttons include an Expedite button
-    And the Expedite button carries the expedite verb tagged with the ticket id
+    Then the rendered buttons include a Q jump button
+    And the Q jump button still carries the expedite verb tagged with the ticket id
     And the Approve, Amend, and Reject buttons are still present
 
   # BL-490 expedite-approval-02
@@ -51,7 +51,7 @@ Feature: Expedite an approval ask: approve, force-promote, and dispatch a ticket
     Given the ticket is still pending review
     When the Expedite button is tapped for the ticket
     Then the posted ask's inline keyboard is removed
-    And an Expedited decision line with the recorded UTC time is appended to the message
+    And a Q jumped decision line with the recorded UTC time is still appended to the message
 
   # BL-490 expedite-approval-08
   Scenario: A tap on an already-decided ask performs no expedite side effect

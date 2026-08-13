@@ -7,7 +7,7 @@ epic: swarm-reliability
 assigned_to:
 human_approval: approved
 severity: medium
-priority: 57
+priority: 58
 mutation_cost: low
 direction: swarm-surfaced
 depends_on: []
