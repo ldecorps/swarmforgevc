@@ -1690,3 +1690,127 @@ test('GET /lets-talk/bubble-config.json serves the bundled default config, inclu
     assert.equal(body.features.bridgeBounceAutoSessionReset, true);
   });
 });
+
+// BL-866: companion-manifest + package catalog, the bridge-side contract
+// epic BL-865's phone-side slices will read.
+
+function writeVisionDocFor(target, relativePath, content) {
+  const filePath = path.join(target, relativePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+}
+
+test('GET /companion-manifest requires authorization, like every other bridge route', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('GET /companion-package/backlog requires authorization', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('GET /companion-manifest lists each available package with a generation and a format version', async () => {
+  const target = mkTmp();
+  writeVisionDocFor(target, 'docs/reference/Specification.MD', '# Spec');
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const names = body.packages.map((p) => p.name).sort();
+    assert.deepEqual(names, ['backlog', 'docs']);
+    for (const pkg of body.packages) {
+      assert.equal(typeof pkg.generation, 'string');
+      assert.equal(typeof pkg.formatVersion, 'number');
+    }
+  });
+});
+
+test('GET /companion-package/backlog serves a body carrying the generation the manifest advertised', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const manifest = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`, { headers: auth }).then((r) => r.json());
+    const advertised = manifest.packages.find((p) => p.name === 'backlog');
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`, { headers: auth });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.generation, advertised.generation);
+  });
+});
+
+test('GET /companion-package/backlog?generation=<current> answers unchanged with no body on the wire', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const first = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`, { headers: auth }).then((r) => r.json());
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog?generation=${first.generation}`, { headers: auth });
+    assert.equal(res.status, 304);
+    const bytes = await res.arrayBuffer();
+    assert.equal(bytes.byteLength, 0);
+  });
+});
+
+test('GET /companion-package/backlog?generation=<stale> sends the current body at the current generation', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const first = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`, { headers: auth }).then((r) => r.json());
+
+    fs.mkdirSync(path.join(target, 'backlog', 'active'), { recursive: true });
+    fs.writeFileSync(path.join(target, 'backlog', 'active', 'BL-1.yaml'), 'id: BL-1\ntitle: "t"\nstatus: todo\n');
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog?generation=${first.generation}`, { headers: auth });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.notEqual(body.generation, first.generation);
+  });
+});
+
+test('GET /companion-manifest omits docs when its source cannot be read, backlog still listed', async () => {
+  const target = mkTmp(); // no docs/ tree
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const body = await res.json();
+    const names = body.packages.map((p) => p.name);
+    assert.deepEqual(names, ['backlog']);
+  });
+});
+
+test('GET /companion-package/docs is refused with a reason once its source is unreadable, not served empty', async () => {
+  const target = mkTmp(); // no docs/ tree — never readable
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/docs`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(typeof body.reason, 'string');
+    assert.ok(body.reason.length > 0);
+    assert.equal('data' in body, false);
+  });
+});
+
+test('GET /companion-package/does-not-exist is refused with a reason naming the unknown package', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/does-not-exist`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.match(body.reason, /does-not-exist/);
+  });
+});
