@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-13T10:22:14.318529Z","feature_name":"Resident-pane live capture TTL cache","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-881-resident-pane-live-capture-ttl-cache.feature","background_hash":"21c27927145ac7b003c224ba8d2fe50e85662d2bce0908e0f3b49138bdcdc489","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 # Backlog: BL-881
 Feature: Resident-pane live capture TTL cache
   The Mini App polls /resident-pane on a short interval. Each live capture
