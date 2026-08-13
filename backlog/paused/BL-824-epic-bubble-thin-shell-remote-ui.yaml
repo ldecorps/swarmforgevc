@@ -201,3 +201,10 @@ notes: |
   Why BL-774 (priority 86) is outranked at 88: the intake's own assessment —
   "it multiplies every later Bubble ticket's ship cost if skipped". Live
   Screen is one of the screens whose ship cost this changes.
+
+  2026-08-13: coordinator open-slot nudge (top candidate: this ticket)
+  cleared without promotion. The slot the sweep saw open was filled between
+  the sweep and this turn by promoting+routing BL-860 (BL-881's close
+  reopened the slot; BL-860 landed in it, commit 4ff36083a). active/ is at
+  cap 3/3 as of this note. Not a rejection of BL-824 — it remains top of the
+  paused queue for the next open slot.
