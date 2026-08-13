@@ -35,10 +35,22 @@ export function buildBubblePairingDeepLink(liveUrl: string): string {
   return `swarmforge-bubble://pair?url=${encodeURIComponent(parsed.origin)}&token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * BL-788: the bridge's own pre-auth /pair page, reachable in any browser
+ * (unlike pairingDeepLink's bare custom-scheme URI, which fails silently
+ * with no fallback when Bubble is not yet installed).
+ */
+export function buildBubblePairingHttpsUrl(liveUrl: string): string {
+  const parsed = new URL(liveUrl);
+  const token = parsed.searchParams.get('token') ?? parsed.searchParams.get('bearer') ?? '';
+  return `${parsed.origin}/pair?token=${encodeURIComponent(token)}`;
+}
+
 export interface ResidentSpyTunnelUrls {
   liveUrl: string;
   consoleUrl: string;
   pairingDeepLink: string;
+  pairingHttpsUrl: string;
 }
 
 export function buildResidentSpyTunnelUrls(baseUrl: string, token: string): ResidentSpyTunnelUrls {
@@ -47,6 +59,7 @@ export function buildResidentSpyTunnelUrls(baseUrl: string, token: string): Resi
     liveUrl,
     consoleUrl: buildConsoleMiniAppUrl(baseUrl, token),
     pairingDeepLink: buildBubblePairingDeepLink(liveUrl),
+    pairingHttpsUrl: buildBubblePairingHttpsUrl(liveUrl),
   };
 }
 
@@ -129,7 +142,12 @@ export async function syncResidentSpyTunnelUrl(
   options: { botUsername?: string } = {}
 ): Promise<{ state: ResidentSpyTunnelNotifyState; outcome: ResidentSpyTunnelNotifyOutcome }> {
   const consoleUrl = consoleUrlFromLiveUrl(liveUrl);
-  const urls: ResidentSpyTunnelUrls = { liveUrl, consoleUrl, pairingDeepLink: buildBubblePairingDeepLink(liveUrl) };
+  const urls: ResidentSpyTunnelUrls = {
+    liveUrl,
+    consoleUrl,
+    pairingDeepLink: buildBubblePairingDeepLink(liveUrl),
+    pairingHttpsUrl: buildBubblePairingHttpsUrl(liveUrl),
+  };
   if (!shouldNotifyResidentSpyTunnel(prevState, urls)) {
     return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
   }

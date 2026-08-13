@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { startBridge } = require('../out/bridge/bridgeServer');
+const { startBridge, buildPairPageHtml } = require('../out/bridge/bridgeServer');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
@@ -211,11 +211,39 @@ test('serves a published float-companion APK without authorization', async () =>
   });
 });
 
+// BL-788: widened from 401 to 404. A name under the sideload namespace
+// prefix that fails SIDELOAD_APK_PATH is now claimed and rejected by THIS
+// route rather than falling through to the generic 401 gate (previously
+// safe only by coincidence - no other route happened to match it either).
 test('rejects path-traversal looking APK names', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/swarmforge-float-companion-../secret.apk`);
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 404);
+  });
+});
+
+// BL-788 acceptance scenario 03: a request under the sideload namespace
+// prefix but shaped so it never matches SIDELOAD_APK_PATH at all (a raw "/"
+// or a percent-encoded one right after the prefix, no matching "-") must
+// still 404, not fall through to the generic unauthorized gate. Raw
+// http.request is used (not fetch) so the exact wire bytes reach the
+// server, matching bl851SideloadApkPreauthSteps.js's own rationale.
+test('404s a traversal-shaped sideload request that never matches the naming pattern at all', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const http = require('node:http');
+    const raw = (rawPath) =>
+      new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port: handle.port, path: rawPath, method: 'GET' }, (res) => {
+          res.on('data', () => {});
+          res.on('end', () => resolve(res.statusCode));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    assert.equal(await raw('/swarmforge-float-companion/../../../../etc/passwd.apk'), 404);
+    assert.equal(await raw('/swarmforge-float-companion%2f..%2f..%2fsecrets.apk'), 404);
   });
 });
 
@@ -240,6 +268,47 @@ test('does not follow a symlink inside the public dir that resolves outside it',
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/${name}`);
     assert.equal(res.status, 404);
+  });
+});
+
+// BL-788: the pairing page - like the sideload APK route - has no bearer to
+// check (a phone that has never paired cannot set an Authorization header),
+// so it is gated by a query-string token instead.
+test('serves the pairing page with an intent:// link naming the shipped package id, and copy fallbacks', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pair?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /intent:\/\/pair\?/);
+    assert.match(html, /package=com\.swarmforge\.float/);
+    assert.doesNotMatch(html, /http-equiv="refresh"/);
+    assert.doesNotMatch(html, /href="swarmforge-bubble:\/\//);
+    assert.match(html, /<code>https:\/\//);
+    assert.match(html, new RegExp(`<code>${TOKEN}</code>`));
+  });
+});
+
+// BL-788: bridgeUrl comes from the client-controlled Host header (see
+// tryServePairPage's `https://${host}`), so buildPairPageHtml must escape
+// HTML-special characters in both the URL and the token before reflecting
+// them into the page. No prior test drives buildPairPageHtml with a value
+// containing '&', '<', '>' or '"', so a broken/removed escapeHtml call
+// would pass every existing assertion.
+test('buildPairPageHtml escapes HTML-special characters in the bridge URL and token', () => {
+  const html = buildPairPageHtml('https://evil.example/"><script>x</script>&x=1', 'tok<>&"en');
+  assert.doesNotMatch(html, /<script>x<\/script>/);
+  assert.match(html, /<code>https:\/\/evil\.example\/&quot;&gt;&lt;script&gt;x&lt;\/script&gt;&amp;x=1<\/code>/);
+  assert.match(html, /<code>tok&lt;&gt;&amp;&quot;en<\/code>/);
+});
+
+test('rejects a pairing page request with no or the wrong token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const noToken = await fetch(`http://127.0.0.1:${handle.port}/pair`);
+    assert.equal(noToken.status, 401);
+    const wrongToken = await fetch(`http://127.0.0.1:${handle.port}/pair?token=not-${TOKEN}`);
+    assert.equal(wrongToken.status, 401);
   });
 });
 
