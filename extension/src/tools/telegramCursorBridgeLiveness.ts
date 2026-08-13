@@ -21,20 +21,33 @@ export function formatCursorBridgeLivenessLine(busy: boolean, queuedCount = 0): 
   return queuedCount > 0 ? `Bridge: busy · ${queuedCount} waiting` : 'Bridge: busy';
 }
 
-export interface SyncLivenessStatusDeps {
+/**
+ * BL-767: standing cue mirrored into the topic a queued question came from
+ * (Cursor Remote already gets formatCursorBridgeLivenessLine's own line —
+ * this is for every OTHER topic holding queued work). Always states its
+ * count, even 0, so a drain is visible as "0 waiting" in that topic too.
+ */
+export function formatQueuedWorkLivenessLine(queuedCount: number): string {
+  return queuedCount > 0 ? `Bridge: busy · ${queuedCount} waiting` : 'Bridge: idle · 0 waiting';
+}
+
+interface TelegramTransportDeps {
   botToken: string;
   chatId: string;
-  state: CursorBridgePersistedState;
-  busy: boolean;
-  persistState: () => void;
   postMessage?: (topicId: number, text: string) => Promise<number | undefined>;
   editMessage?: (topicId: number, messageId: number, text: string) => Promise<boolean>;
   /** Telegram transport seam for the default postMessage/editMessage — never a real network call under test. */
   telegramPostFn?: TelegramPostFn;
 }
 
+export interface SyncLivenessStatusDeps extends TelegramTransportDeps {
+  state: CursorBridgePersistedState;
+  busy: boolean;
+  persistState: () => void;
+}
+
 /** Default postMessage adapter — goes through the injectable Telegram transport seam, never a real network call under test. */
-function defaultLivenessPostMessage(deps: SyncLivenessStatusDeps): (topicId: number, text: string) => Promise<number | undefined> {
+function defaultLivenessPostMessage(deps: TelegramTransportDeps): (topicId: number, text: string) => Promise<number | undefined> {
   return (id, body) =>
     sendTelegramMessage(deps.botToken, deps.chatId, body, undefined, deps.telegramPostFn, id).then((r) =>
       r.success ? r.messageId : undefined
@@ -42,7 +55,7 @@ function defaultLivenessPostMessage(deps: SyncLivenessStatusDeps): (topicId: num
 }
 
 /** Default editMessage adapter — mirrors defaultLivenessPostMessage's transport seam. */
-function defaultLivenessEditMessage(deps: SyncLivenessStatusDeps): (topicId: number, messageId: number, text: string) => Promise<boolean> {
+function defaultLivenessEditMessage(deps: TelegramTransportDeps): (topicId: number, messageId: number, text: string) => Promise<boolean> {
   return (id, messageId, body) =>
     editMessageText(deps.botToken, deps.chatId, messageId, body, undefined, deps.telegramPostFn).then((r) => r.success);
 }
@@ -90,4 +103,71 @@ export async function syncCursorBridgeLivenessStatus(deps: SyncLivenessStatusDep
     result = await syncEditInPlaceMessage(text, { topicId }, adapters);
   }
   applyLivenessSyncResult(deps, result);
+}
+
+export interface SyncQueuedWorkLivenessCuesDeps extends TelegramTransportDeps {
+  state: CursorBridgePersistedState;
+  persistState: () => void;
+}
+
+/**
+ * BL-767 scope bullet 3 / approval_context bullet 1: mirror the busy cue
+ * into every topic OTHER than Cursor Remote that currently holds (or, per
+ * a drain, just stopped holding) queued work — so a question asked from
+ * Bubble sees its own "N waiting" line update to "0 waiting" instead of
+ * going quiet between ack and answer. Best-effort, same as
+ * syncCursorBridgeLivenessStatus: a Telegram failure just leaves the prior
+ * identity for a later retry.
+ */
+export async function syncQueuedWorkLivenessCues(deps: SyncQueuedWorkLivenessCuesDeps): Promise<void> {
+  const cursorTopicId = deps.state.cursorTopicId;
+  const counts = new Map<number, number>();
+  for (const item of deps.state.pendingPrompts ?? []) {
+    const topicId = item.originTopicId;
+    if (topicId === undefined || topicId === cursorTopicId) {
+      continue;
+    }
+    counts.set(topicId, (counts.get(topicId) ?? 0) + 1);
+  }
+  const existing = deps.state.queuedWorkLivenessStatus ?? {};
+  const topicIds = new Set<number>([...counts.keys(), ...Object.keys(existing).map(Number)]);
+  if (topicIds.size === 0) {
+    return;
+  }
+
+  const postMessage = deps.postMessage ?? defaultLivenessPostMessage(deps);
+  const editMessage = deps.editMessage ?? defaultLivenessEditMessage(deps);
+  const next: Record<string, EditInPlaceMessageState> = { ...existing };
+
+  for (const topicId of topicIds) {
+    const text = formatQueuedWorkLivenessLine(counts.get(topicId) ?? 0);
+    const adapters = {
+      ensureTopic: async () => topicId,
+      postMessage,
+      editMessage,
+    };
+    const prevState = existing[String(topicId)];
+    let result = await syncEditInPlaceMessage(text, prevState, adapters);
+    if (result.outcome === 'failed-edit') {
+      result = await syncEditInPlaceMessage(text, { topicId }, adapters);
+    }
+    if (result.outcome === 'posted' || result.outcome === 'edited' || result.outcome === 'skipped-unchanged') {
+      next[String(topicId)] = result.state;
+    }
+  }
+  deps.state.queuedWorkLivenessStatus = next;
+  deps.persistState();
+}
+
+/**
+ * Runs both standing-cue syncs together: Cursor Remote's own busy/idle line,
+ * then every other topic's queued-work cue. The two call sites this fans out
+ * to (`processInboundUpdates`'s queue-ack branch and its tail) always ran
+ * them back to back, so this is the one place that pairing is spelled out.
+ */
+export async function syncBridgeLivenessCues(
+  deps: Omit<SyncLivenessStatusDeps, 'persistState'> & Omit<SyncQueuedWorkLivenessCuesDeps, 'persistState'> & { persistState: () => void }
+): Promise<void> {
+  await syncCursorBridgeLivenessStatus(deps);
+  await syncQueuedWorkLivenessCues(deps);
 }
