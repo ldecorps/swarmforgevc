@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-13T06:22:57.054655Z","feature_name":"Pipeline teardown reports survivors from its own root only","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-730-pipeline-teardown-survivor-scope.feature","background_hash":"d676f0d2a6bcd596f1aaccfb8932d9ae06717e49fdbcdd6dfeee64c1f98508a6","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Pipeline teardown reports survivors from its own root only
 
   Background:
