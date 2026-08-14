@@ -64,4 +64,12 @@ function runStopSwarm(fixture, { timeout = 30000 } = {}) {
   });
 }
 
-module.exports = { buildFixture, writeKillStub, setSurvivor, setNoSurvivors, runStopSwarm };
+// BL-746 architect bounce (fixture root leaked, no cleanup path): mirrors
+// bl886SupervisorFixture.js's own cleanupFixtureRoot exactly, so both
+// callers (the acceptance step handlers and the property runner) reclaim
+// every mkdtemp'd root they build.
+function cleanupFixtureRoot(fixture) {
+  fs.rmSync(fixture.root, { recursive: true, force: true });
+}
+
+module.exports = { buildFixture, writeKillStub, setSurvivor, setNoSurvivors, runStopSwarm, cleanupFixtureRoot };
