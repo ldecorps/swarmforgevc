@@ -238,3 +238,12 @@ notes: |
   (BL-746/BL-788/BL-871) as of this note. Still not a rejection of
   BL-824 — its own children (BL-825/BL-829) remain the promotable path, not
   the epic itself.
+
+  2026-08-14 (fifth time): a fifth open-slot nudge naming this ticket
+  cleared without promotion, same shape as the prior four. BL-788's close
+  reopened the slot (bookkeeping commit 488b6eb3b), and
+  promote_and_route_next.sh auto-picked BL-719
+  (dropped-parcel-surfaces-to-coordinator) into it before this nudge could
+  be acted on, commit dbaa8c283. active/ is at cap 3/3 (BL-746/BL-871/BL-719)
+  as of this note. Still not a rejection of BL-824 — its own children
+  (BL-825/BL-829) remain the promotable path, not the epic itself.
