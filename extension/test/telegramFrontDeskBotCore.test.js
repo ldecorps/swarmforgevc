@@ -3187,6 +3187,9 @@ function amendFixtureAdapters(overrides = {}) {
         editCalls.push({ topicId, messageId, text });
         return { success: true };
       }),
+    // BL-892: same absent-means-not-wired posture as closingFixtureAdapters'.
+    commitApprovalWrites: overrides.commitApprovalWrites,
+    notifyApprovalsTopic: overrides.notifyApprovalsTopic,
     editCalls,
   };
 }
@@ -3207,7 +3210,7 @@ test('recordAmendDecisionAndClose: a real transition records amending, resets em
 
   const result = await recordAmendDecisionAndClose(adapters, 'BL-509', 'tighten the acceptance criteria', nowMs);
 
-  assert.equal(result, true);
+  assert.equal(result.changed, true);
   assert.deepEqual(resets, ['BL-509']);
   assert.deepEqual(directives, [{ backlogId: 'BL-509', text: 'tighten the acceptance criteria' }]);
   assert.deepEqual(adapters.editCalls, [
@@ -3231,7 +3234,7 @@ test('recordAmendDecisionAndClose: no real transition (recordAmendReply reports 
 
   const result = await recordAmendDecisionAndClose(adapters, 'BL-509', 'tighten the acceptance criteria', 0);
 
-  assert.equal(result, false);
+  assert.equal(result.changed, false);
   assert.deepEqual(resets, []);
   assert.deepEqual(directives, []);
   assert.deepEqual(adapters.editCalls, []);
@@ -3239,7 +3242,7 @@ test('recordAmendDecisionAndClose: no real transition (recordAmendReply reports 
 
 test('recordAmendDecisionAndClose: every optional adapter absent degrades to record-only, never crashes', async () => {
   const result = await recordAmendDecisionAndClose({ recordAmendReply: async () => true }, 'BL-509', 'tighten the acceptance criteria', 0);
-  assert.equal(result, true);
+  assert.equal(result.changed, true);
 });
 
 // ── BL-484: recordApprovalDecisionAndClose - the ONE closing routine
@@ -3265,6 +3268,12 @@ function closingFixtureAdapters(overrides = {}) {
     waitForAskCloseRetry: overrides.waitForAskCloseRetry,
     askCloseRetryBudget: overrides.askCloseRetryBudget,
     scheduleConciergeTick: overrides.scheduleConciergeTick,
+    // BL-892: pass through only when the test actually supplies one - an
+    // absent commitApprovalWrites means "not wired", the same
+    // "new capability defaults to a no-op" posture every other optional
+    // PollAdapters field here already has.
+    commitApprovalWrites: overrides.commitApprovalWrites,
+    notifyApprovalsTopic: overrides.notifyApprovalsTopic,
     editCalls,
   };
 }
@@ -3275,9 +3284,9 @@ test('recordApprovalDecisionAndClose: an approved decision with a stored ask edi
   });
   const nowMs = Date.UTC(2026, 6, 17, 3, 7);
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, nowMs);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, nowMs);
 
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
   assert.deepEqual(adapters.editCalls, [
     { topicId: 800, messageId: 999, text: 'BL-484 needs your approval...\n-- Approved 2026-07-17 03:07 UTC' },
   ]);
@@ -3331,14 +3340,14 @@ test('BL-496: a stored ask message with no editApprovalAskMessage adapter wired 
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still succeed with no edit adapter wired');
+  assert.equal(result.changed, true, 'expected the decision recording to still succeed with no edit adapter wired');
   assert.ok(
     errors.some((e) => e.includes('BL-484') && e.includes('message edit failed or not wired')),
     `expected the "not wired" fallback logged, got: ${JSON.stringify(errors)}`
@@ -3358,9 +3367,9 @@ test('recordApprovalDecisionAndClose: a rejected decision appends the reason', a
 test('recordApprovalDecisionAndClose: no stored ask message (never captured) records the decision but attempts no edit, never crashes', async () => {
   const adapters = closingFixtureAdapters({ readApprovalAskMessage: undefined });
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
 
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
   assert.deepEqual(adapters.editCalls, []);
 });
 
@@ -3370,9 +3379,9 @@ test('recordApprovalDecisionAndClose: a decision that was NOT actually pending (
     readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
   });
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
 
-  assert.equal(changed, false);
+  assert.equal(result.changed, false);
   assert.deepEqual(adapters.editCalls, [], 'expected no edit attempted for a no-op (already-decided) recording');
 });
 
@@ -3387,25 +3396,109 @@ test('recordApprovalDecisionAndClose: a failed message edit is logged and does n
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still be reported as successful');
+  assert.equal(result.changed, true, 'expected the decision recording to still be reported as successful');
   assert.ok(errors.some((e) => e.includes('BL-484')), `expected a failed-edit warning naming the ticket, got: ${JSON.stringify(errors)}`);
 });
 
 test('recordApprovalDecisionAndClose: readApprovalAskMessage/editApprovalAskMessage both absent (pre-BL-484 PollAdapters) records the decision and never crashes', async () => {
-  const changed = await recordApprovalDecisionAndClose(
+  const result = await recordApprovalDecisionAndClose(
     { recordApprovalReply: async () => true, recordRejectionReply: async () => true },
     'BL-484',
     { kind: 'approved' },
     0
   );
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
+});
+
+// ── BL-892: commitApprovalWrites is called on every real transition; a
+//    GENUINE failure (adapter wired, returns false) is surfaced loudly to
+//    the Approvals topic, an ABSENT adapter (not wired at all) degrades
+//    silently - the same "new capability defaults to a no-op" posture
+//    every other optional PollAdapters field here already has. ───────────
+
+test('recordApprovalDecisionAndClose: a successful commit is reported and never surfaces a failure notice', async () => {
+  const commitCalls = [];
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    commitApprovalWrites: async (backlogId, message) => {
+      commitCalls.push({ backlogId, message });
+      return true;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, true);
+  assert.deepEqual(commitCalls, [{ backlogId: 'BL-892', message: 'Approve BL-892: record human_approval\n\nBy coder.' }]);
+  assert.deepEqual(notified, [], 'a successful commit needs no surfacing reply');
+});
+
+test('recordApprovalDecisionAndClose: a GENUINE commit failure (adapter wired, returns false) is reported and surfaced loudly', async () => {
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    commitApprovalWrites: async () => false,
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'rejected', reason: 'scope creep' }, 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, false);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /BL-892/);
+  assert.match(notified[0].text, /FAILED TO COMMIT/);
+});
+
+test('recordApprovalDecisionAndClose: commitApprovalWrites ABSENT (not wired) degrades silently - never surfaces a failure notice', async () => {
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, false);
+  assert.deepEqual(notified, [], 'an absent adapter is a deployment that has not wired this capability yet, not a failure');
+});
+
+test('recordAmendDecisionAndClose: a GENUINE commit failure is reported and surfaced loudly, naming "amending"', async () => {
+  const notified = [];
+  const adapters = amendFixtureAdapters({
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-892 needs your approval...' }),
+    commitApprovalWrites: async () => false,
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordAmendDecisionAndClose(adapters, 'BL-892', 'tighten scope', 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, false);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /BL-892/);
+  assert.match(notified[0].text, /amending/);
+  assert.match(notified[0].text, /FAILED TO COMMIT/);
 });
 
 // ── BL-496: the ask-close's own bounded, retry_after-honouring retry ─────
@@ -3462,9 +3555,9 @@ test('BL-496 ask-close-rate-limit-02: a rate-limited edit waits the told-you-so 
     },
   });
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
 
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
   assert.equal(attempts, 3, 'expected 3 total edit attempts (2 failed + 1 succeeded)');
   assert.deepEqual(waits, [3000, 3000], 'expected a 3-second wait requested before each of the 2 retries');
   assert.equal(adapters.editCalls.length, 1, 'expected the message finally edited on the successful attempt');
@@ -3490,14 +3583,14 @@ test('BL-496 ask-close-rate-limit-03: a persistently rate-limited edit stops at 
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still succeed despite the undelivered close');
+  assert.equal(result.changed, true, 'expected the decision recording to still succeed despite the undelivered close');
   assert.equal(attempts, 3, 'expected exactly the bounded budget of attempts, never more');
   assert.deepEqual(waits, [3000, 3000], 'expected a wait only BETWEEN attempts, never after the last one');
   assert.ok(
@@ -3522,14 +3615,14 @@ test('BL-496: an askCloseRetryBudget of 0 (misconfigured) attempts no edit at al
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still succeed despite the zero retry budget');
+  assert.equal(result.changed, true, 'expected the decision recording to still succeed despite the zero retry budget');
   assert.equal(attempts, 0, 'expected zero edit attempts with a zero budget - the loop must never run');
   assert.ok(errors.some((e) => e.includes('BL-484')), `expected the undelivered close logged, got: ${JSON.stringify(errors)}`);
 });
