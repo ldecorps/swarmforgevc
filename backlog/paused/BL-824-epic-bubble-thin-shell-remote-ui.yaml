@@ -193,6 +193,22 @@ notes: |
   BL-634 envelope. Their sequencing dependency on this epic is recorded as
   slice E rather than by rewriting them.
 
+  2026-08-14 (coordinator): open-slot nudge named this candidate (highest
+  approved priority number, 1) — not promoted. Epics are not directly
+  promotable per this ticket's own title ("do not promote directly; tracks
+  children"). The slot was independently filled in the same recheck cycle
+  by BL-894 (defect, priority 35, orthogonal), so no promotion was possible
+  here either way this cycle.
+
+  2026-08-14 (later same shift): nudge recurred again after BL-891 closed;
+  slot was independently filled by BL-514 before this note was worked.
+  active/ at cap 3/3 (BL-514/BL-746/BL-894). Root cause unchanged: BL-824
+  itself is never promotable, and its unlock chain is still blocked —
+  BL-765 (dep of BL-825) remains in paused/, approved, not yet promoted.
+  Recommend BL-765 get priority on the next genuinely open slot to finally
+  break this recurring nudge rather than continuing to record each
+  occurrence individually.
+
   Every operator directive quoted in the source intake survives verbatim in
   substance into this epic's `source:` block (the five locked decisions), per
   the consolidation constraint the specifier prompt states and BL-681 is
