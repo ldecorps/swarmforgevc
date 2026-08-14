@@ -15,7 +15,17 @@ assigned_to: none
 mutation_cost: medium
 invariants:
   - "A queued question leaves the queue in exactly one way — run by selection, cleared by clear-all, or dropped by expiry — and every departure is visible to the human."
-  - "At most one queue selection poll is outstanding for the Host bridge at any time."
+  - >-
+    At most one queue selection poll is outstanding for the Host bridge at
+    any time. NARROWED by BL-894 (architect decision, 2026-08-14): this held
+    for AUTOMATIC re-presentation only (idle-triggered posting still refuses
+    to double-post via clearQueuedPollIfStale's sameIds/clearAllOk check —
+    unchanged). It no longer holds for an EXPLICIT human `/queue` request,
+    which BL-894's hotfix deliberately makes always post a fresh poll even
+    with one outstanding (a scrolled-off poll is otherwise unreachable). The
+    losing case is covered instead by a new BL-894 invariant: a vote on the
+    poll this superseded is never absorbed in silence — the human is told
+    it's stale rather than getting nothing.
 
 approval_context: >
   Drained from `backlog/INTAKE-host-queue-poll-clear-ttl.md` (human via

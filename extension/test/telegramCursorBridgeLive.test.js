@@ -3067,7 +3067,7 @@ test('runCursorBridgePollOnce tells the human a vote landed on a superseded queu
     assert.equal(sentPolls.length, 1, 'expected the repost to send a fresh poll');
     const afterRepost = loadJsonFile(deps.statePath);
     assert.equal(afterRepost.pendingPromptPoll.pollId, 'poll-fresh');
-    assert.equal(afterRepost.supersededPromptPollId, 'poll-old');
+    assert.deepEqual(afterRepost.supersededPromptPollIds, ['poll-old']);
 
     await runCursorBridgePollOnce(
       {
@@ -3094,6 +3094,77 @@ test('runCursorBridgePollOnce tells the human a vote landed on a superseded queu
   const finalState = loadJsonFile(deps.statePath);
   assert.equal((finalState.pendingPrompts ?? []).length, 2, 'a vote on a superseded poll must never change the queue');
   assert.equal(finalState.pendingPromptPoll.pollId, 'poll-fresh', 'the live poll is untouched by a vote on the superseded one');
+});
+
+// BL-894 D1 (hardener bounce 2026-08-14): supersededPromptPollId was a
+// single scalar, so a SECOND /queue repost overwrote the first repost's id
+// and a vote on the now-doubly-superseded poll fell through silently (no
+// post, no queue change). Reproduces two reposts before voting on the very
+// first (generation-0) poll.
+test('runCursorBridgePollOnce tells the human a vote landed on a poll superseded by TWO reposts, not just one', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root, { cursorTopicId: 55 });
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  let freshCounter = 0;
+  telegramClient.sendTelegramPoll = async () => ({ success: true, pollId: `poll-fresh-${++freshCounter}` });
+  const posts = [];
+  function queueUpdate(updateId) {
+    return {
+      update_id: updateId,
+      message: { message_id: updateId, text: '/queue', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 },
+    };
+  }
+  try {
+    const initialState = {
+      updateOffset: 0,
+      cursorTopicId: 55,
+      pendingPrompts: [
+        { id: 'qp-1', text: 'first queued', createdAtMs: Date.now() },
+        { id: 'qp-2', text: 'second queued', createdAtMs: Date.now() },
+      ],
+      pendingPromptPoll: { pollId: 'poll-gen0', itemIds: ['qp-1', 'qp-2'], clearAllOptionIndex: 2 },
+    };
+    writeJsonFile(deps.statePath, initialState);
+
+    const first = await runCursorBridgePollOnce(
+      { ...deps, post: async (_t, _c, _topic, text) => posts.push(text), getUpdates: async () => ({ success: true, updates: [queueUpdate(1)] }) },
+      initialState,
+      false,
+      0
+    );
+    const second = await runCursorBridgePollOnce(
+      { ...deps, post: async (_t, _c, _topic, text) => posts.push(text), getUpdates: async () => ({ success: true, updates: [queueUpdate(2)] }) },
+      first.state,
+      first.busy,
+      0
+    );
+    assert.equal(freshCounter, 2, 'expected two reposts to each send a fresh poll');
+    const afterSecondRepost = loadJsonFile(deps.statePath);
+    assert.equal(afterSecondRepost.pendingPromptPoll.pollId, 'poll-fresh-2');
+
+    await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async (_t, _c, _topic, text) => posts.push(text),
+        getUpdates: async () => ({
+          success: true,
+          updates: [{ update_id: 3, poll_answer: { poll_id: 'poll-gen0', option_ids: [0], user: { id: 42 } } }],
+        }),
+      },
+      second.state,
+      second.busy,
+      0
+    );
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+  assert.ok(
+    posts.some((t) => /no longer live/i.test(t)),
+    `expected a reply telling the human the doubly-superseded poll is stale, not silence; posts:\n${posts.join('\n---\n')}`
+  );
+  const finalState = loadJsonFile(deps.statePath);
+  assert.equal((finalState.pendingPrompts ?? []).length, 2, 'a vote on a doubly-superseded poll must never change the queue');
 });
 
 test('telegramCursorBridgeLive exports poll and file name constants', () => {

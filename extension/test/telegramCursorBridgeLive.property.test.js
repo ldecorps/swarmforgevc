@@ -131,16 +131,23 @@ test('property: whichever deferred-reply path drains, the reply is posted to exa
 // BL-894 declared invariant 1: "A tap the human makes on any selection poll
 // this bridge has posted either changes the queue or tells the human it did
 // not — a superseded poll never absorbs a tap in silence." Generator sweeps
-// queue size (n) and which option on the STALE poll was tapped (0..n-1 a
-// real item, n itself the clear-all option) — the full option space Telegram
-// could actually send back for that poll.
-async function runSupersededPollVote(n, selectedIndex) {
+// queue size (n), which option on the STALE poll was tapped (0..n-1 a real
+// item, n itself the clear-all option — the full option space Telegram could
+// actually send back for that poll), and repostCount: how many /queue
+// reposts happen (each superseding the previous outstanding poll) BEFORE the
+// human votes on the very FIRST (generation-0) poll. BL-894 D1 (hardener
+// bounce 2026-08-14): repostCount >= 2 is exactly the case a single-scalar
+// "most recently superseded" tracker cannot represent — the fix must survive
+// an arbitrary number of generations, not just one.
+async function runSupersededPollVote(n, selectedIndex, repostCount) {
   const root = mkRoot();
   const deps = mkPollDeps(root, 55);
   const telegramClient = require('../out/notify/telegramClient');
   const originalSendPoll = telegramClient.sendTelegramPoll;
-  telegramClient.sendTelegramPoll = async () => ({ success: true, pollId: 'poll-fresh' });
+  let freshCounter = 0;
+  telegramClient.sendTelegramPoll = async () => ({ success: true, pollId: `poll-fresh-${++freshCounter}` });
   const posts = [];
+  let updateId = 0;
   try {
     const items = Array.from({ length: n }, (_, i) => ({ id: `qp-${i + 1}`, text: `item ${i + 1}`, createdAtMs: Date.now() }));
     const initialState = {
@@ -150,36 +157,41 @@ async function runSupersededPollVote(n, selectedIndex) {
       pendingPromptPoll: { pollId: 'poll-old', itemIds: items.map((item) => item.id), clearAllOptionIndex: n },
     };
     writeJsonFile(deps.statePath, initialState);
-    const first = await runCursorBridgePollOnce(
-      {
-        ...deps,
-        post: async (_t, _c, _topic, text) => posts.push(text),
-        getUpdates: async () => ({
-          success: true,
-          updates: [
-            {
-              update_id: 1,
-              message: { message_id: 1, text: '/queue', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 },
-            },
-          ],
-        }),
-      },
-      initialState,
-      false,
-      0
-    );
+    let current = { state: initialState, busy: false };
+    for (let repost = 0; repost < repostCount; repost++) {
+      updateId += 1;
+      current = await runCursorBridgePollOnce(
+        {
+          ...deps,
+          post: async (_t, _c, _topic, text) => posts.push(text),
+          getUpdates: async () => ({
+            success: true,
+            updates: [
+              {
+                update_id: updateId,
+                message: { message_id: updateId, text: '/queue', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 },
+              },
+            ],
+          }),
+        },
+        current.state,
+        current.busy,
+        0
+      );
+    }
     const beforeVote = loadJsonFile(deps.statePath);
+    updateId += 1;
     await runCursorBridgePollOnce(
       {
         ...deps,
         post: async (_t, _c, _topic, text) => posts.push(text),
         getUpdates: async () => ({
           success: true,
-          updates: [{ update_id: 2, poll_answer: { poll_id: 'poll-old', option_ids: [selectedIndex], user: { id: 42 } } }],
+          updates: [{ update_id: updateId, poll_answer: { poll_id: 'poll-old', option_ids: [selectedIndex], user: { id: 42 } } }],
         }),
       },
-      first.state,
-      first.busy,
+      current.state,
+      current.busy,
       0
     );
     const afterVote = loadJsonFile(deps.statePath);
@@ -193,16 +205,17 @@ test('property: a vote on a poll this bridge has superseded either changes the q
   await fc.assert(
     fc.asyncProperty(
       fc.integer({ min: 1, max: 6 }).chain((n) => fc.tuple(fc.constant(n), fc.integer({ min: 0, max: n }))),
-      async ([n, selectedIndex]) => {
-        const { posts, beforeVote, afterVote } = await runSupersededPollVote(n, selectedIndex);
+      fc.integer({ min: 1, max: 4 }), // repostCount: reposts before voting on generation-0
+      async ([n, selectedIndex], repostCount) => {
+        const { posts, beforeVote, afterVote } = await runSupersededPollVote(n, selectedIndex, repostCount);
         assert.deepEqual(
           afterVote.pendingPrompts,
           beforeVote.pendingPrompts,
-          'a vote on an already-superseded poll must never change the queue'
+          `a vote on an already-superseded poll must never change the queue (repostCount=${repostCount})`
         );
         assert.ok(
           posts.some((t) => /no longer live/i.test(t)),
-          `expected an explicit reply telling the human the poll is stale; posts:\n${posts.join('\n---\n')}`
+          `expected an explicit reply telling the human the poll is stale after ${repostCount} repost(s); posts:\n${posts.join('\n---\n')}`
         );
       }
     ),

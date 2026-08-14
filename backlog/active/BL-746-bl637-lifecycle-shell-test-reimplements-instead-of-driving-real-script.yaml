@@ -243,5 +243,5 @@ description: |
     cases is preserved.
 bounce_count: 2
 bounce_history:
-  - { at: 2026-08-14, by: architect, blamed: coder, class: behavior, commit: 7f30ede4d9, evidence: backlog/evidence/BL-746-architect-bounce-20260814.md }
   - { at: 2026-08-14, by: QA, blamed: architect, class: behavior, commit: fd2e742bd, evidence: backlog/evidence/BL-746-qa-bounce-20260814.md }
+  - { at: 2026-08-14, by: architect, blamed: coder, class: behavior, commit: 7f30ede4d9, evidence: backlog/evidence/BL-746-architect-bounce-20260814.md }
