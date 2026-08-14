@@ -27,7 +27,13 @@ After ancillaries + pipeline teardown, `./stop-swarm.sh` scans live processes
 - any `--remote-control Operator` agent
 
 If either survives it prints `REFUSE: … named survivors: …` and exits non-zero —
-it never prints `full stack SUCCESS — clean slate` in that case.
+it never prints `full stack SUCCESS — no known survivors` in that case.
+
+`./stop-swarm.sh` also refuses to report a clean stop if the pipeline kill
+itself exited non-zero: it prints `REFUSE: pipeline stop exited $kill_rc; not
+reporting a finished clean stop` and exits with that same non-zero code — a
+second, independent refuse gate alongside the survivor scan above. Both gates
+must pass before the success line prints.
 
 ## Discoverability
 
