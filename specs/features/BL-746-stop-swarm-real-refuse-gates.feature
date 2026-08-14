@@ -1,7 +1,3 @@
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-14T10:21:55.480692Z","feature_name":"The real stop-swarm.sh owns its refuse gates and success line","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-746-stop-swarm-real-refuse-gates.feature","background_hash":"a3671ae931e16d1f281e752421e727aeeb72d996eb2a895615c785d05a0136b6","implementation_hash":"unknown","scenarios":[]}
-# acceptance-mutation-manifest-end
-
 Feature: The real stop-swarm.sh owns its refuse gates and success line
 
   The full-stack stop refuses to report a clean stop while any supervised
