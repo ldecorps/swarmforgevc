@@ -29,6 +29,20 @@ function runStopSwarm(ctx) {
   return ctx.bl746Result;
 }
 
+// Every Then step below is a potential scenario-terminal assertion (each
+// scenario chains several via And - see the feature file), so each must
+// clean up the fixture root before its assertion can throw: mirrors
+// bl886SupervisorFixture.js's own terminal-step cleanup pattern. Safe to
+// call more than once per scenario - fs.rmSync(..., {force: true}) is a
+// no-op on an already-removed root, and runStopSwarm(ctx) only ever reads
+// the already-captured ctx.bl746Result, never the fixture root itself,
+// after the process has run.
+function assertOnResult(ctx, assertFn) {
+  const result = runStopSwarm(ctx);
+  fixtureLib.cleanupFixtureRoot(fixture(ctx));
+  assertFn(result);
+}
+
 function registerSteps(registry) {
   // ── Background ────────────────────────────────────────────────────────
   registry.defineScoped(
@@ -76,84 +90,64 @@ function registerSteps(registry) {
   );
 
   // ── Then ──────────────────────────────────────────────────────────────
-  // Every Then step below is a potential scenario-terminal assertion (each
-  // scenario chains several via And - see the feature file), so each calls
-  // cleanupFixtureRoot itself, before the assertion can throw: mirrors
-  // bl886SupervisorFixture.js's own terminal-step cleanup pattern. Safe to
-  // call more than once per scenario - fs.rmSync(..., {force: true}) is a
-  // no-op on an already-removed root, and runStopSwarm(ctx) only ever
-  // reads the already-captured ctx.bl746Result, never the fixture root
-  // itself, after the process has run.
   registry.defineScoped(
     /^its exit status is non-zero$/,
-    (ctx) => {
-      const result = runStopSwarm(ctx);
-      fixtureLib.cleanupFixtureRoot(fixture(ctx));
+    (ctx) => assertOnResult(ctx, (result) => {
       if ((result.status || 0) === 0) {
         throw new Error(`expected a non-zero exit status, got 0. stdout=${result.stdout} stderr=${result.stderr}`);
       }
-    },
+    }),
     FEATURE,
   );
 
   registry.defineScoped(
     /^its exit status is (\d+)$/,
-    (ctx, code) => {
-      const result = runStopSwarm(ctx);
-      fixtureLib.cleanupFixtureRoot(fixture(ctx));
+    (ctx, code) => assertOnResult(ctx, (result) => {
       if (result.status !== Number(code)) {
         throw new Error(`expected exit status ${code}, got ${result.status}. stdout=${result.stdout} stderr=${result.stderr}`);
       }
-    },
+    }),
     FEATURE,
   );
 
   registry.defineScoped(
     /^its stderr names "([^"]+)" as a survivor$/,
-    (ctx, named) => {
-      const result = runStopSwarm(ctx);
-      fixtureLib.cleanupFixtureRoot(fixture(ctx));
+    (ctx, named) => assertOnResult(ctx, (result) => {
       if (!(result.stderr || '').includes(named)) {
         throw new Error(`expected stderr to name "${named}" as a survivor, got: ${result.stderr}`);
       }
-    },
+    }),
     FEATURE,
   );
 
   registry.defineScoped(
     /^its output does not contain "([^"]+)"$/,
-    (ctx, text) => {
-      const result = runStopSwarm(ctx);
-      fixtureLib.cleanupFixtureRoot(fixture(ctx));
+    (ctx, text) => assertOnResult(ctx, (result) => {
       const combined = `${result.stdout || ''}${result.stderr || ''}`;
       if (combined.includes(text)) {
         throw new Error(`expected output to NOT contain "${text}", got: ${combined}`);
       }
-    },
+    }),
     FEATURE,
   );
 
   registry.defineScoped(
     /^its stdout contains the line "([^"]+)"$/,
-    (ctx, line) => {
-      const result = runStopSwarm(ctx);
-      fixtureLib.cleanupFixtureRoot(fixture(ctx));
+    (ctx, line) => assertOnResult(ctx, (result) => {
       if (!(result.stdout || '').includes(line)) {
         throw new Error(`expected stdout to contain "${line}", got: ${result.stdout}`);
       }
-    },
+    }),
     FEATURE,
   );
 
   registry.defineScoped(
     /^its stderr contains "([^"]+)"$/,
-    (ctx, text) => {
-      const result = runStopSwarm(ctx);
-      fixtureLib.cleanupFixtureRoot(fixture(ctx));
+    (ctx, text) => assertOnResult(ctx, (result) => {
       if (!(result.stderr || '').includes(text)) {
         throw new Error(`expected stderr to contain "${text}", got: ${result.stderr}`);
       }
-    },
+    }),
     FEATURE,
   );
 }
