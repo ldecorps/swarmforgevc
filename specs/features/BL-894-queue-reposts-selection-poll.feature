@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5cbc42e790cdf99da0671dfa153ef3e83499c04541d3470726929776b5068e97
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-14T20:27:34.363838Z","feature_name":"/queue reposts the Host queue selection poll","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-894-queue-reposts-selection-poll.feature","background_hash":"535a1a045bdc9c0622df364fa8918639fdf6e260a887a9cc7544091eea5aa35d","implementation_hash":"unknown","scenarios":[{"index":5,"name":"/queue never permanently redefines where polls are posted","scenario_hash":"85655ba39a00326b33c79dc61d3e217ce5fd2f4b1b75411c203c78ece8530c73","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-14T20:27:34.363838Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: /queue reposts the Host queue selection poll
 
   The Host bridge's /queue command used to print a scroll of truncated lines.
@@ -30,6 +35,18 @@ Feature: /queue reposts the Host queue selection poll
     And a selection poll is already outstanding
     And the human has sent "/queue"
     And a second selection poll has been posted
+    When the human votes on the superseded poll
+    Then the human is told that poll is no longer live
+    And the queue still holds 2 questions
+
+  # BL-894 queue-reposts-selection-poll-03b
+  Scenario: a tap on a poll superseded by TWO reposts never vanishes in silence
+    Given 2 questions are queued
+    And a selection poll is already outstanding
+    And the human has sent "/queue"
+    And a second selection poll has been posted
+    And the human has sent "/queue"
+    And a third selection poll has been posted
     When the human votes on the superseded poll
     Then the human is told that poll is no longer live
     And the queue still holds 2 questions
