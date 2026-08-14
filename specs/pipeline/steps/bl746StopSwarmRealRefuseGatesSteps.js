@@ -76,10 +76,19 @@ function registerSteps(registry) {
   );
 
   // ── Then ──────────────────────────────────────────────────────────────
+  // Every Then step below is a potential scenario-terminal assertion (each
+  // scenario chains several via And - see the feature file), so each calls
+  // cleanupFixtureRoot itself, before the assertion can throw: mirrors
+  // bl886SupervisorFixture.js's own terminal-step cleanup pattern. Safe to
+  // call more than once per scenario - fs.rmSync(..., {force: true}) is a
+  // no-op on an already-removed root, and runStopSwarm(ctx) only ever
+  // reads the already-captured ctx.bl746Result, never the fixture root
+  // itself, after the process has run.
   registry.defineScoped(
     /^its exit status is non-zero$/,
     (ctx) => {
       const result = runStopSwarm(ctx);
+      fixtureLib.cleanupFixtureRoot(fixture(ctx));
       if ((result.status || 0) === 0) {
         throw new Error(`expected a non-zero exit status, got 0. stdout=${result.stdout} stderr=${result.stderr}`);
       }
@@ -91,6 +100,7 @@ function registerSteps(registry) {
     /^its exit status is (\d+)$/,
     (ctx, code) => {
       const result = runStopSwarm(ctx);
+      fixtureLib.cleanupFixtureRoot(fixture(ctx));
       if (result.status !== Number(code)) {
         throw new Error(`expected exit status ${code}, got ${result.status}. stdout=${result.stdout} stderr=${result.stderr}`);
       }
@@ -102,6 +112,7 @@ function registerSteps(registry) {
     /^its stderr names "([^"]+)" as a survivor$/,
     (ctx, named) => {
       const result = runStopSwarm(ctx);
+      fixtureLib.cleanupFixtureRoot(fixture(ctx));
       if (!(result.stderr || '').includes(named)) {
         throw new Error(`expected stderr to name "${named}" as a survivor, got: ${result.stderr}`);
       }
@@ -113,6 +124,7 @@ function registerSteps(registry) {
     /^its output does not contain "([^"]+)"$/,
     (ctx, text) => {
       const result = runStopSwarm(ctx);
+      fixtureLib.cleanupFixtureRoot(fixture(ctx));
       const combined = `${result.stdout || ''}${result.stderr || ''}`;
       if (combined.includes(text)) {
         throw new Error(`expected output to NOT contain "${text}", got: ${combined}`);
@@ -125,6 +137,7 @@ function registerSteps(registry) {
     /^its stdout contains the line "([^"]+)"$/,
     (ctx, line) => {
       const result = runStopSwarm(ctx);
+      fixtureLib.cleanupFixtureRoot(fixture(ctx));
       if (!(result.stdout || '').includes(line)) {
         throw new Error(`expected stdout to contain "${line}", got: ${result.stdout}`);
       }
@@ -136,6 +149,7 @@ function registerSteps(registry) {
     /^its stderr contains "([^"]+)"$/,
     (ctx, text) => {
       const result = runStopSwarm(ctx);
+      fixtureLib.cleanupFixtureRoot(fixture(ctx));
       if (!(result.stderr || '').includes(text)) {
         throw new Error(`expected stderr to contain "${text}", got: ${result.stderr}`);
       }
