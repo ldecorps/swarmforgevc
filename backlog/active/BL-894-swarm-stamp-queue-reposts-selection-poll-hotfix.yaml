@@ -212,3 +212,6 @@ notes: |
   covered by the diff. Full property suite green (272/272); unit suites
   green (241/241 for the two changed files); acceptance feature green
   (6/6 scenarios).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: hardender, blamed: coder, class: behavior, commit: 6097b0bfdc, evidence: backlog/evidence/BL-894-hardener-bounce-20260814.md }
