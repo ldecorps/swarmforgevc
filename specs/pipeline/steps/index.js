@@ -442,7 +442,8 @@ const DOMAINS = [
   require('./bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps'),
   require('./bl866CompanionManifestPackageCatalogSteps'),
   require('./bl788BubblePairingClientLogsAdoptSteps'),
-  require('./bl719DroppedParcelNudgeSteps')
+  require('./bl719DroppedParcelNudgeSteps'),
+  require('./bl687EpicReorderIncludesActiveChildrenSteps')
 ];
 
 function registerSteps(registry) {

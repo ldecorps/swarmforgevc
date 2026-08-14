@@ -858,27 +858,39 @@ function hasLiveDependency(item: MakeTopItem, liveIds: Set<string>): boolean {
 
 function computeEpicReorderState(targetPath: string): unknown {
   const epics = readPausedEpics(targetPath);
+  // BL-672's own paused+hold domination set - kept for hasLiveDependency's
+  // dependency-liveness check ONLY (invariant 2: widening the drill-down's
+  // MEMBERSHIP must never widen what counts as a live dependency).
   const liveItems = readLiveBacklogItems(targetPath);
   const liveIds = new Set(liveItems.map((item) => item.id));
+  // BL-687: the within-epic drill-down's own widened membership set (paused
+  // + hold + active, done excluded) - deliberately NOT readLiveBacklogItems
+  // above, which stays paused+hold-only for BL-672's epic-tile route
+  // (invariant 3: widening that reader in place would silently widen the
+  // whole-backlog epic-tile Make top's domination set too).
+  const withinEpicItems = readWithinEpicLiveBacklogItems(targetPath);
   // BL-686: membership is resolved by slug (epicTopicSlugMatch.ts), never by
   // comparing a child's `epic:` slug against an epic tile's `id:` - those
   // are different strings by design (BL-542/BL-545's shared slug proves a
   // slug isn't even unique). `type: epic` rows are excluded from `topics`
   // by computeEpicTopics itself.
-  const topics = computeEpicTopics(liveItems, epics);
+  const topics = computeEpicTopics(withinEpicItems, epics);
   return {
     items: epics.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
     total: epics.length,
     // BL-674/BL-686: every live topic, tagged with every epic TICKET ID
     // (unique, unlike its raw slug) whose own slug matches it - the
     // drill-down filters client-side on this ticket id (presentation-only,
-    // no new decision logic in the webview).
+    // no new decision logic in the webview). BL-687: inFlight badges a topic
+    // sourced from active/ - hasLiveDependency stays computed against the
+    // UNWIDENED liveIds above, so an active depends_on never lights it.
     topics: topics.map((topic) => ({
       id: topic.id,
       title: topic.title,
       priority: topic.priority,
       epicIds: topic.epicIds,
       hasLiveDependency: hasLiveDependency(topic, liveIds),
+      inFlight: topic.inFlight,
     })),
   };
 }
@@ -1022,6 +1034,43 @@ function readLiveBacklogItems(targetPath: string): (BacklogItem & MakeTopItem)[]
     dependsOn: item.dependsOn ?? [],
   }));
   return sortEpicsByPriority(live);
+}
+
+// BL-687: pure combination step for the within-epic drill-down's own widened
+// live set (paused + hold + active, done never passed in at all - excluded
+// by this function's own signature rather than filtered, so "done never
+// appears" holds by construction). Tags each item's provenance so the
+// drill-down can badge an active/ child without a second lookup. Kept
+// separate from the FS read (readWithinEpicLiveBacklogItems below) so
+// invariant 1 (every backlog state's membership) is property-testable
+// without a filesystem - same testable-core split the rest of this module
+// follows.
+export function combineWithinEpicLiveItems<T extends BacklogItem>(folders: {
+  paused: T[];
+  hold: T[];
+  active: T[];
+}): (T & MakeTopItem & { inFlight: boolean })[] {
+  const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+  const tag =
+    (inFlight: boolean) =>
+    (item: T): T & MakeTopItem & { inFlight: boolean } => ({
+      ...item,
+      priority: item.priority ?? MAX_PRIORITY,
+      dependsOn: item.dependsOn ?? [],
+      inFlight,
+    });
+  const within = [...folders.paused.map(tag(false)), ...folders.hold.map(tag(false)), ...folders.active.map(tag(true))];
+  return sortEpicsByPriority(within);
+}
+
+// BL-687: the within-epic drill-down surface ONLY - never shared with
+// readLiveBacklogItems above (BL-672's own paused+hold domination set,
+// which handleEpicMakeTopRoute and computeEpicReorderState's own
+// hasLiveDependency check keep using unchanged, invariant 3). Approval
+// context #1: an active/ ticket is a full ordering peer and a valid make-top
+// target here, never merely displayed.
+function readWithinEpicLiveBacklogItems(targetPath: string): (BacklogItem & MakeTopItem & { inFlight: boolean })[] {
+  return combineWithinEpicLiveItems(readBacklogFolders(targetPath));
 }
 
 // BL-672: classifies a depends_on id NOT present in the live domination set
@@ -1175,6 +1224,14 @@ function isEpicReorderTopicMakeTopRequestShape(value: unknown): value is { epicI
 // dominationSet parameter. The named epic and the target topic's own
 // `epic:` field must agree - a mismatch is a 404-class refusal (scenario
 // 07), never a silent move scoped to the wrong epic or the whole backlog.
+//
+// BL-687: membership (target + peers) and the ordering array both resolve
+// from withinEpicItems (paused+hold+active) - an active/ sibling is now a
+// full ordering peer and a valid target itself (approval_context #1).
+// Dependency traversal keeps reading liveItems (paused+hold only), passed as
+// computeMakeTopPriority's separate dependencyLiveItems parameter, so an
+// active depends_on stays exactly the inert 'active' classification BL-672
+// already gave it (invariant 2) regardless of how it's tagged for ordering.
 function handleEpicReorderTopicMakeTopRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -1197,23 +1254,25 @@ function handleEpicReorderTopicMakeTopRoute(
     const folders = readBacklogFolders(targetPath);
     const epics = readPausedEpics(targetPath);
     const liveItems = readLiveBacklogItems(targetPath);
+    const withinEpicItems = readWithinEpicLiveBacklogItems(targetPath);
     // BL-686: `epicId` on the wire is the tile's TICKET id; membership is
     // decided by resolving THAT ticket's own slug and comparing it against
     // the target's `epic:` slug (epicTopicSlugMatch.ts) - the same rule the
     // read side uses, so read and write can never disagree about who is in
     // the epic (invariant 2). A `type: epic` row is never itself a valid
     // make-top target or peer here (invariant 3).
-    const membership = resolveTopicMembership(liveItems, epics, value.epicId, value.topicId);
+    const membership = resolveTopicMembership(withinEpicItems, epics, value.epicId, value.topicId);
     if (!membership) {
       respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
       return;
     }
     const result = computeMakeTopPriority(
-      liveItems,
+      withinEpicItems,
       value.topicId,
       buildResolveNonLiveDependency(folders),
       membership.peers,
-      `epic ${value.epicId}'s live topics`
+      `epic ${value.epicId}'s live topics`,
+      liveItems
     );
     if (!result) {
       respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });

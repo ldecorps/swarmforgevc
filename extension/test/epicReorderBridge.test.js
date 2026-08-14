@@ -126,6 +126,48 @@ test('BL-674/BL-686: epic-reorder JSON feed lists every live (paused+hold) topic
   });
 });
 
+// BL-687 invariant 1: the within-epic drill-down's topics now span paused +
+// hold + active (done excluded), each tagged inFlight - none of those three
+// folders is ever silently absent, and a done/ child never appears.
+test('BL-687: epic-reorder JSON feed topics span paused+hold+active (done excluded), each tagged inFlight', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'EPIC-A', 0, 'slug-a');
+  writeTicket(target, 'paused', 'A1', ['type: feature', 'epic: slug-a', 'priority: 20']);
+  writeTicket(target, 'hold', 'A2', ['type: feature', 'epic: slug-a', 'priority: 40']);
+  writeTicket(target, 'active', 'A3', ['type: feature', 'epic: slug-a', 'priority: 30']);
+  writeTicket(target, 'done', 'A4', ['type: feature', 'epic: slug-a', 'priority: 1']);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const byId = new Map(body.topics.map((t) => [t.id, t]));
+    assert.deepEqual(body.topics.map((t) => t.id), ['A1', 'A3', 'A2'], 'priority ascending across all three folders');
+    assert.equal(byId.get('A1').inFlight, false);
+    assert.equal(byId.get('A2').inFlight, false);
+    assert.equal(byId.get('A3').inFlight, true, 'A3 is sourced from backlog/active/');
+    assert.ok(!byId.has('A4'), 'a done/ child must never appear, even sharing the same epic slug');
+  });
+});
+
+// BL-687 invariant 2: an active/ dependency must stay just as inert for the
+// hasLiveDependency marker as it already is for computeMakeTopPriority's own
+// traversal - widening the drill-down's MEMBERSHIP must never widen what
+// counts as a live dependency.
+test('BL-687: a depends_on naming an in-flight (active/) ticket shows no live-dependency marker', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'EPIC-A', 0, 'slug-a');
+  writeTicket(target, 'active', 'A1', ['type: feature', 'epic: slug-a', 'priority: 10']);
+  writeTicket(target, 'hold', 'A2', ['type: feature', 'epic: slug-a', 'priority: 20', 'depends_on: [A1]']);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    const body = await res.json();
+    const a2 = body.topics.find((t) => t.id === 'A2');
+    assert.equal(a2.hasLiveDependency, false, 'A1 is active/, so it must never light the live-dependency marker');
+  });
+});
+
 test('BL-686: two epic trackers declaring the same slug both resolve the same topics into their epicIds', async () => {
   const target = mkTmp();
   writeEpic(target, 'EPIC-A', 0, 'shared-slug');

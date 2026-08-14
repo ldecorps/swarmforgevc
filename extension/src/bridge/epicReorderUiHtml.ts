@@ -76,6 +76,16 @@ export function getEpicReorderUiHtml(): string {
   button[disabled] { opacity: 0.35; cursor: default; }
   .empty { font-size: 15px; color: var(--tg-theme-hint-color, #8b949e); }
   .dep-marker { font-size: 11px; }
+  .in-flight-badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 1px 6px;
+    border-radius: 6px;
+    color: var(--tg-theme-hint-color, #8b949e);
+    border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 45%, transparent);
+  }
   button.back-to-tiles { margin-bottom: 10px; }
 </style>
 </head>
@@ -203,13 +213,17 @@ export function getEpicReorderUiHtml(): string {
     var topics = ((lastData && lastData.topics) || []).filter(function (t) { return (t.epicIds || []).indexOf(epicId) !== -1; });
     var html = '<button class="back-to-tiles" id="back-to-tiles">&larr; Back</button>';
     if (topics.length === 0) {
-      html += '<p class="empty">No live topics in this epic.</p>';
+      html += '<p class="empty">No reorderable topics under this epic.</p>';
     } else {
       topics.forEach(function (t) {
         var marker = t.hasLiveDependency ? ' <span class="dep-marker" title="Has a live dependency">&#9939;</span>' : '';
+        // BL-687: in-flight children are full members, not read-only guests
+        // (approval_context #1) - badged so the screen never implies an
+        // active/ row is merely displayed.
+        var inFlightBadge = t.inFlight ? ' <span class="in-flight-badge">in flight</span>' : '';
         html += '<div class="row" data-id="' + t.id + '">';
         html += '<div class="row-text">';
-        html += '<div class="row-id">' + t.id + marker + '</div>';
+        html += '<div class="row-id">' + t.id + marker + inFlightBadge + '</div>';
         html += '<div class="row-title">' + (t.title || '(untitled)') + '</div>';
         html += '<div class="row-priority">priority ' + t.priority + '</div>';
         html += '</div>';
