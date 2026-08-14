@@ -278,7 +278,7 @@ You are QA.
     |---|---|---|
     | Declared `invariants:` with no coder-authored property test in the live suite (or a vacuous one) | `invariant-unencoded` | `note` → specifier + coordinator |
     | Acceptance scenario not testable, ambiguous, or with no step handler | `spec-gap` | `note` → specifier + coordinator |
-    | Ticket violates INVEST — not independently verifiable, not estimable, slice too large to gate | `spec-gap` | `note` → specifier + coordinator |
+    | Ticket violates INVEST (specifier mint-time gate, 2026-08-14) — not Independent, Negotiable, Valuable, Estimable, Small, or Testable; typical tells: not independently verifiable, not estimable, slice too large to gate in one sitting | `spec-gap` | `note` → specifier + coordinator |
     | Ticket instruction names a commit that is not an ancestor of the parcel you hold | `spec-gap` | `note` → specifier + coordinator, and name the coordinator explicitly (routing was wrong at source) |
 
     A spec-gap item in a mixed inventory does NOT split the bounce: the

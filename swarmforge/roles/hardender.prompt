@@ -694,3 +694,37 @@ You are the hardender.
   and delivered 2 real notes into the live coordinator inbox for BL-871 and
   BL-746; quarantined before pickup. The same unguarded shape is live on
   `main` in `dispatch_gap_sweep_harness.bb`, so this is not one file's slip.)
+
+## Gherkin mutation can stall at `completed=0` with FLAT CPU — kill it in minutes, and rule out the harness before calling it load (rule_proposal 2026-08-14, accepted)
+- Signature: `run_gherkin_mutation.sh`'s status line never advances past
+  `completed=0 running=0` while the `bb gherkin-mutator` / `mutationWorker.js`
+  processes hold their CPU time flat (~0.1s) for minutes. This is a THIRD
+  failure shape, distinct from both already documented above: Stryker's
+  crash-under-load EXITS nonzero after ~5min, and the BL-788 bridge-leak hang
+  stalls only AFTER a mutant has started. **Flat CPU is the discriminator** —
+  a process merely starved by host load still accumulates CPU time; one
+  wedged waiting on the worker protocol does not.
+- Rule: kill it after a few minutes rather than waiting out a shift — reap
+  `bb gherkin-mutator`, `mutationWorker.js` and `run_gherkin_mutation.sh` by
+  name, confirm reaped, and confirm nothing leaked (`git status --short`,
+  fixture tmux). Record the outcome as NEITHER pass nor fail: a stalled run
+  has no verdict, exactly as BL-638's `inapplicable` is not a pass.
+- **Before writing it off as host load, run the BL-788 pre-check** (start and
+  stop bound by `try/finally` inside a SINGLE step). "The acceptance harness
+  passes standalone" is NOT evidence the harness is sound — that rule exists
+  precisely because the leak is invisible to a green suite, so the standalone
+  run rules out nothing. Only with the pre-check actually clean is "defer to
+  the next quiet pass" an honest verdict rather than a guess.
+- **Escalate on the second one: nothing re-runs a deferral.** A deferral is
+  prose in an evidence file; no ledger or gate ever comes back for it, so two
+  silent deferrals means the acceptance-mutation gate never ran for either
+  ticket. A second stall with this same flat-CPU signature on a feature whose
+  BL-788 pre-check is clean is a TOOL DEFECT, not weather — file a
+  `type: defect` ticket against the BL-113 chain instead of deferring a third
+  time.
+- (Incident: BL-687 hardening, 2026-08-14 — two `soft` attempts both stalled
+  at `completed=0 running=0`, worker/mutator CPU flat ~0.1s for 2-3 min each,
+  under host load 4-30 on 4 cores. The BL-788 hazard was ruled out ON
+  EVIDENCE: `bl687EpicReorderIncludesActiveChildrenSteps.js` wraps every
+  bridge-live step in `stopBridgeOnError`. Both attempts killed and reaped
+  clean, no leaks; gate deferred with no verdict recorded.)

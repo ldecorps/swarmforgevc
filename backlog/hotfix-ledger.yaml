@@ -16,28 +16,42 @@
 - commit: f175bc56d1
   subject: "Park local WIP for host switch: drain router depth, Bubble chiptunes, pilot-safe defects, answer archive."
   detected_at: 2026-08-07
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-860
   human_decision: null
   decided_at: null
 - commit: 36ea0109e9
   subject: "Land parent-orphaned front-desk janitor fix and file swarm stamp-off intake."
   detected_at: 2026-08-11
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-879
   human_decision: null
   decided_at: null
 - commit: 602c7d014c
   subject: "Land Cursor-agent hotfix: handoffd_supervisor's orphan reaper now catches property-lane vitest orphans too"
   detected_at: 2026-08-12
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-886
   human_decision: null
   decided_at: null
 - commit: 1ecbe049fe
   subject: "Land Cursor-agent hotfix: orphan janitor reaps hung property-lane vitest trees; fixture runner cleans up on abnormal exit"
   detected_at: 2026-08-12
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-886
   human_decision: null
   decided_at: null
+- commit: e49a71b532
+  subject: "Host /queue posts the selection poll instead of a numbered text list"
+  detected_at: 2026-08-14
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
+- commit: 2bfce302f5
+  subject: "Make INVEST a specifier mint-time gate (human directive 2026-08-14)"
+  detected_at: 2026-08-14
+  state: waived
+  stamp_ticket: null
+  human_decision: waived
+  decided_at: 2026-08-14
