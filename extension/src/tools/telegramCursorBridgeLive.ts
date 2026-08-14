@@ -1393,6 +1393,14 @@ function hasQueueablePromptDecision(decision: InboundDecision): decision is Extr
   return decision.action === 'prompt';
 }
 
+function syncQueuePollFieldsFromHolder(ctx: CursorBridgeHandlerContext, holder: { state: CursorBridgePersistedState }): void {
+  ctx.state.pendingPrompts = holder.state.pendingPrompts;
+  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
+  if (holder.state.cursorTopicId !== undefined) {
+    ctx.state.cursorTopicId = holder.state.cursorTopicId;
+  }
+}
+
 async function handleQueueInboundAction(
   ctx: CursorBridgeHandlerContext,
   topicId: number,
@@ -1421,11 +1429,7 @@ async function handleQueueInboundAction(
   const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
   const holder = { state: ctx.state };
   await postQueueSelectionPoll({ botToken: ctx.botToken, chatId: ctx.chatId, statePath }, holder, ctx.post);
-  ctx.state.pendingPrompts = holder.state.pendingPrompts;
-  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
-  if (holder.state.cursorTopicId !== undefined) {
-    ctx.state.cursorTopicId = holder.state.cursorTopicId;
-  }
+  syncQueuePollFieldsFromHolder(ctx, holder);
   ctx.persistState();
   return ctx.busy;
 }
@@ -1491,11 +1495,7 @@ async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContex
   );
   // Keep handler ctx aligned for the following liveness sync; persist via
   // writeJsonFile only (ctx.persistState may still point at a stale loop holder).
-  ctx.state.pendingPrompts = holder.state.pendingPrompts;
-  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
-  if (holder.state.cursorTopicId !== undefined) {
-    ctx.state.cursorTopicId = holder.state.cursorTopicId;
-  }
+  syncQueuePollFieldsFromHolder(ctx, holder);
   if (holder.state.queuedWorkLivenessStatus !== undefined) {
     ctx.state.queuedWorkLivenessStatus = holder.state.queuedWorkLivenessStatus;
   }
