@@ -1,31 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 14, 2026 (BL-891: after QA lands an approved commit by
-pushing `origin HEAD:main`, nothing ever advanced the master checkout's own
-local `main` ref — git refuses to update a branch checked out in another
-worktree (`main` lives in the master checkout, where the coordinator and
-specifier do all their reading), and Article 1.1/3.3 (BL-247) forbids the
-coordinator any git merge or push, so no role owned the step. Every landing
-left the master checkout further behind, and its own local backlog/spec commits
-turned that lag into a genuine divergence (measured live at 8 local-only / 22
-missing before the fix) — the concrete harm being a specifier scope decision
-written against a 20-minute-stale local `main` (BL-891's own `notes:`). A new
-handoffd cadence sweep, `master_main_reconcile_lib.bb`, is the pure
-gating/state logic mirroring BL-356's `push_sweep_lib.bb` in the opposite
-direction: each tick merges `origin/main` forward into local `main`
-(fast-forward or a real merge commit, never `reset`/`rebase`/`stash`/force)
-only when the working tree is clean, and surfaces a one-shot `note` to the
-coordinator — self-healing on reason change, same shape as push-sweep's own
-alarm flags — when the tree is dirty or the merge conflicts, aborting the
-conflicted merge immediately rather than leaving the checkout mid-conflict.
-`handoffd.bb` wires the pure logic to real git, reusing push-sweep's own
-ahead/behind fetch so no second fetch runs per tick. Covers both of the
-ticket's declared invariants (every local-only commit stays reachable; a
-checkout that can't be reconciled is surfaced, never partially updated) with a
-generator-based property test (BL-654) and a real-git E2E wiring test walking
-the ticket's own four-scenario QA procedure. See the new
-[runbook](../how-to/BL-891-master-main-reconcile-sweep.md).); Previously
-August 14, 2026 (BL-892: every automated `human_approval`
+**Last Updated:** August 14, 2026 (BL-892: every automated `human_approval`
 verdict — plain Approve/Reject/Amend on the paused-pager HTTP route and the
 Telegram Approvals topic/button taps, not only Expedite's own
 approve+promote path (BL-490/BL-538) — now durably commits before reporting
@@ -1713,7 +1688,6 @@ watchdog would otherwise say.
 - **BL-823** — Swarm Availability Ledger: records pause and stop-to-start intervals; BL-650's `evaluate-effective-age` subtracts them (see "Effective Age and Provider-Outage Evidence" above)
 - **BL-840** — Provider-Outage Evidence Reaches Flow Watchdog: supplies BL-650's previously-unwired provider-outage adapter with a real production evidence source (see above)
 - **BL-839** — Master-Checkout Drift Alarm: a different sweep in the same `handoffd.bb` cadence, reusing this same Telegram Operator outbox, but alarming on a different question (does the master checkout's own working tree still match `main`, not parcel age) — see [the runbook](../how-to/BL-839-master-checkout-drift-alarm.md)
-- **BL-891** — Master-Main Reconcile Sweep: another sweep in the same cadence, mirroring BL-356's push-sweep in the opposite direction — merges `origin/main` forward into the master checkout's local `main` ref when the tree is clean, surfacing a `note` to the coordinator (not this Telegram alarm channel) when it can't — see [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md)
 
 ## Per-Agent Lifecycle Control
 
