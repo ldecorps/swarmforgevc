@@ -1275,15 +1275,51 @@ test('handleInboundDecision status reflects busy state', async () => {
   assert.ok(ctx.posts.some((text) => text.includes('busy (run in flight)')));
 });
 
-test('handleInboundDecision queue lists pending prompts', async () => {
-  const ctx = mkCtx();
-  ctx.state.pendingPrompts = [
-    { id: 'qp-1', text: 'first', createdAtMs: 1 },
-    { id: 'qp-2', text: 'second', createdAtMs: 2 },
-  ];
-  await handleInboundDecision({ action: 'queue' }, ctx, 30, async () => {});
-  assert.ok(ctx.posts.some((text) => text.includes('Queued questions: 2')));
-  assert.ok(ctx.posts.some((text) => text.includes('1. first')));
+test('handleInboundDecision queue posts a selection poll for pending prompts', async () => {
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  const sentPolls = [];
+  telegramClient.sendTelegramPoll = async (_token, _chatId, question, options) => {
+    sentPolls.push({ question, options });
+    return { success: true, pollId: 'poll-queue-cmd' };
+  };
+  try {
+    const ctx = mkCtx();
+    ctx.state.pendingPrompts = [
+      { id: 'qp-1', text: 'first', createdAtMs: 1 },
+      { id: 'qp-2', text: 'second', createdAtMs: 2 },
+    ];
+    ctx.state.pendingPromptPoll = { pollId: 'stale-poll', itemIds: ['qp-1', 'qp-2'] };
+    await handleInboundDecision({ action: 'queue' }, ctx, 30, async () => {});
+    assert.equal(sentPolls.length, 1);
+    assert.match(sentPolls[0].question, /choose next queued question/);
+    assert.ok(sentPolls[0].options.some((opt) => opt.includes('first')));
+    assert.ok(sentPolls[0].options.some((opt) => opt.includes('second')));
+    assert.ok(sentPolls[0].options.includes('Clear all queued questions'));
+    assert.equal(ctx.state.pendingPromptPoll.pollId, 'poll-queue-cmd');
+    assert.ok(!ctx.posts.some((text) => text.includes('Queued questions: 2')));
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+});
+
+test('handleInboundDecision queue reports empty without posting a poll', async () => {
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  let pollCalls = 0;
+  telegramClient.sendTelegramPoll = async () => {
+    pollCalls += 1;
+    return { success: true, pollId: 'should-not-fire' };
+  };
+  try {
+    const ctx = mkCtx();
+    ctx.state.pendingPrompts = [];
+    await handleInboundDecision({ action: 'queue' }, ctx, 30, async () => {});
+    assert.equal(pollCalls, 0);
+    assert.ok(ctx.posts.some((text) => text.includes('Queue is empty.')));
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
 });
 
 test('handleInboundDecision dequeue removes by index and persists state', async () => {

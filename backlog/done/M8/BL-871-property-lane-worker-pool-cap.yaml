@@ -9,9 +9,10 @@ human_approval: approved
 priority: 6
 direction: swarm-surfaced
 depends_on: [BL-868]
-assigned_to: coder
+assigned_to: QA
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits: [48cb6032b5]
 
 description: >
   `extension/vitest.properties.config.mjs` declares `globals`, `environment`,
