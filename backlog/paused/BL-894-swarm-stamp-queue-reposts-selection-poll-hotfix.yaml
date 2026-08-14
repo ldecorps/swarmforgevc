@@ -1,0 +1,177 @@
+id: BL-894
+title: "Swarm stamp-off: /queue reposts the selection poll — verify the one-live-poll guard it deliberately clears"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: pending
+priority: 35
+direction: swarm-surfaced
+depends_on: []
+assigned_to: none
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-894-queue-reposts-selection-poll.feature.draft
+
+approval_context: >
+  This ticket is not yet authorised — it is the swarm asking whether to spend
+  a pipeline pass on this hotfix at all. Two ways to go:
+
+  (1) CERTIFY BY REVIEW (mint this, the BL-811/BL-849 posture) — run the
+  landed diff through the gates, confirm or refute, open narrow follow-ups.
+  Recommended, because the hotfix deliberately clears a guard that BL-810
+  declared as an invariant, and because it left one function with no callers.
+
+  (2) WAIVE — record `waived` in the hotfix ledger and drop this ticket. Fair
+  if you consider a 27-line UX repair on your own bridge not worth a pass.
+
+  Either answer resolves ledger entry `e49a71b532`; leaving it open means the
+  BL-848 sweep keeps resurfacing it every 6h. Note that a waiver still leaves
+  the dead `queuePromptListForDisplay` function and the superseded-poll
+  question below unaddressed — those would need their own ticket if you waive.
+
+source: |
+  `backlog/hotfix-ledger.yaml` entry `e49a71b532`, appended 2026-08-14 from
+  the commit's `Hotfix-Certification: pending` trailer (BL-848 mechanism).
+
+  Hotfix under review: commit `e49a71b53` on main, "Host /queue posts the
+  selection poll instead of a numbered text list" (By Cursor, human-landed,
+  2026-08-14 08:23 CEST). Minted by the specifier 2026-08-14 while draining a
+  coordinator hotfix broadcast; the sweep's own coordinator nudge had not yet
+  fired.
+
+description: |
+  ## What
+
+  An operator hotfix is live on `main` and has passed no gate. This ticket is
+  that gate. It is a REVIEW ticket, not a rewrite ticket — confirm or refute
+  the landed diff, and open narrow follow-ups for anything found. The human's
+  UX decision (`/queue` should show a poll, not a text scroll) is locked and
+  is not being reopened.
+
+  ## What it changed
+
+  `/queue` used to print `queuePromptListForDisplay(...)` — a scroll of
+  truncated lines. It now calls a new `handleQueueInboundAction`, which
+  reposts BL-810's existing pick-one selection poll (clear-all included), so a
+  poll that scrolled off the Host topic can be summoned back.
+
+  ```
+  telegramCursorBridgeLive.ts:825    queue: -> handleQueueInboundAction
+  telegramCursorBridgeLive.ts:1405   the new handler (+27 lines)
+  telegramCursorBridgeCore.ts:808    /help text updated to match
+  ```
+
+  ## Three things the reviewer should probe (found reading the diff)
+
+  **P1 — it clears the one-live-poll guard on purpose.** The handler sets
+  `pendingPromptPoll: undefined` before posting, with the comment "always post
+  a fresh poll, even if one is already outstanding". BL-810 declared the
+  opposite as an invariant: *"At most one queue selection poll is outstanding
+  for the Host bridge at any time."* Both positions are defensible — a
+  scrolled-off poll is useless, and BL-810's invariant was about not spamming
+  the topic — but they cannot both stand as written. Decide which is true,
+  then make the losing one stop claiming otherwise. This is the architect's
+  question, not the coder's.
+
+  **P2 — what happens to a tap on the superseded poll.** Following from P1:
+  once a second poll is posted, the first is still sitting in Telegram and
+  still tappable. `processQueuedPollAnswer` keys off `pendingPromptPoll`, so a
+  vote on the stale poll appears to match nothing. Confirm what the human
+  actually experiences — most likely a tap that does nothing and says nothing.
+  That is the invariant-1 failure below, and it is the most likely real defect
+  in this hotfix.
+
+  **P3 — `cursorTopicId` is pinned from wherever `/queue` was typed.** The
+  handler sets `cursorTopicId: ctx.state.cursorTopicId ?? topicId`. If the
+  bridge has no recorded topic yet and `/queue` arrives from some other topic,
+  that topic becomes the bridge's Host topic for every later poll. Confirm
+  whether that is reachable in practice and whether it is wanted.
+
+  ## One certain finding, already verified
+
+  `queuePromptListForDisplay` (`telegramCursorBridgeLive.ts:328`) now has zero
+  callers anywhere in `extension/src/` or `extension/test/` — the hotfix
+  replaced its only call site and left the function behind. Confirmed by grep
+  at mint time. Delete it, or state why it stays.
+
+  ## How (direction, not mandate)
+
+  The step handlers for the scenarios below belong in this parcel
+  (`specs/pipeline/steps/`), alongside the existing
+  `bl810HostQueuePollClearAllTtlSteps.js` which already drives this surface —
+  extend that harness rather than standing up a second one, unless there is a
+  reason not to.
+
+invariants:
+  - "A tap the human makes on any selection poll this bridge has posted either changes the queue or tells the human it did not — a superseded poll never absorbs a tap in silence."
+  - "Where the selection poll posts is never permanently redefined by whichever topic a /queue command happened to arrive in."
+
+required_wiring:
+  - "extension/src/tools/telegramCursorBridgeLive.ts::handleQueueInboundAction::the /queue path must still route through the poll handler the hotfix introduced; if a fix reverts /queue to a text list, this ticket's premise is gone and the ledger entry needs re-deciding rather than silently passing."
+
+out_of_scope: |
+  - Redesigning the queue selection poll itself, its clear-all option, or the
+    72h TTL. That is BL-810's shipped surface, verified by BL-811.
+  - Reordering, multi-select run-all, and a Bubble UI for this queue — still
+    excluded by the human's BL-810 decision 7.
+  - The `/dequeue N` command. Untouched by this hotfix.
+  - Recording the ledger decision itself. That is a human act via
+    `hotfix_ledger_update.bb --decide`; this ticket only makes it informed.
+
+notes: |
+  ## Why this exists at all
+
+  BL-848's rule: a hotfix is metadata-indistinguishable from ordinary
+  pipeline work, so certification must be DECLARED. This commit declared
+  itself (`Hotfix-Certification: pending`), which is what put it in the
+  ledger and, in turn, produced this ticket.
+
+  ## Sibling hotfix NOT covered here
+
+  Ledger entry `2bfce302f5` ("Make INVEST a specifier mint-time gate") landed
+  the same morning and is deliberately NOT folded into this ticket. It is a
+  prose-only change to `swarmforge/roles/specifier.prompt`,
+  `swarmforge/roles/QA.prompt` and constitution article 4 — a direct human
+  directive with no code, no test, and nothing a pipeline stage could execute.
+  Minting a review ticket whose acceptance cannot be gated would violate the
+  very rule that hotfix added (INVEST, letter T). The specifier's
+  recommendation to the human is to record it as `waived`; that is one CLI
+  call and needs no ticket. Merging the two entries into one ticket would also
+  have broken the INVEST `I` and `V` letters — different surfaces, different
+  dispositions.
+
+  ## E2E QA procedure (specifier, 2026-08-14)
+
+  Run against the live bridge and a real Telegram topic. This is a
+  human-facing surface and the whole finding set is about what the human sees;
+  a fake poll proves nothing about P2 in particular.
+
+  1. **Poll, not a list (scenario 01).** Queue two questions. Type `/queue`.
+     Confirm a native poll appears with one option per queued item plus
+     clear-all — not a text scroll.
+
+  2. **Empty queue (scenario 02).** With nothing queued, type `/queue`.
+     Confirm the reply is "Queue is empty." and that NO poll is posted.
+
+  3. **Repost, and the superseded poll (scenario 03) — the important one.**
+     With a poll already outstanding, type `/queue` again. Confirm a fresh
+     poll appears. Then scroll back and vote on the FIRST, now-superseded
+     poll. Record exactly what happens: does the queue change, does anything
+     reply, or does the tap vanish silently? Whatever it is, that is the
+     answer to P2 — write it down even if it is "nothing happens", because
+     "nothing happens" is the invariant-1 breach.
+
+  4. **Newest poll still works (scenario 04).** Vote the second option on the
+     newest poll. Confirm that question runs next, leaves the queue, and the
+     remaining items are still offered on the next poll.
+
+  5. **Topic pinning (scenario 05).** Exercise P3: with no `cursorTopicId`
+     recorded, send `/queue` from a topic other than Host, then trigger a
+     later auto-present. Confirm where that later poll lands. If P3 turns out
+     to be unreachable in practice, say so explicitly rather than leaving the
+     scenario untested.
+
+  6. **Dead helper.** Confirm `queuePromptListForDisplay` is gone (or that the
+     ticket records why it stays).
