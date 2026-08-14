@@ -78,9 +78,20 @@
 
 ## A Prior QA Bounce Is Not In Your Worktree — Check It Against `main` (BL-340)
 - Before you PASS/approve/forward, check whether the ticket was already
-  bounced for a defect still unfixed. **Read bounce history from the
-  `main` REF**, never worktree files or `origin/main` (lags). See
-  **workflow-detailed.prompt** for the full pre-trim wording.
+  bounced for a defect still unfixed. **Read bounce history from a `main`
+  REF**, never worktree files. See **workflow-detailed.prompt** for the
+  full pre-trim wording.
+- **Read BOTH `main` and `origin/main` — either can be the stale one.**
+  The original rule said to prefer local `main` because `origin/main`
+  lags; that is inverted under the current worktree layout. QA lands from
+  `.worktrees/QA` and git refuses to update a branch checked out in
+  another worktree, so QA can only push `HEAD:main` — `origin/main`
+  advances and the local ref does not, while the master checkout adds
+  bookkeeping commits of its own. Measured 2026-08-14: the two had
+  diverged 8 ahead / 22 behind, the 22 being two fully landed tickets.
+  Until BL-891 closes that loop, `git rev-list --left-right --count
+  main...origin/main` before you trust either ref, and read the one that
+  is ahead.
 
 ## QA merge-up broadcast (worktree roles)
 - A pipeline worktree role receiving a merge-up `note` from QA: `git merge

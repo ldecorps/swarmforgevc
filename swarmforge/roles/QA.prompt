@@ -114,9 +114,19 @@ You are QA.
     `BL-042 QA-approved a1b2c3d4 — merge your branch up to QA's`.
   - **Land it on `main` yourself** (BL-247; operator ruling 2026-07-10 — QA is
     the integration point, not the coordinator). Your approved commit already is
-    the verified, integrated result, so merge/fast-forward `main` to it (plain
-    `git merge`; never force-push) and push `main` to origin in the same session.
+    the verified, integrated result, so land it with
+    `git push origin HEAD:main` in the same session (never force-push).
     On push rejection: fetch, integrate, push again; never force-push.
+    - You CANNOT check out or merge into `main` from `.worktrees/QA`: `main`
+      is checked out in the master worktree, and git refuses to update a
+      branch checked out elsewhere. `git push origin HEAD:main` is the whole
+      of your landing step — do not try to work around the refusal.
+    - Know what that leaves behind: it advances `origin/main` only. The LOCAL
+      `main` ref keeps whatever it had, so the master checkout (coordinator +
+      specifier) does not see your landed code until someone reconciles it.
+      Nobody currently owns that step — BL-891. This is why the merge-up
+      broadcast above says "merge up to QA's approved commit", not "merge
+      `main`": for a worktree role, local `main` is not the landed state.
     - BL-114: if the ticket's `id` is `GH-<n>` (seeded from a GitHub issue; its
       `source:` carries the issue URL), close the loop now:
       `swarmforge/scripts/issue_done.sh <source-url> <merge-commit>`. It never

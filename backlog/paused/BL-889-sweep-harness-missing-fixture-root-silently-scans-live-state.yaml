@@ -1,0 +1,159 @@
+id: BL-889
+title: "DEFECT — a test harness invoked without its fixture-root argument silently re-roots at the cwd, scanning live mailboxes and delivering real parcels"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 100
+direction: normal
+depends_on: []
+mutation_cost: low
+human_approval: pending
+required_stages: [coder, cleaner, hardender, documenter, qa]
+stage_skip_reasons: { architect: "a refusal guard at an existing entry point; no module boundary, data flow or design change — the harnesses' structure and their real-mechanism posture are explicitly preserved by this ticket's constraint" }
+acceptance: specs/features/BL-889-harness-refuses-missing-fixture-root.feature.draft
+
+approval_context: >
+  New feature draft needs review. The judgement call worth your eye is the
+  scope line: this fixes the SILENT part (a missing root becomes a refusal
+  instead of the cwd) and deliberately does NOT try to detect "you passed a
+  live root on purpose" — an explicit `.` or an explicit live path stays
+  allowed, because a harness pointed at real state deliberately is a
+  legitimate diagnostic. If you want the harness to refuse a root that
+  looks live even when named explicitly, say so and that becomes a second,
+  larger ticket. Also confirm severity: `medium` (needs an incorrect
+  invocation to trigger, and the one live occurrence was caught and
+  quarantined) rather than `high` (when it does trigger it writes into the
+  live handoff transport).
+
+source: |
+  Hardender rule_proposal to specifier, 2026-08-14 (handoff
+  50_20260814T012006Z_000124_from_hardender): "Never run a
+  *_sweep_harness.bb w/o its fixture-root arg: bb fs/path silently drops a
+  nil first segment, resolving relative to cwd - inside a live worktree
+  this scans real mailboxes, not a fixture."
+
+  Rationale as reported: "Ran dropped_parcel_sweep_harness.bb with no args
+  hardening BL-719; it used this worktree as root, delivering 2 real notes
+  into the live coordinator inbox for BL-871/BL-746. Quarantined before
+  pickup."
+
+  Accepted as a hardender rule in `dc85c6ba8` (the operator-discipline
+  half). This ticket is the durable half: the guard the rule is currently
+  standing in for.
+
+notes: |
+  Specifier probe, 2026-08-14 — the report is accurate and the hazard is
+  wider than the one file it was found in:
+
+  1. `(fs/path nil ".swarmforge" "roles.tsv")` returns the RELATIVE
+     `".swarmforge/roles.tsv"` — verified directly under bb. No exception,
+     no warning; the nil segment is simply dropped, so the whole sweep
+     re-roots at the process cwd.
+  2. `swarmforge/scripts/test/dispatch_gap_sweep_harness.bb:20` on `main`
+     carries the identical unguarded `(def project-root (first
+     *command-line-args*))`, and drives the same real `chase_sweep_lib.bb`
+     decisions through the same real `swarm_handoff.bb` send path — so the
+     reported incident is reproducible today, on `main`, in a file the
+     original report never named.
+  3. `swarmforge/scripts/test/commit_integrity_856_scenarios_cli.bb:22`
+     has the same silent shape. It has no send path, so its failure mode is
+     bogus results read off live state rather than parcel delivery — still
+     in scope, lower stakes.
+  4. `swarmforge/scripts/test/bl619_token_burn_briefing_harness.bb:28` and
+     `commit_integrity_test_cli.bb:32` use `(nth *command-line-args* 0)`,
+     which THROWS on a missing arg. They already fail loud and need no
+     change — they are the shape the guarded harnesses should end up
+     behaving like.
+  5. `dropped_parcel_sweep_harness.bb` (the file in the incident) landed
+     with BL-719 and is on `origin/main` (`2e5eac51b`) with the same silent
+     `(first *command-line-args*)` shape and zero `System/exit`. It is
+     unambiguously in scope and is armed in `required_wiring` below.
+     Caveat for the implementer: it is NOT yet in the LOCAL `main` ref,
+     which lags `origin/main` by 22 commits — see BL-891, filed from this
+     same probe. Resolve the file against `origin/main` (or your own role
+     branch, which has BL-719 merged), not against a stale local `main`.
+
+invariants:
+  - "No harness under swarmforge/scripts/test/ ever resolves its fixture root relative to the process working directory: an absent root is refused, never defaulted."
+  - "A refused invocation is inert — it reads no mailbox, writes no state, and sends no handoff, so the filesystem is byte-identical before and after it."
+
+required_wiring:
+  - "swarmforge/scripts/test/dispatch_gap_sweep_harness.bb::System/exit::the mandated non-zero refusal; this file has zero System/exit occurrences today, so the entry is only satisfied once the guard is actually wired into this harness and not merely into a shared helper"
+  - "swarmforge/scripts/test/dropped_parcel_sweep_harness.bb::System/exit::same mandated refusal in the harness the incident actually happened in; also zero System/exit occurrences today"
+
+description: |
+  ## What
+
+  Several harnesses under `swarmforge/scripts/test/` take the fixture
+  project root as a bare first positional argument
+  (`(def project-root (first *command-line-args*))`) and then build every
+  path from it with `babashka.fs/path`. `fs/path` silently drops a nil
+  first segment, so omitting the argument does not error — it yields a
+  relative path and re-roots the entire run at the process working
+  directory. Run inside a live worktree, the harness reads the real
+  `.swarmforge/` state.
+
+  That is not a read-only accident. A sweep harness exists precisely to
+  exercise the REAL mechanism — the same `chase_sweep_lib.bb` decisions
+  through the same `swarm_handoff.bb` send path — so a cwd-rooted run
+  decides against live tickets and DELIVERS live parcels into other roles'
+  inboxes. This has happened once already (see `source:`).
+
+  Make the missing argument a loud refusal: print a usage line naming the
+  missing fixture root to standard error and exit non-zero via an explicit
+  `System/exit`, before any mailbox read, state write, or handoff send.
+
+  ## Why
+
+  The hazard is currently held off by operator discipline alone — the
+  hardender rule accepted in `dc85c6ba8` tells the role to always pass the
+  root explicitly. That rule earns its place as a reading aid, but a guard
+  clause removes the failure mode outright, and the same unguarded shape is
+  already live on `main` in a harness the original report never named
+  (`notes:` item 2). The cost of the fix is a few lines; the cost of the
+  next occurrence is polluted live mailboxes plus the recipient's time
+  working a parcel nobody sent.
+
+  ## Scope
+
+  Every harness under `swarmforge/scripts/test/` that binds a fixture root
+  from a bare positional argument, as that set exists at implementation
+  time. At spec time (2026-08-14) that is
+  `dispatch_gap_sweep_harness.bb`, `dropped_parcel_sweep_harness.bb` and
+  `commit_integrity_856_scenarios_cli.bb`. The two `(nth ... 0)` harnesses
+  in `notes:` item 4 already throw and are out of scope. Resolve this set
+  against `origin/main`, not the local `main` ref (see `notes:` item 5).
+
+  Scenario 03 is the durable half: the check must ENUMERATE the harnesses
+  it covers rather than carry a hardcoded list, so a harness added later
+  with the same unguarded shape fails the check instead of shipping the
+  hazard again.
+
+  ## Constraints
+
+  - Do NOT change what a correctly-invoked harness does. These harnesses
+    deliberately drive the real send path against a fixture root; that
+    posture is the point of them and stays exactly as it is.
+  - Do NOT try to detect "this root looks live." An explicitly passed root
+    — including `.` — remains allowed; a harness pointed at real state on
+    purpose is a legitimate diagnostic. Only ABSENCE is refused.
+  - Refuse via an explicit non-zero `System/exit`, not a bare uncaught
+    throw, so the failure reads as a usage error rather than a crash.
+  - Babashka has no mutation, CRAP or DRY tooling wired (BL-472 deferred).
+    The hardening pass here is gated by the Babashka unit-test suite under
+    `swarmforge/scripts/test/` alone, and must record that degraded
+    fallback rather than imply mutation ran.
+
+  ## QA end-to-end procedure
+
+  From a scratch directory outside any worktree
+  (`mkdir -p ./tmp/bl889-scratch && cd ./tmp/bl889-scratch`), run each
+  in-scope harness with no arguments. Each must print a usage line naming
+  the missing fixture root, exit non-zero, and leave the scratch directory
+  with no `.swarmforge/` in it. Then run `dispatch_gap_sweep_harness.bb`
+  against a fixture root with a seeded dispatch gap and confirm the nudge
+  lands in the FIXTURE's coordinator inbox while the live repository's
+  coordinator inbox is untouched (compare a `ls` of
+  `.swarmforge/handoffs/coordinator/inbox/new/` before and after).

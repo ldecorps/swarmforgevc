@@ -247,3 +247,17 @@ notes: |
   be acted on, commit dbaa8c283. active/ is at cap 3/3 (BL-746/BL-871/BL-719)
   as of this note. Still not a rejection of BL-824 — its own children
   (BL-825/BL-829) remain the promotable path, not the epic itself.
+
+  2026-08-14 (sixth time): a sixth open-slot nudge naming this ticket
+  cleared without promotion, same shape as the prior five. BL-719's close
+  reopened the slot (bookkeeping commit 723d1bf2f), and
+  promote_and_route_next.sh auto-picked BL-687
+  (epic-reorder-includes-active-children) into it before this nudge could
+  be acted on, commit d131afc76. active/ is at cap 3/3
+  (BL-687/BL-746/BL-871) as of this note. Additionally, this candidate has
+  its own unmet dependency independent of slot timing: depends_on
+  [BL-765, BL-769] and BL-765 (bubble-remote-config-and-chiptune-catalog)
+  is still in backlog/paused/, not done — so it would not have been
+  eligible even had the slot still been open. Still not a rejection of
+  BL-824 — its own children (BL-825/BL-829) remain the promotable path, not
+  the epic itself.
