@@ -5,11 +5,11 @@ type: defect
 severity: medium
 status: todo
 epic: swarmforge-console
-human_approval: pending
+human_approval: approved
 priority: 35
 direction: swarm-surfaced
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-894-queue-reposts-selection-poll.feature.draft
