@@ -2,7 +2,8 @@
 
 ;; BL-145 / full-stack ensure: `./swarm ensure` brings a swarm to a
 ;; known-good state in one idempotent command. It checks and repairs, in
-;; order: the extension host, every configured agent pane, the handoff
+;; order: the extension host, every configured agent pane (with that role's
+;; remote-control health checked right after it - BL-514), the handoff
 ;; daemon, the operator runtime, babysitterd, and
 ;; (when Telegram is configured) the front-desk supervisor that owns the
 ;; Telegram bridge + Front Desk Bot.
@@ -30,6 +31,9 @@
 ;;     handoffd_supervisor.bb's --check-once probe, which can alarm-and-halt!)
 ;;   SWARM_ENSURE_OPERATOR_CMD / SWARM_ENSURE_FRONT_DESK_CMD
 ;;   SWARM_ENSURE_BABYSITTERD_CMD
+;;   SWARM_ENSURE_RC_CMDLINE_CMD (BL-514) - substitutes the remote-control
+;;     component's live-process probe; the real probe reads /proc/<pid>/cmdline,
+;;     unavailable on a macOS dev/test host
 ;;   SWARMFORGE_SKIP_OPERATOR=1 / SWARMFORGE_SKIP_FRONT_DESK=1
 ;;   SWARMFORGE_SKIP_BABYSITTERD=1
 
@@ -45,6 +49,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -503,6 +508,80 @@
                                 (when (not= launch-role role)
                                   (str " as " launch-role))))))))
 
+;; ── remote-control (RC) component (BL-514) ──────────────────────────────────
+;; Verifies each role's live claude process still carries the --remote-control
+;; flag its launch script expects, right after that role's own agent:<role>
+;; pane check. remote-control-health/classify separates four states; RC only
+;; ever acts on :degraded (a live agent that lost its flag) - :down is left
+;; entirely to the agent:<role> check (actionable? is true only for
+;; :degraded), so a crashed pane is never double-respawned here, and
+;; :off/:healthy need nothing.
+
+(def rc-cmdline-cmd (System/getenv "SWARM_ENSURE_RC_CMDLINE_CMD"))
+
+(defn rc-cmdline-fn
+  "cmdline-fn for remote-control-health/check-role's injectable 5-arg arity.
+   The real probe (remote-control-health/claude-cmdline-in-pane) reads
+   /proc/<pid>/cmdline, which macOS dev/test hosts do not provide - tests
+   substitute SWARM_ENSURE_RC_CMDLINE_CMD (a shell command run with socket
+   and session as $1/$2; its stdout stands in for the live claude argv,
+   blank output or non-zero exit standing in for no live process)."
+  [socket session]
+  (if rc-cmdline-cmd
+    (let [{:keys [exit out]} (process/sh {:continue true} "sh" "-c" rc-cmdline-cmd "sh" socket session)]
+      (when (and (zero? exit) (not (str/blank? (str/trim out))))
+        (str/trim out)))
+    (remote-control-health/claude-cmdline-in-pane socket session)))
+
+(defn rc-launch-role
+  "The role whose launch script currently governs this pane's RC identity.
+   Under mono-router the resident keeps its home session name but may be
+   running a different role's launch script after rotate_to_role - mirrors
+   ensure-mono-router-role!'s own launch-role resolution. Checking RC against
+   the wrong script would misclassify a legitimately rotated resident as
+   :degraded and forcibly respawn it back to `role`. A blank/missing rotation
+   marker (every non-router pack) leaves role unchanged."
+  [ordered-roles role]
+  (if (= :resident (mono-router-lib/classify-role ordered-roles role))
+    (mono-router-lib/resident-launch-role role (read-mono-router-active-role-marker))
+    role))
+
+(defn rc-status [socket launch-role session]
+  (:status (remote-control-health/check-role state-dir socket launch-role session rc-cmdline-fn)))
+
+(defn respawn-rc-pane! [socket launch-role session]
+  (let [launch (remote-control-health/launch-script-path state-dir launch-role)]
+    (remote-control-health/respawn-role-pane! socket session (str launch))))
+
+(defn ensure-rc-role!
+  "role is the roles.tsv identity (used only for the reported component
+   name); launch-role (rc-launch-role) is what is actually checked/repaired.
+   Never probes the live process when the launch script carries no
+   --remote-control flag at all - remote-control-health/classify checks
+   `expected` before `actual`/`alive?`, so the result is unconditionally
+   :off in that case regardless of what the probe would find. Skipping the
+   probe there isn't just an optimization: the real probe walks the pane's
+   full descendant process tree, and is worth avoiding whenever its result
+   cannot change the outcome."
+  [socket ordered role session]
+  (let [launch-role (rc-launch-role ordered role)
+        component (str "rc:" role)]
+    (if (nil? (remote-control-health/expected-rc-name state-dir launch-role))
+      {:component component :status :healthy}
+      (let [status (rc-status socket launch-role session)]
+        (cond
+          (contains? #{:healthy :off} status)
+          {:component component :status :healthy}
+
+          (remote-control-health/actionable? status) ;; :degraded
+          (ensure-component! component
+                             #(contains? #{:healthy :off} (rc-status socket launch-role session))
+                             #(respawn-rc-pane! socket launch-role session)
+                             "respawned pane to restore --remote-control flag")
+
+          :else ;; :down - the agent:<role> check's job
+          {:component component :status :healthy})))))
+
 (defn report-line [{:keys [component status action category]}]
   (case status
     :healthy (str component ": HEALTHY")
@@ -546,20 +625,24 @@
                                    (:session %))
                                 rows)
         role-results (if socket
-                       (mapv (fn [{:keys [role session] :as row}]
-                               (if router?
-                                 (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
-                                 (ensure-role! (str "agent:" role)
-                                               #(pane-alive? socket session)
-                                               #(respawn-role! socket role session)
-                                               contract-broken?)))
-                             rows)
-                       (mapv (fn [{:keys [role]}]
-                               (let [detail "no tmux socket found for this project root"]
-                                 {:component (str "agent:" role) :status :failed
-                                  :action detail
-                                  :category (:category (agent-runtime-lib/classify-provider-error detail))}))
-                             rows))
+                       (vec (mapcat (fn [{:keys [role session] :as row}]
+                                      (let [agent-result
+                                            (if router?
+                                              (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
+                                              (ensure-role! (str "agent:" role)
+                                                            #(pane-alive? socket session)
+                                                            #(respawn-role! socket role session)
+                                                            contract-broken?))
+                                            rc-result (ensure-rc-role! socket ordered role session)]
+                                        [agent-result rc-result]))
+                                    rows))
+                       (vec (mapcat (fn [{:keys [role]}]
+                                      (let [detail "no tmux socket found for this project root"]
+                                        [{:component (str "agent:" role) :status :failed
+                                          :action detail
+                                          :category (:category (agent-runtime-lib/classify-provider-error detail))}
+                                         {:component (str "rc:" role) :status :healthy}]))
+                                    rows)))
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
         operator-result (when (operator-enabled?)
