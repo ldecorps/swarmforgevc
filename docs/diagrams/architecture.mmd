@@ -38,6 +38,17 @@
 %% then dropped mid-pipeline (BL-714) has a trail but no live mail anywhere,
 %% which the dispatch-gap sweep alone can never detect (any trail at all
 %% marks it dispatched forever). Report-only, to the coordinator's inbox.
+%% BL-891 added a master-main-reconcile sweep to the same handoffd.bb
+%% cadence, mirroring BL-356's push-sweep! in the opposite direction:
+%% origin/main's landed commits never reached the master checkout's own
+%% local main ref (QA can only `git push origin HEAD:main`; git refuses to
+%% update a branch checked out in another worktree, and the coordinator is
+%% constitutionally forbidden any git merge/push), so every landing left
+%% the master checkout further behind and, once it also carried local
+%% bookkeeping commits, genuinely diverged. The sweep merges origin/main
+%% forward into local main when the working tree is clean; a dirty tree or
+%% merge conflict blocks it and surfaces a note to the coordinator instead
+%% of touching the checkout.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -128,13 +139,14 @@ flowchart TB
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
-  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nnotifies via tmux send-keys| SOCKET
+  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
   PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
   PANES -->|closing-ceremony-run.js at\n./finish-shift, before pipeline stop (BL-820):\nreads LEANDIR, writes a run| CEREMONYDIR
   PANES -->|closing-ceremony-adjustment.js /\n-outcome.js record coordinator/specifier\ndecisions against the run (BL-820)| CEREMONYDIR
   CEREMONYDIR -->|note to specifier via\nswarm_handoff.sh (BL-820)| HANDOFFS
   DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip;\nBL-855 refuses a no-op landing merge)| TARGETREPO
+  TARGETREPO -->|handoffd.bb master-main-reconcile-sweep!:\ngit merge origin/main into the master\ncheckout local main (BL-891);\nonly when clean, never reset/rebase/\nstash/force; dirty tree or conflict\nsurfaces a note instead| PANES
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
   TILES -->|postMessage: keystroke,\nclick, command| PANEL
