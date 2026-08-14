@@ -128,3 +128,6 @@ description: |
   found, not that the sweep is unwired.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: QA, blamed: documenter, class: behavior, commit: 05eed1921, evidence: backlog/evidence/BL-890-qa-bounce-20260814.md }

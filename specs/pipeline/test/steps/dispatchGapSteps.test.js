@@ -115,6 +115,35 @@ test('findMatchingParen ignores parens inside comments and string literals', () 
   assert.equal(src.slice(0, end + 1), src);
 });
 
+// BL-890 hardening (hand-authored mutation sweep - no Scenario Outline in
+// this feature, so Gherkin mutation is inapplicable per BL-638): deleting
+// findMatchingParen's `if (ch === '\\') { i++; continue; }` backslash-escape
+// branch survived every other test in this file plus both property tests -
+// no fixture anywhere exercises an escaped quote inside a scanned string
+// literal. Without that branch, an escaped `\"` wrongly ends the string,
+// so a stray `)` right after it (as in a real Clojure/Babashka `log!` call
+// like `(log! "...\" text) more" e)`) is counted as the conditional's own
+// close paren - truncating the scan early. Constructed directly against
+// the real handoffd.bb shape: with the escape branch removed,
+// checkSweepWiredInCadence flips from {ok:true} to
+// {ok:false, reason:'conditional-not-found'} for source that is in fact
+// correctly wired - a false alarm, in the wrong direction, from prose a
+// human could add without touching any wiring at all.
+test('findMatchingParen treats an escaped quote inside a string as part of that string, not its end', () => {
+  const src = '(when true\n  (log! "escaped \\" quote) here" (other-call!)))';
+  const end = findMatchingParen(src, 0);
+  assert.equal(src[end], ')');
+  assert.equal(src.slice(0, end + 1), src);
+});
+
+test('checkSweepWiredInCadence still finds the sweep when a sibling string contains an escaped quote followed by a stray close-paren', () => {
+  const src =
+    `${CADENCE_CONDITIONAL_ANCHOR}\n` +
+    '  (try (other-sweep!) (catch Exception e (log! "escaped \\" quote) here" (.getMessage e))))\n' +
+    `  (${DISPATCH_GAP_SWEEP_NAME} (load-roles)))\n`;
+  assert.deepEqual(checkSweepWiredInCadence(src, DISPATCH_GAP_SWEEP_NAME, CADENCE_CONDITIONAL_ANCHOR), { ok: true });
+});
+
 // ── the assignee receives a routing handoff for the item ────────────────
 
 test('the assignee receives a routing handoff for the item fails loudly when nothing was queued', () => {
