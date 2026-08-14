@@ -11,7 +11,7 @@ direction: normal
 depends_on: []
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "A nudge fires only for an active ticket with NO parcel in any role's new or in_process; a ticket holding live mail is never nudged, at any trail age."
