@@ -9,7 +9,7 @@ priority: 55
 direction: normal
 depends_on: []
 mutation_cost: medium
-human_approval: pending
+human_approval: approved
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-891-local-main-ref-reflects-landed-commit.feature.draft
 
@@ -146,3 +146,5 @@ description: |
   step twice and confirm the second run changes nothing; (d) run the drift
   check on a deliberately diverged pair and confirm it reports both the
   behind and ahead counts.
+
+assigned_to: coder
