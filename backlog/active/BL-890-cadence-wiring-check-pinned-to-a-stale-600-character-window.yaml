@@ -12,7 +12,7 @@ mutation_cost: low
 human_approval: approved
 required_stages: [coder, cleaner, hardender, documenter, qa]
 stage_skip_reasons: { architect: "a single assertion inside one acceptance step handler; no module boundary, data flow or production-code change — handoffd.bb itself is explicitly unchanged by this ticket" }
-acceptance: specs/features/BL-890-cadence-wiring-check-is-position-independent.feature.draft
+acceptance: specs/features/BL-890-cadence-wiring-check-is-position-independent.feature
 
 approval_context: >
   New feature draft needs review. The judgement call worth your eye: this
@@ -126,3 +126,5 @@ description: |
   Finally rename the anchor text `chase-sweep-every-cycles` in the scratch
   copy and confirm the failure message says the conditional could not be
   found, not that the sweep is unwired.
+
+assigned_to: coder
