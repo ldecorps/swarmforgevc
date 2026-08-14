@@ -12,7 +12,7 @@ depends_on: []
 assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-894-queue-reposts-selection-poll.feature.draft
+acceptance: specs/features/BL-894-queue-reposts-selection-poll.feature
 
 approval_context: >
   This ticket is not yet authorised — it is the swarm asking whether to spend
