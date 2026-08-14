@@ -1,7 +1,11 @@
 # Article 4: Quality Gates
 
 ## 4.1 Pipeline Gates
-1. **Specifier** – Acceptance criteria defined.
+1. **Specifier** – Acceptance criteria defined; every minted ticket
+   satisfies INVEST (Independent, Negotiable, Valuable, Estimable, Small,
+   Testable) at mint — a failing letter is split or refused, never shipped
+   oversized for the coder to discover by bouncing (specifier prompt,
+   human directive 2026-08-14).
 2. **Architect** – Design review passed.
 3. **Hardener** – 100% test coverage, no surviving mutants, CRAP <= 6.
 4. **QA** – Final approval before merge.
