@@ -116,3 +116,5 @@ notes: |
   (paused-pager Approve currently disk-only). Evidence of the recurring
   stranded pattern: briefing 2026-08-14 Flagged #2; commits e7fab69a7 and
   221995ccc landing catches downstream.
+
+assigned_to: coder
