@@ -5,14 +5,14 @@ type: defect
 severity: medium
 status: todo
 epic: swarmforge-console
-human_approval: pending
+human_approval: approved
 priority: 35
 direction: swarm-surfaced
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-894-queue-reposts-selection-poll.feature.draft
+acceptance: specs/features/BL-894-queue-reposts-selection-poll.feature
 
 approval_context: >
   This ticket is not yet authorised — it is the swarm asking whether to spend
@@ -175,3 +175,40 @@ notes: |
 
   6. **Dead helper.** Confirm `queuePromptListForDisplay` is gone (or that the
      ticket records why it stays).
+
+  ## P1 resolution (architect, 2026-08-14)
+
+  BL-810's invariant "at most one queue selection poll is outstanding for
+  the Host bridge at any time" and this hotfix's "always post a fresh poll,
+  even if one is already outstanding" cannot both hold unscoped — decided in
+  favor of the repost, narrowly. Read literally, BL-810's own acceptance
+  scenario 03 ("no duplicate polls") only ever exercised the AUTOMATIC
+  idle-triggered re-presentation path, forcing another idle transition with
+  a poll outstanding — never an explicit repeated human request. That
+  automatic path is unchanged: `clearQueuedPollIfStale`'s sameIds/
+  clearAllOk check still refuses to double-post there. What BL-894 adds is a
+  deliberate escape hatch on the EXPLICIT `/queue` command only, because a
+  poll that scrolled off the topic is otherwise unreachable — a case BL-810
+  never had a UX answer for. BL-810's invariant text is amended in place
+  (see `backlog/done/M8/BL-810-host-queue-selection-poll-clear-all-and-ttl.yaml`)
+  to state this scope precisely rather than leave it claiming the broader,
+  now-false version. The losing case is covered by this ticket's own
+  declared invariant 1 (a superseded-poll vote is never absorbed in
+  silence), verified by property test in this parcel.
+
+  Confirmed via the coder+cleaner diff: `handleQueueInboundAction` clears
+  `pendingPromptPoll` unconditionally on every `/queue`, records the
+  cleared poll's id as `supersededPromptPollId`, and `processQueuedPollAnswer`
+  replies "That poll is no longer live — send /queue again to see the
+  current one." on a vote against it. P2 and P3 both verified fixed (unit
+  tests, feature scenarios 03/05, and property tests for both declared
+  invariants — non-vacuousness spot-checked by deliberately disabling the
+  P2 reply and confirming the property test fails, then restoring).
+  Dependency gate run scoped to the two changed files and full-repo: the
+  only reported violation (front-desk-bot/OperatorExec/OperatorLiveness
+  acyclic cycle) predates this parcel by ~2 weeks (blame: 2026-07-29) and
+  is already tracked as BL-759 (paused) — not caused by and not blocking
+  this parcel. Co-change report showed only expected coupling, already
+  covered by the diff. Full property suite green (272/272); unit suites
+  green (241/241 for the two changed files); acceptance feature green
+  (6/6 scenarios).
