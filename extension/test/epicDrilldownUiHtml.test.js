@@ -150,6 +150,49 @@ test('BL-674-04: a changed:false response renders its reason verbatim and leaves
   assert.deepEqual(rowIds, ['A1', 'A2', 'A3'], 'expected the listed order to be unchanged');
 });
 
+// BL-687: an in-flight (active/) child is a full member, not a read-only
+// guest - badged so the screen never implies it is merely displayed.
+test('BL-687-01: a topic row tagged inFlight carries the in-flight badge, others do not', async () => {
+  const topics = [
+    { id: 'A1', title: 'Topic A1', priority: 1, epicIds: ['EA'], hasLiveDependency: false, inFlight: false },
+    { id: 'A2', title: 'Topic A2', priority: 4, epicIds: ['EA'], hasLiveDependency: false, inFlight: true },
+  ];
+  const dom = renderScreen((url) => {
+    if (url.startsWith('/epic-reorder-state')) {
+      return stateResponse(EPICS, topics);
+    }
+    return Promise.reject(new Error('unexpected fetch: ' + url));
+  });
+  await flush();
+  const { document } = dom.window;
+  document.querySelectorAll('.drill')[0].onclick();
+  await flush();
+
+  const a1Row = document.querySelector('.row[data-id="A1"]');
+  const a2Row = document.querySelector('.row[data-id="A2"]');
+  assert.ok(!a1Row.querySelector('.in-flight-badge'), 'expected A1 (not in flight) to show no in-flight badge');
+  assert.ok(a2Row.querySelector('.in-flight-badge'), 'expected A2 (in flight) to show the in-flight badge');
+});
+
+// BL-687: "No live topics" implied that shipped (done/) children were also
+// being hidden from a genuinely non-empty set - now that the set is every
+// reorderable child, "no live topics" is no longer the true reason an epic
+// drills down empty.
+test('BL-687-02: an epic with no reorderable children shows the renamed empty state', async () => {
+  const dom = renderScreen((url) => {
+    if (url.startsWith('/epic-reorder-state')) {
+      return stateResponse(EPICS, []);
+    }
+    return Promise.reject(new Error('unexpected fetch: ' + url));
+  });
+  await flush();
+  const { document } = dom.window;
+  document.querySelectorAll('.drill')[0].onclick();
+  await flush();
+
+  assert.equal(document.querySelector('#content .empty').textContent, 'No reorderable topics under this epic.');
+});
+
 test('BL-674-05: back navigation returns to the epic tiles', async () => {
   const dom = renderScreen((url) => {
     if (url.startsWith('/epic-reorder-state')) {

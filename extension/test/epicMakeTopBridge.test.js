@@ -385,3 +385,31 @@ test('make-top route: a non-Error thrown value still reports a reason, not a cra
     atomicWriteModule.atomicWrite = originalAtomicWrite;
   }
 });
+
+// BL-687 invariant 3/scenario 07: BL-687 widens the WITHIN-EPIC drill-down
+// surface only. The epic-tile "Make top" route (BL-672) must keep ignoring
+// active/ entirely, even now that an active/ ticket sharing the target
+// epic's slug exists - readLiveBacklogItems (this route's domination set)
+// must never be the widened reader.
+test('BL-687 scenario 07: the epic-tile Make top verb still ignores an in-flight ticket, even one sharing the target epic\'s slug', async () => {
+  const target = mkGitTarget();
+  writeTicket(target, 'paused', 'E1', ['type: epic', 'priority: 35', 'epic: swarm-intelligence-layer']);
+  writeTicket(target, 'paused', 'T1', ['type: feature', 'priority: 20', 'epic: swarm-intelligence-layer']);
+  writeTicket(target, 'active', 'T2', ['type: feature', 'priority: 5', 'epic: swarm-intelligence-layer']);
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: target });
+
+  const before = fs.readFileSync(path.join(target, 'backlog', 'active', 'T2.yaml'), 'utf8');
+
+  await withBridge(target, {}, async (handle) => {
+    const { status, body } = await makeTop(handle, 'E1');
+    assert.equal(status, 200);
+    assert.equal(body.changed, true);
+  });
+
+  assert.equal(
+    fs.readFileSync(path.join(target, 'backlog', 'active', 'T2.yaml'), 'utf8'),
+    before,
+    'T2 sits at a lower priority number than E1 - if active/ were in the domination set it would bound/outrank E1; it must stay untouched'
+  );
+});

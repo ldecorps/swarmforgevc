@@ -5,6 +5,16 @@
 // transitive depends_on closure. Paths in, writes out - no filesystem, no
 // git - same testable-core boundary as epicReorderSafety.ts beside it.
 //
+// BL-687: the ORDERING array (sortedLiveItems, walked by walkToIndex) and
+// the DEPENDENCY-LIVENESS set (dependencyLiveItems, used only to classify a
+// depends_on id as live vs resolveNonLiveDependency's terminal) are two
+// separate parameters precisely so a caller CAN widen the former (the
+// within-epic topic route now includes active/ items as ordering peers/
+// targets) while the latter stays exactly BL-672's original paused+hold set
+// - an active/ ticket must never become a live dependency just because it
+// is now walkable. Every caller that doesn't pass dependencyLiveItems keeps
+// both sets identical, i.e. BL-672's original single-set behavior.
+//
 // The actual position change is NOT a bespoke bulk-cascade algorithm. It is
 // built entirely out of computeEpicReorder's already-hardened adjacent-swap
 // primitive (BL-572, three architect bounces: never reorders an untouched
@@ -331,19 +341,41 @@ function buildMakeTopResult<T extends MakeTopItem>(
 // a bounded target does not also have to out-rank its domination peers -
 // landing immediately after the bound is the whole answer). dominationLabel
 // only affects the human-readable "already best" wording.
+//
+// dependencyLiveItems (default: sortedLiveItems, i.e. every existing caller's
+// behavior unchanged) is the set whose ids count as LIVE for dependency
+// traversal - kept separate from sortedLiveItems (the ORDERING/walk array)
+// for BL-687: widening sortedLiveItems to include active/ items so they can
+// be ordering peers/targets must NOT also make an active depends_on id a
+// live dependency (approval_context #1/invariant 2 - that stays
+// resolveNonLiveDependency's 'active' classification, exactly as BL-672 set
+// it). BL-673's own call and BL-672's epic-level call never pass this - both
+// keep dependencyLiveItems === sortedLiveItems, identical to before this
+// parameter existed.
 export function computeMakeTopPriority<T extends MakeTopItem>(
   sortedLiveItems: T[],
   targetId: string,
   resolveNonLiveDependency: (id: string) => DependencyResolution,
   dominationSet: T[] = sortedLiveItems,
-  dominationLabel = 'the live backlog'
+  dominationLabel = 'the live backlog',
+  dependencyLiveItems: T[] = sortedLiveItems
 ): MakeTopResult | null {
   const targetIndex = sortedLiveItems.findIndex((item) => item.id === targetId);
   if (targetIndex === -1) {
     return null;
   }
 
-  const byId = new Map(sortedLiveItems.map((item) => [item.id, item]));
+  // The target's own depends_on must always be traversable even when
+  // dependencyLiveItems is narrower than sortedLiveItems and excludes the
+  // target itself (BL-687: an active/ ticket is a valid make-top TARGET, but
+  // never a member of the narrow paused+hold dependency-live set) - without
+  // this fallback, traverseLiveDependencies' initial visit(targetId) would
+  // find no entry for the target and throw iterating its (missing)
+  // depends_on list.
+  const byId = new Map(dependencyLiveItems.map((item) => [item.id, item]));
+  if (!byId.has(targetId)) {
+    byId.set(targetId, sortedLiveItems[targetIndex]);
+  }
   const { liveDeps, cycle, dangling } = traverseLiveDependencies(byId, targetId, resolveNonLiveDependency);
 
   if (cycle) {
