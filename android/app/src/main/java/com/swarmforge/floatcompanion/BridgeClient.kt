@@ -209,14 +209,25 @@ object BridgeClient {
         }
     }
 
-    // BL-763: GET /lets-talk/bubble-config.json — Bubble capability flags,
-    // in particular bridgeBounceAutoSessionReset (invariant 2's remote-config
-    // half). Unread fields are ignored; other flags belong to their own
-    // callers (BL-765).
+    // BL-763/BL-765: GET /lets-talk/bubble-config.json — Bubble's full
+    // capability document (textTurns, handsFree, holdMusic, playlist,
+    // newSession, pauseAll, bridgeBounceAutoSessionReset, voiceEngineSwitch).
+    // BL-763's stub read only bridgeBounceAutoSessionReset; this ticket
+    // applies the rest. Every flag defaults to true (the bundled-default
+    // shape) so a failed/unreachable fetch — BubbleConfigResult(ok = false)
+    // — degrades to "every capability enabled" rather than a broken surface
+    // (BL-654 invariant 1).
 
     data class BubbleConfigResult(
         val ok: Boolean,
+        val textTurns: Boolean = true,
+        val handsFree: Boolean = true,
+        val holdMusic: Boolean = true,
+        val playlist: Boolean = true,
+        val newSession: Boolean = true,
+        val pauseAll: Boolean = true,
         val bridgeBounceAutoSessionReset: Boolean = true,
+        val voiceEngineSwitch: Boolean = true,
         val reason: String? = null
     )
 
@@ -235,10 +246,82 @@ object BridgeClient {
             val features = json.optJSONObject("features")
             BubbleConfigResult(
                 ok = true,
-                bridgeBounceAutoSessionReset = features?.optBoolean("bridgeBounceAutoSessionReset", true) ?: true
+                textTurns = features?.optBoolean("textTurns", true) ?: true,
+                handsFree = features?.optBoolean("handsFree", true) ?: true,
+                holdMusic = features?.optBoolean("holdMusic", true) ?: true,
+                playlist = features?.optBoolean("playlist", true) ?: true,
+                newSession = features?.optBoolean("newSession", true) ?: true,
+                pauseAll = features?.optBoolean("pauseAll", true) ?: true,
+                bridgeBounceAutoSessionReset = features?.optBoolean("bridgeBounceAutoSessionReset", true) ?: true,
+                voiceEngineSwitch = features?.optBoolean("voiceEngineSwitch", true) ?: true
             )
         } catch (e: Exception) {
             BubbleConfigResult(false, reason = friendlyConnectionMessage(e))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    // BL-765: GET /lets-talk/chiptunes.json — the hold-music catalog as
+    // data, so a song add reaches the phone on bridge redeploy with no APK
+    // rebuild. Parsing rejects the WHOLE catalog on any malformed entry
+    // (BL-654 invariant 2) rather than keeping the songs that happened to
+    // parse — [parseChiptunesCatalog] is the pure decision, `internal` so
+    // the JVM unit suite can exercise it directly (BL-769 precedent).
+
+    data class ChiptunesSong(val name: String, val bpm: Int, val steps: List<List<Int>>)
+
+    data class ChiptunesCatalogResult(
+        val ok: Boolean,
+        val songs: List<ChiptunesSong> = emptyList(),
+        val reason: String? = null
+    )
+
+    internal fun parseChiptunesCatalog(raw: String): List<ChiptunesSong>? {
+        return try {
+            val json = JSONObject(raw)
+            val songsJson = json.optJSONArray("songs") ?: return null
+            val songs = ArrayList<ChiptunesSong>(songsJson.length())
+            for (i in 0 until songsJson.length()) {
+                songs.add(parseChiptuneSong(songsJson.optJSONObject(i) ?: return null) ?: return null)
+            }
+            if (songs.isEmpty()) null else songs
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseChiptuneSong(obj: JSONObject): ChiptunesSong? {
+        val name = obj.optString("name", "")
+        val bpm = obj.optInt("bpm", -1)
+        val stepsJson = obj.optJSONArray("steps") ?: return null
+        if (name.isBlank() || bpm <= 0 || stepsJson.length() == 0) return null
+        val steps = ArrayList<List<Int>>(stepsJson.length())
+        for (i in 0 until stepsJson.length()) {
+            val row = stepsJson.optJSONArray(i) ?: return null
+            if (row.length() != 4) return null
+            steps.add((0 until 4).map { row.optInt(it, Int.MIN_VALUE) })
+        }
+        if (steps.any { row -> row.any { it == Int.MIN_VALUE } }) return null
+        return ChiptunesSong(name, bpm, steps)
+    }
+
+    fun fetchChiptunesCatalog(baseUrl: String, token: String): ChiptunesCatalogResult {
+        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/chiptunes.json")
+        val conn = openAuth(url, token)
+        return try {
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            if (code !in 200..299) {
+                return ChiptunesCatalogResult(false, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val songs = parseChiptunesCatalog(raw)
+                ?: return ChiptunesCatalogResult(false, reason = "malformed chiptunes catalog")
+            ChiptunesCatalogResult(true, songs = songs)
+        } catch (e: Exception) {
+            ChiptunesCatalogResult(false, reason = friendlyConnectionMessage(e))
         } finally {
             conn.disconnect()
         }

@@ -445,7 +445,8 @@ const DOMAINS = [
   require('./bl719DroppedParcelNudgeSteps'),
   require('./bl687EpicReorderIncludesActiveChildrenSteps'),
   require('./bl746StopSwarmRealRefuseGatesSteps'),
-  require('./bl894QueueRepostsSelectionPollSteps')
+  require('./bl894QueueRepostsSelectionPollSteps'),
+  require('./bl765BubbleRemoteConfigChiptuneCatalogSteps')
 ];
 
 function registerSteps(registry) {

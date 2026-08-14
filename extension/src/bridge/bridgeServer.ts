@@ -70,6 +70,7 @@ import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
 import { createLetsTalkMetaRoutes } from './letsTalkMetaRoutes';
 import { getLetsTalkBubbleConfig, isLetsTalkBubbleConfigPath } from './letsTalkBubbleConfig';
+import { getLetsTalkChiptunesCatalog, isLetsTalkChiptunesPath } from './letsTalkChiptunes';
 import {
   isCompanionManifestPath,
   isCompanionPackagePath,
@@ -1783,6 +1784,13 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // to a served route of its own until now.
       matches: isLetsTalkBubbleConfigPath,
       compute: () => getLetsTalkBubbleConfig(targetPath, process.env),
+    },
+    {
+      // BL-765: hold-music catalog as data — the module landed (f175bc56d)
+      // but was never wired to a served route, same dead-code shape BL-763
+      // fixed for bubble-config.
+      matches: isLetsTalkChiptunesPath,
+      compute: () => getLetsTalkChiptunesCatalog(),
     },
   ];
 }
