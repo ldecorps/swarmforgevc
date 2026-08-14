@@ -325,15 +325,6 @@ function queuePromptSummary(state: CursorBridgePersistedState, maxItems = 5): st
   return lines.join('\n');
 }
 
-function queuePromptListForDisplay(state: CursorBridgePersistedState): string {
-  const pending = state.pendingPrompts ?? [];
-  if (pending.length === 0) {
-    return 'Queue is empty.';
-  }
-  const lines = pending.map((item, idx) => `${idx + 1}. ${queuePromptOptionLabel(item, idx).replace(/^\d+\)\s/, '')}`);
-  return [`Queued questions: ${pending.length}`, ...lines].join('\n');
-}
-
 function pushQueuedPrompt(
   state: CursorBridgePersistedState,
   text: string,
@@ -418,7 +409,7 @@ export function clearQueuedPollIfStale(state: CursorBridgePersistedState): Curso
   }
   const pendingIds = (state.pendingPrompts ?? []).map((item) => item.id);
   if (pendingIds.length === 0) {
-    return { ...state, pendingPromptPoll: undefined };
+    return { ...state, pendingPromptPoll: undefined, supersededPromptPollId: poll.pollId };
   }
   // Offer the same head the next poll would — if the queue grew/shrunk/reordered
   // relative to the outstanding poll, drop it so idle can post a fresh one.
@@ -433,7 +424,7 @@ export function clearQueuedPollIfStale(state: CursorBridgePersistedState): Curso
   if (sameIds && clearAllOk) {
     return state;
   }
-  return { ...state, pendingPromptPoll: undefined };
+  return { ...state, pendingPromptPoll: undefined, supersededPromptPollId: poll.pollId };
 }
 
 export type PostChunksFn = (
@@ -1402,6 +1393,14 @@ function hasQueueablePromptDecision(decision: InboundDecision): decision is Extr
   return decision.action === 'prompt';
 }
 
+function syncQueuePollFieldsFromHolder(ctx: CursorBridgeHandlerContext, holder: { state: CursorBridgePersistedState }): void {
+  ctx.state.pendingPrompts = holder.state.pendingPrompts;
+  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
+  if (holder.state.cursorTopicId !== undefined) {
+    ctx.state.cursorTopicId = holder.state.cursorTopicId;
+  }
+}
+
 async function handleQueueInboundAction(
   ctx: CursorBridgeHandlerContext,
   topicId: number,
@@ -1412,16 +1411,25 @@ async function handleQueueInboundAction(
     return handleSimpleInboundAction(ctx, topicId, 'Queue is empty.', replyToMessageId);
   }
   // Human asked to see the queue: always post a fresh poll, even if one is
-  // already outstanding (it may have scrolled off the Host topic).
-  ctx.state = { ...ctx.state, pendingPromptPoll: undefined, cursorTopicId: ctx.state.cursorTopicId ?? topicId };
+  // already outstanding (it may have scrolled off the Host topic). Never bind
+  // cursorTopicId from wherever this /queue command happened to arrive
+  // (BL-894 P3) — only ensureCursorTopic's own canonical binding may do that;
+  // otherwise a stray topic would get permanently adopted as the Host topic.
+  // Mutate ctx.state's fields IN PLACE, never reassign the object (BL-894
+  // finding beyond P1-P3): ctx.persistState() below closes over the poll
+  // loop's own holder, which shares this exact state object only as long as
+  // no one replaces the reference — a whole-object reassignment here made
+  // every repost's fresh poll invisible to persistState, so it got
+  // overwritten back to the pre-/queue snapshot moments after being sent.
+  const outgoingPollId = ctx.state.pendingPromptPoll?.pollId;
+  ctx.state.pendingPromptPoll = undefined;
+  if (outgoingPollId) {
+    ctx.state.supersededPromptPollId = outgoingPollId;
+  }
   const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
   const holder = { state: ctx.state };
   await postQueueSelectionPoll({ botToken: ctx.botToken, chatId: ctx.chatId, statePath }, holder, ctx.post);
-  ctx.state.pendingPrompts = holder.state.pendingPrompts;
-  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
-  if (holder.state.cursorTopicId !== undefined) {
-    ctx.state.cursorTopicId = holder.state.cursorTopicId;
-  }
+  syncQueuePollFieldsFromHolder(ctx, holder);
   ctx.persistState();
   return ctx.busy;
 }
@@ -1487,11 +1495,7 @@ async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContex
   );
   // Keep handler ctx aligned for the following liveness sync; persist via
   // writeJsonFile only (ctx.persistState may still point at a stale loop holder).
-  ctx.state.pendingPrompts = holder.state.pendingPrompts;
-  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
-  if (holder.state.cursorTopicId !== undefined) {
-    ctx.state.cursorTopicId = holder.state.cursorTopicId;
-  }
+  syncQueuePollFieldsFromHolder(ctx, holder);
   if (holder.state.queuedWorkLivenessStatus !== undefined) {
     ctx.state.queuedWorkLivenessStatus = holder.state.queuedWorkLivenessStatus;
   }
@@ -1513,6 +1517,20 @@ async function processQueuedPollAnswer(
 ): Promise<void> {
   const pendingPoll = holder.state.pendingPromptPoll;
   if (!pendingPoll || pollAnswer.poll_id !== pendingPoll.pollId) {
+    // BL-894 P2: a vote on a poll this bridge itself superseded (repost, or
+    // dropped for staleness) must tell the human, not vanish in silence — a
+    // vote on any other poll_id (e.g. a choice poll) is none of our business.
+    if (pollAnswer.poll_id === holder.state.supersededPromptPollId) {
+      if (isAuthorizedPrincipal(pollAnswer.user?.id ?? '', deps.principalUserId) && holder.state.cursorTopicId !== undefined) {
+        await handlerCtx.post(
+          deps.botToken,
+          deps.chatId,
+          holder.state.cursorTopicId,
+          'That poll is no longer live — send /queue again to see the current one.',
+          undefined
+        );
+      }
+    }
     return;
   }
   if (!isAuthorizedPrincipal(pollAnswer.user?.id ?? '', deps.principalUserId)) {
