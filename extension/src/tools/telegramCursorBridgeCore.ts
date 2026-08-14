@@ -87,8 +87,14 @@ export interface CursorBridgePersistedState {
   agentId?: string;
   pendingPrompts?: CursorBridgeQueuedPrompt[];
   pendingPromptPoll?: CursorBridgeQueuedPromptPoll;
-  /** BL-894: the most recently replaced queue poll's id, so a vote arriving after it was superseded gets told so instead of vanishing in silence. */
-  supersededPromptPollId?: string;
+  /**
+   * BL-894: ids of replaced queue polls, so a vote arriving after any of
+   * them was superseded gets told so instead of vanishing in silence.
+   * BL-894 D1: a single scalar forgot everything but the newest id, so a
+   * SECOND repost silently dropped the first — this must stay a bounded
+   * history, not the latest id alone.
+   */
+  supersededPromptPollIds?: string[];
   pendingChoicePolls?: CursorBridgeChoicePoll[];
   /** Edit-in-place Host liveness line identity. */
   livenessStatus?: CursorBridgeLivenessStatusState;
@@ -764,9 +770,9 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   if (pendingPromptPoll) {
     state.pendingPromptPoll = pendingPromptPoll;
   }
-  const supersededPromptPollId = parseOptionalNonEmptyString(record.supersededPromptPollId);
-  if (supersededPromptPollId !== undefined) {
-    state.supersededPromptPollId = supersededPromptPollId;
+  const supersededPromptPollIds = parseOptionalStringArray(record.supersededPromptPollIds);
+  if (supersededPromptPollIds !== undefined) {
+    state.supersededPromptPollIds = supersededPromptPollIds;
   }
   const pendingChoicePollsRaw = Array.isArray(record.pendingChoicePolls) ? record.pendingChoicePolls : undefined;
   if (pendingChoicePollsRaw) {

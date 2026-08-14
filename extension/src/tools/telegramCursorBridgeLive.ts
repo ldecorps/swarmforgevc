@@ -402,6 +402,19 @@ async function sweepExpiredQueuedPrompts(
   }
 }
 
+// BL-894 D1 (hardener bounce 2026-08-14): a single scalar can only ever
+// remember the MOST RECENTLY superseded poll id, so a second repost silently
+// forgets the first — a vote arriving late on that first poll then falls
+// through with no post and no queue change. Track a small bounded history
+// instead. Telegram poll history for one topic is small, so an unbounded
+// list was never needed — this cap is generous headroom, not a tuned limit.
+const SUPERSEDED_POLL_ID_HISTORY_LIMIT = 8;
+
+function appendSupersededPollId(existingIds: string[] | undefined, pollId: string): string[] {
+  const deduped = (existingIds ?? []).filter((id) => id !== pollId);
+  return [...deduped, pollId].slice(-SUPERSEDED_POLL_ID_HISTORY_LIMIT);
+}
+
 export function clearQueuedPollIfStale(state: CursorBridgePersistedState): CursorBridgePersistedState {
   const poll = state.pendingPromptPoll;
   if (!poll) {
@@ -409,7 +422,11 @@ export function clearQueuedPollIfStale(state: CursorBridgePersistedState): Curso
   }
   const pendingIds = (state.pendingPrompts ?? []).map((item) => item.id);
   if (pendingIds.length === 0) {
-    return { ...state, pendingPromptPoll: undefined, supersededPromptPollId: poll.pollId };
+    return {
+      ...state,
+      pendingPromptPoll: undefined,
+      supersededPromptPollIds: appendSupersededPollId(state.supersededPromptPollIds, poll.pollId),
+    };
   }
   // Offer the same head the next poll would — if the queue grew/shrunk/reordered
   // relative to the outstanding poll, drop it so idle can post a fresh one.
@@ -424,7 +441,11 @@ export function clearQueuedPollIfStale(state: CursorBridgePersistedState): Curso
   if (sameIds && clearAllOk) {
     return state;
   }
-  return { ...state, pendingPromptPoll: undefined, supersededPromptPollId: poll.pollId };
+  return {
+    ...state,
+    pendingPromptPoll: undefined,
+    supersededPromptPollIds: appendSupersededPollId(state.supersededPromptPollIds, poll.pollId),
+  };
 }
 
 export type PostChunksFn = (
@@ -1424,7 +1445,7 @@ async function handleQueueInboundAction(
   const outgoingPollId = ctx.state.pendingPromptPoll?.pollId;
   ctx.state.pendingPromptPoll = undefined;
   if (outgoingPollId) {
-    ctx.state.supersededPromptPollId = outgoingPollId;
+    ctx.state.supersededPromptPollIds = appendSupersededPollId(ctx.state.supersededPromptPollIds, outgoingPollId);
   }
   const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
   const holder = { state: ctx.state };
@@ -1517,10 +1538,11 @@ async function processQueuedPollAnswer(
 ): Promise<void> {
   const pendingPoll = holder.state.pendingPromptPoll;
   if (!pendingPoll || pollAnswer.poll_id !== pendingPoll.pollId) {
-    // BL-894 P2: a vote on a poll this bridge itself superseded (repost, or
-    // dropped for staleness) must tell the human, not vanish in silence — a
-    // vote on any other poll_id (e.g. a choice poll) is none of our business.
-    if (pollAnswer.poll_id === holder.state.supersededPromptPollId) {
+    // BL-894 P2/D1: a vote on a poll this bridge itself superseded (any
+    // generation — repost, or dropped for staleness) must tell the human,
+    // not vanish in silence — a vote on any other poll_id (e.g. a choice
+    // poll) is none of our business.
+    if ((holder.state.supersededPromptPollIds ?? []).includes(pollAnswer.poll_id)) {
       if (isAuthorizedPrincipal(pollAnswer.user?.id ?? '', deps.principalUserId) && holder.state.cursorTopicId !== undefined) {
         await handlerCtx.post(
           deps.botToken,

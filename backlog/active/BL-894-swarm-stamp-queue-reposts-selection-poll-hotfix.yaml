@@ -212,3 +212,48 @@ notes: |
   covered by the diff. Full property suite green (272/272); unit suites
   green (241/241 for the two changed files); acceptance feature green
   (6/6 scenarios).
+  ## D1 resolution (coder, 2026-08-14)
+
+  The hardener's bounce (`backlog/evidence/BL-894-hardener-bounce-20260814.md`)
+  found that `supersededPromptPollId` was a single scalar, so a SECOND
+  `/queue` repost overwrote the first repost's id — a vote arriving on the
+  original (doubly-superseded) poll then matched neither the live poll nor
+  the remembered stale one, and fell through in silence. Fixed by tracking
+  superseded poll ids as a bounded history (`supersededPromptPollIds:
+  string[]`, capped at 8, de-duplicated, in `CursorBridgePersistedState`)
+  instead of the newest id alone; `clearQueuedPollIfStale` and
+  `handleQueueInboundAction` both append to it, `processQueuedPollAnswer`
+  checks membership instead of equality.
+
+  TDD: added a unit test reproducing exactly two reposts before a vote on
+  the generation-0 poll, confirmed red against the pre-fix scalar (silent
+  fall-through, no reply), then green after the fix. Extended the existing
+  declared-invariant-1 property test with a `repostCount` (1-4) generator
+  dimension so it now sweeps an arbitrary number of repost generations, not
+  just one; non-vacuousness re-verified by temporarily reverting
+  `appendSupersededPollId` to keep only the latest id (simulating the old
+  scalar) and confirming the extended property fails at repostCount=2 before
+  restoring the fix. Added acceptance scenario 03b (two reposts, vote on the
+  original poll) plus its step handler, reusing the existing "votes on the
+  superseded poll" step since it already targets the fixed `poll-original`
+  id regardless of repost count.
+
+  Verified: unit suite for both changed files green (242/242, was 241 +1
+  new); crap:lets-talk-cursor-bridge unit scope green (664/664, was 663 +1
+  new); property suite for the changed file green (4/4); full property
+  suite green (272/272 individual tests — the lane's own file-count report
+  shows one unrelated failing file, a pre-existing untracked stray fixture
+  `test/bl886sigterm...property.test.js` with no test body, present before
+  this parcel and out of this ticket's scope per BL-506; left alone per the
+  "never delete what you did not create" rule and surfaced here rather than
+  swept); acceptance feature green (7/7 scenarios, was 6 +1 new); DRY
+  (`npm run dry`) shows no new clones from this change (same two
+  pre-existing `telegramCursorBridgeLive.ts` clones the hardener already
+  attributed to pre-BL-894 commits). CRAP/mutation not re-run here — both
+  already recorded BLOCKED BY pre-existing, out-of-scope conditions in the
+  hardener's own pass; this fix does not touch coverage-gate or mutation
+  posture for either reason cited there.
+
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: hardender, blamed: coder, class: behavior, commit: 6097b0bfdc, evidence: backlog/evidence/BL-894-hardener-bounce-20260814.md }

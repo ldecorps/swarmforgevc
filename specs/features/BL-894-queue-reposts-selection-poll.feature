@@ -34,6 +34,18 @@ Feature: /queue reposts the Host queue selection poll
     Then the human is told that poll is no longer live
     And the queue still holds 2 questions
 
+  # BL-894 queue-reposts-selection-poll-03b
+  Scenario: a tap on a poll superseded by TWO reposts never vanishes in silence
+    Given 2 questions are queued
+    And a selection poll is already outstanding
+    And the human has sent "/queue"
+    And a second selection poll has been posted
+    And the human has sent "/queue"
+    And a third selection poll has been posted
+    When the human votes on the superseded poll
+    Then the human is told that poll is no longer live
+    And the queue still holds 2 questions
+
   # BL-894 queue-reposts-selection-poll-04
   Scenario: a vote on the newest poll runs and dequeues exactly that question
     Given 3 questions are queued
