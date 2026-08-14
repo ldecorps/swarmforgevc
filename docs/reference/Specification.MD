@@ -1,6 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 14, 2026 (BL-788: adopts the 2026-08-02 hand-built
+**Last Updated:** August 14, 2026 (BL-719: `handoffd.bb` gains a
+dropped-parcel chase sweep, a sibling of the existing dispatch-gap sweep
+(BL-222) run on the same cadence. The dispatch-gap sweep only ever answers
+"was this ticket EVER dispatched" — any trail at all, even a `note` whose
+message text merely mentions the id, marks it dispatched permanently — so a
+ticket dispatched once and then dropped mid-pipeline had no detector of any
+kind. That gap is what let BL-714 (2026-07-30) sit invisible: its diff rode
+downstream inside another ticket's parcel while its own identity stopped
+moving, appearing in five different `sent/` trail files, and only a human
+QA review caught it, hours later. The new sweep (`chase_sweep_lib.bb`'s
+`dropped-parcel-items`/`decide-dropped-parcel?`, wired at
+`handoffd.bb::dropped-parcel-sweep!`) flags an active ticket that has a
+trail (so dispatch-gap is provably silent on it), no parcel currently
+sitting in any role's `new`/`in_process` inbox, and a newest trail event
+older than `dropped_parcel_stall_threshold_minutes` (default 45,
+`swarmforge.conf`) — a `nil` newest-trail timestamp fails closed, never
+open. On a match, past a per-ticket `dropped_parcel_cooldown_minutes`
+cooldown (default 30), it sends a `note` — `"<id> no parcel in flight -
+possible drop."` — to the coordinator only, via the normal
+`swarm_handoff.sh` path; it never assigns, routes, or promotes, leaving
+that judgement in the coordinator's own routing duty (Article 1.1). See the
+new "Dropped-parcel nudge sweep (BL-719)" section in
+`swarmforge/handoff-protocol.md`.); Previously
+August 14, 2026 (BL-788: adopts the 2026-08-02 hand-built
 Bubble pairing + client-logs hotfix under review (BL-506 adopt-and-review,
 not a revert) — the bridge gains a pre-auth `/pair` page
 (`tryServePairPage`, query-token gated like the sideload APK route):

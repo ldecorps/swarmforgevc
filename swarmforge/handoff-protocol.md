@@ -1261,6 +1261,50 @@ throttle engaged) — is documented in `swarmforge/roles/coordinator.prompt`,
 not here; it is a coordinator judgment call, never something this sweep
 enforces or promotes on its own.
 
+### Dropped-parcel nudge sweep (BL-719)
+
+The dispatch-gap sweep above answers exactly one question: **was this
+ticket EVER dispatched?** Any trail at all — even a `note` whose message
+text merely mentions the id — marks it dispatched permanently, so a ticket
+dispatched once and then dropped mid-pipeline has no detector of any kind:
+it sits in `backlog/active/` with nothing to wake it. This is the gap
+BL-714 (2026-07-30) fell into — the hardener merged its tip into another
+ticket's parcel and forwarded under that other ticket's task name only, so
+BL-714's diff travelled downstream anonymously while its own identity
+stopped moving. Its id appeared in five different `sent/` files (one of
+them a note *about* the stall), so the dispatch-gap sweep saw it as
+dispatched and would never have fired for it again. Nothing automated
+surfaced it; QA caught it by eye, at review, hours later.
+
+On the same sweep cadence as its siblings (`chase_sweep_lib.bb` /
+`handoffd.bb::dropped-parcel-sweep!`), the daemon flags an active item when
+all three hold:
+
+1. **Has a trail** — its id appears somewhere in the same
+   dispatch-gap-scan-dirs trail set (`:new :in_process :completed :sent
+   :outbox`, every role) the dispatch-gap sweep already uses, so
+   dispatch-gap is provably silent on it.
+2. **No live mail anywhere** — no parcel for its id currently sits in ANY
+   role's `:new` or `:in_process` (scoped to every role, not just the
+   assignee — the parcel may have progressed to, then dropped from, a
+   later stage).
+3. **Trail gone stale** — its newest trail event (`enqueued_at` or
+   `created_at`, never file mtime) is older than
+   `dropped_parcel_stall_threshold_minutes` (default 45 minutes,
+   `swarmforge.conf`). A `nil` newest-trail timestamp fails closed, never
+   open.
+
+The sweep's own prior nudges are excluded from "newest trail event" (they
+would otherwise re-arm themselves as fresh trail and never go stale again).
+On a match, past `dropped_parcel_cooldown_minutes` (default 30 minutes)
+since the last nudge for that same ticket, the daemon sends a `note` **to
+the coordinator only** — `"<id> no parcel in flight - possible drop."` —
+via the normal `swarm_handoff.sh` outbound path. The sweep never routes,
+assigns, or promotes; which stage owns a dropped parcel and what commit it
+should carry are routing judgements reserved to the coordinator (Article
+1.1). Delivering any parcel for that ticket into a role's inbox stops the
+nudging on the next tick, since live-mail? then holds.
+
 ### Push sweep
 
 Nothing in the swarm otherwise runs `git push`: publication of local `main`

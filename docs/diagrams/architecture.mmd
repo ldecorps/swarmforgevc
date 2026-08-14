@@ -33,6 +33,11 @@
 %% foundation slice): the bridge's companion-manifest + package catalog,
 %% read-only, serving versioned JSON packages (backlog, docs) by a
 %% content-hash generation so a phone can refresh cheaply.
+%% BL-719 added a dropped-parcel chase sweep to the same handoffd.bb cadence
+%% as the existing dispatch-gap/open-slot sweeps: a ticket dispatched once
+%% then dropped mid-pipeline (BL-714) has a trail but no live mail anywhere,
+%% which the dispatch-gap sweep alone can never detect (any trail at all
+%% marks it dispatched forever). Report-only, to the coordinator's inbox.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
