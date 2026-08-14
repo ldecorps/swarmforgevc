@@ -9,7 +9,7 @@ priority: 100
 direction: normal
 depends_on: []
 mutation_cost: low
-human_approval: pending
+human_approval: approved
 required_stages: [coder, cleaner, hardender, documenter, qa]
 stage_skip_reasons: { architect: "a refusal guard at an existing entry point; no module boundary, data flow or design change — the harnesses' structure and their real-mechanism posture are explicitly preserved by this ticket's constraint" }
 acceptance: specs/features/BL-889-harness-refuses-missing-fixture-root.feature.draft
