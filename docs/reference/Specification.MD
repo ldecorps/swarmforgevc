@@ -1,6 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 14, 2026 (BL-719: `handoffd.bb` gains a
+**Last Updated:** August 14, 2026 (BL-892: every automated `human_approval`
+verdict — plain Approve/Reject/Amend on the paused-pager HTTP route and the
+Telegram Approvals topic/button taps, not only Expedite's own
+approve+promote path (BL-490/BL-538) — now durably commits before reporting
+success, closing the same stranded-in-tree gap BL-490-VIOLATION fixed for
+Expedite alone: the UI previously reported success while the ticket file
+sat uncommitted, invisible to `main`, promotion gates, and the daily
+briefing. `commitExpediteWrites` is generalized into a shared
+`commitApprovalWrites` (`commitIntegrityRunner.ts`) that resolves the
+ticket's current on-disk path and pathspec-commits it through the same
+locked `commit_integrity_cli.bb` every writer already uses — Expedite's own
+call is unchanged, just routed through the shared helper.
+`recordApprovalDecisionAndClose`/`recordAmendDecisionAndClose`
+(`telegramFrontDeskBotCore.ts`) now call it on every real transition and
+return `{changed, committed}` instead of a bare boolean; a genuine commit
+failure posts a loud Approvals-topic notice ("recorded but FAILED TO
+COMMIT — a human must land the change manually") rather than the prior
+unqualified success, while the adapter being altogether unwired degrades
+silently, the same no-op posture every other optional `PollAdapters` field
+already has. The paused-pager's `handlePausedPagerApproveRoute` commits
+synchronously in the same request and returns HTTP 500 with `reason:
+'approved but failed to commit'` on failure — already covered by the
+pager's existing generic non-OK-reason contract
+(`docs/how-to/BL-662-paused-pager-shows-server-failure-reason.md`).
+**Hardener pass, same ticket:** added a `git show HEAD:...` assertion to
+the paused-pager's existing Approve test (the one caller the coder's own
+exhaustive property test didn't reach) and split the route's
+decide-what-happened logic into `computePausedPagerApproveOutcome` to
+bring a CRAP regression introduced by the new branch back under the
+gate.); Previously
+August 14, 2026 (BL-719: `handoffd.bb` gains a
 dropped-parcel chase sweep, a sibling of the existing dispatch-gap sweep
 (BL-222) run on the same cadence. The dispatch-gap sweep only ever answers
 "was this ticket EVER dispatched" — any trail at all, even a `note` whose
