@@ -667,3 +667,30 @@ You are the hardender.
   `bl763BubbleTunnelHandFixesSwarmStampSteps`,
   `bl866CompanionManifestPackageCatalogSteps`, `gateAnswerSteps`,
   `deviceRegistrySteps`, `gatesListSteps` — so expect to hit this again.)
+
+## A sweep harness run without its fixture-root argument scans the LIVE mailboxes and sends REAL parcels — always pass the root explicitly (rule_proposal 2026-08-14, accepted)
+- These harnesses take the fixture project root as a bare first positional
+  arg (`(def project-root (first *command-line-args*))`) and build every
+  path from it with `babashka.fs/path`, which **silently drops a nil first
+  segment**: verified 2026-08-14, `(fs/path nil ".swarmforge" "roles.tsv")`
+  returns the relative `".swarmforge/roles.tsv"`. Omitting the arg therefore
+  does not error — it re-roots the entire sweep at your cwd, and inside a
+  live worktree that cwd holds the real `.swarmforge/` state.
+- The blast radius is not read-only. A sweep harness exists precisely to
+  exercise the REAL mechanism — the same `chase_sweep_lib.bb` decisions
+  through the same `swarm_handoff.bb` send path — so a cwd-rooted run reads
+  live mailboxes, decides against live tickets, and DELIVERS live parcels
+  into other roles' inboxes.
+- Rule: pass the fixture root explicitly on every harness invocation, and
+  read the script's `;; Usage:` line before running one by hand — never
+  rely on a default. The property is the unguarded positional arg, not the
+  `*_sweep_harness.bb` filename glob: check for it in any test harness you
+  invoke directly.
+- If you have already run one bare: quarantine the parcels it emitted
+  before the receiving role picks them up, and say so in your hardening
+  note — an unannounced live delivery reads to the recipient as real work.
+- (Incident: BL-719 hardening, 2026-08-14 — a bare
+  `dropped_parcel_sweep_harness.bb` took the hardender worktree as its root
+  and delivered 2 real notes into the live coordinator inbox for BL-871 and
+  BL-746; quarantined before pickup. The same unguarded shape is live on
+  `main` in `dispatch_gap_sweep_harness.bb`, so this is not one file's slip.)
