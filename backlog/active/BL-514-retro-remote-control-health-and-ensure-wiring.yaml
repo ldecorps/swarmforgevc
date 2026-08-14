@@ -152,3 +152,6 @@ approval_context: >
 mutation_cost: low
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: specifier, blamed: specifier, class: spec-gap, commit: 968eaab05, evidence: backlog/evidence/BL-514-bounce-20260814.md }
