@@ -825,8 +825,7 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
     );
     return handleSimpleInboundAction(ctx, topicId, text, undefined);
   },
-  queue: (ctx, topicId, replyTo) =>
-    handleSimpleInboundAction(ctx, topicId, queuePromptListForDisplay(ctx.state), replyTo),
+  queue: (ctx, topicId, replyTo) => handleQueueInboundAction(ctx, topicId, replyTo),
   busy: (ctx, topicId, replyTo) =>
     handleSimpleInboundAction(ctx, topicId, 'Busy — wait for the current run to finish.', replyTo),
   ignore: () => {
@@ -1401,6 +1400,30 @@ function makePollHandlerContext(
 
 function hasQueueablePromptDecision(decision: InboundDecision): decision is Extract<InboundDecision, { action: 'prompt' }> {
   return decision.action === 'prompt';
+}
+
+async function handleQueueInboundAction(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  replyToMessageId: number | undefined
+): Promise<boolean> {
+  const pending = ctx.state.pendingPrompts ?? [];
+  if (pending.length === 0) {
+    return handleSimpleInboundAction(ctx, topicId, 'Queue is empty.', replyToMessageId);
+  }
+  // Human asked to see the queue: always post a fresh poll, even if one is
+  // already outstanding (it may have scrolled off the Host topic).
+  ctx.state = { ...ctx.state, pendingPromptPoll: undefined, cursorTopicId: ctx.state.cursorTopicId ?? topicId };
+  const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
+  const holder = { state: ctx.state };
+  await postQueueSelectionPoll({ botToken: ctx.botToken, chatId: ctx.chatId, statePath }, holder, ctx.post);
+  ctx.state.pendingPrompts = holder.state.pendingPrompts;
+  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
+  if (holder.state.cursorTopicId !== undefined) {
+    ctx.state.cursorTopicId = holder.state.cursorTopicId;
+  }
+  ctx.persistState();
+  return ctx.busy;
 }
 
 async function postQueueSelectionPoll(

@@ -851,7 +851,7 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '',
       '/new — start a fresh agent session',
       '/status — show session state',
-      '/queue — list queued questions',
+      '/queue — show queued questions as a poll',
       '/dequeue N — remove queued question #N',
       '/update — short summary of agent / expedite / swarm activity (works while busy)',
       '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',

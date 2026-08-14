@@ -10,7 +10,9 @@ from wiping it.
 1. **The queue presents itself.** As soon as the Host bridge finishes a turn
    with questions still queued, the next poll loop tick posts a queue
    selection poll to the Host topic — the human is not required to type
-   `/queue` first. Only one such poll is ever outstanding at a time.
+   `/queue` first. `/queue` itself also posts that same selection poll (a
+   fresh one, even if an earlier poll scrolled off). Only one such poll is
+   ever outstanding at a time.
 2. **Selecting a question runs only that one.** Voting for a listed question
    sends it to the Host agent as the next turn and removes it from the queue;
    the rest stay queued.
