@@ -105,7 +105,7 @@ function refreshFromDisk(st) {
   st.pendingPrompts = disk.pendingPrompts ?? [];
   st.pendingPromptPoll = disk.pendingPromptPoll;
   st.cursorTopicId = disk.cursorTopicId;
-  st.supersededPromptPollId = disk.supersededPromptPollId;
+  st.supersededPromptPollIds = disk.supersededPromptPollIds;
 }
 
 function currentState(st) {
@@ -115,7 +115,7 @@ function currentState(st) {
     bubbleTopicId: st.bubbleTopicId,
     pendingPrompts: st.pendingPrompts,
     pendingPromptPoll: st.pendingPromptPoll,
-    supersededPromptPollId: st.supersededPromptPollId,
+    supersededPromptPollIds: st.supersededPromptPollIds,
   };
 }
 
@@ -209,6 +209,20 @@ function registerSteps(registry) {
     assert.ok(
       st.pendingPromptPoll && st.pendingPromptPoll.pollId !== 'poll-original',
       'expected the repost to supersede the original outstanding poll'
+    );
+    st.secondPollId = st.pendingPromptPoll.pollId;
+  }, FEATURE);
+
+  // ── Given: scenario 03b's third repost — the ORIGINAL poll is now
+  // superseded by two generations, not just one (BL-894 D1) ──────────────
+  registry.defineScoped(/^a third selection poll has been posted$/, (ctx) => {
+    const st = ensureState(ctx);
+    assert.equal(st.sentPolls.length, 2, `expected exactly two reposts sent; got ${st.sentPolls.length}`);
+    assert.ok(
+      st.pendingPromptPoll &&
+        st.pendingPromptPoll.pollId !== 'poll-original' &&
+        st.pendingPromptPoll.pollId !== st.secondPollId,
+      'expected the second repost to supersede the first repost, not just the original'
     );
   }, FEATURE);
 
