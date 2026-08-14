@@ -59,7 +59,7 @@ import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
-import { runCommitIntegrity } from '../util/commitIntegrityRunner';
+import { runCommitIntegrity, commitApprovalWrites } from '../util/commitIntegrityRunner';
 import { getLetsTalkUiHtml } from './letsTalkUiHtml';
 import {
   createLetsTalkWriteRoutes,
@@ -808,7 +808,7 @@ function handlePausedPagerApproveRoute(
     PAUSED_PAGER_CONTROL_MAX_BODY_BYTES,
     isPausedPagerIdRequestShape,
     'expected a JSON body of {id}'
-  ).then((value) => {
+  ).then(async (value) => {
     if (!value) {
       return;
     }
@@ -821,6 +821,17 @@ function handlePausedPagerApproveRoute(
       const changed = recordApprovalReply(targetPath, backlogId);
       if (!changed) {
         respondJson(res, 200, { success: false, id: backlogId, reason: 'not pending approval' });
+        return;
+      }
+      // BL-892: a paused-pager tap has no external owner to defer its
+      // commit to (unlike Expedite, deferred to telegramFrontDeskBotCore's
+      // own poll tick) - commits synchronously in this same request, same
+      // posture as commitEpicReorderWrites below. A failed commit must not
+      // report unqualified success: disk holds the flip, but the human is
+      // told it is not yet durable.
+      const committed = await commitApprovalWrites(targetPath, backlogId, `Approve ${backlogId}: record human_approval\n\nBy coder.`);
+      if (!committed) {
+        respondJson(res, 500, { success: false, changed: true, id: backlogId, reason: 'approved but failed to commit' });
         return;
       }
       requestConciergeTick(targetPath);

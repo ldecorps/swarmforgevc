@@ -602,6 +602,15 @@ export interface PollAdapters {
   // behavior, the same "new capability defaults to a no-op" posture every
   // other optional adapter in this file already has - never a crash.
   commitExpediteWrites?: (backlogId: string) => Promise<boolean>;
+  // BL-892: durably commits a plain Approve/Reject/Amend's own
+  // human_approval write (recordApprovalDecisionAndClose/
+  // recordAmendDecisionAndClose below) through the same shared,
+  // pathspec-scoped, locked commit_integrity_cli.bb every other writer in
+  // this file uses - never a second commit path. Optional: absent
+  // degrades to the pre-fix uncommitted behavior, the same "new
+  // capability defaults to a no-op" posture every other optional adapter
+  // in this file already has - never a crash.
+  commitApprovalWrites?: (backlogId: string, message: string) => Promise<boolean>;
   // FILE-LEVEL SAFETY CHECK: reads whether an in-flight build touches the
   // same file(s) this ticket's own scope names (expediteSafety.ts's pure
   // findFileCollision, driven by real active-ticket/in-flight-handoff reads
@@ -1039,6 +1048,31 @@ async function notifyHumanDecisionRecorded(adapters: PollAdapters): Promise<void
   adapters.scheduleConciergeTick?.();
 }
 
+// BL-892: shared commit step for every plain Approve/Reject/Amend writer -
+// mirrors recordExpediteDecisionAndClose's own commitExpediteWrites call
+// below, but LOUD on a GENUINE failure (never silent): Expedite defers its
+// own commit to a later poll tick with an external owner (BL-490/BL-538),
+// but a plain verdict has no such owner, so a failed commit here is
+// surfaced to the Approvals topic immediately - disk may hold the flip,
+// but the human is told it is not yet durable, per this ticket's own
+// invariant 2. The adapter being ABSENT (never wired - the same
+// "new capability defaults to a no-op" posture commitExpediteWrites'
+// own doc comment establishes) is a DIFFERENT case from wired-but-failed
+// and stays silent, exactly like every other optional adapter here -
+// notifying on every fixture/deployment that simply hasn't wired this
+// capability yet would be a false alarm, not a real durability failure.
+async function commitApprovalDecision(adapters: PollAdapters, backlogId: string, kind: 'approved' | 'rejected' | 'amending'): Promise<boolean> {
+  if (!adapters.commitApprovalWrites) {
+    return false;
+  }
+  const verb = kind === 'approved' ? 'Approve' : kind === 'rejected' ? 'Reject' : 'Amend';
+  const committed = await adapters.commitApprovalWrites(backlogId, `${verb} ${backlogId}: record human_approval\n\nBy coder.`);
+  if (!committed) {
+    await adapters.notifyApprovalsTopic?.(undefined, `${backlogId}: ${kind} recorded but FAILED TO COMMIT — a human must land the change manually.`);
+  }
+  return committed;
+}
+
 // BL-484: the ONE closing routine serving BOTH decision entry points - a
 // button tap (processCallbackQuery below) and a typed reply
 // (deliverOperatorContext/deliverApprovalsTopicReply below) - so the two
@@ -1055,14 +1089,16 @@ export async function recordApprovalDecisionAndClose(
   backlogId: string,
   verdict: { kind: 'approved' } | { kind: 'rejected'; reason: string },
   nowMs: number = Date.now()
-): Promise<boolean> {
+): Promise<{ changed: boolean; committed: boolean }> {
   const changed =
     verdict.kind === 'approved' ? await adapters.recordApprovalReply(backlogId) : await adapters.recordRejectionReply(backlogId, verdict.reason);
-  if (changed) {
-    await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
-    await notifyHumanDecisionRecorded(adapters);
+  if (!changed) {
+    return { changed: false, committed: false };
   }
-  return changed;
+  const committed = await commitApprovalDecision(adapters, backlogId, verdict.kind);
+  await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
+  await notifyHumanDecisionRecorded(adapters);
+  return { changed: true, committed };
 }
 
 // BL-509: the Amend verb's own decision-and-close routine - a sibling of
@@ -1077,15 +1113,22 @@ export async function recordApprovalDecisionAndClose(
 // and the directive queue both ride the same real transition guard as the
 // ask-close itself - an already-amending (or otherwise not-pending) ticket
 // gets none of the three effects, exactly like a no-op approve/reject.
-export async function recordAmendDecisionAndClose(adapters: PollAdapters, backlogId: string, note: string, nowMs: number = Date.now()): Promise<boolean> {
+export async function recordAmendDecisionAndClose(
+  adapters: PollAdapters,
+  backlogId: string,
+  note: string,
+  nowMs: number = Date.now()
+): Promise<{ changed: boolean; committed: boolean }> {
   const changed = await adapters.recordAmendReply(backlogId);
-  if (changed) {
-    await adapters.resetApprovalAskEmittedState?.(backlogId);
-    await adapters.queueAmendSteerDirective?.(backlogId, note);
-    await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'amending' }, nowMs);
-    await notifyHumanDecisionRecorded(adapters);
+  if (!changed) {
+    return { changed: false, committed: false };
   }
-  return changed;
+  await adapters.resetApprovalAskEmittedState?.(backlogId);
+  await adapters.queueAmendSteerDirective?.(backlogId, note);
+  const committed = await commitApprovalDecision(adapters, backlogId, 'amending');
+  await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'amending' }, nowMs);
+  await notifyHumanDecisionRecorded(adapters);
+  return { changed: true, committed };
 }
 
 // BL-490: the Expedite verb's own decision-and-close routine - a sibling of
@@ -1219,11 +1262,11 @@ async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision,
   if (decision.action === 'approvals-topic-qjump') {
     return deliverApprovalsTopicQjump(backlogId, topicId, adapters);
   }
-  const changed =
+  const result =
     decision.action === 'approvals-topic-approve'
       ? await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'approved' })
       : await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: decision.reason });
-  if (!changed) {
+  if (!result.changed) {
     await adapters.notifyApprovalsTopic?.(topicId, `${backlogId} isn't awaiting approval.`);
     return 'dropped';
   }

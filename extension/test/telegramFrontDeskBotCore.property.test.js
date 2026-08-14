@@ -116,14 +116,14 @@ test('property: the ask-close retry loop stops at the first success/terminal out
         errors.push(chunk);
         return true;
       };
-      let changed;
+      let result;
       try {
-        changed = await recordApprovalDecisionAndClose(adapters, 'BL-PROP', { kind: 'approved' }, 0);
+        result = await recordApprovalDecisionAndClose(adapters, 'BL-PROP', { kind: 'approved' }, 0);
       } finally {
         process.stderr.write = originalErrorWrite;
       }
 
-      assert.equal(changed, true, 'the decision recording succeeds regardless of how the edit resolves');
+      assert.equal(result.changed, true, 'the decision recording succeeds regardless of how the edit resolves');
       assert.equal(edits.length, expected.stopAttempt, 'expected the loop to stop at the first success/terminal outcome, bounded by budget');
       assert.deepEqual(waits, expected.waits, 'expected exactly one wait per rate-limited attempt before the stop, each its own retry-after');
 

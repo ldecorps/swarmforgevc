@@ -2,12 +2,36 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { startBridge } = require('../out/bridge/bridgeServer');
 
 const TOKEN = 'test-token-123';
 
 function mkTmp() {
   return mkTmpDir('sfvc-paused-pager-bridge-');
+}
+
+// BL-892: the Approve route now durably commits its human_approval write
+// through the real commit_integrity_cli.bb (never a disk-only success) - a
+// target that isn't a real git repo with the CLI present would report the
+// commit as (correctly) failed, so any test that expects a genuine Approve
+// to SUCCEED needs a real fixture, same pattern as commitIntegrityRunner.
+// test.js's own gitFixture()/copyCommitIntegrityScripts().
+function mkGitTmpWithCli() {
+  const root = mkTmp();
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+  for (const name of fs.readdirSync(repoScriptsDir)) {
+    if (name.endsWith('.bb')) {
+      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
+    }
+  }
+  return root;
 }
 
 function mkdirp(dir) {
@@ -125,7 +149,7 @@ test('paused-pager JSON feed: canApprove is true only for human_approval pending
 });
 
 test('paused-pager Approve route requires control auth (bearer + x-control-token)', async () => {
-  const target = mkTmp();
+  const target = mkGitTmpWithCli();
   writeBacklogTicket(
     target,
     'paused',
@@ -153,7 +177,7 @@ test('paused-pager Approve route requires control auth (bearer + x-control-token
 });
 
 test('paused-pager Approve route flips human_approval to approved without moving folders', async () => {
-  const target = mkTmp();
+  const target = mkGitTmpWithCli();
   writeBacklogTicket(
     target,
     'paused',
@@ -171,6 +195,36 @@ test('paused-pager Approve route flips human_approval to approved without moving
 
     const pausedPath = path.join(target, 'backlog', 'paused', 'BL-060.yaml');
     assert.equal(fs.existsSync(pausedPath), true);
+    const yaml = fs.readFileSync(pausedPath, 'utf8');
+    assert.match(yaml, /^human_approval: approved$/m);
+  });
+});
+
+test('BL-892: paused-pager Approve route surfaces a durability failure, never unqualified success, when the commit fails', async () => {
+  // No git repo, no commit_integrity_cli.bb - the write succeeds (disk),
+  // the commit genuinely fails, exactly the shape this ticket's own
+  // qa_e2e_procedure step 3 requires.
+  const target = mkTmp();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-892',
+    'id: BL-892\ntitle: pending approval\nstatus: paused\nhuman_approval: pending\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-892' }),
+    });
+    assert.equal(res.status, 500);
+    const body = await res.json();
+    assert.deepEqual(body, { success: false, changed: true, id: 'BL-892', reason: 'approved but failed to commit' });
+
+    // disk still holds the flip - the write itself was never rolled back,
+    // only its durability guarantee is weaker until a later retry.
+    const pausedPath = path.join(target, 'backlog', 'paused', 'BL-892.yaml');
     const yaml = fs.readFileSync(pausedPath, 'utf8');
     assert.match(yaml, /^human_approval: approved$/m);
   });
