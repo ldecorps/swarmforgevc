@@ -793,6 +793,33 @@ function handlePausedPagerExpediteRoute(
   });
 }
 
+// BL-892 (hardener split, CRAP): the route's actual decide-what-happened
+// logic, pulled out of the request callback below so each half stays under
+// the CRAP complexity budget - this one is unit-testable in-process with no
+// HTTP layer at all. Behavior-preserving: same status/body per branch, same
+// synchronous-commit posture (a paused-pager tap has no external owner to
+// defer its commit to, unlike Expedite's own poll-tick deferral) as
+// commitEpicReorderWrites below. A failed commit must not report
+// unqualified success: disk holds the flip, but the human is told it is
+// not yet durable.
+async function computePausedPagerApproveOutcome(
+  targetPath: string,
+  backlogId: string
+): Promise<{ status: number; body: Record<string, unknown>; conciergeTick: boolean }> {
+  if (!findBacklogFilePath(targetPath, backlogId)) {
+    return { status: 404, body: { success: false, reason: 'ticket not found in active/paused' }, conciergeTick: false };
+  }
+  const changed = recordApprovalReply(targetPath, backlogId);
+  if (!changed) {
+    return { status: 200, body: { success: false, id: backlogId, reason: 'not pending approval' }, conciergeTick: false };
+  }
+  const committed = await commitApprovalWrites(targetPath, backlogId, `Approve ${backlogId}: record human_approval\n\nBy coder.`);
+  if (!committed) {
+    return { status: 500, body: { success: false, changed: true, id: backlogId, reason: 'approved but failed to commit' }, conciergeTick: false };
+  }
+  return { status: 200, body: { success: true, id: backlogId }, conciergeTick: true };
+}
+
 function handlePausedPagerApproveRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -812,30 +839,12 @@ function handlePausedPagerApproveRoute(
     if (!value) {
       return;
     }
-    const backlogId = value.id;
     try {
-      if (!findBacklogFilePath(targetPath, backlogId)) {
-        respondJson(res, 404, { success: false, reason: 'ticket not found in active/paused' });
-        return;
+      const outcome = await computePausedPagerApproveOutcome(targetPath, value.id);
+      if (outcome.conciergeTick) {
+        requestConciergeTick(targetPath);
       }
-      const changed = recordApprovalReply(targetPath, backlogId);
-      if (!changed) {
-        respondJson(res, 200, { success: false, id: backlogId, reason: 'not pending approval' });
-        return;
-      }
-      // BL-892: a paused-pager tap has no external owner to defer its
-      // commit to (unlike Expedite, deferred to telegramFrontDeskBotCore's
-      // own poll tick) - commits synchronously in this same request, same
-      // posture as commitEpicReorderWrites below. A failed commit must not
-      // report unqualified success: disk holds the flip, but the human is
-      // told it is not yet durable.
-      const committed = await commitApprovalWrites(targetPath, backlogId, `Approve ${backlogId}: record human_approval\n\nBy coder.`);
-      if (!committed) {
-        respondJson(res, 500, { success: false, changed: true, id: backlogId, reason: 'approved but failed to commit' });
-        return;
-      }
-      requestConciergeTick(targetPath);
-      respondJson(res, 200, { success: true, id: backlogId });
+      respondJson(res, outcome.status, outcome.body);
     } catch (err) {
       respondJson(res, 500, {
         success: false,

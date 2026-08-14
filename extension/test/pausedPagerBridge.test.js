@@ -197,6 +197,14 @@ test('paused-pager Approve route flips human_approval to approved without moving
     assert.equal(fs.existsSync(pausedPath), true);
     const yaml = fs.readFileSync(pausedPath, 'utf8');
     assert.match(yaml, /^human_approval: approved$/m);
+
+    // BL-892 invariant 1: HEAD, not the working tree, is the source of
+    // truth. This route is the one commitApprovalWrites caller the
+    // exhaustive bl892ApprovalCommitDurability property test does not
+    // reach (it drives recordApprovalDecisionAndClose/
+    // recordAmendDecisionAndClose directly) - assert it here instead.
+    const headYaml = execFileSync('git', ['show', 'HEAD:backlog/paused/BL-060.yaml'], { cwd: target, encoding: 'utf8' });
+    assert.match(headYaml, /^human_approval: approved$/m, 'expected the Approve route to commit the flip to HEAD, not just the working tree');
   });
 });
 
