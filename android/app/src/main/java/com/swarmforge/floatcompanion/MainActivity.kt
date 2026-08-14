@@ -194,7 +194,7 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             "?"
         }
-        binding.status.text = "$overlay · $paired · BL-707 v$ver"
+        binding.status.text = "$overlay · $paired · v$ver"
     }
 
     companion object {

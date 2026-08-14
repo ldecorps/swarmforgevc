@@ -54,6 +54,12 @@ class TalkEngine(private val appContext: Context) {
     private var replyIsErrorStyle = false
     private var holdMusicTitle: String? = null
 
+    // BL-765: the full remote capability document (BL-763 read only
+    // bridgeBounceAutoSessionReset off it). Defaults to every capability
+    // enabled — the same "bundled default" shape a failed/unreachable fetch
+    // resolves to (BL-654 invariant 1) — until the first successful sync.
+    @Volatile private var capabilities = BridgeClient.BubbleConfigResult(ok = false)
+
     private var recorder: AudioTurnRecorder? = null
     private val holdMusic = HoldMusicPlayer()
     private var replyPlayer: ReplyAudioPlayer? = null
@@ -67,7 +73,7 @@ class TalkEngine(private val appContext: Context) {
         }
         // Reply voice stays at full app gain so phone system volume owns loudness
         // (BL-765 volume split). Slider only scales hold music.
-        replyPlayer?.setVolume(1f)
+        replyPlayer?.setVolume(ReplyGain.independentOfMusicVolume(volumePercent))
         holdMusic.setVolume(volumePercent / 100f)
         holdMusic.setPreferredSong(preferredSong.ifBlank { null })
         recorder = AudioTurnRecorder(appContext.cacheDir) {
@@ -89,6 +95,27 @@ class TalkEngine(private val appContext: Context) {
     )
 
     fun songNames(): List<String> = HoldMusicPlayer.SONGS.map { it.name }
+
+    /** Latest remote capability document — bundled-default (all enabled) until the first sync. */
+    fun capabilities(): BridgeClient.BubbleConfigResult = capabilities
+
+    // BL-765 required_wiring: phone fetches the hold-music catalog on
+    // pair/resume, same call shape as [syncBridgeInstanceAndSession]. A
+    // failed/malformed fetch leaves [HoldMusicPlayer.SONGS] on its bundled
+    // defaults (BL-654 invariant 1) — nothing to apply here on failure.
+    fun syncChiptunesCatalog() {
+        val base = CompanionPrefs.getBaseUrl(appContext)
+        val token = CompanionPrefs.getToken(appContext)
+        io.execute {
+            val result = BridgeClient.fetchChiptunesCatalog(base, token)
+            if (!result.ok) return@execute
+            HoldMusicPlayer.applyRemoteCatalog(
+                result.songs.map { song ->
+                    HoldMusicPlayer.Song(song.name, song.bpm, song.steps.map { it.toIntArray() }.toTypedArray())
+                }
+            )
+        }
+    }
 
     fun setListener(l: Listener?) {
         listener = l
@@ -353,6 +380,20 @@ class TalkEngine(private val appContext: Context) {
                 return@execute
             }
             val config = BridgeClient.fetchBubbleConfig(base, token)
+            if (config.ok) {
+                capabilities = config
+                mainHandler.post {
+                    if (!alive.get()) return@post
+                    // Remote-disabling hold music removes it without an APK
+                    // rebuild (remote-config-03) — stop a tune already playing,
+                    // not just refuse to start the next one.
+                    if (!config.holdMusic && holdMusicTitle != null) {
+                        holdMusic.stop()
+                        holdMusicTitle = null
+                    }
+                    publish()
+                }
+            }
             val decision = BridgeBounceSession.decide(lastKnown, meta.instanceId, config.bridgeBounceAutoSessionReset)
             CompanionPrefs.setLastBridgeInstanceId(appContext, decision.nextKnownInstanceId)
             if (!decision.shouldResetSession) {
@@ -542,7 +583,7 @@ class TalkEngine(private val appContext: Context) {
     }
 
     private fun startHoldMusic() {
-        if (!holdMusicOn || pausedAll) return
+        if (!HoldMusicOffer.shouldOffer(holdMusicOn, pausedAll, capabilities.holdMusic)) return
         holdMusic.start { name ->
             mainHandler.post {
                 holdMusicTitle = name
