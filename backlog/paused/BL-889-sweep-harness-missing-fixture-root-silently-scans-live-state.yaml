@@ -66,12 +66,14 @@ notes: |
      which THROWS on a missing arg. They already fail loud and need no
      change — they are the shape the guarded harnesses should end up
      behaving like.
-  5. `dropped_parcel_sweep_harness.bb` (the file in the incident) is not on
-     `main` at spec time — it arrives with BL-719 (`ab37c6858`). It is in
-     scope if present when this ticket is implemented; it is deliberately
-     NOT armed in `required_wiring` below, because that gate reads the
-     SENDER's checkout at the parcel commit and would false-block on a
-     branch that has not yet merged BL-719.
+  5. `dropped_parcel_sweep_harness.bb` (the file in the incident) landed
+     with BL-719 and is on `origin/main` (`2e5eac51b`) with the same silent
+     `(first *command-line-args*)` shape and zero `System/exit`. It is
+     unambiguously in scope and is armed in `required_wiring` below.
+     Caveat for the implementer: it is NOT yet in the LOCAL `main` ref,
+     which lags `origin/main` by 22 commits — see BL-891, filed from this
+     same probe. Resolve the file against `origin/main` (or your own role
+     branch, which has BL-719 merged), not against a stale local `main`.
 
 invariants:
   - "No harness under swarmforge/scripts/test/ ever resolves its fixture root relative to the process working directory: an absent root is refused, never defaulted."
@@ -79,6 +81,7 @@ invariants:
 
 required_wiring:
   - "swarmforge/scripts/test/dispatch_gap_sweep_harness.bb::System/exit::the mandated non-zero refusal; this file has zero System/exit occurrences today, so the entry is only satisfied once the guard is actually wired into this harness and not merely into a shared helper"
+  - "swarmforge/scripts/test/dropped_parcel_sweep_harness.bb::System/exit::same mandated refusal in the harness the incident actually happened in; also zero System/exit occurrences today"
 
 description: |
   ## What
@@ -118,10 +121,10 @@ description: |
   Every harness under `swarmforge/scripts/test/` that binds a fixture root
   from a bare positional argument, as that set exists at implementation
   time. At spec time (2026-08-14) that is
-  `dispatch_gap_sweep_harness.bb`, `commit_integrity_856_scenarios_cli.bb`,
-  and — if BL-719 has landed by then — `dropped_parcel_sweep_harness.bb`.
-  The two `(nth ... 0)` harnesses in `notes:` item 4 already throw and are
-  out of scope.
+  `dispatch_gap_sweep_harness.bb`, `dropped_parcel_sweep_harness.bb` and
+  `commit_integrity_856_scenarios_cli.bb`. The two `(nth ... 0)` harnesses
+  in `notes:` item 4 already throw and are out of scope. Resolve this set
+  against `origin/main`, not the local `main` ref (see `notes:` item 5).
 
   Scenario 03 is the durable half: the check must ENUMERATE the harnesses
   it covers rather than carry a hardcoded list, so a harness added later

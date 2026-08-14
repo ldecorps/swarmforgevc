@@ -11,6 +11,7 @@ Feature: A test harness refuses a missing fixture root instead of falling back t
     Examples:
       | harness                               |
       | dispatch_gap_sweep_harness.bb         |
+      | dropped_parcel_sweep_harness.bb       |
       | commit_integrity_856_scenarios_cli.bb |
 
   # BL-889 harness-refuses-missing-fixture-root-02

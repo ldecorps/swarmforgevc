@@ -1,0 +1,128 @@
+id: BL-890
+title: "DEFECT — BL-222's cadence-wiring check asserts dispatch-gap-sweep! within the first 600 characters of the cadence block, so a comment added by BL-617 turned a correct wiring into a permanent red"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 60
+direction: normal
+depends_on: []
+mutation_cost: low
+human_approval: pending
+required_stages: [coder, cleaner, hardender, documenter, qa]
+stage_skip_reasons: { architect: "a single assertion inside one acceptance step handler; no module boundary, data flow or production-code change — handoffd.bb itself is explicitly unchanged by this ticket" }
+acceptance: specs/features/BL-890-cadence-wiring-check-is-position-independent.feature.draft
+
+approval_context: >
+  New feature draft needs review. The judgement call worth your eye: this
+  ticket asserts the RED IS FALSE — `dispatch-gap-sweep!` is still wired
+  into the same cadence conditional exactly as BL-222 intended, it just sits
+  1267 characters into that block instead of within 600 — so the fix is to
+  the check, and `handoffd.bb` is explicitly not touched. If you believe the
+  sweep should instead be moved back to the top of the conditional so the
+  existing check passes unchanged, reject this and say so; that would be a
+  behaviour-ordering ticket in production code, not a test fix.
+
+source: |
+  Coordinator note to specifier, 2026-08-14 (handoff
+  50_20260814T015639Z_000323_from_coordinator): "Spec defect: pre-existing
+  BL-222-area accept red, stale 600ch slice".
+
+notes: |
+  Specifier probe, 2026-08-14 — reproduced, and the red is FALSE (a stale
+  assertion, not a wiring regression):
+
+  1. `specs/pipeline/steps/dispatchGapSteps.js:95-99` splits
+     `swarmforge/scripts/handoffd.bb` on the literal
+     `"chase-sweep-every-cycles))"`, takes the text AFTER it, and requires
+     `dispatch-gap-sweep!` to appear within `.slice(0, 600)` of it.
+  2. Measured directly: `dispatch-gap-sweep!` is at index **1267** of that
+     block (block length 9050 on local `main`, 9404 on `origin/main`) — so
+     the regex fails and the step throws on every run, in every checkout.
+  3. It is still inside the same conditional. The wiring BL-222 specified is
+     intact; only the 600-character window is wrong.
+  4. What moved it: the BL-617 comment block that now opens the conditional
+     ("BL-617: chase/dispatch-gap/unassigned-active/open-slot all send
+     WAKES...") is ~600 characters of prose on its own. Any future comment,
+     or any sweep added above `dispatch-gap-sweep!`, breaks the check again
+     the same way — the window is not merely too small, it is the wrong
+     kind of assertion.
+  5. Related but separate: BL-882 already covers a misleading clause in
+     that same BL-617 comment. BL-882 rewords a comment; this ticket fixes
+     an assertion. Neither blocks the other.
+
+invariants:
+  - "The cadence-wiring check's verdict depends only on WHETHER the sweep is invoked inside the cadence conditional, never on WHERE in that block it appears or how much text surrounds it."
+  - "The check distinguishes its two failure modes: sweep not wired into the conditional, versus the conditional not found at all."
+
+required_wiring:
+  - "specs/pipeline/steps/dispatchGapSteps.js::chase-sweep-every-cycles::the check must still anchor on the real cadence conditional in handoffd.bb rather than be deleted or weakened into a no-op"
+
+description: |
+  ## What
+
+  The BL-222 acceptance scenario behind the step "the sweep runs at the
+  existing chase interval" is a non-behavioural wiring gate: it pins that
+  `dispatch-gap-sweep!` shares `chase-sweep!`'s existing cadence
+  conditional in `handoffd.bb` rather than running off a separate timer.
+
+  It implements that as a character-offset search: split the source on
+  `chase-sweep-every-cycles))`, then require `dispatch-gap-sweep!` inside
+  the first 600 characters of what follows. The sweep now sits at index
+  1267 of that block, so the step throws and the scenario is permanently
+  red — while the property it exists to protect is still perfectly true.
+
+  Replace the offset window with a position-independent membership check:
+  the sweep is invoked somewhere within the cadence conditional's extent.
+  Distinguish the "conditional not found" case from the "sweep not wired"
+  case, so a future rename of the anchor text reports what actually
+  happened instead of masquerading as an unwired sweep.
+
+  ## Why
+
+  A red that is not a defect is worse than no check: every role running
+  acceptance has to re-derive whether it is theirs, and this one has
+  already cost a coordinator note and a full specifier probe. Because the
+  window is measured in characters of surrounding PROSE, the check breaks
+  whenever someone adds a comment near the top of the conditional — which
+  is exactly what BL-617 did, and exactly what BL-882 is about to do again.
+  A check whose verdict changes when a comment is edited is not testing the
+  thing it claims to test.
+
+  ## Scope
+
+  `specs/pipeline/steps/dispatchGapSteps.js`, the
+  `/^the sweep runs at the existing chase interval$/` handler only.
+
+  While you are in that file, check whether any sibling handler uses the
+  same offset-window idiom and fix those the same way; if none does, say so
+  in the pass note rather than leaving it unstated.
+
+  ## Constraints
+
+  - Do NOT modify `swarmforge/scripts/handoffd.bb`. The production wiring
+    is correct; moving the sweep to satisfy a stale assertion would be the
+    tail wagging the dog, and would collide with BL-882.
+  - Do NOT delete or weaken the scenario into a no-op. Scenario 02 exists
+    precisely to prove the check can still FAIL when the sweep really is
+    unwired — a check that cannot fail is not a fix.
+  - Determine the conditional's extent by structure (its own bounds), not
+    by another magic character count. Swapping 600 for 2000 reproduces this
+    ticket in three months.
+  - Babashka has no mutation, CRAP or DRY tooling wired (BL-472 deferred),
+    but this change is JavaScript under `specs/pipeline/` — confirm at
+    hardening time which gates actually apply to that path and record the
+    answer rather than assuming either way.
+
+  ## QA end-to-end procedure
+
+  Run the BL-222 acceptance feature and confirm the scenario passes against
+  the unmodified `handoffd.bb`. Then, in a scratch copy of `handoffd.bb`,
+  (a) insert 1200 characters of comment above `dispatch-gap-sweep!` inside
+  the conditional and confirm the check still PASSES, and (b) move the
+  `dispatch-gap-sweep!` call out of the conditional entirely and confirm
+  the check FAILS with a message naming the sweep and the conditional.
+  Finally rename the anchor text `chase-sweep-every-cycles` in the scratch
+  copy and confirm the failure message says the conditional could not be
+  found, not that the sweep is unwired.
