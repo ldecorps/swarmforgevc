@@ -241,3 +241,6 @@ description: |
     currently untested by any suite.
   - Existing pass/fail behavior for the babysitterd/Operator survivor
     cases is preserved.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: QA, blamed: architect, class: behavior, commit: fd2e742bd, evidence: backlog/evidence/BL-746-qa-bounce-20260814.md }
