@@ -52,6 +52,7 @@ function runOne({ survivor, killRc }) {
   }
   fixtureLib.writeKillStub(fixture.root, killRc);
   const result = fixtureLib.runStopSwarm(fixture);
+  fixtureLib.cleanupFixtureRoot(fixture);
   return {
     status: result.status,
     stdout: result.stdout || '',
