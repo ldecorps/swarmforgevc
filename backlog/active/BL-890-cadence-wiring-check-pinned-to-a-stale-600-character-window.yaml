@@ -12,7 +12,7 @@ mutation_cost: low
 human_approval: approved
 required_stages: [coder, cleaner, hardender, documenter, qa]
 stage_skip_reasons: { architect: "a single assertion inside one acceptance step handler; no module boundary, data flow or production-code change — handoffd.bb itself is explicitly unchanged by this ticket" }
-acceptance: specs/features/BL-890-cadence-wiring-check-is-position-independent.feature.draft
+acceptance: specs/features/BL-890-cadence-wiring-check-is-position-independent.feature
 
 approval_context: >
   New feature draft needs review. The judgement call worth your eye: this
@@ -128,3 +128,6 @@ description: |
   found, not that the sweep is unwired.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: QA, blamed: documenter, class: behavior, commit: 05eed1921, evidence: backlog/evidence/BL-890-qa-bounce-20260814.md }

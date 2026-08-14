@@ -55,6 +55,95 @@ test('the sweep runs at the existing chase interval fails loudly if dispatch-gap
   assert.doesNotThrow(() => resolveAndRun(registry, ctx, 'the sweep runs at the existing chase interval'));
 });
 
+// ── BL-890: checkSweepWiredInCadence / locateCadenceConditional ─────────
+// The two branches above's comment used to say they "can't easily" be
+// exercised without touching the shipped file - checkSweepWiredInCadence
+// is a pure function over an in-memory string, so now they can be.
+
+const {
+  checkSweepWiredInCadence,
+  locateCadenceConditional,
+  findMatchingParen,
+  CADENCE_CONDITIONAL_ANCHOR,
+  DISPATCH_GAP_SWEEP_NAME,
+} = require('../../steps/dispatchGapSteps');
+
+test('checkSweepWiredInCadence passes when the sweep sits far past the old 600-character window', () => {
+  const padding = ';; '.padEnd(2000, 'x') + '\n';
+  const src = `${CADENCE_CONDITIONAL_ANCHOR}\n  ${padding}(${DISPATCH_GAP_SWEEP_NAME} (load-roles)))\n`;
+  assert.deepEqual(checkSweepWiredInCadence(src, DISPATCH_GAP_SWEEP_NAME, CADENCE_CONDITIONAL_ANCHOR), { ok: true });
+});
+
+test('checkSweepWiredInCadence reports sweep-not-wired when the conditional exists but the sweep is absent from it', () => {
+  const src = `${CADENCE_CONDITIONAL_ANCHOR}\n  (some-other-sweep! (load-roles)))\n`;
+  assert.deepEqual(checkSweepWiredInCadence(src, DISPATCH_GAP_SWEEP_NAME, CADENCE_CONDITIONAL_ANCHOR), {
+    ok: false,
+    reason: 'sweep-not-wired',
+  });
+});
+
+test('checkSweepWiredInCadence reports sweep-not-wired when the sweep runs from a separate conditional entirely', () => {
+  const src =
+    `${CADENCE_CONDITIONAL_ANCHOR}\n  (some-other-sweep! (load-roles)))\n` +
+    `(when (zero? (mod cycle its-own-separate-timer))\n  (${DISPATCH_GAP_SWEEP_NAME} (load-roles)))\n`;
+  assert.deepEqual(checkSweepWiredInCadence(src, DISPATCH_GAP_SWEEP_NAME, CADENCE_CONDITIONAL_ANCHOR), {
+    ok: false,
+    reason: 'sweep-not-wired',
+  });
+});
+
+test('checkSweepWiredInCadence reports conditional-not-found when the anchor text is absent', () => {
+  const src = `(defn some-other-fn []\n  (${DISPATCH_GAP_SWEEP_NAME} (load-roles)))\n`;
+  assert.deepEqual(checkSweepWiredInCadence(src, DISPATCH_GAP_SWEEP_NAME, CADENCE_CONDITIONAL_ANCHOR), {
+    ok: false,
+    reason: 'conditional-not-found',
+  });
+});
+
+test('locateCadenceConditional stops at the anchor when-form\'s own matching close paren, not the next unrelated one', () => {
+  const src = `${CADENCE_CONDITIONAL_ANCHOR}\n  (sweep-a!))\n(defn unrelated [] (other-call!))\n`;
+  const located = locateCadenceConditional(src, CADENCE_CONDITIONAL_ANCHOR);
+  assert.ok(located);
+  assert.equal(located.text.includes('unrelated'), false);
+  assert.equal(located.text.includes('sweep-a!'), true);
+});
+
+test('findMatchingParen ignores parens inside comments and string literals', () => {
+  const src = '(when true\n  ;; a comment with a ( paren\n  (call "a string with ) paren"))';
+  const end = findMatchingParen(src, 0);
+  assert.equal(src[end], ')');
+  assert.equal(src.slice(0, end + 1), src);
+});
+
+// BL-890 hardening (hand-authored mutation sweep - no Scenario Outline in
+// this feature, so Gherkin mutation is inapplicable per BL-638): deleting
+// findMatchingParen's `if (ch === '\\') { i++; continue; }` backslash-escape
+// branch survived every other test in this file plus both property tests -
+// no fixture anywhere exercises an escaped quote inside a scanned string
+// literal. Without that branch, an escaped `\"` wrongly ends the string,
+// so a stray `)` right after it (as in a real Clojure/Babashka `log!` call
+// like `(log! "...\" text) more" e)`) is counted as the conditional's own
+// close paren - truncating the scan early. Constructed directly against
+// the real handoffd.bb shape: with the escape branch removed,
+// checkSweepWiredInCadence flips from {ok:true} to
+// {ok:false, reason:'conditional-not-found'} for source that is in fact
+// correctly wired - a false alarm, in the wrong direction, from prose a
+// human could add without touching any wiring at all.
+test('findMatchingParen treats an escaped quote inside a string as part of that string, not its end', () => {
+  const src = '(when true\n  (log! "escaped \\" quote) here" (other-call!)))';
+  const end = findMatchingParen(src, 0);
+  assert.equal(src[end], ')');
+  assert.equal(src.slice(0, end + 1), src);
+});
+
+test('checkSweepWiredInCadence still finds the sweep when a sibling string contains an escaped quote followed by a stray close-paren', () => {
+  const src =
+    `${CADENCE_CONDITIONAL_ANCHOR}\n` +
+    '  (try (other-sweep!) (catch Exception e (log! "escaped \\" quote) here" (.getMessage e))))\n' +
+    `  (${DISPATCH_GAP_SWEEP_NAME} (load-roles)))\n`;
+  assert.deepEqual(checkSweepWiredInCadence(src, DISPATCH_GAP_SWEEP_NAME, CADENCE_CONDITIONAL_ANCHOR), { ok: true });
+});
+
 // ── the assignee receives a routing handoff for the item ────────────────
 
 test('the assignee receives a routing handoff for the item fails loudly when nothing was queued', () => {
@@ -99,4 +188,47 @@ test('the sweep sends no further routing handoff for the item passes when the ou
   const registry = freshRegistry();
   const ctx = { targetPath: mkTmp() };
   assert.doesNotThrow(() => resolveAndRun(registry, ctx, 'the sweep sends no further routing handoff for the item'));
+});
+
+// ── BL-890 feature scenario steps (specs/features/BL-890-...feature) ────
+
+test('BL-890 scenario 01: sweep wired, then padded with a 1200-char comment, still passes', () => {
+  const registry = freshRegistry();
+  const ctx = {};
+  resolveAndRun(registry, ctx, 'a cadence conditional in handoffd.bb that invokes "dispatch-gap-sweep!"');
+  resolveAndRun(registry, ctx, 'a comment block of 1200 characters precedes that invocation inside the conditional');
+  resolveAndRun(registry, ctx, 'the cadence-wiring check runs');
+  assert.doesNotThrow(() => resolveAndRun(registry, ctx, 'the check passes'));
+});
+
+test('BL-890 scenario 02: sweep moved to its own separate timer fails, naming the sweep and the conditional', () => {
+  const registry = freshRegistry();
+  const ctx = {};
+  resolveAndRun(registry, ctx, 'a cadence conditional in handoffd.bb that does not invoke "dispatch-gap-sweep!"');
+  resolveAndRun(registry, ctx, '"dispatch-gap-sweep!" is invoked from its own separate timer instead');
+  resolveAndRun(registry, ctx, 'the cadence-wiring check runs');
+  assert.doesNotThrow(() => resolveAndRun(registry, ctx, 'the check fails'));
+  assert.doesNotThrow(() => resolveAndRun(registry, ctx, 'its failure message names "dispatch-gap-sweep!" and the cadence conditional'));
+});
+
+test('BL-890 scenario 03: an unlocatable conditional fails with a distinct not-found reason', () => {
+  const registry = freshRegistry();
+  const ctx = {};
+  resolveAndRun(registry, ctx, 'a handoffd.bb in which the cadence conditional cannot be located');
+  resolveAndRun(registry, ctx, 'the cadence-wiring check runs');
+  assert.doesNotThrow(() => resolveAndRun(registry, ctx, 'the check fails'));
+  assert.doesNotThrow(() =>
+    resolveAndRun(registry, ctx, 'its failure message distinguishes a missing cadence conditional from an unwired sweep')
+  );
+});
+
+test('BL-890: "its failure message names..." rejects a not-found verdict masquerading as not-wired', () => {
+  const registry = freshRegistry();
+  const ctx = {};
+  resolveAndRun(registry, ctx, 'a handoffd.bb in which the cadence conditional cannot be located');
+  resolveAndRun(registry, ctx, 'the cadence-wiring check runs');
+  assert.throws(
+    () => resolveAndRun(registry, ctx, 'its failure message names "dispatch-gap-sweep!" and the cadence conditional'),
+    /expected the "sweep not wired" failure mode/
+  );
 });
