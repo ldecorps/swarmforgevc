@@ -194,3 +194,5 @@ notes: |
   the coordinator flagged the stall; the question itself is preserved here and
   in `approval_context` above, so nothing is lost. If you do want pairwise
   move up/down, say so and it becomes its own ticket.
+
+assigned_to: coder
