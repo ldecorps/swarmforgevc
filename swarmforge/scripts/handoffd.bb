@@ -1790,6 +1790,73 @@
       (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
 
 
+;; ── Dropped-parcel coordinator nudge (sibling of BL-222/dispatch-gap) ───────
+;; A ticket dispatched once, then dropped mid-pipeline, is invisible to
+;; dispatch-gap-sweep! above (which only ever asks "was this EVER
+;; dispatched"). Reports to the coordinator only; never routes, assigns, or
+;; promotes. Shares dispatch-gap-scan-dirs's exact trail-dir set (BL-222)
+;; for has-trail?/newest-trail-ms; live-mail? scopes to :new/:in_process
+;; only, across every role (not just the assignee - the parcel may have
+;; progressed to, then dropped from, a later stage).
+
+(defn dropped-parcel-live-mail-dirs [roles]
+  (vec (for [[_ role-info] roles
+             state [:new :in_process]]
+         (str (handoff-lib/mailbox-dir role-info state)))))
+
+(defn dropped-parcel-cooldown-path []
+  (fs/path daemon-dir "dropped-parcel-nudge-cooldown.json"))
+
+(defn read-dropped-parcel-cooldowns []
+  (or (try (json/parse-string (slurp (str (dropped-parcel-cooldown-path))) true)
+           (catch Exception _ nil))
+      {}))
+
+(defn read-dropped-parcel-last-sent-ms [item-id]
+  (get (read-dropped-parcel-cooldowns) (keyword item-id)))
+
+(defn write-dropped-parcel-last-sent! [item-id now-ms]
+  (fs/create-dirs daemon-dir)
+  (spit (str (dropped-parcel-cooldown-path))
+        (json/generate-string (assoc (read-dropped-parcel-cooldowns) (keyword item-id) now-ms))))
+
+(defn nudge-coordinator-dropped-parcel! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/dropped-parcel-draft-lines item))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do
+        (write-dropped-parcel-last-sent! (:id item) (System/currentTimeMillis))
+        (log! "dropped-parcel-nudge" (:id item)))
+      (log! "dropped-parcel-nudge-error" (:id item) (str (:err result))))))
+
+(defn- dropped-parcel-stall-threshold-ms []
+  (chase-sweep-lib/parse-dropped-parcel-stall-threshold-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn- dropped-parcel-cooldown-ms []
+  (chase-sweep-lib/parse-dropped-parcel-cooldown-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn dropped-parcel-sweep! [roles]
+  (try
+    (let [now-ms (System/currentTimeMillis)
+          all-dirs (dispatch-gap-scan-dirs roles)
+          live-dirs (dropped-parcel-live-mail-dirs roles)
+          candidates (chase-sweep-lib/dropped-parcel-items
+                      (active-backlog-dir) all-dirs live-dirs now-ms (dropped-parcel-stall-threshold-ms))
+          cooldown-ms (dropped-parcel-cooldown-ms)]
+      (doseq [item candidates]
+        (try
+          (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
+                     (read-dropped-parcel-last-sent-ms (:id item)) now-ms cooldown-ms)
+            (nudge-coordinator-dropped-parcel! item))
+          (catch Exception e
+            (log! "dropped-parcel-nudge-error" (:id item) (.getMessage e))))))
+    (catch Exception e
+      (log! "dropped-parcel-sweep-error" (.getMessage e)))))
+
+
 ;; ── BL-577: flow watchdog sweep - every mailbox, any parcel type ────────────
 ;; Unsuppressable by design (the ticket's own requirement): this sweep emits
 ;; NO tmux wake, only a durable Telegram OPERATOR-topic alarm, so it runs
@@ -2864,7 +2931,13 @@
                       (try
                         (open-slot-nudge-sweep! (load-roles))
                         (catch Exception e
-                          (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
+                          (log! "open-slot-nudge-sweep-error" (.getMessage e))))
+                      ;; BL-719: dropped-parcel sweep shares the same
+                      ;; cadence as its dispatch-gap/open-slot siblings.
+                      (try
+                        (dropped-parcel-sweep! (load-roles))
+                        (catch Exception e
+                          (log! "dropped-parcel-sweep-error" (.getMessage e)))))
                     ;; BL-577: flow watchdog sweep shares the same cadence,
                     ;; but runs UNCONDITIONALLY (outside the
                     ;; outbound-wakes-suppressed? gate above) - it emits no
