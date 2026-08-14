@@ -87,6 +87,8 @@ export interface CursorBridgePersistedState {
   agentId?: string;
   pendingPrompts?: CursorBridgeQueuedPrompt[];
   pendingPromptPoll?: CursorBridgeQueuedPromptPoll;
+  /** BL-894: the most recently replaced queue poll's id, so a vote arriving after it was superseded gets told so instead of vanishing in silence. */
+  supersededPromptPollId?: string;
   pendingChoicePolls?: CursorBridgeChoicePoll[];
   /** Edit-in-place Host liveness line identity. */
   livenessStatus?: CursorBridgeLivenessStatusState;
@@ -761,6 +763,10 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   const pendingPromptPoll = parseQueuedPromptPoll(record.pendingPromptPoll);
   if (pendingPromptPoll) {
     state.pendingPromptPoll = pendingPromptPoll;
+  }
+  const supersededPromptPollId = parseOptionalNonEmptyString(record.supersededPromptPollId);
+  if (supersededPromptPollId !== undefined) {
+    state.supersededPromptPollId = supersededPromptPollId;
   }
   const pendingChoicePollsRaw = Array.isArray(record.pendingChoicePolls) ? record.pendingChoicePolls : undefined;
   if (pendingChoicePollsRaw) {
