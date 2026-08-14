@@ -148,3 +148,6 @@ description: |
   behind and ahead counts.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: QA, blamed: architect, class: behavior, commit: ee14a3ce6, evidence: backlog/evidence/BL-891-qa-bounce-20260814.md }
