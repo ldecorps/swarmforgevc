@@ -135,6 +135,15 @@ function registerSteps(registry) {
       ctx.result = ctx.stuckEscalationRunner();
       return;
     }
+    // BL-719: same extension point as ctx.stuckEscalationRunner above -
+    // bl719DroppedParcelNudgeSteps.js's Background sets this so its own
+    // scenarios (which share this exact step text) run the real
+    // dropped-parcel + dispatch-gap harnesses together, mirroring what a
+    // live daemon tick actually does.
+    if (ctx.droppedParcelSweepRunner) {
+      ctx.droppedParcelSweepRunner();
+      return;
+    }
     const targetPath = ensureTargetPath(ctx);
     ctx.sweepOutput = execFileSync('bb', [SWEEP_HARNESS, targetPath], { encoding: 'utf8' });
   });
