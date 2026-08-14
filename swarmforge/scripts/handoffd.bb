@@ -29,6 +29,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
@@ -2495,6 +2496,60 @@
     (catch Exception e
       (log! "push-sweep-error" (.getMessage e)))))
 
+;; BL-891: mirror-image sweep of BL-356's push-sweep! above - origin's
+;; LANDED commits never reach the master checkout's own `main` ref (QA can
+;; only ever `git push origin HEAD:main`, which advances origin/main and
+;; leaves local `main` exactly where it was; git refuses to update a branch
+;; checked out in another worktree, so QA/coordinator have no way to do it
+;; themselves - see this ticket's own notes for the incident). This is the
+;; thin git/CLI-specific wiring; master_main_reconcile_lib.bb owns the pure
+;; decision/state logic (gating on a clean tree, self-healing surfaced-once
+;; state). Reuses push-sweep-rev-counts! verbatim - "origin/main...main"
+;; already yields exactly the {:ahead :behind} this sweep needs too, and it
+;; already fetches as a side effect, so no second fetch is needed per tick.
+(defn- master-main-reconcile-worktree-clean? []
+  (let [{:keys [exit out]} (process/sh ["git" "status" "--porcelain"] {:dir (str project-root)})]
+    (and (zero? exit) (str/blank? out))))
+
+;; Never --force, --reset, --rebase, or --stash (BL-891 invariant 1): a
+;; plain `git merge` either fast-forwards (no local-only commits) or
+;; creates a real merge commit (local-only bookkeeping commits preserved
+;; as first-parent history) - both leave every prior commit reachable. A
+;; conflicted merge is aborted immediately so the checkout is left exactly
+;; as it was found (invariant 2's "never partially updated") rather than
+;; sitting mid-conflict for a human to stumble into.
+(defn- master-main-reconcile-merge! []
+  (let [{:keys [exit err]} (process/sh ["git" "merge" "--no-edit" "origin/main"] {:dir (str project-root)})]
+    (if (zero? exit)
+      {:success true}
+      (do
+        (process/sh ["git" "merge" "--abort"] {:dir (str project-root)})
+        {:success false :error (str/trim (or err ""))}))))
+
+;; Same outbound path as auto-route!/nudge-coordinator-unassigned! above:
+;; a `note` shelled through swarm_handoff.bb (SWARMFORGE_ROLE=coordinator)
+;; rather than a hand-written inbox file, reusing its full existing
+;; validation, sequencing, and atomic outbox write.
+(defn- master-main-reconcile-surface! [msg]
+  (let [draft (write-scratch-draft! (master-main-reconcile-lib/surface-draft-lines msg))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "master-main-reconcile-surfaced" msg)
+      (log! "master-main-reconcile-surface-error" (str (:err result))))))
+
+(defn master-main-reconcile-sweep! []
+  (try
+    (master-main-reconcile-lib/sweep!
+     (str daemon-dir)
+     {:rev-counts! push-sweep-rev-counts!
+      :clean? master-main-reconcile-worktree-clean?
+      :merge! master-main-reconcile-merge!
+      :surface! master-main-reconcile-surface!
+      :log! (fn [& parts] (apply log! parts))})
+    (catch Exception e
+      (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
+
 ;; BL-437: shells to the compiled emit-fleet-status.js CLI (Babashka has no
 ;; way to import compiled TS) - reuses createSwarmNode/rollupStatus
 ;; unchanged, the exact same rollup fleet-console.ts used to reconstruct for
@@ -3015,6 +3070,20 @@
                       (push-sweep!)
                       (catch Exception e
                         (log! "push-sweep-error" (.getMessage e))))
+                    ;; BL-891: master-main-reconcile sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
+                    ;; BL-350/BL-356 above. Mirror-image direction of
+                    ;; BL-356's push-sweep! immediately above (origin ->
+                    ;; local instead of local -> origin); already carries
+                    ;; its own try/catch inside master-main-reconcile-
+                    ;; sweep! itself but wrapped again here for the same
+                    ;; belt-and-suspenders reason every sibling sweep in
+                    ;; this cadence block is.
+                    (try
+                      (master-main-reconcile-sweep!)
+                      (catch Exception e
+                        (log! "master-main-reconcile-sweep-error" (.getMessage e))))
                     ;; BL-437: fleet-status sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356
