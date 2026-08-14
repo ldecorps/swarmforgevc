@@ -1080,3 +1080,169 @@
 (defn open-slot-escalation-email-subject
   [candidate-id]
   (str "SwarmForge: promotion inaction on " candidate-id " - open slot unfilled"))
+
+;; ── BL-719: dropped-parcel coordinator nudge (sibling of BL-222) ───────────
+;; BL-222's dispatch-gap sweep answers exactly one question: was this ticket
+;; EVER dispatched. Any trail at all - even a note whose message text merely
+;; contains the id - marks it dispatched forever, so a ticket dispatched
+;; once and then dropped mid-pipeline (BL-714) has no detector: it sits in
+;; backlog/active/ with nothing to wake it. This sweep asks the different
+;; question: does the item have a trail (dispatch-gap already silent on it)
+;; but NO parcel currently in flight anywhere, with that gap stale enough to
+;; be a drop rather than an ordinary pause between stages? Reports to the
+;; coordinator only - never routes, assigns, or promotes (constitution:
+;; routing judgement is the coordinator's exclusive duty).
+
+(def dropped-parcel-nudge-phrase "no parcel in flight - possible drop")
+
+(defn dropped-parcel-note-message
+  "Leads with the ticket id (swarm convention) so the note is unambiguous
+   and self-identifying in the trail."
+  [item-id]
+  (let [msg (str item-id " " dropped-parcel-nudge-phrase ".")]
+    (if (<= (count msg) dispatch-gap-note-max-length)
+      msg
+      (subs msg 0 dispatch-gap-note-max-length))))
+
+(defn dropped-parcel-draft-lines
+  "Note to the coordinator only - same posture as unassigned-active-draft-
+   lines/open-slot-nudge-draft-lines. Never names a routing target; which
+   stage owns the fix is the coordinator's own judgement."
+  [item]
+  ["type: note"
+   "to: coordinator"
+   "priority: 00"
+   (str "message: " (dropped-parcel-note-message (:id item)))])
+
+(defn decide-dropped-parcel?
+  "Pure. has-trail?: some handoff anywhere has ever referenced this id (the
+   same dispatch-trail definition BL-222 uses). live-mail?: a parcel for
+   this id currently sits in ANY role's new or in_process. newest-trail-ms:
+   epoch ms of the freshest trail event EXCLUDING this sweep's own prior
+   nudges (nil when no qualifying event exists - see newest-trail-event-ms).
+   Returns true only when the item has a trail, no live mail anywhere, and
+   that trail has gone stale past stall-threshold-ms - never on missing
+   data (a nil newest-trail-ms fails closed, not open)."
+  [{:keys [has-trail? live-mail? newest-trail-ms]} now-ms stall-threshold-ms]
+  (boolean
+   (and has-trail?
+        (not live-mail?)
+        (number? newest-trail-ms)
+        (number? now-ms)
+        (number? stall-threshold-ms)
+        (>= (- now-ms newest-trail-ms) stall-threshold-ms))))
+
+(defn within-dropped-parcel-cooldown?
+  "True when last-sent-ms (the last dropped-parcel nudge sent for THIS
+   ticket, if any) is still within cooldown-ms of now-ms. Mirrors within-
+   open-slot-cooldown?'s shape, but keyed per ticket by the caller (each
+   dropped ticket runs its own independent cooldown clock, unlike open-
+   slot's single global timestamp)."
+  [last-sent-ms now-ms cooldown-ms]
+  (and (number? last-sent-ms)
+       (number? now-ms)
+       (number? cooldown-ms)
+       (<= 0 (- now-ms last-sent-ms) cooldown-ms)))
+
+(def dropped-parcel-stall-default-threshold-ms
+  "Well above normal inter-stage latency so an ordinary gap between
+   pipeline stages is never mistaken for a drop (the ticket's own
+   requirement). Amendable via swarmforge.conf."
+  (* 45 60 1000))
+
+(defn parse-dropped-parcel-stall-threshold-ms
+  "Pure: `config dropped_parcel_stall_threshold_minutes <n>` from conf
+   text, in minutes, converted to ms. A non-positive or unparseable value
+   degrades to the default (mirrors parse-open-slot-escalation-threshold's
+   own degrade-to-default posture)."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config dropped_parcel_stall_threshold_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) dropped-parcel-stall-default-threshold-ms)))
+
+(def dropped-parcel-cooldown-default-ms
+  "Default cooldown between repeated nudges for the SAME still-dropped
+   ticket (invariant 3): one nudge per window, not every tick."
+  (* 30 60 1000))
+
+(defn parse-dropped-parcel-cooldown-ms
+  "Pure: `config dropped_parcel_cooldown_minutes <n>` from conf text, in
+   minutes, converted to ms. Same degrade-to-default posture as the stall
+   threshold parser above."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config dropped_parcel_cooldown_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) dropped-parcel-cooldown-default-ms)))
+
+(defn- dropped-parcel-self-nudge?
+  "True when file-path's own message header is this sweep's own nudge
+   text - excluded from trail-freshness so a self-sent nudge never re-arms
+   the stale-trail check (BL-719 invariant 3)."
+  [file-path]
+  (let [msg (read-header-field file-path "message")]
+    (boolean (and msg (str/includes? msg dropped-parcel-nudge-phrase)))))
+
+(defn- parse-instant-ms
+  "Pure: an ISO-8601 instant string to epoch millis, or nil when absent,
+   blank, or unparseable - never throws. Mirrors mono_router_lib.bb's own
+   parse-instant-ms exactly (small pure helper, deliberately duplicated
+   across independent libs per this file's own established posture, see
+   the BL-488-VIOLATION comment above)."
+  [s]
+  (try
+    (some-> s str str/trim not-empty java.time.Instant/parse .toEpochMilli)
+    (catch Exception _ nil)))
+
+(defn- handoff-event-ms
+  "A handoff file's own age-source timestamp: enqueued_at if parseable,
+   else created_at - never file mtime (a worktree hot-sync or archive move
+   can touch mtime without a new event happening; mirrors mono_router_lib.
+   bb's note-aged? precedence exactly)."
+  [file-path]
+  (or (parse-instant-ms (read-header-field file-path "enqueued_at"))
+      (parse-instant-ms (read-header-field file-path "created_at"))))
+
+(defn newest-trail-event-ms
+  "The freshest trail-event timestamp (epoch ms) for item-id across
+   scan-dirs, from each matching handoff's own enqueued_at/created_at
+   header. Excludes this sweep's OWN prior nudges (BL-719 invariant 3) so a
+   still-dropped ticket stays detectably stale across repeated nudge
+   cycles, and skips any file with no parseable timestamp header at all
+   (never a false freshness signal from missing data). Returns nil when no
+   qualifying trail file exists."
+  [item-id scan-dirs]
+  (->> scan-dirs
+       (mapcat list-handoff-files-with-batches)
+       (filter #(= item-id (extract-ticket-id (dispatch-ticket-ref %))))
+       (remove dropped-parcel-self-nudge?)
+       (keep handoff-event-ms)
+       (reduce (fn [best ms] (if (or (nil? best) (> ms best)) ms best)) nil)))
+
+(defn dropped-parcel-items
+  "Full pipeline for one evaluation tick. active-dir: backlog/active/.
+   all-scan-dirs: every role's :new/:in_process/:completed/:sent/:outbox
+   (same set BL-222's dispatch-gap-scan-dirs builds - used for has-trail?
+   and newest-trail-event-ms). live-mail-dirs: every role's :new/:in_process
+   ONLY (used for live-mail?). Returns the active items with a trail, no
+   live mail anywhere, and a trail gone stale past stall-threshold-ms - the
+   dropped-parcel candidates for a coordinator nudge. Reuses read-active-
+   items/collect-dispatched-ticket-ids (both id+assigned_to and the trail-
+   set definition are shared with BL-222, unchanged)."
+  [active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
+  (let [items (read-active-items active-dir)
+        dispatched-ids (collect-dispatched-ticket-ids all-scan-dirs)
+        live-ids (collect-dispatched-ticket-ids live-mail-dirs)]
+    (filterv
+     (fn [item]
+       (decide-dropped-parcel?
+        {:has-trail? (contains? dispatched-ids (:id item))
+         :live-mail? (contains? live-ids (:id item))
+         :newest-trail-ms (newest-trail-event-ms (:id item) all-scan-dirs)}
+        now-ms stall-threshold-ms))
+     items)))

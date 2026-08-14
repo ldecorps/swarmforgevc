@@ -441,7 +441,8 @@ const DOMAINS = [
   require('./bl881ResidentPaneLiveCaptureTtlCacheSteps'),
   require('./bl767QueuedBridgeQuestionsAnswerInOriginTopicSteps'),
   require('./bl866CompanionManifestPackageCatalogSteps'),
-  require('./bl788BubblePairingClientLogsAdoptSteps')
+  require('./bl788BubblePairingClientLogsAdoptSteps'),
+  require('./bl719DroppedParcelNudgeSteps')
 ];
 
 function registerSteps(registry) {
