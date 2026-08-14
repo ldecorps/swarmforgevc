@@ -5,7 +5,7 @@
     {
       "role": "coder",
       "tokens": {
-        "value": 306394,
+        "value": 308706,
         "trend": {
           "series": [
             {
@@ -66,17 +66,17 @@
             },
             {
               "periodStart": "2026-08-14T00:00:00.000Z",
-              "value": 306394
+              "value": 308706
             }
           ],
-          "currentValue": 306394,
+          "currentValue": 308706,
           "priorValue": 1282309,
-          "delta": -975915,
+          "delta": -973603,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 36.06076365000001,
+        "value": 36.153127050000016,
         "trend": {
           "series": [
             {
@@ -137,12 +137,12 @@
             },
             {
               "periodStart": "2026-08-14T00:00:00.000Z",
-              "value": 36.06076365000001
+              "value": 36.153127050000016
             }
           ],
-          "currentValue": 36.06076365000001,
+          "currentValue": 36.153127050000016,
           "priorValue": 170.28539759999967,
-          "delta": -134.22463394999966,
+          "delta": -134.13227054999965,
           "direction": "down"
         }
       }
@@ -7210,288 +7210,288 @@
       },
       "buckets": [
         {
-          "bucketStartMs": 1786080234521,
-          "bucketEndMs": 1786101834521,
+          "bucketStartMs": 1786080264703,
+          "bucketEndMs": 1786101864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786101834521,
-          "bucketEndMs": 1786123434521,
+          "bucketStartMs": 1786101864703,
+          "bucketEndMs": 1786123464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786123434521,
-          "bucketEndMs": 1786145034521,
+          "bucketStartMs": 1786123464703,
+          "bucketEndMs": 1786145064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786145034521,
-          "bucketEndMs": 1786166634521,
+          "bucketStartMs": 1786145064703,
+          "bucketEndMs": 1786166664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786166634521,
-          "bucketEndMs": 1786188234521,
+          "bucketStartMs": 1786166664703,
+          "bucketEndMs": 1786188264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786188234521,
-          "bucketEndMs": 1786209834521,
+          "bucketStartMs": 1786188264703,
+          "bucketEndMs": 1786209864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786209834521,
-          "bucketEndMs": 1786231434521,
+          "bucketStartMs": 1786209864703,
+          "bucketEndMs": 1786231464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786231434521,
-          "bucketEndMs": 1786253034521,
+          "bucketStartMs": 1786231464703,
+          "bucketEndMs": 1786253064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786253034521,
-          "bucketEndMs": 1786274634521,
+          "bucketStartMs": 1786253064703,
+          "bucketEndMs": 1786274664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786274634521,
-          "bucketEndMs": 1786296234521,
+          "bucketStartMs": 1786274664703,
+          "bucketEndMs": 1786296264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786296234521,
-          "bucketEndMs": 1786317834521,
+          "bucketStartMs": 1786296264703,
+          "bucketEndMs": 1786317864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786317834521,
-          "bucketEndMs": 1786339434521,
+          "bucketStartMs": 1786317864703,
+          "bucketEndMs": 1786339464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786339434521,
-          "bucketEndMs": 1786361034521,
+          "bucketStartMs": 1786339464703,
+          "bucketEndMs": 1786361064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786361034521,
-          "bucketEndMs": 1786382634521,
+          "bucketStartMs": 1786361064703,
+          "bucketEndMs": 1786382664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786382634521,
-          "bucketEndMs": 1786404234521,
+          "bucketStartMs": 1786382664703,
+          "bucketEndMs": 1786404264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786404234521,
-          "bucketEndMs": 1786425834521,
+          "bucketStartMs": 1786404264703,
+          "bucketEndMs": 1786425864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786425834521,
-          "bucketEndMs": 1786447434521,
+          "bucketStartMs": 1786425864703,
+          "bucketEndMs": 1786447464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786447434521,
-          "bucketEndMs": 1786469034521,
+          "bucketStartMs": 1786447464703,
+          "bucketEndMs": 1786469064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786469034521,
-          "bucketEndMs": 1786490634521,
+          "bucketStartMs": 1786469064703,
+          "bucketEndMs": 1786490664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786490634521,
-          "bucketEndMs": 1786512234521,
+          "bucketStartMs": 1786490664703,
+          "bucketEndMs": 1786512264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786512234521,
-          "bucketEndMs": 1786533834521,
+          "bucketStartMs": 1786512264703,
+          "bucketEndMs": 1786533864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786533834521,
-          "bucketEndMs": 1786555434521,
+          "bucketStartMs": 1786533864703,
+          "bucketEndMs": 1786555464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786555434521,
-          "bucketEndMs": 1786577034521,
+          "bucketStartMs": 1786555464703,
+          "bucketEndMs": 1786577064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786577034521,
-          "bucketEndMs": 1786598634521,
+          "bucketStartMs": 1786577064703,
+          "bucketEndMs": 1786598664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786598634521,
-          "bucketEndMs": 1786602234521,
+          "bucketStartMs": 1786598664703,
+          "bucketEndMs": 1786602264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786602234521,
-          "bucketEndMs": 1786605834521,
+          "bucketStartMs": 1786602264703,
+          "bucketEndMs": 1786605864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786605834521,
-          "bucketEndMs": 1786609434521,
+          "bucketStartMs": 1786605864703,
+          "bucketEndMs": 1786609464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786609434521,
-          "bucketEndMs": 1786613034521,
+          "bucketStartMs": 1786609464703,
+          "bucketEndMs": 1786613064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786613034521,
-          "bucketEndMs": 1786616634521,
+          "bucketStartMs": 1786613064703,
+          "bucketEndMs": 1786616664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786616634521,
-          "bucketEndMs": 1786620234521,
+          "bucketStartMs": 1786616664703,
+          "bucketEndMs": 1786620264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786620234521,
-          "bucketEndMs": 1786623834521,
+          "bucketStartMs": 1786620264703,
+          "bucketEndMs": 1786623864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786623834521,
-          "bucketEndMs": 1786627434521,
+          "bucketStartMs": 1786623864703,
+          "bucketEndMs": 1786627464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786627434521,
-          "bucketEndMs": 1786631034521,
+          "bucketStartMs": 1786627464703,
+          "bucketEndMs": 1786631064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786631034521,
-          "bucketEndMs": 1786634634521,
+          "bucketStartMs": 1786631064703,
+          "bucketEndMs": 1786634664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786634634521,
-          "bucketEndMs": 1786638234521,
+          "bucketStartMs": 1786634664703,
+          "bucketEndMs": 1786638264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786638234521,
-          "bucketEndMs": 1786641834521,
+          "bucketStartMs": 1786638264703,
+          "bucketEndMs": 1786641864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786641834521,
-          "bucketEndMs": 1786645434521,
+          "bucketStartMs": 1786641864703,
+          "bucketEndMs": 1786645464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786645434521,
-          "bucketEndMs": 1786649034521,
+          "bucketStartMs": 1786645464703,
+          "bucketEndMs": 1786649064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786649034521,
-          "bucketEndMs": 1786652634521,
+          "bucketStartMs": 1786649064703,
+          "bucketEndMs": 1786652664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786652634521,
-          "bucketEndMs": 1786656234521,
+          "bucketStartMs": 1786652664703,
+          "bucketEndMs": 1786656264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786656234521,
-          "bucketEndMs": 1786659834521,
+          "bucketStartMs": 1786656264703,
+          "bucketEndMs": 1786659864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786659834521,
-          "bucketEndMs": 1786663434521,
+          "bucketStartMs": 1786659864703,
+          "bucketEndMs": 1786663464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786663434521,
-          "bucketEndMs": 1786667034521,
+          "bucketStartMs": 1786663464703,
+          "bucketEndMs": 1786667064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786667034521,
-          "bucketEndMs": 1786670634521,
+          "bucketStartMs": 1786667064703,
+          "bucketEndMs": 1786670664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786670634521,
-          "bucketEndMs": 1786674234521,
+          "bucketStartMs": 1786670664703,
+          "bucketEndMs": 1786674264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786674234521,
-          "bucketEndMs": 1786675134521,
+          "bucketStartMs": 1786674264703,
+          "bucketEndMs": 1786675164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786675134521,
-          "bucketEndMs": 1786676034521,
+          "bucketStartMs": 1786675164703,
+          "bucketEndMs": 1786676064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676034521,
-          "bucketEndMs": 1786676934521,
+          "bucketStartMs": 1786676064703,
+          "bucketEndMs": 1786676964703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676934521,
-          "bucketEndMs": 1786677834521,
+          "bucketStartMs": 1786676964703,
+          "bucketEndMs": 1786677864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786677834521,
-          "bucketEndMs": 1786678734521,
+          "bucketStartMs": 1786677864703,
+          "bucketEndMs": 1786678764703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786678734521,
-          "bucketEndMs": 1786679634521,
+          "bucketStartMs": 1786678764703,
+          "bucketEndMs": 1786679664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786679634521,
-          "bucketEndMs": 1786680534521,
+          "bucketStartMs": 1786679664703,
+          "bucketEndMs": 1786680564703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786680534521,
-          "bucketEndMs": 1786681434521,
+          "bucketStartMs": 1786680564703,
+          "bucketEndMs": 1786681464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786681434521,
-          "bucketEndMs": 1786682334521,
+          "bucketStartMs": 1786681464703,
+          "bucketEndMs": 1786682364703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786682334521,
-          "bucketEndMs": 1786683234521,
+          "bucketStartMs": 1786682364703,
+          "bucketEndMs": 1786683264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786683234521,
-          "bucketEndMs": 1786684134521,
+          "bucketStartMs": 1786683264703,
+          "bucketEndMs": 1786684164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786684134521,
-          "bucketEndMs": 1786685034521,
+          "bucketStartMs": 1786684164703,
+          "bucketEndMs": 1786685064703,
           "costUsd": 0
         }
       ]
@@ -7504,288 +7504,288 @@
       },
       "buckets": [
         {
-          "bucketStartMs": 1786080234521,
-          "bucketEndMs": 1786101834521,
+          "bucketStartMs": 1786080264703,
+          "bucketEndMs": 1786101864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786101834521,
-          "bucketEndMs": 1786123434521,
+          "bucketStartMs": 1786101864703,
+          "bucketEndMs": 1786123464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786123434521,
-          "bucketEndMs": 1786145034521,
+          "bucketStartMs": 1786123464703,
+          "bucketEndMs": 1786145064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786145034521,
-          "bucketEndMs": 1786166634521,
+          "bucketStartMs": 1786145064703,
+          "bucketEndMs": 1786166664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786166634521,
-          "bucketEndMs": 1786188234521,
+          "bucketStartMs": 1786166664703,
+          "bucketEndMs": 1786188264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786188234521,
-          "bucketEndMs": 1786209834521,
+          "bucketStartMs": 1786188264703,
+          "bucketEndMs": 1786209864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786209834521,
-          "bucketEndMs": 1786231434521,
+          "bucketStartMs": 1786209864703,
+          "bucketEndMs": 1786231464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786231434521,
-          "bucketEndMs": 1786253034521,
+          "bucketStartMs": 1786231464703,
+          "bucketEndMs": 1786253064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786253034521,
-          "bucketEndMs": 1786274634521,
+          "bucketStartMs": 1786253064703,
+          "bucketEndMs": 1786274664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786274634521,
-          "bucketEndMs": 1786296234521,
+          "bucketStartMs": 1786274664703,
+          "bucketEndMs": 1786296264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786296234521,
-          "bucketEndMs": 1786317834521,
+          "bucketStartMs": 1786296264703,
+          "bucketEndMs": 1786317864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786317834521,
-          "bucketEndMs": 1786339434521,
+          "bucketStartMs": 1786317864703,
+          "bucketEndMs": 1786339464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786339434521,
-          "bucketEndMs": 1786361034521,
+          "bucketStartMs": 1786339464703,
+          "bucketEndMs": 1786361064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786361034521,
-          "bucketEndMs": 1786382634521,
+          "bucketStartMs": 1786361064703,
+          "bucketEndMs": 1786382664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786382634521,
-          "bucketEndMs": 1786404234521,
+          "bucketStartMs": 1786382664703,
+          "bucketEndMs": 1786404264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786404234521,
-          "bucketEndMs": 1786425834521,
+          "bucketStartMs": 1786404264703,
+          "bucketEndMs": 1786425864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786425834521,
-          "bucketEndMs": 1786447434521,
+          "bucketStartMs": 1786425864703,
+          "bucketEndMs": 1786447464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786447434521,
-          "bucketEndMs": 1786469034521,
+          "bucketStartMs": 1786447464703,
+          "bucketEndMs": 1786469064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786469034521,
-          "bucketEndMs": 1786490634521,
+          "bucketStartMs": 1786469064703,
+          "bucketEndMs": 1786490664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786490634521,
-          "bucketEndMs": 1786512234521,
+          "bucketStartMs": 1786490664703,
+          "bucketEndMs": 1786512264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786512234521,
-          "bucketEndMs": 1786533834521,
+          "bucketStartMs": 1786512264703,
+          "bucketEndMs": 1786533864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786533834521,
-          "bucketEndMs": 1786555434521,
+          "bucketStartMs": 1786533864703,
+          "bucketEndMs": 1786555464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786555434521,
-          "bucketEndMs": 1786577034521,
+          "bucketStartMs": 1786555464703,
+          "bucketEndMs": 1786577064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786577034521,
-          "bucketEndMs": 1786598634521,
+          "bucketStartMs": 1786577064703,
+          "bucketEndMs": 1786598664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786598634521,
-          "bucketEndMs": 1786602234521,
+          "bucketStartMs": 1786598664703,
+          "bucketEndMs": 1786602264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786602234521,
-          "bucketEndMs": 1786605834521,
+          "bucketStartMs": 1786602264703,
+          "bucketEndMs": 1786605864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786605834521,
-          "bucketEndMs": 1786609434521,
+          "bucketStartMs": 1786605864703,
+          "bucketEndMs": 1786609464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786609434521,
-          "bucketEndMs": 1786613034521,
+          "bucketStartMs": 1786609464703,
+          "bucketEndMs": 1786613064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786613034521,
-          "bucketEndMs": 1786616634521,
+          "bucketStartMs": 1786613064703,
+          "bucketEndMs": 1786616664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786616634521,
-          "bucketEndMs": 1786620234521,
+          "bucketStartMs": 1786616664703,
+          "bucketEndMs": 1786620264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786620234521,
-          "bucketEndMs": 1786623834521,
+          "bucketStartMs": 1786620264703,
+          "bucketEndMs": 1786623864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786623834521,
-          "bucketEndMs": 1786627434521,
+          "bucketStartMs": 1786623864703,
+          "bucketEndMs": 1786627464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786627434521,
-          "bucketEndMs": 1786631034521,
+          "bucketStartMs": 1786627464703,
+          "bucketEndMs": 1786631064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786631034521,
-          "bucketEndMs": 1786634634521,
+          "bucketStartMs": 1786631064703,
+          "bucketEndMs": 1786634664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786634634521,
-          "bucketEndMs": 1786638234521,
+          "bucketStartMs": 1786634664703,
+          "bucketEndMs": 1786638264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786638234521,
-          "bucketEndMs": 1786641834521,
+          "bucketStartMs": 1786638264703,
+          "bucketEndMs": 1786641864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786641834521,
-          "bucketEndMs": 1786645434521,
+          "bucketStartMs": 1786641864703,
+          "bucketEndMs": 1786645464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786645434521,
-          "bucketEndMs": 1786649034521,
+          "bucketStartMs": 1786645464703,
+          "bucketEndMs": 1786649064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786649034521,
-          "bucketEndMs": 1786652634521,
+          "bucketStartMs": 1786649064703,
+          "bucketEndMs": 1786652664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786652634521,
-          "bucketEndMs": 1786656234521,
+          "bucketStartMs": 1786652664703,
+          "bucketEndMs": 1786656264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786656234521,
-          "bucketEndMs": 1786659834521,
+          "bucketStartMs": 1786656264703,
+          "bucketEndMs": 1786659864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786659834521,
-          "bucketEndMs": 1786663434521,
+          "bucketStartMs": 1786659864703,
+          "bucketEndMs": 1786663464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786663434521,
-          "bucketEndMs": 1786667034521,
+          "bucketStartMs": 1786663464703,
+          "bucketEndMs": 1786667064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786667034521,
-          "bucketEndMs": 1786670634521,
+          "bucketStartMs": 1786667064703,
+          "bucketEndMs": 1786670664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786670634521,
-          "bucketEndMs": 1786674234521,
+          "bucketStartMs": 1786670664703,
+          "bucketEndMs": 1786674264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786674234521,
-          "bucketEndMs": 1786675134521,
+          "bucketStartMs": 1786674264703,
+          "bucketEndMs": 1786675164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786675134521,
-          "bucketEndMs": 1786676034521,
+          "bucketStartMs": 1786675164703,
+          "bucketEndMs": 1786676064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676034521,
-          "bucketEndMs": 1786676934521,
+          "bucketStartMs": 1786676064703,
+          "bucketEndMs": 1786676964703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676934521,
-          "bucketEndMs": 1786677834521,
+          "bucketStartMs": 1786676964703,
+          "bucketEndMs": 1786677864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786677834521,
-          "bucketEndMs": 1786678734521,
+          "bucketStartMs": 1786677864703,
+          "bucketEndMs": 1786678764703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786678734521,
-          "bucketEndMs": 1786679634521,
+          "bucketStartMs": 1786678764703,
+          "bucketEndMs": 1786679664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786679634521,
-          "bucketEndMs": 1786680534521,
+          "bucketStartMs": 1786679664703,
+          "bucketEndMs": 1786680564703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786680534521,
-          "bucketEndMs": 1786681434521,
+          "bucketStartMs": 1786680564703,
+          "bucketEndMs": 1786681464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786681434521,
-          "bucketEndMs": 1786682334521,
+          "bucketStartMs": 1786681464703,
+          "bucketEndMs": 1786682364703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786682334521,
-          "bucketEndMs": 1786683234521,
+          "bucketStartMs": 1786682364703,
+          "bucketEndMs": 1786683264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786683234521,
-          "bucketEndMs": 1786684134521,
+          "bucketStartMs": 1786683264703,
+          "bucketEndMs": 1786684164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786684134521,
-          "bucketEndMs": 1786685034521,
+          "bucketStartMs": 1786684164703,
+          "bucketEndMs": 1786685064703,
           "costUsd": 0
         }
       ]
@@ -7798,288 +7798,288 @@
       },
       "buckets": [
         {
-          "bucketStartMs": 1786080234521,
-          "bucketEndMs": 1786101834521,
+          "bucketStartMs": 1786080264703,
+          "bucketEndMs": 1786101864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786101834521,
-          "bucketEndMs": 1786123434521,
+          "bucketStartMs": 1786101864703,
+          "bucketEndMs": 1786123464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786123434521,
-          "bucketEndMs": 1786145034521,
+          "bucketStartMs": 1786123464703,
+          "bucketEndMs": 1786145064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786145034521,
-          "bucketEndMs": 1786166634521,
+          "bucketStartMs": 1786145064703,
+          "bucketEndMs": 1786166664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786166634521,
-          "bucketEndMs": 1786188234521,
+          "bucketStartMs": 1786166664703,
+          "bucketEndMs": 1786188264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786188234521,
-          "bucketEndMs": 1786209834521,
+          "bucketStartMs": 1786188264703,
+          "bucketEndMs": 1786209864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786209834521,
-          "bucketEndMs": 1786231434521,
+          "bucketStartMs": 1786209864703,
+          "bucketEndMs": 1786231464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786231434521,
-          "bucketEndMs": 1786253034521,
+          "bucketStartMs": 1786231464703,
+          "bucketEndMs": 1786253064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786253034521,
-          "bucketEndMs": 1786274634521,
+          "bucketStartMs": 1786253064703,
+          "bucketEndMs": 1786274664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786274634521,
-          "bucketEndMs": 1786296234521,
+          "bucketStartMs": 1786274664703,
+          "bucketEndMs": 1786296264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786296234521,
-          "bucketEndMs": 1786317834521,
+          "bucketStartMs": 1786296264703,
+          "bucketEndMs": 1786317864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786317834521,
-          "bucketEndMs": 1786339434521,
+          "bucketStartMs": 1786317864703,
+          "bucketEndMs": 1786339464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786339434521,
-          "bucketEndMs": 1786361034521,
+          "bucketStartMs": 1786339464703,
+          "bucketEndMs": 1786361064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786361034521,
-          "bucketEndMs": 1786382634521,
+          "bucketStartMs": 1786361064703,
+          "bucketEndMs": 1786382664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786382634521,
-          "bucketEndMs": 1786404234521,
+          "bucketStartMs": 1786382664703,
+          "bucketEndMs": 1786404264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786404234521,
-          "bucketEndMs": 1786425834521,
+          "bucketStartMs": 1786404264703,
+          "bucketEndMs": 1786425864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786425834521,
-          "bucketEndMs": 1786447434521,
+          "bucketStartMs": 1786425864703,
+          "bucketEndMs": 1786447464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786447434521,
-          "bucketEndMs": 1786469034521,
+          "bucketStartMs": 1786447464703,
+          "bucketEndMs": 1786469064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786469034521,
-          "bucketEndMs": 1786490634521,
+          "bucketStartMs": 1786469064703,
+          "bucketEndMs": 1786490664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786490634521,
-          "bucketEndMs": 1786512234521,
+          "bucketStartMs": 1786490664703,
+          "bucketEndMs": 1786512264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786512234521,
-          "bucketEndMs": 1786533834521,
+          "bucketStartMs": 1786512264703,
+          "bucketEndMs": 1786533864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786533834521,
-          "bucketEndMs": 1786555434521,
+          "bucketStartMs": 1786533864703,
+          "bucketEndMs": 1786555464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786555434521,
-          "bucketEndMs": 1786577034521,
+          "bucketStartMs": 1786555464703,
+          "bucketEndMs": 1786577064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786577034521,
-          "bucketEndMs": 1786598634521,
+          "bucketStartMs": 1786577064703,
+          "bucketEndMs": 1786598664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786598634521,
-          "bucketEndMs": 1786602234521,
+          "bucketStartMs": 1786598664703,
+          "bucketEndMs": 1786602264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786602234521,
-          "bucketEndMs": 1786605834521,
+          "bucketStartMs": 1786602264703,
+          "bucketEndMs": 1786605864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786605834521,
-          "bucketEndMs": 1786609434521,
+          "bucketStartMs": 1786605864703,
+          "bucketEndMs": 1786609464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786609434521,
-          "bucketEndMs": 1786613034521,
+          "bucketStartMs": 1786609464703,
+          "bucketEndMs": 1786613064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786613034521,
-          "bucketEndMs": 1786616634521,
+          "bucketStartMs": 1786613064703,
+          "bucketEndMs": 1786616664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786616634521,
-          "bucketEndMs": 1786620234521,
+          "bucketStartMs": 1786616664703,
+          "bucketEndMs": 1786620264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786620234521,
-          "bucketEndMs": 1786623834521,
+          "bucketStartMs": 1786620264703,
+          "bucketEndMs": 1786623864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786623834521,
-          "bucketEndMs": 1786627434521,
+          "bucketStartMs": 1786623864703,
+          "bucketEndMs": 1786627464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786627434521,
-          "bucketEndMs": 1786631034521,
+          "bucketStartMs": 1786627464703,
+          "bucketEndMs": 1786631064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786631034521,
-          "bucketEndMs": 1786634634521,
+          "bucketStartMs": 1786631064703,
+          "bucketEndMs": 1786634664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786634634521,
-          "bucketEndMs": 1786638234521,
+          "bucketStartMs": 1786634664703,
+          "bucketEndMs": 1786638264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786638234521,
-          "bucketEndMs": 1786641834521,
+          "bucketStartMs": 1786638264703,
+          "bucketEndMs": 1786641864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786641834521,
-          "bucketEndMs": 1786645434521,
+          "bucketStartMs": 1786641864703,
+          "bucketEndMs": 1786645464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786645434521,
-          "bucketEndMs": 1786649034521,
+          "bucketStartMs": 1786645464703,
+          "bucketEndMs": 1786649064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786649034521,
-          "bucketEndMs": 1786652634521,
+          "bucketStartMs": 1786649064703,
+          "bucketEndMs": 1786652664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786652634521,
-          "bucketEndMs": 1786656234521,
+          "bucketStartMs": 1786652664703,
+          "bucketEndMs": 1786656264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786656234521,
-          "bucketEndMs": 1786659834521,
+          "bucketStartMs": 1786656264703,
+          "bucketEndMs": 1786659864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786659834521,
-          "bucketEndMs": 1786663434521,
+          "bucketStartMs": 1786659864703,
+          "bucketEndMs": 1786663464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786663434521,
-          "bucketEndMs": 1786667034521,
+          "bucketStartMs": 1786663464703,
+          "bucketEndMs": 1786667064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786667034521,
-          "bucketEndMs": 1786670634521,
+          "bucketStartMs": 1786667064703,
+          "bucketEndMs": 1786670664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786670634521,
-          "bucketEndMs": 1786674234521,
+          "bucketStartMs": 1786670664703,
+          "bucketEndMs": 1786674264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786674234521,
-          "bucketEndMs": 1786675134521,
+          "bucketStartMs": 1786674264703,
+          "bucketEndMs": 1786675164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786675134521,
-          "bucketEndMs": 1786676034521,
+          "bucketStartMs": 1786675164703,
+          "bucketEndMs": 1786676064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676034521,
-          "bucketEndMs": 1786676934521,
+          "bucketStartMs": 1786676064703,
+          "bucketEndMs": 1786676964703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676934521,
-          "bucketEndMs": 1786677834521,
+          "bucketStartMs": 1786676964703,
+          "bucketEndMs": 1786677864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786677834521,
-          "bucketEndMs": 1786678734521,
+          "bucketStartMs": 1786677864703,
+          "bucketEndMs": 1786678764703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786678734521,
-          "bucketEndMs": 1786679634521,
+          "bucketStartMs": 1786678764703,
+          "bucketEndMs": 1786679664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786679634521,
-          "bucketEndMs": 1786680534521,
+          "bucketStartMs": 1786679664703,
+          "bucketEndMs": 1786680564703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786680534521,
-          "bucketEndMs": 1786681434521,
+          "bucketStartMs": 1786680564703,
+          "bucketEndMs": 1786681464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786681434521,
-          "bucketEndMs": 1786682334521,
+          "bucketStartMs": 1786681464703,
+          "bucketEndMs": 1786682364703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786682334521,
-          "bucketEndMs": 1786683234521,
+          "bucketStartMs": 1786682364703,
+          "bucketEndMs": 1786683264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786683234521,
-          "bucketEndMs": 1786684134521,
+          "bucketStartMs": 1786683264703,
+          "bucketEndMs": 1786684164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786684134521,
-          "bucketEndMs": 1786685034521,
+          "bucketStartMs": 1786684164703,
+          "bucketEndMs": 1786685064703,
           "costUsd": 0
         }
       ]
@@ -8092,288 +8092,288 @@
       },
       "buckets": [
         {
-          "bucketStartMs": 1786080234521,
-          "bucketEndMs": 1786101834521,
+          "bucketStartMs": 1786080264703,
+          "bucketEndMs": 1786101864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786101834521,
-          "bucketEndMs": 1786123434521,
+          "bucketStartMs": 1786101864703,
+          "bucketEndMs": 1786123464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786123434521,
-          "bucketEndMs": 1786145034521,
+          "bucketStartMs": 1786123464703,
+          "bucketEndMs": 1786145064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786145034521,
-          "bucketEndMs": 1786166634521,
+          "bucketStartMs": 1786145064703,
+          "bucketEndMs": 1786166664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786166634521,
-          "bucketEndMs": 1786188234521,
+          "bucketStartMs": 1786166664703,
+          "bucketEndMs": 1786188264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786188234521,
-          "bucketEndMs": 1786209834521,
+          "bucketStartMs": 1786188264703,
+          "bucketEndMs": 1786209864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786209834521,
-          "bucketEndMs": 1786231434521,
+          "bucketStartMs": 1786209864703,
+          "bucketEndMs": 1786231464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786231434521,
-          "bucketEndMs": 1786253034521,
+          "bucketStartMs": 1786231464703,
+          "bucketEndMs": 1786253064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786253034521,
-          "bucketEndMs": 1786274634521,
+          "bucketStartMs": 1786253064703,
+          "bucketEndMs": 1786274664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786274634521,
-          "bucketEndMs": 1786296234521,
+          "bucketStartMs": 1786274664703,
+          "bucketEndMs": 1786296264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786296234521,
-          "bucketEndMs": 1786317834521,
+          "bucketStartMs": 1786296264703,
+          "bucketEndMs": 1786317864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786317834521,
-          "bucketEndMs": 1786339434521,
+          "bucketStartMs": 1786317864703,
+          "bucketEndMs": 1786339464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786339434521,
-          "bucketEndMs": 1786361034521,
+          "bucketStartMs": 1786339464703,
+          "bucketEndMs": 1786361064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786361034521,
-          "bucketEndMs": 1786382634521,
+          "bucketStartMs": 1786361064703,
+          "bucketEndMs": 1786382664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786382634521,
-          "bucketEndMs": 1786404234521,
+          "bucketStartMs": 1786382664703,
+          "bucketEndMs": 1786404264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786404234521,
-          "bucketEndMs": 1786425834521,
+          "bucketStartMs": 1786404264703,
+          "bucketEndMs": 1786425864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786425834521,
-          "bucketEndMs": 1786447434521,
+          "bucketStartMs": 1786425864703,
+          "bucketEndMs": 1786447464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786447434521,
-          "bucketEndMs": 1786469034521,
+          "bucketStartMs": 1786447464703,
+          "bucketEndMs": 1786469064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786469034521,
-          "bucketEndMs": 1786490634521,
+          "bucketStartMs": 1786469064703,
+          "bucketEndMs": 1786490664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786490634521,
-          "bucketEndMs": 1786512234521,
+          "bucketStartMs": 1786490664703,
+          "bucketEndMs": 1786512264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786512234521,
-          "bucketEndMs": 1786533834521,
+          "bucketStartMs": 1786512264703,
+          "bucketEndMs": 1786533864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786533834521,
-          "bucketEndMs": 1786555434521,
+          "bucketStartMs": 1786533864703,
+          "bucketEndMs": 1786555464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786555434521,
-          "bucketEndMs": 1786577034521,
+          "bucketStartMs": 1786555464703,
+          "bucketEndMs": 1786577064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786577034521,
-          "bucketEndMs": 1786598634521,
+          "bucketStartMs": 1786577064703,
+          "bucketEndMs": 1786598664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786598634521,
-          "bucketEndMs": 1786602234521,
+          "bucketStartMs": 1786598664703,
+          "bucketEndMs": 1786602264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786602234521,
-          "bucketEndMs": 1786605834521,
+          "bucketStartMs": 1786602264703,
+          "bucketEndMs": 1786605864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786605834521,
-          "bucketEndMs": 1786609434521,
+          "bucketStartMs": 1786605864703,
+          "bucketEndMs": 1786609464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786609434521,
-          "bucketEndMs": 1786613034521,
+          "bucketStartMs": 1786609464703,
+          "bucketEndMs": 1786613064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786613034521,
-          "bucketEndMs": 1786616634521,
+          "bucketStartMs": 1786613064703,
+          "bucketEndMs": 1786616664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786616634521,
-          "bucketEndMs": 1786620234521,
+          "bucketStartMs": 1786616664703,
+          "bucketEndMs": 1786620264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786620234521,
-          "bucketEndMs": 1786623834521,
+          "bucketStartMs": 1786620264703,
+          "bucketEndMs": 1786623864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786623834521,
-          "bucketEndMs": 1786627434521,
+          "bucketStartMs": 1786623864703,
+          "bucketEndMs": 1786627464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786627434521,
-          "bucketEndMs": 1786631034521,
+          "bucketStartMs": 1786627464703,
+          "bucketEndMs": 1786631064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786631034521,
-          "bucketEndMs": 1786634634521,
+          "bucketStartMs": 1786631064703,
+          "bucketEndMs": 1786634664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786634634521,
-          "bucketEndMs": 1786638234521,
+          "bucketStartMs": 1786634664703,
+          "bucketEndMs": 1786638264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786638234521,
-          "bucketEndMs": 1786641834521,
+          "bucketStartMs": 1786638264703,
+          "bucketEndMs": 1786641864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786641834521,
-          "bucketEndMs": 1786645434521,
+          "bucketStartMs": 1786641864703,
+          "bucketEndMs": 1786645464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786645434521,
-          "bucketEndMs": 1786649034521,
+          "bucketStartMs": 1786645464703,
+          "bucketEndMs": 1786649064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786649034521,
-          "bucketEndMs": 1786652634521,
+          "bucketStartMs": 1786649064703,
+          "bucketEndMs": 1786652664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786652634521,
-          "bucketEndMs": 1786656234521,
+          "bucketStartMs": 1786652664703,
+          "bucketEndMs": 1786656264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786656234521,
-          "bucketEndMs": 1786659834521,
+          "bucketStartMs": 1786656264703,
+          "bucketEndMs": 1786659864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786659834521,
-          "bucketEndMs": 1786663434521,
+          "bucketStartMs": 1786659864703,
+          "bucketEndMs": 1786663464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786663434521,
-          "bucketEndMs": 1786667034521,
+          "bucketStartMs": 1786663464703,
+          "bucketEndMs": 1786667064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786667034521,
-          "bucketEndMs": 1786670634521,
+          "bucketStartMs": 1786667064703,
+          "bucketEndMs": 1786670664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786670634521,
-          "bucketEndMs": 1786674234521,
+          "bucketStartMs": 1786670664703,
+          "bucketEndMs": 1786674264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786674234521,
-          "bucketEndMs": 1786675134521,
+          "bucketStartMs": 1786674264703,
+          "bucketEndMs": 1786675164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786675134521,
-          "bucketEndMs": 1786676034521,
+          "bucketStartMs": 1786675164703,
+          "bucketEndMs": 1786676064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676034521,
-          "bucketEndMs": 1786676934521,
+          "bucketStartMs": 1786676064703,
+          "bucketEndMs": 1786676964703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676934521,
-          "bucketEndMs": 1786677834521,
+          "bucketStartMs": 1786676964703,
+          "bucketEndMs": 1786677864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786677834521,
-          "bucketEndMs": 1786678734521,
+          "bucketStartMs": 1786677864703,
+          "bucketEndMs": 1786678764703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786678734521,
-          "bucketEndMs": 1786679634521,
+          "bucketStartMs": 1786678764703,
+          "bucketEndMs": 1786679664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786679634521,
-          "bucketEndMs": 1786680534521,
+          "bucketStartMs": 1786679664703,
+          "bucketEndMs": 1786680564703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786680534521,
-          "bucketEndMs": 1786681434521,
+          "bucketStartMs": 1786680564703,
+          "bucketEndMs": 1786681464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786681434521,
-          "bucketEndMs": 1786682334521,
+          "bucketStartMs": 1786681464703,
+          "bucketEndMs": 1786682364703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786682334521,
-          "bucketEndMs": 1786683234521,
+          "bucketStartMs": 1786682364703,
+          "bucketEndMs": 1786683264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786683234521,
-          "bucketEndMs": 1786684134521,
+          "bucketStartMs": 1786683264703,
+          "bucketEndMs": 1786684164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786684134521,
-          "bucketEndMs": 1786685034521,
+          "bucketStartMs": 1786684164703,
+          "bucketEndMs": 1786685064703,
           "costUsd": 0
         }
       ]
@@ -8386,288 +8386,288 @@
       },
       "buckets": [
         {
-          "bucketStartMs": 1786080234521,
-          "bucketEndMs": 1786101834521,
+          "bucketStartMs": 1786080264703,
+          "bucketEndMs": 1786101864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786101834521,
-          "bucketEndMs": 1786123434521,
+          "bucketStartMs": 1786101864703,
+          "bucketEndMs": 1786123464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786123434521,
-          "bucketEndMs": 1786145034521,
+          "bucketStartMs": 1786123464703,
+          "bucketEndMs": 1786145064703,
           "costUsd": 0.044400999999999996
         },
         {
-          "bucketStartMs": 1786145034521,
-          "bucketEndMs": 1786166634521,
+          "bucketStartMs": 1786145064703,
+          "bucketEndMs": 1786166664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786166634521,
-          "bucketEndMs": 1786188234521,
+          "bucketStartMs": 1786166664703,
+          "bucketEndMs": 1786188264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786188234521,
-          "bucketEndMs": 1786209834521,
+          "bucketStartMs": 1786188264703,
+          "bucketEndMs": 1786209864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786209834521,
-          "bucketEndMs": 1786231434521,
+          "bucketStartMs": 1786209864703,
+          "bucketEndMs": 1786231464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786231434521,
-          "bucketEndMs": 1786253034521,
+          "bucketStartMs": 1786231464703,
+          "bucketEndMs": 1786253064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786253034521,
-          "bucketEndMs": 1786274634521,
+          "bucketStartMs": 1786253064703,
+          "bucketEndMs": 1786274664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786274634521,
-          "bucketEndMs": 1786296234521,
+          "bucketStartMs": 1786274664703,
+          "bucketEndMs": 1786296264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786296234521,
-          "bucketEndMs": 1786317834521,
+          "bucketStartMs": 1786296264703,
+          "bucketEndMs": 1786317864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786317834521,
-          "bucketEndMs": 1786339434521,
+          "bucketStartMs": 1786317864703,
+          "bucketEndMs": 1786339464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786339434521,
-          "bucketEndMs": 1786361034521,
+          "bucketStartMs": 1786339464703,
+          "bucketEndMs": 1786361064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786361034521,
-          "bucketEndMs": 1786382634521,
+          "bucketStartMs": 1786361064703,
+          "bucketEndMs": 1786382664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786382634521,
-          "bucketEndMs": 1786404234521,
+          "bucketStartMs": 1786382664703,
+          "bucketEndMs": 1786404264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786404234521,
-          "bucketEndMs": 1786425834521,
+          "bucketStartMs": 1786404264703,
+          "bucketEndMs": 1786425864703,
           "costUsd": 0.0326032
         },
         {
-          "bucketStartMs": 1786425834521,
-          "bucketEndMs": 1786447434521,
+          "bucketStartMs": 1786425864703,
+          "bucketEndMs": 1786447464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786447434521,
-          "bucketEndMs": 1786469034521,
+          "bucketStartMs": 1786447464703,
+          "bucketEndMs": 1786469064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786469034521,
-          "bucketEndMs": 1786490634521,
+          "bucketStartMs": 1786469064703,
+          "bucketEndMs": 1786490664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786490634521,
-          "bucketEndMs": 1786512234521,
+          "bucketStartMs": 1786490664703,
+          "bucketEndMs": 1786512264703,
           "costUsd": 0.024238
         },
         {
-          "bucketStartMs": 1786512234521,
-          "bucketEndMs": 1786533834521,
+          "bucketStartMs": 1786512264703,
+          "bucketEndMs": 1786533864703,
           "costUsd": 0.024069
         },
         {
-          "bucketStartMs": 1786533834521,
-          "bucketEndMs": 1786555434521,
+          "bucketStartMs": 1786533864703,
+          "bucketEndMs": 1786555464703,
           "costUsd": 0.024346000000000003
         },
         {
-          "bucketStartMs": 1786555434521,
-          "bucketEndMs": 1786577034521,
+          "bucketStartMs": 1786555464703,
+          "bucketEndMs": 1786577064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786577034521,
-          "bucketEndMs": 1786598634521,
+          "bucketStartMs": 1786577064703,
+          "bucketEndMs": 1786598664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786598634521,
-          "bucketEndMs": 1786602234521,
+          "bucketStartMs": 1786598664703,
+          "bucketEndMs": 1786602264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786602234521,
-          "bucketEndMs": 1786605834521,
+          "bucketStartMs": 1786602264703,
+          "bucketEndMs": 1786605864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786605834521,
-          "bucketEndMs": 1786609434521,
+          "bucketStartMs": 1786605864703,
+          "bucketEndMs": 1786609464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786609434521,
-          "bucketEndMs": 1786613034521,
+          "bucketStartMs": 1786609464703,
+          "bucketEndMs": 1786613064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786613034521,
-          "bucketEndMs": 1786616634521,
+          "bucketStartMs": 1786613064703,
+          "bucketEndMs": 1786616664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786616634521,
-          "bucketEndMs": 1786620234521,
+          "bucketStartMs": 1786616664703,
+          "bucketEndMs": 1786620264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786620234521,
-          "bucketEndMs": 1786623834521,
+          "bucketStartMs": 1786620264703,
+          "bucketEndMs": 1786623864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786623834521,
-          "bucketEndMs": 1786627434521,
+          "bucketStartMs": 1786623864703,
+          "bucketEndMs": 1786627464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786627434521,
-          "bucketEndMs": 1786631034521,
+          "bucketStartMs": 1786627464703,
+          "bucketEndMs": 1786631064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786631034521,
-          "bucketEndMs": 1786634634521,
+          "bucketStartMs": 1786631064703,
+          "bucketEndMs": 1786634664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786634634521,
-          "bucketEndMs": 1786638234521,
+          "bucketStartMs": 1786634664703,
+          "bucketEndMs": 1786638264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786638234521,
-          "bucketEndMs": 1786641834521,
+          "bucketStartMs": 1786638264703,
+          "bucketEndMs": 1786641864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786641834521,
-          "bucketEndMs": 1786645434521,
+          "bucketStartMs": 1786641864703,
+          "bucketEndMs": 1786645464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786645434521,
-          "bucketEndMs": 1786649034521,
+          "bucketStartMs": 1786645464703,
+          "bucketEndMs": 1786649064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786649034521,
-          "bucketEndMs": 1786652634521,
+          "bucketStartMs": 1786649064703,
+          "bucketEndMs": 1786652664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786652634521,
-          "bucketEndMs": 1786656234521,
+          "bucketStartMs": 1786652664703,
+          "bucketEndMs": 1786656264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786656234521,
-          "bucketEndMs": 1786659834521,
+          "bucketStartMs": 1786656264703,
+          "bucketEndMs": 1786659864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786659834521,
-          "bucketEndMs": 1786663434521,
+          "bucketStartMs": 1786659864703,
+          "bucketEndMs": 1786663464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786663434521,
-          "bucketEndMs": 1786667034521,
+          "bucketStartMs": 1786663464703,
+          "bucketEndMs": 1786667064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786667034521,
-          "bucketEndMs": 1786670634521,
+          "bucketStartMs": 1786667064703,
+          "bucketEndMs": 1786670664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786670634521,
-          "bucketEndMs": 1786674234521,
+          "bucketStartMs": 1786670664703,
+          "bucketEndMs": 1786674264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786674234521,
-          "bucketEndMs": 1786675134521,
+          "bucketStartMs": 1786674264703,
+          "bucketEndMs": 1786675164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786675134521,
-          "bucketEndMs": 1786676034521,
+          "bucketStartMs": 1786675164703,
+          "bucketEndMs": 1786676064703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676034521,
-          "bucketEndMs": 1786676934521,
+          "bucketStartMs": 1786676064703,
+          "bucketEndMs": 1786676964703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786676934521,
-          "bucketEndMs": 1786677834521,
+          "bucketStartMs": 1786676964703,
+          "bucketEndMs": 1786677864703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786677834521,
-          "bucketEndMs": 1786678734521,
+          "bucketStartMs": 1786677864703,
+          "bucketEndMs": 1786678764703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786678734521,
-          "bucketEndMs": 1786679634521,
+          "bucketStartMs": 1786678764703,
+          "bucketEndMs": 1786679664703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786679634521,
-          "bucketEndMs": 1786680534521,
+          "bucketStartMs": 1786679664703,
+          "bucketEndMs": 1786680564703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786680534521,
-          "bucketEndMs": 1786681434521,
+          "bucketStartMs": 1786680564703,
+          "bucketEndMs": 1786681464703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786681434521,
-          "bucketEndMs": 1786682334521,
+          "bucketStartMs": 1786681464703,
+          "bucketEndMs": 1786682364703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786682334521,
-          "bucketEndMs": 1786683234521,
+          "bucketStartMs": 1786682364703,
+          "bucketEndMs": 1786683264703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786683234521,
-          "bucketEndMs": 1786684134521,
+          "bucketStartMs": 1786683264703,
+          "bucketEndMs": 1786684164703,
           "costUsd": 0
         },
         {
-          "bucketStartMs": 1786684134521,
-          "bucketEndMs": 1786685034521,
+          "bucketStartMs": 1786684164703,
+          "bucketEndMs": 1786685064703,
           "costUsd": 0
         }
       ]
