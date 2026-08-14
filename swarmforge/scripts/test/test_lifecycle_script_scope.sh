@@ -123,98 +123,93 @@ fi
 rm -f "$PS_NONE"
 unset SWARMFORGE_SURVIVOR_PS_FILE
 
-# End-to-end stop-swarm with injected survivor snapshot: stub ancillary+kill
+# End-to-end stop-swarm with injected survivor snapshot (BL-746): every
+# scenario below drives the REAL repo-root stop-swarm.sh, never a
+# reimplementation of its refuse-gate branching. stop-swarm.sh resolves its
+# three helpers relative to its own location (SCRIPT_DIR), so a byte-
+# identical runtime copy in the fixture root IS invoking the script itself.
 STOP_FIX="$(mktemp -d /tmp/bl637-stop.XXXXXX)"
 register_tmp_dir "$STOP_FIX"
 mkdir -p "$STOP_FIX/swarmforge/scripts" "$STOP_FIX/.swarmforge/daemon"
+cp "$ROOT/stop-swarm.sh" "$STOP_FIX/stop-swarm.sh"
 cp "$SCRIPTS/stack_survivor_scan.sh" "$STOP_FIX/swarmforge/scripts/"
-# Minimal stop-swarm clone using stubs
+# stop-swarm.sh runs the ancillary helper UNGUARDED under `set -e` - the
+# stub must always exit 0.
 cat > "$STOP_FIX/swarmforge/scripts/stop_ancillary_services.sh" <<'EOF'
 #!/usr/bin/env bash
 echo "stub stop_ancillary ok"
 EOF
-cat > "$STOP_FIX/swarmforge/scripts/kill_pipeline_swarm.sh" <<'EOF'
+write_kill_stub() {
+  cat > "$STOP_FIX/swarmforge/scripts/kill_pipeline_swarm.sh" <<EOF
 #!/usr/bin/env bash
 echo "stub kill_pipeline ok"
-# Do not print clean slate — pipeline script no longer owns that phrase.
+exit $1
 EOF
-chmod +x "$STOP_FIX/swarmforge/scripts/"*.sh
-# Use real stop-swarm but override SCRIPT_DIR by copying it into fixture
-# Simpler: source survivor scan + simulate stop-swarm tail.
+}
+write_kill_stub 0
+chmod +x "$STOP_FIX/stop-swarm.sh" "$STOP_FIX/swarmforge/scripts/"*.sh
+
 PS_LIVE="$(mktemp /tmp/bl637-ps-live.XXXXXX)"
 register_tmp_dir "$PS_LIVE"
+export SWARMFORGE_SURVIVOR_PS_FILE="$PS_LIVE"
+
+# Runs the real fixture stop-swarm.sh, capturing combined stdout+stderr and
+# exit status without tripping `set -e` (the assignment is the condition of
+# this `if`, one of set -e's own documented exemptions).
+run_stop_fix() {
+  if BL746_OUT="$(bash "$STOP_FIX/stop-swarm.sh" "$STOP_FIX" 2>&1)"; then
+    BL746_RC=0
+  else
+    BL746_RC=$?
+  fi
+}
+
 cat > "$PS_LIVE" <<'EOF'
   1 init
 4242 bash /tmp/x/.swarmforge/operator/babysitterd.sh /tmp/x
 EOF
-export SWARMFORGE_SURVIVOR_PS_FILE="$PS_LIVE"
-# Run the verify half of stop-swarm against the fixture
-(
-  source "$SCRIPTS/stack_survivor_scan.sh"
-  if stack_survivor_scan; then
-    out="REFUSE: full-stack stop left surviving processes:
-$stack_survivor_lines
-named survivors: $stack_survivor_names"
-    if [[ "$out" == *REFUSE* && "$out" == *babysitterd* && "$out" != *"SUCCESS — clean slate"* ]]; then
-      echo "PASS_STOP_BB"
-    fi
-    printf '%s\n' "$out"
-  else
-    echo "full stack SUCCESS — clean slate"
-  fi
-) > /tmp/bl637-stop-bb.out 2>&1
-
-if grep -q 'PASS_STOP_BB' /tmp/bl637-stop-bb.out \
-  && grep -q 'babysitterd' /tmp/bl637-stop-bb.out \
-  && ! grep -q 'SUCCESS — clean slate' /tmp/bl637-stop-bb.out; then
+run_stop_fix
+if [[ "$BL746_RC" -ne 0 && "$BL746_OUT" == *REFUSE* && "$BL746_OUT" == *babysitterd* \
+      && "$BL746_OUT" != *"full stack SUCCESS"* ]]; then
   pass "04: stop path refuses clean slate and names babysitterd"
 else
-  fail "04: stop refuse babysitterd failed: $(cat /tmp/bl637-stop-bb.out)"
+  fail "04: stop refuse babysitterd failed rc=$BL746_RC: $BL746_OUT"
 fi
 
 cat > "$PS_LIVE" <<'EOF'
   1 init
 4243 claude --remote-control Operator --model x
 EOF
-(
-  source "$SCRIPTS/stack_survivor_scan.sh"
-  if stack_survivor_scan; then
-    out="REFUSE: full-stack stop left surviving processes:
-$stack_survivor_lines
-named survivors: $stack_survivor_names"
-    if [[ "$out" == *REFUSE* && "$out" == *Operator* && "$out" != *"SUCCESS — clean slate"* ]]; then
-      echo "PASS_STOP_OP"
-    fi
-    printf '%s\n' "$out"
-  else
-    echo "full stack SUCCESS — clean slate"
-  fi
-) > /tmp/bl637-stop-op.out 2>&1
-
-if grep -q 'PASS_STOP_OP' /tmp/bl637-stop-op.out \
-  && grep -q 'Operator' /tmp/bl637-stop-op.out \
-  && ! grep -q 'SUCCESS — clean slate' /tmp/bl637-stop-op.out; then
+run_stop_fix
+if [[ "$BL746_RC" -ne 0 && "$BL746_OUT" == *REFUSE* && "$BL746_OUT" == *Operator* \
+      && "$BL746_OUT" != *"full stack SUCCESS"* ]]; then
   pass "05: stop path refuses clean slate and names Operator"
 else
-  fail "05: stop refuse Operator failed: $(cat /tmp/bl637-stop-op.out)"
+  fail "05: stop refuse Operator failed rc=$BL746_RC: $BL746_OUT"
 fi
 
-# Clean fixture → clean slate allowed
+# Clean fixture, pipeline kill succeeds → the real script's own literal
+# success line (BL-746's headline defect: the old suite asserted its own
+# reimplementation's wording, "SUCCESS — clean slate", never the real one).
 cat > "$PS_LIVE" <<'EOF'
   1 init
 EOF
-(
-  source "$SCRIPTS/stack_survivor_scan.sh"
-  if stack_survivor_scan; then
-    echo "REFUSE"
-  else
-    echo "full stack SUCCESS — clean slate"
-  fi
-) > /tmp/bl637-stop-clean.out
-if grep -q 'full stack SUCCESS — clean slate' /tmp/bl637-stop-clean.out; then
-  pass "04c: clean fixture reports full stack clean slate"
+run_stop_fix
+if [[ "$BL746_RC" -eq 0 && "$BL746_OUT" == *"full stack SUCCESS — no known survivors"* ]]; then
+  pass "04c: clean fixture reports the real script's literal success line"
 else
-  fail "04c: clean fixture failed: $(cat /tmp/bl637-stop-clean.out)"
+  fail "04c: clean fixture failed rc=$BL746_RC: $BL746_OUT"
+fi
+
+# BL-746: kill_rc refuse path — no survivors, but the pipeline kill itself
+# exited non-zero. Previously untested by any suite.
+write_kill_stub 7
+run_stop_fix
+if [[ "$BL746_RC" -eq 7 && "$BL746_OUT" == *"REFUSE: pipeline stop exited 7"* \
+      && "$BL746_OUT" != *"full stack SUCCESS"* ]]; then
+  pass "06: stop path refuses a clean report when the pipeline kill exited non-zero"
+else
+  fail "06: kill_rc refuse failed rc=$BL746_RC: $BL746_OUT"
 fi
 
 rm -f "$PS_LIVE"

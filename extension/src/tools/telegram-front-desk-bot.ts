@@ -144,7 +144,7 @@ import {
   decideDrainOutcome,
 } from './telegramControlCore';
 import { extractScopePaths, findFileCollision, InFlightScope } from '../concierge/expediteSafety';
-import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
+import { promoteToActive } from '../panel/backlogWriter';
 import {
   computeRecertBatch,
   isScenarioUpForRecert,
@@ -188,7 +188,7 @@ import { buildRoleInboxes } from '../watchdog/chaserMonitor';
 import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
-import { runCommitIntegrity } from '../util/commitIntegrityRunner';
+import { commitApprovalWrites } from '../util/commitIntegrityRunner';
 
 const execFileAsync = promisify(execFile);
 
@@ -1966,16 +1966,13 @@ export async function runExpediteDispatch(targetPath: string, backlogId: string)
 // ticket file, a missing bb/CLI, or a non-zero exit - mirrors
 // runExpediteDispatch's own try/catch -> boolean shape above, so a failed
 // commit never crashes the poll tick (the mutation still landed on disk;
-// only its durability guarantee is weaker until a later retry). The actual
-// exec + trailing-JSON-line parse is shared with BL-572's
-// commitEpicReorderWrites via runCommitIntegrity (util/commitIntegrityRunner.ts).
+// only its durability guarantee is weaker until a later retry). BL-892:
+// the locate-file + pathspec-commit body now lives in the shared
+// commitApprovalWrites (util/commitIntegrityRunner.ts), reused by every
+// other automated human_approval writer (paused-pager Approve, Telegram
+// Approve/Reject/Amend) so none of them re-derive this same locate step.
 export async function commitExpediteWrites(targetPath: string, backlogId: string): Promise<boolean> {
-  const filePath = findBacklogFilePath(targetPath, backlogId);
-  if (!filePath) {
-    return false;
-  }
-  const relPath = path.relative(targetPath, filePath);
-  return runCommitIntegrity(targetPath, [relPath], `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`);
+  return commitApprovalWrites(targetPath, backlogId, `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`);
 }
 
 function buildApprovalAskCloseAdapterFields(botToken: string, targetPath: string, chatId: string) {
@@ -2027,6 +2024,10 @@ function buildPollAdapters(
     // route_backlog_to_coder.sh injector).
     promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId).moved),
     commitExpediteWrites: (backlogId) => commitExpediteWrites(targetPath, backlogId),
+    // BL-892: every other automated human_approval writer's own commit
+    // step - shares commitApprovalWrites (util/commitIntegrityRunner.ts)
+    // with commitExpediteWrites above, never a second locate-file path.
+    commitApprovalWrites: (backlogId, message) => commitApprovalWrites(targetPath, backlogId, message),
     checkExpediteFileCollision: (backlogId) => Promise.resolve(findExpediteFileCollision(targetPath, backlogId)),
     dispatchExpediteBuild: (backlogId) => runExpediteDispatch(targetPath, backlogId),
     // BL-484: the closing routine's own three adapters - a decided ask

@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { findBacklogFilePath } from '../panel/backlogWriter';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,4 +35,20 @@ export async function runCommitIntegrity(targetPath: string, relPaths: string[],
   } catch {
     return false;
   }
+}
+
+// BL-892: shared by every automated human_approval writer (Expedite,
+// paused-pager Approve, Telegram Approve/Reject/Amend) - resolves the
+// SINGLE ticket file's current on-disk location (post-any-promote, so a
+// promoted ticket commits from its FINAL path) and pathspec-commits it
+// through the same locked commit_integrity_cli.bb every other writer here
+// uses. A ticket that no longer resolves (moved/deleted mid-flight) is
+// reported as a commit failure, never a silent no-op success.
+export async function commitApprovalWrites(targetPath: string, backlogId: string, message: string): Promise<boolean> {
+  const filePath = findBacklogFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return false;
+  }
+  const relPath = path.relative(targetPath, filePath);
+  return runCommitIntegrity(targetPath, [relPath], message);
 }

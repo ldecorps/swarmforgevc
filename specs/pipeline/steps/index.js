@@ -443,7 +443,8 @@ const DOMAINS = [
   require('./bl866CompanionManifestPackageCatalogSteps'),
   require('./bl788BubblePairingClientLogsAdoptSteps'),
   require('./bl719DroppedParcelNudgeSteps'),
-  require('./bl687EpicReorderIncludesActiveChildrenSteps')
+  require('./bl687EpicReorderIncludesActiveChildrenSteps'),
+  require('./bl746StopSwarmRealRefuseGatesSteps')
 ];
 
 function registerSteps(registry) {
