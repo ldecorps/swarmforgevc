@@ -126,3 +126,5 @@ description: |
   Finally rename the anchor text `chase-sweep-every-cycles` in the scratch
   copy and confirm the failure message says the conditional could not be
   found, not that the sweep is unwired.
+
+assigned_to: coder
