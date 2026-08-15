@@ -178,3 +178,6 @@ hardener_review: |
   No survivors, no gaps found. Forwarding to documenter.
 
   By hardender.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-15, by: QA, blamed: documenter, class: behavior, commit: 1a32e01e5, evidence: backlog/evidence/BL-806-bounce-20260815.md }
