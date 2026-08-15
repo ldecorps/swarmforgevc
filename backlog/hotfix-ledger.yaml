@@ -44,7 +44,7 @@
 - commit: e49a71b532
   subject: "Host /queue posts the selection poll instead of a numbered text list"
   detected_at: 2026-08-14
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-894
   human_decision: null
   decided_at: null
@@ -55,3 +55,10 @@
   stamp_ticket: null
   human_decision: waived
   decided_at: 2026-08-14
+- commit: 14724edae7
+  subject: "Land morning-briefing not-done burndown chart (stranded WIP; clears master-checkout drift)."
+  detected_at: 2026-08-15
+  state: pending
+  stamp_ticket: BL-896
+  human_decision: null
+  decided_at: null
