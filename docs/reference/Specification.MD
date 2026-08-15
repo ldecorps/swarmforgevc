@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 15, 2026 (BL-689: `record-bounce.js` can now carry
+**Last Updated:** August 15, 2026 (BL-895: a 2026-07-24 commit meant to add
+one paragraph documenting BL-607 instead inserted it 286 times, 284 of them
+with corrupted `--options` JSON quoting, taking this file from 503KB to
+1,336KB and shredding several bullet lists — e.g. `## Out of Scope (v1)` —
+with prose interleaved between their items; ridden unnoticed for three
+weeks. Restored to the single correctly-placed, correctly-worded copy at
+its original spot in the chat-adapter section, dropping the 285 duplicates
+and their inserted blank lines only — a pure 568-line deletion, nothing
+else changed, verified line-by-line against the diff. File now ~690KB.);
+Previously August 15, 2026 (BL-689: `record-bounce.js` can now carry
 a bounce's whole defect inventory — optional `--items`/`--blocked` flags,
 one call still one bounce event, degrading to the pre-ticket single-item
 record on malformed input rather than losing the bounce; `qa-bounce-line.js`
