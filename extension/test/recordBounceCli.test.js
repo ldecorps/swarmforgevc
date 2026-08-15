@@ -6,7 +6,7 @@ const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/record-bounce');
 const { qaBouncesDir } = require('../out/metrics/qaBounceStore');
 const { readBounceRecords, bouncesDir } = require('../out/metrics/bounceStore');
-const { USAGE } = require('../out/tools/recordBounceArgs');
+const { USAGE, resolveBounceInventory, resolveBlockedCount } = require('../out/tools/recordBounceArgs');
 
 // BL-635: the generalised go-forward writer CLI - every reviewing role runs
 // this at bounce time (not just QA). `--by` is REQUIRED, unlike the legacy
@@ -63,6 +63,8 @@ function flagArgs({
   commit = 'abc1234567',
   by = 'architect',
   evidence = 'backlog/evidence/BL-590-bounce-20260726.md',
+  items = undefined,
+  blocked = undefined,
 } = {}) {
   const args = ['--ticket', ticket, '--role', role, '--type', type, '--class', cls, '--commit', commit];
   if (by !== undefined) {
@@ -71,7 +73,19 @@ function flagArgs({
   if (evidence !== undefined) {
     args.push('--evidence', evidence);
   }
+  if (items !== undefined) {
+    args.push('--items', items);
+  }
+  if (blocked !== undefined) {
+    args.push('--blocked', String(blocked));
+  }
   return args;
+}
+
+function inventoryJson(n) {
+  return JSON.stringify(
+    Array.from({ length: n }, (_, i) => ({ id: `D${i + 1}`, class: 'behavior', blamed: 'coder', pointer: `fixture.ts:${i + 1} fn()` }))
+  );
 }
 
 async function runCli(root, args) {
@@ -106,6 +120,8 @@ test('parseArgs accepts a fully valid invocation with the full role set', () => 
     commit: 'abc1234567',
     by: 'architect',
     evidence: 'backlog/evidence/BL-590-bounce-20260726.md',
+    inventory: { kind: 'none' },
+    blocked: 0,
   });
 });
 
@@ -323,3 +339,132 @@ test('the CLI prints usage and exits non-zero when invoked as a real subprocess 
     });
   }, /Command failed/);
 });
+
+// ── BL-689: resolveBounceInventory / resolveBlockedCount (pure) ────────────
+
+test('resolveBounceInventory resolves "none" when --items is absent entirely', () => {
+  assert.deepEqual(resolveBounceInventory(undefined), { kind: 'none' });
+});
+
+test('resolveBounceInventory degrades unparseable JSON to "unparseable"', () => {
+  assert.deepEqual(resolveBounceInventory('{not json'), { kind: 'degraded', reason: 'unparseable' });
+});
+
+test('resolveBounceInventory degrades a non-array value to "invalid-item"', () => {
+  assert.deepEqual(resolveBounceInventory('{"id":"D1"}'), { kind: 'degraded', reason: 'invalid-item' });
+});
+
+test('resolveBounceInventory degrades an empty array to "empty"', () => {
+  assert.deepEqual(resolveBounceInventory('[]'), { kind: 'degraded', reason: 'empty' });
+});
+
+test('resolveBounceInventory degrades an item with an unknown class to "invalid-item"', () => {
+  assert.deepEqual(resolveBounceInventory('[{"id":"D1","class":"flaky","blamed":"coder","pointer":"foo.ts:1 f()"}]'), {
+    kind: 'degraded',
+    reason: 'invalid-item',
+  });
+});
+
+test('resolveBounceInventory degrades an item with an unknown blamed role to "invalid-item"', () => {
+  assert.deepEqual(resolveBounceInventory('[{"id":"D1","class":"unit","blamed":"operator","pointer":"foo.ts:1 f()"}]'), {
+    kind: 'degraded',
+    reason: 'invalid-item',
+  });
+});
+
+test('resolveBounceInventory resolves "ok" for a well-formed multi-item array', () => {
+  const resolution = resolveBounceInventory(inventoryJson(2));
+  assert.equal(resolution.kind, 'ok');
+  assert.equal(resolution.items.length, 2);
+});
+
+test('resolveBlockedCount defaults to 0 when absent, negative, or non-integer', () => {
+  assert.equal(resolveBlockedCount(undefined), 0);
+  assert.equal(resolveBlockedCount('-1'), 0);
+  assert.equal(resolveBlockedCount('1.5'), 0);
+  assert.equal(resolveBlockedCount('not-a-number'), 0);
+});
+
+test('resolveBlockedCount parses a valid non-negative integer', () => {
+  assert.equal(resolveBlockedCount('0'), 0);
+  assert.equal(resolveBlockedCount('3'), 3);
+});
+
+// ── BL-689 parseArgs: --items/--blocked never gate the required-flag usage error ──
+
+test('parseArgs still accepts a fully valid invocation with a well-formed inventory', () => {
+  const args = parseArgs(flagArgs({ items: inventoryJson(2), blocked: 1 }));
+  assert.equal(args.inventory.kind, 'ok');
+  assert.equal(args.inventory.items.length, 2);
+  assert.equal(args.blocked, 1);
+});
+
+test('parseArgs never returns null for a malformed --items - the required-field gate is unaffected', () => {
+  const args = parseArgs(flagArgs({ items: '{not json' }));
+  assert.notEqual(args, null);
+  assert.deepEqual(args.inventory, { kind: 'degraded', reason: 'unparseable' });
+});
+
+test('parseArgs still rejects an invocation missing a required core flag, inventory notwithstanding', () => {
+  const args = ['--role', 'coder', '--type', 'defect', '--class', 'behavior', '--commit', 'abc1234567', '--by', 'architect', '--items', inventoryJson(1)];
+  assert.equal(parseArgs(args), null);
+});
+
+// ── BL-689 end to end: invariant 1, one bounce event, degrade path, exit zero ──
+
+test('invariant 1: a call with no inventory writes the exact same record shape as before this ticket', async () => {
+  const root = mkRepo();
+  const before = await runCli(root, flagArgs({ commit: 'commit0aaa' }));
+  const after = await runCli(root, flagArgs({ commit: 'commit0bbb' }));
+  assert.equal(before.recorded, true);
+  assert.equal(after.recorded, true);
+  const records = readBounceRecords(root);
+  assert.equal(records.length, 2);
+  for (const r of records) {
+    assert.equal('items' in r, false);
+    assert.equal('blocked' in r, false);
+  }
+});
+
+test('a well-formed inventory writes exactly one record carrying every item and the blocked count', async () => {
+  const root = mkRepo();
+  const result = await runCli(root, flagArgs({ items: inventoryJson(4), blocked: 3 }));
+  assert.equal(result.recorded, true);
+  assert.equal(result.inventoryDegradeReason, null);
+  const records = readBounceRecords(root);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].items.length, 4);
+  assert.equal(records[0].blocked, 3);
+  for (let i = 0; i < 4; i++) {
+    assert.equal(records[0].items[i].id, `D${i + 1}`);
+    assert.equal(typeof records[0].items[i].class, 'string');
+    assert.equal(typeof records[0].items[i].blamed, 'string');
+    assert.equal(typeof records[0].items[i].pointer, 'string');
+  }
+});
+
+for (const [items, reason] of [
+  ['{not json', 'unparseable'],
+  ['[]', 'empty'],
+  ['[{"id":"D1","class":"flaky","blamed":"coder","pointer":"foo.ts:1 f()"}]', 'invalid-item'],
+  ['[{"id":"D1","class":"unit","blamed":"operator","pointer":"foo.ts:1 f()"}]', 'invalid-item'],
+]) {
+  test(`a rejected inventory (${reason}) never loses the bounce: single-item record written, reason reported, exit zero`, async () => {
+    const root = mkRepo();
+    const result = await runCli(root, flagArgs({ items }));
+    assert.equal(result.recorded, true);
+    assert.equal(result.inventoryDegradeReason, reason);
+    const records = readBounceRecords(root);
+    assert.equal(records.length, 1);
+    assert.equal('items' in records[0], false);
+    assert.equal('blocked' in records[0], false);
+  });
+
+  test(`the CLI subprocess exits zero for a rejected inventory (${reason})`, () => {
+    const root = mkRepo();
+    const out = execFileSync('node', [CLI, ...flagArgs({ items, commit: `sub${reason}` })], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.recorded, true);
+    assert.equal(parsed.inventoryDegradeReason, reason);
+  });
+}
