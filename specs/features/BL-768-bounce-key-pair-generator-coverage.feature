@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0ac5a46bfa28a5ec9162ef95cdd53eb8b790c70111f443bafb3c59ff13f7b6b3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-15T15:21:28.509956Z","feature_name":"The bounce-key pair generator reaches every near-collision it claims to test","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-768-bounce-key-pair-generator-coverage.feature","background_hash":"5b11bf0bca60e13f4a9a681bc8aefecf72f949323b087e7b953730e90b966e02","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each near-collision category is reached at the default run count","scenario_hash":"a0c9562bb7189802611533663c827878535bd30d491e67205424917211908e5e","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-08-15T15:21:28.509956Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The bounce-key pair generator reaches every near-collision it claims to test
 
   The bounce natural-key property asserts, after each run, that its generator
