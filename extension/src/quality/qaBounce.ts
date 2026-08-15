@@ -86,20 +86,28 @@ export interface BounceInventoryItem {
   pointer: string;
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isKnownFailureClassValue(value: unknown): value is QaBounceFailureClass {
+  return typeof value === 'string' && isKnownFailureClass(value);
+}
+
+function isKnownProducingRoleValue(value: unknown): value is QaBounceProducingRole {
+  return typeof value === 'string' && isKnownProducingRole(value);
+}
+
 export function isValidBounceInventoryItem(value: unknown): value is BounceInventoryItem {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const candidate = value as Record<string, unknown>;
   return (
-    typeof candidate.id === 'string' &&
-    candidate.id.length > 0 &&
-    typeof candidate.class === 'string' &&
-    isKnownFailureClass(candidate.class) &&
-    typeof candidate.blamed === 'string' &&
-    isKnownProducingRole(candidate.blamed) &&
-    typeof candidate.pointer === 'string' &&
-    candidate.pointer.length > 0
+    isNonEmptyString(candidate.id) &&
+    isKnownFailureClassValue(candidate.class) &&
+    isKnownProducingRoleValue(candidate.blamed) &&
+    isNonEmptyString(candidate.pointer)
   );
 }
 
