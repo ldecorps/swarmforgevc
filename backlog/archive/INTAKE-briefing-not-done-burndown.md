@@ -71,3 +71,11 @@ owns the commit.
 - Auto-repair of master-checkout drift by the BL-839 detector (report-only).
 - Resolving BL-895's Specification.MD conflict beyond whatever minting /
   landing this ticket requires.
+
+---
+
+**Dispositioned 2026-08-15 (specifier).** Merged with hotfix-ledger entry
+`14724edae7` into **BL-896** (`backlog/paused/BL-896-swarm-stamp-briefing-open-ticket-chart.yaml`).
+The draft this intake asked to land was already committed as `14724edae7` before
+the drain, so the ticket is a stamp-off review, not a landing. Ban reconciliation
+(locked decision 3) decided and applied to BL-659.

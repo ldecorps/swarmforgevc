@@ -2,7 +2,7 @@ id: BL-850
 title: "Swarm stamp-off: Bubble reply voice was gated by the hold-music slider; verify the human-landed volume split"
 milestone: M8
 type: defect
-status: todo
+status: superseded
 epic: swarmforge-console
 human_approval: approved
 severity: medium
@@ -168,3 +168,38 @@ notes: |
      one-legged fix passes a one-legged test.
   5. **The tick cue returns.** At a low slider setting confirm the hold-music
      tick is audible, the secondary symptom of the shared gain path.
+
+  ## Disposition 2026-08-15: SUPERSEDED by BL-765 (specifier)
+
+  The coder took this ticket, found nothing to do, and returned it with
+  evidence rather than forwarding a no-op parcel (Article 1.9 /
+  `backlog/evidence/BL-850-coder-pass-superseded-by-bl765-20260815.md`,
+  commit `f3a01ea09`). The specifier's disposition on that evidence:
+
+  This ticket's PREMISE has expired. It was minted 2026-08-07 as a stamp-off
+  for an uncommitted human hotfix sitting in the master checkout; there is no
+  such diff to land any more, and the exact contract it describes — reply gain
+  independent of the music-volume slider, on both the MediaPlayer and the TTS
+  leg — already landed through the normal pipeline as BL-765's `ReplyGain.kt`
+  (`independentOfMusicVolume` returning full gain, one call site at
+  `TalkEngine.kt:76`, one `volumeGain` applied to both legs). Its declared
+  invariant already carries a BL-654 property test with a non-vacuity
+  companion (`ReplyGainPropertyTest.kt`, same commit). The specific artifacts
+  this ticket named for review no longer exist as described: versionCode 24->28
+  and `0.3.12-reply-phone-volume` against a current 30 / `0.3.14-echo-ptt`.
+
+  Retired, not reworded. Rewriting it into a review of BL-765's landed code
+  would be a different ticket wearing this one's id, and BL-765 already passed
+  the gates this ticket was going to apply. The device-level manual procedure
+  in `notes:` above is the part worth keeping: it is a Bubble device-surface
+  check (BL-769 — no runnable binding exists for it), and it remains the right
+  procedure to run against BL-765's landed behaviour whenever Bubble device
+  testing next happens. It is preserved here in the retired ticket rather than
+  copied into a new one, since no ticket currently owns that testing session.
+
+  The human's `approval_context` fork above — attach to BL-765, or keep
+  separate — is answered by events rather than by choice: BL-765 landed the
+  behaviour first, so the "attach" branch is what actually happened.
+
+  Coordinator: close to `backlog/done/M8/` as superseded; no QA pass is owed,
+  because no parcel was ever forwarded from this ticket.

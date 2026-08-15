@@ -453,7 +453,8 @@ const DOMAINS = [
   require('./bl689BounceCarriesDefectInventorySteps'),
   require('./bl628AutonomousHostBootstrapSteps'),
   require('./bl895SpecificationMdBl607DuplicateSteps'),
-  require('./bl768BounceKeyPairGeneratorCoverageSteps')
+  require('./bl768BounceKeyPairGeneratorCoverageSteps'),
+  require('./bl624OnboarderSurveyToGateSteps')
 ];
 
 function registerSteps(registry) {
