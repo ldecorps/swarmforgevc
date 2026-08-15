@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 14, 2026 (BL-894: certifying the hand-landed hotfix
+**Last Updated:** August 15, 2026 (BL-765: Bubble takes its capability
+flags and hold-music catalog from the bridge instead of the APK. The bridge
+now serves `GET /lets-talk/chiptunes.json` (`letsTalkChiptunes.ts`, landed
+dead via f175bc56d, wired into `buildJsonRoutes` in the same shape BL-763
+used for bubble-config), and `BridgeClient.fetchBubbleConfig` parses the
+full 8-flag capability document (hold music, hands-free, playlist, new
+session, pause-all, text turns, voice-engine switch,
+`bridgeBounceAutoSessionReset`) instead of only the one flag BL-763 read.
+Bubble fetches both on pair/resume (`OverlayService.onCreate`): the
+chiptunes catalog replaces `HoldMusicPlayer`'s hardcoded song list on a
+successful fetch and falls back to the bundled list otherwise; each
+capability flag gates its corresponding UI control, and a remote
+`holdMusic` disable overrides both the user's own toggle and the
+not-paused check (`HoldMusicOffer.shouldOffer`). Also in scope from the
+same working tree: hold-music volume and reply-voice volume no longer
+share one control — lowering the music-volume slider no longer touches the
+reply voice, which stays at full gain (`ReplyGain.independentOfMusicVolume`)
+— and the debug version label on the pairing screen and talk panel drops
+its stale "BL-707" prefix down to a plain `v<version>` string. An architect
+bounce (invariant 2: "an unparseable or wrong-schema payload is rejected
+whole, never applied field-by-field") caught that `fetchBubbleConfig`
+parsed each flag independently, so one wrong-typed flag silently defaulted
+while sibling flags from the same malformed document still applied — the
+inverse of what the sibling `parseChiptunesCatalog` already did one page up
+in the same file. Fixed by extracting `BridgeClient.parseBubbleConfig`,
+same whole-rejection shape as its chiptunes sibling: a missing/non-object
+`features`, or any flag holding a non-boolean value, rejects the whole
+document and `fetchBubbleConfig` falls back to the bundled-default
+`BubbleConfigResult`. Both parsers are proven by non-vacuous property tests
+(`BridgeClientBubbleConfigPropertyTest`,
+`BridgeClientChiptunesCatalogPropertyTest`) showing a naive per-field
+parser would wrongly accept a document the real parser rejects. Retro-ticket
+per BL-506 (source: 2026-07-31 master-diff review; the work reached Bubble
+v0.3.14 outside the pipeline). See the new
+[BL-765 runbook](../how-to/BL-765-bubble-remote-config-and-chiptune-catalog.md).); Previously
+August 14, 2026 (BL-894: certifying the hand-landed hotfix
 that makes `/queue` repost the Host queue selection poll instead of a
 numbered text list (ledger entry `e49a71b532`) — the human's UX decision is
 locked and unchanged. Two findings closed in this pass: (P1/P2) BL-810's
