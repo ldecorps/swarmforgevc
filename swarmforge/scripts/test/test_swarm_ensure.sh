@@ -1100,4 +1100,304 @@ echo "$OUTPUT" | grep -q "^rc:coder: HEALTHY$" \
 cleanup_daemon
 pass "RC-7 (BL-514): mono-router RC check follows a rotated resident's active launch script, never forces it back to home"
 
+# ---------------------------------------------------------------------------
+# BL-898: session-dead (flag present, cloud session dead) - detection is
+# persistent (RC-10), repair is idle-safe (RC-8/RC-9), and the human is
+# always told the outcome (RC-8's notify assertion).
+# ---------------------------------------------------------------------------
+
+# ── RC-8: a persistently /rc-failed session on an IDLE agent is respawned
+#          idle-safely, reclassified healthy, reported FIXED with the new
+#          session URL, and the human is notified ─────────────────────────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+mkdir -p "$ROOT/.swarmforge/rc-footer-streak"
+echo "1" > "$ROOT/.swarmforge/rc-footer-streak/coder"
+RC8_RESPAWNS="$ROOT/rc8-respawns"
+RC8_RESTORED="$ROOT/rc8-restored"
+RC8_NOTIFY="$ROOT/rc8-notify"
+: > "$RC8_RESPAWNS"
+echo "0" > "$RC8_RESTORED"
+: > "$RC8_NOTIFY"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC8_RESPAWNS"
+  echo "1" > "$RC8_RESTORED"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "capture-pane" ]]; then
+  if [[ "\$(cat "$RC8_RESTORED")" == "1" ]]; then
+    printf 'bypass permissions on (shift+tab to cycle)  /rc\nhttps://claude.ai/code/session_rc8new\n'
+  else
+    printf 'bypass permissions on (shift+tab to cycle)  /rc failed\n'
+  fi
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_8.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_8.sh"
+cat > "$FAKE_BIN/rc_notify_8.sh" <<EOF
+#!/usr/bin/env bash
+echo "\$1 \$2" >> "$RC8_NOTIFY"
+EOF
+chmod +x "$FAKE_BIN/rc_notify_8.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_8.sh" \
+  SWARM_ENSURE_RC_NOTIFY_CMD="$FAKE_BIN/rc_notify_8.sh" \
+  run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: FIXED (respawned pane to restore a dead remote-control session - new session: https://claude.ai/code/session_rc8new)$" \
+  || fail "RC-8: a persistently session-dead role was not repaired and reported FIXED with the new session url; got: $OUT"
+[[ -s "$RC8_RESPAWNS" ]] || fail "RC-8: session-dead repair never actually respawned the idle pane"
+[[ -s "$RC8_NOTIFY" ]]   || fail "RC-8: session-dead repair never notified the human of the outcome"
+grep -q "coder https://claude.ai/code/session_rc8new" "$RC8_NOTIFY" \
+  || fail "RC-8: notify was not called with the role and the new session url; got: $(cat "$RC8_NOTIFY")"
+[[ "$RC" -eq 0 ]] || fail "RC-8: exit status was $RC, expected 0"
+cleanup_daemon
+pass "RC-8 (BL-898): a persistently /rc-failed session (flag present) on an idle agent is repaired idle-safely, reported FIXED with the new session URL, and the human is notified"
+
+# ── RC-9: a session-dead agent that stays BUSY past the wait budget is left
+#          running and reported unrepaired - never respawned mid-turn ──────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+mkdir -p "$ROOT/.swarmforge/rc-footer-streak"
+echo "1" > "$ROOT/.swarmforge/rc-footer-streak/coder"
+RC9_RESPAWNS="$ROOT/rc9-respawns"
+: > "$RC9_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC9_RESPAWNS"
+  exit 0
+fi
+if [[ "\$3" == "capture-pane" ]]; then
+  printf 'esc to interrupt\nbypass permissions on (shift+tab to cycle)  /rc failed\n'
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_9.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_9.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_9.sh" \
+  SWARM_ENSURE_RC_SESSION_DEAD_WAIT_SECONDS=1 \
+  run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: FAILED (agent still busy after 1s wait budget - respawn skipped, not killed (never mid-turn))$" \
+  || fail "RC-9: a persistently-busy session-dead agent was not reported FAILED/unrepaired; got: $OUT"
+[[ -s "$RC9_RESPAWNS" ]] && fail "RC-9: a busy agent must NEVER be respawned mid-turn (invariant 1)"
+[[ "$RC" -ne 0 ]] || fail "RC-9: exit status was 0, expected non-zero after a FAILED session-dead repair"
+cleanup_daemon
+pass "RC-9 (BL-898): a session-dead agent that stays busy past the wait budget is left running and reported unrepaired, never killed mid-turn"
+
+# ── RC-10: ONE failed-footer observation is persisted but never actionable
+#           on its own - repair needs a SECOND consecutive sweep ──────────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC10_RESPAWNS="$ROOT/rc10-respawns"
+: > "$RC10_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC10_RESPAWNS"
+  exit 0
+fi
+if [[ "\$3" == "capture-pane" ]]; then
+  printf 'bypass permissions on (shift+tab to cycle)  /rc failed\n'
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_10.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_10.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_10.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "RC-10: a single failed-footer observation must not yet be treated as session-dead; got: $OUT"
+[[ -s "$RC10_RESPAWNS" ]] && fail "RC-10: a single failed-footer observation must never trigger a respawn"
+[[ "$RC" -eq 0 ]] || fail "RC-10: exit status was $RC, expected 0"
+[[ "$(cat "$ROOT/.swarmforge/rc-footer-streak/coder")" == "1" ]] \
+  || fail "RC-10: the footer-failure streak was not persisted to 1 for the next sweep to see"
+cleanup_daemon
+pass "RC-10 (BL-898): a single /rc-failed observation is persisted but never actionable alone - persistence requires a second consecutive sweep"
+
+# ── RC-11: a working footer, even carrying a stale streak from just before a
+#           repair, reports HEALTHY, never respawns, and resets the streak ──
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+mkdir -p "$ROOT/.swarmforge/rc-footer-streak"
+echo "2" > "$ROOT/.swarmforge/rc-footer-streak/coder"
+RC11_RESPAWNS="$ROOT/rc11-respawns"
+: > "$RC11_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC11_RESPAWNS"
+  exit 0
+fi
+if [[ "\$3" == "capture-pane" ]]; then
+  printf 'bypass permissions on (shift+tab to cycle)  /rc\n'
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_11.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_11.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_11.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "RC-11: a working footer must report HEALTHY even with a stale streak from before a prior repair; got: $OUT"
+[[ -s "$RC11_RESPAWNS" ]] && fail "RC-11: a working footer must never respawn, regardless of a stale streak"
+[[ "$(cat "$ROOT/.swarmforge/rc-footer-streak/coder")" == "0" ]] \
+  || fail "RC-11: a working footer must reset the persisted streak so it cannot re-trigger later"
+[[ "$RC" -eq 0 ]] || fail "RC-11: exit status was $RC, expected 0"
+cleanup_daemon
+pass "RC-11 (BL-898): a working footer since a repair on the last sweep stays HEALTHY and resets any stale streak"
+
+# ── RC-12: a session-dead repair that restores the flag but cannot read a
+#           new session URL still tells the human, with an explicit
+#           not-readable statement, never a fabricated URL ─────────────────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+mkdir -p "$ROOT/.swarmforge/rc-footer-streak"
+echo "1" > "$ROOT/.swarmforge/rc-footer-streak/coder"
+RC12_RESPAWNS="$ROOT/rc12-respawns"
+RC12_NOTIFY="$ROOT/rc12-notify"
+: > "$RC12_RESPAWNS"
+: > "$RC12_NOTIFY"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC12_RESPAWNS"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "capture-pane" ]]; then
+  printf 'bypass permissions on (shift+tab to cycle)  /rc failed\n'
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_12.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_12.sh"
+cat > "$FAKE_BIN/rc_notify_12.sh" <<EOF
+#!/usr/bin/env bash
+printf '%s|%s|%s\n' "\$1" "\$2" "\$3" >> "$RC12_NOTIFY"
+EOF
+chmod +x "$FAKE_BIN/rc_notify_12.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_12.sh" \
+  SWARM_ENSURE_RC_NOTIFY_CMD="$FAKE_BIN/rc_notify_12.sh" \
+  run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: FIXED (respawned pane to restore a dead remote-control session (new session address not yet readable))$" \
+  || fail "RC-12: a repair confirming the flag but with no readable URL was not reported FIXED with the not-yet-readable note; got: $OUT"
+[[ -s "$RC12_RESPAWNS" ]] || fail "RC-12: repair never actually respawned the pane"
+[[ -s "$RC12_NOTIFY" ]]   || fail "RC-12: the human was never notified of the repair outcome"
+NOTIFY_LINE="$(cat "$RC12_NOTIFY")"
+echo "$NOTIFY_LINE" | grep -q "^coder|" \
+  || fail "RC-12: notify was not called with the correct role; got: $NOTIFY_LINE"
+echo "$NOTIFY_LINE" | grep -q "https://" \
+  && fail "RC-12: notify must never fabricate a session URL when none was readable; got: $NOTIFY_LINE"
+echo "$NOTIFY_LINE" | grep -q "could not be read" \
+  || fail "RC-12: notify text must explicitly state the address could not be read; got: $NOTIFY_LINE"
+cleanup_daemon
+pass "RC-12 (BL-898): a repair with no readable new session URL still notifies the human with an explicit not-readable statement, never a fabricated URL"
+
+# ── RC-13: a session-dead respawn that does NOT restore the flag is reported
+#           FAILED and must NEVER send an active notify claiming a repair
+#           that did not actually happen ────────────────────────────────────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+mkdir -p "$ROOT/.swarmforge/rc-footer-streak"
+echo "1" > "$ROOT/.swarmforge/rc-footer-streak/coder"
+RC13_RESPAWNS="$ROOT/rc13-respawns"
+RC13_NOTIFY="$ROOT/rc13-notify"
+RC13_RESPAWNED="$ROOT/rc13-respawned"
+: > "$RC13_RESPAWNS"
+: > "$RC13_NOTIFY"
+echo "0" > "$RC13_RESPAWNED"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC13_RESPAWNS"
+  echo "1" > "$RC13_RESPAWNED"
+  exit 0
+fi
+if [[ "\$3" == "capture-pane" ]]; then
+  printf 'bypass permissions on (shift+tab to cycle)  /rc failed\n'
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+# Flag MATCHES before the respawn (so the sweep genuinely classifies
+# :session-dead off the persisted footer streak, not :degraded) and goes
+# WRONG only after it - the respawn attempt itself is what fails to
+# restore the session, which is what RC-13 needs to exercise.
+cat > "$FAKE_BIN/rc_cmdline_13.sh" <<EOF
+#!/usr/bin/env bash
+if [[ "\$(cat "$RC13_RESPAWNED" 2>/dev/null)" == "1" ]]; then
+  echo "claude --remote-control SwarmForge-StillStale"
+else
+  echo "claude --remote-control SwarmForge-Coder"
+fi
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_13.sh"
+cat > "$FAKE_BIN/rc_notify_13.sh" <<EOF
+#!/usr/bin/env bash
+echo "CALLED" >> "$RC13_NOTIFY"
+EOF
+chmod +x "$FAKE_BIN/rc_notify_13.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_13.sh" \
+  SWARM_ENSURE_RC_NOTIFY_CMD="$FAKE_BIN/rc_notify_13.sh" \
+  run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: FAILED (respawned pane but the --remote-control flag was not restored)$" \
+  || fail "RC-13: a session-dead respawn that never restores the flag was not reported FAILED; got: $OUT"
+[[ -s "$RC13_RESPAWNS" ]] || fail "RC-13: the repair never actually attempted a respawn"
+[[ -s "$RC13_NOTIFY" ]] \
+  && fail "RC-13: notify must NEVER fire for a repair that did not actually restore the session"
+[[ "$RC" -ne 0 ]] || fail "RC-13: exit status was 0, expected non-zero after a FAILED session-dead repair"
+cleanup_daemon
+pass "RC-13 (BL-898): a session-dead respawn that fails to restore the flag is reported FAILED and never sends a notify claiming a repair that did not happen"
+
 echo "ALL PASS"
