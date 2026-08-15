@@ -181,6 +181,28 @@
 (defn- diagram-content-id [name]
   (str name "-diagram"))
 
+;; Human-facing <h3> for each cid attachment. Architecture/swarm-flow keep
+;; the historic "<name> diagram" label; the not-done burndown chart gets a
+;; readable title instead of "not-done-burndown diagram".
+(defn- diagram-heading [name]
+  (case name
+    "not-done-burndown" "Not-done ticket burndown"
+    (str name " diagram")))
+
+(defn- diagram-note-line [diagrams]
+  (let [names (set (map :name diagrams))
+        has-arch? (or (contains? names "architecture") (contains? names "swarm-flow"))
+        has-burn? (contains? names "not-done-burndown")]
+    (cond
+      (and has-arch? has-burn?)
+      "Architecture diagrams and not-done burndown: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
+
+      has-burn?
+      "Not-done ticket burndown: rendered inline above (HTML view)."
+
+      :else
+      "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source.")))
+
 ;; BL-260: given the render CLI's parsed [{:name :base64}...] payload (nil/
 ;; empty when rendering is unavailable this run - the CLI shell-out failed,
 ;; threw, or was never installed), returns {:html :note-line :attachments}
@@ -198,17 +220,22 @@
 ;; (nothing to attach). :note-line still gets appended to the plaintext
 ;; part, since a plaintext-only client can never show the html part at all
 ;; (BL-260 plaintext-degradation-03).
+;;
+;; Also accepts the not-done burndown chart (name "not-done-burndown") from
+;; render-briefing-burndown.js, merged by handoffd alongside architecture
+;; diagrams - same cid-PNG path, never a second attachment mechanism.
 (defn build-diagram-section [diagrams]
   (if (seq diagrams)
     {:html (str "<div>"
                 (str/join ""
                           (map (fn [{:keys [name]}]
-                                 (str "<h3>" name " diagram</h3>"
-                                      "<img src=\"cid:" (diagram-content-id name) "\" "
-                                      "alt=\"" name " diagram\" style=\"max-width:100%;height:auto\"/>"))
+                                 (let [heading (diagram-heading name)]
+                                   (str "<h3>" heading "</h3>"
+                                        "<img src=\"cid:" (diagram-content-id name) "\" "
+                                        "alt=\"" heading "\" style=\"max-width:100%;height:auto\"/>")))
                                diagrams))
                 "</div>")
-     :note-line "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
+     :note-line (diagram-note-line diagrams)
      :attachments (mapv (fn [{:keys [name base64]}]
                            {:filename (str name "-diagram.png")
                             :content-id (diagram-content-id name)

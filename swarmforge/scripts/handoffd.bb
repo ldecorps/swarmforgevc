@@ -2181,12 +2181,25 @@
       (when (zero? exit) (json/parse-string out true)))
     (catch Exception _ nil)))
 
-;; Wraps briefing-diagrams-json with briefing_email_lib.bb's pure
-;; build-diagram-section - the ONLY :diagram-section adapter shape
+;; Not-done ticket burndown chart - same JSON [{name base64}] contract as
+;; briefing-diagrams-json, independent shell-out so a burndown failure
+;; never suppresses architecture diagrams (and vice versa).
+(defn briefing-burndown-json []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "render-briefing-burndown.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (json/parse-string out true)))
+    (catch Exception _ nil)))
+
+;; Wraps architecture + not-done burndown renders with briefing_email_lib.bb's
+;; pure build-diagram-section - the ONLY :diagram-section adapter shape
 ;; send-unsent-briefings! expects (BL-260 render-unavailable-degradation-04:
-;; nil diagrams still produce a clear no-diagram note, never a crash).
+;; nil/empty still produce a clear no-diagram note, never a crash). Each
+;; source fails open independently; whichever succeeds still ships.
 (defn briefing-diagram-section []
-  (briefing-email-lib/build-diagram-section (briefing-diagrams-json)))
+  (let [diagrams (vec (concat (or (briefing-diagrams-json) [])
+                              (or (briefing-burndown-json) [])))]
+    (briefing-email-lib/build-diagram-section (seq diagrams))))
 
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
