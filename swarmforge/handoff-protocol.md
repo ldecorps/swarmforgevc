@@ -841,6 +841,59 @@ reuses the existing gather/evaluate seams rather than a parallel
 implementation, and the QA-edge path keeps calling Check D's full
 evaluation exactly as before.
 
+## Review-Forward Evidence Gate (BL-806)
+
+A structural backstop for Article 4.4's "commit your explicit-NONE evidence
+(or your fix) and forward THAT commit" — a clean review pass that leaves no
+commit of its own is indistinguishable, in the ancestry QA audits, from a
+skipped stage. BL-536 (2026-08-04) proved prompt text alone isn't enough:
+architect and hardener both ran real passes but fast-forward-merged the
+received commit and forwarded that same bare hash, so QA's ancestry audit
+couldn't tell the passes happened — a full bounce and re-entry cycle burned
+re-running work that had already been done once.
+
+- **Arms** for a `git_handoff` sent by one of the four forward-chain review
+  roles — **cleaner, architect, hardender, documenter** — moving forward
+  (`required_stages_lib/routes-forward?`, the same direction predicate
+  BL-606 routing already uses, never an optional header) to exactly one
+  recipient. `coder` is excluded (nothing "received" yet to compare
+  against on a fresh task); `QA` is excluded (its approval-to-coordinator
+  and integration-on-`main` sends are out of scope this slice, to avoid
+  entangling integration mechanics).
+- **Refuses** when the outgoing `commit:` is exactly the commit that role
+  received for the same `task:` — read from the sender's own `in_process`
+  mailbox (the newest matching `git_handoff` parcel, since batch roles hold
+  several at once). A bounce (backward direction), a `note`, a
+  `rule_proposal`, and any send carrying a non-blank `reroute_reason` (the
+  BL-425 cannot-fix-forward-onward exemption) all pass through untouched —
+  the gate's refusal surface is exactly review-role forward-direction
+  `git_handoff`s.
+- **Fails open** — never blocks — when there is nothing to compare against:
+  no received `git_handoff` for the task in the sender's `in_process` box
+  (an initiating send, or a drained box), an unreadable box, or a sender
+  role with no mailbox at all. The gate must never strand a legitimate
+  send.
+
+A refusal reads:
+```
+Cannot send git_handoff for <task>: commit <hash> is exactly the commit
+<hash> already received for this task - Article 4.4 requires a clean
+review pass to commit its explicit-NONE evidence (or its fix) and forward
+THAT commit, never the bare received hash. If <role> legitimately cannot
+act on this parcel, route it onward with a reroute_reason instead of a
+same-commit forward.
+```
+naming the task, the offending hash, and the `reroute_reason` escape hatch
+so the sender can fix and re-send without archaeology.
+
+Implementation: `review_forward_evidence_gate_lib.bb` splits the pure
+decision (`blocked?`, BL-654 property-tested — sender/type/recipient-count/
+direction/reroute-blank/commit-equality, all must hold) from its one
+filesystem read (`received-commit-for-task`, itself fail-open on every
+"nothing to check" shape). Wired live into `swarm_handoff.bb`'s validate
+path alongside the existing ticket-close, duplicate-chain (BL-760), and
+pre-QA (BL-531) gates — not only reachable through the lib.
+
 ## Dynamic Routing via Specifier-Declared required_stages (BL-606)
 
 When the `required_stages_routing_enabled` config flag is true (default false),

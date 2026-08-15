@@ -1,6 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 15, 2026 (BL-765: Bubble takes its capability
+**Last Updated:** August 15, 2026 (BL-806: closes a hole in Article 4.4's
+"commit your evidence and forward THAT commit" rule that let a clean review
+pass vanish from the ancestry QA audits — BL-536 (2026-08-04) proved prompt
+text alone doesn't hold: architect and hardener both ran real passes but
+fast-forward-merged and forwarded the bare received hash, so nothing in the
+commit graph distinguished "reviewed, nothing to change" from "skipped",
+and a full bounce + re-entry cycle was burned re-running work already done.
+`swarm_handoff.bb` now refuses a forward-direction `git_handoff` from any
+of the four review roles (cleaner, architect, hardender, documenter) whose
+outgoing `commit:` is exactly the commit that role received for the same
+task — reading the sender's own `in_process` mailbox, string-equality only,
+no git subprocess. Fails open (never blocks) when there's nothing to check
+against — an initiating send, a drained box, an unreadable box, a
+mailbox-less sender — and a non-blank `reroute_reason` (BL-425's
+cannot-fix-forward-onward exemption) always passes through. Bounces,
+notes, and `rule_proposal`s are outside the refusal surface entirely, as is
+QA's own approval/integration sends (scoped out this slice, to avoid
+entangling integration mechanics). Fork/operator-substrate tooling under
+`swarmforge/scripts/`, not Milestone-1 extension product; no human-facing
+command or setting. See the new "Review-Forward Evidence Gate (BL-806)"
+section in `swarmforge/handoff-protocol.md`.); Previously
+August 15, 2026 (BL-765: Bubble takes its capability
 flags and hold-music catalog from the bridge instead of the APK. The bridge
 now serves `GET /lets-talk/chiptunes.json` (`letsTalkChiptunes.ts`, landed
 dead via f175bc56d, wired into `buildJsonRoutes` in the same shape BL-763
