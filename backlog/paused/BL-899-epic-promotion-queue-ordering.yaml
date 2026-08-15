@@ -1,0 +1,68 @@
+id: BL-899
+title: "EPIC — Promotion queue ordering: the coordinator's ranking key should reflect the epic an item belongs to, not just the number on the child ticket; do not promote directly; tracks children"
+milestone: M8
+type: epic
+status: todo
+epic: promotion-queue-ordering
+priority: 12
+direction: human-requested
+depends_on: []
+mutation_cost: low
+decomposes_into: [BL-900]
+
+remaining_slices: |
+  - BL-900 (filed): epic-priority-first ordering in `rank-key`. When two
+    otherwise-eligible candidates are compared, the containing epic's own
+    `priority:` is considered ahead of the child ticket's `priority:`.
+  - Drifted-child audit (unfiled, explicitly parked by the intake): report
+    child tickets whose `priority:` contradicts their epic's, so the drift is
+    visible. The intake put backfilling out of scope "unless specifier judges
+    otherwise"; once BL-900 lands, the child number stops driving cross-epic
+    order and an audit becomes reporting rather than a migration.
+  - Retire the bulk make-top-priority rewrite (unfiled): today the only way to
+    raise an epic is to rewrite `priority:` on the tracker AND every child
+    (`b174c9a6c`, `bc6bc9f63` — 18+ files touched per invocation). Once
+    ordering reads the epic's own number, that becomes a one-field edit and
+    the bulk rewriter can go.
+  - Epic-reference hygiene (unfiled, measured 2026-08-16): one epic id has
+    THREE trackers (`swarm-intelligence-layer` → BL-712 p31, BL-545 p30,
+    BL-542 p35) and one epic id has five children but no tracker at all
+    (`cost-intelligence`). BL-900 must not block on either — it defines
+    deterministic fallbacks — but the underlying data wants cleaning.
+
+source: |
+  Raw intake `backlog/INTAKE-epic-priority-before-ticket-priority.md` (human
+  via coordinator chat 2026-08-15, filed `053992fbe`), drained by the
+  specifier 2026-08-16 and removed from the backlog root on drain.
+
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the
+  coordinator promotes CHILD slices, never this.
+
+notes: |
+  ## Why this is an epic and not a lone ticket
+
+  The intake asks for one behavior change, and BL-900 is that change. The epic
+  exists because (a) no existing epic owns promotion-queue policy — the
+  closest candidates are the lifecycle-ledger epic (`lean-aware-coordinator`),
+  the git-choreography epic (`deterministic-transit-assist`) and the auto-heal
+  grab-bag (`swarm-reliability`), and none of them is about ordering — and
+  (b) the intake itself parks a second slice and the measured data surfaces
+  two more, listed above. Every non-epic ticket needs a non-empty `epic:`
+  (BL-544), so the alternative was filing BL-900 under an epic that does not
+  describe it.
+
+  ## Measured context, 2026-08-16 (not inferred)
+
+  `promotion_gates_lib.bb`'s `rank-key` is
+  `[(if (expedited? content) 0 1) (read-priority content) (read-id content)]`
+  — the expedite bucket (Article 3.2.4), then the child ticket's OWN
+  `priority:`, then id. `epic:` is read only to build an orthogonality
+  ADVISORY and plays no part in ordering. Lower `priority:` numbers sort
+  FIRST; an absent or unparseable value becomes 999999 and sorts last.
+
+  Live callers, confirmed by grep rather than assumed:
+  `promotion_gates_cli.bb`, `promote_and_route_next.sh`, `chase_sweep_lib.bb`.
+
+  26 epic ids carry a `type: epic` tracker in `paused/`+`active/`; 19 epic ids
+  have children. Epic trackers do carry their own `priority:` — so the data
+  this epic wants to rank by already exists and has a real writer.

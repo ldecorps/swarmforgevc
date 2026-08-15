@@ -39,3 +39,11 @@ Ticket's Spec" notification back to documenter.
 
 No production code or documentation content is implicated; the fix is
 confined to the ticket YAML's `acceptance:` field shape.
+
+## Resolution
+Specifier fixed on `main` at commit `44e5b0378` and notified documenter +
+coordinator by `note` (priority `00`) 2026-08-15T23:02:58Z. See
+`BL-624-onboarding-facilitator-survey-to-gate-specifier-fix-20260816.md` for
+the specifier's own diagnosis and remediation record. Merged into the
+documenter worktree and re-read per "Amending An In-Flight Ticket's Spec" —
+no doc rebuild needed, the change is confined to ticket YAML shape.
