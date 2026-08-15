@@ -217,25 +217,52 @@ object BridgeClient {
         val reason: String? = null
     )
 
+    /** Every flag `features` may carry — used to type-check before applying any of them. */
+    private val BUBBLE_CONFIG_FEATURE_KEYS = listOf(
+        "textTurns", "handsFree", "holdMusic", "playlist",
+        "newSession", "pauseAll", "bridgeBounceAutoSessionReset", "voiceEngineSwitch"
+    )
+
+    /**
+     * BL-765 invariant 2 (BL-654 coder-authored property test in
+     * BridgeClientBubbleConfigPropertyTest): whole-document rejection, same
+     * shape as [parseChiptunesCatalog] one page up. A missing or non-object
+     * `features`, or any flag present with a non-boolean value, rejects the
+     * whole document (`null`) rather than defaulting just that one flag
+     * while applying the rest of the malformed document.
+     */
+    internal fun parseBubbleConfig(raw: String): BubbleConfigResult? {
+        return try {
+            val json = JSONObject(raw)
+            val features = json.optJSONObject("features") ?: return null
+            for (key in BUBBLE_CONFIG_FEATURE_KEYS) {
+                val value = features.opt(key)
+                if (value != null && value !is Boolean) return null
+            }
+            BubbleConfigResult(
+                ok = true,
+                textTurns = features.optBoolean("textTurns", true),
+                handsFree = features.optBoolean("handsFree", true),
+                holdMusic = features.optBoolean("holdMusic", true),
+                playlist = features.optBoolean("playlist", true),
+                newSession = features.optBoolean("newSession", true),
+                pauseAll = features.optBoolean("pauseAll", true),
+                bridgeBounceAutoSessionReset = features.optBoolean("bridgeBounceAutoSessionReset", true),
+                voiceEngineSwitch = features.optBoolean("voiceEngineSwitch", true)
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun fetchBubbleConfig(baseUrl: String, token: String): BubbleConfigResult {
         return try {
             val (code, raw) = getRaw(baseUrl, "/lets-talk/bubble-config.json", token)
             if (code !in 200..299) {
                 return BubbleConfigResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
-            val json = JSONObject(raw)
-            val features = json.optJSONObject("features")
-            BubbleConfigResult(
-                ok = true,
-                textTurns = features?.optBoolean("textTurns", true) ?: true,
-                handsFree = features?.optBoolean("handsFree", true) ?: true,
-                holdMusic = features?.optBoolean("holdMusic", true) ?: true,
-                playlist = features?.optBoolean("playlist", true) ?: true,
-                newSession = features?.optBoolean("newSession", true) ?: true,
-                pauseAll = features?.optBoolean("pauseAll", true) ?: true,
-                bridgeBounceAutoSessionReset = features?.optBoolean("bridgeBounceAutoSessionReset", true) ?: true,
-                voiceEngineSwitch = features?.optBoolean("voiceEngineSwitch", true) ?: true
-            )
+            parseBubbleConfig(raw)
+                ?: BubbleConfigResult(false, reason = "malformed bubble config")
         } catch (e: Exception) {
             BubbleConfigResult(false, reason = friendlyConnectionMessage(e))
         }
