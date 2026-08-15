@@ -15,6 +15,7 @@ import {
 } from '../metrics/resourceTelemetry';
 import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
+import { readLifecycleSnapshot } from '../metrics/lifecycleSnapshot';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
 import { computeCostPerTicketSeries, CostPerTicketSeriesResult, COST_PER_TICKET_BASIS } from '../metrics/costPerTicket';
 import {
@@ -704,13 +705,17 @@ export function computeCostHealthSidecar(
   targetPath: string,
   roles: RoleWorktree[],
   nowMs: number = Date.now(),
-  claudeProjectsDir?: string
+  claudeProjectsDir?: string,
+  snapshotPath?: string
 ): CostHealthSidecar {
   const dateIso = toIso(nowMs).slice(0, 10);
   const costTelemetryByRole = computeCostTelemetry(targetPath, roles, claudeProjectsDir);
   const resourceTrendsByRole = computeResourceTrends(readResourceSampleEvents(targetPath), roles.map((r) => r.role), nowMs);
   const reliabilityDailySeries = bucketDailyReliabilityEvents(readChaserTelemetryEvents(targetPath), nowMs);
-  const lifecycles = [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
+  // BL-897: the shared snapshot's records win over a fresh full-history
+  // walk when usable (present, readable, from today).
+  const sharedLifecycles = snapshotPath ? readLifecycleSnapshot(snapshotPath, nowMs) : null;
+  const lifecycles = sharedLifecycles ?? [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
   const { speccedSeries, closedSeries } = bucketDailyFlowBalance(lifecycles, nowMs);
   const suiteDurationTrend = computeSuiteDurationTrend(targetPath, roles, nowMs);
   const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
