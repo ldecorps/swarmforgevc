@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-15T08:53:20.596237Z","feature_name":"One bounce event carries its whole defect inventory","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-689-bounce-carries-its-defect-inventory.feature","background_hash":"8845323f533580a8c0104851e868cee92c5af731cdf0b4067af2d29fe1698177","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: One bounce event carries its whole defect inventory
 
   Background:

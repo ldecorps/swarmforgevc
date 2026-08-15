@@ -142,7 +142,7 @@ case "$UNIT_TYPE" in
 swarm)
   UNIT="$(cat <<EOF
 [Unit]
-Description=SwarmForge secondary swarm ($PACK_NAME)
+Description=SwarmForge swarm ($PACK_NAME)
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0

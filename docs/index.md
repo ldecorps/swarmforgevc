@@ -71,6 +71,7 @@ here.
 - [Hotfix record: 2026-08-02 Bubble pairing + client-logs](how-to/hotfix-2026-08-02-bubble-client-logs-and-pairing.md) — the pre-auth `/pair` page, the widened sideload-APK guard, and the pairing-save blank-overwrite fix adopted and reviewed under BL-788, plus the corrections (applicationId, signing, Architecture Rule 7) the original hand-hotfix's narrative no longer matched.
 - [Remote-control health/respawn tooling, and its `./swarm ensure` wiring](how-to/BL-514-remote-control-health-and-ensure-wiring.md) — the `--fix`/`--dry-run` standalone scripts (retro-ticketed, KEEP), and the new `rc:<role>` component `./swarm ensure` now reports and repairs alongside `agent:<role>`.
 - [Bubble's capability flags and hold-music catalog, served from the bridge](how-to/BL-765-bubble-remote-config-and-chiptune-catalog.md) — the two versioned documents (`bubble-config.json`, `chiptunes.json`), whole-document rejection on a malformed payload, the remote hold-music kill switch, and the reply-voice/music-volume split.
+- [Bare-host bootstrap for an autonomous swarm](how-to/BL-628-autonomous-swarm-bringup.md) — `provision_autonomous_host.sh`, the shared shape-agnostic bootstrap library, the front-desk unit an autonomous box needs that the secondary path never installs, and why the onboarding ceremony runs on the primary box, never the remote one.
 
 ## Reference
 
