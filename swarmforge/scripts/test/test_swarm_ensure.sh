@@ -1017,6 +1017,28 @@ RC_LINE="$(echo "$OUT" | grep -n '^rc:coder:' | head -1 | cut -d: -f1)"
 cleanup_daemon
 pass "RC-5 (BL-514): rc:<role> is reported immediately after its own agent:<role> pane check"
 
+# ── RC-6: launch script declares no --remote-control flag at all -> HEALTHY,
+#          and the live process is never probed (ensure-rc-role!'s
+#          expected-rc-name nil short-circuit, checked BEFORE rc-status is
+#          ever called) ────────────────────────────────────────────────────
+make_fixture
+printf 'exec claude --dangerously-skip-permissions\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC6_PROBED="$ROOT/rc6-probed"
+cat > "$FAKE_BIN/rc_cmdline_6.sh" <<EOF
+#!/usr/bin/env bash
+touch "$RC6_PROBED"
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_6.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_6.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "RC-6: a launch script declaring no --remote-control flag was not reported HEALTHY; got: $OUT"
+[[ -e "$RC6_PROBED" ]] \
+  && fail "RC-6: the live process was probed despite the launch script declaring no --remote-control flag"
+[[ "$RC" -eq 0 ]] || fail "RC-6: exit status was $RC, expected 0"
+cleanup_daemon
+pass "RC-6 (BL-514): a launch script declaring no --remote-control flag reports HEALTHY without ever probing the live process"
+
 # ---------------------------------------------------------------------------
 # RC-7 (BL-514): mono-router resident rotated onto a different role's launch
 # script must not be misclassified as RC-degraded and forcibly respawned back
