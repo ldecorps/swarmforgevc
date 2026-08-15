@@ -257,3 +257,48 @@ notes: |
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-14, by: hardender, blamed: coder, class: behavior, commit: 6097b0bfdc, evidence: backlog/evidence/BL-894-hardener-bounce-20260814.md }
+
+architect_review: |
+  ## Architect re-review after D1 fix (2026-08-14)
+
+  Reviewed commit 974adc93ea ("BL-894: fix D1 - track superseded queue-poll
+  ids as a bounded history", by coder), on top of the hardener's D1 bounce.
+  Confirmed the fix structurally closes the gap the bounce found: the
+  single scalar `supersededPromptPollId` is replaced by a bounded,
+  deduplicated array `supersededPromptPollIds` (cap 8) that every
+  supersession site appends to (`appendSupersededPollId`, used by
+  `clearQueuedPollIfStale` and `handleQueueInboundAction`), and
+  `processQueuedPollAnswer` now checks membership instead of equality. Grep
+  confirms no stray reference to the old singular field remains outside a
+  test comment. `parseOptionalStringArray` (the deserializer for the new
+  field) exists and is used correctly in `buildPersistedState`.
+
+  Ran the suite live (not just inspected): `npx vitest run
+  telegramCursorBridgeLive.test.js` — 120/120 green (was 119, +1 new D1
+  regression test). `npx vitest run --config vitest.properties.config.mjs
+  telegramCursorBridgeLive.property.test.js` — 4/4 green, including the
+  invariant-1 property now extended with a `repostCount` (1-4) generator
+  dimension that exercises exactly the multi-generation case D1 found.
+  Confirmed by diffing against the pre-fix commit that the old
+  implementation used the singular-scalar pattern the bounce described.
+  The coder's own ticket notes (D1 resolution, above) additionally record
+  a break-then-fix non-vacuousness check (temporarily reverting
+  `appendSupersededPollId` to keep only the latest id and confirming the
+  extended property fails at repostCount=2) which this review did not
+  need to independently repeat given the live green run plus the
+  structural read.
+
+  The 8-generation cap is a deliberate, documented bound (Telegram poll
+  history per topic is small; the hardener's own remediation direction
+  said "bounded is fine") rather than a silently reintroduced version of
+  the same defect at a higher generation count — accepted as reasonable
+  engineering judgment, not a residual defect.
+
+  Required wiring intact: `/queue` still routes through
+  `handleQueueInboundAction` (telegramCursorBridgeLive.ts:840).
+
+  Approved. Forwarding to hardener as its own git_handoff, named
+  separately from BL-514 even though both ride the same merged commit
+  (Article 2.6 — a batch forward carries every ticket ID, never collapsed).
+
+  By architect.

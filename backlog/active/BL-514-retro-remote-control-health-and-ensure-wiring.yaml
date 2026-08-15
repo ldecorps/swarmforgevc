@@ -155,3 +155,75 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-14, by: specifier, blamed: specifier, class: spec-gap, commit: 968eaab05, evidence: backlog/evidence/BL-514-bounce-20260814.md }
+
+architect_review: |
+  ## Architect pass (2026-08-14)
+
+  Reviewed commit b09ce9b953 ("BL-514: wire remote-control health check into
+  ./swarm ensure", by coder). Static/structural review:
+
+  - Every referenced function exists with a matching arity/signature:
+    `remote-control-health/{classify,check-role,actionable?,expected-rc-name,
+    launch-script-path,respawn-role-pane!,claude-cmdline-in-pane}` in
+    remote_control_health_lib.bb; `mono-router-lib/{classify-role,
+    resident-launch-role}` in mono_router_lib.bb; `read-mono-router-active-
+    role-marker` pre-existing in swarm_ensure.bb (already used by
+    ensure-mono-router-role!).
+  - `ensure-rc-role!` branch logic matches the acceptance criteria exactly:
+    :healthy/:off -> HEALTHY no-op; :degraded -> repair via
+    ensure-component!/respawn-rc-pane!, reclassified FIXED/FAILED;
+    :down -> HEALTHY no-op (left to agent:<role>, actionable? gates this so
+    RC never double-respawns a pane the agent check just revived).
+  - `results` aggregation (line ~660) correctly folds the flattened
+    agent+rc pairs into the same list feeding both `report-line` and the
+    exit-code check (`some #(= :failed (:status %)) results`), so an rc
+    FAILED yields a non-zero exit exactly like any other component, and
+    ensure never aborts on it (each row still yields both its agent and rc
+    result via `mapcat`).
+  - The `:off`-short-circuit hang-avoidance fix (skip invoking `cmdline-fn`
+    entirely when `expected-rc-name` is nil) is exercised implicitly by
+    every pre-existing fixture in the suite that doesn't set a
+    `--remote-control` flag in its launch script (the large majority of
+    tests 01-07f, 06, mono-router) — if this short-circuit were missing or
+    broken, that entire pre-existing suite would hit the real
+    process-tree probe against a fake pane-pid and hang, exactly as the
+    commit message describes. That gives strong indirect confirmation
+    beyond the 5 new RC-specific scenarios (RC-1..RC-5, RC-7 — note RC-6
+    is a numbering gap, cosmetic only, no coverage gap: healthy, degraded
+    ->FIXED, degraded-repair-fails->FAILED, :down no-action, report
+    ordering, and the mono-router rotated-resident edge case are all
+    covered).
+  - Dependency gate (`node out/tools/dependency-gate.js`, N/A here since
+    swarm_ensure.bb is Babashka, not TypeScript — this ticket's changed
+    files carry no dependency-cruiser ruleset) and co-change report:
+    not applicable to `.bb` files; this ticket's only TS-adjacent files
+    are none (all changes are in swarmforge/scripts/).
+  - Architecture rules: this is fork/operator-substrate tooling under
+    `swarmforge/scripts/` (the maintained fork), not extension MVP product
+    — consistent with the ticket's own SCOPE NOTE and the BL-472 precedent.
+    No two-layer/webview/secrets/storage rules apply.
+  - No declared `invariants:` on this ticket — Invariants Review is a
+    no-op.
+
+  **Live test execution — BLOCKED BY host load, not by any defect found.**
+  Attempted `bash swarmforge/scripts/test/test_swarm_ensure.sh` three times
+  during this review. `uptime` showed sustained load averages of
+  95-134 (this host, 2 other users active) throughout — far past the
+  documented 2x-cores threshold where subprocess-heavy suites stall or hang
+  even absent any code defect (BL-108/BL-129/BL-139 lesson, same category
+  the hardener already invoked for Stryker in this same ticket cycle's
+  sibling, BL-894). Two independent full-suite attempts stalled at
+  DIFFERENT points in the test sequence (one stopped after "mono-router
+  dormant roles", a later attempt stalled earlier, at test 06) — a
+  non-deterministic stall location is the signature of generic resource
+  contention, not a deterministic hang in the new RC code (a real hang in,
+  say, RC-4's :down cmdline probe would stall at the same place every time).
+  Not fixed here, not claimed as passing; recorded per Article 4.4's
+  run-or-blocked rule rather than assumed clean. The static review above is
+  the basis for this pass.
+
+  Approved. Forwarding to hardener as its own git_handoff (this parcel also
+  carries BL-894's D1 fix, forwarded separately per Article 2.6 — never
+  collapsed into one ticket name).
+
+  By architect.

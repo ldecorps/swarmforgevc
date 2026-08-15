@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 14, 2026 (BL-891: after QA lands an approved commit by
+**Last Updated:** August 14, 2026 (BL-894: certifying the hand-landed hotfix
+that makes `/queue` repost the Host queue selection poll instead of a
+numbered text list (ledger entry `e49a71b532`) — the human's UX decision is
+locked and unchanged. Two findings closed in this pass: (P1/P2) BL-810's
+"at most one queue selection poll is outstanding" invariant is narrowed
+in place to cover automatic idle-triggered re-presentation only (which
+still refuses to double-post); an explicit `/queue` repost is a deliberate,
+narrow exception, and the poll it replaces is *superseded* rather than
+silently abandoned — a vote on a superseded poll now always gets
+`That poll is no longer live — send /queue again to see the current one.`,
+never a silent no-op, tracked via a bounded `supersededPromptPollIds`
+history (cap 8, not just the single most recent id — a hardener bounce
+found a second repost silently forgetting the first) rather than the
+hotfix's original single scalar. (P3) `/queue` never adopts a stray topic
+as the Host topic; that binding stays owned by the bridge's existing
+canonical path. The dead `queuePromptListForDisplay` helper the hotfix
+left with zero callers is deleted. See the updated
+[BL-810 runbook](../how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md).); Previously
+August 14, 2026 (BL-514: retro-tickets the remote-control
+health/respawn operator tooling (`remote_control_health.bb`,
+`remote_control_respawn.bb`, `remote_control_health_lib.bb`) that had
+landed on `main` with no ticket via `7dd4d14e` — coordinator directive:
+KEEP, it's real and tested (Article "An Approval Authorizes Only Its
+Ticket's Work" / BL-506 requires such work to be retroactively ticketed or
+reverted). The new slice: `swarm_ensure.bb`'s routine BAU sweep now emits
+an `rc:<role>` line per role, immediately after that role's `agent:<role>`
+line — HEALTHY/off with no action, repaired-and-reclassified FIXED/FAILED
+for a `:degraded` pane (flag lost but agent still live), and left
+untouched for `:down` (that pane is the `agent:<role>` check's own job, so
+RC never double-respawns a pane just revived). Under mono-router, the
+check follows the resident's currently-active rotated launch script, never
+its home role, so a legitimately rotated resident is never misclassified
+as degraded. This is fork/operator-substrate tooling under
+`swarmforge/scripts/`, not Milestone-1 extension product. See the new
+[runbook](../how-to/BL-514-remote-control-health-and-ensure-wiring.md).); Previously
+August 14, 2026 (BL-891: after QA lands an approved commit by
 pushing `origin HEAD:main`, nothing ever advanced the master checkout's own
 local `main` ref — git refuses to update a branch checked out in another
 worktree (`main` lives in the master checkout, where the coordinator and
