@@ -1,6 +1,12 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 15, 2026 (BL-697: Let's Talk gains a hands-free
+**Last Updated:** August 15, 2026 (BL-689: `record-bounce.js` can now carry
+a bounce's whole defect inventory — optional `--items`/`--blocked` flags,
+one call still one bounce event, degrading to the pre-ticket single-item
+record on malformed input rather than losing the bounce; `qa-bounce-line.js`
+gains a `defectsPerBounce` briefing figure. See the new "One bounce record
+can carry its whole defect inventory" section below.); Previously
+August 15, 2026 (BL-697: Let's Talk gains a hands-free
 mode. With the toggle on, the mic reopens automatically after the agent's
 spoken reply finishes (~400 ms delay so it doesn't capture the tail of the
 agent's own voice), and the turn auto-submits once the user goes silent for
@@ -1097,6 +1103,58 @@ A declared recording epoch (`REWORK_ATTRIBUTION_EPOCH_ISO = '2026-07-25'` in `re
 BL-654 (above) named `invariant-unencoded` as the architect's bounce class for a missing/vacuous invariant property test, and Article 4.4 separately names `spec-gap` for a specification-level finding — but `KNOWN_FAILURE_CLASSES` (`qaBounce.ts`) still only recognized the original five (`compile, unit, integration, acceptance, behavior`), so every bounce recorded under either new class hit the closed-set usage error and was silently dropped: not misclassified, simply never written to `.swarmforge/bounces/<YYYY-MM>.jsonl` or the ticket's `bounce_history`. Measured 2026-07-27: all 5 recorded architect bounces that month read `"failureClass":"behavior"`, none `invariant-unencoded`, and whether that reflects a true `behavior` bounce or a dropped `invariant-unencoded` one is unrecoverable from the log — which is itself the defect, since bounce rate underpins the Article 3.5 circuit breaker.
 
 `KNOWN_FAILURE_CLASSES` now lists seven values: `compile, unit, integration, acceptance, behavior, invariant-unencoded, spec-gap`. The widening is additive only — every pre-existing record, tally, and USAGE ordering for the five original classes is unchanged — and the vocabulary stays closed and case-sensitive: `Behavior`, `flaky`, or any other value outside the seven is still a usage error that writes nothing. Both `record-bounce.js` and the legacy `record-qa-bounce.js` share the same validator (`isKnownFailureClass`) and so both accept the two new classes; `qa-sibling-check.js --class` (sibling-deferral recording, above) accepts them too — a deferral can now cite either new class as its blocker's failure class, with no change to suppression semantics.
+
+#### One bounce record can carry its whole defect inventory + a defects-per-bounce metric (BL-689)
+
+Article 4.4 requires one bounce per review pass carrying EVERY defect that
+pass found, but `record-bounce.js` recorded exactly one
+`(producingRole, failureClass)` pair per call — a four-defect sweep and a
+first-failure stop looked identical in the durable log, so the regression
+the amendment exists to prevent was unmeasurable.
+
+`record-bounce.js` gains two optional flags. One call still stays one
+bounce event:
+
+```sh
+node extension/out/tools/record-bounce.js --ticket <id> --role <producingRole> \
+  --type <ticketType> --class <failureClass> --commit <hex> --by <bouncingRole> \
+  [--items '<json>'] [--blocked <n>]
+```
+
+- `--items <json>` — a non-empty JSON array of `{id, class, blamed, pointer}`
+  objects: the item label (`D1`), its failure class (the BL-688-widened
+  seven-value set), the role blamed for it
+  (`coder|cleaner|architect|hardender|documenter`), and a remediation
+  pointer (file/function/scenario id).
+- `--blocked <n>` (default 0) — how many checks the pass could not run
+  because an earlier item blocked them, so a legitimately short inventory
+  (a compile failure blocking eight gates) stays distinguishable from a
+  first-failure stop.
+- The existing `--role`/`--class` still describe the item being ROUTED on
+  (the earliest blamed role's most severe item) — Article 4.3 routing and
+  every pre-existing tally are unaffected.
+
+Degrade posture is deliberate (engineering.prompt Guardrails: an optional
+JSON flag must catch its own parse errors): unparseable JSON, a non-array, an
+empty array, or an invalid item each fall back to writing the core
+single-item record exactly as if `--items` were absent, print their own
+degrade reason (`unparseable` | `empty` | `invalid-item`), and exit **zero**
+— a reviewer who mistypes the inventory JSON never loses the bounce record
+itself. A call with no inventory at all writes the byte-identical record it
+wrote before this ticket; `BounceRecord`'s new `items`/`blocked` fields are
+optional and every existing reader/tally that doesn't know about them is
+unaffected.
+
+`qa-bounce-line.js` — the briefing's only live reader of the bounce log —
+gains a `defectsPerBounce` figure: total inventory items across recorded
+bounces divided by bounce count, where a record with no inventory counts as
+**one** defect (so the pre-existing records and every future minimal call
+stay comparable in the mean rather than being excluded from it).
+
+Depends on and reuses BL-688's widened failure-class vocabulary for
+per-item classes; `bounceStore.ts`'s shape/value guards already pass unknown
+fields through untouched, so no store change was needed to round-trip the
+new fields.
 
 #### A ticket's own `bounce_history` dedup key widened to match the store's (BL-876)
 
