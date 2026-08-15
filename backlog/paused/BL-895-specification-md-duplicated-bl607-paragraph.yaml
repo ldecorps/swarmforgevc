@@ -1,0 +1,113 @@
+id: BL-895
+title: "docs/reference/Specification.MD carries 286 copies of the BL-607 paragraph (830KB, 55% of the file) with 284 of them textually corrupt"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: spec-drift-realignment
+priority: 30
+direction: swarm-proposed
+depends_on: []
+source: "Coordinator note to specifier 2026-08-14 (10_20260814T114736Z_000349): 'Spec defect: Specification.MD has 288x BL-607 dup, ~1.5MB bloat.' Probed before speccing per the specifier's probe-first rule; the reported shape is confirmed and the actual defect is worse in two ways the note could not have seen (structural shredding, and textual corruption of 284 of the copies)."
+
+description: >
+  Commit 7fa17fecd (2026-07-24, swarm-intake[bot], "Document BL-607: pipeline roles can raise
+  clarifying questions into their own Telegram topics") intended two edits to
+  docs/reference/Specification.MD: refresh the `**Last Updated:**` line, and add one paragraph
+  documenting BL-607. The Last Updated edit landed correctly. The paragraph was inserted 286 times
+  instead of once — each copy preceded by an inserted blank line — taking the file from 502,857 to
+  1,335,926 bytes in that single commit. It has ridden every one of the ~90 commits to the file
+  since, unnoticed for three weeks.
+  Remove the 285 spurious copies and their inserted blank lines, keeping exactly one. This is a
+  content fix to a single document; it must be content-PRESERVING otherwise — the only lines that
+  may disappear are the 285 duplicate paragraphs and the blank line inserted with each. Reviewers
+  should confirm that by reading the diff, not by trusting the byte count: a fix that truncates or
+  reflows anything else is a worse defect than the one it replaces.
+
+notes: |
+  PROBE RESULTS (2026-08-14, measured on main at 0c145b771 — reproduce before building, the counts
+  are exact and any drift means something else has changed):
+
+    Occurrences of the paragraph (lines starting `**Pipeline role clarifying questions into
+    per-role topics (BL-607).**`): 286. Exactly TWO distinct strings among them:
+      - 2910 bytes, 2 copies, at lines 2728 and 2733. CORRECT text: the role_ask example reads
+        `--options '["opt1","opt2"]'`, matching the real usage in swarmforge/scripts/role_ask.bb
+        and in the specifier role prompt.
+      - 2909 bytes, 284 copies, spread through the whole document. CORRUPT text: the same example's
+        JSON quoting is mangled to `--options ''[opt1,opt2]''`, which is not a valid invocation.
+        So the specification currently documents the WRONG command form 284 times and the right one
+        twice — the duplication is not merely redundant, it is majority-wrong.
+
+    Structural damage: the copies are interleaved between existing lines, not appended in a block,
+    so they split lists mid-flow. The clearest instance is `## Out of Scope (v1)`, whose heading is
+    separated from its own bullets and whose bullets are separated from each other by copies of the
+    paragraph. Several other lists are shredded the same way.
+
+    Size: 1,507,748 bytes today. A simulated cleanup (keep the first occurrence; drop every later
+    one together with the blank line inserted before it) yields 677,981 bytes — a 55% reduction —
+    and restores `## Out of Scope (v1)` to a contiguous heading-plus-bullets list.
+
+  WHERE THE SURVIVING COPY BELONGS — keep the FIRST occurrence, line 2728. It is already both
+  correctly placed and correctly worded (it is one of the two 2910-byte copies). It sits under
+  `### Chat adapter (Signal / Telegram / WhatsApp / Teams) — human channel only`, immediately after
+  `**The pending question follows the human across threads (BL-354).**` and immediately before
+  `**BL-607's relay transport was dark until BL-708 (2026-08-04).**` — a paragraph that reads as a
+  direct continuation of it. That is unmistakably the intended home. Note the second 2910-byte copy
+  at line 2733 is five lines later in the same section and IS one of the 285 to remove.
+
+  This is a "keep the first occurrence" fix, not a "delete all and rewrite" one: no new prose is
+  owed. Do not reword the surviving paragraph — the point of the ticket is that the document should
+  read as it was meant to on 2026-07-24, minus the accident.
+
+  SUGGESTED APPROACH: a one-shot scripted edit is right here (285 deletions by hand invites its own
+  slip), but the script is a means, not a deliverable — do not add it to the repo. Walk the file
+  keeping the first line matching the paragraph prefix, and for every later match drop it plus any
+  blank line immediately preceding it. Then diff and READ the result before committing.
+
+  OUT OF SCOPE, deliberately — a recurrence guard. Nothing in the repo would have caught this: it
+  survived ~90 commits and several documenter passes. A gate that fails when any paragraph in a
+  tracked doc appears more than once, or when a single commit inflates a doc beyond some ratio,
+  is worth having and is a genuinely separate slice with its own design questions (which files,
+  which threshold, which stage runs it). It is NOT folded in here — this ticket restores the
+  document; it does not build machinery. Raised to the coordinator alongside this ticket so the
+  decision to spec it is made deliberately rather than inherited.
+
+  `invariants:` is empty on purpose (BL-633 — an absent list is a legitimate outcome). The one
+  property worth stating, "nothing but the 285 duplicate copies and their inserted blank lines
+  changes", quantifies over a single fixed artifact rather than an open surface, so it is a diff
+  review (stated as a constraint in `description:`) rather than a property test over a generated
+  domain. Nothing is manufactured to fill the field.
+
+acceptance: specs/features/BL-895-specification-md-duplicated-bl607-paragraph.feature
+
+qa_e2e: |
+  On the parcel commit, from the repo root:
+  1. `grep -c '^\*\*Pipeline role clarifying questions into per-role topics (BL-607)' docs/reference/Specification.MD`
+     — expect exactly `1`.
+  2. `grep -c "options ''\[opt1,opt2\]''" docs/reference/Specification.MD` — expect `0` (the corrupt
+     variant is gone entirely), and confirm the surviving copy shows `--options '["opt1","opt2"]'`.
+  3. `wc -c docs/reference/Specification.MD` — expect roughly 678KB, down from 1,507,748. Treat a
+     materially different number as a failure to investigate, not a pass.
+  4. Read the surviving copy in context: it must still sit under the chat-adapter heading, after the
+     BL-354 paragraph and before the BL-708 relay paragraph.
+  5. Render or read `## Out of Scope (v1)` — heading followed directly by its own bullets, nothing
+     interleaved. Spot-check two other bullet lists the same way.
+  6. Read the commit diff itself and confirm every removed line is either a copy of the paragraph or
+     a blank line adjacent to one. This step is the real gate; steps 1-5 can all pass on a fix that
+     also quietly dropped something else.
+
+human_approval: pending
+approval_context: >
+  Deleting ~830KB (55%) from the reference specification. The mechanics are not in doubt — the
+  duplication is an unambiguous accident of one commit, and the cleanup is measured and reversible
+  — but it is a large, irreversible-looking edit to a human-facing document, so it should be seen
+  before it lands rather than after. Two things to confirm: (a) keep exactly ONE copy, the existing
+  correctly-placed and correctly-worded one at line 2728, rather than removing all 286 and having
+  the documenter write BL-607 up fresh (recommended: keep the one — no new prose is owed and the
+  original wording is fine); and (b) that the recurrence guard is deliberately NOT part of this
+  ticket (see notes, OUT OF SCOPE) — say the word if you would rather it were specced now, since
+  nothing today would catch a repeat.
+
+mutation_cost: low
+
+assigned_to: coder
