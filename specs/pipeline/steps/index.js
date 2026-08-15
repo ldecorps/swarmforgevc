@@ -447,7 +447,8 @@ const DOMAINS = [
   require('./bl746StopSwarmRealRefuseGatesSteps'),
   require('./bl894QueueRepostsSelectionPollSteps'),
   require('./bl765BubbleRemoteConfigChiptuneCatalogSteps'),
-  require('./bl514RcHealthInSwarmEnsureSteps')
+  require('./bl514RcHealthInSwarmEnsureSteps'),
+  require('./bl806ReviewForwardEvidenceGateSteps')
 ];
 
 function registerSteps(registry) {
