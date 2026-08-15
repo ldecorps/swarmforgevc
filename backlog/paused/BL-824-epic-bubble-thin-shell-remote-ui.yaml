@@ -209,6 +209,12 @@ notes: |
   break this recurring nudge rather than continuing to record each
   occurrence individually.
 
+  2026-08-14 (resolved): BL-765 promoted and routed (commit 9a2555f1f) into
+  the slot BL-746's close reopened. This unblocks BL-825 once BL-765
+  closes, which in turn unblocks BL-829 — the actual promotable path this
+  epic's nudge has been pointing at all shift. Expect this nudge to stop
+  recurring once BL-765 lands.
+
   Every operator directive quoted in the source intake survives verbatim in
   substance into this epic's `source:` block (the five locked decisions), per
   the consolidation constraint the specifier prompt states and BL-681 is

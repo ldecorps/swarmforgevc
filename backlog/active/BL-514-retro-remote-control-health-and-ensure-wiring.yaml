@@ -10,6 +10,22 @@ direction: swarm-proposed
 depends_on: []
 source: "Coordinator directive 2026-07-17 (note 00_20260717T232701Z_000575 to specifier): 'Retro-ticket 7dd4d14e (keep, tested) - spec swarm_ensure.bb wiring too.' Carries out the constitution's An-Approval-Authorizes-Only-Its-Ticket's-Work rule (workflow.prompt / BL-506): commit 7dd4d14e added 514 lines of remote_control_health*.bb / remote_control_respawn.bb operator tooling with NO backlog ticket, riding onto main as an ancestor of BL-506's QA-approved commit. That rule requires such already-landed ticket-less work to be 'retroactively ticketed or reverted'; the coordinator chose KEEP (the tooling is real, tested, and useful), so this ticket is its ticket of record plus the one wiring slice that was designed but never landed."
 
+description: >
+  Two halves. (A) RETRO — give a ticket of record to the remote-control health/respawn operator
+  tooling that landed on main WITHOUT a ticket (commit 7dd4d14e, an ancestor of BL-506's QA-approved
+  commit). The constitution's An-Approval-Authorizes-Only-Its-Ticket's-Work rule requires such
+  un-ticketed work to be retroactively ticketed or reverted; the coordinator chose KEEP because the
+  tooling is real, tested and in use. Nothing is rebuilt or re-verified for this half beyond
+  confirming its existing shell suite still passes — it owes no net-new behaviour and has no runnable
+  acceptance contract of its own (see notes, ACCEPTANCE OF RECORD).
+  (B) NEW WIRING — fold a remote-control component into `./swarm ensure` so the BAU "are the agents
+  up" sweep also verifies remote-control health, instead of leaving it to a standalone command
+  somebody has to remember to run. It repairs exactly one state (a live agent that lost its
+  --remote-control flag) and deliberately leaves a dead pane to the existing agent pane check, so no
+  pane is ever respawned twice in one sweep. Half (B) is what the acceptance feature file contracts.
+  Constraint: fork/operator-substrate tooling under swarmforge/scripts/, not Milestone-1 extension
+  product — project.prompt's watchdog/heartbeat exclusion covers the EXTENSION MVP, not this.
+
 notes: |
   SCOPE NOTE — this is FORK / OPERATOR-SUBSTRATE tooling, not Milestone-1 extension product. It lives
   under swarmforge/scripts/ (the maintained fork) and supervises the swarm's remote-control
@@ -59,22 +75,53 @@ notes: |
   VERIFY THE LIVE PATH AT BUILD (grep first): swarm_ensure.bb's -main is the ensure orchestrator; the
   RC lib is remote_control_health_lib.bb (namespace remote-control-health). Confirm neither moved.
 
-acceptance: |
-  Two parts. (A) RETRO / already-met (KEEP, no rebuild): the three remote_control_*.bb scripts remain
-  on main and swarmforge/scripts/test/test_remote_control_health.sh passes — that shell suite is the
-  acceptance of record for the shipped RC health/respawn behaviour (classify's four statuses;
-  --fix repairs only :degraded and never a :healthy/:down/:off pane; respawn is idle-gated and skips
-  a busy agent rather than killing it; wait-outcome and session-url extraction). No net-new behaviour
-  is owed for this half; the ticket exists to give the landed code a ticket of record per the
-  approval-authorizes-only-its-ticket rule.
-  (B) NEW wiring — the acceptance signal is: `./swarm ensure` now emits an `rc:<role>` line for every
-  configured role, and (proven by extending swarmforge/scripts/test/test_swarm_ensure.sh with
-  fake-probe scenarios, mirroring its existing classify tests) the rc component reports HEALTHY for a
-  :healthy/:off role and takes NO repair action; reports FIXED for a :degraded role AFTER respawning
-  its pane and reclassifying healthy; reports FAILED if the respawn does not restore the flag; and
-  takes NO rc-level action for a :down role (that pane is the agent:<role> check's job) so a crashed
-  pane is never double-respawned. ensure never aborts on one rc FAILED and its exit status is
-  non-zero iff any component (rc included) is FAILED.
+  ACCEPTANCE OF RECORD for half (A), the retro half — preserved here verbatim from this ticket's
+  original prose `acceptance:` block, which the BL-111 feature-file pointer replaced:
+    "(A) RETRO / already-met (KEEP, no rebuild): the three remote_control_*.bb scripts remain on main
+    and swarmforge/scripts/test/test_remote_control_health.sh passes — that shell suite is the
+    acceptance of record for the shipped RC health/respawn behaviour (classify's four statuses;
+    --fix repairs only :degraded and never a :healthy/:down/:off pane; respawn is idle-gated and
+    skips a busy agent rather than killing it; wait-outcome and session-url extraction). No net-new
+    behaviour is owed for this half; the ticket exists to give the landed code a ticket of record per
+    the approval-authorizes-only-its-ticket rule."
+  Half (A) is deliberately NOT in the feature file: it contracts no net-new behaviour, so scenarios
+  for it would be a second, drifting description of a suite that is already its own gate. The
+  `acceptance:` pointer therefore contracts half (B) only.
+
+  WHY `invariants:` IS EMPTY (BL-633 — an absent list is a legitimate outcome, not an oversight):
+  the property a reviewer would reach for here is "the RC component initiates a pane respawn only for
+  a :degraded role". That property quantifies over a status surface with exactly FOUR values, and the
+  feature file enumerates all four (healthy/down in the outline, degraded in scenarios 03-04, no-flag
+  in 05). Where the surface is finite and fully enumerated, scenarios ARE the property; declaring it
+  as an invariant would only oblige a property test (BL-654) over a four-element domain, in a Babashka
+  script whose only gate is a bash suite with no property harness wired. Nothing is manufactured to
+  fill the field.
+
+  SPEC AMENDMENT 2026-08-14 (specifier, in response to the documenter's pre-QA gate refusal):
+  this ticket shipped with a prose `acceptance:` block, which is not a runnable contract — the
+  BL-761 acceptance-contract gate and the BL-111 pointer rule both require `acceptance:` to name a
+  feature file whose every scenario has a step handler. The feature file now exists and lints clean,
+  but its SIX scenarios have NO step handlers yet, so the acceptance runner
+  (specs/pipeline/runtime.js) will throw until they land. Writing them is coder work and must land in
+  THIS parcel (BL-233). Five of the six already have a green shell test behind them in
+  test_swarm_ensure.sh — drive those the way specs/pipeline/steps/bl805RotateGateOnUnfinishedInProcessParcelSteps.js
+  drives its script (spawn the real suite, assert on its `PASS: ...` markers), never a parallel
+  reimplementation of the logic:
+    01 (line beside its agent line)        -> PASS marker "RC-5"
+    02 healthy row                          -> PASS marker "RC-1"
+    02 down row                             -> PASS marker "RC-4"
+    03 (degraded repaired -> FIXED)         -> PASS marker "RC-2"
+    04 (repair fails -> FAILED, no abort)   -> PASS marker "RC-3"
+    06 (rotated resident)                   -> PASS marker "RC-7"
+  Scenario 05 (a launch script declaring no --remote-control flag reports HEALTHY without ever
+  probing the live process) has NO test today — there is no RC-6 in the suite. It is real, shipped
+  behaviour (ensure-rc-role!'s `expected-rc-name` nil short-circuit) and load-bearing, not a nicety:
+  without it the probe walks the pane's whole descendant process tree and hangs every pre-existing
+  ensure fixture, which is exactly why the coder added it. It needs a new RC-6 case in
+  test_swarm_ensure.sh asserting both halves — HEALTHY, and the probe never invoked (assert the
+  SWARM_ENSURE_RC_CMDLINE_CMD fake leaves no trace, e.g. writes no marker file).
+
+acceptance: specs/features/BL-514-rc-health-in-swarm-ensure.feature
 
 qa_e2e: |
   Against the live swarm (or a fixtured tmux session):
@@ -105,6 +152,10 @@ approval_context: >
 mutation_cost: low
 
 assigned_to: coder
+
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-14, by: specifier, blamed: specifier, class: spec-gap, commit: 968eaab05, evidence: backlog/evidence/BL-514-bounce-20260814.md }
 
 architect_review: |
   ## Architect pass (2026-08-14)
@@ -175,5 +226,68 @@ architect_review: |
   Approved. Forwarding to hardener as its own git_handoff (this parcel also
   carries BL-894's D1 fix, forwarded separately per Article 2.6 — never
   collapsed into one ticket name).
+
+  By architect.
+
+  ## Architect pass 2 (2026-08-15) — acceptance step handlers
+
+  Reviewed commit d0d4f3907d ("BL-514: step handlers for the swarm-ensure
+  RC-health acceptance contract", by coder, forwarded unchanged by cleaner
+  as c44912fb3f). This is the specifier's 2026-08-14 spec-amendment slice:
+  `specs/features/BL-514-rc-health-in-swarm-ensure.feature`'s six scenarios
+  had no step handlers.
+
+  - `specs/pipeline/steps/bl514RcHealthInSwarmEnsureSteps.js` drives the
+    real `test_swarm_ensure.sh` suite (spawnSync, cached once per scenario
+    context) and asserts on its `PASS: RC-N` markers — same posture as
+    `bl805RotateGateOnUnfinishedInProcessParcelSteps.js`, no parallel
+    reimplementation of `swarm_ensure.bb`'s decision logic. Registered in
+    `specs/pipeline/steps/index.js` alongside BL-765/BL-894's entries (the
+    merge preserved all three — verified).
+  - `STATE_TO_MARKER` + `knownState()` reject any state string outside
+    `{healthy, down, degraded, no-flag}` for the Scenario Outline's shared
+    step (BL-421 KNOWN_VALUES rule). Scenario 05's fixed-text (non-Outline)
+    step sets `state: 'no-flag'` as a literal, not a captured value — the
+    KNOWN_VALUES rule targets Outline passthrough specifically, so bypassing
+    the validator there is correct, not a gap; it still resolves through the
+    same `STATE_TO_MARKER` lookup as every other state when the shared
+    HEALTHY-assertion step runs.
+  - New `RC-6` case in `test_swarm_ensure.sh` (a launch script with no
+    `--remote-control` flag) asserts BOTH halves scenario 05 requires:
+    `rc:coder: HEALTHY` reported, AND the fake cmdline probe's marker file
+    was never created (i.e. the live process genuinely never probed) — not
+    just the status string. Closes the numbering gap my pass-1 review noted
+    as cosmetic-only.
+  - Architecture / dependency-gate / co-change: unchanged from pass 1 — all
+    changed files are `swarmforge/scripts/test/*.sh` and
+    `specs/pipeline/steps/*.js`, none under `extension/src/`, so the
+    dependency-cruiser ruleset does not apply (confirmed by reading
+    `extension/.dependency-cruiser.cjs`'s own scope comment). No
+    two-layer/webview/secrets rules apply (fork/operator-substrate tooling,
+    per SCOPE NOTE). No declared `invariants:` — no-op.
+
+  **Live test execution — partial run, then stopped; BLOCKED BY host load,
+  not by any defect found.** `uptime` at review time: load averages
+  5.5-7.2 (4 cores, host otherwise idle-ish — well under the prior pass's
+  95-134). Ran `bash swarmforge/scripts/test/test_swarm_ensure.sh` to a
+  file (not through `tail`, which was swallowing all interim output on the
+  first attempt). Confirmed via `ps aux` that the suite was making real
+  forward progress (a fresh `bb swarm_ensure.bb` child process launched for
+  each successive test case, distinct PIDs over time) — not a true hang.
+  25 of the suite's cases passed with zero failures, reaching test 06 and
+  the BL-537 mono-router edge case (further than either stall point pass 1
+  hit), before I stopped it rather than continue waiting on a
+  disproportionately slow host for the remaining cases including the new
+  RC-6 and the RC-1/RC-5/RC-7 cases already indirectly verified in pass 1.
+  Not claimed as passing beyond what actually ran; recorded per Article
+  4.4's run-or-blocked rule. Basis for this pass: the 25/25 clean partial
+  run (zero regressions in the large pre-existing suite from this parcel's
+  changes), the static review above, pass 1's already-completed live/static
+  verification of the underlying `ensure-rc-role!` logic this parcel does
+  not touch, and the coder's commit message recording their own green
+  `run_acceptance.sh` run (which caught and fixed a marker-mapping bug
+  before this commit landed).
+
+  Approved. Forwarding to hardener.
 
   By architect.
