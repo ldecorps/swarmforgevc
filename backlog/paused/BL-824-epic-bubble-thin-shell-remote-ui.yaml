@@ -215,6 +215,12 @@ notes: |
   epic's nudge has been pointing at all shift. Expect this nudge to stop
   recurring once BL-765 lands.
 
+  2026-08-15 (coordinator): BL-765 closed (QA-approved, main efe0043dc2).
+  BL-825's dependency chain [BL-765, BL-769] is now fully satisfied (both
+  done) — BL-825 is genuinely eligible. This recheck's 3 open slots were
+  already filled by BL-697/BL-689/BL-628 before this nudge landed; BL-825
+  is now the top real candidate for the next open slot.
+
   Every operator directive quoted in the source intake survives verbatim in
   substance into this epic's `source:` block (the five locked decisions), per
   the consolidation constraint the specifier prompt states and BL-681 is
