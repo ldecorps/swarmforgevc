@@ -1,0 +1,186 @@
+id: BL-898
+title: "A dead remote-control session is detected and repaired — /rc failed with the flag still present is invisible to every health check today"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: fleet-topology
+human_approval: pending
+priority: 25
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-898-rc-failed-auto-repair.feature
+
+approval_context: >
+  One decision: WHO owns detect-and-repair. The specifier picked direction 1
+  from your intake — extend BL-514's remote-control health with a new
+  `:session-dead` status, made actionable through the existing `actionable?`
+  predicate, and repaired by the respawn path `./swarm ensure` already calls.
+
+  Reason: that path already does everything this needs and does it idle-safely
+  (`remote_control_respawn.bb` waits for the agent's prompt, skips if it stays
+  busy, and can already read the new session URL out of the pane). Direction 2
+  (babysitterd) would split detection from repair across a daemon that
+  deliberately never fixes anything; direction 3 (operator_runtime) would add a
+  third place that knows how to respawn a role.
+
+  The cost of this choice: `./swarm ensure` starts respawning panes for a
+  reason it never used to, so a bug here interrupts agents. That is why
+  invariant 1 and scenario 02 exist, and why a single bad observation is not
+  allowed to trigger anything.
+
+source: |
+  `backlog/INTAKE-rc-failed-footer-auto-repair.md` — human via Cursor,
+  2026-08-15 ~11:32 CEST, from a live incident on the coordinator pane the
+  same morning (~11:18 CEST).
+
+  Observed: the live process still carried `--remote-control
+  SwarmForge-Coordinator`; the pane footer read `/rc failed`; the human had
+  lost claude.ai/code and phone remote control of that role; `./swarm ensure`
+  reported `rc:coordinator: HEALTHY`; `bb remote_control_health.bb` and
+  babysitterd check 2 both agreed, because both trust the flag alone.
+
+  Repair that worked, by hand: wait for the pane to go idle, then
+  `bb swarmforge/scripts/remote_control_respawn.bb . --role coordinator`
+  -> new session URL
+  `https://claude.ai/code/session_017sH8L8mMzdXZNdKPS22rsH`, footer back to
+  `/rc`.
+
+  Human ask, verbatim: **detect persistent `/rc failed` and auto-repair with
+  the existing idle-safe respawn path**, then surface the new session URL.
+
+description: |
+  ## What
+
+  Remote-control health today classifies from one signal: does the live
+  `claude` process carry the expected `--remote-control <name>` flag
+  (`remote_control_health_lib.bb`, `classify` -> `:healthy | :degraded | :down
+  | :off`; `actionable?` = `:degraded` only). The flag is argv — it cannot
+  change while the process runs. So when the cloud session behind it dies, argv
+  stays perfect and every check in the fleet reports HEALTHY while the human
+  has no remote control at all. The lib's own comments already record that
+  there is no local websocket liveness file to consult.
+
+  There IS a second signal, and the human read it by eye during the incident:
+  the pane footer, which shows `/rc` when the session is live and `/rc failed`
+  when it is not. This ticket adds that signal, and lets the repair the human
+  ran by hand run itself.
+
+  ## Direction (chosen; deviate only with a stated reason)
+
+  1. **Classify.** `classify` gains `:session-dead` — flag present AND the pane
+     footer reports a failed session. `actionable?` accepts it alongside
+     `:degraded`, so every existing caller of that predicate picks up the new
+     case without growing its own parallel branch.
+  2. **Persistent, not instantaneous.** One observation never triggers
+     anything. The footer must report failure on consecutive observations
+     before the status is `:session-dead` (scenario 01, row 2). This guards
+     against a transient during the CLI's own reconnect, and against matching
+     the literal text where it is merely echoed in scrollback rather than
+     rendered as current chrome — read the footer region, not the whole
+     capture.
+  3. **Repair.** Reuse `remote_control_respawn.bb` / `respawn-role-pane!`
+     unchanged: wait for the agent to reach an idle prompt, respawn, then
+     `confirm-rc`. An agent that stays busy past the wait budget is LEFT ALONE
+     and reported, never killed (scenario 02).
+  4. **Tell the human.** After a repair, notify with the new session address,
+     read via the existing `session-url-in-capture`. When the address cannot be
+     read, say the repair happened and that the address was not readable —
+     never a silent repair, and never a fabricated URL (scenario 03). Pick the
+     smallest existing notify path (front-desk / Telegram notice); do not build
+     a new one.
+
+  ## Deliberate non-goal: do not conflate with :degraded
+
+  `:degraded` is a live agent that lost its flag; BL-514 already owns detecting
+  and repairing it, and this ticket must not change that behavior or fold the
+  two statuses together. They differ in cause (argv wrong vs session dead), and
+  a fix that reports one as the other makes the incident report wrong. Scenario
+  01 pins both.
+
+invariants:
+  - "A remote-control repair never interrupts an agent mid-turn — every respawn this path triggers happens while that agent is idle at its prompt, or does not happen at all."
+  - "After a repair attempt on this path the human is always told the outcome, with the new session address when it is readable and an explicit statement when it is not — never silence, never a fabricated address."
+
+required_wiring:
+  - "swarmforge/scripts/remote_control_health_lib.bb::actionable?::the new status must be routed through the one predicate every existing caller already asks, not a second parallel repair path bolted alongside it."
+
+out_of_scope: |
+  - Changing the Claude CLI's own reconnect behavior. Not this repo's code.
+  - Treating "no session URL found in scrollback" as a dead session. A known
+    false negative on long-lived agents, already documented in
+    `remote_control_health_lib.bb`; the footer is the signal, not the URL.
+  - Repairing the missing-flag `:degraded` case. BL-514 already covers it and
+    this ticket must leave it byte-for-byte alone.
+  - Making the LLM Operator the primary owner of detect-or-repair. Excluded by
+    the human's locked decision 4; a deterministic sweep owns both.
+  - Any new daemon. Excluded by locked decision 3.
+
+notes: |
+  ## Why severity is high
+
+  Two impacts, either of which would qualify on its own. The human loses remote
+  control of a role — for the coordinator, that is control of the whole swarm —
+  and, worse, every health signal in the fleet actively reports HEALTHY while
+  it is gone. A broken health signal is the class this project keeps getting
+  bitten by: the failure is not that something broke, it is that nothing said
+  so. Repair took a human noticing a footer by eye.
+
+  ## Locked human decisions, carried from the intake
+
+  1. Auto-repair IS wanted for this failure mode — `/rc failed` must not stay
+     human-only recovery.
+  2. Repair must stay idle-safe (same discipline as
+     `remote_control_respawn.bb`: wait, then skip if still busy — never a
+     mid-turn kill as the default).
+  3. Prefer extending existing RC health / ensure / babysitter / runtime
+     machinery over a new daemon.
+  4. The deterministic sweep owns detect+repair; the LLM Operator is the wrong
+     primary owner.
+
+  ## Related
+
+  - `docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md`
+  - `swarmforge/scripts/remote_control_health_lib.bb` (flag-only classify;
+    documents that no websocket liveness signal exists)
+  - `swarmforge/scripts/remote_control_respawn.bb` (the repair that worked)
+  - `docs/how-to/BL-611-babysitterd-runbook.md` (check 2 = flag only; that
+    daemon never fixes anything)
+  - `specs/pipeline/steps/bl514RcHealthInSwarmEnsureSteps.js` — the existing
+    harness for this surface; extend it rather than standing up a second one.
+
+  ## E2E QA procedure (specifier, 2026-08-15)
+
+  The honest version of this needs a genuinely dead session, which cannot be
+  summoned on demand. Do the fixture work first, then take the live half
+  opportunistically the next time a footer goes bad.
+
+  1. **Classification matrix (scenario 01).** Drive `classify` over fixture
+     panes for all six rows — including the two that must NOT trigger this
+     path (`:degraded`, `:down`). Confirm `actionable?` agrees with the table.
+
+  2. **One observation is not enough (scenario 01, row 2).** Feed a single
+     failed-footer observation. Confirm nothing is triggered. Feed a second
+     consecutive one. Confirm it now is.
+
+  3. **Idle safety (scenario 02).** Point the repair at a role whose agent is
+     genuinely mid-turn (start a long task). Confirm the pane is untouched
+     while it works, and respawned only after it returns to its prompt. Then
+     repeat with a task that outlasts the wait budget: confirm the agent is
+     still running afterwards and the role is reported unrepaired.
+
+  4. **The notice (scenario 03).** After a repair, confirm the human's notify
+     surface carries the new `claude.ai/code/session_...` address. Then force
+     the unreadable case (repair a pane whose capture holds no URL) and confirm
+     the notice still arrives and says the address was not readable.
+
+  5. **Live incident (opportunistic).** Next time a pane footer shows
+     `/rc failed`, do nothing by hand. Confirm the sweep finds it, waits for
+     idle, respawns, and that the human learns about it from the notice rather
+     than from noticing the footer. Record how long it took.
+
+  6. **BL-514 unchanged.** Re-run BL-514's own acceptance feature. Confirm
+     green — this ticket must not have moved `:degraded` behavior at all.

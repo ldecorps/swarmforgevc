@@ -286,6 +286,18 @@ out_of_scope: |
     356 and climbing), not iterations with a committed perimeter; a burndown
     on a growing scope burns UP and lies. The FLOW root's Kanban charts are
     the replacement, not a complement.
+    SCOPE OF THE BAN, stated precisely 2026-08-15 (specifier, delegated by the
+    human's BL-896 intake decision 3; the ruling above is unchanged in reach
+    and unchanged in wording). What is banned is a chart that presents ticket
+    counts as progress toward a fixed or committed perimeter — on every
+    surface, PWA and elsewhere, permanently. What is NOT banned, and never
+    was, is the open-count / net-flow view: remaining open tickets per day
+    with arrival and departure rates. That view is inside the Kanban family
+    this ruling named as the replacement, and it is honest precisely because
+    it makes a growing scope visible instead of hiding it behind a target
+    line. The morning-briefing chart landed as `14724edae7` plots exactly
+    that, and is therefore not an exception to this ban — it is an instance of
+    the replacement, which BL-896 renames to stop calling itself a burndown.
   - Any LLM-generated content at build or browse time (summaries, Q&A).
     Structural refusal, see design ruling 2.
   - Live state (pane views, pipeline board) — the Mini App keeps those; one

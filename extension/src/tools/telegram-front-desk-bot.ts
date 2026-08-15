@@ -175,7 +175,9 @@ import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
-import { handleOnboardingMessage } from '../onboarding/onboarderState';
+import { routeOnboardingMessage } from '../onboarding/onboarderContractPhaseRouter';
+import { ContractPhaseAdapters } from '../onboarding/contractPhaseRelay';
+import { createRealContractPhaseAdapters } from './contractPhaseRealAdapters';
 import {
   listOnboarderStates,
   findProcessedOnboardingUpdate,
@@ -873,7 +875,8 @@ export async function handleOnboarderMessage(
   topicId: number,
   text: string,
   updateId: number,
-  postFn?: TelegramPostFn
+  postFn?: TelegramPostFn,
+  contractPhaseAdapters?: ContractPhaseAdapters
 ): Promise<boolean> {
   const already = findProcessedOnboardingUpdate(targetPath, updateId);
   if (already) {
@@ -888,7 +891,13 @@ export async function handleOnboarderMessage(
   }
 
   const states = listOnboarderStates(targetPath);
-  const outcome = handleOnboardingMessage(states, text, Date.now);
+  // BL-624: contractPhaseAdapters is an optional trailing param (real
+  // default constructed here, never at call sites) so every EXISTING caller
+  // - live wiring and the whole prerequisite-phase test suite alike - keeps
+  // working unchanged; routeOnboardingMessage only ever reaches into it for
+  // a target already at or past prerequisites-ready, which no existing
+  // fixture does.
+  const outcome = await routeOnboardingMessage(states, text, Date.now, contractPhaseAdapters ?? createRealContractPhaseAdapters(targetPath));
   if (outcome.kind === 'no-active-onboarding') {
     // No target, therefore nothing durable to guard - a redelivery here
     // recomputes the exact same constant message with no state mutation,
