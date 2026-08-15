@@ -5,7 +5,7 @@ type: epic
 status: todo
 epic: bubble-offline-sync
 human_approval: approved
-priority: 44
+priority: 2
 direction: human-intake
 depends_on: []
 assigned_to: coordinator

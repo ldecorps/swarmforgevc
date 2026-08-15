@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-behaviour-trends
 human_approval: approved
-priority: 38
+priority: 43
 direction: human-requested
 depends_on: []
 assigned_to: coder
