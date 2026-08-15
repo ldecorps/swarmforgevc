@@ -5,7 +5,7 @@ const fc = require('fast-check');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
 const { resolveDeferredReplyTopicId } = require('../out/tools/telegramCursorBridgeCore');
-const { runCursorBridgePollOnce, writeJsonFile } = require('../out/tools/telegramCursorBridgeLive');
+const { runCursorBridgePollOnce, writeJsonFile, loadJsonFile } = require('../out/tools/telegramCursorBridgeLive');
 
 // BL-767 invariant #1: "A queued prompt is answered in exactly one topic:
 // the one it was asked in, or the Cursor Remote topic when no origin was
@@ -125,5 +125,162 @@ test('property: whichever deferred-reply path drains, the reply is posted to exa
       }
     ),
     { numRuns: 40 }
+  );
+});
+
+// BL-894 declared invariant 1: "A tap the human makes on any selection poll
+// this bridge has posted either changes the queue or tells the human it did
+// not — a superseded poll never absorbs a tap in silence." Generator sweeps
+// queue size (n), which option on the STALE poll was tapped (0..n-1 a real
+// item, n itself the clear-all option — the full option space Telegram could
+// actually send back for that poll), and repostCount: how many /queue
+// reposts happen (each superseding the previous outstanding poll) BEFORE the
+// human votes on the very FIRST (generation-0) poll. BL-894 D1 (hardener
+// bounce 2026-08-14): repostCount >= 2 is exactly the case a single-scalar
+// "most recently superseded" tracker cannot represent — the fix must survive
+// an arbitrary number of generations, not just one.
+async function runSupersededPollVote(n, selectedIndex, repostCount) {
+  const root = mkRoot();
+  const deps = mkPollDeps(root, 55);
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  let freshCounter = 0;
+  telegramClient.sendTelegramPoll = async () => ({ success: true, pollId: `poll-fresh-${++freshCounter}` });
+  const posts = [];
+  let updateId = 0;
+  try {
+    const items = Array.from({ length: n }, (_, i) => ({ id: `qp-${i + 1}`, text: `item ${i + 1}`, createdAtMs: Date.now() }));
+    const initialState = {
+      updateOffset: 0,
+      cursorTopicId: 55,
+      pendingPrompts: items,
+      pendingPromptPoll: { pollId: 'poll-old', itemIds: items.map((item) => item.id), clearAllOptionIndex: n },
+    };
+    writeJsonFile(deps.statePath, initialState);
+    let current = { state: initialState, busy: false };
+    for (let repost = 0; repost < repostCount; repost++) {
+      updateId += 1;
+      current = await runCursorBridgePollOnce(
+        {
+          ...deps,
+          post: async (_t, _c, _topic, text) => posts.push(text),
+          getUpdates: async () => ({
+            success: true,
+            updates: [
+              {
+                update_id: updateId,
+                message: { message_id: updateId, text: '/queue', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 },
+              },
+            ],
+          }),
+        },
+        current.state,
+        current.busy,
+        0
+      );
+    }
+    const beforeVote = loadJsonFile(deps.statePath);
+    updateId += 1;
+    await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async (_t, _c, _topic, text) => posts.push(text),
+        getUpdates: async () => ({
+          success: true,
+          updates: [{ update_id: updateId, poll_answer: { poll_id: 'poll-old', option_ids: [selectedIndex], user: { id: 42 } } }],
+        }),
+      },
+      current.state,
+      current.busy,
+      0
+    );
+    const afterVote = loadJsonFile(deps.statePath);
+    return { posts, beforeVote, afterVote };
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+}
+
+test('property: a vote on a poll this bridge has superseded either changes the queue or tells the human it did not', async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.integer({ min: 1, max: 6 }).chain((n) => fc.tuple(fc.constant(n), fc.integer({ min: 0, max: n }))),
+      fc.integer({ min: 1, max: 4 }), // repostCount: reposts before voting on generation-0
+      async ([n, selectedIndex], repostCount) => {
+        const { posts, beforeVote, afterVote } = await runSupersededPollVote(n, selectedIndex, repostCount);
+        assert.deepEqual(
+          afterVote.pendingPrompts,
+          beforeVote.pendingPrompts,
+          `a vote on an already-superseded poll must never change the queue (repostCount=${repostCount})`
+        );
+        assert.ok(
+          posts.some((t) => /no longer live/i.test(t)),
+          `expected an explicit reply telling the human the poll is stale after ${repostCount} repost(s); posts:\n${posts.join('\n---\n')}`
+        );
+      }
+    ),
+    { numRuns: 60 }
+  );
+});
+
+// BL-894 declared invariant 2: "Where the selection poll posts is never
+// permanently redefined by whichever topic a /queue command happened to
+// arrive in." The inbound gate (isOwnedCursorBridgeTopic) only lets an event
+// through when its topic is the recorded cursorTopicId OR bubbleTopicId — so
+// the one state where cursorTopicId is unrecorded AND a /queue command can
+// still reach the handler is "sent from the Bubble topic" (the real
+// reachable case P3 warns about, not a hypothetical arbitrary topic).
+test('property: /queue never permanently redefines the Host topic to wherever it was sent from', async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.boolean(), // cursorTopicId already recorded?
+      fc.tuple(topicIdArb, topicIdArb).filter(([a, b]) => a !== b), // [recordedCursorTopicId, bubbleTopicId], distinct
+      async (topicRecorded, [recordedCursorTopicId, bubbleTopicId]) => {
+        const root = mkRoot();
+        const initialCursorTopicId = topicRecorded ? recordedCursorTopicId : undefined;
+        const deps = mkPollDeps(root, initialCursorTopicId);
+        const initialState = {
+          updateOffset: 0,
+          cursorTopicId: initialCursorTopicId,
+          bubbleTopicId,
+          pendingPrompts: [{ id: 'qp-1', text: 'queued', createdAtMs: Date.now() }],
+        };
+        writeJsonFile(deps.statePath, initialState);
+        await runCursorBridgePollOnce(
+          {
+            ...deps,
+            post: async () => {},
+            getUpdates: async () => ({
+              success: true,
+              updates: [
+                {
+                  update_id: 1,
+                  message: {
+                    message_id: 1,
+                    text: '/queue',
+                    from: { id: 42 },
+                    chat: { id: -100 },
+                    message_thread_id: bubbleTopicId,
+                  },
+                },
+              ],
+            }),
+          },
+          initialState,
+          false,
+          0
+        );
+        const after = loadJsonFile(deps.statePath);
+        assert.notEqual(
+          after.cursorTopicId,
+          bubbleTopicId,
+          'the /queue arrival topic must never become the recorded Host topic, even the legitimate Bubble topic'
+        );
+        if (topicRecorded) {
+          assert.equal(after.cursorTopicId, recordedCursorTopicId, 'an already-recorded Host topic must survive untouched');
+        }
+      }
+    ),
+    { numRuns: 60 }
   );
 });

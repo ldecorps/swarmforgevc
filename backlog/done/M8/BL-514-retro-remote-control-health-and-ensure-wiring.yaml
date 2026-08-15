@@ -152,6 +152,174 @@ approval_context: >
 mutation_cost: low
 
 assigned_to: coder
-bounce_count: 1
+
+
+architect_review: |
+  ## Architect pass (2026-08-14)
+
+  Reviewed commit b09ce9b953 ("BL-514: wire remote-control health check into
+  ./swarm ensure", by coder). Static/structural review:
+
+  - Every referenced function exists with a matching arity/signature:
+    `remote-control-health/{classify,check-role,actionable?,expected-rc-name,
+    launch-script-path,respawn-role-pane!,claude-cmdline-in-pane}` in
+    remote_control_health_lib.bb; `mono-router-lib/{classify-role,
+    resident-launch-role}` in mono_router_lib.bb; `read-mono-router-active-
+    role-marker` pre-existing in swarm_ensure.bb (already used by
+    ensure-mono-router-role!).
+  - `ensure-rc-role!` branch logic matches the acceptance criteria exactly:
+    :healthy/:off -> HEALTHY no-op; :degraded -> repair via
+    ensure-component!/respawn-rc-pane!, reclassified FIXED/FAILED;
+    :down -> HEALTHY no-op (left to agent:<role>, actionable? gates this so
+    RC never double-respawns a pane the agent check just revived).
+  - `results` aggregation (line ~660) correctly folds the flattened
+    agent+rc pairs into the same list feeding both `report-line` and the
+    exit-code check (`some #(= :failed (:status %)) results`), so an rc
+    FAILED yields a non-zero exit exactly like any other component, and
+    ensure never aborts on it (each row still yields both its agent and rc
+    result via `mapcat`).
+  - The `:off`-short-circuit hang-avoidance fix (skip invoking `cmdline-fn`
+    entirely when `expected-rc-name` is nil) is exercised implicitly by
+    every pre-existing fixture in the suite that doesn't set a
+    `--remote-control` flag in its launch script (the large majority of
+    tests 01-07f, 06, mono-router) — if this short-circuit were missing or
+    broken, that entire pre-existing suite would hit the real
+    process-tree probe against a fake pane-pid and hang, exactly as the
+    commit message describes. That gives strong indirect confirmation
+    beyond the 5 new RC-specific scenarios (RC-1..RC-5, RC-7 — note RC-6
+    is a numbering gap, cosmetic only, no coverage gap: healthy, degraded
+    ->FIXED, degraded-repair-fails->FAILED, :down no-action, report
+    ordering, and the mono-router rotated-resident edge case are all
+    covered).
+  - Dependency gate (`node out/tools/dependency-gate.js`, N/A here since
+    swarm_ensure.bb is Babashka, not TypeScript — this ticket's changed
+    files carry no dependency-cruiser ruleset) and co-change report:
+    not applicable to `.bb` files; this ticket's only TS-adjacent files
+    are none (all changes are in swarmforge/scripts/).
+  - Architecture rules: this is fork/operator-substrate tooling under
+    `swarmforge/scripts/` (the maintained fork), not extension MVP product
+    — consistent with the ticket's own SCOPE NOTE and the BL-472 precedent.
+    No two-layer/webview/secrets/storage rules apply.
+  - No declared `invariants:` on this ticket — Invariants Review is a
+    no-op.
+
+  **Live test execution — BLOCKED BY host load, not by any defect found.**
+  Attempted `bash swarmforge/scripts/test/test_swarm_ensure.sh` three times
+  during this review. `uptime` showed sustained load averages of
+  95-134 (this host, 2 other users active) throughout — far past the
+  documented 2x-cores threshold where subprocess-heavy suites stall or hang
+  even absent any code defect (BL-108/BL-129/BL-139 lesson, same category
+  the hardener already invoked for Stryker in this same ticket cycle's
+  sibling, BL-894). Two independent full-suite attempts stalled at
+  DIFFERENT points in the test sequence (one stopped after "mono-router
+  dormant roles", a later attempt stalled earlier, at test 06) — a
+  non-deterministic stall location is the signature of generic resource
+  contention, not a deterministic hang in the new RC code (a real hang in,
+  say, RC-4's :down cmdline probe would stall at the same place every time).
+  Not fixed here, not claimed as passing; recorded per Article 4.4's
+  run-or-blocked rule rather than assumed clean. The static review above is
+  the basis for this pass.
+
+  Approved. Forwarding to hardener as its own git_handoff (this parcel also
+  carries BL-894's D1 fix, forwarded separately per Article 2.6 — never
+  collapsed into one ticket name).
+
+  By architect.
+
+  ## Architect pass 2 (2026-08-15) — acceptance step handlers
+
+  Reviewed commit d0d4f3907d ("BL-514: step handlers for the swarm-ensure
+  RC-health acceptance contract", by coder, forwarded unchanged by cleaner
+  as c44912fb3f). This is the specifier's 2026-08-14 spec-amendment slice:
+  `specs/features/BL-514-rc-health-in-swarm-ensure.feature`'s six scenarios
+  had no step handlers.
+
+  - `specs/pipeline/steps/bl514RcHealthInSwarmEnsureSteps.js` drives the
+    real `test_swarm_ensure.sh` suite (spawnSync, cached once per scenario
+    context) and asserts on its `PASS: RC-N` markers — same posture as
+    `bl805RotateGateOnUnfinishedInProcessParcelSteps.js`, no parallel
+    reimplementation of `swarm_ensure.bb`'s decision logic. Registered in
+    `specs/pipeline/steps/index.js` alongside BL-765/BL-894's entries (the
+    merge preserved all three — verified).
+  - `STATE_TO_MARKER` + `knownState()` reject any state string outside
+    `{healthy, down, degraded, no-flag}` for the Scenario Outline's shared
+    step (BL-421 KNOWN_VALUES rule). Scenario 05's fixed-text (non-Outline)
+    step sets `state: 'no-flag'` as a literal, not a captured value — the
+    KNOWN_VALUES rule targets Outline passthrough specifically, so bypassing
+    the validator there is correct, not a gap; it still resolves through the
+    same `STATE_TO_MARKER` lookup as every other state when the shared
+    HEALTHY-assertion step runs.
+  - New `RC-6` case in `test_swarm_ensure.sh` (a launch script with no
+    `--remote-control` flag) asserts BOTH halves scenario 05 requires:
+    `rc:coder: HEALTHY` reported, AND the fake cmdline probe's marker file
+    was never created (i.e. the live process genuinely never probed) — not
+    just the status string. Closes the numbering gap my pass-1 review noted
+    as cosmetic-only.
+  - Architecture / dependency-gate / co-change: unchanged from pass 1 — all
+    changed files are `swarmforge/scripts/test/*.sh` and
+    `specs/pipeline/steps/*.js`, none under `extension/src/`, so the
+    dependency-cruiser ruleset does not apply (confirmed by reading
+    `extension/.dependency-cruiser.cjs`'s own scope comment). No
+    two-layer/webview/secrets rules apply (fork/operator-substrate tooling,
+    per SCOPE NOTE). No declared `invariants:` — no-op.
+
+  **Live test execution — partial run, then stopped; BLOCKED BY host load,
+  not by any defect found.** `uptime` at review time: load averages
+  5.5-7.2 (4 cores, host otherwise idle-ish — well under the prior pass's
+  95-134). Ran `bash swarmforge/scripts/test/test_swarm_ensure.sh` to a
+  file (not through `tail`, which was swallowing all interim output on the
+  first attempt). Confirmed via `ps aux` that the suite was making real
+  forward progress (a fresh `bb swarm_ensure.bb` child process launched for
+  each successive test case, distinct PIDs over time) — not a true hang.
+  25 of the suite's cases passed with zero failures, reaching test 06 and
+  the BL-537 mono-router edge case (further than either stall point pass 1
+  hit), before I stopped it rather than continue waiting on a
+  disproportionately slow host for the remaining cases including the new
+  RC-6 and the RC-1/RC-5/RC-7 cases already indirectly verified in pass 1.
+  Not claimed as passing beyond what actually ran; recorded per Article
+  4.4's run-or-blocked rule. Basis for this pass: the 25/25 clean partial
+  run (zero regressions in the large pre-existing suite from this parcel's
+  changes), the static review above, pass 1's already-completed live/static
+  verification of the underlying `ensure-rc-role!` logic this parcel does
+  not touch, and the coder's commit message recording their own green
+  `run_acceptance.sh` run (which caught and fixed a marker-mapping bug
+  before this commit landed).
+
+  Approved. Forwarding to hardener.
+
+  By architect.
+
+  ## Architect pass 3 (2026-08-15) — QA bounce resolved, fix confirmed present
+
+  QA bounced this parcel (`backlog/evidence/BL-514-bounce-20260815.md`,
+  commit `1ba16651d1`) claiming BL-765's architect-bounced, un-reverted
+  commit rode unreverted onto the branch QA was asked to land. Merged QA's
+  commit into this worktree (`0a3569281`) and investigated per Article 4.4.
+
+  Full findings in `backlog/evidence/BL-514-bounce-20260815-architect-resolution.md`.
+  Summary: QA's cited commit (`fe2e4b8ad5`) is the coder's pre-bounce
+  commit, not the bounce itself; the actual root cause is a mono-router
+  branch divergence — the hardener->documenter->QA chain forked from a
+  point on the shared coder branch *before* BL-765's invariant-2 fix
+  (`f40ef9bc4`, approved in this ticket's own "architect pass 2" above)
+  merged forward, so QA's reviewed commit genuinely lacked it even though
+  the fix had already landed and been reviewed. This is QA's own stated
+  remediation option (b), not (a): the fix has landed for real, and I
+  re-verified it is what's actually present in the merged branch — by
+  content read of `BridgeClient.kt` (matches `f40ef9bc4` exactly, not just
+  ancestry), by confirming `BridgeClientBubbleConfigPropertyTest.kt`
+  exists, by a fresh `./gradlew :app:testDebugUnitTest --tests
+  "*BubbleConfig*"` run (BUILD SUCCESSFUL), and by re-running the
+  dependency-gate on `bridgeServer.ts` (PASSED). No revert performed — the
+  code is correct, not defective; reverting would remove the fix.
+
+  Approved. Re-forwarding to hardener. Filing a `rule_proposal` separately
+  on the underlying process gap (sibling-ticket fix verification under
+  mono-router batching needs a content/commit check, not just a
+  revert-presence check).
+
+  By architect.
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-14, by: specifier, blamed: specifier, class: spec-gap, commit: 968eaab05, evidence: backlog/evidence/BL-514-bounce-20260814.md }
+  - { at: 2026-08-15, by: QA, blamed: architect, class: behavior, commit: 1ba16651d, evidence: backlog/evidence/BL-514-bounce-20260815.md }

@@ -1,6 +1,97 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 14, 2026 (BL-891: after QA lands an approved commit by
+**Last Updated:** August 15, 2026 (BL-806: closes a hole in Article 4.4's
+"commit your evidence and forward THAT commit" rule that let a clean review
+pass vanish from the ancestry QA audits — BL-536 (2026-08-04) proved prompt
+text alone doesn't hold: architect and hardener both ran real passes but
+fast-forward-merged and forwarded the bare received hash, so nothing in the
+commit graph distinguished "reviewed, nothing to change" from "skipped",
+and a full bounce + re-entry cycle was burned re-running work already done.
+`swarm_handoff.bb` now refuses a forward-direction `git_handoff` from any
+of the four review roles (cleaner, architect, hardender, documenter) whose
+outgoing `commit:` is exactly the commit that role received for the same
+task — reading the sender's own `in_process` mailbox, string-equality only,
+no git subprocess. Fails open (never blocks) when there's nothing to check
+against — an initiating send, a drained box, an unreadable box, a
+mailbox-less sender — and a non-blank `reroute_reason` (BL-425's
+cannot-fix-forward-onward exemption) always passes through. Bounces,
+notes, and `rule_proposal`s are outside the refusal surface entirely, as is
+QA's own approval/integration sends (scoped out this slice, to avoid
+entangling integration mechanics). Fork/operator-substrate tooling under
+`swarmforge/scripts/`, not Milestone-1 extension product; no human-facing
+command or setting. See the new "Review-Forward Evidence Gate (BL-806)"
+section in `swarmforge/handoff-protocol.md`.); Previously
+August 15, 2026 (BL-765: Bubble takes its capability
+flags and hold-music catalog from the bridge instead of the APK. The bridge
+now serves `GET /lets-talk/chiptunes.json` (`letsTalkChiptunes.ts`, landed
+dead via f175bc56d, wired into `buildJsonRoutes` in the same shape BL-763
+used for bubble-config), and `BridgeClient.fetchBubbleConfig` parses the
+full 8-flag capability document (hold music, hands-free, playlist, new
+session, pause-all, text turns, voice-engine switch,
+`bridgeBounceAutoSessionReset`) instead of only the one flag BL-763 read.
+Bubble fetches both on pair/resume (`OverlayService.onCreate`): the
+chiptunes catalog replaces `HoldMusicPlayer`'s hardcoded song list on a
+successful fetch and falls back to the bundled list otherwise; each
+capability flag gates its corresponding UI control, and a remote
+`holdMusic` disable overrides both the user's own toggle and the
+not-paused check (`HoldMusicOffer.shouldOffer`). Also in scope from the
+same working tree: hold-music volume and reply-voice volume no longer
+share one control — lowering the music-volume slider no longer touches the
+reply voice, which stays at full gain (`ReplyGain.independentOfMusicVolume`)
+— and the debug version label on the pairing screen and talk panel drops
+its stale "BL-707" prefix down to a plain `v<version>` string. An architect
+bounce (invariant 2: "an unparseable or wrong-schema payload is rejected
+whole, never applied field-by-field") caught that `fetchBubbleConfig`
+parsed each flag independently, so one wrong-typed flag silently defaulted
+while sibling flags from the same malformed document still applied — the
+inverse of what the sibling `parseChiptunesCatalog` already did one page up
+in the same file. Fixed by extracting `BridgeClient.parseBubbleConfig`,
+same whole-rejection shape as its chiptunes sibling: a missing/non-object
+`features`, or any flag holding a non-boolean value, rejects the whole
+document and `fetchBubbleConfig` falls back to the bundled-default
+`BubbleConfigResult`. Both parsers are proven by non-vacuous property tests
+(`BridgeClientBubbleConfigPropertyTest`,
+`BridgeClientChiptunesCatalogPropertyTest`) showing a naive per-field
+parser would wrongly accept a document the real parser rejects. Retro-ticket
+per BL-506 (source: 2026-07-31 master-diff review; the work reached Bubble
+v0.3.14 outside the pipeline). See the new
+[BL-765 runbook](../how-to/BL-765-bubble-remote-config-and-chiptune-catalog.md).); Previously
+August 14, 2026 (BL-894: certifying the hand-landed hotfix
+that makes `/queue` repost the Host queue selection poll instead of a
+numbered text list (ledger entry `e49a71b532`) — the human's UX decision is
+locked and unchanged. Two findings closed in this pass: (P1/P2) BL-810's
+"at most one queue selection poll is outstanding" invariant is narrowed
+in place to cover automatic idle-triggered re-presentation only (which
+still refuses to double-post); an explicit `/queue` repost is a deliberate,
+narrow exception, and the poll it replaces is *superseded* rather than
+silently abandoned — a vote on a superseded poll now always gets
+`That poll is no longer live — send /queue again to see the current one.`,
+never a silent no-op, tracked via a bounded `supersededPromptPollIds`
+history (cap 8, not just the single most recent id — a hardener bounce
+found a second repost silently forgetting the first) rather than the
+hotfix's original single scalar. (P3) `/queue` never adopts a stray topic
+as the Host topic; that binding stays owned by the bridge's existing
+canonical path. The dead `queuePromptListForDisplay` helper the hotfix
+left with zero callers is deleted. See the updated
+[BL-810 runbook](../how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md).); Previously
+August 14, 2026 (BL-514: retro-tickets the remote-control
+health/respawn operator tooling (`remote_control_health.bb`,
+`remote_control_respawn.bb`, `remote_control_health_lib.bb`) that had
+landed on `main` with no ticket via `7dd4d14e` — coordinator directive:
+KEEP, it's real and tested (Article "An Approval Authorizes Only Its
+Ticket's Work" / BL-506 requires such work to be retroactively ticketed or
+reverted). The new slice: `swarm_ensure.bb`'s routine BAU sweep now emits
+an `rc:<role>` line per role, immediately after that role's `agent:<role>`
+line — HEALTHY/off with no action, repaired-and-reclassified FIXED/FAILED
+for a `:degraded` pane (flag lost but agent still live), and left
+untouched for `:down` (that pane is the `agent:<role>` check's own job, so
+RC never double-respawns a pane just revived). Under mono-router, the
+check follows the resident's currently-active rotated launch script, never
+its home role, so a legitimately rotated resident is never misclassified
+as degraded. This is fork/operator-substrate tooling under
+`swarmforge/scripts/`, not Milestone-1 extension product. See the new
+[runbook](../how-to/BL-514-remote-control-health-and-ensure-wiring.md).); Previously
+August 14, 2026 (BL-891: after QA lands an approved commit by
 pushing `origin HEAD:main`, nothing ever advanced the master checkout's own
 local `main` ref — git refuses to update a branch checked out in another
 worktree (`main` lives in the master checkout, where the coordinator and

@@ -444,7 +444,11 @@ const DOMAINS = [
   require('./bl788BubblePairingClientLogsAdoptSteps'),
   require('./bl719DroppedParcelNudgeSteps'),
   require('./bl687EpicReorderIncludesActiveChildrenSteps'),
-  require('./bl746StopSwarmRealRefuseGatesSteps')
+  require('./bl746StopSwarmRealRefuseGatesSteps'),
+  require('./bl894QueueRepostsSelectionPollSteps'),
+  require('./bl765BubbleRemoteConfigChiptuneCatalogSteps'),
+  require('./bl514RcHealthInSwarmEnsureSteps'),
+  require('./bl806ReviewForwardEvidenceGateSteps')
 ];
 
 function registerSteps(registry) {

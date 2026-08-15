@@ -1760,6 +1760,33 @@ test('GET /lets-talk/bubble-config.json serves the bundled default config, inclu
   });
 });
 
+// BL-765: letsTalkChiptunes.ts (f175bc56d) was never wired to a served
+// route until now — this is the wiring's own test, same shape as BL-763's
+// bubble-config wiring test above.
+test('GET /lets-talk/chiptunes.json serves the hold-music catalog', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/chiptunes.json`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(typeof body.version, 'number');
+    assert.ok(Array.isArray(body.songs));
+    assert.ok(body.songs.length > 0);
+    assert.equal(typeof body.songs[0].name, 'string');
+    assert.ok(Array.isArray(body.songs[0].steps));
+  });
+});
+
+test('GET /lets-talk/chiptunes.json rejects a request with no bearer token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/chiptunes.json`);
+    assert.equal(res.status, 401);
+  });
+});
+
 // BL-866: companion-manifest + package catalog, the bridge-side contract
 // epic BL-865's phone-side slices will read.
 

@@ -247,6 +247,8 @@ if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
 # (classify-provider-error) alongside the raw reason, never in place of it.
 echo "$OUT" | grep -q "^agent:coder: FAILED \[launch-failed\] (no tmux socket found for this project root)$" \
   || fail "04: missing tmux socket did not report agent:coder as FAILED naming the category and reason; got: $OUT"
+echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "04 (BL-514): missing tmux socket did not still report rc:coder as HEALTHY (no separate rc failure); got: $OUT"
 echo "$OUT" | grep -q "^extension: HEALTHY$" || fail "04: extension check did not still run without a tmux socket"
 echo "$OUT" | grep -q "^daemon: HEALTHY$" || fail "04: daemon check did not still run without a tmux socket"
 [[ "$RC" -ne 0 ]] || fail "04: exit status was 0, expected non-zero when an agent pane could not be checked"
@@ -858,5 +860,244 @@ grep -q "^CREATE swarmforge-coder$" "$CREATE_LOG" \
 echo "$OUTPUT" | grep -q "^agent:coder: FIXED (restored mono-router resident pane)$" \
   || fail "10: a recreated resident session was not reported FIXED; got: $OUTPUT"
 pass "10: mono-router resident session that has vanished entirely is recreated and respawned, reported FIXED"
+
+# ---------------------------------------------------------------------------
+# BL-514: remote-control (RC) component wiring — rc:<role> alongside
+# agent:<role>, right after it in the report. SWARM_ENSURE_RC_CMDLINE_CMD is
+# the injectable seam (mirrors the file's own SWARM_ENSURE_*_CMD idiom) since
+# the real probe reads /proc/<pid>/cmdline, which this dev/test host (macOS)
+# does not provide.
+# ---------------------------------------------------------------------------
+
+# ── RC-1: healthy RC (live process carries the expected flag) ──────────────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC_RESPAWNS="$ROOT/rc-respawns-1"
+: > "$RC_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC_RESPAWNS"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_1.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_1.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_1.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "RC-1: a matching --remote-control flag was not reported HEALTHY; got: $OUT"
+[[ -s "$RC_RESPAWNS" ]] && fail "RC-1: a healthy RC state triggered an unnecessary respawn"
+[[ "$RC" -eq 0 ]] || fail "RC-1: exit status was $RC, expected 0"
+cleanup_daemon
+pass "RC-1 (BL-514): rc:coder reports HEALTHY when the live process carries the expected --remote-control flag, no repair"
+
+# ── RC-2: degraded RC (flag lost) is repaired and reclassified HEALTHY -> FIXED
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC_RESTORED="$ROOT/rc-restored-2"
+RC_RESPAWNS="$ROOT/rc-respawns-2"
+echo "0" > "$RC_RESTORED"
+: > "$RC_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC_RESPAWNS"
+  echo "1" > "$RC_RESTORED"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_2.sh" <<EOF
+#!/usr/bin/env bash
+if [[ "\$(cat "$RC_RESTORED")" == "1" ]]; then
+  echo "claude --remote-control SwarmForge-Coder"
+else
+  echo "claude --remote-control SwarmForge-Stale"
+fi
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_2.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_2.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: FIXED (respawned pane to restore --remote-control flag)$" \
+  || fail "RC-2: a degraded RC (flag lost) was not repaired and reported FIXED; got: $OUT"
+[[ -s "$RC_RESPAWNS" ]] || fail "RC-2: rc:coder FIXED was reported without actually respawning the pane"
+cleanup_daemon
+pass "RC-2 (BL-514): rc:coder reports FIXED after respawning a degraded pane and reclassifying healthy"
+
+# ── RC-3: degraded RC whose repair does NOT restore the flag -> FAILED ─────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC_RESPAWNS="$ROOT/rc-respawns-3"
+: > "$RC_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC_RESPAWNS"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_3.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "claude --remote-control SwarmForge-StillStale"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_3.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_3.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: FAILED (respawned pane to restore --remote-control flag)$" \
+  || fail "RC-3: a repair that does not restore the flag was not reported FAILED; got: $OUT"
+[[ -s "$RC_RESPAWNS" ]] || fail "RC-3: rc:coder FAILED was reported without ever attempting a repair"
+[[ "$RC" -ne 0 ]] || fail "RC-3: exit status was 0, expected non-zero after an rc FAILED"
+cleanup_daemon
+pass "RC-3 (BL-514): rc:coder reports FAILED when respawning does not restore the --remote-control flag"
+
+# ── RC-4: no live claude process (:down) is left entirely to agent:<role>,
+#          never double-respawned by the RC check ──────────────────────────
+make_fixture
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC_RESPAWNS="$ROOT/rc-respawns-4"
+: > "$RC_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RC_RESPAWNS"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc_cmdline_4.sh" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_4.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_4.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "RC-4: no live claude process (:down) was not left HEALTHY/no-action at the RC level; got: $OUT"
+echo "$OUT" | grep -q "^agent:coder: HEALTHY$" \
+  || fail "RC-4: agent:coder pane was disturbed by the RC :down case; got: $OUT"
+[[ -s "$RC_RESPAWNS" ]] && fail "RC-4: RC check respawned a pane on :down - that is agent:<role>'s job, never RC's"
+[[ "$RC" -eq 0 ]] || fail "RC-4: exit status was $RC, expected 0"
+cleanup_daemon
+pass "RC-4 (BL-514): rc:coder takes no action on :down, never double-respawning a pane the agent check already owns"
+
+# ── RC-5: rc:<role> is reported immediately after its own agent:<role> line ─
+make_fixture
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+AGENT_LINE="$(echo "$OUT" | grep -n '^agent:coder:' | head -1 | cut -d: -f1)"
+RC_LINE="$(echo "$OUT" | grep -n '^rc:coder:' | head -1 | cut -d: -f1)"
+[[ -n "$AGENT_LINE" && -n "$RC_LINE" ]] || fail "RC-5: missing agent:coder or rc:coder line; got: $OUT"
+[[ "$RC_LINE" -eq $((AGENT_LINE + 1)) ]] \
+  || fail "RC-5: rc:coder did not immediately follow agent:coder; got: $OUT"
+cleanup_daemon
+pass "RC-5 (BL-514): rc:<role> is reported immediately after its own agent:<role> pane check"
+
+# ── RC-6: launch script declares no --remote-control flag at all -> HEALTHY,
+#          and the live process is never probed (ensure-rc-role!'s
+#          expected-rc-name nil short-circuit, checked BEFORE rc-status is
+#          ever called) ────────────────────────────────────────────────────
+make_fixture
+printf 'exec claude --dangerously-skip-permissions\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC6_PROBED="$ROOT/rc6-probed"
+cat > "$FAKE_BIN/rc_cmdline_6.sh" <<EOF
+#!/usr/bin/env bash
+touch "$RC6_PROBED"
+echo "claude --remote-control SwarmForge-Coder"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_6.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_6.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "RC-6: a launch script declaring no --remote-control flag was not reported HEALTHY; got: $OUT"
+[[ -e "$RC6_PROBED" ]] \
+  && fail "RC-6: the live process was probed despite the launch script declaring no --remote-control flag"
+[[ "$RC" -eq 0 ]] || fail "RC-6: exit status was $RC, expected 0"
+cleanup_daemon
+pass "RC-6 (BL-514): a launch script declaring no --remote-control flag reports HEALTHY without ever probing the live process"
+
+# ---------------------------------------------------------------------------
+# RC-7 (BL-514): mono-router resident rotated onto a different role's launch
+# script must not be misclassified as RC-degraded and forcibly respawned back
+# to home - rc-launch-role must resolve against the ACTIVE role's launch
+# script, mirroring ensure-mono-router-role!'s own launch-role resolution.
+# Without this, every ensure while rotated to a non-home role would wrongly
+# see a "flag mismatch" and stomp the resident back onto `coder`.
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
+printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
+printf 'exec claude --remote-control SwarmForge-Coder\n' > "$ROOT/.swarmforge/launch/coder.sh"
+printf 'exec claude --remote-control SwarmForge-Specifier\n' > "$ROOT/.swarmforge/launch/specifier.sh"
+echo "specifier" > "$ROOT/.swarmforge/mono-router-active-role"
+RC7_RESPAWNS="$ROOT/rc7-respawns"
+: > "$RC7_RESPAWNS"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  case "\$target" in
+    swarmforge-coder|swarmforge-coordinator) exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  echo "RESPAWN \$@" >> "$RC7_RESPAWNS"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+cat > "$FAKE_BIN/rc7_cmdline.sh" <<'EOF'
+#!/usr/bin/env bash
+case "$2" in
+  swarmforge-coder) echo "claude --remote-control SwarmForge-Specifier" ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$FAKE_BIN/rc7_cmdline.sh"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc7_cmdline.sh" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q "^rc:coder: HEALTHY$" \
+  || fail "RC-7: rotated resident's RC was not read against its ACTIVE role's launch script; got: $OUTPUT"
+[[ -s "$RC7_RESPAWNS" ]] \
+  && fail "RC-7: rc check forcibly respawned a legitimately-rotated resident; respawns: $(cat "$RC7_RESPAWNS")"
+cleanup_daemon
+pass "RC-7 (BL-514): mono-router RC check follows a rotated resident's active launch script, never forces it back to home"
 
 echo "ALL PASS"

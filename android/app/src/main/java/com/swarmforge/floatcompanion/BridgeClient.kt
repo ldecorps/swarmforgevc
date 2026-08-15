@@ -72,13 +72,8 @@ object BridgeClient {
     }
 
     fun fetchAudioEngineStatus(baseUrl: String, token: String): AudioEngineStatusResult {
-        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/audio-engine")
-        val conn = openAuth(url, token)
         return try {
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/audio-engine", token)
             if (code !in 200..299) {
                 return AudioEngineStatusResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
@@ -96,8 +91,6 @@ object BridgeClient {
             )
         } catch (e: Exception) {
             AudioEngineStatusResult(false, reason = friendlyConnectionMessage(e))
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -183,13 +176,8 @@ object BridgeClient {
     )
 
     fun fetchBridgeMeta(baseUrl: String, token: String): BridgeMetaResult {
-        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/meta")
-        val conn = openAuth(url, token)
         return try {
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/meta", token)
             if (code !in 200..299) {
                 return BridgeMetaResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
@@ -204,43 +192,137 @@ object BridgeClient {
             )
         } catch (e: Exception) {
             BridgeMetaResult(false, reason = friendlyConnectionMessage(e))
-        } finally {
-            conn.disconnect()
         }
     }
 
-    // BL-763: GET /lets-talk/bubble-config.json — Bubble capability flags,
-    // in particular bridgeBounceAutoSessionReset (invariant 2's remote-config
-    // half). Unread fields are ignored; other flags belong to their own
-    // callers (BL-765).
+    // BL-763/BL-765: GET /lets-talk/bubble-config.json — Bubble's full
+    // capability document (textTurns, handsFree, holdMusic, playlist,
+    // newSession, pauseAll, bridgeBounceAutoSessionReset, voiceEngineSwitch).
+    // BL-763's stub read only bridgeBounceAutoSessionReset; this ticket
+    // applies the rest. Every flag defaults to true (the bundled-default
+    // shape) so a failed/unreachable fetch — BubbleConfigResult(ok = false)
+    // — degrades to "every capability enabled" rather than a broken surface
+    // (BL-654 invariant 1).
 
     data class BubbleConfigResult(
         val ok: Boolean,
+        val textTurns: Boolean = true,
+        val handsFree: Boolean = true,
+        val holdMusic: Boolean = true,
+        val playlist: Boolean = true,
+        val newSession: Boolean = true,
+        val pauseAll: Boolean = true,
         val bridgeBounceAutoSessionReset: Boolean = true,
+        val voiceEngineSwitch: Boolean = true,
         val reason: String? = null
     )
 
-    fun fetchBubbleConfig(baseUrl: String, token: String): BubbleConfigResult {
-        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/bubble-config.json")
-        val conn = openAuth(url, token)
+    /** Every flag `features` may carry — used to type-check before applying any of them. */
+    private val BUBBLE_CONFIG_FEATURE_KEYS = listOf(
+        "textTurns", "handsFree", "holdMusic", "playlist",
+        "newSession", "pauseAll", "bridgeBounceAutoSessionReset", "voiceEngineSwitch"
+    )
+
+    /**
+     * BL-765 invariant 2 (BL-654 coder-authored property test in
+     * BridgeClientBubbleConfigPropertyTest): whole-document rejection, same
+     * shape as [parseChiptunesCatalog] one page up. A missing or non-object
+     * `features`, or any flag present with a non-boolean value, rejects the
+     * whole document (`null`) rather than defaulting just that one flag
+     * while applying the rest of the malformed document.
+     */
+    internal fun parseBubbleConfig(raw: String): BubbleConfigResult? {
         return try {
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val json = JSONObject(raw)
+            val features = json.optJSONObject("features") ?: return null
+            for (key in BUBBLE_CONFIG_FEATURE_KEYS) {
+                val value = features.opt(key)
+                if (value != null && value !is Boolean) return null
+            }
+            BubbleConfigResult(
+                ok = true,
+                textTurns = features.optBoolean("textTurns", true),
+                handsFree = features.optBoolean("handsFree", true),
+                holdMusic = features.optBoolean("holdMusic", true),
+                playlist = features.optBoolean("playlist", true),
+                newSession = features.optBoolean("newSession", true),
+                pauseAll = features.optBoolean("pauseAll", true),
+                bridgeBounceAutoSessionReset = features.optBoolean("bridgeBounceAutoSessionReset", true),
+                voiceEngineSwitch = features.optBoolean("voiceEngineSwitch", true)
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun fetchBubbleConfig(baseUrl: String, token: String): BubbleConfigResult {
+        return try {
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/bubble-config.json", token)
             if (code !in 200..299) {
                 return BubbleConfigResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
-            val json = JSONObject(raw)
-            val features = json.optJSONObject("features")
-            BubbleConfigResult(
-                ok = true,
-                bridgeBounceAutoSessionReset = features?.optBoolean("bridgeBounceAutoSessionReset", true) ?: true
-            )
+            parseBubbleConfig(raw)
+                ?: BubbleConfigResult(false, reason = "malformed bubble config")
         } catch (e: Exception) {
             BubbleConfigResult(false, reason = friendlyConnectionMessage(e))
-        } finally {
-            conn.disconnect()
+        }
+    }
+
+    // BL-765: GET /lets-talk/chiptunes.json — the hold-music catalog as
+    // data, so a song add reaches the phone on bridge redeploy with no APK
+    // rebuild. Parsing rejects the WHOLE catalog on any malformed entry
+    // (BL-654 invariant 2) rather than keeping the songs that happened to
+    // parse — [parseChiptunesCatalog] is the pure decision, `internal` so
+    // the JVM unit suite can exercise it directly (BL-769 precedent).
+
+    data class ChiptunesSong(val name: String, val bpm: Int, val steps: List<List<Int>>)
+
+    data class ChiptunesCatalogResult(
+        val ok: Boolean,
+        val songs: List<ChiptunesSong> = emptyList(),
+        val reason: String? = null
+    )
+
+    internal fun parseChiptunesCatalog(raw: String): List<ChiptunesSong>? {
+        return try {
+            val json = JSONObject(raw)
+            val songsJson = json.optJSONArray("songs") ?: return null
+            val songs = ArrayList<ChiptunesSong>(songsJson.length())
+            for (i in 0 until songsJson.length()) {
+                songs.add(parseChiptuneSong(songsJson.optJSONObject(i) ?: return null) ?: return null)
+            }
+            if (songs.isEmpty()) null else songs
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseChiptuneSong(obj: JSONObject): ChiptunesSong? {
+        val name = obj.optString("name", "")
+        val bpm = obj.optInt("bpm", -1)
+        val stepsJson = obj.optJSONArray("steps") ?: return null
+        if (name.isBlank() || bpm <= 0 || stepsJson.length() == 0) return null
+        val steps = ArrayList<List<Int>>(stepsJson.length())
+        for (i in 0 until stepsJson.length()) {
+            val row = stepsJson.optJSONArray(i) ?: return null
+            if (row.length() != 4) return null
+            steps.add((0 until 4).map { row.optInt(it, Int.MIN_VALUE) })
+        }
+        if (steps.any { row -> row.any { it == Int.MIN_VALUE } }) return null
+        return ChiptunesSong(name, bpm, steps)
+    }
+
+    fun fetchChiptunesCatalog(baseUrl: String, token: String): ChiptunesCatalogResult {
+        return try {
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/chiptunes.json", token)
+            if (code !in 200..299) {
+                return ChiptunesCatalogResult(false, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val songs = parseChiptunesCatalog(raw)
+                ?: return ChiptunesCatalogResult(false, reason = "malformed chiptunes catalog")
+            ChiptunesCatalogResult(true, songs = songs)
+        } catch (e: Exception) {
+            ChiptunesCatalogResult(false, reason = friendlyConnectionMessage(e))
         }
     }
 
@@ -325,6 +407,26 @@ object BridgeClient {
             )
         } catch (e: Exception) {
             TurnResult(false, "", reason = friendlyConnectionMessage(e), connectionFailure = true)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * BL-765 cleanup: the shared GET-and-read-raw-body shape behind every
+     * `fetch*` query (audio-engine status, bridge meta, bubble config,
+     * chiptunes catalog) — each keeps its own JSON parsing and connection-
+     * failure handling, only the HTTP mechanics were duplicated.
+     */
+    private fun getRaw(baseUrl: String, path: String, token: String): Pair<Int, String> {
+        val url = URL("${baseUrl.trimEnd('/')}$path")
+        val conn = openAuth(url, token)
+        try {
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            return code to raw
         } finally {
             conn.disconnect()
         }

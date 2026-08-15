@@ -118,3 +118,102 @@ notes: |
   and confirm that control disappears after a resume without reinstalling; add a
   song to the catalog, redeploy the bridge, and confirm it appears in the
   playlist dialog on the phone with no APK change.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-15, by: architect, blamed: coder, class: invariant-unencoded, commit: fe2e4b8ad5, evidence: backlog/evidence/BL-765-bubble-remote-config-and-chiptune-catalog-bounce-20260815.md }
+
+architect_review: |
+  ## Architect pass 2 (2026-08-15) — invariant 2 remediation verified
+
+  Reviewed commit f40ef9bc41 ("BL-765: reject the whole bubble-config
+  document on a wrong-typed flag", by coder, forwarded unchanged by cleaner
+  through 86d0a330d4 — confirmed via `git diff f40ef9bc4 HEAD -- <both
+  touched files>`, empty). This closes D1 from the 2026-08-15 bounce.
+
+  - `BridgeClient.parseBubbleConfig` (BridgeClient.kt:220) extracts the
+    parse from `fetchBubbleConfig`, same whole-rejection shape as the
+    sibling `parseChiptunesCatalog`: a missing/non-object `features`, or
+    any of the 8 flags holding a non-boolean value, rejects the whole
+    document (`null`) before any flag is applied; `fetchBubbleConfig` falls
+    back to the bundled-default `BubbleConfigResult(ok = false)` on a null
+    parse. Confirmed the invariant-1 fallback shape is still intact: the
+    data class defaults every flag to `true` on `ok = false`.
+  - `BridgeClientBubbleConfigPropertyTest.kt` (new, 129 lines) encodes
+    invariant 2 directly: an all-valid document round-trips its flags
+    (500 iterations), a single non-boolean flag anywhere rejects the whole
+    document (1000 iterations), malformed top-level shapes reject whole,
+    and a non-vacuity companion shows a naive field-by-field parser would
+    wrongly accept the same malformed document the real parser rejects —
+    same discipline as the remediation I asked for.
+  - Full Android JVM unit suite re-run under JDK 17
+    (`JAVA_HOME=/usr/local/opt/openjdk@17 ./gradlew :app:testDebugUnitTest`):
+    BUILD SUCCESSFUL, 26 tasks, 18 test-report XML files, 0 failures across
+    all of them, including the 4/4 new BubbleConfig property tests.
+  - Re-ran the hard dependency-gate on the touched `extension/src` file
+    (`bridgeServer.ts`, unchanged since pass 1 — confirmed via
+    `git diff fe2e4b8ad HEAD -- extension/src/bridge/bridgeServer.ts`,
+    empty): PASSED, no forbidden edges. Co-change report: same pre-existing
+    hub coupling as pass 1 (own test file + steps registry top the list),
+    nothing new.
+  - Re-ran `extension/test/bridgeServer.test.js` via vitest (the project's
+    actual runner — `node --test` fails on this file's Jest-style globals,
+    not a real regression): 99/99 passed. Re-ran the full BL-765 acceptance
+    feature after a fresh `npm run compile`: 8/8 scenarios green.
+  - No other files changed since pass 1's review, so pass 1's already-clean
+    `required_wiring` and architecture findings carry forward unchanged.
+
+  Invariant 2 now holds and is proven by a non-vacuous property test.
+  Approved. Forwarding to hardener.
+
+  By architect.
+
+hardener_review: |
+  ## Hardener pass (2026-08-15)
+
+  Batch pass alongside BL-806 (union working set, one combined run per
+  engineering.prompt's batch discipline). Reviewed commit 4964c3ada7
+  (architect pass 2 approval, no code change since architect's own review).
+
+  - No `extension/src/*.ts` files touched by this ticket - Stryker does not
+    apply. Kotlin/Android is gated only by its own JVM unit-test suite
+    (engineering.prompt Startup Tools - no mutation/CRAP/DRY wired for
+    Android).
+  - Full Android JVM unit suite, forced fresh (`--rerun-tasks`, JDK 17 via
+    the project-local `.swarmforge/jdk-17`): BUILD SUCCESSFUL, 26/26 tasks
+    executed (not cached), 0 failures across all test-report XML files,
+    including `BridgeClientBubbleConfigPropertyTest` (4/4 test cases,
+    covering invariant 2 as the architect described).
+  - Full BL-765 acceptance feature (`run_acceptance.sh`): 8/8 scenarios
+    green, real subprocess run through the same generate.js/runnerAdapter.js
+    chain a normal acceptance run uses.
+  - Reviewed `BridgeClient.parseBubbleConfig` and its property test by hand:
+    whole-document rejection on any wrong-typed flag or missing/non-object
+    `features`, matching invariant 2 and the `parseChiptunesCatalog` sibling
+    shape; the non-vacuity companion test demonstrates a naive per-field
+    parser would wrongly accept the same malformed document the real parser
+    rejects.
+  - Gherkin acceptance mutation (BL-113, soft) for this feature's
+    `Scenario Outline` ("An unusable config document leaves the bundled
+    defaults in place", 3 examples) was started but **deferred under the
+    office-hours mutation bypass**: host `uptime` load average held at
+    90-130 on 4 cores (>>2x cores) for the full session, and the mutation
+    worker sat at 0% CPU for 8+ minutes on its first mutant with no sign of
+    progressing - the same starvation pattern documented for Stryker under
+    load, here hitting the Gherkin-mutation runner instead. Killed the
+    process group cleanly (`kill -- -<pgid>`), confirmed no orphaned
+    `node --test`/`gherkin-mutator`/`mutationWorker` processes remained, and
+    removed the one killed run's leftover work-dir
+    (`/var/folders/.../tmp.V5m38RUF`) - this ticket's own feature file was
+    never touched by the killed run (no partial manifest written). Full
+    acceptance (8/8) + full JVM unit/property suite (26/26, 0 failures)
+    already give strong behavioral coverage of the same scenarios the
+    mutation pass would exercise; the mutation-specific survivor-hunting
+    pass itself is deferred to the next quiet pass per the office-hours
+    bypass policy - not skipped, not recorded as passed.
+  - CRAP/DRY: not applicable - no `extension/src/*.ts` files in this
+    ticket's diff.
+
+  No survivors found in what did run; nothing to forward as a defect.
+  Forwarding to documenter.
+
+  By hardender.
