@@ -450,7 +450,8 @@ const DOMAINS = [
   require('./bl514RcHealthInSwarmEnsureSteps'),
   require('./bl806ReviewForwardEvidenceGateSteps'),
   require('./bl697LetsTalkHandsFreeSteps'),
-  require('./bl689BounceCarriesDefectInventorySteps')
+  require('./bl689BounceCarriesDefectInventorySteps'),
+  require('./bl628AutonomousHostBootstrapSteps')
 ];
 
 function registerSteps(registry) {
