@@ -15,7 +15,7 @@ Telegram topic — so onboarding a target reduces to "give it a repo URL" rather
 than remembering seven commands in order. It runs on the swarm's own host
 (never the target host) and clones/onboards the target from its GitHub URL.
 
-**What's shipped so far (slice 1 — this is the whole of it):** an "Onboarding"
+**What's shipped so far (slices 1–2 of 3):** an "Onboarding"
 topic, ensured once in the primary swarm's Telegram group and **reused across
 every target** (never one topic per target — per-target identity lives in the
 onboarder's own state files, not the topic), plus the **prerequisites phase**
@@ -41,15 +41,33 @@ that runs before any survey/contract work starts:
   restarting the onboarder mid-checklist resumes at the same step instead of
   starting over.
 - Once every prerequisite is verified, the onboarder announces that
-  prerequisites are ready and that the survey phase (section 2 below) comes
-  next.
+  prerequisites are ready and that the survey phase comes next — and now
+  (slice 2) runs it right there in the same topic:
+  - **`proceed`** clones the target repo with this box's own GitHub access,
+    surveys it, and posts the proposed contract — the same survey and
+    `propose-onboarding-contract.js` logic section 2 below describes, run
+    for you instead of by hand.
+  - **`show-me`** posts the current proposed contract without changing
+    anything.
+  - **`change-this <objection>`** runs a real negotiation round against your
+    objection, in your own words, and posts the revised contract — the same
+    `object` round the manual CLI/Telegram-relay forms use (section 2
+    below), never a second negotiation engine.
+  - A further **`proceed`** once you're satisfied agrees the contract (the
+    same `approve` round as the manual form), then checks the existing
+    fail-closed build-start gate and, only once it opens, commits and pushes
+    the agreed contract back to the target repo on GitHub and posts the
+    commit reference into the topic.
+  - A clone, survey, or propose failure holds at `prerequisites-ready` with
+    the reason and a `proceed`-to-retry instruction — never a silent stall.
 
-**What's not shipped yet:** the onboarder does not itself run the
-survey/propose/negotiate/gate sequence or the prompt-proposal step — those
-remain the commands described in sections 1–2 below (tracked as slices 2 and
-3 of this same feature). Until those land, finish prerequisites in the
-Onboarding topic, then continue onboarding that target using the manual
-commands below.
+**What's not shipped yet:** the prompt-proposal step generating
+`project.prompt`/`engineering.prompt` from the agreed contract still needs
+the manual command in section 1–2 below (tracked as slice 3, BL-625, along
+with the launch handoff). Everything else described in sections 1–2 —
+survey, propose, negotiate, gate — can now be driven entirely from the
+Onboarding topic instead of by hand; the manual commands remain available
+for scripting or recovery.
 
 ## 1. Onboarding mechanics (reuse, don't re-derive)
 
