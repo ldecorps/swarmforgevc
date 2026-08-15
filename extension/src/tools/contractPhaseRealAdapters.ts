@@ -29,7 +29,7 @@ import { parseContractYaml } from '../onboarding/contractView';
 import { initializeTargetContract, initializeTargetUseCaseInventory } from '../config/targetBootstrap';
 import { slugifyTargetRepoUrl } from '../onboarding/onboarderStateStore';
 import { parseRepoSurveyFacts } from './propose-onboarding-contract';
-import { runObject, runApprove } from './negotiate-onboarding-contract';
+import { runObjectAsOutcome, runApproveAsOutcome } from './negotiationOutcomeAdapters';
 
 const CLAUDE_SURVEY_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -133,44 +133,19 @@ async function defaultReadCurrentContract(swarmRepoRoot: string, targetRepoUrl: 
   }
 }
 
-function isAlreadyEndedError(err: unknown): boolean {
-  return err instanceof Error && /already ended/.test(err.message);
-}
-
-// Wraps negotiate-onboarding-contract.ts's own runObject/runApprove -
-// mirrors buildRelayAdapters' own already-ended translation exactly (BL-381
-// invariant: this is the ONE real writer of negotiation state, never a
-// second engine).
+// Wraps negotiationOutcomeAdapters.ts's own runObjectAsOutcome/
+// runApproveAsOutcome, itself a wrapper over negotiate-onboarding-contract.ts's
+// own runObject/runApprove (BL-381 invariant: this is the ONE real writer of
+// negotiation state, never a second engine) - shared with buildRelayAdapters'
+// own already-ended translation rather than duplicating it.
 async function defaultNegotiateObject(swarmRepoRoot: string, targetRepoUrl: string, objection: string): Promise<ObjectToContractResult> {
   const localPath = targetCloneDir(swarmRepoRoot, targetRepoUrl);
-  try {
-    const result = await runObject(localPath, objection);
-    if (result.ended) {
-      return { outcome: 'round-limit' };
-    }
-    if (!result.derived) {
-      return { outcome: 'not-derived' };
-    }
-    return { outcome: 'revised', contract: result.contract as ProposedContract };
-  } catch (err) {
-    if (isAlreadyEndedError(err)) {
-      return { outcome: 'already-ended' };
-    }
-    throw err;
-  }
+  return runObjectAsOutcome(localPath, objection);
 }
 
 async function defaultNegotiateApprove(swarmRepoRoot: string, targetRepoUrl: string): Promise<ApproveContractResult> {
   const localPath = targetCloneDir(swarmRepoRoot, targetRepoUrl);
-  try {
-    const result = await runApprove(localPath);
-    return { outcome: 'agreed', contract: result.contract as ProposedContract };
-  } catch (err) {
-    if (isAlreadyEndedError(err)) {
-      return { outcome: 'already-ended' };
-    }
-    throw err;
-  }
+  return runApproveAsOutcome(localPath);
 }
 
 // Literally shells to the compiled onboarding-contract-gate.js, per the
