@@ -451,7 +451,9 @@ const DOMAINS = [
   require('./bl806ReviewForwardEvidenceGateSteps'),
   require('./bl697LetsTalkHandsFreeSteps'),
   require('./bl689BounceCarriesDefectInventorySteps'),
-  require('./bl628AutonomousHostBootstrapSteps')
+  require('./bl628AutonomousHostBootstrapSteps'),
+  require('./bl895SpecificationMdBl607DuplicateSteps'),
+  require('./bl768BounceKeyPairGeneratorCoverageSteps')
 ];
 
 function registerSteps(registry) {

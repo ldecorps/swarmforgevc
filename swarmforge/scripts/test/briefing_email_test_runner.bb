@@ -557,6 +557,21 @@
            true
            (str/includes? (:note-line section) "rendered inline above")))
 
+;; Not-done burndown chart shares the same cid-PNG path with a readable heading.
+(let [section (briefing-email-lib/build-diagram-section
+               [{:name "architecture" :base64 "QUJD"}
+                {:name "not-done-burndown" :base64 "Wk9P"}])]
+  (assert= "burndown-diagram-01: not-done burndown is referenced by cid"
+           true
+           (str/includes? (:html section) "cid:not-done-burndown-diagram"))
+  (assert= "burndown-diagram-01: heading is human-readable, not the raw slug"
+           true
+           (str/includes? (:html section) "<h3>Not-done ticket burndown</h3>"))
+  (assert= "burndown-diagram-01: note mentions both architecture and burndown"
+           true
+           (and (str/includes? (:note-line section) "Architecture")
+                (str/includes? (:note-line section) "burndown"))))
+
 ;; BL-286 diagram-cid-02/03: each referenced diagram carries a matching
 ;; inline attachment, with the image bytes and a filename.
 (let [section (briefing-email-lib/build-diagram-section
