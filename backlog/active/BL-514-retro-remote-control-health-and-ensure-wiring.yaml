@@ -153,9 +153,6 @@ mutation_cost: low
 
 assigned_to: coder
 
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-14, by: specifier, blamed: specifier, class: spec-gap, commit: 968eaab05, evidence: backlog/evidence/BL-514-bounce-20260814.md }
 
 architect_review: |
   ## Architect pass (2026-08-14)
@@ -291,3 +288,7 @@ architect_review: |
   Approved. Forwarding to hardener.
 
   By architect.
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-14, by: specifier, blamed: specifier, class: spec-gap, commit: 968eaab05, evidence: backlog/evidence/BL-514-bounce-20260814.md }
+  - { at: 2026-08-15, by: QA, blamed: architect, class: behavior, commit: 1ba16651d, evidence: backlog/evidence/BL-514-bounce-20260815.md }
