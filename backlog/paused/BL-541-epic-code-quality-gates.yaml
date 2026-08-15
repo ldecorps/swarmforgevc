@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: code-quality-gates
-priority: 30
+priority: 31
 depends_on: []
 decomposes_into: [BL-428, BL-472, BL-520, BL-549, BL-626, BL-680, BL-681, BL-688, BL-689, BL-874, BL-877, BL-878]
 source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."

@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: swarm-behaviour-trends
-priority: 5
+priority: 25
 human_approval: approved
 depends_on: []
 decomposes_into: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-603, BL-604, BL-605]

@@ -5,7 +5,7 @@ status: todo
 type: epic
 epic: unit-suite-speed
 human_approval: approved
-priority: 25
+priority: 26
 direction: human-requested
 depends_on: []
 mutation_cost: medium

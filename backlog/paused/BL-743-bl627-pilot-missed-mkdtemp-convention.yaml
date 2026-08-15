@@ -6,7 +6,7 @@ severity: low
 status: todo
 epic: cost-intelligence
 assigned_to: specifier
-priority: 14
+priority: 15
 direction: queue-jump
 depends_on: []
 mutation_cost: low

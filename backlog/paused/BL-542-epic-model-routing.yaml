@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: swarm-intelligence-layer
-priority: 31
+priority: 33
 depends_on: [BL-545]
 decomposes_into: [BL-525]
 source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup. 2026-07-21: nested under BL-545 Swarm Intelligence Layer umbrella."
