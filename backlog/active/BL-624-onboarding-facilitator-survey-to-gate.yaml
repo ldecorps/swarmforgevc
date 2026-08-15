@@ -12,9 +12,6 @@ depends_on: [BL-590]
 assigned_to: coder
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-bounce_count: 1
-bounce_history:
-  - { at: 2026-08-16, by: documenter, blamed: specifier, class: spec-gap, commit: 09214932d1, evidence: backlog/evidence/BL-624-onboarding-facilitator-survey-to-gate-bounce-20260816.md }
 # ^ Re-certified 2026-07-26 (BL-606): FULL chain, nothing skipped. A build slice
 #   with an invariants: section needs the architect's invariants pass and the
 #   hardener's property-test verification; stage_skip_reasons is therefore absent
