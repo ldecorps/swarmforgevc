@@ -145,6 +145,20 @@ You are the hardender.
   (Lesson, 2026-07-06: BL-139 hardening at load 100–250 on 4 cores — a
   concurrency=1, 2-file --mutate dry run still timed out after 5 min, not
   just full-suite runs.)
+- The load rules above are not Stryker's alone — they bind EVERY mutation
+  runner, Gherkin mutation (`specs/pipeline/mutationWorker.js`) included.
+  Its failure shape under extreme load is quieter than Stryker's and easier
+  to misread: it does not crash or print a timeout, it simply sits at **0%
+  CPU** while the wall clock runs. Treat minutes at 0% CPU as the same
+  load-crash signal a Stryker dry-run timeout gives you — kill the straggler
+  by its process group (`kill -- -<pgid>`, same reaping discipline as the
+  leftover-process check above), take the office-hours bypass, and defer the
+  pass to a quiet host. Do NOT wait it out and do NOT read the stall as a
+  defect in the feature file or its step handlers. (Proposed by the
+  hardender, BL-765/BL-806 passes 2026-08-15 at load 90–130 on 4 cores:
+  BL-806's four mutants finished in under 3 min while BL-765's very first
+  mutant sat at 0% CPU for 8+ min on the same host — the difference was
+  contention, not the work.)
 - Clearing a crashed Stryker run's `.stryker-tmp` also deletes the sandbox
   sibling symlinks, which live at `.stryker-tmp/<name>` — re-run
   `node extension/scripts/ensureStrykerSandboxSiblings.js` (or retry via the
