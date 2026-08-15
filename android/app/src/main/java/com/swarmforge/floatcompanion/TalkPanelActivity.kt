@@ -151,10 +151,14 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
 
         fun renderVoiceEngineState(state: VoiceEngineSelector.UiState) {
             voiceEngineState = state
-            val visibility = if (state.visible) View.VISIBLE else View.GONE
+            // BL-765: the bubble-config voiceEngineSwitch flag is a second,
+            // independent gate on top of the /lets-talk/audio-engine
+            // serviceability check state.visible already encodes.
+            val effectiveVisible = state.visible && eng.capabilities().voiceEngineSwitch
+            val visibility = if (effectiveVisible) View.VISIBLE else View.GONE
             voiceEngineHeader.visibility = visibility
             voiceEngineGroup.visibility = visibility
-            if (!state.visible) {
+            if (!effectiveVisible) {
                 voiceEngineMessage.visibility = View.GONE
                 return
             }
@@ -211,6 +215,8 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         fun syncFromEngine() {
             val snap = eng.snapshot()
             suppressToggleCallbacks = true
+            // BL-765 remote-config-03: hold music removed without a new APK.
+            holdMusic.visibility = if (eng.capabilities().holdMusic) View.VISIBLE else View.GONE
             holdMusic.isChecked = snap.holdMusicOn
             mute.isChecked = snap.muted
             if (!volumeSeek.isPressed) {
@@ -349,6 +355,17 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             if (snapshot.pausedAll) R.string.resume_all else R.string.pause_all
         )
 
+        // BL-765: a remotely-disabled capability is removed without a new
+        // APK (remote-config-03) — bundled default is every flag enabled,
+        // so an unreachable/unsynced bridge never hides anything.
+        val caps = engine?.capabilities() ?: BridgeClient.BubbleConfigResult(ok = false)
+        binding.handsFree.visibility = if (caps.handsFree) View.VISIBLE else View.GONE
+        binding.pauseAll.visibility = if (caps.pauseAll) View.VISIBLE else View.GONE
+        binding.newSession.visibility = if (caps.newSession) View.VISIBLE else View.GONE
+        binding.playlistBtn.visibility = if (caps.playlist) View.VISIBLE else View.GONE
+        binding.turnInput.visibility = if (caps.textTurns) View.VISIBLE else View.GONE
+        binding.sendTurn.visibility = if (caps.textTurns) View.VISIBLE else View.GONE
+
         suppressToggleCallbacks = true
         binding.handsFree.isChecked = snapshot.handsFree
         binding.handsFree.isEnabled = !snapshot.pausedAll
@@ -359,11 +376,11 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         // bridge wait (PTT timeout / hung turn) instead of sitting disabled.
         binding.recordBtn.isEnabled = !snapshot.pausedAll
         binding.sendTurn.isEnabled =
-            !snapshot.pausedAll && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
+            caps.textTurns && !snapshot.pausedAll && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
         binding.turnInput.isEnabled =
-            !snapshot.pausedAll && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
+            caps.textTurns && !snapshot.pausedAll && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
         binding.newSession.isEnabled =
-            !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
+            caps.newSession && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
     }
 
     override fun onRequestPermissionsResult(
@@ -402,7 +419,7 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         } catch (_: Exception) {
             "?"
         }
-        return "BL-707 v$ver"
+        return "v$ver"
     }
 
     companion object {

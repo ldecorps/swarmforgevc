@@ -64,7 +64,15 @@ rc:hardender: FIXED (respawned pane to restore --remote-control flag)
 
 Behavior per role, driven by `remote-control-health/check-role`:
 
-- **`:healthy` or `:off`** → `rc:<role>: HEALTHY`, no action.
+- **`:healthy` or `:off`** → `rc:<role>: HEALTHY`, no action. For `:off`
+  (the role's launch script declares no `--remote-control` flag at all),
+  this is a short-circuit on `expected-rc-name` being `nil`: the live
+  process is **never probed**. Skipping the probe is load-bearing, not
+  cosmetic — probing walks the pane's whole descendant process tree, which
+  hangs every ensure fixture that doesn't declare the flag if the
+  short-circuit is ever lost. Covered by the RC-6 case in
+  `test_swarm_ensure.sh`, which asserts both the `HEALTHY` status and that
+  the probe's marker file was never created.
 - **`:degraded`** → repaired by respawning the pane from its persisted
   launch script, then reclassified: `FIXED` if the flag came back,
   `FAILED` if it didn't.
