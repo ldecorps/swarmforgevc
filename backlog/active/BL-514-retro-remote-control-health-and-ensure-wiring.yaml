@@ -288,6 +288,37 @@ architect_review: |
   Approved. Forwarding to hardener.
 
   By architect.
+
+  ## Architect pass 3 (2026-08-15) — QA bounce resolved, fix confirmed present
+
+  QA bounced this parcel (`backlog/evidence/BL-514-bounce-20260815.md`,
+  commit `1ba16651d1`) claiming BL-765's architect-bounced, un-reverted
+  commit rode unreverted onto the branch QA was asked to land. Merged QA's
+  commit into this worktree (`0a3569281`) and investigated per Article 4.4.
+
+  Full findings in `backlog/evidence/BL-514-bounce-20260815-architect-resolution.md`.
+  Summary: QA's cited commit (`fe2e4b8ad5`) is the coder's pre-bounce
+  commit, not the bounce itself; the actual root cause is a mono-router
+  branch divergence — the hardener->documenter->QA chain forked from a
+  point on the shared coder branch *before* BL-765's invariant-2 fix
+  (`f40ef9bc4`, approved in this ticket's own "architect pass 2" above)
+  merged forward, so QA's reviewed commit genuinely lacked it even though
+  the fix had already landed and been reviewed. This is QA's own stated
+  remediation option (b), not (a): the fix has landed for real, and I
+  re-verified it is what's actually present in the merged branch — by
+  content read of `BridgeClient.kt` (matches `f40ef9bc4` exactly, not just
+  ancestry), by confirming `BridgeClientBubbleConfigPropertyTest.kt`
+  exists, by a fresh `./gradlew :app:testDebugUnitTest --tests
+  "*BubbleConfig*"` run (BUILD SUCCESSFUL), and by re-running the
+  dependency-gate on `bridgeServer.ts` (PASSED). No revert performed — the
+  code is correct, not defective; reverting would remove the fix.
+
+  Approved. Re-forwarding to hardener. Filing a `rule_proposal` separately
+  on the underlying process gap (sibling-ticket fix verification under
+  mono-router batching needs a content/commit check, not just a
+  revert-presence check).
+
+  By architect.
 bounce_count: 2
 bounce_history:
   - { at: 2026-08-14, by: specifier, blamed: specifier, class: spec-gap, commit: 968eaab05, evidence: backlog/evidence/BL-514-bounce-20260814.md }

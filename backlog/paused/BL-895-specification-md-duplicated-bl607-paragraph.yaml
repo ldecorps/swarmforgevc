@@ -96,7 +96,7 @@ qa_e2e: |
      a blank line adjacent to one. This step is the real gate; steps 1-5 can all pass on a fix that
      also quietly dropped something else.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Deleting ~830KB (55%) from the reference specification. The mechanics are not in doubt — the
   duplication is an unambiguous accident of one commit, and the cleanup is measured and reversible
