@@ -166,3 +166,54 @@ architect_review: |
   Approved. Forwarding to hardener.
 
   By architect.
+
+hardener_review: |
+  ## Hardener pass (2026-08-15)
+
+  Batch pass alongside BL-806 (union working set, one combined run per
+  engineering.prompt's batch discipline). Reviewed commit 4964c3ada7
+  (architect pass 2 approval, no code change since architect's own review).
+
+  - No `extension/src/*.ts` files touched by this ticket - Stryker does not
+    apply. Kotlin/Android is gated only by its own JVM unit-test suite
+    (engineering.prompt Startup Tools - no mutation/CRAP/DRY wired for
+    Android).
+  - Full Android JVM unit suite, forced fresh (`--rerun-tasks`, JDK 17 via
+    the project-local `.swarmforge/jdk-17`): BUILD SUCCESSFUL, 26/26 tasks
+    executed (not cached), 0 failures across all test-report XML files,
+    including `BridgeClientBubbleConfigPropertyTest` (4/4 test cases,
+    covering invariant 2 as the architect described).
+  - Full BL-765 acceptance feature (`run_acceptance.sh`): 8/8 scenarios
+    green, real subprocess run through the same generate.js/runnerAdapter.js
+    chain a normal acceptance run uses.
+  - Reviewed `BridgeClient.parseBubbleConfig` and its property test by hand:
+    whole-document rejection on any wrong-typed flag or missing/non-object
+    `features`, matching invariant 2 and the `parseChiptunesCatalog` sibling
+    shape; the non-vacuity companion test demonstrates a naive per-field
+    parser would wrongly accept the same malformed document the real parser
+    rejects.
+  - Gherkin acceptance mutation (BL-113, soft) for this feature's
+    `Scenario Outline` ("An unusable config document leaves the bundled
+    defaults in place", 3 examples) was started but **deferred under the
+    office-hours mutation bypass**: host `uptime` load average held at
+    90-130 on 4 cores (>>2x cores) for the full session, and the mutation
+    worker sat at 0% CPU for 8+ minutes on its first mutant with no sign of
+    progressing - the same starvation pattern documented for Stryker under
+    load, here hitting the Gherkin-mutation runner instead. Killed the
+    process group cleanly (`kill -- -<pgid>`), confirmed no orphaned
+    `node --test`/`gherkin-mutator`/`mutationWorker` processes remained, and
+    removed the one killed run's leftover work-dir
+    (`/var/folders/.../tmp.V5m38RUF`) - this ticket's own feature file was
+    never touched by the killed run (no partial manifest written). Full
+    acceptance (8/8) + full JVM unit/property suite (26/26, 0 failures)
+    already give strong behavioral coverage of the same scenarios the
+    mutation pass would exercise; the mutation-specific survivor-hunting
+    pass itself is deferred to the next quiet pass per the office-hours
+    bypass policy - not skipped, not recorded as passed.
+  - CRAP/DRY: not applicable - no `extension/src/*.ts` files in this
+    ticket's diff.
+
+  No survivors found in what did run; nothing to forward as a defect.
+  Forwarding to documenter.
+
+  By hardender.

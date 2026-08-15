@@ -142,3 +142,39 @@ architect_review: |
   Approved. Forwarding to hardener.
 
   By architect.
+
+hardener_review: |
+  ## Hardener pass (2026-08-15)
+
+  Batch pass alongside BL-765 (union working set, one combined run).
+  Reviewed commit 41b19d4479 (architect approval, no code change since
+  architect's own review).
+
+  - `review_forward_evidence_gate_lib.bb` and `swarm_handoff.bb` are
+    babashka - no mutation/CRAP/DRY tool wired (engineering.prompt Startup
+    Tools), gated by their own test suite: ran
+    `review_forward_evidence_gate_lib_test_runner.bb` and
+    `..._property_runner.bb` fresh - both ALL PASS.
+  - Full BL-806 acceptance feature (`run_acceptance.sh`): 9/9 scenarios
+    green - `bl806ReviewForwardEvidenceGateSteps.js` drives the real
+    `swarm_handoff.bb` as a subprocess against a scratch fixture git repo
+    (not a reimplementation), so this is genuine wiring coverage of
+    `required_wiring`'s live-validate-path requirement, not just the lib.
+  - Gherkin acceptance mutation (BL-113, soft) on the feature's
+    `Scenario Outline` (4 role examples): 4/4 mutants KILLED, 0 survivors,
+    0 errors - each single-character role-name mutation (`cleaner` ->
+    `cleanEr` etc.) correctly fails at "Then the handoff is refused"
+    because swarm_handoff.bb reports "Unknown sender role" for the mutated
+    name, proving each Examples row is load-bearing. Manifest embedded in
+    the feature file and committed (BL-460/BL-502: this is the durable
+    verdict, not the soft-rerun stdout).
+  - No `extension/src/*.ts` files touched - Stryker/CRAP/jscpd do not apply
+    to this ticket's diff (`specs/pipeline/steps/*.js`,
+    `swarmforge/scripts/*.bb`).
+  - `specs/pipeline/steps/index.js` change is a one-line step-module
+    registration (`require('./bl806ReviewForwardEvidenceGateSteps')`) -
+    trivial, nothing to harden.
+
+  No survivors, no gaps found. Forwarding to documenter.
+
+  By hardender.
