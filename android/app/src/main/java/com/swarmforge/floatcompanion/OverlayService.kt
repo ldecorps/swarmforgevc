@@ -65,6 +65,9 @@ class OverlayService : Service() {
             // hands-free - a stale session id from before a bounce should
             // never be the one hands-free resumes into.
             talkEngine?.syncBridgeInstanceAndSession()
+            // BL-765: hold-music catalog + full capability document, same
+            // "every overlay start" cadence as the bounce/session sync above.
+            talkEngine?.syncChiptunesCatalog()
             // Resume last mode: hands-free cold-start greets then opens the mic.
             talkEngine?.greetAndResumeHandsFreeIfNeeded()
         } catch (e: Exception) {
