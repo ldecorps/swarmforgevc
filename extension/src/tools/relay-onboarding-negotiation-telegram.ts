@@ -51,10 +51,9 @@ import { getTelegramUpdates, sendTelegramMessage, TelegramPostFn } from '../noti
 import { readTelegramChannel } from '../onboarding/telegramChannelStore';
 import { readTelegramBotToken } from '../onboarding/telegramChannelSecretStore';
 import { parseContractYaml } from '../onboarding/contractView';
-import { ProposedContract } from '../onboarding/contractTypes';
 import { formatContractForTelegram } from '../onboarding/negotiationTelegramRouting';
 import { NegotiationRelayAdapters, relayNegotiationUpdates, NegotiationRelayResult } from '../onboarding/negotiationTelegramRelay';
-import { runObject, runApprove } from './negotiate-onboarding-contract';
+import { runObjectAsOutcome, runApproveAsOutcome } from './negotiationOutcomeAdapters';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 import { runContainedLoop } from './telegramFrontDeskBotCore';
 import { atomicWrite } from '../util/atomicWrite';
@@ -128,18 +127,12 @@ function requireChannel(targetRepoPath: string): { chatId: string; negotiationTo
   return channel;
 }
 
-function isAlreadyEndedError(err: unknown): boolean {
-  return err instanceof Error && /already ended/.test(err.message);
-}
-
-// BL-381: wraps negotiate-onboarding-contract.ts's own runObject/runApprove
-// as this relay's NegotiationRelayAdapters - the "REAL writer" the ticket's
-// own notes insist on, never a second negotiation engine. The "already
-// ended" throw those functions raise for a stale/replayed update is caught
-// here and translated to the adapter's own terminal outcome (see
-// negotiationTelegramRelay.ts's own ObjectToContractResult/ApproveContractResult
-// doc) rather than propagating as an exception that would abort the whole
-// poll cycle.
+// BL-381: wraps negotiationOutcomeAdapters.ts's own runObjectAsOutcome/
+// runApproveAsOutcome as this relay's NegotiationRelayAdapters - the "REAL
+// writer" the ticket's own notes insist on, never a second negotiation
+// engine. That shared helper is also BL-624's contractPhaseRealAdapters.ts's
+// own translation, so the already-ended-throw handling lives in exactly one
+// place.
 export function buildRelayAdapters(
   targetRepoPath: string,
   botToken: string,
@@ -148,34 +141,8 @@ export function buildRelayAdapters(
   postFn?: TelegramPostFn
 ): NegotiationRelayAdapters {
   return {
-    objectToContract: async (text) => {
-      try {
-        const result = await runObject(targetRepoPath, text);
-        if (result.ended) {
-          return { outcome: 'round-limit' };
-        }
-        if (!result.derived) {
-          return { outcome: 'not-derived' };
-        }
-        return { outcome: 'revised', contract: result.contract as ProposedContract };
-      } catch (err) {
-        if (isAlreadyEndedError(err)) {
-          return { outcome: 'already-ended' };
-        }
-        throw err;
-      }
-    },
-    approveContract: async () => {
-      try {
-        const result = await runApprove(targetRepoPath);
-        return { outcome: 'agreed', contract: result.contract as ProposedContract };
-      } catch (err) {
-        if (isAlreadyEndedError(err)) {
-          return { outcome: 'already-ended' };
-        }
-        throw err;
-      }
-    },
+    objectToContract: (text) => runObjectAsOutcome(targetRepoPath, text),
+    approveContract: () => runApproveAsOutcome(targetRepoPath),
     postToTopic: async (text) => {
       const result = await sendTelegramMessage(botToken, chatId, text, undefined, postFn, negotiationTopicId);
       if (!result.success) {

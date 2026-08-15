@@ -1,0 +1,173 @@
+id: BL-897
+title: "One briefing send walks the backlog's history once — every lifecycle consumer reads the same snapshot instead of re-shelling git"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-behaviour-trends
+human_approval: pending
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-897-briefing-gathers-lifecycles-once.feature
+
+approval_context: >
+  One decision: the specifier picked direction 2 from your intake (handoffd's
+  briefing sweep gathers the lifecycle snapshot once and hands it to each
+  consumer CLI, which still derives its own when none is offered), over
+  direction 1 (reuse the committed cost-health sidecar).
+
+  Reason: the consumers are separate OS processes, not functions in one
+  program, so nothing in-process can be shared between them — it has to be an
+  artifact. The committed sidecar is the wrong artifact for it: 837 lifecycle
+  records is ~100KB of JSON added to a file that is committed to git every
+  day, and the sidecar's derived `flowBalance` does not carry the raw records
+  a consumer needs. So the snapshot is machine-local under `.swarmforge/`,
+  gathered by the sweep, passed by path. No new daemon, no new metrics store.
+
+  Say so if you would rather pay the repo-size cost and keep everything in the
+  committed sidecar; that is the only part of this the specifier would call a
+  genuine toss-up.
+
+source: |
+  `backlog/INTAKE-briefing-lifecycle-gather-once.md` — human via Cursor,
+  2026-08-15 ~09:22 CEST, observed live while that morning's briefing was
+  still unsent. Sibling of `INTAKE-briefing-not-done-burndown.md` (BL-896);
+  filed as the separate PERFORMANCE half, explicitly not the chart itself.
+
+  Human's measurements, quiet host:
+
+  | Job                                              | Wall time |
+  |--------------------------------------------------|-----------|
+  | `runGitLog(backlog)` -> `deriveTicketLifecycles`  | ~7 s      |
+  | `render-briefing-burndown.js` (walk + PNG)        | ~10 s     |
+  | `render-briefing-diagrams.js`                     | ~12 s     |
+
+  Human ask, verbatim: **spec a change so the necessary lifecycle data is
+  gathered once (or reused), not re-derived from scratch by every briefing
+  section.**
+
+description: |
+  ## What
+
+  One morning briefing send performs several independent full-history
+  `git log --name-status -- backlog/` walks, one per section that wants ticket
+  lifecycle data, each in its own node process. Each walk is ~7s of CPU on a
+  repo whose backlog history already exceeds execFileSync's default 1MiB
+  buffer (BL-549). Under the handoffd cadence, on a 4-core host also
+  rasterizing diagrams, that turns a tens-of-seconds send into a multi-minute
+  saturation spike — and a send that can fail to go out at all.
+
+  Confirmed at spec time, the lifecycle consumers that run inside one send:
+
+  ```
+  extension/src/notify/costHealthSidecar.ts:713   runGitLog(targetPath, 'backlog')
+  extension/src/tools/briefing-digest-line.ts:76  runGitLog(projectRoot, 'backlog')
+  extension/src/tools/render-briefing-burndown.ts:25 runGitLog(projectRoot, 'backlog/', 'main')
+  ```
+
+  Six more call sites exist elsewhere (`deliveryMetrics`, `backlogDashboard`,
+  `bridgeState`, `docsTree`, `reworkObservatorySource`) and are NOT in scope —
+  they do not run on the briefing cadence. Note the third one already reads a
+  different ref (`main`) than the other two (`HEAD`), which is a second reason
+  they can disagree: see invariant 1.
+
+  ## Direction (chosen; deviate only with a stated reason)
+
+  Handoffd's briefing sweep gathers the lifecycle data ONCE, before invoking
+  any consumer CLI, and writes it to a machine-local snapshot under
+  `.swarmforge/` (gitignored — never a committed artifact, scenario 05). Each
+  consumer CLI takes an optional snapshot path and uses it when it is present
+  and current; with no snapshot offered, or one that is missing, unreadable, or
+  from an earlier day, it derives its own exactly as it does today (scenarios
+  03 and 04). That fallback is what keeps every non-briefing caller and every
+  hand-run of these CLIs working unchanged.
+
+  ## Why not the other two directions in the intake
+
+  - **Reuse the committed cost-health sidecar** (`docs/briefings/<date>.json`):
+    it derives lifecycles already, but stores only the derived `flowBalance`
+    series, not the records. Adding ~837 raw records would put ~100KB/day of
+    machine-derived JSON into git permanently.
+  - **Persist a daily remaining-open series and take only today's delta**:
+    smaller still, but it serves the burndown alone; the digest line and the
+    sidecar need the records, not a remaining count. It also makes every
+    consumer's answer depend on yesterday's file being correct.
+
+  Neither is refused on principle — if implementation finds the chosen shape
+  worse, say so in the ticket rather than quietly switching.
+
+  ## Acceptance signal
+
+  The countable one is scenario 01: instrument the walk (a counting seam around
+  the adapter, not a timer) and assert exactly one walk per send with three
+  consumers live. Wall-clock timings make poor gates on a loaded host; do not
+  write one.
+
+invariants:
+  - "Every section of one briefing email reports ticket state from the same snapshot — no two sections of one send can disagree about a ticket."
+  - "A missing, stale or unreadable shared snapshot never fails a send or drops a section; the consumer falls back to deriving its own."
+
+out_of_scope: |
+  - The chart itself, its heading, and its correctness. That is BL-896,
+    specced from the sibling intake and deliberately kept separate.
+  - Architecture diagram rendering (~12s, the other half of the observed
+    spike). Named out of scope by the intake unless deliberately widened;
+    it is not widened here.
+  - VS Code's per-file `git log --follow` metrics path — an observed competitor
+    for the CPU, not part of the briefing pipeline. Not this repo's to silence.
+  - The six non-briefing `runGitLog(…, 'backlog')` call sites listed above.
+    They do not run on the briefing cadence; touching them widens the blast
+    radius for no measured gain.
+  - Any new daemon or new metrics store. Explicitly excluded by the human's
+    locked decision 3.
+
+notes: |
+  ## Why severity is medium, not high
+
+  Real and observed live — host 4x saturated for tens of minutes, a send that
+  should take seconds stretched into minutes and was at risk of not going out
+  at all — but contained and self-clearing: the swarm keeps working and the
+  email does eventually arrive. Not `high`, because no safety or health signal
+  is broken by it, and nothing silently reports success while failing.
+
+  ## Locked human decisions, carried from the intake
+
+  1. The burndown chart STAYS on the morning briefing. This ticket is not
+     "remove burndown", it is "stop paying for full-history git N times per
+     send".
+  2. The specifier decides slice shape and which preferred direction to take;
+     the multi-walk behavior must not be left as the permanent design.
+  3. Prefer reusing existing briefing / sidecar machinery over a new daemon or
+     a new metrics store.
+
+  ## E2E QA procedure (specifier, 2026-08-15)
+
+  1. **Count the walks (scenario 01).** On a quiet host, trigger one briefing
+     send with the burndown, sidecar and digest sections all enabled. Count
+     `git log` invocations against `backlog/` for that send (process
+     accounting, or the counting seam the parcel adds). Confirm exactly one.
+
+  2. **Agreement (scenario 02).** Send a briefing while a ticket is being moved
+     to `done/`. Confirm every section of the delivered email tells the same
+     story about that ticket — the chart's count, the digest line and the
+     sidecar must not straddle the move.
+
+  3. **Fallbacks (scenario 03).** Delete the snapshot mid-send; corrupt it to
+     invalid JSON; backdate it to yesterday. In all three the email must still
+     arrive complete.
+
+  4. **Standalone (scenario 04).** Run `node
+     extension/out/tools/render-briefing-burndown.js` by hand from the repo
+     root, with no snapshot argument. Confirm it still prints its JSON.
+
+  5. **Not committed (scenario 05).** After a send, run `git status` in the
+     master checkout. Confirm the snapshot appears nowhere — not as an
+     untracked file the BL-839 drift detector will flag, and not as a tracked
+     one.
+
+  6. **Cost.** Time one send before and after on a quiet host. Report both
+     numbers in the ticket. This is evidence, not a gate.
