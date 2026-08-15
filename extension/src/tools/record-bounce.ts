@@ -41,6 +41,16 @@ export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
     by: args.by,
     at,
   };
+  // BL-689 invariant 1: a call with no inventory (args.inventory.kind is
+  // 'none' or 'degraded') must write EXACTLY the record this CLI wrote
+  // before this ticket - `items`/`blocked` are only ever added when the
+  // inventory actually resolved. `blocked` is metadata about the inventory,
+  // so it never appears without `items` alongside it.
+  if (args.inventory.kind === 'ok') {
+    record.items = args.inventory.items;
+    record.blocked = args.blocked;
+  }
+  const inventoryDegradeReason = args.inventory.kind === 'degraded' ? args.inventory.reason : null;
   const recorded = appendBounceRecordIfNew(mainWorktreePath, record);
 
   // --evidence is the only optional flag left (--by is required at parse
@@ -58,7 +68,12 @@ export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
         })
       : { updated: false, reason: 'not-attempted' };
 
-  printJsonToStdout({ recorded, ticketRecordUpdated: ticketRecord.updated, ticketRecordReason: ticketRecord.reason });
+  printJsonToStdout({
+    recorded,
+    ticketRecordUpdated: ticketRecord.updated,
+    ticketRecordReason: ticketRecord.reason,
+    inventoryDegradeReason,
+  });
 });
 
 if (require.main === module) {

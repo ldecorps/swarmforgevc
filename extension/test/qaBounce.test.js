@@ -12,6 +12,9 @@ const {
   bounceNaturalKey,
   hasBounceRecord,
   computeBounceTallyByBouncingRole,
+  isValidBounceInventoryItem,
+  defectCountForRecord,
+  computeDefectsPerBounce,
 } = require('../out/quality/qaBounce');
 
 // BL-454: the pure QA-bounce core - closed-set validators, the idempotency
@@ -210,4 +213,65 @@ test('computeBounceTallyByBouncingRole breaks ties alphabetically', () => {
     { role: 'architect', count: 1 },
     { role: 'documenter', count: 1 },
   ]);
+});
+
+// ── BL-689: inventory item validator (bounce-carries-its-defect-inventory-05) ──
+
+function item(overrides = {}) {
+  return { id: 'D1', class: 'behavior', blamed: 'coder', pointer: 'foo.ts:12 bar()', ...overrides };
+}
+
+test('isValidBounceInventoryItem accepts a well-formed item', () => {
+  assert.equal(isValidBounceInventoryItem(item()), true);
+});
+
+test('isValidBounceInventoryItem rejects a class outside the widened set', () => {
+  assert.equal(isValidBounceInventoryItem(item({ class: 'flaky' })), false);
+});
+
+test('isValidBounceInventoryItem rejects a blamed role outside the producing-role set (e.g. "operator")', () => {
+  assert.equal(isValidBounceInventoryItem(item({ blamed: 'operator' })), false);
+});
+
+test('isValidBounceInventoryItem rejects a blamed role that is a bouncing-only role (e.g. "QA")', () => {
+  assert.equal(isValidBounceInventoryItem(item({ blamed: 'QA' })), false);
+});
+
+test('isValidBounceInventoryItem rejects an empty id or pointer', () => {
+  assert.equal(isValidBounceInventoryItem(item({ id: '' })), false);
+  assert.equal(isValidBounceInventoryItem(item({ pointer: '' })), false);
+});
+
+test('isValidBounceInventoryItem rejects a missing field entirely', () => {
+  const { pointer, ...withoutPointer } = item();
+  assert.equal(isValidBounceInventoryItem(withoutPointer), false);
+});
+
+test('isValidBounceInventoryItem rejects a non-object value', () => {
+  assert.equal(isValidBounceInventoryItem('D1'), false);
+  assert.equal(isValidBounceInventoryItem(null), false);
+  assert.equal(isValidBounceInventoryItem(42), false);
+});
+
+// ── BL-689: defects-per-bounce aggregator (bounce-carries-its-defect-inventory-02/06) ──
+
+test('defectCountForRecord counts a record with no inventory as exactly one defect', () => {
+  assert.equal(defectCountForRecord(record()), 1);
+});
+
+test('defectCountForRecord counts a record\'s inventory size when present', () => {
+  assert.equal(defectCountForRecord(record({ items: [item(), item({ id: 'D2' })] })), 2);
+});
+
+test('computeDefectsPerBounce is 0 for an empty record set, never a crash or NaN', () => {
+  assert.equal(computeDefectsPerBounce([]), 0);
+});
+
+test('computeDefectsPerBounce averages inventory size across bounces, no-inventory records counting as one', () => {
+  const records = [record({ items: [item(), item({ id: 'D2' }), item({ id: 'D3' }), item({ id: 'D4' })] }), record({ ticket: 'BL-2' })];
+  assert.equal(computeDefectsPerBounce(records), 2.5);
+});
+
+test('computeDefectsPerBounce counts a bounce event once, not once per item - a single 4-item bounce is 4.0, not diluted', () => {
+  assert.equal(computeDefectsPerBounce([record({ items: [item(), item({ id: 'D2' }), item({ id: 'D3' }), item({ id: 'D4' })] })]), 4);
 });
