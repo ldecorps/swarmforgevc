@@ -83,3 +83,10 @@ not the briefing pipeline).
   `handoffd.bb` `briefing-burndown-json`, `briefing_email_lib.bb`.
 - Existing single walk: `gitHistoryAdapter.runGitLog` +
   `deriveTicketLifecycles`; cost-health sidecar already calls both.
+
+---
+
+**Dispositioned 2026-08-15 (specifier).** Specced as **BL-897**
+(`backlog/paused/BL-897-briefing-gathers-lifecycles-once.yaml`). Preferred
+direction 2 chosen (sweep gathers once, consumers take an optional snapshot
+path); reasoning recorded in the ticket.
