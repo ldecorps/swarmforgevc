@@ -1,6 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 15, 2026 (BL-806: closes a hole in Article 4.4's
+**Last Updated:** August 15, 2026 (BL-697: Let's Talk gains a hands-free
+mode. With the toggle on, the mic reopens automatically after the agent's
+spoken reply finishes (~400 ms delay so it doesn't capture the tail of the
+agent's own voice), and the turn auto-submits once the user goes silent for
+~2.5 s after speaking — no tapping Record or Stop. If nothing is said within
+30 s, capture cancels with a recoverable error and re-arms since hands-free
+stays on. The server turn model is unchanged: still one discrete
+`POST /lets-talk/turn` per utterance, no duplex/streaming STT, no wake word.
+Pure timing/decision logic lives in `letsTalkCore.ts`; the toggle, Web Audio
+`AnalyserNode`-based silence detection, and the auto-listen loop live in the
+WebView shell (`letsTalkUiHtml.ts`). The preference persists in browser
+`localStorage`, off by default; manual Record/Stop remains available as an
+override, and BL-696 tap-to-toggle behavior is unchanged with hands-free
+off. Production code landed 2026-07-27 (`153b9a3b1`); this pipeline pass
+adds the acceptance step handlers for the previously step-less feature file
+plus property tests proving the ticket's three declared invariants
+(`extension/test/bl697LetsTalkHandsFreeInvariants.property.test.js`) — no
+production-code delta, so the hardener pass is a genuine zero-mutant/no-CRAP
+-target result, not a skipped one. See the
+[BL-697 spec](specs/BL-697-lets-talk-hands-free-listening.md) and the
+["Hands-free mode" section](../how-to/BL-696-miniapp-lets-talk-cursor-audio.md#hands-free-mode)
+of the Let's Talk how-to.); Previously
+August 15, 2026 (BL-806: closes a hole in Article 4.4's
 "commit your evidence and forward THAT commit" rule that let a clean review
 pass vanish from the ancestry QA audits — BL-536 (2026-08-04) proved prompt
 text alone doesn't hold: architect and hardener both ran real passes but

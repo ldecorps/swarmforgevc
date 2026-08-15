@@ -74,14 +74,80 @@ export function isKnownBounceRole(value: string): value is BounceRole {
   return isKnownValue(KNOWN_BOUNCE_ROLES, value);
 }
 
+// BL-689: one item in a bounce's defect inventory - Article 4.4's D1..Dn
+// shape. `class` reuses the same widened closed set as the record's own
+// failureClass (KNOWN_FAILURE_CLASSES); `blamed` reuses the producing-role
+// vocabulary (KNOWN_PRODUCING_ROLES) - the role a REVIEW PASS blames for an
+// item, same vocabulary as who is blamed for the bounce as a whole.
+export interface BounceInventoryItem {
+  id: string;
+  class: QaBounceFailureClass;
+  blamed: QaBounceProducingRole;
+  pointer: string;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isKnownFailureClassValue(value: unknown): value is QaBounceFailureClass {
+  return typeof value === 'string' && isKnownFailureClass(value);
+}
+
+function isKnownProducingRoleValue(value: unknown): value is QaBounceProducingRole {
+  return typeof value === 'string' && isKnownProducingRole(value);
+}
+
+export function isValidBounceInventoryItem(value: unknown): value is BounceInventoryItem {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    isNonEmptyString(candidate.id) &&
+    isKnownFailureClassValue(candidate.class) &&
+    isKnownProducingRoleValue(candidate.blamed) &&
+    isNonEmptyString(candidate.pointer)
+  );
+}
+
 // BL-635: identical to QaBounceRecord plus `by` - optional on the TYPE
 // (the 53 legacy qa_bounces records predate --by reaching the JSONL line
 // at all) even though the generalised CLI makes the flag REQUIRED going
 // forward. A record with `by` absent reads as unattributed
 // (bounceAttribution below), never silently folded into QA or any other
 // role (record-bounce-by-role-06).
+//
+// BL-689: `items`/`blocked` are optional on the TYPE forever (invariant 1) -
+// every record written before this ticket, and every call that omits
+// --items going forward, carries neither field. `blocked` is metadata ABOUT
+// the inventory (how many checks that review pass could not run), so it is
+// only ever written alongside a present `items` array, never alone.
 export interface BounceRecord extends QaBounceRecord {
   by?: BounceRole;
+  items?: BounceInventoryItem[];
+  blocked?: number;
+}
+
+// BL-689 invariant 2: one call is one bounce EVENT, so a record with no
+// inventory (a call made before this ticket, or one that omitted --items)
+// must still count as ONE defect in the mean - never zero, and never
+// excluded from the figure entirely (Article 4.4's own defects-per-bounce
+// motivation: every bounce, old and new, stays comparable).
+export function defectCountForRecord(record: Pick<BounceRecord, 'items'>): number {
+  return record.items && record.items.length > 0 ? record.items.length : 1;
+}
+
+// Pure aggregator - total inventory items across every recorded bounce,
+// divided by the number of bounce events. Reads the SAME merged log
+// computeQaBounceTally does; qa-bounce-line.ts is this function's one live
+// caller (required_wiring - see BL-689's ticket).
+export function computeDefectsPerBounce(records: BounceRecord[]): number {
+  if (records.length === 0) {
+    return 0;
+  }
+  const totalDefects = records.reduce((sum, r) => sum + defectCountForRecord(r), 0);
+  return totalDefects / records.length;
 }
 
 export function bounceAttribution(record: Pick<BounceRecord, 'by'>): string {
