@@ -448,7 +448,8 @@ const DOMAINS = [
   require('./bl894QueueRepostsSelectionPollSteps'),
   require('./bl765BubbleRemoteConfigChiptuneCatalogSteps'),
   require('./bl514RcHealthInSwarmEnsureSteps'),
-  require('./bl806ReviewForwardEvidenceGateSteps')
+  require('./bl806ReviewForwardEvidenceGateSteps'),
+  require('./bl697LetsTalkHandsFreeSteps')
 ];
 
 function registerSteps(registry) {
