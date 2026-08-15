@@ -72,13 +72,8 @@ object BridgeClient {
     }
 
     fun fetchAudioEngineStatus(baseUrl: String, token: String): AudioEngineStatusResult {
-        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/audio-engine")
-        val conn = openAuth(url, token)
         return try {
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/audio-engine", token)
             if (code !in 200..299) {
                 return AudioEngineStatusResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
@@ -96,8 +91,6 @@ object BridgeClient {
             )
         } catch (e: Exception) {
             AudioEngineStatusResult(false, reason = friendlyConnectionMessage(e))
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -183,13 +176,8 @@ object BridgeClient {
     )
 
     fun fetchBridgeMeta(baseUrl: String, token: String): BridgeMetaResult {
-        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/meta")
-        val conn = openAuth(url, token)
         return try {
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/meta", token)
             if (code !in 200..299) {
                 return BridgeMetaResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
@@ -204,8 +192,6 @@ object BridgeClient {
             )
         } catch (e: Exception) {
             BridgeMetaResult(false, reason = friendlyConnectionMessage(e))
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -232,13 +218,8 @@ object BridgeClient {
     )
 
     fun fetchBubbleConfig(baseUrl: String, token: String): BubbleConfigResult {
-        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/bubble-config.json")
-        val conn = openAuth(url, token)
         return try {
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/bubble-config.json", token)
             if (code !in 200..299) {
                 return BubbleConfigResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
@@ -257,8 +238,6 @@ object BridgeClient {
             )
         } catch (e: Exception) {
             BubbleConfigResult(false, reason = friendlyConnectionMessage(e))
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -307,13 +286,8 @@ object BridgeClient {
     }
 
     fun fetchChiptunesCatalog(baseUrl: String, token: String): ChiptunesCatalogResult {
-        val url = URL("${baseUrl.trimEnd('/')}/lets-talk/chiptunes.json")
-        val conn = openAuth(url, token)
         return try {
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/chiptunes.json", token)
             if (code !in 200..299) {
                 return ChiptunesCatalogResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
@@ -322,8 +296,6 @@ object BridgeClient {
             ChiptunesCatalogResult(true, songs = songs)
         } catch (e: Exception) {
             ChiptunesCatalogResult(false, reason = friendlyConnectionMessage(e))
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -408,6 +380,26 @@ object BridgeClient {
             )
         } catch (e: Exception) {
             TurnResult(false, "", reason = friendlyConnectionMessage(e), connectionFailure = true)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * BL-765 cleanup: the shared GET-and-read-raw-body shape behind every
+     * `fetch*` query (audio-engine status, bridge meta, bubble config,
+     * chiptunes catalog) — each keeps its own JSON parsing and connection-
+     * failure handling, only the HTTP mechanics were duplicated.
+     */
+    private fun getRaw(baseUrl: String, path: String, token: String): Pair<Int, String> {
+        val url = URL("${baseUrl.trimEnd('/')}$path")
+        val conn = openAuth(url, token)
+        try {
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            return code to raw
         } finally {
             conn.disconnect()
         }

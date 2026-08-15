@@ -118,3 +118,6 @@ notes: |
   and confirm that control disappears after a resume without reinstalling; add a
   song to the catalog, redeploy the bridge, and confirm it appears in the
   playlist dialog on the phone with no APK change.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-15, by: architect, blamed: coder, class: invariant-unencoded, commit: fe2e4b8ad5, evidence: backlog/evidence/BL-765-bubble-remote-config-and-chiptune-catalog-bounce-20260815.md }
