@@ -121,3 +121,48 @@ notes: |
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-15, by: architect, blamed: coder, class: invariant-unencoded, commit: fe2e4b8ad5, evidence: backlog/evidence/BL-765-bubble-remote-config-and-chiptune-catalog-bounce-20260815.md }
+
+architect_review: |
+  ## Architect pass 2 (2026-08-15) — invariant 2 remediation verified
+
+  Reviewed commit f40ef9bc41 ("BL-765: reject the whole bubble-config
+  document on a wrong-typed flag", by coder, forwarded unchanged by cleaner
+  through 86d0a330d4 — confirmed via `git diff f40ef9bc4 HEAD -- <both
+  touched files>`, empty). This closes D1 from the 2026-08-15 bounce.
+
+  - `BridgeClient.parseBubbleConfig` (BridgeClient.kt:220) extracts the
+    parse from `fetchBubbleConfig`, same whole-rejection shape as the
+    sibling `parseChiptunesCatalog`: a missing/non-object `features`, or
+    any of the 8 flags holding a non-boolean value, rejects the whole
+    document (`null`) before any flag is applied; `fetchBubbleConfig` falls
+    back to the bundled-default `BubbleConfigResult(ok = false)` on a null
+    parse. Confirmed the invariant-1 fallback shape is still intact: the
+    data class defaults every flag to `true` on `ok = false`.
+  - `BridgeClientBubbleConfigPropertyTest.kt` (new, 129 lines) encodes
+    invariant 2 directly: an all-valid document round-trips its flags
+    (500 iterations), a single non-boolean flag anywhere rejects the whole
+    document (1000 iterations), malformed top-level shapes reject whole,
+    and a non-vacuity companion shows a naive field-by-field parser would
+    wrongly accept the same malformed document the real parser rejects —
+    same discipline as the remediation I asked for.
+  - Full Android JVM unit suite re-run under JDK 17
+    (`JAVA_HOME=/usr/local/opt/openjdk@17 ./gradlew :app:testDebugUnitTest`):
+    BUILD SUCCESSFUL, 26 tasks, 18 test-report XML files, 0 failures across
+    all of them, including the 4/4 new BubbleConfig property tests.
+  - Re-ran the hard dependency-gate on the touched `extension/src` file
+    (`bridgeServer.ts`, unchanged since pass 1 — confirmed via
+    `git diff fe2e4b8ad HEAD -- extension/src/bridge/bridgeServer.ts`,
+    empty): PASSED, no forbidden edges. Co-change report: same pre-existing
+    hub coupling as pass 1 (own test file + steps registry top the list),
+    nothing new.
+  - Re-ran `extension/test/bridgeServer.test.js` via vitest (the project's
+    actual runner — `node --test` fails on this file's Jest-style globals,
+    not a real regression): 99/99 passed. Re-ran the full BL-765 acceptance
+    feature after a fresh `npm run compile`: 8/8 scenarios green.
+  - No other files changed since pass 1's review, so pass 1's already-clean
+    `required_wiring` and architecture findings carry forward unchanged.
+
+  Invariant 2 now holds and is proven by a non-vacuous property test.
+  Approved. Forwarding to hardener.
+
+  By architect.
