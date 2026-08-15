@@ -9,7 +9,7 @@ severity: medium
 priority: 53
 direction: human-requested
 depends_on: []
-assigned_to: null
+assigned_to: coder
 mutation_cost: low
 
 invariants:
