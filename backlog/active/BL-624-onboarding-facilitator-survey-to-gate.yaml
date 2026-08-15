@@ -95,6 +95,7 @@ approval_context: >
   only, existing gate) are carried through. Approve is a rubber stamp
   unless the slice boundary (survey through gate here; prompts/launch in
   BL-625) looks wrong to you.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-15, by: architect, blamed: coder, class: behavior, commit: 6763758acc, evidence: backlog/evidence/BL-624-onboarder-survey-untrusted-agent-bounce-20260815.md }
+  - { at: 2026-08-15, by: documenter, blamed: specifier, class: spec-gap, commit: b696a6b3e8, evidence: backlog/evidence/BL-624-onboarding-facilitator-survey-to-gate-bounce-20260816.md }
