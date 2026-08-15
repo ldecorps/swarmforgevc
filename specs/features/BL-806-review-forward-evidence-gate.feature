@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=59edd3c38ef6aae2ba2f0c3f15e3703a76281190ca4b4b625558af3ffefac9a2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-15T04:17:41.598970Z","feature_name":"BL-806 a review role's forward must name its own pass commit, never the bare received hash","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-806-review-forward-evidence-gate.feature","background_hash":"a890699b46bf97c7313ac5889252e3e48e31414190b19afde9e349851d8dbd0c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a review role forwarding exactly the received commit is refused","scenario_hash":"6b40678f8ba1f94d292e86ace1ea800e9e5f31b693e7cd404f918b1b1c0e1e12","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-15T04:17:41.598970Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-806 a review role's forward must name its own pass commit, never the bare received hash
 
   Article 4.4 requires a clean review pass to commit its explicit-NONE

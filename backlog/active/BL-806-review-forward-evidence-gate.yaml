@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-assigned_to:
+assigned_to: coder
 human_approval: approved
 severity: medium
 priority: 58
@@ -93,3 +93,88 @@ notes: |
   in_process box and submit naming X -> delivered (fail open).
 
 acceptance: specs/features/BL-806-review-forward-evidence-gate.feature
+
+architect_review: |
+  ## Architect pass (2026-08-15)
+
+  Reviewed commit 9cb1d7c1a0 ("BL-806: refuse a review role's forward
+  naming exactly the received commit", by coder — single implementation
+  commit, forwarded unchanged by cleaner).
+
+  - Architecture: `review_forward_evidence_gate_lib.bb` splits the pure
+    decision (`blocked?`) from its one fs read (`received-commit-for-task`),
+    same shape as the codebase's other gate libs. Direction reuses
+    `required_stages_lib/routes-forward?` — no second predicate. Wired live
+    into `swarm_handoff.bb`'s validate path alongside the existing
+    ticket-close, duplicate-chain (BL-760), and pre-QA (BL-531) gates —
+    `required_wiring`'s only entry confirmed present by reading the diff
+    directly (the check runs in the `cond->` errors chain, not only in the
+    lib). All changed files are `swarmforge/scripts/*.bb` and
+    `specs/pipeline/steps/*.js` — none under `extension/src/`, so the
+    dependency-cruiser ruleset's scope (confirmed via its own header
+    comment) does not apply; no two-layer/webview/secrets rules apply
+    either (fork/operator-substrate tooling).
+  - Co-change: `swarm_handoff.bb` shows the expected pre-existing hub
+    coupling (handoffd.bb, required_stages_lib.bb, handoff_lib.bb — all
+    genuine `load-file` collaborators already visible in the diff), nothing
+    new or suspicious.
+  - Invariants (both declared, BL-654): `review_forward_evidence_gate_lib_property_runner.bb`
+    encodes both jointly against `blocked?` via an independently-stated
+    oracle (`expected-blocked?`, a fresh restatement of the invariant text,
+    not a copy of the implementation) over a combinatorial input space
+    (review/non-review senders, all 4 handoff types, 0/1/2 recipients,
+    same/different/absent received-commit, reroute present/absent,
+    task present/absent) — 1000 runs, plus a non-vacuity companion proving
+    a naive "ignore reroute_reason" gate would fail the same property.
+    Non-vacuity also verified by the coder by hand at authoring time per
+    the commit message (dropping the review-roles conjunct, then the
+    reroute-blank conjunct, each broke the runners). Ran both runners
+    myself: `bb .../review_forward_evidence_gate_lib_test_runner.bb` and
+    `..._property_runner.bb` — both ALL PASS.
+  - Re-ran the full BL-806 acceptance feature after a fresh compile: 9/9
+    scenarios green (the Scenario Outline's 4 role examples + 5 singles).
+  - Minor, not a send-back: the commit message has a stray trailing
+    `EOF` / `)` (heredoc-closing artifact leaked into the message body,
+    after the "By coder." byline) — cosmetic only, byline itself is
+    present and correct, no effect on the shipped code or on Article 4.4
+    evidence.
+
+  Approved. Forwarding to hardener.
+
+  By architect.
+
+hardener_review: |
+  ## Hardener pass (2026-08-15)
+
+  Batch pass alongside BL-765 (union working set, one combined run).
+  Reviewed commit 41b19d4479 (architect approval, no code change since
+  architect's own review).
+
+  - `review_forward_evidence_gate_lib.bb` and `swarm_handoff.bb` are
+    babashka - no mutation/CRAP/DRY tool wired (engineering.prompt Startup
+    Tools), gated by their own test suite: ran
+    `review_forward_evidence_gate_lib_test_runner.bb` and
+    `..._property_runner.bb` fresh - both ALL PASS.
+  - Full BL-806 acceptance feature (`run_acceptance.sh`): 9/9 scenarios
+    green - `bl806ReviewForwardEvidenceGateSteps.js` drives the real
+    `swarm_handoff.bb` as a subprocess against a scratch fixture git repo
+    (not a reimplementation), so this is genuine wiring coverage of
+    `required_wiring`'s live-validate-path requirement, not just the lib.
+  - Gherkin acceptance mutation (BL-113, soft) on the feature's
+    `Scenario Outline` (4 role examples): 4/4 mutants KILLED, 0 survivors,
+    0 errors - each single-character role-name mutation (`cleaner` ->
+    `cleanEr` etc.) correctly fails at "Then the handoff is refused"
+    because swarm_handoff.bb reports "Unknown sender role" for the mutated
+    name, proving each Examples row is load-bearing. Manifest embedded in
+    the feature file and committed (BL-460/BL-502: this is the durable
+    verdict, not the soft-rerun stdout).
+  - No `extension/src/*.ts` files touched - Stryker/CRAP/jscpd do not apply
+    to this ticket's diff (`specs/pipeline/steps/*.js`,
+    `swarmforge/scripts/*.bb`).
+  - `specs/pipeline/steps/index.js` change is a one-line step-module
+    registration (`require('./bl806ReviewForwardEvidenceGateSteps')`) -
+    trivial, nothing to harden.
+
+  No survivors, no gaps found. Forwarding to documenter.
+
+  By hardender.
