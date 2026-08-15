@@ -89,15 +89,27 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
+// BL-624 architect bounce (backlog/evidence/BL-624-onboarder-survey-untrusted-agent-bounce-20260815.md):
+// unlike claudeCliExecutor.ts's own --dangerously-skip-permissions (safe
+// only because its cwd is always a disposable scratch copy), this agent's
+// cwd is the real, untrusted onboarding target's clone, which later
+// receives a real push with the box's own git credentials. Never blanket-
+// skip permissions here - scope the agent to read-only tools instead, so
+// adversarial content in the surveyed repo cannot make it exec commands,
+// write/push files, or reach the network.
+export function surveyCliArgs(): string[] {
+  return ['-p', surveyPrompt(), '--output-format', 'json', '--allowedTools', 'Read,Glob,Grep'];
+}
+
 // The one genuinely agent-performed step (per contractSurvey.ts's own
 // header: gathering RepoSurveyFacts is swarm/agent behavior, not a
 // deterministic function) - mirrors pipelineReviewOracle.ts's own
-// execFileSync('claude', ['-p', ..., '--output-format', 'json', ...]) call
-// exactly, the established convention in this codebase for "shell to an
-// agent, parse its JSON reply".
+// execFileSync('claude', ['-p', ..., '--output-format', 'json', ...]) call,
+// except scoped read-only per surveyCliArgs() above rather than
+// --dangerously-skip-permissions.
 async function defaultSurveyRepo(swarmRepoRoot: string, targetRepoUrl: string): Promise<RepoSurveyFacts> {
   const localPath = targetCloneDir(swarmRepoRoot, targetRepoUrl);
-  const stdout = execFileSync('claude', ['-p', surveyPrompt(), '--output-format', 'json', '--dangerously-skip-permissions'], {
+  const stdout = execFileSync('claude', surveyCliArgs(), {
     cwd: localPath,
     encoding: 'utf8',
     timeout: CLAUDE_SURVEY_TIMEOUT_MS,
