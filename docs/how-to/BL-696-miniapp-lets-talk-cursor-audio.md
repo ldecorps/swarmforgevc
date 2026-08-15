@@ -43,6 +43,8 @@ Telegram topic, including numbered choice polls when the reply lists options.
 - [Android floating overlay companion](BL-707-android-floating-overlay-companion.md)
   (2026-07-29) — native bubble over other apps; home hands-free with
   settings, volume, and playlist.
+- [Hands-free listening](../reference/specs/BL-697-lets-talk-hands-free-listening.md)
+  (2026-07-27) — auto-start the mic after playback, auto-submit on silence.
 
 ## Record a Turn
 
@@ -65,6 +67,25 @@ nothing to speak falls back.
 
 The browser captures audio only. Speech-to-text runs on the bridge host so the
 Mini App CSP is never widened beyond `connect-src 'self'`.
+
+### Hands-free mode
+
+Turn on the **Hands-free** toggle for a more natural conversation flow:
+
+- After the agent's reply finishes playing, the mic reopens on its own
+  (~400 ms delay, so it doesn't capture the tail of the agent's own voice)
+  — no need to tap **Record**.
+- The turn submits automatically once you go silent for about 2.5 seconds
+  after speaking; no need to tap **Stop**.
+- If nothing is said within 30 seconds, listening cancels with a recoverable
+  error and re-arms automatically since hands-free stays on.
+- The **Record** button still works as a manual override at any time, and
+  turning hands-free off returns to tap-to-toggle (BL-696) behavior exactly.
+- The preference is remembered per-browser (`localStorage`), off by default.
+
+This only changes the WebView capture loop — the server still receives one
+discrete `POST /lets-talk/turn` per utterance; there is no duplex or
+streaming speech-to-text.
 
 ### Install on the home screen
 
