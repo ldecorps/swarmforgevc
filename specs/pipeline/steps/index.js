@@ -454,7 +454,8 @@ const DOMAINS = [
   require('./bl628AutonomousHostBootstrapSteps'),
   require('./bl895SpecificationMdBl607DuplicateSteps'),
   require('./bl768BounceKeyPairGeneratorCoverageSteps'),
-  require('./bl624OnboarderSurveyToGateSteps')
+  require('./bl624OnboarderSurveyToGateSteps'),
+  require('./bl898RcFailedAutoRepairSteps')
 ];
 
 function registerSteps(registry) {
