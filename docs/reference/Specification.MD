@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 15, 2026 (BL-895: a 2026-07-24 commit meant to add
+**Last Updated:** August 15, 2026 (BL-768: `extension/test/bounceNaturalKey.property.test.js`'s
+`assertPairCoverage` guard — the check that the pair generator actually
+reaches all five bounce-natural-key near-collision categories rather than
+passing vacuously — failed on ~2.6% of runs because those categories were
+reached only by chance perturbation of a random field subset, not by
+construction; measured at 4000 batches, "differs only in time-of-day"
+alone missed 2.45% of the time. The generator, now extracted to
+`extension/test/support/bounceKeyPairArb.js`, draws the category first and
+constructs a pair that satisfies it, one dedicated arm per category plus
+the original free-form perturbation as a further arm — `PAIR_CATEGORIES`
+and `assertPairCoverage` themselves are unchanged. Re-run 15x consecutively
+clean; no source under test changed.); Previously August 15, 2026 (BL-895:
+a 2026-07-24 commit meant to add
 one paragraph documenting BL-607 instead inserted it 286 times, 284 of them
 with corrupted `--options` JSON quoting, taking this file from 503KB to
 1,336KB and shredding several bullet lists — e.g. `## Out of Scope (v1)` —
