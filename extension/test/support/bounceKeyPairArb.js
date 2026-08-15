@@ -39,17 +39,21 @@ const byArb = fc.option(fc.constantFrom(...KNOWN_BOUNCE_ROLES), { nil: undefined
 const producingArb = fc.constantFrom(...KNOWN_PRODUCING);
 const typeArb = fc.constantFrom(...KNOWN_TYPES);
 
+// Shared field shape for both the shaped record generator below and
+// freeFormArb's raw draw of fresh values to perturb with.
+const RAW_FIELDS_SHAPE = {
+  ticket: ticketArb,
+  commit: commitArb,
+  day: dayArb,
+  timeOfDay: timeOfDayArb,
+  failureClass: classArb,
+  by: byArb,
+  producingRole: producingArb,
+  ticketType: typeArb,
+};
+
 const recordArb = fc
-  .record({
-    ticket: ticketArb,
-    commit: commitArb,
-    day: dayArb,
-    timeOfDay: timeOfDayArb,
-    failureClass: classArb,
-    by: byArb,
-    producingRole: producingArb,
-    ticketType: typeArb,
-  })
+  .record(RAW_FIELDS_SHAPE)
   .map(({ day, timeOfDay, ...rest }) => ({ ...rest, at: `${day}T${timeOfDay}` }));
 
 function keyComponentsMatch(a, b) {
@@ -190,20 +194,7 @@ const differingKeyArb = fc.constantFrom('ticket', 'commit', 'day', 'failureClass
 const PERTURBABLE = ['ticket', 'commit', 'day', 'timeOfDay', 'failureClass', 'by', 'producingRole', 'ticketType'];
 
 const freeFormArb = fc
-  .tuple(
-    recordArb,
-    fc.subarray(PERTURBABLE),
-    fc.record({
-      ticket: ticketArb,
-      commit: commitArb,
-      day: dayArb,
-      timeOfDay: timeOfDayArb,
-      failureClass: classArb,
-      by: byArb,
-      producingRole: producingArb,
-      ticketType: typeArb,
-    })
-  )
+  .tuple(recordArb, fc.subarray(PERTURBABLE), fc.record(RAW_FIELDS_SHAPE))
   .map(([a, fields, fresh]) => {
     const b = { ...a };
     for (const f of fields) {
