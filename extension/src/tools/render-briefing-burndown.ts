@@ -12,6 +12,7 @@
  * briefing send.
  */
 import { runGitLog, deriveTicketLifecycles } from '../metrics/gitHistoryAdapter';
+import { readLifecycleSnapshot } from '../metrics/lifecycleSnapshot';
 import {
   computeNotDoneBurndownSeries,
   buildNotDoneBurndownSvg,
@@ -19,11 +20,20 @@ import {
   NOT_DONE_BURNDOWN_DIAGRAM_NAME,
 } from '../metrics/notDoneBurndown';
 import { resolveProjectRoot, printJsonToStdout, runCliMain } from './swarm-metrics';
+import { parseSnapshotPath } from './briefingSnapshotArgs';
 import type { RenderedDiagram } from './render-briefing-diagrams';
 
-export function renderBriefingBurndown(projectRoot: string, nowMs: number = Date.now()): RenderedDiagram[] {
-  const history = runGitLog(projectRoot, 'backlog/', 'main');
-  const lifecycles = [...deriveTicketLifecycles(history).values()];
+// BL-897: snapshotPath, when given and usable (readLifecycleSnapshot
+// degrades to null on missing/unreadable/stale), skips the full-history
+// walk entirely - the shared, already-derived lifecycle records win over a
+// fresh runGitLog/deriveTicketLifecycles call.
+export function renderBriefingBurndown(
+  projectRoot: string,
+  nowMs: number = Date.now(),
+  snapshotPath?: string
+): RenderedDiagram[] {
+  const shared = snapshotPath ? readLifecycleSnapshot(snapshotPath, nowMs) : null;
+  const lifecycles = shared ?? [...deriveTicketLifecycles(runGitLog(projectRoot, 'backlog/', 'main')).values()];
   const series = computeNotDoneBurndownSeries(lifecycles, nowMs);
   if (series.series.length === 0) {
     throw new Error('not-done burndown series is empty');
@@ -35,7 +45,8 @@ export function renderBriefingBurndown(projectRoot: string, nowMs: number = Date
 
 export function main(): void {
   const projectRoot = resolveProjectRoot(process.cwd());
-  const diagrams = renderBriefingBurndown(projectRoot);
+  const snapshotPath = parseSnapshotPath(process.argv.slice(2));
+  const diagrams = renderBriefingBurndown(projectRoot, Date.now(), snapshotPath);
   printJsonToStdout(diagrams);
 }
 

@@ -108,6 +108,18 @@
 ;; before any handoff-lib call below reads target-root.
 (handoff-lib/set-project-root! project-root)
 
+;; BL-897: the deterministic, machine-local (never committed - already
+;; covered by the bare .swarmforge/ .gitignore entry) path every briefing-
+;; section CLI is handed via --snapshot, so all three read the SAME
+;; already-derived lifecycle records instead of each re-walking the
+;; backlog's full git history (extension/src/metrics/lifecycleSnapshot.ts's
+;; lifecycleSnapshotPath, same join, kept in sync by hand since Babashka
+;; cannot import the compiled TS module). Defined here, right after
+;; project-root, so every shell-out below (regardless of its own position
+;; in the file) can reference it.
+(def lifecycle-snapshot-path
+  (str (fs/path project-root ".swarmforge" "briefing" "lifecycle-snapshot.json")))
+
 ;; BL-406: refuse to run at all against a throwaway test/temp project root
 ;; unless the caller explicitly opts in - checked here, before this daemon
 ;; claims a pid file, loads roles, or starts a single sweep, so a leaked
@@ -2041,7 +2053,7 @@
 (defn merged-blocked-digest-briefing-section []
   (try
     (let [cli-path (str (fs/path project-root "extension" "out" "tools" "briefing-digest-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+          {:keys [exit out]} (process/sh ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
@@ -2187,7 +2199,7 @@
 (defn briefing-burndown-json []
   (try
     (let [cli-path (str (fs/path project-root "extension" "out" "tools" "render-briefing-burndown.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+          {:keys [exit out]} (process/sh ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
       (when (zero? exit) (json/parse-string out true)))
     (catch Exception _ nil)))
 
@@ -2658,6 +2670,25 @@
   (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))]
     (briefing-generation-schedule-lib/parse-morning-time (get conf "briefing_morning_time_utc"))))
 
+;; BL-897: ensures that shared snapshot (lifecycle-snapshot-path, defined
+;; near project-root above) is fresh (today's) before any
+;; section below reads it (extension/src/tools/emit-lifecycle-snapshot.ts,
+;; compiled to out/tools/emit-lifecycle-snapshot.js) - idempotent within a
+;; day, so calling this unconditionally on every daemon tick is safe; the
+;; real walk happens on at most one tick per UTC day. Best-effort like the
+;; sections below: any failure here just means every consumer falls back to
+;; its own walk exactly as it did before this ticket, never a lost
+;; briefing - never propagated as an exception.
+(defn ensure-lifecycle-snapshot! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-lifecycle-snapshot.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (if (zero? exit)
+        (log! "lifecycle-snapshot-ensured" (str/trim out))
+        (log! "lifecycle-snapshot-ensure-nonzero-exit" (str exit))))
+    (catch Exception e
+      (log! "ensure-lifecycle-snapshot-error" (.getMessage e)))))
+
 ;; BL-272: headless entrypoint for BL-213's deterministic cost & health
 ;; sidecar emitter (extension/src/tools/emit-cost-health-sidecar.ts,
 ;; compiled to out/tools/emit-cost-health-sidecar.js) - the same
@@ -2668,7 +2699,7 @@
 ;; this adapter does not need its own try/catch.
 (defn emit-cost-health-sidecar! []
   (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-cost-health-sidecar.js"))
-        {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+        {:keys [exit out err]} (process/sh ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
     (if (zero? exit)
       (log! "cost-health-sidecar-emitted" (str/trim out))
       (throw (ex-info "emit-cost-health-sidecar.js failed" {:exit exit :err err})))))
@@ -3035,6 +3066,14 @@
                       (ambulance-auto-exit-sweep!)
                       (catch Exception e
                         (log! "ambulance-auto-exit-sweep-error" (.getMessage e))))
+                    ;; BL-897: ensures the shared lifecycle snapshot both
+                    ;; briefing sweeps below read is fresh, sharing the same
+                    ;; cadence - unconditional and cheap after the first
+                    ;; tick of a new UTC day (see ensure-lifecycle-snapshot!).
+                    (try
+                      (ensure-lifecycle-snapshot!)
+                      (catch Exception e
+                        (log! "ensure-lifecycle-snapshot-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try
