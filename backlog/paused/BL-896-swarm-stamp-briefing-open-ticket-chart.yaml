@@ -1,0 +1,244 @@
+id: BL-896
+title: "Swarm stamp-off: the morning briefing's not-done burndown chart — certify the landed hotfix, and settle what the chart is allowed to call itself"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-behaviour-trends
+human_approval: pending
+priority: 35
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-896-briefing-not-done-burndown-stamp.feature
+
+approval_context: >
+  Two decisions, both cheap to answer, neither reopening the product ask (you
+  want this chart on the morning briefing — that is locked and is not on this
+  list).
+
+  (1) CERTIFY BY REVIEW, or WAIVE. The chart is live on your daily email and
+  has passed no gate. Certifying runs the landed diff through the pipeline and
+  fixes what it finds; waiving records `waived` in the hotfix ledger and drops
+  this ticket. Recommendation: CERTIFY — three findings below are already
+  verified, one of them visible in the chart you receive every morning.
+
+  (2) THE TITLE. The chart's heading currently reads "Backlog burndown — last
+  30 days (not-done tickets)". Rendered against today's real data it is a line
+  going UP: open 11 -> 182, net +171. That is not a defect in the maths; the
+  backlog genuinely grew. It is the exact failure your own 2026-07-26 ruling
+  banned burndowns for ("sur l'état de milestones cela ne sert à rien" — a
+  burndown on a growing scope burns up and lies). The specifier's reconciliation
+  (below, and already applied to BL-659) is that your ban stands untouched and
+  this chart is not an exception to it — it is the Kanban open-count trend the
+  ban named as the REPLACEMENT, wearing the wrong word. So: rename the heading
+  to what it plots (open tickets remaining, with filed/closed rates), keep the
+  chart exactly as it is otherwise. Say so if you would rather keep the word
+  "burndown" on the heading despite it; that is your call to make and this
+  ticket will carry whichever you choose.
+
+  Either answer resolves ledger entry `14724edae7`; leaving it open means the
+  BL-848 sweep keeps resurfacing it every 6h.
+
+source: |
+  TWO sources, merged into one ticket (specifier consolidation authority,
+  BL-680; neither source loses a human sentence, Article 5.3):
+
+  1. `backlog/INTAKE-briefing-not-done-burndown.md` — human via Cursor,
+     2026-08-15 ~08:28 CEST. Asked for the chart on the morning briefing, and
+     handed the specifier the landing path and the ban reconciliation.
+  2. `backlog/hotfix-ledger.yaml` entry `14724edae7`, detected 2026-08-15 from
+     the commit's `Hotfix-Certification: pending` trailer (BL-848 mechanism).
+
+  They merge because the intake's own disposition question ("land the draft
+  via pipeline or certified hotfix?") was answered by events before the
+  specifier saw it: the draft was already committed as `14724edae7` at 08:39
+  CEST to clear the BL-839 master-checkout drift. There is no draft left to
+  land. What remains is one ticket: certify what landed, and settle the
+  naming question the intake explicitly delegated.
+
+  Hotfix under review: commit `14724edae7` on main, "Land morning-briefing
+  not-done burndown chart (stranded WIP; clears master-checkout drift)."
+  (By Cursor, human-landed, 2026-08-15 08:39 CEST), 7 files, +365/-8.
+
+description: |
+  ## What
+
+  An operator hotfix is live on `main` and has passed no gate. This ticket is
+  that gate. It is a REVIEW ticket, not a rewrite ticket — confirm or refute
+  the landed diff, fix what it finds, and open narrow follow-ups for anything
+  wider. The human's product decision (a not-done chart belongs on the morning
+  briefing email) is locked and is not being reopened.
+
+  ## What it changed
+
+  A second render source was added alongside BL-260's architecture diagrams,
+  on the same cid-PNG path:
+
+  ```
+  extension/src/metrics/notDoneBurndown.ts        new, 208 lines — series + SVG + PNG
+  extension/src/tools/render-briefing-burndown.ts new, 44 lines  — CLI, [{name, base64}]
+  swarmforge/scripts/handoffd.bb:2187             briefing-burndown-json (second shell-out)
+  swarmforge/scripts/handoffd.bb:2199             briefing-diagram-section concats both
+  swarmforge/scripts/briefing_email_lib.bb:184    diagram-heading / diagram-note-line
+  extension/test/notDoneBurndown.test.js          new, 3 unit tests
+  .../test/briefing_email_test_runner.bb          burndown-diagram-01 assertions
+  ```
+
+  ## Findings already verified at mint time — do not re-derive, confirm and fix
+
+  **F1 — the chart's own name is the thing the ban was about.** Heading reads
+  "Backlog burndown — last 30 days (not-done tickets)". Run live against this
+  repo on 2026-08-15: `open0 11 → openN 182, net +171, close 8.7/d, mint
+  14.1/d`. The line goes UP under a heading that says burndown. The maths is
+  right; the word is wrong. See "The ban reconciliation" below for the decided
+  position and what to change. Scenario 01.
+
+  **F2 — a second burndown engine was built next to the existing one.**
+  `notDoneBurndown.ts`'s `isRemainingAtDayEnd` is `deliveryMetrics.ts:84`'s
+  `isRemainingOnDay` line for line, renamed; the per-day remaining loop
+  duplicates `burndownForMilestone`'s (`deliveryMetrics.ts:96`). Same input
+  type, same maths, two implementations that can now drift apart. Whether the
+  answer is extraction, reuse, or a stated reason the two must stay separate
+  (the existing one is per-milestone and scoped to milestone members; this one
+  is repo-wide) is the cleaner's and architect's call — but "we didn't notice"
+  is not one of the options. This is the finding most likely to survive as
+  real debt if the ticket is waived.
+
+  **F3 — a ticket retired by deletion counts as open forever.**
+  `deriveTicketLifecycles` sets a close date only when a file arrives under
+  `backlog/done/`; a ticket superseded by deleting its YAML never gets one, so
+  it sits on the open line permanently. Measured today: the model reports 182
+  open, the active/paused/hold lanes hold 180. `BL-205` and `BL-583` are
+  phantom-open; `BL-101` is on disk but invisible to the model. Two tickets of
+  drift today, monotonically growing, on a number the human reads as fact each
+  morning. Scenario 02. Note this is an adapter-level flaw, not a chart-level
+  one — every consumer of `deriveTicketLifecycles` inherits it, so if the fix
+  belongs in `gitHistoryAdapter.ts` it changes numbers on other surfaces too;
+  say so explicitly rather than fixing it silently in one caller.
+
+  **F4 — the fail-open claim is asserted in a comment and tested nowhere.**
+  `briefing-diagram-section`'s comment says "Each source fails open
+  independently; whichever succeeds still ships." Only `build-diagram-section`
+  (the pure lib) is covered by `briefing_email_test_runner.bb`; the handoffd
+  concat that actually makes the claim true has no test at all. Scenario 03 is
+  that matrix.
+
+  ## The ban reconciliation (specifier decision, delegated by the intake)
+
+  The intake's locked decision 3 handed this to the specifier. Decided:
+
+  **BL-659's ban stands, unamended in substance, on every surface — and this
+  chart is not an exception to it.** The ban's motive is a technical claim, not
+  a taste: milestones here label a continuously growing scope, not an iteration
+  with a committed perimeter, so a burndown against them burns up and lies. F1
+  is that claim coming true in the first live render. Nothing about putting the
+  chart in an email instead of the PWA weakens it.
+
+  What the chart actually plots, however, is not a scope burndown. It is open
+  tickets remaining per day with arrival and departure rates — the open-count /
+  net-flow view, which is squarely inside the Kanban family BL-659 ratified as
+  the REPLACEMENT for burndown. So the reconciliation is a rename, not an
+  exception: make the heading and summary say what the series is, and the ban
+  and the human's ask both hold with nothing bent.
+
+  BL-659's `out_of_scope` has been amended in place to state this scope
+  precisely (the operator's quoted words kept verbatim; the ban's reach
+  unchanged). That amendment is landed on `main` by the specifier — it is not
+  this parcel's work. See `notes:` for the commit.
+
+  ## How (direction, not mandate)
+
+  Extend the existing briefing-diagram harness
+  (`specs/pipeline/steps/briefingDiagramCidAttachmentsSteps.js`,
+  `briefingDiagramRenderWidthSteps.js`) rather than standing up a second one,
+  unless there is a reason not to. F3's scenario needs a real disk-vs-model
+  comparison, not a fixture that assumes the answer.
+
+invariants:
+  - "Every ticket count the briefing states matches the backlog's actual lane contents on the day it is stated."
+  - "No briefing chart source failing can suppress another source that succeeded, or the send itself."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::briefing-burndown-json::the chart must still reach the briefing through handoffd's own render shell-out; if a fix removes the chart from the email entirely, this ticket's premise is gone and ledger entry 14724edae7 needs re-deciding rather than silently passing."
+
+out_of_scope: |
+  - Re-adding any chart to the PWA dashboard or the Kanban analytics surface.
+    Still under BL-659's ruling, which this ticket deliberately leaves intact.
+  - Building BL-659's ratified FLOW charts (per-role CFD, cycle-time scatter,
+    aging WIP, flow efficiency). That epic is unchanged and unstarted.
+  - The cost of gathering the data. The extra full-history `git log` walk this
+    chart adds per briefing send is BL-897, specced from its own intake, and
+    deliberately NOT folded in here: different surface (host cost vs chart
+    honesty), different acceptance, and merging them would have produced one
+    oversized ticket (BL-634).
+  - Auto-repair of master-checkout drift by the BL-839 detector (report-only).
+  - Recording the ledger decision itself. That is a human act via
+    `hotfix_ledger_update.bb --decide`; this ticket only makes it informed.
+
+notes: |
+  ## Why this exists at all
+
+  BL-848's rule: a hotfix is metadata-indistinguishable from ordinary pipeline
+  work, so certification must be DECLARED. This commit declared itself
+  (`Hotfix-Certification: pending`), which is what put it in the ledger and, in
+  turn, produced this ticket.
+
+  ## Prose landed out of band by the specifier (BL-798)
+
+  The ban reconciliation above is a change to a file the specifier owns
+  (`backlog/paused/BL-659-...yaml`'s `out_of_scope`), and no pipeline stage
+  would ever have delivered it. Landed on `main` at spec time, not left for the
+  parcel: see the drain commit that adds this ticket. The operator's quoted
+  French sentence is preserved verbatim (Article 5.3); only scoping prose was
+  added beneath it. Nothing a downstream stage builds changes because of it —
+  it is bookkeeping, not a rebuild.
+
+  ## Sibling ticket this overlaps, deliberately not merged
+
+  `BL-599` (paused, same epic) asks for an intake-balance series: tickets
+  filed/day vs closed/day and net backlog growth, from the same adapter. The
+  landed `computeNotDoneBurndownSeries` already computes all three (`filed`,
+  `closed` per day; `totalFiled`/`totalClosed`/`closePerDay`/`mintPerDay`/`net`
+  in aggregate). BL-599's surface is different (trend.ts / PWA, not the email)
+  so the two are not merged — but whoever builds BL-599 must reuse this
+  aggregator rather than write a third one. BL-599's `notes:` has been updated
+  to point here.
+
+  ## E2E QA procedure (specifier, 2026-08-15)
+
+  Run against a real briefing send, not only fixtures — the whole finding set
+  is about what the human reads at 08:00.
+
+  1. **The heading (scenario 01).** Trigger a briefing send and open the email.
+     Read the chart's heading and subtitle aloud. Confirm they describe open
+     tickets over a window, and that nothing in them implies a target, a
+     remaining-to-zero, or a completion date. If the human chose to keep the
+     word "burndown", confirm instead that the accompanying text states the
+     scope is not fixed.
+
+  2. **The count (scenario 02).** On the same day the email was sent, count
+     `backlog/active/*.yaml` + `backlog/paused/*.yaml` + `backlog/hold/*.yaml`
+     by hand. Confirm the number equals the chart's last point. If it does not,
+     the fix did not land — record both numbers.
+
+  3. **Independent failure (scenario 03).** Make the architecture render fail
+     (rename `docs/diagrams/architecture.mmd` aside) and send. Confirm the
+     email still carries the open-ticket chart and a sensible note. Restore,
+     then make the open-ticket render fail (rename
+     `extension/out/tools/render-briefing-burndown.js` aside) and send. Confirm
+     the architecture diagrams still arrive. Restore both.
+
+  4. **Both failing (scenario 03, last row).** With both renders broken,
+     confirm the email still SENDS, with the no-diagram plaintext note and no
+     attachments — never a failed send, never a crash in handoffd's log.
+
+  5. **Empty window (scenario 04).** Point the CLI at a checkout whose
+     `backlog/` history is empty. Confirm it omits the chart and the send
+     proceeds, rather than throwing into a failed briefing.
+
+  6. **The duplication (F2).** Confirm the parcel either removed one of the two
+     remaining-count implementations or recorded, in this ticket, why both must
+     stay. A silent "both still there" is a bounce.

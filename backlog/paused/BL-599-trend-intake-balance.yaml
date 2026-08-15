@@ -42,3 +42,22 @@ acceptance: |
 out_of_scope: |
   - Velocity/burndown of closes (deliveryMetrics owns those); this adds the
     intake counterpart and the net.
+notes: |
+  ## Most of this aggregator already exists — reuse it (specifier, 2026-08-15)
+
+  The morning-briefing chart landed as `14724edae7` brought
+  `extension/src/metrics/notDoneBurndown.ts`'s `computeNotDoneBurndownSeries`,
+  which already derives, from the same `deriveTicketLifecycles` adapter this
+  ticket names: per-day `filed` and `closed` counts, and in aggregate
+  `totalFiled` / `totalClosed` / `mintPerDay` / `closePerDay` / `net`. That is
+  requirement 1 and most of requirement 2 already written.
+
+  The two tickets are NOT merged, because the surfaces differ — that one
+  renders a PNG into the briefing email, this one feeds `trend.ts` and the
+  PWA. But whoever builds this must extend or extract from that function
+  rather than write a third remaining-count implementation; there are already
+  two (`deliveryMetrics.ts`'s per-milestone `burndownForMilestone` and the new
+  repo-wide one), and BL-896 is the ticket deciding what to do about that
+  duplication. Wait for, or read, BL-896's outcome before choosing which to
+  build on. Requirement 3 (counting backlog-root `INTAKE-*.md` items as
+  intake) is genuinely new work either way.
