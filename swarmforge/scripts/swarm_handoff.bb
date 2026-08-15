@@ -16,6 +16,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "required_stages_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "review_forward_evidence_gate_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -296,6 +297,21 @@
         dup-chain-block
         (when (and (= "git_handoff" type) (not (str/blank? task-name)))
           (duplicate-chain-guard-lib/blocking-parcel (project-root) task-name sender))
+        ;; BL-806 review-forward-evidence gate: refuses a review role's
+        ;; forward-direction git_handoff naming exactly the commit it
+        ;; received for this task (Article 4.4 backstop; see
+        ;; review_forward_evidence_gate_lib.bb).
+        review-forward-evidence-block?
+        (and (= "git_handoff" type) canonical (not (str/blank? task-name))
+             (review-forward-evidence-gate-lib/blocked?
+              {:type type
+               :sender sender
+               :recipients recipients
+               :task-name task-name
+               :commit canonical
+               :reroute-reason (get headers "reroute_reason")
+               :received-commit (review-forward-evidence-gate-lib/received-commit-for-task
+                                  (project-root) sender task-name)}))
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -315,7 +331,10 @@
                              (conj (duplicate-chain-guard-lib/refusal-message dup-chain-block))
                              (and (not (str/blank? task-name)) canonical)
                              (-> (into (pre-qa-gate-errors type to task-name canonical))
-                                 (into (pointer-gate-errors type to task-name canonical)))))
+                                 (into (pointer-gate-errors type to task-name canonical)))
+                             review-forward-evidence-block?
+                             (conj (review-forward-evidence-gate-lib/refusal-message
+                                    {:sender sender :task-name task-name :commit canonical}))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
