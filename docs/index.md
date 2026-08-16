@@ -107,3 +107,4 @@ here.
 - [Why the expeditor commands the stack but never depends on it](explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md)
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.
 - [The Non-Pipeline Agents, As a Class](explanation/BL-643-non-pipeline-agents-as-a-class.md) — what makes an agent non-pipeline, the taxonomy, and what the Onboarder actually ships today vs. its unbuilt phases.
+- [Why Promotion Ranks by Epic Priority Before Ticket Priority](explanation/BL-900-epic-priority-promotion-ranking.md) — the rank-key shape, the epic-priority lookup and its fallbacks, and why expedited defects, queue-jump, and ambulance mode are untouched.

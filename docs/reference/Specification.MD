@@ -1,6 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 16, 2026 (BL-898: `./swarm ensure`'s
+**Last Updated:** August 16, 2026 (BL-900: promotion ranking now compares
+the priority of a candidate's containing epic before the candidate's own
+`priority:` — `[expedited? epic-priority own-priority id]`, spliced after
+the Article 3.2.4 expedite bucket so that bucket stays strictly first by
+construction. `epic-priority-index` resolves each epic's most urgent
+`type: epic` tracker priority (an epic id with several trackers ranks by
+its lowest); a candidate whose epic has no tracker, or no `epic:` field at
+all, falls back to its own priority rather than being buried behind every
+tracked epic. `direction: queue-jump` and ambulance mode are untouched —
+neither was ever a ranking input. Wired into all three real call sites
+(`promotion_gates_cli.bb`'s `cmd-select`, and `chase_sweep_lib.bb`'s
+`top-open-slot-candidate` / `top-expedited-paused-candidate`, used to name
+the ticket in the BL-798 escalation nudge and the BL-679 ambulance-release
+announcement) after a hardener bounce caught the latter two call sites
+missing an epic-priority index on the first pass. See the new
+[explanation](../explanation/BL-900-epic-priority-promotion-ranking.md) and
+the updated [console
+runbook](../how-to/BL-572-console-epic-priority-reorder.md).); Previously
+August 16, 2026 (BL-898: `./swarm ensure`'s
 remote-control health check (BL-514) trusted only the live process's
 `--remote-control` flag, which cannot see a dead claude.ai/code session
 behind a still-correct flag; every health signal in the fleet reported
