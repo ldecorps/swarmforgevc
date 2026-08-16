@@ -7,6 +7,7 @@ import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.URLEncoder
 import java.net.UnknownHostException
 
 /**
@@ -324,6 +325,161 @@ object BridgeClient {
         } catch (e: Exception) {
             ChiptunesCatalogResult(false, reason = friendlyConnectionMessage(e))
         }
+    }
+
+    // BL-907: GET /companion-manifest + GET /companion-package/<name> — BL-866's
+    // contract, the phone's only sync source for the offline package store
+    // (CompanionPackageSync / CompanionPackageStore). No bridge change: this
+    // reads BL-866's contract exactly as it landed.
+
+    data class CompanionManifestEntry(
+        val name: String,
+        val generation: String,
+        val format: String,
+        val formatVersion: Int
+    )
+
+    data class CompanionManifestResult(
+        val ok: Boolean,
+        val packages: List<CompanionManifestEntry> = emptyList(),
+        val reason: String? = null
+    )
+
+    /**
+     * Whole-document rejection on any malformed entry, same shape as
+     * [parseChiptunesCatalog] / [parseBubbleConfig] one page up — `internal`
+     * so the JVM unit suite can exercise it directly (BL-769 precedent).
+     */
+    internal fun parseCompanionManifest(raw: String): List<CompanionManifestEntry>? {
+        return try {
+            val json = JSONObject(raw)
+            val packagesJson = json.optJSONArray("packages") ?: return null
+            val entries = ArrayList<CompanionManifestEntry>(packagesJson.length())
+            for (i in 0 until packagesJson.length()) {
+                val obj = packagesJson.optJSONObject(i) ?: return null
+                val name = obj.optString("name", "")
+                val generation = obj.optString("generation", "")
+                val format = obj.optString("format", "")
+                val formatVersion = obj.optInt("formatVersion", -1)
+                if (name.isBlank() || generation.isBlank() || format.isBlank() || formatVersion < 0) return null
+                entries.add(CompanionManifestEntry(name, generation, format, formatVersion))
+            }
+            entries
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun fetchCompanionManifest(baseUrl: String, token: String): CompanionManifestResult {
+        return try {
+            val (code, raw) = getRaw(baseUrl, "/companion-manifest", token)
+            if (code !in 200..299) {
+                return CompanionManifestResult(false, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val packages = parseCompanionManifest(raw)
+                ?: return CompanionManifestResult(false, reason = "malformed companion manifest")
+            CompanionManifestResult(true, packages = packages)
+        } catch (e: Exception) {
+            CompanionManifestResult(false, reason = friendlyConnectionMessage(e))
+        }
+    }
+
+    /**
+     * The outcome of asking the bridge for one companion package. Kept apart
+     * from a single `ok: Boolean` result (unlike the fetch* results above)
+     * because [CompanionPackageSync.applyFetch] must tell a bad transfer
+     * apart from a genuinely-unreachable bridge and a refused package — each
+     * leaves the device's held copy intact but is reported distinctly.
+     */
+    sealed class CompanionPackageFetch {
+        data class Ok(
+            val name: String,
+            val generation: String,
+            val format: String,
+            val formatVersion: Int,
+            val data: String
+        ) : CompanionPackageFetch()
+
+        /** The bridge answered 304: the held generation is still current. */
+        data class Unchanged(val name: String, val generation: String) : CompanionPackageFetch()
+
+        /** The bridge answered 404 unknown_package. */
+        data class Unknown(val name: String, val reason: String) : CompanionPackageFetch()
+
+        /** The bridge answered 503 unreadable_package (or any other non-2xx/304/404). */
+        data class Unreadable(val name: String, val reason: String) : CompanionPackageFetch()
+
+        /** The bridge could not be reached at all — host/tunnel down, timed out, refused. */
+        data class ConnectionFailure(val name: String, val reason: String) : CompanionPackageFetch()
+
+        /** A connection was made but the transfer broke off or the body was malformed. */
+        data class Interrupted(val name: String, val reason: String) : CompanionPackageFetch()
+    }
+
+    fun fetchCompanionPackage(baseUrl: String, token: String, name: String, heldGeneration: String?): CompanionPackageFetch {
+        val path = buildString {
+            append("/companion-package/")
+            append(URLEncoder.encode(name, "UTF-8"))
+            if (heldGeneration != null) {
+                append("?generation=")
+                append(URLEncoder.encode(heldGeneration, "UTF-8"))
+            }
+        }
+        val url = URL("${baseUrl.trimEnd('/')}$path")
+        val conn = openAuth(url, token)
+        val code: Int
+        try {
+            conn.requestMethod = "GET"
+            code = conn.responseCode
+        } catch (e: Exception) {
+            conn.disconnect()
+            return CompanionPackageFetch.ConnectionFailure(name, friendlyConnectionMessage(e))
+        }
+        return try {
+            when (code) {
+                304 -> CompanionPackageFetch.Unchanged(name, heldGeneration.orEmpty())
+                404 -> CompanionPackageFetch.Unknown(name, companionErrorReason(conn, code, "unknown package"))
+                503 -> CompanionPackageFetch.Unreadable(name, companionErrorReason(conn, code, "package unreadable"))
+                in 200..299 -> parseCompanionPackageOk(name, readBody(conn, code))
+                    ?: CompanionPackageFetch.Interrupted(name, "malformed companion package response")
+                else -> CompanionPackageFetch.Unreadable(name, "HTTP $code")
+            }
+        } catch (e: Exception) {
+            CompanionPackageFetch.Interrupted(name, "transfer interrupted: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** `internal` (BL-769 precedent) so the JVM unit suite can exercise it directly. */
+    internal fun parseCompanionPackageOk(requestedName: String, raw: String): CompanionPackageFetch.Ok? {
+        return try {
+            val json = JSONObject(raw)
+            if (!json.has("generation") || !json.has("data")) return null
+            CompanionPackageFetch.Ok(
+                name = json.optString("name", requestedName),
+                generation = json.getString("generation"),
+                format = json.optString("format", ""),
+                formatVersion = json.optInt("formatVersion", -1),
+                data = json.get("data").toString()
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun companionErrorReason(conn: HttpURLConnection, code: Int, fallback: String): String {
+        val raw = readBody(conn, code)
+        return try {
+            JSONObject(raw).optString("reason", fallback)
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
+    private fun readBody(conn: HttpURLConnection, code: Int): String {
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        return stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
     }
 
     fun newSession(baseUrl: String, token: String): Pair<Boolean, String?> {

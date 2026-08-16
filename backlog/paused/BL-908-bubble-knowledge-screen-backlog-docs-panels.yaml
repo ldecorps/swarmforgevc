@@ -1,0 +1,170 @@
+id: BL-908
+title: "The browsable knowledge screen (Bubble): native Kotlin backlog and docs panels over the packages held on the device, readable in airplane mode, every view stamped with its generation"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-offline-sync
+human_approval: approved
+severity: medium
+priority: 11
+direction: human-intake
+depends_on: [BL-907]
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "Nothing on a panel is fetched, derived or inferred at browse time — every value shown was read from the package held on the device, so browsing behaves identically with the network off."
+  - "No view presents package content without stating the generation it was read at."
+
+approval_context: >
+  Sign-off is carried by the epic BL-865, whose two open questions the human
+  answered on 2026-08-16 (front-desk SUP-5) — including the BL-659 retarget this
+  slice is the first delivery of. Nothing extra is asked here.
+
+source: |
+  Slice 3 of 5 of epic BL-865, minted 2026-08-16 by the specifier from raw
+  intake `backlog/INTAKE-operator-question-1786899039245.md` (Operator, front-desk
+  SUP-5, human ldecorps, 2026-08-16), archived to
+  `.swarmforge/operator/archive/` in the same pass.
+
+  Human directives carried verbatim from that intake (Article 5.3):
+
+  - "Human confirmed the two BL-865 approval_context decisions for the browsable
+    knowledge screen: (a) PROMOTE BL-865 so the coordinator can drive minting of
+    the remaining knowledge-screen slices, and (b) CONFIRM the BL-659 retarget —
+    the previously-approved PWA knowledge-explorer becomes the native-Kotlin
+    knowledge-screen slice (Pages PWA goes maintain-only) rather than being
+    retired."
+  - "Please mint the two remaining slices: ... (2) native Kotlin backlog/docs
+    browse panels over the shared JSON shapes (this is the browsable knowledge
+    screen itself, retargeted from BL-659's PWA corpus goals). Source: front-desk
+    SUP-5, human ldecorps, 2026-08-16."
+
+  This ticket is directive (2). Directive (1) is BL-907.
+
+  Fast-track directive carried verbatim from the companion intake
+  `backlog/INTAKE-operator-question-1786899438508.md` (same human, same day,
+  amending the first):
+
+  - "once the browsable-knowledge-screen ticket(s) are minted — the two BL-865
+    slices requested in the companion intake ... — the human wants the resulting
+    ticket(s) routed through the AMBULANCE / expedite fast-track, not the normal
+    promote queue. Please mint them onto the expedite path; the coordinator
+    confirms/drives the ambulance dispatch."
+
+  Probed against `main` 2026-08-16 — the "shared JSON shapes" are what BL-866
+  actually serves, not the whole BL-659 corpus:
+
+  - The `backlog` package is `readBacklogFolders` (`extension/src/panel/
+    backlogReader.ts:430`): `{ active, paused, done, hold }`, each a list of
+    `BacklogItem` (id, title, status, milestone, priority, description,
+    acceptance, humanApproval, notes and friends).
+  - The `docs` package is `{ vision }` from `readVisionDocs`
+    (`extension/src/docs/docsTree.ts:247`): five `VisionDoc` entries today —
+    Specification, Milestone Roadmap, Getting Started (markdown) and the
+    Architecture / Swarm Flow diagrams (mermaid sources).
+  - Bubble's UI is Android Views with `viewBinding`, no Compose
+    (`android/app/build.gradle.kts`), minSdk 26.
+
+description: |
+  ## What this slice adds
+
+  The knowledge screen the human asked for: Bubble becomes something you can
+  read the swarm from, on the tube, with no bridge in reach.
+
+  - **A backlog panel.** The tickets the held package carries, grouped by the
+    folder they sit in (active / paused / hold / done); opening one shows the
+    detail the package carries for it.
+  - **A docs panel.** The documents the held package carries, listed and
+    openable. A markdown document shows its text; a diagram document shows its
+    source, labelled as a diagram — rendering diagrams is not in this slice.
+  - **Offline by construction.** Both panels read only what BL-907 holds on the
+    device. Browsing issues no request, which is why airplane mode changes
+    nothing about it.
+  - **Provenance on every view.** Each panel states the generation of the package
+    it is reading. The human's honesty rule applies to the screen, not just the
+    sync: cached content never passes for live.
+  - **Nothing held reads as nothing held.** Before a first sync, a panel says so
+    and offers to sync, rather than showing an empty list that looks like an
+    empty backlog.
+
+  ## Scope boundary — this is the retarget, not the whole of BL-659
+
+  The human confirmed BL-659's corpus goals move here as native Kotlin, and that
+  BL-659 is retargeted rather than retired. This slice delivers the roots the
+  bridge can already serve — backlog and docs. BL-659's other roots
+  (constitution, briefings, evidence, Gherkin scenarios, FLOW analytics, COST),
+  its search palette, its facet chips, and its completion/ETA cues each need a
+  new bridge package or new derivation first, and remain BL-659's own unminted
+  slices. Nothing of BL-659 is dropped by this slice; it is sequenced behind it.
+
+  ## How (direction, not mandate)
+
+  Views + viewBinding, matching the rest of Bubble; the panels are readers over
+  BL-907's store. The coder chooses the screen structure and how it is reached
+  from the bubble.
+
+  ## Testability (Bubble boundary)
+
+  - The panel DECISIONS — what a folder lists, what a ticket's detail shows, what
+    a document opens to, what generation a view states, what a panel says when
+    nothing is held — belong in pure Kotlin with no `android.*` type in the
+    signature, covered by the JVM unit suite (`./gradlew :app:testDebugUnitTest`).
+    Every scenario in the feature file is expressible there.
+  - Only the screen and list wiring is device-surface, verified by the recorded
+    manual procedure below.
+  - No mutation/CRAP/DRY gate exists for `.kt`: the hardener applies the
+    documented unit-test-gap fallback and must record that it did.
+
+  ## Not in scope
+
+  - Fetching or caching anything — BL-907 owns the sync; this slice only reads.
+  - Search, facet chips with counts, completion rings, ETAs, cross-links, the
+    Miller-column interaction of BL-659's mockup — later BL-659 slices.
+  - Corpus roots the bridge does not serve yet (constitution, briefings,
+    evidence, features, FLOW, COST) — each needs a bridge package first.
+  - Rendering mermaid diagrams. The source is shown as source.
+  - Editing anything from the screen. Read-only, as BL-659 ruled.
+
+acceptance: specs/features/BL-908-bubble-knowledge-screen-backlog-docs-panels.feature
+
+qa_e2e_procedure: |
+  Recorded manual device procedure, with Bubble paired to a live bridge and
+  BL-907 landed:
+
+  1. From the floating bubble, reach the knowledge screen — expect it reachable
+     without re-pairing and without leaving Bubble.
+  2. Fresh install, before any sync — expect the panel to say nothing is held and
+     offer to sync, not an empty ticket list.
+  3. Sync, open the backlog panel — expect each folder to list the tickets the
+     host actually holds under it (spot-check a count against
+     `ls backlog/active/` on the host).
+  4. Open one ticket — expect the title and description the host's YAML carries.
+  5. Open the docs panel — expect the five vision documents; open a markdown one
+     and expect its text; open a diagram one and expect its source, labelled as a
+     diagram.
+  6. Read the generation stated on each panel — expect it to match the generation
+     `GET /companion-manifest` advertises for that package on the host.
+  7. Put the phone in airplane mode and repeat steps 3-6 — expect identical
+     content and no failure anywhere in the browse.
+  8. Change the backlog on the host, sync, reopen the backlog panel — expect the
+     new content and the stated generation moved with it.
+
+notes: |
+  No `required_wiring` is declared, deliberately. The reachability this slice
+  needs is "the human can get to the screen from the bubble", and the identifier
+  for that entry point is the coder's to choose — BL-874's lesson is that a
+  `required_wiring` pattern is a plain substring check, so a placeholder for a
+  name nobody has written yet fails the gate on every send rather than checking
+  anything. Reachability is gated by step 1 of the QA procedure instead.
+
+  Depends on BL-907 for the store it reads: do not start this slice before BL-907
+  lands, or the panels have nothing to read and the whole screen stays dark
+  (BL-298's consumer-over-an-unwritten-store failure, which this sequencing
+  exists to avoid).
+
+  Fast-tracked at the human's request: the coordinator engages ambulance mode for
+  BL-907 first, then for this ticket
+  (`docs/how-to/BL-655-ambulance-mode-the-hold.md`), rather than letting either
+  take the normal promote queue.
