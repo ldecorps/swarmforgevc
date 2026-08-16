@@ -74,6 +74,7 @@ here.
 - [Bare-host bootstrap for an autonomous swarm](how-to/BL-628-autonomous-swarm-bringup.md) — `provision_autonomous_host.sh`, the shared shape-agnostic bootstrap library, the front-desk unit an autonomous box needs that the secondary path never installs, and why the onboarding ceremony runs on the primary box, never the remote one.
 - [One briefing send, one backlog history walk: the shared lifecycle snapshot](how-to/BL-897-briefing-lifecycle-snapshot.md) — the machine-local, gitignored snapshot handoffd gathers once per UTC day and hands every briefing-section CLI via `--snapshot`, and the per-consumer fallback when it's missing, unreadable, or stale.
 - [The Morning Briefing's Open-Ticket Chart](how-to/BL-896-briefing-open-ticket-chart.md) — what the chart shows, why its heading says "open tickets remaining" and never "burndown," and its fail-open independence from the architecture diagram section.
+- [Bubble caches the bridge's companion packages, offline-first](how-to/BL-907-bubble-offline-package-sync.md) — the pure sync/cache decision layer, the atomic per-package file store, the two BL-654 invariants, and the manual device procedure that verifies the storage/lifecycle wiring the JVM suite can't reach.
 
 ## Reference
 
