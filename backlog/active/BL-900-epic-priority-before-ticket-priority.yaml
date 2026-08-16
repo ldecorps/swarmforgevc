@@ -9,7 +9,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: low
 human_approval: approved
-acceptance: specs/features/BL-900-epic-priority-before-ticket-priority.feature.draft
+acceptance: specs/features/BL-900-epic-priority-before-ticket-priority.feature
 
 approval_context: >
   Two judgement calls are mine, not the intake's, and both change observable
@@ -208,3 +208,6 @@ notes: |
   reads later as a guard that works.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-16, by: hardender, blamed: coder, class: behavior, commit: 6319570ea1, evidence: backlog/evidence/BL-900-epic-priority-before-ticket-priority-hardener-bounce-20260816.md }

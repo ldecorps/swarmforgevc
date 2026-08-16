@@ -83,6 +83,7 @@
   (let [max-depth (Long/parseLong max-depth-str)
         active-count (promotion-gates-lib/active-count root)
         active-epics (promotion-gates-lib/active-epics root)
+        epic-priority-index (promotion-gates-lib/epic-priority-index root)
         eligible (keep (fn [f]
                           (let [content (slurp f)
                                 result (promotion-gates-lib/evaluate
@@ -91,7 +92,7 @@
                                          :active-epics active-epics})]
                             (when (:ok result) {:file f :content content :advisory (:advisory result)})))
                         files)
-        winner (promotion-gates-lib/rank-candidates eligible)]
+        winner (promotion-gates-lib/rank-candidates eligible epic-priority-index)]
     (if winner
       (do (print-advisory! (:advisory winner))
           (println (:file winner))
