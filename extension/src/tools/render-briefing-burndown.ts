@@ -14,12 +14,8 @@
 import { runGitLog, deriveTicketLifecycles } from '../metrics/gitHistoryAdapter';
 import { readLifecycleSnapshot } from '../metrics/lifecycleSnapshot';
 import { readBacklogFolders } from '../panel/backlogReader';
-import {
-  computeNotDoneBurndownSeries,
-  buildNotDoneBurndownSvg,
-  renderNotDoneBurndownPng,
-  NOT_DONE_BURNDOWN_DIAGRAM_NAME,
-} from '../metrics/notDoneBurndown';
+import { computeNotDoneBurndownSeries } from '../metrics/notDoneBurndown';
+import { buildNotDoneBurndownSvg, renderNotDoneBurndownPng, NOT_DONE_BURNDOWN_DIAGRAM_NAME } from '../metrics/notDoneBurndownChart';
 import { resolveProjectRoot, printJsonToStdout, runCliMain } from './swarm-metrics';
 import { parseSnapshotPath } from './briefingSnapshotArgs';
 import type { RenderedDiagram } from './render-briefing-diagrams';

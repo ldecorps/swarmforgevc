@@ -1,11 +1,6 @@
 const assert = require('node:assert/strict');
-const {
-  computeNotDoneBurndownSeries,
-  buildNotDoneBurndownSvg,
-  renderNotDoneBurndownPng,
-  NOT_DONE_BURNDOWN_DIAGRAM_NAME,
-  DEFAULT_NOT_DONE_BURNDOWN_WINDOW_DAYS,
-} = require('../out/metrics/notDoneBurndown');
+const { computeNotDoneBurndownSeries, DEFAULT_NOT_DONE_BURNDOWN_WINDOW_DAYS } = require('../out/metrics/notDoneBurndown');
+const { buildNotDoneBurndownSvg, renderNotDoneBurndownPng, NOT_DONE_BURNDOWN_DIAGRAM_NAME } = require('../out/metrics/notDoneBurndownChart');
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
