@@ -5,11 +5,11 @@ type: feature
 severity: medium
 status: todo
 epic: swarmforge-console
-priority: 41
+priority: 43
 direction: human-requested
 depends_on: []
 mutation_cost: low
-human_approval: pending
+human_approval: approved
 required_stages: [coder, cleaner, hardender, documenter, qa]
 stage_skip_reasons: { architect: "wires the existing engageOperatorAmbulance / Control engage-ambulance adapter into the Approvals button+verb namespace already proven by Q jump (BL-721); no new hold mechanism or data-flow design" }
 acceptance: specs/features/BL-893-approvals-ambulance-choice.feature.draft

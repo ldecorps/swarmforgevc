@@ -77,7 +77,11 @@ interface ClaudeCliPrintResult {
   result?: string;
 }
 
-function extractJsonObject(text: string): unknown {
+// Exported (behavior-preserving) so its parsing branches - clean JSON,
+// prose-wrapped JSON needing the regex fallback, and no-JSON-found - are
+// unit-testable directly, without shelling out to `claude` the way
+// defaultSurveyRepo (its only caller) does.
+export function extractJsonObject(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
