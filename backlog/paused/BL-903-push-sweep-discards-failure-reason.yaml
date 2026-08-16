@@ -1,0 +1,148 @@
+id: BL-903
+title: "push-sweep's push-failed log records only an attempt count and discards git's actual error — 27 consecutive failures against a remote that is provably healthy, and no way to tell why"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 40
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, hardender, documenter, qa]
+stage_skip_reasons: { architect: "one log line gains an already-captured field and the alarm body reuses it; no new mechanism, no new data flow, no new integration surface — the :error value is already returned by the existing adapter and simply thrown away" }
+acceptance: specs/features/BL-903-push-sweep-discards-failure-reason.feature.draft
+
+approval_context: >
+  One thing to be aware of, no decision needed unless you disagree.
+
+  The intake suspected the push sweep was "likely why local `main` sat
+  unpushed". I probed that before writing this, and the suspicion did not
+  survive contact in the shape it was filed. The retry budget is NOT stuck:
+  `:exhausted?` gates only the operator ALARM, never the push itself, so the
+  sweep keeps retrying on a 5-minute capped backoff indefinitely. There is no
+  terminal give-up state to fix.
+
+  What IS wrong is smaller and certain: after 27 failures nobody — you, the
+  operator, or this specifier — can say why, because the reason is thrown
+  away at the log line. That is the ticket. If you would rather I also chase
+  the "why is main unpushed" question as its own investigation ticket, say so
+  and I will mint one; I did not, because the honest answer today is that the
+  push succeeds when tried and the question may simply dissolve once BL-902
+  stops the restart storm.
+
+source: |
+  `.swarmforge/operator/INTAKE-handoffd-freshness-restart-storm.md` — human
+  via Cursor 2026-08-16 ~10:56 CEST.
+
+  ONE of three tickets this intake was split into (specifier consolidation
+  authority, BL-680; no human sentence lost, Article 5.3). Siblings: BL-902
+  (the briefing-path stall the intake asked be minted) and BL-904 (the
+  sidecar's blind restart counter).
+
+  The human's sentence this ticket carries, verbatim:
+
+  > Also in the same log: `push-sweep push-failed` while `git ls-remote
+  > origin` is fast — likely why local `main` sat unpushed.
+
+description: |
+  ## What is wrong
+
+  When the push sweep's `git push origin main` fails, the failure reason is
+  captured and then discarded. `push-sweep-push!`
+  (`swarmforge/scripts/handoffd.bb`) returns
+  `{:success false :error <git's stderr>}`, but `push_sweep_lib.bb` logs only:
+
+      ((:log! adapters) "push-sweep" "push-failed" (str "attempts=" (:attempts next-push)))
+
+  The `:error` value is never read. The operator's entire view of a failing
+  push is therefore `push-sweep push-failed attempts=27` — a counter with no
+  cause. Auth failure, non-fast-forward, network timeout, protected branch,
+  and a hook refusal are all indistinguishable in the log.
+
+  This is the same class the engineering article's guardrail already names for
+  console surfaces: show the actual failure reason, never a bare status.
+
+  ## Why it matters here, concretely
+
+  Today's state, measured while writing this ticket:
+
+      .swarmforge/daemon/push-sweep-state.json
+        {"push":{"attempts":27,"last-attempt-at-ms":1786892026551,"exhausted?":true}, ...}
+
+      git rev-list --left-right --count main...origin/main   ->  4   0
+      git ls-remote origin -h refs/heads/main                ->  0.79s
+      git push --dry-run origin main                         ->  exit 0
+                                                                 25ce618c4..1186ec9fe  main -> main
+
+  Four commits are unpushed. The remote is fast and reachable. The exact
+  command the adapter runs would succeed right now, as a clean fast-forward.
+  So 27 attempts failed for a reason that is no longer true, or was never
+  about the remote — and the log cannot tell us which, which is precisely the
+  gap the human hit when they filed this.
+
+  ## What is NOT wrong (checked, so nobody re-derives it)
+
+  `:exhausted?` sounds terminal and is not. `next-push-state` sets it once
+  `attempts >= max-push-attempts` (default 5), but it is read in exactly one
+  place — the guard on whether to send the operator alarm. The push itself is
+  gated only by `due?` against a backoff capped at `backoff-max-ms` (5
+  minutes), so the sweep retries forever. `attempts=27` against a max of 5 is
+  by design, not a stuck counter. Do not "fix" it.
+
+  ## How (direction, not mandate)
+
+  - Carry `:error` into the `push-failed` log line, trimmed and single-lined
+    so it cannot break the log's one-record-per-line shape. Git's stderr can
+    be multi-line and can carry a remote URL; keep it readable and do not let
+    it smuggle a newline into the record.
+  - Give the operator alarm the same reason. `send-push-alarm!` is handed only
+    the attempt count today; a "push has failed 27 times" alert that cannot say
+    why is the same defect one layer up.
+  - Nothing in the retry state machine changes. This ticket adds no branch, no
+    new state field, and no new failure classification — a wrong-looking retry
+    budget is explicitly out of scope per the section above.
+
+  ## Scope
+
+  `swarmforge/scripts/push_sweep_lib.bb`'s failure log line and its alarm
+  call, plus whatever the adapter in `swarmforge/scripts/handoffd.bb` must
+  pass through. Not the backoff, not `:exhausted?`, not the QA-ancestry gate,
+  not the divergence alarm.
+
+invariants:
+  - "A push failure is never recorded without the underlying error text alongside it."
+  - "No logged record spans more than one line, whatever git wrote to stderr."
+
+qa_e2e_procedure: |
+  In a scratch repo with a deliberately broken remote, never against origin:
+
+  1. THE REGRESSION. Point the sweep at a remote that refuses (e.g. a
+     non-fast-forward, and separately a bad URL). Run it and read the log.
+     Expect `push-failed` to carry both the attempt count and a recognisable
+     fragment of git's own message, distinct between the two cases.
+  2. ONE LINE. Force a failure whose stderr is multi-line (a bad URL over
+     https produces several). Assert the log gains exactly one new record.
+  3. ALARM. Drive attempts past `max-push-attempts` so the alarm fires (use
+     the existing `PUSH_ALARM_FORCE_RESULT` seam, never real mail) and assert
+     the alarm body names the reason, not only the count.
+  4. HAPPY PATH. Let a push succeed; assert state resets to attempts 0 and no
+     failure record is written.
+  5. NO BEHAVIOUR DRIFT. Re-run the existing push-sweep suite unchanged —
+     backoff timing, `:exhausted?`, the QA gate and the divergence alarm must
+     all behave exactly as before.
+
+notes: |
+  Sibling tickets from the same intake: BL-902 (briefing-email compose-before-
+  key-check, the actual restart storm) and BL-904 (cost-health sidecar's
+  daemonRestarts reads 0). Independent; any landing order.
+
+  Secondary observation, deliberately NOT specced here because it was not
+  reproducible from the live log after a restart truncated the day's history:
+  `push-sweep-state.json` shows the alarm as `{"armed?":true,"attempts":0,
+  "gave-up?":false}` — never attempted — while `exhausted?` has been true for
+  some time. That may be correct (the alarm branch only runs on a tick where a
+  push was actually due AND failed) or may be a second gap. Worth a look while
+  in this file; if it turns out to be real it is its own ticket, not a silent
+  widening of this one.

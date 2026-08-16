@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { epicIdsForSlug, computeEpicTopics, resolveTopicMembership } = require('../out/bridge/epicTopicSlugMatch');
+const { epicIdsForSlug, computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } = require('../out/bridge/epicTopicSlugMatch');
 
 // BL-686 hardening: direct unit coverage for the pure slug-matching core.
 // epicTopicSlugMatch.property.test.js proves the two declared invariants
@@ -103,6 +103,34 @@ test('resolveTopicMembership: returns the exact {target, peers} shape, not an em
   assert.deepEqual(Object.keys(result).sort(), ['peers', 'target']);
   assert.equal(result.target.id, 'T1');
   assert.equal(result.peers.length, 1);
+});
+
+test('filterEpicsWithTopics: an empty topics list drops every epic, preserving none', () => {
+  const epics = [{ id: 'EPIC-A' }, { id: 'EPIC-B' }];
+  assert.deepEqual(filterEpicsWithTopics(epics, []), []);
+});
+
+test('filterEpicsWithTopics: keeps only epics whose ticket id appears in at least one topic, in the original order', () => {
+  const epics = [{ id: 'EPIC-A' }, { id: 'EPIC-B' }, { id: 'EPIC-C' }];
+  const topics = [{ epicIds: ['EPIC-C'] }, { epicIds: ['EPIC-A'] }];
+  assert.deepEqual(
+    filterEpicsWithTopics(epics, topics).map((e) => e.id),
+    ['EPIC-A', 'EPIC-C']
+  );
+});
+
+test('filterEpicsWithTopics: a topic with empty epicIds populates nobody', () => {
+  const epics = [{ id: 'EPIC-A' }];
+  assert.deepEqual(filterEpicsWithTopics(epics, [{ epicIds: [] }]), []);
+});
+
+test('filterEpicsWithTopics: a shared slug tagging two epic ids keeps both trackers', () => {
+  const epics = [{ id: 'EPIC-A' }, { id: 'EPIC-B' }];
+  const topics = [{ epicIds: ['EPIC-A', 'EPIC-B'] }];
+  assert.deepEqual(
+    filterEpicsWithTopics(epics, topics).map((e) => e.id),
+    ['EPIC-A', 'EPIC-B']
+  );
 });
 
 test('resolveTopicMembership: a peer must satisfy type, epic, AND id conditions together, not any single one', () => {
