@@ -1,0 +1,173 @@
+id: BL-901
+title: "A commit can silently delete a backlog ticket it does not own — c9f888d14 swept a staged delete of BL-893 into an unrelated rule-proposal commit and no gate noticed"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 30
+direction: agent-proposed
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, hardender, documenter, qa]
+stage_skip_reasons: { architect: "one standalone shell predicate behind the existing BL-105 pre-commit hook, mirroring check_commit_size.sh exactly; no new mechanism, no data-flow design, no new integration surface" }
+acceptance: specs/features/BL-901-ticket-deletion-commit-guard.feature.draft
+
+approval_context: >
+  Two calls worth your sign-off.
+
+  First, severity `high` rather than `medium`. The damage is contained and
+  already repaired, which argues for medium — but the failure is SILENT and
+  PERMANENT: the ticket left the tracked tree with no error, no gate, and no
+  log line, and it was recoverable only because an untracked copy happened to
+  still be sitting in the master checkout. A `git clean` at any point in that
+  window would have destroyed BL-893 and the human approval recorded on it,
+  with nothing left to notice it by. Downgrade to medium if you would rather
+  it not take the Article 3.2.4 expedite lane.
+
+  Second, the rule deliberately allows a deletion whose ticket id appears
+  anywhere else in the staged tree. That is what keeps every normal close
+  (`active/` to `done/M8/`) and promote (`paused/` to `active/`) working
+  untouched, but it does mean a commit that moves a ticket to a wrong path
+  still passes. Catching that is a different, larger ticket about backlog
+  path validity, not this one.
+
+source: |
+  Discovered 2026-08-16 by the specifier while carrying out the human's
+  answer to a pending role question ("Specifier merges now, taking origin/main
+  for both files") — the BL-891 main/origin-main reconcile.
+
+  After the merge, `backlog/paused/BL-893-approvals-ambulance-choice.yaml` was
+  still untracked, which the reconcile did not explain. Tracing it:
+
+    git log --diff-filter=AD --name-status -- backlog/paused/BL-893-*.yaml
+      c9f888d14  D  backlog/paused/BL-893-approvals-ambulance-choice.yaml
+      7bd936c3a  A  backlog/paused/BL-893-approvals-ambulance-choice.yaml
+
+  `c9f888d14` is "Accept rule_proposal (engineering): cross-language mirrored
+  constants need a test" — a specifier commit that had nothing to do with
+  BL-893. Its full contents were the intended two-file prose change plus an
+  85-line deletion of BL-893's YAML that it silently inherited from a
+  pre-existing staged delete left in the shared master checkout by an earlier
+  turn.
+
+  The result was a ticket that existed nowhere in the tracked backlog while
+  `backlog/topics/BL-893.json` and
+  `specs/features/BL-893-approvals-ambulance-choice.feature.draft` both stayed
+  tracked — a live approval thread with no ticket behind it. The surviving
+  untracked copy also carried two changes the deleted committed version never
+  had: `human_approval: approved` and `priority: 44`. Restored in 0405f5d4e.
+
+  This is a repeat of the BL-506 breach class ("stage only the paths your
+  ticket touched"), which is today a prompt rule with no enforcement. An audit
+  of the rest of the divergence found c9f888d14 was the only such sweep, and
+  the four other tickets present in origin/main but absent from local HEAD were
+  all legitimate relocations (BL-768, BL-850, BL-895 closed to `done/M8/`;
+  BL-624 promoted to `active/`).
+
+description: |
+  ## What is wrong
+
+  Nothing prevents a commit from deleting a backlog ticket YAML it never
+  meant to touch. The master checkout is shared by the coordinator and the
+  specifier and is chronically dirty, so a staged change left behind by one
+  turn is routinely inherited by the next commit any role makes. When that
+  inherited change is a ticket deletion, the ticket leaves the backlog with
+  no error, no gate, and no log line — the exact failure that happened to
+  BL-893.
+
+  The existing guards do not cover it. `check_commit_size.sh` (BL-105) counts
+  files and is indifferent to what they are. BL-632's proposed guard is about
+  pipeline *code* reaching `main` from a non-QA role — an adjacent rule on the
+  same hook, but a different predicate, and it is still paused.
+
+  ## The rule
+
+  > Refuse a commit whose staged changes DELETE a backlog ticket YAML when
+  > that ticket id appears at no other staged path AND the commit message
+  > does not name it.
+
+  The two escape hatches are what keep the guard quiet in normal operation:
+
+  - **Survives elsewhere in the staged tree** — a close (`active/` to
+    `done/M8/`) or a promote (`paused/` to `active/`) stages a delete and an
+    add for the same id, so it passes untouched. This is the common case and
+    must never be blocked.
+  - **Named in the commit message** — a deliberate retirement stays possible
+    with no ceremony beyond saying which ticket you are retiring, which is
+    already the house style ("Close BL-895: ...", "Retire BL-850: ...").
+
+  The sweep that motivated this ticket satisfies neither, which is precisely
+  why it should have been refused.
+
+  ## How (direction, not mandate)
+
+  Follow `check_commit_size.sh` exactly — that is the working precedent for
+  this hook and the reason the guard logic stays testable on its own:
+
+  - Put the predicate in a standalone script and have
+    `swarmforge/git-hooks/pre-commit` call it. **Name the script
+    `swarmforge/scripts/check_ticket_deletion.sh`** — fixed by this ticket so
+    `required_wiring` below has a literal to match (BL-874), not because the
+    name matters.
+  - The hook currently ends in `exec "$REPO_ROOT/swarmforge/scripts/check_commit_size.sh" 50`.
+    `exec` replaces the shell, so a second guard appended after it would never
+    run. Both guards must run and either must be able to refuse — scenario 05
+    exists to hold that line.
+  - Read the staged state with plumbing (`git diff --cached --name-status`)
+    and the message from the commit-message file. Do not consult the working
+    tree; see invariant 1.
+  - Shell test alongside the existing ones in `swarmforge/scripts/test/`,
+    mirroring `test_commit_size_guard.sh`. Per the engineering article, shell
+    has no mutation/CRAP/DRY wired — its own unit suite is the whole gate, so
+    the hardening pass must record that degraded fallback rather than imply
+    mutation ran.
+  - Target stock macOS `/bin/bash` 3.2: write `${arr[@]+"${arr[@]}"}` for any
+    array expansion under `set -u` (BL-801).
+
+  ## Scope
+
+  Backlog ticket YAMLs under `backlog/paused/`, `backlog/active/` and
+  `backlog/done/**` only. Not `backlog/topics/`, not `specs/features/`, not
+  evidence files — those have their own lifecycles and deleting one is not
+  the same silent loss.
+
+invariants:
+  - "The guard's verdict is a function of the staged tree and the commit message alone — never the working tree, the branch, the role, or any untracked file."
+  - "No backlog ticket YAML tracked in HEAD is ever absent from both the resulting tree and the commit message of the commit that removed it."
+
+required_wiring:
+  - "swarmforge/git-hooks/pre-commit::swarmforge/scripts/check_ticket_deletion.sh::the guard script is inert unless the shared hook actually invokes it, and the hook's current trailing `exec` of check_commit_size.sh would prevent any second guard from running at all"
+
+qa_e2e_procedure: |
+  In a scratch clone (never the live repo), with core.hooksPath set to
+  swarmforge/git-hooks as ./swarm sets it:
+
+  1. REFUSE, the regression case. `git rm --cached` a paused ticket YAML,
+     stage an unrelated one-line prose edit, and commit with a message that
+     never names the ticket. Expect a non-zero exit, no commit created, and a
+     message naming the ticket id.
+  2. ALLOW, close. `git mv` a ticket from backlog/active/ to
+     backlog/done/M8/, stage both sides, commit with any message. Expect
+     success — this is the path that must not regress.
+  3. ALLOW, promote. Same as 2 but backlog/paused/ to backlog/active/.
+  4. ALLOW, deliberate retirement. Repeat 1 but put the ticket id in the
+     commit message. Expect success.
+  5. INVARIANT 1. Repeat 1, but first drop an untracked copy of the same
+     ticket YAML back into the working tree. Expect the same refusal — the
+     untracked copy must not excuse it.
+  6. COMPOSITION. Stage 200 trivial files with no ticket deletion and commit.
+     Expect the pre-existing commit-size guard to still refuse. Confirms the
+     `exec` was replaced without disarming the older guard.
+
+notes: |
+  Restoration of the lost ticket is already done and is not part of this
+  ticket's work: BL-893 was restored in 0405f5d4e with its
+  `human_approval: approved` and `priority: 44` intact.
+
+  BL-632 (paused, same epic, `swarm-reliability`) proposes a second predicate
+  on this same hook — refuse pipeline code on `main` from any role but QA.
+  The two are independent and can land in either order, but whichever lands
+  second inherits a hook that already runs more than one guard, so the `exec`
+  problem described above only has to be solved once.
