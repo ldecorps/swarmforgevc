@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatEmitResult, main } = require('../out/tools/emit-cost-health-sidecar');
+const { lifecycleSnapshotPath, serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
 // ── formatEmitResult ─────────────────────────────────────────────────────
 
@@ -65,8 +66,9 @@ function runCliSubprocess(root) {
 // console.log - under Vitest, console.log is NOT routed through
 // process.stdout.write (Vitest intercepts console itself), so console.log
 // must be mocked directly here to observe the output.
-async function runCli(root) {
+async function runCli(root, argv = []) {
   const originalCwd = process.cwd;
+  const originalArgv = process.argv;
   const writes = [];
   const originalLog = console.log;
   console.log = (chunk) => {
@@ -74,10 +76,12 @@ async function runCli(root) {
   };
   try {
     process.cwd = () => root;
+    process.argv = ['node', 'emit-cost-health-sidecar.js', ...argv];
     await main();
   } finally {
     console.log = originalLog;
     process.cwd = originalCwd;
+    process.argv = originalArgv;
   }
   return writes.join('\n') + (writes.length > 0 ? '\n' : '');
 }
@@ -119,6 +123,32 @@ test('a missing .swarmforge/roles.tsv (no resolvable project root) exits non-zer
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
 
   await assert.rejects(() => runCli(root));
+});
+
+// BL-897 hardening: the sibling CLIs (render-briefing-burndown,
+// briefing-digest-line) both got an explicit "compiled CLI reads --snapshot
+// from argv" test when BL-897 wired the same flag into them; this CLI's
+// main() gained the identical parseSnapshotPath(process.argv.slice(2)) call
+// but nothing proved main() itself actually threads it through to
+// computeCostHealthSidecar. The fixture's own git history is empty, so a
+// nonzero speccedPerDay can only come from the shared snapshot winning.
+test('the compiled CLI reads --snapshot from argv and reflects the shared snapshot data', async () => {
+  const root = initFixture();
+  const snapshotPath = lifecycleSnapshotPath(root);
+  mkdirp(path.dirname(snapshotPath));
+  const nowMs = Date.now();
+  fs.writeFileSync(
+    snapshotPath,
+    JSON.stringify(serializeLifecycleSnapshot([{ ticketId: 'ZZ-90005', specDateIso: new Date(nowMs).toISOString(), closeDateIso: null }], nowMs), null, 2),
+    'utf8'
+  );
+
+  await runCli(root, ['--snapshot', snapshotPath]);
+
+  const briefingsDir = path.join(root, 'docs', 'briefings');
+  const jsonFile = fs.readdirSync(briefingsDir).find((f) => f.endsWith('.json'));
+  const sidecar = JSON.parse(fs.readFileSync(path.join(briefingsDir, jsonFile), 'utf8'));
+  assert.equal(sidecar.flowBalance.speccedPerDay.value, 1);
 });
 
 // A single subprocess smoke test locks the compiled CLI's own wiring
