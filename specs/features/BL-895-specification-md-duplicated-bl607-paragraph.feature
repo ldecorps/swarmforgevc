@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-15T15:21:52.451358Z","feature_name":"BL-895 the BL-607 paragraph appears once in Specification.MD","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-895-specification-md-duplicated-bl607-paragraph.feature","background_hash":"2bab5d8f374b1d93230de09574599dcea4a550d924e0efbe7bdbb20ceb7f7392","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-895 the BL-607 paragraph appears once in Specification.MD
 
   Commit 7fa17fecd meant to document BL-607 in the reference specification
