@@ -1,6 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 16, 2026 (BL-897: a briefing send previously walked the
+**Last Updated:** August 16, 2026 (BL-898: `./swarm ensure`'s
+remote-control health check (BL-514) trusted only the live process's
+`--remote-control` flag, which cannot see a dead claude.ai/code session
+behind a still-correct flag; every health signal in the fleet reported
+HEALTHY through a live incident that took a human reading the pane footer
+by eye to catch. The check now also reads the pane footer (`/rc` vs `/rc
+failed`) and, after two consecutive failed observations (never one),
+classifies the role `:session-dead` — routed through the same
+`actionable?` predicate `:degraded` already uses, so every existing caller
+picks it up automatically. Repair is idle-safe (waits for the agent to
+reach its prompt, same discipline as `remote_control_respawn.bb`; a
+still-busy agent is left alone and reported `FAILED`, never killed
+mid-turn) and always notifies the human of the outcome — the new session
+address when readable, an explicit "not readable" statement when it isn't,
+never a fabricated URL. `:degraded` behavior is untouched. See the updated
+[runbook](../how-to/BL-514-remote-control-health-and-ensure-wiring.md).);
+Previously August 16, 2026 (BL-897: a briefing send previously walked the
 backlog's full git history once per section that needed ticket lifecycle
 data (the cost-health sidecar, the digest line, the not-done burndown
 chart), ~7s CPU each, which on a loaded host turned a tens-of-seconds send

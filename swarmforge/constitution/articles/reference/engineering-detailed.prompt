@@ -468,6 +468,26 @@ not as the several separate edits that produced it).
   `nowMs`, threaded through to the `/stage-dwell` route and defaulting to
   the real clock (`undefined`) in production, so a test can now pin the
   same instant its fixture and the route both evaluate against.)
+- **Threading the clock seam is not enough on its own: a fixture DERIVED from
+  the injected clock still flakes if the derived instant can cross a BUCKET
+  boundary the assertion depends on.** When a fixture is seeded as an OFFSET
+  from an injected `nowMs`/clock value (`nowMs - 1hr`) and that seam is left
+  DEFAULTED to the real clock, the offset lands in a different day/hour/window
+  bucket depending on what time the suite happens to run. There is only ONE
+  clock read here, and it is correctly threaded — so the two-independent-reads
+  rule above reads as already satisfied, which is exactly why this slips past
+  it. Pin the seam to a fixed instant chosen so every derived offset stays
+  inside its intended bucket; never let a derived fixture depend on the
+  wall-clock time of the run. (BL-897: a lifecycle fixture seeded
+  `closeDateIso` as an hour before `ctx.nowMs` with `ctx.nowMs` unpinned. The
+  suite ran at 00:39 UTC, so that instant fell into the PRIOR UTC day;
+  `closedPerDay` then correctly reported 0 for the expected bucket and the
+  scenario asserting 1 failed. It flakes only in the hour after real UTC
+  midnight, and presents as a product defect in the aggregation rather than a
+  fixture defect. Proposed by the hardener 2026-08-16 scoped `role:hardender`;
+  accepted into the shared article instead, on the same reasoning as the
+  socket-glob rule above — the coder writes tests first, so this binds every
+  test author.)
 - **The no-real-timers ban covers SUBPROCESS and real-daemon tests too, not just
   in-process unit tests.** A shell test that spawns a real daemon and then polls for
   tens of seconds — because the behavior under test sits behind a HARDCODED production
