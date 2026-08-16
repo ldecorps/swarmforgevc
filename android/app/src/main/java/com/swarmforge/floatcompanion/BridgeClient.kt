@@ -107,8 +107,7 @@ object BridgeClient {
             conn.setFixedLengthStreamingMode(payload.size)
             conn.outputStream.use { it.write(payload) }
             val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val raw = readBody(conn, code)
             if (code !in 200..299) {
                 return AudioEngineWriteResult(false, reason = "HTTP $code: ${raw.take(200)}")
             }
@@ -479,11 +478,6 @@ object BridgeClient {
         }
     }
 
-    private fun readBody(conn: HttpURLConnection, code: Int): String {
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        return stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-    }
-
     fun newSession(baseUrl: String, token: String): Pair<Boolean, String?> {
         val url = URL("${baseUrl.trimEnd('/')}/lets-talk/new-session")
         val conn = openAuth(url, token)
@@ -493,8 +487,7 @@ object BridgeClient {
             conn.setRequestProperty("Content-Length", "0")
             conn.outputStream.close()
             val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val raw = readBody(conn, code)
             if (code !in 200..299) {
                 val reason = if (code in TUNNEL_DEAD_HTTP_CODES) {
                     friendlyTunnelMessage(code)
@@ -533,8 +526,7 @@ object BridgeClient {
             conn.setFixedLengthStreamingMode(payload.size)
             conn.outputStream.use { it.write(payload) }
             val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val raw = readBody(conn, code)
             if (code !in 200..299) {
                 return if (code in TUNNEL_DEAD_HTTP_CODES) {
                     TurnResult(false, "", reason = friendlyTunnelMessage(code), connectionFailure = true)
@@ -672,12 +664,16 @@ object BridgeClient {
         try {
             conn.requestMethod = "GET"
             val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            return code to raw
+            return code to readBody(conn, code)
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** The success/error body for a completed response, by convention across every call site above. */
+    private fun readBody(conn: HttpURLConnection, code: Int): String {
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        return stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
     }
 
     private fun openAuth(url: URL, token: String): HttpURLConnection =

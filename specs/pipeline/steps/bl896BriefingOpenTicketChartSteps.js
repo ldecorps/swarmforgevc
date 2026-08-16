@@ -27,6 +27,10 @@ function notDoneBurndownModule() {
   return require(path.join(EXT_DIR, 'out', 'metrics', 'notDoneBurndown'));
 }
 
+function notDoneBurndownChartModule() {
+  return require(path.join(EXT_DIR, 'out', 'metrics', 'notDoneBurndownChart'));
+}
+
 function ensureBriefingsDir(ctx) {
   if (!ctx.briefingsDir) {
     ctx.briefingsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-briefing-open-chart-'));
@@ -81,7 +85,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the open-ticket chart is rendered$/, (ctx) => {
-    const { buildNotDoneBurndownSvg } = notDoneBurndownModule();
+    const { buildNotDoneBurndownSvg } = notDoneBurndownChartModule();
     ctx.burndownSvg = buildNotDoneBurndownSvg(ctx.burndownSeries);
   });
 

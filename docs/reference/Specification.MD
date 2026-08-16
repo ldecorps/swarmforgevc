@@ -1,6 +1,57 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 16, 2026 (BL-898: `./swarm ensure`'s
+**Last Updated:** August 16, 2026 (BL-907: Bubble's phone side now caches
+BL-866's companion packages — the sync/cache decisions
+(`CompanionPackageSync`: which generation to request for an already-held
+package, what a read answers before/after a package is held, what a fetch
+outcome does to what's already held) live in pure Kotlin proven by the JVM
+unit suite and two BL-654 property tests; `CompanionPackageStore` wires them
+to one atomically-written file per package under app-private storage,
+verified by a recorded manual device procedure per the Bubble testability
+boundary. Two invariants hold across every scenario: a held package's
+generation always comes from the same fetch as its data, and no sync
+outcome — success or any of four failure kinds — ever leaves the device
+holding less than it held before. Phone-side only, no bridge change; BL-908
+builds the browse UI over what this slice stores. See the updated
+"Remote Access & Phone App" section and the new
+[how-to](../how-to/BL-907-bubble-offline-package-sync.md).); Previously
+August 16, 2026 (BL-896: swarm stamp-off certifying the
+operator hotfix (`14724edae7`) that put a second chart — open tickets
+remaining per day, with filed/closed rates — on the morning briefing email
+alongside the architecture diagrams. The chart's heading was renamed off
+"burndown" to "Open tickets remaining": the maths was right but the label
+collided with BL-659's burndown ban, since this backlog is a continuously
+growing scope, not a committed iteration perimeter — this chart is the
+open-count/net-flow replacement BL-659 itself ratified, not an exception to
+the ban. Also fixed while certifying: a duplicated remaining-count predicate
+(`notDoneBurndown.ts`'s copy of `deliveryMetrics.ts`'s
+`isRemainingOnDay`) consolidated into one implementation on
+`gitHistoryAdapter.ts`; today's point in the series now reconciles against a
+live disk count of `active/`+`paused/`+`hold/` (a ticket retired by file
+deletion rather than a move to `done/` was reading as open forever); and the
+two diagram sources' fail-open-independently claim, previously asserted only
+in a comment, now has real test coverage on the extracted
+`diagram-section-from-sources`. See the new
+[how-to](../how-to/BL-896-briefing-open-ticket-chart.md).); Previously
+August 16, 2026 (BL-900: promotion ranking now compares
+the priority of a candidate's containing epic before the candidate's own
+`priority:` — `[expedited? epic-priority own-priority id]`, spliced after
+the Article 3.2.4 expedite bucket so that bucket stays strictly first by
+construction. `epic-priority-index` resolves each epic's most urgent
+`type: epic` tracker priority (an epic id with several trackers ranks by
+its lowest); a candidate whose epic has no tracker, or no `epic:` field at
+all, falls back to its own priority rather than being buried behind every
+tracked epic. `direction: queue-jump` and ambulance mode are untouched —
+neither was ever a ranking input. Wired into all three real call sites
+(`promotion_gates_cli.bb`'s `cmd-select`, and `chase_sweep_lib.bb`'s
+`top-open-slot-candidate` / `top-expedited-paused-candidate`, used to name
+the ticket in the BL-798 escalation nudge and the BL-679 ambulance-release
+announcement) after a hardener bounce caught the latter two call sites
+missing an epic-priority index on the first pass. See the new
+[explanation](../explanation/BL-900-epic-priority-promotion-ranking.md) and
+the updated [console
+runbook](../how-to/BL-572-console-epic-priority-reorder.md).); Previously
+August 16, 2026 (BL-898: `./swarm ensure`'s
 remote-control health check (BL-514) trusted only the live process's
 `--remote-control` flag, which cannot see a dead claude.ai/code session
 behind a still-correct flag; every health signal in the fleet reported
@@ -2882,7 +2933,8 @@ The bridge exposes:
 - **A read projection** — pipeline stage, per-agent status/heartbeat, completion %, run log — all derived from the same on-disk state, pushed over an event stream (WebSocket/SSE)
 - **A small control surface — narrower than originally scoped here, by deliberate operator posture (BL-240, 2026-07-10):** the ONLY write route the bridge exposes is answering a captured `to: human` gate (`POST /gate-answer {role, answer}`), authenticated, dispatched through the exact same tmux send-keys call the extension uses when the operator types into a tile locally, and refused for any role that isn't currently showing a captured gate. Respawn-an-agent, stop-the-swarm, and switch-a-model remain future work on this surface, not yet implemented — a client cannot do them remotely today.
 - **`GET /gates` — the pending-gate list (BL-265 slice 1).** A read-scoped route listing every role currently showing a captured `to: human` gate (role + question snippet); a role with no pending gate is simply absent, and nothing gated returns an empty list, never an error. `filterPendingGates` (`extension/src/bridge/gateSnapshot.ts`) narrows `computeRoleGateStatesLive`'s per-role snapshot (built for the Telegram narrator, BL-239, which needs the full gated/not-gated set to detect a resolved transition) down to only the gated entries. This closes gap #10's missing read half — the write half (`POST /gate-answer` above) already existed; a client still needs a UI to actually view and answer from, which is slice 2 (holistic UI, `extension/src/bridge/holisticUiHtml.ts`, parked as `specs/features/BL-265-holistic-gate-answer-view.slice-2-ui.feature.draft` until built) — deliberately NOT the static backlog-dashboard PWA, which has no live bridge connection, token, or write path (see the PWA-vs-holistic-UI boundary rule in `local-engineering.prompt`).
-- **`GET /companion-manifest` + `GET /companion-package/<name>` — the companion-manifest and package catalog (BL-866, epic BL-865's foundation slice).** The contract every later offline slice of Bubble's offline-first sync reads: `/companion-manifest` lists each package the bridge can currently serve (`backlog`, sourced from the same `readBacklogFolders` the panel uses; `docs`, the vision-doc tree via `readVisionDocs`) with a **generation** — a `sha256` of the package's own content, truncated to 16 hex chars, computed fresh on every request from the exact content about to be served, so a served body and the generation it carries can never drift apart by separate bookkeeping — and a **format version** (`companionManifest.ts`, `COMPANION_PACKAGE_FORMAT = 'json'`). `/companion-package/<name>?generation=<g>` serves that package: omit `generation` (or name a stale one) and the current body comes back at `200` with the generation in both the JSON body and an `etag` header; name the generation already held and the answer is `304` with an `etag` header and **zero bytes on the wire** — the cheap-refresh path a phone needs to keep the BL-659 corpus (~2-3 MB compressed) current without re-downloading it unchanged. A package whose source cannot be read is left off the manifest rather than advertised (`docs` degrades this way if every vision-doc source is unreadable — `readVisionDocs` already tolerates individual missing docs; zero docs read back is what trips this), and one that was advertised but becomes unreadable by request time is refused `503` with a reason rather than served as an empty package; an unknown package name is refused `404`. Both routes sit behind the bridge's existing `isAuthorizedForRead` gate, same as every other read route. Bridge-side only, fully covered by the Node unit suite — no phone-side fetch, cache, or offline read path yet; that, and the offline mutation outbox, are later slices of epic BL-865.
+- **`GET /companion-manifest` + `GET /companion-package/<name>` — the companion-manifest and package catalog (BL-866, epic BL-865's foundation slice).** The contract every later offline slice of Bubble's offline-first sync reads: `/companion-manifest` lists each package the bridge can currently serve (`backlog`, sourced from the same `readBacklogFolders` the panel uses; `docs`, the vision-doc tree via `readVisionDocs`) with a **generation** — a `sha256` of the package's own content, truncated to 16 hex chars, computed fresh on every request from the exact content about to be served, so a served body and the generation it carries can never drift apart by separate bookkeeping — and a **format version** (`companionManifest.ts`, `COMPANION_PACKAGE_FORMAT = 'json'`). `/companion-package/<name>?generation=<g>` serves that package: omit `generation` (or name a stale one) and the current body comes back at `200` with the generation in both the JSON body and an `etag` header; name the generation already held and the answer is `304` with an `etag` header and **zero bytes on the wire** — the cheap-refresh path a phone needs to keep the BL-659 corpus (~2-3 MB compressed) current without re-downloading it unchanged. A package whose source cannot be read is left off the manifest rather than advertised (`docs` degrades this way if every vision-doc source is unreadable — `readVisionDocs` already tolerates individual missing docs; zero docs read back is what trips this), and one that was advertised but becomes unreadable by request time is refused `503` with a reason rather than served as an empty package; an unknown package name is refused `404`. Both routes sit behind the bridge's existing `isAuthorizedForRead` gate, same as every other read route. Bridge-side only, fully covered by the Node unit suite.
+- **Bubble holds those packages on the device (BL-907, epic BL-865's phone-side slice).** `CompanionPackageSync` (pure Kotlin, no `android.*` type in any signature — the Bubble testability boundary) owns every sync/cache decision, proven by the JVM unit suite plus two BL-654 property tests: a held package's generation always comes from the same fetch as its data (never relabeled with a stale or a different fetch's generation), and no sync outcome — the successful fetch or any of the four failure kinds (unknown package, unreadable package, connection failure, interrupted transfer) — ever leaves the device holding less than it held before; only a successful fetch replaces what's held, every failure reports itself and leaves the existing copy untouched. `CompanionPackageStore` wires those decisions to one atomically-written JSON file per package under app-private storage (temp file, then rename, so a sync that dies mid-write can't corrupt the previous complete copy) and is the ticket's device-surface half, verified by a recorded manual procedure rather than the JVM suite. Before any package has ever synced, a read reports nothing held rather than an empty package. See the new [how-to](../how-to/BL-907-bubble-offline-package-sync.md).
 - **Auth + tunnel** — token-based; opt-in and encrypted (see the remote-access security gap)
 
 It deliberately does *not* hold or cache authoritative state, run its own watchdog, or duplicate logic. If it dies, the swarm is unaffected and the desktop extension carries on — because neither depends on it.
