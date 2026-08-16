@@ -8,6 +8,7 @@ const {
   deriveTicketLifecycles,
   parseMergeLog,
   runGitLog,
+  isTicketRemainingAtDayEnd,
 } = require('../out/metrics/gitHistoryAdapter');
 
 // BL-096: parseGitLog is a pure text parser over `git log
@@ -257,10 +258,39 @@ test('deriveTicketLifecycles leaves closeDateIso null for a ticket never seen un
   assert.equal(lifecycles.get('BL-001').closeDateIso, null);
 });
 
+test('isTicketRemainingAtDayEnd: not yet specced by day end is never remaining', () => {
+  const member = { ticketId: 'BL-1', specDateIso: '2026-08-05T00:00:00Z', closeDateIso: null };
+  assert.equal(isTicketRemainingAtDayEnd(member, Date.parse('2026-08-04T23:59:59Z')), false);
+});
+
+test('isTicketRemainingAtDayEnd: specced and never closed is remaining at any day end after spec', () => {
+  const member = { ticketId: 'BL-1', specDateIso: '2026-08-01T00:00:00Z', closeDateIso: null };
+  assert.equal(isTicketRemainingAtDayEnd(member, Date.parse('2026-08-10T00:00:00Z')), true);
+});
+
+test('isTicketRemainingAtDayEnd: no longer remaining once the close date is before day end', () => {
+  const member = { ticketId: 'BL-1', specDateIso: '2026-08-01T00:00:00Z', closeDateIso: '2026-08-03T00:00:00Z' };
+  assert.equal(isTicketRemainingAtDayEnd(member, Date.parse('2026-08-05T00:00:00Z')), false);
+  assert.equal(isTicketRemainingAtDayEnd(member, Date.parse('2026-08-02T00:00:00Z')), true);
+});
+
 test('deriveTicketLifecycles extracts the ticket id from a bare filename with no title slug', () => {
   const output = [commitLine('aaa', '2026-01-01T00:00:00Z'), 'A\tbacklog/active/BL-101.yaml', ''].join('\n');
   const lifecycles = deriveTicketLifecycles(parseGitLog(output));
   assert.ok(lifecycles.has('BL-101'));
+});
+
+test('deriveTicketLifecycles leaves closeDateIso null when a ticket is retired by deleting its file rather than moving it to done/ (BL-896 F3: documented adapter gap - every consumer inherits this, not fixed here; notDoneBurndown.ts reconciles against a live disk read at the point of use instead)', () => {
+  const output = [
+    commitLine('aaa', '2026-01-01T00:00:00Z'),
+    'A\tbacklog/active/BL-001-example.yaml',
+    '',
+    commitLine('bbb', '2026-01-05T00:00:00Z'),
+    'D\tbacklog/active/BL-001-example.yaml',
+    '',
+  ].join('\n');
+  const lifecycles = deriveTicketLifecycles(parseGitLog(output));
+  assert.equal(lifecycles.get('BL-001').closeDateIso, null);
 });
 
 test('deriveTicketLifecycles ignores changes to files that are not ticket yaml files', () => {
