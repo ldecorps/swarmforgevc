@@ -8,8 +8,7 @@ priority: 10
 direction: human-requested
 depends_on: []
 mutation_cost: low
-human_approval: pending
-
+human_approval: approved
 acceptance: specs/features/BL-900-epic-priority-before-ticket-priority.feature.draft
 
 approval_context: >
@@ -207,3 +206,5 @@ notes: |
   Recording this rather than silently implementing three exceptions: two of
   them would have been guards against nothing, and a guard against nothing
   reads later as a guard that works.
+
+assigned_to: coder
