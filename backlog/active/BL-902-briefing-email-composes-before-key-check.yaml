@@ -172,3 +172,5 @@ notes: |
   only the instance the human caught. If the same ordering exists in the
   escalation-email or push-alarm paths that share `daemon_alarm_lib.bb`, that
   is a follow-on ticket, not a silent widening of this one.
+
+assigned_to: coder
