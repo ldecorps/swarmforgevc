@@ -1,5 +1,5 @@
 import { Resvg } from '@resvg/resvg-js';
-import { TicketLifecycleEvent } from './gitHistoryAdapter';
+import { TicketLifecycleEvent, isTicketRemainingAtDayEnd } from './gitHistoryAdapter';
 
 // Not-done (open) ticket burndown for the daily briefing email: remaining
 // count over a fixed trailing window, rendered as SVG then rasterized to
@@ -47,18 +47,6 @@ function mmDd(ms: number): string {
   return `${mm}-${dd}`;
 }
 
-function isRemainingAtDayEnd(member: TicketLifecycleEvent, dayEndMs: number): boolean {
-  const specMs = Date.parse(member.specDateIso);
-  if (Number.isNaN(specMs) || specMs >= dayEndMs) {
-    return false;
-  }
-  if (member.closeDateIso === null) {
-    return true;
-  }
-  const closeMs = Date.parse(member.closeDateIso);
-  return Number.isNaN(closeMs) || closeMs >= dayEndMs;
-}
-
 function onLocalDay(iso: string | null, dayStartMs: number): boolean {
   if (iso === null) {
     return false;
@@ -70,11 +58,26 @@ function onLocalDay(iso: string | null, dayStartMs: number): boolean {
   return localDayStartMs(ms) === dayStartMs;
 }
 
-/** Pure: remaining (not-yet-closed) ticket count per local calendar day. */
+/**
+ * Pure: remaining (not-yet-closed) ticket count per local calendar day.
+ *
+ * `currentOpenTicketIds`, when given, is the live set of ticket ids actually
+ * sitting in backlog/active + backlog/paused + backlog/hold today (BL-896
+ * F3). `deriveTicketLifecycles` never assigns a close date to a ticket
+ * retired by deleting its YAML rather than moving it under backlog/done/, so
+ * without this the lifecycle-only heuristic below can count such a ticket as
+ * remaining forever. That is an adapter-level gap shared by every
+ * `deriveTicketLifecycles` consumer, not fixed at the source here (wide
+ * blast radius - see gitHistoryAdapter.ts's isTicketRemainingAtDayEnd). Only
+ * TODAY's point can be reconciled against a live disk read, so only it is
+ * corrected; the rest of the window keeps the lifecycle estimate since past
+ * disk state cannot be reconstructed.
+ */
 export function computeNotDoneBurndownSeries(
   lifecycles: TicketLifecycleEvent[],
   nowMs: number,
-  windowDays: number = DEFAULT_NOT_DONE_BURNDOWN_WINDOW_DAYS
+  windowDays: number = DEFAULT_NOT_DONE_BURNDOWN_WINDOW_DAYS,
+  currentOpenTicketIds?: ReadonlySet<string>
 ): NotDoneBurndownSeries {
   const todayStart = localDayStartMs(nowMs);
   const start = todayStart - (windowDays - 1) * DAY_MS;
@@ -84,12 +87,16 @@ export function computeNotDoneBurndownSeries(
 
   for (let day = start; day <= todayStart; day += DAY_MS) {
     const dayEnd = day + DAY_MS;
-    const remaining = lifecycles.filter((m) => isRemainingAtDayEnd(m, dayEnd)).length;
+    const remaining = lifecycles.filter((m) => isTicketRemainingAtDayEnd(m, dayEnd)).length;
     const filed = lifecycles.filter((m) => onLocalDay(m.specDateIso, day)).length;
     const closed = lifecycles.filter((m) => onLocalDay(m.closeDateIso, day)).length;
     totalFiled += filed;
     totalClosed += closed;
     series.push({ dayMs: day, label: mmDd(day), remaining, filed, closed });
+  }
+
+  if (currentOpenTicketIds && series.length > 0) {
+    series[series.length - 1] = { ...series[series.length - 1], remaining: currentOpenTicketIds.size };
   }
 
   const open0 = series.length > 0 ? series[0].remaining : 0;
@@ -189,7 +196,7 @@ export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<rect width="100%" height="100%" fill="#f7f5f0"/>`,
-    `<text x="${padL}" y="26" font-size="18" font-weight="700" fill="#1a3a4a" font-family="system-ui,sans-serif">Backlog burndown — last ${data.windowDays} days (not-done tickets)</text>`,
+    `<text x="${padL}" y="26" font-size="18" font-weight="700" fill="#1a3a4a" font-family="system-ui,sans-serif">Open tickets remaining — last ${data.windowDays} days</text>`,
     `<text x="${padL}" y="44" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXml(subtitle)}</text>`,
     ...gridLines,
     `<polyline fill="none" stroke="#1a3a4a" stroke-width="2.6" points="${poly}"/>`,

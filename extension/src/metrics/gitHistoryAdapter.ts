@@ -90,6 +90,21 @@ export interface TicketLifecycleEvent {
   closeDateIso: string | null;
 }
 
+// BL-896 F2: shared by deliveryMetrics.ts's per-milestone burndown and
+// notDoneBurndown.ts's repo-wide not-done series - both had copied this
+// same predicate under a different name, free to drift apart.
+export function isTicketRemainingAtDayEnd(member: TicketLifecycleEvent, dayEndMs: number): boolean {
+  const specMs = Date.parse(member.specDateIso);
+  if (Number.isNaN(specMs) || specMs >= dayEndMs) {
+    return false; // not yet specced by this day
+  }
+  if (member.closeDateIso === null) {
+    return true;
+  }
+  const closeMs = Date.parse(member.closeDateIso);
+  return Number.isNaN(closeMs) || closeMs >= dayEndMs;
+}
+
 const TICKET_PATH_PATTERN = /(?:^|\/)([A-Za-z]+-\d+)(?:-[^/]+)?\.yaml$/;
 
 function extractTicketId(filePath: string): string | null {

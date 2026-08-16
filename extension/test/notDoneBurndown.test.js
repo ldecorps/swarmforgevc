@@ -28,15 +28,43 @@ test('computeNotDoneBurndownSeries counts remaining across the window', () => {
   assert.equal(dayClosed.closed, 1);
 });
 
-test('buildNotDoneBurndownSvg draws the remaining polyline and title', () => {
+test('buildNotDoneBurndownSvg draws the remaining polyline and names the series it plots, not a burndown', () => {
+  // BL-896 F1: the heading must name what the series actually is (open
+  // tickets remaining) and must not claim progress toward a fixed/committed
+  // scope - "burndown" is exactly that claim, and BL-659 banned it.
   const nowMs = Date.parse('2026-08-10T15:00:00+02:00');
   const series = computeNotDoneBurndownSeries(lifecycles, nowMs, 7);
   const svg = buildNotDoneBurndownSvg(series);
-  assert.match(svg, /Backlog burndown — last 7 days \(not-done tickets\)/);
+  assert.match(svg, /Open tickets remaining — last 7 days/);
+  assert.doesNotMatch(svg, /burndown/i);
   assert.match(svg, /<polyline /);
-  assert.match(svg, /not-done tickets/);
   assert.equal(DEFAULT_NOT_DONE_BURNDOWN_WINDOW_DAYS, 30);
   assert.equal(NOT_DONE_BURNDOWN_DIAGRAM_NAME, 'not-done-burndown');
+});
+
+test('computeNotDoneBurndownSeries reconciles only today\'s point against the live open-ticket set (BL-896 F3)', () => {
+  // A ticket retired by deleting its YAML (rather than moving it under
+  // backlog/done/) never gets a closeDateIso from deriveTicketLifecycles,
+  // so the lifecycle-only heuristic overcounts it as still open. When the
+  // caller supplies the actual current open ids, today's point must match
+  // that ground truth instead - and the retired ticket must not be in it.
+  const nowMs = Date.parse('2026-08-10T15:00:00+02:00');
+  // BL-2 and BL-3 are lifecycle-open per the fixture above; BL-3 was
+  // actually retired by deletion, so it is absent from the live open set.
+  const currentOpenTicketIds = new Set(['BL-2']);
+  const reconciled = computeNotDoneBurndownSeries(lifecycles, nowMs, 10, currentOpenTicketIds);
+  assert.equal(reconciled.openN, 1);
+  assert.equal(reconciled.series[reconciled.series.length - 1].remaining, 1);
+
+  const unreconciled = computeNotDoneBurndownSeries(lifecycles, nowMs, 10);
+  assert.equal(unreconciled.openN, 2); // unchanged when no live set is supplied
+
+  // Only today's point is corrected - earlier days keep the lifecycle
+  // estimate, since past disk state cannot be reconstructed.
+  assert.deepEqual(
+    reconciled.series.slice(0, -1).map((p) => p.remaining),
+    unreconciled.series.slice(0, -1).map((p) => p.remaining)
+  );
 });
 
 test('renderNotDoneBurndownPng returns a well-formed PNG', () => {

@@ -182,11 +182,17 @@
   (str name "-diagram"))
 
 ;; Human-facing <h3> for each cid attachment. Architecture/swarm-flow keep
-;; the historic "<name> diagram" label; the not-done burndown chart gets a
+;; the historic "<name> diagram" label; the open-ticket chart gets a
 ;; readable title instead of "not-done-burndown diagram".
+;;
+;; BL-896 F1: was "Not-done ticket burndown" - "burndown" claims progress
+;; toward a fixed/committed scope, which BL-659 banned (this repo's
+;; milestones are a continuously growing scope, not a committed perimeter).
+;; The chart plots open tickets remaining with filed/closed rates, not a
+;; burndown, so the heading now says that instead.
 (defn- diagram-heading [name]
   (case name
-    "not-done-burndown" "Not-done ticket burndown"
+    "not-done-burndown" "Open tickets remaining"
     (str name " diagram")))
 
 (defn- diagram-note-line [diagrams]
@@ -195,10 +201,10 @@
         has-burn? (contains? names "not-done-burndown")]
     (cond
       (and has-arch? has-burn?)
-      "Architecture diagrams and not-done burndown: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
+      "Architecture diagrams and the open-ticket chart: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
 
       has-burn?
-      "Not-done ticket burndown: rendered inline above (HTML view)."
+      "Open-ticket chart: rendered inline above (HTML view)."
 
       :else
       "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source.")))
@@ -243,6 +249,26 @@
                          diagrams)}
     {:html nil
      :note-line "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo."}))
+
+;; BL-896 F4: handoffd's briefing-diagram-section calls two independent
+;; render-CLI shell-outs (architecture, open-ticket chart) and concatenates
+;; whichever succeeded before handing the result to build-diagram-section
+;; above - "each source fails open independently; whichever succeeded still
+;; ships" is the claim that combining step makes true, not build-diagram-
+;; section itself (which was already covered below). Extracted here, taking
+;; the two source thunks as parameters, so a test can inject any combination
+;; of success/nil/throw and assert the claim actually holds - handoffd.bb
+;; itself cannot be load-file'd by a test harness (it exits immediately when
+;; *command-line-args* is empty), so the testable half of this logic has to
+;; live in a plain lib file like this one. The try/catch here is a second,
+;; redundant safety net for that same reason: an injected fake thunk that
+;; throws for real must not prevent its sibling's result from shipping,
+;; exactly like a production source's own internal catch already does.
+(defn diagram-section-from-sources [architecture-source-fn burndown-source-fn]
+  (let [architecture (try (architecture-source-fn) (catch Exception _ nil))
+        burndown (try (burndown-source-fn) (catch Exception _ nil))
+        diagrams (vec (concat (or architecture []) (or burndown [])))]
+    (build-diagram-section (seq diagrams))))
 
 ;; BL-393: the diagram section's own html (a <div> of <h3>/<img> per
 ;; diagram) must coexist with the rendered body, never replace it -
