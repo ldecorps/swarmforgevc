@@ -102,13 +102,14 @@ class KnowledgeActivity : AppCompatActivity() {
                 showEmpty(getString(R.string.knowledge_malformed, "docs", state.reason))
             is KnowledgeReader.DocsPanelState.Ready -> {
                 showGeneration(state.generation)
-                val labels = state.vision.map { doc ->
-                    if (doc.kind == "mermaid") getString(R.string.knowledge_diagram_title, doc.title) else doc.title
-                }
+                val labels = state.vision.map { doc -> docLabel(doc) }
                 showList(labels) { index -> showDocDetail(state.vision[index]) }
             }
         }
     }
+
+    private fun docLabel(doc: KnowledgeReader.VisionDoc): String =
+        if (doc.kind == "mermaid") getString(R.string.knowledge_diagram_title, doc.title) else doc.title
 
     private fun showGeneration(generation: String) {
         binding.generationText.text = getString(R.string.knowledge_generation, generation)
@@ -161,9 +162,8 @@ class KnowledgeActivity : AppCompatActivity() {
     }
 
     private fun showDocDetail(doc: KnowledgeReader.VisionDoc) {
-        val title = if (doc.kind == "mermaid") getString(R.string.knowledge_diagram_title, doc.title) else doc.title
         AlertDialog.Builder(this)
-            .setTitle(title)
+            .setTitle(docLabel(doc))
             .setMessage(doc.content)
             .setPositiveButton(android.R.string.ok, null)
             .show()
