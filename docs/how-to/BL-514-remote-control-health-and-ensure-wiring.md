@@ -79,8 +79,8 @@ Behavior per role, driven by `remote-control-health/check-role`:
 - **`:down`** → `rc:<role>: HEALTHY`, no action taken here — a crashed pane
   is entirely the `agent:<role>` check's job (which respawns it and
   thereby restores RC as a side effect). `actionable?` is true only for
-  `:degraded`, so the RC check can never double-respawn a pane the
-  agent-pane check just revived.
+  `:degraded` (and, since BL-898, `:session-dead` — see below), so the RC
+  check can never double-respawn a pane the agent-pane check just revived.
 
 Under mono-router, the resident may currently be running a rotated role's
 launch script rather than its home role's — the RC check is evaluated
@@ -91,6 +91,57 @@ to home, so a legitimately rotated resident is never misclassified as
 `rc:<role>` folds into the same aggregation as every other `./swarm ensure`
 component: it never aborts the sweep on one `FAILED`, and the overall exit
 status is non-zero iff any component (RC included) is `FAILED`.
+
+## New: `:session-dead` — the flag is fine, the cloud session isn't (BL-898)
+
+`classify` (above) trusts argv alone: the live `claude` process still
+carrying its `--remote-control <name>` flag. Argv cannot change while the
+process runs, so when the claude.ai/code session behind a correct flag dies,
+every RC check described above keeps reporting `HEALTHY` while the human has
+no remote control at all — the failure mode a 2026-08-15 coordinator-pane
+incident exposed by hand (see `remote_control_health_lib.bb`'s file header).
+
+The pane footer carries the second signal `classify` cannot see: Claude Code
+prints a bare `/rc` when its remote-control session is live, `/rc failed`
+when it drops. `./swarm ensure`'s RC check now reads that footer line (the
+last non-blank line of the pane capture — never the whole scrollback, so a
+`/rc failed` merely echoed higher up in scrollback from an earlier redraw is
+never mistaken for current chrome) on every sweep and persists a
+consecutive-failure streak per role under
+`.swarmforge/rc-footer-streak/<role>`. One failed observation never triggers
+anything — a mid-reconnect blip must not fire a respawn — only 2+
+*consecutive* failed observations reclassify an otherwise-`:healthy` role as
+`:session-dead` (`classify-session`, `advance-footer-streak!`). `:degraded`,
+`:down` and `:off` are untouched — `:session-dead` only ever reclassifies
+what `classify` already called `:healthy`.
+
+`:session-dead` is routed through the same `actionable?` predicate as
+`:degraded`, so every existing caller already asking that one question picks
+it up automatically — no second, parallel repair path. Its repair
+(`repair-session-dead!`) differs from `:degraded`'s immediate respawn in one
+deliberate way: it is idle-safe. It waits up to
+`SWARM_ENSURE_RC_SESSION_DEAD_WAIT_SECONDS` (default 180) for the pane to go
+idle (`remote-control-health/wait-until-idle!`, the same busy signal
+`remote_control_respawn.bb` already polls), respawns only then, confirms the
+flag came back (`confirm-rc!`), and — invariant 2 — always tells the human
+the outcome: the new `claude.ai/code/session_...` address when readable, an
+explicit "address not readable yet, check the pane" when it is not, never a
+fabricated URL. The notice reuses `operator_telegram_lib.bb`'s existing
+`send-message-request` primitive (no new comms path); when Telegram isn't
+configured it no-ops, and the outcome is still visible in this component's
+own report line either way. A pane still busy past the wait budget is left
+alone and reported `FAILED` — never a mid-turn kill.
+
+```text
+rc:coordinator: HEALTHY
+rc:documenter: FIXED (respawned pane to restore a dead remote-control session - new session: https://claude.ai/code/session_...)
+```
+
+Env overrides for fixturing this path (mirrors the existing `remote-control`
+overrides): `SWARM_ENSURE_RC_CAPTURE_CMD` (pane-capture probe, for both
+footer detection and the idle-wait busy check), `SWARM_ENSURE_RC_NOTIFY_CMD`
+(substitutes the human-notify call so a test can assert on exactly what
+would have been sent).
 
 ## Verifying the live path
 
@@ -108,6 +159,13 @@ Against the live swarm (or a fixtured tmux session):
    `agent`/`daemon`/`operator`/`front-desk` lines, a `:degraded` role shows
    `FIXED`, a `:down` role is left to its `agent:<role>` line (no double
    respawn), and the overall exit status reflects any `FAILED`.
+5. Feed a single failed-footer pane capture through `./swarm ensure`
+   (`SWARM_ENSURE_RC_CAPTURE_CMD`) — confirm nothing is triggered. Feed a
+   second consecutive one — confirm the role now reports `:session-dead` and
+   is repaired. Point the repair at a pane whose busy probe never goes idle
+   — confirm the pane is left untouched and reported `FAILED`, not killed.
+   Confirm a genuine `:degraded` pane still repairs exactly as before —
+   BL-898 must not have moved that behavior at all.
 
 ## Related
 
