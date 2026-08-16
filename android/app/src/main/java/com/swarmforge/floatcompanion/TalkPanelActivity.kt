@@ -77,6 +77,9 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         }
         binding.pauseAll.setOnClickListener { eng.togglePauseAll() }
         binding.newSession.setOnClickListener { eng.resetSession() }
+        binding.knowledgeBtn.setOnClickListener {
+            startActivity(Intent(this, KnowledgeActivity::class.java))
+        }
         binding.settingsBtn.setOnClickListener { showSettingsDialog(eng) }
         binding.playlistBtn.setOnClickListener { showPlaylistDialog(eng) }
 

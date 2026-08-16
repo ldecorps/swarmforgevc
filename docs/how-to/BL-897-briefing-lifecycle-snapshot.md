@@ -5,8 +5,10 @@
 Three sections of a morning briefing send each need ticket lifecycle data
 derived from the backlog's git history (`deriveTicketLifecycles`): the
 cost-health sidecar (`emit-cost-health-sidecar.ts`), the digest line
-(`briefing-digest-line.ts`) and the not-done burndown chart
-(`render-briefing-burndown.ts`). Before BL-897 each ran that walk itself, in
+(`briefing-digest-line.ts`) and the [open-ticket
+chart](BL-896-briefing-open-ticket-chart.md) (`render-briefing-burndown.ts`
+— the module name predates BL-896's heading rename away from "burndown").
+Before BL-897 each ran that walk itself, in
 its own `node` process — three full-history `git log --name-status --
 backlog/` walks (~7s CPU each) per send. On a loaded host also rasterizing
 diagrams, that turned a tens-of-seconds send into a multi-minute saturation

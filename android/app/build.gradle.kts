@@ -37,6 +37,10 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        // BL-825: BuildConfig.VERSION_CODE is how resolveUiBundle learns
+        // this shell's own version — the standard Android idiom for exactly
+        // this ordered-comparison purpose, so no android.* call is needed.
+        buildConfig = true
     }
     testOptions {
         unitTests {
