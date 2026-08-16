@@ -457,7 +457,8 @@ const DOMAINS = [
   require('./bl624OnboarderSurveyToGateSteps'),
   require('./bl898RcFailedAutoRepairSteps'),
   require('./bl897BriefingGathersLifecyclesOnceSteps'),
-  require('./bl900EpicPriorityBeforeTicketPrioritySteps')
+  require('./bl900EpicPriorityBeforeTicketPrioritySteps'),
+  require('./bl896BriefingOpenTicketChartSteps')
 ];
 
 function registerSteps(registry) {
