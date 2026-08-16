@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-16T03:54:51.382003Z","feature_name":"Promotion ranking considers the containing epic's priority before the ticket's own","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-900-epic-priority-before-ticket-priority.feature","background_hash":"177ce0b6ba0c3db7fe170fb56fe0644337db9946814d8bae2bfee7bfd5bc9a34","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Promotion ranking considers the containing epic's priority before the ticket's own
 
   The coordinator ranks eligible promotion candidates. Ordering compares the

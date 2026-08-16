@@ -208,3 +208,6 @@ notes: |
   reads later as a guard that works.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-16, by: hardender, blamed: coder, class: behavior, commit: 6319570ea1, evidence: backlog/evidence/BL-900-epic-priority-before-ticket-priority-hardener-bounce-20260816.md }
