@@ -1,0 +1,183 @@
+id: BL-905
+title: "Swarm stamp-off: hide childless epics from the console reorder screen — certify the landed hotfix 0f5394a2d0"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 41
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-905-hide-childless-epics-reorder.feature.draft
+
+approval_context: >
+  ANSWERED 2026-08-16 — the landing question this field used to ask is
+  closed. The human chose (a) LAND AS A DECLARED HOTFIX for this ticket, and
+  (b) COMMIT TO A BRANCH for its sibling BL-906. Nothing below this line
+  changed: the locked behaviour, the acceptance scenarios and the gates are
+  exactly as they were specced, as promised when the question was raised.
+
+  The WIP is no longer in the dirty master checkout — the BL-901 hazard this
+  field warned about is discharged for this ticket.
+
+source: |
+  `.swarmforge/operator/INTAKE-hide-childless-epics-from-reorder.md` — human
+  via Cursor 2026-08-16 ~09:33–10:51 CEST, from a screenshot of the Reorder
+  epics screen. The intake's instruction to the specifier, verbatim:
+
+  > **Code already exists as uncommitted WIP on master.** Specifier: mint a
+  > stamp/review ticket; do **not** reimplement and do **not** discard the
+  > working tree.
+
+  and
+
+  > Mint (stamp ticket or small follow-on to BL-572). Spec what is locked
+  > above. Do not ask the coder to rewrite from scratch. Landing: keep the WIP
+  > until a declared commit (`Hotfix-Certification: pending` if it stays a
+  > hotfix) — BL-848 has no ledger row until there is a commit.
+
+  Related surface: BL-572
+  (`docs/how-to/BL-572-console-epic-priority-reorder.md`).
+
+description: |
+  ## Disposition — answered 2026-08-16: (a), landed as a declared hotfix
+
+  The code is ALREADY ON `main` at commit `0f5394a2d0` ("Land
+  hide-childless-epics reorder screen fix"), carrying
+  `Hotfix-Certification: pending`. BL-848's ledger row exists and names this
+  ticket as its `stamp_ticket` (coordinator commit `b51ba4979`).
+
+  So this parcel starts differently from a normal one, and the difference is
+  the whole point:
+
+  - **Do not implement the behaviour.** It exists. Merge `main` into your
+    worktree first (`git merge main`) and read the diff of `0f5394a2d0`.
+  - **Certify it** against the locked bullets and the gates below —
+    confirm or refute. A refutation is a normal finding: fix it forward in
+    this parcel, do not revert the hotfix and do not start over.
+  - **The acceptance step handlers are the one genuinely NEW code here.**
+    `specs/features/BL-905-hide-childless-epics-reorder.feature.draft` is
+    still a `.draft` because no handler exists for its scenarios yet, and a
+    live `.feature` with no handler hard-fails the runner for every parcel
+    (BL-233). Write the handlers and rename the draft to
+    `BL-905-hide-childless-epics-reorder.feature` **in the same commit**,
+    then point this ticket's `acceptance:` at the live path.
+  - Closing this ticket is what closes the certification: the ledger row
+    moves `stamp-open` → `awaiting-human` on its own from this ticket's
+    status. Never hand-edit `backlog/hotfix-ledger.yaml`.
+
+  ## What
+
+  The Reorder epics screen lists every paused `type: epic` tracker, including
+  ones with no live children. A tracker with nothing under it is a shell: it
+  occupies a tile, and — worse — it occupies a Move up / Move down NEIGHBOUR
+  slot, so a tap intended for a real epic can land on a shell instead.
+
+  This is a REVIEW ticket, not a rewrite ticket. The behaviour is written and
+  the human has locked its semantics. Confirm or refute the implementation
+  against what is locked below; fix what the gates find; do not redesign it
+  and do not start over.
+
+  ## Locked by the human — verbatim, not negotiable
+
+  > - A paused `type: epic` is shown on Reorder epics only when at least one
+  >   live child exists (`paused/` + `hold/` + `active/`, never `done/`, never
+  >   another epic tracker). Membership stays slug-resolved (BL-686).
+  > - Childless trackers stay in `backlog/paused/` unchanged; they are omitted
+  >   from the tile list **and** from Move up / Move down neighbours so a
+  >   hidden shell cannot swallow a tap.
+  > - Make-top's domination set is unchanged (still the full paused-epic list
+  >   via its own reader).
+
+  Read the third bullet carefully, because it is the one a reviewer is most
+  likely to "helpfully" break: hiding is a VIEW concern only. Make-top still
+  dominates against every paused epic, including the hidden ones. A tracker
+  being invisible must never change what make-top computes.
+
+  ## Already on `main` in `0f5394a2d0` — keep it, per the human's instruction
+
+  Specced against the working tree; verified again after the hotfix landed,
+  same content, now committed:
+
+  - `extension/src/bridge/epicTopicSlugMatch.ts` — `filterEpicsWithTopics`
+    (exported, line 59)
+  - `extension/src/bridge/bridgeServer.ts` — shared
+    `readEpicReorderMembership` (line 882), consumed by both GET
+    `/epic-reorder-state` (line 889) and POST `/epic-reorder/move` (line 998)
+  - `extension/src/bridge/epicReorderUiHtml.ts`
+  - tests in `epicReorderBridge.test.js`, `epicTopicSlugMatch.test.js`,
+    `epicTopicSlugMatch.property.test.js`
+  - `docs/how-to/BL-572-console-epic-priority-reorder.md` updated to match
+
+  Diffstat: 7 files, +231/-75.
+
+  That both endpoints go through ONE shared reader is the load-bearing
+  detail. It is what makes the second locked bullet true by construction —
+  the list you see and the neighbours a move resolves against cannot drift
+  apart if they are the same read. A review that splits them back into two
+  readers would satisfy the tests and reintroduce the bug.
+
+  ## What the review must actually check
+
+  - The three locked bullets hold, including the make-top one.
+  - `done/` is excluded and an epic tracker never counts as its own child —
+    both are stated in the locked bullet and both are easy to get subtly
+    wrong under slug resolution.
+  - Slug resolution is still BL-686's, not a second parallel implementation.
+  - The normal gates: coverage, no surviving mutants, CRAP <= 6, DRY.
+
+  ## Scope
+
+  The files listed above. Not the make-top reader, not BL-686's slug
+  resolution, not the epic YAMLs themselves.
+
+invariants:
+  - "The tile list and the Move up / Move down neighbour set are always derived from one read — no code path can make them disagree."
+  - "Hiding is presentation-only: no epic YAML is written, moved, or reordered on disk as a result of being hidden, and make-top's domination set is unaffected."
+
+qa_e2e_procedure: |
+  Against a fixture backlog, then the live console:
+
+  1. HIDDEN. A paused epic tracker with zero live children is absent from
+     GET `/epic-reorder-state` and its YAML is untouched on disk.
+  2. SHOWN, EACH FOLDER. A tracker with exactly one child in `paused/`, then
+     one in `hold/`, then one in `active/` — shown in all three cases.
+  3. NOT SHOWN BY A DONE CHILD. A tracker whose only child is in `done/` is
+     hidden. This is the boundary the locked bullet names explicitly.
+  4. NOT ITS OWN CHILD. A tracker whose only slug match is another epic
+     tracker is hidden.
+  5. THE TAP-SWALLOW REGRESSION. With a childless tracker positioned between
+     two live epics, POST `/epic-reorder/move` "up" on the lower live epic.
+     It must swap with the live epic ABOVE the shell, not with the shell.
+     This is the behaviour the human filed the intake for.
+  6. MAKE-TOP UNCHANGED. Make-top a live epic while a childless tracker
+     exists; assert its resulting priority dominates the childless tracker
+     too — hiding must not have shrunk the domination set.
+  7. LIVE. Open Reorder epics on the phone console against the real backlog
+     and confirm the screenshot complaint is gone: no empty epics listed, and
+     Move up / Move down land where they look like they will.
+
+notes: |
+  Sibling stamp ticket from the same morning: BL-906 (operator polls
+  babysitterd freshness, tell-never-restart) — same disposition question,
+  answered differently: (b), so BL-906's code sits on branch
+  `wip/BL-906-babysitterd-freshness-watchdog` and never touched `main`.
+  Independent work; the two share no files.
+
+  Landing record (2026-08-16), the answer to this ticket's own question:
+
+  - `0f5394a2d0` — the hotfix, on `main`, trailer
+    `Hotfix-Certification: pending`, `By Cursor.` 7 files, +231/-75.
+  - `b51ba4979` — coordinator linked that commit to this ticket in
+    `backlog/hotfix-ledger.yaml` (row `state: pending`, `stamp_ticket:
+    BL-905`). The BL-848 sweep recomputes that state from this ticket's
+    status; it is not a field anyone edits by hand.
+
+  Certifying reviewer: `0f5394a2d0` is authored outside the pipeline, so no
+  stage has yet looked at it. Every gate this ticket names is being run on
+  it for the FIRST time — treat a clean-looking diff with the same suspicion
+  you would give a fresh one, not the deference you would give code that had
+  already passed a stage.

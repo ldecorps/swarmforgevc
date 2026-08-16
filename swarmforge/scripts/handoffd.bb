@@ -2016,6 +2016,24 @@
      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
      :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))})))
 
+;; BL-902: the SAME to/api-key resolution send-configured-briefing-email!
+;; above performs, but decides sendability alone - no compose, no send -
+;; so briefing-email-sweep! can skip the entire expensive gather+render
+;; when the email cannot go out anyway (the ~96s-per-cycle stall this
+;; ticket exists to fix). Fires the SAME one-shot warn-missing-key-if-
+;; needed! atom/log line as the real send path when the reason is
+;; :missing-api-key, so a caller consulting this instead of actually
+;; sending still gets the loud, deduped warning exactly as before.
+(defn briefing-send-reason! []
+  (let [reason (daemon-alarm-lib/configured-email-send-reason conf-file)]
+    (when (= reason :missing-api-key)
+      (daemon-alarm-lib/warn-missing-key-if-needed!
+       {:reason reason}
+       {:already-warned?! (fn [] @briefing-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
+    reason))
+
 ;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
 ;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
 ;; computeSuiteDuration unchanged, the SAME functions already feeding the
@@ -2220,7 +2238,8 @@
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
    (str briefings-dir)
-   {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
+   {:send-reason! briefing-send-reason!
+    :read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
     :send-email! send-configured-briefing-email!
     :diagram-section briefing-diagram-section
     :suite-duration-line suite-duration-briefing-line

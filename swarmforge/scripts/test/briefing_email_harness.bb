@@ -9,12 +9,15 @@
 ;;         | "diagram-available" | "diagram-unavailable" (BL-260)
 ;;         | "diagram-sources-independence" (BL-896: arch-outcome/burn-outcome
 ;;           each one of "succeeds" | "fails" | "throws")
+;;         | "sendability-gate" (BL-902: 3rd/4th args are
+;;           <reason: "missing-api-key"|"disabled"|"sendable"> <runs>)
 
 (ns briefing-email-harness
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "briefing_email_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "daemon_alarm_lib.bb")))
 
 (def briefings-dir (nth *command-line-args* 0))
 (def mode (nth *command-line-args* 1))
@@ -24,6 +27,67 @@
 (def last-sent-text (atom nil))
 (def last-sent-html (atom :unset))
 (def last-sent-attachments (atom :unset))
+
+;; BL-902: drives the new :send-reason! early-skip path across N repeated
+;; sweeps against the same fixture dir - every gather/render adapter
+;; records its own invocation, so acceptance can assert the ticket's exact
+;; "zero section adapters invoked" claim, not just "nothing was sent".
+;; Handled first and exits early so the mode falls through to none of the
+;; case forms below (which have no clause for "sendability-gate" and would
+;; throw on an unmatched case).
+(when (= mode "sendability-gate")
+  (let [reason-str (nth *command-line-args* 2)
+        runs (parse-long (nth *command-line-args* 3))
+        reason (case reason-str
+                 "missing-api-key" :missing-api-key
+                 "disabled" :disabled
+                 "sendable" nil)
+        section-calls (atom [])
+        warned? (atom false)
+        ;; Mirrors handoffd.bb's own briefing-send-reason! exactly: the
+        ;; one-shot missing-key warning is owned by the CALLER's
+        ;; :send-reason! adapter, via daemon_alarm_lib.bb's shared
+        ;; warn-missing-key-if-needed! and a per-process atom - never a
+        ;; second, harness-only warning mechanism.
+        send-reason! (fn []
+                       (when (= reason :missing-api-key)
+                         (daemon-alarm-lib/warn-missing-key-if-needed!
+                          {:reason reason}
+                          {:already-warned?! (fn [] @warned?)
+                           :log-warning! (fn [msg] (swap! logs conj ["email-misconfigured" msg]))
+                           :mark-warned! (fn [] (reset! warned? true))}))
+                       reason)
+        tracking-adapters
+        {:send-reason! send-reason!
+         :read-briefing-content (fn [f] (swap! section-calls conj :read) (slurp (str (fs/path briefings-dir f))))
+         :suite-duration-line (fn [] (swap! section-calls conj :suite-duration) "line")
+         :needs-approval-section (fn [] (swap! section-calls conj :needs-approval) "line")
+         :merged-blocked-digest (fn [] (swap! section-calls conj :merged-blocked) "line")
+         :stage-dwell-section (fn [] (swap! section-calls conj :stage-dwell) "line")
+         :chase-trend-section (fn [] (swap! section-calls conj :chase-trend) "line")
+         :not-done-count-line (fn [] (swap! section-calls conj :not-done) "line")
+         :standing-rule-violations-line (fn [] (swap! section-calls conj :standing-rule) "line")
+         :suboptimality-verdict-line (fn [] (swap! section-calls conj :suboptimality) "line")
+         :qa-bounce-line (fn [] (swap! section-calls conj :qa-bounce) "line")
+         :telegram-bridge-cost-line (fn [] (swap! section-calls conj :telegram) "line")
+         :token-burn-section (fn [] (swap! section-calls conj :token-burn) {:appended-text "x"})
+         :diagram-section (fn [] (swap! section-calls conj :diagram) {:html "<img/>" :note-line "note"})
+         :send-email! (fn [_subject text html & [attachments]]
+                        (swap! emails-sent inc)
+                        (reset! last-sent-text text)
+                        (reset! last-sent-html html)
+                        (reset! last-sent-attachments attachments)
+                        {:success true})
+         :log! (fn [& parts] (swap! logs conj (vec parts)))}
+        last-sent (atom [])]
+    (dotimes [_ runs]
+      (reset! last-sent (briefing-email-lib/send-unsent-briefings! briefings-dir tracking-adapters)))
+    (println (json/generate-string {:sent @last-sent
+                                     :emailsSent @emails-sent
+                                     :logs @logs
+                                     :sectionCallsTotal (count @section-calls)
+                                     :sectionCallCounts (frequencies @section-calls)}))
+    (System/exit 0)))
 
 ;; BL-260: the diagram modes exercise send-unsent-briefings!'s :diagram-section
 ;; adapter path through the real build-diagram-section - "diagram-available"

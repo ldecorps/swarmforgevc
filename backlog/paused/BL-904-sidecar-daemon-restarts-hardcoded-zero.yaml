@@ -1,0 +1,156 @@
+id: BL-904
+title: "The cost & health sidecar's daemonRestarts is a hardcoded zero enshrined by a passing test — the one metric that would have surfaced today's 155 handoffd restarts reads a confident 0"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+priority: 42
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-904-sidecar-daemon-restarts-hardcoded-zero.feature.draft
+
+approval_context: >
+  One call worth your sign-off: severity `medium` rather than `high`.
+
+  Medium, because nothing is broken by this — no parcel is lost, no gate is
+  wrong, and you did eventually learn about the storm (it reached you as
+  briefing Flagged #4, by a different route entirely).
+
+  The argument for `high`, which I did not take: this is the exact metric
+  whose job was to tell you, it sits on the daily briefing you actually read,
+  and it did not merely stay silent — it reported `0` with a trend attached,
+  which reads as "checked, and fine". A health signal that lies quietly is
+  worse than one that is missing, and the sibling babysitterd intake this
+  morning opens with the same sentence in a different key: "nothing in the
+  operator health sweep caught it." Bump it if you read it that way.
+
+source: |
+  `.swarmforge/operator/INTAKE-handoffd-freshness-restart-storm.md` — human
+  via Cursor 2026-08-16 ~10:56 CEST.
+
+  ONE of three tickets this intake was split into (specifier consolidation
+  authority, BL-680; no human sentence lost, Article 5.3). Siblings: BL-902
+  (the briefing-path stall that caused the storm) and BL-903 (push-sweep
+  discards its failure reason).
+
+  The human's sentence this ticket carries, verbatim:
+
+  > Sidecar `daemonRestarts: 0` is disconnected from
+  > `freshness-incidents.log`.
+
+description: |
+  ## What is wrong
+
+  `daemonRestarts` is not computed from anything. In
+  `extension/src/notify/costHealthSidecar.ts` it is a literal:
+
+      reliability: {
+        chases: trendedFromSeries(reliabilityDailySeries.chases),
+        nudges: trendedFromSeries(reliabilityDailySeries.nudges),
+        respawns: trendedFromSeries(reliabilityDailySeries.respawns),
+        failedDeliveries: trendedFromSeries(reliabilityDailySeries.failedDeliveries),
+        daemonRestarts: { value: 0, trend: computeTrend([]) },     // <-- literal
+      },
+
+  Its four siblings all read a real series. This one alone is a placeholder,
+  and it is placed among them so it reads exactly like a measurement.
+
+  The placeholder is deliberate and was honest when written — but it is now
+  locked in by a test that asserts the placeholder rather than the behaviour:
+
+      extension/test/costHealthSidecar.test.js:320
+      'reliability counts carry a trend per field, and daemonRestarts is
+       always zero (no telemetry source exists yet)'
+
+  The parenthetical is the part that has expired. A telemetry source does
+  exist: BL-675's freshness watchdog has been appending to
+  `.swarmforge/daemon/freshness-incidents.log` since it landed, one record
+  per line, already carrying everything needed:
+
+      epoch=1785625446 daemon=babysitterd age_secs=999999999 threshold=600 action=restart
+
+  ## The gap, measured today
+
+      handoffd      restart=155  escalate=100
+      babysitterd   restart=93   escalate=123
+      (471 records in .swarmforge/daemon/freshness-incidents.log)
+
+  Against which `docs/briefings/2026-08-16.json` reports:
+
+      "daemonRestarts": { "value": 0, "trend": { "series": [], "direction": "unknown" } }
+
+  248 restarts in one day, reported as zero, with a trend object attached to
+  lend it the shape of a real measurement.
+
+  ## How (direction, not mandate)
+
+  - Read the incident log the same way the other four reliability counts get
+    their series — as a daily count, so `computeTrend` has real history to
+    work with and the field gains a direction that means something.
+  - Count `action=restart` records. `escalate` is a different event (the
+    watchdog declining a second restart during cool-off) and folding the two
+    together would overstate restarts by roughly two thirds on today's data.
+    If both are worth surfacing they are two fields, not one sum.
+  - Per-daemon or total is a real design choice, and it is the reason this
+    ticket keeps its architect stage: today's data is 155 handoffd + 93
+    babysitterd, and a single total would have hidden which daemon was
+    storming — the first question anyone asks. Prefer the shape that answers
+    it, unless the sidecar's consumers make that expensive.
+  - The log is append-only, host-local, and survives daemon restarts, so it
+    is a safe source. Treat a missing or unreadable file as "no data", never
+    as zero — that distinction is the whole point of this ticket, and
+    `trend.direction: "unknown"` already exists to express it.
+  - Fix the test, do not delete it. Its first clause (every reliability field
+    carries a trend) is still worth holding; only the "always zero" clause
+    goes.
+
+  ## Scope
+
+  `extension/src/notify/costHealthSidecar.ts`'s `daemonRestarts` field, the
+  reader that feeds it, and the two tests that assert the placeholder
+  (`costHealthSidecar.test.js`, and `pwaDashboard.test.js`'s fixture if it
+  needs updating). Not the watchdog, not the log format, not the other four
+  reliability counts.
+
+invariants:
+  - "No reliability field on the sidecar is a literal — every one is derived from a source, or absent."
+  - "An unreadable or missing incident log yields no data, never a zero count."
+
+qa_e2e_procedure: |
+  Against a fixture incident log, never the live one:
+
+  1. THE REGRESSION. Fixture log with a known mix of `action=restart` and
+     `action=escalate` across two daemons and several days. Emit the sidecar
+     and assert `daemonRestarts` matches the hand-counted restarts — and does
+     NOT include the escalates.
+  2. TREND IS REAL. Same fixture spanning enough days that `computeTrend`
+     produces a direction; assert the series is populated and the direction
+     is not `unknown`.
+  3. INVARIANT 2. Delete the fixture log, then make it unreadable. In both
+     cases assert the field reports no data — `direction: "unknown"`, empty
+     series — and is distinguishable from a genuine zero-restart day.
+  4. GENUINE ZERO. Fixture log present and well-formed with zero `restart`
+     records. Assert this is distinguishable from case 3.
+  5. MALFORMED. Fixture log with a truncated final line and a junk line.
+     Assert the good records still count and nothing throws.
+  6. LIVE. Emit today's sidecar and compare `daemonRestarts` against
+     `awk` over the real `freshness-incidents.log`. They must agree.
+
+notes: |
+  Sibling tickets from the same intake: BL-902 (briefing-email compose-before-
+  key-check — the cause of the restarts this ticket would have surfaced) and
+  BL-903 (push-sweep discards its failure reason). Independent; any landing
+  order. There is a pleasing symmetry worth noting for whoever picks these
+  up: BL-902 is the fire, BL-904 is the smoke detector that was wired to a
+  battery-shaped block of plastic.
+
+  The placeholder-enshrined-by-test shape is worth watching for elsewhere. A
+  test whose name documents WHY a value is fake ("no telemetry source exists
+  yet") is a dated assertion, and nothing makes it expire when the premise
+  does. This ticket does not go looking for siblings — that would be a
+  separate audit, not a silent widening — but it is the kind of thing the
+  closing ceremony's process-hypothesis slot exists for.
