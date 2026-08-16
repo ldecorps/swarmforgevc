@@ -72,6 +72,7 @@ here.
 - [Remote-control health/respawn tooling, and its `./swarm ensure` wiring](how-to/BL-514-remote-control-health-and-ensure-wiring.md) — the `--fix`/`--dry-run` standalone scripts (retro-ticketed, KEEP), and the new `rc:<role>` component `./swarm ensure` now reports and repairs alongside `agent:<role>`.
 - [Bubble's capability flags and hold-music catalog, served from the bridge](how-to/BL-765-bubble-remote-config-and-chiptune-catalog.md) — the two versioned documents (`bubble-config.json`, `chiptunes.json`), whole-document rejection on a malformed payload, the remote hold-music kill switch, and the reply-voice/music-volume split.
 - [Bare-host bootstrap for an autonomous swarm](how-to/BL-628-autonomous-swarm-bringup.md) — `provision_autonomous_host.sh`, the shared shape-agnostic bootstrap library, the front-desk unit an autonomous box needs that the secondary path never installs, and why the onboarding ceremony runs on the primary box, never the remote one.
+- [One briefing send, one backlog history walk: the shared lifecycle snapshot](how-to/BL-897-briefing-lifecycle-snapshot.md) — the machine-local, gitignored snapshot handoffd gathers once per UTC day and hands every briefing-section CLI via `--snapshot`, and the per-consumer fallback when it's missing, unreadable, or stale.
 
 ## Reference
 
