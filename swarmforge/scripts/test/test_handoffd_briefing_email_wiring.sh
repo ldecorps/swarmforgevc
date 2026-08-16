@@ -56,9 +56,22 @@ for _ in $(seq 1 40); do
   [[ -f "$LOG_FILE" ]] && grep -q "briefing-skip" "$LOG_FILE" 2>/dev/null && break
   sleep 0.25
 done
+
+# BL-902 warning-not-spammed-05: keep the daemon running a little longer -
+# wait for at least 2 skip cycles. The sweep shares chase-sweep-every-cycles'
+# cadence (10 poll-ms cycles, ~10s apart - see handoffd.bb), not poll-ms
+# itself, so a 2nd cycle is ~10s out; bounded generously to absorb CI
+# scheduling jitter without making a passing run wait the full bound.
+for _ in $(seq 1 90); do
+  SKIP_COUNT_NOW="$(grep -c "briefing-skip-missing-key" "$LOG_FILE" 2>/dev/null || true)"
+  [[ "${SKIP_COUNT_NOW:-0}" -ge 2 ]] && break
+  sleep 0.5
+done
+
 mkdir -p "$ROOT/.swarmforge/daemon"
 touch "$ROOT/.swarmforge/daemon/stop"
 wait "$DAEMON_PID" 2>/dev/null || true
+DAEMON_PID=""
 
 # ── 01: the real daemon ran the sweep and logged the (safe, no-network) skip ─
 grep -q "briefing-skip" "$LOG_FILE" || fail "01: expected the daemon's own briefing-email sweep to log a skip (RESEND_API_KEY unset); got: $(cat "$LOG_FILE" 2>/dev/null)"
@@ -72,5 +85,19 @@ pass "02: the briefing is not marked sent, so an unconfigured sweep retries it n
 #     would mean the wiring is broken, not just gracefully unconfigured) ───
 grep -q "briefing-email-sweep-error" "$LOG_FILE" && fail "03: the briefing-email sweep threw an exception; got: $(cat "$LOG_FILE")"
 pass "03: the briefing-email sweep ran without throwing"
+
+# ── BL-902 warning-not-spammed-05: briefing-send-reason! (the new
+#    :send-reason! adapter this ticket added) owns its own call to
+#    warn-missing-key-if-needed!, wired to the SAME one-shot atom
+#    send-configured-briefing-email! already used - proving that wiring
+#    survived moving the warning trigger onto the early, pre-compose path
+#    instead of only firing from a real send attempt. ────────────────────
+SKIP_COUNT_FINAL="$(grep -c "briefing-skip-missing-key" "$LOG_FILE" 2>/dev/null || true)"
+[[ "${SKIP_COUNT_FINAL:-0}" -ge 2 ]] || fail "BL-902: expected at least 2 briefing-skip-missing-key sweeps to have run, got ${SKIP_COUNT_FINAL:-0} - the daemon may not have run long enough for this assertion"
+pass "BL-902: the sweep ran the early-skip path across multiple cycles (${SKIP_COUNT_FINAL} times)"
+
+WARN_COUNT="$(grep -c "email-misconfigured" "$LOG_FILE" 2>/dev/null || true)"
+[[ "${WARN_COUNT:-0}" -eq 1 ]] || fail "BL-902 warning-not-spammed-05: expected exactly 1 email-misconfigured warning across ${SKIP_COUNT_FINAL} early-skip sweeps, got ${WARN_COUNT:-0}"
+pass "BL-902 warning-not-spammed-05: the missing-key warning fired exactly once across ${SKIP_COUNT_FINAL} early-skip sweeps, via the SAME one-shot dedup the real send path always used"
 
 echo "ALL PASS"
