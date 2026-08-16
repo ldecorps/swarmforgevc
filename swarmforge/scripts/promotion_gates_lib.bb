@@ -104,20 +104,46 @@
    (and (contains? expedited-types (read-type content))
         (contains? expedited-severities (read-severity content)))))
 
-(defn- rank-key [content]
-  [(if (expedited? content) 0 1) (read-priority content) (or (read-id content) "")])
+;; BL-900: an epic's own priority is compared before the child ticket's own
+;; priority - splicing the term AFTER the expedite bucket (invariant "the
+;; expedite bucket stays strictly first" holds by construction, not by a
+;; guard) and BEFORE own-priority (own-priority remains the within-epic
+;; tie-break it already was).
+
+(defn epic-priority
+  "The candidate's resolved epic-priority: the minimum `type: epic` tracker
+   priority sharing its `epic:` (via epic-index, see epic-priority-index
+   below), or its OWN priority when it has no `epic:` field or that epic has
+   no tracker anywhere in the backlog (BL-900 decisions 2 and 3 - the
+   fallback that keeps such a candidate ranked exactly as it is today). An
+   epic tracker that is itself a ranking candidate needs no special case: its
+   own priority already participates in epic-index's min for its own epic."
+  [content epic-index]
+  (let [epic (read-epic content)]
+    (or (and epic (get epic-index epic))
+        (read-priority content))))
+
+(defn- rank-key [content epic-index]
+  [(if (expedited? content) 0 1)
+   (epic-priority content epic-index)
+   (read-priority content)
+   (or (read-id content) "")])
 
 (defn rank-candidates
   "candidates: a seq of {:file :content}. Returns the winning candidate map
-   (nil for an empty seq) under Article 3.2.4: every expedited candidate
-   sorts ahead of every non-expedited one regardless of priority number;
-   priority then id breaks ties within each bucket - the same tie-break
-   promote_and_route_next.sh's pre-existing candidate_sort_line already used,
-   preserved so a fully-compliant, non-expedited pick is unchanged."
-  [candidates]
-  (some->> (seq candidates)
-           (sort-by (comp rank-key :content))
-           first))
+   (nil for an empty seq) under Article 3.2.4 plus BL-900: every expedited
+   candidate sorts ahead of every non-expedited one regardless of priority
+   number; within a bucket, epic-priority (epic-index, defaulted to {} when
+   omitted - every candidate then falls back to its own priority, preserving
+   pre-BL-900 ordering exactly) breaks ties before own-priority; own-priority
+   then id breaks the rest - the same tie-break promote_and_route_next.sh's
+   pre-existing candidate_sort_line already used, preserved so a fully-
+   compliant, non-expedited, epic-tracker-less pick is unchanged."
+  ([candidates] (rank-candidates candidates {}))
+  ([candidates epic-index]
+   (some->> (seq candidates)
+            (sort-by (comp #(rank-key % epic-index) :content))
+            first)))
 
 ;; ── gate: assignee / spec-stage routing ─────────────────────────────────
 ;; Recurrence #3 (de5b5d323): promote_and_route_next.sh's own sed flipped
@@ -258,3 +284,39 @@
                    [epic (or (read-id content) (fs/file-name f))]))))
        (reduce (fn [m [epic id]] (update m epic (fnil conj []) id)) {})
        (reduce-kv (fn [m epic ids] (assoc m epic (vec (sort ids)))) {})))
+
+;; ── epic-priority index (BL-900) ────────────────────────────────────────
+;; A `type: epic` tracker's own priority can live anywhere in the backlog
+;; tree (active/paused/done, done/ nested one level under a milestone
+;; subdir) - same "status-dirs" scan ticket_status_lib.bb's own
+;; contains-ticket? already established for "is this ticket anywhere in the
+;; backlog", reused here rather than a second, divergent directory list.
+;; hold/ is deliberately excluded, mirroring that same precedent: a held
+;; item is parked, not a live signal.
+
+(def ^:private epic-tracker-status-dirs ["active" "paused" "done"])
+
+(defn- epic-tracker-yaml-files [root]
+  (mapcat (fn [status]
+            (let [dir (fs/path root "backlog" status)]
+              (if (fs/exists? dir) (fs/glob dir "**.yaml") [])))
+          epic-tracker-status-dirs))
+
+(defn epic-priority-index
+  "Map of epic-name -> the minimum read-priority among every `type: epic`
+   tracker ticket anywhere under root's backlog tree whose own `epic:` field
+   equals that name (BL-900 decision 1: more than one tracker for the same
+   epic ranks by its most urgent - lowest - tracker). Built once per ranking
+   call (epic-priority above just does a map lookup), never a per-candidate
+   directory scan. A tracker with no `epic:` field of its own contributes
+   nothing - `keep` drops it, exactly like active-epics does above."
+  [root]
+  (->> (epic-tracker-yaml-files root)
+       (keep (fn [f]
+               (let [content (slurp (str f))]
+                 (when (= "epic" (read-type content))
+                   (when-let [epic (read-epic content)]
+                     [epic (read-priority content)])))))
+       (reduce (fn [m [epic priority]]
+                 (update m epic (fn [cur] (if cur (min cur priority) priority))))
+               {})))

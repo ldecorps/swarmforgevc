@@ -923,6 +923,25 @@ not as the several separate edits that produced it).
   poll options, JSON-parsed — crashed the whole CLI on invalid JSON / a bare number / a non-string array,
   losing the AGENT'S ENTIRE QUESTION instead of falling back to the ticket's own plain-message ask.
   Proposed by the hardender 2026-07-16 scoped `engineering`.)
+- **A constant duplicated by hand across a language boundary that no import can bridge must be covered by
+  an automated cross-check test asserting the two literals agree — a "kept in sync by hand" comment is not
+  a gate.** This repo has exactly such a boundary by construction: the extension host is TypeScript and the
+  daemon/helper scripts are Babashka, and Babashka cannot import the compiled TS module. That makes a
+  mirrored path/key/limit unavoidable in places — what is NOT unavoidable is leaving the agreement
+  unverified. A comment records an INTENTION; only a test detects the day someone edits one side. The
+  failure mode is the dangerous kind: a drifted path is still a well-formed string, so nothing throws. The
+  consumer takes its own not-found fallback and the system keeps working, just silently slower or staler,
+  with no error to trace back to the edit. Write the check as a real test in whichever suite can see both
+  sides (read the other language's literal out of its source file if that is what it takes, rather than
+  re-mirroring it a third time in the test); assert equality of the produced VALUE, not of the surrounding
+  text. This is the cross-language sibling of the wiring-contract rules above — a mechanism that is correct
+  on both sides independently can still be dead end-to-end because the two sides disagree about where they
+  meet. (BL-897: `handoffd.bb`'s `lifecycle-snapshot-path` hand-joins
+  `.swarmforge/briefing/lifecycle-snapshot.json`, duplicating
+  `extension/src/metrics/lifecycleSnapshot.ts`'s `lifecycleSnapshotPath()`, and says so in a comment with
+  no test behind it. Drift would hand every briefing-section CLI a `--snapshot` path pointing nowhere,
+  regressing all three sections to the full backlog-history walk the ticket existed to eliminate — with no
+  signal at all. Proposed by the architect 2026-08-16 scoped `engineering`.)
 
 ## test:properties Unhandled Error/Rejection allowlist — pre-BL-883 boot wording (BL-883 split)
 
