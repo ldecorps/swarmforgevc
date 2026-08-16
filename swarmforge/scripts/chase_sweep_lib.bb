@@ -993,12 +993,18 @@
    {:id .. :approved? bool}, or nil when candidates is empty. Approval state
    is reported, never used to filter: a sole pending-approval candidate is
    still named as the top candidate, flagged awaiting approval rather than
-   silently skipped (BL-798 scenario 03)."
-  [candidates]
-  (when-let [winner (promotion-gates-lib/rank-candidates candidates)]
-    (let [content (:content winner)]
-      {:id (or (promotion-gates-lib/read-id content) (fs/file-name (:file winner)))
-       :approved? (= "approved" (promotion-gates-lib/read-human-approval content))})))
+   silently skipped (BL-798 scenario 03). BL-900: epic-index, defaulted to
+   {} when omitted (mirrors promotion-gates-lib/rank-candidates' own default
+   - a candidate with no epic: field, or whose epic has no tracker, ranks by
+   its own priority exactly as before BL-900), is threaded through to
+   rank-candidates so this candidate matches the one promotion actually
+   picks."
+  ([candidates] (top-open-slot-candidate candidates {}))
+  ([candidates epic-index]
+   (when-let [winner (promotion-gates-lib/rank-candidates candidates epic-index)]
+     (let [content (:content winner)]
+       {:id (or (promotion-gates-lib/read-id content) (fs/file-name (:file winner)))
+        :approved? (= "approved" (promotion-gates-lib/read-human-approval content))}))))
 
 (defn top-expedited-paused-candidate
   "BL-679: the id of the single Article-3.2.4-best EXPEDITED (defect/bug,
@@ -1007,11 +1013,16 @@
    mid-ambulance in paused/ like everything else (the one place the mode
    outranks Article 3.2.4) - this is what the auto-exit sweep's release
    announcement consults to name it FIRST, rather than let it go silently
-   unmentioned among everything else that queued."
-  [candidates]
-  (when-let [winner (promotion-gates-lib/rank-candidates
-                     (filter #(promotion-gates-lib/expedited? (:content %)) candidates))]
-    (or (promotion-gates-lib/read-id (:content winner)) (fs/file-name (:file winner)))))
+   unmentioned among everything else that queued. BL-900: epic-index,
+   defaulted to {} when omitted, is threaded through to rank-candidates so
+   that WITHIN the expedited bucket, epic priority breaks ties before own-
+   priority, same as top-open-slot-candidate above."
+  ([candidates] (top-expedited-paused-candidate candidates {}))
+  ([candidates epic-index]
+   (when-let [winner (promotion-gates-lib/rank-candidates
+                      (filter #(promotion-gates-lib/expedited? (:content %)) candidates)
+                      epic-index)]
+     (or (promotion-gates-lib/read-id (:content winner)) (fs/file-name (:file winner))))))
 
 (def open-slot-escalation-default-threshold
   "BL-798 approval_context default: 3 unacted nudges for the same top

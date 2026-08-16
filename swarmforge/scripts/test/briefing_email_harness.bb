@@ -4,9 +4,11 @@
 ;; send-email! adapter (no real network) and prints a JSON result for
 ;; acceptance step handlers to assert against.
 ;;
-;; Usage: briefing_email_harness.bb <briefings-dir> <mode>
+;; Usage: briefing_email_harness.bb <briefings-dir> <mode> [arch-outcome] [burn-outcome]
 ;;   mode: "success" | "missing-api-key" | "disabled"
 ;;         | "diagram-available" | "diagram-unavailable" (BL-260)
+;;         | "diagram-sources-independence" (BL-896: arch-outcome/burn-outcome
+;;           each one of "succeeds" | "fails" | "throws")
 
 (ns briefing-email-harness
   (:require [babashka.fs :as fs]
@@ -42,6 +44,23 @@
     "diagram-unavailable"
     (fn [] (briefing-email-lib/build-diagram-section nil))
 
+    ;; BL-896 F4/scenario-03/04: drives the real diagram-section-from-sources
+    ;; (not just build-diagram-section) with independently-controllable
+    ;; architecture/burndown outcomes, so acceptance can assert one source's
+    ;; failure never suppresses a succeeding sibling's chart or the send.
+    "diagram-sources-independence"
+    (let [outcome->thunk
+          (fn [outcome items]
+            (case outcome
+              "throws" (fn [] (throw (ex-info "simulated source failure" {})))
+              "fails" (fn [] nil)
+              "succeeds" (fn [] items)))
+          arch-outcome (nth *command-line-args* 2)
+          burn-outcome (nth *command-line-args* 3)]
+      (fn [] (briefing-email-lib/diagram-section-from-sources
+              (outcome->thunk arch-outcome [{:name "architecture" :base64 "ZmFrZS1wbmctYnl0ZXM="}])
+              (outcome->thunk burn-outcome [{:name "not-done-burndown" :base64 "ZmFrZS1idXJuZG93bg=="}]))))
+
     nil))
 
 ;; BL-393: :send-email! is now always called with html (a 3rd arg, minimum -
@@ -49,7 +68,7 @@
 ;; accepts and captures it, not only the diagram-specific ones.
 (def send-email!
   (case mode
-    ("success" "diagram-available" "diagram-unavailable")
+    ("success" "diagram-available" "diagram-unavailable" "diagram-sources-independence")
     (fn [_subject text html & [attachments]]
       (swap! emails-sent inc)
       (reset! last-sent-text text)

@@ -1790,7 +1790,8 @@
         ;; escalate repeated unacted nudges for the SAME candidate rather
         ;; than repeating a ticketless poke forever (invariant 2).
         (let [candidates (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
-              candidate (chase-sweep-lib/top-open-slot-candidate candidates)
+              candidate (chase-sweep-lib/top-open-slot-candidate
+                         candidates (promotion-gates-lib/epic-priority-index project-root))
               decision (chase-sweep-lib/decide-open-slot-escalation
                         @open-slot-escalation-state (:id candidate)
                         (open-slot-escalation-threshold))]
@@ -1955,7 +1956,8 @@
   (try
     (when-let [{:keys [ticket case]} (ambulance-lib/auto-exit! (str project-root))]
       (let [queued (chase-sweep-lib/top-expedited-paused-candidate
-                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir))
+                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
+                    (promotion-gates-lib/epic-priority-index project-root))
             text (ambulance-lib/auto-exit-announcement-text
                   {:ticket ticket :case case :queued-expedited-defect-id queued})]
         (log! "ambulance-auto-exit" ticket (name case))
@@ -2204,14 +2206,16 @@
     (catch Exception _ nil)))
 
 ;; Wraps architecture + not-done burndown renders with briefing_email_lib.bb's
-;; pure build-diagram-section - the ONLY :diagram-section adapter shape
-;; send-unsent-briefings! expects (BL-260 render-unavailable-degradation-04:
-;; nil/empty still produce a clear no-diagram note, never a crash). Each
-;; source fails open independently; whichever succeeds still ships.
+;; pure diagram-section-from-sources (BL-896 F4: previously build-diagram-
+;; section directly - this combining step, which is what actually makes the
+;; "each source fails open independently" claim below true, had nothing a
+;; unit test could exercise in isolation until it moved into the lib file
+;; alongside build-diagram-section, testable the same way). BL-260
+;; render-unavailable-degradation-04: nil/empty still produce a clear
+;; no-diagram note, never a crash. Each source fails open independently;
+;; whichever succeeds still ships.
 (defn briefing-diagram-section []
-  (let [diagrams (vec (concat (or (briefing-diagrams-json) [])
-                              (or (briefing-burndown-json) [])))]
-    (briefing-email-lib/build-diagram-section (seq diagrams))))
+  (briefing-email-lib/diagram-section-from-sources briefing-diagrams-json briefing-burndown-json))
 
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!

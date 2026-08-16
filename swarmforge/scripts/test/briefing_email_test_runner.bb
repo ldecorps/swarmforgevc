@@ -557,7 +557,9 @@
            true
            (str/includes? (:note-line section) "rendered inline above")))
 
-;; Not-done burndown chart shares the same cid-PNG path with a readable heading.
+;; Open-ticket chart shares the same cid-PNG path with a readable heading.
+;; BL-896 F1: heading/note text no longer say "burndown" - that claims
+;; progress toward a fixed/committed scope, which BL-659 banned.
 (let [section (briefing-email-lib/build-diagram-section
                [{:name "architecture" :base64 "QUJD"}
                 {:name "not-done-burndown" :base64 "Wk9P"}])]
@@ -566,11 +568,12 @@
            (str/includes? (:html section) "cid:not-done-burndown-diagram"))
   (assert= "burndown-diagram-01: heading is human-readable, not the raw slug"
            true
-           (str/includes? (:html section) "<h3>Not-done ticket burndown</h3>"))
-  (assert= "burndown-diagram-01: note mentions both architecture and burndown"
+           (str/includes? (:html section) "<h3>Open tickets remaining</h3>"))
+  (assert= "burndown-diagram-01: note mentions both architecture and the open-ticket chart, never \"burndown\""
            true
            (and (str/includes? (:note-line section) "Architecture")
-                (str/includes? (:note-line section) "burndown"))))
+                (str/includes? (:note-line section) "open-ticket")
+                (not (str/includes? (str/lower-case (:note-line section)) "burndown")))))
 
 ;; BL-286 diagram-cid-02/03: each referenced diagram carries a matching
 ;; inline attachment, with the image bytes and a filename.

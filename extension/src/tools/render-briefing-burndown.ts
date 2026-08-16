@@ -13,15 +13,20 @@
  */
 import { runGitLog, deriveTicketLifecycles } from '../metrics/gitHistoryAdapter';
 import { readLifecycleSnapshot } from '../metrics/lifecycleSnapshot';
-import {
-  computeNotDoneBurndownSeries,
-  buildNotDoneBurndownSvg,
-  renderNotDoneBurndownPng,
-  NOT_DONE_BURNDOWN_DIAGRAM_NAME,
-} from '../metrics/notDoneBurndown';
+import { readBacklogFolders } from '../panel/backlogReader';
+import { computeNotDoneBurndownSeries } from '../metrics/notDoneBurndown';
+import { buildNotDoneBurndownSvg, renderNotDoneBurndownPng, NOT_DONE_BURNDOWN_DIAGRAM_NAME } from '../metrics/notDoneBurndownChart';
 import { resolveProjectRoot, printJsonToStdout, runCliMain } from './swarm-metrics';
 import { parseSnapshotPath } from './briefingSnapshotArgs';
 import type { RenderedDiagram } from './render-briefing-diagrams';
+
+// BL-896 F3: today's open count is authoritative from a live disk read
+// (active + paused + hold), not the lifecycle heuristic - see
+// computeNotDoneBurndownSeries's own doc comment for why.
+function currentOpenTicketIds(projectRoot: string): Set<string> {
+  const folders = readBacklogFolders(projectRoot);
+  return new Set([...folders.active, ...folders.paused, ...folders.hold].map((item) => item.id));
+}
 
 // BL-897: snapshotPath, when given and usable (readLifecycleSnapshot
 // degrades to null on missing/unreadable/stale), skips the full-history
@@ -34,7 +39,7 @@ export function renderBriefingBurndown(
 ): RenderedDiagram[] {
   const shared = snapshotPath ? readLifecycleSnapshot(snapshotPath, nowMs) : null;
   const lifecycles = shared ?? [...deriveTicketLifecycles(runGitLog(projectRoot, 'backlog/', 'main')).values()];
-  const series = computeNotDoneBurndownSeries(lifecycles, nowMs);
+  const series = computeNotDoneBurndownSeries(lifecycles, nowMs, undefined, currentOpenTicketIds(projectRoot));
   if (series.series.length === 0) {
     throw new Error('not-done burndown series is empty');
   }
