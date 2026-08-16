@@ -51,26 +51,9 @@ description: |
   prerequisite); secrets stay in the host environment, never committed to
   the target (Architecture rule 4).
 
-acceptance: |
-  specs/features/BL-624-onboarding-facilitator-survey-to-gate.feature
+acceptance: specs/features/BL-624-onboarding-facilitator-survey-to-gate.feature
 
-  Every scenario needs its step handler wired in this same parcel (BL-233).
-
-  Scenario map: 01 proceed clones + surveys + posts contract ->
-  contract-proposed; 02 show-me inspects without state change; 03
-  change-this runs a real object round -> negotiating; 04 proceed agrees
-  via the existing approve round -> contract-agreed; 05 the gate check
-  shells to the existing onboarding contract gate, failing gate = visible
-  block; 06 agreed contract committed + pushed to the target repo, commit
-  reference posted; 07 clone/survey failure holds with a visible reason.
-
-  Supporting gates:
-  - Phase decisions are pure exported functions; CLI invocations go through
-    injected seams (no *_FORCE_RESULT env bypasses); clone/push effects
-    faked in unit tests, real in the live QA pass.
-  - No parallel negotiation state: grep-level assertion that only
-    runObject/runApprove write negotiation state (BL-381 comment contract).
-
+qa_e2e: |
   QA end-to-end procedure (live swarm, real target repo):
   1. From prerequisites-ready, post proceed: the onboarder clones the
      real repo, posts the proposed contract in the topic.
@@ -95,6 +78,54 @@ approval_context: >
   only, existing gate) are carried through. Approve is a rubber stamp
   unless the slice boundary (survey through gate here; prompts/launch in
   BL-625) looks wrong to you.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-15, by: architect, blamed: coder, class: behavior, commit: 6763758acc, evidence: backlog/evidence/BL-624-onboarder-survey-untrusted-agent-bounce-20260815.md }
+  - { at: 2026-08-15, by: documenter, blamed: specifier, class: spec-gap, commit: b696a6b3e8, evidence: backlog/evidence/BL-624-onboarding-facilitator-survey-to-gate-bounce-20260816.md }
+
+notes: |
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 proceed clones + surveys + posts contract ->
+  contract-proposed; 02 show-me inspects without state change; 03
+  change-this runs a real object round -> negotiating; 04 proceed agrees
+  via the existing approve round -> contract-agreed; 05 the gate check
+  shells to the existing onboarding contract gate, failing gate = visible
+  block; 06 agreed contract committed + pushed to the target repo, commit
+  reference posted; 07 clone/survey failure holds with a visible reason.
+
+  Supporting gates:
+  - Phase decisions are pure exported functions; CLI invocations go through
+    injected seams (no *_FORCE_RESULT env bypasses); clone/push effects
+    faked in unit tests, real in the live QA pass.
+  - No parallel negotiation state: grep-level assertion that only
+    runObject/runApprove write negotiation state (BL-381 comment contract).
+
+  ## Amendment 2026-08-16 (specifier): `acceptance:` made a single-line pointer
+
+  BOOKKEEPING ONLY — nothing anyone builds changes. No scenario, gate,
+  invariant, or QA step was added, removed or reworded; the text above is the
+  same text, relocated.
+
+  The documenter bounced this ticket (priority `00` note) because
+  `acceptance:` was a block scalar (`acceptance: |`) carrying the feature-file
+  path PLUS the scenario map, supporting gates and the QA procedure. The
+  specifier confirmed the diagnosis in the code rather than taking it on
+  report: `pre_qa_gate_gather_lib.bb`'s `gather-acceptance-contract-facts`
+  passes the raw `acceptance:` value straight to `feature-text-at-commit` as a
+  PATH, so a multi-line value resolves to no file, yields
+  `{:declaration-readable? false}`, and `acceptance_contract_gate_lib/evaluate`
+  fails **CLOSED** with an `:acceptance-contract` finding — blocking the
+  documenter's handoff to QA.
+
+  Note the two gates differ here, which is why the symptom looked odd: the
+  BL-880 acceptance-POINTER gate deliberately SKIPS a block-scalar declaration
+  (`acceptance_pointer_gate_lib/applicable?` excludes multi-line values and the
+  bare `|` residue, leaving that judgement to QA). It is the BL-761
+  acceptance-CONTRACT gate that fails closed. Only the contract gate needed
+  satisfying.
+
+  Fix: `acceptance:` is now the single-line path the schema and both gates
+  expect; the QA procedure moved to its own `qa_e2e:` field and the scenario
+  map plus supporting gates moved here. This is the same defect class already
+  seen on BL-514 (2026-08-14) — a prose `acceptance:` where a pointer belongs.

@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict');
-const { targetCloneDir, createRealContractPhaseAdapters, surveyCliArgs } = require('../out/tools/contractPhaseRealAdapters');
+const fs = require('node:fs');
+const path = require('node:path');
+const yaml = require('js-yaml');
+const { targetCloneDir, createRealContractPhaseAdapters, surveyCliArgs, extractJsonObject } = require('../out/tools/contractPhaseRealAdapters');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 // BL-624: contractPhaseRealAdapters.ts is the untested I/O boundary (real
 // git/claude/node subprocess calls) - unit tests fake ContractPhaseAdapters
@@ -66,4 +70,80 @@ test('BL-624: surveyCliArgs scopes the agent to read-only tools only', () => {
   for (const dangerous of ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch']) {
     assert.equal(allowed.includes(dangerous), false, `expected ${dangerous} to be excluded from allowedTools`);
   }
+});
+
+// ── extractJsonObject (pure - the one part of defaultSurveyRepo's parsing
+// that owes real coverage; the execFileSync('claude', ...) call above it
+// is the genuine untested I/O boundary, this parsing logic is not) ──────
+
+test('BL-624: extractJsonObject parses a clean JSON object directly', () => {
+  const result = extractJsonObject('{"languages":["ts"],"layoutSummary":"x"}');
+  assert.deepEqual(result, { languages: ['ts'], layoutSummary: 'x' });
+});
+
+test('BL-624: extractJsonObject falls back to a regex match for a JSON object wrapped in prose', () => {
+  const result = extractJsonObject('Sure, here you go:\n{"languages":["ts"]}\nHope that helps!');
+  assert.deepEqual(result, { languages: ['ts'] });
+});
+
+test('BL-624: extractJsonObject throws when no JSON object is present at all', () => {
+  assert.throws(() => extractJsonObject('no JSON here, sorry'), /no JSON object found/);
+});
+
+// ── defaultReadCurrentContract (real fs, no subprocess needed) ──────────
+
+test('BL-624: readCurrentContract returns undefined when the target has never had a contract written', async () => {
+  const swarmRoot = mkTmpDir('bl624-read-contract-');
+  const adapters = createRealContractPhaseAdapters(swarmRoot);
+  const result = await adapters.readCurrentContract('https://github.com/acme/never-surveyed');
+  assert.equal(result, undefined);
+});
+
+test('BL-624: readCurrentContract returns the parsed contract when one exists on disk at the target clone', async () => {
+  const swarmRoot = mkTmpDir('bl624-read-contract-');
+  const targetRepoUrl = 'https://github.com/acme/widget';
+  const localPath = targetCloneDir(swarmRoot, targetRepoUrl);
+  fs.mkdirSync(path.join(localPath, '.swarmforge'), { recursive: true });
+  const contract = {
+    scope: ['a'],
+    outOfScope: ['b'],
+    boundaries: ['c'],
+    initialBacklogSummary: 'summary',
+    agreement: 'proposed',
+  };
+  fs.writeFileSync(path.join(localPath, '.swarmforge', 'contract.yaml'), yaml.dump(contract), 'utf8');
+
+  const adapters = createRealContractPhaseAdapters(swarmRoot);
+  const result = await adapters.readCurrentContract(targetRepoUrl);
+  assert.deepEqual(result, contract);
+});
+
+test('BL-624: readCurrentContract returns undefined (never throws) when the file on disk is malformed', async () => {
+  const swarmRoot = mkTmpDir('bl624-read-contract-');
+  const targetRepoUrl = 'https://github.com/acme/widget';
+  const localPath = targetCloneDir(swarmRoot, targetRepoUrl);
+  fs.mkdirSync(path.join(localPath, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(localPath, '.swarmforge', 'contract.yaml'), 'scope: [unterminated', 'utf8');
+
+  const adapters = createRealContractPhaseAdapters(swarmRoot);
+  const result = await adapters.readCurrentContract(targetRepoUrl);
+  assert.equal(result, undefined);
+});
+
+// ── defaultCloneTarget's idempotent path (fs.existsSync check only - the
+// actual `git clone` execFileSync call on the non-idempotent path remains
+// the genuine untested I/O boundary) ─────────────────────────────────────
+
+test('BL-624: cloneTarget is a no-op success when the target clone directory already has a .git (idempotent retry), never re-invoking git', async () => {
+  const swarmRoot = mkTmpDir('bl624-clone-target-');
+  // A bogus, unreachable URL: if the idempotent early-return did NOT fire,
+  // the real `git clone` call below it would fail (or hang) against this
+  // URL, so a passing {ok: true} here proves the early return actually ran.
+  const targetRepoUrl = 'https://example.invalid/does/not/exist.git';
+  const localPath = targetCloneDir(swarmRoot, targetRepoUrl);
+  fs.mkdirSync(path.join(localPath, '.git'), { recursive: true });
+
+  const adapters = createRealContractPhaseAdapters(swarmRoot);
+  const result = await adapters.cloneTarget(targetRepoUrl);
+  assert.deepEqual(result, { ok: true });
 });

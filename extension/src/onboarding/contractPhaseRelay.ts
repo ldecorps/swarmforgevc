@@ -36,6 +36,26 @@ const SHOW_ME_PATTERN = /^\s*show-me\s*$/i;
 // reviseContractFromObjection's own callers do for the negotiation topic.
 const CHANGE_THIS_PATTERN = /^\s*change-this\s+([\s\S]+)$/i;
 
+// The control vocabulary once a contract is on the table (contract-proposed
+// or negotiating): show-me / proceed / change-this. Split out of
+// decideContractPhaseAction below (behavior-preserving; hardener CRAP pass)
+// so the phase dispatch and this phase's own control parsing are each
+// independently simple, rather than one function's complexity being the
+// sum of both.
+function decideNegotiationPhaseAction(text: string): ContractPhaseAction {
+  if (SHOW_ME_PATTERN.test(text)) {
+    return { kind: 'show-current-contract' };
+  }
+  if (PROCEED_PATTERN.test(text)) {
+    return { kind: 'negotiate-approve' };
+  }
+  const changeMatch = CHANGE_THIS_PATTERN.exec(text);
+  if (changeMatch) {
+    return { kind: 'negotiate-object', objection: changeMatch[1].trim() };
+  }
+  return { kind: 'unrecognized' };
+}
+
 // The onboarder's own turn: given the currently-active state's phase and
 // the principal's raw text, decide WHAT to do - never how to do it (that is
 // runContractPhaseAction's job below, via injected adapters). Phases this
@@ -47,17 +67,7 @@ export function decideContractPhaseAction(state: OnboarderState, text: string): 
     return PROCEED_PATTERN.test(text) ? { kind: 'start-survey' } : { kind: 'unrecognized' };
   }
   if (state.phase === 'contract-proposed' || state.phase === 'negotiating') {
-    if (SHOW_ME_PATTERN.test(text)) {
-      return { kind: 'show-current-contract' };
-    }
-    if (PROCEED_PATTERN.test(text)) {
-      return { kind: 'negotiate-approve' };
-    }
-    const changeMatch = CHANGE_THIS_PATTERN.exec(text);
-    if (changeMatch) {
-      return { kind: 'negotiate-object', objection: changeMatch[1].trim() };
-    }
-    return { kind: 'unrecognized' };
+    return decideNegotiationPhaseAction(text);
   }
   // 'contract-agreed' (and any other phase this module does not own) -
   // terminal for this slice; BL-625 owns whatever comes after agreement.

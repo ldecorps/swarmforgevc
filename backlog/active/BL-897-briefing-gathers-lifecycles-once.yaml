@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: swarm-behaviour-trends
-human_approval: pending
+human_approval: approved
 priority: 30
 direction: human-requested
 depends_on: []
