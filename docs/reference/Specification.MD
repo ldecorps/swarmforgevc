@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 16, 2026 (BL-624: the Onboarder's slice 2 —
+**Last Updated:** August 16, 2026 (BL-897: a briefing send previously walked the
+backlog's full git history once per section that needed ticket lifecycle
+data (the cost-health sidecar, the digest line, the not-done burndown
+chart), ~7s CPU each, which on a loaded host turned a tens-of-seconds send
+into a multi-minute saturation spike and risked the send never going out.
+`handoffd.bb` now gathers that history once per UTC day into a
+machine-local, gitignored snapshot
+(`.swarmforge/briefing/lifecycle-snapshot.json`) and hands every consumer
+CLI its path via a `--snapshot` flag; a missing, unreadable, or stale
+snapshot degrades a consumer straight back to its own walk, exactly as it
+worked before. See the new
+[runbook](../how-to/BL-897-briefing-lifecycle-snapshot.md).); Previously
+August 16, 2026 (BL-624: the Onboarder's slice 2 —
 survey → propose → negotiate → agree → gate → push — lands inside the same
 in-topic conversational flow slice 1 shipped. `proceed` from
 `prerequisites-ready` clones the target with this box's own GitHub access,
