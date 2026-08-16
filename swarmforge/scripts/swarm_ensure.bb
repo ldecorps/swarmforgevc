@@ -34,6 +34,14 @@
 ;;   SWARM_ENSURE_RC_CMDLINE_CMD (BL-514) - substitutes the remote-control
 ;;     component's live-process probe; the real probe reads /proc/<pid>/cmdline,
 ;;     unavailable on a macOS dev/test host
+;;   SWARM_ENSURE_RC_CAPTURE_CMD (BL-898) - substitutes the remote-control
+;;     component's pane-capture probe (footer-status detection + the
+;;     session-dead repair's idle-wait busy check)
+;;   SWARM_ENSURE_RC_SESSION_DEAD_WAIT_SECONDS (BL-898) - idle-wait budget
+;;     before a :session-dead repair gives up and skips a busy agent (180)
+;;   SWARM_ENSURE_RC_NOTIFY_CMD (BL-898) - substitutes the human-notify call
+;;     after a :session-dead repair; real default posts to Telegram when
+;;     configured, else no-ops (the report line still carries the outcome)
 ;;   SWARMFORGE_SKIP_OPERATOR=1 / SWARMFORGE_SKIP_FRONT_DESK=1
 ;;   SWARMFORGE_SKIP_BABYSITTERD=1
 
@@ -50,6 +58,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -516,6 +526,12 @@
 ;; entirely to the agent:<role> check (actionable? is true only for
 ;; :degraded), so a crashed pane is never double-respawned here, and
 ;; :off/:healthy need nothing.
+;;
+;; BL-898 adds a fifth state, :session-dead: the flag is fine but the pane
+;; footer has persistently reported the cloud session dead. Detection is
+;; folded into the SAME per-sweep check below; repair is idle-safe (unlike
+;; :degraded's immediate respawn) and routed through the SAME actionable?
+;; predicate, never a second parallel repair path.
 
 (def rc-cmdline-cmd (System/getenv "SWARM_ENSURE_RC_CMDLINE_CMD"))
 
@@ -532,6 +548,57 @@
       (when (and (zero? exit) (not (str/blank? (str/trim out))))
         (str/trim out)))
     (remote-control-health/claude-cmdline-in-pane socket session)))
+
+(def rc-capture-cmd (System/getenv "SWARM_ENSURE_RC_CAPTURE_CMD"))
+
+(defn rc-capture-pane
+  "Pane capture text for BOTH footer-status (BL-898 session-dead detection)
+   and busy-detection during a session-dead repair's idle wait.
+   SWARM_ENSURE_RC_CAPTURE_CMD stands in for a real tmux capture-pane on
+   hosts where the fixture tmux binary is faked. Run directly (not via
+   `sh -c`, which never actually forwards trailing argv to a script path) so
+   a substituted probe genuinely receives socket/session as $1/$2."
+  [socket session]
+  (if rc-capture-cmd
+    (:out (process/sh {:continue true} rc-capture-cmd socket session))
+    (:out (process/sh {:continue true} "tmux" "-S" socket "capture-pane" "-p" "-t" session "-S" "-50"))))
+
+(defn rc-busy? [socket session]
+  (chase-sweep-lib/actively-processing? (rc-capture-pane socket session)))
+
+(def rc-session-dead-wait-seconds
+  (or (some-> (System/getenv "SWARM_ENSURE_RC_SESSION_DEAD_WAIT_SECONDS") parse-long) 180))
+
+(def rc-notify-cmd (System/getenv "SWARM_ENSURE_RC_NOTIFY_CMD"))
+
+(defn notify-rc-repair!
+  "Human notify for a :session-dead repair (BL-898 invariant 2: the human is
+   always told the outcome). Reuses operator_telegram_lib's own
+   send-message-request (the SAME primitive the live Telegram bot posts
+   through) and the file's own telegram-configured? gate that front-desk
+   already uses - no new comms path. A no-op when Telegram isn't configured;
+   the outcome is still visible in this command's own FIXED/FAILED report
+   line either way. SWARM_ENSURE_RC_NOTIFY_CMD lets tests substitute a fake
+   and assert on exactly what would have been sent - run directly (not via
+   `sh -c`, which never actually forwards trailing argv to a script path) so
+   the substituted script genuinely receives role/url as $1/$2."
+  [role session-url]
+  (let [text (remote-control-health/repair-notice-text role session-url)]
+    (cond
+      rc-notify-cmd
+      (process/sh {:continue true} rc-notify-cmd role (or session-url "") text)
+
+      (telegram-configured?)
+      (let [{:keys [url form-params]}
+            (operator-telegram-lib/send-message-request
+             (System/getenv "TELEGRAM_BOT_TOKEN") (System/getenv "TELEGRAM_CHAT_ID") text)]
+        (process/sh {:continue true} "curl" "-fsS" "-X" "POST"
+                    "-d" (str "chat_id=" (:chat_id form-params))
+                    "-d" (str "text=" (:text form-params))
+                    "-d" "disable_web_page_preview=true"
+                    url))
+
+      :else nil)))
 
 (defn rc-launch-role
   "The role whose launch script currently governs this pane's RC identity.
@@ -553,6 +620,39 @@
   (let [launch (remote-control-health/launch-script-path state-dir launch-role)]
     (remote-control-health/respawn-role-pane! socket session (str launch))))
 
+(defn repair-session-dead!
+  "BL-898 invariant 1: never interrupts an agent mid-turn - waits up to
+   rc-session-dead-wait-seconds for the agent to reach an idle prompt (the
+   SAME busy signal remote_control_respawn.bb already polls), respawns ONLY
+   once idle, confirms the flag came back, then tells the human the outcome
+   (invariant 2 - scoped, like acceptance scenario 03, to a genuinely
+   restored session: the active notify names the new address or explicitly
+   says it wasn't readable, but is never sent claiming a repair that did NOT
+   happen). A still-busy agent past the wait budget, or a respawn whose flag
+   never comes back, is reported FAILED via this component's own report line
+   - the same channel :degraded's repair failure already relies on, with no
+   separate active notify for either."
+  [socket launch-role role session expected]
+  (let [component (str "rc:" role)
+        busy?-fn #(rc-busy? socket session)]
+    (if (remote-control-health/wait-until-idle! busy?-fn rc-session-dead-wait-seconds)
+      (do
+        (respawn-rc-pane! socket launch-role session)
+        (let [{:keys [ok url]} (remote-control-health/confirm-rc!
+                                 #(rc-cmdline-fn socket session)
+                                 #(rc-capture-pane socket session)
+                                 expected)]
+          (when ok (notify-rc-repair! role url))
+          {:component component
+           :status (if ok :fixed :failed)
+           :action (if ok
+                     (str "respawned pane to restore a dead remote-control session"
+                          (if url (str " - new session: " url) " (new session address not yet readable)"))
+                     "respawned pane but the --remote-control flag was not restored")}))
+      {:component component :status :failed
+       :action (str "agent still busy after " rc-session-dead-wait-seconds
+                    "s wait budget - respawn skipped, not killed (never mid-turn)")})))
+
 (defn ensure-rc-role!
   "role is the roles.tsv identity (used only for the reported component
    name); launch-role (rc-launch-role) is what is actually checked/repaired.
@@ -568,19 +668,27 @@
         component (str "rc:" role)]
     (if (nil? (remote-control-health/expected-rc-name state-dir launch-role))
       {:component component :status :healthy}
-      (let [status (rc-status socket launch-role session)]
+      (let [footer-streak (remote-control-health/advance-footer-streak!
+                            state-dir launch-role
+                            (remote-control-health/footer-status (rc-capture-pane socket session)))
+            check (remote-control-health/check-role
+                   state-dir socket launch-role session rc-cmdline-fn footer-streak)
+            status (:status check)]
         (cond
-          (contains? #{:healthy :off} status)
+          ;; "worth repairing at all" is decided ONCE, through actionable? -
+          ;; :healthy/:off need nothing and :down is the agent:<role> check's
+          ;; job, so anything actionable? refuses is left alone here.
+          (not (remote-control-health/actionable? status))
           {:component component :status :healthy}
 
-          (remote-control-health/actionable? status) ;; :degraded
+          (= status :session-dead)
+          (repair-session-dead! socket launch-role role session (:expected check))
+
+          :else ;; :degraded - the only other status actionable? accepts
           (ensure-component! component
                              #(contains? #{:healthy :off} (rc-status socket launch-role session))
                              #(respawn-rc-pane! socket launch-role session)
-                             "respawned pane to restore --remote-control flag")
-
-          :else ;; :down - the agent:<role> check's job
-          {:component component :status :healthy})))))
+                             "respawned pane to restore --remote-control flag"))))))
 
 (defn report-line [{:keys [component status action category]}]
   (case status
