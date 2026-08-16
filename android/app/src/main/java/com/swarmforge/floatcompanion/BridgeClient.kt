@@ -1,7 +1,9 @@
 package com.swarmforge.floatcompanion
 
+import android.content.Context
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.IOException
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -558,6 +560,96 @@ object BridgeClient {
         } finally {
             conn.disconnect()
         }
+    }
+
+    // BL-825 slice A: GET /lets-talk/ui-bundle.json — the versioned UI
+    // bundle manifest, same "same shape, same fallback posture, deliberately
+    // a sibling" reuse posture as bubble-config/chiptunes above. Unlike
+    // those two, the device also caches the last-served manifest (atomic
+    // temp-file-then-rename, same pattern as CompanionPackageStore) so
+    // [resolveUiBundle] can answer even when the bridge is unreachable.
+
+    /**
+     * `reachable` is distinct from `ok`: a 404/500 or a malformed body still
+     * means the bridge answered (reachable = true, ok = false) — only a
+     * connection-level exception means the bridge could not be reached at
+     * all (reachable = false). [UiBundleResolver.resolve]'s STALE-vs-CACHED
+     * split depends on telling these apart (BL-654 invariant 3).
+     */
+    data class UiBundleFetchResult(
+        val ok: Boolean,
+        val reachable: Boolean,
+        val manifest: UiBundleResolver.UiBundleManifest? = null,
+        val reason: String? = null
+    )
+
+    fun fetchUiBundleManifest(baseUrl: String, token: String): UiBundleFetchResult {
+        return try {
+            val (code, raw) = getRaw(baseUrl, "/lets-talk/ui-bundle.json", token)
+            if (code !in 200..299) {
+                return UiBundleFetchResult(false, reachable = true, reason = "HTTP $code: ${raw.take(200)}")
+            }
+            val manifest = UiBundleResolver.parseUiBundleManifest(raw)
+                ?: return UiBundleFetchResult(false, reachable = true, reason = "malformed ui bundle manifest")
+            UiBundleFetchResult(true, reachable = true, manifest = manifest)
+        } catch (e: Exception) {
+            UiBundleFetchResult(false, reachable = false, reason = friendlyConnectionMessage(e))
+        }
+    }
+
+    private const val UI_BUNDLE_CACHE_FILE = "ui-bundle-cache.json"
+
+    /** Device-surface (Context, file I/O): verified by BL-825's recorded manual procedure, not the JVM suite. */
+    private fun readCachedUiBundleManifest(ctx: Context): UiBundleResolver.UiBundleManifest? {
+        val f = File(ctx.filesDir, UI_BUNDLE_CACHE_FILE)
+        if (!f.isFile) return null
+        return try {
+            UiBundleResolver.parseUiBundleManifest(f.readText(Charsets.UTF_8))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun writeCachedUiBundleManifest(ctx: Context, manifest: UiBundleResolver.UiBundleManifest) {
+        val json = JSONObject()
+            .put("schemaVersion", manifest.schemaVersion)
+            .put("bundleVersion", manifest.bundleVersion)
+            .put("minShellVersion", manifest.minShellVersion)
+            .put("payload", manifest.payload)
+        val target = File(ctx.filesDir, UI_BUNDLE_CACHE_FILE)
+        val tmp = File(ctx.filesDir, "$UI_BUNDLE_CACHE_FILE.tmp")
+        tmp.writeText(json.toString(), Charsets.UTF_8)
+        if (!tmp.renameTo(target)) {
+            target.delete()
+            tmp.renameTo(target)
+        }
+    }
+
+    /**
+     * BL-825 required_wiring: the resolver decides, this is its only real
+     * caller outside unit tests — invoked on pair/resume (every overlay
+     * start, [OverlayService.onCreate]), the same cadence as
+     * [TalkEngine.syncBridgeInstanceAndSession] / [TalkEngine.syncChiptunesCatalog].
+     * Reads the device cache, fetches the bridge's manifest, asks
+     * [UiBundleResolver.resolve] which to render, and — only on a FRESH
+     * outcome — persists the newly-served manifest so it becomes next
+     * session's cache (BL-654 invariant 2: nothing is written on a
+     * rejected/stale/bare outcome, so the last known-good bundle is never
+     * overwritten with anything less than a confirmed newer one).
+     */
+    fun resolveUiBundle(ctx: Context, baseUrl: String, token: String, installedShellVersion: Int): UiBundleResolver.UiBundleResolution {
+        val cached = readCachedUiBundleManifest(ctx)
+        val fetch = fetchUiBundleManifest(baseUrl, token)
+        val resolution = UiBundleResolver.resolve(
+            servedManifest = fetch.manifest,
+            servedReachable = fetch.reachable,
+            cachedManifest = cached,
+            installedShellVersion = installedShellVersion
+        )
+        if (resolution.outcome == UiBundleResolver.UiBundleOutcome.FRESH && resolution.bundle != null) {
+            writeCachedUiBundleManifest(ctx, resolution.bundle)
+        }
+        return resolution
     }
 
     /**

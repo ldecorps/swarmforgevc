@@ -158,3 +158,16 @@ its own.
 The epic tiles only reorder `type: epic` tickets. Reordering one epic's own
 topics is a narrower, separate action — scoped to a single epic's drill-down
 (**Make top** within an epic), not a general topic reorder screen.
+
+## Why This Screen Is Now Enough On Its Own
+
+A move or **Make top** on this screen only ever rewrites `priority:` on the
+epic tracker(s) and topics involved — it never bulk-rewrites every child
+ticket under an epic. Since BL-900, that's sufficient: promotion ranking
+reads a candidate's containing epic's own priority ahead of the candidate's
+own `priority:`, so reordering the epic here changes real promotion order
+without touching a single child ticket. See [Why Promotion Ranks by Epic
+Priority Before Ticket
+Priority](../explanation/BL-900-epic-priority-promotion-ranking.md) for the
+ranking mechanics and its exceptions (expedited defects, queue-jump,
+ambulance mode).
