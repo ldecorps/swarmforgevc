@@ -1,5 +1,5 @@
 id: BL-905
-title: "Swarm stamp-off: hide childless epics from the console reorder screen — certify the uncommitted Cursor WIP, and decide how it lands"
+title: "Swarm stamp-off: hide childless epics from the console reorder screen — certify the landed hotfix 0f5394a2d0"
 milestone: M8
 type: defect
 severity: medium
@@ -14,36 +14,14 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-905-hide-childless-epics-reorder.feature.draft
 
 approval_context: >
-  ONE decision, and it blocks the coder rather than merely shaping the
-  ticket — please answer this one before promoting.
+  ANSWERED 2026-08-16 — the landing question this field used to ask is
+  closed. The human chose (a) LAND AS A DECLARED HOTFIX for this ticket, and
+  (b) COMMIT TO A BRANCH for its sibling BL-906. Nothing below this line
+  changed: the locked behaviour, the acceptance scenarios and the gates are
+  exactly as they were specced, as promised when the question was raised.
 
-  HOW DOES THE WIP LAND? The behaviour you asked for is already written and
-  is sitting UNCOMMITTED in the master checkout (7 files, +231/-75, tests
-  included). I verified it is not reachable from `.worktrees/coder` — neither
-  the tracked edits nor the new files appear there — so the coder cannot pick
-  this up at all until someone commits it. Two ways, your call:
-
-  (a) LAND AS A DECLARED HOTFIX. Commit it to `main` with a
-  `Hotfix-Certification: pending` trailer, exactly as `14724edae7` was for
-  BL-896. BL-848's sweep then opens a ledger row, and this ticket becomes a
-  certify-the-landed-diff review — confirm or refute, fix what the gates
-  find. Fastest, and it gets the code out of the dirty shared checkout
-  today. Cost: unreviewed code sits on `main` until this ticket closes.
-
-  (b) COMMIT TO A BRANCH the coder merges, and run the normal pipeline from
-  the top. Nothing unreviewed reaches `main`. Costs a day and needs someone
-  to make that commit.
-
-  I did not choose for you because the two produce genuinely different first
-  stages. Everything BELOW this line is identical either way — the locked
-  behaviour, the acceptance scenarios and the gates do not change.
-
-  Worth knowing while you decide: BL-901 (minted yesterday, `high`) exists
-  because a staged change left sitting in this same shared master checkout
-  was silently swept into an unrelated commit and deleted a ticket. This WIP
-  is exposed to exactly that hazard for as long as it stays uncommitted. I
-  have kept my hands off the working tree per your instruction and staged
-  only my own ticket files.
+  The WIP is no longer in the dirty master checkout — the BL-901 hazard this
+  field warned about is discharged for this ticket.
 
 source: |
   `.swarmforge/operator/INTAKE-hide-childless-epics-from-reorder.md` — human
@@ -65,6 +43,32 @@ source: |
   (`docs/how-to/BL-572-console-epic-priority-reorder.md`).
 
 description: |
+  ## Disposition — answered 2026-08-16: (a), landed as a declared hotfix
+
+  The code is ALREADY ON `main` at commit `0f5394a2d0` ("Land
+  hide-childless-epics reorder screen fix"), carrying
+  `Hotfix-Certification: pending`. BL-848's ledger row exists and names this
+  ticket as its `stamp_ticket` (coordinator commit `b51ba4979`).
+
+  So this parcel starts differently from a normal one, and the difference is
+  the whole point:
+
+  - **Do not implement the behaviour.** It exists. Merge `main` into your
+    worktree first (`git merge main`) and read the diff of `0f5394a2d0`.
+  - **Certify it** against the locked bullets and the gates below —
+    confirm or refute. A refutation is a normal finding: fix it forward in
+    this parcel, do not revert the hotfix and do not start over.
+  - **The acceptance step handlers are the one genuinely NEW code here.**
+    `specs/features/BL-905-hide-childless-epics-reorder.feature.draft` is
+    still a `.draft` because no handler exists for its scenarios yet, and a
+    live `.feature` with no handler hard-fails the runner for every parcel
+    (BL-233). Write the handlers and rename the draft to
+    `BL-905-hide-childless-epics-reorder.feature` **in the same commit**,
+    then point this ticket's `acceptance:` at the live path.
+  - Closing this ticket is what closes the certification: the ledger row
+    moves `stamp-open` → `awaiting-human` on its own from this ticket's
+    status. Never hand-edit `backlog/hotfix-ledger.yaml`.
+
   ## What
 
   The Reorder epics screen lists every paused `type: epic` tracker, including
@@ -93,9 +97,10 @@ description: |
   dominates against every paused epic, including the hidden ones. A tracker
   being invisible must never change what make-top computes.
 
-  ## Already on disk — keep it, per the human's instruction
+  ## Already on `main` in `0f5394a2d0` — keep it, per the human's instruction
 
-  Verified present in the master checkout at spec time:
+  Specced against the working tree; verified again after the hotfix landed,
+  same content, now committed:
 
   - `extension/src/bridge/epicTopicSlugMatch.ts` — `filterEpicsWithTopics`
     (exported, line 59)
@@ -158,9 +163,21 @@ qa_e2e_procedure: |
 notes: |
   Sibling stamp ticket from the same morning: BL-906 (operator polls
   babysitterd freshness, tell-never-restart) — same disposition question,
-  same shared-checkout hazard, independent work.
+  answered differently: (b), so BL-906's code sits on branch
+  `wip/BL-906-babysitterd-freshness-watchdog` and never touched `main`.
+  Independent work; the two share no files.
 
-  If the human answers (a), whoever lands the commit should carry the
-  `Hotfix-Certification: pending` trailer and name BL-905 in the message, so
-  BL-848's ledger row and this ticket are linked without hand-editing
-  `backlog/hotfix-ledger.yaml`.
+  Landing record (2026-08-16), the answer to this ticket's own question:
+
+  - `0f5394a2d0` — the hotfix, on `main`, trailer
+    `Hotfix-Certification: pending`, `By Cursor.` 7 files, +231/-75.
+  - `b51ba4979` — coordinator linked that commit to this ticket in
+    `backlog/hotfix-ledger.yaml` (row `state: pending`, `stamp_ticket:
+    BL-905`). The BL-848 sweep recomputes that state from this ticket's
+    status; it is not a field anyone edits by hand.
+
+  Certifying reviewer: `0f5394a2d0` is authored outside the pipeline, so no
+  stage has yet looked at it. Every gate this ticket names is being run on
+  it for the FIRST time — treat a clean-looking diff with the same suspicion
+  you would give a fresh one, not the deference you would give code that had
+  already passed a stage.

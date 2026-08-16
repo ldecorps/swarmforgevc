@@ -1,5 +1,5 @@
 id: BL-906
-title: "Swarm stamp-off: Operator polls babysitterd freshness and TELLS, never restarts — certify the uncommitted Cursor WIP, and decide how it lands"
+title: "Swarm stamp-off: Operator polls babysitterd freshness and TELLS, never restarts — certify the WIP branch wip/BL-906-babysitterd-freshness-watchdog"
 milestone: M8
 type: defect
 severity: medium
@@ -14,27 +14,11 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature.draft
 
 approval_context: >
-  ONE decision, the same one BL-905 asks and for the same reason — answer it
-  once and I will apply your answer to both.
-
-  HOW DOES THE WIP LAND? The behaviour is already written and is sitting
-  UNCOMMITTED in the master checkout (8 tracked files +292/-15, plus 3 new
-  untracked files including the pure lib and its tests). I verified it is not
-  reachable from `.worktrees/coder` — `babysitterd_freshness_lib.bb` does not
-  exist there — so the coder cannot start until someone commits it. Either
-  (a) land it on `main` with a `Hotfix-Certification: pending` trailer and
-  this becomes a certify-the-landed-diff review, exactly as `14724edae7` was
-  for BL-896; or (b) commit to a branch the coder merges and run the normal
-  pipeline. Everything below this line is identical either way.
-
-  A note on THIS ticket specifically, if you pick (a). The WIP changes
-  `./swarm status`, `start_babysitterd.sh` and `babysitterd.sh` — the
-  machinery that keeps the swarm alive. Landing it unreviewed means an
-  unreviewed change to the restart path, and a defect there is the kind that
-  takes the pack down rather than showing up as a failing test. BL-905's code
-  is a console view and carries nothing like that exposure. I would still
-  lean (a) for BL-905 and (b) for this one, but they are your calls and I
-  have specced both to be correct either way.
+  ANSWERED 2026-08-16 — the landing question this field used to ask is
+  closed, and it was answered per-ticket rather than once for both. This one
+  took (b) COMMIT TO A BRANCH, matching the caution stated here: nothing
+  unreviewed reaches `main` on the swarm's own restart machinery. Its sibling
+  BL-905, a console view, took (a). Nothing below this line changed.
 
 source: |
   `.swarmforge/operator/INTAKE-operator-babysitterd-freshness-watchdog.md` —
@@ -59,6 +43,37 @@ source: |
   > a commit.
 
 description: |
+  ## Disposition — answered 2026-08-16: (b), a branch the coder merges
+
+  The code is committed, but **not on `main`** — deliberately. It is one
+  commit, `d7b986e8f`, on local branch
+  `wip/BL-906-babysitterd-freshness-watchdog`, whose parent is `0f5394a2d0`
+  (its BL-905 sibling, on `main`), so the branch is `main` plus exactly this
+  one commit. Nothing unreviewed reaches `main` until QA lands this parcel —
+  which is the entire reason this ticket got (b) and BL-905 got (a).
+
+  Coder, start here:
+
+  - `git merge main`, then `git merge wip/BL-906-babysitterd-freshness-watchdog`
+    in `.worktrees/coder`. The branch is local to this repo, so it is
+    visible from your worktree with no fetch; it has never been pushed.
+  - **Do not implement the behaviour** — it exists in that commit. Read its
+    diff, then run the normal pipeline from the top over it. Every stage
+    reviews it as ordinary in-parcel work, because after your merge that is
+    exactly what it is.
+  - **The acceptance step handlers are the genuinely new code.**
+    `specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature.draft`
+    is still a `.draft` because no handler exists for its scenarios, and a
+    live `.feature` with no handler hard-fails the runner for every parcel
+    (BL-233). Write the handlers and rename the draft to
+    `BL-906-operator-babysitterd-freshness-watchdog.feature` **in the same
+    commit**, then point this ticket's `acceptance:` at the live path.
+  - There is no hotfix ledger row for this ticket and there must not be one:
+    `d7b986e8f` carries no `Hotfix-Certification` trailer and never reached
+    `main` un-reviewed. BL-848 is not involved here.
+  - Delete the `wip/` branch only after QA has landed this parcel — until
+    then it is the sole copy of the work outside your worktree.
+
   ## What
 
   Babysitterd went down and no health signal caught it. Worse, the obvious
@@ -99,9 +114,10 @@ description: |
   insufficient, that is a finding to raise, never a licence to add a restart
   call.
 
-  ## Already on disk — keep it, per the human's instruction
+  ## Already written in `d7b986e8f` — keep it, per the human's instruction
 
-  Verified present in the master checkout at spec time:
+  Specced against the working tree; verified again after the commit, same
+  files:
 
   - `swarmforge/scripts/babysitterd_freshness_lib.bb` — pure classify (NEW,
     untracked)
@@ -117,7 +133,10 @@ description: |
     `babysitterd_freshness_lib_test_runner.bb` (NEW), plus lifecycle /
     freshness / ensure tests
 
-  Tracked diffstat: 8 files, +292/-15, plus 3 new untracked files.
+  Committed diffstat, which supersedes the spec-time tracked/untracked split
+  (that split counted only `git diff` lines and excluded the three new
+  files): **15 files, +784/-16** in `d7b986e8f`. Same file list as above —
+  the larger number is the new files being counted, not scope that grew.
 
   That the classifier is a PURE lib with its own test runner is the detail
   worth protecting: the four states are decidable from inputs alone, so they
@@ -178,8 +197,19 @@ qa_e2e_procedure: |
 
 notes: |
   Sibling stamp ticket from the same morning: BL-905 (hide childless epics
-  from the console reorder screen) — same disposition question, same
-  shared-checkout hazard, independent work.
+  from the console reorder screen) — same disposition question, answered
+  differently: (a), so BL-905's code is on `main` at `0f5394a2d0` under a
+  BL-848 hotfix-certification row while this one waits on a branch.
+  Independent work; the two share no files.
+
+  `swarmforge/roles/operator.prompt` (+7) is a specifier-owned file that
+  someone else wrote (BL-798 makes prompt prose mine to land). It is NOT
+  orphaned and needs no separate commit: I reviewed the hunk on the branch
+  — trust the poll, never `start_babysitterd.sh` from a health sweep, on
+  `pidfile-lie`/`announce-mute` tell the human — and it states exactly the
+  locked posture above, so it rides in this parcel and lands with it. If a
+  review stage changes that hunk's wording, send it to me rather than
+  editing it in place.
 
   Not to be confused with BL-902. Both are freshness restart problems from
   the same day, and they are opposites: BL-902 is handoffd being restarted
@@ -190,7 +220,15 @@ notes: |
   observed — see also BL-904, where a restart counter was inferred from
   nothing at all.
 
-  If the human answers (a), whoever lands the commit should carry the
-  `Hotfix-Certification: pending` trailer and name BL-906 in the message, so
-  BL-848's ledger row and this ticket are linked without hand-editing
-  `backlog/hotfix-ledger.yaml`.
+  Landing record (2026-08-16), the answer to this ticket's own question:
+
+  - `d7b986e8f` — the work, on branch
+    `wip/BL-906-babysitterd-freshness-watchdog`, `By Cursor.`, parent
+    `0f5394a2d0`. No `Hotfix-Certification` trailer, no ledger row, never on
+    `main`.
+
+  Certifying reviewer: `d7b986e8f` is authored outside the pipeline, so no
+  stage has yet looked at it. Every gate this ticket names is being run on it
+  for the FIRST time — treat a clean-looking diff with the same suspicion you
+  would give a fresh one, not the deference you would give code that had
+  already passed a stage.

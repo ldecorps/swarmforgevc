@@ -1,0 +1,167 @@
+id: BL-907
+title: "Offline-first phone side (Bubble): fetch the bridge's versioned packages network-first, keep serving them when the bridge is out of reach, and label every read 'as of <generation>'"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-offline-sync
+human_approval: approved
+severity: medium
+priority: 10
+direction: human-intake
+depends_on: [BL-866]
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "A held package and the generation it is labelled with always agree — Bubble never labels content with a generation it did not receive that content at."
+  - "No sync outcome, successful or failed, leaves the device holding less than it held before: after any sync attempt the last complete package is still readable at its own generation."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::/companion-manifest::the phone's only sync source is BL-866's catalog — a sync that never asks the bridge for the manifest is wired to nothing"
+
+approval_context: >
+  Sign-off is carried by the epic BL-865, whose two open questions the human
+  answered on 2026-08-16 (front-desk SUP-5) and who commissioned this slice by
+  name. Nothing extra is asked here.
+
+source: |
+  Slice 2 of 5 of epic BL-865, minted 2026-08-16 by the specifier from raw
+  intake `backlog/INTAKE-operator-question-1786899039245.md` (Operator, front-desk
+  SUP-5, human ldecorps, 2026-08-16), archived to
+  `.swarmforge/operator/archive/` in the same pass.
+
+  Human directives carried verbatim from that intake (Article 5.3):
+
+  - "Human confirmed the two BL-865 approval_context decisions for the browsable
+    knowledge screen: (a) PROMOTE BL-865 so the coordinator can drive minting of
+    the remaining knowledge-screen slices, and (b) CONFIRM the BL-659 retarget —
+    the previously-approved PWA knowledge-explorer becomes the native-Kotlin
+    knowledge-screen slice (Pages PWA goes maintain-only) rather than being
+    retired."
+  - "Please mint the two remaining slices: (1) Bubble-side: fetch/cache the
+    versioned packages network-first, serve reads offline, show 'as of
+    <generation>'"
+
+  This ticket is directive (1). Directive (2) is BL-908.
+
+  Fast-track directive carried verbatim from the companion intake
+  `backlog/INTAKE-operator-question-1786899438508.md` (same human, same day,
+  amending the first):
+
+  - "once the browsable-knowledge-screen ticket(s) are minted ... the human wants
+    the resulting ticket(s) routed through the AMBULANCE / expedite fast-track,
+    not the normal promote queue. Please mint them onto the expedite path; the
+    coordinator confirms/drives the ambulance dispatch."
+
+  Probed against `main` 2026-08-16, so the contract below is what BL-866 actually
+  landed rather than what its ticket described:
+
+  - `GET /companion-manifest` answers `{ packages: [{ name, generation, format,
+    formatVersion }] }` (`extension/src/bridge/companionManifest.ts`, dispatched
+    by `bridgeServer.ts:tryServeCompanionRoutes`).
+  - `GET /companion-package/<name>[?generation=<held>]` answers `200` with
+    `{ name, generation, format, formatVersion, data }` and an `etag` of the
+    generation; `304` with the `etag` and no body when the held generation still
+    matches; `404 unknown_package`; `503 unreadable_package` with a reason.
+  - Two packages exist today: `backlog` (the active/paused/hold/done folders) and
+    `docs` (the vision documents). Both sit behind the bridge's existing client
+    authorization, like every other bridge route.
+  - Nothing under `android/` references either route yet — this slice is the
+    first phone-side reader.
+
+description: |
+  ## What this slice adds
+
+  Bubble stops being online-only. It holds the bridge's packages on the device
+  and reads from what it holds:
+
+  - **Network-first, cache-backed.** A sync asks the bridge for the manifest and
+    refreshes each package it advertises. What comes back is kept on the device.
+  - **Cheap refresh.** A package already held is asked for by the generation
+    the device holds, so an unchanged package costs no body on the wire. This is
+    what makes keeping current affordable on a phone.
+  - **Reads survive the bridge.** Once a package has been synced once, reading it
+    works with the bridge unreachable — a tube, a plane, a dead tunnel.
+  - **Honest age, always.** Every read carries the generation it was cached at,
+    so nothing cached is ever presented as live. This is the human's "as of
+    <generation>" requirement, and it is an invariant, not a label on one screen.
+  - **A bad sync costs nothing.** Unreachable bridge, refused package, unknown
+    package, interrupted transfer — each is reported, and each leaves the copy
+    already held intact and readable. Losing offline data to a failed refresh is
+    the one outcome this slice exists to prevent.
+  - **Nothing held reads as nothing held.** Before a first successful sync a read
+    says so, rather than answering with an empty package.
+
+  Phone-side only. No bridge change: BL-866's contract is used exactly as it
+  landed.
+
+  ## How (direction, not mandate)
+
+  `BridgeClient` already owns the phone's authorized HTTP against the bridge and
+  `CompanionPrefs` already owns small durable state; package bodies are too big
+  for `SharedPreferences`, so a file-backed store in app storage is the obvious
+  home. The coder chooses the shapes.
+
+  ## Testability (Bubble boundary)
+
+  Per the Bubble testability boundary, the decisions in this slice must not sit
+  on the device side of the line:
+
+  - The sync and cache DECISIONS — which packages to refresh, which generation to
+    send, what to keep when an answer fails, what generation a read is labelled
+    with, what a read answers when nothing is held — belong in pure Kotlin with
+    no `android.*` type in the signature, covered by the JVM unit suite
+    (`./gradlew :app:testDebugUnitTest`). Every scenario in the feature file is
+    expressible there.
+  - Only the storage and lifecycle wiring is device-surface, verified by the
+    recorded manual procedure below.
+  - No mutation/CRAP/DRY gate exists for `.kt`: the hardener applies the
+    documented unit-test-gap fallback and must record that it did.
+
+  ## Not in scope
+
+  - Any browse UI over the cached packages — BL-908, the slice that reads this.
+  - The offline groom mutation outbox (write path) — a later slice of BL-865.
+  - New packages beyond the `backlog` and `docs` that BL-866 serves — each new
+    corpus root is bridge-side work of its own.
+  - Protobuf. Deferred by the human; this is the REST + JSON contract.
+
+acceptance: specs/features/BL-907-bubble-offline-package-sync.feature
+
+qa_e2e_procedure: |
+  Recorded manual device procedure, with Bubble paired to a live bridge:
+
+  1. Fresh install, before any sync — expect a read to report that nothing is
+     held, not an empty package.
+  2. Sync — expect both `backlog` and `docs` held, each labelled with the
+     generation the manifest advertised (compare against
+     `GET /companion-manifest` on the host).
+  3. Sync again with nothing changed on the host — expect the same generations
+     and no body on the wire (check the response size / a `304`, not just that
+     it succeeded).
+  4. Change the backlog on the host so the generation moves, sync — expect the
+     new body and the label moved with it.
+  5. Put the phone in airplane mode and read both packages — expect the cached
+     bodies, each still labelled at its own generation.
+  6. Stop the bridge, sync — expect the refresh failure reported and both
+     packages still readable at their previous generations.
+  7. Make a package source unreadable on the host (BL-866 answers `503`), sync —
+     expect the failure reported for that package, the previously held copy
+     intact, and the other package refreshed normally.
+
+notes: |
+  BL-908 reads the store this slice writes, and is the reason it is worth
+  building: shipped alone, this slice's only visible surface is its own sync
+  state. The two are sequenced deliberately (BL-298's lesson — a consumer built
+  over a store nothing writes stays dark), and the human commissioned both in
+  one breath.
+
+  The generation is the whole cache key: BL-866's own note flags that whatever
+  identifies a generation must change whenever content changes. The phone half
+  must not weaken that — it caches BY the generation and must never invent,
+  truncate or normalize one.
+
+  Fast-tracked at the human's request: the coordinator engages ambulance mode for
+  this ticket, then for BL-908 (`docs/how-to/BL-655-ambulance-mode-the-hold.md`),
+  rather than letting either take the normal promote queue.
