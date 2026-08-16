@@ -32,6 +32,7 @@ class KnowledgeActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.closeBtn.setOnClickListener { finish() }
+        binding.syncBtnHeader.setOnClickListener { sync() }
         binding.tabBacklog.setOnClickListener { tab = Tab.BACKLOG; render() }
         binding.tabDocs.setOnClickListener { tab = Tab.DOCS; render() }
         binding.folderActive.setOnClickListener { folder = Folder.ACTIVE; render() }
