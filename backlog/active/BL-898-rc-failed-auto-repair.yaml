@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: fleet-topology
-human_approval: pending
+human_approval: approved
 priority: 25
 direction: human-requested
 depends_on: []

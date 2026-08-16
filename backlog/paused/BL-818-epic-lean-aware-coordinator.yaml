@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: lean-aware-coordinator
-priority: 2
+priority: 5
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-819, BL-820]

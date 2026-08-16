@@ -3,7 +3,7 @@ title: "Specification.MD carries 285 junk copies of one BL-607 paragraph interle
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: superseded
 epic: spec-drift-realignment
 human_approval: approved
 priority: 172
@@ -232,3 +232,61 @@ notes: |
   noted here rather than silently discarded — it was approved, but so was the
   earlier split, and the split is the shape chosen for the reasons above. No
   new human approval is required for either ticket: both shapes were approved.
+
+  ## Disposition 2026-08-16: SUPERSEDED by BL-895 (specifier)
+
+  The repair this ticket describes has LANDED — through BL-895, not through
+  this ticket. `BL-895: remove 285 spurious BL-607 paragraph duplicates from
+  Specification.MD` (`6b0c54784`) is on `origin/main`, ran the full chain
+  (architect `58eb9072d`, hardener `58a26a4ec`, documenter `b69254379`) and
+  was QA-approved and closed to `done/M8/` (`1737acee3`).
+
+  This is a duplicate MINT, and it was the specifier's own: BL-895 was written
+  2026-08-14 against a fresh measurement without noticing BL-692 had described
+  the identical defect since 2026-07-27. Recorded plainly here rather than
+  quietly deleted — it is the third re-diagnosis of one defect (BL-692,
+  BL-873, BL-895), and the pattern is the finding.
+
+  **Verified against the landed blob, not assumed** — this ticket's own
+  `qa_e2e` re-run against `origin/main`'s `docs/reference/Specification.MD`:
+
+  1. Step 1 PASS — `grep -c` for the paragraph prints `1` (was `286`).
+  2. Step 2 PASS — the SURVIVING copy is the correct variant, carrying
+     `--options '["opt1","opt2"]'`; the variant removed is the shell-mangled
+     `--options ''[opt1,opt2]''` one. Invariant 2 ("the surviving copy is the
+     CORRECT variant, never whichever is most numerous") is satisfied — this
+     was the delicate half, and it was done right.
+  3. Step 3 PASS — set-compare of distinct trimmed non-blank lines, pre-fix
+     blob vs landed blob: exactly two lines from the pre-fix set are absent,
+     and both are accounted for — the mangled paragraph variant (the defect)
+     and the `**Last Updated:**` changelog header line (correctly demoted to
+     `Previously ...`). No real paragraph was dropped alongside the copies,
+     which was invariant 1 and the load-bearing risk of the whole ticket.
+  4. Step 5 PASS — file is 691,818 bytes, in the predicted ~620 KB band and
+     down from 1.36 MB.
+  5. Step 6 **NOT MET, recorded not glossed** — this ticket asked for zero
+     runs of two consecutive blank lines. Four remain (down from 135). Two of
+     them are ordinary formatting far from the repair (lines 2035, 3110); the
+     other two sit at lines 2920 and 2923, immediately bracketing the
+     surviving paragraph — genuine deletion residue, precisely what step 6
+     existed to catch.
+
+  **No new ticket is minted for item 5.** Two stray blank lines in a Markdown
+  file render identically and fail INVEST on `V` — it is not one observable
+  valuable outcome, and minting it would be process theatre. It is recorded
+  here so the next parcel that legitimately edits Specification.MD can absorb
+  it, and so the residue is not mistaken later for a fresh corruption.
+
+  **BL-693 is NOT superseded and stays live.** The standing
+  repeated-paragraph guard was always `out_of_scope` here (see above), and
+  BL-895 built no guard either — so the recurrence risk this ticket's family
+  was filed against is still open, now with nothing in front of it. Item 5
+  above is a small argument for the guard also noticing blank-line residue.
+
+  Retired, not reworded — rewriting BL-692 into a review of BL-895's landed
+  deletion would be a different ticket wearing this id, and BL-895 already
+  passed those gates. Every human sentence in this file is preserved above
+  (Article 5.3): nothing was trimmed, only appended.
+
+  status: superseded. Coordinator closes to `backlog/done/M8/`; no QA pass is
+  owed, because no parcel was ever forwarded from this ticket.
