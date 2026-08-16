@@ -1790,7 +1790,8 @@
         ;; escalate repeated unacted nudges for the SAME candidate rather
         ;; than repeating a ticketless poke forever (invariant 2).
         (let [candidates (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
-              candidate (chase-sweep-lib/top-open-slot-candidate candidates)
+              candidate (chase-sweep-lib/top-open-slot-candidate
+                         candidates (promotion-gates-lib/epic-priority-index project-root))
               decision (chase-sweep-lib/decide-open-slot-escalation
                         @open-slot-escalation-state (:id candidate)
                         (open-slot-escalation-threshold))]
@@ -1955,7 +1956,8 @@
   (try
     (when-let [{:keys [ticket case]} (ambulance-lib/auto-exit! (str project-root))]
       (let [queued (chase-sweep-lib/top-expedited-paused-candidate
-                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir))
+                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
+                    (promotion-gates-lib/epic-priority-index project-root))
             text (ambulance-lib/auto-exit-announcement-text
                   {:ticket ticket :case case :queued-expedited-defect-id queued})]
         (log! "ambulance-auto-exit" ticket (name case))
