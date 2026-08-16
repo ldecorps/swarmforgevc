@@ -131,6 +131,13 @@ freshness/age comparison you REASON WITH must be true UTC:
   heartbeat fresh, git HEAD advancing or agents actively working, no stuck
   parcels, backlog counts, **pipeline-board freshness** (below). If all
   healthy, do nothing but (optionally) note it.
+  - **Babysitterd (runtime, not you):** `status.json` `babysitterd_watchdog`
+    is a deterministic poll (process + pidfile + Telegram announce path).
+    Trust it. Never run `start_babysitterd.sh` from a health sweep — a
+    second start while an orphan is alive is how the pidfile disappeared
+    and `./swarm status` lied DOWN. Cron restarts wedged daemons; ensure
+    / start adopt a live orphan. If the pane says `pidfile-lie` or
+    `announce-mute`, tell the human that fact; do not spawn a duplicate.
   - **Pipeline-board freshness (added 2026-07-17 after a 10h+ silent board
     freeze — `backlog/evidence/pipeline-board-frozen-live-outage-20260717.md`):**
     a frozen board is NOT merely an old `lastChangeMs`. A genuinely idle

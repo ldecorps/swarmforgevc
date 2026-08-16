@@ -48,6 +48,7 @@ copy_operator_runtime_sandbox() {
     operator_ask.bb
     ambulance_lib.bb
     hotfix_certification_lib.bb
+    babysitterd_freshness_lib.bb
     # BL-848: hotfix-certification-sweep! shells to swarm_handoff.bb (never
     # hand-writes an inbox file, per the coordinator-nudge constraint) - its
     # full load-file transitive closure, so a sandboxed --tick-once can
