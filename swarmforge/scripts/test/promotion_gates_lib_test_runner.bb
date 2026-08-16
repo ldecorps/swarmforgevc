@@ -81,6 +81,94 @@
   (assert= "with no expedited candidates, lower priority number wins as before"
            "b.yaml" (:file winner)))
 
+;; ── epic-priority / epic-priority-index (BL-900) ─────────────────────────
+
+(assert= "epic-priority resolves through the index when the epic has a tracker"
+         5 (promotion-gates-lib/epic-priority "id: BL-1\nepic: alpha\npriority: 90\n" {"alpha" 5}))
+(assert= "epic-priority falls back to own priority when the epic has no tracker in the index"
+         90 (promotion-gates-lib/epic-priority "id: BL-1\nepic: alpha\npriority: 90\n" {}))
+(assert= "epic-priority falls back to own priority when the candidate has no epic: field at all"
+         90 (promotion-gates-lib/epic-priority "id: BL-1\npriority: 90\n" {"alpha" 5}))
+
+(let [root (mk-root)]
+  (assert= "epic-priority-index on a missing backlog tree is empty" {} (promotion-gates-lib/epic-priority-index root)))
+
+(defn- write-yaml! [root stage id content]
+  (fs/create-dirs (fs/path root "backlog" stage))
+  (spit (str (fs/path root "backlog" stage (str id "-fixture.yaml"))) content))
+
+(let [root (mk-root)]
+  (write-yaml! root "paused" "BL-1" "id: BL-1\ntype: epic\nepic: alpha\npriority: 5\n")
+  (write-yaml! root "active" "BL-2" "id: BL-2\ntype: feature\nepic: alpha\npriority: 90\n")
+  (assert= "epic-priority-index reads a tracker from paused/, ignores a non-epic-type candidate sharing the epic"
+           {"alpha" 5} (promotion-gates-lib/epic-priority-index root)))
+
+(let [root (mk-root)]
+  (write-yaml! root "paused" "BL-1" "id: BL-1\ntype: epic\nepic: alpha\npriority: 40\n")
+  (write-yaml! root "done" "BL-2" "id: BL-2\ntype: epic\nepic: alpha\npriority: 5\n")
+  (assert= "epic-priority-index: two+ trackers for one epic resolve to the most urgent (lowest) priority (decision 1)"
+           {"alpha" 5} (promotion-gates-lib/epic-priority-index root)))
+
+(let [root (mk-root)]
+  (fs/create-dirs (fs/path root "backlog" "done" "M2-fixture-milestone"))
+  (spit (str (fs/path root "backlog" "done" "M2-fixture-milestone" "BL-3-fixture.yaml"))
+        "id: BL-3\ntype: epic\nepic: nested\npriority: 12\n")
+  (assert= "epic-priority-index finds trackers nested one level under a done/<milestone> subdir"
+           {"nested" 12} (promotion-gates-lib/epic-priority-index root)))
+
+(let [root (mk-root)]
+  (write-yaml! root "paused" "BL-1" "id: BL-1\ntype: epic\nepic: alpha\npriority: not-a-number\n")
+  (assert= "epic-priority-index: an unparseable tracker priority falls back to 999999 (sorts last), like read-priority elsewhere"
+           {"alpha" 999999} (promotion-gates-lib/epic-priority-index root)))
+
+(let [root (mk-root)]
+  (write-yaml! root "paused" "BL-1" "id: BL-1\ntype: epic\npriority: 5\n")
+  (assert= "epic-priority-index: a tracker with no epic: field of its own contributes nothing"
+           {} (promotion-gates-lib/epic-priority-index root)))
+
+;; ── rank-candidates: epic-priority is compared before own-priority (BL-900) ──
+
+(let [a {:file "a.yaml" :content "id: BL-A\nepic: e1\npriority: 90\n"}
+      b {:file "b.yaml" :content "id: BL-B\nepic: e2\npriority: 1\n"}
+      epic-index {"e1" 5 "e2" 40}
+      winner (promotion-gates-lib/rank-candidates [a b] epic-index)]
+  (assert= "a more urgent epic wins even against a numerically better own priority"
+           "a.yaml" (:file winner)))
+
+(let [a {:file "a.yaml" :content "id: BL-D\ntype: defect\nseverity: high\nepic: e900\npriority: 50\n"}
+      b {:file "b.yaml" :content "id: BL-E\nepic: e1\npriority: 1\n"}
+      epic-index {"e900" 900 "e1" 1}
+      winner (promotion-gates-lib/rank-candidates [a b] epic-index)]
+  (assert= "an expedited defect still outranks a candidate from a more urgent epic (invariant 2)"
+           "a.yaml" (:file winner)))
+
+(let [a {:file "a.yaml" :content "id: BL-F\npriority: 20\n"}
+      b {:file "b.yaml" :content "id: BL-G\nepic: e50\npriority: 90\n"}
+      epic-index {"e50" 50}
+      winner (promotion-gates-lib/rank-candidates [a b] epic-index)]
+  (assert= "a candidate whose epic has no tracker keeps its own priority (decision 3)"
+           "a.yaml" (:file winner)))
+
+(let [a {:file "a.yaml" :content "id: BL-H\nepic: sil\npriority: 90\n"}
+      b {:file "b.yaml" :content "id: BL-I\nepic: e33\npriority: 1\n"}
+      epic-index {"sil" 30 "e33" 33}
+      winner (promotion-gates-lib/rank-candidates [a b] epic-index)]
+  (assert= "an epic with several trackers ranks by its most urgent tracker (decision 1, threaded through ranking)"
+           "a.yaml" (:file winner)))
+
+(let [a {:file "a.yaml" :content "id: BL-A\nepic: e40\npriority: 50\n"}
+      b {:file "b.yaml" :content "id: BL-B\nepic: e40\npriority: 50\n"}
+      epic-index {"e40" 40}
+      winner (promotion-gates-lib/rank-candidates [a b] epic-index)]
+  (assert= "equal epic priority AND equal own priority falls through to id, same as before BL-900"
+           "a.yaml" (:file winner)))
+
+(let [defect {:file "defect.yaml" :content "id: BL-2\ntype: defect\nseverity: high\npriority: 50\n"}
+      feature {:file "feature.yaml" :content "id: BL-1\ntype: feature\npriority: 5\n"}
+      winner (promotion-gates-lib/rank-candidates [feature defect])]
+  (assert= "rank-candidates called with no epic-index (1-arity) still lets the expedited bucket win, unchanged"
+           "defect.yaml" (:file winner)))
+
 ;; ── route-target ──────────────────────────────────────────────────────────
 
 (assert= "specifier routes to specifier, never rewritten"

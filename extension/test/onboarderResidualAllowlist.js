@@ -20,6 +20,8 @@ const ALLOWED_EXACT_PATHS = new Set([
   'backlog/topics/BL-684.json',
   'backlog/topics/BL-714.json',
   'docs/design/BL-659-traceability-explorer-mockup.html',
+  'specs/features/BL-624-onboarding-facilitator-survey-to-gate.feature',
+  'specs/features/BL-625-onboarding-facilitator-prompts-and-launch-handoff.feature',
   'specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature',
   'specs/features/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp.feature',
   'specs/pipeline/steps/bl633InvariantsSectionSteps.js',

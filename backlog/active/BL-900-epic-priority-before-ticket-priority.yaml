@@ -1,0 +1,210 @@
+id: BL-900
+title: "Promotion ranking should consider the containing epic's priority ahead of the child ticket's own priority, leaving the expedite bucket, queue-jump and ambulance untouched"
+milestone: M8
+type: feature
+status: todo
+epic: promotion-queue-ordering
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: low
+human_approval: approved
+acceptance: specs/features/BL-900-epic-priority-before-ticket-priority.feature
+
+approval_context: >
+  Two judgement calls are mine, not the intake's, and both change observable
+  ordering — say so if you disagree. (1) An epic id with MORE THAN ONE
+  tracker ranks by its most urgent (lowest) tracker priority; this is real
+  today, `swarm-intelligence-layer` has three trackers at 30/31/35. (2) A
+  candidate whose epic has NO tracker keeps its OWN priority as its epic
+  priority, so it ranks exactly as it does today; the alternative — treating
+  a missing tracker as 999999, matching `read-priority`'s absent handling —
+  would silently bury the five live `cost-intelligence` children behind
+  every tracked epic, which I judged worse than a no-op. Also worth your eye:
+  the intake asked to preserve queue-jump behaviour, and the measured answer
+  is that `direction:` is read by NO promotion code at all, so there is
+  nothing to preserve mechanically (detail in `notes:`).
+
+source: |
+  Raw intake `backlog/INTAKE-epic-priority-before-ticket-priority.md`
+  (human via coordinator chat 2026-08-15, filed `053992fbe`), drained by the
+  specifier 2026-08-16. The intake was removed from the backlog root on drain;
+  everything it carried is preserved here and in the epic BL-899.
+
+  ## The human's request, verbatim (Article 5.3 — do not paraphrase away)
+
+  > can we add an intake so that the epic priority is considered before the
+  > ticket priority (except jumpq, defects and ambulence)
+
+  ## The exceptions the human named, carried through verbatim
+
+  > - `direction: queue-jump` tickets (existing field, 33 live uses) — keep
+  >   current behavior, still jump ahead regardless of epic priority.
+  > - `type: defect` tickets under the Article 3.2.4 expedite lane
+  >   (critical/high severity) — keep expediting ahead of everything,
+  >   unaffected by epic ordering.
+  > - Ambulance-mode tickets (`docs/how-to/BL-655-ambulance-mode-the-hold.md`)
+  >   — already an orthogonal override mechanism (only one ticket's parcels
+  >   move at all); epic-priority ordering must not interact with or weaken
+  >   it.
+
+invariants:
+  - "Ordering only: the ranking change never grants an extra active slot (Article 3.2 rule 1), never overrides orthogonality (3.2.3), the mutation-heavy window (3.4) or the circuit breaker (3.5)."
+  - "The expedite bucket stays strictly first: given one expedited and one non-expedited candidate, the expedited one ranks ahead regardless of either candidate's epic priority."
+  - "Ranking is a deterministic total order: the same candidate set yields the same sequence regardless of enumeration order, including when an epic priority is missing, duplicated across trackers, or unparseable."
+
+description: |
+  ## What
+
+  When the coordinator ranks otherwise-eligible promotion candidates, compare
+  the priority of the EPIC each candidate belongs to before comparing the
+  candidates' own `priority:` fields. A child ticket in an urgent epic should
+  be promoted ahead of a child ticket in a background epic, even when the
+  background epic's child carries the lower number.
+
+  Today ordering ignores `epic:` entirely, so a child's number can drift out
+  of sync with its epic's stated priority with nothing enforcing consistency,
+  and promotion follows the child's number regardless.
+
+  ## Why
+
+  The only way to raise an epic today is to bulk-rewrite `priority:` on the
+  epic tracker AND on every child ticket — `b174c9a6c` and `bc6bc9f63` each
+  touched 18+ files to do exactly that. That churns the backlog, destroys the
+  child's own intra-epic ordering signal, and has to be repeated every time
+  priorities move. Reading the epic's own number makes raising an epic a
+  one-field edit and lets each child's number mean what it should: order
+  WITHIN its epic.
+
+  ## How (direction, not mandate)
+
+  `promotion_gates_lib.bb`'s `rank-key` is today
+  `[expedited?  own-priority  id]`. The natural shape is to splice an
+  epic-priority term after the expedite bucket and before the child's own
+  priority:
+
+      [expedited?  epic-priority  own-priority  id]
+
+  with `epic-priority` resolved from the `type: epic` tracker whose `epic:`
+  matches the candidate's, reusing the existing `read-priority` so an absent
+  or unparseable tracker priority degrades the same way it already does
+  elsewhere. Splicing it AFTER the expedite term is what makes invariant 2
+  hold by construction rather than by a guard. The implementer may reach the
+  same behavior another way; the four ordering decisions below are the
+  contract, the tuple is a suggestion.
+
+  Ordering decisions this ticket settles:
+
+  1. **Two or more trackers for one epic id** — rank by the most urgent
+     (lowest) tracker priority. Real today: `swarm-intelligence-layer` has
+     three trackers (BL-712 p31, BL-545 p30, BL-542 p35). Deterministic, and
+     it cannot be gamed by adding a less urgent tracker.
+  2. **Epic with no tracker** — fall back to the candidate's OWN priority, so
+     such a ticket ranks exactly as it does today. Real today:
+     `cost-intelligence` has five children and no tracker anywhere in
+     `backlog/`. Treating it as 999999 would bury all five.
+  3. **Candidate with no `epic:` field at all** — same fallback as 2.
+  4. **Ties** — equal epic priority falls through to the child's own
+     `priority:`, then to id, exactly the tie-break that exists today.
+
+  An epic tracker that is itself a candidate resolves to its own priority,
+  which falls out of the rule rather than needing a special case.
+
+  ## Scope
+
+  `swarmforge/scripts/promotion_gates_lib.bb` (`rank-key` plus an
+  epic-priority resolver) and its test runners under
+  `swarmforge/scripts/test/`. Confirmed as the live path rather than assumed:
+  `rank-candidates` is called by `promotion_gates_cli.bb`,
+  `promote_and_route_next.sh` and `chase_sweep_lib.bb`.
+
+  Note for the implementer: ranking currently reads only the candidate's own
+  `:content`. Resolving an epic priority means reading OTHER ticket files, so
+  the resolver needs an epic-priority index built once per ranking call, not a
+  per-candidate directory scan. The data it indexes already exists and has a
+  real writer — 26 epic trackers carry their own `priority:` today.
+
+  ## Constraints
+
+  - Babashka has no mutation/CRAP/DRY tooling wired (engineering.prompt,
+    Startup Tools). This is gated by its own unit suite under
+    `swarmforge/scripts/test/`; a hardening pass must record that degraded
+    fallback rather than imply mutation ran.
+  - Lower `priority:` numbers sort FIRST. Article 3.2 rule 2 says "highest
+    first", which is inverted against the code; do not "fix" the code to match
+    the article inside this ticket.
+
+  ## QA end-to-end procedure
+
+  1. On a fixture backlog: two eligible candidates, A in an epic whose tracker
+     priority is 5 with its own priority 90, B in an epic whose tracker
+     priority is 40 with its own priority 1. Run the promotion ranking and
+     confirm A is picked. Before this ticket, B is picked — run it against the
+     parent commit to prove the fixture is not vacuous.
+  2. Add an eligible `type: defect` / `severity: high` candidate in an epic
+     with tracker priority 900. Confirm it is picked ahead of both, proving
+     the expedite bucket still leads.
+  3. On the LIVE backlog, run the ranking read-only before and after and diff
+     the resulting order. Confirm the `cost-intelligence` children (no epic
+     tracker) hold the same relative position they held before, and that the
+     three-tracker `swarm-intelligence-layer` children rank by 30, not 35.
+  4. Fill `backlog/active/` to `active_backlog_max_depth` and confirm a
+     top-epic candidate is still not promoted — ordering only, never an extra
+     slot.
+  5. Run the ranking twice over a shuffled file enumeration and confirm the
+     output order is byte-identical.
+
+out_of_scope: |
+  - Changing the Article 3.2.4 expedite lane itself.
+  - Changing ambulance mode or the expeditor (rungs 2/3 of the escalation
+    ladder) — this is purely about ordinary promotion-queue ordering (rung 0).
+  - Backfilling/auditing existing tickets whose `priority:` drifted from their
+    epic's — only the ordering algorithm is in scope. Parked on BL-899.
+  - Retiring the bulk make-top-priority rewrite. Parked on BL-899.
+  - Cleaning up the duplicate/absent epic trackers themselves. BL-900 defines
+    deterministic fallbacks for both; the data cleanup is parked on BL-899.
+  - Correcting Article 3.2 rule 2's inverted "highest first" wording.
+
+notes: |
+  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
+  wires handlers in the same commit.
+
+  Lint gate clean. IR-DRY reports 31 findings, ALL `medium` and ALL in the
+  known quoted-literal false-positive class — zero exact duplicates. The
+  checker compares step text literally, so `a candidate "BL-E" whose epic
+  tracker priority is 1 ...` and `a candidate "BL-G" whose epic tracker
+  priority is 50 ...` read as synonyms when they are in fact the SAME
+  parameterized step serving both, which is already the DRY shape. Reviewed
+  and deliberately kept — do not "normalize" them. The three genuinely
+  distinct Given variants (`of type defect with severity`, `whose epic has no
+  tracker`, `in epic <name>`) each carry a different behavior and merging
+  them would change what the scenario asserts. Shared setup is already in
+  `Background`.
+
+  ## Measured finding: two of the three named exceptions are structurally free
+
+  The intake asked to preserve queue-jump, expedited defects and ambulance.
+  Probed 2026-08-16 rather than assumed:
+
+  - **queue-jump has no code path.** `direction:` is read by NO promotion
+    code — the string `queue-jump` appears nowhere under
+    `swarmforge/scripts/`, and `promotion_gates_lib.bb` never reads
+    `direction:` at all. It is a coordinator-level action described in prose
+    in `workflow.prompt` ("queue-jump reorders promotion only"). This ticket
+    touches only `rank-key`, so queue-jump is preserved by construction: the
+    coordinator can still promote out of order exactly as it does now.
+  - **Ambulance** is a hold mechanism (BL-655), not a ranking input. Untouched
+    for the same reason.
+  - **Expedited defects** are the one exception with a real code path, and it
+    is the first term of the ranking key. Invariant 2 keeps it first.
+
+  This also answers the intake's own note 4 — the pre-existing
+  `direction: expedite` value (46 live uses, distinct from the Article 3.2.4
+  severity lane) cannot collide with this change, because `direction:` is
+  never read by the ranking code. No disambiguation work is needed.
+
+  Recording this rather than silently implementing three exceptions: two of
+  them would have been guards against nothing, and a guard against nothing
+  reads later as a guard that works.
+
+assigned_to: coder

@@ -91,5 +91,8 @@
   Strip/escape external text in structured files; honor 429 `retry_after` on
   first-tick backfills; optional JSON CLI flags degrade to a documented
   fallback on parse error. A console screen must show the server's actual
-  failure reason, never a bare HTTP status (BL-572/BL-662). See
+  failure reason, never a bare HTTP status (BL-572/BL-662). A constant
+  mirrored by hand across a language boundary no import can bridge (here
+  TS ↔ Babashka) needs a test asserting both literals agree — a "kept in
+  sync" comment is not a gate, and drift fails silently (BL-897). See
   **engineering-detailed.prompt** for full incident narratives on each rule.
