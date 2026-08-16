@@ -85,12 +85,22 @@ function runThreeSections(ctx) {
   return { burndown, sidecar, digest };
 }
 
+// Pinned, not Date.now(): every downstream fixture in this file seeds
+// specDateIso/closeDateIso as offsets from ctx.nowMs (e.g. "1 hour
+// before"), and bucketDailyFlowBalance buckets by UTC calendar day. A
+// real-clock nowMs run within ~1h of UTC midnight pushes that offset into
+// the PRIOR day's bucket, so "today's" closedPerDay legitimately reads 0
+// and the scenario flakes on nothing but wall-clock timing - not a product
+// defect (BL-897 hardening finding). Fixed at noon UTC, far from any
+// bucket boundary this file's offsets could cross.
+const FIXTURE_NOW_MS = Date.parse('2026-08-15T12:00:00Z');
+
 function registerSteps(registry) {
   registry.defineScoped(
     /^a briefing send whose sections include the open-ticket chart, the cost-health sidecar and the digest line$/,
     (ctx) => {
       ctx.root = mkFixture();
-      ctx.nowMs = Date.now();
+      ctx.nowMs = FIXTURE_NOW_MS;
     },
     FEATURE
   );
