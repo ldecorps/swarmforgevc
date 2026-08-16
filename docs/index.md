@@ -73,6 +73,8 @@ here.
 - [Bubble's capability flags and hold-music catalog, served from the bridge](how-to/BL-765-bubble-remote-config-and-chiptune-catalog.md) — the two versioned documents (`bubble-config.json`, `chiptunes.json`), whole-document rejection on a malformed payload, the remote hold-music kill switch, and the reply-voice/music-volume split.
 - [Bare-host bootstrap for an autonomous swarm](how-to/BL-628-autonomous-swarm-bringup.md) — `provision_autonomous_host.sh`, the shared shape-agnostic bootstrap library, the front-desk unit an autonomous box needs that the secondary path never installs, and why the onboarding ceremony runs on the primary box, never the remote one.
 - [One briefing send, one backlog history walk: the shared lifecycle snapshot](how-to/BL-897-briefing-lifecycle-snapshot.md) — the machine-local, gitignored snapshot handoffd gathers once per UTC day and hands every briefing-section CLI via `--snapshot`, and the per-consumer fallback when it's missing, unreadable, or stale.
+- [The Morning Briefing's Open-Ticket Chart](how-to/BL-896-briefing-open-ticket-chart.md) — what the chart shows, why its heading says "open tickets remaining" and never "burndown," and its fail-open independence from the architecture diagram section.
+- [Bubble caches the bridge's companion packages, offline-first](how-to/BL-907-bubble-offline-package-sync.md) — the pure sync/cache decision layer, the atomic per-package file store, the two BL-654 invariants, and the manual device procedure that verifies the storage/lifecycle wiring the JVM suite can't reach.
 
 ## Reference
 
@@ -107,3 +109,4 @@ here.
 - [Why the expeditor commands the stack but never depends on it](explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md)
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.
 - [The Non-Pipeline Agents, As a Class](explanation/BL-643-non-pipeline-agents-as-a-class.md) — what makes an agent non-pipeline, the taxonomy, and what the Onboarder actually ships today vs. its unbuilt phases.
+- [Why Promotion Ranks by Epic Priority Before Ticket Priority](explanation/BL-900-epic-priority-promotion-ranking.md) — the rank-key shape, the epic-priority lookup and its fallbacks, and why expedited defects, queue-jump, and ambulance mode are untouched.

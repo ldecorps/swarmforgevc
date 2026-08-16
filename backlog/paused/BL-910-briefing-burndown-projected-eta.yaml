@@ -1,0 +1,123 @@
+id: BL-910
+title: "Projected ETA on the morning-briefing burndown: a date when the backlog is genuinely shrinking, and a stated reason when it is not"
+milestone: M8
+type: feature
+severity: medium
+epic: swarm-behaviour-trends
+human_approval: approved
+priority: 35
+direction: human-intake
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "A projected date is shown only when the measured net burn is strictly positive — a growing or flat backlog renders the reason, never a date, an infinity, or a placeholder."
+  - "The projection never contradicts the counts printed beside it: the ETA shown is recomputable from the open count, close rate and mint rate on the same chart."
+
+required_wiring:
+  - "extension/src/metrics/notDoneBurndown.ts::no ETA::the not-shrinking answer has to be rendered by the chart itself — computed and not drawn is the failure this ticket exists to prevent"
+
+approval_context: >
+  The human filed this with all three decisions locked and the computation
+  method suggested as a welcome default. The three delegated choices are
+  answered in `description:`. Nothing further is asked.
+
+source: |
+  Raw intake `backlog/INTAKE-briefing-burndown-projected-eta.md` (human via
+  Cursor, 2026-08-16 ~08:20 CEST), drained by the specifier 2026-08-16 and
+  removed from the backlog root in the same pass.
+
+  Locked human decisions carried verbatim (Article 5.3):
+
+  1. "The chart stays. The 2026-07-26 PWA/milestone-burndown ban does not apply
+     here (recorded on BL-896)."
+  2. "Keep calling it a burndown on the heading."
+  3. "Add a projected ETA the human can read at a glance (caption and/or a
+     dashed projection). Never invent a date when net flow is still growing."
+
+  The human's suggested default method, verbatim: "net burn = close − mint. If
+  net burn > 0, etaDays = openN / netBurn, shown as a calendar date. If net burn
+  ≤ 0, render 'no ETA — backlog still growing' (never 'never', never a
+  fabricated infinity)." And on forecaster choice: "Default: net-flow, because
+  this chart is repo-wide open count, not milestone remaining. Do not silently
+  introduce a second disagreeing ETA."
+
+  Sibling boundary, verbatim: "Parent / sibling: BL-896 (stamp-off of hotfix
+  `14724edae7`, already active). Do not fold this into BL-896 — that ticket is a
+  review stamp (F1–F4); this is new product. Mint a small follow-on."
+
+  Probed against `main` 2026-08-16: `NotDoneBurndownSeries`
+  (`extension/src/metrics/notDoneBurndown.ts:26`) already carries `openN`,
+  `closePerDay` and `mintPerDay`, and `renderNotDoneBurndownSvg` already prints
+  all three in its subtitle line — the projection needs no new measurement, only
+  a derivation and a place on the chart. The heading already reads "Backlog
+  burndown — last N days (not-done tickets)", satisfying decision 2 unchanged.
+
+description: |
+  ## What this adds
+
+  The morning-briefing burndown gains a projection alongside its trailing line:
+
+  - **A date when the backlog is actually shrinking.** Net burn is the close rate
+    minus the mint rate. When it is strictly positive, the open count divided by
+    net burn gives the days remaining, shown as a calendar date.
+  - **A reason when it is not.** When net burn is zero or negative the chart says
+    the backlog is not shrinking, in words. Never a date, never "never", never a
+    fabricated infinity — this is the human's one hard condition and it is
+    invariant 1, not a branch in one renderer.
+  - **A projection that agrees with its own chart.** The open count, close rate
+    and mint rate are already printed in the subtitle; the ETA is derived from
+    those same numbers, so a reader can check it by hand.
+  - **Labelled for what it forecasts.** The projection covers repo-wide open
+    tickets. It is not, and must not read as, BL-228's milestone p50/p85
+    forecast — the human's "do not silently introduce a second disagreeing ETA"
+    is met by naming the scope on the chart, not by hiding one of them.
+
+  ## The three delegated choices, answered (defaults, per "defaults welcome")
+
+  - **Method: net-flow**, as the human suggested, for the reason the human gave —
+    this chart is repo-wide open count, not milestone remaining. BL-228's
+    `deliveryMetrics` forecasts stay where they are and are not reused here.
+  - **Placement: the caption**, not a dashed overlay line. One number in the
+    subtitle beside the counts it is derived from is what "read at a glance"
+    asks for, keeps the slice one sitting, and cannot be misread as measured
+    data drawn on the same axes as the real series. A projection line is a
+    later, separate call if the human wants one.
+  - **Heading: unchanged.** Decision 2 already holds today.
+
+  ## Not in scope (the human's own boundary)
+
+  - "Re-adding burndown to the PWA dashboard (still under BL-659)."
+  - "Recertifying hotfix `14724edae7` (BL-896)."
+  - "Changing how open/filed/closed points are counted (F3 of BL-896)."
+
+acceptance: specs/features/BL-910-briefing-burndown-projected-eta.feature
+
+qa_e2e_procedure: |
+  1. Render the burndown against the live repo and read the subtitle — expect the
+     open count, close rate and mint rate as today, plus a projection.
+  2. Compute `openN / (closePerDay - mintPerDay)` by hand from the numbers on
+     that same subtitle — expect the shown date to be that many days out.
+  3. Render against a window where the backlog grew (mint above close; the live
+     repo has had such windows) — expect the stated reason and no date anywhere
+     on the chart.
+  4. Render against a window where close and mint are equal — expect the same
+     not-shrinking answer, not a division result and not a blank.
+  5. Read the heading — expect it still to call the chart a burndown.
+  6. Confirm the projection names its scope as all open tickets, and that no
+     milestone p50/p85 figure appears beside it.
+  7. Check the next morning briefing's attached PNG and caption — expect the same
+     projection as step 1.
+
+notes: |
+  Deliberately a follow-on to BL-896, not part of it, at the human's explicit
+  instruction: BL-896 is a review stamp on hotfix `14724edae7` and this is new
+  product on the same chart. The two touch `notDoneBurndown.ts`, so if BL-896 is
+  still in flight when this is promoted the coordinator's orthogonality rule
+  applies and this one waits rather than running concurrently.
+
+  Invariant 1 is the human's hard condition restated as a property: it holds over
+  every possible close/mint pair, including the boundary where they are exactly
+  equal, which is the case an example table is most likely to miss.
