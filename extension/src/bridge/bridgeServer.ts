@@ -54,7 +54,7 @@ import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
-import { computeEpicTopics, resolveTopicMembership } from './epicTopicSlugMatch';
+import { computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } from './epicTopicSlugMatch';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
@@ -856,10 +856,10 @@ function handlePausedPagerApproveRoute(
 }
 
 // BL-572: paused `type: epic` tickets, normalized to a required numeric
-// priority and sorted the same way the screen displays them - the one place
-// both the read (state) and write (move) routes derive "current order"
-// from, so they can never disagree about who a mover's on-screen neighbour
-// is.
+// priority and sorted. The reorder screen itself (and the move neighbour
+// set) uses the child-bearing subset from readEpicReorderMembership, so a
+// childless tracker is never an on-screen neighbour. Make-top still reads
+// this full paused-epic list via readLiveBacklogItems's domination set.
 function readPausedEpics(targetPath: string): (BacklogItem & EpicPriorityItem)[] {
   const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
   const epics = readBacklogFolders(targetPath)
@@ -877,28 +877,27 @@ function hasLiveDependency(item: MakeTopItem, liveIds: Set<string>): boolean {
   return (item.dependsOn ?? []).some((depId) => liveIds.has(depId));
 }
 
-function computeEpicReorderState(targetPath: string): unknown {
+// Shared by the reorder-state feed and the move route so a childless epic
+// never appears as a tile AND never acts as a Move up / Move down neighbour.
+function readEpicReorderMembership(targetPath: string) {
   const epics = readPausedEpics(targetPath);
+  const topics = computeEpicTopics(readWithinEpicLiveBacklogItems(targetPath), epics);
+  return { epics, topics, reorderable: filterEpicsWithTopics(epics, topics) };
+}
+
+function computeEpicReorderState(targetPath: string): unknown {
+  const { topics, reorderable } = readEpicReorderMembership(targetPath);
   // BL-672's own paused+hold domination set - kept for hasLiveDependency's
   // dependency-liveness check ONLY (invariant 2: widening the drill-down's
   // MEMBERSHIP must never widen what counts as a live dependency).
   const liveItems = readLiveBacklogItems(targetPath);
   const liveIds = new Set(liveItems.map((item) => item.id));
-  // BL-687: the within-epic drill-down's own widened membership set (paused
-  // + hold + active, done excluded) - deliberately NOT readLiveBacklogItems
-  // above, which stays paused+hold-only for BL-672's epic-tile route
-  // (invariant 3: widening that reader in place would silently widen the
-  // whole-backlog epic-tile Make top's domination set too).
-  const withinEpicItems = readWithinEpicLiveBacklogItems(targetPath);
-  // BL-686: membership is resolved by slug (epicTopicSlugMatch.ts), never by
-  // comparing a child's `epic:` slug against an epic tile's `id:` - those
-  // are different strings by design (BL-542/BL-545's shared slug proves a
-  // slug isn't even unique). `type: epic` rows are excluded from `topics`
-  // by computeEpicTopics itself.
-  const topics = computeEpicTopics(withinEpicItems, epics);
+  // Childless trackers are omitted from `items` (and from the move neighbour
+  // set) so an empty shell cannot swallow a tap. Topics still span paused +
+  // hold + active (BL-687), resolved by slug (BL-686).
   return {
-    items: epics.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
-    total: epics.length,
+    items: reorderable.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
+    total: reorderable.length,
     // BL-674/BL-686: every live topic, tagged with every epic TICKET ID
     // (unique, unlike its raw slug) whose own slug matches it - the
     // drill-down filters client-side on this ticket id (presentation-only,
@@ -967,15 +966,16 @@ export function resolveEpicWritePaths(
   return resolved;
 }
 
-// BL-572: the epic reorder screen's write route. Reads paused epics fresh
-// (same order the screen itself was built from), asks the pure decision
-// core which files change, applies those as atomic writes, then commits
-// them - scenario 06's "committed to main" is not a separate step, it is
-// part of what a successful move means. A move is never refused by the
-// decision core except at the true list boundary (first epic up / last
+// BL-572: the epic reorder screen's write route. Reads the same child-
+// bearing paused-epic subset the screen was built from, asks the pure
+// decision core which files change, applies those as atomic writes, then
+// commits them - scenario 06's "committed to main" is not a separate step,
+// it is part of what a successful move means. A move is never refused by
+// the decision core except at the true list boundary (first epic up / last
 // epic down); that boundary answers changed:false with a human-readable
 // reason the screen must display (architect bounce #2's response-contract
-// finding) rather than a payload indistinguishable from success.
+// finding) rather than a payload indistinguishable from success. A
+// childless tracker is not a neighbour here, matching the tiles.
 function handleEpicReorderMoveRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -995,12 +995,12 @@ function handleEpicReorderMoveRoute(
     if (!value) {
       return;
     }
-    const epics = readPausedEpics(targetPath);
-    if (!epics.some((epic) => epic.id === value.id)) {
+    const { reorderable } = readEpicReorderMembership(targetPath);
+    if (!reorderable.some((epic) => epic.id === value.id)) {
       respondJson(res, 404, { success: false, reason: 'epic not found in paused' });
       return;
     }
-    const result = computeEpicReorder(epics, value.id, value.direction);
+    const result = computeEpicReorder(reorderable, value.id, value.direction);
     if (!result) {
       respondJson(res, 404, { success: false, reason: 'epic not found in paused' });
       return;

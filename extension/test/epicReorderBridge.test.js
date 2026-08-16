@@ -30,6 +30,15 @@ function writeEpic(targetPath, id, priority, slug) {
   writeTicket(targetPath, 'paused', id, fields);
 }
 
+// A paused epic with a live child so it appears on the reorder tiles (and
+// is a legal Move up / Move down neighbour). Defaults the slug to the
+// ticket id so tests that only care about order do not have to invent one.
+function writeReorderableEpic(targetPath, id, priority, slug) {
+  const epicSlug = slug || id;
+  writeEpic(targetPath, id, priority, epicSlug);
+  writeTicket(targetPath, 'paused', `${id}-T`, ['type: feature', `epic: ${epicSlug}`, 'priority: 100']);
+}
+
 function readPriority(targetPath, id) {
   const content = fs.readFileSync(path.join(targetPath, 'backlog', 'paused', `${id}.yaml`), 'utf8');
   const match = content.match(/^priority:\s*(-?\d+)$/m);
@@ -83,7 +92,7 @@ test('epic-reorder JSON feed: empty state when there are no paused epics', async
 
 test('epic-reorder JSON feed: lists only type: epic paused tickets, excluding other types', async () => {
   const target = mkTmp();
-  writeEpic(target, 'BL-500', 10);
+  writeReorderableEpic(target, 'BL-500', 10);
   writeTicket(target, 'paused', 'BL-501', ['type: feature', 'priority: 1']);
 
   await withBridge(target, {}, async (handle) => {
@@ -92,6 +101,37 @@ test('epic-reorder JSON feed: lists only type: epic paused tickets, excluding ot
     const body = await res.json();
     assert.deepEqual(body.items.map((i) => i.id), ['BL-500']);
     assert.equal(body.total, 1);
+  });
+});
+
+test('epic-reorder JSON feed: a backlog of only childless paused epics is the empty list, not a row per tracker', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'BL-EMPTY-A', 1, 'empty-a');
+  writeEpic(target, 'BL-EMPTY-B', 2, 'empty-b');
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    const body = await res.json();
+    assert.deepEqual(body.items, []);
+    assert.equal(body.total, 0);
+  });
+});
+
+test('epic-reorder JSON feed: omits a paused epic with no live child, including a done-only tracker, but keeps one whose only child is in-flight', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'BL-EMPTY', 1, 'empty-slug');
+  writeReorderableEpic(target, 'BL-LIVE', 2, 'live-slug');
+  writeEpic(target, 'BL-DONE-ONLY', 0, 'done-slug');
+  writeTicket(target, 'done', 'BL-DONE-ONLY-T', ['type: feature', 'epic: done-slug', 'priority: 1']);
+  writeEpic(target, 'BL-ACTIVE-ONLY', 3, 'active-slug');
+  writeTicket(target, 'active', 'BL-ACTIVE-ONLY-T', ['type: feature', 'epic: active-slug', 'priority: 1']);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.items.map((i) => i.id), ['BL-LIVE', 'BL-ACTIVE-ONLY']);
+    assert.equal(body.total, 2);
   });
 });
 
@@ -184,9 +224,9 @@ test('BL-686: two epic trackers declaring the same slug both resolve the same to
 
 test('epic-reorder JSON feed: orders epics by priority ascending, then id ascending on ties', async () => {
   const target = mkTmp();
-  writeEpic(target, 'BL-003', 5);
-  writeEpic(target, 'BL-002', 1);
-  writeEpic(target, 'BL-005', 1);
+  writeReorderableEpic(target, 'BL-003', 5);
+  writeReorderableEpic(target, 'BL-002', 1);
+  writeReorderableEpic(target, 'BL-005', 1);
 
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
@@ -254,9 +294,9 @@ test('epic-reorder move route requires control auth (bearer-only 403, wrong toke
 
 test('epic-reorder move route: moving a mid-list epic up swaps exactly two backlog YAML files and commits both to main (scenario 01 + 06)', async () => {
   const target = mkGitTarget();
-  writeEpic(target, 'BL-700', 10);
-  writeEpic(target, 'BL-701', 20);
-  writeEpic(target, 'BL-702', 30);
+  writeReorderableEpic(target, 'BL-700', 10);
+  writeReorderableEpic(target, 'BL-701', 20);
+  writeReorderableEpic(target, 'BL-702', 30);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed epics'], { cwd: target });
 
@@ -294,9 +334,9 @@ test('epic-reorder move route: moving a mid-list epic up swaps exactly two backl
 // own `v.direction === 'down'` acceptance branch untested at the HTTP layer.
 test('epic-reorder move route: moving a mid-list epic down swaps its priority with its neighbour below', async () => {
   const target = mkGitTarget();
-  writeEpic(target, 'BL-703', 10);
-  writeEpic(target, 'BL-704', 20);
-  writeEpic(target, 'BL-705', 30);
+  writeReorderableEpic(target, 'BL-703', 10);
+  writeReorderableEpic(target, 'BL-704', 20);
+  writeReorderableEpic(target, 'BL-705', 30);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed epics'], { cwd: target });
 
@@ -319,10 +359,10 @@ test('epic-reorder move route: moving a mid-list epic down swaps its priority wi
 
 test('epic-reorder move route: adjacent epics sharing one priority value still reorder strictly and preserve everyone else\'s relative position (scenario 02)', async () => {
   const target = mkGitTarget();
-  writeEpic(target, 'BL-708', 5);
-  writeEpic(target, 'BL-710', 20);
-  writeEpic(target, 'BL-711', 20);
-  writeEpic(target, 'BL-712', 500);
+  writeReorderableEpic(target, 'BL-708', 5);
+  writeReorderableEpic(target, 'BL-710', 20);
+  writeReorderableEpic(target, 'BL-711', 20);
+  writeReorderableEpic(target, 'BL-712', 500);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed tied epics'], { cwd: target });
 
@@ -346,10 +386,10 @@ test('epic-reorder move route: adjacent epics sharing one priority value still r
 
 test('epic-reorder move route: a move inside a run tied at priority 0 still reorders, extends only downward, and never goes negative (scenario 07)', async () => {
   const target = mkGitTarget();
-  writeEpic(target, 'BL-960', 0);
-  writeEpic(target, 'BL-961', 0);
-  writeEpic(target, 'BL-962', 0);
-  writeEpic(target, 'BL-963', 0);
+  writeReorderableEpic(target, 'BL-960', 0);
+  writeReorderableEpic(target, 'BL-961', 0);
+  writeReorderableEpic(target, 'BL-962', 0);
+  writeReorderableEpic(target, 'BL-963', 0);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed four-way tied epics'], { cwd: target });
 
@@ -383,8 +423,8 @@ test('epic-reorder move route: a move inside a run tied at priority 0 still reor
 
 test('epic-reorder move route: moving the first-priority epic up changes nothing and states why (scenario 03)', async () => {
   const target = mkTmp();
-  writeEpic(target, 'BL-720', 10);
-  writeEpic(target, 'BL-721', 20);
+  writeReorderableEpic(target, 'BL-720', 10);
+  writeReorderableEpic(target, 'BL-721', 20);
   const before720 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-720.yaml'), 'utf8');
   const before721 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-721.yaml'), 'utf8');
 
@@ -404,6 +444,37 @@ test('epic-reorder move route: moving the first-priority epic up changes nothing
 
   assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-720.yaml'), 'utf8'), before720);
   assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-721.yaml'), 'utf8'), before721);
+});
+
+test('epic-reorder move route: a childless epic sitting between two populated ones is not a neighbour and is never rewritten', async () => {
+  const target = mkGitTarget();
+  writeReorderableEpic(target, 'BL-A', 10, 'slug-a');
+  writeEpic(target, 'BL-HIDDEN', 20, 'slug-hidden');
+  writeReorderableEpic(target, 'BL-C', 30, 'slug-c');
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'seed mixed populated/empty epics'], { cwd: target });
+
+  await withBridge(target, {}, async (handle) => {
+    const before = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    assert.deepEqual((await before.json()).items.map((i) => i.id), ['BL-A', 'BL-C']);
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/move`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ id: 'BL-A', direction: 'down' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.equal(body.changed, true);
+
+    const after = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    assert.deepEqual((await after.json()).items.map((i) => i.id), ['BL-C', 'BL-A']);
+  });
+
+  assert.equal(readPriority(target, 'BL-A'), 30);
+  assert.equal(readPriority(target, 'BL-C'), 10);
+  assert.equal(readPriority(target, 'BL-HIDDEN'), 20, 'the hidden childless tracker must keep its original priority');
 });
 
 test('epic-reorder move route: a reorder without control auth is refused and modifies no backlog YAML (scenario 05)', async () => {
@@ -531,10 +602,10 @@ test('epic-reorder move route: a file vanishing partway through a tie-run cascad
   // path lookup for BL-963 is made to fail, reproducing the concurrent-
   // modification window a real filesystem race would only hit non-
   // deterministically.
-  writeEpic(target, 'BL-960', 0);
-  writeEpic(target, 'BL-961', 0);
-  writeEpic(target, 'BL-962', 0);
-  writeEpic(target, 'BL-963', 0);
+  writeReorderableEpic(target, 'BL-960', 0);
+  writeReorderableEpic(target, 'BL-961', 0);
+  writeReorderableEpic(target, 'BL-962', 0);
+  writeReorderableEpic(target, 'BL-963', 0);
   const before960 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-960.yaml'), 'utf8');
   const before961 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-961.yaml'), 'utf8');
   const before962 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-962.yaml'), 'utf8');
@@ -578,8 +649,8 @@ test('epic-reorder move route: write succeeds but the commit fails - reports the
   // is the only test that drives that response out of the real route instead
   // of asserting on a hand-built payload.
   const target = mkTmp();
-  writeEpic(target, 'BL-800', 10);
-  writeEpic(target, 'BL-801', 20);
+  writeReorderableEpic(target, 'BL-800', 10);
+  writeReorderableEpic(target, 'BL-801', 20);
 
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/move`, {
@@ -611,8 +682,9 @@ test('epic-reorder move route: a prose mention of "priority:" ABOVE the real fie
   const dir = path.join(target, 'backlog', 'paused');
   mkdirp(dir);
   const decoyLine = 'notes: hand-editing `priority:` in its YAML is what this ticket replaces';
-  fs.writeFileSync(path.join(dir, 'BL-900.yaml'), `id: BL-900\ntitle: BL-900 title\n${decoyLine}\ntype: epic\npriority: 10\n`);
-  writeEpic(target, 'BL-901', 20);
+  fs.writeFileSync(path.join(dir, 'BL-900.yaml'), `id: BL-900\ntitle: BL-900 title\n${decoyLine}\ntype: epic\nepic: decoy-slug\npriority: 10\n`);
+  writeTicket(target, 'paused', 'BL-900-T', ['type: feature', 'epic: decoy-slug', 'priority: 100']);
+  writeReorderableEpic(target, 'BL-901', 20);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed decoy epic'], { cwd: target });
 

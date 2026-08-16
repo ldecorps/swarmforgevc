@@ -742,3 +742,23 @@ You are the hardender.
   EVIDENCE: `bl687EpicReorderIncludesActiveChildrenSteps.js` wraps every
   bridge-live step in `stopBridgeOnError`. Both attempts killed and reaped
   clean, no leaks; gate deferred with no verdict recorded.)
+
+## A default-arg signature change hides unwired call sites behind a green suite (BL-900)
+- When a ticket changes a function's signature by ADDING A PARAMETER WITH A
+  DEFAULT, every call site that was never updated keeps compiling, keeps
+  passing, and silently keeps the OLD behavior. There is no failing test to
+  find, because the default is precisely what makes the old call legal.
+- So verify the WIRING, not the suite: take the call sites the ticket's own
+  `Scope:` names, and check each one actually passes the new argument. A
+  ticket naming three call sites and updating two is a ticket that shipped
+  two thirds of its behavior change — and the third site is exactly where the
+  behavior was supposed to matter.
+- Mutation does not cover this gap either. Mutating the default value only
+  proves a test exercises the default path; it says nothing about whether the
+  call site was SUPPOSED to be on that path. Read the ticket's scope list and
+  grep each named site by hand.
+- (Incident: BL-900, 2026-08-16 — scope named `promotion_gates_cli.bb`,
+  `promote_and_route_next.sh` and `chase_sweep_lib.bb` as `rank-candidates`
+  call sites. `chase_sweep_lib.bb` kept the pre-change ranking with zero test
+  failures, so the epic-priority ordering the ticket existed to deliver never
+  reached the chase sweep at all.)
