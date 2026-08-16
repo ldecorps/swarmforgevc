@@ -117,6 +117,26 @@ class TalkEngine(private val appContext: Context) {
         }
     }
 
+    /**
+     * BL-825 required_wiring: resolveUiBundle's real caller outside unit
+     * tests. Same "every overlay start" (pair/resume) cadence as
+     * [syncBridgeInstanceAndSession] / [syncChiptunesCatalog] above. Slice A
+     * only decides which bundle to render (BuildConfig.VERSION_CODE is this
+     * shell's own version); slice B renders it — nothing to apply to the UI
+     * here yet, only stash the outcome for the caller to read later.
+     */
+    @Volatile
+    var latestUiBundleResolution: UiBundleResolver.UiBundleResolution? = null
+        private set
+
+    fun syncUiBundle() {
+        val base = CompanionPrefs.getBaseUrl(appContext)
+        val token = CompanionPrefs.getToken(appContext)
+        io.execute {
+            latestUiBundleResolution = BridgeClient.resolveUiBundle(appContext, base, token, BuildConfig.VERSION_CODE)
+        }
+    }
+
     fun setListener(l: Listener?) {
         listener = l
         l?.onSnapshot(snapshot())

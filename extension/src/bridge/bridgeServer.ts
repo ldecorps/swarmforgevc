@@ -71,6 +71,7 @@ import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
 import { createLetsTalkMetaRoutes } from './letsTalkMetaRoutes';
 import { getLetsTalkBubbleConfig, isLetsTalkBubbleConfigPath } from './letsTalkBubbleConfig';
 import { getLetsTalkChiptunesCatalog, isLetsTalkChiptunesPath } from './letsTalkChiptunes';
+import { getLetsTalkUiBundleManifest, isLetsTalkUiBundlePath } from './letsTalkUiBundle';
 import {
   isCompanionManifestPath,
   isCompanionPackagePath,
@@ -1791,6 +1792,13 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // fixed for bubble-config.
       matches: isLetsTalkChiptunesPath,
       compute: () => getLetsTalkChiptunesCatalog(),
+    },
+    {
+      // BL-825 slice A: versioned UI bundle manifest — same sibling shape
+      // as bubble-config/chiptunes above, so Android's UiBundleResolver can
+      // decide fresh/cached/stale/bare from what this route actually serves.
+      matches: isLetsTalkUiBundlePath,
+      compute: () => getLetsTalkUiBundleManifest(targetPath, process.env),
     },
   ];
 }

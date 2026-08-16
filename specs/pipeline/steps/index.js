@@ -460,7 +460,8 @@ const DOMAINS = [
   require('./bl897BriefingGathersLifecyclesOnceSteps'),
   require('./bl900EpicPriorityBeforeTicketPrioritySteps'),
   require('./bl896BriefingOpenTicketChartSteps'),
-  require('./bl907BubbleOfflinePackageSyncSteps')
+  require('./bl907BubbleOfflinePackageSyncSteps'),
+  require('./bl825BubbleUiBundleResolutionSteps')
 ];
 
 function registerSteps(registry) {

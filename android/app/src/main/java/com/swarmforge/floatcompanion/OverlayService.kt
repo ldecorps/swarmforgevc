@@ -68,6 +68,10 @@ class OverlayService : Service() {
             // BL-765: hold-music catalog + full capability document, same
             // "every overlay start" cadence as the bounce/session sync above.
             talkEngine?.syncChiptunesCatalog()
+            // BL-825 slice A: which UI bundle to render, same cadence. No
+            // rendering yet (slice B) - resolving now settles cache/fetch/
+            // shell-compat before any screen depends on the answer.
+            talkEngine?.syncUiBundle()
             // Resume last mode: hands-free cold-start greets then opens the mic.
             talkEngine?.greetAndResumeHandsFreeIfNeeded()
         } catch (e: Exception) {
