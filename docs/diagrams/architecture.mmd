@@ -49,6 +49,16 @@
 %% forward into local main when the working tree is clean; a dirty tree or
 %% merge conflict blocks it and surfaces a note to the coordinator instead
 %% of touching the checkout.
+%% BL-897 added a lifecycle-snapshot sweep to the same handoffd.bb cadence,
+%% immediately ahead of the briefing sections it feeds: ensure-lifecycle-
+%% snapshot! runs emit-lifecycle-snapshot.js at most once per UTC day and
+%% writes a machine-local .swarmforge/briefing/lifecycle-snapshot.json
+%% (gitignored, never committed), which the cost-health sidecar, digest-line
+%% and burndown-chart briefing CLIs are then all handed via a --snapshot
+%% flag so one send's sections read the identical ticket-lifecycle records
+%% instead of each re-walking the backlog's full git history. A missing,
+%% unreadable or stale snapshot degrades a consumer straight back to its own
+%% walk, exactly as it worked before this sweep existed.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -139,7 +149,7 @@ flowchart TB
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
-  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nnotifies via tmux send-keys| SOCKET
+  PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nlifecycle-snapshot sweep (BL-897),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
   PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
   PANES -->|closing-ceremony-run.js at\n./finish-shift, before pipeline stop (BL-820):\nreads LEANDIR, writes a run| CEREMONYDIR
