@@ -11,35 +11,41 @@ depends_on: []
 assigned_to: coordinator
 mutation_cost: low
 
-decomposes_into: [BL-866]
+decomposes_into: [BL-866, BL-907, BL-908]
 
 remaining_slices:
-  - "BL-866 — bridge side (MINTED): companion-manifest + versioned JSON package catalog, the contract everything else reads"
-  - "NOT YET MINTED — Bubble side: fetch/cache the packages network-first, serve reads offline after one successful sync, show 'as of <generation>'"
-  - "NOT YET MINTED — native Kotlin panels for backlog/docs over the shared JSON shapes (BL-659 corpus goals retarget here)"
+  - "BL-866 — bridge side (LANDED): companion-manifest + versioned JSON package catalog, the contract everything else reads"
+  - "BL-907 — Bubble side (MINTED 2026-08-16): fetch/cache the packages network-first, serve reads offline after one successful sync, show 'as of <generation>'"
+  - "BL-908 — native Kotlin panels for backlog/docs over the shared JSON shapes (MINTED 2026-08-16); the BL-659 corpus goals retarget here, confirmed by the human 2026-08-16"
   - "NOT YET MINTED — offline groom mutation outbox: drafts queue on device and sync when the bridge is up"
   - "NOT YET MINTED — Mini App -> Bubble capability migration, one ticket per surface"
 
 approval_context: >
-  Two things to confirm before this epic is promoted.
+  Both questions ANSWERED by the human 2026-08-16 (front-desk SUP-5, via
+  Operator intake `backlog/INTAKE-operator-question-1786899039245.md`). Kept
+  here as the decision record; nothing further is asked.
 
-  1. **Only the foundation slice is minted.** The other four are named above
-     with their scope but have no ticket yet, deliberately: each one's
-     acceptance depends on the package contract BL-866 defines, and minting
-     them now would fix their scenarios against a format that does not exist.
-     They get minted once BL-866 lands. Say so if you would rather see all
-     five specced up front.
+  1. **Mint the remaining knowledge-screen slices — ANSWERED.** The human asked
+     to "PROMOTE BL-865 so the coordinator can drive minting of the remaining
+     knowledge-screen slices", and named the two to mint. Done 2026-08-16:
+     BL-907 (Bubble-side network-first fetch/cache, offline serve, "as of
+     <generation>") and BL-908 (native Kotlin backlog/docs browse panels). The
+     two later slices — the groom outbox and the Mini App migration — stay
+     unminted for the same reason as before: their acceptance depends on
+     surface these two define.
 
-  2. **BL-659 retarget is NOT applied yet.** This intake says the PWA
-     knowledge-explorer's corpus goals "retarget here" as native Kotlin, and
-     that Pages PWA is maintain-only, not a feature destination. BL-659 is
-     paused, so retargeting it is allowed at spec time — but it changes what an
-     already-approved ticket builds, so I am flagging it rather than rewriting
-     it silently. Confirm and I will retarget BL-659 (or retire it in favour of
-     the native-Kotlin slice) in a follow-up pass.
+  2. **BL-659 retarget — CONFIRMED, and applied.** The human's words: "CONFIRM
+     the BL-659 retarget — the previously-approved PWA knowledge-explorer
+     becomes the native-Kotlin knowledge-screen slice (Pages PWA goes
+     maintain-only) rather than being retired." Applied 2026-08-16: BL-659 is
+     retargeted in place (NOT retired) to native Kotlin in Bubble, and BL-908 is
+     its first delivery. BL-659 keeps its remaining corpus roots as its own
+     unminted slices.
 
-  Open question 3 from the intake is still unanswered and assumed YES: showing
-  "as of <cache time>" honesty on cached data. Say if that is wrong.
+  Open question 3 (showing "as of <cache time>" honesty on cached data) was
+  never contradicted and is now settled affirmatively by the human's own wording
+  for slice 1: "show 'as of <generation>'". It is an invariant on both BL-907
+  and BL-908.
 
 source: |
   Raw intake `backlog/INTAKE-phone-wire-format-and-offline.md`, parked by the
@@ -114,11 +120,24 @@ description: |
   - A second phone client, in any form.
 
 notes: |
-  Related existing work: BL-659 (`pwa-knowledge-explorer`) holds the offline
-  corpus goals this intake retargets to native Kotlin in Bubble; BL-707 is
-  Bubble itself; BL-696/BL-707 Let's Talk is already native (the Mini App
-  Let's Talk migration was completed 2026-07-30, so it is NOT a remaining
-  slice here).
+  Related existing work: BL-659 holds the offline corpus goals this intake
+  retargets to native Kotlin in Bubble — retarget CONFIRMED and applied
+  2026-08-16, BL-659 keeps its epic id `knowledge-screen` (renamed from
+  `pwa-knowledge-explorer`) and is not retired; BL-707 is Bubble itself;
+  BL-696/BL-707 Let's Talk is already native (the Mini App Let's Talk migration
+  was completed 2026-07-30, so it is NOT a remaining slice here).
+
+  Cross-epic arrangement, stated once so neither epic reads as owning the other:
+  BL-908 carries `epic: bubble-offline-sync` because it is an offline-first
+  delivery over BL-866's packages, exactly as this epic's own slice list has
+  said since it was written. BL-659 tracks it as the first delivery of its
+  corpus goals and keeps every remaining root as its own unminted slice.
+
+  Fast-track, human directive 2026-08-16 (companion intake
+  `backlog/INTAKE-operator-question-1786899438508.md`): BL-907 and BL-908 go
+  through the AMBULANCE / expedite fast-track, not the normal promote queue.
+  The coordinator confirms and drives the ambulance dispatch — BL-907 first,
+  then BL-908 (they are sequenced, BL-908 reads BL-907's store).
 
   The 2026-08-07 standing order deprioritizing Bubble speech/voice work does
   NOT cover this epic — nothing here is speech, voice or hands-free.

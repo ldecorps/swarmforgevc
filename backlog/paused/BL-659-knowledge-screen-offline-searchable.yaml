@@ -1,9 +1,9 @@
 id: BL-659
-title: "EPIC — PWA Knowledge Explorer: milestones→tickets→Gherkin AND docs, constitution, briefings, evidence — the whole understand-the-swarm corpus, offline, searchable, on the phone, at zero token cost"
+title: "EPIC — Knowledge Screen (RETARGETED to native Kotlin in Bubble): milestones→tickets→Gherkin AND docs, constitution, briefings, evidence — the whole understand-the-swarm corpus, offline, searchable, on the phone, at zero token cost"
 milestone: M8
 type: epic
 status: todo
-epic: pwa-knowledge-explorer
+epic: knowledge-screen
 human_approval: approved
 severity: medium
 priority: 89
@@ -11,6 +11,16 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: high
+
+decomposes_into: [BL-908]
+
+remaining_slices:
+  - "BL-908 — backlog + docs browse panels over BL-866's packages (MINTED 2026-08-16, tracked under epic BL-865): the first native-Kotlin delivery of this corpus"
+  - "NOT YET MINTED — the remaining corpus roots as bridge packages: CONSTITUTION (roles/*.prompt + articles), BRIEFINGS, EVIDENCE, and the Gherkin scenarios under SPECS. Each needs a bridge-side package before a panel can read it."
+  - "NOT YET MINTED — search across all roots, on device, grouped results (the mockup's Ctrl-P)"
+  - "NOT YET MINTED — ticket facets (status/milestone/type/severity/epic/human_approval/direction), multi-select, counts before selecting"
+  - "NOT YET MINTED — completion cues + ETA ranges at milestone / epic / ticket level"
+  - "NOT YET MINTED — FLOW root (Kanban analytics) and COST root (efficiency experiment log)"
 
 approval_context: >
   Operator design session, 2026-07-26 morning. Started as a spec-browsing
@@ -61,6 +71,44 @@ source: |
      day this epic's bill is born — refuse it here.
 
 description: |
+  ## RETARGETED 2026-08-16 — the SURFACE changed, no goal below did
+
+  Human decision, front-desk SUP-5, ldecorps, 2026-08-16, verbatim (Article 5.3):
+
+  - "CONFIRM the BL-659 retarget — the previously-approved PWA
+    knowledge-explorer becomes the native-Kotlin knowledge-screen slice (Pages
+    PWA goes maintain-only) rather than being retired."
+
+  What changed: this corpus is delivered as **native Kotlin panels in Bubble**
+  over the shared JSON packages BL-866 serves, not as a Pages PWA. The Pages PWA
+  is maintain-only — it keeps working, it gains nothing new.
+
+  What did NOT change: everything else on this ticket. The seven roots, the three
+  requirements (offline / searchable / phone), the zero-token ruling, the facets,
+  the completion cues and ETA display rules, the honesty requirements and the
+  out_of_scope bans all stand exactly as written and as approved. This ticket is
+  RETARGETED, explicitly NOT retired.
+
+  The two design rulings recorded under `source:` read in that light, and neither
+  is weakened:
+
+  - Ruling 1 ("PWA, not Mini App") was a choice between two WEB surfaces, made
+    because a Telegram webview cannot be offline. A native app satisfies that
+    reasoning more completely than the PWA did. The ruling's substance — the
+    corpus must be offline, and the Mini App is not where it lives — survives
+    intact.
+  - Ruling 2 ("zero tokens, forever") is surface-independent and untouched: no
+    LLM in build or browse, on any surface, ever.
+
+  Where the interface intent lives is also unchanged: the mockup at
+  `docs/design/BL-659-traceability-explorer-mockup.html` is still the contract of
+  intent (columns, breadcrumb, palette, minimap, feature map) — a native slice
+  keeps its bones or records why it deviates, exactly as a PWA slice would have.
+
+  The epic id moved `pwa-knowledge-explorer` -> `knowledge-screen` so the label
+  stops asserting a surface that is no longer the target. BL-659 was and remains
+  the only ticket carrying it.
+
   ## Information architecture — seven roots, one explorer
 
   ```
@@ -307,6 +355,21 @@ out_of_scope: |
   - The operator's private memory corpus (~/.claude) — not repo content.
 
 notes: |
+  2026-08-16 retarget bookkeeping (see the head of `description:` for the human's
+  words). First delivery is BL-908 — the backlog + docs browse panels over
+  BL-866's packages, tracked under epic BL-865 (`bubble-offline-sync`) because it
+  is an offline-first delivery over that epic's package contract, which BL-865's
+  own slice list has said since it was written. This ticket keeps every remaining
+  corpus root as its own unminted slice; nothing here was dropped, only
+  sequenced. The old epic id was `pwa-knowledge-explorer`.
+
+  The corpus BL-866 can serve today is two packages — `backlog` (the four ticket
+  folders) and `docs` (five vision documents). The other five roots named above
+  (CONSTITUTION, BRIEFINGS, EVIDENCE, the Gherkin under SPECS, FLOW, COST) have
+  no bridge package yet, so each of this epic's remaining slices carries a
+  bridge-side half as well as a phone-side one. Measured 2026-08-16 against
+  `extension/src/bridge/companionManifest.ts`.
+
   The mockup at docs/design/BL-659-traceability-explorer-mockup.html is the
   contract of intent: keep its bones (columns, breadcrumb, palette, minimap,
   feature map) unless a slice records why it deviates. Token-cost analysis

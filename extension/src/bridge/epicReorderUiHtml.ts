@@ -1,11 +1,13 @@
 /// BL-572: Telegram Mini App shell for the console EPIC PRIORITY REORDER
-/// screen. Lists paused `type: epic` tickets (priority ascending) with
-/// Move up / Move down per row - each tap POSTs /epic-reorder/move
-/// {id, direction} and refreshes. A move is never silently refused: a
-/// boundary no-op (already first/last) answers changed:false with a reason,
-/// which this screen displays rather than a status line indistinguishable
-/// from success (architect bounce #2). Empty state ("No epics to reorder")
-/// when there are none. Polls GET /epic-reorder-state?token=... for the list.
+/// screen. Lists paused `type: epic` tickets that have at least one live
+/// child (priority ascending) with Move up / Move down per row - each tap
+/// POSTs /epic-reorder/move {id, direction} and refreshes. Childless
+/// trackers are omitted so they cannot swallow a tap. A move is never
+/// silently refused: a boundary no-op (already first/last) answers
+/// changed:false with a reason, which this screen displays rather than a
+/// status line indistinguishable from success (architect bounce #2). Empty
+/// state ("No epics to reorder") when there are none. Polls GET
+/// /epic-reorder-state?token=... for the list.
 
 export function getEpicReorderUiHtml(): string {
   return `<!DOCTYPE html>

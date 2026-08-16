@@ -364,6 +364,79 @@ bb "$ROOT/refuse_tmp_daemon_start_test.bb" | grep -q "refuse-tmp-daemon-start-ok
   || fail "BL-406: refuse-tmp-daemon-start? did not gate correctly on root shape + explicit allow flag"
 pass "BL-406: refuse-tmp-daemon-start? refuses a temp-directory root by default, only allowing it with an explicit opt-in flag, and never refuses a real project root"
 
+# ── BL-902: email-send-reason / configured-email-send-reason (pure) ─────────
+# The knowledge send-alarm-email!'s cond already had (to/api-key blank
+# checks), factored out so a caller with an expensive-to-build message
+# (briefing_email_lib.bb) can decide sendability BEFORE paying that cost.
+cat > "$ROOT/email_send_reason_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(assert (= :disabled (daemon-alarm-lib/email-send-reason "" "fake-key")) "01: blank to -> :disabled")
+(assert (= :disabled (daemon-alarm-lib/email-send-reason nil "fake-key")) "02: nil to -> :disabled")
+(assert (= :missing-api-key (daemon-alarm-lib/email-send-reason "ops@example.com" "")) "03: blank api-key -> :missing-api-key")
+(assert (= :missing-api-key (daemon-alarm-lib/email-send-reason "ops@example.com" nil)) "04: nil api-key -> :missing-api-key")
+(assert (nil? (daemon-alarm-lib/email-send-reason "ops@example.com" "fake-key")) "05: both present -> nil (sendable)")
+(assert (= :disabled (daemon-alarm-lib/email-send-reason "" "")) "06: both blank -> :disabled (recipient checked first)")
+(println "email-send-reason-ok")
+EOF
+bb "$ROOT/email_send_reason_test.bb" | grep -q "email-send-reason-ok" \
+  || fail "BL-902: email-send-reason did not compute the expected verdict for every to/api-key combination"
+pass "BL-902: email-send-reason computes :disabled/:missing-api-key/nil exactly as send-alarm-email!'s own cond always did"
+
+# ── BL-902: send-alarm-email!'s own result is unchanged after refactoring
+#    its cond to delegate to email-send-reason (regression guard) ───────────
+cat > "$ROOT/send_alarm_email_reason_regression_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [disabled (daemon-alarm-lib/send-alarm-email! "fake-key" "" "onboarding@resend.dev" "subj" "text"
+                 (fn [& _] (throw (ex-info "must never be called" {}))))
+      missing-key (daemon-alarm-lib/send-alarm-email! "" "ops@example.com" "onboarding@resend.dev" "subj" "text"
+                    (fn [& _] (throw (ex-info "must never be called" {}))))]
+  (assert (= {:success false :reason :disabled :error "email not configured (notify_email_to unset)"} disabled)
+    "expected the exact pre-refactor :disabled result shape")
+  (assert (= {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"} missing-key)
+    "expected the exact pre-refactor :missing-api-key result shape")
+  (println "send-alarm-email-reason-regression-ok"))
+EOF
+bb "$ROOT/send_alarm_email_reason_regression_test.bb" | grep -q "send-alarm-email-reason-regression-ok" \
+  || fail "BL-902: send-alarm-email!'s :disabled/:missing-api-key result shape changed after delegating to email-send-reason"
+pass "BL-902: send-alarm-email!'s own result shape is byte-identical after delegating its cond to email-send-reason"
+
+# ── BL-902: configured-email-send-reason reads conf-file + env exactly like
+#    send-configured-email! does, with no compose/send side effect ──────────
+cat > "$ROOT/configured_email_send_reason_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [conf-file "$ROOT/bl902_fixture.conf"]
+  (spit conf-file "config notify_email_to ops@example.com\n")
+  (assert (= :missing-api-key (daemon-alarm-lib/configured-email-send-reason conf-file))
+    "01: recipient configured, no key in env -> :missing-api-key")
+  (println "configured-email-send-reason-missing-key-ok"))
+EOF
+env -u RESEND_API_KEY bb "$ROOT/configured_email_send_reason_test.bb" | grep -q "configured-email-send-reason-missing-key-ok" \
+  || fail "BL-902: configured-email-send-reason did not report :missing-api-key for a configured-but-keyless conf"
+pass "BL-902 configured-email-send-reason-01: recipient configured, key absent from env -> :missing-api-key, no compose/send"
+
+cat > "$ROOT/configured_email_send_reason_sendable_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [conf-file "$ROOT/bl902_fixture2.conf"]
+  (spit conf-file "config notify_email_to ops@example.com\n")
+  (assert (nil? (daemon-alarm-lib/configured-email-send-reason conf-file))
+    "expected nil (sendable) when both recipient and key are present")
+  (println "configured-email-send-reason-sendable-ok"))
+EOF
+env RESEND_API_KEY=fake-key bb "$ROOT/configured_email_send_reason_sendable_test.bb" | grep -q "configured-email-send-reason-sendable-ok" \
+  || fail "BL-902: configured-email-send-reason did not report nil (sendable) when fully configured"
+pass "BL-902 configured-email-send-reason-02: fully configured -> nil (sendable)"
+
+cat > "$ROOT/configured_email_send_reason_disabled_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [conf-file "$ROOT/bl902_fixture3.conf"]
+  (assert (= :disabled (daemon-alarm-lib/configured-email-send-reason conf-file))
+    "expected :disabled for a conf-file with no notify_email_to at all (or missing entirely)")
+  (println "configured-email-send-reason-disabled-ok"))
+EOF
+bb "$ROOT/configured_email_send_reason_disabled_test.bb" | grep -q "configured-email-send-reason-disabled-ok" \
+  || fail "BL-902: configured-email-send-reason did not report :disabled for a missing/no-recipient conf-file"
+pass "BL-902 configured-email-send-reason-03: no notify_email_to configured (conf-file absent) -> :disabled"
+
 # ── BL-646 suites-leave-no-untracked-files-01 ───────────────────────────────
 assert_no_untracked_in_root "$GUARD_ROOT" \
   || fail "BL-646 suites-leave-no-untracked-files-01: daemon-death/alarm suite left debris in guard root"

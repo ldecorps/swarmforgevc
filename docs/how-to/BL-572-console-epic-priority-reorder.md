@@ -12,11 +12,14 @@ epics**. The console links to `/epic-reorder` on the bridge server. The HTML
 shell is publicly reachable like the other Mini App shells, but the list
 feed and the move route require the console token.
 
-The screen lists every `backlog/paused/` ticket of `type: epic`, ordered by
-`priority:` ascending, one row per epic with its id, title, and current
-priority. Each row has **Move up**, **Move down**, **Make top**, and
-**Topics** controls. When there are no paused epics, the screen shows an
-empty state and no rows.
+The screen lists every `backlog/paused/` ticket of `type: epic` that has at
+least one live child ticket (`paused/`, `hold/`, or `active/` — never
+`done/`), ordered by `priority:` ascending, one row per epic with its id,
+title, and current priority. Childless trackers stay in `backlog/paused/`
+but are omitted from the list and from **Move up** / **Move down**
+neighbours, so an empty shell cannot swallow a tap. Each row has **Move
+up**, **Move down**, **Make top**, and **Topics** controls. When there are
+no such epics, the screen shows an empty state and no rows.
 
 ## Move an Epic
 
@@ -88,8 +91,8 @@ its id, so a bound or refused move is never a surprise before you tap
 anything. A topic sourced from `backlog/active/` carries an **in flight**
 badge next to its id — it is still an ordinary row you can reorder and tap
 **Make top** on, the badge is informational only. An epic with no
-reorderable topics shows its own empty state ("No reorderable topics under
-this epic.") instead of a blank list.
+reorderable topics is omitted from the tiles, so that empty state is only
+reachable if the last child vanished after the screen last refreshed.
 
 Tap **&larr; Back** to return to the epic tiles.
 

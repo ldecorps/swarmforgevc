@@ -7,7 +7,12 @@ epic: swarm-behaviour-trends
 priority: 27
 human_approval: approved
 depends_on: []
-decomposes_into: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-603, BL-604, BL-605]
+decomposes_into: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-603, BL-604, BL-605, BL-909, BL-910]
+# This list is NOT exhaustive and never has been: tickets minted into this epic
+# after the original decomposition carry `epic: swarm-behaviour-trends` as their
+# authoritative link, and several (BL-649, BL-664, BL-665, BL-896, BL-904) are
+# not listed above. Query the field, not this list, for true membership.
+# BL-909/BL-910 added 2026-08-16 with the intakes they came from.
 direction: human-requested
 source: |
   Human, 2026-07-23: "I want as many trends possible to analyse the swarm

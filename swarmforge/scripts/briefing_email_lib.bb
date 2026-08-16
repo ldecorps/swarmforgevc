@@ -279,6 +279,43 @@
     (str body-html diagram-html)
     body-html))
 
+;; BL-902: given a (possibly nil) result of an optional :send-reason!
+;; adapter (daemon_alarm_lib.bb's email-send-reason - :disabled or
+;; :missing-api-key), returns the exact same log key send-unsent-briefings!
+;; has always emitted for that reason once a real send attempt reports it -
+;; the early-skip path below must be indistinguishable from today's outcome
+;; to any downstream consumer keyed off these log lines.
+(defn- skip-log-key [reason]
+  (case reason
+    :disabled "briefing-skip-disabled"
+    :missing-api-key "briefing-skip-missing-key"))
+
+;; BL-902: the expensive half of what was inline in send-unsent-briefings!
+;; below - gathers every optional section, renders diagrams/markdown, and
+;; calls :send-email!. Extracted so the sendability check ahead of it can
+;; skip straight past this entire function when the email cannot be sent,
+;; without duplicating the gather/render/subject/html logic itself.
+(defn- compose-and-send-one! [file-name adapters]
+  (let [raw-content ((:read-briefing-content adapters) file-name)
+        content (apply-optional-sections raw-content adapters)
+        diagram-section (when-let [f (:diagram-section adapters)] (f))
+        content (if diagram-section
+                  (append-content-block content (:note-line diagram-section))
+                  content)
+        token-burn-section (when-let [f (:token-burn-section adapters)] (f))
+        content (if (:appended-text token-burn-section)
+                  (append-content-block content (:appended-text token-burn-section))
+                  content)
+        date-label (str/replace file-name #"\.md$" "")
+        subject (maybe-mark-subject (build-briefing-subject date-label content) (:subject-marker? token-burn-section))
+        content (if (:leading-text token-burn-section)
+                  (prepend-content-block content (:leading-text token-burn-section))
+                  content)
+        html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))]
+    (if (seq (:attachments diagram-section))
+      ((:send-email! adapters) subject content html (:attachments diagram-section))
+      ((:send-email! adapters) subject content html))))
+
 (defn send-unsent-briefings!
   "Sends each not-yet-sent committed briefing exactly once via the injected
    send-email! adapter (daemon_alarm_lib.bb's send-alarm-email!). A file is
@@ -286,6 +323,18 @@
    (:reason :disabled/:missing-api-key) or a real failure both log a skip
    and leave the file to retry on the next sweep, never crashing and never
    losing the briefing. Returns the file names actually sent this call.
+
+   BL-902: an optional :send-reason! adapter (zero-arg fn returning
+   daemon_alarm_lib.bb's email-send-reason verdict - nil when sendable, or
+   :disabled/:missing-api-key) is consulted FIRST, before any section is
+   gathered or anything is rendered - a defect this ticket fixes was the
+   entire expensive compose running every cycle only to discover the send
+   can't happen. A non-nil verdict skips straight to the same
+   briefing-skip-* log line a real send attempt would have produced, never
+   touching :read-briefing-content, any optional section adapter, or
+   :diagram-section. Omitting the adapter (every caller/test predating
+   BL-902) falls through to the original always-compose-then-send path
+   unchanged.
 
    Each optional section adapter (:suite-duration-line, BL-252;
    :needs-approval-section, BL-251 - zero-arg fns returning a content block
@@ -323,38 +372,20 @@
   [briefings-dir adapters]
   (let [sent-now (atom [])]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
-      (let [raw-content ((:read-briefing-content adapters) file-name)
-            content (apply-optional-sections raw-content adapters)
-            diagram-section (when-let [f (:diagram-section adapters)] (f))
-            content (if diagram-section
-                      (append-content-block content (:note-line diagram-section))
-                      content)
-            token-burn-section (when-let [f (:token-burn-section adapters)] (f))
-            content (if (:appended-text token-burn-section)
-                      (append-content-block content (:appended-text token-burn-section))
-                      content)
-            date-label (str/replace file-name #"\.md$" "")
-            subject (maybe-mark-subject (build-briefing-subject date-label content) (:subject-marker? token-burn-section))
-            content (if (:leading-text token-burn-section)
-                      (prepend-content-block content (:leading-text token-burn-section))
-                      content)
-            html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))
-            result (if (seq (:attachments diagram-section))
-                     ((:send-email! adapters) subject content html (:attachments diagram-section))
-                     ((:send-email! adapters) subject content html))]
-        (cond
-          (:success result)
-          (do
-            (record-briefing-sent! briefings-dir file-name)
-            ((:log! adapters) "briefing-sent" file-name)
-            (swap! sent-now conj file-name))
+      (let [early-reason (when-let [f (:send-reason! adapters)] (f))]
+        (if early-reason
+          ((:log! adapters) (skip-log-key early-reason) file-name)
+          (let [result (compose-and-send-one! file-name adapters)]
+            (cond
+              (:success result)
+              (do
+                (record-briefing-sent! briefings-dir file-name)
+                ((:log! adapters) "briefing-sent" file-name)
+                (swap! sent-now conj file-name))
 
-          (= (:reason result) :disabled)
-          ((:log! adapters) "briefing-skip-disabled" file-name)
+              (contains? #{:disabled :missing-api-key} (:reason result))
+              ((:log! adapters) (skip-log-key (:reason result)) file-name)
 
-          (= (:reason result) :missing-api-key)
-          ((:log! adapters) "briefing-skip-missing-key" file-name)
-
-          :else
-          ((:log! adapters) "briefing-send-failed" file-name (str (:error result))))))
+              :else
+              ((:log! adapters) "briefing-send-failed" file-name (str (:error result))))))))
     @sent-now))

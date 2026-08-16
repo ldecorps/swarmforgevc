@@ -1,0 +1,234 @@
+id: BL-906
+title: "Swarm stamp-off: Operator polls babysitterd freshness and TELLS, never restarts — certify the WIP branch wip/BL-906-babysitterd-freshness-watchdog"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 41
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature.draft
+
+approval_context: >
+  ANSWERED 2026-08-16 — the landing question this field used to ask is
+  closed, and it was answered per-ticket rather than once for both. This one
+  took (b) COMMIT TO A BRANCH, matching the caution stated here: nothing
+  unreviewed reaches `main` on the swarm's own restart machinery. Its sibling
+  BL-905, a console view, took (a). Nothing below this line changed.
+
+source: |
+  `.swarmforge/operator/INTAKE-operator-babysitterd-freshness-watchdog.md` —
+  human via Cursor 2026-08-16 ~08:13–08:31 CEST. The trigger, verbatim:
+
+  > Babysitterd was down; nothing in the operator health sweep caught it.
+  > Human asked whether Operator should poll babysitterd freshness; then
+  > "Ok fix it." Live failure: extra `start_babysitterd.sh` while an orphan
+  > was alive deleted the pidfile on EXIT and `./swarm status` reported DOWN
+  > while the daemon still ran.
+
+  And the instruction to the specifier, verbatim:
+
+  > **Code already exists as uncommitted WIP on master.** Specifier: mint a
+  > stamp/review ticket; do **not** reimplement and do **not** discard the
+  > working tree.
+
+  > Mint (stamp ticket or small follow-on to BL-611/BL-675). Spec the locked
+  > tell-don't-restart posture. Do not ask the coder to rewrite from scratch.
+  > Landing: keep the WIP until a declared commit (`Hotfix-Certification:
+  > pending` if it stays a hotfix) — BL-848 has no ledger row until there is
+  > a commit.
+
+description: |
+  ## Disposition — answered 2026-08-16: (b), a branch the coder merges
+
+  The code is committed, but **not on `main`** — deliberately. It is one
+  commit, `d7b986e8f`, on local branch
+  `wip/BL-906-babysitterd-freshness-watchdog`, whose parent is `0f5394a2d0`
+  (its BL-905 sibling, on `main`), so the branch is `main` plus exactly this
+  one commit. Nothing unreviewed reaches `main` until QA lands this parcel —
+  which is the entire reason this ticket got (b) and BL-905 got (a).
+
+  Coder, start here:
+
+  - `git merge main`, then `git merge wip/BL-906-babysitterd-freshness-watchdog`
+    in `.worktrees/coder`. The branch is local to this repo, so it is
+    visible from your worktree with no fetch; it has never been pushed.
+  - **Do not implement the behaviour** — it exists in that commit. Read its
+    diff, then run the normal pipeline from the top over it. Every stage
+    reviews it as ordinary in-parcel work, because after your merge that is
+    exactly what it is.
+  - **The acceptance step handlers are the genuinely new code.**
+    `specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature.draft`
+    is still a `.draft` because no handler exists for its scenarios, and a
+    live `.feature` with no handler hard-fails the runner for every parcel
+    (BL-233). Write the handlers and rename the draft to
+    `BL-906-operator-babysitterd-freshness-watchdog.feature` **in the same
+    commit**, then point this ticket's `acceptance:` at the live path.
+  - There is no hotfix ledger row for this ticket and there must not be one:
+    `d7b986e8f` carries no `Hotfix-Certification` trailer and never reached
+    `main` un-reviewed. BL-848 is not involved here.
+  - Delete the `wip/` branch only after QA has landed this parcel — until
+    then it is the sole copy of the work outside your worktree.
+
+  ## What
+
+  Babysitterd went down and no health signal caught it. Worse, the obvious
+  manual remedy made things ambiguous: running a second
+  `start_babysitterd.sh` while an orphaned daemon was still alive caused the
+  new process to delete the pidfile on EXIT, after which `./swarm status`
+  reported DOWN while the daemon was in fact still running.
+
+  So there are two faults here, and the fix addresses both: nobody was
+  watching, and the thing you would naturally do about it corrupted the
+  evidence.
+
+  This is a REVIEW ticket, not a rewrite ticket. Confirm or refute the
+  implementation against what is locked below; fix what the gates find; do
+  not redesign it.
+
+  ## Locked by the human — verbatim, not negotiable
+
+  > - Operator runtime polls process + pidfile + Telegram-announce path every
+  >   tick. It **tells** (coordinator note + `status.json`
+  >   `babysitterd_watchdog`). It never calls `start_babysitterd.sh`.
+  > - Cron (BL-675) remains the restarter. `./swarm ensure` /
+  >   `start_babysitterd.sh` **adopt** a live orphan (rewrite pidfile), never
+  >   spawn a second copy.
+  > - `./swarm status` reports process truth, not pidfile-only
+  >   (`adopted-live` when the pidfile is missing).
+  > - States: `down` / `pidfile-lie` / `announce-mute` / healthy. Operator
+  >   prompt: trust the poll; on pidfile-lie or announce-mute, tell the human;
+  >   do not spawn a duplicate.
+  > - Opt-out: `OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=0`.
+
+  The first bullet is the whole design and the one a reviewer is most likely
+  to erode. "Tell, never restart" is a SEPARATION OF POWERS, not a limitation
+  waiting to be lifted: cron restarts, Operator observes. An Operator that
+  could also restart would be a second restarter racing the first — which is
+  precisely the duplicate-process failure that produced the pidfile lie in
+  the first place. If the review turns up a case where telling seems
+  insufficient, that is a finding to raise, never a licence to add a restart
+  call.
+
+  ## Already written in `d7b986e8f` — keep it, per the human's instruction
+
+  Specced against the working tree; verified again after the commit, same
+  files:
+
+  - `swarmforge/scripts/babysitterd_freshness_lib.bb` — pure classify (NEW,
+    untracked)
+  - `swarmforge/scripts/operator_runtime.bb` — watchdog sweep +
+    `status.json` field (+140)
+  - `swarmforge/scripts/start_babysitterd.sh` — adopt-orphan; EXIT trap
+    unlinks the pidfile only for this pid (+39)
+  - `swarmforge/scripts/swarm_status.bb` (+32),
+    `swarmforge/scripts/daemon_log_freshness_check.sh` (+37),
+    `swarmforge/scripts/babysitterd.sh` (+6)
+  - `swarmforge/roles/operator.prompt` (+7), how-tos BL-611 and BL-675
+  - tests: `test_operator_runtime_babysitterd_watchdog.sh` (NEW),
+    `babysitterd_freshness_lib_test_runner.bb` (NEW), plus lifecycle /
+    freshness / ensure tests
+
+  Committed diffstat, which supersedes the spec-time tracked/untracked split
+  (that split counted only `git diff` lines and excluded the three new
+  files): **15 files, +784/-16** in `d7b986e8f`. Same file list as above —
+  the larger number is the new files being counted, not scope that grew.
+
+  That the classifier is a PURE lib with its own test runner is the detail
+  worth protecting: the four states are decidable from inputs alone, so they
+  can be tested exhaustively without a live daemon. Per the engineering
+  article, Babashka has no mutation/CRAP/DRY wired — its own unit suite is
+  the whole gate, so the hardening pass must RECORD that degraded fallback
+  rather than imply mutation ran.
+
+  ## What the review must actually check
+
+  - `operator_runtime.bb` contains no call to `start_babysitterd.sh`, on any
+    branch. This is invariant 1 and it is grep-checkable.
+  - The EXIT trap unlinks the pidfile ONLY when the pid it holds is this
+    process. This is the exact regression from the live failure.
+  - Adoption rewrites the pidfile and does not spawn; two concurrent
+    `start_babysitterd.sh` runs converge on one daemon.
+  - `./swarm status` reports `adopted-live` rather than DOWN when the process
+    is alive and the pidfile is missing.
+  - All four states are reachable and distinguishable, and the opt-out
+    genuinely disables the sweep.
+
+  ## Scope
+
+  The files listed above. Not cron's restart policy (BL-675 owns it), not the
+  freshness thresholds, not handoffd's own freshness storm — that is BL-902,
+  a different daemon and a different cause.
+
+invariants:
+  - "The Operator runtime never starts, restarts, or spawns a babysitterd process on any code path — its only outputs are a coordinator note and a status.json field."
+  - "A pidfile is only ever removed by the process it names, so a second launch can never make a live daemon report DOWN."
+  - "Every reported state is derived from observed process truth; the pidfile is corroborating evidence, never the sole source."
+
+qa_e2e_procedure: |
+  On a scratch socket/state dir, never the live swarm:
+
+  1. THE PIDFILE-LIE REGRESSION. Start babysitterd, orphan it, then run
+     `start_babysitterd.sh` a second time and let it exit. Assert the pidfile
+     still names the live daemon and `./swarm status` does NOT report DOWN.
+     This is the exact live failure that produced the intake.
+  2. ADOPT, DO NOT SPAWN. With a live orphan, run `./swarm ensure`. Assert
+     exactly one babysitterd process exists afterwards and the pidfile was
+     rewritten to it.
+  3. ADOPTED-LIVE. Delete the pidfile with the daemon alive; assert
+     `./swarm status` reports `adopted-live`, not DOWN.
+  4. FOUR STATES. Drive the pure lib through healthy / `down` /
+     `pidfile-lie` / `announce-mute` and assert each classifies distinctly.
+     Exhaustive here, since it is pure.
+  5. INVARIANT 1, THE LOAD-BEARING ONE. Kill babysitterd and let the Operator
+     tick. Assert a coordinator note is sent and `status.json` gains
+     `babysitterd_watchdog` — and assert NO babysitterd process was started.
+     Then grep `operator_runtime.bb` for `start_babysitterd` and assert no
+     call site exists.
+  6. OPT-OUT. With `OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=0`, assert the
+     sweep does not run and no note is sent.
+  7. DEGRADED-GATE RECORD. Confirm the hardening evidence explicitly records
+     that mutation/CRAP/DRY do not run for Babashka and that the shell/bb
+     unit suites were the gate.
+
+notes: |
+  Sibling stamp ticket from the same morning: BL-905 (hide childless epics
+  from the console reorder screen) — same disposition question, answered
+  differently: (a), so BL-905's code is on `main` at `0f5394a2d0` under a
+  BL-848 hotfix-certification row while this one waits on a branch.
+  Independent work; the two share no files.
+
+  `swarmforge/roles/operator.prompt` (+7) is a specifier-owned file that
+  someone else wrote (BL-798 makes prompt prose mine to land). It is NOT
+  orphaned and needs no separate commit: I reviewed the hunk on the branch
+  — trust the poll, never `start_babysitterd.sh` from a health sweep, on
+  `pidfile-lie`/`announce-mute` tell the human — and it states exactly the
+  locked posture above, so it rides in this parcel and lands with it. If a
+  review stage changes that hunk's wording, send it to me rather than
+  editing it in place.
+
+  Not to be confused with BL-902. Both are freshness restart problems from
+  the same day, and they are opposites: BL-902 is handoffd being restarted
+  too MUCH by a watchdog doing its job correctly against a real stall; this
+  ticket is babysitterd being watched too LITTLE. The shared lesson, and the
+  reason both landed on the same morning, is that daemon liveness was being
+  inferred from artifacts (a pidfile, a heartbeat timestamp) rather than
+  observed — see also BL-904, where a restart counter was inferred from
+  nothing at all.
+
+  Landing record (2026-08-16), the answer to this ticket's own question:
+
+  - `d7b986e8f` — the work, on branch
+    `wip/BL-906-babysitterd-freshness-watchdog`, `By Cursor.`, parent
+    `0f5394a2d0`. No `Hotfix-Certification` trailer, no ledger row, never on
+    `main`.
+
+  Certifying reviewer: `d7b986e8f` is authored outside the pipeline, so no
+  stage has yet looked at it. Every gate this ticket names is being run on it
+  for the FIRST time — treat a clean-looking diff with the same suspicion you
+  would give a fresh one, not the deference you would give code that had
+  already passed a stage.
