@@ -9,7 +9,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: low
 human_approval: approved
-acceptance: specs/features/BL-900-epic-priority-before-ticket-priority.feature.draft
+acceptance: specs/features/BL-900-epic-priority-before-ticket-priority.feature
 
 approval_context: >
   Two judgement calls are mine, not the intake's, and both change observable

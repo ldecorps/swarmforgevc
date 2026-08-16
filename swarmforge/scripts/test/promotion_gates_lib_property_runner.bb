@@ -89,9 +89,46 @@
 ;;      more directly than "these functions' source is unchanged", per the
 ;;      coder role's own carve-out for a declared invariant that "quantifies
 ;;      over prose or process rather than a pure, testable module".
+;;
+;; BL-900 (declared invariants):
+;;   1. "Ordering only: never grants an extra active slot, never overrides
+;;      orthogonality, the mutation-heavy window or the circuit breaker" -
+;;      rank-candidates/epic-priority/epic-priority-index are net-new
+;;      additions never called from evaluate/depth-refusal/hold-refusal/
+;;      orthogonality-advisory, and cmd-select's own gate order (evaluate
+;;      every candidate, THEN rank only the survivors) is unchanged by this
+;;      diff - a structural fact about which functions this ticket's diff
+;;      touches, not an input/output relationship a property could quantify
+;;      over any more directly than "these functions' source is unchanged",
+;;      per the coder role's own carve-out (same one BL-854 invariant 3 and
+;;      BL-853 invariant 2 above already use).
+;;   2. "The expedite bucket stays strictly first ... regardless of either
+;;      candidate's epic priority" - P9 below deliberately gives the
+;;      NON-expedited candidate the more urgent (lower) epic-priority, the
+;;      adversarial case the invariant exists to name, and asserts the
+;;      expedited candidate still wins.
+;;   3. "Ranking is a deterministic total order ... regardless of
+;;      enumeration order" - P10 ranks the SAME candidate set twice, the
+;;      second time reversed, and asserts the FULL resulting order (not
+;;      just the winner) is byte-identical both times. A forced-tie shape
+;;      (same expedited?/epic-priority/own-priority, different id) is
+;;      drawn into a third of sets - stable-sort code that dropped the id
+;;      tie-break would let a tied pair's relative order flip between the
+;;      two enumerations, which only a forced-tie draw reliably exercises
+;;      (same "independently-drawn fields make the interesting conjunction
+;;      rare" lesson as gen-context's own shape draws above).
+;;
+;; Non-vacuity proven by hand at authoring time: P9 was run with
+;; epic-priority spliced BEFORE the expedited term instead of after
+;; (rank-key reordered to [epic-priority expedited? ...]) and failed on
+;; every case where the non-expedited candidate's epic-priority beat the
+;; expedited one's, as expected. P10 was run with the trailing id tie-break
+;; dropped from rank-key and failed on forced-tie draws once enumeration
+;; order flipped, as expected. Both restored before commit.
 
 (ns promotion-gates-lib-property-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "promotion_gates_lib.bb")))
 
@@ -466,6 +503,111 @@
 
           :else true)))))
 
+;; ── P9/P10 (BL-900, declared invariants) - see this file's own header ────
+
+;; Deliberate repeat, biasing draws toward the "urgent" value - same
+;; weighting posture as candidate-priority-alphabet's own repeated 5.
+(def epic-priority-alphabet [1 1 50 900])
+
+;; BUG FOUND AUTHORING P10: an earlier draft drew each candidate's id
+;; independently, so two DIFFERENT candidates could land on the SAME id -
+;; then their rank-key (which ends in id) is genuinely, fully tied, and a
+;; stable sort legitimately lets enumeration order decide between them
+;; (correct sort behavior, not a defect). Real backlog ids are unique per
+;; ticket file, so this generator draws WITHOUT replacement - every id in
+;; one generated set is distinct, matching that real invariant, and the
+;; property only ever asks whether DISTINCT tickets rank deterministically.
+(defn- draw-distinct-ids [s n]
+  (loop [avail candidate-id-alphabet picked [] sx s cnt n]
+    (if (zero? cnt)
+      [picked sx]
+      (let [[i sy] (gen-int sx (count avail))
+            v (nth avail i)]
+        (recur (vec (remove #{v} avail)) (conj picked v) sy (dec cnt))))))
+
+(defn- mk-epic-candidate [id type severity priority epic-name epic-p]
+  {:file (str id "|" type "|" (or severity "none") "|" priority "|" (or epic-name "noepic"))
+   :content (str "id: " id "\n" "type: " type "\n"
+                  (when severity (str "severity: " severity "\n"))
+                  "priority: " priority "\n"
+                  (when epic-name (str "epic: " epic-name "\n")))
+   :epic-entry (when epic-name [epic-name epic-p])
+   :expected-expedited? (expected-expedited? type severity)
+   :priority priority
+   :id id
+   :tied? (boolean (and epic-name (str/starts-with? epic-name "tied-epic-")))})
+
+(defn gen-epic-candidate-set
+  "1-3 base candidates (distinct id, each with its own independent
+   type/severity/priority/epic); a third of draws ALSO force a tied pair
+   (same type/severity/priority/epic-priority, distinct id from each other
+   and from the base candidates) into the set - the case P10's non-vacuity
+   depends on (see header). n-base maxes at 3 and a tied pair adds 2, so the
+   5-entry id alphabet always covers the total without repeats."
+  [s]
+  (let [[tie? s0] (gen-bool s)
+        [extra s1] (gen-int s0 3)
+        n-base (inc extra)
+        n-total (+ n-base (if tie? 2 0))
+        [ids s2] (draw-distinct-ids s1 n-total)
+        base-ids (take n-base ids)
+        tied-ids (drop n-base ids)
+        [base-cands s3] (reduce (fn [[acc sx] id]
+                                   (let [[type sy] (gen-pick sx candidate-type-alphabet)
+                                         [severity sz] (gen-pick sy candidate-severity-alphabet)
+                                         [priority sw] (gen-pick sz candidate-priority-alphabet)
+                                         [epic? sv] (gen-bool sw)
+                                         [epic-p su] (gen-pick sv epic-priority-alphabet)
+                                         epic-name (when epic? (str "epic-" su))]
+                                     [(conj acc (mk-epic-candidate id type severity priority epic-name epic-p)) su]))
+                                 [[] s2] base-ids)]
+    (if (= 2 (count tied-ids))
+      (let [[type s4] (gen-pick s3 candidate-type-alphabet)
+            [severity s5] (gen-pick s4 candidate-severity-alphabet)
+            [priority s6] (gen-pick s5 candidate-priority-alphabet)
+            [epic-p s7] (gen-pick s6 epic-priority-alphabet)
+            epic-name (str "tied-epic-" s7)
+            tied-cands (map #(mk-epic-candidate % type severity priority epic-name epic-p) tied-ids)]
+        [(into base-cands tied-cands) s7])
+      [base-cands s3])))
+
+(defn- merged-epic-index [candidates]
+  (reduce (fn [m c] (if-let [[k v] (:epic-entry c)] (assoc m k v) m)) {} candidates))
+
+(check-all "P9 rank-candidates (BL-900): the expedited bucket stays strictly first regardless of epic priority"
+  gen-epic-candidate-set
+  (fn [candidates]
+    (let [epic-index (merged-epic-index candidates)
+          winner (promotion-gates-lib/rank-candidates candidates epic-index)
+          expected-present? (boolean (some :expected-expedited? candidates))
+          winner-expected? (boolean (:expected-expedited? winner))]
+      (if (and expected-present? (not winner-expected?))
+        (str "an expedited candidate exists but rank-candidates picked " (:file winner)
+             ", which is not expedited - epic-priority must never outrank the expedite bucket")
+        true))))
+
+(defn- ranked-order
+  "The FULL ranked :file sequence for candidates against epic-index, by
+   repeatedly asking rank-candidates for the winner and removing it - O(n^2),
+   fine at these small n, and exercises the real production function rather
+   than re-deriving a sort independently."
+  [candidates epic-index]
+  (loop [remaining candidates order []]
+    (if (empty? remaining)
+      order
+      (let [winner (promotion-gates-lib/rank-candidates remaining epic-index)]
+        (recur (remove #(= (:file winner) (:file %)) remaining) (conj order (:file winner)))))))
+
+(check-all "P10 rank-candidates (BL-900): the total order is deterministic regardless of enumeration order"
+  gen-epic-candidate-set
+  (fn [candidates]
+    (let [epic-index (merged-epic-index candidates)
+          forward (ranked-order candidates epic-index)
+          reversed (ranked-order (vec (reverse candidates)) epic-index)]
+      (if (= forward reversed)
+        true
+        (str "ranking order depends on enumeration order: forward=" (pr-str forward) " reversed=" (pr-str reversed))))))
+
 ;; ── generator coverage, asserted rather than assumed ─────────────────────
 
 (let [[refused ok] (loop [i 0 s 7 r 0 o 0]
@@ -522,6 +664,29 @@
   (println (str "  generator coverage: multi-id-advisory=" multi-id))
   (when (< multi-id floor)
     (report! "COVERAGE P8 multi-id advisory branch" 7 {:multi-id multi-id :floor floor} "the multi-id advisory branch is barely exercised")))
+
+(let [[with-expedited without] (loop [i 0 s 7 w 0 wo 0]
+                                  (if (= i runs)
+                                    [w wo]
+                                    (let [[candidates s'] (gen-epic-candidate-set s)]
+                                      (if (some :expected-expedited? candidates)
+                                        (recur (inc i) s' (inc w) wo)
+                                        (recur (inc i) s' w (inc wo))))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: P9 expedited-present=" with-expedited " none-expedited=" without))
+  (when (< with-expedited floor)
+    (report! "COVERAGE P9 expedited-present branch" 7 {:with-expedited with-expedited :floor floor} "the expedited-present branch is barely exercised")))
+
+(let [tied (loop [i 0 s 7 t 0]
+             (if (= i runs)
+               t
+               (let [[candidates s'] (gen-epic-candidate-set s)
+                     tied? (>= (count (filter :tied? candidates)) 2)]
+                 (recur (inc i) s' (if tied? (inc t) t)))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: P10 forced-tie-pair=" tied))
+  (when (< tied floor)
+    (report! "COVERAGE P10 forced-tie-pair branch" 7 {:tied tied :floor floor} "the forced-tie-pair branch is barely exercised")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "promotion_gates_lib properties: " runs " runs each"))
