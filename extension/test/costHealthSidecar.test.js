@@ -18,6 +18,7 @@ const {
 } = require('../out/notify/costHealthSidecar');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
 const { appendHostLoadSample } = require('../out/metrics/resourceTelemetry');
+const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -680,6 +681,34 @@ test('computeCostHealthSidecar folds in a real host-load verdict without throwin
   const sidecar = computeCostHealthSidecar(targetPath, [{ role: 'coder', worktreePath: targetPath }]);
   assert.ok(sidecar.hostLoad);
   assert.equal(typeof sidecar.hostLoad.severe, 'boolean');
+});
+
+// BL-897: with a usable shared snapshotPath given, the flow-balance and
+// flowBalance.speccedPerDay reflects the SNAPSHOT's records, not a fresh
+// runGitLog walk against an empty target (which would derive zero
+// lifecycles) - a nonzero today's-specced-count on an otherwise-empty
+// fixture proves the snapshot won. speccedPerDay.value is trendedFromSeries'
+// LATEST (today's) bucket, so the fixture ticket is specced today.
+test('computeCostHealthSidecar uses a shared snapshotPath for lifecycles when one is given and usable', () => {
+  const targetPath = mkTmpDir('sfvc-costhealth-snapshot-');
+  const nowMs = Date.now();
+  const snapshotPath = path.join(targetPath, 'snapshot.json');
+  fs.writeFileSync(
+    snapshotPath,
+    JSON.stringify(serializeLifecycleSnapshot([lifecycle('ZZ-90004', new Date(nowMs).toISOString(), null)], nowMs), null, 2),
+    'utf8'
+  );
+
+  const sidecar = computeCostHealthSidecar(targetPath, [{ role: 'coder', worktreePath: targetPath }], nowMs, undefined, snapshotPath);
+
+  assert.equal(sidecar.flowBalance.speccedPerDay.value, 1);
+});
+
+test('computeCostHealthSidecar falls back to deriving its own history when snapshotPath is missing/unreadable', () => {
+  const targetPath = mkTmpDir('sfvc-costhealth-snapshot-');
+  assert.doesNotThrow(() =>
+    computeCostHealthSidecar(targetPath, [{ role: 'coder', worktreePath: targetPath }], Date.now(), undefined, '/no/such/snapshot.json')
+  );
 });
 
 // ── writeCostHealthSidecar / commitCostHealthSidecar / sidecarPath ──────
