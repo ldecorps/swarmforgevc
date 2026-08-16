@@ -419,6 +419,24 @@
          nil
          (chase-sweep-lib/top-open-slot-candidate []))
 
+;; BL-900 hardener bounce: top-open-slot-candidate must thread an
+;; epic-priority-index through to rank-candidates, mirroring
+;; promotion_gates_lib_test_runner.bb's own rank-candidates epic-priority
+;; assertions - a candidate that only wins once its epic's priority is
+;; considered.
+(assert= "open-slot-candidate-04 (BL-900): a more urgent epic wins even against a numerically better own priority"
+         {:id "BL-A" :approved? true}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-A\nepic: e1\npriority: 90\nhuman_approval: approved\n"}
+           {:content "id: BL-B\nepic: e2\npriority: 1\nhuman_approval: approved\n"}]
+          {"e1" 5 "e2" 40}))
+
+(assert= "open-slot-candidate-05 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged"
+         {:id "BL-B" :approved? true}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-A\nepic: e1\npriority: 90\nhuman_approval: approved\n"}
+           {:content "id: BL-B\nepic: e2\npriority: 1\nhuman_approval: approved\n"}]))
+
 ;; Reading real paused/*.yaml files end to end (fs-backed, mirrors
 ;; unassigned-active-items's own fixture style above).
 (let [tmp (mk-tmp)
@@ -446,6 +464,30 @@
 (assert= "top-expedited-paused-candidate: nil for an empty candidate seq"
          nil
          (chase-sweep-lib/top-expedited-paused-candidate []))
+
+;; BL-900 hardener bounce: top-expedited-paused-candidate must thread an
+;; epic-priority-index through to rank-candidates too - the expedite bucket
+;; still wins first (invariant 2 below), but WITHIN the expedited bucket,
+;; epic priority breaks ties before own-priority.
+(assert= "top-expedited-paused-candidate-06 (BL-900): within the expedited bucket, a more urgent epic wins over a numerically better own priority"
+         "BL-D"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-D\ntype: defect\nseverity: high\nepic: e1\npriority: 90\n"}
+           {:content "id: BL-E\ntype: defect\nseverity: high\nepic: e2\npriority: 1\n"}]
+          {"e1" 5 "e2" 40}))
+
+(assert= "top-expedited-paused-candidate-07 (BL-900): an expedited defect still outranks a candidate from a more urgent epic (invariant 2)"
+         "BL-D"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-D\ntype: defect\nseverity: high\nepic: e900\npriority: 50\n"}
+           {:content "id: BL-E\ntype: feature\nepic: e1\npriority: 1\n"}]
+          {"e900" 900 "e1" 1}))
+
+(assert= "top-expedited-paused-candidate-08 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged"
+         "BL-14"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
+           {:content "id: BL-14\ntype: bug\nseverity: critical\npriority: 5\n"}]))
 
 (assert= "top-expedited-paused-candidate: a defect with missing severity: fails CLOSED, not named"
          nil
