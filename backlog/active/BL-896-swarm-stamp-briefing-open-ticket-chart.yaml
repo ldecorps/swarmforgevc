@@ -179,6 +179,18 @@ out_of_scope: |
     `hotfix_ledger_update.bb --decide`; this ticket only makes it informed.
 
 notes: |
+  ## HUMAN RULING 2026-08-16 ~08:20 CEST (Cursor)
+
+  Flagged #1 answered. Change of mind: the human **does want** this
+  burndown chart on the morning briefing. Land / keep the hotfix
+  (`14724edae7`); do not hold or discard. The 2026-07-26 ban remains
+  PWA/milestone-dashboard-specific and does **not** apply to this email
+  chart. Keep the word "burndown" on the heading (overrides the specifier's
+  F1 rename recommendation). Certify via this stamp ticket; do not waive.
+  Projected ETA is a sibling (`INTAKE-briefing-burndown-projected-eta.md`),
+  not extra scope here. Durable copy:
+  `backlog/ANSWER-BL-896-land-burndown-chart.md`.
+
   ## Why this exists at all
 
   BL-848's rule: a hotfix is metadata-indistinguishable from ordinary pipeline

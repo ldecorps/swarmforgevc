@@ -58,7 +58,7 @@
 - commit: 14724edae7
   subject: "Land morning-briefing not-done burndown chart (stranded WIP; clears master-checkout drift)."
   detected_at: 2026-08-15
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-896
   human_decision: null
   decided_at: null
