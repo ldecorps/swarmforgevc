@@ -1,6 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 16, 2026 (BL-900: promotion ranking now compares
+**Last Updated:** August 16, 2026 (BL-896: swarm stamp-off certifying the
+operator hotfix (`14724edae7`) that put a second chart — open tickets
+remaining per day, with filed/closed rates — on the morning briefing email
+alongside the architecture diagrams. The chart's heading was renamed off
+"burndown" to "Open tickets remaining": the maths was right but the label
+collided with BL-659's burndown ban, since this backlog is a continuously
+growing scope, not a committed iteration perimeter — this chart is the
+open-count/net-flow replacement BL-659 itself ratified, not an exception to
+the ban. Also fixed while certifying: a duplicated remaining-count predicate
+(`notDoneBurndown.ts`'s copy of `deliveryMetrics.ts`'s
+`isRemainingOnDay`) consolidated into one implementation on
+`gitHistoryAdapter.ts`; today's point in the series now reconciles against a
+live disk count of `active/`+`paused/`+`hold/` (a ticket retired by file
+deletion rather than a move to `done/` was reading as open forever); and the
+two diagram sources' fail-open-independently claim, previously asserted only
+in a comment, now has real test coverage on the extracted
+`diagram-section-from-sources`. See the new
+[how-to](../how-to/BL-896-briefing-open-ticket-chart.md).); Previously
+August 16, 2026 (BL-900: promotion ranking now compares
 the priority of a candidate's containing epic before the candidate's own
 `priority:` — `[expedited? epic-priority own-priority id]`, spliced after
 the Article 3.2.4 expedite bucket so that bucket stays strictly first by
