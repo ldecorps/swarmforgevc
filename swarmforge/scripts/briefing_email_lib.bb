@@ -383,11 +383,8 @@
                 ((:log! adapters) "briefing-sent" file-name)
                 (swap! sent-now conj file-name))
 
-              (= (:reason result) :disabled)
-              ((:log! adapters) "briefing-skip-disabled" file-name)
-
-              (= (:reason result) :missing-api-key)
-              ((:log! adapters) "briefing-skip-missing-key" file-name)
+              (contains? #{:disabled :missing-api-key} (:reason result))
+              ((:log! adapters) (skip-log-key (:reason result)) file-name)
 
               :else
               ((:log! adapters) "briefing-send-failed" file-name (str (:error result))))))))
