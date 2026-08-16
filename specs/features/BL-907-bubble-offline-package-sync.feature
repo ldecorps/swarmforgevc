@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5c01c407deba96c8575c290be106f7e5889757381af995db74da78184a350832
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-16T19:13:25.619976Z","feature_name":"Bubble keeps the bridge's packages on the device, refreshes them cheaply, and never presents cached data as live","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-907-bubble-offline-package-sync.feature","background_hash":"85cd0375da7918a6ac25baa0a64c6572cfba153877feaf348f0649d6306bf3bd","implementation_hash":"unknown","scenarios":[{"index":4,"name":"a sync that cannot deliver a package leaves the cached copy intact and readable","scenario_hash":"1c44fa58b892f0903ec9a37ab7bfa919d6747a70b028fdd97a840fda1423c22d","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-16T19:13:25.619976Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble keeps the bridge's packages on the device, refreshes them cheaply, and never presents cached data as live
 
   # BL-907 (epic BL-865, slice 2 of 5, depends on BL-866): BL-866 gave the bridge a

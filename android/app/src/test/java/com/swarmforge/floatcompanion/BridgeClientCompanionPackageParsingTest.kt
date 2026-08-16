@@ -53,6 +53,50 @@ class BridgeClientCompanionManifestParsingTest {
         assertNull(BridgeClient.parseCompanionManifest(raw))
     }
 
+    // Hardener addition (BL-907 hand-authored surgical mutation sweep — no
+    // mutation tool wired for .kt): an entry missing/negative formatVersion
+    // is a SEPARATE check term (`formatVersion < 0`) from the other three
+    // required-field checks on the same line — dropping just that term left
+    // no test failing, so this locks the whole-document rejection in for the
+    // field the prior test didn't cover.
+    @Test
+    fun `an entry with a negative formatVersion rejects the whole document`() {
+        val raw = JSONObject().put(
+            "packages",
+            JSONArray().put(
+                JSONObject().put("name", "backlog").put("generation", "aaaa1111").put("format", "json")
+                    .put("formatVersion", -1)
+            )
+        ).toString()
+
+        assertNull(BridgeClient.parseCompanionManifest(raw))
+    }
+
+    @Test
+    fun `an entry with a missing formatVersion rejects the whole document`() {
+        val raw = JSONObject().put(
+            "packages",
+            JSONArray().put(JSONObject().put("name", "backlog").put("generation", "aaaa1111").put("format", "json"))
+        ).toString()
+
+        assertNull(BridgeClient.parseCompanionManifest(raw))
+    }
+
+    // Hardener addition: same gap for `name.isBlank()` — a blank (not
+    // merely absent) name is its own check term and was not exercised by
+    // any prior test.
+    @Test
+    fun `an entry with a blank name rejects the whole document`() {
+        val raw = JSONObject().put(
+            "packages",
+            JSONArray().put(
+                JSONObject().put("name", "").put("generation", "aaaa1111").put("format", "json").put("formatVersion", 1)
+            )
+        ).toString()
+
+        assertNull(BridgeClient.parseCompanionManifest(raw))
+    }
+
     @Test
     fun `not valid json rejects the document`() {
         assertNull(BridgeClient.parseCompanionManifest("not json at all"))
