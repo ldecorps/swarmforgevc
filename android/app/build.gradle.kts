@@ -14,8 +14,8 @@ android {
         applicationId = "com.swarmforge.float"
         minSdk = 26
         targetSdk = 34
-        versionCode = 30
-        versionName = "0.3.14-echo-ptt"
+        versionCode = 33
+        versionName = "0.3.17-open-talk"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

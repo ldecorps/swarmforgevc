@@ -69,3 +69,10 @@
   stamp_ticket: BL-905
   human_decision: null
   decided_at: null
+- commit: 8da0f52e59
+  subject: "Land Cursor-agent hotfix: Bubble expand after cold start (v0.3.17-open-talk)."
+  detected_at: 2026-08-17
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null

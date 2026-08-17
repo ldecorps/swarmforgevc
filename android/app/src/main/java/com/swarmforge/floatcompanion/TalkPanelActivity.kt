@@ -4,10 +4,11 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
-import android.view.WindowManager
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -37,42 +38,64 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
     private var pendingAutoRecord = false
     private var stoppingOverlay = false
     private var suppressToggleCallbacks = false
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OverlayService.setBubbleVisible(this, false)
+        bindWhenEngineReady(0)
+    }
+
+    private fun bindWhenEngineReady(attempt: Int) {
+        val eng = OverlayService.engineOrNull() ?: try {
+            OverlayService.requireEngine(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "engine not ready attempt=$attempt", e)
+            null
+        }
+        if (eng == null) {
+            if (attempt >= 20 || isFinishing) {
+                Toast.makeText(this, "talk engine failed", Toast.LENGTH_LONG).show()
+                OverlayService.setBubbleVisible(this, true)
+                finish()
+                return
+            }
+            mainHandler.postDelayed({ bindWhenEngineReady(attempt + 1) }, 50)
+            return
+        }
+        inflatePanel(eng)
+    }
+
+    private fun inflatePanel(eng: TalkEngine) {
+        engine = eng
         try {
-            rootBinding = ActivityTalkPanelBinding.inflate(layoutInflater)
-            setContentView(rootBinding.root)
-            window?.setLayout(
-                (resources.displayMetrics.widthPixels * 0.94f).toInt(),
-                WindowManager.LayoutParams.WRAP_CONTENT
-            )
+            val pagerList = currentPagerList(eng)
+            val onlyTalk = pagerList.entries.size == 1 &&
+                pagerList.entries[0] is PagerListResolver.PagerEntry.Talk
+            val dm = resources.displayMetrics
+            val width = (dm.widthPixels * 0.94f).toInt()
+            if (onlyTalk) {
+                binding = TalkPanelPageBinding.inflate(layoutInflater)
+                setContentView(binding.root)
+                window?.setLayout(width, android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+                setupTalkPage(eng)
+            } else {
+                rootBinding = ActivityTalkPanelBinding.inflate(layoutInflater)
+                setContentView(rootBinding.root)
+                window?.setLayout(width, (dm.heightPixels * 0.86f).toInt())
+                rootBinding.pagerBareNotice.text = pagerList.bareReason ?: ""
+                rootBinding.pagerBareNotice.visibility =
+                    if (pagerList.state == PagerListResolver.PagerState.BARE) View.VISIBLE else View.GONE
+                rootBinding.pager.adapter = TalkPagerAdapter(pagerList, CompanionPrefs.getBaseUrl(this)) { talkPageBinding ->
+                    binding = talkPageBinding
+                    setupTalkPage(eng)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "panel inflate failed", e)
             Toast.makeText(this, "panel UI failed: ${e.message}", Toast.LENGTH_LONG).show()
-            finish()
-            return
-        }
-
-        OverlayService.setBubbleVisible(this, false)
-        val eng = try {
-            OverlayService.requireEngine(this)
-        } catch (e: Exception) {
-            Log.e(TAG, "engine unavailable", e)
-            Toast.makeText(this, "talk engine failed: ${e.message}", Toast.LENGTH_LONG).show()
             OverlayService.setBubbleVisible(this, true)
             finish()
-            return
-        }
-        engine = eng
-
-        val pagerList = currentPagerList(eng)
-        rootBinding.pagerBareNotice.text = pagerList.bareReason ?: ""
-        rootBinding.pagerBareNotice.visibility =
-            if (pagerList.state == PagerListResolver.PagerState.BARE) View.VISIBLE else View.GONE
-        rootBinding.pager.adapter = TalkPagerAdapter(pagerList, CompanionPrefs.getBaseUrl(this)) { talkPageBinding ->
-            binding = talkPageBinding
-            setupTalkPage(eng)
         }
     }
 
@@ -148,17 +171,6 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             PagerListResolver.RemotePage(id = it.id, title = it.title, entryPath = it.entryPath, order = it.order)
         }
         return PagerListResolver.resolve(outcome, pages)
-    }
-
-    /**
-     * Home / Recents: collapse to bubble on the launcher, same as the Collapse
-     * button — do not leave the pairing activity or a stuck panel task visible.
-     */
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        if (!stoppingOverlay && !isFinishing) {
-            finish()
-        }
     }
 
     // BL-864: reduces a BridgeClient audio-engine result to VoiceEngineSelector's
@@ -353,6 +365,7 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
     override fun onDestroy() {
         engine?.setListener(null)
         engine = null
+        mainHandler.removeCallbacksAndMessages(null)
         if (!stoppingOverlay) {
             OverlayService.setBubbleVisible(this, true)
         }
@@ -360,7 +373,7 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
     }
 
     override fun onSnapshot(snapshot: TalkEngine.Snapshot) {
-        if (isFinishing) return
+        if (isFinishing || !::binding.isInitialized) return
         binding.phaseText.text = when (snapshot.phase) {
             TalkEngine.Phase.READY -> getString(R.string.phase_ready)
             TalkEngine.Phase.RECORDING -> getString(R.string.phase_recording)

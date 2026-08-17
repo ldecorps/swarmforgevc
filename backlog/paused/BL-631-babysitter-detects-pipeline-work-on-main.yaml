@@ -173,3 +173,16 @@ notes: |
 
   Depends on BL-611 accordingly — this check is a `check-*` in a lib BL-611
   creates. Do not promote before BL-611 lands on `main`.
+
+  2026-08-17 specifier: BL-632 (commit-time guard) went into the pipeline first
+  and OWNS the shared QA-exclusive path definition (`extension/src/`,
+  `extension/test/`, `specs/pipeline/steps/`). This ticket must CONSUME that
+  definition, not restate it — the three paths are currently hand-written into
+  this ticket's own prose at lines 77 and 94, which is the drift both tickets'
+  sequencing notes warn about.
+
+  Cross-language caveat to settle when this is specced for build: BL-632's
+  guard is bash, this detector is Babashka, and no import bridges them. If the
+  implementation mirrors the literal instead of reading BL-632's single source,
+  engineering.prompt's BL-897 rule binds — a test must assert both literals
+  agree. A "kept in sync" comment is not a gate and the drift fails silently.

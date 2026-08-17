@@ -66,13 +66,13 @@ Feature: a commit-time hook refuses pipeline code on main from any role but QA
     Given the current branch is main
     And <branch guard scenario>
     When a commit is attempted
-    Then <branch guard outcome>
+    Then the branch guard passes it
     And the commit-size guard still refuses an oversized file when its own condition is met
 
     Examples:
-      | branch guard scenario                              | branch guard outcome        |
-      | the staged change touches only backlog/ (no size issue) | the branch guard passes it |
-      | SWARMFORGE_ROLE is QA and the change touches extension/src/ | the branch guard passes it |
+      | branch guard scenario                                       |
+      | the staged change touches only backlog/ (no size issue)     |
+      | SWARMFORGE_ROLE is QA and the change touches extension/src/  |
 
   # BL-632 refusal-message-states-remedy-07
   Scenario: the refusal message states the remedy
