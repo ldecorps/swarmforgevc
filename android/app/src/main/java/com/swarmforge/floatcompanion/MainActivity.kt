@@ -164,6 +164,15 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    /**
+     * BL-829 required_wiring: this is the real start of the chain the
+     * pager's RemotePageHost is reachable from — MainActivity itself is
+     * pairing-only and never shows Talk or the pager, but starting
+     * [OverlayService] here is what makes expanding the bubble (which
+     * launches [TalkPanelActivity], which builds [TalkPagerAdapter], which
+     * instantiates [RemotePageHost] per remote page) reachable at all. See
+     * [TalkPagerAdapter] for the actual instantiation.
+     */
     private fun startBubbleService() {
         val intent = Intent(this, OverlayService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

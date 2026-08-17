@@ -1790,7 +1790,8 @@
         ;; escalate repeated unacted nudges for the SAME candidate rather
         ;; than repeating a ticketless poke forever (invariant 2).
         (let [candidates (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
-              candidate (chase-sweep-lib/top-open-slot-candidate candidates)
+              candidate (chase-sweep-lib/top-open-slot-candidate
+                         candidates (promotion-gates-lib/epic-priority-index project-root))
               decision (chase-sweep-lib/decide-open-slot-escalation
                         @open-slot-escalation-state (:id candidate)
                         (open-slot-escalation-threshold))]
@@ -1955,7 +1956,8 @@
   (try
     (when-let [{:keys [ticket case]} (ambulance-lib/auto-exit! (str project-root))]
       (let [queued (chase-sweep-lib/top-expedited-paused-candidate
-                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir))
+                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
+                    (promotion-gates-lib/epic-priority-index project-root))
             text (ambulance-lib/auto-exit-announcement-text
                   {:ticket ticket :case case :queued-expedited-defect-id queued})]
         (log! "ambulance-auto-exit" ticket (name case))
@@ -2013,6 +2015,24 @@
     {:already-warned?! (fn [] @briefing-missing-key-warned?)
      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
      :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))})))
+
+;; BL-902: the SAME to/api-key resolution send-configured-briefing-email!
+;; above performs, but decides sendability alone - no compose, no send -
+;; so briefing-email-sweep! can skip the entire expensive gather+render
+;; when the email cannot go out anyway (the ~96s-per-cycle stall this
+;; ticket exists to fix). Fires the SAME one-shot warn-missing-key-if-
+;; needed! atom/log line as the real send path when the reason is
+;; :missing-api-key, so a caller consulting this instead of actually
+;; sending still gets the loud, deduped warning exactly as before.
+(defn briefing-send-reason! []
+  (let [reason (daemon-alarm-lib/configured-email-send-reason conf-file)]
+    (when (= reason :missing-api-key)
+      (daemon-alarm-lib/warn-missing-key-if-needed!
+       {:reason reason}
+       {:already-warned?! (fn [] @briefing-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
+    reason))
 
 ;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
 ;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
@@ -2204,19 +2224,22 @@
     (catch Exception _ nil)))
 
 ;; Wraps architecture + not-done burndown renders with briefing_email_lib.bb's
-;; pure build-diagram-section - the ONLY :diagram-section adapter shape
-;; send-unsent-briefings! expects (BL-260 render-unavailable-degradation-04:
-;; nil/empty still produce a clear no-diagram note, never a crash). Each
-;; source fails open independently; whichever succeeds still ships.
+;; pure diagram-section-from-sources (BL-896 F4: previously build-diagram-
+;; section directly - this combining step, which is what actually makes the
+;; "each source fails open independently" claim below true, had nothing a
+;; unit test could exercise in isolation until it moved into the lib file
+;; alongside build-diagram-section, testable the same way). BL-260
+;; render-unavailable-degradation-04: nil/empty still produce a clear
+;; no-diagram note, never a crash. Each source fails open independently;
+;; whichever succeeds still ships.
 (defn briefing-diagram-section []
-  (let [diagrams (vec (concat (or (briefing-diagrams-json) [])
-                              (or (briefing-burndown-json) [])))]
-    (briefing-email-lib/build-diagram-section (seq diagrams))))
+  (briefing-email-lib/diagram-section-from-sources briefing-diagrams-json briefing-burndown-json))
 
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
    (str briefings-dir)
-   {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
+   {:send-reason! briefing-send-reason!
+    :read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
     :send-email! send-configured-briefing-email!
     :diagram-section briefing-diagram-section
     :suite-duration-line suite-duration-briefing-line

@@ -539,6 +539,123 @@
            #{}
            (briefing-email-lib/load-sent-briefings dir)))
 
+;; ── send-unsent-briefings! + :send-reason! adapter (BL-902) ──────────────
+;; BL-902: an optional :send-reason! adapter, consulted BEFORE any section
+;; is gathered, lets an undeliverable sweep skip the entire expensive
+;; compose - the fix for the ~96s-per-cycle stall this ticket describes.
+;; Mirrors the qa_e2e_procedure scenarios in BL-902's own ticket.
+
+;; scenario 1 (THE REGRESSION) / scenario 2 (NO GATHERING): with
+;; :send-reason! reporting :missing-api-key, every section adapter -
+;; including :read-briefing-content itself - is never invoked, and the
+;; expected briefing-skip-missing-key line is still logged.
+(let [dir (mk-tmp)
+      calls (atom [])
+      log-calls (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (let [sent (briefing-email-lib/send-unsent-briefings!
+              dir
+              {:send-reason! (fn [] :missing-api-key)
+               :read-briefing-content (fn [f] (swap! calls conj :read) (slurp (str (fs/path dir f))))
+               :suite-duration-line (fn [] (swap! calls conj :suite-duration) "line")
+               :diagram-section (fn [] (swap! calls conj :diagram) {:html "<img/>" :note-line "note"})
+               :token-burn-section (fn [] (swap! calls conj :token-burn) {:appended-text "x"})
+               :send-email! (fn [& _] (throw (ex-info "must never be called - send-reason! already said undeliverable" {})))
+               :log! (fake-log! log-calls)})]
+    (assert= "BL-902 no-gathering-02: nothing is sent when :send-reason! reports undeliverable" [] sent)
+    (assert= "BL-902 no-gathering-02: zero section/content adapters are invoked before the skip"
+             []
+             @calls)
+    (assert= "BL-902: the same briefing-skip-missing-key line is logged as the pre-BL-902 path"
+             [["briefing-skip-missing-key" "2026-07-09.md"]]
+             @log-calls)))
+
+;; :disabled reaches the same zero-gathering, correctly-keyed skip.
+(let [dir (mk-tmp)
+      calls (atom [])
+      log-calls (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:send-reason! (fn [] :disabled)
+    :read-briefing-content (fn [f] (swap! calls conj :read) (slurp (str (fs/path dir f))))
+    :send-email! (fn [& _] (throw (ex-info "must never be called" {})))
+    :log! (fake-log! log-calls)})
+  (assert= "BL-902: a :disabled :send-reason! also skips before any gathering" [] @calls)
+  (assert= "BL-902: the same briefing-skip-disabled line is logged as the pre-BL-902 path"
+           [["briefing-skip-disabled" "2026-07-09.md"]]
+           @log-calls))
+
+;; scenario 3 (INVARIANT 3, UNCHANGED OUTCOME): the briefing stays NOT
+;; marked sent after an early skip, and is picked up again on a second
+;; sweep - same retry contract as the pre-BL-902 skip path.
+(let [dir (mk-tmp)]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:send-reason! (fn [] :missing-api-key)
+    :send-email! (fn [& _] (throw (ex-info "must never be called" {})))
+    :log! (fn [& _] nil)})
+  (assert= "BL-902 unchanged-outcome-03: not marked sent after an early skip"
+           #{}
+           (briefing-email-lib/load-sent-briefings dir))
+  (assert= "BL-902 unchanged-outcome-03: still picked up as unsent on a second sweep"
+           ["2026-07-09.md"]
+           (briefing-email-lib/find-unsent-briefings dir)))
+
+;; scenario 4 (HAPPY PATH UNTOUCHED): a sendable :send-reason! (nil) does
+;; not short-circuit anything - the full compose still runs, every section
+;; still reaches the sent content, and the briefing is marked sent exactly
+;; once, unaffected by the adapter's mere presence.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (let [sent (briefing-email-lib/send-unsent-briefings!
+              dir
+              {:send-reason! (fn [] nil)
+               :read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+               :suite-duration-line (fn [] "Suite duration trend: 5s latest")
+               :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+               :log! (fn [& _] nil)})]
+    (assert= "BL-902 happy-path-04: the briefing is still composed and sent exactly once" ["2026-07-09.md"] sent)
+    (assert= "BL-902 happy-path-04: an optional section still reaches the sent content"
+             true
+             (str/includes? (first @sent-texts) "Suite duration trend: 5s latest"))))
+
+;; scenario 5 (WARNING NOT SPAMMED, library half): the one-shot dedup
+;; itself lives in the injected :send-reason! adapter (handoffd.bb's
+;; briefing-send-reason! owns the real warn-missing-key-if-needed! wiring -
+;; see test_handoffd_briefing_email_wiring.sh) - this proves only that
+;; send-unsent-briefings! calls :send-reason! exactly once per unsent
+;; briefing per sweep, never more, so a caller's own one-shot guard is
+;; never bypassed by a hidden extra invocation.
+(let [dir (mk-tmp)
+      reason-calls (atom 0)]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:send-reason! (fn [] (swap! reason-calls inc) :missing-api-key)
+    :send-email! (fn [& _] (throw (ex-info "must never be called" {})))
+    :log! (fn [& _] nil)})
+  (assert= "BL-902 warning-not-spammed-05: :send-reason! is consulted exactly once per unsent briefing"
+           1
+           @reason-calls))
+
+;; Backward compatibility: no :send-reason! adapter at all -> the original
+;; always-compose-then-send path runs unchanged (every pre-BL-902
+;; caller/test above already proves this; this makes the contract explicit).
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-902: no :send-reason! adapter -> the original compose-then-send path runs unaffected"
+           "Headline\n"
+           (first @sent-texts)))
+
 ;; ── build-diagram-section (pure, BL-260 / BL-286) ────────────────────────
 
 ;; BL-286 diagram-cid-01: available diagrams are referenced by a cid image
@@ -557,7 +674,9 @@
            true
            (str/includes? (:note-line section) "rendered inline above")))
 
-;; Not-done burndown chart shares the same cid-PNG path with a readable heading.
+;; Open-ticket chart shares the same cid-PNG path with a readable heading.
+;; BL-896 F1: heading/note text no longer say "burndown" - that claims
+;; progress toward a fixed/committed scope, which BL-659 banned.
 (let [section (briefing-email-lib/build-diagram-section
                [{:name "architecture" :base64 "QUJD"}
                 {:name "not-done-burndown" :base64 "Wk9P"}])]
@@ -566,11 +685,12 @@
            (str/includes? (:html section) "cid:not-done-burndown-diagram"))
   (assert= "burndown-diagram-01: heading is human-readable, not the raw slug"
            true
-           (str/includes? (:html section) "<h3>Not-done ticket burndown</h3>"))
-  (assert= "burndown-diagram-01: note mentions both architecture and burndown"
+           (str/includes? (:html section) "<h3>Open tickets remaining</h3>"))
+  (assert= "burndown-diagram-01: note mentions both architecture and the open-ticket chart, never \"burndown\""
            true
            (and (str/includes? (:note-line section) "Architecture")
-                (str/includes? (:note-line section) "burndown"))))
+                (str/includes? (:note-line section) "open-ticket")
+                (not (str/includes? (str/lower-case (:note-line section)) "burndown")))))
 
 ;; BL-286 diagram-cid-02/03: each referenced diagram carries a matching
 ;; inline attachment, with the image bytes and a filename.

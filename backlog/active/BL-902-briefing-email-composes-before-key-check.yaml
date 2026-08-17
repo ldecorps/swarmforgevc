@@ -11,7 +11,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-902-briefing-email-composes-before-key-check.feature.draft
+acceptance: specs/features/BL-902-briefing-email-composes-before-key-check.feature
 
 approval_context: >
   One call worth your sign-off: severity `high` rather than `critical`.

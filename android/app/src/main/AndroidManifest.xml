@@ -53,6 +53,14 @@
             android:theme="@style/Theme.FloatCompanion.Panel"
             android:windowSoftInputMode="adjustPan" />
 
+        <!-- BL-908: the browsable knowledge screen, reached from the talk panel. -->
+        <activity
+            android:name=".KnowledgeActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.FloatCompanion" />
+
         <service
             android:name=".OverlayService"
             android:exported="false"

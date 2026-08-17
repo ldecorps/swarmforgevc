@@ -37,6 +37,10 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        // BL-825: BuildConfig.VERSION_CODE is how resolveUiBundle learns
+        // this shell's own version — the standard Android idiom for exactly
+        // this ordered-comparison purpose, so no android.* call is needed.
+        buildConfig = true
     }
     testOptions {
         unitTests {
@@ -51,6 +55,10 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // BL-829: the pager beside the native Talk page — a plain
+    // RecyclerView.Adapter (not FragmentStateAdapter), so TalkPanelActivity
+    // keeps its existing view-binding-driven Talk UI as page 0 unchanged.
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
 
     // BL-769: JVM unit suite for Bubble's pure logic — no emulator, no device.
     testImplementation("junit:junit:4.13.2")

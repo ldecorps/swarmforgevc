@@ -1,4 +1,14 @@
 // BL-696: HTTP handlers for Let's Talk routes on the bridge host.
+//
+// This file is the POST write routes (turn, new-session) only. The GET
+// JSON routes under /lets-talk/ — bubble-config.json, chiptunes.json, and
+// (BL-825) the ui-bundle manifest — follow the established sibling-module
+// pattern instead: each lives in its own letsTalk*.ts file and is wired
+// into bridgeServer.ts's buildJsonRoutes, not here. See
+// extension/src/bridge/letsTalkUiBundle.ts for the ui-bundle route — as of
+// BL-829 that same manifest, and so that same route, also carries the
+// `pages` list the Bubble pager renders (id/title/entryPath/order per
+// page); there is no separate pages route, and none is needed here.
 
 import * as http from 'http';
 import type { DeviceRegistry } from './deviceRegistry';

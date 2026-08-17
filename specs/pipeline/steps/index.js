@@ -17,6 +17,7 @@ const DOMAINS = [
   require('./rateLimitCooldownSteps'),
   require('./emailMissingKeySteps'),
   require('./briefingEmailSteps'),
+  require('./bl902BriefingSendabilityGateSteps'),
   require('./briefingDuplicateInconsistentSteps'),
   require('./vitestWorkerMemoryBudgetSteps'),
   require('./bl409ApproveRejectAmendSteps'),
@@ -457,7 +458,12 @@ const DOMAINS = [
   require('./bl624OnboarderSurveyToGateSteps'),
   require('./bl898RcFailedAutoRepairSteps'),
   require('./bl897BriefingGathersLifecyclesOnceSteps'),
-  require('./bl900EpicPriorityBeforeTicketPrioritySteps')
+  require('./bl900EpicPriorityBeforeTicketPrioritySteps'),
+  require('./bl896BriefingOpenTicketChartSteps'),
+  require('./bl907BubbleOfflinePackageSyncSteps'),
+  require('./bl825BubbleUiBundleResolutionSteps'),
+  require('./bl908BubbleKnowledgeScreenSteps'),
+  require('./bl829BubbleRemotePagePagerSteps')
 ];
 
 function registerSteps(registry) {

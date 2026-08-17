@@ -10,6 +10,14 @@
 %% (ADVISORY|orthogonality|... on stderr, naming the overlapping active
 %% ticket(s)) that leaves the real file-overlap call with the coordinator,
 %% per the Concurrent Work Orthogonality workflow rule.
+%% BL-900 (2026-08-16): within promotion_gates' ranking (not a gate — it
+%% never refuses), a candidate's containing epic's own priority is compared
+%% before the candidate's own priority: [expedited? epic-priority
+%% own-priority id]. Epic priority is looked up from the most urgent
+%% type:epic tracker sharing the candidate's epic: (an untracked or
+%% duplicated epic falls back to the candidate's own priority — never
+%% buried). The Article 3.2.4 expedite bucket still ranks strictly first;
+%% queue-jump and ambulance mode are untouched (neither is a ranking input).
 %% cleaner and hardender are batch-mode roles (consume all queued
 %% equal-priority handoffs as one batch); every other pipeline role is
 %% task-mode (one handoff at a time). The coordinator sits outside the
@@ -37,7 +45,7 @@ flowchart LR
 
   ROOT -->|drain: spec ambiguous items,\nwrite prose+Gherkin spec| SPEC
   SPEC -->|places spec| PAUSED
-  PAUSED -->|promote (promotion_gates:\nhuman_approval, expedite lane,\ndepth, hold marker refuse;\northogonality advises only)| COORD
+  PAUSED -->|promote (promotion_gates:\nhuman_approval, expedite lane,\ndepth, hold marker refuse;\nepic-priority ranks before own\npriority; orthogonality advises only)| COORD
   COORD -->|promotes into| ACTIVE
   COORD -->|routes first parcel| SPEC
   SPEC -->|git_handoff\npriority 00| CODER

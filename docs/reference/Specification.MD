@@ -1,6 +1,127 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 16, 2026 (BL-898: `./swarm ensure`'s
+**Last Updated:** August 17, 2026 (BL-829: Bubble's pager renders the
+bundle's pages — slice B of epic `bubble-thin-shell`, the slice every
+other Bubble screen ticket (BL-775, BL-831, BL-832, BL-834) was waiting
+on. The manifest BL-825 serves gains a `pages` list
+(`id`/`title`/`entryPath`/`order`), same whole-or-nothing rejection
+posture as the rest of the document, with an absent `pages` key parsing
+to `[]` so a pre-BL-829 manifest still parses. `PagerListResolver.resolve`
+(pure Kotlin) turns a `UiBundleResolver` outcome plus that page list into
+a pager entry list: Talk is never returned data, always placed at
+position 0 by the caller and so never omittable however malformed the
+manifest; a page whose entry path would let the WebView escape the bundle
+(absolute, another origin, a `..` segment) is dropped rather than
+trusted; a bare outcome always carries a stated reason, never a
+null/blank placeholder. `RemotePageHost` is the thin device edge that
+loads a resolved page into the WebView and, on a main-frame load failure,
+swaps in a reason `TextView` rather than ever leaving a blank view. Wired
+from `TalkPanelActivity` (which now owns the pager) via
+`TalkPagerAdapter` — not `MainActivity`, which the ticket's own
+`required_wiring` cited; `MainActivity` is pairing-only and never shown
+again once paired, so a host built there would be the exact
+BL-419 unreachable-host shape the wiring check exists to catch, and
+`MainActivity.startBubbleService()` is what makes the real chain
+(`OverlayService` → `TalkPanelActivity` → the pager) reachable at all —
+recorded as a correction, not a spec-gap bounce. See the new
+[how-to](../how-to/BL-829-bubble-remote-page-pager.md).);
+Previously August 17, 2026 (BL-825: Bubble's UI bundle resolver —
+slice A of epic `bubble-thin-shell`, the decision every later remote-UI
+slice depends on, with nothing rendered yet. `UiBundleResolver.resolve`
+(pure Kotlin, no `android.*` type in its own signature) classifies what
+the bridge served this session, what is cached, and which shell is
+installed into one of four outcomes — FRESH (a newer served bundle),
+CACHED (nothing newer, or the served bundle was rejected), STALE (bridge
+unreachable, cached bundle rendered but marked unconfirmed), or BARE
+(native Talk only, no bundle usable from either source) — and always
+returns cleanly so a caller can always fall back to native Talk. A bundle
+whose `minShellVersion` exceeds the installed shell's own version is never
+returned as FRESH regardless of recency, falling through to CACHED or BARE
+with a shell-behind reason a later slice turns into an update prompt —
+rendering a bundle the shell can't honour is how a remote-UI app bricks
+itself on a phone the human can't easily reach. `BridgeClient.resolveUiBundle`
+is the device edge (HTTP fetch distinguishing an unreachable bridge from a
+reachable one that answered badly, one atomically-written cache file,
+same pattern as `CompanionPackageStore`/BL-907) and is called from
+`TalkEngine.syncUiBundle()` on the same pair/resume cadence as the
+existing bubble-config/chiptunes syncs; a new bridge route,
+`GET /lets-talk/ui-bundle.json` (`letsTalkUiBundle.ts`), serves the
+manifest with the same operator-push/rollback/env-flag posture as its
+siblings. Both the Kotlin and TypeScript parsers reject a manifest whole
+on any missing/mistyped field (BL-654 invariant 2), never partially. See
+the new
+[how-to](../how-to/BL-825-bubble-remote-ui-bundle-resolution.md).);
+Previously August 17, 2026 (BL-908: Bubble's browsable knowledge
+screen — read-only backlog and docs panels over what BL-907 already holds
+on the device. `KnowledgeReader` (pure Kotlin) owns every panel decision —
+what a folder lists, what a ticket's detail shows, what a document opens
+to, what generation a view states — reading only the cached package, never
+the network, so a `Ready` state is reached identically online or off; a
+`Ready` state cannot be constructed without a generation, so the
+"no view without its generation" invariant holds structurally.
+`KnowledgeActivity` wires this to real views (two tabs, four folder chips, a
+detail dialog) and is reached from the expanded bubble's new `knowledgeBtn`
+with no re-pairing. An architect send-back — the only sync trigger lived
+inside the empty-state view and vanished for the rest of the app's life once
+both packages had synced once — was fixed by giving the sync action a
+permanent header home alongside the empty-state one. This is the
+native-Kotlin retarget of BL-659's corpus goals the human confirmed
+2026-08-16; the previously-approved PWA knowledge-explorer becomes this
+screen, and the Pages PWA goes maintain-only. See the updated
+"Remote Access & Phone App" section and the new
+[how-to](../how-to/BL-908-bubble-knowledge-screen-backlog-docs-panels.md).);
+Previously August 16, 2026 (BL-907: Bubble's phone side now caches
+BL-866's companion packages — the sync/cache decisions
+(`CompanionPackageSync`: which generation to request for an already-held
+package, what a read answers before/after a package is held, what a fetch
+outcome does to what's already held) live in pure Kotlin proven by the JVM
+unit suite and two BL-654 property tests; `CompanionPackageStore` wires them
+to one atomically-written file per package under app-private storage,
+verified by a recorded manual device procedure per the Bubble testability
+boundary. Two invariants hold across every scenario: a held package's
+generation always comes from the same fetch as its data, and no sync
+outcome — success or any of four failure kinds — ever leaves the device
+holding less than it held before. Phone-side only, no bridge change; BL-908
+builds the browse UI over what this slice stores. See the updated
+"Remote Access & Phone App" section and the new
+[how-to](../how-to/BL-907-bubble-offline-package-sync.md).); Previously
+August 16, 2026 (BL-896: swarm stamp-off certifying the
+operator hotfix (`14724edae7`) that put a second chart — open tickets
+remaining per day, with filed/closed rates — on the morning briefing email
+alongside the architecture diagrams. The chart's heading was renamed off
+"burndown" to "Open tickets remaining": the maths was right but the label
+collided with BL-659's burndown ban, since this backlog is a continuously
+growing scope, not a committed iteration perimeter — this chart is the
+open-count/net-flow replacement BL-659 itself ratified, not an exception to
+the ban. Also fixed while certifying: a duplicated remaining-count predicate
+(`notDoneBurndown.ts`'s copy of `deliveryMetrics.ts`'s
+`isRemainingOnDay`) consolidated into one implementation on
+`gitHistoryAdapter.ts`; today's point in the series now reconciles against a
+live disk count of `active/`+`paused/`+`hold/` (a ticket retired by file
+deletion rather than a move to `done/` was reading as open forever); and the
+two diagram sources' fail-open-independently claim, previously asserted only
+in a comment, now has real test coverage on the extracted
+`diagram-section-from-sources`. See the new
+[how-to](../how-to/BL-896-briefing-open-ticket-chart.md).); Previously
+August 16, 2026 (BL-900: promotion ranking now compares
+the priority of a candidate's containing epic before the candidate's own
+`priority:` — `[expedited? epic-priority own-priority id]`, spliced after
+the Article 3.2.4 expedite bucket so that bucket stays strictly first by
+construction. `epic-priority-index` resolves each epic's most urgent
+`type: epic` tracker priority (an epic id with several trackers ranks by
+its lowest); a candidate whose epic has no tracker, or no `epic:` field at
+all, falls back to its own priority rather than being buried behind every
+tracked epic. `direction: queue-jump` and ambulance mode are untouched —
+neither was ever a ranking input. Wired into all three real call sites
+(`promotion_gates_cli.bb`'s `cmd-select`, and `chase_sweep_lib.bb`'s
+`top-open-slot-candidate` / `top-expedited-paused-candidate`, used to name
+the ticket in the BL-798 escalation nudge and the BL-679 ambulance-release
+announcement) after a hardener bounce caught the latter two call sites
+missing an epic-priority index on the first pass. See the new
+[explanation](../explanation/BL-900-epic-priority-promotion-ranking.md) and
+the updated [console
+runbook](../how-to/BL-572-console-epic-priority-reorder.md).); Previously
+August 16, 2026 (BL-898: `./swarm ensure`'s
 remote-control health check (BL-514) trusted only the live process's
 `--remote-control` flag, which cannot see a dead claude.ai/code session
 behind a still-correct flag; every health signal in the fleet reported
@@ -2882,7 +3003,9 @@ The bridge exposes:
 - **A read projection** — pipeline stage, per-agent status/heartbeat, completion %, run log — all derived from the same on-disk state, pushed over an event stream (WebSocket/SSE)
 - **A small control surface — narrower than originally scoped here, by deliberate operator posture (BL-240, 2026-07-10):** the ONLY write route the bridge exposes is answering a captured `to: human` gate (`POST /gate-answer {role, answer}`), authenticated, dispatched through the exact same tmux send-keys call the extension uses when the operator types into a tile locally, and refused for any role that isn't currently showing a captured gate. Respawn-an-agent, stop-the-swarm, and switch-a-model remain future work on this surface, not yet implemented — a client cannot do them remotely today.
 - **`GET /gates` — the pending-gate list (BL-265 slice 1).** A read-scoped route listing every role currently showing a captured `to: human` gate (role + question snippet); a role with no pending gate is simply absent, and nothing gated returns an empty list, never an error. `filterPendingGates` (`extension/src/bridge/gateSnapshot.ts`) narrows `computeRoleGateStatesLive`'s per-role snapshot (built for the Telegram narrator, BL-239, which needs the full gated/not-gated set to detect a resolved transition) down to only the gated entries. This closes gap #10's missing read half — the write half (`POST /gate-answer` above) already existed; a client still needs a UI to actually view and answer from, which is slice 2 (holistic UI, `extension/src/bridge/holisticUiHtml.ts`, parked as `specs/features/BL-265-holistic-gate-answer-view.slice-2-ui.feature.draft` until built) — deliberately NOT the static backlog-dashboard PWA, which has no live bridge connection, token, or write path (see the PWA-vs-holistic-UI boundary rule in `local-engineering.prompt`).
-- **`GET /companion-manifest` + `GET /companion-package/<name>` — the companion-manifest and package catalog (BL-866, epic BL-865's foundation slice).** The contract every later offline slice of Bubble's offline-first sync reads: `/companion-manifest` lists each package the bridge can currently serve (`backlog`, sourced from the same `readBacklogFolders` the panel uses; `docs`, the vision-doc tree via `readVisionDocs`) with a **generation** — a `sha256` of the package's own content, truncated to 16 hex chars, computed fresh on every request from the exact content about to be served, so a served body and the generation it carries can never drift apart by separate bookkeeping — and a **format version** (`companionManifest.ts`, `COMPANION_PACKAGE_FORMAT = 'json'`). `/companion-package/<name>?generation=<g>` serves that package: omit `generation` (or name a stale one) and the current body comes back at `200` with the generation in both the JSON body and an `etag` header; name the generation already held and the answer is `304` with an `etag` header and **zero bytes on the wire** — the cheap-refresh path a phone needs to keep the BL-659 corpus (~2-3 MB compressed) current without re-downloading it unchanged. A package whose source cannot be read is left off the manifest rather than advertised (`docs` degrades this way if every vision-doc source is unreadable — `readVisionDocs` already tolerates individual missing docs; zero docs read back is what trips this), and one that was advertised but becomes unreadable by request time is refused `503` with a reason rather than served as an empty package; an unknown package name is refused `404`. Both routes sit behind the bridge's existing `isAuthorizedForRead` gate, same as every other read route. Bridge-side only, fully covered by the Node unit suite — no phone-side fetch, cache, or offline read path yet; that, and the offline mutation outbox, are later slices of epic BL-865.
+- **`GET /companion-manifest` + `GET /companion-package/<name>` — the companion-manifest and package catalog (BL-866, epic BL-865's foundation slice).** The contract every later offline slice of Bubble's offline-first sync reads: `/companion-manifest` lists each package the bridge can currently serve (`backlog`, sourced from the same `readBacklogFolders` the panel uses; `docs`, the vision-doc tree via `readVisionDocs`) with a **generation** — a `sha256` of the package's own content, truncated to 16 hex chars, computed fresh on every request from the exact content about to be served, so a served body and the generation it carries can never drift apart by separate bookkeeping — and a **format version** (`companionManifest.ts`, `COMPANION_PACKAGE_FORMAT = 'json'`). `/companion-package/<name>?generation=<g>` serves that package: omit `generation` (or name a stale one) and the current body comes back at `200` with the generation in both the JSON body and an `etag` header; name the generation already held and the answer is `304` with an `etag` header and **zero bytes on the wire** — the cheap-refresh path a phone needs to keep the BL-659 corpus (~2-3 MB compressed) current without re-downloading it unchanged. A package whose source cannot be read is left off the manifest rather than advertised (`docs` degrades this way if every vision-doc source is unreadable — `readVisionDocs` already tolerates individual missing docs; zero docs read back is what trips this), and one that was advertised but becomes unreadable by request time is refused `503` with a reason rather than served as an empty package; an unknown package name is refused `404`. Both routes sit behind the bridge's existing `isAuthorizedForRead` gate, same as every other read route. Bridge-side only, fully covered by the Node unit suite.
+- **Bubble holds those packages on the device (BL-907, epic BL-865's phone-side slice).** `CompanionPackageSync` (pure Kotlin, no `android.*` type in any signature — the Bubble testability boundary) owns every sync/cache decision, proven by the JVM unit suite plus two BL-654 property tests: a held package's generation always comes from the same fetch as its data (never relabeled with a stale or a different fetch's generation), and no sync outcome — the successful fetch or any of the four failure kinds (unknown package, unreadable package, connection failure, interrupted transfer) — ever leaves the device holding less than it held before; only a successful fetch replaces what's held, every failure reports itself and leaves the existing copy untouched. `CompanionPackageStore` wires those decisions to one atomically-written JSON file per package under app-private storage (temp file, then rename, so a sync that dies mid-write can't corrupt the previous complete copy) and is the ticket's device-surface half, verified by a recorded manual procedure rather than the JVM suite. Before any package has ever synced, a read reports nothing held rather than an empty package. See the new [how-to](../how-to/BL-907-bubble-offline-package-sync.md).
+- **Bubble browses those packages (BL-908, epic BL-865's browse-UI slice).** `KnowledgeReader` (pure Kotlin, no `android.*` type in any signature) holds every panel decision — what a folder lists, what a ticket's detail shows, what a document opens to, what generation a view states — reading only what BL-907 already holds on the device, never the network, so a `Ready` state is reached identically with the network on or off. A `Ready` state cannot be constructed without a generation, so "no view presents package content without stating the generation it was read at" holds structurally. `KnowledgeActivity` wires this against real views: two tabs (backlog, docs), four folder chips, and a detail dialog per ticket/document; reached from the expanded bubble's new `knowledgeBtn` with no re-pairing. An architect send-back (the only sync trigger lived inside the empty-state view, so it vanished for the rest of the app's life once both packages had synced once) was fixed by giving the sync action a permanent header home (`syncBtnHeader`) alongside the empty-state one. Read-only; a diagram document shows its source, labelled as a diagram, never a rendered image. See the new [how-to](../how-to/BL-908-bubble-knowledge-screen-backlog-docs-panels.md).
 - **Auth + tunnel** — token-based; opt-in and encrypted (see the remote-access security gap)
 
 It deliberately does *not* hold or cache authoritative state, run its own watchdog, or duplicate logic. If it dies, the swarm is unaffected and the desktop extension carries on — because neither depends on it.
