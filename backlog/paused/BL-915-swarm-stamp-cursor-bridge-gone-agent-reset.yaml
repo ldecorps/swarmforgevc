@@ -1,0 +1,153 @@
+id: BL-915
+title: "Swarm stamp-off: Cursor bridge starts a new agent when the stored agentId is gone — certify the landed hotfix ece61cbe63"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 45
+direction: swarm-surfaced
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-915-cursor-bridge-gone-agent-session-reset.feature
+
+invariants:
+  - "A fault is classified as session-reset only when it means THIS stored agent is unusable — a fault the bridge cannot resolve by starting a new agent (quota, rate limit, bad request) must never reach the reset path."
+  - "After a session reset the stored agentId is the newly created agent's id — a reset never leaves the rejected agentId persisted, or the next prompt repeats the same failure."
+
+approval_context: >
+  This is a BL-848 hotfix stamp-off, so the human decision it needs is the
+  ledger one: does `ece61cbe63` get certified (approved) or waived? The code
+  is already in production on `main` — nothing here proposes changing
+  behaviour, and rejecting this ticket does not un-land the hotfix.
+
+  What specifically needs sign-off: the widened classifier. The hotfix added a
+  fourth fault to the session-reset set on a message-pattern match. That is
+  the right call for the reported fault, but pattern-matching a vendor's error
+  prose is inherently brittle in both directions — too narrow and the fault
+  returns under slightly different wording, too wide and unrelated faults get
+  silently swallowed into a reset loop. Scenarios 04 and 05 pin the
+  over-matching half; the hardener's mutation pass is what will probe the
+  under-matching half.
+
+  What is firm: the landed behaviour. The coder certifies and closes gate
+  gaps — it does not redesign the classifier or rewrite the shipped tests.
+
+source: |
+  `backlog/hotfix-ledger.yaml` row `ece61cbe63`, state `pending`, detected
+  2026-08-17. Routed to the specifier by the coordinator as a `note`:
+
+  > mint stamp ticket for hotfix ece61cbe63 (cursor gone-agent reset)
+
+  The hotfix commit, `Hotfix-Certification: pending`, authored via Cursor:
+
+  > A stored Cursor SDK agentId the cloud no longer has ("Agent agent-… not
+  > found") failed the prompt instead of starting a new agent; treat that like
+  > the other session-reset faults.
+
+  It touched three files (56 insertions, 1 deletion):
+
+  ```
+  extension/src/tools/telegramCursorBridgeCore.ts   +12
+  extension/test/cursorBridgeAgentSession.test.js   +35
+  extension/test/telegramCursorBridgeCore.test.js   +10
+  ```
+
+description: |
+  ## What already landed — do not rebuild it
+
+  `ece61cbe63` added `isCursorAgentGone(message)` to
+  `extension/src/tools/telegramCursorBridgeCore.ts` and folded it into
+  `shouldResetCursorAgentSession`, joining the three faults already classified
+  as session-reset (active-run conflict, auth error, connection failure).
+
+  Before the hotfix, a stored `agentId` the Cursor cloud had deleted or expired
+  made `Agent.resume` throw `"Agent agent-… not found."`, and the bridge
+  surfaced that as a failed prompt. The operator's only remedy was to clear
+  bridge state by hand. Now the bridge treats it as a dead session and
+  transparently creates a new agent.
+
+  The hotfix shipped with its own tests, including a live-session test that
+  drives `promptAgent` through a failing `resume` and asserts a new agent is
+  created. **This ticket certifies that work through the full gate stack — it
+  is not a licence to redesign the classifier or rewrite those tests.**
+
+  ## Why it still needs a parcel
+
+  A hotfix lands outside the pipeline by definition, so nothing has yet run
+  the gates the constitution requires: coverage, mutation with no surviving
+  mutants, CRAP <= 6, DRY, and QA's own pass. The stamp parcel runs them and
+  closes whatever they surface.
+
+  ## Where to look hardest (direction, not mandate)
+
+  The predicate is a regex over vendor error prose, and that is precisely the
+  shape mutation testing tends to find survivors in — a loosened boundary, a
+  dropped anchor, or a case-sensitivity flip can leave every existing test
+  green. Expect the hardener's real work to be here rather than in the wiring.
+
+  The declared invariants say what the scenarios cannot: the reset set must
+  hold exactly the faults a NEW AGENT actually fixes. A quota or rate-limit
+  fault resets nothing and burns an agent creation per prompt, which is why
+  the existing code deliberately routes those to a fail-fast path — keep that
+  boundary intact.
+
+out_of_scope: |
+  - Redesigning how Cursor faults are classified, or replacing message-pattern
+    matching with a structured error-code check. If the gates show the pattern
+    approach is untenable, raise it as its own ticket rather than widening
+    this one.
+  - Retrying, backoff, or any change to the fail-fast quota/rate-limit path
+    beyond proving it still does not reset.
+  - The other pending hotfix-ledger rows. Each gets its own stamp ticket.
+
+qa_e2e_procedure: |
+  The fault is a cloud-side state (an agentId the Cursor cloud no longer has),
+  so it cannot be conjured on demand against the live API. Verify at the seam
+  instead:
+
+  1. Confirm the shipped live-session test in
+     `extension/test/cursorBridgeAgentSession.test.js` still drives
+     `promptAgent` through a failing `resume` and asserts exactly one agent
+     creation plus a replaced stored agentId (invariant 2).
+  2. Confirm the quota/rate-limit path still fails fast with no agent creation
+     (invariant 1) — this is the regression that would be invisible in
+     production until a bill arrived.
+  3. Confirm the three pre-existing reset faults still reset (scenario 03), so
+     the widening did not disturb them.
+  4. In the live bridge, corrupt `agentId` in
+     `.swarmforge/operator/cursor-bridge-state.json` to a well-formed but
+     non-existent `agent-<uuid>`, then send one prompt from Telegram. The
+     operator MUST get a normal reply, and the file MUST then hold a different
+     agentId. This is the only step that exercises the real SDK error string —
+     run it last, and restore the file afterwards.
+
+notes: |
+  2026-08-17 specifier, on minting: checked this against the prose-only-hotfix
+  waiver rule first. It does NOT qualify for a waiver — `git show --stat`
+  shows 12 lines of production TypeScript in
+  `extension/src/tools/telegramCursorBridgeCore.ts`, so the acceptance is
+  gateable and INVEST letter T passes. Minted rather than waived.
+
+  Ledger linkage: `backlog/hotfix-ledger.yaml` row `ece61cbe63` now carries
+  `stamp_ticket: BL-915`, set via `hotfix_ledger_update.bb --link`. Its
+  `state:` still reads `pending` and that is correct, not a stale write —
+  `hotfix_certification_lib.bb` DERIVES state from the stamp ticket's status
+  (R2 state machine, line 129: a linked ticket that is not `done` derives
+  `stamp-open`), so the field flips on the next certification sweep rather
+  than at link time. The row's `human_decision` stays null until the human
+  decides approved/waived — that decision is the one `human_approval: pending`
+  above is asking for, and it is the ledger's to record, not this ticket's.
+
+  Scope note for the coder: the hotfix's own tests are evidence, not a
+  baseline to beat. If a gate surfaces a gap, close it by adding to them;
+  do not restructure passing tests to suit a coverage number.
+
+  BL-233 obligation, stated so it cannot be missed: the acceptance file is
+  shipped LIVE (`.feature`, not `.feature.draft`) because the code it
+  describes is already in production — but no step handlers exist for it yet.
+  All five scenarios need handlers landed in THIS parcel. The runner throws on
+  any scenario it cannot resolve, so a partial handler set fails the
+  hardener's gate rather than degrading quietly.

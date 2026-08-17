@@ -1,0 +1,146 @@
+id: BL-917
+title: "BL-911 left one re-exec path stale: an idle-boundary clear respawns the role without recomposing its prompt"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 55
+direction: swarm-surfaced
+depends_on: [BL-911]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-911-rotation-recomposes-the-role-prompt.feature
+
+invariants:
+  - "Every path that re-execs a role's launch script recomposes that role's prompt first — rotating to a different role and clearing the same role in place alike. No re-exec boots on a prompt inherited from launch."
+  - "A recompose failure never blocks the boot: the role still comes up on the prompt it already had, and the failure is reported rather than swallowed."
+
+approval_context: >
+  Wants sign-off on one judgement call: this ticket EXTENDS BL-911's feature
+  file (`specs/features/BL-911-rotation-recomposes-the-role-prompt.feature`)
+  instead of opening its own, so `acceptance:` above points at a file named
+  for a different, already-closed ticket.
+
+  That is deliberate. The defect IS an incomplete enumeration of re-exec
+  paths, so splitting the enumeration across two files would reproduce the
+  exact shape of the miss. The alternative — a BL-917-named file — reads
+  tidier in a directory listing and costs a near-duplicate scenario set that
+  can drift out of agreement with the original. Say so if you would rather
+  have the separate file; nothing else in the ticket changes.
+
+source: |
+  Reported by the architect as a `note` (priority 50) to specifier +
+  coordinator, 2026-08-17, verbatim:
+
+  > BL-911 gap: respawn-self! idle-clear also boots stale (currently off)
+
+  BL-911 (`backlog/done/M8/`) closed the rotation half of the same defect.
+
+description: |
+  ## What BL-911 fixed, and the path it missed
+
+  BL-911 established that a role's composed prompt
+  (`.swarmforge/prompts/<role>.md`) is a launch-time build output, so any
+  accepted rule proposal or inlined constitution amendment sits on `main` in
+  force for nobody until something recomposes it. Its fix made ROTATION the
+  moment freshness is established: `rotate-resident-to!` in
+  `swarmforge/scripts/handoff_lib.bb` calls `recompose-role-prompt!` before
+  respawning the pane.
+
+  There is a second way a pane re-execs a launch script, and BL-911 did not
+  touch it. `respawn-self!` (same file, the BL-089 idle-boundary clear) also
+  re-execs a launch script — the CURRENT role's — and it recomposes nothing.
+  A role cleared at its idle boundary therefore comes back up on exactly the
+  stale prompt BL-911 exists to prevent.
+
+  The two are easy to conflate and are not the same trigger: `respawn-as!` /
+  `rotate-resident-to!` re-exec to become a DIFFERENT role; `respawn-self!`
+  re-execs to become the SAME role. BL-911's invariant 1 is phrased over
+  rotation, so the idle-clear path slipped between the words.
+
+  ## Verified dormant, not live — and that is the whole risk
+
+  Checked at spec time: `.swarmforge/roles.tsv` column 8 reads `off` for all
+  eight roles, and `idle-clear-enabled?` is opt-in with default-off by design
+  (BL-089). So nothing is stale because of this today, and the architect said
+  as much.
+
+  That is precisely why it is worth closing now rather than filing as a
+  curiosity: the defect is a loaded trap, not a live fault. Flipping one
+  roles.tsv column to `on` — a config change nobody would expect to have
+  prompt-freshness consequences — silently re-arms a defect the swarm already
+  paid for once at high severity. Severity is medium because nothing is
+  currently degraded, not because the consequence would be small.
+
+  ## Shape of the fix (direction, not mandate)
+
+  `respawn-self!` should establish freshness the same way its sibling does,
+  including the same failure posture: a recompose that fails warns loudly and
+  the pane still boots on the prompt it already had (invariant 2). Scenario 07
+  guards the other side — with idle-clear off, the idle boundary must remain a
+  no-op and must not start recomposing on every parcel completion.
+
+qa_e2e_procedure: |
+  1. With `.swarmforge/roles.tsv` column 8 `off` for every role (the shipped
+     default), complete a parcel so a role reaches its idle boundary. Confirm
+     no respawn occurred and the composed prompt file's mtime is unchanged —
+     the fix must not make the idle boundary do work it did not do before.
+  2. Enable idle-clear for one non-home role in a scratch roles.tsv copy. Add
+     a recognisable sentence to that role's prompt source and commit it.
+     Trigger the idle-boundary clear and confirm the role's composed prompt
+     under `.swarmforge/prompts/` now contains that sentence.
+  3. Make the sources uncomposable for that role, trigger the clear again, and
+     confirm the pane still comes up and the failure is reported rather than
+     silently swallowed (invariant 2).
+  4. Restore roles.tsv. Do NOT leave idle-clear enabled — the shipped default
+     is off and this ticket does not change it.
+
+out_of_scope: |
+  - Turning idle-clear ON for any role. This closes the freshness hole on the
+    path; whether the path is used at all stays BL-089's opt-in decision.
+  - BL-640's on-demand `articles/reference/` half, which BL-911 already
+    carved out as its own ticket with its own mechanism.
+  - Any change to how composition itself works (PromptEngine / BL-546 remains
+    the single composition authority — reuse it, do not grow a second
+    composer).
+
+notes: |
+  2026-08-17 specifier, on minting.
+
+  **Probed before speccing; both halves of the report hold.** Confirmed in
+  `swarmforge/scripts/handoff_lib.bb` that `recompose-role-prompt!` exists and
+  is called from `rotate-resident-to!` before the respawn, and that
+  `respawn-self!` contains no such call. Confirmed `idle-clear-enabled?` reads
+  column 8 of `.swarmforge/roles.tsv` and that all eight roles read `off`.
+  The two live callers of `respawn-self!` are `ready_for_next_task.bb` and
+  `ready_for_next_batch.bb`, both via `maybe-clear-at-idle-boundary!`, which
+  additionally requires the `--idle-boundary` flag that only
+  `done_with_current_task.bb` passes.
+
+  **No `required_wiring:` deliberately.** The call site this ticket is about
+  lives in the same file as an existing call to the same function, so any
+  substring pattern a `required_wiring` entry could carry
+  (`recompose-role-prompt!` in `handoff_lib.bb`) already matches today and
+  would pass vacuously. Per BL-874 a pattern must be a literal that means
+  something; an entry that cannot fail is worse than none, because it reads as
+  a gate.
+
+  **Degraded gating — the hardener must record this, not imply it away.**
+  This is Babashka. Per engineering.prompt's Startup Tools, Babashka/Clojure
+  has NO code-mutation, CRAP or DRY tooling wired; the gate is its own unit
+  suite under `swarmforge/scripts/test/`. Note the distinction that makes this
+  easy to overclaim: the manifest block at the top of the acceptance file is
+  an APS **Gherkin**-mutation stamp, which does apply here — it is not
+  evidence that code mutation ran against the Clojure, which cannot run at
+  all.
+
+  **That stamp is now stale** — this ticket appends scenarios 05-07 to the
+  file. Regenerate it through the normal tooling. Do NOT hand-edit the
+  manifest block (engineering.prompt Guardrails: no hand-edited
+  mutation/Gherkin-mutation manifests).
+
+  **BL-233 obligation.** Scenarios 05-07 need step handlers landed in THIS
+  parcel; the runner throws on any scenario it cannot resolve, so the existing
+  BL-911 handlers going green is not evidence the new ones are bound.
