@@ -110,7 +110,10 @@ function registerSteps(registry) {
   );
 
   registry.define(/^it makes no claim of progress toward a fixed or committed scope$/, (ctx) => {
-    if (/burndown/i.test(ctx.burndownSvg) || /\btarget\b/i.test(ctx.burndownSvg) || /remaining to zero/i.test(ctx.burndownSvg)) {
+    // BL-896 bounce 2026-08-17: the human ruling keeps the word "burndown" in
+    // the heading, so the word alone is no longer treated as a progress
+    // claim - only an explicit target or a remaining-to-zero framing is.
+    if (/\btarget\b/i.test(ctx.burndownSvg) || /remaining to zero/i.test(ctx.burndownSvg)) {
       throw new Error(`expected no claim of progress toward a fixed/committed scope; got: ${ctx.burndownSvg}`);
     }
   });
@@ -194,7 +197,7 @@ function registerSteps(registry) {
     (ctx, shipped) => {
       const html = ctx.result.lastSentHtml || '';
       const hasArch = /<h3>architecture diagram<\/h3>/.test(html);
-      const hasBurn = /<h3>Open tickets remaining<\/h3>/.test(html);
+      const hasBurn = /<h3>[^<]*burndown[^<]*<\/h3>/i.test(html);
       const expected = SHIPPED_EXPECTATIONS[shipped];
       if (hasArch !== expected.arch || hasBurn !== expected.burn) {
         throw new Error(
@@ -215,7 +218,7 @@ function registerSteps(registry) {
 
   registry.define(/^the open-ticket chart is omitted$/, (ctx) => {
     const html = ctx.result.lastSentHtml || '';
-    if (/<h3>Open tickets remaining<\/h3>/.test(html)) {
+    if (/<h3>[^<]*burndown[^<]*<\/h3>/i.test(html)) {
       throw new Error(`expected the open-ticket chart to be omitted; got: ${html}`);
     }
   });

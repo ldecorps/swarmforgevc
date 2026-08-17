@@ -23,15 +23,17 @@ test('computeNotDoneBurndownSeries counts remaining across the window', () => {
   assert.equal(dayClosed.closed, 1);
 });
 
-test('buildNotDoneBurndownSvg draws the remaining polyline and names the series it plots, not a burndown', () => {
-  // BL-896 F1: the heading must name what the series actually is (open
-  // tickets remaining) and must not claim progress toward a fixed/committed
-  // scope - "burndown" is exactly that claim, and BL-659 banned it.
+test('buildNotDoneBurndownSvg draws the remaining polyline and keeps "burndown" in the heading per the human ruling', () => {
+  // BL-896 bounce 2026-08-17: the 2026-08-16 08:20 CEST human ruling
+  // explicitly overrides the F1 rename recommendation and keeps the word
+  // "burndown" on the heading (backlog/answers-archive/ANSWER-BL-896-land-burndown-chart.md).
+  // The heading still names what the series plots (open tickets remaining).
   const nowMs = Date.parse('2026-08-10T15:00:00+02:00');
   const series = computeNotDoneBurndownSeries(lifecycles, nowMs, 7);
   const svg = buildNotDoneBurndownSvg(series);
-  assert.match(svg, /Open tickets remaining — last 7 days/);
-  assert.doesNotMatch(svg, /burndown/i);
+  assert.match(svg, /burndown/i);
+  assert.match(svg, /open tickets remaining/i);
+  assert.match(svg, /last 7 days/i);
   assert.match(svg, /<polyline /);
   assert.equal(DEFAULT_NOT_DONE_BURNDOWN_WINDOW_DAYS, 30);
   assert.equal(NOT_DONE_BURNDOWN_DIAGRAM_NAME, 'not-done-burndown');
