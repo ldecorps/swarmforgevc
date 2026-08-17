@@ -10,6 +10,14 @@ SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 START="$SRC/start_babysitterd.sh"
 DAEMON="$SRC/babysitterd.sh"
 
+# babysitterd.sh's own tick loop shells out to `sleep "$INTERVAL_S"` (default
+# 300) as a CHILD of the daemon's own pid - killing the daemon's pid does not
+# cascade to that in-flight child, so it would otherwise survive as an
+# orphan for up to 5 minutes after every scenario below kills its own daemon
+# (BL-906 review finding). A short interval makes any such orphan
+# self-terminate almost immediately instead.
+export BABYSITTERD_INTERVAL_S=1
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 

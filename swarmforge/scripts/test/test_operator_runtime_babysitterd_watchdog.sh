@@ -51,11 +51,15 @@ exec sleep 300
 EOF
   chmod +x "$root/babysitterd.sh"
   # Must nohup+disown: callers capture this function's stdout in $(...),
-  # which is a subshell — a bare `&` child dies with that subshell.
+  # which is a subshell — a bare `&` child dies with that subshell. For the
+  # same reason, appending to LIVE_PIDS here would only mutate this
+  # subshell's own copy and never reach the parent script's EXIT trap
+  # (confirmed leaking a live "sleep 300" per call, orphaned under pid 1,
+  # BL-906 review finding) — every caller must register the returned pid
+  # into its own LIVE_PIDS itself, right after capturing it.
   nohup bash "$root/babysitterd.sh" "$root" >/dev/null 2>&1 &
   pid=$!
   disown "$pid" 2>/dev/null || true
-  LIVE_PIDS+=("$pid")
   printf '[{"pid":%s,"cmdline":"bash %s/babysitterd.sh %s"}]\n' "$pid" "$root" "$root" \
     > "$root/.process-snapshot.json"
   printf '%s\n' "$pid"
@@ -101,6 +105,7 @@ check "01: a coordinator draft was written (tell path)" \
 # ── 02: live daemon + pidfile + telegram → healthy, no tell, no restart ───
 F2="$(make_fixture)"
 PID2="$(start_fake_daemon "$F2")"
+LIVE_PIDS+=("$PID2")
 kill -0 "$PID2" 2>/dev/null || { echo "FAIL - 02: fake daemon pid $PID2 is not alive"; fail=1; }
 echo "$PID2" > "$F2/.swarmforge/babysitterd/babysitterd.pid"
 tick "$F2" env OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=1 \
@@ -117,6 +122,7 @@ check "02: healthy writes no alert" \
 # ── 03: live daemon, missing pidfile → pidfile-lie, tell, no restart ──────
 F3="$(make_fixture)"
 PID3="$(start_fake_daemon "$F3")"
+LIVE_PIDS+=("$PID3")
 tick "$F3" env OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=1 \
   OPERATOR_BABYSITTERD_WATCHDOG_COOLDOWN_MS=0 \
   TELEGRAM_BOT_TOKEN=t TELEGRAM_CHAT_ID=1 >/dev/null
@@ -129,6 +135,7 @@ check "03: pidfile-lie never restarts" 'never_restarted "$F3"'
 # ── 04: live+pidfile but no telegram creds (isolated fleet home) → mute ───
 F4="$(make_fixture)"
 PID4="$(start_fake_daemon "$F4")"
+LIVE_PIDS+=("$PID4")
 echo "$PID4" > "$F4/.swarmforge/babysitterd/babysitterd.pid"
 tick "$F4" env OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=1 \
   OPERATOR_BABYSITTERD_WATCHDOG_COOLDOWN_MS=0 >/dev/null
