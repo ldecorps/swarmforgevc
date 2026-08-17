@@ -11,6 +11,12 @@
 ;;           each one of "succeeds" | "fails" | "throws")
 ;;         | "sendability-gate" (BL-902: 3rd/4th args are
 ;;           <reason: "missing-api-key"|"disabled"|"sendable"> <runs>)
+;;         | "bl821" (BL-821: 3rd/4th/5th args are
+;;           <today-str, ISO yyyy-MM-dd UTC, or "none" to omit the window>
+;;           <commit-mode: "real"|"none"|"fail"> <send-outcome: "success"|"fail">
+;;           - runs send-unsent-briefings! ONCE against the real library,
+;;           optionally wired to the REAL commit-sent-marker! (real git, no
+;;           fake sh-fn) so acceptance can drive an actual git repo)
 
 (ns briefing-email-harness
   (:require [babashka.fs :as fs]
@@ -87,6 +93,37 @@
                                      :logs @logs
                                      :sectionCallsTotal (count @section-calls)
                                      :sectionCallCounts (frequencies @section-calls)}))
+    (System/exit 0)))
+
+;; BL-821: one real sweep tick, optionally window-bounded and optionally
+;; wired to the REAL commit-sent-marker! (real `git`, not an injected
+;; sh-fn) - so acceptance scenarios can drive an actual git repo across
+;; separate host checkouts. Handled first (same "exits early" convention as
+;; sendability-gate above).
+(when (= mode "bl821")
+  (let [today-str (nth *command-line-args* 2)
+        commit-mode (nth *command-line-args* 3)
+        send-outcome (nth *command-line-args* 4)
+        commit-marker!
+        (case commit-mode
+          "real" briefing-email-lib/commit-sent-marker!
+          "fail" (fn [_dir] {:ok false :reason "simulated commit failure"})
+          "none" nil)
+        adapters
+        (cond-> {:read-briefing-content (fn [f] (slurp (str (fs/path briefings-dir f))))
+                 :send-email! (fn [_subject text & _]
+                                (if (= send-outcome "fail")
+                                  {:success false :reason :send-failed :error "simulated send failure"}
+                                  (do (swap! emails-sent inc)
+                                      (reset! last-sent-text text)
+                                      {:success true})))
+                 :log! (fn [& parts] (swap! logs conj (vec parts)))}
+          (not= today-str "none") (assoc :today-str today-str)
+          commit-marker! (assoc :commit-marker! commit-marker!))
+        sent (briefing-email-lib/send-unsent-briefings! briefings-dir adapters)]
+    (println (json/generate-string {:sent sent
+                                     :emailsSent @emails-sent
+                                     :logs @logs}))
     (System/exit 0)))
 
 ;; BL-260: the diagram modes exercise send-unsent-briefings!'s :diagram-section
