@@ -1,0 +1,192 @@
+id: BL-913
+title: "Pin a role's shell to its own worktree and heal one classified tool miss in silence, so a recoverable wrong-cwd or wrong-surface command never reaches the model as a miss to apologize for"
+milestone: M8
+type: feature
+status: todo
+epic: tool-miss-auto-heal
+severity: medium
+priority: 12
+direction: human-intake
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "Exactly one healed re-run per miss: no classification path produces a second retry, and a failure outside the recoverable classes is never re-run at all."
+  - "The pinned environment is derived from the role's own worktree, never from the cwd the process happened to inherit."
+  - "When a heal succeeds the model receives only the healed result; when it does not, the model receives the real failure exactly once — never both."
+
+human_approval: pending
+
+approval_context: >
+  The human wrote "Defaults welcome; human did not lock these" against three
+  open questions and locked the other six decisions. The three defaults chosen
+  here are called out so they can be vetoed cheaply rather than discovered in
+  review:
+
+  (a) IMPLEMENTATION SEAM — left to the coder as direction, not mandate, because
+  the intake itself lists three candidates (Claude PreToolUse, launch wrap, a
+  `bb` exec helper). The one constraint recorded in the description is that
+  locked decision 5 ("the first miss must not reach the model as a confession")
+  is only satisfiable if classification and retry happen inside a single
+  invocation the model observes once.
+
+  (b) CURSOR SURFACE — SPLIT OUT of this slice, on INVEST grounds: a second
+  process and a second integration point would make this two sittings and two
+  independent gates. Recorded on the BL-912 tracker as its own future slice. The
+  intake authorizes the split ("specifier splits the surfaces if INVEST
+  requires it"); if the human wants both surfaces in one go, say so and this
+  ticket should be re-cut.
+
+  (c) SLICE D (the one-line apology-ban constitution edit) — does NOT ride with
+  this ticket. Locked decision 2 is "do not pad prompts", and decision 5 calls
+  the apology ban "token hygiene beside this, not a substitute". Bundling it
+  would blur what this slice's acceptance actually proves. Held on BL-912.
+
+source: |
+  Minted 2026-08-17 by the specifier from raw intake
+  `backlog/INTAKE-agent-tool-miss-auto-heal.md` (human via Cursor, 2026-08-17
+  ~00:32 BST, "Ok for intake."), removed from the backlog root in the same pass.
+  This ticket is slice A ("mint first") of that intake; the tracker BL-912 holds
+  slices B, C, D and the Cursor surface, and carries the full verbatim directive
+  set.
+
+  The human's observed symptom, in their words: agents "apologize all the time
+  for running the wrong command, or running it in the wrong folder." The miss is
+  almost always the model acting as a shell operator whose cwd and command
+  vocabulary are choices, instead of a planner sitting on a pinned execution
+  environment. The apology is wasted tokens after a recoverable miss.
+
+  Human directives carried VERBATIM from that intake (Article 5.3), the ones
+  that bind THIS slice:
+
+  - "**Auto-heal below the model.** Pin execution and classify/retry in the
+    substrate. Do not write "be more careful about folders" into role prompts as
+    the fix."
+  - "**Do not pad prompts.** Longer "always `cd` first" role text is out."
+  - "**First slice is pin + one classified retry.** Catalog, mechanical
+    rotation-pin leftovers, and apology-ban narration can follow. Do not mint the
+    whole vision as one INVEST-failing ticket."
+  - "**One retry, then stop.** Wrong-cwd / wrong-surface / missing-root-argv get
+    exactly one healed re-run. Real failures (test red, conflict, permission) are
+    returned as-is. No retry storm."
+  - "**The first miss must not reach the model as a confession.** Hide or replace
+    the first stderr when a heal succeeded. Apology ban is token hygiene beside
+    this, not a substitute."
+  - "**Do not invent a queue file** (no `control-ambulance-next.json` analogue)
+    and do not babysitter-restart a pane because it ran in the wrong folder."
+
+  And the human's one-line direction, verbatim:
+
+  - "stop teaching the model to be a careful shell; make the shell un-wrong, heal
+    one miss in silence, then fail honestly."
+
+description: |
+  ## What this slice adds
+
+  Two things, and deliberately only two.
+
+  - **A pin.** A role's shell commands start in that role's own worktree, taken
+    from the swarm's own record of where the role lives — not from the cwd the
+    pane last drifted into. A `cd` written inside one command applies to that
+    command only; it does not become the next command's starting point.
+  - **One classified retry.** When a command still misses, the substrate decides
+    which of four things happened before the model sees anything:
+    `wrong-cwd`, `wrong-surface` (npm issued at the repo root rather than
+    `extension/`), `missing-root-argv` (a CLI that needs `<project-root>` on
+    argv and did not get it), or `real-failure`. The first three are re-run once
+    from the right place and only that result is returned. The fourth is
+    returned as it happened, once, untouched.
+
+  ## Why the silence matters
+
+  The wasted turn is not the miss — it is the apology and the guess that follow
+  it. If the model never receives the first stderr for a miss that was healed,
+  there is nothing to apologize for and nothing to re-derive. That is why
+  "return the healed result" and "hide the first miss" are one requirement and
+  not two.
+
+  Equally, the honesty half is load-bearing: a red test, a merge conflict or a
+  permission error that got quietly retried and reported as something else would
+  be far worse than the goofiness this ticket exists to remove. The classifier
+  must be conservative — anything it is not sure about is a real failure.
+
+  ## How (direction, not mandate)
+
+  The seam is the coder's call; the intake names three candidates (Claude
+  PreToolUse, a launch-time wrap, a `bb` exec helper the pane is required to
+  call) and the only real constraint is the one locked decision 5 imposes:
+  classification and retry have to happen inside a single invocation that the
+  model observes once, or the first miss leaks and the silence is lost.
+
+  Reuse the SHAPE of `agent_runtime_lib.bb`'s closed `error-category-patterns`
+  taxonomy (`enoent` / `command not found` / `no such file`) rather than
+  inventing a new one — but note those categories are provider-launch, not
+  per-invocation, so this is a shape to copy, not a table to extend in place.
+
+  `roles.tsv` is the intake's suggested source for a role's worktree. Confirm it
+  is the live record before depending on it: this repo has a standing lesson
+  that a still-existing file is not proof it is still the wired path, and BL-846
+  is a live case of exactly this file being read where mono-router never writes
+  it. If it is not trustworthy, pin from whatever the launch path actually uses
+  and say so.
+
+  No `required_wiring:` is declared, deliberately. The seam is genuinely
+  unchosen at spec time, so any path/pattern pinned here would either name a
+  file the coder legitimately does not touch or a symbol nobody has written yet
+  — the BL-874 failure mode, where the gate blocks the documenter's handoff over
+  a string that could never match. The unwired-mechanism risk is covered instead
+  by the e2e procedure below, which exercises the real pane rather than the
+  classifier in isolation.
+
+  ## Out of scope
+
+  Straight from the intake, unchanged:
+
+  - Prompt-only reminders, CLAUDE.md essays, or "always pwd first."
+  - Babysitter / Operator restarts as the heal.
+  - Re-opening BL-812, BL-875, BL-528.
+  - Expanding the allowed shell to a bigger catalog in slice A (that is slice B).
+  - The Cursor surface (split out — see approval_context (b) and BL-912).
+
+acceptance: specs/features/BL-913-pinned-shell-and-one-classified-retry.feature
+
+qa_e2e_procedure: |
+  Against a live swarm pane, not only the unit suite — the point of this ticket
+  is what a real role experiences:
+
+  1. As a rotating role, issue a command that would fail from a drifted cwd
+     (e.g. a relative-path git command) after the pane's cwd has been moved to
+     `$HOME`. Confirm the command succeeds and that the transcript the model
+     received contains the healed result only — no first-miss stderr.
+  2. Issue an `npm` script from the repo root. Confirm it is healed to
+     `extension/` and that the stray-root-lockfile failure (BL-875) is never
+     handed to the model to diagnose. Confirm afterwards that the root
+     `package-lock.json` was not rewritten — if it was, that is a real defect,
+     not a heal.
+  3. Run a command that fails honestly (a deliberately red test). Confirm it is
+     NOT retried and appears exactly once.
+  4. Arrange a command that misses for `wrong-cwd` and STILL misses the same way
+     after the heal. Confirm exactly two invocations, no third, and that the
+     model receives the second failure.
+  5. Run an ordinary command that works as issued. Confirm one invocation and an
+     unchanged result — the wrapper must be invisible on the happy path.
+  6. Confirm no new queue/state file was introduced (locked decision 6) and that
+     no pane was restarted by the babysitter during any of the above.
+
+notes: |
+  - INVEST at mint: this is one sitting because it is exactly the pin plus one
+    classifier with four verdicts. The catalog (slice B), the rotation-pin
+    cleanup (slice C), the apology line (slice D) and the Cursor surface are all
+    held on BL-912 rather than bundled — bundling any of them is what would make
+    this fail S and I.
+  - The `<miss>` column in scenario 01 is the classifier's own verdict and is the
+    handler's lookup key. Per the rule_proposal accepted into `hardender.prompt`
+    on 2026-08-17 (9d053f579), keep it the key — a handler that picks its check
+    by scenario shape never reads the column and a Gherkin mutant in it survives.
+  - IR-DRY was run; findings resolved. What remains is the checker's known
+    inability to normalize quoted literals (`"<miss>"` and `"wrong-cwd"` in the
+    same slot read as two steps though one regex serves both) plus the honest
+    distinction between "not re-run" and "not re-run a second time". Neither is
+    drift; do not normalize them away.
