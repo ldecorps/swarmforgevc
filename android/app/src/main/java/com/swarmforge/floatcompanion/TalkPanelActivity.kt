@@ -16,13 +16,23 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.checkbox.MaterialCheckBox
 import com.swarmforge.floatcompanion.databinding.ActivityTalkPanelBinding
+import com.swarmforge.floatcompanion.databinding.TalkPanelPageBinding
 
 /**
  * UI shell for [TalkEngine]. Collapse finishes this activity but leaves the
  * engine (and mic) running in [OverlayService] when hands-free / mid-turn.
+ *
+ * BL-829: [rootBinding] is the pager shell (talk_panel_page.xml's old
+ * content is now the pager's page 0, plus any remote pages the resolved
+ * bundle names beside it); [binding] is that Talk page's own binding,
+ * assigned once [TalkPagerAdapter] creates it — every method below that
+ * referenced `binding.*` before BL-829 is unchanged, since page 0's view
+ * IDs did not move, only which layout file and which point in the
+ * lifecycle they are bound at.
  */
 class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
-    private lateinit var binding: ActivityTalkPanelBinding
+    private lateinit var rootBinding: ActivityTalkPanelBinding
+    private lateinit var binding: TalkPanelPageBinding
     private var engine: TalkEngine? = null
     private var pendingAutoRecord = false
     private var stoppingOverlay = false
@@ -31,8 +41,8 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            binding = ActivityTalkPanelBinding.inflate(layoutInflater)
-            setContentView(binding.root)
+            rootBinding = ActivityTalkPanelBinding.inflate(layoutInflater)
+            setContentView(rootBinding.root)
             window?.setLayout(
                 (resources.displayMetrics.widthPixels * 0.94f).toInt(),
                 WindowManager.LayoutParams.WRAP_CONTENT
@@ -55,6 +65,23 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             return
         }
         engine = eng
+
+        val pagerList = currentPagerList(eng)
+        rootBinding.pagerBareNotice.text = pagerList.bareReason ?: ""
+        rootBinding.pagerBareNotice.visibility =
+            if (pagerList.state == PagerListResolver.PagerState.BARE) View.VISIBLE else View.GONE
+        rootBinding.pager.adapter = TalkPagerAdapter(pagerList, CompanionPrefs.getBaseUrl(this)) { talkPageBinding ->
+            binding = talkPageBinding
+            setupTalkPage(eng)
+        }
+    }
+
+    /**
+     * Everything BL-829 moved out of onCreate: it needs [binding] (the Talk
+     * page's own view binding), which only exists once [TalkPagerAdapter]
+     * has created the pager's page-0 ViewHolder — see the callback above.
+     */
+    private fun setupTalkPage(eng: TalkEngine) {
         binding.versionText.text = appVersionLabel()
 
         binding.recordBtn.setOnClickListener {
@@ -106,6 +133,21 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         if (eng.snapshot().handsFree && hasMicPermission()) {
             eng.ensureListeningIfHandsFree()
         }
+    }
+
+    /**
+     * BL-829: [PagerListResolver.resolve] driven by [TalkEngine]'s latest
+     * synced bundle — a resolution not yet available (sync still in flight,
+     * or never yet run) is treated the same as [UiBundleResolver.UiBundleOutcome.BARE]
+     * (Talk alone), never as "no pages" silently rendered as NORMAL.
+     */
+    private fun currentPagerList(eng: TalkEngine): PagerListResolver.PagerList {
+        val resolution = eng.latestUiBundleResolution
+        val outcome = resolution?.outcome ?: UiBundleResolver.UiBundleOutcome.BARE
+        val pages = resolution?.bundle?.pages.orEmpty().map {
+            PagerListResolver.RemotePage(id = it.id, title = it.title, entryPath = it.entryPath, order = it.order)
+        }
+        return PagerListResolver.resolve(outcome, pages)
     }
 
     /**

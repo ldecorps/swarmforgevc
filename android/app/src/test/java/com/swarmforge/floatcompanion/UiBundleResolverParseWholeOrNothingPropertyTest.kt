@@ -82,6 +82,88 @@ class UiBundleResolverParseWholeOrNothingPropertyTest {
         }
     }
 
+    // BL-829: extends this same whole-or-nothing invariant to the manifest's
+    // new `pages` field — the generator must reach it, not just the four
+    // fields BL-825 originally declared, or this invariant would silently
+    // stop covering half the schema the moment BL-829 grew it.
+
+    @Test
+    fun `a manifest with no pages field at all still parses (backward compatible with BL-825 documents)`() {
+        val rng = Random(20260817101L)
+        repeat(200) {
+            val doc = randomValidManifest(rng)
+
+            val parsed = UiBundleResolver.parseUiBundleManifest(doc.toString())
+
+            assertTrue("doc=$doc", parsed != null)
+            assertEquals(emptyList<UiBundleResolver.UiBundlePage>(), parsed!!.pages)
+        }
+    }
+
+    @Test
+    fun `a well-formed pages list parses to exactly its entries`() {
+        val doc = randomValidManifest(Random(20260817102L))
+            .put(
+                "pages",
+                org.json.JSONArray()
+                    .put(JSONObject().put("id", "live").put("title", "Live").put("entryPath", "live").put("order", 0))
+                    .put(JSONObject().put("id", "pipeline").put("title", "Pipeline").put("entryPath", "pipeline").put("order", 1))
+            )
+
+        val parsed = UiBundleResolver.parseUiBundleManifest(doc.toString())
+
+        assertTrue(parsed != null)
+        assertEquals(
+            listOf(
+                UiBundleResolver.UiBundlePage("live", "Live", "live", 0),
+                UiBundleResolver.UiBundlePage("pipeline", "Pipeline", "pipeline", 1)
+            ),
+            parsed!!.pages
+        )
+    }
+
+    // Wrong-typed for a *string* page field (id/title/entryPath) — deliberately
+    // excludes any bare string, since a bare string is a VALID value for
+    // those fields and would make the property vacuously pass by accident.
+    private val wrongTypedForStringField: List<Any> = listOf(42, 3.14, true, JSONObject().put("nested", 1))
+
+    @Test
+    fun `pages as a non-array, or a page entry missing or wrong-typing a field, rejects the whole document`() {
+        val rng = Random(20260817103L)
+        val stringKeys = listOf("id", "title", "entryPath")
+        repeat(500) {
+            val doc = randomValidManifest(rng)
+            if (rng.nextBoolean()) {
+                doc.put("pages", "not-an-array")
+            } else {
+                val page = JSONObject()
+                    .put("id", "live")
+                    .put("title", "Live")
+                    .put("entryPath", "live")
+                    .put("order", 0)
+                if (rng.nextBoolean()) {
+                    val badKey = stringKeys[rng.nextInt(stringKeys.size)]
+                    if (rng.nextBoolean()) {
+                        page.remove(badKey)
+                    } else {
+                        page.put(badKey, wrongTypedForStringField[rng.nextInt(wrongTypedForStringField.size)])
+                    }
+                } else {
+                    if (rng.nextBoolean()) {
+                        page.remove("order")
+                    } else {
+                        page.put("order", wrongTypedValues[rng.nextInt(wrongTypedValues.size)])
+                    }
+                }
+                doc.put("pages", org.json.JSONArray().put(page))
+            }
+
+            val parsed = UiBundleResolver.parseUiBundleManifest(doc.toString())
+
+            assertNull("doc=$doc", parsed)
+        }
+    }
+
     @Test
     fun `malformed top-level shapes are rejected whole`() {
         assertNull(UiBundleResolver.parseUiBundleManifest("not json at all"))
