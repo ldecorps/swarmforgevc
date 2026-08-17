@@ -1,0 +1,97 @@
+id: BL-914
+title: "Four real-subprocess/real-diagram-render unit tests run consistently close to or over the 20s budget under normal host load — give them a per-test timeout, not a global budget raise"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 70
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+approval_context: >
+  Minted under BL-815's own explicit 1:N permission ("Then the fix tickets
+  that classification justifies, minimally scoped") — the human's original
+  approval of BL-815 already covers whatever fix tickets its measurement
+  evidence justifies; this is that evidence's one consequence. No separate
+  human sign-off was sought before minting; if you would rather review it
+  first, say so and it can wait in paused/ until then.
+
+source: |
+  BL-815's own isolation measurement (2026-08-17), evidence file
+  `backlog/evidence/BL-815-unit-suite-timeout-classification-20260817.md`.
+  Four of the five failures BL-815 was asked to classify turned out not to
+  be regressions or hangs at all: each, run alone, either passed within
+  single-digit-percent headroom of the 20000ms `testTimeout` or failed by a
+  low single-digit number of seconds, and re-running the identical
+  workload swung between both outcomes at comparable host load. BL-815's
+  own scope explicitly forbids making these green by raising the global
+  budget; this ticket is the "defensible measured reason" fix it names
+  instead.
+
+description: |
+  ## What
+
+  Four unit tests do genuinely expensive, real, subprocess-or-render work
+  by design (never mocked - each test's own header comment says so
+  explicitly) and measure consistently within a few percent of Vitest's
+  20000ms default `testTimeout`, even when isolated from every other test
+  in the suite:
+
+  - `extension/test/dependencyGateCliReportsAndScope.test.js` — "running
+    the REAL checker twice over identical fixture code produces
+    byte-identical reports" (runs the real pinned `dependency-cruiser`
+    TWICE, by design, to compare outputs).
+  - `extension/test/renderBriefingDiagramsCli.test.js` — three tests
+    ("renders exactly the two maintained diagrams...", "main() runs
+    in-process against the real repo...", "the compiled CLI runs
+    standalone as a subprocess...") that render the briefing's real
+    architecture diagrams via `mermaidRender.ts` (`beautiful-mermaid` +
+    `resvg` - CPU-bound layout and native rendering, deliberately chosen
+    over `@mermaid-js/mermaid-cli` to avoid spawning headless Chromium).
+
+  This project already has an established pattern for exactly this shape
+  of problem: BL-362 relocated `dependencyGateCliReportsAndScope.test.js`'s
+  own sibling whole-project dependency scan (~1.6s, but the pattern is the
+  same) out of the fast unit budget and into the acceptance path, rather
+  than touching the global timeout. This ticket is the same fix at a
+  per-test scope: Vitest's `test(name, fn, { timeout })` third-argument
+  form.
+
+  ## How (direction, not mandate)
+
+  Give each of the four tests above its own explicit, generous timeout
+  override (e.g. 45000ms - the largest isolated measurement recorded was
+  ~34.4s) via the third `test()` argument. Do NOT touch
+  `extension/vitest.config.mjs`'s global `testTimeout: 20000` - that stays
+  the default for every other test in the suite, which is not the class
+  of problem these four measure into.
+
+  Confirm the fix actually helps: re-run each of the four tests in
+  isolation and under a full-suite run, and confirm none times out even at
+  whatever load the host is carrying at verification time - the point is
+  headroom, not a specific pass on a specific quiet moment.
+
+  ## Scope
+
+  The four named tests' own `test(...)` call sites, in the two named
+  files. Not `vitest.config.mjs`'s global timeout, not any other test file,
+  not the underlying rendering/dependency-check performance (a genuine
+  speed-up of `mermaidRender.ts` or the dependency-cruiser invocation is
+  welcome future work but is a different ticket - this one buys headroom,
+  not throughput).
+
+invariants:
+  - "The suite-wide default testTimeout in vitest.config.mjs is unchanged by this ticket."
+
+notes: |
+  Sibling ticket: BL-815 (the classification this fix ticket is one
+  consequence of). The evidence file this ticket cites also classified a
+  fifth originally-failing test (dependencyGateCliStorageGlobals.test.js's
+  localStorage QA-bounce repro) as a one-off load-induced failure with a
+  comfortable isolated margin (10.7s) - that one gets no fix ticket, per
+  the same evidence file.
