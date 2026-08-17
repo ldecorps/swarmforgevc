@@ -77,14 +77,29 @@ command:
 - `stop_ancillary_services.sh` / `./stop-swarm.sh` stop it by pidfile, the
   same pattern as the other daemons.
 - `kill_all_swarm.sh` (the nuclear path) signals its pidfile too.
-- `./swarm ensure` verifies pid-alive and restarts it via
-  `start_babysitterd.sh` if not — same posture as the `rc:<role>` component.
-  Override the repair command with `SWARM_ENSURE_BABYSITTERD_CMD`.
-- `./swarm status` reports a `babysitterd` row (from its pidfile) and no
-  longer reports anything for the retired agent-based babysitter.
+- `./swarm ensure` verifies the pidfile's pid is alive and, if not, runs
+  `start_babysitterd.sh`. That start script **adopts** a live
+  `babysitterd.sh` for this root when the pidfile is missing or stale
+  (rewrites the pidfile, does not spawn a second copy) — the extra-start +
+  EXIT-trap path is how a healthy daemon used to look DOWN in
+  `./swarm status`. Override the repair command with
+  `SWARM_ENSURE_BABYSITTERD_CMD`.
+- `./swarm status` reports a `babysitterd` row from **process truth** (a
+  live `babysitterd.sh` for this root), not pidfile-only. Status is
+  read-only: it tags `adopted-live` when the pidfile is missing and never
+  rewrites it.
+- Operator's runtime (`operator_runtime.bb`) polls that same process +
+  pidfile + Telegram-announce path every tick and **tells** (coordinator
+  note + `status.json` `babysitterd_watchdog`) — it never restarts
+  babysitterd. Cron (BL-675) remains the restarter. Set
+  `OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=0` to disable the poll.
+- The daemon's EXIT trap unlinks the pidfile only when it still contains
+  **this** process's pid, so a raced extra start cannot delete an
+  orphan's pidfile on the way out.
 
 A second `start_babysitterd.sh` while a live pidfile exists is refused; the
-original process is left running.
+original process is left running. A second start while the pidfile is
+**missing** but the daemon process is still alive **adopts** that pid.
 
 ## Where the log and state live
 
@@ -236,8 +251,10 @@ Acceptance feature:
 ```bash
 bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb
 bb swarmforge/scripts/test/babysitterd_sweep_lib_property_runner.bb
+bb swarmforge/scripts/test/babysitterd_freshness_lib_test_runner.bb
 bash swarmforge/scripts/test/test_babysitter_check.sh
 bash swarmforge/scripts/test/test_babysitterd_lifecycle.sh
+bash swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh
 ```
 
 Acceptance feature:

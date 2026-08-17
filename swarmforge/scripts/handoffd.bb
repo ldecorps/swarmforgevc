@@ -2526,12 +2526,14 @@
       :qa-gate-facts! push-sweep-qa-gate-facts!
       :noop-merge-gate-facts! push-sweep-noop-merge-gate-facts!
       :send-push-alarm!
-      (fn [attempts]
+      (fn [attempts reason]
         (send-push-alarm-email!
          "SwarmForge: main is not reaching origin"
          (str "Local `main` has failed to push to origin " attempts " times in a row. "
               "The swarm's committed work is not reaching origin - check network/auth "
-              "and push by hand if needed.\n")))
+              "and push by hand if needed."
+              (when reason (str " Last error: " reason))
+              "\n")))
       :send-divergence-alarm!
       (fn [ahead behind]
         (send-push-alarm-email!

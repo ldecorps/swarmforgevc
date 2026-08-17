@@ -26,6 +26,9 @@
 ;;   OPERATOR_SWARM_CHECK_MS     periodic swarm-check cadence (default 1800000 = 30m)
 ;;   OPERATOR_HEARTBEAT          set to 0 to skip heartbeat writes (tests)
 ;;   OPERATOR_SKIP_LAUNCH        set to 1 to never actually launch the LLM (dry-run)
+;;   OPERATOR_BABYSITTERD_WATCHDOG_ENABLED  set to 0 to skip the tell-don't-restart
+;;                               babysitterd poll (default on; SWARMFORGE_SKIP_BABYSITTERD=1
+;;                               also disables it)
 ;;
 ;; BL-481: -main's loop now wakes every OPERATOR_POLL_INTERVAL_MS (a few
 ;; seconds) instead of sleeping a full OPERATOR_INTERVAL_MS between ticks, so
@@ -110,6 +113,12 @@
 ;; BL-848: pure decision core for the hotfix certification ledger + its
 ;; recurrent check, wired below by hotfix-certification-sweep!.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "hotfix_certification_lib.bb")))
+;; Operator tell-don't-restart poll of babysitterd (process+pidfile+telegram
+;; announce path). Cron BL-675 remains the restarter; this lib never returns
+;; :restart. process_table_lib is already load-file'd by the orphan reaper
+;; above; listed here so the watchdog's dependency is obvious.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "babysitterd_freshness_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -299,6 +308,15 @@
 (def cursor-bridge-watchdog-enabled? (not= "0" (System/getenv "OPERATOR_CURSOR_BRIDGE_WATCHDOG_ENABLED")))
 (def cursor-bridge-watchdog-stall-ms (env-ms "OPERATOR_CURSOR_BRIDGE_STALL_MS" 120000))
 (def cursor-bridge-watchdog-cooldown-ms (env-ms "OPERATOR_CURSOR_BRIDGE_RESTART_COOLDOWN_MS" 120000))
+;; Tell-don't-restart babysitterd poll. Cron (BL-675) restarts; Operator
+;; never calls start_babysitterd.sh. Cooldown matches babysitterd's own
+;; 30-minute nudge dedup so a persistent pidfile-lie does not flood
+;; coordinator mail.
+(def babysitterd-watchdog-flag? (not= "0" (System/getenv "OPERATOR_BABYSITTERD_WATCHDOG_ENABLED")))
+(def babysitterd-watchdog-cooldown-ms (env-ms "OPERATOR_BABYSITTERD_WATCHDOG_COOLDOWN_MS" 1800000))
+(def babysitterd-pid-file (fs/path state-dir "babysitterd" "babysitterd.pid"))
+(def babysitterd-watchdog-state-file (fs/path op-dir "babysitterd-watchdog.json"))
+(def ^:private babysitterd-watchdog-snap* (atom nil))
 ;; BL-848: hotfix certification recurrent check - own cadence (R3), never the
 ;; every-30s tick default, plus a per-entry resurfacing cooldown so an open
 ;; entry keeps coming back without spamming every due tick (invariant 2).
@@ -1036,6 +1054,123 @@
               (not alive?) "down"
               stale? "stalled"
               :else "healthy")}))
+
+(defn- non-blank-env? [k]
+  (let [v (System/getenv k)]
+    (and (some? v) (not (str/blank? v)))))
+
+(defn babysitterd-telegram-creds?
+  "Same creds the freshness checker can see: live env, or fleet telegram.json
+   (BL-436; never in the tree). A present-but-empty swarm.env is NOT creds —
+   that was the live miss (TELEGRAM_* unset while swarm.env only held skip flags)."
+  []
+  (boolean
+   (or (and (non-blank-env? "TELEGRAM_BOT_TOKEN") (non-blank-env? "TELEGRAM_CHAT_ID"))
+       (let [home (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getenv "HOME"))
+             swarm (swarm-identity-lib/own-swarm-name project-root)]
+         (and home swarm (fs/exists? (fs/path home ".swarmforge" "fleet" swarm "telegram.json")))))))
+
+(defn babysitterd-watchdog-enabled? []
+  (and babysitterd-watchdog-flag?
+       (not= "1" (System/getenv "SWARMFORGE_SKIP_BABYSITTERD"))))
+
+(defn read-babysitterd-watchdog-state []
+  (if (fs/exists? babysitterd-watchdog-state-file)
+    (try
+      (let [raw (json/parse-string (slurp (str babysitterd-watchdog-state-file)) true)]
+        {:last-alert-at-ms (when (number? (:last_alert_at_ms raw)) (:last_alert_at_ms raw))
+         :last-state (:last_state raw)})
+      (catch Exception _ {:last-alert-at-ms nil :last-state nil}))
+    {:last-alert-at-ms nil :last-state nil}))
+
+(defn write-babysitterd-watchdog-state! [{:keys [last-alert-at-ms last-state]}]
+  (atomic-spit!
+   babysitterd-watchdog-state-file
+   (str (json/generate-string {:last_alert_at_ms last-alert-at-ms
+                               :last_state last-state
+                               :updated_at (now-iso)}) "\n")))
+
+(defn- send-babysitterd-watchdog-nudge! [finding]
+  (let [draft-dir (fs/path op-dir "babysitterd-watchdog-drafts")
+        _ (fs/create-dirs draft-dir)
+        draft (fs/path draft-dir (str "draft-" (System/nanoTime) ".txt"))
+        lines ["type: note" "to: coordinator" "priority: 00"
+               (str "message: babysitterd watchdog: " finding)]
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})]
+    (spit (str draft) (str (str/join "\n" lines) "\n"))
+    (let [result (process/sh ["bb" (str (fs/path script-dir "swarm_handoff.bb")) (str draft)]
+                              {:dir (str project-root) :env env})]
+      (if (zero? (:exit result))
+        (log! "babysitterd-watchdog-nudge" "sent")
+        (log! "babysitterd-watchdog-nudge-error" (str (:err result)))))))
+
+(defn- babysitterd-process-rows
+  "Host process table, or a test-injected JSON snapshot (vector of
+   {:pid :cmdline}) at SWARMFORGE_BABYSITTERD_PROCESS_SNAPSHOT — the same
+   'never scan the tester's real table' seam orphan-agent reaper uses.
+   When SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS is set (including empty),
+   operator-runtime tests have already opted out of a host process-table
+   scan; do not reintroduce one here."
+  []
+  (if-let [path (not-empty (System/getenv "SWARMFORGE_BABYSITTERD_PROCESS_SNAPSHOT"))]
+    (try (vec (json/parse-string (slurp path) true))
+         (catch Exception _ []))
+    (if (System/getenv "SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS")
+      []
+      (or (process-table-lib/list-processes!) []))))
+
+(defn babysitterd-watchdog-snapshot* []
+  (let [enabled? (babysitterd-watchdog-enabled?)
+        pidfile-pid (read-pid babysitterd-pid-file)
+        pidfile-alive? (boolean (pid-alive? pidfile-pid))
+        orphan (when enabled?
+                 (babysitterd-freshness-lib/find-live-pid
+                  (str project-root)
+                  (babysitterd-process-rows)))
+        live (babysitterd-freshness-lib/resolve-live-pid pidfile-pid pidfile-alive? orphan)
+        creds? (babysitterd-telegram-creds?)
+        classified (babysitterd-freshness-lib/classify
+                    {:enabled? enabled?
+                     :live-pid live
+                     :pidfile-alive? pidfile-alive?
+                     :telegram-creds? creds?})]
+    (assoc classified
+           :live-pid live
+           :pidfile-alive? pidfile-alive?
+           :telegram-creds? creds?
+           :enabled enabled?)))
+
+(defn refresh-babysitterd-watchdog-snapshot! []
+  (reset! babysitterd-watchdog-snap* (babysitterd-watchdog-snapshot*)))
+
+(defn babysitterd-watchdog-snapshot []
+  (or @babysitterd-watchdog-snap* (refresh-babysitterd-watchdog-snapshot!)))
+
+(defn babysitterd-watchdog-sweep! [now]
+  (when babysitterd-watchdog-flag?
+    (let [snap (refresh-babysitterd-watchdog-snapshot!)
+          {:keys [last-alert-at-ms]} (read-babysitterd-watchdog-state)
+          alert? (babysitterd-freshness-lib/should-alert?
+                  snap last-alert-at-ms now babysitterd-watchdog-cooldown-ms)]
+      (when alert?
+        (log! "babysitterd-watchdog-alert" (:state snap) (:finding snap))
+        (send-babysitterd-watchdog-nudge! (:finding snap))
+        (write-babysitterd-watchdog-state! {:last-alert-at-ms now :last-state (:state snap)}))
+      (when-not alert?
+        (write-babysitterd-watchdog-state!
+         (merge (read-babysitterd-watchdog-state)
+                {:last-state (:state snap)}))))))
+
+(defn babysitterd-watchdog-status []
+  (let [snap (babysitterd-watchdog-snapshot)
+        {:keys [last-alert-at-ms]} (read-babysitterd-watchdog-state)]
+    {:enabled (:enabled snap)
+     :state (:state snap)
+     :pid (:live-pid snap)
+     :pidfile_alive (:pidfile-alive? snap)
+     :telegram_creds (:telegram-creds? snap)
+     :last_alert_at_ms last-alert-at-ms
+     :action (name (:action snap))}))
 
 ;; ── BL-333: front-desk starvation state (runtime-owned, same posture as
 ;;    cooldown above) - {:backlog-started-at-ms :armed?} ────────────────────
@@ -2151,6 +2286,9 @@
     ;; BL-763: Cursor Remote supervisor liveness/heartbeat watchdog - same
     ;; best-effort, cooldown-guarded, never-gates-launch posture.
     (cursor-bridge-watchdog-sweep! now)
+    ;; Babysitterd tell-don't-restart poll: process truth, pidfile lie,
+    ;; telegram announce path. Never start_babysitterd.sh — cron restarter.
+    (babysitterd-watchdog-sweep! now)
 
     (let [llm-running? (operator-running?)
           pending (read-events events-file)
@@ -2160,6 +2298,7 @@
           role-questions-undeliverable (read-role-questions-undeliverable)
           miniapp-watchdog (miniapp-watchdog-status)
           cursor-bridge-watchdog (cursor-bridge-watchdog-status)
+          babysitterd-watchdog (babysitterd-watchdog-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
                      :provider-state provider-state
@@ -2216,6 +2355,7 @@
                        (seq role-questions-undeliverable) (assoc :role_questions_undeliverable role-questions-undeliverable)
                        true (assoc :miniapp_watchdog miniapp-watchdog)
                        true (assoc :cursor_bridge_watchdog cursor-bridge-watchdog)
+                       true (assoc :babysitterd_watchdog babysitterd-watchdog)
                        true (assoc :build_sha own-build-sha)
                        true (assoc :front_desk
                                    (operator-lib/render-front-desk-status

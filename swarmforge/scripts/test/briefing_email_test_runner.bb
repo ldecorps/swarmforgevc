@@ -675,22 +675,26 @@
            (str/includes? (:note-line section) "rendered inline above")))
 
 ;; Open-ticket chart shares the same cid-PNG path with a readable heading.
-;; BL-896 F1: heading/note text no longer say "burndown" - that claims
-;; progress toward a fixed/committed scope, which BL-659 banned.
+;; BL-896 bounce 2026-08-17: the 2026-08-16 08:20 CEST human ruling
+;; explicitly overrides the F1 rename recommendation and keeps the word
+;; "burndown" in the heading and note-line
+;; (backlog/answers-archive/ANSWER-BL-896-land-burndown-chart.md).
 (let [section (briefing-email-lib/build-diagram-section
                [{:name "architecture" :base64 "QUJD"}
                 {:name "not-done-burndown" :base64 "Wk9P"}])]
   (assert= "burndown-diagram-01: not-done burndown is referenced by cid"
            true
            (str/includes? (:html section) "cid:not-done-burndown-diagram"))
-  (assert= "burndown-diagram-01: heading is human-readable, not the raw slug"
+  (assert= "burndown-diagram-01: heading is human-readable and keeps \"burndown\" per the human ruling"
            true
-           (str/includes? (:html section) "<h3>Open tickets remaining</h3>"))
-  (assert= "burndown-diagram-01: note mentions both architecture and the open-ticket chart, never \"burndown\""
+           (and (str/includes? (:html section) "<h3>")
+                (str/includes? (str/lower-case (:html section)) "burndown")
+                (str/includes? (str/lower-case (:html section)) "open tickets remaining")))
+  (assert= "burndown-diagram-01: note mentions both architecture and the open-ticket burndown chart"
            true
            (and (str/includes? (:note-line section) "Architecture")
                 (str/includes? (:note-line section) "open-ticket")
-                (not (str/includes? (str/lower-case (:note-line section)) "burndown")))))
+                (str/includes? (str/lower-case (:note-line section)) "burndown"))))
 
 ;; BL-286 diagram-cid-02/03: each referenced diagram carries a matching
 ;; inline attachment, with the image bytes and a filename.

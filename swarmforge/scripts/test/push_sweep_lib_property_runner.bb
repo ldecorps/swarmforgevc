@@ -141,7 +141,7 @@
           logs (atom [])
           adapters {:rev-counts! (fn [] {:ahead 1 :behind 0})
                     :push! (fn [] (swap! push-calls inc) {:success true})
-                    :send-push-alarm! (fn [_] {:success true})
+                    :send-push-alarm! (fn [_ _] {:success true})
                     :send-divergence-alarm! (fn [_ _] {:success true})
                     :qa-gate-facts! (fn [] scenario)
                     ;; BL-855: this property predates the no-op-merge gate -
@@ -177,7 +177,7 @@
         push-calls (atom 0)
         broken-adapters {:rev-counts! (fn [] {:ahead 1 :behind 0})
                           :push! (fn [] (swap! push-calls inc) {:success true})
-                          :send-push-alarm! (fn [_] {:success true})
+                          :send-push-alarm! (fn [_ _] {:success true})
                           :send-divergence-alarm! (fn [_ _] {:success true})
                           ;; a gate that ALWAYS approves, even for a tip
                           ;; that plainly lacks QA approval - the bug this
@@ -403,6 +403,115 @@
           (System/exit 1)))))
 
 (non-vacuity-check-dirty-tree)
+
+;; ── BL-903: PROPERTY test over push_sweep_lib.bb, covering the ticket's
+;;    own 2 declared invariants (coder-authored first, per BL-654):
+;;
+;;   1. A push failure is never recorded without the underlying error text
+;;      alongside it - whenever push! reports non-blank stderr, both the
+;;      recorded push-state and the push-failed log line name it.
+;;   2. No logged record spans more than one line, whatever git wrote to
+;;      stderr - a multi-line git error must never smuggle a raw newline
+;;      into the push-failed log record.
+;;
+;; Independent oracle - "is this raw generated string non-blank once
+;; trimmed", a fresh restatement that never calls sanitize-error-line
+;; itself (same posture as every property above). sweep!'s :push! adapter
+;; always fails here, so every generated draw exercises the exact
+;; push-failed path under test - no rare corner to hope for (BL-654
+;; generator-reach).
+
+(def error-word-pool ["fatal:" "remote:" "error:" "could" "not" "access" "the"
+                       "repository" "authentication" "failed" "connection" "refused"
+                       "non-fast-forward" "rejected"])
+
+(defn gen-error-line [s]
+  (let [[n s1] (gen-int s 5)] ; 0..4 words - 0 words -> an empty line
+    (reduce (fn [[acc sx] _]
+              (let [[w sy] (gen-pick sx error-word-pool)] [(conj acc w) sy]))
+            [[] s1] (range n))))
+
+;; 0..3 lines joined by real newlines - 0 lines (or every line 0-word) is
+;; the "no error text at all" case, matching push!'s real contract (:error
+;; can be "").
+(defn gen-error-string [s]
+  (let [[n s1] (gen-int s 4)]
+    (let [[lines s2] (reduce (fn [[acc sx] _]
+                                (let [[words sy] (gen-error-line sx)]
+                                  [(conj acc (clojure.string/join " " words)) sy]))
+                              [[] s1] (range n))]
+      [(clojure.string/join "\n" lines) s2])))
+
+(defn- oracle-non-blank? [error]
+  (boolean (and error (seq (clojure.string/trim error)))))
+
+(check-all "push_sweep_lib push-failed invariant: a failure's recorded state and log line never drop non-blank error text, and never carry a raw newline"
+  gen-error-string
+  (fn [error]
+    (let [dir (mk-tmp)
+          logs (atom [])
+          adapters {:rev-counts! (fn [] {:ahead 1 :behind 0})
+                    :push! (fn [] {:success false :error error})
+                    :send-push-alarm! (fn [_ _] {:success true})
+                    :send-divergence-alarm! (fn [_ _] {:success true})
+                    :qa-gate-facts! (fn [] {:qa-ref-exists? true :tip-is-qa-ancestor? true})
+                    :noop-merge-gate-facts! (fn [] {:facts-complete? true :ahead-commits []})
+                    :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}
+          _ (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+          recorded-error (get-in (push-sweep-lib/read-state dir) [:push :last-error])
+          push-failed-line (some #(when (clojure.string/includes? % "push-failed") %) @logs)]
+      (cond
+        (and (oracle-non-blank? error) (nil? recorded-error))
+        (str "INVARIANT 1 VIOLATION: push! reported non-blank error " (pr-str error) " but no :last-error was recorded")
+
+        (and (oracle-non-blank? error) (not (clojure.string/includes? push-failed-line recorded-error)))
+        (str "INVARIANT 1 VIOLATION: the push-failed log record does not carry the recorded error; record=" (pr-str push-failed-line))
+
+        (clojure.string/includes? push-failed-line "\n")
+        (str "INVARIANT 2 VIOLATION: the push-failed log record contains a raw newline; record=" (pr-str push-failed-line))
+
+        :else true))))
+
+;; ── non-vacuity, invariant 1: prove this property actually catches the bug
+;;    this ticket exists to fix - a push-failed record naming only the
+;;    attempt count, exactly push_sweep_lib.bb's pre-fix behavior. ─────────
+(defn- buggy-push-failed-log-line
+  "Verbatim restatement of the pre-fix bug: the push-failed record names
+   only the attempt count, discarding whatever git wrote to stderr."
+  [attempts _error]
+  (str "attempts=" attempts))
+
+(defn- non-vacuity-check-error-discarded []
+  (let [error "fatal: could not read Username for 'https://example.invalid'"
+        real-line (str "attempts=1" (when-let [e (push-sweep-lib/sanitize-error-line error)] (str " error=\"" e "\"")))
+        buggy-line (buggy-push-failed-log-line 1 error)]
+    (if (and (clojure.string/includes? real-line "could not read Username")
+             (not (clojure.string/includes? buggy-line "could not read Username")))
+      (println "non-vacuity confirmed: today's push-failed record carries the error text a pre-fix implementation would have discarded")
+      (do (println (str "NON-VACUITY FAILURE (BL-903 error-discarded mutant): real=" (pr-str real-line) " buggy=" (pr-str buggy-line)))
+          (System/exit 1)))))
+
+(non-vacuity-check-error-discarded)
+
+;; ── non-vacuity, invariant 2: prove this property actually catches a
+;;    mutant that forgets to collapse embedded newlines. ──────────────────
+(defn- buggy-sanitize-error-line
+  "A mutant that forgets to collapse newlines - stderr's raw multi-line
+   text would smuggle straight into the one-record-per-line log."
+  [error]
+  (some-> error clojure.string/trim not-empty))
+
+(defn- non-vacuity-check-multiline-not-collapsed []
+  (let [multiline-error "remote: line one\nfatal: line two"
+        real-result (push-sweep-lib/sanitize-error-line multiline-error)
+        buggy-result (buggy-sanitize-error-line multiline-error)]
+    (if (and (not (clojure.string/includes? (or real-result "") "\n"))
+             (clojure.string/includes? (or buggy-result "") "\n"))
+      (println "non-vacuity confirmed: sanitize-error-line collapses a multi-line error a mutant would have smuggled through as a raw newline")
+      (do (println (str "NON-VACUITY FAILURE (BL-903 multiline mutant): real=" (pr-str real-result) " buggy=" (pr-str buggy-result)))
+          (System/exit 1)))))
+
+(non-vacuity-check-multiline-not-collapsed)
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "push_sweep_lib qa-gate property: " runs " runs"))

@@ -185,14 +185,15 @@
 ;; the historic "<name> diagram" label; the open-ticket chart gets a
 ;; readable title instead of "not-done-burndown diagram".
 ;;
-;; BL-896 F1: was "Not-done ticket burndown" - "burndown" claims progress
-;; toward a fixed/committed scope, which BL-659 banned (this repo's
-;; milestones are a continuously growing scope, not a committed perimeter).
-;; The chart plots open tickets remaining with filed/closed rates, not a
-;; burndown, so the heading now says that instead.
+;; BL-896 bounce 2026-08-17: F1 had renamed this away from "burndown"
+;; ("burndown" claims progress toward a fixed/committed scope, which BL-659
+;; banned). The 2026-08-16 08:20 CEST human ruling explicitly overrides that
+;; rename and keeps the word "burndown" on the heading for this email chart -
+;; BL-659's ban stays PWA/milestone-dashboard-specific and does not reach
+;; here (backlog/answers-archive/ANSWER-BL-896-land-burndown-chart.md).
 (defn- diagram-heading [name]
   (case name
-    "not-done-burndown" "Open tickets remaining"
+    "not-done-burndown" "Backlog burndown — open tickets remaining"
     (str name " diagram")))
 
 (defn- diagram-note-line [diagrams]
@@ -201,10 +202,10 @@
         has-burn? (contains? names "not-done-burndown")]
     (cond
       (and has-arch? has-burn?)
-      "Architecture diagrams and the open-ticket chart: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
+      "Architecture diagrams and the open-ticket burndown chart: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
 
       has-burn?
-      "Open-ticket chart: rendered inline above (HTML view)."
+      "Open-ticket burndown chart: rendered inline above (HTML view)."
 
       :else
       "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source.")))

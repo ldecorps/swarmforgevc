@@ -94,7 +94,7 @@
   (or (env-json "PUSH_SWEEP_PUSH_RESULT")
       (throw (ex-info "PUSH_SWEEP_PUSH_RESULT not set - no real git process is ever allowed here" {}))))
 
-(defn send-push-alarm! [_attempts]
+(defn send-push-alarm! [_attempts _reason]
   (swap! alarm-calls inc)
   (or (env-json "PUSH_SWEEP_ALARM_RESULT")
       (throw (ex-info "PUSH_SWEEP_ALARM_RESULT not set - no real network call is ever allowed here" {}))))

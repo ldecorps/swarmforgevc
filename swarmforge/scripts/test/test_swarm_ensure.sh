@@ -32,7 +32,8 @@ make_fixture() {
 
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
   mkdir -p "$ROOT/.swarmforge/daemon" "$ROOT/.swarmforge/operator" \
-           "$ROOT/.swarmforge/launch" "$ROOT/.worktrees/coder"
+           "$ROOT/.swarmforge/launch" "$ROOT/.swarmforge/babysitterd" \
+           "$ROOT/.worktrees/coder"
   echo "$ROOT/fake.sock" > "$ROOT/.swarmforge/tmux-socket"
   printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
     > "$ROOT/.swarmforge/roles.tsv"
@@ -71,6 +72,10 @@ EOF
   chmod +x "$FAKE_BIN/fake_ext_bounce.sh"
 
   echo "$$" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+  # Same stand-in as handoffd: this test script's pid is alive. Without it,
+  # ensure called the REAL start_babysitterd.sh against every temp root and
+  # leaked looping daemons (cleanup never signalled babysitterd.pid).
+  echo "$$" > "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
   # BL-690: this fake must mirror the real repair command's START semantics
   # (start_handoff_daemon.sh), never a health PROBE - the previous fake here
   # (a bare `sleep` spawn standing in for `handoffd_supervisor.bb
@@ -140,6 +145,7 @@ cleanup_daemon() {
   # never kill it.
   for pid_file in \
       "$ROOT/.swarmforge/daemon/handoffd.pid" \
+      "$ROOT/.swarmforge/babysitterd/babysitterd.pid" \
       "$ROOT/.swarmforge/operator/runtime.pid" \
       "$ROOT/.swarmforge/operator/front-desk-supervisor.pid" \
       "$ROOT/.swarmforge/operator/cursor-bridge-supervisor.pid"; do
