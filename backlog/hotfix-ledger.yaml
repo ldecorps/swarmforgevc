@@ -58,14 +58,14 @@
 - commit: 14724edae7
   subject: "Land morning-briefing not-done burndown chart (stranded WIP; clears master-checkout drift)."
   detected_at: 2026-08-15
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-896
   human_decision: null
   decided_at: null
 - commit: 0f5394a2d0
   subject: "Land hide-childless-epics reorder screen fix (BL-905 stamp-off; human-approved hotfix landing)."
   detected_at: 2026-08-16
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-905
   human_decision: null
   decided_at: null
@@ -74,5 +74,12 @@
   detected_at: 2026-08-17
   state: pending
   stamp_ticket: null
+  human_decision: null
+  decided_at: null
+- commit: ece61cbe63
+  subject: "Land Cursor-bridge gone-agent session reset."
+  detected_at: 2026-08-17
+  state: pending
+  stamp_ticket: BL-915
   human_decision: null
   decided_at: null
