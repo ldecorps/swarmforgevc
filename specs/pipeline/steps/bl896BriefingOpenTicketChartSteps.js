@@ -95,6 +95,16 @@ function registerSteps(registry) {
     }
   });
 
+  registry.define(/^its heading keeps the word "burndown" per the 2026-08-16 human ruling$/, (ctx) => {
+    // BL-896 architect bounce (round 2): the earlier "no claim of progress"
+    // step stopped REJECTING the word "burndown" but nothing ever asserted
+    // it must be PRESENT, so the acceptance gate passed either heading.
+    // This is the positive assertion the ruling actually requires.
+    if (!/burndown/i.test(ctx.burndownSvg)) {
+      throw new Error(`expected the heading to keep the word "burndown" per the human ruling; got: ${ctx.burndownSvg}`);
+    }
+  });
+
   registry.define(
     /^its summary reports the open count at each end of the window with the filed and closed rates$/,
     (ctx) => {
