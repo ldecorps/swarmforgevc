@@ -29,6 +29,7 @@ const {
   isActiveRunConflict,
   isCursorAuthError,
   isCursorConnectionFailure,
+  isCursorAgentGone,
   shouldResetCursorAgentSession,
   isCursorResourceExhausted,
   parseCursorBridgeCliArgs,
@@ -936,6 +937,15 @@ test('cursor bridge: shouldResetCursorAgentSession covers auth, active-run, and 
   assert.equal(shouldResetCursorAgentSession('Connection failed repeatedly after retries'), true);
   assert.equal(shouldResetCursorAgentSession('Cursor run failed (run-123): [unavailable] Error'), true);
   assert.equal(shouldResetCursorAgentSession('quota exceeded'), false);
+});
+
+test('cursor bridge: isCursorAgentGone detects a resume whose agentId the SDK no longer has', () => {
+  assert.equal(
+    isCursorAgentGone('Agent agent-47f26e41-65e8-459a-96f0-4a6a8e7bbfb0 not found.'),
+    true
+  );
+  assert.equal(isCursorAgentGone('ticket not found in active/paused'), false);
+  assert.equal(shouldResetCursorAgentSession('Agent agent-47f26e41-65e8-459a-96f0-4a6a8e7bbfb0 not found.'), true);
 });
 
 test('cursor bridge: isCursorResourceExhausted detects rate-limit / quota errors', () => {

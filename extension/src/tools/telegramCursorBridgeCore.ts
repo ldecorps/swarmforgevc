@@ -874,8 +874,18 @@ export function isCursorConnectionFailure(message: string): boolean {
   );
 }
 
+/** Cursor SDK can no longer resume this stored agentId (deleted or expired). */
+export function isCursorAgentGone(message: string): boolean {
+  return /\bagent\s+agent-[a-z0-9-]+\s+not found\b/i.test(message);
+}
+
 export function shouldResetCursorAgentSession(message: string): boolean {
-  return isActiveRunConflict(message) || isCursorAuthError(message) || isCursorConnectionFailure(message);
+  return (
+    isActiveRunConflict(message) ||
+    isCursorAuthError(message) ||
+    isCursorConnectionFailure(message) ||
+    isCursorAgentGone(message)
+  );
 }
 
 /** Rate-limit / quota errors from the Cursor API — fail fast with a clear message, no session reset. */
