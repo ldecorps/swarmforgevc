@@ -1,0 +1,214 @@
+id: BL-916
+title: "Swarm stamp-off: Bubble expand blocked after cold start — certify the landed hotfix 8da0f52e59 (v0.3.17-open-talk)"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 25
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-916-bubble-cold-start-expand-swarm-stamp.feature
+
+invariants:
+  - "The overlay service never starts the Talk panel activity directly — every path from the disc to Talk goes through the exported launcher activity, because a background start of a non-exported dialog activity is exactly what the platform drops after a cold start."
+  - "No fix for one freeze reintroduces another: the splash, the panel dismiss and the expand path were fixed together on one live device, and each is only observable as 'the bubble is frozen'."
+
+approval_context: >
+  This is a BL-848 hotfix stamp-off, so the human decision it needs is the
+  ledger one: does `8da0f52e59` get certified (approved) or waived? The code
+  is already on `main` and already on the human's phone — rejecting this
+  ticket does not un-land the hotfix.
+
+  What specifically needs sign-off: the acceptance strategy, because this
+  ticket cannot be gated the way a normal ticket is. Everything the hotfix
+  fixes is device-surface, so the feature file is a set of configuration and
+  structure regression guards and the REAL acceptance is a recorded manual
+  procedure. Bubble also has no mutation, CRAP or DRY tooling wired at all
+  (see notes). If the human wants stronger automated evidence, the honest way
+  to get it is a separate ticket that extracts pure-logic seams — not a
+  widening of this stamp-off, which locked decision 1 forbids.
+
+  What is firm: the landed behaviour and all four locked decisions below.
+
+source: |
+  `backlog/INTAKE-bubble-expand-blocked-after-cold-start-hotfix.md` — human
+  via Cursor 2026-08-17, landed the same evening; drained from the backlog
+  root into this ticket. Routed to the specifier by the coordinator as a
+  `note`:
+
+  > mint stamp ticket for hotfix 8da0f52e59, intake already at root
+
+  The human confirmed live on the phone the same evening, verbatim:
+
+  > "It's working as expected then. Let swarm know about this hotfix."
+
+  ### Locked human decisions — preserved verbatim from the intake
+
+  > 1. Treat this as **swarm-review stamp-off of a landed hotfix**, not a
+  >    greenfield implement ticket (same posture as BL-811 / BL-849).
+  > 2. Severity **high** — the collapsed bubble is the product's only
+  >    day-to-day entry; after cold start it did not open at all.
+  > 3. Keep single-tap expand. Do not take this as approval of BL-828.
+  > 4. Do not restore `finishAndRemoveTask()` of `MainActivity` from
+  >    `onCreate` — that was the splash freeze. Pairing UI staying on
+  >    screen when the user opens the app icon (with Let's Talk launched
+  >    from a tap) is the accepted trade-off.
+
+  The hotfix commit, `Hotfix-Certification: pending`, authored via Cursor,
+  shipped as `0.3.17-open-talk` (`versionCode` 33) after iterating through
+  0.3.15-expand-fix and 0.3.16-splash-fix on the phone. It touched 8 files
+  (310 insertions, 125 deletions) across `android/`.
+
+description: |
+  ## The incident
+
+  The human expanded the bubble to look at Knowledge. The disc drew, but a
+  short tap did nothing — and force-stopping made it worse, not better: the
+  app started collapsed and stayed that way. The product's only day-to-day
+  entry point was dead.
+
+  Root cause: `OverlayService.openTalkPanel()` called
+  `startActivity(TalkPanelActivity)` from a background overlay service. After
+  a cold start there is no foreground activity, so the platform's
+  background-activity-launch block (Samsung especially) drops that start
+  **silently** — no crash, no log, just a bubble that does not respond.
+
+  Two further freezes surfaced while fixing it on the device, both wearing the
+  same "frozen bubble" costume:
+
+  1. Finishing `MainActivity` from `onCreate` after starting Talk left the
+     Android 12+ splash (a giant launcher lightbulb) stuck on screen.
+  2. `windowCloseOnTouchOutside=true` on the dialog panel treated the
+     overlay's own finger-up as an outside tap and finished the panel
+     instantly.
+
+  That all three present identically to the user is why invariant 2 is
+  declared: a later change that fixes one by reverting another would read as
+  "still broken" and be very hard to attribute.
+
+  ## What landed — do not rebuild it
+
+  The overlay now trampolines through the exported `MainActivity` carrying
+  `EXTRA_OPEN_TALK`, sent as a `PendingIntent` with
+  `MODE_BACKGROUND_ACTIVITY_START_ALLOWED` on API 34+, with a plain
+  `startActivity` of that same launcher intent as a last-resort catch
+  fallback. `MainActivity` no longer finishes its own task from `onCreate`.
+  `TalkPanelActivity` retries its engine bind (~1s) rather than inflating
+  against a service that has not come up. The panel dialog no longer closes
+  on an outside touch, and the API 31+ theme uses a transparent splash icon
+  with zero animation duration.
+
+  **This ticket certifies that work through the chain — it is not a licence to
+  redesign the launch path or the gesture model.**
+
+  ## Why the acceptance looks unusual (read before bouncing it)
+
+  Per the BL-769 testability boundary, every behaviour above is device-surface
+  — a running Service, the overlay window, the activity lifecycle. It is
+  reachable by neither the JVM unit suite (no `android.*` types allowed in the
+  seam) nor the Node acceptance runner, which cannot execute Kotlin at all.
+
+  So the feature file deliberately holds configuration and structure guards
+  rather than behavioural proofs: each pins one thing whose silent reversal
+  would restore one of the three freezes. **The primary acceptance is the
+  recorded manual procedure in `qa_e2e_procedure`.** Treating the feature file
+  as the real gate here would be the overclaim this ticket is trying to avoid.
+
+  ### One correction for whoever implements the guards
+
+  `OverlayService` DOES still call `startActivity` — at the end of the catch
+  block, targeting `MainActivity`. A guard asserting the service never calls
+  `startActivity` at all is therefore WRONG and will fail against correct
+  code. The property that actually matters, and what invariant 1 states, is
+  that it never targets `TalkPanelActivity`. Verified at spec time: the file
+  contains no reference to that class.
+
+qa_e2e_procedure: |
+  The automated guards cannot show the bubble opens; only a device can. Run
+  the manual procedure — it is this ticket's primary acceptance, and the same
+  one the human already ran to confirm the build.
+
+  Prerequisites: a physical Android device (Samsung is the surface that
+  exposed the fault), the `0.3.17-open-talk` APK or later sideloaded.
+
+  1. **Reproduce the original entry condition.** Force-stop the app from
+     Android settings, so no activity is in the foreground. This is the state
+     the whole hotfix is about — skipping it tests nothing.
+  2. **Cold-start expand.** Bring up the floating disc and give it one short
+     tap. Let's Talk MUST open. This is the headline fix; before the hotfix
+     the tap was silently dropped.
+  3. **Panel survives its own opening tap** (freeze 2). The panel must STAY
+     open — it must not appear and vanish, which is what the overlay finger-up
+     did when the dialog closed on outside touch.
+  4. **No stuck splash** (freeze 1). Launch from the app icon. The pairing
+     screen must appear; the launcher-icon splash must not persist. Confirm
+     the pairing UI stays on screen — that is the accepted trade-off in locked
+     decision 4, not a defect to report.
+  5. **Open Talk from a real tap** in `MainActivity` (the "Open Let's Talk"
+     button when paired), proving both entry paths work.
+  6. **Repeat step 2 twice more without force-stopping**, confirming the
+     re-entrant open reuses the task rather than stacking panels.
+  7. **Record the result in the ticket** — device model, Android version, app
+     versionName, and pass/fail per step. An unrecorded manual run is not
+     evidence, and this ticket has no automated substitute for it.
+
+  Note the boundary: Knowledge being reachable again is a CONSEQUENCE of
+  expand working. Its content is BL-908/BL-659 and is not this ticket's to
+  judge.
+
+out_of_scope: |
+  Taken verbatim from the intake, plus its "do not widen" goal item:
+
+  - BL-828 double-tap / idle-mic gesture model. Keep single-tap expand; this
+    ticket is not approval of that redesign.
+  - Knowledge miller-column drill-down (BL-659) — still mock-only; BL-908
+    remaining a list + dialog peek is expected.
+  - Changing `applicationId` / sideload hosting (BL-851 already stamped).
+  - Remote-page content for the pager (BL-830 children).
+  - APK-distribution policy.
+  - The BL-824 / BL-825 / BL-829 remote UI pager. Expand working again makes
+    those pages reachable; it does not implement them.
+
+notes: |
+  2026-08-17 specifier, on minting from the backlog root.
+
+  **Degraded gating — the hardener must record this, not imply it away.**
+  Bubble/Kotlin has NO mutation, CRAP or DRY tooling wired (engineering.prompt
+  Startup Tools: the Bubble Kotlin gap). The only automated gate available is
+  `android/gradlew :app:testDebugUnitTest`, and that suite covers pure logic
+  only — none of which this hotfix adds. A hardening pass here MUST state the
+  degraded fallback explicitly and must not report mutation/CRAP/DRY as having
+  run.
+
+  **Expedite lane.** `type: defect` + `severity: high` makes this expedited
+  under Article 3.2.4 — it promotes ahead of every non-expedited ticket
+  regardless of its `priority:` number. The severity is a locked human
+  decision, not a specifier judgement. Expediting reorders promotion only: it
+  is not an extra active slot and does not raise the handoff priority lane.
+
+  **Spec-time verification.** Every claim the feature file asserts was checked
+  against the landed code before minting, not taken from the intake's prose:
+  `windowCloseOnTouchOutside` is false with a comment already warning it must
+  stay so; `values-v31/themes.xml` sets a transparent animated icon and zero
+  duration; `MainActivity` is `exported="true"` with `launchMode="singleTop"`;
+  `MainActivity` contains no `finishAndRemoveTask` or `finish()`;
+  `OverlayService` contains no reference to `TalkPanelActivity`. One intake
+  claim needed correcting for the guards — see the description's correction
+  note about `startActivity` still being present as a fallback.
+
+  **BL-233 obligation.** The acceptance file ships LIVE (`.feature`, not
+  `.feature.draft`) because the code it describes is already in production,
+  but no step handlers exist for it yet. All five scenarios need handlers
+  landed in THIS parcel; the runner throws on any it cannot resolve.
+
+  Related tickets, from the intake's "do not conflate" list: BL-828 (gesture
+  model, paused), BL-824/BL-825/BL-829 (remote UI pager epic, paused), BL-908
+  (Knowledge native screen, done), BL-788 (pairing + client-logs, done),
+  BL-707 (original overlay companion, done — this is a follow-on launch-path
+  defect on that shell).
+
+assigned_to: coder
