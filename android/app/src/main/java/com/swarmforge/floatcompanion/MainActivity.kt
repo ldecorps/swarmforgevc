@@ -7,16 +7,15 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.swarmforge.floatcompanion.databinding.ActivityMainBinding
 
 /**
- * First-run / rare re-pair screen for bridge URL + token.
- * Day-to-day use is the floating bubble; when already paired this activity
- * starts the overlay and finishes so the old pairing UI is not left behind
- * Let's Talk.
+ * Pairing / control screen. When already paired this still *stays on screen*
+ * so the system splash can dismiss (killing it from onCreate froze Samsung
+ * on the giant lightbulb). Overlay starts in the background; Let's Talk
+ * opens from a real tap here, or from the bubble via [EXTRA_OPEN_TALK].
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -32,12 +31,28 @@ class MainActivity : AppCompatActivity() {
         binding.token.setText(CompanionPrefs.getToken(this))
 
         val editPairing = intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false)
-        if (!editPairing && tryAutoStartBubble()) {
-            return
-        }
-
         showPairingUi(editPairing || !isPaired())
+        ensureOverlayRunning()
+        bindControls()
+        refreshStatus()
+        if (intent.getBooleanExtra(EXTRA_OPEN_TALK, false)) {
+            openTalkFromUi()
+        }
+    }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyPairingDeepLinkIfPresent(intent)
+        showPairingUi(intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false) || !isPaired())
+        ensureOverlayRunning()
+        refreshStatus()
+        if (intent.getBooleanExtra(EXTRA_OPEN_TALK, false)) {
+            openTalkFromUi()
+        }
+    }
+
+    private fun bindControls() {
         val persistWatcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -52,58 +67,32 @@ class MainActivity : AppCompatActivity() {
         binding.grantOverlay.setOnClickListener {
             if (Settings.canDrawOverlays(this)) {
                 Toast.makeText(this, "Overlay already granted", Toast.LENGTH_SHORT).show()
-                if (isPaired() && tryAutoStartBubble()) return@setOnClickListener
+                ensureOverlayRunning()
             } else {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
                 )
-                startActivity(intent)
             }
         }
 
         binding.startBubble.setOnClickListener {
             persistPairing()
-            if (!Settings.canDrawOverlays(this)) {
-                Toast.makeText(this, "Grant draw-over permission first", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            if (!isPaired()) {
-                Toast.makeText(this, "Need bridge URL and token", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            startBubbleService()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                finishAndRemoveTask()
-            } else {
-                finish()
-            }
+            openTalkFromUi()
         }
 
         binding.stopBubble.setOnClickListener {
             stopService(Intent(this, OverlayService::class.java))
             refreshStatus()
         }
-
-        refreshStatus()
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        applyPairingDeepLinkIfPresent(intent)
-        if (!intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false) && tryAutoStartBubble()) {
-            return
-        }
-        showPairingUi(intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false) || !isPaired())
-        refreshStatus()
     }
 
     /**
      * BL-716 dns-05: applies a swarmforge-bubble://pair deep link if this
      * intent carries one, so a revived tunnel URL reaches the phone without
      * the human hunting logs or retyping it by hand.
-     * @return true if a pairing update was applied.
      */
     private fun applyPairingDeepLinkIfPresent(intent: Intent): Boolean {
         val data = intent.data ?: return false
@@ -114,7 +103,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        if (binding.bridgeUrlLayout.visibility == View.VISIBLE) {
+        if (binding.bridgeUrlLayout.visibility == android.view.View.VISIBLE) {
             CompanionPrefs.save(
                 this,
                 binding.bridgeUrl.text?.toString().orEmpty(),
@@ -127,17 +116,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!isFinishing &&
-            !intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false) &&
-            tryAutoStartBubble()
-        ) {
-            return
-        }
+        showPairingUi(intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false) || !isPaired())
+        ensureOverlayRunning()
         refreshStatus()
     }
 
     private fun showPairingUi(showFields: Boolean) {
-        val vis = if (showFields) View.VISIBLE else View.GONE
+        val vis = if (showFields) android.view.View.VISIBLE else android.view.View.GONE
         binding.bridgeUrlLayout.visibility = vis
         binding.tokenLayout.visibility = vis
     }
@@ -146,33 +131,26 @@ class MainActivity : AppCompatActivity() {
         CompanionPrefs.getBaseUrl(this).isNotBlank() &&
             CompanionPrefs.getToken(this).isNotBlank()
 
-    /** @return true if this activity is finishing after starting the bubble. */
-    private fun tryAutoStartBubble(): Boolean {
-        if (!isPaired()) return false
-        if (!Settings.canDrawOverlays(this)) {
-            showPairingUi(false)
-            refreshStatus()
-            return false
-        }
+    private fun ensureOverlayRunning() {
+        if (!isPaired()) return
+        if (!Settings.canDrawOverlays(this)) return
         startBubbleService()
-        // Drop this task so Home never resurfaces the pairing screen.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            finishAndRemoveTask()
-        } else {
-            finish()
-        }
-        return true
     }
 
-    /**
-     * BL-829 required_wiring: this is the real start of the chain the
-     * pager's RemotePageHost is reachable from — MainActivity itself is
-     * pairing-only and never shows Talk or the pager, but starting
-     * [OverlayService] here is what makes expanding the bubble (which
-     * launches [TalkPanelActivity], which builds [TalkPagerAdapter], which
-     * instantiates [RemotePageHost] per remote page) reachable at all. See
-     * [TalkPagerAdapter] for the actual instantiation.
-     */
+    private fun openTalkFromUi() {
+        persistPairing()
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Grant draw-over permission first", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!isPaired()) {
+            Toast.makeText(this, "Need bridge URL and token", Toast.LENGTH_LONG).show()
+            return
+        }
+        startBubbleService()
+        startActivity(Intent(this, TalkPanelActivity::class.java))
+    }
+
     private fun startBubbleService() {
         val intent = Intent(this, OverlayService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -204,9 +182,13 @@ class MainActivity : AppCompatActivity() {
             "?"
         }
         binding.status.text = "$overlay · $paired · v$ver"
+        binding.startBubble.text = getString(
+            if (isPaired()) R.string.open_lets_talk else R.string.start_bubble
+        )
     }
 
     companion object {
         const val EXTRA_EDIT_PAIRING = "edit_pairing"
+        const val EXTRA_OPEN_TALK = "open_talk"
     }
 }

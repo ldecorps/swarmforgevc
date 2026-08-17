@@ -3,6 +3,7 @@
     <string name="app_name">SwarmForge Float</string>
     <string name="lets_talk_title">Let\'s Talk</string>
     <string name="start_bubble">Start bubble</string>
+    <string name="open_lets_talk">Open Let\'s Talk</string>
     <string name="stop_bubble">Stop bubble</string>
     <string name="grant_overlay">Grant draw-over permission</string>
     <string name="bridge_url_hint">Bridge base URL (saved on phone)</string>
