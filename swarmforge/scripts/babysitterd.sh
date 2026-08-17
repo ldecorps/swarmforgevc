@@ -55,6 +55,8 @@ echo $$ > "$PIDFILE"
 # Only unlink OUR pid. A second start that raced the missing-pidfile window
 # can overwrite the file; a blindly-rm EXIT trap is how the original live
 # process lost its pidfile and ./swarm status reported DOWN.
+# babysitterd_freshness_lib.bb's should-unlink-pidfile? is a pure twin of
+# this decision (BL-906 invariant 2, property-tested); MUST stay aligned.
 trap 'recorded=$(tr -d "[:space:]" < "$PIDFILE" 2>/dev/null || true)
       if [ "$recorded" = "$$" ]; then rm -f "$PIDFILE"; fi' EXIT
 

@@ -94,3 +94,13 @@
         (or (nil? last-alert-at-ms)
             (>= (- (long now-ms) (long last-alert-at-ms))
                  (long cooldown-ms))))))
+
+(defn should-unlink-pidfile?
+  "Pure twin of babysitterd.sh's own EXIT trap (BL-906 invariant 2): a
+   pidfile is unlinked only when its recorded content, whitespace-trimmed,
+   equals this process's own pid, as strings. Bash original MUST stay
+   aligned (commented there) - this is the decision the trap encodes, not a
+   reimplementation of the trap itself (which also does the actual rm -f)."
+  [recorded-pidfile-content own-pid]
+  (= (str/trim (or recorded-pidfile-content ""))
+     (str own-pid)))
