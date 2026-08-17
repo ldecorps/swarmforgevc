@@ -52,6 +52,13 @@ test('getLetsTalkUiBundleManifest: a malformed on-disk file falls back to the bu
   assert.equal(manifest.payload, '');
 });
 
+test('getLetsTalkUiBundleManifest: an on-disk file that is not valid JSON falls back to the bundled default', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(manifestPath(root), 'not json {');
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, '');
+});
+
 test('getLetsTalkUiBundleManifest: LETS_TALK_UI_BUNDLE_DISABLED forces the bundled default even with a file present', () => {
   const root = mkOperatorDir();
   fs.writeFileSync(
@@ -131,4 +138,95 @@ test('getLetsTalkUiBundleManifest: an empty-string payload is rejected the same 
   const manifest = getLetsTalkUiBundleManifest(root, {});
   assert.equal(manifest.payload, '');
   assert.equal(manifest.bundleVersion, 0);
+});
+
+// BL-829: the manifest's `pages` list, and its whole-or-nothing rejection.
+
+test('getLetsTalkUiBundleManifest: default (no file on disk) carries an empty pages list', () => {
+  const root = mkOperatorDir();
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.deepEqual(manifest.pages, []);
+});
+
+test('getLetsTalkUiBundleManifest: a well-formed pages list is served with id, title, entryPath and order', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    manifestPath(root),
+    JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: 7,
+      minShellVersion: 3,
+      payload: '<html></html>',
+      pages: [
+        { id: 'live', title: 'Live', entryPath: 'live', order: 0 },
+        { id: 'pipeline', title: 'Pipeline', entryPath: 'pipeline', order: 1 },
+      ],
+    })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.deepEqual(manifest.pages, [
+    { id: 'live', title: 'Live', entryPath: 'live', order: 0 },
+    { id: 'pipeline', title: 'Pipeline', entryPath: 'pipeline', order: 1 },
+  ]);
+});
+
+test('getLetsTalkUiBundleManifest: a manifest with no pages field at all still serves (empty pages), backward compatible with BL-825 documents', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    manifestPath(root),
+    JSON.stringify({ schemaVersion: 1, bundleVersion: 7, minShellVersion: 3, payload: '<html></html>' })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.bundleVersion, 7);
+  assert.deepEqual(manifest.pages, []);
+});
+
+test('getLetsTalkUiBundleManifest: a malformed page list (missing title) rejects the whole manifest, not just that page', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    manifestPath(root),
+    JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: 7,
+      minShellVersion: 3,
+      payload: '<html></html>',
+      pages: [{ id: 'live', entryPath: 'live', order: 0 }],
+    })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, '');
+  assert.deepEqual(manifest.pages, []);
+  assert.equal(manifest.bundleVersion, 0);
+});
+
+test('getLetsTalkUiBundleManifest: pages as a non-array rejects the whole manifest', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    manifestPath(root),
+    JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: 7,
+      minShellVersion: 3,
+      payload: '<html></html>',
+      pages: 'not-an-array',
+    })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, '');
+});
+
+test('getLetsTalkUiBundleManifest: a page entry with a non-finite order rejects the whole manifest', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    manifestPath(root),
+    JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: 7,
+      minShellVersion: 3,
+      payload: '<html></html>',
+      pages: [{ id: 'live', title: 'Live', entryPath: 'live', order: 'first' }],
+    })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, '');
 });

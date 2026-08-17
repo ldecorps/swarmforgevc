@@ -20,12 +20,24 @@ import org.json.JSONObject
  */
 object UiBundleResolver {
 
+    /**
+     * BL-829: one entry in the manifest's page allowlist — the shell's
+     * pager only ever opens a page whose id/entryPath came from here.
+     */
+    data class UiBundlePage(
+        val id: String,
+        val title: String,
+        val entryPath: String,
+        val order: Int
+    )
+
     /** A UI bundle: the version it is served/cached at, the shell floor it requires, and its opaque content. */
     data class UiBundleManifest(
         val schemaVersion: Int,
         val bundleVersion: Int,
         val minShellVersion: Int,
-        val payload: String
+        val payload: String,
+        val pages: List<UiBundlePage> = emptyList()
     )
 
     enum class UiBundleOutcome { FRESH, CACHED, STALE, BARE }
@@ -125,6 +137,36 @@ object UiBundleResolver {
             else -> null
         }
 
+    /**
+     * BL-829: `pages` shares the same whole-or-nothing posture as every
+     * other field here — a present-but-malformed entry rejects the entire
+     * document (never a partial page list), matching the bridge-side
+     * parser's stance (extension/src/bridge/letsTalkUiBundle.ts). An absent
+     * `pages` key is not malformed: it parses to an empty list, so a
+     * pre-BL-829 manifest (BL-825) still parses.
+     */
+    private fun parsePage(raw: Any?): UiBundlePage? {
+        val json = raw as? JSONObject ?: return null
+        val id = json.opt("id") as? String ?: return null
+        if (id.isEmpty()) return null
+        val title = json.opt("title") as? String ?: return null
+        if (title.isEmpty()) return null
+        val entryPath = json.opt("entryPath") as? String ?: return null
+        if (entryPath.isEmpty()) return null
+        val order = wholeIntOrNull(json, "order") ?: return null
+        return UiBundlePage(id, title, entryPath, order)
+    }
+
+    private fun parsePages(json: JSONObject): List<UiBundlePage>? {
+        if (!json.has("pages")) return emptyList()
+        val array = json.opt("pages") as? org.json.JSONArray ?: return null
+        val pages = ArrayList<UiBundlePage>(array.length())
+        for (i in 0 until array.length()) {
+            pages.add(parsePage(array.opt(i)) ?: return null)
+        }
+        return pages
+    }
+
     fun parseUiBundleManifest(raw: String): UiBundleManifest? {
         return try {
             val json = JSONObject(raw)
@@ -133,7 +175,8 @@ object UiBundleResolver {
             val minShellVersion = wholeIntOrNull(json, "minShellVersion") ?: return null
             val payload = json.opt("payload") as? String ?: return null
             if (payload.isEmpty()) return null
-            UiBundleManifest(schemaVersion, bundleVersion, minShellVersion, payload)
+            val pages = parsePages(json) ?: return null
+            UiBundleManifest(schemaVersion, bundleVersion, minShellVersion, payload, pages)
         } catch (_: Exception) {
             null
         }
