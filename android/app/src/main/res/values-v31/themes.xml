@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- No animated launcher-icon splash — that surface was freezing on
+         Samsung after MainActivity launched TalkPanel and finished. -->
+    <style name="Theme.FloatCompanion" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/sf_accent</item>
+        <item name="android:statusBarColor">@color/sf_bg</item>
+        <item name="android:navigationBarColor">@color/sf_bg</item>
+        <item name="android:windowBackground">@color/sf_bg</item>
+        <item name="android:textColor">@color/sf_text</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowSplashScreenBackground">@color/sf_bg</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+    </style>
+</resources>

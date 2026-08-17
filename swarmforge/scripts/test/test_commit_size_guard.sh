@@ -54,12 +54,16 @@ rm -f "$ROOT/medium.bin"
 #       `git commit` is blocked - not just the standalone script ──────────
 # BL-901: pre-commit also calls check_ticket_deletion.sh unconditionally,
 # so the fixture must install it too or an ordinary commit fails on a
-# missing script rather than exercising this guard.
+# missing script rather than exercising this guard. BL-632 adds a third
+# unconditional call (check_pipeline_code_on_main.sh) for the same reason;
+# this fixture's default branch is never `main`, so that guard is a no-op
+# here, but the script must still exist for the hook to invoke it at all.
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
 cp "$SCRIPT_DIR/../check_ticket_deletion.sh" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
+cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
-chmod +x "$ROOT/swarmforge/scripts/check_commit_size.sh" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$ROOT/swarmforge/git-hooks/pre-commit"
+chmod +x "$ROOT/swarmforge/scripts/check_commit_size.sh" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh" "$ROOT/swarmforge/git-hooks/pre-commit"
 git -C "$ROOT" config core.hooksPath swarmforge/git-hooks
 
 dd if=/dev/zero of="$ROOT/blob.bin" bs=1048576 count=51 >/dev/null 2>&1

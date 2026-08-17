@@ -14,6 +14,37 @@ mutation_cost: medium
 invariants:
   - "No commit path available to a non-QA role — commit, merge, or amend — can land pipeline code on `main`; the guard refuses at creation time."
 
+required_wiring:
+  - "swarmforge/git-hooks/pre-merge-commit::swarmforge/scripts/::the --no-ff merge path (merge_and_process) stays unguarded unless this hook exists AND delegates to the standalone guard script; pre-commit alone is the hole this ticket calls out as coverage-in-disguise"
+
+qa_e2e_procedure: |
+  Do NOT verify by attempting a real pipeline-code commit on `main` — a
+  successful attempt would be the very BL-590 landing this guard exists to
+  prevent, and would need reverting off `main`/`origin/main`.
+
+  Verify against a throwaway clone instead, so no live ref is ever at risk:
+
+  1. `git clone /Users/ldecorps/projects/swarmforgevc <tmp>` and, inside it,
+     `git config core.hooksPath swarmforge/git-hooks` (the clone does not
+     inherit it).
+  2. On `main`, stage a trivial edit under `extension/src/` with
+     `SWARMFORGE_ROLE` unset. Commit MUST fail non-zero, and the message MUST
+     name the offending path and the remedy (scenarios 01, 07).
+  3. Repeat with `SWARMFORGE_ROLE=QA`. Commit MUST succeed (scenario 02).
+  4. With `SWARMFORGE_ROLE` unset, stage a `backlog/`-only edit. Commit MUST
+     succeed — this is the specifier/coordinator bookkeeping path and a
+     regression here stalls the swarm (scenario 03).
+  5. Branch off, stage an `extension/src/` edit, commit there (MUST succeed —
+     scenario 04), return to `main` and `git merge --no-ff` it with
+     `SWARMFORGE_ROLE` unset. The merge commit MUST be refused (scenario 05).
+  6. Confirm the existing size guard still fires independently (scenario 06)
+     and that `swarmforge/scripts/check_commit_size.sh` and
+     `check_ticket_deletion.sh` still run from `pre-commit`.
+
+  Also confirm the standalone guard script is invocable outside a hook and
+  unit-tested there (BL-105 precedent), since that is what the Gherkin cannot
+  pin.
+
 approval_context: >
   Operator ruling 2026-07-25, closing the BL-590 post-mortem. BL-629 rejected
   commit-time guards on the grounds that they "fight the mono-router's
@@ -129,6 +160,20 @@ notes: |
   touch adjacent concerns and share the QA-exclusive path definition. BL-631 and
   BL-632 in particular must agree on that set — land one first and have the
   other consume its definition rather than restating it.
+
+  2026-08-17 specifier, resolving that "land one first" ambiguity before
+  handing off: verified BL-629 and BL-630 do not exist as tickets at all, and
+  BL-631 is still in `backlog/paused/` (unbuilt, though its own prose restates
+  the same three paths at lines 77 and 94). **BL-632 therefore lands first and
+  OWNS the definition.** Publish the QA-exclusive path set ONCE, in the
+  standalone guard script, in a form BL-631's detector can consume — do not
+  hand-copy the three paths into a second place.
+
+  Note for whoever specs/builds BL-631: its detector is Babashka
+  (`babysitterd`) while this guard is bash, so no import can bridge them. If
+  BL-631 ends up mirroring the literal rather than reading it, engineering.prompt's
+  BL-897 rule applies — a test must assert both literals agree; a "kept in
+  sync" comment is not a gate. That obligation belongs to BL-631, not here.
 
   Supporting criteria the Gherkin does not pin: guard logic lives in a
   standalone script callable outside a hook, per the BL-105 precedent, and is

@@ -466,7 +466,8 @@ const DOMAINS = [
   require('./bl829BubbleRemotePagePagerSteps'),
   require('./bl906OperatorBabysitterdFreshnessWatchdogSteps'),
   require('./bl911RotationRecomposesRolePromptSteps'),
-  require('./bl821BriefingWindowAndMarkerDurabilitySteps')
+  require('./bl821BriefingWindowAndMarkerDurabilitySteps'),
+  require('./bl632CommitTimeGuardSteps')
 ];
 
 function registerSteps(registry) {
