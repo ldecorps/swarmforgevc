@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c955f7a282246a14f144583fcbc8683314e2f468ac07226f557d23e4db57e8f2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-17T16:55:20.529476Z","feature_name":"Briefing emails are sent once, and only inside the allowed date window","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-821-briefing-emails-for-past-days-keep-arriving.feature","background_hash":"eb0f9bb6d525efa85c77b08ca9d38462c0ab16e0da873b27ad05b4ef4d8ce4de","implementation_hash":"unknown","scenarios":[{"index":3,"name":"only briefings dated today or yesterday are mailed","scenario_hash":"ef4f50b1ff0f2a0a8ad9d7d1e6bcd49fffa2789c9caf2a547ba3c68b578f2d75","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-17T16:55:20.529476Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Briefing emails are sent once, and only inside the allowed date window
 
   # BL-821. Two independent legs. Leg A: a successful send persists .sent.json
