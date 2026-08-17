@@ -16,8 +16,7 @@ invariants:
   - "No rotation boots a role on a composed prompt that omits prose already present in that role's prompt sources — freshness is established at rotation, never inherited from launch."
   - "A composition that fails never prevents the rotation: the role still boots, on the prompt it already had, and the failure is reported rather than swallowed."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Two things worth a human decision before this is built.
 
