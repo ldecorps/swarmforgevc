@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7fd73d0c1fad5d1b8124229c616f1bcbce19d9206391218d6e7290d25b0f4ba9
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-17T00:23:06.395284Z","feature_name":"Bubble browses the backlog and the docs from the packages held on the device, with the network off, and says how old they are","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-908-bubble-knowledge-screen-backlog-docs-panels.feature","background_hash":"51bf1e8a0d24f699c5e0c488f12daa73c16613e0a45234ad73fbc96e23f9f0d9","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the docs panel lists the documents the package carries and opens one","scenario_hash":"9c14261c2ca269565a19ba8eb191cd4a259b6a708da5079d5a21cde51eedbfbb","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-17T00:23:06.395284Z"},{"index":4,"name":"every panel states the generation of the package it is reading","scenario_hash":"905453ab224c78f74d464848f5a4f5c29681b208ba1337941a2aaacb29e33704","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-17T00:23:06.395284Z"},{"index":0,"name":"the backlog panel lists the tickets of each folder the package carries","scenario_hash":"e1dd725e27a4462cf5d2ce644cfcbf8ccc2bb88d02cc64668c0928423ab5ab83","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-17T00:06:48.585463Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble browses the backlog and the docs from the packages held on the device, with the network off, and says how old they are
 
   # BL-908 (epic BL-865, slice 3 of 5, depends on BL-907): this is the browsable knowledge

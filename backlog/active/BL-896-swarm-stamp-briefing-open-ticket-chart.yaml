@@ -254,3 +254,6 @@ notes: |
   6. **The duplication (F2).** Confirm the parcel either removed one of the two
      remaining-count implementations or recorded, in this ticket, why both must
      stay. A silent "both still there" is a bounce.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-17, by: QA, blamed: coder, class: behavior, commit: 09d3c50476, evidence: backlog/evidence/BL-896-swarm-stamp-briefing-open-ticket-chart-bounce-20260817.md }

@@ -24,6 +24,21 @@ const FEATURE_NAME =
 const TEST_REPORT_DIR = 'testDebugUnitTest';
 const TEST_CLASS_PREFIX = 'KnowledgeReader';
 
+// currentExpectedTest() below picks a JVM test purely by SHAPE (which
+// Given/When fields were set) — it never re-checks that the literal
+// kind/title/generation value a scenario declares is the one the picked
+// test's own fixture actually hardcodes. A shape-only check can't
+// distinguish "docs panel opens the mermaid doc" from a corrupted title on
+// that same doc, so it can't be the sole gate for these two Outlines: two
+// Examples rows share one shape (the doc-kind branch; the generation
+// scenario's two rows already differ by panel and are shape-distinguished).
+// These maps pin the exact literal each named KnowledgeReaderTest.kt/
+// KnowledgeReaderPropertyTest.kt fixture uses, so a Gherkin-level typo in
+// either field fails here before ever reaching the shape lookup (BL-908
+// hardener pass, closing 6 Gherkin-mutation survivors: m5-m9/m11).
+const EXPECTED_DOC_TITLE_BY_KIND = { markdown: 'Specification', mermaid: 'Architecture' };
+const EXPECTED_GENERATION_BY_PANEL = { backlog: 'aaaa1111', docs: 'cccc3333' };
+
 function repoRootFromHere() {
   return path.join(__dirname, '..', '..', '..');
 }
@@ -122,6 +137,18 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the "([^"]+)" package holds a "([^"]+)" document "([^"]+)"$/,
     (ctx, _pkgName, kind, title) => {
+      const expectedTitle = EXPECTED_DOC_TITLE_BY_KIND[kind];
+      if (expectedTitle === undefined) {
+        throw new Error(
+          `no known fixture document for kind "${kind}" — expected one of ${JSON.stringify(Object.keys(EXPECTED_DOC_TITLE_BY_KIND))}`
+        );
+      }
+      if (title !== expectedTitle) {
+        throw new Error(
+          `expected the "${kind}" document's fixture title to be "${expectedTitle}" ` +
+            `(matching KnowledgeReaderTest.kt's hardcoded fixture), got "${title}"`
+        );
+      }
       ctx.docKind = kind;
       ctx.docTitle = title;
     },
@@ -215,6 +242,16 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the view states it is as of generation "([^"]+)"$/,
     (ctx, generation) => {
+      const expectedGeneration = EXPECTED_GENERATION_BY_PANEL[ctx.lastPanel];
+      if (expectedGeneration === undefined) {
+        throw new Error(`no known fixture generation for panel "${ctx.lastPanel}"`);
+      }
+      if (generation !== expectedGeneration) {
+        throw new Error(
+          `expected the "${ctx.lastPanel}" panel's fixture generation to be "${expectedGeneration}" ` +
+            `(matching KnowledgeReaderTest.kt's hardcoded fixture), got "${generation}"`
+        );
+      }
       assertKnownTestPassed(ctx, currentExpectedTest(ctx), `states generation ${generation}`);
     },
     FEATURE_NAME
