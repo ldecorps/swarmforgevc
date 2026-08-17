@@ -210,3 +210,5 @@ notes: |
   (Knowledge native screen, done), BL-788 (pairing + client-logs, done),
   BL-707 (original overlay companion, done — this is a follow-on launch-path
   defect on that shell).
+
+assigned_to: coder
