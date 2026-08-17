@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { boolFromEnv } from '../util/envFlag';
 
 /**
  * BL-825 slice A: the versioned UI bundle manifest, served alongside
@@ -68,11 +69,6 @@ function loadManifestFromFile(filePath: string): LetsTalkUiBundleManifest | null
   } catch {
     return null;
   }
-}
-
-function boolFromEnv(value: string | undefined): boolean {
-  const normalized = (value ?? '').trim().toLowerCase();
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
 export function isLetsTalkUiBundlePath(url: string): boolean {
