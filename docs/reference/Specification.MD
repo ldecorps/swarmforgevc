@@ -1,6 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 17, 2026 (BL-911: rotation now recomposes a
+**Last Updated:** August 17, 2026 (BL-821: daily briefing emails no
+longer keep re-mailing past days. Two independent legs, both required.
+Leg A — the sent-marker is now durable: `commit-sent-marker!`
+(`swarmforge/scripts/briefing_email_lib.bb`) commits exactly
+`.sent.json` (a scoped, BL-506-style `git add` + `git commit` of that
+one path, never sweeping in unrelated working-tree changes) to the
+shared store right after a successful send, so a fresh checkout, a
+second host, or a pull no longer sees a stale local-only marker and
+re-mails the whole archive; a commit failure logs
+`briefing-marker-commit-failed` but degrades to the pre-fix
+working-tree-only behavior for that host rather than losing the local
+send record. Leg B — the send path is now bounded: `briefing-in-window?`
+mails a briefing only when its `YYYY-MM-DD.md` date label is today or
+yesterday (UTC, the specifier's picked window — the intake's other
+option, today-only, could silently lose a briefing generated late in the
+day); a briefing outside the window is never composed or sent and logs
+`briefing-suppressed-outside-window`, distinguishable from generating
+nothing at all. `handoffd.bb` wires both legs into
+`send-unsent-briefings!` with the real UTC clock. Unbounded historical
+catch-up stays possible only through an explicit one-shot operator
+action, never as a side effect of a stale marker.); Previously
+August 17, 2026 (BL-911: rotation now recomposes a
 role's system prompt from current sources instead of booting on whatever
 was composed at the swarm's last full launch. `rotate-resident-to!`
 (`swarmforge/scripts/handoff_lib.bb`) is the one chokepoint both rotation
