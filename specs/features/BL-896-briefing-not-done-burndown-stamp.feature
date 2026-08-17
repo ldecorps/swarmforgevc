@@ -13,6 +13,7 @@ Feature: The briefing's open-ticket chart states what it measures and never supp
     Given a backlog whose open-ticket count rose over the charted window
     When the open-ticket chart is rendered
     Then its heading names the series as remaining open tickets over the window
+    And its heading keeps the word "burndown" per the 2026-08-16 human ruling
     And its summary reports the open count at each end of the window with the filed and closed rates
     And it makes no claim of progress toward a fixed or committed scope
     And it projects no completion date
