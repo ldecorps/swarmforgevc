@@ -97,9 +97,13 @@ git -C "$ROOT" checkout -q -- backlog/done/M8/BL-893-approvals-ambulance-choice.
 
 # ── 8: wired as real pre-commit + commit-msg hooks via core.hooksPath, an
 #       actual `git commit` is blocked - not just the standalone script ──
+# BL-632: pre-commit also calls check_pipeline_code_on_main.sh
+# unconditionally; this fixture's default branch is never `main`, so that
+# guard is a no-op here, but the script must still exist to be invoked.
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
 cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
+cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 cp "$COMMIT_MSG_HOOK" "$ROOT/swarmforge/git-hooks/commit-msg"
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/"*

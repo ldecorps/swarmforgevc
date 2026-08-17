@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# BL-632: pre-merge-commit is a SEPARATE hook from pre-commit and is the
+# only one that fires for `git merge --no-ff` (the handoff path's
+# merge_and_process shape). Without this file, pre-commit alone leaves the
+# --no-ff merge path unguarded - coverage-in-disguise, the exact hole the
+# BL-590 post-mortem called out. Delegates to the same standalone script
+# pre-commit uses, so the QA-exclusive path definition lives in one place.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+"$REPO_ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
