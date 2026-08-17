@@ -73,7 +73,7 @@
   subject: "Land Cursor-agent hotfix: Bubble expand after cold start (v0.3.17-open-talk)."
   detected_at: 2026-08-17
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-916
   human_decision: null
   decided_at: null
 - commit: ece61cbe63
