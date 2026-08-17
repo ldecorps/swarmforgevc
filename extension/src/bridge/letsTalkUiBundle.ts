@@ -28,6 +28,20 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isPlainManifestObject(raw: unknown): raw is Record<string, unknown> {
+  return typeof raw === 'object' && raw !== null && !Array.isArray(raw);
+}
+
+function hasValidManifestFields(record: Record<string, unknown>): boolean {
+  return (
+    isFiniteNumber(record.schemaVersion) &&
+    isFiniteNumber(record.bundleVersion) &&
+    isFiniteNumber(record.minShellVersion) &&
+    typeof record.payload === 'string' &&
+    record.payload.length > 0
+  );
+}
+
 /**
  * Whole-document rejection, same posture as letsTalkBubbleConfig's
  * parseBubbleConfig: a missing or wrong-typed field returns null (the
@@ -38,24 +52,14 @@ function isFiniteNumber(value: unknown): value is number {
  * the bridge itself writes/serves — the phone re-validates independently.
  */
 function parseUiBundleManifest(raw: unknown): LetsTalkUiBundleManifest | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return null;
-  }
-  const record = raw as Record<string, unknown>;
-  if (
-    !isFiniteNumber(record.schemaVersion) ||
-    !isFiniteNumber(record.bundleVersion) ||
-    !isFiniteNumber(record.minShellVersion) ||
-    typeof record.payload !== 'string' ||
-    record.payload.length === 0
-  ) {
+  if (!isPlainManifestObject(raw) || !hasValidManifestFields(raw)) {
     return null;
   }
   return {
-    schemaVersion: record.schemaVersion,
-    bundleVersion: record.bundleVersion,
-    minShellVersion: record.minShellVersion,
-    payload: record.payload,
+    schemaVersion: raw.schemaVersion as number,
+    bundleVersion: raw.bundleVersion as number,
+    minShellVersion: raw.minShellVersion as number,
+    payload: raw.payload as string,
   };
 }
 
@@ -76,6 +80,19 @@ export function isLetsTalkUiBundlePath(url: string): boolean {
   return pathOnly === '/lets-talk/ui-bundle.json' || pathOnly === '/lets-talk/ui-bundle';
 }
 
+function resolveUiBundlePaths(targetPath: string, env: NodeJS.ProcessEnv): { primaryPath: string; rollbackPath: string } {
+  const operatorDir = path.join(targetPath, '.swarmforge', 'operator');
+  return {
+    primaryPath: env.LETS_TALK_UI_BUNDLE_PATH || path.join(operatorDir, 'lets-talk-ui-bundle.json'),
+    rollbackPath:
+      env.LETS_TALK_UI_BUNDLE_ROLLBACK_PATH || path.join(operatorDir, 'lets-talk-ui-bundle.rollback.json'),
+  };
+}
+
+function loadManifestPreferring(preferredPath: string, fallbackPath: string): LetsTalkUiBundleManifest {
+  return loadManifestFromFile(preferredPath) ?? loadManifestFromFile(fallbackPath) ?? DEFAULT_MANIFEST;
+}
+
 /**
  * Bridge-served UI bundle manifest — same operator-file / rollback / force-
  * rollback / disabled posture as getLetsTalkBubbleConfig, so an operator
@@ -83,20 +100,13 @@ export function isLetsTalkUiBundlePath(url: string): boolean {
  * a capability flag.
  */
 export function getLetsTalkUiBundleManifest(targetPath: string, env: NodeJS.ProcessEnv): LetsTalkUiBundleManifest {
-  const operatorDir = path.join(targetPath, '.swarmforge', 'operator');
-  const primaryPath = env.LETS_TALK_UI_BUNDLE_PATH || path.join(operatorDir, 'lets-talk-ui-bundle.json');
-  const rollbackPath =
-    env.LETS_TALK_UI_BUNDLE_ROLLBACK_PATH || path.join(operatorDir, 'lets-talk-ui-bundle.rollback.json');
-  const forceRollback = boolFromEnv(env.LETS_TALK_UI_BUNDLE_FORCE_ROLLBACK);
-  const disabled = boolFromEnv(env.LETS_TALK_UI_BUNDLE_DISABLED);
-
-  if (disabled) {
+  const { primaryPath, rollbackPath } = resolveUiBundlePaths(targetPath, env);
+  if (boolFromEnv(env.LETS_TALK_UI_BUNDLE_DISABLED)) {
     return DEFAULT_MANIFEST;
   }
-  if (forceRollback) {
-    return loadManifestFromFile(rollbackPath) ?? loadManifestFromFile(primaryPath) ?? DEFAULT_MANIFEST;
-  }
-  return loadManifestFromFile(primaryPath) ?? loadManifestFromFile(rollbackPath) ?? DEFAULT_MANIFEST;
+  return boolFromEnv(env.LETS_TALK_UI_BUNDLE_FORCE_ROLLBACK)
+    ? loadManifestPreferring(rollbackPath, primaryPath)
+    : loadManifestPreferring(primaryPath, rollbackPath);
 }
 
 export function getLetsTalkUiBundleManifestJsonBody(targetPath: string, env: NodeJS.ProcessEnv): string {

@@ -75,3 +75,60 @@ test('getLetsTalkUiBundleManifest: LETS_TALK_UI_BUNDLE_FORCE_ROLLBACK prefers th
   const manifest = getLetsTalkUiBundleManifest(root, { LETS_TALK_UI_BUNDLE_FORCE_ROLLBACK: '1' });
   assert.equal(manifest.payload, 'rollback');
 });
+
+test('getLetsTalkUiBundleManifest: LETS_TALK_UI_BUNDLE_FORCE_ROLLBACK with no rollback file falls back to primary', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    manifestPath(root),
+    JSON.stringify({ schemaVersion: 1, bundleVersion: 7, minShellVersion: 3, payload: 'primary' })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, { LETS_TALK_UI_BUNDLE_FORCE_ROLLBACK: '1' });
+  assert.equal(manifest.payload, 'primary');
+});
+
+test('getLetsTalkUiBundleManifest: no primary file falls back to the rollback file when not forcing rollback', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'operator', 'lets-talk-ui-bundle.rollback.json'),
+    JSON.stringify({ schemaVersion: 1, bundleVersion: 5, minShellVersion: 2, payload: 'rollback' })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, 'rollback');
+});
+
+test('getLetsTalkUiBundleManifest: LETS_TALK_UI_BUNDLE_PATH / _ROLLBACK_PATH override the default operator-dir locations', () => {
+  const root = mkOperatorDir();
+  const customPrimary = path.join(root, 'custom-primary.json');
+  const customRollback = path.join(root, 'custom-rollback.json');
+  fs.writeFileSync(
+    customPrimary,
+    JSON.stringify({ schemaVersion: 1, bundleVersion: 9, minShellVersion: 1, payload: 'custom-primary' })
+  );
+  fs.writeFileSync(
+    customRollback,
+    JSON.stringify({ schemaVersion: 1, bundleVersion: 8, minShellVersion: 1, payload: 'custom-rollback' })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {
+    LETS_TALK_UI_BUNDLE_PATH: customPrimary,
+    LETS_TALK_UI_BUNDLE_ROLLBACK_PATH: customRollback,
+  });
+  assert.equal(manifest.payload, 'custom-primary');
+});
+
+test('getLetsTalkUiBundleManifest: an on-disk file that parses but is not an object (array) falls back to the bundled default', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(manifestPath(root), JSON.stringify([1, 2, 3]));
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, '');
+});
+
+test('getLetsTalkUiBundleManifest: an empty-string payload is rejected the same as a missing one', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(
+    manifestPath(root),
+    JSON.stringify({ schemaVersion: 1, bundleVersion: 7, minShellVersion: 3, payload: '' })
+  );
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, '');
+  assert.equal(manifest.bundleVersion, 0);
+});
