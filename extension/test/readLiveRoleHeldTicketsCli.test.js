@@ -19,10 +19,10 @@ const REAL_SCRIPTS_DIR = path.join(__dirname, '..', '..', 'swarmforge', 'scripts
 // of these must still break the fixture (proves this list was not widened
 // to "everything in the directory" - it is exactly what is depended on).
 // Recurrence history: BL-655 added ambulance_lib.bb, BL-805 added
-// mono_router_lib.bb - both times this copy list went stale and the
-// fixture missed it, because the failure it produced was a passing-shaped
-// {} rather than an error (see BL-814).
-const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb'];
+// mono_router_lib.bb, BL-911 added prompt_engine_lib.bb - each time this
+// copy list went stale and the fixture missed it, because the failure it
+// produced was a passing-shaped {} rather than an error (see BL-814).
+const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb', 'prompt_engine_lib.bb'];
 
 function mkFixtureRoot(omit) {
   const root = mkTmpDir('bl487-live-role-held-');

@@ -6,6 +6,7 @@
 
 (ns handoff-lib
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.java.shell :as sh]
             [clojure.string :as str])
   (:import [java.nio.channels FileChannel]
@@ -26,6 +27,13 @@
 ;; second load-file here just re-evaluates the same defns, same as the
 ;; ambulance-lib double-load above.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+
+;; BL-911: prompt-engine-lib is also a leaf dependency (its own load-file
+;; list is empty) - loaded here so recompose-role-prompt! below can reuse
+;; PromptEngine's compose (the single composition authority, BL-546) rather
+;; than growing a second composer. Same double-load-is-harmless shape as
+;; ambulance-lib/mono-router-lib above.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "prompt_engine_lib.bb")))
 
 (defn worktree-root
   "Handoff state lives at the worktree root even when invoked from a
@@ -416,6 +424,51 @@
 (defn launch-script-path [role-name]
   (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".sh"))))
 
+(defn prompt-file-path
+  "The composed system-prompt artifact a role's launch script names by path
+   (swarmforge.sh's write_agent_instruction_file writes it; a launch/rotation
+   never assembles prompt text itself)."
+  [role-name]
+  (str (fs/path (target-root) ".swarmforge" "prompts" (str role-name ".md"))))
+
+;; BL-911: rotation is the moment freshness is established, not inherited
+;; from launch (see rotate-resident-to! below). recompose-role-prompt!
+;; reuses PromptEngine's compose via the SAME agent/model/two-pack?/
+;; overlay-prompt context write_agent_instruction_file captured in the
+;; prompt's own metadata sidecar at launch time (BL-563 Slice 2) - it never
+;; re-derives that context (e.g. re-reading swarm config), so a rotation
+;; recomposes with exactly the launch-time composition choices, just against
+;; current source content.
+(defn recompose-role-prompt!
+  "Rewrites <role-name>'s composed prompt file from current sources.
+   Returns {:ok true} on a successful, non-blank recompose, or
+   {:ok false :reason ...} on any failure - a missing/unreadable metadata
+   sidecar, an empty compose result, or compose itself throwing (e.g. a
+   source file that cannot be read). The existing prompt file is left
+   completely untouched on failure, satisfying invariant 2: a composition
+   that fails never prevents the rotation, it just leaves the role booting
+   on the prompt it already had."
+  ([role-name] (recompose-role-prompt! role-name {}))
+  ([role-name {:keys [compose-fn] :or {compose-fn prompt-engine-lib/compose}}]
+   (try
+     (let [prompt-file (prompt-file-path role-name)
+           metadata-file (str prompt-file ".metadata.json")]
+       (if-not (fs/exists? metadata-file)
+         {:ok false :reason "no-metadata-sidecar"}
+         (let [metadata (json/parse-string (slurp metadata-file) true)
+               result (compose-fn role-name
+                                   {:agent (:agent metadata)
+                                    :model (:model metadata)
+                                    :two-pack? (boolean (:two-pack? metadata))
+                                    :overlay-prompt (or (:overlay-prompt metadata) "")})
+               text (:system-prompt result)]
+           (if (str/blank? text)
+             {:ok false :reason "empty-compose-result"}
+             (do (spit prompt-file text)
+                 {:ok true})))))
+     (catch Exception e
+       {:ok false :reason (str "recompose-exception: " (.getMessage e))}))))
+
 (defn openrouter-pane-env-args
   "BL-130 ephemeral -e injection for launch_role / chase / ensure / rotate.
    Must not drop OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen auth on respawn.
@@ -672,6 +725,20 @@
         {:ok false :reason "no-launch-script"}
         :else
         (do
+          ;; BL-911: recompose BEFORE the respawn so the pane about to boot
+          ;; reads a prompt freshly composed from current sources - the one
+          ;; chokepoint both the resident-invoked path (respawn-as!) and
+          ;; handoffd.bb's daemon-driven chase share, so a fix placed here
+          ;; covers both drivers. A recompose failure is reported loudly but
+          ;; never refuses the rotation - the role still boots, on the
+          ;; prompt it already had (invariant 2).
+          (let [recompose-result (recompose-role-prompt! target-role)]
+            (when-not (:ok recompose-result)
+              (binding [*out* *err*]
+                (println (str "rotate: WARNING recompose failed for '" target-role
+                              "': " (:reason recompose-result)
+                              " - booting on the previously composed prompt.")))
+              (flush)))
           (when-not (wait-for-delivery! target-role 30000)
             (binding [*out* *err*]
               (println (str "rotate: WARNING no parcel delivered to '" target-role

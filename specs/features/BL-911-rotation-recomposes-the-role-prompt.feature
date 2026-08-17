@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7772344640f91cee55a10dc2adb479224f7bb311e50ee62221b3dc26f32311e4
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-17T16:53:34.220769Z","feature_name":"A rotating role boots on a prompt composed from the current sources, not the one built at launch","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-911-rotation-recomposes-the-role-prompt.feature","background_hash":"181552df05bfba7f53daa31e025bb69fbd182e4dd10b237fa84bdf6c9515b76a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"prose landed after launch reaches the role at its next rotation","scenario_hash":"4b71efa1bb802e32f67b917dd29c55b12324d39f01710cd932c96d952533bf6f","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-17T16:53:34.220769Z"},{"index":1,"name":"whichever driver rotates the role, it boots on a freshly composed prompt","scenario_hash":"ad178a12d2bd95aec255cb27753ee4e073330248be2eb656c7f59c2b44ce57a1","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-17T16:53:34.220769Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A rotating role boots on a prompt composed from the current sources, not the one built at launch
 
   # BL-911 (epic swarm-reliability): the composed prompt a role boots on
