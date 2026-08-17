@@ -65,15 +65,22 @@ function isValidPageList(raw: unknown): raw is LetsTalkUiBundlePage[] {
   return Array.isArray(raw) && raw.every(isValidPage);
 }
 
-function hasValidManifestFields(record: Record<string, unknown>): boolean {
+function hasValidCoreManifestFields(record: Record<string, unknown>): boolean {
   return (
     isFiniteNumber(record.schemaVersion) &&
     isFiniteNumber(record.bundleVersion) &&
     isFiniteNumber(record.minShellVersion) &&
     typeof record.payload === 'string' &&
-    record.payload.length > 0 &&
-    (record.pages === undefined || isValidPageList(record.pages))
+    record.payload.length > 0
   );
+}
+
+function hasValidPagesField(record: Record<string, unknown>): boolean {
+  return record.pages === undefined || isValidPageList(record.pages);
+}
+
+function hasValidManifestFields(record: Record<string, unknown>): boolean {
+  return hasValidCoreManifestFields(record) && hasValidPagesField(record);
 }
 
 /**
