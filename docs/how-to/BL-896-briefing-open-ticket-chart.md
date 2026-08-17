@@ -9,17 +9,18 @@ It renders as SVG, is converted to a `cid`-attached PNG the same way the
 architecture diagrams already are, and appears in its own section with its
 own heading.
 
-**The heading says "Open tickets remaining," never "burndown."** The chart
-plots the same open-count-over-time family of data a burndown chart would,
-but the backlog here is a continuously growing scope, not an iteration with
-a committed perimeter — a burndown *label* on a line that goes up reads as
-a target being missed, when no target was ever set. [BL-659's 2026-07-26
-ruling](../reference/Specification.MD) banned burndown charts for exactly
-this reason and ratified the open-count/net-flow view as its replacement;
-this chart is that replacement, named accordingly, not an exception to the
-ban. If you're looking for the chart in code, its module is still named
-`notDoneBurndown.ts` / `render-briefing-burndown.ts` — only the human-facing
-heading, SVG title, and note-line changed.
+**The heading reads "Backlog burndown — open tickets remaining."** The chart
+plots the same open-count-over-time family of data a burndown chart would.
+[BL-659's 2026-07-26 ruling](../reference/Specification.MD) banned burndown
+*charts* for the PWA/milestone-dashboard surface, and ratified the
+open-count/net-flow view as their replacement there — but the 2026-08-16
+08:20 CEST human ruling on this ticket explicitly keeps the word "burndown"
+on this email chart's heading, overriding an earlier draft that had renamed
+it away. The ban itself is unchanged and still applies to the
+PWA/milestone-dashboard surface; it does not reach this email chart. See
+`backlog/answers-archive/ANSWER-BL-896-land-burndown-chart.md` for the
+ruling. If you're looking for the chart in code, its module is still named
+`notDoneBurndown.ts` / `render-briefing-burndown.ts`.
 
 ## Where the data comes from
 

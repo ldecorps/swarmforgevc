@@ -93,7 +93,7 @@ export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<rect width="100%" height="100%" fill="#f7f5f0"/>`,
-    `<text x="${padL}" y="26" font-size="18" font-weight="700" fill="#1a3a4a" font-family="system-ui,sans-serif">Open tickets remaining — last ${data.windowDays} days</text>`,
+    `<text x="${padL}" y="26" font-size="18" font-weight="700" fill="#1a3a4a" font-family="system-ui,sans-serif">Backlog burndown — open tickets remaining, last ${data.windowDays} days</text>`,
     `<text x="${padL}" y="44" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXml(subtitle)}</text>`,
     ...gridLines,
     `<polyline fill="none" stroke="#1a3a4a" stroke-width="2.6" points="${poly}"/>`,
