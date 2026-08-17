@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { boolFromEnv } from '../util/envFlag';
 
 export interface LetsTalkBubbleConfig {
   schemaVersion: number;
@@ -76,11 +77,6 @@ function loadConfigFromFile(filePath: string, fallbackRevision: string): LetsTal
   } catch {
     return null;
   }
-}
-
-function boolFromEnv(value: string | undefined): boolean {
-  const normalized = (value ?? '').trim().toLowerCase();
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
 export function isLetsTalkBubbleConfigPath(url: string): boolean {
