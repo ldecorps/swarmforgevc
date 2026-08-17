@@ -93,7 +93,7 @@ description: |
   window" from "not mailed because nothing was generated". A silent bound
   would turn an inbox-noise defect into an invisible-briefing defect.
 
-acceptance: specs/features/BL-821-briefing-emails-for-past-days-keep-arriving.feature.draft
+acceptance: specs/features/BL-821-briefing-emails-for-past-days-keep-arriving.feature
 
 # BL-633. Two properties the scenarios cannot express.
 invariants:

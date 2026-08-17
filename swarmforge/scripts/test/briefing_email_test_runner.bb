@@ -15,6 +15,10 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
+(defn assert-true [msg actual]
+  (when-not actual
+    (swap! failures conj (str "FAIL: " msg))))
+
 (def created-temp-dirs (atom []))
 ;; BL-459: every temp dir this runner creates is tracked here and removed by
 ;; a JVM shutdown hook, registered ONCE below - fires on both a clean run
@@ -893,6 +897,156 @@
   (assert= "BL-511: a nil-returning :telegram-bridge-cost-line adapter leaves content unchanged"
            "Headline\n"
            (first @sent-texts)))
+
+;; ── BL-821 Leg B: briefing-date-label / briefing-in-window? (pure, no clock) ─
+
+(assert= "BL-821: a plain YYYY-MM-DD.md name is its own date label"
+         "2026-08-17" (briefing-email-lib/briefing-date-label "2026-08-17.md"))
+(assert= "BL-821: a name with a suffix beyond the date has no date label (decided deliberately, not treated as dated)"
+         nil (briefing-email-lib/briefing-date-label "2026-07-30-evening.md"))
+(assert= "BL-821: a name with no date at all has no date label"
+         nil (briefing-email-lib/briefing-date-label "README.md"))
+
+(assert= "BL-821: today is in the window" true (briefing-email-lib/briefing-in-window? "2026-08-17.md" "2026-08-17"))
+(assert= "BL-821: yesterday is in the window" true (briefing-email-lib/briefing-in-window? "2026-08-16.md" "2026-08-17"))
+(assert= "BL-821: two days ago is outside the window" false (briefing-email-lib/briefing-in-window? "2026-08-15.md" "2026-08-17"))
+(assert= "BL-821: a month ago is outside the window" false (briefing-email-lib/briefing-in-window? "2026-07-17.md" "2026-08-17"))
+(assert= "BL-821: tomorrow (a clock-skew/malformed edge, not a real briefing) is outside the window, never negative-days-old admitted"
+         false (briefing-email-lib/briefing-in-window? "2026-08-18.md" "2026-08-17"))
+(assert= "BL-821: a suffixed name is never mailed by the window (out-of-scope note: decided deliberately, not crashed on)"
+         false (briefing-email-lib/briefing-in-window? "2026-07-30-evening.md" "2026-08-17"))
+(assert= "BL-821: a malformed today-str fails closed rather than throwing"
+         false (briefing-email-lib/briefing-in-window? "2026-08-17.md" "not-a-date"))
+
+(assert= "BL-821: partition-by-window splits mailable vs suppressed, preserving order"
+         {:mailable ["2026-08-16.md" "2026-08-17.md"] :suppressed ["2026-07-17.md" "2026-07-30-evening.md"]}
+         (briefing-email-lib/partition-by-window
+          ["2026-07-17.md" "2026-07-30-evening.md" "2026-08-16.md" "2026-08-17.md"]
+          "2026-08-17"))
+
+;; ── BL-821 Leg B wiring: send-unsent-briefings! ─────────────────────────────
+
+(let [dir (mk-tmp)
+      sent (atom [])
+      logs (atom [])]
+  (spit (str (fs/path dir "2026-07-01.md")) "old\n")
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                dir
+                {:today-str "2026-08-17"
+                 :read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+                 :send-email! (fn [_subject text & _] (swap! sent conj text) {:success true})
+                 :log! (fn [& parts] (swap! logs conj (vec parts)))})]
+    (assert= "BL-821: only the in-window briefing is sent when :today-str is supplied"
+             ["2026-08-17.md"] result)
+    (assert-true "BL-821: the suppressed briefing is reported, distinguishable from no briefing at all"
+                 (some #(= % ["briefing-suppressed-outside-window" "2026-07-01.md"]) @logs))))
+
+(let [dir (mk-tmp)
+      sent (atom [])]
+  (spit (str (fs/path dir "2026-07-01.md")) "old\n")
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                dir
+                {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+                 :send-email! (fn [_subject text & _] (swap! sent conj text) {:success true})
+                 :log! (fn [& _] nil)})]
+    (assert= "BL-821: omitting :today-str leaves every unsent file mailable (backward compatible with every pre-BL-821 caller)"
+             ["2026-07-01.md" "2026-08-17.md"] result)))
+
+;; ── BL-821 Leg A wiring: :commit-marker! ────────────────────────────────────
+
+(let [dir (mk-tmp)
+      commit-calls (atom [])]
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] {:success true})
+    :commit-marker! (fn [briefings-dir] (swap! commit-calls conj briefings-dir) {:ok true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-821: :commit-marker! is called once, with briefings-dir, after a successful send"
+           [dir] @commit-calls))
+
+(let [dir (mk-tmp)
+      commit-calls (atom [])]
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] {:success false :reason :missing-api-key :error "no key"})
+    :commit-marker! (fn [briefings-dir] (swap! commit-calls conj briefings-dir) {:ok true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-821: :commit-marker! is never called on a failed/skipped send"
+           [] @commit-calls))
+
+(let [dir (mk-tmp)
+      logs (atom [])]
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                dir
+                {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+                 :send-email! (fn [_subject text & _] {:success true})
+                 :commit-marker! (fn [_] {:ok false :reason "simulated git failure"})
+                 :log! (fn [& parts] (swap! logs conj (vec parts)))})]
+    (assert= "BL-821: a send is still recorded as sent even when the durable-store commit fails"
+             ["2026-08-17.md"] result)
+    (assert-true "BL-821: a commit failure is reported via :log!"
+                 (some #(= (first %) "briefing-marker-commit-failed") @logs))))
+
+;; ── BL-821 Leg A: commit-sent-marker! (injected sh-fn, no real git process) ─
+
+(let [dir (mk-tmp)
+      calls (atom [])
+      sh-fn (fn [repo-dir & args]
+              (swap! calls conj (vec (cons repo-dir args)))
+              {:exit 0 :out "" :err ""})]
+  (spit (str (fs/path dir ".sent.json")) "{}")
+  (let [result (briefing-email-lib/commit-sent-marker! dir sh-fn)
+        add-call (first @calls)
+        commit-call (second @calls)
+        marker-path (briefing-email-lib/sent-state-path dir)]
+    (assert= "BL-821: a clean add+commit reports ok" {:ok true} result)
+    (assert= "BL-821: git add is scoped to exactly the marker path, nothing else, run inside briefings-dir"
+             [dir "git" "add" "--" marker-path]
+             add-call)
+    (assert= "BL-821: git commit is scoped to exactly the marker path too, never a broad `git commit -a`"
+             ["--" marker-path]
+             (take-last 2 commit-call))))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "add")
+                {:exit 1 :out "" :err "fatal: add failed"}
+                {:exit 0 :out "" :err ""}))]
+  (assert-true "BL-821: a git add failure is reported, never thrown"
+               (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "commit")
+                {:exit 1 :out "" :err "nothing to commit, working tree clean"}
+                {:exit 0 :out "" :err ""}))]
+  (assert= "BL-821: \"nothing to commit\" (a racing second host already committed the same content) is ok, not a failure"
+           {:ok true :reason :nothing-to-commit}
+           (briefing-email-lib/commit-sent-marker! dir sh-fn)))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "commit")
+                {:exit 1 :out "On branch main\nUntracked files:\n\t(use \"git add\" to track)\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n" :err ""}
+                {:exit 0 :out "" :err ""}))]
+  (assert= "BL-821: git's OTHER \"nothing to commit\" phrasing - printed instead of \"working tree clean\" whenever ANY untracked file exists anywhere else in the repo, which real-fixture testing found is the common case for this chronically-not-pristine checkout - is ok too, not a failure"
+           {:ok true :reason :nothing-to-commit}
+           (briefing-email-lib/commit-sent-marker! dir sh-fn)))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "commit")
+                {:exit 1 :out "" :err "fatal: unable to lock ref"}
+                {:exit 0 :out "" :err ""}))]
+  (assert-true "BL-821: a real git commit failure is reported, never thrown"
+               (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
