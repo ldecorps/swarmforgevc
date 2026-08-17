@@ -1,6 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 17, 2026 (BL-908: Bubble's browsable knowledge
+**Last Updated:** August 17, 2026 (BL-825: Bubble's UI bundle resolver —
+slice A of epic `bubble-thin-shell`, the decision every later remote-UI
+slice depends on, with nothing rendered yet. `UiBundleResolver.resolve`
+(pure Kotlin, no `android.*` type in its own signature) classifies what
+the bridge served this session, what is cached, and which shell is
+installed into one of four outcomes — FRESH (a newer served bundle),
+CACHED (nothing newer, or the served bundle was rejected), STALE (bridge
+unreachable, cached bundle rendered but marked unconfirmed), or BARE
+(native Talk only, no bundle usable from either source) — and always
+returns cleanly so a caller can always fall back to native Talk. A bundle
+whose `minShellVersion` exceeds the installed shell's own version is never
+returned as FRESH regardless of recency, falling through to CACHED or BARE
+with a shell-behind reason a later slice turns into an update prompt —
+rendering a bundle the shell can't honour is how a remote-UI app bricks
+itself on a phone the human can't easily reach. `BridgeClient.resolveUiBundle`
+is the device edge (HTTP fetch distinguishing an unreachable bridge from a
+reachable one that answered badly, one atomically-written cache file,
+same pattern as `CompanionPackageStore`/BL-907) and is called from
+`TalkEngine.syncUiBundle()` on the same pair/resume cadence as the
+existing bubble-config/chiptunes syncs; a new bridge route,
+`GET /lets-talk/ui-bundle.json` (`letsTalkUiBundle.ts`), serves the
+manifest with the same operator-push/rollback/env-flag posture as its
+siblings. Both the Kotlin and TypeScript parsers reject a manifest whole
+on any missing/mistyped field (BL-654 invariant 2), never partially. See
+the new
+[how-to](../how-to/BL-825-bubble-remote-ui-bundle-resolution.md).);
+Previously August 17, 2026 (BL-908: Bubble's browsable knowledge
 screen — read-only backlog and docs panels over what BL-907 already holds
 on the device. `KnowledgeReader` (pure Kotlin) owns every panel decision —
 what a folder lists, what a ticket's detail shows, what a document opens
