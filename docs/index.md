@@ -77,6 +77,7 @@ here.
 - [Bubble caches the bridge's companion packages, offline-first](how-to/BL-907-bubble-offline-package-sync.md) — the pure sync/cache decision layer, the atomic per-package file store, the two BL-654 invariants, and the manual device procedure that verifies the storage/lifecycle wiring the JVM suite can't reach.
 - [Bubble's browsable knowledge screen — backlog and docs panels](how-to/BL-908-bubble-knowledge-screen-backlog-docs-panels.md) — the read-only backlog/docs panels over what BL-907 holds on the device, the generation stamped on every Ready view, and the permanent header sync trigger that replaced the empty-state-only button.
 - [Bubble decides which UI bundle to render, without ever losing Talk](how-to/BL-825-bubble-remote-ui-bundle-resolution.md) — the four-outcome resolver (fresh/cached/stale/bare) behind the coming remote-UI pager screens, the shell-behind refusal that never renders a bundle the installed APK can't honour, and the whole-or-nothing manifest parsing on both the bridge and the phone.
+- [Bubble's pager renders the bundle's pages, without ever stranding Talk](how-to/BL-829-bubble-remote-page-pager.md) — the manifest's new `pages` list, the pure `PagerListResolver` allowlist/degraded-state decision, the `RemotePageHost` WebView edge that never shows a blank failure, and the `TalkPanelActivity`/`MainActivity` wiring correction to the ticket's own `required_wiring`.
 
 ## Reference
 

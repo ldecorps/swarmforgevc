@@ -119,8 +119,9 @@ With Bubble paired to a live bridge:
 
 ## Not in this slice
 
-Rendering the actual remote pager screens (slice B — the pager still shows
-today's native pages regardless of the resolver's outcome). The APK update
+Rendering the actual remote pager screens — that's slice B,
+[BL-829](BL-829-bubble-remote-page-pager.md), which also adds the
+manifest's `pages` list this doc's outcome table feeds. The APK update
 prompt and its download/install flow (slice C). Migrating Talk, the mic
 pipeline, the overlay window, or the collapsed-bubble gestures to remote
 UI — those stay native. Any signed/verified-payload scheme beyond schema
