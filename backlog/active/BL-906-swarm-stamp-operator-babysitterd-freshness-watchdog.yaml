@@ -234,3 +234,6 @@ notes: |
   already passed a stage.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-17, by: architect, blamed: coder, class: invariant-unencoded, commit: 678fcb3889, evidence: backlog/evidence/BL-906-swarm-stamp-operator-babysitterd-freshness-watchdog-bounce-20260817.md }
