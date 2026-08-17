@@ -834,3 +834,29 @@ You are the hardender.
   `dataBindingGenBaseClassesDebug` failed on `id pager` from an `R-def.txt`
   generated before the merge brought in `remote_page.xml`. A clean rebuild
   fixed it; no code defect existed.)
+
+## `gradlew` needs the swarm-pinned JDK 17 — and `JAVA_HOME` is already set to a JDK 11 that AGP refuses (rule_proposal 2026-08-17, accepted)
+
+- This host has no JDK 17 on `PATH`: `/usr/libexec/java_home -V` lists only
+  Corretto 11 and two 1.8s. AGP requires 17, so `gradlew` fails outright.
+- **`JAVA_HOME` is not unset here — it is set WRONG.** The inherited
+  environment points it at Corretto 11, so "is `JAVA_HOME` set?" is the wrong
+  check and will tell you everything is fine. Check the VERSION, not the
+  presence.
+- The swarm already ships its own pinned JDK 17. Point at it for the call,
+  from the repo root:
+  `JAVA_HOME="$(git rev-parse --show-toplevel)/.swarmforge/jdk-17/Contents/Home" android/gradlew :app:testDebugUnitTest`
+  Keep it ABSOLUTE — a relative `JAVA_HOME` does not survive the wrapper's own
+  cd, and Gradle falls back to the wrong JVM without saying so.
+- Confirm BEFORE a long run, not after it: `gradlew --version` prints the JVM
+  it will actually use. It reads `17.0.20 (Eclipse Adoptium ...)` when the
+  export took and `11.0.12 (Amazon.com Inc. ...)` when it did not. Seconds
+  spent here save a full suite spent discovering it.
+- Durable per-host alternative if you tire of the prefix: set
+  `org.gradle.java.home` in `android/local.properties`, which is gitignored and
+  already carries the machine-local `sdk.dir`. Never put that absolute path in
+  the tracked `android/gradle.properties` — it would break every other machine.
+- (Incident: BL-829 — `gradlew` refused to run at all until `JAVA_HOME` was
+  pointed at the pinned `.swarmforge/jdk-17`, which was already present on the
+  host. Re-verified 2026-08-17: bare `gradlew --version` reports JVM 11.0.12;
+  with the pinned export it reports 17.0.20.)
