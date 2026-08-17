@@ -1,6 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 17, 2026 (BL-825: Bubble's UI bundle resolver —
+**Last Updated:** August 17, 2026 (BL-829: Bubble's pager renders the
+bundle's pages — slice B of epic `bubble-thin-shell`, the slice every
+other Bubble screen ticket (BL-775, BL-831, BL-832, BL-834) was waiting
+on. The manifest BL-825 serves gains a `pages` list
+(`id`/`title`/`entryPath`/`order`), same whole-or-nothing rejection
+posture as the rest of the document, with an absent `pages` key parsing
+to `[]` so a pre-BL-829 manifest still parses. `PagerListResolver.resolve`
+(pure Kotlin) turns a `UiBundleResolver` outcome plus that page list into
+a pager entry list: Talk is never returned data, always placed at
+position 0 by the caller and so never omittable however malformed the
+manifest; a page whose entry path would let the WebView escape the bundle
+(absolute, another origin, a `..` segment) is dropped rather than
+trusted; a bare outcome always carries a stated reason, never a
+null/blank placeholder. `RemotePageHost` is the thin device edge that
+loads a resolved page into the WebView and, on a main-frame load failure,
+swaps in a reason `TextView` rather than ever leaving a blank view. Wired
+from `TalkPanelActivity` (which now owns the pager) via
+`TalkPagerAdapter` — not `MainActivity`, which the ticket's own
+`required_wiring` cited; `MainActivity` is pairing-only and never shown
+again once paired, so a host built there would be the exact
+BL-419 unreachable-host shape the wiring check exists to catch, and
+`MainActivity.startBubbleService()` is what makes the real chain
+(`OverlayService` → `TalkPanelActivity` → the pager) reachable at all —
+recorded as a correction, not a spec-gap bounce. See the new
+[how-to](../how-to/BL-829-bubble-remote-page-pager.md).);
+Previously August 17, 2026 (BL-825: Bubble's UI bundle resolver —
 slice A of epic `bubble-thin-shell`, the decision every later remote-UI
 slice depends on, with nothing rendered yet. `UiBundleResolver.resolve`
 (pure Kotlin, no `android.*` type in its own signature) classifies what
