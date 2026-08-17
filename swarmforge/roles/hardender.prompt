@@ -800,3 +800,37 @@ You are the hardender.
   `FAILURE_TEST_NAMES`. Closed by pinning `EXPECTED_DOC_TITLE_BY_KIND` and the
   per-panel fixture generation against `KnowledgeReaderTest.kt`, asserted
   ahead of the shape lookup.)
+
+## After a merge touches `android/app/src/main/res/`, clear the Android build outputs before `gradlew` — a stale `R-def.txt` reports real new ids as `Cannot find resource` (rule_proposal 2026-08-17, accepted)
+
+- Symptom shape: `dataBindingGenBaseClassesDebug` (or any generated `R`/`BR`
+  reference) fails with `Cannot find resource` for an id that IS present in
+  the layout XML sitting in your worktree. It reads exactly like a defect the
+  merge introduced — a missing id, a typo, a bad binding. It is not. Do not
+  start debugging the Kotlin or the XML.
+- Cause: the resource symbol list is a build INTERMEDIATE, generated before
+  the merge brought the new layout in. It lives at
+  `android/app/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt`,
+  and Gradle's up-to-date checks do not reliably invalidate it when a merge
+  rewrites `res/`. The generated `R` therefore has no field for an id that now
+  exists on disk.
+- Fix — BEFORE the `gradlew` call, from the REPO ROOT:
+  `rm -rf android/app/build android/.gradle`
+  then run the suite as normal (`android/gradlew :app:testDebugUnitTest`).
+- **Write both paths repo-root-relative, exactly as above.** The obvious
+  shorthand `rm -rf android/app/build .gradle` is wrong from either cwd and
+  fails SILENTLY: from the repo root there is no `.gradle`, and from `android/`
+  there is no `android/app/build` — so one of the two caches always survives
+  and you conclude the clean rebuild "didn't help".
+- `android/app/build` is the one that actually holds `R-def.txt`;
+  `android/.gradle` is cleared with it because that is where the incremental
+  state pinning the stale intermediate lives. Both are gitignored
+  (`android/.gitignore`), so this deletes nothing tracked and nothing another
+  role owns — the workflow rule "never delete what you did not create" is
+  about repo content, and does not fence off your own build outputs.
+- Cost: a full clean rebuild is minutes. Pay it once on a res-touching merge
+  rather than spending the same minutes bisecting a defect that does not exist.
+- (Incident: BL-829 Bubble remote page pager, 2026-08-17 —
+  `dataBindingGenBaseClassesDebug` failed on `id pager` from an `R-def.txt`
+  generated before the merge brought in `remote_page.xml`. A clean rebuild
+  fixed it; no code defect existed.)
