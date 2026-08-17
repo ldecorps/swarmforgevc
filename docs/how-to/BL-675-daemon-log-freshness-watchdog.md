@@ -50,10 +50,20 @@ duplicates. The marker is root-scoped
 project roots on the same host each keep their own line — installing for one
 root never removes a sibling root's line.
 
-Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in
+Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` — from
 `.swarmforge/telegram.env`, `.swarmforge/operator/telegram.env`, or
-`.swarmforge/swarm.env` for announces. If those are unset, the checker still
-restarts and records; it only skips the Telegram send.
+`.swarmforge/swarm.env` when those files set them, **or** from
+`~/.swarmforge/fleet/<swarm_name>/telegram.json` (`botToken` / `chatId`,
+the BL-436 fleet identity a normal primary actually uses). Cron starts
+with none of the operator shell's env, so without the fleet fallback
+announces printed `TELEGRAM_* unset` while restarts still happened. If
+those are all absent, the checker still restarts and records; it only
+skips the Telegram send.
+
+Operator (during a shift) also polls babysitterd freshness
+deterministically — process alive, pidfile agrees, announce path has
+creds — and **tells** the coordinator / `status.json`. It does not
+restart babysitterd. See [the babysitterd runbook](BL-611-babysitterd-runbook.md).
 
 ## Cron PATH and SKIP_BABYSITTERD (BL-789, Mac host-switch hotfix)
 
@@ -147,6 +157,7 @@ FRESHNESS_NOW_EPOCH=$(date +%s) \
 | `FRESHNESS_KILL_CMD` | Override kill (`$1` = pid) |
 | `FRESHNESS_START_CMD` | Override restart (`$1` = script, `$2` = root) |
 | `FRESHNESS_EXTRA_PATH_DIRS` | Override the checker's self-established PATH prefix (BL-789; test seam) |
+| `SWARMFORGE_FLEET_HOME` | Home dir containing `.swarmforge/fleet/<swarm>/telegram.json` (default `$HOME`) |
 
 ## Verify
 

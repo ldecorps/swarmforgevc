@@ -167,4 +167,7 @@ notes: |
   Fast-tracked at the human's request: the coordinator engages ambulance mode for
   BL-907 first, then for this ticket
   (`docs/how-to/BL-655-ambulance-mode-the-hold.md`), rather than letting either
-  take the normal promote queue.
+  take the normal promote queue. Human 2026-08-17 (Cursor): after this ticket
+  delivers, ambulance the BL-824 slices next — BL-825 first, then BL-829.
+  Do not ambulance the epic BL-824 itself. Do not engage 825 while this ticket
+  is still the patient.

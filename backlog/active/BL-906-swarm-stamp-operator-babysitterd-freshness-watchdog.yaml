@@ -11,7 +11,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature.draft
+acceptance: specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature
 
 approval_context: >
   ANSWERED 2026-08-16 — the landing question this field used to ask is

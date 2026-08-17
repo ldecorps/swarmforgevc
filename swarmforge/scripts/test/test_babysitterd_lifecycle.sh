@@ -10,6 +10,14 @@ SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 START="$SRC/start_babysitterd.sh"
 DAEMON="$SRC/babysitterd.sh"
 
+# babysitterd.sh's own tick loop shells out to `sleep "$INTERVAL_S"` (default
+# 300) as a CHILD of the daemon's own pid - killing the daemon's pid does not
+# cascade to that in-flight child, so it would otherwise survive as an
+# orphan for up to 5 minutes after every scenario below kills its own daemon
+# (BL-906 review finding). A short interval makes any such orphan
+# self-terminate almost immediately instead.
+export BABYSITTERD_INTERVAL_S=1
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
@@ -160,5 +168,51 @@ kill -TERM "$PID" 2>/dev/null || true
 sleep 0.3
 kill -0 "$PID" 2>/dev/null && kill -KILL "$PID" 2>/dev/null || true
 rm -rf "$ROOT" "$SETSID_STUB_BIN"
+
+# ── 03: missing pidfile + live daemon → start_babysitterd adopts, no spawn ─
+ROOT="$(make_root)"
+bash "$START" "$ROOT" >/dev/null
+PIDFILE="$ROOT/.swarmforge/babysitterd/babysitterd.pid"
+wait_for_pidfile "$PIDFILE" || fail "03: pidfile never appeared on first start"
+FIRST_PID="$(cat "$PIDFILE")"
+STRAY_PIDS+=("$FIRST_PID")
+rm -f "$PIDFILE"
+[[ ! -f "$PIDFILE" ]] || fail "03: pidfile still present after rm"
+kill -0 "$FIRST_PID" 2>/dev/null || fail "03: original process died after pidfile rm"
+# The incident: ./swarm status said DOWN while the process was alive.
+STATUS_BEFORE="$(bb "$SRC/swarm_status.bb" "$ROOT" 2>/dev/null || true)"
+printf '%s\n' "$STATUS_BEFORE" | grep -E "babysitterd" | grep -q "UP" \
+  || fail "03b: swarm status with missing pidfile must still show babysitterd UP; got: $STATUS_BEFORE"
+printf '%s\n' "$STATUS_BEFORE" | grep -E "babysitterd" | grep -q "adopted-live" \
+  || fail "03b: swarm status should tag adopted-live when pidfile is missing; got: $STATUS_BEFORE"
+OUT3="$(bash "$START" "$ROOT")"
+grep -qi "already running" <<< "$OUT3" || fail "03: expected adopt/already-running; got: $OUT3"
+grep -qi "rewrote pidfile" <<< "$OUT3" || fail "03: expected pidfile rewrite; got: $OUT3"
+[[ -f "$PIDFILE" ]] || fail "03: pidfile was not rewritten"
+ADOPTED="$(cat "$PIDFILE")"
+[[ "$ADOPTED" == "$FIRST_PID" ]] || fail "03: pidfile rewritten with a different pid ($ADOPTED vs $FIRST_PID) — a second daemon started"
+kill -0 "$FIRST_PID" 2>/dev/null || fail "03: original process is gone after adopt"
+pass "03: a live daemon with a missing pidfile is adopted (pidfile rewritten, no spawn)"
+kill -KILL "$FIRST_PID" 2>/dev/null || true
+rm -rf "$ROOT"
+
+# ── 04: EXIT trap must not unlink a pidfile it no longer owns ──────────────
+ROOT="$(make_root)"
+bash "$START" "$ROOT" >/dev/null
+PIDFILE="$ROOT/.swarmforge/babysitterd/babysitterd.pid"
+wait_for_pidfile "$PIDFILE" || fail "04: pidfile never appeared"
+FIRST_PID="$(cat "$PIDFILE")"
+STRAY_PIDS+=("$FIRST_PID")
+printf '99999\n' > "$PIDFILE"
+kill -TERM "$FIRST_PID" 2>/dev/null || true
+sleep 0.5
+kill -0 "$FIRST_PID" 2>/dev/null && kill -KILL "$FIRST_PID" 2>/dev/null || true
+sleep 0.2
+[[ -f "$PIDFILE" ]] || fail "04: EXIT trap unlinked a pidfile that no longer held this pid"
+[[ "$(tr -d '[:space:]' < "$PIDFILE")" == "99999" ]] \
+  || fail "04: pidfile contents changed; expected the foreign pid to survive. got: $(cat "$PIDFILE" 2>/dev/null)"
+rm -f "$PIDFILE"
+pass "04: EXIT trap only unlinks the pidfile when it still contains this daemon's pid"
+rm -rf "$ROOT"
 
 echo "ALL PASS"

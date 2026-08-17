@@ -16,6 +16,8 @@
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "swarm_status_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
+(load-file (str (fs/path script-dir "process_table_lib.bb")))
+(load-file (str (fs/path script-dir "babysitterd_freshness_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -178,14 +180,38 @@
                                  detail
                                  (when (and pid (not alive)) "stale-pid")]))})))
 
+(defn gather-babysitterd
+  "Pidfile is not the source of truth: a live babysitterd.sh for this root
+   with a missing/stale pidfile still reports UP (the incident ./swarm status
+   called DOWN). Status is read-only — it never rewrites the pidfile;
+   start_babysitterd.sh / ./swarm ensure adopt."
+  []
+  (let [path (fs/path state-dir "babysitterd" "babysitterd.pid")
+        pidfile-pid (read-pid path)
+        pidfile-alive? (boolean (pid-alive? pidfile-pid))
+        orphan (babysitterd-freshness-lib/find-live-pid
+                (str project-root)
+                (or (process-table-lib/list-processes!) []))
+        live (babysitterd-freshness-lib/resolve-live-pid pidfile-pid pidfile-alive? orphan)
+        alive? (boolean (and live (pid-alive? live)))
+        et (pid-etime live)]
+    (swarm-status-lib/daemon-status-row
+     {:name "babysitterd"
+      :alive? alive?
+      :uptime et
+      :detail (str/join " "
+                        (remove str/blank?
+                                [(when live (str "pid=" live))
+                                 (when (and live (not pidfile-alive?)) "adopted-live")
+                                 (when (and pidfile-pid (not pidfile-alive?)) "stale-pid")]))})))
+
 (defn gather-daemons []
   (let [op (fs/path state-dir "operator")
-        daemon (fs/path state-dir "daemon")
-        bb (fs/path state-dir "babysitterd")]
+        daemon (fs/path state-dir "daemon")]
     [(daemon-from-pid "handoffd" (fs/path daemon "handoffd.pid"))
      (daemon-from-pid "handoffd-supervisor" (fs/path daemon "handoffd-supervisor.pid"))
      (daemon-from-pid "operator-runtime" (fs/path op "runtime.pid"))
-     (daemon-from-pid "babysitterd" (fs/path bb "babysitterd.pid"))
+     (gather-babysitterd)
      (daemon-from-pid "cloudflare-tunnel" (fs/path op "tunnel.pid"))]))
 
 (defn read-json [path]
