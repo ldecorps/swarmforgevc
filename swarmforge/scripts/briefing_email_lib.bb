@@ -11,8 +11,11 @@
 ;; with its own diagram-html concern (merge-diagram-html below).
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.time LocalDate]
+           [java.time.temporal ChronoUnit]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "markdown_to_html_lib.bb")))
 
@@ -44,6 +47,116 @@
            sort
            vec))
     []))
+
+;; ── BL-821 Leg B: bound the send window ─────────────────────────────────
+;; The specifier's picked window (approval_context): today and yesterday,
+;; UTC. A briefing older than that is never mailed by the ordinary sweep,
+;; no matter what the marker contains - unbounded historical catch-up
+;; remains possible only through an explicit one-shot operator action
+;; (out of this ticket's scope).
+(def briefing-window-days 2)
+
+;; The plain YYYY-MM-DD date label a briefing file name IS, or nil for any
+;; other shape - including a name that merely STARTS with a date, like
+;; "2026-07-30-evening.md" (BL-821's own out-of-scope note: such names do
+;; reach this path on `main` and must be decided deliberately, not crashed
+;; on or silently treated as if the trailing suffix were not there).
+(defn briefing-date-label [file-name]
+  (some-> (re-matches #"(\d{4}-\d{2}-\d{2})\.md" file-name) second))
+
+;; Pure, no clock: today-str is an explicit ISO yyyy-MM-dd UTC date string
+;; the caller supplies (send-unsent-briefings! below, from the daemon's own
+;; real clock) - this function never reads the clock itself, keeping it
+;; testable with fixed strings, no timers. A file name with no plain date
+;; label (briefing-date-label nil), or an unparseable/malformed date in
+;; either string, decides false (out of window) rather than throwing -
+;; the same fail-closed posture this project uses everywhere else for an
+;; absent/unrecognized fact, and exactly what scenario 09 requires: a
+;; DEFINITE decision, never a crash.
+(defn briefing-in-window? [file-name today-str]
+  (boolean
+   (when-let [date-str (briefing-date-label file-name)]
+     (try
+       (let [today (LocalDate/parse today-str)
+             d (LocalDate/parse date-str)
+             days-old (.between ChronoUnit/DAYS d today)]
+         (and (>= days-old 0) (< days-old briefing-window-days)))
+       (catch Exception _ false)))))
+
+;; Splits unsent-file-names (already marker-filtered, oldest first) into
+;; {:mailable [...] :suppressed [...]} against today-str, preserving the
+;; incoming order within each partition.
+(defn partition-by-window [unsent-file-names today-str]
+  {:mailable (vec (filter #(briefing-in-window? % today-str) unsent-file-names))
+   :suppressed (vec (remove #(briefing-in-window? % today-str) unsent-file-names))})
+
+;; ── BL-821 Leg A: make the sent-marker durable ──────────────────────────
+;; A successful send must persist .sent.json to the shared store the sweep
+;; reads (a fresh checkout/second host/pull otherwise never sees it - Leg
+;; A's own defect), not just this process's working tree. sh-fn is the
+;; injectable IO seam (default real-sh, a thin babashka.process/sh wrapper)
+;; so no test needs a real git process; the real-fixture proof lives in
+;; test_briefing_marker_commit.sh, same split as every other tmux/git-
+;; touching concern in this codebase. process/sh, not clojure.java.shell/sh:
+;; this adapter is called from inside the daemon's own sweep loop, once per
+;; successfully-sent briefing, and bb's clojure.java.shell shim is known to
+;; deadlock reading subprocess streams across repeated calls in one process
+;; (handoffd.bb's own header comment, BL-061) - the same failure shape this
+;; call site would reproduce under a multi-briefing sweep.
+(defn- real-sh [dir & args]
+  (let [{:keys [exit out err]} (apply process/sh {:continue true :dir dir} args)]
+    {:exit exit :out out :err err}))
+
+(defn commit-sent-marker!
+  "Commits EXACTLY briefings-dir's .sent.json - a scoped `git add` + `git
+   commit` of that one path, never sweeping unrelated working-tree changes
+   into the commit (BL-506 applies to this machine-authored commit exactly
+   as it does to an agent's own). Returns {:ok true} on a clean commit,
+   {:ok true :reason :nothing-to-commit} when the marker's new content is
+   byte-identical to what the durable store already has (a second host
+   racing the same entry - scenario 07's \"mailed exactly once\" depends on
+   this not erroring), or {:ok false :reason ...} on a real add/commit
+   failure. The marker file itself is already written to disk by
+   record-briefing-sent! either way - a commit failure degrades to exactly
+   the pre-Leg-A working-tree-only behavior for THIS host, it never loses
+   the local send record."
+  ([briefings-dir] (commit-sent-marker! briefings-dir real-sh))
+  ([briefings-dir sh-fn]
+   (try
+     (let [path (sent-state-path briefings-dir)
+           ;; git resolves its own repo root by walking UP from :dir - so
+           ;; briefings-dir itself (any depth inside the working tree) is
+           ;; always a valid cwd for both calls, no matter how deep the
+           ;; briefings directory sits, without this function having to know
+           ;; or guess that depth itself.
+           add-result (sh-fn briefings-dir "git" "add" "--" path)]
+       (if-not (zero? (:exit add-result))
+         {:ok false :reason (str "git add failed: " (str/trim (str (:err add-result))))}
+         (let [commit-result (sh-fn briefings-dir "git" "commit"
+                                     "-m" "briefing: record sent marker\n\nAutomated by the briefing-email sweep (BL-821)."
+                                     "--" path)]
+           (cond
+             (zero? (:exit commit-result))
+             {:ok true}
+
+             ;; git reports a scoped no-op commit two different ways
+             ;; depending on whether ANY untracked file exists anywhere
+             ;; else in the repo (unrelated to briefings-dir entirely) -
+             ;; "nothing to commit, working tree clean" when none do, or
+             ;; "nothing added to commit but untracked files present" when
+             ;; one does. This checkout is chronically not pristine, so
+             ;; the second phrasing is the common case in practice, not an
+             ;; edge case - missing it here would misclassify the exact
+             ;; race this return value exists to make safe (a second host
+             ;; already committed byte-identical content) as a hard
+             ;; failure nearly every real time it happens.
+             (re-find #"nothing (?:to commit|added to commit)" (str (:out commit-result) (:err commit-result)))
+             {:ok true :reason :nothing-to-commit}
+
+             :else
+             {:ok false :reason (str "git commit failed: " (str/trim (str (:err commit-result))))}))))
+     (catch Exception e
+       {:ok false :reason (str "commit-sent-marker-exception: " (.getMessage e))}))))
 
 ;; BL-392: the headline's positional contract ("first non-empty line") is
 ;; unchanged, but a briefing's first line can be a whole markdown-laden lede
@@ -369,10 +482,40 @@
    headline still reflects the coordinator-authored body, never the warning
    text. :subject-marker? true additionally prefixes the subject with a
    fixed token-burn marker (maybe-mark-subject) - the ticket's own \"email
-   subject gains a token-burn warning marker\" contract."
+   subject gains a token-burn warning marker\" contract.
+
+   BL-821 Leg B: an optional :today-str value (a plain ISO yyyy-MM-dd UTC
+   date string, not a function - one sweep call has one \"today\") bounds
+   the send window to briefings dated today or yesterday
+   (briefing-in-window?/partition-by-window above); a briefing outside the
+   window is never composed or sent, and is reported via :log! as
+   \"briefing-suppressed-outside-window\" - distinguishable from having
+   generated no briefing at all. Omitting :today-str (every caller/test
+   predating BL-821) leaves every unsent file mailable, unaffected by the
+   window - the same \"omitted adapter -> unchanged behavior\" contract
+   every other optional key here already has; the real daemon caller
+   always supplies it, since only the true IO edge (a real clock read) may
+   ever produce this value - never something derived inside this library.
+
+   BL-821 Leg A: an optional :commit-marker! adapter (1-arg fn, called
+   with briefings-dir, returning commit-sent-marker!'s {:ok ...} shape)
+   persists the sent-marker to the durable store right after a successful
+   send is recorded locally. A commit failure is reported via :log! as
+   \"briefing-marker-commit-failed\" but never undoes the local record or
+   fails the sweep - the file already sent stays sent for THIS host; the
+   marker's own diff just rides the next successful commit. Omitting the
+   adapter (every caller/test predating BL-821) skips Leg A entirely,
+   same contract as every other optional adapter here."
   [briefings-dir adapters]
-  (let [sent-now (atom [])]
-    (doseq [file-name (find-unsent-briefings briefings-dir)]
+  (let [sent-now (atom [])
+        unsent (find-unsent-briefings briefings-dir)
+        today-str (:today-str adapters)
+        {:keys [mailable suppressed]} (if today-str
+                                         (partition-by-window unsent today-str)
+                                         {:mailable unsent :suppressed []})]
+    (doseq [file-name suppressed]
+      ((:log! adapters) "briefing-suppressed-outside-window" file-name))
+    (doseq [file-name mailable]
       (let [early-reason (when-let [f (:send-reason! adapters)] (f))]
         (if early-reason
           ((:log! adapters) (skip-log-key early-reason) file-name)
@@ -381,6 +524,10 @@
               (:success result)
               (do
                 (record-briefing-sent! briefings-dir file-name)
+                (when-let [commit! (:commit-marker! adapters)]
+                  (let [commit-result (commit! briefings-dir)]
+                    (when-not (:ok commit-result)
+                      ((:log! adapters) "briefing-marker-commit-failed" file-name (str (:reason commit-result))))))
                 ((:log! adapters) "briefing-sent" file-name)
                 (swap! sent-now conj file-name))
 

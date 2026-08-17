@@ -464,7 +464,9 @@ const DOMAINS = [
   require('./bl825BubbleUiBundleResolutionSteps'),
   require('./bl908BubbleKnowledgeScreenSteps'),
   require('./bl829BubbleRemotePagePagerSteps'),
-  require('./bl906OperatorBabysitterdFreshnessWatchdogSteps')
+  require('./bl906OperatorBabysitterdFreshnessWatchdogSteps'),
+  require('./bl911RotationRecomposesRolePromptSteps'),
+  require('./bl821BriefingWindowAndMarkerDurabilitySteps')
 ];
 
 function registerSteps(registry) {
