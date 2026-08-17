@@ -17,8 +17,7 @@ invariants:
   - "The pinned environment is derived from the role's own worktree, never from the cwd the process happened to inherit."
   - "When a heal succeeds the model receives only the healed result; when it does not, the model receives the real failure exactly once — never both."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   The human wrote "Defaults welcome; human did not lock these" against three
   open questions and locked the other six decisions. The three defaults chosen
