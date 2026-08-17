@@ -52,6 +52,13 @@ test('getLetsTalkUiBundleManifest: a malformed on-disk file falls back to the bu
   assert.equal(manifest.payload, '');
 });
 
+test('getLetsTalkUiBundleManifest: an on-disk file that is not valid JSON falls back to the bundled default', () => {
+  const root = mkOperatorDir();
+  fs.writeFileSync(manifestPath(root), 'not json {');
+  const manifest = getLetsTalkUiBundleManifest(root, {});
+  assert.equal(manifest.payload, '');
+});
+
 test('getLetsTalkUiBundleManifest: LETS_TALK_UI_BUNDLE_DISABLED forces the bundled default even with a file present', () => {
   const root = mkOperatorDir();
   fs.writeFileSync(

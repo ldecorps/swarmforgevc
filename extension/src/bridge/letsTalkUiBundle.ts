@@ -143,7 +143,3 @@ export function getLetsTalkUiBundleManifest(targetPath: string, env: NodeJS.Proc
     ? loadManifestPreferring(rollbackPath, primaryPath)
     : loadManifestPreferring(primaryPath, rollbackPath);
 }
-
-export function getLetsTalkUiBundleManifestJsonBody(targetPath: string, env: NodeJS.ProcessEnv): string {
-  return JSON.stringify(getLetsTalkUiBundleManifest(targetPath, env));
-}
