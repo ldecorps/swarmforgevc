@@ -20,6 +20,11 @@
 #   FRESHNESS_EXTRA_PATH_DIRS  colon-separated dirs prepended to PATH (test seam;
 #                              production default is a curated bin list, see below)
 #   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID  for default announce
+#   SWARMFORGE_FLEET_HOME / HOME + swarm-identity  fleet telegram.json
+#                              fallback when those vars are still empty
+#                              after loading *.env (BL-436 creds live in
+#                              ~/.swarmforge/fleet/<swarm>/telegram.json,
+#                              never in the tree)
 #
 # BL-789 (2026-08-02 Mac host-switch hotfix): cron's own PATH is
 # /usr/bin:/bin, missing bb/node, so a restart's `nohup bb ...` failed with
@@ -245,6 +250,38 @@ for env_file in \
     set +a
   fi
 done
+
+# Fleet creds: cron inherits none of the operator shell's TELEGRAM_*, and
+# a normal primary never copies the bot token into telegram.env (secrets
+# stay in ~/.swarmforge/fleet/<swarm>/telegram.json). Env files above win
+# when they already set the vars; this only fills the gap.
+json_field() {
+  file=$1
+  key=$2
+  [ -f "$file" ] || return 0
+  sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$file" | head -n 1
+}
+json_number() {
+  file=$1
+  key=$2
+  [ -f "$file" ] || return 0
+  sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\(-*[0-9][0-9]*\\).*/\\1/p" "$file" | head -n 1
+}
+if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+  swarm_name=${SWARMFORGE_SWARM_NAME:-}
+  if [ -z "$swarm_name" ] && [ -f "$ROOT/.swarmforge/swarm-identity" ]; then
+    swarm_name=$(awk -F '\t' '$1=="swarm_name" {print $2; exit}' "$ROOT/.swarmforge/swarm-identity" || true)
+  fi
+  [ -n "$swarm_name" ] || swarm_name=primary
+  fleet_home=${SWARMFORGE_FLEET_HOME:-${HOME:-}}
+  fleet_json="$fleet_home/.swarmforge/fleet/$swarm_name/telegram.json"
+  if [ -f "$fleet_json" ]; then
+    [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || TELEGRAM_BOT_TOKEN=$(json_field "$fleet_json" "botToken")
+    [ -n "${TELEGRAM_CHAT_ID:-}" ] || TELEGRAM_CHAT_ID=$(json_field "$fleet_json" "chatId")
+    [ -n "${TELEGRAM_CHAT_ID:-}" ] || TELEGRAM_CHAT_ID=$(json_number "$fleet_json" "chatId")
+    export TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID
+  fi
+fi
 
 if [ ! -f "$CONF" ]; then
   printf '%s\n' "freshness_check: missing conf $CONF" >&2

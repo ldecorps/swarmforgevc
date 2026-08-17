@@ -52,7 +52,11 @@ if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; t
   exit 1
 fi
 echo $$ > "$PIDFILE"
-trap 'rm -f "$PIDFILE"' EXIT
+# Only unlink OUR pid. A second start that raced the missing-pidfile window
+# can overwrite the file; a blindly-rm EXIT trap is how the original live
+# process lost its pidfile and ./swarm status reported DOWN.
+trap 'recorded=$(tr -d "[:space:]" < "$PIDFILE" 2>/dev/null || true)
+      if [ "$recorded" = "$$" ]; then rm -f "$PIDFILE"; fi' EXIT
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) babysitterd start pid=$$ interval=${INTERVAL_S}s" >> "$LOG"
 while true; do

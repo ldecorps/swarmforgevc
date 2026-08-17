@@ -661,6 +661,63 @@ HB_WRITE_COUNT="$(grep -c '(spit (str heartbeat-file)' "$SRC/handoffd.bb" || tru
 check "BL-789: heartbeat is written twice per cycle (start AND end), not just once" \
   '[[ "$HB_WRITE_COUNT" -ge 2 ]]'
 
+# ── fleet telegram.json fills cron announce when *.env has no TELEGRAM_* ─
+unset TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID || true
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+printf "swarm_name\tfleet-test-swarm\n" > "$ROOT/.swarmforge/swarm-identity"
+FLEET_HOME="$(mktemp -d)"
+register_tmp_dir "$FLEET_HOME"
+mkdir -p "$FLEET_HOME/.swarmforge/fleet/fleet-test-swarm"
+printf '{"botToken":"test-token-not-a-secret","chatId":"4242","bridgePort":8765}\n' \
+  > "$FLEET_HOME/.swarmforge/fleet/fleet-test-swarm/telegram.json"
+mkdir -p "$ROOT/bin"
+CURL_LOG="$ROOT/curl-args.log"
+cat > "$ROOT/bin/curl" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$CURL_LOG"
+exit 0
+EOF
+chmod +x "$ROOT/bin/curl"
+ERRF="$ROOT/checker.err"
+PATH="$ROOT/bin:$PATH" \
+HOME="$FLEET_HOME" SWARMFORGE_FLEET_HOME="$FLEET_HOME" \
+FRESHNESS_ROOT="$ROOT" FRESHNESS_CONF="$CONF" FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
+FRESHNESS_COOL_OFF_SECS=300 \
+FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
+FRESHNESS_START_CMD="printf '%s %s\n' \"\$1\" \"\$2\" >> \"$ROOT/starts.log\"" \
+/bin/sh "$CHECKER" 2>"$ERRF" || true
+check "fleet-telegram: default announce invoked curl (creds came from fleet json)" \
+  'grep -q "sendMessage" "$CURL_LOG"'
+check "fleet-telegram: announce was not skipped" \
+  '! grep -q "announce skipped" "$ERRF"'
+pass "fleet telegram.json is used for freshness announces when TELEGRAM_* is unset"
+
+# Negative: empty fleet home, no env files → still skip (no curl against the real API).
+ROOT="$(make_root)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+EMPTY_HOME="$(mktemp -d)"
+register_tmp_dir "$EMPTY_HOME"
+ERRF="$ROOT/checker.err"
+PATH="$ROOT/bin:$PATH" \
+HOME="$EMPTY_HOME" SWARMFORGE_FLEET_HOME="$EMPTY_HOME" \
+FRESHNESS_ROOT="$ROOT" FRESHNESS_CONF="$CONF" FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
+FRESHNESS_COOL_OFF_SECS=300 \
+FRESHNESS_KILL_CMD="true" FRESHNESS_START_CMD="true" \
+/bin/sh "$CHECKER" 2>"$ERRF" || true
+check "fleet-telegram-empty: announce skipped when neither env files nor fleet json exist" \
+  'grep -Fq "announce skipped (TELEGRAM_* unset)" "$ERRF"'
+pass "missing fleet json still skips announce (never hits the real API)"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-675 daemon-log-freshness: ALL CHECKS PASSED"
 else
