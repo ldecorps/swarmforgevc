@@ -209,11 +209,38 @@
          {:attempts 0 :last-attempt-at-ms nil :exhausted? false}
          (push-sweep-lib/next-push-state :pushed {:attempts 2} retry-cfg 200000))
 (assert= "next-push-state: a transient failure under the cap counts the attempt, not exhausted"
-         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false}
+         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false :last-error nil}
          (push-sweep-lib/next-push-state :transient-failure {:attempts 0} retry-cfg 200000))
 (assert= "next-push-state: a transient failure AT the cap is exhausted (bounded, not unlimited)"
-         {:attempts 3 :last-attempt-at-ms 200000 :exhausted? true}
+         {:attempts 3 :last-attempt-at-ms 200000 :exhausted? true :last-error nil}
          (push-sweep-lib/next-push-state :transient-failure {:attempts 2} retry-cfg 200000))
+
+;; BL-903: the underlying git error now travels into push-state as
+;; :last-error, sanitized to one line.
+(assert= "next-push-state: a transient failure carries the sanitized error alongside the attempt count"
+         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false :last-error "connection refused"}
+         (push-sweep-lib/next-push-state :transient-failure {:attempts 0} retry-cfg 200000 "connection refused"))
+(assert= "next-push-state: a blank error yields no :last-error text, not a blank string"
+         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false :last-error nil}
+         (push-sweep-lib/next-push-state :transient-failure {:attempts 0} retry-cfg 200000 "  "))
+
+;; ── sanitize-error-line ───────────────────────────────────────────────────
+
+(assert= "sanitize-error-line: nil error -> nil"
+         nil (push-sweep-lib/sanitize-error-line nil))
+(assert= "sanitize-error-line: blank error -> nil"
+         nil (push-sweep-lib/sanitize-error-line "   "))
+(assert= "sanitize-error-line: a single-line error is trimmed and returned as-is"
+         "fatal: could not read Username"
+         (push-sweep-lib/sanitize-error-line "  fatal: could not read Username  "))
+(assert= "sanitize-error-line: a multi-line error collapses to one line, nothing dropped"
+         "remote: Support for password authentication was removed. | fatal: Authentication failed for 'https://example.invalid/repo.git/'"
+         (push-sweep-lib/sanitize-error-line
+          "remote: Support for password authentication was removed.\nfatal: Authentication failed for 'https://example.invalid/repo.git/'"))
+(assert-false "sanitize-error-line: the collapsed result never contains a raw newline"
+              (clojure.string/includes?
+               (or (push-sweep-lib/sanitize-error-line "line one\nline two\nline three") "")
+               "\n"))
 
 ;; ── classify-send-result / next-alarm-state ─────────────────────────────
 
@@ -272,8 +299,13 @@
         push-calls (atom 0)
         alarm-calls (atom 0)
         divergence-calls (atom 0)
+        alarm-args (atom [])
         logs (atom [])]
-    {:calls {:push push-calls :alarm alarm-calls :divergence divergence-calls :logs logs}
+    {:calls {:push push-calls :alarm alarm-calls :divergence divergence-calls :logs logs
+             ;; BL-903: [attempts reason] as actually received by
+             ;; :send-push-alarm! on each call, so a test can confirm the
+             ;; reason travels through, not only the count.
+             :alarm-args alarm-args}
      ;; Lets a test simulate the real world changing between sweep! ticks
      ;; (e.g. a human merging directly to origin mid-episode) without
      ;; losing the running call counters a fresh fake-adapters would reset.
@@ -284,8 +316,9 @@
                (swap! push-calls inc)
                (let [r (nth push-results (dec @push-calls) (last push-results))]
                  r))
-      :send-push-alarm! (fn [_attempts]
+      :send-push-alarm! (fn [attempts reason]
                            (swap! alarm-calls inc)
+                           (swap! alarm-args conj [attempts reason])
                            (let [r (nth alarm-results (dec @alarm-calls) (last alarm-results))]
                              r))
       :send-divergence-alarm! (fn [_ahead _behind]
@@ -312,14 +345,50 @@
                                                 :push-results [{:success false :error "connection refused"}]})]
   (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
   (assert= "02: a transient push failure is recorded, not treated as delivered"
-           {:attempts 1 :last-attempt-at-ms 100000 :exhausted? false}
+           {:attempts 1 :last-attempt-at-ms 100000 :exhausted? false :last-error "connection refused"}
            (:push (push-sweep-lib/read-state dir)))
+  (assert-true "02: the push-failed log record carries the error, on one line"
+               (some #(and (clojure.string/includes? % "push-failed")
+                            (clojure.string/includes? % "connection refused"))
+                     @(:logs calls)))
   ;; Before backoff elapses, no further attempt.
   (push-sweep-lib/sweep! 100200 dir retry-cfg adapters)
   (assert= "02: no retry attempted before backoff elapses" 1 @(:push calls))
   ;; Once backoff (1000ms for attempt 1) elapses, a retry is attempted.
   (push-sweep-lib/sweep! 101000 dir retry-cfg adapters)
   (assert= "02: a retry is attempted once backoff elapses" 2 @(:push calls)))
+
+;; BL-903 push-sweep-discards-failure-reason-02: two different failure
+;; causes on two different tick series produce two distinguishable records
+;; (a non-fast-forward reads differently from an unreachable remote).
+(let [ffwd-dir (mk-fixture-dir)
+      {:keys [adapters]}
+      (fake-adapters {:counts {:ahead 2 :behind 0}
+                      :push-results [{:success false :error "! [rejected] main -> main (non-fast-forward)"}]})
+      unreachable-dir (mk-fixture-dir)
+      {adapters2 :adapters}
+      (fake-adapters {:counts {:ahead 2 :behind 0}
+                      :push-results [{:success false :error "fatal: unable to access remote"}]})]
+  (push-sweep-lib/sweep! 100000 ffwd-dir retry-cfg adapters)
+  (push-sweep-lib/sweep! 100000 unreachable-dir retry-cfg adapters2)
+  (let [ffwd-error (get-in (push-sweep-lib/read-state ffwd-dir) [:push :last-error])
+        unreachable-error (get-in (push-sweep-lib/read-state unreachable-dir) [:push :last-error])]
+    (assert-true "BL-903-02: both records carry non-blank reasons"
+                 (and (some? ffwd-error) (some? unreachable-error)))
+    (assert-false "BL-903-02: the two causes produce distinguishable recorded reasons"
+                  (= ffwd-error unreachable-error))))
+
+;; BL-903 push-sweep-discards-failure-reason-03: a multi-line git error
+;; still occupies exactly one new log record.
+(let [dir (mk-fixture-dir)
+      multiline-error "remote: Support for password authentication was removed.\nfatal: Authentication failed"
+      {:keys [calls adapters]} (fake-adapters {:counts {:ahead 2 :behind 0}
+                                                :push-results [{:success false :error multiline-error}]})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-903-03: exactly one push-failed record is written"
+           1 (count (filter #(clojure.string/includes? % "push-failed") @(:logs calls))))
+  (assert-false "BL-903-03: the log record itself carries no raw newline"
+                (some #(clojure.string/includes? % "\n") @(:logs calls))))
 
 ;; BL-356 swarm-pushes-main-to-origin-03: pushes that keep failing raise a
 ;; loud alarm rather than silently accumulating, and the alarm is only
@@ -340,6 +409,9 @@
   (assert= "03: exactly one alarm attempt so far" 1 @(:alarm calls))
   (assert-false "03: a failed alarm delivery is NOT marked armed/delivered"
                 (get-in (push-sweep-lib/read-state dir) [:alarm :armed?]))
+  ;; BL-903: the alarm names the reason, not only the attempt count.
+  (assert= "03: the alarm receives the recorded failure reason alongside the attempt count"
+           [3 "e"] (first @(:alarm-args calls)))
   ;; The alarm itself is retried (bounded, with backoff) until it actually
   ;; delivers - it must not be silently abandoned either.
   (push-sweep-lib/sweep! 103500 dir retry-cfg adapters)   ; alarm backoff not yet elapsed -> no new alarm call

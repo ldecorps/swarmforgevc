@@ -132,5 +132,38 @@ set -e
 [[ "$STATUS10" -ne 0 ]] || fail "10: expected the commit-size guard to still block an oversized file"
 echo "$OUT10" | grep -q "blob.bin" || fail "10: size-guard output must name the offending file, got: $OUT10"
 pass "10: the pre-existing commit-size guard still runs alongside the new ticket-deletion guard"
+git -C "$ROOT" reset -q
+rm -f "$ROOT/blob.bin"
+
+# ── 11 (2+ candidates): two naked deletions in one commit, message names
+#       only one - refused, naming the UNNAMED one specifically, never the
+#       one already accounted for. A per-ticket message-naming check that is
+#       only ever exercised with a single naked deletion can silently
+#       degrade at 2+; this proves it does not. ─────────────────────────────
+echo "id: BL-100" > "$ROOT/backlog/paused/BL-100-foo.yaml"
+echo "id: BL-200" > "$ROOT/backlog/paused/BL-200-bar.yaml"
+git -C "$ROOT" add -A
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "seed two more tickets"
+git -C "$ROOT" rm -q backlog/paused/BL-100-foo.yaml backlog/paused/BL-200-bar.yaml
+echo "Retire BL-100: superseded" > "$MSG_OMIT"
+set +e
+OUT11="$(run_guard "$MSG_OMIT" 2>&1)"
+STATUS11=$?
+set -e
+[[ "$STATUS11" -ne 0 ]] || fail "11: expected refusal when one of two naked deletions is left unnamed"
+echo "$OUT11" | grep -q "BL-200" || fail "11: refusal must name the unnamed ticket BL-200, got: $OUT11"
+echo "$OUT11" | grep -q "(BL-100)" && fail "11: refusal must not also flag the already-named ticket BL-100, got: $OUT11"
+pass "11: with two naked deletions, naming only one still refuses and names the unnamed one specifically"
+
+# ── 12 (2+ candidates, allow path): the same two naked deletions, message
+#       names BOTH - allowed. ─────────────────────────────────────────────
+git -C "$ROOT" reset -q
+git -C "$ROOT" checkout -q -- backlog/paused/BL-100-foo.yaml backlog/paused/BL-200-bar.yaml
+git -C "$ROOT" rm -q backlog/paused/BL-100-foo.yaml backlog/paused/BL-200-bar.yaml
+echo "Retire BL-100 and BL-200: superseded" > "$MSG_OMIT"
+run_guard "$MSG_OMIT" || fail "12: expected two naked deletions to be allowed once both ticket ids are named"
+pass "12: with two naked deletions, naming both in the message allows the commit"
+git -C "$ROOT" reset -q
+git -C "$ROOT" checkout -q -- backlog/paused/BL-100-foo.yaml backlog/paused/BL-200-bar.yaml
 
 echo "ALL PASS"
