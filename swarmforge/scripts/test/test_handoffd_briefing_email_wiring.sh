@@ -36,7 +36,12 @@ touch "$SOCK"
 mkdir -p "$ROOT/.swarmforge" "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/docs/briefings"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
-printf 'Headline: BL-214 wiring smoke test\n\nBody.\n' > "$ROOT/docs/briefings/2026-07-09.md"
+# BL-821: a fixed past date would now fall outside the 2-day send window and
+# be suppressed before ever reaching the :send-reason! skip path this test
+# asserts on - use today (UTC), same technique as
+# test_handoffd_banked_briefing_wiring.sh's TODAY_DAY_KEY.
+TODAY_DAY_KEY="$(date -u +%Y-%m-%d)"
+printf 'Headline: BL-214 wiring smoke test\n\nBody.\n' > "$ROOT/docs/briefings/${TODAY_DAY_KEY}.md"
 
 FAKE_BIN="$ROOT/bin"
 mkdir -p "$FAKE_BIN"
