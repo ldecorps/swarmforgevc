@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 17, 2026 (BL-829: Bubble's pager renders the
+**Last Updated:** August 17, 2026 (BL-906: swarm stamp-off certifying the
+WIP branch `wip/BL-906-babysitterd-freshness-watchdog` (commit `d7b986e8f`)
+that gives the Operator runtime its own babysitterd freshness watchdog —
+tell, never restart. `operator_runtime.bb` polls process + pidfile +
+Telegram-announce-credential presence every tick via the pure classifier
+`babysitterd_freshness_lib.bb::classify`, which reports one of `down` /
+`pidfile-lie` / `announce-mute` / `healthy` (priority in that order) and
+only ever `:tell`s — a coordinator note plus `status.json`'s
+`babysitterd_watchdog` field — never `:restart`s; cron (BL-675) remains the
+sole restarter, a deliberate separation of powers so the Operator can never
+race cron into starting a second daemon. The `pidfile-lie` state exists
+because that race used to corrupt its own evidence: a second
+`start_babysitterd.sh` against a live orphan deleted the orphan's pidfile on
+EXIT, so `./swarm status` reported DOWN for a daemon that was still running.
+Fixed at the source — the daemon's EXIT trap, and `./swarm ensure` /
+`start_babysitterd.sh`'s adopt path, now touch a pidfile only when it
+already names their own or the live orphan's pid, never blind-overwriting
+or blind-deleting. Certifying this review found and fixed one gap: none of
+the ticket's three declared invariants had a property test; a new
+`babysitterd_freshness_lib_property_runner.bb` now covers the pure classify
+logic and the EXIT-trap's pure predicate twin,
+`should-unlink-pidfile?`. Opt out with
+`OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=0`. See the updated
+[babysitterd runbook](../how-to/BL-611-babysitterd-runbook.md#operators-babysitterd-freshness-watchdog-tell-never-restart-bl-906).);
+Previously August 17, 2026 (BL-829: Bubble's pager renders the
 bundle's pages — slice B of epic `bubble-thin-shell`, the slice every
 other Bubble screen ticket (BL-775, BL-831, BL-832, BL-834) was waiting
 on. The manifest BL-825 serves gains a `pages` list
@@ -88,12 +112,15 @@ builds the browse UI over what this slice stores. See the updated
 August 16, 2026 (BL-896: swarm stamp-off certifying the
 operator hotfix (`14724edae7`) that put a second chart — open tickets
 remaining per day, with filed/closed rates — on the morning briefing email
-alongside the architecture diagrams. The chart's heading was renamed off
-"burndown" to "Open tickets remaining": the maths was right but the label
-collided with BL-659's burndown ban, since this backlog is a continuously
-growing scope, not a committed iteration perimeter — this chart is the
-open-count/net-flow replacement BL-659 itself ratified, not an exception to
-the ban. Also fixed while certifying: a duplicated remaining-count predicate
+alongside the architecture diagrams. The chart's heading reads "Backlog
+burndown — open tickets remaining": an initial certification pass renamed it
+off "burndown" (the maths was right but the label collided with BL-659's
+burndown ban, since this backlog is a continuously growing scope, not a
+committed iteration perimeter), but a 2026-08-16 08:20 CEST human ruling
+explicitly overrode that rename and kept the word "burndown" for this email
+chart specifically — BL-659's ban still stands unamended for the
+PWA/milestone-dashboard surface. Also fixed while certifying: a duplicated
+remaining-count predicate
 (`notDoneBurndown.ts`'s copy of `deliveryMetrics.ts`'s
 `isRemainingOnDay`) consolidated into one implementation on
 `gitHistoryAdapter.ts`; today's point in the series now reconciles against a
