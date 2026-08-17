@@ -246,12 +246,58 @@ matched — and counted — exactly once.
 Acceptance feature:
 [`specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature`](../../specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature).
 
+## Operator's babysitterd freshness watchdog: tell, never restart (BL-906)
+
+Babysitterd going down was previously caught by nothing but cron's own
+freshness restart (BL-675). Worse, the obvious manual remedy was ambiguous:
+running a second `start_babysitterd.sh` while an orphaned daemon was still
+alive deleted the pidfile on that second process's EXIT, so `./swarm status`
+reported the daemon DOWN while it was in fact still running. This is a
+separate, additional layer on top of that same manual remedy — the Operator
+runtime now polls, on every tick, and the manual/adopt path was hardened at
+the same time.
+
+**Separation of powers, not a limitation.** `operator_runtime.bb` polls
+process + pidfile + Telegram-announce-credential presence every tick, via the
+pure classifier `babysitterd_freshness_lib.bb`'s `classify`. On anything but
+healthy it **tells** — a coordinator-pane note plus a `babysitterd_watchdog`
+field in `status.json` — and never calls `start_babysitterd.sh` itself. Cron
+(BL-675) remains the sole restarter. An Operator that could also restart
+would be a second restarter racing the first, reproducing the exact
+duplicate-process failure that caused the pidfile lie in the first place.
+Disable the poll with `OPERATOR_BABYSITTERD_WATCHDOG_ENABLED=0`.
+
+`classify` reports exactly one of four states, in this priority order:
+
+| State | Meaning |
+|---|---|
+| `down` | No live babysitterd process for this root. A missing pidfile alone is not proof either way — this only fires when no matching process exists. Cron or `./swarm ensure` should restart it; the Operator will not. |
+| `pidfile-lie` | A live process exists but the pidfile is missing or stale — `./swarm status` would otherwise report DOWN for a daemon that is actually running. `./swarm ensure` / `start_babysitterd.sh` adopt that pid (rewrite the pidfile) rather than starting a duplicate. |
+| `announce-mute` | The daemon is alive and the pidfile is correct, but no Telegram credentials are available to announce with — restarts still happen, humans just aren't told. |
+| `healthy` | Live process, correct pidfile, announce path available. No finding, no note. |
+
+(A fifth, non-alerting `disabled` state applies only when the watchdog itself
+is turned off via the env var above.)
+
+The pidfile-lie regression is fixed at its source, not just detected: the
+daemon's own EXIT trap (`babysitterd.sh`) now unlinks its pidfile only when
+the pidfile's own recorded content still names *this* process's pid — a pure
+twin of that check, `should-unlink-pidfile?`, lives in
+`babysitterd_freshness_lib.bb` for property coverage, and the bash original
+carries a comment pointing back at it so the two can't silently drift apart.
+A raced second `start_babysitterd.sh` against a live orphan can therefore
+never delete the orphan's own pidfile on its way out.
+
+Acceptance feature:
+[`specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature`](../../specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature).
+
 ## Verify
 
 ```bash
 bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb
 bb swarmforge/scripts/test/babysitterd_sweep_lib_property_runner.bb
 bb swarmforge/scripts/test/babysitterd_freshness_lib_test_runner.bb
+bb swarmforge/scripts/test/babysitterd_freshness_lib_property_runner.bb
 bash swarmforge/scripts/test/test_babysitter_check.sh
 bash swarmforge/scripts/test/test_babysitterd_lifecycle.sh
 bash swarmforge/scripts/test/test_operator_runtime_babysitterd_watchdog.sh
