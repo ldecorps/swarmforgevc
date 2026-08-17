@@ -59,12 +59,13 @@
 %% instead of each re-walking the backlog's full git history. A missing,
 %% unreadable or stale snapshot degrades a consumer straight back to its own
 %% walk, exactly as it worked before this sweep existed.
-%% BL-896 (2026-08-16): the open-ticket-chart CLI (module still named
-%% render-briefing-burndown.ts) plots open tickets remaining per day next to
-%% the architecture diagrams in the briefing email; heading says "Open
-%% tickets remaining," never "burndown" — BL-659 banned the word for this
-%% ever-growing backlog and ratified this open-count view as its
-%% replacement (see docs/how-to/BL-896-briefing-open-ticket-chart.md).
+%% BL-896 (2026-08-16, heading confirmed 2026-08-17): the open-ticket-chart
+%% CLI (module still named render-briefing-burndown.ts) plots open tickets
+%% remaining per day next to the architecture diagrams in the briefing
+%% email; heading reads "Backlog burndown — open tickets remaining" — the
+%% word "burndown" is kept per an explicit 2026-08-16 human ruling that
+%% overrides BL-659's PWA/milestone-dashboard ban for this email chart only
+%% (see docs/how-to/BL-896-briefing-open-ticket-chart.md).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
