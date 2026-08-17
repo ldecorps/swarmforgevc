@@ -88,12 +88,15 @@ builds the browse UI over what this slice stores. See the updated
 August 16, 2026 (BL-896: swarm stamp-off certifying the
 operator hotfix (`14724edae7`) that put a second chart — open tickets
 remaining per day, with filed/closed rates — on the morning briefing email
-alongside the architecture diagrams. The chart's heading was renamed off
-"burndown" to "Open tickets remaining": the maths was right but the label
-collided with BL-659's burndown ban, since this backlog is a continuously
-growing scope, not a committed iteration perimeter — this chart is the
-open-count/net-flow replacement BL-659 itself ratified, not an exception to
-the ban. Also fixed while certifying: a duplicated remaining-count predicate
+alongside the architecture diagrams. The chart's heading reads "Backlog
+burndown — open tickets remaining": an initial certification pass renamed it
+off "burndown" (the maths was right but the label collided with BL-659's
+burndown ban, since this backlog is a continuously growing scope, not a
+committed iteration perimeter), but a 2026-08-16 08:20 CEST human ruling
+explicitly overrode that rename and kept the word "burndown" for this email
+chart specifically — BL-659's ban still stands unamended for the
+PWA/milestone-dashboard surface. Also fixed while certifying: a duplicated
+remaining-count predicate
 (`notDoneBurndown.ts`'s copy of `deliveryMetrics.ts`'s
 `isRemainingOnDay`) consolidated into one implementation on
 `gitHistoryAdapter.ts`; today's point in the series now reconciles against a
