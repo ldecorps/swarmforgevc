@@ -61,3 +61,34 @@ Feature: A rotating role boots on a prompt composed from the current sources, no
     Given no source for "hardender" has changed since the swarm was composed
     When the rotation to "hardender" is driven by "the resident"
     Then the prompt "hardender" boots on carries everything it carried before
+
+  # BL-917 extends this file rather than opening its own, because the defect it
+  # closes IS an incomplete enumeration: BL-911 fixed the paths that re-exec a
+  # launch script to become ANOTHER role, and missed the one that re-execs to
+  # become the SAME role. Splitting the two across two files would put the
+  # enumeration in two places, which is the shape of the original miss. These
+  # do not fit scenario 02's Examples table: that step rotates TO a target
+  # role, while an idle-boundary clear respawns the current role in place.
+
+  # BL-917 idle-clear-respawn-recomposes-05
+  Scenario: an idle-boundary clear boots the same role on a freshly composed prompt
+    Given "the role prompt" carries a rule the running swarm was not composed with
+    And idle-clear is enabled for "hardender"
+    When "hardender" reaches its idle boundary
+    Then the prompt "hardender" boots on carries that rule
+
+  # BL-917 idle-clear-failed-composition-still-boots-06
+  Scenario: a composition that fails at an idle clear still boots the role
+    Given the sources for "hardender" cannot be composed
+    And idle-clear is enabled for "hardender"
+    When "hardender" reaches its idle boundary
+    Then the clear still completes
+    And the prompt "hardender" boots on carries everything it carried before
+    And the composition failure is reported
+
+  # BL-917 idle-clear-off-changes-nothing-07
+  Scenario: with idle-clear off, the idle boundary neither respawns nor recomposes
+    Given idle-clear is disabled for "hardender"
+    When "hardender" reaches its idle boundary
+    Then no respawn happens
+    And the composed prompt for "hardender" is left untouched
