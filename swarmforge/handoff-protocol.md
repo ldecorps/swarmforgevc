@@ -1145,6 +1145,63 @@ feeds it, not by a runtime flag.
 Acceptance: `specs/features/BL-805-rotate-gate-on-unfinished-in-process-parcel.feature`.
 E2e: `swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh`.
 
+### Mono-router rotation recomposes the role prompt from current sources (BL-911)
+
+Before BL-911, a role's system prompt was composed exactly once — at the
+swarm's last full `./swarm` launch — into `.swarmforge/prompts/<role>.md`,
+and every rotation into that role re-executed a launch script that names
+that file by path. Nothing on the rotation path ever recomposed it. An
+accepted `rule_proposal` (Article 5 / BL-035) or a landed constitution
+amendment sat on `main`, in force for no rotating role, until the next full
+relaunch — silently, since `main` shows the rule present and the commit is
+real.
+
+`rotate-resident-to!` (`swarmforge/scripts/handoff_lib.bb`) is the one
+chokepoint both rotation drivers pass through — the resident's own
+`rotate_to_role.bb` path (via `respawn-as!`) and `handoffd.bb`'s
+daemon-driven chase rotation, which calls `rotate-resident-to!` directly —
+so the fix sits there rather than in either caller. Immediately before the
+pane respawn, it now calls `recompose-role-prompt!`, which reuses
+PromptEngine's existing `compose` (the single composition authority,
+BL-546 — never a second composer) with the exact agent/model/two-pack?/
+overlay-prompt context `write_agent_instruction_file` captured in the
+composed prompt's own `.metadata.json` sidecar at launch time (BL-563
+Slice 2). Recomposing with launch-time composition choices against
+current source content means the same role/model/pack shape, just fresh
+prose.
+
+**A recompose failure never blocks the rotation** (the ticket's own
+invariant 2): a missing/unreadable metadata sidecar, an empty compose
+result, or `compose` itself throwing all degrade to `{:ok false :reason
+...}`, logged loudly to stderr, and the pane still respawns — on the
+prompt it already had. The prompt file on disk is left completely
+untouched on any failure path.
+
+**Scope — two named drivers, not every prompt re-exec.** This covers
+exactly the two rotation entry points the ticket named:
+`rotate_to_role.bb`'s resident-invoked path and `handoffd.bb`'s chase
+rotation. It does **not** cover `respawn-self!` (same file), the re-exec
+`maybe-clear-at-idle-boundary!` (BL-089) uses when a role finishes a task,
+stays the same role, and that role's `roles.tsv` idle-clear column is
+`on` — that path still boots on whatever `.swarmforge/prompts/<role>.md`
+already held. The architect flagged this as the same class of staleness
+via a third, unnamed entry point (evidence:
+`backlog/evidence/BL-911-architect-followup-note-20260817.md`) but
+confirmed it inert on this swarm: idle-clear is opt-in and every role's
+`roles.tsv` column currently reads `off`, so `respawn-self!` never fires
+today. Sent to the specifier as a `note` to judge whether it warrants its
+own ticket — treat any future idle-clear adoption as reopening this gap
+until `respawn-self!` gets the same treatment.
+
+**Out of scope**, per the ticket: `articles/reference/` on-demand
+elaborations (BL-640, a distinct build-output-vs-worktree root cause), and
+`.swarmforge/launch/<role>.sh` itself (the other launch-time build output,
+which changes far less often).
+
+Acceptance: `specs/features/BL-911-rotation-recomposes-the-role-prompt.feature`.
+E2e: `swarmforge/scripts/test/test_rotate_recomposes_role_prompt.sh`,
+`swarmforge/scripts/test/bl911_rotation_recompose_test_runner.bb`.
+
 ### Mono-router aged-note actionability (BL-576)
 
 Under `config rotation router`, the handoff daemon's chase sweep decides which
