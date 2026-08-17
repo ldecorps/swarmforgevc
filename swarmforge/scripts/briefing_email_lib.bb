@@ -11,8 +11,8 @@
 ;; with its own diagram-html concern (merge-diagram-html below).
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
-            [clojure.java.shell :as sh]
             [clojure.string :as str])
   (:import [java.time LocalDate]
            [java.time.temporal ChronoUnit]))
@@ -94,12 +94,18 @@
 ;; A successful send must persist .sent.json to the shared store the sweep
 ;; reads (a fresh checkout/second host/pull otherwise never sees it - Leg
 ;; A's own defect), not just this process's working tree. sh-fn is the
-;; injectable IO seam (default real-sh, a thin clojure.java.shell/sh
-;; wrapper) so no test needs a real git process; the real-fixture proof
-;; lives in test_briefing_marker_commit.sh, same split as every other
-;; tmux/git-touching concern in this codebase.
+;; injectable IO seam (default real-sh, a thin babashka.process/sh wrapper)
+;; so no test needs a real git process; the real-fixture proof lives in
+;; test_briefing_marker_commit.sh, same split as every other tmux/git-
+;; touching concern in this codebase. process/sh, not clojure.java.shell/sh:
+;; this adapter is called from inside the daemon's own sweep loop, once per
+;; successfully-sent briefing, and bb's clojure.java.shell shim is known to
+;; deadlock reading subprocess streams across repeated calls in one process
+;; (handoffd.bb's own header comment, BL-061) - the same failure shape this
+;; call site would reproduce under a multi-briefing sweep.
 (defn- real-sh [dir & args]
-  (apply sh/sh (concat args [:dir dir])))
+  (let [{:keys [exit out err]} (apply process/sh {:continue true :dir dir} args)]
+    {:exit exit :out out :err err}))
 
 (defn commit-sent-marker!
   "Commits EXACTLY briefings-dir's .sent.json - a scoped `git add` + `git

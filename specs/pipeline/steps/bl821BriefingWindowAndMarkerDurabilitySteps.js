@@ -37,11 +37,15 @@ function git(cwd, args) {
   return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
 }
 
+function configGitIdentity(dir) {
+  git(dir, ['config', 'user.email', 'aps@example.com']);
+  git(dir, ['config', 'user.name', 'aps']);
+}
+
 function initRepo(dir) {
   fs.mkdirSync(path.join(dir, 'docs', 'briefings'), { recursive: true });
   git(dir, ['init', '-q']);
-  git(dir, ['config', 'user.email', 'aps@example.com']);
-  git(dir, ['config', 'user.name', 'aps']);
+  configGitIdentity(dir);
   fs.writeFileSync(path.join(dir, 'README.md'), '# fixture repo\n');
   git(dir, ['add', 'README.md']);
   git(dir, ['commit', '-q', '-m', 'init']);
@@ -287,8 +291,7 @@ function registerSteps(registry) {
     git(ctx.originDir, ['init', '-q', '--bare']);
     ctx.hostADir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl821-hosta-'));
     git(ctx.hostADir, ['clone', '-q', ctx.originDir, '.']);
-    git(ctx.hostADir, ['config', 'user.email', 'aps@example.com']);
-    git(ctx.hostADir, ['config', 'user.name', 'aps']);
+    configGitIdentity(ctx.hostADir);
     fs.mkdirSync(path.join(ctx.hostADir, 'docs', 'briefings'), { recursive: true });
     fs.writeFileSync(path.join(ctx.hostADir, 'README.md'), '# fixture repo\n');
     ctx.today = new Date().toISOString().slice(0, 10);
@@ -307,8 +310,7 @@ function registerSteps(registry) {
 
     ctx.hostBDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl821-hostb-'));
     git(ctx.hostBDir, ['clone', '-q', ctx.originDir, '.']);
-    git(ctx.hostBDir, ['config', 'user.email', 'aps@example.com']);
-    git(ctx.hostBDir, ['config', 'user.name', 'aps']);
+    configGitIdentity(ctx.hostBDir);
     git(ctx.hostBDir, ['pull', '-q', 'origin', 'main']);
     const hostBBriefings = path.join(ctx.hostBDir, 'docs', 'briefings');
     const resultB = runBl821(hostBBriefings, ctx.today, 'real', 'success');
