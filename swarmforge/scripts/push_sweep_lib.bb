@@ -220,9 +220,18 @@
        (>= (- now-ms last-attempt-at-ms)
            (compute-backoff-ms attempts retry-config)))))
 
+;; BL-903: collapses a (possibly multi-line, possibly nil/blank) git error
+;; into one trimmed line, so a push-failed log record or alarm body can
+;; never gain a second physical line from the underlying stderr - lines are
+;; joined with " | " rather than dropped, so a multi-line auth failure
+;; (where the useful text is often not on the first line) stays readable.
+(defn sanitize-error-line
+  [error]
+  (some-> error str/trim (str/replace #"\s*\n\s*" " | ") not-empty))
+
 ;; ── pure: push-attempt state machine ──────────────────────────────────────
 (defn next-push-state
-  [outcome {:keys [attempts]} {:keys [max-push-attempts]} now-ms]
+  [outcome {:keys [attempts]} {:keys [max-push-attempts]} now-ms & [error]]
   (case outcome
     :pushed
     {:attempts 0 :last-attempt-at-ms nil :exhausted? false}
@@ -231,7 +240,8 @@
     (let [next-attempts (inc (or attempts 0))]
       {:attempts next-attempts
        :last-attempt-at-ms now-ms
-       :exhausted? (>= next-attempts max-push-attempts)})))
+       :exhausted? (>= next-attempts max-push-attempts)
+       :last-error (sanitize-error-line error)})))
 
 ;; ── pure: alarm-delivery state machine (BL-345's shape) ──────────────────
 (def terminal-misconfig-reasons
@@ -268,7 +278,10 @@
 ;; ── adapter-injected orchestration ───────────────────────────────────────
 ;; adapters: {:rev-counts!            (fn [] -> {:ahead int :behind int})
 ;;            :push!                  (fn [] -> {:success bool :error str?})
-;;            :send-push-alarm!       (fn [attempts] -> {:success bool :reason kw? :error str?})
+;;            :send-push-alarm!       (fn [attempts reason] -> {:success bool :reason kw? :error str?}) -
+;;                                    reason (BL-903) is push-state's own
+;;                                    :last-error, already single-lined; nil
+;;                                    when the last failure carried no text
 ;;            :send-divergence-alarm! (fn [ahead behind] -> {:success bool :reason kw? :error str?})
 ;;            :qa-gate-facts!         (fn [] -> qa-gate-decision's own facts map, BL-630) -
 ;;                                    called ONLY when push-decision is :should-push, never
@@ -381,14 +394,20 @@
                                   (let [result ((:push! adapters))]
                                     (if (:success result)
                                       (do ((:log! adapters) "push-sweep" "pushed") nil)
-                                      (let [next-push (next-push-state :transient-failure push-state retry-config now-ms)]
-                                        ((:log! adapters) "push-sweep" "push-failed" (str "attempts=" (:attempts next-push)))
+                                      ;; BL-903: the underlying git error travels into push-state
+                                      ;; as :last-error (already single-lined by next-push-state)
+                                      ;; and into this same tick's log record, so a failure streak
+                                      ;; is diagnosable without waiting for the alarm.
+                                      (let [next-push (next-push-state :transient-failure push-state retry-config now-ms (:error result))]
+                                        ((:log! adapters) "push-sweep" "push-failed"
+                                         (str "attempts=" (:attempts next-push)
+                                              (when-let [err (:last-error next-push)] (str " error=\"" err "\""))))
                                         next-push))))]
                 (if (nil? push-state')
                   (write-state! daemon-dir {})
                   (let [alarm-state (or (:alarm state) {})]
                     (if (and (:exhausted? push-state') (alarm-due? alarm-state now-ms retry-config))
-                      (let [alarm-result ((:send-push-alarm! adapters) (:attempts push-state'))
+                      (let [alarm-result ((:send-push-alarm! adapters) (:attempts push-state') (:last-error push-state'))
                             alarm-outcome (classify-send-result alarm-result)
                             next-alarm (next-alarm-state alarm-outcome alarm-state retry-config now-ms)]
                         ((:log! adapters) "push-sweep" "push-alarm" (name alarm-outcome))
