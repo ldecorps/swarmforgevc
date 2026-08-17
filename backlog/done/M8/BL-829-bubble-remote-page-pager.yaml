@@ -151,3 +151,6 @@ notes: |
   promoted out of BL-824's `remaining_slices` because four newly-drained screen
   intakes and BL-775 all depend on it. BL-824's `decomposes_into` and
   `remaining_slices` are updated in the same pass so slice B is not listed twice.
+
+  Human 2026-08-17 (Cursor): ambulance this slice after BL-825, which itself
+  rides after BL-908. Do not engage while 908 or 825 is the ambulance patient.

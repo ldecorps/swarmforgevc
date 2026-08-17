@@ -1,0 +1,183 @@
+id: BL-911
+title: "A rotating role boots on the prompt built at launch, so every accepted rule proposal and inlined constitution amendment since then is in force for nobody"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: high
+priority: 12
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "No rotation boots a role on a composed prompt that omits prose already present in that role's prompt sources — freshness is established at rotation, never inherited from launch."
+  - "A composition that fails never prevents the rotation: the role still boots, on the prompt it already had, and the failure is reported rather than swallowed."
+
+human_approval: approved
+approval_context: >
+  Two things worth a human decision before this is built.
+
+  (a) Severity `high` puts this in the Article 3.2.4 expedite lane, ahead of all
+  non-expedited work including the BL-908 ambulance. The rationale is that the
+  rule-proposal and constitution-amendment delivery path is a safety mechanism
+  and it is currently inert — but the operator may prefer it queue normally,
+  since a full `./swarm` relaunch clears the symptom by hand at any time.
+
+  (b) A relaunch IS the existing workaround, and the standing continuous-shifts
+  order vetoes scheduled swarm stops. If the operator would rather answer this
+  with an occasional manual relaunch than with code in the rotation path, say so
+  and this ticket should be retired rather than built.
+
+source: |
+  Found 2026-08-17 by the specifier while accepting a `rule_proposal` from the
+  hardender (scope `role:hardender`, landed 9d053f579). Accepting a proposal
+  means appending the rule to `swarmforge/roles/hardender.prompt` and committing
+  it to `main` — at which point the question "does the hardener now read it?"
+  was probed rather than assumed, per the specifier's own probe-before-speccing
+  rule.
+
+  Measured on this host, 2026-08-17:
+
+  - `.swarmforge/prompts/<role>.md` mtimes: every pipeline role frozen at
+    `2026-08-11 04:30` (the last full `./swarm`). Only `specifier.md` is newer
+    (`2026-08-15 22:14`), from a single-role respawn through `launch_role`.
+  - `swarmforge/roles/hardender.prompt` on `main` carries the accepted
+    2026-08-14 rule_proposal ("Gherkin mutation can stall at completed=0 with
+    FLAT CPU") and the 2026-08-16 BL-900 rule. `.swarmforge/prompts/hardender.md`
+    carries neither: `grep -c 'FLAT CPU'` is 1 in the source and 0 in the
+    composed prompt. The hardener's own worktree copy of the source has it (1),
+    so this is not worktree staleness — it is the build output.
+  - `.swarmforge/launch/hardender.sh` names
+    `--append-system-prompt-file '.../.swarmforge/prompts/hardender.md'` as a
+    literal path. It does not compose anything.
+  - `write_agent_instruction_file` (the composer, `swarmforge/scripts/swarmforge.sh:1022`)
+    is called from exactly two places, both launch-time: the dormant-role
+    pre-generation loop (`:1168`) and `launch_role` (`:1568`).
+  - `rotate_to_role.bb` calls `handoff-lib/respawn-as!`, which calls
+    `rotate-resident-to!`, which re-execs the pre-generated launch script.
+    Nothing on that path composes. `handoffd.bb:1336` calls
+    `rotate-resident-to!` directly for its chase rotation, so both rotation
+    entry points share the chokepoint and both boot stale.
+  - `swarmforge/scripts/expedite_cli.bb:313` already names the property in
+    passing — ".swarmforge/prompts/<role>.md: that is a build output (stale
+    between launches)" — as a reason not to edit it, without anyone having
+    drawn the consequence for rotation.
+
+  Consequence: on a mono-router pack, the composed prompt is only ever as fresh
+  as the last full `./swarm`. Six days of prompt and constitution changes are
+  currently in force for no rotating role, and — with the standing
+  continuous-shifts veto on scheduled stops — no event is scheduled that would
+  clear it.
+
+  Relationship to BL-640 (paused, same epic): BL-640 covers the ON-DEMAND half —
+  `articles/reference/` elaborations, which are not inlined and are read from
+  each role's own stale worktree. Its own source section states the assumption
+  this ticket falsifies: "the short form travels inside the composed prompt and
+  is delivered by regenerating it." Nothing regenerates it. Distinct root cause
+  (build output vs git worktree), distinct fix; neither blocks the other, and
+  the pair should be read together.
+
+description: |
+  ## The defect
+
+  A role's system prompt is composed once, at swarm launch, into
+  `.swarmforge/prompts/<role>.md`. Rotation re-executes a launch script that
+  names that file by path. So between two full launches, no role ever boots on
+  anything newer than the launch.
+
+  That silently disables three delivery paths that everything else assumes works:
+
+  - **Accepted rule proposals** (Article 5 / BL-035). The specifier appends the
+    rule and commits it; the proposing role never reads it.
+  - **Constitution amendments** to the inlined articles. Ratified, landed, and
+    not in force.
+  - **The specifier's own landing duty** (BL-798) — "land that prose yourself, on
+    `main`". Landing it is necessary and, today, not sufficient.
+
+  The failure is silent in the worst way: `main` shows the rule present, the
+  commit is real, and the role behaves as though it were never written.
+
+  ## What should be true instead
+
+  Rotating into a role establishes that the role is about to boot on a prompt
+  composed from the current sources. If it cannot, the rotation still happens —
+  a role that fails to boot strands its parcel, which is strictly worse than a
+  stale prompt — but it says so, loudly, instead of continuing silently.
+
+  ## How (direction, not mandate)
+
+  `rotate-resident-to!` in `swarmforge/scripts/handoff_lib.bb` is the chokepoint:
+  the resident's own `rotate_to_role.bb` path and `handoffd.bb`'s chase rotation
+  both pass through it, so a recomposition placed there covers both, while one
+  placed in `rotate_to_role.bb` alone leaves the daemon path booting stale. That
+  is the shape scenario 02 exists to catch, and it is deliberately an acceptance
+  scenario rather than a `required_wiring:` pin — a substring pin cannot express
+  "and the daemon path got it too", and BL-874 is the standing reminder that a
+  pin naming a not-yet-chosen identifier only blocks the pipeline.
+
+  Composition itself already exists and is not this ticket's to redesign:
+  `write_agent_instruction_file` (`swarmforge.sh`) over `prompt_engine_cli.bb`.
+  Reuse it rather than growing a second composer.
+
+  Whether recomposition is unconditional or guarded by a cheap
+  source-vs-output freshness comparison is the implementer's call; scenario 04
+  only requires that a no-change rotation loses nothing.
+
+  ## Out of scope
+
+  - `articles/reference/` on-demand elaborations — that is BL-640.
+  - `.swarmforge/launch/<role>.sh` itself, which is the other launch-time build
+    output. It changes far less often; if it needs the same treatment that is a
+    follow-up ticket, not this slice.
+  - Any change to what the prompt CONTAINS, or to the boot prefix budget.
+
+acceptance: specs/features/BL-911-rotation-recomposes-the-role-prompt.feature
+
+qa_e2e_procedure: |
+  On the live swarm, without relaunching it:
+
+  1. Pick a rotating role that is currently dormant (not the resident) — the
+     hardener is the natural choice, since its prompt is the one measured stale.
+  2. Confirm the gap is real before the fix is exercised:
+     `grep -c '<some phrase>' swarmforge/roles/hardender.prompt` returns 1 and
+     `grep -c '<same phrase>' .swarmforge/prompts/hardender.md` returns 0, for a
+     phrase landed on `main` after the launch that composed the file.
+  3. Append a uniquely-identifiable marker line to `swarmforge/roles/hardender.prompt`
+     on `main` and commit it.
+  4. Cause a rotation into that role by the resident's own path
+     (`rotate_to_role.sh hardender`).
+  5. Assert the marker is present in `.swarmforge/prompts/hardender.md`, and that
+     its mtime moved. Assert the role actually booted — the pane is running
+     `claude` as that role, not a bare shell.
+  6. Repeat once for the daemon-driven chase rotation, so scenario 02's second
+     row is verified against the live path and not only its handler.
+  7. Remove the marker line and confirm a subsequent rotation composes it away
+     again, leaving the rest of the prompt intact (scenario 04).
+
+notes: |
+  - Scenario Outline columns `<source>` and `<entry>` are fixture vocabulary the
+    handler must validate against explicit KNOWN_VALUES, per engineering.prompt's
+    Acceptance Pipeline rule and the rule_proposal accepted into
+    `hardender.prompt` on 2026-08-17 (9d053f579): a handler that picks its
+    downstream check by scenario SHAPE never reads the column, and a Gherkin
+    mutant in it survives. Both columns here are naturally the lookup key; keep
+    them that way.
+  - No `required_wiring:` by deliberate choice — see the "How" section. The
+    unwired-call-site risk this ticket carries is covered behaviorally by
+    scenario 02 instead.
+  - IR-DRY was run and its findings resolved: the step vocabulary was normalized
+    so the resident and daemon rotations share one step text (and one handler),
+    as do the two "nothing was lost" assertions — 4 findings down to 3, the
+    score-1.0 duplicate gone. The 3 that remain are not drift and should not be
+    "fixed": two are the checker's known blind spot (it does not normalize
+    quoted literals, so `"<driver>"` and `"the resident"` in the same slot read
+    as different steps though one regex serves both), and the third is the
+    honest semantic gap between "carries that rule" and "carries everything it
+    carried before".
+  - The evidence in `source:` was measured on one host at one moment. Re-measure
+    before building rather than trusting the numbers quoted here; the mtimes in
+    particular will have moved if the swarm is relaunched in the meantime — and
+    a relaunch does not make the defect go away, it only resets the clock on it.

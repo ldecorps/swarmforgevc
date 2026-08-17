@@ -185,3 +185,10 @@ notes: |
   bundle during a tunnel outage must not look identical to one rendering a
   confirmed-current bundle, or the human will trust a stale screen during
   exactly the incident where that screen is their only view of the swarm.
+
+  Human 2026-08-17 (Cursor): ambulance this slice after BL-908 exits, not now.
+  Sequence: BL-908 (current patient) → this ticket → BL-829. Epic BL-824 is a
+  tracker only; never engage ambulance on the epic. Ambulance is one ticket at
+  a time (`docs/how-to/BL-655-ambulance-mode-the-hold.md`): engage this the
+  moment 908 auto-exits / is released, before the rest of the pipeline resumes
+  mixed.

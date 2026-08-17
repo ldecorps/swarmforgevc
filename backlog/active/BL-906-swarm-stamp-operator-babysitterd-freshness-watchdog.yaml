@@ -232,3 +232,5 @@ notes: |
   for the FIRST time — treat a clean-looking diff with the same suspicion you
   would give a fresh one, not the deference you would give code that had
   already passed a stage.
+
+assigned_to: coder

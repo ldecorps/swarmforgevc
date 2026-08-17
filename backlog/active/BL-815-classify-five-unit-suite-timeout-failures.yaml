@@ -9,7 +9,7 @@ severity: medium
 priority: 67
 direction: human-requested
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: low
 invariants:
   - "Every failure in the inventory ends the slice with a recorded classification and the isolation evidence behind it; none is left as an unexamined 'environmental'."

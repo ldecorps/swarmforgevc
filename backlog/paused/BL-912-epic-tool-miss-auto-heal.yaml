@@ -1,0 +1,100 @@
+id: BL-912
+title: "EPIC — Agent tool-miss auto-heal: pin the execution environment, classify a recoverable miss, heal it once in silence, then fail honestly; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: tool-miss-auto-heal
+priority: 12
+depends_on: []
+decomposes_into: [BL-913]
+
+source: |
+  Minted 2026-08-17 by the specifier from raw intake
+  `backlog/INTAKE-agent-tool-miss-auto-heal.md` (human via Cursor, 2026-08-17
+  ~00:32 BST, "Ok for intake."), which was drained and removed from the backlog
+  root in the same pass. That intake produced two tickets — this tracker and
+  BL-913 (slice A) — and slices B/C/D below are recorded here rather than minted,
+  per the human's locked decision 3.
+
+  A NEW epic rather than a child of BL-539 (swarm-reliability), on the intake's
+  own instruction: "Candidate epic field: `swarm-reliability` (BL-539) **or** a
+  new small epic if 539's `decomposes_into` is already a grab-bag." BL-539 today
+  lists 27 children spanning claim-without-progress, branch≠claim, launch-config
+  heal, provider auth and mono-router dormancy. That is the grab-bag case, so
+  this gets its own small tracker. Same preference (heal below the babysitter),
+  different patient: BL-539's is stuck pipeline identity, this one's is wasted
+  turns on recoverable tool errors.
+
+  Human directives carried VERBATIM from the intake (Article 5.3 — a
+  consolidation never drops a human sentence). These bind every slice below, not
+  only BL-913:
+
+  - "**Auto-heal below the model.** Pin execution and classify/retry in the
+    substrate. Do not write "be more careful about folders" into role prompts as
+    the fix."
+  - "**Do not pad prompts.** Longer "always `cd` first" role text is out."
+  - "**First slice is pin + one classified retry.** Catalog, mechanical
+    rotation-pin leftovers, and apology-ban narration can follow. Do not mint the
+    whole vision as one INVEST-failing ticket."
+  - "**One retry, then stop.** Wrong-cwd / wrong-surface / missing-root-argv get
+    exactly one healed re-run. Real failures (test red, conflict, permission) are
+    returned as-is. No retry storm."
+  - "**The first miss must not reach the model as a confession.** Hide or replace
+    the first stderr when a heal succeeded. Apology ban is token hygiene beside
+    this, not a substitute."
+  - "**Do not invent a queue file** (no `control-ambulance-next.json` analogue)
+    and do not babysitter-restart a pane because it ran in the wrong folder."
+
+  And the human's one-line direction, verbatim:
+
+  - "stop teaching the model to be a careful shell; make the shell un-wrong, heal
+    one miss in silence, then fail honestly."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
+  promotes CHILD slices, never this. Children carry `epic: tool-miss-auto-heal`
+  and are listed in `decomposes_into`.
+
+  VISION: a wrong-cwd or wrong-surface tool miss is retried once from a pinned
+  execution environment; the model sees the healed result (or a real failure),
+  never the first miss as a story to apologize for.
+
+  ## Remaining slices (recorded, deliberately NOT minted)
+
+  Per locked decision 3, only slice A is minted. These are held here so the
+  design survives without minting an INVEST-failing ticket:
+
+  - **Slice B** — a small command catalog / `role_exec` that always passes
+    `<project-root>` into known `bb swarmforge/scripts/*.bb` CLIs. Unknown argv
+    is a catalog miss, not `ls`-and-invent.
+  - **Slice C** — rotation identity is only `rotate_to_role.sh <role>` changing
+    the pin; leftover prompt text that teaches `cd` as identity is removed or
+    reduced to "run the wrapper." Do NOT merge this into BL-518.
+  - **Slice D** (cheap, optional) — one constitution line: tool errors are
+    classify / retry / stop; do not apologize or recap the miss. The specifier's
+    default is that this does NOT ride with slice A (see BL-913's
+    approval_context); it is harmless alone and only valuable next to A.
+  - **Cursor surface** — the same policy for the Cursor Shell
+    `working_directory`, split out of slice A on INVEST grounds (a second
+    process and a second integration point). The intake authorizes this split:
+    "Pretending Cursor and swarm panes are the same process. Same *policy*;
+    specifier splits the surfaces if INVEST requires it."
+
+  ## Do not conflate (from the intake's own "Related" section)
+
+  - BL-512 (done) — recurring failure-mode audit. Lesson kept: do not treat
+    heterogeneous misses as one bug.
+  - BL-528 — claim-without-progress: idle WITH a claim and no tool use. The
+    opposite failure; here the roles are using tools, just the wrong ones.
+  - BL-812 (done) — never trust process cwd, pin a root. Precedent, not to be
+    re-opened.
+  - BL-875 (paused) — stray root `package-lock.json`. The classifier should
+    RECOGNIZE that miss (npm at repo root is the wrong surface), not rewrite 875.
+  - BL-518 / `rotate_to_role.sh` — mechanical rotation already respawns the pane;
+    leftover manual-`cd` teaching is slice C, not a merge into 518.
+  - `agent_runtime_lib.bb` `error-category-patterns` — reuse the SHAPE of that
+    closed taxonomy; today's categories are provider-launch, not per-invocation.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

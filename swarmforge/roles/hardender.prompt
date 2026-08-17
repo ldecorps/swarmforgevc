@@ -762,3 +762,41 @@ You are the hardender.
   call sites. `chase_sweep_lib.bb` kept the pre-change ranking with zero test
   failures, so the epic-priority ordering the ticket existed to deliver never
   reached the chase sweep at all.)
+
+## A Scenario Outline handler that picks its downstream test by SHAPE cannot kill a mutant in a value it never reads (rule_proposal 2026-08-17, accepted)
+- Signature: Gherkin mutation of an `Examples:` cell survives, and the step
+  handler still "uses" the parameter — it captures it into `ctx`. Storing is
+  not asserting. If the handler then picks which downstream test to check by
+  SCENARIO SHAPE (branching on context flags other steps recorded — which
+  panel was opened, whether a folder was chosen), the mutated cell never
+  reaches the lookup, the same test runs, it still passes, and the mutant
+  lives.
+- **Discriminator: is the lookup KEYED on the Examples value, or on shape?**
+  A keyed lookup (`TEST_NAMES[ctx.failureMode]`) is already mutation-tight —
+  corrupt the cell and the key misses. A shape lookup
+  (`ctx.docKind ? 'the mermaid test' : 'the markdown test'`) is not, and a
+  ternary reading the value is still shape: it only distinguishes the
+  branches, never the literal. Check this per COLUMN, not per file — one
+  Outline can be tight in one column and blind in the next.
+- Rule: for every Outline column whose value is fixture vocabulary the
+  downstream test HARDCODES, pin the literal in an explicit map and assert
+  the row's value against that pin BEFORE the shape lookup runs. Fail loud
+  with both the expected and received literal, naming the fixture file the
+  pin mirrors, so a fixture that legitimately moves is a one-line fix and not
+  a mystery. This is engineering.prompt's `KNOWN_VALUES` rule
+  (`swarmforge/constitution/articles/engineering.prompt`, Acceptance
+  Pipeline) applied where it is easiest to miss — the handler does not LOOK
+  like a passthrough, because the parameter is bound, named and stored.
+- Do not reach for this where the value IS the key, and do not pin a column
+  whose literal the downstream test never sees (symbolic scenario vocabulary
+  with no fixture behind it) — an assert with nothing on the other side of it
+  is ceremony, and pinning a free column makes the feature file harder to
+  edit for no mutation gain.
+- (Incident: BL-908 hardening, 2026-08-17 — `bl908BubbleKnowledgeScreenSteps.js`
+  bound `<kind>`, `<title>` and `<generation>` into `ctx`, but
+  `currentExpectedTest(ctx)` branched on shape, so 6 of 8 Gherkin mutants
+  survived silently. BL-907's Outline in the same pass was clean only by
+  accident of form: its one column `<failure>` WAS the key into
+  `FAILURE_TEST_NAMES`. Closed by pinning `EXPECTED_DOC_TITLE_BY_KIND` and the
+  per-panel fixture generation against `KnowledgeReaderTest.kt`, asserted
+  ahead of the shape lookup.)
