@@ -611,11 +611,22 @@ object BridgeClient {
     }
 
     private fun writeCachedUiBundleManifest(ctx: Context, manifest: UiBundleResolver.UiBundleManifest) {
+        val pages = org.json.JSONArray()
+        for (page in manifest.pages) {
+            pages.put(
+                JSONObject()
+                    .put("id", page.id)
+                    .put("title", page.title)
+                    .put("entryPath", page.entryPath)
+                    .put("order", page.order)
+            )
+        }
         val json = JSONObject()
             .put("schemaVersion", manifest.schemaVersion)
             .put("bundleVersion", manifest.bundleVersion)
             .put("minShellVersion", manifest.minShellVersion)
             .put("payload", manifest.payload)
+            .put("pages", pages)
         val target = File(ctx.filesDir, UI_BUNDLE_CACHE_FILE)
         val tmp = File(ctx.filesDir, "$UI_BUNDLE_CACHE_FILE.tmp")
         tmp.writeText(json.toString(), Charsets.UTF_8)
