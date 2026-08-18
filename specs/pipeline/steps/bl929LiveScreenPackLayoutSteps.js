@@ -193,6 +193,13 @@ function registerSteps(registry) {
         ctx.rendered = await renderLiveScreen(ctx.snapshot);
       } finally {
         ctx.fake?.restore();
+        // BL-929 architect bounce: every Then step below reads only the
+        // plain in-memory data already captured above (ctx.snapshot,
+        // ctx.panes, ctx.rendered) - none of them touch ctx.targetPath
+        // again, so the fixture root is safe to remove here even if
+        // renderLiveScreen threw. This runner has no scenario-level
+        // after-hook to hang cleanup off instead.
+        fs.rmSync(ctx.targetPath, { recursive: true, force: true });
       }
     },
     FEATURE_NAME
