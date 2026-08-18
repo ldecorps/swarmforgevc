@@ -80,7 +80,7 @@
     {:viable? true}))
 
 (defn rotate-gate-decision
-  "BL-805: pure decide for the RESIDENT-INVOKED rotation entry only
+  "BL-805/BL-926: pure decide for the RESIDENT-INVOKED rotation entry only
    (rotate_to_role.bb -> handoff-lib/respawn-as!). The daemon's own
    rotate-resident-to! call (handoffd.bb chase) never routes through this -
    gating it would risk deadlocking chase-driven drain on the very parcel
@@ -89,12 +89,26 @@
    nil when that box holds no real parcel (missing, empty, or holding only
    claim-progress/nudge/chase sidecars - callers pass handoff-lib's already
    *.handoff-filtered result, so a sidecar alone never reaches here).
+
+   BL-926: active-role (the departing/marker role) and target-role (the
+   rotation destination) are optional - when BOTH are given and name the
+   same role, rotating into that role is not abandonment (it is the only
+   way the blocking parcel gets picked up) and the gate proceeds even over
+   a real blocking-file. Checked AFTER force? so the force override still
+   behaves exactly as BL-805 specified (a real block + force always reads
+   :proceed-forced, loud warning and all - ownership never silently
+   swallows that signal). Omitting either key (nil) leaves BL-805's
+   original two-input behavior byte-for-byte unchanged - this change can
+   only ever turn a :refuse into a :proceed, never the reverse, and never
+   turns a :proceed-forced into anything else.
+
    Returns :proceed, :proceed-forced (blocked, but the force override is
    set), or :refuse (blocked, no override)."
-  [{:keys [blocking-file force?]}]
+  [{:keys [blocking-file force? active-role target-role]}]
   (cond
     (nil? blocking-file) :proceed
     force? :proceed-forced
+    (and active-role target-role (= (str active-role) (str target-role))) :proceed
     :else :refuse))
 
 (defn summarize-topology
