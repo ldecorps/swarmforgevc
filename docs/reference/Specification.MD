@@ -24,7 +24,24 @@ into `resolveStallEvent` to keep `composeStallEvents` under the CRAP <= 6
 gate; behavior-preserving, not a functional change. See the updated "Reuse
 before invent" table in
 [BL-819: Ticket Lifecycle Ledger](BL-819-ticket-lifecycle-ledger.md).);
-Previously August 18, 2026 (BL-922: a block-scalar `acceptance:`
+Previously August 18, 2026 (BL-917: `respawn-self!`
+(`swarmforge/scripts/handoff_lib.bb`), the idle-boundary (BL-089) re-exec
+that brings the SAME role back up, now calls `recompose-role-prompt!`
+before its respawn — the same chokepoint and failure posture (a recompose
+failure warns loudly and the pane still boots on the prompt it already had)
+BL-911 gave `rotate-resident-to!` for a DIFFERENT-role re-exec. BL-911's own
+scope note had named this exact path as still stale and confirmed it inert
+only because idle-clear is opt-in and every role's `.swarmforge/roles.tsv`
+column currently reads `off`; flipping that one column back on would have
+silently re-armed the staleness BL-911 exists to prevent.
+`.swarmforge/roles.tsv` is restored to `off` for every role after this
+ticket's own verification — it does not change that default. Acceptance
+extends `specs/features/BL-911-rotation-recomposes-the-role-prompt.feature`
+(scenarios 05-07) rather than opening a new file, since the defect was an
+incomplete enumeration of re-exec paths. See the updated "Mono-router
+rotation recomposes the role prompt from current sources (BL-911, BL-917)"
+section in `swarmforge/handoff-protocol.md`, now covering both re-exec
+paths.); Previously August 18, 2026 (BL-922: a block-scalar `acceptance:`
 field (`acceptance: |` followed by an indented body) collapsed to the bare
 indicator `"|"` under `pre_qa_gate_gather_lib.bb`'s `read-yaml-field`,
 which reads only the field line's own tail — so a ticket naming a real
