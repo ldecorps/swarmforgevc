@@ -220,3 +220,5 @@ notes: |
   invocation - not accidental drift. The three clean-case scenarios were merged
   into one Scenario Outline first, which is what took the report from 6 findings
   to 4.
+
+assigned_to: coder
