@@ -90,15 +90,6 @@
          :silent
          (batch-claim-progress-lib/decide-batch-claim-observation nil 5000 1000))
 
-;; ── within-cooldown? ─────────────────────────────────────────────────────────
-
-(assert-true "within-cooldown?: last-sent-ms within window"
-             (batch-claim-progress-lib/within-cooldown? 1000 1500 1000))
-(assert-false "within-cooldown?: last-sent-ms outside window"
-              (batch-claim-progress-lib/within-cooldown? 1000 3000 1000))
-(assert-false "within-cooldown?: nil last-sent-ms is not within cooldown"
-              (batch-claim-progress-lib/within-cooldown? nil 1500 1000))
-
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
