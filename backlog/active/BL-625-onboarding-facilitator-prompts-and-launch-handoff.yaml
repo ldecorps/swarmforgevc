@@ -50,23 +50,9 @@ description: |
      onboardings never blur (BL-590 design decision: one topic, per-target
      state).
 
-acceptance: |
-  specs/features/BL-625-onboarding-facilitator-prompts-and-launch-handoff.feature
+acceptance: specs/features/BL-625-onboarding-facilitator-prompts-and-launch-handoff.feature
 
-  Every scenario needs its step handler wired in this same parcel (BL-233).
-
-  Scenario map: 01 prompts via the existing tool, committed + pushed ->
-  prompts-proposed; 02 ready-to-launch names the exact target-host command;
-  03 never claims remote launch; 04 confirmation -> done + summary; 05 next
-  target reuses the topic with separate per-target state, replies name
-  their target.
-
-  Supporting gates:
-  - Same pure/impure split as slices 1-2; prompts CLI behind an injected
-    seam; no real timers.
-  - The launch-command text is derived from the persisted target state
-    (path/pack), not hardcoded.
-
+qa_e2e: |
   QA end-to-end procedure (live swarm — the old-Mac onboarding is the
   first live target per the BL-590 ruling):
   1. From a real contract-agreed target, proceed: prompt files land on the
@@ -90,3 +76,46 @@ approval_context: >
   across targets (per-target state keeps them distinct) rather than one
   topic per target — matches the ad-hoc ensure-or-reuse pattern of every
   other standing topic and avoids unbounded topic growth.
+
+notes: |
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 prompts via the existing tool, committed + pushed ->
+  prompts-proposed; 02 ready-to-launch names the exact target-host command;
+  03 never claims remote launch; 04 confirmation -> done + summary; 05 next
+  target reuses the topic with separate per-target state, replies name
+  their target.
+
+  Supporting gates:
+  - Same pure/impure split as slices 1-2; prompts CLI behind an injected
+    seam; no real timers.
+  - The launch-command text is derived from the persisted target state
+    (path/pack), not hardcoded.
+
+  ## Amendment 2026-08-18 (documenter): `acceptance:` made a single-line pointer
+
+  BOOKKEEPING ONLY — nothing anyone builds changes. No scenario, gate,
+  invariant, or QA step was added, removed or reworded; the text above and
+  in the new `qa_e2e:` field is the same text, relocated verbatim.
+
+  `acceptance:` was a block scalar (`acceptance: |`) carrying the feature-file
+  path PLUS the scenario map, supporting gates and the QA procedure —
+  `PRE_QA_GATE_FAIL acceptance-contract BL-625 acceptance: declaration is
+  unreadable at the cited commit` at documenter's send to QA, the identical
+  defect class BL-624 (this ticket's sibling, split from the same BL-590 at
+  the same 2026-07-25 specifier pass) hit and fixed the same way on
+  2026-08-16 — see `backlog/evidence/BL-624-onboarding-facilitator-survey-to-gate-specifier-fix-20260816.md`.
+  `pre_qa_gate_gather_lib.bb`'s `gather-acceptance-contract-facts` passes the
+  raw `acceptance:` value straight to `feature-text-at-commit` as a PATH, so a
+  multi-line value resolves to no file and `acceptance_contract_gate_lib/
+  evaluate` fails CLOSED.
+
+  Per Article 4.4 this is a spec-gap owned by the specifier, not the
+  documenter — a priority-00 note was sent to specifier+coordinator first
+  (`type: note`, 2026-08-18T08:55Z) naming this exact defect and the BL-624
+  precedent. This mechanical relocation was applied directly by the
+  documenter, under the human operator's explicit real-time instruction to
+  continue rather than leave the parcel blocked indefinitely on a
+  single-resident mono-router session where no separate specifier process
+  would otherwise pick up the note. Flagging for the specifier/coordinator
+  to review after the fact, same as any other bounce-and-fix record.
