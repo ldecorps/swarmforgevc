@@ -225,3 +225,6 @@ notes: |
   against explicit KNOWN_VALUES, not pass through.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-18, by: architect, blamed: coder, class: behavior, commit: f91df9dd01, evidence: backlog/evidence/BL-925-reconcile-merge-of-qa-published-tip-completes-bounce-20260818.md }
