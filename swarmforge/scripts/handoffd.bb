@@ -1908,6 +1908,71 @@
       (log! "dropped-parcel-sweep-error" (.getMessage e)))))
 
 
+;; ── BL-678: batch-claim-progress suspect nudge (live-owner half of ─────────
+;; BL-648's source near-miss) ─────────────────────────────────────────────────
+;; Scoped to :receive-mode "batch" roles only (cleaner/hardender today) -
+;; task-mode claims are BL-528's territory (.claim-progress.json above),
+;; untouched. Never re-forwards or re-delivers a parcel; the only action is
+;; a coordinator-facing suspect note, same posture as dropped-parcel-sweep!.
+
+(defn batch-claim-progress-cooldown-path []
+  (fs/path daemon-dir "batch-claim-progress-suspect-cooldown.json"))
+
+(defn read-batch-claim-progress-cooldowns []
+  (or (try (json/parse-string (slurp (str (batch-claim-progress-cooldown-path))) true)
+           (catch Exception _ nil))
+      {}))
+
+(defn read-batch-claim-progress-last-sent-ms [file-path]
+  (get (read-batch-claim-progress-cooldowns) (keyword (fs/file-name file-path))))
+
+(defn write-batch-claim-progress-last-sent! [file-path now-ms]
+  (fs/create-dirs daemon-dir)
+  (spit (str (batch-claim-progress-cooldown-path))
+        (json/generate-string (assoc (read-batch-claim-progress-cooldowns) (keyword (fs/file-name file-path)) now-ms))))
+
+(defn nudge-coordinator-batch-claim-suspect! [suspect]
+  (let [draft (write-scratch-draft!
+               (chase-sweep-lib/batch-claim-progress-suspect-draft-lines (:item-id suspect) (:age-ms suspect)))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do
+        (write-batch-claim-progress-last-sent! (:file-path suspect) (System/currentTimeMillis))
+        (log! "batch-claim-progress-suspect" (:item-id suspect)))
+      (log! "batch-claim-progress-suspect-error" (:item-id suspect) (str (:err result))))))
+
+(defn- batch-claim-progress-stale-threshold-ms []
+  (chase-sweep-lib/parse-batch-claim-progress-stale-threshold-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn- batch-claim-progress-cooldown-ms []
+  (chase-sweep-lib/parse-batch-claim-progress-cooldown-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn batch-claim-progress-sweep! [roles]
+  (try
+    (let [now-ms (System/currentTimeMillis)
+          stale-ms (batch-claim-progress-stale-threshold-ms)
+          cooldown-ms (batch-claim-progress-cooldown-ms)]
+      (doseq [[role role-info] roles
+              :when (= "batch" (:receive-mode role-info))]
+        (try
+          (let [in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))
+                items (chase-sweep-lib/scan-in-process in-process-dir)
+                current-commit (worktree-head-commit-10 roles role)
+                suspects (chase-sweep-lib/apply-batch-claim-progress-check!
+                          items now-ms stale-ms current-commit)]
+            (doseq [suspect suspects]
+              (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
+                         (read-batch-claim-progress-last-sent-ms (:file-path suspect)) now-ms cooldown-ms)
+                (nudge-coordinator-batch-claim-suspect! suspect))))
+          (catch Exception e
+            (log! "batch-claim-progress-sweep-role-error" role (.getMessage e))))))
+    (catch Exception e
+      (log! "batch-claim-progress-sweep-error" (.getMessage e)))))
+
+
 ;; ── BL-577: flow watchdog sweep - every mailbox, any parcel type ────────────
 ;; Unsuppressable by design (the ticket's own requirement): this sweep emits
 ;; NO tmux wake, only a durable Telegram OPERATOR-topic alarm, so it runs
@@ -3125,7 +3190,13 @@
                       (try
                         (dropped-parcel-sweep! (load-roles))
                         (catch Exception e
-                          (log! "dropped-parcel-sweep-error" (.getMessage e)))))
+                          (log! "dropped-parcel-sweep-error" (.getMessage e))))
+                      ;; BL-678: batch-claim-progress suspect nudge shares
+                      ;; the same cadence as its dropped-parcel sibling.
+                      (try
+                        (batch-claim-progress-sweep! (load-roles))
+                        (catch Exception e
+                          (log! "batch-claim-progress-sweep-error" (.getMessage e)))))
                     ;; BL-577: flow watchdog sweep shares the same cadence,
                     ;; but runs UNCONDITIONALLY (outside the
                     ;; outbound-wakes-suppressed? gate above) - it emits no
