@@ -5,13 +5,18 @@ Feature: a constitution reference amendment reaches every role before it next ac
   # reference/*.prompt is read from each role's OWN worktree on demand and is
   # NOT inlined — an amendment landed on main via that path reached zero role
   # worktrees, leaving three branches carrying a stale elaboration that
-  # directly contradicted the amended, inlined rule. A second, independent
-  # defect: fast-forwarding a role branch to main can fail on untracked
-  # hot-synced files that are byte-identical to main's tracked versions.
+  # directly contradicted the amended, inlined rule.
+  #
+  # Mechanism bound by the specifier 2026-08-18 to the ticket's own recommended
+  # option 1, a freshness check at stage start. Scenario 02 is what makes that
+  # binding testable: the check may resolve staleness by merging, but refusing
+  # and reporting is an equally acceptable outcome, and that is deliberate —
+  # it is what keeps this slice independent of the merge-path defect now split
+  # out as BL-924.
 
   # BL-640 amendment-reaches-role-before-next-act-01
   Scenario: an amended reference/ file reaches a role before it next acts on the amended subject
-    Given a constitution reference/ file is amended on main
+    Given a constitution reference/ file was amended on main
     When a role is about to act on the subject that file elaborates
     Then that role reads the amended text, not a stale copy
 
@@ -33,13 +38,6 @@ Feature: a constitution reference amendment reaches every role before it next ac
     Given no constitution file has changed since the last composed prompt
     When the prompt is composed again
     Then its byte size matches the prior baseline
-
-  # BL-640 identical-untracked-copy-does-not-block-fast-forward-05
-  Scenario: a byte-identical untracked hot-synced file does not block a fast-forward merge
-    Given a role worktree carries untracked files that are byte-identical to main's tracked versions of the same paths
-    When that worktree fast-forwards to main
-    Then the merge is not blocked by those files
-    And any remaining genuine collision is reported naming every colliding path at once, not one round at a time
 
   # BL-640 top-level-articles-unchanged-06
   Scenario: top-level articles/*.prompt delivery is unchanged
