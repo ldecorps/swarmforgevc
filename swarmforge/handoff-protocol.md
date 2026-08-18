@@ -1184,7 +1184,7 @@ rely on it.
 Acceptance: `specs/features/BL-812-handoffd-cwd-breaks-mono-router-wake-remap.feature`.
 E2e: `swarmforge/scripts/test/test_handoffd_bl812_cwd_invariant_root_resolution.sh`.
 
-### Mono-router resident-invoked rotation gate on unfinished in_process (BL-805)
+### Mono-router resident-invoked rotation gate on unfinished in_process (BL-805, BL-926)
 
 The resident forwards its work (`swarm_handoff.sh`), then rotates. Nothing
 completes the parcel it *received* until it runs `done_with_current.sh` —
@@ -1203,8 +1203,21 @@ entry point: `rotate_to_role.sh` → `rotate_to_role.bb` →
 the departing role's own `inbox/in_process/` (the role read from
 `.swarmforge/mono-router-active-role`) for a real `*.handoff` file:
 
-- **A real parcel is still there** → refusal: nonzero exit, the pane is
-  never respawned, and the message names `done_with_current.sh` as the fix.
+- **A real parcel is still there, and the rotation target is a DIFFERENT
+  role** → refusal: nonzero exit, the pane is never respawned, and the
+  message names `done_with_current.sh` as the fix.
+- **A real parcel is still there, but the rotation target IS the role that
+  owns it** (BL-926) → proceeds. Rotating a pane INTO the role whose
+  mailbox holds the parcel abandons nothing — it is the only way that
+  parcel gets picked up, which is exactly the case BL-921's live-identity
+  check produces: a resident whose stale `mono-router-active-role` marker
+  disagrees with its live persona needs to rotate into the marker's role to
+  drain it. Before BL-926 the gate refused this rotation too, live-stranding
+  a parcel that BL-921 had just decided the daemon should rotate the pane
+  to reach (measured: BL-640 stranded ~62 minutes on 2026-08-18). The
+  in_process file itself is untouched by the rotation either way — nothing
+  is drained, moved, or completed; the owning role still resumes it through
+  `ready_for_next.sh`'s in_process-first check after the respawn.
 - **Only sidecars are there** (`.claim-progress.json`, `.nudge`, or any
   filename that merely contains the substring `.handoff` without being a
   true `*.handoff` parcel file) → rotation proceeds normally; sidecars never
@@ -1215,7 +1228,18 @@ the departing role's own `inbox/in_process/` (the role read from
 
 **Force override:** set `SWARMFORGE_ROTATE_FORCE=1` to rotate anyway over a
 real stuck parcel — for emergencies and tests. The gate still warns loudly on
-stdout, naming the parcel left behind, so the override is never silent.
+stdout, naming the parcel left behind, so the override is never silent. The
+force check runs BEFORE the BL-926 same-role check, so a real block plus
+force always reads `:proceed-forced` — ownership never silently swallows
+that signal.
+
+**Still out of scope (BL-927, paused):** BL-926 only fires when the
+rotation target names the SAME role the raw active-role marker names. A
+marker that has diverged to a THIRD role — neither the departing pane's
+live persona nor the rotation target — never satisfies the equality check,
+so the gate still protects a mailbox the pane does not own. BL-927 closes
+that residual case by resolving the departing role from the pane's live
+tmux identity instead of the raw marker.
 
 **Daemon rotation is deliberately never gated.** `handoffd.bb`'s own chase
 sweep calls `handoff-lib/rotate-resident-to!` *directly*, bypassing
@@ -1226,8 +1250,10 @@ decision logic itself is a pure function
 filtered blocking-file argument, so this split is enforced by which caller
 feeds it, not by a runtime flag.
 
-Acceptance: `specs/features/BL-805-rotate-gate-on-unfinished-in-process-parcel.feature`.
-E2e: `swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh`.
+Acceptance: `specs/features/BL-805-rotate-gate-on-unfinished-in-process-parcel.feature`,
+`specs/features/BL-926-rotate-gate-refuses-rotation-into-the-parcels-own-owner.feature`.
+E2e: `swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh`,
+`swarmforge/scripts/test/bl926_rotate_gate_owner_property_runner.bb`.
 
 ### Mono-router rotation recomposes the role prompt from current sources (BL-911, BL-917)
 
