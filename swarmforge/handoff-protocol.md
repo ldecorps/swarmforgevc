@@ -841,6 +841,90 @@ reuses the existing gather/evaluate seams rather than a parallel
 implementation, and the QA-edge path keeps calling Check D's full
 evaluation exactly as before.
 
+## Mint-Time Unreadable-Acceptance Gate (BL-922)
+
+Check D (QA-edge) and the BL-880 pointer gate (every earlier hop) both
+read a ticket's `acceptance:` field through the same narrow lens:
+`pre_qa_gate_gather_lib.bb`'s `read-yaml-field` captures only the
+`acceptance:` line's own tail, never an indented body beneath it. Write
+the field as a block scalar —
+
+```yaml
+acceptance: |
+  specs/features/BL-042-example.feature
+  (some prose about the contract)
+```
+
+— and that tail collapses to the bare indicator `"|"`. The two gates then
+behave individually correctly but jointly wrong: BL-880 deliberately
+**excludes** exactly this shape (block-scalar residue) as a QA-edge-only
+concern and skips silently at every hop from coder onward, while Check D
+tries to `git show <commit>:|` at the documenter→QA edge, fails, and
+refuses the send **fails closed** — after coder, cleaner, architect,
+hardender, and documenter have already worked the ticket. A ticket that
+names a perfectly real feature file is judged unreadable only at the last
+and most expensive edge in the pipeline, when the information needed to
+refuse it was present the moment it was minted. Measured against the live
+backlog on 2026-08-18: 53 tickets carried a block-scalar `acceptance:`, of
+which 12 named a real `specs/features/*.feature` path inside the block
+body and were armed to repeat this five-stage waste (BL-514, BL-624, and
+BL-625 were the first three live occurrences; BL-625 was repaired in
+flight rather than blocked, on the operator's explicit real-time
+instruction).
+
+**The fix reports at mint/hygiene-gate time instead**, reusing the
+existing backlog-hygiene machinery both the specifier's per-file gate and
+the repo-wide audit already run:
+
+- `acceptance_pointer_gate_lib.bb` exports `block-scalar-residue?`, the
+  single point of truth for "is this line's tail nothing but a bare `|`/`>`
+  indicator" — `backlog_hygiene_lib.bb`'s new check consults this exported
+  predicate rather than restating the regex, so the two can never drift
+  apart (the BL-897 hazard this repo has already been bitten by once).
+- `backlog_hygiene_lib.bb`'s new `unreadable-acceptance-violation` fires
+  only when BOTH halves hold: the `acceptance:` line's own tail is
+  block-scalar residue, AND the indented body beneath it contains a
+  `specs/features/....feature` path (path-charset excludes `*`, so a glob
+  mention or a not-yet-written preview filename is never misreported as
+  an already-armed pointer). A block scalar naming no feature file at all
+  — an honest not-yet-drafted placeholder — is never reported; that shape
+  is BL-626's business, a different gate for a different failure mode
+  (INVEST letter-T at mint, not an unreadable declaration).
+- Surfaced at both existing call sites: `specifier_backlog_hygiene_gate.sh`
+  (per-ticket, at mint) and `backlog_epic_milestone_audit.bb` (repo-wide).
+  The audit does not print every violation kind it collects — it filters
+  into hardcoded buckets and prints only those, while `all-clean?` still
+  counts every kind — so a violation kind added to the lib alone would
+  make the audit exit 1 having printed nothing about why. The audit now
+  names `unreadable-acceptance` explicitly, alongside the pre-existing
+  `missing-epic`/`missing-milestone` buckets.
+- The gate is read-only with respect to ticket YAML: it reports and exits
+  non-zero, and never repairs a ticket in place — the role that owns a
+  ticket is the only writer of it.
+
+Violation line shape:
+```
+UNREADABLE-ACCEPTANCE <id>  <path>  (acceptance: is a block scalar hiding <feature-path> - rewrite as a single-line pointer)
+```
+
+**The eleven armed tickets found live were repaired in the same pass**,
+per the precedent `qa_e2e:`/`qa_e2e_procedure:` already sets on 36 other
+tickets: `acceptance:` becomes the bare single-line pointer, and any prose
+that rode inside the block moves to a sibling field. Two of the eleven
+(BL-579, BL-580) name a feature file that was never written — repairing
+their shape does not hide that; as a single-line pointer, the BL-880 gate
+now catches the dangling path at the *first* hop instead of the last,
+which is the intended outcome, not a regression.
+
+`swarmforge/backlog-schema.md`'s `acceptance:` row previously read "both
+forms are read" — false against the live gates, corrected in the same
+pass this ticket was minted (a specifier-owned prose file, landed directly
+per the specifier's own BL-798 rule rather than scheduled as a stage of
+this ticket).
+
+Acceptance:
+`specs/features/BL-922-unreadable-acceptance-declaration-caught-at-mint.feature`.
+
 ## Review-Forward Evidence Gate (BL-806)
 
 A structural backstop for Article 4.4's "commit your explicit-NONE evidence
