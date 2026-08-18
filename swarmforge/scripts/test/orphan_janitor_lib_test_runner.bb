@@ -331,6 +331,58 @@
          (orphan-janitor-lib/front-desk-bridge-or-bot-cmdline?
           "tmux -S /tmp/tmp.jIAp73PXra/.swarmforge/babysitter/babysitter-tmux.sock new-session"))
 
+;; ── BL-930: tmp-rooted onboarder ancillary class ─────────────────────────
+
+(assert= "onboarder reconcile poll-loop cmdline detected"
+         true
+         (orphan-janitor-lib/onboarder-reconcile-cmdline?
+          "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm/extension/out/tools/onboarder-reconcile.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm poll-loop"))
+
+(assert= "unrelated node cmdline not detected as onboarder reconcile"
+         false
+         (orphan-janitor-lib/onboarder-reconcile-cmdline?
+          "node /tmp/tmp.KTEWg2bJ/extension/out/tools/start-bridge-headless.js /tmp/tmp.KTEWg2bJ 8765"))
+
+(assert= "onboarder supervisor cmdline detected"
+         true
+         (orphan-janitor-lib/onboarder-supervisor-cmdline?
+          "bb /tmp/tmp.KTEWg2bJ/swarm/onboarder_supervisor.bb /tmp/tmp.KTEWg2bJ/swarm --check-once"))
+
+(assert= "unrelated bb cmdline not detected as onboarder supervisor"
+         false
+         (orphan-janitor-lib/onboarder-supervisor-cmdline?
+          "bb /tmp/tmp.KTEWg2bJ/swarm/operator_runtime.bb /tmp/tmp.KTEWg2bJ/swarm"))
+
+(assert= "tmp-rooted onboarder reconcile poll-loop detected as tmp ancillary"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm/extension/out/tools/onboarder-reconcile.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm poll-loop"))
+
+(assert= "tmp-rooted onboarder supervisor detected as tmp ancillary"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "bb /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm/onboarder_supervisor.bb /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm --check-once"))
+
+(assert= "host-repo onboarder reconcile never detected as tmp ancillary (invariant 1)"
+         false
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "node /Users/ldecorps/projects/swarmforgevc/extension/out/tools/onboarder-reconcile.js /Users/ldecorps/projects/swarmforgevc poll-loop"))
+
+(assert= "host-repo onboarder supervisor never detected as tmp ancillary (invariant 1)"
+         false
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "bb /Users/ldecorps/projects/swarmforgevc/swarmforge/scripts/onboarder_supervisor.bb /Users/ldecorps/projects/swarmforgevc"))
+
+(assert= "onboarder cmdline is never classified as front-desk bridge/bot (no fast path, invariant 2)"
+         false
+         (orphan-janitor-lib/front-desk-bridge-or-bot-cmdline?
+          "node /tmp/tmp.KTEWg2bJ/swarm/extension/out/tools/onboarder-reconcile.js /tmp/tmp.KTEWg2bJ/swarm poll-loop"))
+
+(assert= "extract disposable root from onboarder reconcile cmdline"
+         "/var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ"
+         (orphan-janitor-lib/parse-tmp-ancillary-root
+          "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm/extension/out/tools/onboarder-reconcile.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.KTEWg2bJ/swarm poll-loop"))
+
 ;; ── BL-885: leaked caffeinate -dims daemons ──────────────────────────────
 
 (assert= "exact caffeinate -dims cmdline detected"

@@ -889,3 +889,46 @@ You are the hardender.
   255 confirmed leaks — but it is the reason this is a standing check and not
   a one-ticket note. The authoring-side rule is in **engineering.prompt**
   under Test Speed And Isolation.)
+
+## A fixture test's own stop-then-kill teardown must be a BOUNDED, CONFIRMED SIGTERM-then-SIGKILL retry (rule_proposal 2026-08-18, accepted)
+- Shape: a teardown helper polls for the fixture process to exit gracefully,
+  then falls back to a single `kill "$pid" 2>/dev/null || true` — fire and
+  forget, no `kill -0` confirmation, no retry, no escalation. Under host
+  contention BOTH halves starve at once: the process's own stop-file poll
+  misses its window AND the fallback signal lands too late to matter, so the
+  fixture survives as a PPID-1 orphan while the run reports fully green.
+- **This is a new leak shape, not a restatement of the two above.** Nothing was
+  killed by you (the killed-run fixture-file rule), nothing threw (the
+  Given-validation temp-dir rule), and it is not a tmux server, so
+  `pgrep -fl 'node --test|stryker'` and `pgrep -afl tmux` both miss it. A green
+  suite leaks a live daemon; only a live process-table check after the run
+  finds it, because a test's assertions check the ticket's behaviour and never
+  its own scaffolding.
+- Rule: every teardown kill of a fixture-spawned LONG-LIVED process is bounded
+  and confirmed — SIGTERM, poll `kill -0` to a deadline, SIGKILL, poll again,
+  and warn loud on a pid that survives both. `stop_background_supervisor` in
+  `swarmforge/scripts/test/test_onboarder_supervisor_tick.sh` is the reference
+  shape (100 × 0.02s per stage). This is engineering.prompt's Guardrails
+  ("bounded retries with backoff", "max-wait deadlines") applied to a test's
+  own scaffolding rather than to production code.
+- **Reap the PARENT too, not only its children.** A blanket child-reaper is a
+  backstop only if it names every process the fixture spawned: here it
+  `pkill`ed the supervisor's `onboarder-reconcile.js` child and never the
+  supervisor's own `bb` process, so the one that leaked was the one nobody
+  listed. Enumerate the fixture's spawns from the fixture, not from memory.
+- Scope it to what can actually outlive you — a real spawned daemon,
+  supervisor, or node loop, especially one that re-spawns children. A `sleep`
+  stub does not earn the ceremony. Coarse population measured 2026-08-18:
+  90 unconfirmed `kill "$PID"` sites across 47 files in
+  `swarmforge/scripts/test/`, only 13 of those files containing any `kill -0`
+  confirmation at all — an upper bound on candidates, not 90 confirmed leaks,
+  and the reason this is a standing check rather than one ticket's note.
+- Extend the Handoff orphan check to match: after a pass that ran shell
+  fixtures spawning daemons, also grep the process table for the fixture's tmp
+  root (`/var/folders/…`, `$TMPDIR`) — the two documented patterns do not name
+  `bb …_supervisor.bb` or `node …-reconcile.js`.
+- (Incident: BL-928 hardening 2026-08-18, fixed `3d2894696`. Load peaked at
+  129 on 4 cores; a shell fixture test and a 6/6 acceptance suite both passed
+  first try while leaving two PPID-1 orphans — a `bb onboarder_supervisor.bb`
+  and its `node onboarder-reconcile.js` — rooted under a `/var/folders` fixture
+  dir. Reaped by hand, re-verified clean twice at load 26-65.)
