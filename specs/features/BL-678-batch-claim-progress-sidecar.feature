@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-18T18:06:31.365016Z","feature_name":"Batch claim progress sidecar","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-678-batch-claim-progress-sidecar.feature","background_hash":"9609ca429c0e73572f73ccb3f6b74a5a4f6562822ecdc155b2e6ae8c8a993f5e","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Batch claim progress sidecar
 
   Background:
