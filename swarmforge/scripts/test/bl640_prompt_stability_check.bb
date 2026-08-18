@@ -43,27 +43,33 @@
 
 ;; ── scenario 04: no growth when nothing changed ───────────────────────────
 (let [before-count (count @failures)
-      root (mk-synthetic-root)
-      first-compose (prompt-engine-lib/stable-prefix-text root)
-      second-compose (prompt-engine-lib/stable-prefix-text root)]
-  (assert-true "04: byte size matches the prior baseline when nothing changed"
-               (= (count first-compose) (count second-compose)))
-  (assert-true "04: content is byte-identical, not just same length"
-               (= first-compose second-compose))
-  (report-block! "04" "a no-op recompose matches the prior byte size exactly" before-count))
+      root (mk-synthetic-root)]
+  (try
+    (let [first-compose (prompt-engine-lib/stable-prefix-text root)
+          second-compose (prompt-engine-lib/stable-prefix-text root)]
+      (assert-true "04: byte size matches the prior baseline when nothing changed"
+                   (= (count first-compose) (count second-compose)))
+      (assert-true "04: content is byte-identical, not just same length"
+                   (= first-compose second-compose))
+      (report-block! "04" "a no-op recompose matches the prior byte size exactly" before-count))
+    (finally
+      (fs/delete-tree root))))
 
 ;; ── scenario 06: a top-level article amendment still reaches compose ─────
 (let [before-count (count @failures)
-      root (mk-synthetic-root)
-      before (prompt-engine-lib/stable-prefix-text root)]
-  (spit (str (fs/path root "swarmforge" "constitution" "articles" "01_workflow.prompt"))
-        "Top-level workflow rule: v2 AMENDED.\n")
-  (let [after (prompt-engine-lib/stable-prefix-text root)]
-    (assert-true "06: the amended top-level rule reaches the composed prompt"
-                 (str/includes? after "v2 AMENDED"))
-    (assert-true "06: the amendment actually changed the composed output"
-                 (not= before after))
-    (report-block! "06" "the amended top-level rule reaches the composed prompt" before-count)))
+      root (mk-synthetic-root)]
+  (try
+    (let [before (prompt-engine-lib/stable-prefix-text root)]
+      (spit (str (fs/path root "swarmforge" "constitution" "articles" "01_workflow.prompt"))
+            "Top-level workflow rule: v2 AMENDED.\n")
+      (let [after (prompt-engine-lib/stable-prefix-text root)]
+        (assert-true "06: the amended top-level rule reaches the composed prompt"
+                     (str/includes? after "v2 AMENDED"))
+        (assert-true "06: the amendment actually changed the composed output"
+                     (not= before after))
+        (report-block! "06" "the amended top-level rule reaches the composed prompt" before-count)))
+    (finally
+      (fs/delete-tree root))))
 
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
