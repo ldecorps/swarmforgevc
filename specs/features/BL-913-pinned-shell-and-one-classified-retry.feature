@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ad669a6cbbb7fb8d9c5f096b2b0123955422f04a562d67e4beb24db26a0597db
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-18T08:20:25.351106Z","feature_name":"A recoverable tool miss is healed once from the pinned execution environment, and a real failure is returned honestly","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-913-pinned-shell-and-one-classified-retry.feature","background_hash":"8866222fa0ac22f177cf605ac6aaa5151489aeb9355fd17413337e36934694fb","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each recoverable miss class is re-run once from the right place","scenario_hash":"03d35d508947b5279f4afc9994bc77202d528f7fe4b90080c2e9dc904daeb7de","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-18T08:20:25.351106Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A recoverable tool miss is healed once from the pinned execution environment, and a real failure is returned honestly
 
   # BL-913 (epic tool-miss-auto-heal, slice A of the BL-912 tracker): a role's shell

@@ -17,12 +17,24 @@ export const PREREQUISITE_STEP_ORDER: readonly PrerequisiteStepId[] = PREREQUISI
 // contractPhaseRelay.ts owns that turn), so the only phases ever actually
 // persisted/observed are the ones below - a transient "surveying" value
 // would never be read back and is not added here.
+// BL-625: four more phases past contract-agreed - prompts, launch handoff,
+// done. Same posture as 'gate-open' below: contractPhaseRelay.ts's own
+// runProposePrompts advances contract-agreed straight to 'prompts-proposed'
+// in one turn (never through 'gate-open'), so 'gate-open' is never itself
+// durably persisted - it exists as a type member only so postLaunchHandoff
+// can be tested directly against a state at that conceptual waypoint,
+// mirroring proveGateAndPush's own directly-testable shape (BL-624 scenario
+// 05, "the onboarder checks the build-start gate").
 export type OnboardingPhase =
   | 'checking-prerequisites'
   | 'prerequisites-ready'
   | 'contract-proposed'
   | 'negotiating'
-  | 'contract-agreed';
+  | 'contract-agreed'
+  | 'prompts-proposed'
+  | 'gate-open'
+  | 'ready-to-launch'
+  | 'done';
 
 // BL-590 architect bounce #6/#7 (D3/D4): target identity is POLICY, not
 // persistence, so it lives here and both the handler (findInFlightStateForTarget
@@ -350,11 +362,18 @@ export function applyPrincipalReply(state: OnboarderState, text: string, now: ()
 const NO_ACTIVE_ONBOARDING_MESSAGE =
   'No onboarding is currently in progress in this topic. Post a target GitHub repo URL to start one.';
 
+// BL-625 invariant 2: a plain reply that cannot be attributed to exactly one
+// in-flight target (more than one target in flight, none of them named in
+// the text) is refused rather than silently applied to whichever target was
+// last active - message-only, same "nothing durable to guard" shape as
+// 'no-active-onboarding' (onboarderContractPhaseRouter.ts's own
+// pickUnambiguousInFlightState decides when this fires).
 export type OnboardingMessageOutcome =
   | { kind: 'started'; state: OnboarderState; message: string }
   | { kind: 'resumed'; state: OnboarderState; message: string }
   | { kind: 'advanced'; state: OnboarderState; message: string }
-  | { kind: 'no-active-onboarding'; message: string };
+  | { kind: 'no-active-onboarding'; message: string }
+  | { kind: 'ambiguous-target'; message: string };
 
 // BL-590 architect bounce (defect 2, 2026-07-25): a repo URL for a target
 // that already has an in-flight (non-prerequisites-ready) state must RESUME

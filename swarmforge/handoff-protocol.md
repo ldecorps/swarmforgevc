@@ -841,6 +841,90 @@ reuses the existing gather/evaluate seams rather than a parallel
 implementation, and the QA-edge path keeps calling Check D's full
 evaluation exactly as before.
 
+## Mint-Time Unreadable-Acceptance Gate (BL-922)
+
+Check D (QA-edge) and the BL-880 pointer gate (every earlier hop) both
+read a ticket's `acceptance:` field through the same narrow lens:
+`pre_qa_gate_gather_lib.bb`'s `read-yaml-field` captures only the
+`acceptance:` line's own tail, never an indented body beneath it. Write
+the field as a block scalar —
+
+```yaml
+acceptance: |
+  specs/features/BL-042-example.feature
+  (some prose about the contract)
+```
+
+— and that tail collapses to the bare indicator `"|"`. The two gates then
+behave individually correctly but jointly wrong: BL-880 deliberately
+**excludes** exactly this shape (block-scalar residue) as a QA-edge-only
+concern and skips silently at every hop from coder onward, while Check D
+tries to `git show <commit>:|` at the documenter→QA edge, fails, and
+refuses the send **fails closed** — after coder, cleaner, architect,
+hardender, and documenter have already worked the ticket. A ticket that
+names a perfectly real feature file is judged unreadable only at the last
+and most expensive edge in the pipeline, when the information needed to
+refuse it was present the moment it was minted. Measured against the live
+backlog on 2026-08-18: 53 tickets carried a block-scalar `acceptance:`, of
+which 12 named a real `specs/features/*.feature` path inside the block
+body and were armed to repeat this five-stage waste (BL-514, BL-624, and
+BL-625 were the first three live occurrences; BL-625 was repaired in
+flight rather than blocked, on the operator's explicit real-time
+instruction).
+
+**The fix reports at mint/hygiene-gate time instead**, reusing the
+existing backlog-hygiene machinery both the specifier's per-file gate and
+the repo-wide audit already run:
+
+- `acceptance_pointer_gate_lib.bb` exports `block-scalar-residue?`, the
+  single point of truth for "is this line's tail nothing but a bare `|`/`>`
+  indicator" — `backlog_hygiene_lib.bb`'s new check consults this exported
+  predicate rather than restating the regex, so the two can never drift
+  apart (the BL-897 hazard this repo has already been bitten by once).
+- `backlog_hygiene_lib.bb`'s new `unreadable-acceptance-violation` fires
+  only when BOTH halves hold: the `acceptance:` line's own tail is
+  block-scalar residue, AND the indented body beneath it contains a
+  `specs/features/....feature` path (path-charset excludes `*`, so a glob
+  mention or a not-yet-written preview filename is never misreported as
+  an already-armed pointer). A block scalar naming no feature file at all
+  — an honest not-yet-drafted placeholder — is never reported; that shape
+  is BL-626's business, a different gate for a different failure mode
+  (INVEST letter-T at mint, not an unreadable declaration).
+- Surfaced at both existing call sites: `specifier_backlog_hygiene_gate.sh`
+  (per-ticket, at mint) and `backlog_epic_milestone_audit.bb` (repo-wide).
+  The audit does not print every violation kind it collects — it filters
+  into hardcoded buckets and prints only those, while `all-clean?` still
+  counts every kind — so a violation kind added to the lib alone would
+  make the audit exit 1 having printed nothing about why. The audit now
+  names `unreadable-acceptance` explicitly, alongside the pre-existing
+  `missing-epic`/`missing-milestone` buckets.
+- The gate is read-only with respect to ticket YAML: it reports and exits
+  non-zero, and never repairs a ticket in place — the role that owns a
+  ticket is the only writer of it.
+
+Violation line shape:
+```
+UNREADABLE-ACCEPTANCE <id>  <path>  (acceptance: is a block scalar hiding <feature-path> - rewrite as a single-line pointer)
+```
+
+**The eleven armed tickets found live were repaired in the same pass**,
+per the precedent `qa_e2e:`/`qa_e2e_procedure:` already sets on 36 other
+tickets: `acceptance:` becomes the bare single-line pointer, and any prose
+that rode inside the block moves to a sibling field. Two of the eleven
+(BL-579, BL-580) name a feature file that was never written — repairing
+their shape does not hide that; as a single-line pointer, the BL-880 gate
+now catches the dangling path at the *first* hop instead of the last,
+which is the intended outcome, not a regression.
+
+`swarmforge/backlog-schema.md`'s `acceptance:` row previously read "both
+forms are read" — false against the live gates, corrected in the same
+pass this ticket was minted (a specifier-owned prose file, landed directly
+per the specifier's own BL-798 rule rather than scheduled as a stage of
+this ticket).
+
+Acceptance:
+`specs/features/BL-922-unreadable-acceptance-declaration-caught-at-mint.feature`.
+
 ## Review-Forward Evidence Gate (BL-806)
 
 A structural backstop for Article 4.4's "commit your explicit-NONE evidence
@@ -1292,6 +1376,68 @@ alone is not; C: `in_process` outranks a `rule_proposal`). See
 `backlog/evidence/hotfix-2026-08-03-mono-router-starvation.md` for the
 original live incident and `backlog/evidence/BL-795-hardener-verify-pass.md`
 for the full adoption test run.
+
+### Mono-router chase verifies live pane identity (BL-921)
+
+`.swarmforge/mono-router-active-role` is a marker file, not a live fact.
+Two chase decisions used to trust it alone: `dormant-mailbox-chase-action`
+returned `:wake-resident` whenever `active-role` equaled the target role,
+and `should-rotate-resident?` refused to rotate (`:already-active`) on the
+same equality. Neither ever asked the pane itself. When the marker
+diverged from what the resident pane was actually running, the wake landed
+on the wrong persona — it ran `ready_for_next.sh` as itself, read its own
+empty mailbox, got `NO_TASK`, and idled, correctly for who it thought it
+was, while the target role's real mail sat untouched and the next sweep
+made the identical decision roughly every 20 seconds.
+
+**Measured live, 2026-08-18:** the marker read `cleaner` from ~03:48Z while
+the resident pane was running `coder.sh` (`SWARMFORGE_ROLE=coder`).
+`.swarmforge/telemetry/wake-attribution-2026-08.jsonl` recorded 535 landed
+wakes for `cleaner` that day, every one `handoffPresent?: true`, every one
+naming the same unclaimed parcel, on a ~19–20s cadence for hours — while
+cleaner's mailbox genuinely held two QA merge-up notes and three
+`git_handoff`s for BL-913.
+
+**The fix.** `resident-live-role` (`swarmforge/scripts/handoffd.bb`) probes
+the resident pane directly: `tmux list-panes -F '#{pane_start_command}'`,
+matched against `launch/([^/]+)\.sh` — the exact launch script
+`rotate-resident-to!` installs on every respawn, so the live role name is
+read off the pane's own command line, never off the marker. This feeds a
+new `live-role` argument into both pure decision functions
+(`swarmforge/scripts/mono_router_lib.bb`):
+
+- `dormant-mailbox-chase-action`'s `:wake-resident` now requires the
+  marker AND the live identity to both agree with the target role.
+- `should-rotate-resident?`'s `:already-active` requires the same double
+  agreement — a stale marker claiming the resident is already the target
+  can no longer refuse the very rotate that would fix it.
+
+Both routed through one predicate, `live-role-agrees?`: a `live-role` that
+is `nil`, blank, or otherwise unreadable is treated as **divergence, never
+as agreement** — an identity the daemon can't confirm must never be
+trusted more than one it can prove disagrees. The check only ever
+*tightens* the gate: every input that resolved to `:wake-resident` or
+`:already-active` with the marker and the live identity in agreement is
+byte-identical to before; a disagreement or an unreadable identity now
+takes the pre-existing `:rotate` / `respawn-as!` path, which makes the
+identity true instead of assuming it.
+
+**Deterministic acceptance without a wall-clock wait.** `handoffd.bb`
+gained `--chase-sweep-once`, a one-shot-and-exit flag for `chase-sweep!`
+specifically (deliberately not folded into the pre-existing
+`--sweep-once`, which runs delivery plus the ambulance/watchdog/nudge
+sweeps but never `chase-sweep!`) — needed to prove "N chase sweeps never
+inject wake text for a diverged live identity" deterministically, without
+backgrounding the daemon or waiting on its real ~10s cadence.
+
+**Out of scope, deliberately:** *why* the marker diverges from the pane in
+the first place. The 2026-08-18 divergence dated to ~03:48Z, the same
+minute the tmux sessions were created — pointing at the boot path
+(`resolve-boot-role`, BL-648) rather than at rotation. This ticket stops
+the storm and un-strands the mail regardless of how the divergence arose;
+the boot-origin question is a separate slice if it proves real.
+
+Acceptance: `specs/features/BL-921-chase-verifies-live-pane-identity.feature`.
 
 ### Dispatch-gap sweep
 

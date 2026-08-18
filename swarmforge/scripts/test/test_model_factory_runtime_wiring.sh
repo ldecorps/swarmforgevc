@@ -119,6 +119,13 @@ grep -q '"model": "opus"' "$ROOT1/.swarmforge/launch/coder.claude-settings.json"
 pass "01: assignment overlay overrides the pack model for a named role"
 
 # ── model-factory-runtime-wiring-02: no overlay -> byte-identical to pack-derived ─
+# BL-913: settings.json now also embeds an absolute, root-specific
+# tool_miss_heal_hook.bb path (the PreToolUse hooks block) - genuinely
+# root-dependent content, unlike model/effort resolution. Normalize each
+# root's own absolute path to a common placeholder before comparing, so this
+# test still proves what it always proved (model/effort resolution is
+# root-independent when no overlay is present) without asserting true
+# byte-identity across two different filesystem paths.
 ROOT2A="$(mk_root)"; write_conf "$ROOT2A"
 ROOT2B="$(mk_root)"; write_conf "$ROOT2B"
 write_overlay "$ROOT2B" coder opus
@@ -126,10 +133,12 @@ rm -f "$ROOT2B/.swarmforge/model-factory/assignment.json"
 for role in coder cleaner architect documenter; do
   run_write_role_launch_script "$ROOT2A" "$role"
   run_write_role_launch_script "$ROOT2B" "$role"
-  diff -q "$ROOT2A/.swarmforge/launch/${role}.claude-settings.json" "$ROOT2B/.swarmforge/launch/${role}.claude-settings.json" \
-    || fail "02: settings for $role differ with no overlay present"
+  diff -q \
+    <(sed "s#$ROOT2A#ROOT#g" "$ROOT2A/.swarmforge/launch/${role}.claude-settings.json") \
+    <(sed "s#$ROOT2B#ROOT#g" "$ROOT2B/.swarmforge/launch/${role}.claude-settings.json") \
+    || fail "02: settings for $role differ (beyond their own root path) with no overlay present"
 done
-pass "02: with no overlay present, settings files are byte-identical to pack-derived output"
+pass "02: with no overlay present, settings files are identical (root path aside) to pack-derived output"
 
 # ── model-factory-runtime-wiring-03: a broken overlay degrades, never aborts ─
 for broken in malformed truncated empty; do

@@ -134,15 +134,9 @@ description: |
   5. BDD: see `specs/features/BL-548-prompt-calibration-loop.feature`.
      Slices 2–3 parked in `specs/features/BL-548-prompt-calibration-slices-2-3.feature.draft`.
 
-acceptance: |
-  See specs/features/BL-548-prompt-calibration-loop.feature for Slice 1 scenarios.
-  Slices 2–3 parked in specs/features/BL-548-prompt-calibration-slices-2-3.feature.draft.
-  Coder implements Slice 1 after BL-546 Slice 2 and BL-547 Slice 2 land (evaluate
-  ingestion required for real model exercise). Documenter adds runbook: running a
-  calibration experiment, reading the report, promoting vs rolling back. QA verifies
-  production catalogue unchanged after run-only, and that evaluate was invoked per
-  variant with distinct composed prompt hashes.
+acceptance: specs/features/BL-548-prompt-calibration-loop.feature
 
+qa_e2e_procedure: |
   QA end-to-end (Slice 1, fixture-friendly):
     1. Define two experimental adapter variants for a fixture model+role.
     2. Run `prompt-calibration run`; confirm report artifact with two variant entries.
@@ -150,6 +144,19 @@ acceptance: |
     4. Confirm each variant's evaluate evidence id differs (distinct prompts exercised).
     5. Launch production role without SWARMFORGE_PROMPT_EXPERIMENT; confirm incumbent
        adapter still used.
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a block
+  scalar hiding the pointer from the pre-QA gates until the documenter->QA
+  hop). Nothing anyone builds changes; the text below and in qa_e2e_procedure:
+  is the same text, relocated verbatim.
+
+  Slices 2–3 parked in specs/features/BL-548-prompt-calibration-slices-2-3.feature.draft.
+  Coder implements Slice 1 after BL-546 Slice 2 and BL-547 Slice 2 land (evaluate
+  ingestion required for real model exercise). Documenter adds runbook: running a
+  calibration experiment, reading the report, promoting vs rolling back. QA verifies
+  production catalogue unchanged after run-only, and that evaluate was invoked per
+  variant with distinct composed prompt hashes.
 
 out_of_scope: |
   - PromptEngine auto-tuning without steward evaluate (no direct LLM calls from

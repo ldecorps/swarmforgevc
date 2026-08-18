@@ -307,6 +307,26 @@
 (defn capture-pane-text [socket session]
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
 
+(defn resident-live-role
+  "BL-921: probes the resident pane's OWN start command for the launch
+   script it is actually running - independent of the mono-router-active-
+   role marker file chase would otherwise trust alone. rotate-resident-to!
+   respawns the pane as `zsh '<root>/.swarmforge/launch/<role>.sh'`, so the
+   live role name is read directly off #{pane_start_command}, never off the
+   marker. Returns the role name, or nil when the session is gone, the tmux
+   call fails, or the command names no launch script - an identity that
+   cannot be read must never be treated as agreement (see
+   mono-router-lib/live-role-agrees?)."
+  [socket session]
+  (when-not (str/blank? session)
+    (try
+      (let [result (tmux! "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
+        (when (zero? (:exit result))
+          (let [line (first (str/split-lines (str (:out result))))]
+            (when-let [[_ role] (re-find #"launch/([^/]+)\.sh" (or line ""))]
+              role))))
+      (catch Exception _ nil))))
+
 (defn last-non-blank-line [pane-text]
   (last (remove str/blank? (str/split-lines (or pane-text "")))))
 
@@ -370,7 +390,9 @@
 
 (defn chase-poke-action
   "Decide how to poke `role` under mono-router (pure wrapper around
-   mono-router-lib/dormant-mailbox-chase-action with live tmux probes)."
+   mono-router-lib/dormant-mailbox-chase-action with live tmux probes).
+   BL-921: also probes the resident pane's own live identity so a diverged
+   active-role marker can no longer produce a false :wake-resident."
   [roles socket role]
   (let [session (:session (get roles role))
         resident (handoff-lib/mono-router-resident-session)]
@@ -378,7 +400,8 @@
      {:target-session-exists? (boolean (and session (handoff-lib/session-exists? socket session)))
       :resident-session-exists? (boolean (and resident (handoff-lib/session-exists? socket resident)))
       :active-role (handoff-lib/read-mono-router-active-role)
-      :target-role role})))
+      :target-role role
+      :live-role (resident-live-role socket resident)})))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
@@ -674,6 +697,17 @@
 ;; watchdog sweep runs" steps.
 (def sweep-once-only?
   (some #{"--sweep-once"} *command-line-args*))
+
+;; BL-921: same one-shot-and-exit posture as --sweep-once above, but for the
+;; chase sweep specifically - --sweep-once deliberately does NOT include
+;; chase-sweep! (it runs delivery plus the ambulance/watchdog/nudge sweeps
+;; only), and the full daemon loop only reaches chase-sweep! on its real
+;; ~10s cadence. An acceptance scenario proving "N chase sweeps never
+;; inject wake text for a diverged live identity" needs to run exactly N
+;; sweeps deterministically, without a background process or a wall-clock
+;; wait for the real cadence.
+(def chase-sweep-once-only?
+  (some #{"--chase-sweep-once"} *command-line-args*))
 
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
@@ -1326,6 +1360,9 @@
   (let [gate (mono-router-lib/should-rotate-resident?
               {:active-role (handoff-lib/read-mono-router-active-role)
                :target-role target-role
+               ;; BL-921: a stale marker claiming the resident is already
+               ;; target-role must not refuse the very rotate that would fix it.
+               :live-role (resident-live-role socket (handoff-lib/mono-router-resident-session))
                :resident-busy? (resident-pane-busy? socket)
                :last-rotate-at-ms @last-chase-rotate-at-ms
                :now-ms (System/currentTimeMillis)
@@ -2555,13 +2592,32 @@
 ;; checked out in another worktree, so QA/coordinator have no way to do it
 ;; themselves - see this ticket's own notes for the incident). This is the
 ;; thin git/CLI-specific wiring; master_main_reconcile_lib.bb owns the pure
-;; decision/state logic (gating on a clean tree, self-healing surfaced-once
+;; decision/state logic (BL-919: gating on dirty/merge-changed path overlap
+;; rather than a blanket clean-tree check, self-healing surfaced-once
 ;; state). Reuses push-sweep-rev-counts! verbatim - "origin/main...main"
 ;; already yields exactly the {:ahead :behind} this sweep needs too, and it
 ;; already fetches as a side effect, so no second fetch is needed per tick.
-(defn- master-main-reconcile-worktree-clean? []
+(defn- master-main-reconcile-dirty-paths! []
   (let [{:keys [exit out]} (process/sh ["git" "status" "--porcelain"] {:dir (str project-root)})]
-    (and (zero? exit) (str/blank? out))))
+    (if (zero? exit)
+      (master-main-reconcile-lib/porcelain-lines->paths out)
+      #{master-main-reconcile-lib/unknown-dirty-marker})))
+
+;; BL-919: which paths would the incoming merge itself write to? Diffed
+;; against the merge-base (not HEAD..origin/main, which would also include
+;; paths only local commits touched) so this names exactly the paths a real
+;; `git merge` would need to write - the same set reconcile-decision checks
+;; dirty paths against for overlap. Only called when behind>0 (sweep!'s own
+;; contract), so `origin/main` and a real merge-base always exist.
+(defn- master-main-reconcile-merge-changed-paths! []
+  (let [{:keys [exit out]} (process/sh ["git" "merge-base" "HEAD" "origin/main"] {:dir (str project-root)})]
+    (if (not (zero? exit))
+      #{master-main-reconcile-lib/unknown-dirty-marker}
+      (let [base (str/trim out)
+            {:keys [exit out]} (process/sh ["git" "diff" "--name-only" base "origin/main"] {:dir (str project-root)})]
+        (if (zero? exit)
+          (into #{} (remove str/blank?) (str/split-lines out))
+          #{master-main-reconcile-lib/unknown-dirty-marker})))))
 
 ;; Never --force, --reset, --rebase, or --stash (BL-891 invariant 1): a
 ;; plain `git merge` either fast-forwards (no local-only commits) or
@@ -2595,7 +2651,8 @@
     (master-main-reconcile-lib/sweep!
      (str daemon-dir)
      {:rev-counts! push-sweep-rev-counts!
-      :clean? master-main-reconcile-worktree-clean?
+      :dirty-paths! master-main-reconcile-dirty-paths!
+      :merge-changed-paths! master-main-reconcile-merge-changed-paths!
       :merge! master-main-reconcile-merge!
       :surface! master-main-reconcile-surface!
       :log! (fn [& parts] (apply log! parts))})
@@ -2987,6 +3044,11 @@
         (try (flow-watchdog-sweep! roles socket) (catch Exception e (log! "flow-watchdog-sweep-error" (.getMessage e))))
         (try (ambulance-auto-exit-sweep!) (catch Exception e (log! "ambulance-auto-exit-sweep-error" (.getMessage e))))
         (log! "sweep-once done"))
+
+      chase-sweep-once-only?
+      (do
+        (try (chase-sweep! roles socket) (catch Exception e (log! "chase-sweep-once-error" (.getMessage e))))
+        (log! "chase-sweep-once done"))
 
       :else
       (let [claim (claim-pid-file!)]

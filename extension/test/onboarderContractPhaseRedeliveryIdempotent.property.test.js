@@ -76,6 +76,9 @@ function fakeContractPhaseAdapters() {
     async commitAndPush() {
       return { ok: true, commitSha: 'abc1234def' };
     },
+    async proposePrompts() {
+      return { committed: true, withheld: false };
+    },
   };
 }
 
@@ -154,6 +157,84 @@ test('P BL-624: a redelivered updateId in the survey/negotiate phases re-sends t
         assert.equal(finalStates.length, 1);
         assert.notEqual(finalStates[0].phase, 'prerequisites-ready');
         assert.notEqual(finalStates[0].phase, 'contract-agreed', 'the plateau must never reach contract-agreed by construction');
+      }
+    ),
+    { numRuns: 120 }
+  );
+});
+
+// BL-625 invariant authorship (BL-654): the SAME "every durable write is
+// idempotent under redelivery" invariant, driven through BL-625's OWN new
+// phases (contract-agreed -> prompts-proposed) instead of BL-624's. Reuses
+// the identical real guard machinery, unmodified by this ticket - only the
+// seed phase and the op sequence differ.
+//
+// Generator reach, asserted by construction: op 0 is forced to 'proceed'
+// against a target PRE-SEEDED at 'contract-agreed', which
+// decideContractPhaseAction maps to 'propose-prompts' - the ONE transition
+// that leaves 'contract-agreed'. Every follow-up op is drawn only from
+// {'show-me', 'change-this <text>'} - decideContractPhaseAction has no
+// mapping for either at 'prompts-proposed' (both decide 'unrecognized'), so
+// the target is PROVEN, not assumed, to stay in flight, plateaued at
+// 'prompts-proposed' for the whole run.
+const AGREED_SEED_STATE = { ...SEED_STATE, phase: 'contract-agreed' };
+
+test('P BL-625: a redelivered updateId in the prompts phase re-sends the first-computed message and never re-enters the orchestration', async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(followUpOpArb, { minLength: 1, maxLength: 14 }),
+      fc.array(fc.boolean(), { minLength: 1, maxLength: 6 }),
+      async (followUps, successes) => {
+        const root = mkTmpDir('sfvc-onboarder-bl625-prompts-redelivery-prop-');
+        writeOnboarderState(root, AGREED_SEED_STATE);
+        const adapters = fakeContractPhaseAdapters();
+        const { postFn, calls } = scriptedPostFn(successes);
+        const ops = [{ updateId: 0, text: 'proceed' }, ...followUps];
+
+        const firstBodyFor = new Map();
+        const deliveredFor = new Set();
+
+        for (const op of ops) {
+          const seenBefore = firstBodyFor.has(op.updateId);
+          const statesBefore = listOnboarderStates(root);
+          const callsBefore = calls.length;
+
+          await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, op.text, op.updateId, postFn, adapters);
+
+          const sent = calls.slice(callsBefore);
+          if (!seenBefore) {
+            assert.equal(sent.length, 1, 'a first-seen update is always attempted exactly once');
+            firstBodyFor.set(op.updateId, sent[0].body);
+            if (sent[0].ok) {
+              deliveredFor.add(op.updateId);
+            }
+            continue;
+          }
+
+          if (deliveredFor.has(op.updateId)) {
+            assert.equal(sent.length, 0, `updateId ${op.updateId} already landed - a redelivery must send nothing at all`);
+          } else {
+            assert.equal(sent.length, 1, `updateId ${op.updateId} never landed - a redelivery must retry the send`);
+            assert.equal(
+              sent[0].body,
+              firstBodyFor.get(op.updateId),
+              `updateId ${op.updateId} must re-send the message computed on the FIRST attempt, never a freshly recomputed one`
+            );
+            if (sent[0].ok) {
+              deliveredFor.add(op.updateId);
+            }
+          }
+          assert.deepEqual(
+            listOnboarderStates(root),
+            statesBefore,
+            `updateId ${op.updateId} is a redelivery - it must not re-enter the orchestration or mutate any target's state`
+          );
+        }
+        // Sanity on the reachability floor itself: op 0 must actually have
+        // left contract-agreed (proving 'propose-prompts' really ran).
+        const finalStates = listOnboarderStates(root);
+        assert.equal(finalStates.length, 1);
+        assert.equal(finalStates[0].phase, 'prompts-proposed', 'the plateau must land on prompts-proposed and never advance further by construction');
       }
     ),
     { numRuns: 120 }

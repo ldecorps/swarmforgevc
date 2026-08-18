@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# BL-891: handoffd.bb's consolidated poll loop now also reconciles the
-# master checkout's OWN `main` ref against origin, sharing the same cadence
-# as every other *-sweep! above it (mirror-image direction of BL-356's
-# push-sweep!). The DECISION/STATE logic itself (gating on a clean tree,
-# self-healing surfaced-once state) is exhaustively covered by
+# BL-891: handoffd.bb's consolidated poll loop reconciles the master
+# checkout's OWN `main` ref against origin, sharing the same cadence as
+# every other *-sweep! above it (mirror-image direction of BL-356's
+# push-sweep!). BL-919 narrowed the gate: a dirty tree only blocks when a
+# dirty path actually overlaps a path the incoming merge would change.
+#
+# The DECISION/STATE logic itself (gating on dirty/merge-changed path
+# overlap, self-healing surfaced-once state) is exhaustively covered by
 # master_main_reconcile_lib_test_runner.bb (pure unit tests) and
-# master_main_reconcile_lib_property_runner.bb (the ticket's 2 declared
-# invariants, generator-based); this test only proves the real daemon
-# reaches and fires master-main-reconcile-sweep! against a REAL git repo
-# and a REAL local remote, on its own cadence - same "one real wiring
-# proof, not re-run per scenario" posture as
-# test_handoffd_push_sweep_wiring.sh, walking the ticket's own QA
-# end-to-end procedure (a)-(d) against real git.
+# master_main_reconcile_lib_property_runner.bb (BL-891's and BL-919's own
+# declared invariants, generator-based); this test only proves the real
+# daemon reaches and fires master-main-reconcile-sweep! against a REAL git
+# repo and a REAL local remote, on its own cadence - same "one real wiring
+# proof, not re-run per scenario" posture as test_handoffd_push_sweep_
+# wiring.sh, walking BL-919's own qa_e2e_procedure (a)-(f) against real git.
 
 set -euo pipefail
 
@@ -84,7 +86,7 @@ TMUX
 chmod +x "$FAKE_BIN/tmux"
 
 # ── ROOT must start with a CLEAN working tree once the daemon comes up -
-#    this sweep judges "clean" via `git status --porcelain`, so the daemon's
+#    this sweep judges dirt via `git status --porcelain`, so the daemon's
 #    own runtime scaffolding (.swarmforge/ state, the fixture's fake tmux
 #    socket/bin) must be gitignored exactly like the real repo's own
 #    .gitignore already does, and the briefing file committed, or every
@@ -110,8 +112,9 @@ git clone --quiet --branch main "$REMOTE" "$CLONE"
 git -C "$CLONE" config user.email "qa@example.com"
 git -C "$CLONE" config user.name "QA"
 
-land_on_origin() {
+land_new_file() {
   local marker="$1"
+  git -C "$CLONE" pull -q origin main
   echo "$marker" > "$CLONE/$marker.txt"
   git -C "$CLONE" add "$marker.txt"
   git -C "$CLONE" commit -q -m "QA lands $marker"
@@ -145,15 +148,33 @@ wait_for_file() {
   return 1
 }
 
-# ── scenario 04: the drift check is observable while divergence is small ──
+# Content-based, unlike wait_for_log: "master-main-reconcile reconciled" is
+# a generic log line that recurs across every scenario in this file, so
+# waiting for its mere PRESENCE in the accumulated log is a false-pass once
+# any earlier scenario has already reconciled once. Waiting for the actual
+# observable outcome (the file containing what only a successful reconcile
+# could have put there) is unambiguous regardless of scenario order.
+wait_for_content() {
+  local path="$1" pattern="$2" timeout_s="$3" waited=0
+  while (( waited < timeout_s * 4 )); do
+    [[ -f "$path" ]] && grep -q "$pattern" "$path" 2>/dev/null && return 0
+    sleep 0.25
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# ── scenario 04 (qa_e2e_procedure not applicable - inherited from BL-891):
+#    the drift check is observable while divergence is small ─────────────
 wait_for_log "master-main-reconcile drift ahead=[0-9]* behind=0" 20 \
   || fail "expected the reconcile sweep to log the ahead/behind drift within 20s; log: $(cat "$LOG_FILE" 2>/dev/null)"
 pass "the drift check reports both ahead and behind counts before it accumulates"
 
-# ── scenario 01: a landed commit reaches the master checkout's main ref,
-#    ROOT has no local-only commits yet, so this must be a pure fast-
-#    forward - ROOT's main lands EXACTLY on the same sha origin has. ──────
-LANDED_1_SHA="$(land_on_origin landed-1)"
+# ── scenario 01 (qa_e2e_procedure d): a landed commit reaches the master
+#    checkout's main ref, ROOT has no local-only commits yet, so this must
+#    be a pure fast-forward - ROOT's main lands EXACTLY on the same sha
+#    origin has. ─────────────────────────────────────────────────────────
+LANDED_1_SHA="$(land_new_file landed-1)"
 
 wait_for_log "master-main-reconcile reconciled" 20 \
   || fail "the reconcile sweep never logged a successful reconcile within 20s; log: $(cat "$LOG_FILE" 2>/dev/null)"
@@ -170,22 +191,22 @@ grep -q "master-main-reconcile-sweep-error" "$LOG_FILE" && fail "the reconcile s
 pass "the reconcile sweep ran without throwing"
 
 # ── an already-published main stays quiet on a later cycle (idempotent
-#    re-run, the ticket's own QA procedure (c)) ────────────────────────────
+#    re-run, the ticket's own QA procedure (d)) ────────────────────────────
 wait_for_log "master-main-reconcile up-to-date" 15 \
   || fail "expected a later sweep to report up-to-date once reconciled, got: $(cat "$LOG_FILE")"
 pass "a later sweep sees the reconciled state and changes nothing further"
 
-# ── scenario 02: local-only bookkeeping commits are reconciled, not
-#    discarded - ROOT gets its OWN local-only commit (coordinator/specifier
-#    bookkeeping) while origin independently lands another commit, so the
-#    two refs genuinely DIVERGE (both ahead and behind), exactly like the
-#    ticket's own measured incident. ────────────────────────────────────────
+# ── scenario 02 (qa_e2e_procedure d): local-only bookkeeping commits are
+#    reconciled, not discarded - ROOT gets its OWN local-only commit
+#    (coordinator/specifier bookkeeping) while origin independently lands
+#    another commit, so the two refs genuinely DIVERGE (both ahead and
+#    behind), exactly like the ticket's own measured incident. ────────────
 echo "bookkeeping" > "$ROOT/backlog/done/BL-bookkeeping-test.yaml"
 git -C "$ROOT" add backlog/done/BL-bookkeeping-test.yaml
 git -C "$ROOT" commit -q -m "coordinator bookkeeping, local-only"
 LOCAL_ONLY_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 
-LANDED_2_SHA="$(land_on_origin landed-2)"
+LANDED_2_SHA="$(land_new_file landed-2)"
 
 wait_for_file "$ROOT/landed-2.txt" 20 \
   || fail "expected ROOT's working tree to contain landed-2 after the divergence was reconciled; log: $(cat "$LOG_FILE" 2>/dev/null)"
@@ -200,40 +221,137 @@ git -C "$ROOT" rev-parse -q --verify main^2 > /dev/null \
   || fail "expected reconciling a genuine divergence to produce a real merge commit (2 parents), main has only 1"
 pass "reconciling a genuine divergence produces a real merge commit, never a rewrite of local history"
 
-# ── scenario 03: a master checkout that cannot be reconciled cleanly is
-#    surfaced, never forced - a dirty working tree blocks the sweep
-#    entirely, leaving the ref exactly where it was. ────────────────────────
-LANDED_3_SHA="$(land_on_origin landed-3)"
-ROOT_HEAD_BEFORE_DIRTY="$(git -C "$ROOT" rev-parse main)"
-echo "uncommitted change" >> "$ROOT/seed.txt"
+# ── scenario A (qa_e2e_procedure 1, the ticket's own existence proof): a
+#    dirty tree whose dirty path does NOT overlap what the incoming merge
+#    would change reconciles exactly like a clean tree would - the whole
+#    point of BL-919. seed.txt is untouched by landed-3 (a new file), so
+#    dirtying seed.txt must NOT block. Dirtied BEFORE landing (not after) so
+#    there is no window where the daemon could observe a still-clean tree
+#    and reconcile before this scenario's own dirt is even in place. ──────
+echo "root-local-dirty-edit" >> "$ROOT/seed.txt"
+SEED_DIRTY_CONTENT_BEFORE="$(cat "$ROOT/seed.txt")"
+LANDED_3_SHA="$(land_new_file landed-3)"
 
-wait_for_log "master-main-reconcile dirty-blocked" 20 \
-  || fail "expected the reconcile sweep to log dirty-blocked within 20s once the working tree was dirtied; log: $(cat "$LOG_FILE" 2>/dev/null)"
-wait_for_log "master-main-reconcile-surfaced BL-891.*dirty" 10 \
-  || fail "expected a surfaced note naming the dirty-tree reason; log: $(cat "$LOG_FILE" 2>/dev/null)"
-pass "a dirty working tree blocks reconciliation and is surfaced with its reason"
+wait_for_file "$ROOT/landed-3.txt" 20 \
+  || fail "expected ROOT's working tree to contain landed-3 - a non-overlapping dirty tree must still reconcile; log: $(cat "$LOG_FILE" 2>/dev/null)"
+git -C "$ROOT" merge-base --is-ancestor "$LANDED_3_SHA" main \
+  || fail "expected landed-3 to be reachable from ROOT's main; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "a dirty tree whose dirty path does not overlap the incoming merge reconciles (BL-919's own existence proof)"
+
+SEED_DIRTY_CONTENT_AFTER="$(cat "$ROOT/seed.txt")"
+[[ "$SEED_DIRTY_CONTENT_BEFORE" == "$SEED_DIRTY_CONTENT_AFTER" ]] \
+  || fail "expected the non-overlapping dirty file to stay byte-identical through the reconcile, was [$SEED_DIRTY_CONTENT_BEFORE] now [$SEED_DIRTY_CONTENT_AFTER]"
+SEED_STATUS="$(git -C "$ROOT" status --porcelain -- seed.txt)"
+[[ -n "$SEED_STATUS" ]] \
+  || fail "expected seed.txt's uncommitted dirt to still show in git status after reconciling (never silently committed or discarded)"
+pass "the non-overlapping dirty file survives the reconcile byte-identical and still uncommitted"
+
+git -C "$ROOT" checkout -q -- seed.txt
+
+# ── scenario B (qa_e2e_procedure 2): a dirty path that the incoming merge
+#    DOES change blocks reconciliation entirely, and the surfaced note
+#    names the offending path. Dirtied BEFORE landing (not after), same
+#    race-window reasoning as scenario A. ──────────────────────────────────
+ROOT_HEAD_BEFORE_OVERLAP="$(git -C "$ROOT" rev-parse main)"
+echo "root-conflicting-local-edit" >> "$ROOT/seed.txt"
+
+git -C "$CLONE" pull -q origin main
+echo "origin-changes-seed" >> "$CLONE/seed.txt"
+git -C "$CLONE" add seed.txt
+git -C "$CLONE" commit -q -m "QA lands landed-4 (modifies seed.txt)"
+git -C "$CLONE" push -q origin main
+LANDED_4_SHA="$(git -C "$CLONE" rev-parse HEAD)"
+
+wait_for_log "master-main-reconcile-surfaced BL-891.*seed.txt" 20 \
+  || fail "expected a surfaced note naming seed.txt as the overlapping dirty path; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "a dirty path the incoming merge also changes blocks reconciliation, and the surfaced note names it"
 
 # Give the daemon a couple more full cadence ticks to (wrongly) act, then
 # confirm it genuinely never did - not just that it hasn't YET.
 sleep 3
-ROOT_HEAD_AFTER_DIRTY="$(git -C "$ROOT" rev-parse main)"
-[[ "$ROOT_HEAD_AFTER_DIRTY" == "$ROOT_HEAD_BEFORE_DIRTY" ]] \
-  || fail "expected ROOT's main to stay untouched while dirty, was $ROOT_HEAD_BEFORE_DIRTY now $ROOT_HEAD_AFTER_DIRTY"
-DIRTY_STATUS="$(git -C "$ROOT" status --porcelain)"
-[[ -n "$DIRTY_STATUS" ]] \
-  || fail "expected the uncommitted change to still be present (never reset/stashed away)"
-grep -q "master-main-reconcile conflict" "$LOG_FILE" \
-  && fail "a dirty tree must never even attempt a merge, but a conflict outcome was logged: $(cat "$LOG_FILE")"
-pass "no reset, stash, or force-update was ever performed while the tree was dirty - left byte-identical"
+ROOT_HEAD_AFTER_OVERLAP="$(git -C "$ROOT" rev-parse main)"
+[[ "$ROOT_HEAD_AFTER_OVERLAP" == "$ROOT_HEAD_BEFORE_OVERLAP" ]] \
+  || fail "expected ROOT's main to stay untouched while overlap-blocked, was $ROOT_HEAD_BEFORE_OVERLAP now $ROOT_HEAD_AFTER_OVERLAP"
+grep -q "master-main-reconcile-sweep-error" "$LOG_FILE" && fail "the reconcile sweep threw while overlap-blocked; got: $(cat "$LOG_FILE")"
+LOCAL_EDIT_STILL_PRESENT="$(grep -c "root-conflicting-local-edit" "$ROOT/seed.txt" || true)"
+[[ "$LOCAL_EDIT_STILL_PRESENT" -ge 1 ]] \
+  || fail "expected the overlapping local edit to survive untouched while blocked (never reset/stashed away)"
+pass "an overlapping dirty path is never touched while blocked - no reset, stash, or force-update, no merge attempted"
 
-# ── resolving the dirty tree lets a later tick reconcile normally
+# ── resolving the overlap lets a later tick reconcile normally
 #    (self-healing, not permanently stuck) ─────────────────────────────────
 git -C "$ROOT" checkout -q -- seed.txt
 
-wait_for_file "$ROOT/landed-3.txt" 20 \
-  || fail "expected reconciliation to resume once the working tree was clean again; log: $(cat "$LOG_FILE" 2>/dev/null)"
-git -C "$ROOT" merge-base --is-ancestor "$LANDED_3_SHA" main \
-  || fail "expected the third landed commit $LANDED_3_SHA to reach ROOT's main once unblocked"
-pass "reconciliation self-heals once the working tree is clean again, without any further landing"
+wait_for_content "$ROOT/seed.txt" "origin-changes-seed" 20 \
+  || fail "expected reconciliation to resume once the overlapping path was clean again; log: $(cat "$LOG_FILE" 2>/dev/null)"
+git -C "$ROOT" merge-base --is-ancestor "$LANDED_4_SHA" main \
+  || fail "expected landed-4 (the seed.txt-modifying commit) to reach ROOT's main once unblocked"
+pass "reconciliation self-heals once the overlapping path is clean again, without any further landing"
+
+# ── scenario C (qa_e2e_procedure 3): an untracked file sitting exactly
+#    where the incoming merge would create one blocks reconciliation rather
+#    than letting a real `git merge` fail mid-operation. Created BEFORE
+#    landing (not after), same race-window reasoning as scenario A. ───────
+ROOT_HEAD_BEFORE_CLASH="$(git -C "$ROOT" rev-parse main)"
+echo "local-untracked-content" > "$ROOT/clash.txt"
+
+git -C "$CLONE" pull -q origin main
+echo "origin-clash-content" > "$CLONE/clash.txt"
+git -C "$CLONE" add clash.txt
+git -C "$CLONE" commit -q -m "QA lands landed-5 (adds clash.txt)"
+git -C "$CLONE" push -q origin main
+LANDED_5_SHA="$(git -C "$CLONE" rev-parse HEAD)"
+
+wait_for_log "master-main-reconcile-surfaced BL-891.*clash.txt" 20 \
+  || fail "expected a surfaced note naming clash.txt as the overlapping untracked path; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "an untracked file clashing with a path the incoming merge would create blocks reconciliation, named in the surfaced note"
+
+sleep 3
+ROOT_HEAD_AFTER_CLASH="$(git -C "$ROOT" rev-parse main)"
+[[ "$ROOT_HEAD_AFTER_CLASH" == "$ROOT_HEAD_BEFORE_CLASH" ]] \
+  || fail "expected ROOT's main to stay untouched while the untracked clash was blocked, was $ROOT_HEAD_BEFORE_CLASH now $ROOT_HEAD_AFTER_CLASH"
+CLASH_CONTENT="$(cat "$ROOT/clash.txt")"
+[[ "$CLASH_CONTENT" == "local-untracked-content" ]] \
+  || fail "expected the untracked clash.txt to stay exactly as the local file left it, got [$CLASH_CONTENT]"
+pass "an untracked-file clash is refused up front rather than letting a real git merge fail mid-operation"
+
+rm "$ROOT/clash.txt"
+
+wait_for_file "$ROOT/clash.txt" 20 \
+  || fail "expected reconciliation to resume once the untracked clash was removed; log: $(cat "$LOG_FILE" 2>/dev/null)"
+git -C "$ROOT" merge-base --is-ancestor "$LANDED_5_SHA" main \
+  || fail "expected landed-5 (the clash.txt-adding commit) to reach ROOT's main once unblocked"
+CLASH_CONTENT_AFTER="$(cat "$ROOT/clash.txt")"
+[[ "$CLASH_CONTENT_AFTER" == "origin-clash-content" ]] \
+  || fail "expected clash.txt to contain origin's content once the clash-blocked reconcile self-healed, got [$CLASH_CONTENT_AFTER]"
+pass "reconciliation self-heals once the untracked clash is removed, without any further landing"
+
+# ── scenario D (qa_e2e_procedure 5): a genuine content conflict on an
+#    otherwise-clean tree aborts the merge and leaves no in-progress merge
+#    state - `git status` shows nothing unusual. ──────────────────────────
+echo "root-conflict-line" >> "$ROOT/seed.txt"
+git -C "$ROOT" add seed.txt
+git -C "$ROOT" commit -q -m "root-only conflicting edit to seed.txt"
+ROOT_HEAD_BEFORE_CONFLICT="$(git -C "$ROOT" rev-parse main)"
+
+git -C "$CLONE" pull -q origin main
+echo "origin-conflict-line" >> "$CLONE/seed.txt"
+git -C "$CLONE" add seed.txt
+git -C "$CLONE" commit -q -m "origin-only conflicting edit to seed.txt"
+git -C "$CLONE" push -q origin main
+
+wait_for_log "master-main-reconcile conflict" 20 \
+  || fail "expected a genuine content conflict on an otherwise-clean tree to be attempted and reported; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "a genuine content conflict on an otherwise-clean tree is attempted (never pre-emptively refused) and reported"
+
+ROOT_HEAD_AFTER_CONFLICT="$(git -C "$ROOT" rev-parse main)"
+[[ "$ROOT_HEAD_AFTER_CONFLICT" == "$ROOT_HEAD_BEFORE_CONFLICT" ]] \
+  || fail "expected ROOT's main to stay unchanged after an aborted conflicting merge, was $ROOT_HEAD_BEFORE_CONFLICT now $ROOT_HEAD_AFTER_CONFLICT"
+[[ ! -f "$ROOT/.git/MERGE_HEAD" ]] \
+  || fail "expected the aborted merge to leave no MERGE_HEAD - checkout left mid-merge"
+CONFLICT_STATUS="$(git -C "$ROOT" status --porcelain)"
+[[ -z "$CONFLICT_STATUS" ]] \
+  || fail "expected the working tree to be exactly as clean as it was before the aborted conflict, got: $CONFLICT_STATUS"
+pass "an aborted merge conflict leaves no in-progress merge state and a checkout exactly as it found it"
 
 echo "ALL SCENARIOS PASS"

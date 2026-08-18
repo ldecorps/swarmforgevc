@@ -1,6 +1,108 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-916: swarm stamp-off certifying the
+**Last Updated:** August 18, 2026 (BL-922: a block-scalar `acceptance:`
+field (`acceptance: |` followed by an indented body) collapsed to the bare
+indicator `"|"` under `pre_qa_gate_gather_lib.bb`'s `read-yaml-field`,
+which reads only the field line's own tail — so a ticket naming a real
+`specs/features/*.feature` path inside the block body passed the BL-880
+pointer gate silently at every pre-QA hop (deliberately excluded there as
+QA-edge-only) and was refused only at the documenter→QA edge by Check D,
+after coder, cleaner, architect, hardender, and documenter had all already
+worked it. `backlog_hygiene_lib.bb` gains a new `unreadable-acceptance`
+violation — a block-scalar tail (`acceptance_pointer_gate_lib.bb`'s
+now-exported `block-scalar-residue?`, consulted rather than restated, per
+BL-897) whose indented body names a real feature-file path — surfaced at
+mint time through the specifier's existing per-ticket hygiene gate and the
+repo-wide `backlog_epic_milestone_audit.bb` (which previously printed only
+two hardcoded violation buckets while `all-clean?` counted every kind, so
+a new kind alone would have exited 1 printing nothing). A block scalar
+naming no feature file — an honest not-yet-drafted placeholder — is never
+reported; that is BL-626's territory. Measured live: 53 tickets carried a
+block-scalar `acceptance:`, 12 of them armed this way (BL-514, BL-624, and
+BL-625 were the first three live occurrences); all eleven still-open ones
+were repaired in the same pass to a single-line pointer, prose moved to a
+sibling field per the `qa_e2e:` precedent. See the new "Mint-Time
+Unreadable-Acceptance Gate (BL-922)" section in
+`swarmforge/handoff-protocol.md`.); Previously August 18, 2026 (BL-921:
+`dormant-mailbox-chase-action` and `should-rotate-resident?`
+(`swarmforge/scripts/mono_router_lib.bb`) no longer trust the
+`.swarmforge/mono-router-active-role` marker alone — `:wake-resident` and
+`:already-active` now additionally require a live tmux probe of the
+resident pane's own `#{pane_start_command}` (`resident-live-role`,
+`swarmforge/scripts/handoffd.bb`) to agree with the target role, via the
+new pure `live-role-agrees?`, which treats an identity that cannot be read
+(nil, blank, or an unparseable pane command) as divergence, never as
+agreement. Measured live on 2026-08-18: the marker read `cleaner` from
+~03:48Z while the pane ran `coder.sh`, producing 535 identical false wakes
+for `cleaner` in one day, each with a real handoff behind it, while the
+coder persona answered `NO_TASK` to its own empty mailbox and cleaner's
+actual mail sat untouched. The identity check only ever tightens the gate
+— every case that resolved to `:wake-resident` or `:already-active` with
+the marker and the live identity in agreement is unchanged; a diverged or
+unreadable identity now takes the pre-existing `:rotate` / respawn path
+instead of a false wake or a wrongly-refused rotate. Deliberately out of
+scope: *why* the marker diverged in the first place (points at the boot
+path, `resolve-boot-role`/BL-648, not rotation — tracked separately if it
+proves real). See the new "Mono-router chase verifies live pane identity
+(BL-921)" section in `swarmforge/handoff-protocol.md`.); Previously
+August 18, 2026 (BL-913: a
+`PreToolUse` hook now pins every role's Bash command to that role's own
+worktree and heals one recoverable shell miss in silence, so a stale/wrong
+pane cwd never reaches the model as a failure to apologize for — slice A of
+the `tool-miss-auto-heal` epic (BL-912 tracks the catalog, rotation-pin
+cleanup, apology-ban narration, and the Cursor surface as later slices).
+`tool_miss_heal_hook.bb`, scoped to the `Bash` matcher only and wired per
+role at `write_claude_settings_file` (`swarmforge.sh`), rewrites a command
+into a self-healing bash wrapper (`tool_miss_heal_lib.bb`'s pure
+`build-healing-wrapper-command`) that runs the original command once, and
+only on failure classifies the output against a closed, ordered taxonomy
+(`wrong-cwd`, `wrong-surface`, `missing-root-argv`, else `real-failure`),
+re-running from a healed environment at most once for the first three and
+never for the fourth — an `if`/`elif` chain, so at most one heal can ever
+fire, structurally. The pin comes from `SWARMFORGE_ROLE_WORKTREE`, exported
+by the launch script from the same `WORKTREE_PATHS` array that generates
+the role's own `cd` line, never the hook's own `$PWD`. The model observes
+exactly one result per command: the happy path is untouched, a healed miss
+shows only the healed output (the first failed attempt's stderr is never
+surfaced), a still-broken heal shows the second failure once, and a real
+failure is returned exactly as it happened. Fails open throughout — a
+non-Bash tool call, an unknown pin, or a hook bug all leave the command
+untouched rather than blocking it. See the new
+[runbook](../how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md).);
+Previously August 18, 2026 (BL-625: the Onboarder's slice 3 closes
+the onboarding state machine past `contract-agreed` — `proceed` runs the
+existing BL-269 prompts CLI, committing and pushing the proposed project/
+engineering prompts and advancing to `prompts-proposed`; a further
+`proceed` posts the exact `./swarm <path> --pack mono-router` launch
+command for the target host (never claiming to launch or observe it
+directly) and advances to `ready-to-launch`; a final `proceed` marks the
+target `done` with a completion summary, and the single Onboarding topic
+is reused for the next target rather than closed. New declared invariant:
+a plain reply unattributable to exactly one in-flight target among two or
+more concurrent ones is refused rather than silently applied to whichever
+was last touched. See the updated "The Onboarder, slice 3" section below.);
+Previously August 18, 2026 (BL-919: the master-main reconcile sweep's
+dirty gate no longer blocks on any working-tree dirt at all — only when a
+dirty (or untracked) path actually overlaps a path the incoming
+`origin/main` merge would itself write to. Before this, the sweep read
+`git status --porcelain` as a single clean/dirty boolean, so the routine
+in-progress backlog/spec editing the coordinator and specifier do directly
+in the master checkout parked reconciliation even when a plain `git merge`
+would have succeeded untouched — the trigger case: local `main` fell 24
+ahead / 84 behind `origin/main` after a QA land, the checkout was dirty on
+unrelated paths, and only a human running the merge by hand (successfully,
+dirty files untouched) revealed the gate was wider than git itself.
+`reconcile-decision` (`swarmforge/scripts/master_main_reconcile_lib.bb`)
+now takes the dirty-path set and the merge-changed-path set as real inputs
+instead of a bare boolean, computes their intersection, and blocks only on
+a non-empty overlap or an uncertain computation (fails closed, per the
+ticket's own directive) — every working-tree state the old gate let
+through still reconciles (invariant 3), so this is a strict narrowing, not
+a behavior change to the merge itself. The surfaced note now names the
+offending path (or a count, past the first) instead of just saying "dirty
+tree". See the updated
+[runbook](../how-to/BL-891-master-main-reconcile-sweep.md).); Previously
+August 18, 2026 (BL-916: swarm stamp-off certifying the
 already-landed Bubble hotfix `8da0f52e59` (`0.3.17-open-talk`,
 `versionCode` 33) — a cold-start tap on the bubble drew the disc but
 silently did nothing, because `OverlayService.openTalkPanel()` started
@@ -2199,7 +2301,7 @@ watchdog would otherwise say.
 - **BL-823** — Swarm Availability Ledger: records pause and stop-to-start intervals; BL-650's `evaluate-effective-age` subtracts them (see "Effective Age and Provider-Outage Evidence" above)
 - **BL-840** — Provider-Outage Evidence Reaches Flow Watchdog: supplies BL-650's previously-unwired provider-outage adapter with a real production evidence source (see above)
 - **BL-839** — Master-Checkout Drift Alarm: a different sweep in the same `handoffd.bb` cadence, reusing this same Telegram Operator outbox, but alarming on a different question (does the master checkout's own working tree still match `main`, not parcel age) — see [the runbook](../how-to/BL-839-master-checkout-drift-alarm.md)
-- **BL-891** — Master-Main Reconcile Sweep: another sweep in the same cadence, mirroring BL-356's push-sweep in the opposite direction — merges `origin/main` forward into the master checkout's local `main` ref when the tree is clean, surfacing a `note` to the coordinator (not this Telegram alarm channel) when it can't — see [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md)
+- **BL-891** — Master-Main Reconcile Sweep: another sweep in the same cadence, mirroring BL-356's push-sweep in the opposite direction — merges `origin/main` forward into the master checkout's local `main` ref, surfacing a `note` to the coordinator (not this Telegram alarm channel) only when a dirty or untracked path actually overlaps a path the incoming merge would change (BL-919 narrowed this from a blanket any-dirt gate) — see [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md)
 
 ## Per-Agent Lifecycle Control
 
@@ -2982,9 +3084,11 @@ A separate, higher-level contract sits above these two files and above the per-t
 
 **The front desk's own replies follow the agreed verbosity too, not just the generated agent prompts (BL-383).** BL-382 feeds the negotiated verbosity into the agents' generated `project.prompt`/`engineering.prompt` — useful, but not what the human actually reads; the messages he reads are the front-desk Operator's own replies on Telegram, a different codebase (Babashka, not TypeScript), so this is its own slice reading the same field BL-382 defines (`depends_on: [BL-382]`, never a second vocabulary). `operator_lib.bb`'s `front-desk-reply-prompt` (the pure function that composes the front-desk Operator's whole self-contained prompt, BL-334's `--tools ""` boundary) now takes an additional `:verbosity` key and prepends a `Be <verbosity> in your responses and explanations.` directive — the exact same wording `promptProposal.ts`'s own instruction uses, so the negotiated term reads as one property felt in two places, not two independently-invented ones. `resolve-front-desk-verbosity` re-implements BL-382's closed three-value set (`concise`/`normal`/`detailed`, defaulting to `normal`) as its own small literal — a Babashka script can't import a TypeScript constant, and a three-value set isn't worth a cross-language sharing mechanism — but is written to never accept a raw value BL-382's own `resolveVerbosity` would reject; an absent or unrecognized term both resolve to the same default. `compose-front-desk-reply-prompt` is the one seam that reads a target's raw `.swarmforge/contract.yaml` text and builds the full prompt from it; `operator_runtime.bb`'s real front-desk launch path calls this same seam, and so does this feature's own acceptance steps, so the acceptance run proves the live composition rather than a re-derivation that could silently drift from it. The contract file is re-read fresh on every front-desk wake — never cached — which is what makes a re-negotiated verbosity take effect on the very next reply with no swarm restart: the front-desk Operator is already disposable and re-prompted per event (BL-334), so this restart-free property falls out of the existing design rather than needing new machinery, but is pinned by its own scenario precisely because a build that read the value once at launch and cached it would otherwise pass every other scenario while silently breaking that property.
 
-**The Onboarder: a standing conversational agent guiding a human through onboarding, starting with prerequisites (BL-590, slice 1 of 3).** Sections above ship a full onboarding toolchain (survey/propose/negotiate/provision-channel/relay/gate) but no orchestrator and no persona — a human ran each CLI by hand, in order. This slice is the first of three that close that gap: a standing "Onboarding" topic (`ONBOARDING_SUBJECT_ID`, `decideEnsureOnboardingTopicAction`, `extension/src/tools/telegramTopicDecisions.ts`) in the PRIMARY swarm's own group, ensured-or-reused exactly like every other standing topic (Backlog, Control, Babysitter) and **never per-target** — one topic reused across every onboarding, since per-target identity lives in the onboarder's own state, not the topic. Inbound routing (`decideOnboardingReplyAction`, `telegramFrontDeskBotCore.ts`) is attempted last of all the topic side-channels and never reaches the front-desk SUP path. The onboarder does **not** run a second Telegram poller — unlike the per-target negotiation relay (BL-381), its message handling runs in-process inside the front-desk bot's own single poller (`attemptOnboardingTopicDelivery`); `onboarder_supervisor.bb` + `launch_onboarder.sh` (registered in `start_ancillary_services.sh`/`stop_ancillary_services.sh`, mirroring `negotiation_relay_supervisor.bb`'s spawn/crash-detect/bounded-restart shape) supervise only an outbound topic-*reconcile* loop, which is not subject to the one-poller-per-token restriction because it only calls outbound Bot API methods. The prerequisites state machine (`extension/src/onboarding/onboarderState.ts`, pure and clock-injected) covers `needs-target → checking-prerequisites → prerequisites-ready`: posting a repo URL opens (or, via `findInFlightStateForTarget`, resumes) a per-target state, keyed by `normalizeTargetRepoUrl` so scheme/`.git`/trailing-slash aliases of the same target collapse onto the same in-flight onboarding rather than silently overwriting verified progress with a fresh one (an architect-bounced defect, fixed). Five guide-and-verify steps — `toolchain`, `github-access`, `fork-clone`, `target-repo`, `bot-token` — each carry the exact command for the target host and name the verification the human must paste back (`PREREQUISITE_STEPS`); a step advances only on a passing `verifyPrerequisiteStep` match against required/failure markers, never on a bare completion claim (`isBareDoneClaim`, whole-message-anchored so a real verification paste is never swept in). The `bot-token` step explicitly instructs a NEW, dedicated token and forbids reusing the primary's (the BL-622 one-token-one-poller invariant, enforced here at guidance level). `pause`/`proceed` controls (`classifyControl`) hold and resume the flow; state persists per target (`onboarderStateStore.ts`, atomic write, one file per target keyed by a normalized-URL slug + digest) so an onboarder restart resumes at the same step with prior verifications intact. Declared invariant (BL-633): every durable write is idempotent under redelivery of the same Telegram update — proven by a coder-authored property test (architect bounce, non-vacuous generator reach) after four of the slice's six architect send-backs circled exactly this property without it ever being stated. **Scope, stated plainly:** this slice ends at `prerequisites-ready` and announces that the survey phase comes next; slice 2 (BL-624, immediately below) is what actually runs survey/propose/negotiate/gate from there. Neither slice claims to launch a swarm on the target host, which the human still does by hand per the human ruling above (slice 3, BL-625, is the prompts/launch handoff, still open).
+**The Onboarder: a standing conversational agent guiding a human through onboarding, starting with prerequisites (BL-590, slice 1 of 3).** Sections above ship a full onboarding toolchain (survey/propose/negotiate/provision-channel/relay/gate) but no orchestrator and no persona — a human ran each CLI by hand, in order. This slice is the first of three that close that gap: a standing "Onboarding" topic (`ONBOARDING_SUBJECT_ID`, `decideEnsureOnboardingTopicAction`, `extension/src/tools/telegramTopicDecisions.ts`) in the PRIMARY swarm's own group, ensured-or-reused exactly like every other standing topic (Backlog, Control, Babysitter) and **never per-target** — one topic reused across every onboarding, since per-target identity lives in the onboarder's own state, not the topic. Inbound routing (`decideOnboardingReplyAction`, `telegramFrontDeskBotCore.ts`) is attempted last of all the topic side-channels and never reaches the front-desk SUP path. The onboarder does **not** run a second Telegram poller — unlike the per-target negotiation relay (BL-381), its message handling runs in-process inside the front-desk bot's own single poller (`attemptOnboardingTopicDelivery`); `onboarder_supervisor.bb` + `launch_onboarder.sh` (registered in `start_ancillary_services.sh`/`stop_ancillary_services.sh`, mirroring `negotiation_relay_supervisor.bb`'s spawn/crash-detect/bounded-restart shape) supervise only an outbound topic-*reconcile* loop, which is not subject to the one-poller-per-token restriction because it only calls outbound Bot API methods. The prerequisites state machine (`extension/src/onboarding/onboarderState.ts`, pure and clock-injected) covers `needs-target → checking-prerequisites → prerequisites-ready`: posting a repo URL opens (or, via `findInFlightStateForTarget`, resumes) a per-target state, keyed by `normalizeTargetRepoUrl` so scheme/`.git`/trailing-slash aliases of the same target collapse onto the same in-flight onboarding rather than silently overwriting verified progress with a fresh one (an architect-bounced defect, fixed). Five guide-and-verify steps — `toolchain`, `github-access`, `fork-clone`, `target-repo`, `bot-token` — each carry the exact command for the target host and name the verification the human must paste back (`PREREQUISITE_STEPS`); a step advances only on a passing `verifyPrerequisiteStep` match against required/failure markers, never on a bare completion claim (`isBareDoneClaim`, whole-message-anchored so a real verification paste is never swept in). The `bot-token` step explicitly instructs a NEW, dedicated token and forbids reusing the primary's (the BL-622 one-token-one-poller invariant, enforced here at guidance level). `pause`/`proceed` controls (`classifyControl`) hold and resume the flow; state persists per target (`onboarderStateStore.ts`, atomic write, one file per target keyed by a normalized-URL slug + digest) so an onboarder restart resumes at the same step with prior verifications intact. Declared invariant (BL-633): every durable write is idempotent under redelivery of the same Telegram update — proven by a coder-authored property test (architect bounce, non-vacuous generator reach) after four of the slice's six architect send-backs circled exactly this property without it ever being stated. **Scope, stated plainly:** this slice ends at `prerequisites-ready` and announces that the survey phase comes next; slice 2 (BL-624, immediately below) is what actually runs survey/propose/negotiate/gate from there. Neither slice claims to launch a swarm on the target host, which the human still does by hand per the human ruling above (slice 3, BL-625, immediately below, is the prompts/launch handoff — the state machine's terminal slice).
 
 **The Onboarder, slice 2: survey through an agreed, gated contract on the onboarder's own clone (BL-624, slice 2 of 3).** Picks up exactly where slice 1 leaves off — `prerequisites-ready` — and drives the do-for-you phase to `contract-agreed`, all inside the same Onboarding topic and the same per-target state slice 1 already persists, through a small control vocabulary this slice adds: `proceed` (start the survey, or later agree the contract), `show-me` (post the current proposed contract, no state change) and `change-this <objection>` (a real negotiation object round). `contractPhaseRelay.ts` is the pure decision (`decideContractPhaseAction`) plus its adapter-injected execution (`runContractPhaseAction`), mirroring `negotiationTelegramRelay.ts`'s own split; `onboarderContractPhaseRouter.ts` is the thin seam that tries slice 1's existing, unmodified `handleOnboardingMessage` first and only falls through to this slice's own phases (`prerequisites-ready`/`contract-proposed`/`negotiating`; `contract-agreed` is terminal here, BL-625's territory) when nothing checking-prerequisites is active. No CLI is reimplemented: `proceed` from `prerequisites-ready` clones the target with this box's own GitHub access, runs the existing survey and `propose-onboarding-contract.js`'s own `proposeContractFromSurvey`, and posts the result; `change-this`/a later `proceed` route through the exact SAME `negotiate-onboarding-contract.ts` `runObject`/`runApprove` the CLI and Telegram-relay forms already call (via a shared `negotiationOutcomeAdapters.ts` wrapper, cleaner-deduped out of the CLI's own translation code — never a second negotiation engine, the BL-381 invariant). Agreement cascades straight into the existing fail-closed `onboarding-contract-gate.js` (`proveGateAndPush`); only once the gate allows does it commit and push the agreed contract back to the target repo and post the commit reference into the topic — `commitAndPush` has exactly one call site, reached only after the gate's own `allow`, so declared invariant 2 ("nothing is pushed before the human has agreed") holds structurally, not just by convention. Any clone/survey/propose failure leaves the state exactly at `prerequisites-ready` with a visible reason and a `Fix the issue and post "proceed" to retry.` instruction — never a silent stall or a half-advanced phase. Real adapters live in `contractPhaseRealAdapters.ts`, the one file in this slice that ever shells to git/`claude`/node (unit tests fake `ContractPhaseAdapters` entirely); it derives its clone directory under `.swarmforge/onboarding-clones/<slug>` the same way `onboarderStateStore.ts` derives its own per-target state path. **Architect bounce, same ticket:** the first cut's survey step shelled to `claude --dangerously-skip-permissions` with `cwd` set to the real target clone — the established `--dangerously-skip-permissions` precedent (`claudeCliExecutor.ts`) is safe only because its `cwd` is always a disposable scratch fixture, a condition that never held here against a live, human-supplied, potentially adversarial target repo sitting on real push credentials. Fixed by scoping the survey agent instead: `surveyCliArgs()` now passes `--allowedTools Read,Glob,Grep`, dropping the blanket permission skip outright; swept for the same defect class elsewhere and found nowhere else it applies. Declared invariant 1 (redelivery idempotency) is re-proven at this slice's own new phases by `onboarderContractPhaseRedeliveryIdempotent.property.test.js` against the real, unmodified redelivery guard.
+
+**The Onboarder, slice 3: prompts, launch handoff, done, topic reuse across targets (BL-625, slice 3 of 3 — closes the state machine).** Picks up at `contract-agreed` and drives the remaining three phases. `proceed` runs the existing BL-269 `propose-onboarding-prompts.js` building blocks via a new `proposePrompts` adapter, committing and pushing the proposed project/engineering prompts through the same `commitAndPush` adapter contract-agreed already uses, and advances to `prompts-proposed` — the real adapter persists the survey's raw facts at survey time and reads them back here rather than re-running the multi-minute `claude` CLI survey on every `proceed`, so the prompts derive from the SAME survey that produced the agreed contract's own scope. A further `proceed` at `prompts-proposed` posts the exact `./swarm <path> --pack mono-router` launch command (the path derived from the persisted `targetRepoUrl`, never hardcoded) and states plainly that the human runs it on the target host, advancing to `ready-to-launch`; any other text there — including "is it running?" — restates the same disclaimer plus the command, because the onboarder never claims to launch or observe a swarm it cannot reach. A final `proceed` at `ready-to-launch` marks the target `done` with a completion summary naming it. The single Onboarding topic is then reused for the next target's own repo URL rather than closed, matching slice 1's standing-topic design. Declared invariant 2 (new this slice): a plain reply that cannot be attributed to exactly one in-flight target among two or more concurrent ones (any state from `checking-prerequisites` through `ready-to-launch`) is refused rather than silently applied to whichever target was last touched — `pickUnambiguousInFlightState` in `onboarderContractPhaseRouter.ts`, proven by a coder-authored property test with a "most recently touched" mutant demonstrating non-vacuity. Declared invariant 1 (redelivery idempotency) is extended through these three new phases by the same property test slice 2 introduced. This closes the state machine slice 1 opened: `contract-agreed → prompts-proposed → ready-to-launch → done` (the ticket's own "gate-open" waypoint is conceptual — proving prompts committed before advancing — not a distinct persisted phase), with the topic-reuse loop back to `needs-target` for the next onboarding.
 
 ---
 

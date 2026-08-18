@@ -1245,11 +1245,31 @@ resolve_and_sweep_relaunch_resume() {
 
 write_claude_settings_file() {
   local role="$1"
+  local role_script_dir="$2"
   local settings_file="$STATE_DIR/launch/${role}.claude-settings.json"
   local resolved_model
   resolved_model="$(resolve_role_model "$role" "$CLAUDE_SETTINGS_MODEL")"
 
   mkdir -p "$STATE_DIR/launch"
+
+  # BL-913: pin a role's shell + heal one classified retry. Scoped to the
+  # Bash tool only (matcher). tool_miss_heal_hook.bb itself fails open (an
+  # unknown pin or a non-Bash call is an untouched no-op) - a bug here must
+  # never block a role from running commands at all.
+  local hooks_block
+  hooks_block="$(cat <<HOOKS
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bb '$role_script_dir/tool_miss_heal_hook.bb'" }
+        ]
+      }
+    ]
+  }
+HOOKS
+)"
 
   if [[ -n "$CLAUDE_SETTINGS_PERMISSION_MODE" ]]; then
     cat > "$settings_file" <<EOF
@@ -1259,20 +1279,23 @@ write_claude_settings_file() {
   "skipDangerousModePermissionPrompt": true,
   "permissions": {
     "defaultMode": "$CLAUDE_SETTINGS_PERMISSION_MODE"
-  }
+  },
+$hooks_block
 }
 EOF
   elif [[ -n "$resolved_model" ]]; then
     cat > "$settings_file" <<EOF
 {
   "model": "$resolved_model",
-  "effortLevel": "$CLAUDE_SETTINGS_EFFORT"
+  "effortLevel": "$CLAUDE_SETTINGS_EFFORT",
+$hooks_block
 }
 EOF
   else
     cat > "$settings_file" <<EOF
 {
-  "effortLevel": "$CLAUDE_SETTINGS_EFFORT"
+  "effortLevel": "$CLAUDE_SETTINGS_EFFORT",
+$hooks_block
 }
 EOF
   fi
@@ -1332,7 +1355,7 @@ RESUMECHECK
   case "$agent" in
     claude)
       claude_settings_and_flags_from_extra_cli "$extra_cli"
-      settings_file="$(write_claude_settings_file "$role")"
+      settings_file="$(write_claude_settings_file "$role" "$role_script_dir")"
       claude_flags="$CLAUDE_REMAINING_FLAGS"
       local claude_permission_flags=""
       if [[ "$CLAUDE_SKIP_PERMISSIONS" == 1 ]]; then
@@ -1467,6 +1490,11 @@ RESUMECHECK
 #!/usr/bin/env zsh
 set -euo pipefail
 export SWARMFORGE_ROLE='$role'
+# BL-913: the swarm's own record of where this role lives, exported from
+# the SAME WORKTREE_PATHS this script's own `cd` line below uses - the
+# tool_miss_heal_hook.bb PreToolUse hook pins every Bash command to this,
+# never to whatever cwd the pane's persistent shell has drifted to.
+export SWARMFORGE_ROLE_WORKTREE='$role_worktree'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}

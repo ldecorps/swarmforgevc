@@ -109,6 +109,15 @@
      :illicit (filterv #(= :teardown-illicit (:action %)) actions)
      :missing-standing (filterv #(= :ensure-standing (:action %)) actions)}))
 
+(defn live-role-agrees?
+  "True only when live-role, trimmed, names target-role exactly. BL-921: an
+   identity that cannot be read - nil, blank, or whitespace-only - is
+   divergence, never agreement. The marker alone can never buy trust a live
+   probe did not independently confirm."
+  [live-role target-role]
+  (let [live (some-> live-role str str/trim not-empty)]
+    (boolean (and live (= live (str target-role))))))
+
 (defn dormant-mailbox-chase-action
   "How chase should poke a role that may be a mono-router dormant target.
 
@@ -118,17 +127,29 @@
    cleaner/inbox/new held the real parcels. Coordinator could not promote the
    next ticket because BL-508 stayed active waiting on cleaner.
 
+   BL-921: the active-role marker alone diverged from the pane's live
+   identity for hours on 2026-08-18, producing 535 identical false wakes in
+   one day - the marker said cleaner while the pane ran coder. :wake-resident
+   now additionally requires live-role (the caller's own tmux probe of the
+   resident pane, independent of the marker file) to agree with target-role;
+   see live-role-agrees? for the unreadable-is-divergence rule. This can only
+   ever move a case from :wake-resident to :rotate, never the reverse - the
+   marker-only equality is still the first gate, live-role narrows it further.
+
    Returns:
      :wake-own-session — role has its own standing pane; wake that session
-     :wake-resident    — no own pane, but resident already IS this role
-     :rotate           — no own pane, and resident is a different identity;
-                         must respawn-as! before any wake
+     :wake-resident    — no own pane, and resident's marker AND live identity
+                         both already ARE this role
+     :rotate           — no own pane, and either the marker or the live
+                         identity disagrees (or the identity could not be
+                         read); must respawn-as! before any wake
      :wake-own-session — also the degrade path when no resident pane exists"
-  [{:keys [target-session-exists? resident-session-exists? active-role target-role]}]
+  [{:keys [target-session-exists? resident-session-exists? active-role target-role live-role]}]
   (cond
     target-session-exists? :wake-own-session
     (not resident-session-exists?) :wake-own-session
-    (= (str active-role) (str target-role)) :wake-resident
+    (and (= (str active-role) (str target-role))
+         (live-role-agrees? live-role target-role)) :wake-resident
     :else :rotate))
 
 (defn resident-poke-target?
@@ -345,12 +366,19 @@
         (not= (str role) (str home-role)))))
 
 (defn should-rotate-resident?
-  "Gate resident rotation during chase — avoid mid-turn thrash and burst rotates."
-  [{:keys [active-role target-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]
+  "Gate resident rotation during chase — avoid mid-turn thrash and burst
+   rotates. BL-921: :already-active additionally requires live-role (a live
+   tmux probe of the resident pane, independent of the active-role marker)
+   to agree with target-role - a stale marker claiming the resident is
+   already the target must not refuse the very rotate that would fix it.
+   See live-role-agrees? for the unreadable-is-divergence rule; omitting
+   live-role treats it as unreadable, never as agreement."
+  [{:keys [active-role target-role live-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]
   (let [cooldown (or cooldown-ms default-rotate-cooldown-ms)]
     (cond
       resident-busy? :busy
-      (and active-role target-role (= (str active-role) (str target-role))) :already-active
+      (and active-role target-role (= (str active-role) (str target-role))
+           (live-role-agrees? live-role target-role)) :already-active
       (and last-rotate-at-ms (pos? last-rotate-at-ms)
            (< (- now-ms last-rotate-at-ms) cooldown)) :cooldown
       :else :rotate)))

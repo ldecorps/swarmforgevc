@@ -71,8 +71,23 @@ description: |
   BL-621 — sequence these two, never run them concurrently
   (Concurrent Work Orthogonality).
 
-acceptance: |
-  specs/features/BL-620-front-desk-caption-messages-and-drop-audit.feature
+acceptance: specs/features/BL-620-front-desk-caption-messages-and-drop-audit.feature
+
+qa_e2e_procedure: |
+  QA end-to-end procedure (live swarm):
+  1. From the principal account, send a photo with a caption addressing a
+     bound BL topic: the caption routes exactly as the same text would, and
+     the posted content notes the image was not read.
+  2. Send a photo with no caption: no routing, but the supervisor log shows
+     one media-no-caption line with the update id.
+  3. Send a text message from a non-principal account: one not-principal
+     audit line appears; offset advances; no replay on restart.
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a
+  block scalar hiding the pointer from the pre-QA gates until the
+  documenter->QA hop). Nothing anyone builds changes; the text below and in
+  qa_e2e_procedure: is the same text, relocated verbatim.
 
   Every scenario needs its step handler wired in this same parcel (BL-233).
 
@@ -89,15 +104,6 @@ acceptance: |
   - Empty-string caption and absent caption behave identically.
   - The audit line writer is injected (postFn-style seam), not a bare
     console call inside pure decision code.
-
-  QA end-to-end procedure (live swarm):
-  1. From the principal account, send a photo with a caption addressing a
-     bound BL topic: the caption routes exactly as the same text would, and
-     the posted content notes the image was not read.
-  2. Send a photo with no caption: no routing, but the supervisor log shows
-     one media-no-caption line with the update id.
-  3. Send a text message from a non-principal account: one not-principal
-     audit line appears; offset advances; no replay on restart.
 
 out_of_scope: |
   - Reading/processing image content (no vision in the front desk; future
