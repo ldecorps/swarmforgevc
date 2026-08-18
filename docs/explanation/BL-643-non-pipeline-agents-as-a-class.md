@@ -53,8 +53,9 @@ was resolved against the repo, not recalled.
 ## The Onboarder: what shipped
 
 The Onboarder guides a human through bringing the swarm to a new target
-repo, in a standing Telegram topic. Only **slice 1** (BL-590) is on `main`
-today; what follows describes exactly that slice, nothing more:
+repo, in a standing Telegram topic. All **three slices** (BL-590, BL-624,
+BL-625) are on `main` today, closing the full state machine from a bare
+repo URL through a running swarm handoff. Slice 1 first:
 
 - **One standing "Onboarding" topic**, ensured once per swarm's Telegram
   group and reused across every target — never one topic per target
@@ -83,12 +84,34 @@ today; what follows describes exactly that slice, nothing more:
   in-memory, it survives both a manual pause and a process or daemon
   restart.
 
-**Not built yet:** survey, gate, prompt generation, and launch-handoff
-behaviour are all later phases, owned by BL-624 (survey-to-gate) and BL-625
-(prompts and launch-handoff) — both specced and approved, both still in
-`backlog/paused/`, neither built. A document that described them as present
-would be worse than one that said nothing, because a reader could not tell
-which half was real. The Onboarder has no authored role prompt of its own
+**Slice 2 (BL-624) — survey through an agreed, gated contract.** From
+`prerequisites-ready`, `proceed` clones the target with the box's own
+GitHub access, surveys it, and posts a proposed contract
+(`contractPhaseRelay.ts`); `show-me` inspects the current proposal with no
+state change, and `change-this <objection>` opens a real negotiation round
+— routed through the same `negotiate-onboarding-contract.ts` engine the
+CLI and Telegram-relay forms already use, never a second engine. Agreement
+cascades into the existing fail-closed `onboarding-contract-gate.js`, and
+only once it allows does the agreed contract get committed and pushed to
+the target repo. The survey agent runs scoped to `--allowedTools
+Read,Glob,Grep`, never the blanket `--dangerously-skip-permissions` a
+disposable scratch fixture would tolerate, because this clone is a live,
+human-supplied, potentially adversarial target with real push credentials.
+
+**Slice 3 (BL-625) — prompts, launch handoff, done, topic reuse.** From
+`contract-agreed`, `proceed` runs the existing BL-269 prompts CLI, commits
+and pushes the proposed project/engineering prompts, and advances to
+`prompts-proposed`. A further `proceed` posts the exact `./swarm <path>
+--pack mono-router` launch command for the target host and states plainly
+that the human runs it there — the Onboarder never claims to launch or
+observe a swarm it cannot reach, even when asked directly. A final
+`proceed` marks the target `done` with a completion summary, and the one
+standing Onboarding topic is reused for the next target rather than closed.
+With two or more targets in flight at once, a plain reply that cannot be
+attributed to exactly one of them is refused rather than silently applied
+to whichever was last touched.
+
+The Onboarder has no authored role prompt of its own
 (`swarmforge/roles/onboarder.prompt` does not exist) — everything above is
 derived from reading the shipped code, not from an authored description, and
 is stated that way rather than left for the reader to assume.
