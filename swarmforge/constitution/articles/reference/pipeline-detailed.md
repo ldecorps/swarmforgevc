@@ -70,6 +70,19 @@ if your inbox is empty, call `rotate_to_role.sh <home>` proactively (`coder`
 for `openrouter-kimi-sonnet-mono-router`; home role comes from
 `config rotation_home` in swarmforge.conf).
 
+**Router packs only (BL-931).** This whole rule is scoped to a pack declaring
+`config rotation router`. On a standing pack — full-forge, where all seven
+pipeline roles hold their own tmux session — there is no resident to move, and
+rotation is not merely unnecessary but actively destructive: the pane it
+targets is `mono-router-resident-session`, defined as the *first
+non-coordinator `roles.tsv` row*, which on such a pack is a working colleague
+(the standing **specifier**, in the 2026-08-18 incident). `rotate_to_role.sh`
+there kills that pane, respawns it running someone else's launch script, and
+stamps the active-role marker with the stolen identity — leaving two processes
+in one worktree and the evicted role's mailbox with no reader. A standing-pack
+role must never call it, and must not read the "non-home role" phrasing above
+as applying to it merely because its own role is not the configured home.
+
 **Tool backstop:** when a non-home role runs `ready_for_next.sh` with an empty
 mailbox (`inbox/new/` and `inbox/in_process/`), the helper prints
 `ROTATE_HOME` (not `NO_TASK`) and the `.sh` wrapper execs
@@ -207,8 +220,10 @@ QA's merge-up `note` broadcasts to **all five** pipeline worktree roles; a
 non-home role (cleaner, architect, hardender, documenter) that finishes it
 with an empty inbox must call `rotate_to_role.sh <home>` proactively, or it
 strands past the next coder handoff. A tool backstop prints `ROTATE_HOME`
-(not `NO_TASK`) if a non-home role forgets. See **reference/pipeline-detailed.md**
-for the full stranding scenario and backstop mechanics.
+(not `NO_TASK`) if a non-home role forgets. Scoped to `config rotation router`
+packs only — a standing pack never rotates (BL-931). See
+**reference/pipeline-detailed.md** for the full stranding scenario and
+backstop mechanics.
 
 ## Lightly-compressed passages — Full Text (BL-858 further trim)
 
