@@ -1,0 +1,55 @@
+Feature: The master-main reconcile refuses only when git itself would refuse
+
+  # BL-919. BL-891's sweep gates on `git status --porcelain` being wholly
+  # blank, so any dirt at all blocks reconciliation - including dirt git
+  # would never touch. Parked as .feature.draft (BL-233): these scenarios
+  # describe a Babashka daemon sweep the JS acceptance runner cannot bind.
+  # The live gate is the unit suite under swarmforge/scripts/test/.
+
+  Background:
+    Given a master checkout whose local main is behind origin/main
+
+  # BL-919 dirt-clear-of-the-merge-reconciles-01
+  Scenario: dirt that the merge would not touch does not block it
+    Given the working tree has uncommitted changes
+    And none of those paths is one the incoming merge would change
+    When the reconcile sweep runs
+    Then local main is reconciled with origin/main
+    And every uncommitted change is left exactly as it was
+
+  # BL-919 dirt-overlapping-the-merge-refuses-02
+  Scenario: dirt on a path the merge would change still blocks
+    Given the working tree has uncommitted changes
+    And at least one of those paths is one the incoming merge would change
+    When the reconcile sweep runs
+    Then no merge is attempted
+    And the block is surfaced with the paths that caused it
+
+  # BL-919 untracked-clash-refuses-03
+  Scenario: an untracked file the merge would create still blocks
+    Given the working tree holds an untracked file
+    And the incoming merge would create a file at that same path
+    When the reconcile sweep runs
+    Then no merge is attempted
+    And the block is surfaced with the paths that caused it
+
+  # BL-919 clean-tree-unchanged-04
+  Scenario: a clean tree reconciles exactly as it did before
+    Given the working tree is clean
+    When the reconcile sweep runs
+    Then local main is reconciled with origin/main
+
+  # BL-919 conflict-still-aborts-05
+  Scenario: a real conflict is still aborted, never left mid-merge
+    Given the working tree has no dirt on any path the merge would change
+    And the incoming merge conflicts with local-only commits
+    When the reconcile sweep runs
+    Then the merge is aborted
+    And the checkout is left exactly as the sweep found it
+
+  # BL-919 never-stash-reset-rebase-force-06
+  Scenario: the sweep never rewrites or sets aside local work
+    Given any working tree state
+    When the reconcile sweep runs
+    Then it never stashes, resets, rebases, or force-updates
+    And every commit reachable before the sweep is still reachable after
