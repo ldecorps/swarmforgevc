@@ -54,6 +54,10 @@ echo "$ROOT/fake.sock" > "$ROOT/.swarmforge/tmux-socket"
 
 printf '#!/bin/sh\nexit 0\n' > "$ROOT/.swarmforge/launch/cleaner.sh"
 chmod +x "$ROOT/.swarmforge/launch/cleaner.sh"
+# BL-926 scenario 09 rotates coder -> coder (same-role, into the parcel's
+# own owner), so coder needs its own launch script too.
+printf '#!/bin/sh\nexit 0\n' > "$ROOT/.swarmforge/launch/coder.sh"
+chmod +x "$ROOT/.swarmforge/launch/coder.sh"
 
 FAKE_BIN="$ROOT/bin"
 make_fake_tmux "$FAKE_BIN"
@@ -172,6 +176,37 @@ echo "nonexistent-role" > "$ROOT/.swarmforge/mono-router-active-role"
 OUT="$(run_rotate cleaner 2>&1)"
 grep -q "respawn-pane" "$TMUX_LOG" || fail "08: unknown-role active-role marker wrongly blocked rotation, log: $(cat "$TMUX_LOG")"
 pass "08: fail-open when the active-role marker names a role absent from roles.tsv"
+rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+
+# ── 09: rotating INTO the role that owns the blocking parcel proceeds ──────
+# BL-926: the departing role (active-role marker) and the rotation target
+# are the SAME role here - rotating there is not abandonment, it is the only
+# way the stuck parcel gets picked up. The gate must proceed, and the parcel
+# itself must survive byte-identical (rotation never removes, moves, renames
+# or completes it - it is resumed via ready_for_next.sh's in_process-first
+# check, not re-delivered).
+queue_stuck_parcel stuck9
+PARCEL_PATH="$CODER_WT/.swarmforge/handoffs/inbox/in_process/00_stuck9.handoff"
+BEFORE_SHA="$(shasum "$PARCEL_PATH" | awk '{print $1}')"
+: > "$TMUX_LOG"
+OUT="$(run_rotate coder 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" \
+  || fail "09: rotating into the parcel's own owner must respawn, log: $(cat "$TMUX_LOG")"
+[[ -f "$PARCEL_PATH" ]] || fail "09: parcel must survive a same-role rotation, missing: $PARCEL_PATH"
+AFTER_SHA="$(shasum "$PARCEL_PATH" | awk '{print $1}')"
+[[ "$BEFORE_SHA" == "$AFTER_SHA" ]] \
+  || fail "09: parcel content must be byte-identical after a same-role rotation"
+grep -q "^coder$" "$ROOT/.swarmforge/mono-router-active-role" \
+  || fail "09: active-role marker must (re)name coder after rotating into coder"
+# ready_for_next_task.bb's in_process-first check (BL-529) resumes rather
+# than reporting NO_TASK precisely when exactly one real *.handoff file sits
+# in in_process/ - the rotation must neither drain it (zero files) nor
+# duplicate it (more than one).
+IN_PROCESS_COUNT="$(find "$CODER_WT/.swarmforge/handoffs/inbox/in_process" -name '*.handoff' -type f | wc -l | tr -d ' ')"
+[[ "$IN_PROCESS_COUNT" == "1" ]] \
+  || fail "09: expected exactly one in_process parcel after rotation (resume precondition), found $IN_PROCESS_COUNT"
+pass "09: rotation into the parcel's own owner proceeds and leaves the parcel untouched"
 rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
 echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
 
