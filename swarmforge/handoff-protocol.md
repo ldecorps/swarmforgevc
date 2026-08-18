@@ -1293,6 +1293,68 @@ alone is not; C: `in_process` outranks a `rule_proposal`). See
 original live incident and `backlog/evidence/BL-795-hardener-verify-pass.md`
 for the full adoption test run.
 
+### Mono-router chase verifies live pane identity (BL-921)
+
+`.swarmforge/mono-router-active-role` is a marker file, not a live fact.
+Two chase decisions used to trust it alone: `dormant-mailbox-chase-action`
+returned `:wake-resident` whenever `active-role` equaled the target role,
+and `should-rotate-resident?` refused to rotate (`:already-active`) on the
+same equality. Neither ever asked the pane itself. When the marker
+diverged from what the resident pane was actually running, the wake landed
+on the wrong persona — it ran `ready_for_next.sh` as itself, read its own
+empty mailbox, got `NO_TASK`, and idled, correctly for who it thought it
+was, while the target role's real mail sat untouched and the next sweep
+made the identical decision roughly every 20 seconds.
+
+**Measured live, 2026-08-18:** the marker read `cleaner` from ~03:48Z while
+the resident pane was running `coder.sh` (`SWARMFORGE_ROLE=coder`).
+`.swarmforge/telemetry/wake-attribution-2026-08.jsonl` recorded 535 landed
+wakes for `cleaner` that day, every one `handoffPresent?: true`, every one
+naming the same unclaimed parcel, on a ~19–20s cadence for hours — while
+cleaner's mailbox genuinely held two QA merge-up notes and three
+`git_handoff`s for BL-913.
+
+**The fix.** `resident-live-role` (`swarmforge/scripts/handoffd.bb`) probes
+the resident pane directly: `tmux list-panes -F '#{pane_start_command}'`,
+matched against `launch/([^/]+)\.sh` — the exact launch script
+`rotate-resident-to!` installs on every respawn, so the live role name is
+read off the pane's own command line, never off the marker. This feeds a
+new `live-role` argument into both pure decision functions
+(`swarmforge/scripts/mono_router_lib.bb`):
+
+- `dormant-mailbox-chase-action`'s `:wake-resident` now requires the
+  marker AND the live identity to both agree with the target role.
+- `should-rotate-resident?`'s `:already-active` requires the same double
+  agreement — a stale marker claiming the resident is already the target
+  can no longer refuse the very rotate that would fix it.
+
+Both routed through one predicate, `live-role-agrees?`: a `live-role` that
+is `nil`, blank, or otherwise unreadable is treated as **divergence, never
+as agreement** — an identity the daemon can't confirm must never be
+trusted more than one it can prove disagrees. The check only ever
+*tightens* the gate: every input that resolved to `:wake-resident` or
+`:already-active` with the marker and the live identity in agreement is
+byte-identical to before; a disagreement or an unreadable identity now
+takes the pre-existing `:rotate` / `respawn-as!` path, which makes the
+identity true instead of assuming it.
+
+**Deterministic acceptance without a wall-clock wait.** `handoffd.bb`
+gained `--chase-sweep-once`, a one-shot-and-exit flag for `chase-sweep!`
+specifically (deliberately not folded into the pre-existing
+`--sweep-once`, which runs delivery plus the ambulance/watchdog/nudge
+sweeps but never `chase-sweep!`) — needed to prove "N chase sweeps never
+inject wake text for a diverged live identity" deterministically, without
+backgrounding the daemon or waiting on its real ~10s cadence.
+
+**Out of scope, deliberately:** *why* the marker diverges from the pane in
+the first place. The 2026-08-18 divergence dated to ~03:48Z, the same
+minute the tmux sessions were created — pointing at the boot path
+(`resolve-boot-role`, BL-648) rather than at rotation. This ticket stops
+the storm and un-strands the mail regardless of how the divergence arose;
+the boot-origin question is a separate slice if it proves real.
+
+Acceptance: `specs/features/BL-921-chase-verifies-live-pane-identity.feature`.
+
 ### Dispatch-gap sweep
 
 The daemon's existing chase/nudge sweep only watches inbox mail (queued or
