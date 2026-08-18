@@ -79,6 +79,7 @@ here.
 - [Bubble decides which UI bundle to render, without ever losing Talk](how-to/BL-825-bubble-remote-ui-bundle-resolution.md) — the four-outcome resolver (fresh/cached/stale/bare) behind the coming remote-UI pager screens, the shell-behind refusal that never renders a bundle the installed APK can't honour, and the whole-or-nothing manifest parsing on both the bridge and the phone.
 - [Bubble's pager renders the bundle's pages, without ever stranding Talk](how-to/BL-829-bubble-remote-page-pager.md) — the manifest's new `pages` list, the pure `PagerListResolver` allowlist/degraded-state decision, the `RemotePageHost` WebView edge that never shows a blank failure, and the `TalkPanelActivity`/`MainActivity` wiring correction to the ticket's own `required_wiring`.
 - [Pinned Shell + One Classified Retry (Tool-Miss Auto-Heal, Slice A)](how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md) — the `PreToolUse` hook that pins every role's Bash command to its own worktree and heals one recoverable miss (wrong-cwd, wrong-surface, missing-root-argv) in silence before the model ever sees a failure, versus a real failure returned untouched.
+- [The Batch-Claim Progress Sidecar](how-to/BL-678-batch-claim-progress-sidecar.md) — the live-owner half of BL-648's source near-miss: the sidecar every batch claim now writes at claim time, the chase sweep that refreshes it and surfaces (never re-forwards or re-delivers) a stale one to the coordinator, and the two staleness/cooldown config knobs.
 
 ## Reference
 

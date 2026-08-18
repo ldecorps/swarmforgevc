@@ -184,7 +184,12 @@
 ;; queued handoff. Once the handoff itself completes/moves, an orphaned
 ;; sidecar can remain - these are the ONLY file kinds completion may ever
 ;; delete on its own; anything else still aborts with a clear error.
-(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json"])
+;; BL-678: .batch-claim-progress.json rides the same list - a batch item's
+;; completion (done_with_current_batch.bb) already calls remove-sidecars-of!
+;; for every terminal sidecar kind, which is exactly how a completed batch
+;; claim's progress sidecar retires itself (invariant: "no longer reads as
+;; an active claim") without any dedicated retirement code.
+(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json" ".batch-claim-progress.json"])
 
 (defn sidecar-file? [path]
   (let [filename (fs/file-name path)]
