@@ -166,3 +166,12 @@ notes: |
   states the reason rather than a bare code; point Bubble at a bad token and
   confirm the same. Confirm no control affordance is present anywhere on the
   page.
+
+live_screen_layout_pointer: |
+  BL-929 (2026-08-18) fixes the shared Live Screen renderer to follow the
+  running pack: under a standing full pack there is no Resident tile and no
+  global ticket strip, and each tile carries its own role identity. This
+  ticket's "coordinator + resident" framing describes the mono-router
+  layout, which BL-929 leaves unchanged. Because both surfaces share one
+  renderer (this ticket's own do-not-fork invariant), Bubble Live inherits
+  the pack-aware layout without a spec change here.
