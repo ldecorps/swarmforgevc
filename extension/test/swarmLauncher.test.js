@@ -11,6 +11,7 @@ const {
   waitForSwarmReady,
   chooseReattachTimeoutMs,
   countRolesInConfig,
+  configHasRotationRouter,
   runningSwarmMatchesConfig,
 } = require('../out/swarm/swarmLauncher');
 const { installFakeTmux } = require('./helpers/fakeTmux');
@@ -727,6 +728,31 @@ test('countRolesInConfig counts window lines in a pack/profile conf', () => {
     'config active_backlog_max_depth 3\nwindow coordinator copilot master\nwindow coder copilot coder\n'
   );
   assert.equal(countRolesInConfig(configPath), 2);
+});
+
+test('configHasRotationRouter is true for a conf declaring config rotation router', () => {
+  const targetPath = mkTmp();
+  const configPath = path.join(targetPath, 'mono-router.conf');
+  fs.writeFileSync(
+    configPath,
+    'config active_backlog_max_depth 2\nconfig rotation router\nwindow coder claude coder\n'
+  );
+  assert.equal(configHasRotationRouter(configPath), true);
+});
+
+test('configHasRotationRouter is false for a standing pack conf with no rotation line', () => {
+  const targetPath = mkTmp();
+  const configPath = path.join(targetPath, 'full-forge.conf');
+  fs.writeFileSync(
+    configPath,
+    'config active_backlog_max_depth 3\nwindow specifier claude master\nwindow coder claude coder\n'
+  );
+  assert.equal(configHasRotationRouter(configPath), false);
+});
+
+test('configHasRotationRouter fails closed (false) for a config path that does not exist', () => {
+  const targetPath = mkTmp();
+  assert.equal(configHasRotationRouter(path.join(targetPath, 'missing.conf')), false);
 });
 
 test('runningSwarmMatchesConfig is false when roles.tsv count differs from config', () => {

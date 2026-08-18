@@ -355,6 +355,22 @@ export function countRolesInConfig(configPath: string): number {
   }
 }
 
+/**
+ * BL-929: true when a pack/profile config declares itself a rotation
+ * (mono-router) pack via `config rotation router`. A standing pack (e.g.
+ * full-forge) has no such line - every pipeline role owns its own pane, so
+ * there is no rotation to declare. An unreadable config reads as false
+ * (not a rotation pack), same fail-closed posture as countRolesInConfig.
+ */
+export function configHasRotationRouter(configPath: string): boolean {
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    return content.split('\n').some((line) => line.trim() === 'config rotation router');
+  } catch {
+    return false;
+  }
+}
+
 /** True when roles.tsv matches the configured pack/profile role count. */
 export function runningSwarmMatchesConfig(targetPath: string, configPath?: string): boolean {
   const resolved = configPath?.trim() || resolveSwarmConfigPath();

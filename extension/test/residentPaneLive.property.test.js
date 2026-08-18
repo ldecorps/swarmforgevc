@@ -8,6 +8,8 @@ const {
   captureMonoRouterLiveScreen,
   clearResidentPaneLiveCache,
   RESIDENT_PANE_CACHE_TTL_MS,
+  decideMonoRouterLayout,
+  monoRouterActiveRoleForPane,
 } = require('../out/bridge/residentPaneLive');
 
 // BL-881 (coder, invariants): captureMonoRouterLiveScreen wraps a synchronous
@@ -124,3 +126,96 @@ test('property: real walk count matches the greedy TTL model, for any sequence o
 // (a single [0] delta pair collapsing to 2 actual vs 1 expected walk)
 // immediately. Restored to the real implementation afterward; this comment
 // is the durable record since the broken variant was never committed.
+
+// BL-929 (coder, invariants): property tests for the two declared
+// invariants that admit a pure, generator-reachable encoding.
+//
+//   Invariant 1 (marker never decides layout): decideMonoRouterLayout's own
+//   signature has no marker parameter at all - there is nothing to feed it
+//   even adversarially. The property instead pins the two behaviors that
+//   together make the config signal load-bearing: it is authoritative
+//   whenever present (wins over EVERY liveRoleCount, not just the ones that
+//   happen to agree with it), and liveRoleCount is consulted only when the
+//   config signal is genuinely absent.
+//
+//   Invariant 2 (a tile never displays another role's identity):
+//   monoRouterActiveRoleForPane returns undefined for EVERY role/activeRole
+//   pair whenever monoLayout is false - the exact condition a full pack
+//   sits in once invariant 1 holds - so no non-mono-router pane can ever
+//   receive an identity override, for any role string fast-check generates,
+//   not just 'specifier'/'documenter'.
+//
+// Generator reach: role/activeRole are drawn from the real pipeline role
+// vocabulary plus a few adversarial strings (empty, 'resident', 'coder'
+// itself) so the space includes both plausible and edge-case identifiers,
+// never diluted by unrelated random noise a real role id could never be.
+const ROLE_POOL = ['coordinator', 'specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA', '', 'resident'];
+const roleArb = fc.constantFrom(...ROLE_POOL);
+const activeRoleArb = fc.option(roleArb, { nil: undefined });
+
+test('property: decideMonoRouterLayout - the config signal, when present, wins over every liveRoleCount', () => {
+  fc.assert(
+    fc.property(fc.boolean(), fc.integer({ min: 0, max: 20 }), (configRotationRouter, liveRoleCount) => {
+      assert.equal(
+        decideMonoRouterLayout({ configRotationRouter, liveRoleCount }),
+        configRotationRouter
+      );
+    }),
+    { numRuns: 200 }
+  );
+});
+
+test('property: decideMonoRouterLayout - liveRoleCount is consulted only when the config signal is absent', () => {
+  fc.assert(
+    fc.property(fc.integer({ min: 0, max: 20 }), (liveRoleCount) => {
+      assert.equal(
+        decideMonoRouterLayout({ liveRoleCount }),
+        liveRoleCount <= 2
+      );
+    }),
+    { numRuns: 200 }
+  );
+});
+
+test('property: monoRouterActiveRoleForPane - a non-mono-router layout never overrides any pane\'s identity', () => {
+  fc.assert(
+    fc.property(roleArb, activeRoleArb, (role, activeRole) => {
+      assert.equal(monoRouterActiveRoleForPane(false, role, activeRole), undefined);
+    }),
+    { numRuns: 200 }
+  );
+});
+
+test('property: monoRouterActiveRoleForPane - under a mono-router layout, only the coder pane can be overridden', () => {
+  fc.assert(
+    fc.property(roleArb, activeRoleArb, (role, activeRole) => {
+      const result = monoRouterActiveRoleForPane(true, role, activeRole);
+      if (role === 'coder') {
+        assert.equal(result, activeRole);
+      } else {
+        assert.equal(result, undefined);
+      }
+    }),
+    { numRuns: 200 }
+  );
+});
+
+// NON-VACUOUS check (BL-654): confirmed by temporarily breaking each
+// implementation and re-running these four properties before landing them.
+//   - decideMonoRouterLayout with `if (evidence.configRotationRouter)`
+//     (truthy check instead of `!== undefined`) failed the first property
+//     immediately: configRotationRouter=false, liveRoleCount=0 returned
+//     true instead of false (fast-check's shrinker reduced straight to that
+//     minimal case).
+//   - decideMonoRouterLayout with the liveRoleCount branch changed to
+//     `liveRoleCount < 2` (off-by-one) failed the second property at
+//     liveRoleCount=2 (expected true, got false).
+//   - monoRouterActiveRoleForPane with the monoLayout check dropped
+//     (`role === 'coder' ? activeRole : undefined`) failed the third
+//     property on role='coder' with any defined activeRole - exactly the
+//     identity-leak shape this invariant exists to close.
+//   - monoRouterActiveRoleForPane with the role check dropped (`monoLayout
+//     ? activeRole : undefined`) failed the fourth property on any
+//     role !== 'coder' with a defined activeRole.
+// All four restored to the real implementation afterward; this comment is
+// the durable record since none of the broken variants were committed.

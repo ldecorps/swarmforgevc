@@ -290,6 +290,11 @@ export function getResidentSpyUiHtml(): string {
   var fsTitleBase = '';
   var lastPanes = [];
   var lastFetchAvailable = false;
+  // BL-929: false until a snapshot says otherwise, so a standing full pack
+  // never shows the top ticket strip even on the very first paint (fails
+  // closed toward the layout that has no strip, not toward the one that
+  // does).
+  var lastMonoRouterLayout = false;
 
   function inTelegram() {
     return !!(tg && tg.initData);
@@ -634,6 +639,12 @@ export function getResidentSpyUiHtml(): string {
 
   function updateTicketStrip(panes) {
     if (focusPane) return;
+    if (!lastMonoRouterLayout) {
+      ticketStripEl.hidden = true;
+      ticketStripClaimEnteredAtMs = null;
+      ticketStripMetaBase = '';
+      return;
+    }
     var pane = pickTicketPane(panes);
     if (!pane || !pane.ticketId) {
       ticketStripEl.hidden = true;
@@ -734,6 +745,7 @@ export function getResidentSpyUiHtml(): string {
         var panes = normalizePanes(data);
         lastPanes = panes;
         lastFetchAvailable = !!data.available;
+        lastMonoRouterLayout = !!data.monoRouterLayout;
         renderAllPanes(panes);
         if (!data.available) {
           setStatus('err');
