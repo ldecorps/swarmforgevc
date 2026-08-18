@@ -309,6 +309,38 @@ echo "$OUT925G" | grep -q "extension/src/unpublished.ts" || fail "BL-925 unpubli
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 pass "BL-925 unpublished-tip-is-not-waved-through-05: a merge parent that is NOT an ancestor of swarmforge-QA is refused, naming the offending paths"
 
+# ── BL-925 descendant-of-qa-tip-is-not-waved-through-06 (direction check):
+#    a commit built ON TOP OF an already-published tip - so swarmforge-QA IS
+#    an ancestor of it, but it is NOT an ancestor of swarmforge-QA - is still
+#    refused. is_qa_ancestor.sh's ancestry direction is `git merge-base
+#    --is-ancestor "$SHA" swarmforge-QA` (is the incoming commit AT OR BEFORE
+#    the published tip); the reversed direction (is swarmforge-QA at or
+#    before the incoming commit) would wrongly wave through anything newer
+#    than an old approved base. unpublished-tip-05 above cannot catch a
+#    swapped-argument regression here: it merges a commit unrelated to
+#    swarmforge-QA, so neither direction finds an ancestor and both refuse
+#    for the same (right) reason. This scenario is related by construction -
+#    only the correct direction refuses it. ──────────────────────────────
+reset_bl925_fixture
+make_published_tip
+git -C "$ROOT" checkout -q published-tip
+mkdir -p "$ROOT/extension/src"
+echo "built on the old approved tip, never itself approved" > "$ROOT/extension/src/unapproved-descendant.ts"
+git -C "$ROOT" add extension/src/unapproved-descendant.ts
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "descendant of the published tip, not itself QA-approved"
+git -C "$ROOT" branch -f unapproved-descendant HEAD >/dev/null
+git -C "$ROOT" checkout -q main
+make_ahead_bookkeeping_commit "925h"
+set +e
+OUT925H="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit unapproved-descendant 2>&1)"
+STATUS925H=$?
+set -e
+[[ "$STATUS925H" -ne 0 ]] || fail "BL-925 descendant-of-qa-tip-is-not-waved-through-06: expected a commit descending from (but not itself an ancestor of) swarmforge-QA to be refused"
+echo "$OUT925H" | grep -q "extension/src/unapproved-descendant.ts" || fail "BL-925 descendant-of-qa-tip-is-not-waved-through-06: refusal must name the offending path, got: $OUT925H"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+git -C "$ROOT" branch -D unapproved-descendant >/dev/null 2>&1 || true
+pass "BL-925 descendant-of-qa-tip-is-not-waved-through-06: a commit built on top of the published tip, but not itself QA-approved, is still refused"
+
 reset_bl925_fixture
 
 # ── extra: --list-paths surface, for a future consumer to read the same
