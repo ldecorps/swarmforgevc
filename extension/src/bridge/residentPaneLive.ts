@@ -22,6 +22,7 @@ import {
 } from '../concierge/residentPaneSpy';
 import { readRoleModelId } from '../swarm/backendSwitch';
 import { formatModelDisplayName } from '../swarm/modelDisplayName';
+import { resolveSwarmConfigPath, configHasRotationRouter } from '../swarm/swarmLauncher';
 
 export interface PaneLiveSnapshot {
   available: boolean;
@@ -50,6 +51,11 @@ export interface MonoRouterLiveScreenSnapshot {
   resident: PaneLiveSnapshot;
   coordinator: PaneLiveSnapshot;
   panes: LiveScreenPaneEntry[];
+  /** BL-929: true when the running pack is a rotation (mono-router) pack -
+   *  the one layout with a Resident tile and a global ticket strip. The
+   *  shared renderer (residentSpyUiHtml.ts, loaded by both the Mini App and
+   *  Bubble Live) reads this instead of inferring layout client-side. */
+  monoRouterLayout: boolean;
 }
 
 export const LIVE_SCREEN_ROLE_ORDER: readonly string[] = ['coordinator', ...PIPELINE_CHAIN];
@@ -122,11 +128,51 @@ function tryCaptureRolePane(
   };
 }
 
-function isMonoRouterLayout(targetPath: string, liveRoles: SwarmRole[]): boolean {
-  if (readMonoRouterActiveRole(targetPath)) {
-    return true;
+// BL-929 invariant 1: the mono-router active-role marker's signature has NO
+// place for it - a structural guarantee, not just a behavioral one, that
+// its presence, absence or contents can never decide layout.
+// handoff_lib.bb's write-mono-router-active-role! keeps the marker
+// maintained throughout a standing full pack's whole run (measured
+// 2026-08-18: mtime fourteen minutes into a full-forge launch), so treating
+// it as evidence renders a RESIDENT tile and a global ticket strip under a
+// pack that has neither. Layout is decided from positive evidence of the
+// running pack instead: the effective pack config's own `config rotation
+// router` declaration (the strongest signal - present in every rotation
+// pack's conf, absent from every standing pack's, no launch-time
+// transient) when resolvable, else the live session count. The live count
+// is already correct on its own but briefly reads <= 2 while a full pack's
+// sessions come up one at a time, so it is the fallback, not the primary
+// signal.
+export function decideMonoRouterLayout(evidence: {
+  configRotationRouter?: boolean;
+  liveRoleCount: number;
+}): boolean {
+  if (evidence.configRotationRouter !== undefined) {
+    return evidence.configRotationRouter;
   }
-  return liveRoles.length <= 2;
+  return evidence.liveRoleCount <= 2;
+}
+
+function isMonoRouterLayout(_targetPath: string, liveRoles: SwarmRole[]): boolean {
+  const configPath = resolveSwarmConfigPath();
+  return decideMonoRouterLayout({
+    configRotationRouter: configPath ? configHasRotationRouter(configPath) : undefined,
+    liveRoleCount: liveRoles.length,
+  });
+}
+
+// BL-929 invariant 2: a tile never displays another role's identity. This
+// is the ONLY place a pane's identity can be overridden by another role's
+// id at all, and it is bounded to exactly one case - monoLayout true AND
+// this pane IS the coder/resident pane - so a non-coder pane, or any pane
+// under a non-mono-router layout, always returns undefined here and keeps
+// its own identity downstream in resolveResidentRoleIdentity.
+export function monoRouterActiveRoleForPane(
+  monoLayout: boolean,
+  role: string,
+  activeRole: string | undefined
+): string | undefined {
+  return monoLayout && role === 'coder' ? activeRole : undefined;
 }
 
 export function orderLiveScreenRoles(liveRoles: SwarmRole[]): SwarmRole[] {
@@ -211,7 +257,7 @@ export function captureLiveScreenPanes(targetPath: string): LiveScreenPaneEntry[
   return orderLiveScreenRoles(liveRoles).map((roleEntry) => {
     const id = liveScreenPaneId(roleEntry, monoLayout);
     const label = liveScreenPaneLabel(roleEntry, monoLayout);
-    const monoActive = monoLayout && roleEntry.role === 'coder' ? activeRole : undefined;
+    const monoActive = monoRouterActiveRoleForPane(monoLayout, roleEntry.role, activeRole);
     const raw = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, monoActive);
     const showClaimEntered = id === 'resident' || roleEntry.role === 'coder';
     const pane = withHeader(raw ? { ...raw, available: true } : unavailablePane(), label, {
@@ -230,11 +276,18 @@ export function captureMonoRouterLiveScreenUncached(targetPath: string): MonoRou
     panes.find((entry) => entry.id === 'coordinator')?.pane ??
     withHeader(unavailablePane(), 'Coordinator');
   const anyAvailable = panes.some((entry) => entry.pane.available);
+  // Recomputed rather than derived from `panes` (e.g. "does any entry carry
+  // id 'resident'"): a mono-router pack whose coder pane fails to capture
+  // this tick would otherwise misread as a standing pack. Same inputs
+  // captureLiveScreenPanes already used, so the layout this snapshot
+  // reports always matches the layout its own panes were built under.
+  const monoRouterLayout = isMonoRouterLayout(targetPath, readLiveSwarmRoles(targetPath));
   return {
     available: anyAvailable,
     resident,
     coordinator,
     panes,
+    monoRouterLayout,
   };
 }
 
