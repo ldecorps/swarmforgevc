@@ -72,6 +72,10 @@ merge, close tickets, or promote backlog items.
 
 ## Mono-router idle and open slots
 
+**Scope: `config rotation router` packs only.** On a standing pack (every
+role has its own pane) nothing below applies — `rotate_to_role.sh` there
+respawns the FIRST roles.tsv pane, i.e. a colleague, not a resident (BL-931).
+
 Mono-router packs keep **one resident** process (usually **coder** as home)
 that rotates other pipeline roles in on demand, with the coordinator as a
 separate always-on pane. On `NO_TASK`: STOP (no re-poll/`/loop`); rotate to
@@ -85,7 +89,7 @@ idle for a wake — promotion stays coordinator-owned. See
 A solo `note` to a dormant role stays non-actionable until
 `note_actionable_after_ms` (default 20 min) ages it in, to avoid broadcast
 thrash on a five-role merge-up — a directed `rule_proposal` is different, it
-is actionable immediately. A non-home role must `rotate_to_role.sh <home>`
+is actionable immediately. A non-home **router-pack** role must `rotate_to_role.sh <home>`
 proactively once its inbox is empty after a merge-up note, or it strands
 (tool backstop: `ROTATE_HOME`, not `NO_TASK`). Full mechanics for all three:
 **pipeline-detailed.md**, `swarmforge/handoff-protocol.md`,
