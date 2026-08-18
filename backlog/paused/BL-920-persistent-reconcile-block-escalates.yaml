@@ -1,0 +1,159 @@
+id: BL-920
+title: "A blocked master-main reconcile surfaces one coordinator note then goes quiet, so 84 landed commits sat off local main with no further signal"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: deterministic-transit-assist
+human_approval: approved
+priority: 40
+direction: human-requested
+depends_on: [BL-891]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-920-persistent-reconcile-block-escalates.feature.draft
+
+invariants:
+  - "Escalation is additive: the coordinator still gets its note on the first tick of a block, and escalation only ever adds a second, louder signal when that block persists."
+  - "Resolving a block clears the escalation state, so a later unrelated block is judged on its own merits and is never suppressed by a stale flag from an episode that already ended."
+
+approval_context: >
+  Wants sign-off on one open value the intake deliberately left unnamed: how
+  long a block must persist before the operator is escalated to. The human
+  wrote only "still persists across ticks". I have not invented a number in
+  the spec — the scenarios say "the escalation threshold of ticks" and leave
+  the value to be set as a named, configurable constant, so it is one edit to
+  change rather than a rewrite.
+
+  If you have a figure in mind, say it and I will pin it. Otherwise the
+  implementer picks a defensible default and documents it, which is the
+  smaller commitment.
+
+  Also flags the 1:N split, shared with BL-919: this intake named two fixes
+  and I made them two tickets. Rationale in BL-919's `approval_context`.
+
+source: |
+  Operator intake `.swarmforge/operator/INTAKE-bl891-dirty-overlap-reconcile.md`
+  (human ldecorps via Cursor, 2026-08-17 ~07:56 BST), drained by the
+  specifier 2026-08-17 into BL-919 (the dirty gate) and BL-920 (this ticket).
+  The human's framing question, verbatim:
+
+  > is there a way to prevent this from happening again?
+
+  The intake is explicit that this is not a rewrite:
+
+  > Do **not** treat this as a rewrite of BL-891. That sweep already ships.
+  > This is the documented remainder: dirty-blocked, then quiet.
+
+  This ticket carries the "then quiet" half.
+
+description: |
+  ## The second failure, in the human's own words
+
+  > The sweep also surfaces **one** coordinator note then goes quiet for that
+  > same reason. Coordinator idled. No operator escalation while 84 landed
+  > commits sat off local `main`.
+
+  And the requested remedy, verbatim:
+
+  > If dirty-block (or a conflict abort) still persists across ticks,
+  > escalate to the operator, not only a one-shot coordinator note.
+
+  ## Confirmed in code at spec time
+
+  `sweep!` in `swarmforge/scripts/master_main_reconcile_lib.bb` records
+  `{:surfaced "dirty"}` after the first blocked tick and thereafter takes the
+  `(if (= (:surfaced state) "dirty") nil ...)` branch — a literal no-op for
+  every subsequent tick of the same episode. The conflict path has the same
+  shape. `surface-draft-lines` addresses the note `to: coordinator` only;
+  there is no operator path in the lib at all.
+
+  The suppression itself is deliberate and correct — it exists so a standing
+  block does not spam the coordinator every tick. The defect is that nothing
+  ever escalates instead. Silence is currently indistinguishable between
+  "resolved" and "still stuck, eight hours later".
+
+  ## Why this is worth its own ticket rather than folding into BL-919
+
+  BL-919 narrows the gate so mergeable dirt stops blocking. It does not, and
+  should not, make blocks impossible: a genuine conflict, or dirt that really
+  does overlap the merge, must still refuse. Those are exactly the cases that
+  will now go quiet — so the quiet path outlives the gate fix and is worth
+  closing on its own.
+
+  ## Shape of the fix (direction, not mandate)
+
+  The existing per-episode state is the natural place to count persistence,
+  and the existing self-healing reset (reaching `:up-to-date` or a successful
+  reconcile clears state) is what invariant 2 is protecting — it already
+  works and must keep working. The operator-facing channel should be one the
+  swarm already uses to reach a human rather than a new one invented here.
+
+qa_e2e_procedure: |
+  1. Drive the sweep into a blocked state on a scratch clone. Confirm the
+     first tick still sends exactly one coordinator note naming the reason,
+     and that no operator escalation has fired yet.
+  2. Hold the block and run the sweep repeatedly past the threshold. Confirm
+     the operator is escalated to, and that the escalation names both the
+     reason and how far behind local `main` is.
+  3. Keep the block in place for further ticks. Confirm the operator is not
+     escalated to again — once per episode, not per tick.
+  4. Resolve the block and let the sweep reconcile. Then create a fresh,
+     unrelated block and confirm it notes the coordinator and escalates on
+     its own schedule rather than being suppressed by the previous episode's
+     flag (invariant 2).
+  5. Run a sweep that is never blocked and confirm no operator escalation
+     occurs at all.
+  6. Repeat step 1 for the conflict-abort reason as well as the dirty reason —
+     the human named both.
+
+out_of_scope: |
+  The intake's own exclusions, taken unchanged:
+
+  - Moving `main` onto a forever-clean worktree.
+  - Letting the coordinator merge.
+  - Changing QA's `push origin HEAD:main` landing.
+
+  Also out of scope here:
+
+  - Narrowing which trees count as blocking — that is BL-919, split from the
+    same intake. This ticket assumes blocks will still legitimately happen.
+  - Changing the existing first-tick coordinator note, its wording, or its
+    `≤80` char limit.
+  - Any general-purpose operator alerting mechanism. Reuse a path that
+    already reaches the human; do not build a second one.
+
+notes: |
+  2026-08-17 specifier, on minting. Drained from operator intake per BL-311;
+  the source `INTAKE-*.md` is archived in the same pass, pointing at both
+  this ticket and BL-919.
+
+  **Probed before speccing.** Read the `sweep!` state machine directly and
+  confirmed the surfaced-once suppression and the coordinator-only draft.
+  Also confirmed the existing unit suite already asserts the current
+  behaviour explicitly — `"sweep!: dirty-blocked surfaces only once across
+  repeated identical ticks"` — so that assertion is not incidental coverage
+  to be quietly edited; it encodes the intended suppression and needs
+  extending rather than deleting.
+
+  **Sequencing with BL-919.** Independent, and either order works. If both
+  are active at once they touch the same two files
+  (`master_main_reconcile_lib.bb` and its test runners), so per Concurrent
+  Work Orthogonality they should not be promoted into the same active set.
+  BL-919 is the higher-severity half and should go first if a choice is
+  needed.
+
+  **Degraded gating — the hardener must record this, not imply it away.**
+  Babashka: no code-mutation, CRAP or DRY tooling is wired (engineering.prompt
+  Startup Tools). The gate is
+  `swarmforge/scripts/test/master_main_reconcile_lib_test_runner.bb` and
+  `..._property_runner.bb`.
+
+  **Acceptance is a `.feature.draft` on purpose**, following BL-891's
+  precedent — a Babashka daemon sweep the JS acceptance runner cannot bind,
+  so a live `.feature` would hard-fail the runner on unbindable scenarios
+  (BL-233).
+
+  **No `required_wiring:` deliberately.** The sweep is already called from
+  `handoffd.bb:3163`; this ticket adds no new call site, so any pattern would
+  match vacuously today (BL-874).
