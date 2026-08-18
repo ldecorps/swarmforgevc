@@ -140,7 +140,7 @@ If the gate encounters a git command failure (e.g., `main` and `swarmforge-QA` s
 
 - **BL-630:** Push sweep refuses non-QA-approved main (complement to BL-629)
 - **BL-631:** Babysitter detects pipeline work on main (land-time detection)
-- **BL-632:** Commit-time guard refuses pipeline code on main (pre-commit hook)
+- **[BL-632](BL-632-commit-time-guard-refuses-pipeline-code-on-main.md):** Commit-time guard refuses pipeline code on main (pre-commit + pre-merge-commit hooks)
 - **BL-567:** Expeditor (offline single-ticket pipeline)
 
 ## Testing
