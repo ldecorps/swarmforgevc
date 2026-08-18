@@ -35,6 +35,20 @@ function resolveMarker(ctx) {
   throw new Error(`BL-926: no known scenario for ${JSON.stringify(ctx.bl926)}`);
 }
 
+// resolveMarker is keyed on shape (departing/target/box/forceOverride), not
+// on the Examples table's own <decision> literal - so mutating a Scenario
+// Outline decision cell alone would resolve the same marker and pass. Pin
+// each marker's real outcome so the <decision> the fixture actually asserts
+// is checked against what the shell test scenario itself proves, not merely
+// whitelisted for being a recognized word.
+const MARKER_EXPECTED_DECISION = {
+  '09:': 'proceed',
+  '01:': 'refuse',
+  '02:': 'proceed',
+  '03:': 'proceed',
+  '05:': 'proceed-forced',
+};
+
 function runGateTest() {
   const result = spawnSync('bash', [TEST_SCRIPT], { encoding: 'utf8' });
   return { status: result.status, stdout: (result.stdout || '') + (result.stderr || '') };
@@ -87,7 +101,15 @@ function registerSteps(registry) {
     if (!KNOWN_DECISIONS.has(decision)) {
       throw new Error(`BL-926: unrecognized decision "${decision}"`);
     }
-    requirePass(ctx, resolveMarker(ctx), `the rotate gate decision to be "${decision}"`);
+    const marker = resolveMarker(ctx);
+    const expected = MARKER_EXPECTED_DECISION[marker];
+    if (expected !== decision) {
+      throw new Error(
+        `BL-926: Examples row claims decision "${decision}" but scenario ${marker} ` +
+        `(${JSON.stringify(ctx.bl926)}) proves "${expected}"`
+      );
+    }
+    requirePass(ctx, marker, `the rotate gate decision to be "${decision}"`);
   }, FEATURE);
 
   registry.defineScoped(/^that role's in_process box still holds the same parcel unchanged$/, (ctx) => {
