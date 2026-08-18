@@ -94,42 +94,9 @@ description: |
   exist. Expect the measured bounce rate to go UP if anything, as previously
   invisible defects become detectable.
 
-acceptance: |
-  specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
+acceptance: specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
 
-  Every scenario needs its step handler wired in this same parcel (BL-233).
-
-  Scenario map: 01 outlines the three refusal shapes and asserts the refusal
-  names the offending path in each (a feature shadowed by its draft; an
-  acceptance pointing straight at a parked draft; a feature absent with no
-  draft at all) (#1/#4); 02 an acceptance that resolves promotes unchanged
-  (#2); 03 prose acceptance is outside the gate and no feature is demanded
-  (#3); 04 a same-prefix sibling feature does not rescue a dangling explicit
-  pointer; 05 the backfill audit enumerates the whole exposure at once (#5).
-
-  Scenario 04 is not in the original numbered list and is the one shape a
-  reimplementation is most likely to miss. The gate that exists today,
-  `is_buildable()` in promote_and_route_next.sh, falls back to a glob over
-  `specs/features/<id>-*.feature` when the explicit pointer fails to resolve,
-  so any sibling feature carrying the same ticket-id prefix silently passes a
-  candidate whose own acceptance dangles. Closing the hole means the explicit
-  pointer is authoritative; the glob may only be a fallback for tickets that
-  name no path at all.
-
-  Supporting gates:
-  - The same function already treats an acceptance naming an existing
-    `.feature.draft` as buildable (verified 2026-07-27 against BL-694 while
-    it was still parked). That is the live exposure, not a hypothetical: a
-    parked draft is by convention non-executable, so resolving to one must
-    refuse, not pass. Cover it as a distinct case from the missing-file one.
-  - Fail-closed: an acceptance field that cannot be parsed refuses. Absence of
-    a readable answer must never read as permission.
-  - The refusal text is asserted for CONTENT, not just for being a refusal -
-    the named path is the deliverable (prompt-text assertions over a message
-    that merely says "blocked" would be fake acceptance here).
-  - No new friction on the happy path: a resolving acceptance must promote in
-    the same number of steps as before.
-
+qa_e2e_procedure: |
   QA end-to-end procedure (live swarm, scratch backlog fixtures - never the
   live paused/ tree):
   1. Point a scratch ticket's acceptance at `<x>.feature` with only
@@ -181,3 +148,43 @@ notes: |
   set drifts. Two tickets found on 07-27 carry the OTHER shape — BL-579 and
   BL-580 name a `.feature` that exists nowhere, with no draft beside it —
   and are the closest thing to a live reproduction of the origin incident.
+
+  ## BL-922 bookkeeping (coder): acceptance: made a single-line pointer
+
+  Bookkeeping only - nothing anyone builds changes; the text below and in
+  qa_e2e_procedure: is the same text that used to ride the acceptance: block
+  scalar, relocated verbatim, so the pre-QA gates can read the pointer instead
+  of failing at the documenter->QA hop.
+
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 outlines the three refusal shapes and asserts the refusal
+  names the offending path in each (a feature shadowed by its draft; an
+  acceptance pointing straight at a parked draft; a feature absent with no
+  draft at all) (#1/#4); 02 an acceptance that resolves promotes unchanged
+  (#2); 03 prose acceptance is outside the gate and no feature is demanded
+  (#3); 04 a same-prefix sibling feature does not rescue a dangling explicit
+  pointer; 05 the backfill audit enumerates the whole exposure at once (#5).
+
+  Scenario 04 is not in the original numbered list and is the one shape a
+  reimplementation is most likely to miss. The gate that exists today,
+  `is_buildable()` in promote_and_route_next.sh, falls back to a glob over
+  `specs/features/<id>-*.feature` when the explicit pointer fails to resolve,
+  so any sibling feature carrying the same ticket-id prefix silently passes a
+  candidate whose own acceptance dangles. Closing the hole means the explicit
+  pointer is authoritative; the glob may only be a fallback for tickets that
+  name no path at all.
+
+  Supporting gates:
+  - The same function already treats an acceptance naming an existing
+    `.feature.draft` as buildable (verified 2026-07-27 against BL-694 while
+    it was still parked). That is the live exposure, not a hypothetical: a
+    parked draft is by convention non-executable, so resolving to one must
+    refuse, not pass. Cover it as a distinct case from the missing-file one.
+  - Fail-closed: an acceptance field that cannot be parsed refuses. Absence of
+    a readable answer must never read as permission.
+  - The refusal text is asserted for CONTENT, not just for being a refusal -
+    the named path is the deliverable (prompt-text assertions over a message
+    that merely says "blocked" would be fake acceptance here).
+  - No new friction on the happy path: a resolving acceptance must promote in
+    the same number of steps as before.

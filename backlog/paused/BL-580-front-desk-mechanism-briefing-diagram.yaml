@@ -71,9 +71,19 @@ description: |
       mapped topic; a voice-originated turn comes back as a synthesized opus
       voice note instead of text
 
-acceptance: |
-  See specs/features/BL-580-front-desk-mechanism-briefing-diagram.feature
-  (specifier writes it). Minimum:
+acceptance: specs/features/BL-580-front-desk-mechanism-briefing-diagram.feature
+
+qa_e2e_procedure: |
+  QA: run a real briefing generation and confirm the images arrive inline in
+  the actual email, not only in fixtures (BL-454's lesson).
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a
+  block scalar hiding the pointer from the pre-QA gates until the
+  documenter->QA hop). Nothing anyone builds changes; the text below and in
+  qa_e2e_procedure: is the same text, relocated verbatim.
+
+  (specifier writes the feature file). Minimum:
 
   1. `renderBriefingDiagrams` returns FOUR entries once both this and BL-579
      have landed, each with non-empty base64, and the email's cid references
@@ -85,9 +95,6 @@ acceptance: |
   Documenter: the diagram must not be the only copy of this knowledge - fold
   a prose "how the front desk works" section into the front-desk docs that
   states the restricted-operator constraint explicitly.
-
-  QA: run a real briefing generation and confirm the images arrive inline in
-  the actual email, not only in fixtures (BL-454's lesson).
 
 out_of_scope: |
   - Changing any front-desk behaviour. This is documentation of the CURRENT

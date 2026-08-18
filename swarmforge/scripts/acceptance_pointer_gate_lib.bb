@@ -32,6 +32,17 @@
    is excluded here the same as an actually-multi-line string would be."
   #"^[|>][-+]?$")
 
+(defn block-scalar-residue?
+  "True when raw-declaration (a single line's own tail) is nothing but a
+   bare YAML block-scalar indicator - see block-scalar-residue-pattern.
+   BL-922: the single point of truth other checks (e.g. backlog-hygiene-
+   lib's unreadable-acceptance check, which needs to recognize the SAME
+   residue shape against the raw acceptance: line before it goes on to
+   inspect the indented body beneath) consult instead of restating the
+   regex, so the two can never drift apart (BL-897)."
+  [raw-declaration]
+  (boolean (and raw-declaration (re-matches block-scalar-residue-pattern raw-declaration))))
+
 (defn applicable?
   "A single-line, non-blank acceptance: declaration naming an actual path is
    the only shape this gate ever checks. Blank/absent declarations,

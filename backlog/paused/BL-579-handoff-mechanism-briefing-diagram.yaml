@@ -88,9 +88,20 @@ description: |
   Source drafted at intake is attached to this ticket's evidence rather than
   inlined here; regenerate from the bullet list above if it is missing.
 
-acceptance: |
-  See specs/features/BL-579-handoff-mechanism-briefing-diagram.feature
-  (specifier writes it). Minimum the design must make testable:
+acceptance: specs/features/BL-579-handoff-mechanism-briefing-diagram.feature
+
+qa_e2e_procedure: |
+  QA: run the real briefing generation once and confirm three images arrive
+  inline in the email, not just in fixtures - BL-454's lesson that a
+  fixture-only acceptance can pass while the real path is broken.
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a
+  block scalar hiding the pointer from the pre-QA gates until the
+  documenter->QA hop). Nothing anyone builds changes; the text below and in
+  qa_e2e_procedure: is the same text, relocated verbatim.
+
+  (specifier writes the feature file). Minimum the design must make testable:
 
   1. `renderBriefingDiagrams` returns THREE entries - architecture,
      swarm-flow and the new handoff diagram - each with non-empty base64.
@@ -107,10 +118,6 @@ acceptance: |
   Documenter: fold a short "how a handoff travels" section into the handoff
   docs referencing the new diagram, so the diagram is not the only copy of
   this knowledge.
-
-  QA: run the real briefing generation once and confirm three images arrive
-  inline in the email, not just in fixtures - BL-454's lesson that a
-  fixture-only acceptance can pass while the real path is broken.
 
 out_of_scope: |
   - Changing swarm-flow.mmd or architecture.mmd. This ADDS a third diagram;
