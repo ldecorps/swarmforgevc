@@ -71,7 +71,12 @@ function registerSteps(registry) {
   registry.defineScoped(/^the ticket's acceptance field uses the block-scalar indicator "([^"]+)"$/, (ctx, indicatorName) => {
     const st = ensureState(ctx);
     const indicator = INDICATOR_MAP[indicatorName];
-    if (!indicator) throw new Error(`unknown block-scalar indicator name: ${indicatorName}`);
+    if (!indicator) {
+      // ensureState(ctx) above already created st.tmpDir - a later step's
+      // cleanup() never runs if this validation throws first.
+      cleanup(ctx);
+      throw new Error(`unknown block-scalar indicator name: ${indicatorName}`);
+    }
     st.acceptanceLine = `acceptance: ${indicator}`;
   }, FEATURE);
 
@@ -137,6 +142,9 @@ function registerSteps(registry) {
         st.bodyLines = [];
         break;
       default:
+        // ensureState(ctx) above already created st.tmpDir - a later
+        // step's cleanup() never runs if this validation throws first.
+        cleanup(ctx);
         throw new Error(`unknown acceptance shape: ${shape}`);
     }
   }, FEATURE);
