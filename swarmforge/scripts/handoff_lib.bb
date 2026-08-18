@@ -664,18 +664,35 @@
    the same launch script a fresh pane launch would run so the new session
    gets the full role re-bootstrap. Mirrors the coordinator's manual
    respawn-pane procedure, but self-triggered from inside the pane being
-   replaced instead of from an operator pane."
+   replaced instead of from an operator pane.
+
+   BL-917: this is the SAME-role re-exec path BL-911's own fix missed -
+   rotate-resident-to! (a DIFFERENT-role re-exec) established that rotation
+   is the moment prompt freshness gets recomposed from current sources, but
+   respawn-self! re-execs the CURRENT role's launch script and recomposed
+   nothing, so a role cleared at its idle boundary came back up on exactly
+   the stale prompt BL-911 exists to prevent. Same chokepoint, same failure
+   posture as rotate-resident-to!: a recompose failure is reported loudly
+   but never blocks the respawn (invariant 2) - the role still boots on the
+   prompt it already had."
   [role-name]
   (let [socket (tmux-socket)
         session (or (mono-router-resident-session) (pane-id socket))
         script (launch-script-path role-name)
-        env-args (openrouter-pane-env-args)
-        result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
-                                    env-args
-                                    ["-t" session (str "zsh '" script "'")]))]
-    (when (zero? (:exit result))
-      (write-mono-router-active-role! role-name))
-    result))
+        env-args (openrouter-pane-env-args)]
+    (let [recompose-result (recompose-role-prompt! role-name)]
+      (when-not (:ok recompose-result)
+        (binding [*out* *err*]
+          (println (str "respawn-self: WARNING recompose failed for '" role-name
+                        "': " (:reason recompose-result)
+                        " - booting on the previously composed prompt.")))
+        (flush)))
+    (let [result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                                      env-args
+                                      ["-t" session (str "zsh '" script "'")]))]
+      (when (zero? (:exit result))
+        (write-mono-router-active-role! role-name))
+      result)))
 
 ;; ── BL-518: mono-router rotation ────────────────────────────────────────────
 ;; respawn-self! re-execs the CURRENT role's launch script (idle-boundary
