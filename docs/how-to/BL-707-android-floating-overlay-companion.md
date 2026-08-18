@@ -3,11 +3,11 @@
 Native system overlay bubble for SwarmForge. Distinct from Mini App
 minimize (BL-706): this bubble can stay visible while you leave Telegram.
 
-Current debug line: **BL-707 v0.3.13-fresh-id** (`versionCode` 29, applicationId
+Current debug line: **v0.3.17-open-talk** (`versionCode` 33, applicationId
 `com.swarmforge.float`). Confirm that string under the Let's Talk title on the
-talk panel (and on the pairing screen status line if you still see it). This id
-is intentionally new so phones blocked by a signature conflict on older package
-ids can install cleanly.
+talk panel (and on the pairing screen status line if you still see it). The
+`com.swarmforge.float` application id is unchanged from BL-707's original
+0.3.13 release — it does not need to be new again for this update.
 
 ## What you get
 
@@ -44,15 +44,15 @@ android/scripts/publish-apk.sh
 That copies into `.swarmforge/operator/public/` and the bridge serves them
 at `https://bubble.musicalsifu.com/<filename>` (no bearer). Prefer the
 **versioned** filename (e.g.
-`swarmforge-float-companion-0.3.13-fresh-id.apk`) so browsers/CDNs cannot
+`swarmforge-float-companion-0.3.17-open-talk.apk`) so browsers/CDNs cannot
 keep serving a cached older APK via HTTP 304.
 
 On the phone: install
-`https://bubble.musicalsifu.com/swarmforge-float-companion-0.3.13-fresh-id.apk`
-(~5.9 MB). This build uses applicationId `com.swarmforge.float` (new), so it
-does not need to update over older `floatcompanion` / `bubble` installs.
-Confirm the talk panel shows `BL-707 v0.3.13-fresh-id`, then re-pair if
-fields are empty (or rely on `Download/swarmforge-float-pairing.json`).
+`https://bubble.musicalsifu.com/swarmforge-float-companion-0.3.17-open-talk.apk`.
+This build uses applicationId `com.swarmforge.float`, so it updates in place
+over any earlier build on that same id (0.3.13 and later). Confirm the talk
+panel shows `v0.3.17-open-talk`, then re-pair if fields are empty (or rely on
+`Download/swarmforge-float-pairing.json`).
 
 You can uninstall leftover **SwarmForge Float** / **SwarmForge Bubble** icons
 from older package ids when convenient — they are separate apps now.
@@ -113,6 +113,24 @@ say (same ticket — see the "Record a Turn" note in the
 [main Let's Talk how-to](BL-696-miniapp-lets-talk-cursor-audio.md)), a turn
 now always ends in either the real reply or an audible failure — never
 open-ended silence.
+
+## Cold-start expand no longer fails silently (BL-916)
+
+A short tap on the bubble right after a cold start (no foreground activity
+— e.g. right after force-stopping the app) used to draw the disc but do
+nothing: Android's background-activity-launch block (Samsung especially)
+silently dropped the panel start, no crash and no log. Expand now
+trampolines through the app's own exported launcher activity instead of
+starting the Talk panel directly from the background overlay service, so
+the platform allows it. Two related freezes fixed in the same pass, since
+all three looked identical to the user — "the bubble is frozen":
+
+- The pairing screen no longer gets stuck behind the Android 12+ launcher
+  splash icon when Talk is opened from the bubble.
+- The Talk panel no longer closes itself the instant it opens (the
+  overlay's own finger-up was being read as an outside tap).
+
+This does not change the gesture model — expand is still a single tap.
 
 ## When the bridge host is unreachable (BL-716)
 

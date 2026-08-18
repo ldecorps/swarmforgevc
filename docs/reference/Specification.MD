@@ -1,6 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-632: two versioned git hooks now
+**Last Updated:** August 18, 2026 (BL-916: swarm stamp-off certifying the
+already-landed Bubble hotfix `8da0f52e59` (`0.3.17-open-talk`,
+`versionCode` 33) — a cold-start tap on the bubble drew the disc but
+silently did nothing, because `OverlayService.openTalkPanel()` started
+`TalkPanelActivity` directly from a background service with no foreground
+activity, which Android's background-activity-launch block (Samsung
+especially) drops with no crash and no log. Expand now trampolines
+through the app's own exported `MainActivity` (a `PendingIntent` with
+`MODE_BACKGROUND_ACTIVITY_START_ALLOWED` on API 34+, plain `startActivity`
+of the same launcher intent as a last-resort fallback) instead of
+targeting the dialog activity directly. Two further freezes wearing the
+same "frozen bubble" costume, fixed in the same device session: the
+Android 12+ launcher splash no longer sticks after `MainActivity` stopped
+finishing its own task from `onCreate`, and the Talk panel no longer
+closes itself on its own opening finger-up now that
+`windowCloseOnTouchOutside` is false. Gesture model unchanged — expand is
+still single-tap; this is not approval of the BL-828 gesture redesign.
+Bubble has no mutation/CRAP/DRY tooling wired (the Kotlin gap), so the
+acceptance feature holds configuration/structure regression guards only
+— the primary acceptance is the ticket's recorded manual device
+procedure. See the updated "Cold-start expand no longer fails silently
+(BL-916)" section in
+`docs/how-to/BL-707-android-floating-overlay-companion.md`.); Previously
+August 18, 2026 (BL-632: two versioned git hooks now
 refuse, at commit time, a commit or `--no-ff` merge that would put
 pipeline code (`extension/src/`, `extension/test/`,
 `specs/pipeline/steps/`) onto `main` from any role but QA — the layer
