@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: lean-aware-coordinator
-human_approval: pending
+human_approval: approved
 priority: 50
 direction: swarm-surfaced
 depends_on: [BL-819, BL-820]
