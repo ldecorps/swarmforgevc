@@ -6,7 +6,7 @@ type: epic
 epic: tool-miss-auto-heal
 priority: 12
 depends_on: []
-decomposes_into: [BL-913]
+decomposes_into: [BL-913, BL-934]
 
 source: |
   Minted 2026-08-17 by the specifier from raw intake
@@ -58,6 +58,13 @@ notes: |
   VISION: a wrong-cwd or wrong-surface tool miss is retried once from a pinned
   execution environment; the model sees the healed result (or a real failure),
   never the first miss as a story to apologize for.
+
+  ## Live follow-on (minted)
+
+  - **BL-934** — slice A's missing-root-argv heal is inlined as
+    `original-command 'worktree'` in the source Claude Code classifies, so
+    every `rm` of a temp file looks like rm of the repo. Human: "Why does
+    it keep asking?" then "Mint it" (2026-08-19).
 
   ## Remaining slices (recorded, deliberately NOT minted)
 
