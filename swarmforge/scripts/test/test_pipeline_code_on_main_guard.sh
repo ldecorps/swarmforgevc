@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUARD="$SCRIPT_DIR/../check_pipeline_code_on_main.sh"
 SIZE_GUARD="$SCRIPT_DIR/../check_commit_size.sh"
 TICKET_GUARD="$SCRIPT_DIR/../check_ticket_deletion.sh"
+IS_QA_ANCESTOR="$SCRIPT_DIR/../is_qa_ancestor.sh"
 PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
 PRE_MERGE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-merge-commit"
 
@@ -30,6 +31,7 @@ mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
 cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
 cp "$TICKET_GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
+cp "$IS_QA_ANCESTOR" "$ROOT/swarmforge/scripts/is_qa_ancestor.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 cp "$PRE_MERGE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-merge-commit"
 chmod +x "$ROOT"/swarmforge/scripts/*.sh "$ROOT"/swarmforge/git-hooks/*
@@ -316,5 +318,30 @@ echo "$LIST_OUT" | grep -qx "extension/src/" || fail "list-paths: expected exten
 echo "$LIST_OUT" | grep -qx "extension/test/" || fail "list-paths: expected extension/test/ in output"
 echo "$LIST_OUT" | grep -qx "specs/pipeline/steps/" || fail "list-paths: expected specs/pipeline/steps/ in output"
 pass "extra: --list-paths publishes the QA-exclusive path set for external consumers"
+
+# ── BL-925 invariant 2: one definition of "QA-approved tip", not two ──────
+# check_pipeline_code_on_main.sh (bash) and handoffd.bb (Babashka) must both
+# call is_qa_ancestor.sh rather than each running its own `git merge-base
+# --is-ancestor ... swarmforge-QA` - a "kept in sync" pair of independent
+# invocations is exactly what invariant 2 forbids. This does not re-verify
+# ancestry semantics (provenance-01a/both-hooks-agree-02/unpublished-tip-05
+# above already do that against the real script); it only pins the
+# extraction itself, so a future edit that quietly re-inlines the git call
+# in one file without the other fails loudly here instead of drifting
+# silently.
+HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
+grep -q "is_qa_ancestor.sh" "$GUARD" \
+  || fail "BL-925 invariant 2: check_pipeline_code_on_main.sh no longer calls is_qa_ancestor.sh"
+grep -q "is_qa_ancestor.sh" "$HANDOFFD" \
+  || fail "BL-925 invariant 2: handoffd.bb no longer calls is_qa_ancestor.sh"
+# Neither file may ALSO run its own independent `git merge-base
+# --is-ancestor ... swarmforge-QA` outside of is_qa_ancestor.sh's own body -
+# that would be exactly the divergent second definition invariant 2 forbids,
+# even with the shared script still present and called.
+grep -q 'merge-base.*--is-ancestor.*swarmforge-QA' "$GUARD" \
+  && fail "BL-925 invariant 2: check_pipeline_code_on_main.sh still runs its own inline ancestry git call"
+grep -q '"merge-base".*"--is-ancestor"' "$HANDOFFD" \
+  && fail "BL-925 invariant 2: handoffd.bb still runs its own inline ancestry git call"
+pass "BL-925 invariant2-one-shared-definition: both the bash guard and handoffd.bb call is_qa_ancestor.sh, not a second independent ancestry check"
 
 echo "ALL PASS"
