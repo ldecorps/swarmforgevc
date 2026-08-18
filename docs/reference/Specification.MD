@@ -1,6 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-928: the onboarder supervisor's
+**Last Updated:** August 18, 2026 (BL-930: extends the orphan janitor's
+disposable-root ancillary class (`tmp-ancillary-cmdline?`,
+`orphan_janitor_lib.bb`) to admit a tmp-rooted onboarder — its reconcile
+poll-loop (`extension/out/tools/onboarder-reconcile.js <root> poll-loop`)
+and its `onboarder_supervisor.bb` parent — neither of which the catalog
+recognized at all, so a fixture-scoped leftover from a killed
+`test_onboarder_supervisor_tick.sh` run was invisible to every sweep at any
+age; measured live 2026-08-18, a `tmp.KTEWg2bJ/swarm` leftover pair burning
+~15% CPU. New `onboarder-reconcile-cmdline?`/`onboarder-supervisor-cmdline?`
+predicates sit inside `tmp-ancillary-cmdline?`'s existing `or`, so the
+disposable-root gate (`extract-disposable-root`) stays structural rather
+than a second promise — the host-repo onboarder remains BL-928's territory
+and can never match (invariant 1). Deliberately no front-desk-class fast
+path (invariant 2): `onboarder_supervisor.bb`'s `--check-once` branch exits
+immediately after spawning the poll-loop through `tick!`, so a live
+fixture's own child is PPID 1 within milliseconds — `parent-orphaned?`
+carries no signal for this class the way it does for BL-879's front-desk
+leftovers, and a fast path would reap a healthy in-progress test. The class
+falls through unchanged to the ordinary ~2h ancillary age gate
+`reapable-tmp-ancillary?` already applies to babysitter/tmux, needing no
+change of its own. Explicit human decision in the source intake: no fast
+path even though the CPU cost is real, since the hardener's separate BL-928
+teardown fix (bounded SIGTERM-then-SIGKILL plus supervisor cleanup) already
+cuts the leak rate at its normal/graceful-stop producer, leaving only a
+SIGKILLed run as this class's actual target; the host-repo onboarder ban
+from BL-928 is restated, not relaxed. No human-facing command or setting;
+same internal-hygiene reap-class-extension class as BL-849/BL-879/BL-885.);
+Previously August 18, 2026 (BL-928: the onboarder supervisor's
 `check-one!` `"not-started"` restart branch spawned a fresh reconcile child
 without ever reaping a sibling left behind by an abnormal supervisor death
 (SIGKILL, crash, a host kill skipping `stop-all!`'s `finally`) — one more
