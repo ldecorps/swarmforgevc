@@ -12,11 +12,11 @@ import { LeanLedgerEvent } from '../quality/leanLedger';
 import { composeStageTransitionEvents } from './leanLedgerComposeStageDwell';
 import { composeBounceEvents } from './leanLedgerComposeBounce';
 import { composeStageSkipEvents } from './leanLedgerComposeStageSkip';
-import { composeStallEvents } from './leanLedgerComposeStall';
+import { composeStallEvents, unrecognizedChaserTelemetryTypes } from './leanLedgerComposeStall';
 import { composeCloseEvent } from './leanLedgerComposeClose';
 
 export type { MinimalRoleEntry };
-export { composeStageTransitionEvents, composeBounceEvents, composeStageSkipEvents, composeStallEvents, composeCloseEvent };
+export { composeStageTransitionEvents, composeBounceEvents, composeStageSkipEvents, composeStallEvents, composeCloseEvent, unrecognizedChaserTelemetryTypes };
 
 export function composeAllLeanLedgerEvents(mainWorktreePath: string, roles: MinimalRoleEntry[], ticket: string): LeanLedgerEvent[] {
   const closeEvent = composeCloseEvent(mainWorktreePath, ticket);

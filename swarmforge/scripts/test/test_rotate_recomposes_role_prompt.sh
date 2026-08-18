@@ -26,6 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROTATE_SH="$REAL_SCRIPTS_DIR/rotate_to_role.sh"
 HANDOFF_LIB="$REAL_SCRIPTS_DIR/handoff_lib.bb"
+READY_TASK_BB="$REAL_SCRIPTS_DIR/ready_for_next_task.bb"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -112,6 +113,31 @@ run_rotate_via_daemon_path() {
 ")
 }
 
+# BL-917: idle-clear is a per-role roles.tsv column 8 opt-in (BL-089),
+# absent/"off"/anything-but-"on" meaning disabled. Rewrites the SAME two
+# rows scenarios 01-04 already depend on, only varying hardender's 8th
+# column, so target-root/session resolution stays identical to above.
+set_idle_clear() {
+  local state="$1"
+  printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" > "$ROOT/.swarmforge/roles.tsv"
+  printf 'hardender\thardender\t%s\tswarmforge-hardender\tHardender\tclaude\tbatch\t%s\n' "$HARD_WT" "$state" >> "$ROOT/.swarmforge/roles.tsv"
+}
+
+# Drives the REAL ready_for_next_task.bb --idle-boundary (BL-089's own
+# entrypoint flag) directly via `bb`, as hardender, with an empty inbox so
+# it reaches report-no-task-or-rotate! -> maybe-clear-at-idle-boundary! -
+# never a reimplementation of that gate. Deliberately NOT the .sh wrapper:
+# ready_for_next_task.sh's own `cd "$SCRIPT_DIR"` (to this repo's REAL
+# swarmforge/scripts/, so its relative loads resolve regardless of caller
+# cwd) would override this fixture's `cd "$HARD_WT"` before bb even starts,
+# making target-root's git-common-dir fallback resolve against the REAL
+# swarm repo instead of the fixture - confirmed the hard way: an earlier
+# draft of this test using the wrapper read (harmlessly, but by luck) a
+# REAL in-process handoff out of THIS repo's own live hardender worktree.
+run_idle_boundary() {
+  (cd "$HARD_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE="$1" bb "$READY_TASK_BB" --idle-boundary)
+}
+
 # ── Scenario Outline 01 / 02 (resident row): prose landed after launch ─────
 # reaches the role at its next rotation, driven by the resident. All three
 # <source> examples (role prompt / inlined constitution article / pipeline
@@ -167,5 +193,57 @@ run_rotate hardender > /dev/null 2>&1
 SECOND="$(cat "$PROMPT_FILE")"
 [[ "$FIRST" == "$SECOND" ]] || fail "04: recomposing twice against unchanged sources must be byte-identical"
 pass "04: a role whose sources are unchanged since the swarm was composed boots on a prompt that lost nothing"
+
+# BL-917: scenarios 05-07 exercise the SAME-role re-exec path BL-911 missed
+# - respawn-self! (the idle-boundary clear), never rotate-resident-to!/
+# rotate_to_role.sh. hardender's inbox/new still holds scenario 01-04's
+# wait-for-delivery! seed handoff; clear it first so ready_for_next_task.sh
+# actually reaches NO_TASK -> report-no-task-or-rotate! instead of handing
+# out that leftover parcel.
+rm -f "$HARD_WT/.swarmforge/handoffs/inbox/new"/*.handoff \
+      "$HARD_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+
+# ── Scenario 05: an idle-boundary clear boots the same role on a freshly ───
+# composed prompt - BL-917's own fix (respawn-self! did not recompose
+# before BL-911's sibling rotate-resident-to! did).
+reset_stale_prompt
+assert_no_marker "You are the hardender." "05"
+set_idle_clear "on"
+: > "$TMUX_LOG"
+OUT="$(run_idle_boundary hardender 2>&1)"
+echo "$OUT" | grep -q '^NO_TASK$' || fail "05: expected NO_TASK before the idle clear runs, got: $OUT"
+grep -q "respawn-pane" "$TMUX_LOG" || fail "05: expected a respawn-pane call at the idle boundary, log: $(cat "$TMUX_LOG")"
+assert_markers_present "05"
+pass "05: an idle-boundary clear boots the same role on a freshly composed prompt"
+
+# ── Scenario 06: a composition that fails at an idle clear still boots the ─
+# role (clear still completes), leaves the previous prompt in place, and
+# reports the failure - same invariant-2 posture as scenario 03's rotation.
+reset_stale_prompt
+rm -f "$METADATA_FILE"   # BL-911/BL-917: no metadata sidecar -> recompose-role-prompt! fails
+: > "$TMUX_LOG"
+OUT="$(run_idle_boundary hardender 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" || fail "06: the clear must still complete despite a composition failure, log: $(cat "$TMUX_LOG")"
+[[ "$(cat "$PROMPT_FILE")" == "$STALE_PROMPT" ]] \
+  || fail "06: the prompt must carry everything it carried before on a composition failure, got: $(cat "$PROMPT_FILE")"
+echo "$OUT" | grep -qi "recompose failed" || fail "06: the composition failure must be reported, got: $OUT"
+echo "$OUT" | grep -q "hardender" || fail "06: the failure report must name the role, got: $OUT"
+pass "06: a composition that fails at an idle clear still boots the role, and the failure is reported"
+
+# restore the metadata sidecar (deleted above) before scenario 07 composes
+printf '{"agent":"claude","model":"sonnet-5","two-pack?":false,"overlay-prompt":""}' > "$METADATA_FILE"
+
+# ── Scenario 07: with idle-clear off, the idle boundary neither respawns ───
+# nor recomposes - the shipped default (BL-089) must remain a true no-op;
+# this ticket must not start recomposing on every parcel completion.
+reset_stale_prompt
+set_idle_clear "off"
+: > "$TMUX_LOG"
+OUT="$(run_idle_boundary hardender 2>&1)"
+echo "$OUT" | grep -q '^NO_TASK$' || fail "07: expected NO_TASK, got: $OUT"
+grep -q "respawn-pane" "$TMUX_LOG" && fail "07: idle-clear off must never respawn, log: $(cat "$TMUX_LOG")"
+[[ "$(cat "$PROMPT_FILE")" == "$STALE_PROMPT" ]] \
+  || fail "07: idle-clear off must never recompose the prompt either, got: $(cat "$PROMPT_FILE")"
+pass "07: with idle-clear off, the idle boundary neither respawns nor recomposes"
 
 echo "test_rotate_recomposes_role_prompt: ALL CHECKS PASSED"
