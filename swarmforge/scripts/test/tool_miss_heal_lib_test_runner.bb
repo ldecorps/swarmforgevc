@@ -80,6 +80,15 @@
 ;; this way. Every fixture below is a tiny throwaway script, never a real
 ;; git/npm/node invocation.
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn mk-tmp []
+  (let [d (str (fs/create-temp-dir))]
+    (swap! created-temp-dirs conj d)
+    d))
+
 (defn run-wrapper
   "Runs the generated wrapper as bash would - :session-dir simulates the
    drifted cwd the model's persistent shell session happens to be in when
@@ -93,7 +102,7 @@
          {:keys [out exit]} (process/sh ["bash" "-c" wrapper] opts)]
      {:out out :exit exit})))
 
-(let [tmp (str (fs/create-temp-dir))
+(let [tmp (mk-tmp)
       script (str tmp "/always-ok.sh")]
   (spit script "#!/usr/bin/env bash\nprintf 'ok'\nexit 0\n")
   (.setExecutable (fs/file script) true)
@@ -101,7 +110,7 @@
     (assert= "end to end: a command that succeeds as issued is returned untouched, exit 0" 0 exit)
     (assert= "end to end: a command that succeeds as issued returns its own output untouched" "ok" out)))
 
-(let [tmp (str (fs/create-temp-dir))
+(let [tmp (mk-tmp)
       counter (str tmp "/calls")
       script (str tmp "/fail-outside-repo.sh")]
   ;; Simulates a relative-path git command run from a drifted cwd: fails
@@ -117,14 +126,14 @@
              "  exit 128\n"
              "fi\n"))
   (.setExecutable (fs/file script) true)
-  (let [outside (str (fs/create-temp-dir))
+  (let [outside (mk-tmp)
         {:keys [out exit]} (run-wrapper (str "bash " script) tmp outside)]
     (assert= "end to end wrong-cwd: the healed re-run (from the pinned worktree) succeeds" 0 exit)
     (assert= "end to end wrong-cwd: the model receives ONLY the healed result" "healed-ok" out)
     (assert= "end to end wrong-cwd: exactly one retry (two invocations total: the miss + the one heal)"
              2 (count (str/split-lines (str/trim (slurp counter)))))))
 
-(let [tmp (str (fs/create-temp-dir))
+(let [tmp (mk-tmp)
       counter (str tmp "/calls")
       script (str tmp "/always-fails-wrong-cwd.sh")]
   ;; One-retry-then-stop (scenario 03): the healed re-run misses the SAME
@@ -143,7 +152,7 @@
     (assert= "end to end one-retry-then-stop: exactly two invocations total, never a third"
              2 (count (str/split-lines (str/trim (slurp counter)))))))
 
-(let [tmp (str (fs/create-temp-dir))
+(let [tmp (mk-tmp)
       counter (str tmp "/calls")
       script (str tmp "/real-failure.sh")]
   ;; A genuine failure (red test) outside the recoverable classes: never
