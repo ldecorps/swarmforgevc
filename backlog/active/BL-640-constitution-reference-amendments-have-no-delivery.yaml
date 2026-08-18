@@ -205,6 +205,7 @@ notes: |
   which is the merge BL-924 unblocks — is dissolved by scenario 02 accepting
   refuse-and-report as a valid outcome. So neither slice waits on the other,
   and `depends_on` stays empty rather than naming an unbuilt sibling.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-18, by: architect, blamed: coder, class: behavior, commit: fded1ca02, evidence: backlog/evidence/BL-640-constitution-reference-amendments-have-no-delivery-bounce-20260818.md }
+  - { at: 2026-08-18, by: QA, blamed: coder, class: behavior, commit: aca588ea6, evidence: backlog/evidence/BL-640-constitution-reference-amendments-have-no-delivery-qa-bounce-20260818.md }
