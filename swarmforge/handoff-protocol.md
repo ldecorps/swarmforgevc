@@ -1688,6 +1688,47 @@ Responsibilities:
 - Dispatch to `ready_for_next_task.sh` for `task` mode.
 - Dispatch to `ready_for_next_batch.sh` for `batch` mode.
 
+### Reference-freshness pre-turn guard (BL-640)
+
+`ready_for_next.bb` runs one check before any of the above dispatch logic:
+a stale `swarmforge/constitution/articles/reference/` elaboration must
+never be silently acted on. Top-level `articles/*.prompt` files are inlined
+into the composed prompt on every respawn, so an amendment there is
+delivered automatically; the on-demand `reference/` elaborations are read
+straight from each role's own worktree, so an amendment landed on `main`
+reaches no one until that worktree happens to merge — the 2026-07-25 gap
+where an Article 5.1 bounce-revert correction left three role worktrees
+instructing reviewers to run a check that could never pass.
+
+`reference_freshness_lib.bb` (pure) compares a sha256 of every file the
+worktree currently has under that directory against the same files' content
+at whichever of `main` / `origin/main` is actually ahead (`git rev-list
+--left-right --count main...origin/main` — see the workflow rule "A Prior
+QA Bounce Is Not In Your Worktree", BL-340, on why the ahead ref can be
+either one depending on when QA last pushed and when the master checkout
+last merged it in). Any path present on the ahead ref with different
+content — or missing from the worktree entirely — is stale.
+
+- **Fresh** (no stale paths, or the check can't run — no `main` ref, no
+  `reference/` dir, git unavailable): passes through silently, no cost to
+  the normal case.
+- **Stale**: the turn is refused with exit code 2 and a
+  `STALE_REFERENCE_ELABORATION` message naming every drifted file:
+  ```
+  STALE_REFERENCE_ELABORATION: this worktree has not merged an amendment to the
+  swarmforge/constitution/articles/reference file(s) - an inlined constitution
+  rule and its on-demand elaboration could contradict each other until `main`
+  is merged:
+    - swarmforge/constitution/articles/reference/workflow-detailed.prompt
+  Merge main, then run ready_for_next.sh again.
+  ```
+
+The guard never attempts the merge itself and never touches the untracked
+hot-synced script copies that can block one — that gap is BL-924's scope
+(not yet built), deliberately split out so this guard's refuse-and-report
+outcome never depends on a merge succeeding. Run `ready_for_next.sh` again
+after merging `main` in.
+
 ### `done_with_current.sh`
 
 Responsibilities:
