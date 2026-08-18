@@ -185,6 +185,10 @@ out_of_scope: |
     not regress it, but does not re-open it.
 
 notes: |
+  Human 2026-08-17 (Cursor): after BL-908's ambulance ride, ambulance the
+  children — BL-825 then BL-829. Do not engage ambulance on this epic; it is
+  a tracker only.
+
   Consolidation record (BL-680). This epic drains ONE root intake,
   `INTAKE-bubble-thin-shell-auto-update.md`, 1:1 — no merge, no split. The
   nine sibling Bubble intakes at the backlog root are deliberately NOT folded
