@@ -171,3 +171,5 @@ notes: |
   **BL-233 obligation.** All five scenarios are new and need step handlers
   landed in THIS parcel; the acceptance runner throws on any scenario it
   cannot resolve.
+
+assigned_to: coder
