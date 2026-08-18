@@ -79,9 +79,10 @@ if (( ${#offenders[@]} > 0 )); then
   # writer could stage fresh pipeline edits on top of a legitimate merge and
   # ride through on its coat-tails, so every offending path's staged content
   # is diffed against the incoming parent - any real difference keeps that
-  # path (and only that path) refused below. This reuses BL-630's own
-  # QA-ancestry question (git merge-base --is-ancestor against
-  # swarmforge-QA) rather than a second definition of "QA-approved tip".
+  # path (and only that path) refused below. This calls is_qa_ancestor.sh,
+  # the ONE shared definition of "QA-approved tip" handoffd.bb's push-sweep
+  # wiring also calls (BL-925 invariant 2) - never a second, independently
+  # maintained ancestry check.
   #
   # Finding the incoming merge parent: .git/MERGE_HEAD is reliable when the
   # merge was explicitly stopped (--no-commit, or a real conflict later
@@ -110,7 +111,7 @@ if (( ${#offenders[@]} > 0 )); then
       merge_head_sha="$githead_candidate"
     fi
   fi
-  if [[ -n "$merge_head_sha" ]] && git merge-base --is-ancestor "$merge_head_sha" swarmforge-QA 2>/dev/null; then
+  if [[ -n "$merge_head_sha" ]] && "$REPO_ROOT/swarmforge/scripts/is_qa_ancestor.sh" "$merge_head_sha" 2>/dev/null; then
     non_matching=()
     for f in "${offenders[@]}"; do
       if [[ -n "$(git diff --cached "$merge_head_sha" -- "$f")" ]]; then
