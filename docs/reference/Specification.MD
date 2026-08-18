@@ -1,6 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-918: the ticket lifecycle ledger's
+**Last Updated:** August 18, 2026 (BL-678: batch-mode claims
+(`ready_for_next_batch.bb`) now write a `.batch-claim-progress.json`
+sidecar (`batch_claim_progress_lib.bb`) the instant a parcel is claimed —
+naming owner role, parcel id, claim instant, last-progress instant, and
+last-seen commit — closing the live-owner half of the same 2026-07-25
+source near-miss BL-648 fixed the dead-owner half of at relaunch time: a
+cleaner batch claim wrote no progress record at all, so the coordinator,
+chasing an apparently-stalled parcel, nearly re-forwarded a duplicate. A
+new sweep (`chase_sweep_lib.bb`/`handoffd.bb::batch-claim-progress-sweep!`)
+refreshes the sidecar from the owning worktree's `HEAD` and, past
+`batch_claim_progress_stale_threshold_minutes` (default 20 minutes) with no
+advance, surfaces a named, aged suspect `note` to the coordinator only —
+never re-forwarding or re-delivering the parcel — at most once per
+`batch_claim_progress_cooldown_minutes` (default 30 minutes) for the same
+item. Deliberately separate from BL-528's task-mode claim-idle escalation
+ladder (nudge → bounce → halt): this mechanism assumes a live owner
+throughout and only ever answers "is it progressing", never "is it alive".
+An architect bounce caught dead code with a self-contradicting coupling
+rationale (a duplicated cooldown predicate never called outside its own
+unit test); cleaner deleted it in the remediation pass. See
+`docs/how-to/BL-678-batch-claim-progress-sidecar.md` and the new
+"Batch-claim-progress suspect sweep (BL-678)" section in
+`swarmforge/handoff-protocol.md`.); Previously August 18, 2026 (BL-918: the
+ticket lifecycle ledger's
 `stall` event composer, `composeStallEvents`
 (`extension/src/metrics/leanLedgerComposeStall.ts`), ingested every row
 sharing `handoffd`'s chaser-telemetry file as a stall regardless of type —
