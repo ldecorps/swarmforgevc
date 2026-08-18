@@ -972,3 +972,36 @@ not as the several separate edits that produced it).
   `dangerouslyIgnoreUnhandledErrors` is all-or-nothing (`_checkUnhandledErrors`
   has no per-message filter), so without this grep gate the flag masks every
   future distinct unhandled error too (BL-871; architect rule, 2026-08-11).
+## Fixture temp dirs are removed in a `finally` (architect rule proposal 2026-08-18)
+
+Adopted from an architect `rule_proposal`, scope `engineering`, raised after
+BL-921 and BL-922 bounced in the same session for the same reason: an
+acceptance step-handler fixture created its scratch directory with
+`fs.mkdtempSync` and removed it on the last line of the happy path. When an
+assertion threw — which is exactly what a bounce IS — the removal never ran.
+BL-922 alone left 45 directories behind.
+
+The failure mode is quiet and cumulative. Nothing fails when a temp dir
+survives; the suite stays green, the host slowly fills, and the leak is only
+visible to whoever goes looking. It is also self-amplifying under review: the
+more a ticket bounces, the more copies it strands, so the tickets that leak
+worst are the ones already having a bad day.
+
+Measured across the step registry on 2026-08-18: **236 of 287** step-handler
+files that call `mkdtempSync` had no `finally` anywhere in the file. So the
+proposal describes the norm, not two unlucky tickets — the happy-path cleanup
+is what the codebase teaches by example, which is why it belongs in a rule
+rather than in the two bounce reports.
+
+`try`/`finally` is the shape named because it survives the throw. A test
+framework's own teardown hook is an equally acceptable answer where one is
+available; what is NOT acceptable is cleanup positioned after the assertions,
+whatever it is spelled. The property that matters is that the removal runs on
+the failing path, not that a particular keyword appears.
+
+This is deliberately narrower than the existing "never diff shared globals"
+rule above. That one is about tests READING shared state and drawing
+conclusions from it; this one is about tests WRITING durable state and not
+taking it back. Both point at the same underlying discipline — a test leaves
+the host as it found it — but they fail in opposite directions and are worth
+stating separately.
