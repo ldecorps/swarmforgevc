@@ -97,12 +97,28 @@
      (or (re-find #"/extension/out/tools/start-bridge-headless\.js" c)
          (re-find #"/extension/out/tools/telegram-front-desk-bot\.js" c)))))
 
+(defn onboarder-reconcile-cmdline?
+  "True for the onboarder reconcile poll-loop entrypoint (BL-930). Alone
+   this also matches a host-repo invocation - callers MUST still require a
+   disposable root (tmp-ancillary-cmdline? / tmp-project-root?) before
+   treating the process as reapable."
+  [cmdline]
+  (boolean (re-find #"/extension/out/tools/onboarder-reconcile\.js(?:\s|$)" (or cmdline ""))))
+
+(defn onboarder-supervisor-cmdline?
+  "True for the onboarder_supervisor.bb entrypoint (BL-930). Same host-repo
+   caveat as onboarder-reconcile-cmdline? - callers MUST still require a
+   disposable root before treating the process as reapable."
+  [cmdline]
+  (boolean (re-find #"(?:^|/)onboarder_supervisor\.bb(?:\s|$)" (or cmdline ""))))
+
 (defn tmp-ancillary-cmdline?
-  "Front-desk / babysitter leftovers under a disposable checkout. Requires
-   an extractable disposable root so host bridge/bot/babysitterd never match.
-   Also covers worktree babysitterd.sh aimed at a temp root, and any tmux
-   whose -S socket path sits under that root (BL-647 / swarmforge-coder
-   fixture leftovers)."
+  "Front-desk / babysitter / onboarder leftovers under a disposable
+   checkout. Requires an extractable disposable root so host
+   bridge/bot/babysitterd/onboarder never match (BL-930 invariant 1: the
+   host-repo onboarder stays BL-928's territory). Also covers worktree
+   babysitterd.sh aimed at a temp root, and any tmux whose -S socket path
+   sits under that root (BL-647 / swarmforge-coder fixture leftovers)."
   [cmdline]
   (let [c (or cmdline "")]
     (boolean
@@ -112,6 +128,8 @@
               (re-find #"babysitterd\.sh(?:\s|$)" c)
               (re-find #"(?:^|[\s/])tmux(?:\s|$)" c)
               (front-desk-bridge-or-bot-cmdline? c)
+              (onboarder-reconcile-cmdline? c)
+              (onboarder-supervisor-cmdline? c)
               (and (re-find #"(?:^|\s)claude(?:\s|$)" c)
                    (re-find #"(?:^|\s)-n\s+Babysitter(?:\s|$)" c)))))))
 
