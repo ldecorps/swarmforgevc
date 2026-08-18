@@ -61,6 +61,11 @@ check_once() {
 jget() { bb -e "(require '[cheshire.core :as j]) (println (get-in (j/parse-string (slurp \"$1\") true) $2))"; }
 cleanup_children() {
   pkill -f "$1/swarm/extension/out/tools/onboarder-reconcile.js" 2>/dev/null || true
+  # BL-928 hardening: a supervisor whose graceful stop (stop_background_supervisor)
+  # missed its window under host contention is a leaked orphan by the time this
+  # backstop runs - reap it here too, not just its reconcile.js child, or it
+  # outlives the whole test run.
+  pkill -f "$1/swarm/onboarder_supervisor.bb" 2>/dev/null || true
 }
 die() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -205,7 +210,27 @@ stop_background_supervisor() {
     kill -0 "$sup_pid" 2>/dev/null || return 0
     sleep 0.02
   done
+  # BL-928 hardening: under host contention the 10s graceful-stop poll above
+  # can miss its window (the supervisor's own stop-file check is itself
+  # scheduler-starved). The original fallback here was a single unverified
+  # `kill` with no confirmation, no retry, and no escalation - measured
+  # live, 2026-08-18: at load avg 100-130 on 4 cores this left a real
+  # onboarder_supervisor.bb orphan (PPID 1) on the host after a fully green
+  # run. Escalate with a bounded, confirmed SIGTERM-then-SIGKILL retry
+  # instead (engineering.prompt Guardrails: bounded retries with backoff,
+  # never fire-and-forget) - cleanup_children is still the final backstop
+  # if even this fails.
   kill "$sup_pid" 2>/dev/null || true
+  for i in $(seq 1 100); do
+    kill -0 "$sup_pid" 2>/dev/null || return 0
+    sleep 0.02
+  done
+  kill -9 "$sup_pid" 2>/dev/null || true
+  for i in $(seq 1 100); do
+    kill -0 "$sup_pid" 2>/dev/null || return 0
+    sleep 0.02
+  done
+  echo "WARN: stop_background_supervisor: pid $sup_pid survived SIGTERM+SIGKILL (host load?)" >&2
 }
 
 # ── 1. first check-once: the reconcile loop is started, attempt 1, running ──
