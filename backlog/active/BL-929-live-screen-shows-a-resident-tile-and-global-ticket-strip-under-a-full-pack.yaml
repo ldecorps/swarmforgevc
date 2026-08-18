@@ -248,3 +248,5 @@ notes: |
   Resident` against `the coder tile is labelled Resident`. Those are opposite
   assertions across the two layouts, which is the whole point of the feature -
   merging them would delete the comparison. Left as written.
+
+assigned_to: coder
