@@ -212,3 +212,5 @@ notes: |
   `KNOWN_PARENT_STATES` keyed-map shape when extending it: a keyed lookup on
   the Examples value is mutation-tight, a shape lookup is not (hardender rule
   2026-08-17).
+
+assigned_to: coder
