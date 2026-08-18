@@ -143,6 +143,172 @@ pass "07: the refusal message states the remedy"
 git -C "$ROOT" reset -q specs/pipeline/steps/thing.js
 rm -f "$ROOT/specs/pipeline/steps/thing.js"
 
+# ── BL-925: importing an already-QA-published tip is not a non-QA landing ──
+# CONTENT PROVENANCE, not merge-in-progress, decides the exemption - being
+# mid-merge is never on its own enough (a writer could stage fresh pipeline
+# edits on top of a legitimate merge and ride through on its coat-tails).
+# Reuses this SAME $ROOT/main checkout (already past the BL-632 scenarios
+# above, clean and on main) rather than a second fixture.
+QA_REF="swarmforge-QA"
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" tag -f bl925-checkpoint main >/dev/null
+
+reset_bl925_fixture() {
+  (cd "$ROOT" && git merge --abort 2>/dev/null) || true
+  git -C "$ROOT" checkout -q main
+  git -C "$ROOT" reset -q --hard bl925-checkpoint
+  git -C "$ROOT" branch -D published-tip >/dev/null 2>&1 || true
+  git -C "$ROOT" branch -D "$QA_REF" >/dev/null 2>&1 || true
+  git -C "$ROOT" clean -fdq -- extension specs/pipeline backlog >/dev/null 2>&1 || true
+}
+
+# Standing in for origin/main: one commit, touching BOTH QA-exclusive paths
+# this guard protects, with swarmforge-QA pointed at that same tip - trivially
+# its own ancestor (git merge-base --is-ancestor considers a commit its own
+# ancestor).
+make_published_tip() {
+  git -C "$ROOT" branch -f published-tip main >/dev/null
+  git -C "$ROOT" checkout -q published-tip
+  mkdir -p "$ROOT/extension/src" "$ROOT/specs/pipeline/steps"
+  echo "published code" > "$ROOT/extension/src/published.ts"
+  echo "published step" > "$ROOT/specs/pipeline/steps/published.js"
+  git -C "$ROOT" add extension/src/published.ts specs/pipeline/steps/published.js
+  git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "QA lands published tip"
+  git -C "$ROOT" branch -f "$QA_REF" published-tip >/dev/null
+  git -C "$ROOT" checkout -q main
+}
+
+make_ahead_bookkeeping_commit() {
+  local n="$1"
+  mkdir -p "$ROOT/backlog"
+  echo "bookkeeping $n" > "$ROOT/backlog/bookkeeping-$n.txt"
+  git -C "$ROOT" add "backlog/bookkeeping-$n.txt"
+  commit_as ""
+}
+
+# ── BL-925 provenance-01a: unchanged import of an already-QA-published tip
+#    is allowed ─────────────────────────────────────────────────────────────
+reset_bl925_fixture
+make_published_tip
+make_ahead_bookkeeping_commit "925a"
+set +e
+OUT925A="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS925A=$?
+set -e
+[[ "$STATUS925A" -eq 0 ]] || fail "BL-925 provenance-01a: expected the merge of an already-QA-published tip to succeed, got: $OUT925A"
+[[ -f "$ROOT/extension/src/published.ts" ]] || fail "BL-925 provenance-01a: expected the published file to land on main after the merge"
+pass "BL-925 provenance-01a: a merge that only imports an already-QA-published tip, unchanged, is allowed"
+
+# ── BL-925 provenance-01b: newly-authored pipeline content (no merge at
+#    all) is still refused exactly as before - the guard's original
+#    behaviour is untouched outside the merge-import case ─────────────────
+reset_bl925_fixture
+make_ahead_bookkeeping_commit "925b"
+mkdir -p "$ROOT/extension/src"
+echo "freshly authored, not from any merge" > "$ROOT/extension/src/fresh.ts"
+git -C "$ROOT" add extension/src/fresh.ts
+set +e
+OUT925B="$(commit_as "" 2>&1)"
+STATUS925B=$?
+set -e
+[[ "$STATUS925B" -ne 0 ]] || fail "BL-925 provenance-01b: expected freshly-authored pipeline content with no merge in progress to be refused"
+echo "$OUT925B" | grep -q "extension/src/fresh.ts" || fail "BL-925 provenance-01b: refusal must name the offending path, got: $OUT925B"
+git -C "$ROOT" reset -q extension/src/fresh.ts
+rm -f "$ROOT/extension/src/fresh.ts"
+pass "BL-925 provenance-01b: newly-authored pipeline content with no merge in progress is still refused"
+
+# ── BL-925 provenance-01c (invariant 1, most important negative): an edit
+#    staged ON TOP OF a legitimate merge of a published tip - content that
+#    differs from what the published parent holds - is still refused. Being
+#    mid-merge is never on its own sufficient. ──────────────────────────────
+reset_bl925_fixture
+make_published_tip
+make_ahead_bookkeeping_commit "925c"
+(cd "$ROOT" && env -u SWARMFORGE_ROLE git merge --no-commit --no-ff -q published-tip)
+echo "extra edit riding the merge's coat-tails" > "$ROOT/extension/src/published.ts"
+git -C "$ROOT" add extension/src/published.ts
+set +e
+OUT925C="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test commit -q -m "merge + extra edit" 2>&1)"
+STATUS925C=$?
+set -e
+[[ "$STATUS925C" -ne 0 ]] || fail "BL-925 provenance-01c: expected an edit riding the merge's coat-tails to be refused"
+echo "$OUT925C" | grep -q "extension/src/published.ts" || fail "BL-925 provenance-01c: refusal must name the offending path, got: $OUT925C"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+pass "BL-925 provenance-01c: an edit staged on top of the merge (content differs from the published parent) is still refused"
+
+# ── BL-925 both-hooks-agree-02: the merge completes whichever hook fires ───
+reset_bl925_fixture
+make_published_tip
+make_ahead_bookkeeping_commit "925d"
+set +e
+OUT925D="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS925D=$?
+set -e
+[[ "$STATUS925D" -eq 0 ]] || fail "BL-925 both-hooks-agree-02 (merge --no-edit / pre-merge-commit): expected success, got: $OUT925D"
+pass "BL-925 both-hooks-agree-02: completing the merge via 'git merge --no-edit' (pre-merge-commit hook path) is allowed"
+
+reset_bl925_fixture
+make_published_tip
+make_ahead_bookkeeping_commit "925e"
+(cd "$ROOT" && env -u SWARMFORGE_ROLE git merge --no-commit --no-ff -q published-tip)
+set +e
+OUT925E="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test commit --no-edit -q 2>&1)"
+STATUS925E=$?
+set -e
+[[ "$STATUS925E" -eq 0 ]] || fail "BL-925 both-hooks-agree-02 (commit --no-edit / pre-commit): expected success, got: $OUT925E"
+pass "BL-925 both-hooks-agree-02: completing the merge via 'git commit --no-edit' (pre-commit hook path) is also allowed"
+
+# ── BL-925 real-conflict-still-aborts-03: a genuine content conflict still
+#    fails the merge and leaves no half-finished merge behind - BL-891's own
+#    invariant is unchanged by anything here ───────────────────────────────
+reset_bl925_fixture
+mkdir -p "$ROOT/backlog"
+echo "shared original" > "$ROOT/backlog/shared.txt"
+git -C "$ROOT" add backlog/shared.txt
+commit_as ""
+git -C "$ROOT" branch -f published-tip main >/dev/null
+git -C "$ROOT" checkout -q published-tip
+echo "QA changed this line" > "$ROOT/backlog/shared.txt"
+git -C "$ROOT" add backlog/shared.txt
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "QA edits shared.txt"
+git -C "$ROOT" branch -f "$QA_REF" published-tip >/dev/null
+git -C "$ROOT" checkout -q main
+echo "local checkout also changed this line" > "$ROOT/backlog/shared.txt"
+git -C "$ROOT" add backlog/shared.txt
+commit_as ""
+set +e
+OUT925F="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS925F=$?
+set -e
+[[ "$STATUS925F" -ne 0 ]] || fail "BL-925 real-conflict-still-aborts-03: expected a genuine content conflict to fail the merge"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+CLEAN925F="$(git -C "$ROOT" status --porcelain)"
+[[ -z "$CLEAN925F" ]] || fail "BL-925 real-conflict-still-aborts-03: expected a clean working tree after abort, got: $CLEAN925F"
+[[ ! -f "$ROOT/.git/MERGE_HEAD" ]] || fail "BL-925 real-conflict-still-aborts-03: expected no merge in progress after abort"
+pass "BL-925 real-conflict-still-aborts-03: a real conflict still fails the merge and leaves no half-finished merge after abort"
+
+# ── BL-925 unpublished-tip-is-not-waved-through-05: a merge parent QA has
+#    not published (not an ancestor of swarmforge-QA) is refused ─────────
+reset_bl925_fixture
+git -C "$ROOT" branch -f published-tip main >/dev/null
+git -C "$ROOT" checkout -q published-tip
+mkdir -p "$ROOT/extension/src"
+echo "not yet QA-approved" > "$ROOT/extension/src/unpublished.ts"
+git -C "$ROOT" add extension/src/unpublished.ts
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "not yet QA-approved"
+git -C "$ROOT" checkout -q main
+make_ahead_bookkeeping_commit "925g"
+set +e
+OUT925G="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS925G=$?
+set -e
+[[ "$STATUS925G" -ne 0 ]] || fail "BL-925 unpublished-tip-is-not-waved-through-05: expected a merge of a non-QA-ancestor pipeline-code tip to be refused"
+echo "$OUT925G" | grep -q "extension/src/unpublished.ts" || fail "BL-925 unpublished-tip-is-not-waved-through-05: refusal must name the offending path, got: $OUT925G"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+pass "BL-925 unpublished-tip-is-not-waved-through-05: a merge parent that is NOT an ancestor of swarmforge-QA is refused, naming the offending paths"
+
+reset_bl925_fixture
+
 # ── extra: --list-paths surface, for a future consumer to read the same
 #           QA-exclusive set instead of hand-copying the literals ─────────
 LIST_OUT="$(bash "$GUARD" --list-paths)"
