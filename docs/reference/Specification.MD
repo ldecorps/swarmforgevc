@@ -1,6 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-930: extends the orphan janitor's
+**Last Updated:** August 18, 2026 (BL-925: the commit-time guard (BL-632)
+refused completing a merge that only *imports* an already-QA-published
+`origin/main` — indistinguishable, to a guard that asked only branch and
+`SWARMFORGE_ROLE`, from fresh non-QA pipeline authorship — so BL-891's
+reconcile sweep aborted the same clean join on every tick while the master
+checkout stayed ahead-and-behind, its steady state; the join never
+completed. `check_pipeline_code_on_main.sh` now recognizes a merge whose
+incoming parent is already a QA-approved tip and exempts only the
+offending paths whose staged content is byte-identical to that parent's —
+content provenance decides, never mere merge-in-progress, so a writer
+staging fresh pipeline edits on top of a legitimate import is still
+refused on that path (invariant 1). Finding the incoming merge parent
+needed two routes: `.git/MERGE_HEAD` when the merge was explicitly stopped
+or later completed via `git commit --no-edit`, falling back to the single
+unambiguous `GITHEAD_<sha>` env var git's own merge machinery sets when
+`MERGE_HEAD` isn't yet written (confirmed empirically: a clean,
+no-conflict `git merge` never persists it before `pre-merge-commit` runs).
+**Architect bounce, same ticket:** the ancestry question ("is `<sha>` an
+ancestor of `swarmforge-QA`?") must have exactly one definition; the
+coder's first cut satisfied that with a "kept in sync" comment across the
+bash/Babashka boundary, which the engineering article's
+constant-across-a-language-boundary rule explicitly disqualifies. Fixed by
+extracting `swarmforge/scripts/is_qa_ancestor.sh`, called directly by the
+bash guard and shelled to by `handoffd.bb`'s new `qa-ancestor?` (replacing
+the old two-arg `git-is-ancestor?` helper, both call sites migrated).
+Hardener killed a swapped-argument mutant in the shared script's own guard
+suite (`is-ancestor "$SHA" swarmforge-QA` vs the wrong direction) with a
+new negative scenario. See the updated
+[BL-632 reference doc](BL-632-commit-time-guard-refuses-pipeline-code-on-main.md)
+and [BL-891 runbook](../how-to/BL-891-master-main-reconcile-sweep.md).);
+Previously August 18, 2026 (BL-930: extends the orphan janitor's
 disposable-root ancillary class (`tmp-ancillary-cmdline?`,
 `orphan_janitor_lib.bb`) to admit a tmp-rooted onboarder — its reconcile
 poll-loop (`extension/out/tools/onboarder-reconcile.js <root> poll-loop`)

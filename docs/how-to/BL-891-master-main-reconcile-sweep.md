@@ -42,6 +42,24 @@ push-sweep, flow watchdog, master-checkout drift). Each tick:
    already decided there's no known dirty-path overlap), it aborts
    immediately and surfaces the same way.
 
+**(BL-925)** Step 3's merge used to be refused for a reason that had
+nothing to do with a real conflict: `origin/main`'s incoming tip routinely
+carries pipeline-code paths (`extension/src/`, `extension/test/`,
+`specs/pipeline/steps/`) that [BL-632's commit-time
+guard](../reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md)
+refuses from any non-QA writer — and the master checkout doing this merge
+is never QA. The guard had no notion of a merge at all, so importing
+content QA had already published was indistinguishable to it from fresh
+non-QA authorship; `master-main-reconcile-merge!` read that refusal as an
+ordinary git failure, aborted, and logged it as verdict "merge conflict,
+aborted" even though there was no real conflict. Because the ahead-and-
+behind shape this sweep exists for is the steady state, that false
+conflict recurred on every tick and the join never completed. The guard
+now recognizes an incoming merge parent that is already an ancestor of
+`swarmforge-QA` and exempts only the paths whose staged content is
+byte-identical to that parent's, so this specific join now succeeds; a
+genuine content conflict still aborts exactly as before.
+
 ## Verdicts
 
 | Outcome | What happened |
@@ -94,6 +112,11 @@ push-sweep's own alarm flags use).
 
 ## See also
 
+- [BL-632: Commit-Time Guard Refuses Pipeline Code on
+  Main](../reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md)
+  — the guard whose merge-import exemption (BL-925) is what lets this
+  sweep's merge complete instead of appearing as a false "merge conflict,
+  aborted".
 - [Master-Checkout Drift Alarm](BL-839-master-checkout-drift-alarm.md) — a
   different sweep in the same cadence, alarming on a different question
   (does the working tree's *script content* still match `main`, not
