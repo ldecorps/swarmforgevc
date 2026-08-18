@@ -94,13 +94,3 @@
     :silent
     :stale-suspect))
 
-(defn within-cooldown?
-  "Mirrors chase_sweep_lib.bb's within-dropped-parcel-cooldown? shape
-   exactly - deliberately duplicated (this codebase's own established
-   'small live-glue duplicated across independent pure libs' posture)
-   rather than cross-coupling this lib to chase_sweep_lib.bb."
-  [last-sent-ms now-ms cooldown-ms]
-  (and (number? last-sent-ms)
-       (number? now-ms)
-       (number? cooldown-ms)
-       (<= 0 (- now-ms last-sent-ms) cooldown-ms)))
