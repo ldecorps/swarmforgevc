@@ -17,6 +17,12 @@ notes: |
   VISION: multi-host / secondary swarm topology and remote-control health stay
   ticketed and ensure-able, not tribal knowledge.
 
+  2026-08-18 21:33 coordinator: handoffd's open-slot nudge (000496) named this
+  as the top candidate by priority, but it is an epic tracker — never directly
+  promotable per this ticket's own title/notes. No action taken on it. The
+  open slot that triggered the nudge was independently filled by BL-930
+  (promoted same evening, ~21:33) before this note was processed.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high
