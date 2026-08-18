@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=58a43364070b1f0441380efede043a4172b7e412ab73c1d43cfd075ee26e9055
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-18T00:10:11.410714Z","feature_name":"a commit-time hook refuses pipeline code on main from any role but QA","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-632-commit-time-guard-refuses-pipeline-code-on-main.feature","background_hash":"27f86c6f7bb3919ded2654bc0de4b7adc0ae038677aded0c5d93251d5744f34b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a bookkeeping-only commit on main is allowed with no role set","scenario_hash":"e3444f9e487c67b5d9783e4ade147d02acd4bac3752ef18776f8313b957bf305","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-18T00:10:11.410714Z"},{"index":5,"name":"the existing commit-size guard keeps firing independently","scenario_hash":"04e2aad046b0fa6aa8a5e0937958d0e8eed4e4fd2ac8a99b7728b9a6d53dd168","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-18T00:10:11.410714Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a commit-time hook refuses pipeline code on main from any role but QA
 
   # BL-632, closing the BL-590 post-mortem 2026-07-25: BL-629 (deploy gate),

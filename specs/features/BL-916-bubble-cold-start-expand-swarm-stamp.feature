@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f61579e37a6897073778f10eaa9ddd92f6f03109089eb8d21bbca13b9d95f64e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-18T00:10:32.828121Z","feature_name":"Stamp Bubble cold-start expand fixes (overlay trampoline, splash, panel dismiss)","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-916-bubble-cold-start-expand-swarm-stamp.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":4,"name":"the Android 12+ splash cannot leave a launcher icon stuck","scenario_hash":"97d3f277f577b1765f274b27a7d475176d8d75fbb3adf4f17cf87d3c90d12ec0","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-18T00:10:32.828121Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Stamp Bubble cold-start expand fixes (overlay trampoline, splash, panel dismiss)
 
   # BL-916 stamp-off for landed hotfix 8da0f52e59 (v0.3.17-open-talk). After a
