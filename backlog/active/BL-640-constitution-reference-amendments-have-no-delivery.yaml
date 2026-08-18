@@ -9,7 +9,7 @@ severity: medium
 priority: 88
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "No amendment to articles/reference/ can leave any role reading a stale elaboration that contradicts the amended rule on `main`."
@@ -86,7 +86,23 @@ description: |
   A constitution that cannot be amended in practice is worse than one with a known
   defect, because everyone believes the amendment took effect.
 
-  ## Shape — three options, specifier decides
+  ## Shape — decided by the specifier 2026-08-18: option 1
+
+  **Bound outcome (this is spec, not implementation):** a role must never
+  silently act on a stale `reference/` elaboration. Freshness is established at
+  stage start, and staleness resolves either by merging `main` or by refusing
+  and reporting — scenario 02 pins exactly that pair, and nothing narrower.
+  HOW the check is implemented stays the coder's call.
+
+  Options 2 and 3 are rejected, not deferred. Option 3 is a human habit rather
+  than a mechanism — the same class of thing that failed here, per the ticket's
+  own reading. Option 2 mutates the stable cacheable prefix BL-519 created
+  deliberately, which is a real cost paid on every respawn to fix a rarely-read
+  file. Option 1 is the ticket's own recommendation and the only one that
+  catches drift nobody remembered to announce.
+
+  The three options as originally written, for the record:
+
 
   1. **Freshness check at stage start (recommended).** Before a role acts, compare
      the sha of each `reference/` file it may read against `main`'s. Stale ->
@@ -104,7 +120,13 @@ description: |
   the prompt, on the stable cache prefix BL-519 created deliberately, to carry
   elaboration that is read rarely and on demand.
 
-  ## Second defect found while fixing this by hand
+  ## Second defect found while fixing this by hand — SPLIT OUT as BL-924
+
+  The following was found while hand-repairing a stale worktree, and the ticket
+  left its placement to the specifier. Decided 2026-08-18: it is a **sibling**,
+  BL-924, not part of this parcel. Reasoning is in `notes:`; the account below
+  stays here because it is the evidence that produced BL-924.
+
 
   Fast-forwarding `swarmforge-QA` to `main` **failed**, twice, on untracked files:
 
@@ -131,8 +153,11 @@ out_of_scope: |
   - Inlining all of `articles/reference/`. Measured and rejected in the description.
   - The bounce-revert amendment itself. Landed `e3a36855a`; this ticket is about the
     fact that it did not reach anyone.
-  - Changing what `sync_worktree_scripts()` copies, unless the specifier folds the
-    second defect in here rather than a sibling.
+  - The untracked hot-synced copies that block a fast-forward merge, and anything
+    about what `sync_worktree_scripts()` copies. Split out 2026-08-18 as BL-924;
+    this parcel must not touch the merge path. If the freshness check finds a
+    stale worktree it may refuse and report — it does not have to be able to
+    merge, which is precisely what keeps these two independent.
 
 notes: |
   2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
@@ -154,3 +179,32 @@ notes: |
   BL-590 work and were deliberately left alone — each merges `main` as its first act
   on the next parcel, so their window closes on its own. That self-closing property is
   luck, not design, and is exactly what this ticket should replace.
+
+  ## Specifier disposition 2026-08-18 (this parcel's routing to specifier)
+
+  The ticket delegated two open decisions to the specifier and was routed here
+  to settle them before a coder picks it up. Both are now settled above:
+  mechanism bound to option 1, second defect split to BL-924.
+
+  **A contradiction inside the ticket, resolved in favour of the description.**
+  `approval_context` says mechanism choice is "left to the coder, per the
+  ticket's own wording", but the ticket's own wording is the description's
+  heading "Shape — three options, specifier decides". The approval_context
+  misquotes the body it claims to be quoting. Resolved toward the description,
+  because that is the half the human also read and the half the routing acted
+  on — the coordinator sent this to the specifier, not the coder. Flagged
+  rather than silently corrected; say so if the other reading was intended and
+  the binding above comes straight back out.
+
+  **Why the split, given the two defects share a story.** They share how they
+  were discovered and nothing else — different mechanism, different files,
+  different failure mode. The deciding test was the ticket's own invariant: a
+  merge blocked by a byte-identical untracked file happens with no amendment
+  anywhere near it, so scenario 05 served none of this ticket's invariants.
+  The one real coupling — that option 1 tells a stale role to merge `main`,
+  which is the merge BL-924 unblocks — is dissolved by scenario 02 accepting
+  refuse-and-report as a valid outcome. So neither slice waits on the other,
+  and `depends_on` stays empty rather than naming an unbuilt sibling.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-18, by: architect, blamed: coder, class: behavior, commit: fded1ca02, evidence: backlog/evidence/BL-640-constitution-reference-amendments-have-no-delivery-bounce-20260818.md }
