@@ -34,6 +34,17 @@ function ensureState(ctx) {
   return ctx.bl922;
 }
 
+// Idempotent, mirroring bl870WakeAttributionSteps.js's cleanup(ctx): every
+// Then/And step below (scenarios 01-04 alike) calls this from its own
+// try/finally, so whichever step is last to run - pass or throw - removes
+// the fixture root exactly once.
+function cleanup(ctx) {
+  const st = ctx.bl922;
+  if (!st || !st.tmpDir) return;
+  fs.rmSync(st.tmpDir, { recursive: true, force: true });
+  st.tmpDir = null;
+}
+
 function baseTicketLines(id) {
   return [`id: ${id}`, 'title: fixture ticket', 'type: feature', 'epic: fixture-epic', 'milestone: M8'];
 }
@@ -79,21 +90,32 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^the gate reports an unreadable-acceptance violation naming the ticket id and its path$/, (ctx) => {
     const st = ensureState(ctx);
-    if (!st.result.out.includes('UNREADABLE-ACCEPTANCE')) {
-      throw new Error(`expected an UNREADABLE-ACCEPTANCE line, got:\n${st.result.out}`);
-    }
-    if (!st.result.out.includes(st.ticketId)) {
-      throw new Error(`violation output does not name the ticket id ${st.ticketId}:\n${st.result.out}`);
-    }
-    if (!st.result.out.includes(st.featurePath)) {
-      throw new Error(`violation output does not name the hidden feature path ${st.featurePath}:\n${st.result.out}`);
+    try {
+      if (!st.result.out.includes('UNREADABLE-ACCEPTANCE')) {
+        throw new Error(`expected an UNREADABLE-ACCEPTANCE line, got:\n${st.result.out}`);
+      }
+      if (!st.result.out.includes(st.ticketId)) {
+        throw new Error(`violation output does not name the ticket id ${st.ticketId}:\n${st.result.out}`);
+      }
+      if (!st.result.out.includes(st.featurePath)) {
+        throw new Error(`violation output does not name the hidden feature path ${st.featurePath}:\n${st.result.out}`);
+      }
+    } catch (e) {
+      // This scenario's own last step ("the gate exits non-zero") never
+      // runs if this one throws first - clean up here too.
+      cleanup(ctx);
+      throw e;
     }
   }, FEATURE);
 
   registry.defineScoped(/^the gate exits non-zero$/, (ctx) => {
     const st = ensureState(ctx);
-    if (st.result.status === 0) {
-      throw new Error(`expected non-zero exit, got 0:\n${st.result.out}`);
+    try {
+      if (st.result.status === 0) {
+        throw new Error(`expected non-zero exit, got 0:\n${st.result.out}`);
+      }
+    } finally {
+      cleanup(ctx);
     }
   }, FEATURE);
 
@@ -121,15 +143,26 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^the gate reports no unreadable-acceptance violation$/, (ctx) => {
     const st = ensureState(ctx);
-    if (st.result.out.includes('UNREADABLE-ACCEPTANCE')) {
-      throw new Error(`expected no UNREADABLE-ACCEPTANCE line, got:\n${st.result.out}`);
+    try {
+      if (st.result.out.includes('UNREADABLE-ACCEPTANCE')) {
+        throw new Error(`expected no UNREADABLE-ACCEPTANCE line, got:\n${st.result.out}`);
+      }
+    } catch (e) {
+      // This scenario's own last step ("the gate exits zero") never runs
+      // if this one throws first - clean up here too.
+      cleanup(ctx);
+      throw e;
     }
   }, FEATURE);
 
   registry.defineScoped(/^the gate exits zero$/, (ctx) => {
     const st = ensureState(ctx);
-    if (st.result.status !== 0) {
-      throw new Error(`expected exit 0, got ${st.result.status}:\n${st.result.out}`);
+    try {
+      if (st.result.status !== 0) {
+        throw new Error(`expected exit 0, got ${st.result.status}:\n${st.result.out}`);
+      }
+    } finally {
+      cleanup(ctx);
     }
   }, FEATURE);
 
@@ -149,14 +182,21 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^the gate reports an unreadable-acceptance violation naming the ticket id and its path for each of the two$/, (ctx) => {
     const st = ensureState(ctx);
-    for (const id of st.twoTicketIds) {
-      if (!st.result.out.includes(id)) {
-        throw new Error(`violation output does not name ticket ${id}:\n${st.result.out}`);
+    try {
+      for (const id of st.twoTicketIds) {
+        if (!st.result.out.includes(id)) {
+          throw new Error(`violation output does not name ticket ${id}:\n${st.result.out}`);
+        }
       }
-    }
-    const count = (st.result.out.match(/UNREADABLE-ACCEPTANCE/g) || []).length;
-    if (count < 2) {
-      throw new Error(`expected 2 UNREADABLE-ACCEPTANCE lines (one per ticket), got ${count}:\n${st.result.out}`);
+      const count = (st.result.out.match(/UNREADABLE-ACCEPTANCE/g) || []).length;
+      if (count < 2) {
+        throw new Error(`expected 2 UNREADABLE-ACCEPTANCE lines (one per ticket), got ${count}:\n${st.result.out}`);
+      }
+    } catch (e) {
+      // This scenario's own last step ("the gate exits non-zero") never
+      // runs if this one throws first - clean up here too.
+      cleanup(ctx);
+      throw e;
     }
   }, FEATURE);
 
@@ -173,10 +213,13 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^it reports zero unreadable-acceptance violations$/, (ctx) => {
     const st = ensureState(ctx);
-    if (!/unreadable acceptance \(block scalar hiding a feature pointer\): 0\b/.test(st.auditResult.out)) {
-      throw new Error(`expected zero unreadable-acceptance violations against the live backlog, got:\n${st.auditResult.out}`);
+    try {
+      if (!/unreadable acceptance \(block scalar hiding a feature pointer\): 0\b/.test(st.auditResult.out)) {
+        throw new Error(`expected zero unreadable-acceptance violations against the live backlog, got:\n${st.auditResult.out}`);
+      }
+    } finally {
+      cleanup(ctx);
     }
-    fs.rmSync(st.tmpDir, { recursive: true, force: true });
   }, FEATURE);
 }
 
