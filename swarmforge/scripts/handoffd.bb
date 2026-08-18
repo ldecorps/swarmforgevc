@@ -2555,13 +2555,32 @@
 ;; checked out in another worktree, so QA/coordinator have no way to do it
 ;; themselves - see this ticket's own notes for the incident). This is the
 ;; thin git/CLI-specific wiring; master_main_reconcile_lib.bb owns the pure
-;; decision/state logic (gating on a clean tree, self-healing surfaced-once
+;; decision/state logic (BL-919: gating on dirty/merge-changed path overlap
+;; rather than a blanket clean-tree check, self-healing surfaced-once
 ;; state). Reuses push-sweep-rev-counts! verbatim - "origin/main...main"
 ;; already yields exactly the {:ahead :behind} this sweep needs too, and it
 ;; already fetches as a side effect, so no second fetch is needed per tick.
-(defn- master-main-reconcile-worktree-clean? []
+(defn- master-main-reconcile-dirty-paths! []
   (let [{:keys [exit out]} (process/sh ["git" "status" "--porcelain"] {:dir (str project-root)})]
-    (and (zero? exit) (str/blank? out))))
+    (if (zero? exit)
+      (master-main-reconcile-lib/porcelain-lines->paths out)
+      #{master-main-reconcile-lib/unknown-dirty-marker})))
+
+;; BL-919: which paths would the incoming merge itself write to? Diffed
+;; against the merge-base (not HEAD..origin/main, which would also include
+;; paths only local commits touched) so this names exactly the paths a real
+;; `git merge` would need to write - the same set reconcile-decision checks
+;; dirty paths against for overlap. Only called when behind>0 (sweep!'s own
+;; contract), so `origin/main` and a real merge-base always exist.
+(defn- master-main-reconcile-merge-changed-paths! []
+  (let [{:keys [exit out]} (process/sh ["git" "merge-base" "HEAD" "origin/main"] {:dir (str project-root)})]
+    (if (not (zero? exit))
+      #{master-main-reconcile-lib/unknown-dirty-marker}
+      (let [base (str/trim out)
+            {:keys [exit out]} (process/sh ["git" "diff" "--name-only" base "origin/main"] {:dir (str project-root)})]
+        (if (zero? exit)
+          (into #{} (remove str/blank?) (str/split-lines out))
+          #{master-main-reconcile-lib/unknown-dirty-marker})))))
 
 ;; Never --force, --reset, --rebase, or --stash (BL-891 invariant 1): a
 ;; plain `git merge` either fast-forwards (no local-only commits) or
@@ -2595,7 +2614,8 @@
     (master-main-reconcile-lib/sweep!
      (str daemon-dir)
      {:rev-counts! push-sweep-rev-counts!
-      :clean? master-main-reconcile-worktree-clean?
+      :dirty-paths! master-main-reconcile-dirty-paths!
+      :merge-changed-paths! master-main-reconcile-merge-changed-paths!
       :merge! master-main-reconcile-merge!
       :surface! master-main-reconcile-surface!
       :log! (fn [& parts] (apply log! parts))})
