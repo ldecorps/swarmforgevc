@@ -198,3 +198,6 @@ notes: |
     acted on here.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-18, by: architect, blamed: coder, class: behavior, commit: c29a61dc92, evidence: backlog/evidence/BL-921-chase-trusts-active-role-marker-over-pane-identity-bounce-20260818.md }
