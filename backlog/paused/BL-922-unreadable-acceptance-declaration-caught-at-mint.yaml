@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 15
 direction: agent-proposed
 mutation_cost: low
