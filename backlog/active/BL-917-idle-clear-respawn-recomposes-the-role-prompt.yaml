@@ -144,3 +144,5 @@ notes: |
   **BL-233 obligation.** Scenarios 05-07 need step handlers landed in THIS
   parcel; the runner throws on any scenario it cannot resolve, so the existing
   BL-911 handlers going green is not evidence the new ones are bound.
+
+assigned_to: coder
