@@ -9,7 +9,7 @@ severity: medium
 priority: 88
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "No amendment to articles/reference/ can leave any role reading a stale elaboration that contradicts the amended rule on `main`."
