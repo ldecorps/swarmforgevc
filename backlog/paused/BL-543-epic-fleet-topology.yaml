@@ -23,6 +23,13 @@ notes: |
   open slot that triggered the nudge was independently filled by BL-930
   (promoted same evening, ~21:33) before this note was processed.
 
+  2026-08-18 22:10 coordinator: same nudge repeated (000501) — same non-reason
+  (epic, not directly promotable). Slot again independently filled, this time
+  by BL-929 (~22:13), before this note was processed. The nudge-ranking logic
+  does not appear to exclude type:epic from "top candidate by priority" — a
+  ranking gap, not a stuck-work signal; BL-543 itself is not starved since it
+  was never eligible to promote in the first place.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high
