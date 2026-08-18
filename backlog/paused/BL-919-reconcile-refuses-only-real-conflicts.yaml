@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: deterministic-transit-assist
-human_approval: pending
+human_approval: approved
 priority: 20
 direction: human-requested
 depends_on: [BL-891]
