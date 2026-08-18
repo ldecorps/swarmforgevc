@@ -469,7 +469,8 @@ const DOMAINS = [
   require('./bl821BriefingWindowAndMarkerDurabilitySteps'),
   require('./bl632CommitTimeGuardSteps'),
   require('./bl916BubbleColdStartExpandSwarmStampSteps'),
-  require('./bl625OnboarderPromptsLaunchHandoffSteps')
+  require('./bl625OnboarderPromptsLaunchHandoffSteps'),
+  require('./bl913PinnedShellClassifiedRetrySteps')
 ];
 
 function registerSteps(registry) {
