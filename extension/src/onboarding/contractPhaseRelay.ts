@@ -7,7 +7,7 @@
 // below are adapter SEAMS around negotiate-onboarding-contract.ts's own
 // runObject/runApprove, the ONE writer of negotiation state, not a
 // reimplementation of them).
-import { normalizeTargetRepoUrl, OnboarderState } from './onboarderState';
+import { normalizeTargetRepoUrl, OnboarderState, OnboardingPhase } from './onboarderState';
 import { GateDecision, ProposedContract, RepoSurveyFacts } from './contractTypes';
 import {
   ApproveContractResult,
@@ -65,34 +65,35 @@ function decideNegotiationPhaseAction(text: string): ContractPhaseAction {
 // module does not own (checking-prerequisites) never reach here at all -
 // onboarderContractPhaseRouter.ts only calls this once onboarderState.ts's
 // own pickActiveOnboardingState has already come up empty.
+// BL-625 (behavior-preserving; hardener CRAP pass): 'proceed' is the same
+// universal forward-advance control used at every gated phase in this whole
+// state machine (prerequisites-ready -> survey, contract-agreed -> prompts,
+// prompts-proposed -> launch handoff, ready-to-launch -> confirm) rather
+// than a slice-specific control word per phase - one table row per phase
+// replaces one if+ternary each, so decideContractPhaseAction's own
+// complexity does not grow with the number of such phases.
+// BL-625 never-claims-remote-launch-03: ready-to-launch narrows to ONE
+// recognized control ("proceed", confirming the human ran it) - every
+// other text, question or not, falls to 'unrecognized' so the onboarder
+// never has to parse "is it running"-style phrasing to know it cannot
+// answer; renderUnrecognized's own ready-to-launch branch is the single
+// place that "cannot observe" response is written.
+const PROCEED_ADVANCE_ACTION: Partial<Record<OnboardingPhase, ContractPhaseAction>> = {
+  'prerequisites-ready': { kind: 'start-survey' },
+  'contract-agreed': { kind: 'propose-prompts' },
+  'prompts-proposed': { kind: 'post-launch-handoff' },
+  'ready-to-launch': { kind: 'confirm-launch' },
+};
+
 export function decideContractPhaseAction(state: OnboarderState, text: string): ContractPhaseAction {
-  if (state.phase === 'prerequisites-ready') {
-    return PROCEED_PATTERN.test(text) ? { kind: 'start-survey' } : { kind: 'unrecognized' };
+  const advanceAction = PROCEED_ADVANCE_ACTION[state.phase];
+  if (advanceAction) {
+    return PROCEED_PATTERN.test(text) ? advanceAction : { kind: 'unrecognized' };
   }
   if (state.phase === 'contract-proposed' || state.phase === 'negotiating') {
     return decideNegotiationPhaseAction(text);
   }
-  // BL-625: 'proceed' is the same universal forward-advance control used at
-  // every gated phase in this whole state machine (prerequisites-ready ->
-  // survey, negotiating -> agree) - contract-agreed -> prompts and
-  // prompts-proposed -> launch handoff both reuse it rather than inventing
-  // slice-specific control words.
-  if (state.phase === 'contract-agreed') {
-    return PROCEED_PATTERN.test(text) ? { kind: 'propose-prompts' } : { kind: 'unrecognized' };
-  }
-  if (state.phase === 'prompts-proposed') {
-    return PROCEED_PATTERN.test(text) ? { kind: 'post-launch-handoff' } : { kind: 'unrecognized' };
-  }
-  // BL-625 never-claims-remote-launch-03: ready-to-launch narrows to ONE
-  // recognized control ("proceed", confirming the human ran it) - every
-  // other text, question or not, falls to 'unrecognized' so the onboarder
-  // never has to parse "is it running"-style phrasing to know it cannot
-  // answer; renderUnrecognized's own ready-to-launch branch is the single
-  // place that "cannot observe" response is written.
-  if (state.phase === 'ready-to-launch') {
-    return PROCEED_PATTERN.test(text) ? { kind: 'confirm-launch' } : { kind: 'unrecognized' };
-  }
-  // 'done' (and any other phase this module does not own) - terminal.
+  // 'gate-open', 'done' (and any other phase this module does not own) - terminal.
   return { kind: 'unrecognized' };
 }
 
@@ -371,24 +372,48 @@ function renderCannotObserveLaunch(state: OnboarderState): string {
   );
 }
 
+const NEGOTIATION_PROMPT_MESSAGE =
+  'Post "show-me" to see the current contract, "change-this <objection>" to revise it, or "proceed" to agree it.';
+
+// Behavior-preserving; hardener CRAP pass: one phase -> one message, so a
+// lookup table replaces one `if` each (mirrors PROCEED_ADVANCE_ACTION
+// above).
+const UNRECOGNIZED_MESSAGE_BY_PHASE: Partial<Record<OnboardingPhase, (state: OnboarderState) => string>> = {
+  'prerequisites-ready': () => 'Post "proceed" to survey the target repo and propose an onboarding contract.',
+  'contract-proposed': () => NEGOTIATION_PROMPT_MESSAGE,
+  negotiating: () => NEGOTIATION_PROMPT_MESSAGE,
+  'contract-agreed': (state) => `The contract for ${state.targetRepoUrl} is agreed. Post "proceed" to generate and commit the target's prompts.`,
+  'prompts-proposed': (state) => `Prompts for ${state.targetRepoUrl} are committed. Post "proceed" for the launch handoff.`,
+  'ready-to-launch': renderCannotObserveLaunch,
+};
+
 function renderUnrecognized(state: OnboarderState): string {
-  if (state.phase === 'prerequisites-ready') {
-    return 'Post "proceed" to survey the target repo and propose an onboarding contract.';
-  }
-  if (state.phase === 'contract-proposed' || state.phase === 'negotiating') {
-    return 'Post "show-me" to see the current contract, "change-this <objection>" to revise it, or "proceed" to agree it.';
-  }
-  if (state.phase === 'contract-agreed') {
-    return `The contract for ${state.targetRepoUrl} is agreed. Post "proceed" to generate and commit the target's prompts.`;
-  }
-  if (state.phase === 'prompts-proposed') {
-    return `Prompts for ${state.targetRepoUrl} are committed. Post "proceed" for the launch handoff.`;
-  }
-  if (state.phase === 'ready-to-launch') {
-    return renderCannotObserveLaunch(state);
-  }
-  return `Onboarding ${state.targetRepoUrl} has already reached "${state.phase}"; there is nothing further to do here.`;
+  const render = UNRECOGNIZED_MESSAGE_BY_PHASE[state.phase];
+  return render
+    ? render(state)
+    : `Onboarding ${state.targetRepoUrl} has already reached "${state.phase}"; there is nothing further to do here.`;
 }
+
+type ContractPhaseActionHandler = (
+  state: OnboarderState,
+  adapters: ContractPhaseAdapters,
+  now: () => number
+) => Promise<ContractPhaseTurn>;
+
+// Behavior-preserving; hardener CRAP pass: every action.kind but
+// 'negotiate-object' (the one variant carrying its own payload) dispatches
+// to a handler needing nothing but state/adapters/now, so a lookup table
+// replaces one switch `case` each - this table growing with a future action
+// kind costs one row, never one more branch in runContractPhaseAction's own
+// complexity.
+const ACTION_HANDLERS: Partial<Record<ContractPhaseAction['kind'], ContractPhaseActionHandler>> = {
+  'start-survey': runStartSurvey,
+  'show-current-contract': runShowCurrentContract,
+  'negotiate-approve': runNegotiateApprove,
+  'propose-prompts': runProposePrompts,
+  'post-launch-handoff': (state, _adapters, now) => Promise.resolve(postLaunchHandoff(state, now)),
+  'confirm-launch': (state, _adapters, now) => Promise.resolve(runConfirmLaunch(state, now)),
+};
 
 // The whole per-message decision for a state already known to be at or past
 // prerequisites-ready (onboarderContractPhaseRouter.ts's job to route
@@ -403,23 +428,9 @@ export async function runContractPhaseAction(
   adapters: ContractPhaseAdapters,
   now: () => number
 ): Promise<ContractPhaseTurn> {
-  switch (action.kind) {
-    case 'start-survey':
-      return runStartSurvey(state, adapters, now);
-    case 'show-current-contract':
-      return runShowCurrentContract(state, adapters);
-    case 'negotiate-object':
-      return runNegotiateObject(state, action.objection, adapters, now);
-    case 'negotiate-approve':
-      return runNegotiateApprove(state, adapters, now);
-    case 'propose-prompts':
-      return runProposePrompts(state, adapters, now);
-    case 'post-launch-handoff':
-      return postLaunchHandoff(state, now);
-    case 'confirm-launch':
-      return runConfirmLaunch(state, now);
-    case 'unrecognized':
-    default:
-      return { state, message: renderUnrecognized(state) };
+  if (action.kind === 'negotiate-object') {
+    return runNegotiateObject(state, action.objection, adapters, now);
   }
+  const handler = ACTION_HANDLERS[action.kind];
+  return handler ? handler(state, adapters, now) : { state, message: renderUnrecognized(state) };
 }

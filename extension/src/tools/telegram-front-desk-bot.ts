@@ -183,6 +183,7 @@ import {
   findProcessedOnboardingUpdate,
   writeOnboardingStateAndMarkUpdateProcessed,
   markOnboardingUpdateDelivered,
+  ProcessedOnboardingUpdateLookup,
 } from '../onboarding/onboarderStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
@@ -868,6 +869,30 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
 // ONLY the send, with the message computed on the first attempt - never
 // re-runs handleOnboardingMessage, which would misapply that (possibly
 // stale) text against whatever step the state has since moved to.
+// Extracted from handleOnboarderMessage below (behavior-preserving;
+// hardener CRAP pass): the redelivery-guard branch only ever accounts for
+// the already-computed message's send/delivered bookkeeping, independent of
+// which target or phase the update concerns, so splitting it keeps each
+// function's own complexity a reflection of its own concern.
+async function respondToProcessedUpdate(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  topicId: number,
+  updateId: number,
+  already: ProcessedOnboardingUpdateLookup,
+  postFn?: TelegramPostFn
+): Promise<boolean> {
+  if (already.record.delivered) {
+    return true;
+  }
+  const retry = await sendTelegramMessage(botToken, chatId, already.record.message, undefined, postFn, topicId);
+  if (retry.success) {
+    markOnboardingUpdateDelivered(targetPath, already.targetRepoUrl, updateId);
+  }
+  return retry.success;
+}
+
 export async function handleOnboarderMessage(
   targetPath: string,
   botToken: string,
@@ -880,14 +905,7 @@ export async function handleOnboarderMessage(
 ): Promise<boolean> {
   const already = findProcessedOnboardingUpdate(targetPath, updateId);
   if (already) {
-    if (already.record.delivered) {
-      return true;
-    }
-    const retry = await sendTelegramMessage(botToken, chatId, already.record.message, undefined, postFn, topicId);
-    if (retry.success) {
-      markOnboardingUpdateDelivered(targetPath, already.targetRepoUrl, updateId);
-    }
-    return retry.success;
+    return respondToProcessedUpdate(targetPath, botToken, chatId, topicId, updateId, already, postFn);
   }
 
   const states = listOnboarderStates(targetPath);
