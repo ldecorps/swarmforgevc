@@ -1,10 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-913: a `PreToolUse` hook now pins
-every role's Bash command to that role's own worktree and heals one
-recoverable shell miss in silence, so a stale/wrong pane cwd never reaches
-the model as a failure to apologize for — slice A of the
-`tool-miss-auto-heal` epic (BL-912 tracks the catalog, rotation-pin
+**Last Updated:** August 18, 2026 (BL-921: `dormant-mailbox-chase-action`
+and `should-rotate-resident?` (`swarmforge/scripts/mono_router_lib.bb`) no
+longer trust the `.swarmforge/mono-router-active-role` marker alone —
+`:wake-resident` and `:already-active` now additionally require a live
+tmux probe of the resident pane's own `#{pane_start_command}`
+(`resident-live-role`, `swarmforge/scripts/handoffd.bb`) to agree with the
+target role, via the new pure `live-role-agrees?`, which treats an
+identity that cannot be read (nil, blank, or an unparseable pane command)
+as divergence, never as agreement. Measured live on 2026-08-18: the marker
+read `cleaner` from ~03:48Z while the pane ran `coder.sh`, producing 535
+identical false wakes for `cleaner` in one day, each with a real handoff
+behind it, while the coder persona answered `NO_TASK` to its own empty
+mailbox and cleaner's actual mail sat untouched. The identity check only
+ever tightens the gate — every case that resolved to `:wake-resident` or
+`:already-active` with the marker and the live identity in agreement is
+unchanged; a diverged or unreadable identity now takes the pre-existing
+`:rotate` / respawn path instead of a false wake or a wrongly-refused
+rotate. Deliberately out of scope: *why* the marker diverged in the first
+place (points at the boot path, `resolve-boot-role`/BL-648, not rotation —
+tracked separately if it proves real). See the new "Mono-router chase
+verifies live pane identity (BL-921)" section in
+`swarmforge/handoff-protocol.md`.); Previously August 18, 2026 (BL-913: a
+`PreToolUse` hook now pins every role's Bash command to that role's own
+worktree and heals one recoverable shell miss in silence, so a stale/wrong
+pane cwd never reaches the model as a failure to apologize for — slice A of
+the `tool-miss-auto-heal` epic (BL-912 tracks the catalog, rotation-pin
 cleanup, apology-ban narration, and the Cursor surface as later slices).
 `tool_miss_heal_hook.bb`, scoped to the `Bash` matcher only and wired per
 role at `write_claude_settings_file` (`swarmforge.sh`), rewrites a command

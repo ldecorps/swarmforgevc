@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-18T11:44:49.710959Z","feature_name":"Chase verifies the resident pane's live identity before waking it","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-921-chase-verifies-live-pane-identity.feature","background_hash":"c2773fb58f3d51b5c7e856e6d2d25a48be317c56e6bdab46f0588f790437a5a8","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Chase verifies the resident pane's live identity before waking it
 
   Under mono-router one pane serves every role in turn. Chase decides how to
