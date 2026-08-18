@@ -1,6 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-678: batch-mode claims
+**Last Updated:** August 18, 2026 (BL-640: `ready_for_next.bb` now runs a
+pre-turn freshness guard (`reference_freshness_lib.bb`) before any dispatch
+logic, for every role and every pack: it hashes the worktree's own
+`swarmforge/constitution/articles/reference/` files against whichever of
+`main` / `origin/main` is currently ahead, and refuses the turn (exit 2,
+`STALE_REFERENCE_ELABORATION`, naming every drifted file) when they differ.
+Closes the gap where a constitution amendment's inlined top-level summary
+(delivered on every respawn) and its on-demand `reference/` elaboration
+(read from each role's own stale worktree, with no delivery mechanism at
+all) could contradict each other indefinitely with no signal — the
+2026-07-25 episode where three role worktrees kept instructing reviewers to
+run a bounce-revert check the just-landed amendment had already proven
+could never pass. Deliberately refuse-and-report only, never an
+auto-merge: an architect bounce (D2) caught the initial cut comparing only
+local `main`, when this repo's QA-lands-to-origin mechanics can leave
+`origin/main` ahead instead (`git rev-list --left-right --count
+main...origin/main` picks whichever ref is actually ahead). Does not
+inline `reference/` into the boot prompt (measured 94,739 B against a
+74,564 B composed prompt — more than doubling the stable cache prefix
+BL-519 created deliberately) and does not attempt the merge itself — a
+second defect found while hand-repairing a stale worktree, untracked
+hot-synced script copies blocking a legitimate fast-forward, was split out
+as BL-924 rather than folded in. See
+`docs/how-to/BL-640-reference-freshness-guard.md` and the new
+"Reference-freshness pre-turn guard (BL-640)" section in
+`swarmforge/handoff-protocol.md`.); Previously August 18, 2026 (BL-678: batch-mode claims
 (`ready_for_next_batch.bb`) now write a `.batch-claim-progress.json`
 sidecar (`batch_claim_progress_lib.bb`) the instant a parcel is claimed —
 naming owner role, parcel id, claim instant, last-progress instant, and
