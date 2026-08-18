@@ -860,3 +860,32 @@ You are the hardender.
   pointed at the pinned `.swarmforge/jdk-17`, which was already present on the
   host. Re-verified 2026-08-17: bare `gradlew --version` reports JVM 11.0.12;
   with the pinned export it reports 17.0.20.)
+## A fixture-creating Given step that throws while VALIDATING leaks its temp dir — the terminal step's cleanup never runs (rule_proposal 2026-08-18, accepted)
+- The acceptance step model splits a fixture's life across two functions: a
+  `Given` calls `ensureState(ctx)` (which `mkdtempSync`s `st.tmpDir`), and the
+  terminal `Then` calls `cleanup(ctx)`. Any `throw` between them — including a
+  step's OWN input validation, which fires before a single assertion has run —
+  skips the cleanup and strands the directory. A `try/finally` inside the
+  throwing step does not save you: the dir was created by a DIFFERENT step, so
+  there is no local handle for a `finally` to release.
+- Rule: in a step that creates or inherits a fixture dir, every `throw` runs
+  `cleanup(ctx)` first — `cleanup(ctx); throw new Error(...)`. The property is
+  that the removal happens on the throwing path, not that a keyword appears.
+- **This is the disk sibling of the bridge-handle rule above** (2026-08-13,
+  cross-step `startBridge`/`stop`). Same cross-step lifetime defect, different
+  resource and a very different symptom: the bridge case hangs mutation
+  forever at idle CPU, this one passes green and quietly fills the host. When
+  you check one before a BL-113 run, check the other — they live in the same
+  step files.
+- **Fixing the reported sites is not the fix — sweep the siblings.** On
+  BL-921/BL-922 the architect's D1 covered the 2 steps it had reviewed, and
+  mutation then found the SAME leak in 2 further steps nobody had looked at
+  (indicator and shape lookup-miss). A leak found by review is a sample; the
+  file's other validation throws are the population.
+- (Incident: BL-921/BL-922 hardening 2026-08-18, fixed `7f71bad6b`. Measured
+  the same day across `specs/pipeline/steps/`: 285 step files create a fixture
+  dir, and 255 of them contain a `throw` with no `cleanup(` call in the three
+  lines above it. That count is a coarse upper bound on candidate sites, not
+  255 confirmed leaks — but it is the reason this is a standing check and not
+  a one-ticket note. The authoring-side rule is in **engineering.prompt**
+  under Test Speed And Isolation.)
