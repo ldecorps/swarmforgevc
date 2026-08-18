@@ -20,15 +20,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { ContractPhaseAdapters, CloneResult, CommitAndPushResult } from '../onboarding/contractPhaseRelay';
+import { ContractPhaseAdapters, CloneResult, CommitAndPushResult, ProposePromptsResult } from '../onboarding/contractPhaseRelay';
 import { GateDecision, ProposedContract, RepoSurveyFacts } from '../onboarding/contractTypes';
 import { ApproveContractResult, ObjectToContractResult } from '../onboarding/negotiationTelegramRelay';
 import { proposeContractFromSurvey } from '../onboarding/contractSurvey';
 import { deriveUseCaseInventory } from '../onboarding/useCaseInventory';
 import { parseContractYaml } from '../onboarding/contractView';
-import { initializeTargetContract, initializeTargetUseCaseInventory } from '../config/targetBootstrap';
+import { initializeTargetContract, initializeTargetUseCaseInventory, initializeTargetPrompts } from '../config/targetBootstrap';
 import { slugifyTargetRepoUrl } from '../onboarding/onboarderStateStore';
-import { parseRepoSurveyFacts } from './propose-onboarding-contract';
+import { proposePromptsFromSurvey } from '../onboarding/promptProposal';
+import { evaluateBuildStartGate } from '../onboarding/buildStartGate';
+import { parseRepoSurveyFacts, readSurveyFacts } from './propose-onboarding-contract';
+import { readContractYaml } from './onboarding-contract-gate';
 import { runObjectAsOutcome, runApproveAsOutcome } from './negotiationOutcomeAdapters';
 
 const CLAUDE_SURVEY_TIMEOUT_MS = 5 * 60 * 1000;
@@ -127,15 +130,35 @@ async function defaultSurveyRepo(swarmRepoRoot: string, targetRepoUrl: string): 
   return parseRepoSurveyFacts(factsRaw, `claude survey of ${targetRepoUrl}`);
 }
 
+// BL-625: where this survey's own raw facts are kept for the prompts phase
+// to read back later - onboarder-local bookkeeping (never committed to the
+// target repo, unlike contract.yaml/CONTRACT.md above), since an arbitrarily
+// later "proceed" (a separate Telegram turn, possibly hours later) is what
+// eventually calls defaultProposePrompts below and OnboarderState itself
+// persists no survey facts between turns.
+function surveyFactsPath(swarmRepoRoot: string, targetRepoUrl: string): string {
+  return path.join(targetCloneDir(swarmRepoRoot, targetRepoUrl), '.swarmforge', 'onboarding-survey-facts.json');
+}
+
 // Calls the SAME building blocks propose-onboarding-contract.ts's own
 // main() calls - never a subprocess round-trip through a temp facts file,
-// since the facts are already in memory here.
+// since the facts are already in memory here. BL-625: also persists the raw
+// facts themselves (see surveyFactsPath above) - the prompts phase must
+// generate project.prompt/engineering.prompt from the SAME survey that
+// produced the agreed contract's own scope (promptProposal.ts's own header:
+// "maps the SAME RepoSurveyFacts... uses"), never a fresh re-survey against
+// whatever the target repo happens to look like by the time "proceed" is
+// posted at contract-agreed - which could disagree with what was actually
+// negotiated, and re-runs the same 5-minute claude CLI call for nothing.
 async function defaultProposeContract(swarmRepoRoot: string, targetRepoUrl: string, facts: RepoSurveyFacts): Promise<ProposedContract> {
   const localPath = targetCloneDir(swarmRepoRoot, targetRepoUrl);
   const contract = proposeContractFromSurvey(facts);
   await initializeTargetContract(localPath, contract);
   const inventory = deriveUseCaseInventory(facts);
   await initializeTargetUseCaseInventory(localPath, inventory);
+  const factsPath = surveyFactsPath(swarmRepoRoot, targetRepoUrl);
+  fs.mkdirSync(path.dirname(factsPath), { recursive: true });
+  fs.writeFileSync(factsPath, JSON.stringify(facts));
   return contract;
 }
 
@@ -200,6 +223,25 @@ async function defaultCommitAndPush(swarmRepoRoot: string, targetRepoUrl: string
   }
 }
 
+// BL-625: calls the SAME building blocks propose-onboarding-prompts.ts's own
+// main() calls (readSurveyFacts, proposePromptsFromSurvey,
+// evaluateBuildStartGate, initializeTargetPrompts) - never a subprocess
+// round-trip, matching defaultProposeContract's own precedent above. Reads
+// the facts defaultProposeContract persisted at survey time (surveyFactsPath)
+// rather than re-surveying: prompts must derive from the SAME survey that
+// produced the agreed contract's own scope, and a fresh survey here would
+// re-run the same 5-minute claude CLI call for nothing on every "proceed".
+async function defaultProposePrompts(swarmRepoRoot: string, targetRepoUrl: string): Promise<ProposePromptsResult> {
+  const localPath = targetCloneDir(swarmRepoRoot, targetRepoUrl);
+  const facts = readSurveyFacts(surveyFactsPath(swarmRepoRoot, targetRepoUrl));
+  const rawContractYaml = readContractYaml(localPath);
+  const contract = rawContractYaml ? parseContractYaml(rawContractYaml) : null;
+  const prompts = proposePromptsFromSurvey(facts, contract?.verbosity);
+  const gateDecision = evaluateBuildStartGate(rawContractYaml);
+  const result = await initializeTargetPrompts(localPath, prompts, gateDecision);
+  return { committed: result.committed, withheld: result.withheld };
+}
+
 export function createRealContractPhaseAdapters(swarmRepoRoot: string): ContractPhaseAdapters {
   return {
     cloneTarget: (targetRepoUrl) => defaultCloneTarget(swarmRepoRoot, targetRepoUrl),
@@ -210,5 +252,6 @@ export function createRealContractPhaseAdapters(swarmRepoRoot: string): Contract
     negotiateApprove: (targetRepoUrl) => defaultNegotiateApprove(swarmRepoRoot, targetRepoUrl),
     checkGate: (targetRepoUrl) => defaultCheckGate(swarmRepoRoot, targetRepoUrl),
     commitAndPush: (targetRepoUrl) => defaultCommitAndPush(swarmRepoRoot, targetRepoUrl),
+    proposePrompts: (targetRepoUrl) => defaultProposePrompts(swarmRepoRoot, targetRepoUrl),
   };
 }

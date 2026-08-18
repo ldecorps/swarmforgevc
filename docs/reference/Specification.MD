@@ -1,6 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-916: swarm stamp-off certifying the
+**Last Updated:** August 18, 2026 (BL-919: the master-main reconcile sweep's
+dirty gate no longer blocks on any working-tree dirt at all — only when a
+dirty (or untracked) path actually overlaps a path the incoming
+`origin/main` merge would itself write to. Before this, the sweep read
+`git status --porcelain` as a single clean/dirty boolean, so the routine
+in-progress backlog/spec editing the coordinator and specifier do directly
+in the master checkout parked reconciliation even when a plain `git merge`
+would have succeeded untouched — the trigger case: local `main` fell 24
+ahead / 84 behind `origin/main` after a QA land, the checkout was dirty on
+unrelated paths, and only a human running the merge by hand (successfully,
+dirty files untouched) revealed the gate was wider than git itself.
+`reconcile-decision` (`swarmforge/scripts/master_main_reconcile_lib.bb`)
+now takes the dirty-path set and the merge-changed-path set as real inputs
+instead of a bare boolean, computes their intersection, and blocks only on
+a non-empty overlap or an uncertain computation (fails closed, per the
+ticket's own directive) — every working-tree state the old gate let
+through still reconciles (invariant 3), so this is a strict narrowing, not
+a behavior change to the merge itself. The surfaced note now names the
+offending path (or a count, past the first) instead of just saying "dirty
+tree". See the updated
+[runbook](../how-to/BL-891-master-main-reconcile-sweep.md).); Previously
+August 18, 2026 (BL-916: swarm stamp-off certifying the
 already-landed Bubble hotfix `8da0f52e59` (`0.3.17-open-talk`,
 `versionCode` 33) — a cold-start tap on the bubble drew the disc but
 silently did nothing, because `OverlayService.openTalkPanel()` started
@@ -2199,7 +2220,7 @@ watchdog would otherwise say.
 - **BL-823** — Swarm Availability Ledger: records pause and stop-to-start intervals; BL-650's `evaluate-effective-age` subtracts them (see "Effective Age and Provider-Outage Evidence" above)
 - **BL-840** — Provider-Outage Evidence Reaches Flow Watchdog: supplies BL-650's previously-unwired provider-outage adapter with a real production evidence source (see above)
 - **BL-839** — Master-Checkout Drift Alarm: a different sweep in the same `handoffd.bb` cadence, reusing this same Telegram Operator outbox, but alarming on a different question (does the master checkout's own working tree still match `main`, not parcel age) — see [the runbook](../how-to/BL-839-master-checkout-drift-alarm.md)
-- **BL-891** — Master-Main Reconcile Sweep: another sweep in the same cadence, mirroring BL-356's push-sweep in the opposite direction — merges `origin/main` forward into the master checkout's local `main` ref when the tree is clean, surfacing a `note` to the coordinator (not this Telegram alarm channel) when it can't — see [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md)
+- **BL-891** — Master-Main Reconcile Sweep: another sweep in the same cadence, mirroring BL-356's push-sweep in the opposite direction — merges `origin/main` forward into the master checkout's local `main` ref, surfacing a `note` to the coordinator (not this Telegram alarm channel) only when a dirty or untracked path actually overlaps a path the incoming merge would change (BL-919 narrowed this from a blanket any-dirt gate) — see [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md)
 
 ## Per-Agent Lifecycle Control
 

@@ -44,7 +44,7 @@ const FIXTURE_FACTS = {
 // records its calls (so a test can assert push was never reached) and
 // returns whatever the test configured, never touching git/claude/fs.
 function fakeAdapters(overrides = {}) {
-  const calls = { clone: [], survey: [], propose: [], readCurrent: [], object: [], approve: [], gate: [], push: [] };
+  const calls = { clone: [], survey: [], propose: [], readCurrent: [], object: [], approve: [], gate: [], push: [], prompts: [] };
   const adapters = {
     async cloneTarget(url) {
       calls.clone.push(url);
@@ -85,6 +85,11 @@ function fakeAdapters(overrides = {}) {
       if (overrides.commitAndPush) return overrides.commitAndPush(url);
       return { ok: true, commitSha: 'abc1234def' };
     },
+    async proposePrompts(url) {
+      calls.prompts.push(url);
+      if (overrides.proposePrompts) return overrides.proposePrompts(url);
+      return { committed: true, withheld: false };
+    },
   };
   return { adapters, calls };
 }
@@ -120,9 +125,36 @@ test('BL-624: "proceed" at negotiating decides negotiate-approve', () => {
   assert.deepEqual(decideContractPhaseAction(baseState('negotiating'), 'proceed'), { kind: 'negotiate-approve' });
 });
 
-test('BL-624: show-me/change-this/proceed all decide unrecognized once contract-agreed (terminal for this slice)', () => {
+test('BL-624/BL-625: show-me/change-this decide unrecognized at contract-agreed - only "proceed" (BL-625) does anything', () => {
   assert.deepEqual(decideContractPhaseAction(baseState('contract-agreed'), 'show-me'), { kind: 'unrecognized' });
-  assert.deepEqual(decideContractPhaseAction(baseState('contract-agreed'), 'proceed'), { kind: 'unrecognized' });
+  assert.deepEqual(decideContractPhaseAction(baseState('contract-agreed'), 'change-this x'), { kind: 'unrecognized' });
+});
+
+// ── BL-625: contract-agreed -> prompts-proposed -> ready-to-launch -> done ──
+
+test('BL-625: "proceed" at contract-agreed decides propose-prompts', () => {
+  assert.deepEqual(decideContractPhaseAction(baseState('contract-agreed'), 'proceed'), { kind: 'propose-prompts' });
+});
+
+test('BL-625: "proceed" at prompts-proposed decides post-launch-handoff', () => {
+  assert.deepEqual(decideContractPhaseAction(baseState('prompts-proposed'), 'proceed'), { kind: 'post-launch-handoff' });
+});
+
+test('BL-625: unrecognized text at prompts-proposed decides unrecognized', () => {
+  assert.deepEqual(decideContractPhaseAction(baseState('prompts-proposed'), 'blah'), { kind: 'unrecognized' });
+});
+
+test('BL-625: "proceed" at ready-to-launch decides confirm-launch', () => {
+  assert.deepEqual(decideContractPhaseAction(baseState('ready-to-launch'), 'proceed'), { kind: 'confirm-launch' });
+});
+
+test('BL-625 never-claims-remote-launch-03: any other text at ready-to-launch (a status question or anything else) decides unrecognized, never confirm-launch', () => {
+  assert.deepEqual(decideContractPhaseAction(baseState('ready-to-launch'), 'is it running?'), { kind: 'unrecognized' });
+  assert.deepEqual(decideContractPhaseAction(baseState('ready-to-launch'), 'did you launch it?'), { kind: 'unrecognized' });
+});
+
+test('BL-625: text at done decides unrecognized (genuinely terminal)', () => {
+  assert.deepEqual(decideContractPhaseAction(baseState('done'), 'proceed'), { kind: 'unrecognized' });
 });
 
 // ── BL-624 survey-runs-on-own-clone-01 ──────────────────────────────────
@@ -280,5 +312,88 @@ test('BL-624: an unrecognized action never touches any adapter and never changes
   const state = baseState('contract-proposed');
   const turn = await runContractPhaseAction(state, { kind: 'unrecognized' }, adapters, now);
   assert.deepEqual(turn.state, state);
-  assert.deepEqual(calls, { clone: [], survey: [], propose: [], readCurrent: [], object: [], approve: [], gate: [], push: [] });
+  assert.deepEqual(calls, { clone: [], survey: [], propose: [], readCurrent: [], object: [], approve: [], gate: [], push: [], prompts: [] });
+});
+
+// ── BL-625 prompts-proposed-via-existing-cli-01 ─────────────────────────
+
+test('BL-625 scenario 01: propose-prompts proposes via the existing tool, commits+pushes, and advances to prompts-proposed', async () => {
+  const { adapters, calls } = fakeAdapters();
+  const state = baseState('contract-agreed');
+  const turn = await runContractPhaseAction(state, { kind: 'propose-prompts' }, adapters, now);
+  assert.equal(turn.state.phase, 'prompts-proposed');
+  assert.equal(turn.state.updatedAtMs, NOW_MS);
+  assert.deepEqual(calls.prompts, [TARGET_URL]);
+  assert.deepEqual(calls.push, [TARGET_URL]);
+  assert.match(turn.message, /abc1234def/);
+});
+
+test('BL-625: a withheld prompts proposal (gate not open) leaves the phase unchanged and never pushes', async () => {
+  const { adapters, calls } = fakeAdapters({ proposePrompts: async () => ({ committed: false, withheld: true }) });
+  const state = baseState('contract-agreed');
+  const turn = await runContractPhaseAction(state, { kind: 'propose-prompts' }, adapters, now);
+  assert.deepEqual(turn.state, state);
+  assert.match(turn.message, /withheld/i);
+  assert.equal(calls.push.length, 0);
+});
+
+test('BL-625: a push failure after proposing prompts is reported and never silently dropped', async () => {
+  const { adapters } = fakeAdapters({ commitAndPush: async () => ({ ok: false, error: 'permission denied (publickey)' }) });
+  const state = baseState('contract-agreed');
+  const turn = await runContractPhaseAction(state, { kind: 'propose-prompts' }, adapters, now);
+  assert.deepEqual(turn.state, state);
+  assert.ok(turn.message.includes('permission denied (publickey)'));
+});
+
+test('BL-625: proposePrompts throwing (e.g. missing persisted survey facts) leaves the state untouched with a visible reason', async () => {
+  const { adapters, calls } = fakeAdapters({
+    proposePrompts: async () => {
+      throw new Error('ENOENT: no such file, onboarding-survey-facts.json');
+    },
+  });
+  const state = baseState('contract-agreed');
+  const turn = await runContractPhaseAction(state, { kind: 'propose-prompts' }, adapters, now);
+  assert.deepEqual(turn.state, state);
+  assert.ok(turn.message.includes('onboarding-survey-facts.json'));
+  assert.equal(calls.push.length, 0);
+});
+
+// ── BL-625 ready-to-launch-names-exact-command-02 ───────────────────────
+
+test('BL-625 scenario 02: post-launch-handoff names the exact command, states the human runs it, and advances to ready-to-launch', async () => {
+  const { adapters } = fakeAdapters();
+  const state = baseState('prompts-proposed');
+  const turn = await runContractPhaseAction(state, { kind: 'post-launch-handoff' }, adapters, now);
+  assert.equal(turn.state.phase, 'ready-to-launch');
+  assert.equal(turn.state.updatedAtMs, NOW_MS);
+  assert.match(turn.message, /\.\/swarm widget --pack mono-router/);
+  assert.match(turn.message, /you run this/i);
+});
+
+test('BL-625: postLaunchHandoff is directly callable against a gate-open state, mirroring proveGateAndPush', async () => {
+  const { postLaunchHandoff } = require('../out/onboarding/contractPhaseRelay');
+  const state = baseState('gate-open');
+  const turn = postLaunchHandoff(state, now);
+  assert.equal(turn.state.phase, 'ready-to-launch');
+  assert.match(turn.message, /\.\/swarm widget --pack mono-router/);
+});
+
+// ── BL-625 never-claims-remote-launch-03 / done-closes-the-onboarding-04 ──
+
+test('BL-625 scenario 03: any non-confirm text at ready-to-launch states it cannot observe the target host and restates the command', async () => {
+  const { adapters } = fakeAdapters();
+  const state = baseState('ready-to-launch');
+  const turn = await runContractPhaseAction(state, { kind: 'unrecognized' }, adapters, now);
+  assert.deepEqual(turn.state, state, 'a status question never changes state');
+  assert.match(turn.message, /cannot launch or observe/i);
+  assert.match(turn.message, /\.\/swarm widget --pack mono-router/);
+});
+
+test('BL-625 scenario 04: confirm-launch marks the onboarding done and posts a completion summary naming the target', async () => {
+  const { adapters } = fakeAdapters();
+  const state = baseState('ready-to-launch');
+  const turn = await runContractPhaseAction(state, { kind: 'confirm-launch' }, adapters, now);
+  assert.equal(turn.state.phase, 'done');
+  assert.equal(turn.state.updatedAtMs, NOW_MS);
+  assert.ok(turn.message.includes(TARGET_URL), 'expected the completion summary to name the target');
 });

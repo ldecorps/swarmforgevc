@@ -7,7 +7,7 @@ epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
 priority: 86
-direction: human-requested
+direction: queue-jump
 depends_on: [BL-624]
 assigned_to: coder
 mutation_cost: medium

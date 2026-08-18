@@ -23,22 +23,32 @@ push-sweep, flow watchdog, master-checkout drift). Each tick:
    the same `git fetch`-then-count call BL-356's push-sweep already makes
    each tick — no second fetch).
 2. If local `main` is not behind, there is nothing to reconcile — done.
-3. If it is behind and the master checkout's working tree is **clean**,
-   runs `git merge --no-edit origin/main` in the master checkout: a plain
+3. **(BL-919)** If it is behind, it compares which paths are dirty in the
+   master checkout's working tree against which paths the incoming merge
+   would itself change. If there is **no overlap** — including when the
+   tree is dirty but on paths the merge never touches — it runs
+   `git merge --no-edit origin/main` in the master checkout: a plain
    fast-forward when there are no local-only commits, or a real merge
    commit when there are — either way every prior commit, local-only
-   bookkeeping included, stays reachable.
-4. If it is behind and the working tree is **dirty**, or the merge hits a
-   conflict, it does not touch the checkout — it sends a `note` (priority
-   `00`) to the coordinator and stops.
+   bookkeeping included, stays reachable, and the dirty files are left
+   byte-identical. A clean tree is just the zero-dirty-paths case of the
+   same check, so it always reconciles as before.
+4. If a dirty (or untracked) path **does overlap** a path the merge would
+   change, or the overlap computation itself could not run, it does not
+   touch the checkout — it sends a `note` (priority `00`) naming the
+   offending path(s) to the coordinator and stops. Uncertainty always fails
+   closed to blocked, never to reconciling.
+5. If the merge itself hits a conflict (only possible once step 3 has
+   already decided there's no known dirty-path overlap), it aborts
+   immediately and surfaces the same way.
 
 ## Verdicts
 
 | Outcome | What happened |
 |---|---|
 | up to date | Local `main` already has everything `origin/main` has. Nothing emitted. |
-| reconciled | Local `main` was behind and the tree was clean — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
-| dirty tree, not reconciled | Local `main` is behind but the master checkout has uncommitted changes. The sweep leaves the checkout exactly as it found it and surfaces a `note` to the coordinator. |
+| reconciled | Local `main` was behind and no dirty path overlapped a path the merge would change (clean tree, or dirty-but-non-overlapping) — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
+| dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. The sweep leaves the checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
 | merge conflict, aborted | The merge itself hit a conflict. Aborted immediately (`git merge --abort`) so the checkout is never left mid-conflict — surfaced to the coordinator the same way. |
 
 Both surfaced cases send **one** note and then go quiet for that same reason
@@ -49,17 +59,21 @@ push-sweep's own alarm flags use).
 
 ## Operator workflow
 
-1. Receive a `BL-891: master main <N> behind origin, dirty tree - not
-   reconciled` (or `... hit a merge conflict, aborted, <N> behind`) note in
-   the coordinator's queue.
-2. Look at the master checkout directly (`git -C <repo> status`,
-   `git -C <repo> diff`) — a dirty tree here is routine (the coordinator and
-   specifier both do in-progress backlog/spec editing there), so decide by
-   hand whether to commit it, stash it *only if you are certain nothing else
-   in the repo needs that stash slot* (`git stash` is repo-wide — prefer
+1. Receive a `BL-891: master main <N> behind origin, dirty overlap[: <path>
+   | : <N> paths] - not reconciled` (or `... hit a merge conflict, aborted,
+   <N> behind`) note in the coordinator's queue. **A routine dirty tree with
+   no overlap no longer generates this note at all** (BL-919) — it
+   reconciled on the same tick instead, so seeing this note means the dirt
+   is specifically in the incoming merge's way.
+2. Look at the named path(s) in the master checkout directly (`git -C
+   <repo> status`, `git -C <repo> diff -- <path>`) and decide by hand
+   whether to commit it, stash it *only if you are certain nothing else in
+   the repo needs that stash slot* (`git stash` is repo-wide — prefer
    committing), or otherwise resolve it.
-3. Once the tree is clean, the next sweep tick reconciles automatically —
-   there is no manual merge command to run.
+3. Once the overlapping path is no longer dirty, the next sweep tick
+   reconciles automatically — there is no manual merge command to run. Any
+   *other* dirty path in the tree, overlapping or not, is irrelevant to
+   this decision.
 4. For a conflict: the abort already happened, so the checkout is safe to
    leave as-is while you investigate; resolve by hand (e.g. merge
    `origin/main` yourself and fix the conflict) once you're ready.
@@ -67,12 +81,14 @@ push-sweep's own alarm flags use).
 ## What it does not do
 
 - Never `reset --hard`, `rebase`, `stash`, or force-updates the ref — a
-  behind-and-dirty checkout is left byte-identical, never partially
-  updated (this is BL-891's own two declared invariants).
+  checkout the sweep declines to touch is left byte-identical, never
+  partially updated (this is BL-891's own two declared invariants).
 - Never pushes anything — that direction is push-sweep's job (BL-356); this
   sweep only ever merges `origin/main` **forward into** local `main`.
 - Does not resolve a merge conflict on your behalf. It aborts and surfaces;
   a human resolves it.
+- Does not block on dirt that the incoming merge would never touch (BL-919)
+  — only an actual path overlap, or an uncertain overlap computation, blocks.
 - Re-running the sweep on an already-reconciled tree is a no-op by
   construction (step 2 above).
 

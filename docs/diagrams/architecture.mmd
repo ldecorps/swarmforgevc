@@ -46,8 +46,10 @@
 %% constitutionally forbidden any git merge/push), so every landing left
 %% the master checkout further behind and, once it also carried local
 %% bookkeeping commits, genuinely diverged. The sweep merges origin/main
-%% forward into local main when the working tree is clean; a dirty tree or
-%% merge conflict blocks it and surfaces a note to the coordinator instead
+%% forward into local main whenever no dirty (or untracked) path overlaps a
+%% path the merge would itself change (BL-919 narrowed this from a blanket
+%% any-dirt gate); an actual overlap or a merge conflict blocks it and
+%% surfaces a note to the coordinator instead
 %% of touching the checkout.
 %% BL-897 added a lifecycle-snapshot sweep to the same handoffd.bb cadence,
 %% immediately ahead of the briefing sections it feeds: ensure-lifecycle-
@@ -163,7 +165,7 @@ flowchart TB
   PANES -->|closing-ceremony-adjustment.js /\n-outcome.js record coordinator/specifier\ndecisions against the run (BL-820)| CEREMONYDIR
   CEREMONYDIR -->|note to specifier via\nswarm_handoff.sh (BL-820)| HANDOFFS
   DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip;\nBL-855 refuses a no-op landing merge)| TARGETREPO
-  TARGETREPO -->|handoffd.bb master-main-reconcile-sweep!:\ngit merge origin/main into the master\ncheckout local main (BL-891);\nonly when clean, never reset/rebase/\nstash/force; dirty tree or conflict\nsurfaces a note instead| PANES
+  TARGETREPO -->|handoffd.bb master-main-reconcile-sweep!:\ngit merge origin/main into the master\ncheckout local main (BL-891); never\nreset/rebase/stash/force; blocks only\non real dirty-path/merge overlap\n(BL-919), else a conflict; surfaces\na note naming the path instead| PANES
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
   TILES -->|postMessage: keystroke,\nclick, command| PANEL
