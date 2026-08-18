@@ -2477,13 +2477,20 @@
   (let [{:keys [exit out]} (process/sh ["git" "rev-parse" ref] {:dir (str project-root)})]
     (when (zero? exit) (str/trim out))))
 
-;; git merge-base --is-ancestor's own exit codes: 0 = is an ancestor, 1 =
-;; is NOT (a clean, known "no" - never a failure), anything else = a real
-;; git failure (e.g. an unresolvable sha) - :ok? false distinguishes that
-;; from a clean :ancestor? false, so a real failure can fail closed instead
-;; of silently reading as "not approved" for the wrong reason.
-(defn- git-is-ancestor? [sha ref]
-  (let [{:keys [exit]} (process/sh ["git" "merge-base" "--is-ancestor" sha ref] {:dir (str project-root)})]
+;; BL-925 invariant 2: the ONE definition of "is <sha> a QA-approved tip" -
+;; shells out to is_qa_ancestor.sh, the same script
+;; check_pipeline_code_on_main.sh (bash) calls, so a future rename of the
+;; swarmforge-QA ref or a change to the ancestry predicate has exactly one
+;; call site to update rather than two divergently-maintained git
+;; invocations. Exit codes are that script's own (git merge-base
+;; --is-ancestor's, passed straight through): 0 = is an ancestor, 1 = is NOT
+;; (a clean, known "no" - never a failure), anything else = a real git
+;; failure (e.g. an unresolvable sha) - :ok? false distinguishes that from a
+;; clean :ancestor? false, so a real failure can fail closed instead of
+;; silently reading as "not approved" for the wrong reason.
+(defn- qa-ancestor? [sha]
+  (let [{:keys [exit]} (process/sh ["bash" (str (fs/path script-dir "is_qa_ancestor.sh")) sha]
+                                    {:dir (str project-root)})]
     (cond
       (zero? exit) {:ok? true :ancestor? true}
       (= 1 exit) {:ok? true :ancestor? false}
@@ -2537,7 +2544,7 @@
   (if (git-merge-commit? sha)
     (let [paths (git-changed-paths-combined sha)]
       {:sha sha :ok? (some? paths) :merge? true :qa-ancestor? false :changed-paths (or paths [])})
-    (let [ancestry (git-is-ancestor? sha "swarmforge-QA")]
+    (let [ancestry (qa-ancestor? sha)]
       (if-not (:ok? ancestry)
         {:sha sha :ok? false}
         (let [paths (git-changed-paths sha)]
@@ -2548,7 +2555,7 @@
     (if-not (git-ref-exists? "swarmforge-QA")
       {:qa-ref-exists? false :facts-complete? true}
       (let [main-tip (git-rev-parse "main")
-            tip-check (when main-tip (git-is-ancestor? main-tip "swarmforge-QA"))]
+            tip-check (when main-tip (qa-ancestor? main-tip))]
         (cond
           (or (nil? main-tip) (nil? tip-check) (not (:ok? tip-check)))
           {:qa-ref-exists? true :facts-complete? false}

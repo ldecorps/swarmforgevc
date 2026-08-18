@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUARD="$SCRIPT_DIR/../check_pipeline_code_on_main.sh"
 SIZE_GUARD="$SCRIPT_DIR/../check_commit_size.sh"
 TICKET_GUARD="$SCRIPT_DIR/../check_ticket_deletion.sh"
+IS_QA_ANCESTOR="$SCRIPT_DIR/../is_qa_ancestor.sh"
 PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
 PRE_MERGE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-merge-commit"
 
@@ -30,6 +31,7 @@ mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
 cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
 cp "$TICKET_GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
+cp "$IS_QA_ANCESTOR" "$ROOT/swarmforge/scripts/is_qa_ancestor.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 cp "$PRE_MERGE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-merge-commit"
 chmod +x "$ROOT"/swarmforge/scripts/*.sh "$ROOT"/swarmforge/git-hooks/*
@@ -307,6 +309,38 @@ echo "$OUT925G" | grep -q "extension/src/unpublished.ts" || fail "BL-925 unpubli
 (cd "$ROOT" && git merge --abort 2>/dev/null) || true
 pass "BL-925 unpublished-tip-is-not-waved-through-05: a merge parent that is NOT an ancestor of swarmforge-QA is refused, naming the offending paths"
 
+# ── BL-925 descendant-of-qa-tip-is-not-waved-through-06 (direction check):
+#    a commit built ON TOP OF an already-published tip - so swarmforge-QA IS
+#    an ancestor of it, but it is NOT an ancestor of swarmforge-QA - is still
+#    refused. is_qa_ancestor.sh's ancestry direction is `git merge-base
+#    --is-ancestor "$SHA" swarmforge-QA` (is the incoming commit AT OR BEFORE
+#    the published tip); the reversed direction (is swarmforge-QA at or
+#    before the incoming commit) would wrongly wave through anything newer
+#    than an old approved base. unpublished-tip-05 above cannot catch a
+#    swapped-argument regression here: it merges a commit unrelated to
+#    swarmforge-QA, so neither direction finds an ancestor and both refuse
+#    for the same (right) reason. This scenario is related by construction -
+#    only the correct direction refuses it. ──────────────────────────────
+reset_bl925_fixture
+make_published_tip
+git -C "$ROOT" checkout -q published-tip
+mkdir -p "$ROOT/extension/src"
+echo "built on the old approved tip, never itself approved" > "$ROOT/extension/src/unapproved-descendant.ts"
+git -C "$ROOT" add extension/src/unapproved-descendant.ts
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "descendant of the published tip, not itself QA-approved"
+git -C "$ROOT" branch -f unapproved-descendant HEAD >/dev/null
+git -C "$ROOT" checkout -q main
+make_ahead_bookkeeping_commit "925h"
+set +e
+OUT925H="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit unapproved-descendant 2>&1)"
+STATUS925H=$?
+set -e
+[[ "$STATUS925H" -ne 0 ]] || fail "BL-925 descendant-of-qa-tip-is-not-waved-through-06: expected a commit descending from (but not itself an ancestor of) swarmforge-QA to be refused"
+echo "$OUT925H" | grep -q "extension/src/unapproved-descendant.ts" || fail "BL-925 descendant-of-qa-tip-is-not-waved-through-06: refusal must name the offending path, got: $OUT925H"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+git -C "$ROOT" branch -D unapproved-descendant >/dev/null 2>&1 || true
+pass "BL-925 descendant-of-qa-tip-is-not-waved-through-06: a commit built on top of the published tip, but not itself QA-approved, is still refused"
+
 reset_bl925_fixture
 
 # ── extra: --list-paths surface, for a future consumer to read the same
@@ -316,5 +350,30 @@ echo "$LIST_OUT" | grep -qx "extension/src/" || fail "list-paths: expected exten
 echo "$LIST_OUT" | grep -qx "extension/test/" || fail "list-paths: expected extension/test/ in output"
 echo "$LIST_OUT" | grep -qx "specs/pipeline/steps/" || fail "list-paths: expected specs/pipeline/steps/ in output"
 pass "extra: --list-paths publishes the QA-exclusive path set for external consumers"
+
+# ── BL-925 invariant 2: one definition of "QA-approved tip", not two ──────
+# check_pipeline_code_on_main.sh (bash) and handoffd.bb (Babashka) must both
+# call is_qa_ancestor.sh rather than each running its own `git merge-base
+# --is-ancestor ... swarmforge-QA` - a "kept in sync" pair of independent
+# invocations is exactly what invariant 2 forbids. This does not re-verify
+# ancestry semantics (provenance-01a/both-hooks-agree-02/unpublished-tip-05
+# above already do that against the real script); it only pins the
+# extraction itself, so a future edit that quietly re-inlines the git call
+# in one file without the other fails loudly here instead of drifting
+# silently.
+HANDOFFD="$SCRIPT_DIR/../handoffd.bb"
+grep -q "is_qa_ancestor.sh" "$GUARD" \
+  || fail "BL-925 invariant 2: check_pipeline_code_on_main.sh no longer calls is_qa_ancestor.sh"
+grep -q "is_qa_ancestor.sh" "$HANDOFFD" \
+  || fail "BL-925 invariant 2: handoffd.bb no longer calls is_qa_ancestor.sh"
+# Neither file may ALSO run its own independent `git merge-base
+# --is-ancestor ... swarmforge-QA` outside of is_qa_ancestor.sh's own body -
+# that would be exactly the divergent second definition invariant 2 forbids,
+# even with the shared script still present and called.
+grep -q 'merge-base.*--is-ancestor.*swarmforge-QA' "$GUARD" \
+  && fail "BL-925 invariant 2: check_pipeline_code_on_main.sh still runs its own inline ancestry git call"
+grep -q '"merge-base".*"--is-ancestor"' "$HANDOFFD" \
+  && fail "BL-925 invariant 2: handoffd.bb still runs its own inline ancestry git call"
+pass "BL-925 invariant2-one-shared-definition: both the bash guard and handoffd.bb call is_qa_ancestor.sh, not a second independent ancestry check"
 
 echo "ALL PASS"
