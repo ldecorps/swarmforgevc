@@ -87,8 +87,9 @@ This covers **task-mode** claims left behind by a dead session at
 **launch time** only:
 
 - A batch-mode role's claim-progress sidecar gap (a healthy in-flight batch
-  parcel with no progress record) is a related but separate defect —
-  see BL-678.
+  parcel with no progress record) is a related but separate defect, fixed
+  mid-run rather than at launch — see
+  [BL-678](BL-678-batch-claim-progress-sidecar.md).
 - Mid-run idle/wedged-session detection (BL-528's claim-idle auto-heal) is
   unchanged; it is tuned for a session that is alive but stuck, not for a
   fresh relaunch.
@@ -97,6 +98,8 @@ This covers **task-mode** claims left behind by a dead session at
 
 ## See Also
 
+- **BL-678** — the live-owner half of this same source near-miss, handled
+  mid-run rather than at relaunch.
 - **BL-528** — claim-idle auto-heal for wedged (not dead) sessions.
 - **BL-576** — aged-note actionability, the other mono-router dormant-role
   drain mechanism.

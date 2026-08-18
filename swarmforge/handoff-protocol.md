@@ -1583,6 +1583,50 @@ should carry are routing judgements reserved to the coordinator (Article
 1.1). Delivering any parcel for that ticket into a role's inbox stops the
 nudging on the next tick, since live-mail? then holds.
 
+### Batch-claim-progress suspect sweep (BL-678)
+
+The dropped-parcel sweep above answers "was this ticket EVER dispatched,
+then dropped mid-pipeline?" — it has nothing to say about a parcel that is
+currently, healthily, claimed by a **batch** role (cleaner, hardener) with a
+live owner still working it. Before BL-678, a batch-mode claim
+(`ready_for_next_batch.bb`) wrote no progress record at all, so a healthy
+in-flight batch parcel was indistinguishable from a lost one — on
+2026-07-25 this nearly caused the coordinator to re-forward a duplicate
+mid-run (see `docs/how-to/BL-648-relaunch-resume-orphan-claims.md` for the
+sibling **dead**-owner half of the same source near-miss, handled at
+relaunch instead of mid-run).
+
+`ready_for_next_batch.bb` now writes a `.batch-claim-progress.json` sidecar
+(`batch_claim_progress_lib.bb`) the instant a batch parcel is claimed —
+never lazily on a later sweep tick — naming the owner role, parcel id,
+claim instant, last-progress instant, and last-seen commit. On the same
+sweep cadence as its siblings (`chase_sweep_lib.bb` /
+`handoffd.bb::batch-claim-progress-sweep!`), the daemon compares each held
+batch item's owning-worktree `HEAD` against the sidecar's last-recorded
+commit:
+
+- **Commit advanced** — the sidecar's last-progress instant refreshes; the
+  item is healthy.
+- **No advance, under `batch_claim_progress_stale_threshold_minutes`**
+  (default 20 minutes) — normal mid-task quiet time; nothing happens.
+- **No advance past the threshold** — the item is a suspect. The sweep
+  sends a `note` (priority `00`) **to the coordinator only** —
+  `"<id> batch claim stale <N>m since progress, not re-delivered."` — past
+  `batch_claim_progress_cooldown_minutes` (default 30 minutes) since the
+  last suspect note for that same item.
+
+Same posture as the dropped-parcel sweep: the sweep never routes, assigns,
+promotes, re-forwards, or re-delivers the parcel itself — it only ever
+surfaces a named, aged suspect to the coordinator. It is deliberately
+separate from BL-528's task-mode claim-idle escalation ladder
+(nudge → bounce → halt): this mechanism assumes a live owner throughout and
+only ever answers "is it progressing", never "is it alive". The sidecar is
+registered in `handoff_lib.bb`'s sidecar suffixes, so the existing
+terminal-cleanup convention (every batch completion calls
+`remove-sidecars-of!`) retires it automatically when the batch finishes.
+See `docs/how-to/BL-678-batch-claim-progress-sidecar.md` for the full
+runbook.
+
 ### Push sweep
 
 Nothing in the swarm otherwise runs `git push`: publication of local `main`

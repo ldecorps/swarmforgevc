@@ -61,6 +61,18 @@
 %% instead of each re-walking the backlog's full git history. A missing,
 %% unreadable or stale snapshot degrades a consumer straight back to its own
 %% walk, exactly as it worked before this sweep existed.
+%% BL-678 added a batch-claim-progress suspect sweep to the same handoffd.bb
+%% cadence: batch-mode claims (cleaner, hardener) now write a
+%% .batch-claim-progress.json sidecar the instant ready_for_next_batch.bb
+%% claims a parcel (owner role, claim/last-progress instants, last-seen
+%% commit) - closing the live-owner half of BL-648's source near-miss (a
+%% batch claim with no progress record nearly caused a duplicate
+%% re-forward). The sweep refreshes the sidecar from the owning worktree's
+%% HEAD and, past a staleness threshold with no advance, surfaces a named
+%% suspect note to the coordinator - report-only, same posture as the
+%% dropped-parcel sweep; it never re-forwards or re-delivers the parcel
+%% itself, and never becomes a liveness oracle for a dead owner (BL-648's
+%% job) or touches BL-528's task-mode claim-idle ladder.
 %% BL-896 (2026-08-16, heading confirmed 2026-08-17): the open-ticket-chart
 %% CLI (module still named render-briefing-burndown.ts) plots open tickets
 %% remaining per day next to the architecture diagrams in the briefing
