@@ -1,6 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 17, 2026 (BL-821: daily briefing emails no
+**Last Updated:** August 18, 2026 (BL-632: two versioned git hooks now
+refuse, at commit time, a commit or `--no-ff` merge that would put
+pipeline code (`extension/src/`, `extension/test/`,
+`specs/pipeline/steps/`) onto `main` from any role but QA — the layer
+BL-629/BL-630/BL-631 all lacked, since each of those three reacts to a
+bad `main` tip that already exists. `pre-commit` (plain `git commit`,
+including `--amend`) and the previously-nonexistent `pre-merge-commit`
+(`git merge --no-ff`, the handoff path's `merge_and_process` shape) both
+delegate to one standalone script,
+`swarmforge/scripts/check_pipeline_code_on_main.sh`, so the QA-exclusive
+path set is defined once and the deny path does not depend on
+`SWARMFORGE_ROLE` being set at all — only the QA allowance reads it, so a
+role with a lost env or a bare human shell is refused, not waved through.
+Known holes stated rather than hidden: a fast-forward merge fires no
+hook, `--no-verify` bypasses both by design, and `reset --hard` /
+`branch -f` / `cherry-pick` / a direct push from another checkout all
+move `main` without a commit hook running — which is exactly why BL-630
+and BL-631 still run regardless. See the new
+"BL-632: Commit-Time Guard Refuses Pipeline Code on Main" reference doc
+(`docs/reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md`).);
+Previously August 17, 2026 (BL-821: daily briefing emails no
 longer keep re-mailing past days. Two independent legs, both required.
 Leg A — the sent-marker is now durable: `commit-sent-marker!`
 (`swarmforge/scripts/briefing_email_lib.bb`) commits exactly
