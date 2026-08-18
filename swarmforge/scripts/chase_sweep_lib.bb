@@ -26,6 +26,11 @@
 ;; BL-528: claim-without-progress detection.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "claim_progress_lib.bb")))
 
+;; BL-678: batch-mode claim-progress sidecar (live-owner half of BL-648's
+;; source near-miss) - deliberately separate from BL-528 above, see
+;; batch_claim_progress_lib.bb's own header.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "batch_claim_progress_lib.bb")))
+
 ;; BL-798: reuses promotion-gates-lib's own Article 3.2.4 ranking (expedited
 ;; defects first, then priority) for the open-slot nudge's candidate — never
 ;; a second, divergent ranking, exactly what promotion_gates_lib.bb's own
@@ -1257,3 +1262,96 @@
          :newest-trail-ms (newest-trail-event-ms (:id item) all-scan-dirs)}
         now-ms stall-threshold-ms))
      items)))
+
+;; ── BL-678: batch-claim-progress sidecar (live-owner half of BL-648's ──────
+;; source near-miss) ─────────────────────────────────────────────────────────
+;; Chase-side observer for batch-mode claims: reads/refreshes each batch
+;; item's .batch-claim-progress.json sidecar (written at claim time by
+;; ready_for_next_batch.bb) from the owning role's worktree HEAD, and
+;; surfaces - never re-forwards, never re-delivers, never bounces/halts - a
+;; named suspect note to the coordinator when progress has gone stale.
+;; Deliberately does not touch BL-528's .claim-progress.json escalation
+;; ladder above; scoped by the caller (handoffd.bb) to :receive-mode "batch"
+;; roles only.
+
+(defn read-batch-claim-progress [in-process-file-path]
+  (let [data (read-json (batch-claim-progress-lib/sidecar-path in-process-file-path))]
+    (when (and (map? data) (number? (:claimAtMs data)) (number? (:lastProgressAtMs data)))
+      data)))
+
+(defn write-batch-claim-progress! [in-process-file-path progress]
+  (spit (batch-claim-progress-lib/sidecar-path in-process-file-path)
+        (json/generate-string progress)))
+
+(def batch-claim-progress-stale-default-threshold-ms
+  batch-claim-progress-lib/default-stale-threshold-ms)
+
+(defn parse-batch-claim-progress-stale-threshold-ms
+  "Pure: `config batch_claim_progress_stale_threshold_minutes <n>` from conf
+   text, in minutes, converted to ms. Same degrade-to-default posture as the
+   dropped-parcel stall-threshold parser above."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config batch_claim_progress_stale_threshold_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) batch-claim-progress-stale-default-threshold-ms)))
+
+(def batch-claim-progress-cooldown-default-ms
+  "Default cooldown between repeated suspect nudges for the SAME still-stale
+   batch item: one nudge per window, not every sweep tick."
+  (* 30 60 1000))
+
+(defn parse-batch-claim-progress-cooldown-ms
+  "Pure: `config batch_claim_progress_cooldown_minutes <n>` from conf text,
+   in minutes, converted to ms."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config batch_claim_progress_cooldown_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) batch-claim-progress-cooldown-default-ms)))
+
+(defn batch-claim-progress-suspect-note-message
+  [item-id age-ms]
+  (let [msg (str item-id " batch claim stale " (quot age-ms 60000) "m since progress, not re-delivered.")]
+    (if (<= (count msg) dispatch-gap-note-max-length)
+      msg
+      (subs msg 0 dispatch-gap-note-max-length))))
+
+(defn batch-claim-progress-suspect-draft-lines
+  "Note to the coordinator only - same posture as dropped-parcel-draft-lines
+   above. Never routes, assigns, or promotes; never re-forwards or re-
+   delivers the parcel itself (invariant 2)."
+  [item-id age-ms]
+  ["type: note"
+   "to: coordinator"
+   "priority: 00"
+   (str "message: " (batch-claim-progress-suspect-note-message item-id age-ms))])
+
+(defn apply-batch-claim-progress-check!
+  "Refreshes (impure) each held batch item's sidecar from current-commit,
+   then classifies it via the pure decide-batch-claim-observation. Returns
+   the seq of {:file-path :item-id :age-ms} suspects this tick - the caller
+   (handoffd.bb) is responsible for actually sending the note, respecting
+   its own per-item cooldown. Never moves, deletes, or otherwise touches the
+   handoff file itself - the only side effect here is the sidecar write."
+  [held now-ms staleness-threshold-ms current-commit]
+  (vec
+   (keep
+    (fn [item]
+      (let [fp (:filePath item)
+            progress (read-batch-claim-progress fp)]
+        (when progress
+          (let [progress' (if (batch-claim-progress-lib/advanced? progress current-commit)
+                             (batch-claim-progress-lib/mark-progress progress current-commit now-ms)
+                             progress)]
+            (write-batch-claim-progress! fp progress')
+            (when (= :stale-suspect
+                     (batch-claim-progress-lib/decide-batch-claim-observation progress' now-ms staleness-threshold-ms))
+              {:file-path fp
+               :item-id (or (extract-ticket-id (dispatch-ticket-ref fp)) (handoff-id fp))
+               :age-ms (batch-claim-progress-lib/progress-age-ms progress' now-ms)})))))
+    held)))

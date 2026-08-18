@@ -2,11 +2,14 @@
 
 (ns ready-for-next-batch
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "batch_claim_progress_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_batch.bb, right after it
@@ -63,6 +66,37 @@
         (recur (inc suffix))
         dir))))
 
+;; ── BL-678: claim-time batch-claim-progress sidecar ─────────────────────────
+
+(defn- current-head-commit-10
+  "10-char HEAD of THIS role's own worktree (the cwd this script runs from) -
+   never a remote/other role's worktree. \"\" on error, mirroring handoffd.
+   bb's worktree-head-commit-10 error posture."
+  []
+  (try
+    (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"])]
+      (if (zero? (:exit result)) (str/trim (:out result)) ""))
+    (catch Exception _ "")))
+
+(defn- claimed-parcel-id
+  "Task header (git_handoff) if present, else message header (note) - both
+   conventionally lead with the ticket id (mirrors chase_sweep_lib.bb's own
+   dispatch-ticket-ref); falls back to the bare filename when neither header
+   is present, so the sidecar always names SOMETHING."
+  [file]
+  (handoff-lib/header-value
+   file "task"
+   (handoff-lib/header-value file "message" (fs/file-name file))))
+
+(defn write-batch-claim-progress-sidecar! [target-file]
+  (let [role (or (handoff-lib/current-role) "")
+        parcel-id (claimed-parcel-id target-file)
+        commit (current-head-commit-10)
+        progress (batch-claim-progress-lib/make-batch-claim-progress
+                  role parcel-id commit (System/currentTimeMillis))]
+    (spit (batch-claim-progress-lib/sidecar-path (str target-file))
+          (json/generate-string progress))))
+
 (defn -main []
   (let [new-dir        (handoff-lib/my-mailbox-dir :new)
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
@@ -105,7 +139,11 @@
                     (fs/move source-file target-file)
                     ;; BL-232: same sidecar drop as the task-mode dequeue path.
                     (handoff-lib/remove-sidecars-of! source-file)
-                    (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))))
+                    (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
+                    ;; BL-678 invariant 1: the sidecar is written the INSTANT
+                    ;; the item is claimed - never lazily by a later sweep
+                    ;; tick (that gap is the BL-648-source near-miss).
+                    (write-batch-claim-progress-sidecar! target-file)))
                 (when (empty? selected-files)
                   (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: no tasks selected for batch priority " batch-priority ".")))
                 (print-batch batch-dir)))))))))

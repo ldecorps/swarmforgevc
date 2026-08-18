@@ -473,7 +473,8 @@ const DOMAINS = [
   require('./bl913PinnedShellClassifiedRetrySteps'),
   require('./bl921ChaseVerifiesLiveIdentitySteps'),
   require('./bl922UnreadableAcceptanceCaughtAtMintSteps'),
-  require('./bl918PeriodicSamplesAreNotStallsSteps')
+  require('./bl918PeriodicSamplesAreNotStallsSteps'),
+  require('./bl678BatchClaimProgressSidecarSteps')
 ];
 
 function registerSteps(registry) {

@@ -14,7 +14,7 @@ mutation_cost: medium
 invariants:
   - "Every batch-mode claim has a sidecar naming its owner and last-progress instant from the moment of the claim until completion."
   - "No observer re-forwards or re-delivers a parcel whose sidecar shows progress fresher than its staleness threshold."
-acceptance: specs/features/BL-678-batch-claim-progress-sidecar.feature.draft
+acceptance: specs/features/BL-678-batch-claim-progress-sidecar.feature
 
 approval_context: >
   Split out of BL-648's source at spec time (its 2026-07-25 16:28-16:50
@@ -67,3 +67,6 @@ description: |
   verify no re-forward happens and no duplicate lands; freeze the batch
   role past the staleness threshold and verify the coordinator gets a
   named suspect surface line, and the parcel is still not re-delivered.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-18, by: architect, blamed: cleaner, class: behavior, commit: a140fcc393, evidence: backlog/evidence/BL-678-batch-claim-progress-sidecar-bounce-20260818.md }
