@@ -219,3 +219,5 @@ notes: |
   merge is meaning-preserving: the outline varies the very fields a Background
   would have to fix, and the two standalone scenarios assert different Thens
   (parcel survival and resume, against the force override). Left as written.
+
+assigned_to: coder
