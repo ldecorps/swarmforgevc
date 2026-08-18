@@ -117,15 +117,9 @@ description: |
   `extension/test/pipelineBoard.property.test.js` likewise for any invariant
   over the old grid shape.
 
-acceptance: |
-  specs/features/BL-585-pipeline-board-ticket-column-matrix.feature
+acceptance: specs/features/BL-585-pipeline-board-ticket-column-matrix.feature
 
-  Gates: unit + acceptance + coverage + mutation (Stryker `--mutate` scoped to
-  the compiled `out/**/*.js`, never `src/**/*.ts`) + CRAP <= 6, as usual.
-  Width/alignment assertions must compare against the real rendered string,
-  including the non-breaking spaces — an assertion that normalizes whitespace
-  away would pass while the phone render is broken.
-
+qa_e2e_procedure: |
   QA end-to-end procedure (live swarm, real Telegram):
   1. With 2-3 tickets in `backlog/active/` across at least two different epics,
      let the concierge tick repaint the pinned Pipeline Board message.
@@ -144,6 +138,18 @@ acceptance: |
      is still present in the LINKS list.
   6. Empty case: with `backlog/active/` empty, confirm the grid renders the bare
      `(no active tickets)` line with no dashes.
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a
+  block scalar hiding the pointer from the pre-QA gates until the
+  documenter->QA hop). Nothing anyone builds changes; the text below and in
+  qa_e2e_procedure: is the same text, relocated verbatim.
+
+  Gates: unit + acceptance + coverage + mutation (Stryker `--mutate` scoped to
+  the compiled `out/**/*.js`, never `src/**/*.ts`) + CRAP <= 6, as usual.
+  Width/alignment assertions must compare against the real rendered string,
+  including the non-breaking spaces — an assertion that normalizes whitespace
+  away would pass while the phone render is broken.
 
 docs: |
   documenter: update whatever documents the pipeline board's layout to describe

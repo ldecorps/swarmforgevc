@@ -21,9 +21,12 @@
 #
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KILL_PIPELINE="$SCRIPT_DIR/swarmforge/scripts/kill_pipeline_swarm.sh"
-source "$SCRIPT_DIR/swarmforge/scripts/finish_shift_lib.sh"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KILL_PIPELINE="$REPO_ROOT/swarmforge/scripts/kill_pipeline_swarm.sh"
+# finish_shift_lib.sh overwrites SCRIPT_DIR to swarmforge/scripts/ — keep
+# the repo root in REPO_ROOT so a no-arg `./finish-shift` still beds THIS
+# checkout rather than the helper directory.
+source "$REPO_ROOT/swarmforge/scripts/finish_shift_lib.sh"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'EOF'
@@ -50,7 +53,7 @@ if [[ $# -gt 1 ]]; then
   exit 2
 fi
 
-TARGET="${1:-$SCRIPT_DIR}"
+TARGET="${1:-$REPO_ROOT}"
 TARGET="$(cd "$TARGET" && pwd)"
 
 # BL-820: the closing-ceremony lean pass, named step, runs before the shift

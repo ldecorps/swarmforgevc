@@ -106,14 +106,20 @@ description: |
        (doc is a live projection, not stale hand-edited text).
     4. Confirm NO new pane/session/mailbox was added to any launch path.
 
-acceptance: |
-  See specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature
-  for the executable acceptance scenarios. The coder graduates the role prompt
-  and wires the `compat-docs` CLI subcommand + pure doc-render helper with tests
-  (doc lists status + limitations per model, links to role matrix, regenerates
-  from registry state). Documenter folds the compatibility doc into the
-  model-steward runbook and the architecture/docs index. QA verifies the role
-  prompt contract and the generated doc, and that no always-on pane was added.
+acceptance: specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a block
+  scalar hiding the pointer from the pre-QA gates until the documenter->QA
+  hop). Nothing anyone builds changes; the text below is the same text,
+  relocated verbatim.
+
+  The coder graduates the role prompt and wires the `compat-docs` CLI
+  subcommand + pure doc-render helper with tests (doc lists status +
+  limitations per model, links to role matrix, regenerates from registry
+  state). Documenter folds the compatibility doc into the model-steward
+  runbook and the architecture/docs index. QA verifies the role prompt
+  contract and the generated doc, and that no always-on pane was added.
 
 out_of_scope: |
   - An always-on autonomous steward pane, mailbox, worktree, standing loop, or

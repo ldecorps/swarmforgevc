@@ -130,12 +130,13 @@ coordinator as one more promotion hint. The raw intake
 (`INTAKE-resume-jumpq-pilot-process-after-bl764.md`) is drained into this
 section; its substance is carried here in full.
 
-**Human directive 2026-07-31 (Cursor, evening):** **continuous shifts until
-revoked.** Keep the pack up across former day/night boundaries — no scheduled
-`night-stop` / `day-shift-end`. Crontab ensure-up only (09:00 + 17:00). State:
-`.swarmforge/operator/continuous-shifts.json`. Do not restore
-`crontab.night-standing` or lights-out the stack on a timer until the human
-says otherwise. Operator note:
+**Human directive 2026-08-17 (Cursor, evening) — revokes 2026-07-31:**
+**day + night** of the 3×8 packs. Night 01:00–09:00 and day 09:00–17:00
+Europe/London are on and adjacent (01:00 `./start-swarm.sh`, 17:00
+`./finish-shift`, no 09:00 bounce). Evening 17:00–01:00 is **off**.
+Cooldown window 17:00→01:00 is on. State:
+`.swarmforge/operator/continuous-shifts.json` (mode `day-and-night`) and
+`.swarmforge/operator/shift-schedule.json`. Operator note:
 `.swarmforge/operator/INTAKE-continuous-shifts-until-revoked.md`.
 
 This freeze is stronger than "Awaiting the human" silence: it is an explicit

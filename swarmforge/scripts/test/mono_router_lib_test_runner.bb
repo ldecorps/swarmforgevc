@@ -110,13 +110,14 @@
            :resident-session-exists? true
            :active-role "coder"
            :target-role "cleaner"}))
-(assert= "dormant + already that role → wake resident"
+(assert= "dormant + already that role, live identity agrees → wake resident"
          :wake-resident
          (mono-router-lib/dormant-mailbox-chase-action
           {:target-session-exists? false
            :resident-session-exists? true
            :active-role "cleaner"
-           :target-role "cleaner"}))
+           :target-role "cleaner"
+           :live-role "cleaner"}))
 (assert= "no resident degrades to own-session wake"
          :wake-own-session
          (mono-router-lib/dormant-mailbox-chase-action
@@ -124,6 +125,49 @@
            :resident-session-exists? false
            :active-role "coder"
            :target-role "cleaner"}))
+
+;; BL-921: the marker alone is never sufficient evidence - a diverged or
+;; unreadable live identity must still route to :rotate, never :wake-resident.
+(assert= "BL-921: marker matches but live identity diverged → rotate, not wake"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "cleaner"
+           :target-role "cleaner"
+           :live-role "coder"}))
+(assert= "BL-921: marker matches but live identity unreadable (nil) → rotate"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "cleaner"
+           :target-role "cleaner"
+           :live-role nil}))
+(assert= "BL-921: marker matches but live identity unreadable (blank) → rotate"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "cleaner"
+           :target-role "cleaner"
+           :live-role "   "}))
+(assert= "BL-921: marker itself already wrong stays rotate regardless of live-role"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "coder"
+           :target-role "cleaner"
+           :live-role "coder"}))
+(assert= "BL-921: a role with its own standing session is unaffected by either identity"
+         :wake-own-session
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? true
+           :resident-session-exists? true
+           :active-role "architect"
+           :target-role "architect"
+           :live-role "coder"}))
 
 (assert= "ensure restores cleaner when marker says cleaner"
          "cleaner"
@@ -275,6 +319,30 @@
          (mono-router-lib/should-rotate-resident?
           {:active-role "coder" :target-role "cleaner" :resident-busy? false
            :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+
+;; BL-921: :already-active requires the marker AND the live identity to
+;; agree with target-role - a stale marker must never refuse the rotate
+;; that would actually fix the divergence.
+(assert= "BL-921: marker and live identity both agree → already-active"
+         :already-active
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role "cleaner"
+           :resident-busy? false :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "BL-921: marker agrees but live identity diverged → rotate, not already-active"
+         :rotate
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role "coder"
+           :resident-busy? false :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "BL-921: marker agrees but live identity unreadable → rotate, not already-active"
+         :rotate
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role nil
+           :resident-busy? false :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "BL-921: busy still wins over a live-agreeing marker"
+         :busy
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role "cleaner"
+           :resident-busy? true :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
 
 ;; ── BL-550: parse-rotation-home / rotate-home? ────────────────────────────
 (assert= "reads config rotation_home"
