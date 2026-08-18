@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-625: the Onboarder's slice 3 closes
+**Last Updated:** August 18, 2026 (BL-913: a `PreToolUse` hook now pins
+every role's Bash command to that role's own worktree and heals one
+recoverable shell miss in silence, so a stale/wrong pane cwd never reaches
+the model as a failure to apologize for — slice A of the
+`tool-miss-auto-heal` epic (BL-912 tracks the catalog, rotation-pin
+cleanup, apology-ban narration, and the Cursor surface as later slices).
+`tool_miss_heal_hook.bb`, scoped to the `Bash` matcher only and wired per
+role at `write_claude_settings_file` (`swarmforge.sh`), rewrites a command
+into a self-healing bash wrapper (`tool_miss_heal_lib.bb`'s pure
+`build-healing-wrapper-command`) that runs the original command once, and
+only on failure classifies the output against a closed, ordered taxonomy
+(`wrong-cwd`, `wrong-surface`, `missing-root-argv`, else `real-failure`),
+re-running from a healed environment at most once for the first three and
+never for the fourth — an `if`/`elif` chain, so at most one heal can ever
+fire, structurally. The pin comes from `SWARMFORGE_ROLE_WORKTREE`, exported
+by the launch script from the same `WORKTREE_PATHS` array that generates
+the role's own `cd` line, never the hook's own `$PWD`. The model observes
+exactly one result per command: the happy path is untouched, a healed miss
+shows only the healed output (the first failed attempt's stderr is never
+surfaced), a still-broken heal shows the second failure once, and a real
+failure is returned exactly as it happened. Fails open throughout — a
+non-Bash tool call, an unknown pin, or a hook bug all leave the command
+untouched rather than blocking it. See the new
+[runbook](../how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md).);
+Previously August 18, 2026 (BL-625: the Onboarder's slice 3 closes
 the onboarding state machine past `contract-agreed` — `proceed` runs the
 existing BL-269 prompts CLI, committing and pushing the proposed project/
 engineering prompts and advancing to `prompts-proposed`; a further
