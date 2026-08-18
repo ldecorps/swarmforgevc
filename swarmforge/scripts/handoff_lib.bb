@@ -605,22 +605,32 @@
   (= "1" (System/getenv rotate-force-env-var)))
 
 (defn departing-role-blocking-handoff
-  "The currently-active (about-to-depart) role's own inbox/in_process/
-   *.handoff file, if any - what the resident-invoked rotation gate refuses
-   on. Deliberately reads the RAW active-role marker (not
-   read-mono-router-active-role's home-role fallback): fails OPEN (returns
-   nil, so rotation proceeds) whenever the departing role can't actually be
-   determined - missing/blank marker, or no roles.tsv row for it - rather
-   than guessing an identity and gating on the wrong role's mailbox. handoff-
-   files already filters to real *.handoff parcels only, so a lone claim-
-   progress/nudge/chase sidecar never blocks."
+  "The currently-active (about-to-depart) role, and its own inbox/in_process/
+   *.handoff file if any - what the resident-invoked rotation gate refuses
+   on. Returns {:role ... :blocking-file ...}, both nil when undetermined.
+   Deliberately reads the RAW active-role marker (not
+   read-mono-router-active-role's home-role fallback): fails OPEN (:role and
+   :blocking-file both nil, so rotation proceeds) whenever the departing
+   role can't actually be determined - missing/blank marker, or no
+   roles.tsv row for it - rather than guessing an identity and gating on
+   the wrong role's mailbox. handoff-files already filters to real
+   *.handoff parcels only, so a lone claim-progress/nudge/chase sidecar
+   never blocks.
+
+   BL-926: :role is the departing role rotate-gate-decision compares
+   against the rotation target under :active-role - rotating INTO the role
+   that owns the blocking parcel is not abandonment. BL-927 (out of scope
+   here) is resolving this from the pane's live identity rather than the
+   raw marker."
   []
   (let [marker-path (mono-router-active-role-path)]
-    (when (fs/exists? marker-path)
-      (let [role (str/trim (slurp (str marker-path)))]
-        (when-not (str/blank? role)
-          (when-let [role-info (load-role-info role)]
-            (first (handoff-files (mailbox-dir role-info :in_process)))))))))
+    (or (when (fs/exists? marker-path)
+          (let [role (str/trim (slurp (str marker-path)))]
+            (when-not (str/blank? role)
+              (when-let [role-info (load-role-info role)]
+                {:role role
+                 :blocking-file (first (handoff-files (mailbox-dir role-info :in_process)))}))))
+        {:role nil :blocking-file nil})))
 
 (defn session-exists?
   "True when tmux has a live session of this name on the project socket."
@@ -792,12 +802,19 @@
    rotate-force-env-var override is set, in which case it warns loudly,
    naming what was left behind, and proceeds. rotate-resident-to! itself
    stays ungated: handoffd.bb's daemon-driven chase calls it directly and
-   must never be able to deadlock on the very parcel it is trying to drain."
+   must never be able to deadlock on the very parcel it is trying to drain.
+
+   BL-926: also passes the departing role (:active-role) alongside
+   target-role into rotate-gate-decision, so rotating INTO the role that
+   already owns the blocking parcel proceeds - that is not abandonment, it
+   is the only way the parcel gets picked up."
   [target-role]
-  (let [blocking-file (departing-role-blocking-handoff)
+  (let [{:keys [role blocking-file]} (departing-role-blocking-handoff)
         decision (mono-router-lib/rotate-gate-decision
                   {:blocking-file (some-> blocking-file str)
-                   :force? (rotate-force-override?)})
+                   :force? (rotate-force-override?)
+                   :active-role role
+                   :target-role target-role})
         do-respawn! (fn []
                       (let [result (rotate-resident-to! target-role)]
                         (when-not (:ok result)
