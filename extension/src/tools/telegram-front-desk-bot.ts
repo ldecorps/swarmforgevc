@@ -898,11 +898,13 @@ export async function handleOnboarderMessage(
   // a target already at or past prerequisites-ready, which no existing
   // fixture does.
   const outcome = await routeOnboardingMessage(states, text, Date.now, contractPhaseAdapters ?? createRealContractPhaseAdapters(targetPath));
-  if (outcome.kind === 'no-active-onboarding') {
-    // No target, therefore nothing durable to guard - a redelivery here
-    // recomputes the exact same constant message with no state mutation,
-    // so at worst it is a harmless duplicate send, never a wrong-step
-    // misapplication.
+  if (outcome.kind === 'no-active-onboarding' || outcome.kind === 'ambiguous-target') {
+    // Neither carries a state to persist - 'no-active-onboarding' because
+    // there is no target at all, 'ambiguous-target' (BL-625 invariant 2)
+    // because the reply could not be attributed to exactly one in-flight
+    // target. Both recompute the exact same message from the same durable
+    // states on disk, so a redelivery here is a harmless duplicate send,
+    // never a wrong-step misapplication.
     const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
     return result.success;
   }
