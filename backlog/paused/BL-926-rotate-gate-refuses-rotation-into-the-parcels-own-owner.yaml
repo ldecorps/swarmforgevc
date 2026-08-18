@@ -209,3 +209,13 @@ notes: |
   THIS parcel - the acceptance runner throws on any scenario it cannot resolve.
   The box and decision columns must validate against explicit KNOWN_VALUES, not
   pass through.
+
+  IR-DRY run and dispositioned as no-change. The checker reports 10 (BL-926)
+  / 8 (BL-927) medium-confidence findings and every one is a placeholder-vs-
+  literal pair (`"<target>"` against `"coder"`) or two genuinely different
+  assertions (`proceed` against `proceed-forced`). That is the known limitation
+  - IR-DRY does not normalize quoted literals - not accidental drift, which is
+  the only thing its own suggested_action says to normalize. Neither available
+  merge is meaning-preserving: the outline varies the very fields a Background
+  would have to fix, and the two standalone scenarios assert different Thens
+  (parcel survival and resume, against the force override). Left as written.
