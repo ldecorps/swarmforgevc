@@ -12,6 +12,27 @@ interface RoleTicketWindow {
   endMs: number;
 }
 
+// BL-918: only these mean a human or daemon had to intervene - the rest of
+// this file's own comment already named this set ("Chase/nudge/dead-letter/
+// respawn telemetry") but the loop below never actually checked it, so any
+// row sharing the chaser-*.jsonl file (periodic resource_sample/
+// host_load_sample measurements included) became a `stall` regardless of
+// type. An ALLOWLIST here (not a denylist of known sample types) is
+// deliberate: a sample type invented later defaults to excluded without a
+// code change, rather than silently becoming a stall.
+export const CHASER_ATTENTION_SIGNAL_TYPES = ['chase', 'nudge', 'dead-letter', 'respawn'] as const;
+
+// Recognised periodic measurements - fire on a timer whether or not
+// anything is wrong. Distinguished from a genuinely unrecognised type only
+// so unrecognizedChaserTelemetryTypes below can report the latter rather
+// than folding it in with an already-understood, deliberately-excluded
+// sample type.
+const CHASER_PERIODIC_SAMPLE_TYPES = ['resource_sample', 'host_load_sample'];
+
+function isAttentionSignal(type: string): boolean {
+  return (CHASER_ATTENTION_SIGNAL_TYPES as readonly string[]).includes(type);
+}
+
 function parseWindowTimestamp(iso: string | undefined): number {
   return iso ? Date.parse(iso) : NaN;
 }
@@ -54,6 +75,9 @@ export function composeStallEvents(mainWorktreePath: string, roles: MinimalRoleE
   const windows = readAllRoleTicketWindows(roles);
   const events: LeanLedgerEvent[] = [];
   for (const telemetryEvent of readChaserTelemetryEvents(mainWorktreePath)) {
+    if (!isAttentionSignal(telemetryEvent.type)) {
+      continue;
+    }
     const atMs = Date.parse(telemetryEvent.at);
     if (Number.isNaN(atMs)) {
       continue;
@@ -73,4 +97,24 @@ export function composeStallEvents(mainWorktreePath: string, roles: MinimalRoleE
     });
   }
   return events;
+}
+
+// BL-918 scenario 03: a chaser-telemetry `type` that is neither a known
+// attention signal (would already produce a stall above) nor a recognised
+// periodic sample (already excluded on purpose) is reported here rather
+// than silently dropped the way an excluded sample type is - so a type
+// nobody has classified yet stays visible instead of quietly vanishing into
+// "not a stall". Reads the raw telemetry file directly (not per-ticket -
+// unlike composeStallEvents this performs no window attribution) so one
+// call surfaces every unrecognised type present, for lean-ledger-record.ts
+// to report to its caller.
+export function unrecognizedChaserTelemetryTypes(mainWorktreePath: string): string[] {
+  const known = new Set<string>([...CHASER_ATTENTION_SIGNAL_TYPES, ...CHASER_PERIODIC_SAMPLE_TYPES]);
+  const found = new Set<string>();
+  for (const telemetryEvent of readChaserTelemetryEvents(mainWorktreePath)) {
+    if (!known.has(telemetryEvent.type)) {
+      found.add(telemetryEvent.type);
+    }
+  }
+  return [...found].sort();
 }

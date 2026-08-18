@@ -85,3 +85,35 @@ test('main() run twice on unchanged state appends nothing the second time (invar
   const secondCount = readLeanLedgerEvents(target, 'BL-819').length;
   assert.equal(firstCount, secondCount);
 });
+
+// BL-918 scenario 03: a chaser-telemetry type nobody has classified yet is
+// reported on this CLI's own stdout - the seam an operator running it would
+// see - rather than silently dropped the way an excluded sample type is.
+test('main() reports an unrecognised chaser-telemetry type on stdout instead of silently dropping it', async () => {
+  const target = mkTmp();
+  setupProject(target);
+  writeBouncedTicket(target);
+  const telemetryDir = path.join(target, '.swarmforge', 'telemetry');
+  fs.mkdirSync(telemetryDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(telemetryDir, 'chaser-2026-08.jsonl'),
+    JSON.stringify({ type: 'never-classified-type', role: 'coder', at: '2026-08-07T08:00:00.000Z' }) + '\n'
+  );
+
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  const writes = [];
+  process.stdout.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  process.argv = ['node', 'lean-ledger-record.js', '--ticket', 'BL-819', '--target', target];
+  process.cwd = () => target;
+  try {
+    await main();
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  const printed = JSON.parse(writes.join(''));
+  assert.deepEqual(printed.unrecognizedTelemetryTypes, ['never-classified-type']);
+});

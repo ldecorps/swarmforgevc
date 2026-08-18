@@ -12,7 +12,7 @@
  * Usage: node lean-ledger-record.js --ticket <id> [--target <path>]
  */
 import { loadRoles, resolveProjectRoot, printJsonToStdout, makeArgsGuardedMain, runCliMain } from './swarm-metrics';
-import { composeAllLeanLedgerEvents } from '../metrics/leanLedgerCompose';
+import { composeAllLeanLedgerEvents, unrecognizedChaserTelemetryTypes } from '../metrics/leanLedgerCompose';
 import { appendLeanLedgerEventIfNew, writeLeanLedgerSnapshotFor } from '../metrics/leanLedgerStore';
 import { parseArgs, USAGE, LeanLedgerRecordArgs } from './leanLedgerRecordArgs';
 
@@ -31,7 +31,11 @@ export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
     }
   }
   const snapshot = writeLeanLedgerSnapshotFor(targetPath, args.ticket);
-  printJsonToStdout({ ticket: args.ticket, composed: events.length, appended, snapshot });
+  // BL-918 scenario 03: an unrecognised chaser-telemetry type is reported
+  // here rather than silently dropped - this CLI's own stdout is the seam
+  // an operator running it (directly, or via its .bb callers' logs) sees.
+  const unrecognizedTelemetryTypes = unrecognizedChaserTelemetryTypes(targetPath);
+  printJsonToStdout({ ticket: args.ticket, composed: events.length, appended, snapshot, unrecognizedTelemetryTypes });
 });
 
 if (require.main === module) {
