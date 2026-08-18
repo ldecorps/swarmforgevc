@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: tool-miss-auto-heal
-human_approval: pending
+human_approval: approved
 priority: 10
 direction: human-intake
 depends_on: []
