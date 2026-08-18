@@ -1,0 +1,156 @@
+id: BL-928
+title: "The onboarder supervisor's not-started branch spawns without reaping siblings, so every supervisor death leaves a PID-1 reconcile poll-loop that outlives it and shares the heartbeat file with the new child"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 3
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-928-onboarder-supervisor-reaps-orphan-poll-loop-siblings.feature
+
+invariants:
+  - "A process whose parent is alive is never reaped. The running supervisor's own child, and any other live supervisor's child, survive every sweep - the sweep's only licence is over processes whose parent is gone."
+  - "Only a process whose command line names THIS swarm repo root is ever a candidate. A poll-loop for any other root, including a tmp fixture root, is never reaped no matter how orphaned it is."
+  - "An unreadable process table reaps nothing and is never conflated with an empty candidate set. The two outcomes are distinguishable from the supervisor's own log."
+
+approval_context: >
+  Two decisions I made on your behalf, both reversible if you disagree.
+
+  The reap runs at supervisor STARTUP only, not on every tick. A sibling can
+  only come into existence when a supervisor dies, so a per-tick host-wide
+  process scan every 2s would buy nothing and would put live-process hunting on
+  the hot path - the BL-367 failure class your intake told me to stay out of.
+  Say the word if you want it on the tick as well.
+
+  I did NOT touch stop_onboarder(). Your goal sentence names both a start and a
+  stop-without-finally, but both clauses land on the same moment - "must not
+  leave PID-1 leftovers ALONGSIDE a freshly spawned child" - and your own
+  acceptance shape #1 is worded as a restart. A stop-path sweep would add a bash
+  entry point for a window in which no supervisor is running anyway. If you want
+  the leftovers gone at stop time rather than at next start, that is a second
+  ticket and I will mint it.
+
+  Severity high. Nothing is down, but the stall detector reads a heartbeat file
+  that any of N writers may have last touched, which is a corrupted health
+  signal, and the leak is unbounded - one more orphan per supervisor death,
+  forever. High also puts it in the Article 3.2.4 expedite lane, which matches
+  your queue-jump direction.
+
+source: |
+  backlog/INTAKE-onboarder-supervisor-orphans-reconcile-poll-loop.md
+  (human via Cursor 2026-08-18 ~20:26 CEST), minted 1:1 - this ticket is the
+  whole intake, nothing split off and nothing merged in.
+
+  Human decisions locked in that conversation, quoted verbatim:
+
+  - "Do **not** ad-hoc kill the leftover PIDs."
+  - "Do **not** add a janitor class for host-repo `onboarder-reconcile.js`.
+    Live-window / host-daemon hunting is the BL-367 failure class."
+  - "Fix it in the pipeline: specifier mints a ticket; supervisor (or its
+    stop path) is the owner; \"exactly one live poll-loop per root\" is the
+    acceptance."
+  - "**Qjump 2026-08-18 ~20:30 CEST** (human via Cursor): spec this intake
+    now, ahead of other root intake (including
+    `INTAKE-live-screen-full-pack-no-resident.md`). Mint with
+    `direction: queue-jump` so promotion walks the live pipeline first."
+
+  Coordinator note 2026-08-18T19:35:18Z: "Qjump onboarder-supervisor-orphans
+  intake; mint direction: queue-jump".
+
+description: |
+  ## What happens
+
+  `onboarder_supervisor.bb` supervises exactly one child - `node
+  extension/out/tools/onboarder-reconcile.js <root> poll-loop` - through
+  `front_desk_supervisor_lib/check-one!`. Three facts compose into a leak:
+
+  1. `stop-all!` destroys only pids recorded in
+     `onboarder-supervisor.status.json`. A supervisor that dies without
+     running its `finally` - SIGKILL, crash, a host kill of the bb process -
+     never runs it at all, and its child reparents to PID 1.
+  2. `stop_ancillary_services.sh` `stop_onboarder()` then `rm -f`s
+     `onboarder-supervisor.status.json`, so the next supervisor has no record
+     of the pid even when one survived.
+  3. `check-one!`'s `"not-started"` branch is `{:entry (started-entry entry
+     now-ms (spawn!)) :event :started}` - a bare `spawn!` with no `kill-pid!`.
+     BL-403 and BL-411 added `kill-pid!` to the `"waiting"`/`"stalled"` and
+     `"gave-up"` re-arm branches only, and both explicitly left this branch
+     out of scope.
+
+  The result is a healthy new child plus every unreaped sibling, indefinitely -
+  one more per supervisor death, with nothing that ever removes them.
+
+  ## Measured, this host, 2026-08-18 ~20:20 CEST, live swarm up
+
+  | PID | PPID | Age | Role |
+  |---|---|---|---|
+  | 5343 | 1 | ~3h | live `onboarder_supervisor.bb` (pidfile matches) |
+  | 5356 | 5343 | ~3h | live reconcile child |
+  | 25731 | 1 | ~19h | leftover `onboarder-reconcile.js … poll-loop` |
+  | 50175 | 1 | ~11h | leftover `onboarder-reconcile.js … poll-loop` |
+
+  All four have cwd `/Users/ldecorps/projects/swarmforgevc`. Re-confirmed
+  first-hand by the specifier at mint time - all four still present, same pids,
+  ages now 03:12 / 19:42 / 11:31. The two leftovers predate the live
+  supervisor's own start, so they survived its startup: a startup sweep is
+  exactly the missing step.
+
+  ## Harm
+
+  These poll-loops are outbound-only (`createForumTopic`), not a second
+  `getUpdates` poller, so they will NOT 409 the front desk - the intake is
+  right about that and it is why this is not critical. What they do:
+
+  - Share `onboarder-heartbeat.json`. `poll-heartbeat-stale?` reads
+    `lastHeartbeatMs` from whichever writer last touched the file, so the
+    supervisor's stall detector can be answered by a process it does not
+    supervise. A genuinely stalled child is masked by a leftover's heartbeat.
+  - Duplicate outbound Telegram topic-ensure calls, N-fold per reconcile
+    interval.
+  - Accumulate without bound.
+
+  ## Shape of the fix (direction, not mandate)
+
+  Sweep once at supervisor startup, before the first tick spawns anything.
+  A candidate is reapable when ALL of: its command line names the reconcile
+  entrypoint AND this swarm repo root AND `poll-loop`; and its parent is gone
+  (PID 1, missing, or dead). Anything else is left alone.
+
+  `front_desk_supervisor_lib.bb` already holds this exact class of function -
+  `bridge-entrypoint-holder?` / `decide-bridge-port-action`, pure decisions
+  over a discovered process, adapter-injected, no I/O inside. Put the predicate
+  and the sweep decision beside them rather than starting a third home. Adding
+  a new function there does not change `check-one!`'s semantics for the
+  front-desk or negotiation-relay supervisors, which the intake put out of
+  scope.
+
+  The parent-gone test is `process_table_lib/parent-orphaned?`, which BL-879
+  already built and which is the decapitation guard in invariant 1: the live
+  supervisor's own child has a live parent by construction.
+
+  ## Why the enumeration must go through process_table_lib
+
+  Non-negotiable, and the reason is invariant 3. `process_table_lib/list-processes!`
+  returns nil when the table cannot be enumerated and a vector otherwise, a
+  distinction BL-849 established deliberately so "I cannot see the process
+  table" never degrades into "there is nothing to reap". A hand-rolled
+  `ProcessHandle/allProcesses` scan loses that, and loses the procfs/Darwin
+  split with it. This is the one implementation constraint in this ticket;
+  everything else above is direction.
+
+qa_e2e_procedure: |
+  1. Fixture root, the reap: build a temp swarm-repo fixture, start two
+     orphaned processes whose command line names the fixture root and
+     `onboarder-reconcile.js … poll-loop` and whose parent has exited (so they
+     reparent to PID 1). Start the supervisor for that fixture root. Confirm
+     both orphan pids are gone, the supervisor spawned its own child, and
+     `onboarder-supervisor.status.json` records exactly one pid, which is that
+     child's and is alive.
+  2. Decapitation guard: with the supervisor from step 1 still running, start a
+     SECOND supervisor process for the same fixture root directly (bypassing
+     launch_onboarder.sh's pidfile guard
