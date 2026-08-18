@@ -1,0 +1,173 @@
+id: BL-918
+title: "The closing-ceremony packet counts periodic resource samples as stalls, so its stall hypothesis is noise on every sampled shift"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: lean-aware-coordinator
+human_approval: pending
+priority: 50
+direction: swarm-surfaced
+depends_on: [BL-819, BL-820]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-918-periodic-samples-are-not-stalls.feature
+
+invariants:
+  - "Only attention signals — an event meaning a human or daemon had to intervene — become `stall` events in the lean ledger. Periodic measurement telemetry sharing the same file never does, whatever sample types exist today or are added later."
+  - "The exclusion happens where the event is classified, so every consumer of the ledger's stall events sees the same set without re-filtering. A consumer that has to exclude a type itself is the defect, not the fix."
+
+approval_context: >
+  Wants sign-off on the severity call, which is the one genuinely arguable
+  field. Filed `medium`: the ceremony still runs, still delivers a packet,
+  and the dwell and bounce hypotheses remain sound, so nothing is down.
+
+  The case for `high` is that a health signal is not merely noisy but
+  deterministically wrong — this shift's packet reports `coder` with 80
+  stalls when the coder had exactly one real chase, and Article 3.5 names
+  chase/nudge telemetry as a circuit-breaker input. I did not file `high`
+  because nothing auto-acts on the packet's number: the throttle is a
+  coordinator judgement made against the BL-098 telemetry surface directly,
+  not against this packet, so the misleading count has no proven path to a
+  false throttle today. Say so if you read that adjacency as closer than I
+  did; only the severity field changes.
+
+source: |
+  Surfaced by the BL-820 closing-ceremony lean pass, shift 2026-08-17
+  (`.swarmforge/lean/ceremony/2026-08-17.json`), from the packet's own
+  hypothesis 3: "79 resource_sample(s) in coder this shift — chase pattern."
+  Investigating that hypothesis is what found it to be an artefact.
+
+description: |
+  ## What the packet reports, and why it cannot be right
+
+  handoffd writes several kinds of row into one `chaser-*.jsonl` telemetry
+  family. Two of them are different in kind:
+
+  - **Attention signals** — `chase`, `nudge`, `dead-letter`, `respawn`. Each
+    means something had to intervene. Each carries a meaningful escalation
+    `count`.
+  - **Periodic measurements** — `resource_sample`, and per
+    `resourceTelemetry.ts` the sibling `host_load_sample`. These fire on a
+    timer whether or not anything is wrong, and carry `count: null`.
+
+  `composeStallEvents` (`extension/src/metrics/leanLedgerComposeStall.ts:56`)
+  ingests every row in that file as `type: 'stall'` with no type filter. Its
+  own comment four lines above enumerates the intended set — "Chase/nudge/
+  dead-letter/respawn telemetry" — so the implementation already diverges
+  from its documented contract; `resource_sample` was never meant to be in
+  there.
+
+  ## The consequence is structural, not a bad shift
+
+  `closingCeremony.ts:118` builds the stall hypothesis by taking the
+  HIGHEST-count entry in the stall summary. A timer that fires every ~6
+  minutes will outnumber real stalls on essentially any shift, so that
+  hypothesis slot is not occasionally noisy — it is reliably captured by
+  whichever role was sampled most.
+
+  Measured on 2026-08-17: coder shows 80 stall entries, 79 of them
+  `resource_sample`, against exactly one real chase. That won the hypothesis
+  slot. The real signal it displaced was QA at 23 nudges — including a burst
+  of 9 nudges in 5m38s against BL-902 and 5 in 2m28s against BL-911, both
+  fired while QA was legitimately mid-gate (16 and 27 minutes of processing).
+  Whatever that pattern turns out to be, the ceremony never got to ask,
+  because a timer outranked it.
+
+  So the packet spends one of only three hypothesis slots on an artefact, and
+  spends it in a way that specifically crowds out real stall signal. It also
+  misreports the coder as the shift's worst stall offender when it was the
+  least stalled role in the pipeline.
+
+  ## This classification is already settled elsewhere
+
+  A sibling consumer of the same telemetry, `failureModeInventory.ts:167`,
+  already carries `if (type === 'resource_sample') continue;`. So the
+  exclusion is established practice — it was simply applied locally, at one
+  reader, instead of at the point of classification. Invariant 2 exists to
+  stop the fix repeating that shape: adding a second local filter (in
+  `closingCeremony.ts`, say) would patch this shift's symptom and leave the
+  ledger's `stall` events still wrong for every other reader.
+
+  ## Shape of the fix (direction, not mandate)
+
+  Classify at the composer. An allowlist of attention signals is likely to
+  age better than a denylist of sample types — a sample type added later
+  defaults to excluded rather than silently becoming a stall — which is what
+  invariant 1's "or are added later" clause is protecting, and what
+  scenario 03 pins. Scenario 03 also asks that an unrecognised type be
+  reported rather than dropped in silence, so an allowlist does not become a
+  new way to lose telemetry nobody has classified yet.
+
+qa_e2e_procedure: |
+  1. Take a real shift ledger under `.swarmforge/lean/` containing
+     `resource_sample` rows (2026-08-17 has 79). Recompose the lifecycle for a
+     ticket held by the sampled role and confirm the ledger's `stall` entries
+     for it no longer include any `resource_sample` row.
+  2. Confirm the attention signals in that same window survive: the coder's
+     one real `chase` on 2026-08-17 must still be recorded, with its
+     timestamp and count intact. The fix must not thin out real stalls.
+  3. Rebuild the closing packet for that shift. Its `stalls` array must show
+     the coder at 1, not 80, and the stall-derived hypothesis must name QA's
+     nudges rather than the sample volume.
+  4. Add a fixture telemetry row of an invented type. Confirm it produces no
+     stall entry and that the unrecognised type is reported somewhere an
+     operator would see it, not silently swallowed.
+  5. Re-run the ceremony for a shift with no periodic samples at all and
+     confirm the packet is unchanged from before the fix — this must be a
+     narrowing of what counts, never a change to how real stalls are folded.
+
+out_of_scope: |
+  - The QA nudge-burst pattern this defect was masking. It is now visible but
+    not diagnosed; if it turns out to be a real defect it earns its own
+    ticket rather than riding this one, which is about classification only.
+  - `failureModeInventory.ts`'s existing local filter. Once the composer
+    classifies correctly that line is arguably redundant, but it reads a
+    different surface and removing it is a separate judgement — leave it.
+  - Any change to what handoffd emits. The telemetry rows are correct; only
+    their classification downstream is wrong. Do not stop sampling, and do
+    not split the telemetry file.
+  - How the packet's other two hypotheses are built. Dwell and bounce are
+    sound and are not touched here.
+
+notes: |
+  2026-08-17 shift, closing-ceremony lean pass (BL-820). Recorded as this
+  pass's `process_ticket` outcome.
+
+  **Probed before speccing; the packet's own hypotheses did not survive
+  intact.** Hypothesis 1 ("QA longest dwell — investigate that stage's
+  throughput") is an artefact of QA doing the most work: QA processed 14
+  tickets at a 14.8-minute mean as the final full gate, against documenter's
+  12 at 3.7. Nothing to investigate. Hypothesis 2 (2 `behavior` bounces) is
+  two events, not a pattern. Hypothesis 3 is the one that turned out to be a
+  defect in the instrument itself — the opposite of what it claimed.
+
+  Also confirmed the packet's dwell figures are sound and should not be
+  swept into this ticket: `dwellHotspots` sums `processingMs` only and
+  correctly excludes `queueWaitMs`, which matters because queue wait is
+  dominated by dormant-role waits under mono-router (BL-896 alone shows a
+  29,260,170ms queue wait — 8 hours of nobody being rotated in, which would
+  have made every dwell number meaningless had it been included).
+
+  **No `required_wiring:` deliberately.** The fix adds a filter inside a
+  function that is already wired — `composeStallEvents` is called from
+  `leanLedgerCompose.ts:27`. There is no new call site for the ticket's value
+  to depend on, so any pattern an entry could carry would already match today
+  and pass vacuously. Per BL-874 an entry that cannot fail is worse than
+  none, because it reads as a gate.
+
+  **IR-DRY: one finding, reviewed, no change.** The checker flags
+  "possible-synonym" (score 0.545) between the positive assertion in scenario
+  01 and the negative in 02/03. Those are the two sides of the classification
+  boundary this ticket exists to draw, not accidental drift — the checker's
+  own suggested action is to normalize only when the wording difference is
+  accidental. Scenarios 02 and 03 already share one step text, so they bind
+  to a single handler.
+
+  **Degraded gating does not apply here.** This is TypeScript under
+  `extension/src`, so the full toolchain is available — mutation, CRAP and
+  DRY all run. No fallback to record.
+
+  **BL-233 obligation.** All five scenarios are new and need step handlers
+  landed in THIS parcel; the acceptance runner throws on any scenario it
+  cannot resolve.
