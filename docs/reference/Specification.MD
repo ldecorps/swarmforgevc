@@ -1,27 +1,51 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-921: `dormant-mailbox-chase-action`
-and `should-rotate-resident?` (`swarmforge/scripts/mono_router_lib.bb`) no
-longer trust the `.swarmforge/mono-router-active-role` marker alone —
-`:wake-resident` and `:already-active` now additionally require a live
-tmux probe of the resident pane's own `#{pane_start_command}`
-(`resident-live-role`, `swarmforge/scripts/handoffd.bb`) to agree with the
-target role, via the new pure `live-role-agrees?`, which treats an
-identity that cannot be read (nil, blank, or an unparseable pane command)
-as divergence, never as agreement. Measured live on 2026-08-18: the marker
-read `cleaner` from ~03:48Z while the pane ran `coder.sh`, producing 535
-identical false wakes for `cleaner` in one day, each with a real handoff
-behind it, while the coder persona answered `NO_TASK` to its own empty
-mailbox and cleaner's actual mail sat untouched. The identity check only
-ever tightens the gate — every case that resolved to `:wake-resident` or
-`:already-active` with the marker and the live identity in agreement is
-unchanged; a diverged or unreadable identity now takes the pre-existing
-`:rotate` / respawn path instead of a false wake or a wrongly-refused
-rotate. Deliberately out of scope: *why* the marker diverged in the first
-place (points at the boot path, `resolve-boot-role`/BL-648, not rotation —
-tracked separately if it proves real). See the new "Mono-router chase
-verifies live pane identity (BL-921)" section in
-`swarmforge/handoff-protocol.md`.); Previously August 18, 2026 (BL-913: a
+**Last Updated:** August 18, 2026 (BL-922: a block-scalar `acceptance:`
+field (`acceptance: |` followed by an indented body) collapsed to the bare
+indicator `"|"` under `pre_qa_gate_gather_lib.bb`'s `read-yaml-field`,
+which reads only the field line's own tail — so a ticket naming a real
+`specs/features/*.feature` path inside the block body passed the BL-880
+pointer gate silently at every pre-QA hop (deliberately excluded there as
+QA-edge-only) and was refused only at the documenter→QA edge by Check D,
+after coder, cleaner, architect, hardender, and documenter had all already
+worked it. `backlog_hygiene_lib.bb` gains a new `unreadable-acceptance`
+violation — a block-scalar tail (`acceptance_pointer_gate_lib.bb`'s
+now-exported `block-scalar-residue?`, consulted rather than restated, per
+BL-897) whose indented body names a real feature-file path — surfaced at
+mint time through the specifier's existing per-ticket hygiene gate and the
+repo-wide `backlog_epic_milestone_audit.bb` (which previously printed only
+two hardcoded violation buckets while `all-clean?` counted every kind, so
+a new kind alone would have exited 1 printing nothing). A block scalar
+naming no feature file — an honest not-yet-drafted placeholder — is never
+reported; that is BL-626's territory. Measured live: 53 tickets carried a
+block-scalar `acceptance:`, 12 of them armed this way (BL-514, BL-624, and
+BL-625 were the first three live occurrences); all eleven still-open ones
+were repaired in the same pass to a single-line pointer, prose moved to a
+sibling field per the `qa_e2e:` precedent. See the new "Mint-Time
+Unreadable-Acceptance Gate (BL-922)" section in
+`swarmforge/handoff-protocol.md`.); Previously August 18, 2026 (BL-921:
+`dormant-mailbox-chase-action` and `should-rotate-resident?`
+(`swarmforge/scripts/mono_router_lib.bb`) no longer trust the
+`.swarmforge/mono-router-active-role` marker alone — `:wake-resident` and
+`:already-active` now additionally require a live tmux probe of the
+resident pane's own `#{pane_start_command}` (`resident-live-role`,
+`swarmforge/scripts/handoffd.bb`) to agree with the target role, via the
+new pure `live-role-agrees?`, which treats an identity that cannot be read
+(nil, blank, or an unparseable pane command) as divergence, never as
+agreement. Measured live on 2026-08-18: the marker read `cleaner` from
+~03:48Z while the pane ran `coder.sh`, producing 535 identical false wakes
+for `cleaner` in one day, each with a real handoff behind it, while the
+coder persona answered `NO_TASK` to its own empty mailbox and cleaner's
+actual mail sat untouched. The identity check only ever tightens the gate
+— every case that resolved to `:wake-resident` or `:already-active` with
+the marker and the live identity in agreement is unchanged; a diverged or
+unreadable identity now takes the pre-existing `:rotate` / respawn path
+instead of a false wake or a wrongly-refused rotate. Deliberately out of
+scope: *why* the marker diverged in the first place (points at the boot
+path, `resolve-boot-role`/BL-648, not rotation — tracked separately if it
+proves real). See the new "Mono-router chase verifies live pane identity
+(BL-921)" section in `swarmforge/handoff-protocol.md`.); Previously
+August 18, 2026 (BL-913: a
 `PreToolUse` hook now pins every role's Bash command to that role's own
 worktree and heals one recoverable shell miss in silence, so a stale/wrong
 pane cwd never reaches the model as a failure to apologize for — slice A of
