@@ -361,6 +361,80 @@
          (front-desk-supervisor-lib/decide-bridge-port-action
           {:pid 5555 :cmdline "node /other-repo/extension/out/tools/start-bridge-headless.js /other-repo 8765"} true repo-root))
 
+;; ── onboarder-reconcile-poll-loop-holder? / decide-onboarder-orphan-reap
+;;    (pure) — BL-928 supervisor-startup orphan sweep ────────────────────────
+
+(def onb-root "/repo")
+
+(assert= "bl928: our own poll-loop cmdline for this root -> holder"
+         true
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop" onb-root))
+
+(assert= "bl928: same entrypoint, DIFFERENT root -> not a holder (invariant 2)"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "node /other-repo/extension/out/tools/onboarder-reconcile.js /other-repo poll-loop" onb-root))
+
+(assert= "bl928: our root, but not the poll-loop subcommand -> not a holder"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "node /repo/extension/out/tools/onboarder-reconcile.js /repo once" onb-root))
+
+(assert= "bl928: an unrelated process that happens to mention our root -> not a holder"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "cat /repo/README.md poll-loop" onb-root))
+
+(assert= "bl928: nil cmdline -> not a holder"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder? nil onb-root))
+
+;; decide-onboarder-orphan-reap: processes / project-root / parent-orphaned?
+(defn- onb-parent-orphaned-set [orphan-pids]
+  (fn [pid] (boolean (contains? (set orphan-pids) pid))))
+
+(assert= "bl928: unreadable process table (nil) -> reaps nothing, flagged unreadable (invariant 3)"
+         {:reapable [] :unreadable? true}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap nil onb-root (onb-parent-orphaned-set [])))
+
+(assert= "bl928: empty process table -> reaps nothing, NOT flagged unreadable (distinguishable from nil)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap [] onb-root (onb-parent-orphaned-set [])))
+
+(assert= "bl928: a real orphaned poll-loop for our root is reapable"
+         {:reapable [111] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 111 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}]
+          onb-root (onb-parent-orphaned-set [111])))
+
+(assert= "bl928: a poll-loop whose parent is alive is NEVER reaped (invariant 1 - decapitation guard)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 222 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}]
+          onb-root (onb-parent-orphaned-set [])))
+
+(assert= "bl928: an orphaned poll-loop for a DIFFERENT root is never reaped (invariant 2)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 333 :cmdline "node /other-repo/extension/out/tools/onboarder-reconcile.js /other-repo poll-loop"}]
+          onb-root (onb-parent-orphaned-set [333])))
+
+(assert= "bl928: an orphaned, unrelated process is never reaped (cmdline match required too)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 444 :cmdline "python3 -m http.server 8765"}]
+          onb-root (onb-parent-orphaned-set [444])))
+
+(assert= "bl928: mixed table - only the orphaned, ours, poll-loop candidate is reaped"
+         {:reapable [111] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 111 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}
+           {:pid 222 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}
+           {:pid 333 :cmdline "node /other-repo/extension/out/tools/onboarder-reconcile.js /other-repo poll-loop"}
+           {:pid 444 :cmdline "python3 -m http.server 8765"}]
+          onb-root (onb-parent-orphaned-set [111 333 444])))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
