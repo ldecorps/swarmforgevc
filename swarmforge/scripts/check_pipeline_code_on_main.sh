@@ -71,6 +71,57 @@ while IFS= read -r file; do
 done < <(git diff --cached --name-only)
 
 if (( ${#offenders[@]} > 0 )); then
+  # BL-925: importing an already-QA-published tip is not a non-QA landing.
+  # A merge in progress whose incoming parent is already an ancestor of
+  # swarmforge-QA may carry pipeline-code paths - but ONLY when the staged
+  # content for each offending path is EXACTLY what that published parent
+  # holds. Being mid-merge is never on its own sufficient (invariant 1): a
+  # writer could stage fresh pipeline edits on top of a legitimate merge and
+  # ride through on its coat-tails, so every offending path's staged content
+  # is diffed against the incoming parent - any real difference keeps that
+  # path (and only that path) refused below. This reuses BL-630's own
+  # QA-ancestry question (git merge-base --is-ancestor against
+  # swarmforge-QA) rather than a second definition of "QA-approved tip".
+  #
+  # Finding the incoming merge parent: .git/MERGE_HEAD is reliable when the
+  # merge was explicitly stopped (--no-commit, or a real conflict later
+  # completed via `git commit --no-edit` - the pre-commit path) but is NOT
+  # written to disk before pre-merge-commit runs for a clean, no-conflict
+  # `git merge` (confirmed empirically, git 2.36.1 - the fast path commits
+  # in one step and never persists throwaway merge state). For that case,
+  # fall back to the GITHEAD_<sha>=<name> environment variables git's own
+  # merge machinery sets for each merge parent - the same longstanding
+  # contract external merge-driver tools (kdiff3, meld, ...) rely on. Used
+  # only when exactly one such variable is present, so an ambiguous or
+  # absent signal never grants the exemption (fails closed).
+  merge_head_sha="$(git rev-parse -q --verify MERGE_HEAD 2>/dev/null || true)"
+  if [[ -z "$merge_head_sha" ]]; then
+    githead_count=0
+    githead_candidate=""
+    while IFS='=' read -r env_name env_value; do
+      case "$env_name" in
+        GITHEAD_????????????????????????????????????????)
+          githead_candidate="${env_name#GITHEAD_}"
+          githead_count=$((githead_count + 1))
+          ;;
+      esac
+    done < <(env)
+    if [[ "$githead_count" -eq 1 ]]; then
+      merge_head_sha="$githead_candidate"
+    fi
+  fi
+  if [[ -n "$merge_head_sha" ]] && git merge-base --is-ancestor "$merge_head_sha" swarmforge-QA 2>/dev/null; then
+    non_matching=()
+    for f in "${offenders[@]}"; do
+      if [[ -n "$(git diff --cached "$merge_head_sha" -- "$f")" ]]; then
+        non_matching+=("$f")
+      fi
+    done
+    offenders=(${non_matching[@]+"${non_matching[@]}"})
+  fi
+fi
+
+if (( ${#offenders[@]} > 0 )); then
   {
     echo "Commit refused: staged change touches pipeline code on \`main\`:"
     for f in "${offenders[@]}"; do
