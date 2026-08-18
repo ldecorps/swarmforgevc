@@ -20,8 +20,19 @@ source is dropped from this ledger rather than given a new writer:
 | `stage_transition` | `stage-dwell` | The handoff audit headers already stamped on every parcel (`enqueued_at`, `dequeued_at`, `completed_at`) |
 | `bounce` | `bounce-store` | The ticket YAML's own `bounce_count`/`bounce_history`, written by `record-bounce` (`extension/src/tools/record-bounce.ts`) |
 | `stage_skip` | `routing-skip-log` | The ticket's own `required_stages` and `stage_skip_reasons` |
-| `stall` | `chaser-telemetry` | `handoffd`'s existing chase/nudge telemetry |
+| `stall` | `chaser-telemetry` | `handoffd`'s existing chase/nudge/dead-letter/respawn telemetry (BL-918: attention signals only — periodic `resource_sample`/`host_load_sample` measurements sharing the same file are excluded, never counted as a stall) |
 | `close` | `backlog-close` | The backlog folder transition (`backlog/active/` → `backlog/done/`) and its landing commit |
+
+`handoffd`'s chaser telemetry file mixes two kinds of row: attention
+signals (`chase`, `nudge`, `dead-letter`, `respawn` — each means a human or
+daemon had to intervene) and periodic measurements (`resource_sample`,
+`host_load_sample` — fire on a timer, `count: null`, regardless of whether
+anything is wrong). Only the former become `stall` events; the composer
+(`composeStallEvents`, `extension/src/metrics/leanLedgerComposeStall.ts`)
+classifies against an explicit allowlist rather than a denylist of known
+sample types, so a sample type invented later defaults excluded without a
+code change. A telemetry row of neither kind is reported, not silently
+dropped — see `unrecognizedChaserTelemetryTypes` in the same file.
 
 ## Storage
 

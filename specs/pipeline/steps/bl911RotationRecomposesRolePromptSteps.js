@@ -63,7 +63,16 @@ function requirePass(ctx, marker, description) {
 // call viewed through the <driver> column. This is the IR-DRY-resolved
 // sharing the ticket's own notes call out ("the resident and daemon
 // rotations share one step text (and one handler)").
+//
+// BL-917 scenarios 05-07 exercise the SAME-role re-exec path (respawn-self!
+// at the idle boundary) instead of rotate-resident-to! - a disjoint branch,
+// checked first so it never falls through to the rotation markers below.
 function markerFor(ctx) {
+  if (ctx.bl911?.idleClear) {
+    if (!ctx.bl911.idleClearEnabled) return '07';
+    if (ctx.bl911.compositionFails) return '06';
+    return '05';
+  }
   if (ctx.bl911?.compositionFails) return '03';
   if (ctx.bl911?.noChange) return '04';
   if (ctx.bl911?.driver === "the daemon's chase") return '02';
@@ -106,6 +115,33 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^the composition failure is reported$/, (ctx) => {
     requirePass(ctx, markerFor(ctx), 'the composition failure to be reported');
+  }, FEATURE);
+
+  // ── BL-917 scenarios 05-07: respawn-self! (the idle-boundary clear), ────
+  // never rotate-resident-to! - the SAME-role re-exec path BL-911 missed.
+  registry.defineScoped(/^idle-clear is enabled for "([^"]+)"$/, (ctx, role) => {
+    ctx.bl911 = { ...(ctx.bl911 || {}), role, idleClearEnabled: true };
+  }, FEATURE);
+
+  registry.defineScoped(/^idle-clear is disabled for "([^"]+)"$/, (ctx, role) => {
+    ctx.bl911 = { ...(ctx.bl911 || {}), role, idleClearEnabled: false };
+  }, FEATURE);
+
+  registry.defineScoped(/^"([^"]+)" reaches its idle boundary$/, (ctx, role) => {
+    ctx.bl911 = { ...(ctx.bl911 || {}), role, idleClear: true };
+    ensureResult(ctx);
+  }, FEATURE);
+
+  registry.defineScoped(/^the clear still completes$/, (ctx) => {
+    requirePass(ctx, markerFor(ctx), 'the idle-boundary clear to still complete despite a composition failure');
+  }, FEATURE);
+
+  registry.defineScoped(/^no respawn happens$/, (ctx) => {
+    requirePass(ctx, markerFor(ctx), 'idle-clear off to never trigger a respawn');
+  }, FEATURE);
+
+  registry.defineScoped(/^the composed prompt for "([^"]+)" is left untouched$/, (ctx) => {
+    requirePass(ctx, markerFor(ctx), 'idle-clear off to leave the composed prompt untouched');
   }, FEATURE);
 }
 

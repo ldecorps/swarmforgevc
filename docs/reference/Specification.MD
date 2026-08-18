@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-922: a block-scalar `acceptance:`
+**Last Updated:** August 18, 2026 (BL-918: the ticket lifecycle ledger's
+`stall` event composer, `composeStallEvents`
+(`extension/src/metrics/leanLedgerComposeStall.ts`), ingested every row
+sharing `handoffd`'s chaser-telemetry file as a stall regardless of type —
+including `resource_sample`/`host_load_sample`, periodic measurements that
+fire on a timer whether or not anything is wrong — though the file's own
+comment four lines above already named the intended set. On a
+resource-sample-heavy shift the highest-count stall entry, which the
+closing-ceremony packet (BL-820) turns into one of its 1-3 process
+hypotheses, was reliably captured by whichever role got sampled most: on
+2026-08-17 the coder showed 80 stall entries (79 `resource_sample`, one
+real chase) against QA's 23 real nudges, so the ceremony's hypothesis slot
+went to an artefact and crowded out the real signal. `composeStallEvents`
+now classifies against an explicit allowlist,
+`CHASER_ATTENTION_SIGNAL_TYPES = ['chase', 'nudge', 'dead-letter',
+'respawn']` — an allowlist rather than a denylist of known sample types, so
+a sample type invented later defaults excluded without a code change. A row
+of neither kind is reported, not silently dropped: `lean-ledger-record.js`
+now prints an additive `unrecognizedTelemetryTypes` key alongside its
+existing output shape. Hardening split the new per-event attribution logic
+into `resolveStallEvent` to keep `composeStallEvents` under the CRAP <= 6
+gate; behavior-preserving, not a functional change. See the updated "Reuse
+before invent" table in
+[BL-819: Ticket Lifecycle Ledger](BL-819-ticket-lifecycle-ledger.md).);
+Previously August 18, 2026 (BL-922: a block-scalar `acceptance:`
 field (`acceptance: |` followed by an indented body) collapsed to the bare
 indicator `"|"` under `pre_qa_gate_gather_lib.bb`'s `read-yaml-field`,
 which reads only the field line's own tail — so a ticket naming a real

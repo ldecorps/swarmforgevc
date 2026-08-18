@@ -472,7 +472,8 @@ const DOMAINS = [
   require('./bl625OnboarderPromptsLaunchHandoffSteps'),
   require('./bl913PinnedShellClassifiedRetrySteps'),
   require('./bl921ChaseVerifiesLiveIdentitySteps'),
-  require('./bl922UnreadableAcceptanceCaughtAtMintSteps')
+  require('./bl922UnreadableAcceptanceCaughtAtMintSteps'),
+  require('./bl918PeriodicSamplesAreNotStallsSteps')
 ];
 
 function registerSteps(registry) {

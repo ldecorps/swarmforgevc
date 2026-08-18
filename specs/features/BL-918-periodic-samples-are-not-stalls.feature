@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=04ec708e71a5e9838591001c1b9dec16aeb90ba7f25c2937e6d60607f4a5a027
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-18T14:22:06.279255Z","feature_name":"Periodic sampling telemetry is not a stall","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-918-periodic-samples-are-not-stalls.feature","background_hash":"10d2c3bc928c3deaa69e5862ddb302dcdf450ba0edc03d8a65b20eaa4d554551","implementation_hash":"unknown","scenarios":[{"index":0,"name":"an attention signal is recorded as a stall","scenario_hash":"23930d42adeec0928fda70036e605dfb58b1d5c767a036dcafce83571c107a97","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-18T14:22:06.279255Z"},{"index":1,"name":"a periodic measurement is not recorded as a stall","scenario_hash":"55c1ca0166c8898fe4c0afc4536b92676dd41ed2c1b74582e57912f2b45c348f","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-18T14:22:06.279255Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Periodic sampling telemetry is not a stall
 
   # BL-918 (lean-aware-coordinator). handoffd writes several kinds of row into

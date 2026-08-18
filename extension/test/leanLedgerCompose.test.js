@@ -10,6 +10,7 @@ const {
   composeStallEvents,
   composeCloseEvent,
   composeAllLeanLedgerEvents,
+  unrecognizedChaserTelemetryTypes,
 } = require('../out/metrics/leanLedgerCompose');
 const { formatBounceHistoryEntry } = require('../out/quality/bounceHistory');
 
@@ -253,6 +254,77 @@ test('composeStallEvents drops a chaser telemetry record whose own timestamp is 
   writeChaserTelemetry(main, '2026-08', [{ type: 'chase', role: 'coder', at: 'not-a-timestamp', count: 1 }]);
   const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
   assert.deepEqual(composeStallEvents(main, roles, 'BL-819'), []);
+});
+
+// BL-918: resource_sample/host_load_sample fire on a timer whether or not
+// anything is wrong - composeStallEvents must never turn one into a stall,
+// even when it falls unambiguously inside exactly one ticket's window (the
+// exact shape that used to make a 6-minute timer outrank real chases).
+test('composeStallEvents excludes a resource_sample event even when it unambiguously matches one ticket\'s window', () => {
+  const main = mkTmp();
+  writeHandoff(completedDir(main), '00_a.handoff', { task: 'BL-819-x', enqueued_at: '2026-08-07T08:00:00Z', dequeued_at: '2026-08-07T08:20:00Z', completed_at: '2026-08-07T08:30:00Z' });
+  writeChaserTelemetry(main, '2026-08', [{ type: 'resource_sample', role: 'coder', at: '2026-08-07T08:10:00.000Z', count: null }]);
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
+  assert.deepEqual(composeStallEvents(main, roles, 'BL-819'), []);
+});
+
+test('composeStallEvents excludes a host_load_sample event the same way', () => {
+  const main = mkTmp();
+  writeHandoff(completedDir(main), '00_a.handoff', { task: 'BL-819-x', enqueued_at: '2026-08-07T08:00:00Z', dequeued_at: '2026-08-07T08:20:00Z', completed_at: '2026-08-07T08:30:00Z' });
+  writeChaserTelemetry(main, '2026-08', [{ type: 'host_load_sample', role: 'coder', at: '2026-08-07T08:10:00.000Z', count: null }]);
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
+  assert.deepEqual(composeStallEvents(main, roles, 'BL-819'), []);
+});
+
+test('composeStallEvents excludes a chaser-telemetry type nobody has classified yet, same as a known sample type', () => {
+  const main = mkTmp();
+  writeHandoff(completedDir(main), '00_a.handoff', { task: 'BL-819-x', enqueued_at: '2026-08-07T08:00:00Z', dequeued_at: '2026-08-07T08:20:00Z', completed_at: '2026-08-07T08:30:00Z' });
+  writeChaserTelemetry(main, '2026-08', [{ type: 'never-classified-type', role: 'coder', at: '2026-08-07T08:10:00.000Z', count: 1 }]);
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
+  assert.deepEqual(composeStallEvents(main, roles, 'BL-819'), []);
+});
+
+test('composeStallEvents still attributes every known attention-signal type (chase/nudge/dead-letter/respawn), not only chase', () => {
+  const main = mkTmp();
+  writeHandoff(completedDir(main), '00_a.handoff', { task: 'BL-819-x', enqueued_at: '2026-08-07T08:00:00Z', dequeued_at: '2026-08-07T08:20:00Z', completed_at: '2026-08-07T09:00:00Z' });
+  writeChaserTelemetry(main, '2026-08', [
+    { type: 'chase', role: 'coder', at: '2026-08-07T08:05:00.000Z', count: 1 },
+    { type: 'nudge', role: 'coder', at: '2026-08-07T08:10:00.000Z', count: 1 },
+    { type: 'dead-letter', role: 'coder', at: '2026-08-07T08:15:00.000Z', count: 1 },
+    { type: 'respawn', role: 'coder', at: '2026-08-07T08:20:00.000Z', count: 1 },
+  ]);
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
+  const events = composeStallEvents(main, roles, 'BL-819');
+  assert.deepEqual(
+    events.map((e) => e.data.eventType).sort(),
+    ['chase', 'dead-letter', 'nudge', 'respawn']
+  );
+});
+
+// ── unrecognizedChaserTelemetryTypes (hygiene reporting, not per-ticket) ─
+
+test('unrecognizedChaserTelemetryTypes reports a type that is neither an attention signal nor a known sample', () => {
+  const main = mkTmp();
+  writeChaserTelemetry(main, '2026-08', [{ type: 'never-classified-type', role: 'coder', at: '2026-08-07T08:10:00.000Z', count: 1 }]);
+  assert.deepEqual(unrecognizedChaserTelemetryTypes(main), ['never-classified-type']);
+});
+
+test('unrecognizedChaserTelemetryTypes excludes every known attention and sample type, deduped and sorted', () => {
+  const main = mkTmp();
+  writeChaserTelemetry(main, '2026-08', [
+    { type: 'chase', role: 'coder', at: '2026-08-07T08:00:00.000Z', count: 1 },
+    { type: 'resource_sample', role: 'coder', at: '2026-08-07T08:01:00.000Z', count: null },
+    { type: 'host_load_sample', role: 'coder', at: '2026-08-07T08:02:00.000Z', count: null },
+    { type: 'zzz-new', role: 'coder', at: '2026-08-07T08:03:00.000Z', count: 1 },
+    { type: 'aaa-new', role: 'coder', at: '2026-08-07T08:04:00.000Z', count: 1 },
+    { type: 'zzz-new', role: 'coder', at: '2026-08-07T08:05:00.000Z', count: 1 },
+  ]);
+  assert.deepEqual(unrecognizedChaserTelemetryTypes(main), ['aaa-new', 'zzz-new']);
+});
+
+test('unrecognizedChaserTelemetryTypes returns empty when no telemetry file exists', () => {
+  const main = mkTmp();
+  assert.deepEqual(unrecognizedChaserTelemetryTypes(main), []);
 });
 
 // ── composeCloseEvent (backlog-close) ───────────────────────────────────
