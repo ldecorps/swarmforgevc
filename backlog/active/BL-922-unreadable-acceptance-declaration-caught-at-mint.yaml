@@ -222,3 +222,6 @@ notes: |
   to 4.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-18, by: architect, blamed: coder, class: behavior, commit: 997015b48b, evidence: backlog/evidence/BL-922-unreadable-acceptance-declaration-caught-at-mint-bounce-20260818.md }
