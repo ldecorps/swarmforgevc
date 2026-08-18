@@ -69,8 +69,24 @@ description: |
   config), conf key for the sustained threshold. NOTE: overlaps
   telegramFrontDeskBotCore.ts with BL-620 — sequence, never concurrent.
 
-acceptance: |
-  specs/features/BL-621-front-desk-degraded-cause-and-sustained-escalation.feature
+acceptance: specs/features/BL-621-front-desk-degraded-cause-and-sustained-escalation.feature
+
+qa_e2e_procedure: |
+  QA end-to-end procedure (live swarm):
+  1. Point a scratch bot config at an invalid/conflicted token (or run a
+     second poller against a scratch token): within one streak the
+     supervisor log shows the degraded line WITH the 409/error text.
+  2. Leave it failing past the sustained threshold (lower the conf key for
+     the test): exactly one direct Telegram escalation arrives naming the
+     loop, duration, and error; it does not repeat while the outage holds.
+  3. Restore the token: polling recovers; re-break it; a new escalation
+     arrives for the new episode.
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a
+  block scalar hiding the pointer from the pre-QA gates until the
+  documenter->QA hop). Nothing anyone builds changes; the text below and in
+  qa_e2e_procedure: is the same text, relocated verbatim.
 
   Every scenario needs its step handler wired in this same parcel (BL-233).
 
@@ -86,16 +102,6 @@ acceptance: |
   - The direct-send escalation is proven reachable while getUpdates fails
     (fixture: getUpdates 409, sendMessage ok).
   - No real timers in tests (fake timers only).
-
-  QA end-to-end procedure (live swarm):
-  1. Point a scratch bot config at an invalid/conflicted token (or run a
-     second poller against a scratch token): within one streak the
-     supervisor log shows the degraded line WITH the 409/error text.
-  2. Leave it failing past the sustained threshold (lower the conf key for
-     the test): exactly one direct Telegram escalation arrives naming the
-     loop, duration, and error; it does not repeat while the outage holds.
-  3. Restore the token: polling recovers; re-break it; a new escalation
-     arrives for the new episode.
 
 out_of_scope: |
   - The caption/drop-audit half of the incident cluster (BL-620).

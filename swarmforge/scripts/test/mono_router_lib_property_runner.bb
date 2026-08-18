@@ -210,6 +210,12 @@
               gate (mono-router-lib/should-rotate-resident?
                     {:active-role active-role
                      :target-role preferred
+                     ;; BL-921 added a second, independent live-identity axis
+                     ;; to :already-active. P3 exercises the PRE-EXISTING
+                     ;; starve/busy/cooldown precedence order only, so pin
+                     ;; live-role to agree with active-role here - the new
+                     ;; axis has its own P4/P5/P6 below.
+                     :live-role active-role
                      :resident-busy? busy?
                      :last-rotate-at-ms last-rotate-at-ms
                      :now-ms now-ms
@@ -240,7 +246,7 @@
                       (recur (inc i) s' (update acc :nil-preferred inc))
                       (let [last-rotate-at-ms (if within-cooldown? (- now-ms 1000) (- now-ms mono-router-lib/default-rotate-cooldown-ms 1000))
                             gate (mono-router-lib/should-rotate-resident?
-                                  {:active-role active-role :target-role preferred
+                                  {:active-role active-role :target-role preferred :live-role active-role
                                    :resident-busy? busy? :last-rotate-at-ms last-rotate-at-ms
                                    :now-ms now-ms :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
                         (recur (inc i) s' (update acc (keyword (name gate)) (fnil inc 0))))))))
@@ -259,6 +265,210 @@
                                              (mono-router-lib/oldest-actionable-waited-ms (map #(dissoc % :mtime) sources) now-ms))
                                      (inc n) n)))))]
   (println (str "  generator coverage (P2): mtime-would-have-mattered=" mtime-mattered " (informational; property asserts 0 actual divergence above)")))
+
+;; ── BL-921 (coder pass): PROPERTY tests encoding the ticket's three
+;;    declared invariants over dormant-mailbox-chase-action and
+;;    should-rotate-resident?, both now gated by a live-role independent of
+;;    the active-role marker.
+;;
+;;    1. "Wake text reaches the resident pane only when the pane's own live
+;;       identity equals the target role... an identity that cannot be read
+;;       is treated as divergence, never as agreement." -> P4/P4b: a
+;;       :wake-resident / :already-active verdict never occurs unless
+;;       live-role-agrees? held.
+;;    2. "The identity check only ever tightens the gate: for every input,
+;;       no case that resolves to skip or rotate today may resolve to wake
+;;       once the check is in place." -> P5/P5b: compared against a
+;;       reference marker-only baseline (the pre-BL-921 function bodies,
+;;       reproduced here so the comparison survives future edits to the
+;;       real functions), every branch OTHER than :wake-resident /
+;;       :already-active is byte-identical; that one branch may only ever
+;;       narrow towards :rotate/:cooldown, never the reverse.
+;;    3. "A role holding its own standing session is decided exactly as it
+;;       is today, independent of both the marker and the resident pane's
+;;       identity." -> P6: target-session-exists? true always yields
+;;       :wake-own-session regardless of active-role/live-role.
+;;
+;;    Non-vacuity proven by hand at authoring time (mutant restored before
+;;    this commit): P4 was run against dormant-mailbox-chase-action with the
+;;    live-role-agrees? conjunct dropped (i.e. the pre-BL-921 body) - failed
+;;    immediately, reporting a :wake-resident verdict with a non-agreeing
+;;    live-role on the very first generated input. P4b was run the same way
+;;    against should-rotate-resident? and failed identically on
+;;    :already-active. P5/P5b were run against the CURRENT (correct)
+;;    functions with baseline-dormant-action/baseline-should-rotate below
+;;    temporarily made identical to the patched call (i.e. asserting
+;;    equality on every branch, including :wake-resident) - failed as soon
+;;    as a generated live-role diverged from an agreeing marker, confirming
+;;    the comparison is actually sensitive to the tightening, not trivially
+;;    true.
+
+(defn gen-role-biased-to
+  "50% of the time returns `target` exactly, else a uniform pick from
+   role-alphabet (which may coincidentally still equal target) - biases
+   toward the agreement boundary the property needs to exercise, mirroring
+   gen-starve-ms's bias toward small thresholds. Without this bias,
+   independent uniform picks make :wake-resident / :already-active so rare
+   (~1/48 of inputs) that 500 runs barely exercise them."
+  [s target]
+  (let [[hit? s1] (gen-bool s)]
+    (if hit? [target s1] (gen-pick s1 role-alphabet))))
+
+(defn gen-live-role-biased-to
+  "50% unreadable (nil or blank, split evenly), 50% gen-role-biased-to
+   target - so both live-role-agrees? and its negation are well covered."
+  [s target]
+  (let [[unreadable? s1] (gen-bool s)]
+    (if unreadable?
+      (let [[blank? s2] (gen-bool s1)] [(if blank? "   " nil) s2])
+      (gen-role-biased-to s1 target))))
+
+(defn gen-p4-input [s]
+  (let [[target-role s1] (gen-pick s role-alphabet)
+        [active-role s2] (gen-role-biased-to s1 target-role)
+        [live-role s3] (gen-live-role-biased-to s2 target-role)
+        [resident-exists? s4] (gen-bool s3)]
+    [{:active-role active-role :target-role target-role :live-role live-role
+      :resident-session-exists? resident-exists?}
+     s4]))
+
+;; ── P4 (invariant 1): dormant-mailbox-chase-action ───────────────────────
+
+(check-all "P4 dormant-mailbox-chase-action never returns :wake-resident unless the live identity independently agrees with target-role"
+  gen-p4-input
+  (fn [{:keys [active-role target-role live-role resident-session-exists?]}]
+    (let [action (mono-router-lib/dormant-mailbox-chase-action
+                  {:target-session-exists? false
+                   :resident-session-exists? resident-session-exists?
+                   :active-role active-role
+                   :target-role target-role
+                   :live-role live-role})]
+      (if (and (= action :wake-resident)
+               (not (mono-router-lib/live-role-agrees? live-role target-role)))
+        (str "wake-resident with non-agreeing live-role=" (pr-str live-role) " target-role=" target-role)
+        true))))
+
+;; ── P4b (invariant 1): should-rotate-resident? ───────────────────────────
+
+(defn gen-p4b-input [s]
+  (let [[target-role s1] (gen-pick s role-alphabet)
+        [active-role s2] (gen-role-biased-to s1 target-role)
+        [live-role s3] (gen-live-role-biased-to s2 target-role)
+        [busy? s4] (gen-bool s3)
+        [cooldown-offset s5] (gen-int s4 120000)]
+    [{:active-role active-role :target-role target-role :live-role live-role
+      :busy? busy? :last-rotate-at-ms (- now-ms cooldown-offset) :now-ms now-ms
+      :cooldown-ms mono-router-lib/default-rotate-cooldown-ms}
+     s5]))
+
+(check-all "P4b should-rotate-resident? never returns :already-active unless the live identity independently agrees with target-role"
+  gen-p4b-input
+  (fn [{:keys [active-role target-role live-role busy? last-rotate-at-ms now-ms cooldown-ms]}]
+    (let [gate (mono-router-lib/should-rotate-resident?
+                {:active-role active-role :target-role target-role :live-role live-role
+                 :resident-busy? busy? :last-rotate-at-ms last-rotate-at-ms
+                 :now-ms now-ms :cooldown-ms cooldown-ms})]
+      (if (and (= gate :already-active)
+               (not (mono-router-lib/live-role-agrees? live-role target-role)))
+        (str "already-active with non-agreeing live-role=" (pr-str live-role) " target-role=" target-role)
+        true))))
+
+;; ── P5/P5b (invariant 2): tightening only, never loosening ──────────────
+
+(defn- baseline-dormant-action
+  "Reference PRE-BL-921 body (marker-only) - deliberately NOT the function
+   under test, so this comparison stays meaningful if that function is
+   later edited again."
+  [{:keys [target-session-exists? resident-session-exists? active-role target-role]}]
+  (cond
+    target-session-exists? :wake-own-session
+    (not resident-session-exists?) :wake-own-session
+    (= (str active-role) (str target-role)) :wake-resident
+    :else :rotate))
+
+(check-all "P5 dormant-mailbox-chase-action: live-role only ever narrows a baseline :wake-resident to :rotate - every other branch is untouched"
+  gen-p4-input
+  (fn [{:keys [active-role target-role live-role resident-session-exists?]}]
+    (let [args {:target-session-exists? false
+                :resident-session-exists? resident-session-exists?
+                :active-role active-role :target-role target-role}
+          baseline (baseline-dormant-action args)
+          patched (mono-router-lib/dormant-mailbox-chase-action (assoc args :live-role live-role))]
+      (cond
+        (not= baseline :wake-resident)
+        (if (= patched baseline) true
+          (str "baseline=" baseline " (never :wake-resident) but patched=" patched " - unaffected branch changed"))
+
+        :else ;; baseline :wake-resident - patched may stay or narrow to :rotate, nothing else
+        (if (contains? #{:wake-resident :rotate} patched) true
+          (str "baseline=:wake-resident narrowed to unexpected patched=" patched))))))
+
+(defn- baseline-should-rotate
+  "Reference PRE-BL-921 body (marker-only)."
+  [{:keys [active-role target-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]
+  (let [cooldown (or cooldown-ms mono-router-lib/default-rotate-cooldown-ms)]
+    (cond
+      resident-busy? :busy
+      (and active-role target-role (= (str active-role) (str target-role))) :already-active
+      (and last-rotate-at-ms (pos? last-rotate-at-ms)
+           (< (- now-ms last-rotate-at-ms) cooldown)) :cooldown
+      :else :rotate)))
+
+(check-all "P5b should-rotate-resident?: live-role only ever narrows a baseline :already-active to :cooldown/:rotate - every other branch is untouched"
+  gen-p4b-input
+  (fn [{:keys [active-role target-role live-role busy? last-rotate-at-ms now-ms cooldown-ms]}]
+    (let [args {:active-role active-role :target-role target-role
+                :resident-busy? busy? :last-rotate-at-ms last-rotate-at-ms
+                :now-ms now-ms :cooldown-ms cooldown-ms}
+          baseline (baseline-should-rotate args)
+          patched (mono-router-lib/should-rotate-resident? (assoc args :live-role live-role))]
+      (cond
+        (not= baseline :already-active)
+        (if (= patched baseline) true
+          (str "baseline=" baseline " (never :already-active) but patched=" patched " - unaffected branch changed"))
+
+        :else ;; baseline :already-active - patched may stay, or fall through to cooldown/rotate
+        (if (contains? #{:already-active :cooldown :rotate} patched) true
+          (str "baseline=:already-active narrowed to unexpected patched=" patched))))))
+
+;; ── P6 (invariant 3): a role's own standing session is decided
+;;      independent of the marker/live-role ───────────────────────────────
+
+(check-all "P6 dormant-mailbox-chase-action: target-session-exists? true always yields :wake-own-session regardless of active-role/live-role"
+  gen-p4-input
+  (fn [{:keys [active-role target-role live-role resident-session-exists?]}]
+    (let [action (mono-router-lib/dormant-mailbox-chase-action
+                  {:target-session-exists? true
+                   :resident-session-exists? resident-session-exists?
+                   :active-role active-role
+                   :target-role target-role
+                   :live-role live-role})]
+      (if (= action :wake-own-session) true
+        (str "expected :wake-own-session, got " action)))))
+
+;; ── generator coverage, asserted rather than assumed ─────────────────────
+
+(let [wake-resident-count (loop [i 0 s 7 n 0]
+                             (if (= i runs) n
+                               (let [[{:keys [active-role target-role live-role resident-session-exists?]} s'] (gen-p4-input s)]
+                                 (recur (inc i) s'
+                                        (if (= :wake-resident
+                                               (mono-router-lib/dormant-mailbox-chase-action
+                                                {:target-session-exists? false
+                                                 :resident-session-exists? resident-session-exists?
+                                                 :active-role active-role :target-role target-role :live-role live-role}))
+                                          (inc n) n)))))
+      already-active-count (loop [i 0 s 7 n 0]
+                              (if (= i runs) n
+                                (let [[input s'] (gen-p4b-input s)]
+                                  (recur (inc i) s'
+                                         (if (= :already-active (mono-router-lib/should-rotate-resident? input)) (inc n) n)))))
+      floor (quot runs 40)]
+  (println (str "  generator coverage (P4 :wake-resident)=" wake-resident-count " (P4b :already-active)=" already-active-count))
+  (when (< wake-resident-count floor)
+    (report! "COVERAGE P4 :wake-resident branch" 7 wake-resident-count "barely exercised"))
+  (when (< already-active-count floor)
+    (report! "COVERAGE P4b :already-active branch" 7 already-active-count "barely exercised")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "mono_router_lib properties: " runs " runs each"))
