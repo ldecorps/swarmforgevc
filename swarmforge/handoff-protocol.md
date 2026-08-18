@@ -1229,7 +1229,7 @@ feeds it, not by a runtime flag.
 Acceptance: `specs/features/BL-805-rotate-gate-on-unfinished-in-process-parcel.feature`.
 E2e: `swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh`.
 
-### Mono-router rotation recomposes the role prompt from current sources (BL-911)
+### Mono-router rotation recomposes the role prompt from current sources (BL-911, BL-917)
 
 Before BL-911, a role's system prompt was composed exactly once — at the
 swarm's last full `./swarm` launch — into `.swarmforge/prompts/<role>.md`,
@@ -1261,30 +1261,52 @@ result, or `compose` itself throwing all degrade to `{:ok false :reason
 prompt it already had. The prompt file on disk is left completely
 untouched on any failure path.
 
-**Scope — two named drivers, not every prompt re-exec.** This covers
-exactly the two rotation entry points the ticket named:
-`rotate_to_role.bb`'s resident-invoked path and `handoffd.bb`'s chase
-rotation. It does **not** cover `respawn-self!` (same file), the re-exec
-`maybe-clear-at-idle-boundary!` (BL-089) uses when a role finishes a task,
-stays the same role, and that role's `roles.tsv` idle-clear column is
-`on` — that path still boots on whatever `.swarmforge/prompts/<role>.md`
+**Scope at BL-911's landing — two named drivers, not every prompt
+re-exec.** BL-911 covered exactly the two rotation entry points the ticket
+named: `rotate_to_role.bb`'s resident-invoked path and `handoffd.bb`'s
+chase rotation. It did **not** cover `respawn-self!` (same file), the
+re-exec `maybe-clear-at-idle-boundary!` (BL-089) uses when a role finishes
+a task, stays the same role, and that role's `roles.tsv` idle-clear column
+is `on` — that path booted on whatever `.swarmforge/prompts/<role>.md`
 already held. The architect flagged this as the same class of staleness
 via a third, unnamed entry point (evidence:
 `backlog/evidence/BL-911-architect-followup-note-20260817.md`) but
-confirmed it inert on this swarm: idle-clear is opt-in and every role's
-`roles.tsv` column currently reads `off`, so `respawn-self!` never fires
-today. Sent to the specifier as a `note` to judge whether it warrants its
-own ticket — treat any future idle-clear adoption as reopening this gap
-until `respawn-self!` gets the same treatment.
+confirmed it inert on that swarm: idle-clear is opt-in and every role's
+`roles.tsv` column read `off`, so `respawn-self!` never fired. Sent to the
+specifier as a `note` to judge whether it warranted its own ticket.
 
-**Out of scope**, per the ticket: `articles/reference/` on-demand
-elaborations (BL-640, a distinct build-output-vs-worktree root cause), and
+**BL-917 closes that gap.** `respawn-self!` re-execs the CURRENT role's
+launch script (the idle-boundary re-exec); `rotate-resident-to!` /
+`respawn-as!` re-exec to become a DIFFERENT role. The two are easy to
+conflate and are not the same trigger — BL-911's invariant 1 was phrased
+over rotation, so the idle-clear path slipped between the words. Now
+`respawn-self!` calls `recompose-role-prompt!` immediately before its own
+`respawn-pane`, the same chokepoint and failure posture as
+`rotate-resident-to!`: a recompose failure warns loudly to stderr but never
+blocks the respawn, and the role boots on the prompt it already had.
+Verified dormant, not live, at spec time — `.swarmforge/roles.tsv` column 8
+still reads `off` for all eight roles and this ticket does not flip it —
+which is precisely why closing it now mattered: flipping one `roles.tsv`
+column to `on` is a config change nobody would expect to have
+prompt-freshness consequences, and would have silently re-armed a defect
+the swarm already paid for once. With idle-clear off, `respawn-self!` is
+never reached at all (gated at the source by `idle-clear-enabled?`,
+unchanged), so nothing new recomposes on every parcel completion — a
+dedicated scenario (07) guards this no-op stays a no-op.
+
+**Out of scope**, both tickets: `articles/reference/` on-demand
+elaborations (BL-640, a distinct build-output-vs-worktree root cause),
 `.swarmforge/launch/<role>.sh` itself (the other launch-time build output,
-which changes far less often).
+which changes far less often), and turning idle-clear on for any role
+(BL-089's opt-in decision, untouched).
 
-Acceptance: `specs/features/BL-911-rotation-recomposes-the-role-prompt.feature`.
+Acceptance: `specs/features/BL-911-rotation-recomposes-the-role-prompt.feature`
+(BL-917 extends this file with scenarios 05-07 rather than opening its own,
+since the defect was an incomplete enumeration of re-exec paths on the same
+feature).
 E2e: `swarmforge/scripts/test/test_rotate_recomposes_role_prompt.sh`,
-`swarmforge/scripts/test/bl911_rotation_recompose_test_runner.bb`.
+`swarmforge/scripts/test/bl911_rotation_recompose_test_runner.bb`,
+`swarmforge/scripts/test/bl917_recompose_never_loses_prompt_on_failure_property_runner.bb`.
 
 ### Mono-router aged-note actionability (BL-576)
 
