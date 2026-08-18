@@ -2,7 +2,7 @@
 // (time-window correlated).
 import { mailboxDir } from '../swarm/swarmState';
 import { LeanLedgerEvent } from '../quality/leanLedger';
-import { readHandoffHeaderRecordsWithBatches, extractTicketId, readChaserTelemetryEvents } from './swarmMetrics';
+import { readHandoffHeaderRecordsWithBatches, extractTicketId, readChaserTelemetryEvents, ChaserTelemetryEvent } from './swarmMetrics';
 import { MinimalRoleEntry, definedData } from './leanLedgerComposeShared';
 
 interface RoleTicketWindow {
@@ -62,15 +62,38 @@ function readAllRoleTicketWindows(roles: MinimalRoleEntry[]): RoleTicketWindow[]
   return windows;
 }
 
+// Attribution here is a FACTUAL correlation, not an inference: a role holds
+// exactly one ticket at a time in task mode, so an event whose timestamp
+// falls inside exactly one ticket's window for that role legitimately
+// belongs to it. When two tickets' windows overlap for the same role (batch
+// mode, or a race) and both contain the event, attribution is genuinely
+// ambiguous - null is returned rather than guessing onto one of them.
+// BL-918 hardening: split out of composeStallEvents to keep that function's
+// own CRAP at/under 6 - this is where the split lands the branching that
+// composeStallEvents' loop body used to carry directly.
+function resolveStallEvent(telemetryEvent: ChaserTelemetryEvent, windows: RoleTicketWindow[], ticket: string): LeanLedgerEvent | null {
+  const atMs = Date.parse(telemetryEvent.at);
+  if (Number.isNaN(atMs)) {
+    return null;
+  }
+  const matches = windows.filter((w) => w.role === telemetryEvent.role && atMs >= w.startMs && atMs <= w.endMs);
+  const candidateTickets = [...new Set(matches.map((w) => w.ticketId))];
+  if (candidateTickets.length !== 1 || candidateTickets[0] !== ticket) {
+    return null;
+  }
+  return {
+    ticket,
+    type: 'stall',
+    source: 'chaser-telemetry',
+    at: telemetryEvent.at,
+    role: telemetryEvent.role,
+    data: definedData({ eventType: telemetryEvent.type, count: telemetryEvent.count ?? null }),
+  };
+}
+
 // Chase/nudge/dead-letter/respawn telemetry is keyed by role + timestamp,
 // not by ticket (handoffd.bb: `handoffId` is a mailbox filename, not a
-// stable ticket reference). Attribution here is a FACTUAL correlation, not
-// an inference: a role holds exactly one ticket at a time in task mode, so
-// an event whose timestamp falls inside exactly one ticket's window for
-// that role legitimately belongs to it. When two tickets' windows overlap
-// for the same role (batch mode, or a race) and both contain the event,
-// attribution is genuinely ambiguous - the event is dropped for every
-// ticket rather than guessed onto one of them.
+// stable ticket reference).
 export function composeStallEvents(mainWorktreePath: string, roles: MinimalRoleEntry[], ticket: string): LeanLedgerEvent[] {
   const windows = readAllRoleTicketWindows(roles);
   const events: LeanLedgerEvent[] = [];
@@ -78,23 +101,10 @@ export function composeStallEvents(mainWorktreePath: string, roles: MinimalRoleE
     if (!isAttentionSignal(telemetryEvent.type)) {
       continue;
     }
-    const atMs = Date.parse(telemetryEvent.at);
-    if (Number.isNaN(atMs)) {
-      continue;
+    const event = resolveStallEvent(telemetryEvent, windows, ticket);
+    if (event) {
+      events.push(event);
     }
-    const matches = windows.filter((w) => w.role === telemetryEvent.role && atMs >= w.startMs && atMs <= w.endMs);
-    const candidateTickets = [...new Set(matches.map((w) => w.ticketId))];
-    if (candidateTickets.length !== 1 || candidateTickets[0] !== ticket) {
-      continue;
-    }
-    events.push({
-      ticket,
-      type: 'stall',
-      source: 'chaser-telemetry',
-      at: telemetryEvent.at,
-      role: telemetryEvent.role,
-      data: definedData({ eventType: telemetryEvent.type, count: telemetryEvent.count ?? null }),
-    });
   }
   return events;
 }
