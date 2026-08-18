@@ -200,8 +200,9 @@ notes: |
   elaboration swarmforge/constitution/articles/reference/pipeline-detailed.md
   is mirrored. Boot prefix budget gate run on the change (it was at
   43313/44000 before, so headroom was only ~687 chars - anything added here has
-  to be near-neutral). Commit named in the specifier's coordinator note for
-  this ticket. Nothing the coder builds changes because of it.
+  to be near-neutral; it now reads 43555/44000, leaving ~445). Landed in commit
+  c870cdccc, the same commit that minted this ticket. Nothing the coder builds
+  changes because of it.
 
   Note on the live pack: a standing pane only re-reads a composed role prompt
   on respawn or recompose, so the prose fix does not reach the currently
@@ -256,3 +257,5 @@ qa_e2e_procedure: |
      wired, so that suite plus the acceptance run is the whole gate here and
      any hardening pass must record that degraded fallback rather than imply
      mutation ran.
+
+assigned_to: coder
