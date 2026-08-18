@@ -178,3 +178,5 @@ notes: |
   ticket changes a decision inside an existing call path and adds no new call
   site, so any pattern an entry could carry would already match today and
   pass vacuously. Per BL-874 an entry that cannot fail is worse than none.
+
+assigned_to: coder
