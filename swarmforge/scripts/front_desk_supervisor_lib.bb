@@ -208,6 +208,51 @@
     (and (bridge-entrypoint-holder? (:cmdline holder) project-root) healthy?) :adopt
     :else :free))
 
+;; BL-928: onboarder-reconcile poll-loop orphan reap -------------------------
+;; check-one!'s "not-started" branch above (line ~125) is a bare spawn! with
+;; no kill-pid! - BL-403/BL-411 deliberately left it out of scope, so nothing
+;; in this state machine ever removes a sibling left behind when a
+;; supervisor dies without running its own stop path (SIGKILL, crash, a host
+;; kill). This is a ONE-TIME STARTUP sweep, not a check-one! branch: it runs
+;; once before the first tick, over the whole process table, never per-tick
+;; (BL-367 - no live-process hunting on the hot path).
+(defn onboarder-reconcile-poll-loop-holder?
+  "True when cmdline looks like OUR OWN onboarder-reconcile.js poll-loop for
+   THIS project-root - the entrypoint, 'poll-loop', AND project-root must all
+   appear, not just one. Mirrors bridge-entrypoint-holder?'s own two-part
+   cmdline check for the identical reason: a poll-loop naming a different
+   swarm root, including a tmp fixture root, is never mistaken for ours
+   (invariant 2)."
+  [cmdline project-root]
+  (boolean (and cmdline
+                (str/includes? cmdline "onboarder-reconcile.js")
+                (str/includes? cmdline "poll-loop")
+                (str/includes? cmdline project-root))))
+
+(defn decide-onboarder-orphan-reap
+  "processes: process-table-lib/list-processes!'s own return - nil when the
+   table could not be enumerated, a vector of {:pid :cmdline} otherwise
+   (BL-849's distinction, preserved here rather than coerced away).
+   parent-orphaned?: injected (process-table-lib/parent-orphaned? in
+   production) so this stays pure, no real process I/O inside.
+
+   Returns {:reapable [pid ...] :unreadable? bool}. :unreadable? true means
+   the process table itself could not be read - :reapable is always [] in
+   that case, and the two must never be conflated (invariant 3: an
+   unreadable table is not the same fact as a genuinely empty candidate
+   set). A process whose parent is alive is never a candidate (invariant 1)
+   - the running supervisor's own child has a live parent by construction,
+   so it can never appear in :reapable regardless of cmdline match."
+  [processes project-root parent-orphaned?]
+  (if (nil? processes)
+    {:reapable [] :unreadable? true}
+    {:reapable (->> processes
+                    (filter #(onboarder-reconcile-poll-loop-holder? (:cmdline %) project-root))
+                    (map :pid)
+                    (filter parent-orphaned?)
+                    vec)
+     :unreadable? false}))
+
 (defn make-kill-pid! [grace-ms]
   (fn [pid]
     (when pid

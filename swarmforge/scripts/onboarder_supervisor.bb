@@ -51,6 +51,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "fleet_telegram_creds_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -187,6 +188,36 @@
         (when (pid-alive? pid)
           (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.destroy)))))))
 
+;; BL-928: test-only seam - forces the sweep below onto the "unreadable
+;; process table" path without a real enumeration failure (never a chmod;
+;; see the engineering article's failure-simulation rule). Mirrors
+;; orphan_janitor_sweep_lib.bb's own SWARMFORGE_ORPHAN_JANITOR_CANDIDATE_PIDS
+;; env-seam convention for injecting process-table state from a fixture.
+(defn list-processes-for-reap! []
+  (if (= "1" (System/getenv "ONBOARDER_REAP_FORCE_UNREADABLE"))
+    nil
+    (process-table-lib/list-processes!)))
+
+;; BL-928: startup-only orphan sweep (see front_desk_supervisor_lib.bb's
+;; decide-onboarder-orphan-reap docstring for the full invariant rationale).
+;; Runs once, before the first tick ever spawns this supervisor's own child
+;; - never inside tick!/check-one!, and never under --check-once (a
+;; diagnostic tick should not be destructive).
+(defn reap-orphan-siblings! []
+  (let [{:keys [reapable unreadable?]}
+        (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+         (list-processes-for-reap!) swarm-repo-root process-table-lib/parent-orphaned?)]
+    (cond
+      unreadable?
+      (log! "reap-unreadable" "could not enumerate the process table; reaped nothing")
+
+      (seq reapable)
+      (doseq [pid reapable]
+        (kill-pid! pid)
+        (log! "reaped" "pid=" (str pid)))
+
+      :else nil)))
+
 (defn -main []
   (fs/create-dirs op-dir)
   ;; BL-622: see fleet-home-dir/resolved-telegram-creds above - a refused
@@ -200,6 +231,7 @@
     (if check-once?
       (println (json/generate-string (tick!)))
       (do
+        (reap-orphan-siblings!)
         (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
         (log! "onboarder-supervisor started" (str "interval-ms=" interval-ms) "swarm-repo=" swarm-repo-root)
         (try
