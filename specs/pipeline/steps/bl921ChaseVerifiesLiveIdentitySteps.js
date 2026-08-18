@@ -65,6 +65,16 @@ function ensureState(ctx) {
   return ctx.bl921;
 }
 
+// Idempotent, mirroring bl870WakeAttributionSteps.js's cleanup(ctx): safe to
+// call from both the fixture-creation step's failure path and the
+// downstream assertion step's finally, whichever runs last.
+function cleanup(ctx) {
+  const st = ctx.bl921;
+  if (!st || !st.fixtureRoot) return;
+  fs.rmSync(st.fixtureRoot, { recursive: true, force: true });
+  st.fixtureRoot = null;
+}
+
 function registerSteps(registry) {
   registry.defineScoped(/^a mono-router pack whose resident pane session exists$/, (ctx) => {
     ensureState(ctx).residentExists = true;
@@ -201,31 +211,44 @@ exit 0
     fs.writeFileSync(path.join(fakeBin, 'tmux'), liveRoleScript);
     fs.chmodSync(path.join(fakeBin, 'tmux'), 0o755);
 
-    for (let i = 0; i < times; i++) {
-      const result = spawnSync('bb', [HANDOFFD, root, '--chase-sweep-once'], {
-        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, SWARMFORGE_ALLOW_TMP_DAEMON: '1' },
-        encoding: 'utf8',
-      });
-      if (result.status !== 0) {
-        throw new Error(`--chase-sweep-once run ${i + 1} failed:\n${result.stdout}\n${result.stderr}`);
+    try {
+      for (let i = 0; i < times; i++) {
+        const result = spawnSync('bb', [HANDOFFD, root, '--chase-sweep-once'], {
+          env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, SWARMFORGE_ALLOW_TMP_DAEMON: '1' },
+          encoding: 'utf8',
+        });
+        if (result.status !== 0) {
+          throw new Error(`--chase-sweep-once run ${i + 1} failed:\n${result.stdout}\n${result.stderr}`);
+        }
       }
+      st.sweepsRun = times;
+    } catch (e) {
+      // Daemon invocation itself failed - the assertion step that would
+      // otherwise clean up the fixture root never runs.
+      cleanup(ctx);
+      throw e;
     }
-    st.sweepsRun = times;
   }, FEATURE);
 
   registry.defineScoped(/^no wake text is injected into the resident pane$/, (ctx) => {
     const st = ensureState(ctx);
-    if (!st.tmuxLog || !fs.existsSync(st.tmuxLog)) {
-      throw new Error('chase sweep fixture never ran - no tmux log to inspect');
+    try {
+      if (!st.tmuxLog || !fs.existsSync(st.tmuxLog)) {
+        throw new Error('chase sweep fixture never ran - no tmux log to inspect');
+      }
+      const log = fs.readFileSync(st.tmuxLog, 'utf8');
+      const wakeLines = log.split('\n').filter((l) => l.includes('send-keys'));
+      if (wakeLines.length > 0) {
+        throw new Error(
+          `expected no send-keys wake injection across ${st.sweepsRun} sweeps, found ${wakeLines.length}:\n${wakeLines.join('\n')}`
+        );
+      }
+    } finally {
+      // Guarantee cleanup whether the assertion above passes or throws -
+      // the failing case is exactly the one that most needs the fixture
+      // preserved for evidence, and was previously the one that leaked it.
+      cleanup(ctx);
     }
-    const log = fs.readFileSync(st.tmuxLog, 'utf8');
-    const wakeLines = log.split('\n').filter((l) => l.includes('send-keys'));
-    if (wakeLines.length > 0) {
-      throw new Error(
-        `expected no send-keys wake injection across ${st.sweepsRun} sweeps, found ${wakeLines.length}:\n${wakeLines.join('\n')}`
-      );
-    }
-    fs.rmSync(st.fixtureRoot, { recursive: true, force: true });
   }, FEATURE);
 }
 
