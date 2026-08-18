@@ -83,6 +83,38 @@
          (mono-router-lib/rotate-gate-decision
           {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff" :force? true}))
 
+;; BL-926: rotating INTO the role that already owns the blocking parcel is
+;; not abandonment - it is the only way that parcel gets picked up. Table
+;; mirrors specs/features/BL-926-...feature Scenario Outline exactly.
+(assert= "rotate-gate: same-role rotation proceeds even with a real blocking parcel"
+         :proceed
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? false :active-role "coder" :target-role "coder"}))
+(assert= "rotate-gate: different-role rotation still refuses over a real blocking parcel"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? false :active-role "coder" :target-role "documenter"}))
+(assert= "rotate-gate: no blocking file proceeds regardless of active/target roles"
+         :proceed
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file nil :force? false :active-role "coder" :target-role "documenter"}))
+(assert= "rotate-gate: force override still behaves exactly as BL-805 specified, even on same-role ownership"
+         :proceed-forced
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? true :active-role "coder" :target-role "coder"}))
+(assert= "rotate-gate: omitting active-role/target-role keeps BL-805 behavior (refuse)"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff" :force? false}))
+(assert= "rotate-gate: active-role given without target-role never matches - refuses"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? false :active-role "coder" :target-role nil}))
+
 (let [sum (mono-router-lib/summarize-topology
            roles
            [{:role "coder" :alive? false}

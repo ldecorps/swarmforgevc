@@ -475,7 +475,8 @@ const DOMAINS = [
   require('./bl922UnreadableAcceptanceCaughtAtMintSteps'),
   require('./bl918PeriodicSamplesAreNotStallsSteps'),
   require('./bl678BatchClaimProgressSidecarSteps'),
-  require('./bl640ConstitutionReferenceAmendmentDeliverySteps')
+  require('./bl640ConstitutionReferenceAmendmentDeliverySteps'),
+  require('./bl926RotateGateOwnerSteps')
 ];
 
 function registerSteps(registry) {

@@ -1,6 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-640: `ready_for_next.bb` now runs a
+**Last Updated:** August 18, 2026 (BL-926: the mono-router resident-invoked
+rotation gate (`mono_router_lib.bb/rotate-gate-decision`, BL-805) refused a
+rotation even when the rotation target was the very role that owned the
+blocking `in_process/` parcel — live-stranding BL-640 for ~62 minutes on
+2026-08-18 when a diverged `mono-router-active-role` marker (the BL-921
+divergence recurring after BL-921's own daemon-side fix) needed the pane to
+rotate INTO the marker's role to drain it, and the gate refused that very
+rotation as if it were abandonment. `departing-role-blocking-handoff`
+(`handoff_lib.bb`) now returns the departing role alongside its blocking
+file, and `respawn-as!` passes both that role and the rotation target into
+`rotate-gate-decision`, which proceeds when they name the same role —
+checked after the force override so a real block plus force still always
+reads `:proceed-forced`. A genuine departure to a different role while
+holding a real undrained parcel still refuses exactly as BL-805 specified;
+the in_process file itself is never touched by the rotation either way.
+BL-927 (paused) is the other half of the same incident — resolving the
+departing role from the pane's live identity rather than the raw marker,
+for the residual case where the marker diverges to a third role. See the
+updated "Mono-router resident-invoked rotation gate on unfinished
+in_process (BL-805, BL-926)" section in
+`swarmforge/handoff-protocol.md`.); Previously August 18, 2026 (BL-640: `ready_for_next.bb` now runs a
 pre-turn freshness guard (`reference_freshness_lib.bb`) before any dispatch
 logic, for every role and every pack: it hashes the worktree's own
 `swarmforge/constitution/articles/reference/` files against whichever of
