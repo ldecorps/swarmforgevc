@@ -30,6 +30,13 @@ printf 'architect\tarchitect\t%s\tswarmforge-architect\tArchitect\tclaude\ttask\
 printf 'hardender\thardender\t%s\tswarmforge-hardender\tHardender\tclaude\tbatch\n' "$FIXTURE" >> "$FIXTURE/.swarmforge/roles.tsv"
 printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$FIXTURE" >> "$FIXTURE/.swarmforge/roles.tsv"
 
+# BL-931: this fixture's own concern is cwd-invariant root resolution, not
+# the pack-router gate test_rotate_pack_router_gate.sh covers - declare a
+# rotation-router pack so scenario 04's rotate-resident-to! call still
+# reaches the respawn logic it always did.
+mkdir -p "$FIXTURE/swarmforge"
+printf 'config rotation router\n' > "$FIXTURE/swarmforge/swarmforge.conf"
+
 echo "hardender" > "$FIXTURE/.swarmforge/mono-router-active-role"
 
 SOCK_DIR="$(mktemp -d)"; register_tmp_dir "$SOCK_DIR"

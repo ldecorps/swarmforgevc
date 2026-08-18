@@ -49,6 +49,14 @@ mkdir -p "$CODER_WT/.swarmforge/handoffs/inbox/new" \
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" > "$ROOT/.swarmforge/roles.tsv"
 printf 'cleaner\tcleaner\t%s\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n' "$CLEAN_WT" >> "$ROOT/.swarmforge/roles.tsv"
 
+# BL-931: this fixture's own concern is the stuck-parcel gate, not the
+# pack-router gate test_rotate_pack_router_gate.sh covers - declare a
+# rotation-router pack here so every scenario below still exercises what it
+# always did, rather than being refused upstream by the new gate before it
+# ever reaches the stuck-parcel check.
+mkdir -p "$ROOT/swarmforge"
+printf 'config rotation router\n' > "$ROOT/swarmforge/swarmforge.conf"
+
 touch "$ROOT/fake.sock"
 echo "$ROOT/fake.sock" > "$ROOT/.swarmforge/tmux-socket"
 

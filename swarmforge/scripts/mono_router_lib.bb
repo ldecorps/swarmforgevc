@@ -7,9 +7,13 @@
 ;;     on disk only; no tmux session)
 ;;
 ;; No filesystem / tmux I/O here — callers inject conf text and role rows.
+;; BL-931's resolve-rotation-router-mode? below is the one sanctioned
+;; exception (see its own docstring for why); every other function in this
+;; file stays pure.
 
 (ns mono-router-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (defn conf-rotation-router?
   "True when pack/conf text declares `config rotation router`."
@@ -33,6 +37,29 @@
   "True when identity already records rotation=router."
   [identity-text]
   (= "router" (get (parse-identity-map identity-text) "rotation")))
+
+(defn resolve-rotation-router-mode?
+  "BL-931 invariant 1: the ONE resolution of whether a pack is a rotation
+   router - swarm-identity's rotation key, else the persisted active pack
+   conf path (recorded in swarm-identity), else the given default conf
+   path. handoffd.bb/swarm_ensure.bb/babysitter_check.bb/swarm_status.bb
+   each hand-copy this exact identity-else-conf resolution today (four
+   independent implementations of the same question, same shape, same
+   underlying primitives below). This is the lift: handoff_lib.bb's
+   rotate-resident-to! calls this so a fifth caller never becomes a fifth
+   independent copy. The one sanctioned exception to this file's own 'no
+   filesystem I/O' rule - every other function here stays pure and takes
+   already-read text."
+  [state-dir default-conf-path]
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      default-conf-path)
+        conf-text (when (and conf-path (fs/exists? conf-path)) (slurp conf-path))]
+    (boolean
+     (or (rotation-router-from-identity? identity-text)
+         (conf-rotation-router? conf-text)))))
 
 (defn classify-role
   "Given ordered role names (roles.tsv order) and one role, return
