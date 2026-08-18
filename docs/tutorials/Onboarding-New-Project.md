@@ -6,7 +6,7 @@ project. For installing and running the SwarmForge VC extension itself, see
 it at a target" and focuses on what actually drives the swarm's work: **the
 acceptance contract**.
 
-## 0. The Onboarder: a guided conversational front-end (BL-590, slice 1 of 3)
+## 0. The Onboarder: a guided conversational front-end (BL-590/BL-624/BL-625, all 3 slices shipped)
 
 Everything in sections 1–2 below can be driven by hand, one CLI/Telegram-relay
 command at a time. The **Onboarder** is a standing conversational agent that
@@ -15,11 +15,12 @@ Telegram topic — so onboarding a target reduces to "give it a repo URL" rather
 than remembering seven commands in order. It runs on the swarm's own host
 (never the target host) and clones/onboards the target from its GitHub URL.
 
-**What's shipped so far (slices 1–2 of 3):** an "Onboarding"
+**What's shipped:** an "Onboarding"
 topic, ensured once in the primary swarm's Telegram group and **reused across
 every target** (never one topic per target — per-target identity lives in the
-onboarder's own state files, not the topic), plus the **prerequisites phase**
-that runs before any survey/contract work starts:
+onboarder's own state files, not the topic), the **prerequisites phase**
+that runs before any survey/contract work starts, and — end to end — every
+phase through a target repo ready to launch:
 
 - Posting a target's GitHub repo URL into the Onboarding topic opens (or
   resumes, if that target is already mid-flight) a per-target onboarding at
@@ -60,14 +61,26 @@ that runs before any survey/contract work starts:
     commit reference into the topic.
   - A clone, survey, or propose failure holds at `prerequisites-ready` with
     the reason and a `proceed`-to-retry instruction — never a silent stall.
+  - Once the contract is agreed (slice 3), a further **`proceed`** runs the
+    same prompt-proposal step section 2 below describes by hand — generating
+    `project.prompt`/`engineering.prompt` from the agreed contract, then
+    committing and pushing them to the target repo — and advances to
+    `prompts-proposed`.
+  - Another **`proceed`** posts the exact `./swarm <path> --pack mono-router`
+    command for the target host and states plainly that the human runs it
+    there; the Onboarder never claims to have launched or observed a swarm it
+    cannot reach, even if you ask it directly.
+  - A final **`proceed`** once the swarm is actually running marks the target
+    **done** with a completion summary, and the same Onboarding topic is
+    reused for the next target's repo URL rather than closed. With more than
+    one target in flight at once, a reply that can't be pinned to exactly one
+    of them is refused rather than silently applied to whichever you touched
+    last — name the target if you have two or more open.
 
-**What's not shipped yet:** the prompt-proposal step generating
-`project.prompt`/`engineering.prompt` from the agreed contract still needs
-the manual command in section 1–2 below (tracked as slice 3, BL-625, along
-with the launch handoff). Everything else described in sections 1–2 —
-survey, propose, negotiate, gate — can now be driven entirely from the
-Onboarding topic instead of by hand; the manual commands remain available
-for scripting or recovery.
+Everything described in sections 1–2 below — survey, propose, negotiate,
+gate, prompt generation, and the launch handoff — can now be driven entirely
+from the Onboarding topic instead of by hand; the manual commands remain
+available for scripting or recovery.
 
 ## 1. Onboarding mechanics (reuse, don't re-derive)
 
