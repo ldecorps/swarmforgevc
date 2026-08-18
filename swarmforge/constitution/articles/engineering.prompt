@@ -51,6 +51,11 @@
   fails the lane unless it is the known benign `[vitest-worker]: Timeout
   calling "onTaskUpdate"` artifact — grep and allowlist exactly that
   message. See **engineering-detailed.prompt** (BL-871).
+- A fixture dir from `fs.mkdtempSync` is removed in a `finally`, never only
+  after the last assertion — a test that throws or bounces otherwise leaks it
+  permanently. Measured 2026-08-18: 236 of 287 step-handler files using it had
+  no `finally`; one ticket left 45 dirs behind. See
+  **engineering-detailed.prompt**.
 
 ## Acceptance Pipeline
 - APS pinned (see Startup Tools). Features in `specs/features/`; pipeline in
