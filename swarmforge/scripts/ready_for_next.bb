@@ -26,14 +26,37 @@
                (reference-freshness-lib/sha256-hex (slurp (str f)))]))
       {})))
 
+;; BL-640 D2 (architect bounce 20260818): this repo's QA lands its approved
+;; commit by pushing HEAD:main straight to origin (QA's own worktree can't
+;; fast-forward the shared local main, since another worktree already has
+;; it checked out) - local main only catches up later, whenever the master
+;; checkout next merges it in. In that window origin/main can carry a
+;; landed reference/ amendment local main does not yet have, and the
+;; workflow rule "A Prior QA Bounce Is Not In Your Worktree" documents that
+;; the direction can flip - so neither ref alone is trustworthy. Compare
+;; ahead-counts and read whichever ref is actually ahead; falls back to
+;; "main" when origin/main does not exist (no remote configured - e.g. this
+;; guard's own unit fixtures) or the counts tie.
+(defn- freshest-main-ref [root]
+  (let [result (sh/sh "git" "-C" (str root) "rev-list" "--left-right" "--count"
+                       "main...origin/main")]
+    (if (zero? (:exit result))
+      (let [counts (str/split (str/trim (:out result)) #"\s+")]
+        (if (= 2 (count counts))
+          (let [[local-ahead origin-ahead] (map #(Long/parseLong %) counts)]
+            (if (> origin-ahead local-ahead) "origin/main" "main"))
+          "main"))
+      "main")))
+
 (defn- main-reference-shas [root]
-  (let [list-result (sh/sh "git" "-C" (str root) "ls-tree" "-r" "--name-only" "main"
+  (let [ref (freshest-main-ref root)
+        list-result (sh/sh "git" "-C" (str root) "ls-tree" "-r" "--name-only" ref
                             "--" reference-freshness-lib/reference-dir-rel)]
     (if (zero? (:exit list-result))
       (into {}
             (keep (fn [path]
                     (when-not (str/blank? path)
-                      (let [show-result (sh/sh "git" "-C" (str root) "show" (str "main:" path))]
+                      (let [show-result (sh/sh "git" "-C" (str root) "show" (str ref ":" path))]
                         (when (zero? (:exit show-result))
                           [path (reference-freshness-lib/sha256-hex (:out show-result))]))))
                   (str/split-lines (:out list-result))))

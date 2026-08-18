@@ -57,7 +57,16 @@ mkdir -p "$ROOT/.swarmforge" \
          "$CODER_WT/.swarmforge/handoffs/inbox/new" \
          "$CODER_WT/.swarmforge/handoffs/inbox/in_process" \
          "$CODER_WT/.swarmforge/handoffs/inbox/completed"
-printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" \
+# BL-640 D1 (architect bounce 20260818): an intentionally unrecognized
+# receive-mode. Once the guard passes a fresh worktree through, dispatch
+# would exec the REAL ready_for_next_task.sh - whose wrapper cd's into the
+# REAL repo's own scripts dir before invoking bb (pre-existing, unrelated
+# to this guard) - which would act on THIS machine's live coder mailbox
+# instead of this fixture. "guard-boundary-only" is not "task"/"batch", so
+# dispatch_lib.bb's run-dispatch! fails closed with its own
+# INVALID_RECEIVE_MODE error instead of ever exec'ing anything - proof
+# control reached dispatch without letting a real exec touch the live repo.
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\tguard-boundary-only\n' "$CODER_WT" \
   > "$ROOT/.swarmforge/roles.tsv"
 printf 'swarm_name\tprimary\nswarm_mode\tautonomous\n' > "$ROOT/.swarmforge/swarm-identity"
 
@@ -111,9 +120,95 @@ git -C "$CODER_WT" merge -q main
 
 drop_handoff "$INBOX/in_process" "resume2" "BL-000-demo" "git_handoff"
 run_ready
-[[ $RC -eq 0 ]] || fail "01: expected the turn to proceed after merging main, rc=$RC err=$ERR"
-echo "$OUT" | grep -q "^TASK:" || fail "01: expected the claim to print, got: $OUT"
-[[ -z "$ERR" ]] || fail "01: a fresh worktree must emit no staleness warning, got: $ERR"
-pass "01: a role that has merged the amendment reads it and the turn proceeds untouched"
+# BL-640 D1 (architect bounce backlog/evidence/BL-640-...-bounce-20260818.md):
+# do NOT assert on what ready_for_next_task.sh itself prints/returns - once
+# the guard passes a fresh worktree through, dispatch execs that REAL
+# script against the REAL repo (see the roles.tsv comment above), so its
+# output belongs to whatever this machine's live coder mailbox happens to
+# hold, not this fixture. Scenario 01's contract - a fresh worktree is
+# never refused by THIS guard - is fully proven by two guard-attributable
+# signals: no STALE_REFERENCE_ELABORATION marker (the guard's own refusal
+# signature), and INVALID_RECEIVE_MODE (dispatch's closed-failure path,
+# reached only once the guard has handed the turn onward).
+echo "$ERR" | grep -q "STALE_REFERENCE_ELABORATION" \
+  && fail "01: a fresh worktree must never be refused by the guard, got: $ERR"
+echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+  || fail "01: expected control to reach dispatch after the guard passed through, got rc=$RC err=$ERR"
+pass "01: a role that has merged the amendment is never refused by the guard, and the turn is handed to dispatch"
+
+# ── scenario 02 (origin-ahead variant, D2): main-reference-shas must read
+# whichever of `main`/`origin/main` is actually ahead, not local `main`
+# alone. QA lands its approved commit by pushing HEAD:main straight to
+# origin (QA's own worktree can't fast-forward the shared local main,
+# checked out elsewhere), so local main can lag origin/main with a landed
+# reference/ amendment. A worktree byte-identical to (stale) local main
+# must still be caught, because origin/main - the actually published tip -
+# has moved further. Self-contained second fixture; independent of the
+# scenario 01/02 state above.
+ORIGIN_ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
+register_tmp_dir ORIGIN_ROOT2
+git init -q --bare -b main "$ORIGIN_ROOT2"
+
+ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
+register_tmp_dir ROOT2
+git -C "$ROOT2" init -q -b main
+mkdir -p "$ROOT2/swarmforge/constitution/articles/reference"
+echo "OLD: check ancestry" > "$ROOT2/$REF_REL"
+printf '.swarmforge/\n' > "$ROOT2/.gitignore"
+git -C "$ROOT2" add "$REF_REL" .gitignore
+git -C "$ROOT2" -c user.email=t@t -c user.name=t commit -q -m base
+git -C "$ROOT2" remote add origin "$ORIGIN_ROOT2"
+git -C "$ROOT2" push -q origin main
+
+git -C "$ROOT2" branch swarmforge-coder
+
+# A second clone stands in for QA's own worktree: it pushes the amendment
+# straight to origin's main, exactly as QA does - ROOT2's own local `main`
+# never sees it.
+QA_CLONE="$(cd "$(mktemp -d)" && pwd -P)"
+register_tmp_dir QA_CLONE
+git clone -q "$ORIGIN_ROOT2" "$QA_CLONE"
+echo "NEW: verify content is gone, never ancestry" > "$QA_CLONE/$REF_REL"
+git -C "$QA_CLONE" add "$REF_REL"
+git -C "$QA_CLONE" -c user.email=t@t -c user.name=t commit -q -m "amend reference/ rule (landed via QA's push-to-origin path)"
+git -C "$QA_CLONE" push -q origin main
+
+git -C "$ROOT2" fetch -q origin
+[[ "$(git -C "$ROOT2" rev-parse main)" != "$(git -C "$ROOT2" rev-parse origin/main)" ]] \
+  || fail "02-origin-ahead: fixture sanity - local main and origin/main must have diverged"
+
+CODER_WT2="$ROOT2/.worktrees/coder"
+git -C "$ROOT2" worktree add -q "$CODER_WT2" swarmforge-coder
+# The worktree's own copy matches local main (OLD) byte-for-byte - the
+# defect this covers is exactly that a naive local-main-only comparison
+# would call this "fresh".
+[[ "$(cat "$CODER_WT2/$REF_REL")" == "OLD: check ancestry" ]] \
+  || fail "02-origin-ahead: fixture sanity - worktree should still carry the pre-amendment text"
+
+mkdir -p "$ROOT2/.swarmforge" \
+         "$CODER_WT2/.swarmforge/handoffs/inbox/new" \
+         "$CODER_WT2/.swarmforge/handoffs/inbox/in_process" \
+         "$CODER_WT2/.swarmforge/handoffs/inbox/completed"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\tguard-boundary-only\n' "$CODER_WT2" \
+  > "$ROOT2/.swarmforge/roles.tsv"
+printf 'swarm_name\tprimary\nswarm_mode\tautonomous\n' > "$ROOT2/.swarmforge/swarm-identity"
+
+INBOX2="$CODER_WT2/.swarmforge/handoffs/inbox"
+COMMIT2="$(git -C "$ROOT2" rev-parse --short=10 HEAD)"
+printf 'id: resume3\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 00\ntype: git_handoff\ntask: BL-000-demo\ncommit: %s\n\nbody for resume3\n' \
+  "$COMMIT2" > "$INBOX2/in_process/00_resume3.handoff"
+
+set +e
+OUT2="$(cd "$CODER_WT2" && SWARMFORGE_ROLE=coder bb "$READY" 2>"$ROOT2/stderr.txt")"
+RC2=$?
+set -e
+ERR2="$(cat "$ROOT2/stderr.txt")"
+
+[[ $RC2 -ne 0 ]] || fail "02-origin-ahead: expected a refusal, rc=0 out=$OUT2"
+echo "$ERR2" | grep -q "STALE_REFERENCE_ELABORATION" \
+  || fail "02-origin-ahead: expected a staleness report even though the worktree matches local main, got: $ERR2"
+echo "$ERR2" | grep -q "$REF_REL" \
+  || fail "02-origin-ahead: the report must name the stale file, got: $ERR2"
+pass "02: a worktree byte-identical to local main but stale relative to a further-ahead origin/main still refuses (D2)"
 
 echo "ALL PASS"
