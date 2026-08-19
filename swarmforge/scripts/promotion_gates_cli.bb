@@ -72,7 +72,8 @@
                  :held? held?
                  :active-count (promotion-gates-lib/active-count root)
                  :max-depth max-depth
-                 :active-epics (promotion-gates-lib/active-epics root)})]
+                 :active-epics (promotion-gates-lib/active-epics root)
+                 :done-ids (promotion-gates-lib/done-ids root)})]
     (print-advisory! (:advisory result))
     (if (:ok result)
       (do (println "ALLOW") (System/exit 0))
@@ -84,12 +85,14 @@
         active-count (promotion-gates-lib/active-count root)
         active-epics (promotion-gates-lib/active-epics root)
         epic-priority-index (promotion-gates-lib/epic-priority-index root)
+        done-id-set (promotion-gates-lib/done-ids root)
         eligible (keep (fn [f]
                           (let [content (slurp f)
                                 result (promotion-gates-lib/evaluate
                                         {:content content :held? false
                                          :active-count active-count :max-depth max-depth
-                                         :active-epics active-epics})]
+                                         :active-epics active-epics
+                                         :done-ids done-id-set})]
                             (when (:ok result) {:file f :content content :advisory (:advisory result)})))
                         files)
         winner (promotion-gates-lib/rank-candidates eligible epic-priority-index)]
