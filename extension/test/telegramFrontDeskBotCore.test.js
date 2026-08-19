@@ -10,6 +10,8 @@ const {
   resolveReplyTopicId,
   resolveReplyDelivery,
   decideUpdateAction,
+  annotateRoutedMediaText,
+  formatDropAuditLine,
   pollAndForward,
   decideCursorBridgeExclusion,
   parseNextSseRecord,
@@ -71,6 +73,23 @@ function mkVoiceUpdate({ fromId, topicId, chatId, fileId, updateId } = {}) {
   return {
     update_id: updateId ?? 1,
     message: { message_id: 1, chat: { id: chatId ?? 1 }, from: { id: fromId }, message_thread_id: topicId, voice: { file_id: fileId ?? 'file-1', duration: 3 } },
+  };
+}
+
+// BL-620: a photo update - the incident shape (photo + caption directive
+// from the principal). `caption` carries the words; `text` is absent on a
+// media message.
+function mkPhotoUpdate({ fromId, topicId, caption, chatId, updateId } = {}) {
+  return {
+    update_id: updateId ?? 1,
+    message: {
+      message_id: 1,
+      chat: { id: chatId ?? 1 },
+      from: { id: fromId },
+      message_thread_id: topicId,
+      photo: [{ file_id: 'photo-1', width: 90, height: 60 }],
+      ...(caption === undefined ? {} : { caption }),
+    },
   };
 }
 
@@ -6051,4 +6070,135 @@ test('cursor bridge: a callback_query in a bridge-owned topic is an explicit dro
   assert.equal(result.dropped, 1);
   assert.equal(result.posted, 0);
   assert.equal(result.failed, 0);
+});
+
+
+// ── BL-620: photo captions route like text, drops are audited ────────────
+
+test('BL-620: messageTextOf reads a photo caption when text is absent', () => {
+  const update = mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'the caption directive' });
+  assert.equal(messageTextOf(update), 'the caption directive');
+});
+
+test('BL-620: messageTextOf still prefers text when both are somehow present', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'the text' });
+  update.message.caption = 'the caption';
+  assert.equal(messageTextOf(update), 'the text');
+});
+
+test('BL-620: a principal photo caption decides EXACTLY like the identical plain text (the incident shape)', () => {
+  const subjectFor = (topicId) => (topicId === 7 ? 'SUP-1' : undefined);
+  const asPhoto = decideUpdateAction(mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'usage screenshot: act on this' }), PRINCIPAL_ID, '1', subjectFor);
+  const asText = decideUpdateAction(mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'usage screenshot: act on this' }), PRINCIPAL_ID, '1', subjectFor);
+  assert.deepEqual(asPhoto, asText);
+  assert.notEqual(asPhoto.action, 'drop');
+});
+
+test('BL-620: a captionless photo drops with the distinct media-no-caption reason, never a silent no-text', () => {
+  const decision = decideUpdateAction(mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'media-no-caption' });
+});
+
+test('BL-620: an EMPTY-string caption behaves identically to an absent one (media-no-caption)', () => {
+  const decision = decideUpdateAction(mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: '' }), PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'media-no-caption' });
+});
+
+test('BL-620: a plain textless non-media message still drops as no-text (the reason stays distinct)', () => {
+  const decision = decideUpdateAction(mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'no-text' });
+});
+
+test('BL-620 regression: a voice note is never classified media-no-caption (voice pre-emption vocabulary untouched)', () => {
+  const decision = decideUpdateAction(mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), PRINCIPAL_ID, '1', () => undefined);
+  assert.equal(decision.action, 'drop');
+  assert.equal(decision.reason, 'no-text');
+});
+
+test('BL-620: annotateRoutedMediaText marks a photo-sourced routing as image-not-read, and leaves plain text alone', () => {
+  const photo = mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'the caption' });
+  const annotated = annotateRoutedMediaText('the caption', photo);
+  assert.notEqual(annotated, 'the caption');
+  assert.match(annotated, /image.*not read/i);
+  assert.ok(annotated.startsWith('the caption'));
+  const text = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'plain' });
+  assert.equal(annotateRoutedMediaText('plain', text), 'plain');
+});
+
+test('BL-620: formatDropAuditLine is one bounded line naming update id and reason, never message content', () => {
+  const line = formatDropAuditLine(41, 'media-no-caption');
+  assert.equal(line.includes('\n'), false);
+  assert.match(line, /41/);
+  assert.match(line, /media-no-caption/);
+});
+
+test('BL-620: every dropped update in a poll cycle logs exactly one audit line; posted updates log none', async () => {
+  const auditLines = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'accepted' }), update_id: 10 },
+        { ...mkUpdate({ fromId: 999, topicId: 7, text: 'stranger' }), update_id: 11 },
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, chatId: 2, text: 'foreign chat' }), update_id: 12 },
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), update_id: 13 },
+        mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, updateId: 14 }),
+      ],
+    }),
+    postToBridge: async () => true,
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    logDropAudit: (line) => auditLines.push(line),
+  });
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 4);
+  assert.equal(auditLines.length, 4, `expected one line per drop, got: ${JSON.stringify(auditLines)}`);
+  assert.match(auditLines[0], /11/);
+  assert.match(auditLines[0], /not-principal/);
+  assert.match(auditLines[1], /12/);
+  assert.match(auditLines[1], /not-my-chat/);
+  assert.match(auditLines[2], /13/);
+  assert.match(auditLines[2], /no-text/);
+  assert.match(auditLines[3], /14/);
+  assert.match(auditLines[3], /media-no-caption/);
+  // BL-389 offset semantics unchanged: drops never block the offset.
+  assert.equal(result.nextOffset, 15);
+});
+
+test('BL-620: the audit adapter is optional - a fixture without it drops exactly as before', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, updateId: 21 })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+  });
+  assert.equal(result.dropped, 1);
+  assert.equal(result.nextOffset, 22);
+});
+
+test('BL-620: a routed photo caption posts with the image-not-read annotation; the same words as text post unannotated', async () => {
+  const posted = [];
+  const adapters = {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [
+        mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'route these words', updateId: 31 }),
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'route these words' }), update_id: 32 },
+      ],
+    }),
+    postToBridge: async (subjectId, text) => {
+      posted.push(text);
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+  };
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.equal(posted.length, 2);
+  assert.match(posted[0], /^route these words/);
+  assert.match(posted[0], /image.*not read/i);
+  assert.equal(posted[1], 'route these words');
 });
