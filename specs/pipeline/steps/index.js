@@ -482,7 +482,8 @@ const DOMAINS = [
   require('./bl930OrphanJanitorTmpOnboarderSteps'),
   require('./bl929LiveScreenPackLayoutSteps'),
   require('./bl931RotatePackGateSteps'),
-  require('./bl934HealWrapperRmFalsePositiveSteps')
+  require('./bl934HealWrapperRmFalsePositiveSteps'),
+  require('./bl932SharedHeavyTimeoutSteps')
 ];
 
 function registerSteps(registry) {
