@@ -198,3 +198,6 @@ notes: |
   ONLY, and leave `conf-rotation-router?`, `resolve-rotation-router-mode?` and
   every other call site untouched. The out-of-scope refactor below is now a
   six-site closure rather than four - more reason to keep it in its own ticket.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: bbb14382d8, evidence: backlog/evidence/BL-571-sequential-rotation-dormant-parity-bounce-20260819.md }
