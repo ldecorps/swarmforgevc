@@ -26,10 +26,27 @@
 (def review-roles
   "The four forward-chain review roles this gate covers (approval_context
    scope decision #1). coder is absent - a fresh task has nothing 'received'
-   yet to compare against. QA is absent - its send paths (approval to
-   coordinator, integration on main) are excluded this slice to avoid
-   entangling integration mechanics."
+   yet to compare against. QA is absent from THIS set - its forward
+   direction is the approval hop to the coordinator, which
+   required_stages_lib/routes-forward? cannot see (canonical-order has no
+   coordinator entry), so it is gated by qa-approval-hop? below instead
+   (BL-950; BL-806's original exclusion of both QA send paths was that
+   slice's approved scope, taken back for the approval hop only). QA's
+   OTHER send path - integrating on main and pushing origin - stays
+   ungated, per BL-950's own out-of-scope line."
   #{"cleaner" "architect" "hardender" "documenter"})
+
+(defn qa-approval-hop?
+  "BL-950: QA's approval git_handoff to the coordinator - the last hop
+   before a ticket closes, and the one BL-806 excluded. BL-585 went through
+   it 4m09s after dequeue naming the documenter's own commit, leaving no
+   evidence file anywhere in history - the identical BL-536 shape this gate
+   exists for, one hop past where it reached. Direction needs its own
+   predicate because routes-forward?'s canonical-order is the six pipeline
+   stages and never contains coordinator. ONLY QA gets this hop: a review
+   role sending to the coordinator is not an approval and stays ungated."
+  [sender recipient]
+  (and (= sender "QA") (= recipient "coordinator")))
 
 (defn- received-parcel-for-task
   "The newest git_handoff parcel in role-info's in_process box whose task
@@ -57,8 +74,9 @@
 
 (defn blocked?
   "Pure decision (BL-654 property-tested): true only when EVERY one of -
-   sender is a review role, type is git_handoff, exactly one recipient, the
-   send moves forward (required_stages_lib/routes-forward?), no
+   type is git_handoff, exactly one recipient, the send moves forward
+   (a review role via required_stages_lib/routes-forward?, or QA's
+   approval hop to the coordinator via qa-approval-hop? - BL-950), no
    reroute_reason marks a deliberate detour, and the outgoing commit equals
    received-commit - holds. received-commit is the caller's own
    received-commit-for-task lookup (or nil on a fs miss, which can never
@@ -67,9 +85,10 @@
   [{:keys [type sender recipients task-name commit reroute-reason received-commit]}]
   (boolean
    (and (= type "git_handoff")
-        (review-roles sender)
         (= 1 (count recipients))
-        (required-stages-lib/routes-forward? sender (first recipients))
+        (or (and (review-roles sender)
+                 (required-stages-lib/routes-forward? sender (first recipients)))
+            (qa-approval-hop? sender (first recipients)))
         (str/blank? reroute-reason)
         (not (str/blank? task-name))
         (not (str/blank? commit))
