@@ -8,7 +8,7 @@ severity: medium
 priority: 113
 direction: swarm-surfaced
 depends_on: [BL-537]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "Under every rotation value that means single-resident, ensure never respawns a role the launcher deliberately left dormant."
@@ -22,11 +22,11 @@ source: |
   the architect worktree) and confirmed BL-530 neither introduces nor worsens it.
 
   Specifier verified the mismatch directly on `main` before speccing:
-    - swarmforge/scripts/swarmforge.sh:700 (is_sequential_dormant) —
+    - swarmforge/scripts/swarmforge.sh:709 (is_sequential_dormant) —
       `[[ "$ROTATION_MODE" == "sequential" || "$ROTATION_MODE" == "router" ]]`
-    - swarmforge/scripts/mono_router_lib.bb:14 (conf-rotation-router?) —
+    - swarmforge/scripts/mono_router_lib.bb:18 (conf-rotation-router?) —
       regex `(?m)^(?:config\s+)?rotation\s+router\b`, router only
-    - swarmforge/scripts/swarm_ensure.bb:119 (rotation-router-mode?) — ORs the
+    - swarmforge/scripts/swarm_ensure.bb:159 (rotation-router-mode?) — ORs the
       two router-only predicates
     - swarmforge/packs/mono-rotate.conf is the one shipped pack declaring
       `config rotation sequential`
@@ -149,3 +149,52 @@ notes: |
   could not be kept: it was also tearing down healthy classic-pack sessions.
   The fix must come from the DECLARED signal, never from inferring topology by
   observing which sessions happen to exist.
+
+  ## Re-read after BL-537 landed (specifier, 2026-08-19)
+
+  BL-537 is in `backlog/done/`, so this ticket's `depends_on` is satisfied and
+  it is cleared to run. Re-verified on `main` that the defect is still live and
+  unchanged in substance: `is_sequential_dormant` still accepts
+  `sequential|router` (swarmforge.sh:709) while BOTH library predicates remain
+  router-only - `conf-rotation-router?` regex `rotation\s+router\b`
+  (mono_router_lib.bb:18) and `rotation-router-from-identity?` `(= "router" ...)`
+  (mono_router_lib.bb:36). The fix and all three scenarios stand as written.
+
+  Four things MOVED under this ticket's feet. Read these before starting.
+
+  1. `ensure-role!` moved, exactly as this ticket warned it might. The
+     `router?` branch in `run-ensure` (swarm_ensure.bb:726) no longer calls
+     `ensure-role!`; BL-537 introduced `ensure-mono-router-role!`
+     (swarm_ensure.bb:457) and dispatches there instead. Widening the predicate
+     therefore routes `sequential` packs into that NEW function, not the old
+     one. That is the correct destination - it is the same topology - but the
+     branch now does strictly more than it did when this ticket was written.
+
+  2. Scenario 01's fixture now needs a live resident, or it fails for the wrong
+     reason. `ensure-mono-router-role!`'s `:dormant-ok` branch is gated by
+     BL-537's `dormant-rotate-viable?`, which demands BOTH a live resident pane
+     AND the rotate-target launch script on disk. A dormant role failing either
+     is reported `:failed`, NOT `:dormant`. So the fixture backing "the five
+     middle pipeline roles are reported DORMANT" must stand up a live resident
+     pane and a launch script per middle role. A fixture that omits either will
+     show scenario 01 red even with a correct predicate - do not chase the
+     predicate when that happens.
+
+  3. There is now a FIFTH hand-copy of the identity-or-conf pair, in
+     `babysitter_check.bb:106-107`. It postdates this ticket and was not in the
+     out-of-scope list below. Same router-only gap; still out of scope here.
+
+  4. BL-931 added `resolve-rotation-router-mode?` (mono_router_lib.bb:41) and it
+     is NOT the consolidation its docstring reads like. It did not replace the
+     hand-copies - `swarm_ensure.bb`, `swarm_status.bb`, `handoffd.bb` and
+     `babysitter_check.bb` each still carry their own - it added one more
+     resolution, whose only production caller is `handoff_lib.bb:814`
+     (`rotate-resident-to!`). Do NOT widen it in this parcel: its caller is the
+     rotate path, which is the same behavior-change hazard the ROTATE_HOME
+     constraint above fences off, and it needs its own spec and tests.
+
+  Scope is unchanged by all of the above: add `single-resident-rotation?` to
+  `mono_router_lib.bb`, consume it in `swarm_ensure.bb`'s `rotation-router-mode?`
+  ONLY, and leave `conf-rotation-router?`, `resolve-rotation-router-mode?` and
+  every other call site untouched. The out-of-scope refactor below is now a
+  six-site closure rather than four - more reason to keep it in its own ticket.
