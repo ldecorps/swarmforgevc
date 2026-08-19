@@ -1,6 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-931: the resident-invoked rotate
+**Last Updated:** August 19, 2026 (BL-932: the property lane's own
+20000ms `testTimeout` default (`extension/vitest.properties.config.mjs`)
+covers ALL of a property's `numRuns` combined, not one run — a distinction
+`onboarderLauncherPidGuard.property.test.js` never accounted for.
+Fifteen runs each `spawnSync` the real `launch_onboarder.sh` with an inner
+`{ timeout: 15000 }` — a single run's inner allowance alone is 75% of the
+whole test's budget — but the `test(...)` call carried no third argument,
+so all fifteen runs shared the lane-wide default and the property timed
+out against the lane rather than against the code under test, exactly the
+failure BL-871 named ("the verdict depends on something other than the
+code under test"); QA hit it three times across two tickets' passes. Fix
+is BL-871's own established treatment (already adopted by
+`bl760DuplicateChainGuard`, `bl787NamedTunnelInvariants`, and
+`bl797MutationGateProbeCrashFallback`'s property tests): pass an explicit
+outer timeout as `test()`'s third argument. The shared
+`SUBPROCESS_HEAVY_TIMEOUT_MS` (240000) constant, previously hand-copied
+into each of those three files independently, moves to one new module,
+`extension/test/helpers/subprocessHeavyTimeout.js`, and all four adopters
+(the three existing plus the newly-fixed one) import it instead of
+declaring their own copy — adopting a fourth file by copying the constant
+again was the wrong direction. A second new helper,
+`extension/test/helpers/sharedHeavyTimeoutGuard.js`, holds the
+source-text-based checks (never executed/imported-and-run against the
+target files) that distinguish the OUTER `test()` third argument from the
+INNER `spawnSync({ timeout })` option — the two knobs a naive `grep
+timeout` conflates, since the inner one alone makes the file look already
+covered. Both the lane-wide 20000ms default and BL-871's own
+`dangerouslyIgnoreUnhandledErrors` gate are untouched; not a general sweep
+of the roughly dozen other property files that spawn subprocesses without
+an outer override, since only this one had an actual failure report
+behind it. Hardener live-verified all five affected property files
+(previously-failing `onboarderLauncherPidGuard` now passes at 66.8s; the
+three existing adopters and the new invariants test still pass) and ran
+BL-113 Gherkin mutation on the file's one Scenario Outline (2/2 killed).);
+Previously August 19, 2026 (BL-931: the resident-invoked rotate
 (`rotate_to_role.sh` → `respawn-as!` → `rotate-resident-to!`) never asked
 whether the pack it was running under rotates at all before addressing
 `mono-router-resident-session` ("first non-coordinator `roles.tsv` row") —
