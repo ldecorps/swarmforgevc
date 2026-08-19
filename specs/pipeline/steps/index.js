@@ -498,7 +498,8 @@ const DOMAINS = [
   require('./bl939TwoPackSmokeCheckDropsCoordinatorWindowSteps'),
   require('./bl817FixtureTmuxServersReapedSteps'),
   require('./bl914PerTestTimeoutSteps'),
-  require('./bl924HotSyncedCopiesDoNotBlockMergeSteps')
+  require('./bl924HotSyncedCopiesDoNotBlockMergeSteps'),
+  require('./bl631BabysitterDetectsPipelineCodeOnMainSteps')
 ];
 
 function registerSteps(registry) {

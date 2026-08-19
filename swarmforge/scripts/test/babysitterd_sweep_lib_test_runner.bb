@@ -299,6 +299,57 @@
                     (str/includes? msg "low mem")
                     (str/includes? msg "dead letters"))))
 
+;; ── check-pipeline-code-on-main (BL-631) ────────────────────────────────────
+
+(assert= "no offending commits, ancestry resolvable, produces zero findings"
+         []
+         (sw/check-pipeline-code-on-main {:offending-commits [] :ancestry-unavailable? false}))
+
+(assert-true "one offending commit produces one CRIT finding, keyed by its sha"
+             (let [fs (sw/check-pipeline-code-on-main
+                       {:offending-commits [{:sha "4851901ed" :subject "coder: merge BL-590 fix" :paths ["extension/src/foo.ts"]}]
+                        :ancestry-unavailable? false})]
+               (and (= 1 (count fs))
+                    (= "CRIT" (:severity (first fs)))
+                    (= "pipeline-code-on-main-4851901ed" (:key (first fs)))
+                    (str/includes? (:message (first fs)) "4851901ed")
+                    (str/includes? (:message (first fs)) "coder: merge BL-590 fix")
+                    (str/includes? (:message (first fs)) "extension/src/foo.ts"))))
+
+(assert-true "each offending commit gets its OWN key - no role, path, or timing is exempt (invariant 1), and dedup can distinguish them (scenario 04)"
+             (let [fs (sw/check-pipeline-code-on-main
+                       {:offending-commits [{:sha "aaa1111111" :subject "s1" :paths ["extension/src/a.ts"]}
+                                             {:sha "bbb2222222" :subject "s2" :paths ["specs/pipeline/steps/b.js"]}]
+                        :ancestry-unavailable? false})
+                   keys-found (set (map :key fs))]
+               (and (= 2 (count fs))
+                    (contains? keys-found "pipeline-code-on-main-aaa1111111")
+                    (contains? keys-found "pipeline-code-on-main-bbb2222222"))))
+
+;; invariant 3: an unresolvable swarmforge-QA ref reports UNAVAILABLE, never
+;; a silent all-clear - even when offending-commits happens to be empty
+;; (the gatherer could not have populated it correctly anyway).
+(assert-true "ancestry-unavailable? true reports UNAVAILABLE, never a clean sweep"
+             (let [fs (sw/check-pipeline-code-on-main {:offending-commits [] :ancestry-unavailable? true})]
+               (and (= 1 (count fs))
+                    (= "UNAVAILABLE" (:severity (first fs)))
+                    (= "pipeline-code-on-main" (:key (first fs))))))
+
+(assert-true "ancestry-unavailable? wins over any offending-commits data - never both an UNAVAILABLE and stale CRIT findings"
+             (let [fs (sw/check-pipeline-code-on-main
+                       {:offending-commits [{:sha "cccc333333" :subject "s" :paths ["extension/src/x.ts"]}]
+                        :ancestry-unavailable? true})]
+               (and (= 1 (count fs)) (= "UNAVAILABLE" (:severity (first fs))))))
+
+;; nudge-eligible?: a CRIT pipeline-code-on-main finding rides the SAME rule
+;; as every other CRIT finding (scenario 03) - no special-casing needed, but
+;; pinned directly so a future change to nudge-eligible? cannot silently
+;; exempt this check without failing here too.
+(assert-true "a pipeline-code-on-main CRIT finding is nudge-eligible on the standard CRIT rule"
+             (sw/nudge-eligible? {:key "pipeline-code-on-main-4851901ed" :severity "CRIT"}))
+(assert-true "a pipeline-code-on-main UNAVAILABLE finding is NOT nudge-eligible (matches every other UNAVAILABLE check)"
+             (not (sw/nudge-eligible? {:key "pipeline-code-on-main" :severity "UNAVAILABLE"})))
+
 ;; ── assemble-findings: end-to-end composition + streak threading ───────────
 (let [green-snapshot
       {:now-ms 1000000
@@ -337,6 +388,35 @@
                  (every? keys-found ["proc-coder" "handoffd" "failed-box" "stuck-p1" "claim-risk-hardener"]))
     (assert-true "second consecutive idle sweep also raises swarm-starved among the rest"
                  (contains? keys-found "swarm-starved"))))
+
+;; BL-631 required_wiring: proves the pure check actually reaches
+;; assemble-findings's own vector - a gather fn and a pure check that are
+;; both unit-tested but never wired into THIS function leave the detection
+;; at zero on the real 5-minute tick (the BL-419 shape this entry guards
+;; against). An otherwise-green snapshot carrying :offending-commits alone
+;; must surface the CRIT finding.
+(let [snapshot-with-offender
+      (merge {:now-ms 1000000 :roles [] :handoffd-alive? true :handoffd-supervisor-alive? true
+              :handoffd-log-age-secs 5 :handoffd-max-age-secs 300 :failed-count 0 :stuck-parcels []
+              :available-mb 4000 :mem-floor-mb 1500 :claim-risks [] :rotate-note nil
+              :pause {:active? false :until-ms nil} :active-ticket-count 0 :any-pane-busy? false
+              :prev-streak 0 :pending-claims [] :in-process-claims []}
+             {:offending-commits [{:sha "4851901ed" :subject "coder: merge BL-590 fix" :paths ["extension/src/foo.ts"]}]
+              :ancestry-unavailable? false})]
+  (let [{:keys [findings]} (sw/assemble-findings snapshot-with-offender)]
+    (assert-true "an offending commit reaches assemble-findings's own output as a CRIT finding"
+                 (some #(= "pipeline-code-on-main-4851901ed" (:key %)) findings))))
+
+(let [snapshot-ancestry-unavailable
+      (merge {:now-ms 1000000 :roles [] :handoffd-alive? true :handoffd-supervisor-alive? true
+              :handoffd-log-age-secs 5 :handoffd-max-age-secs 300 :failed-count 0 :stuck-parcels []
+              :available-mb 4000 :mem-floor-mb 1500 :claim-risks [] :rotate-note nil
+              :pause {:active? false :until-ms nil} :active-ticket-count 0 :any-pane-busy? false
+              :prev-streak 0 :pending-claims [] :in-process-claims []}
+             {:offending-commits [] :ancestry-unavailable? true})]
+  (let [{:keys [findings]} (sw/assemble-findings snapshot-ancestry-unavailable)]
+    (assert-true "an unresolvable swarmforge-QA ref reaches assemble-findings's own output as UNAVAILABLE, never a silent all-clear"
+                 (some #(and (= "pipeline-code-on-main" (:key %)) (= "UNAVAILABLE" (:severity %))) findings))))
 
 (when (seq @failures)
   (binding [*out* *err*]

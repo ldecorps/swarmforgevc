@@ -225,6 +225,36 @@
      :message (str "pause untilMs expired " (quot (- (long now-ms) (long until-ms)) 60000)
                    "min ago but control-pause.json still active — auto-resume sweep failed, swarm sleeping past its window")}))
 
+;; ── check N: pipeline-code-on-main (BL-631) ─────────────────────────────────
+;; Detects pipeline code landing on `main` outside QA's own integration path
+;; (Article 4.2/BL-247) - the BL-590 post-mortem gap: nothing errored, and
+;; nothing told anyone, when an entire pipeline pass ran in the master
+;; checkout. This fn is pure: the gatherer (babysitter_check.bb, impure)
+;; already resolved which commits are reachable from a main ref, NOT an
+;; ancestor of swarmforge-QA (via is_qa_ancestor.sh, the ONE shared
+;; predicate - BL-925 invariant 2), and touch a QA-exclusive path read at
+;; runtime from BL-632's own check_pipeline_code_on_main.sh --list-paths
+;; (never restated here - invariant 2) - merge commits diffed with
+;; `git diff-tree -m --first-parent`, never plain `git show`, which is
+;; blind to a merge's own content (BL-590's f8dc07963: 0 files plain, 13
+;; via --first-parent). This fn only classifies what it is handed.
+
+(defn check-pipeline-code-on-main
+  "offending-commits: seq of {:sha :subject :paths [...]} the gatherer
+   already resolved as offending. ancestry-unavailable?: true when
+   swarmforge-QA could not be resolved at all this sweep - fails CLOSED to
+   an UNAVAILABLE finding, never a silent all-clear (invariant 3)."
+  [{:keys [offending-commits ancestry-unavailable?]}]
+  (if ancestry-unavailable?
+    [{:key "pipeline-code-on-main" :severity "UNAVAILABLE"
+      :message "pipeline-code-on-main check unavailable this sweep - the swarmforge-QA ref could not be resolved (fails closed, never reads as clean)"}]
+    (mapv (fn [{:keys [sha subject paths]}]
+            {:key (str "pipeline-code-on-main-" sha)
+             :severity "CRIT"
+             :message (str "pipeline code landed on main outside QA (Article 4.2/BL-247): "
+                           sha " \"" subject "\" touches " (str/join ", " paths))})
+          (or offending-commits []))))
+
 ;; ── nudge eligibility (scenario 13) ──────────────────────────────────────────
 
 (defn nudge-eligible?
@@ -273,14 +303,15 @@
 ;; :handoffd-max-age-secs, :failed-count, :stuck-parcels, :available-mb
 ;; :mem-floor-mb, :claim-risks (pre-scanned assessments), :rotate-note (or nil),
 ;; :pause {:active? :until-ms}, :now-ms, :active-ticket-count :any-pane-busy?
-;; :prev-streak :pending-claims :in-process-claims :overdue-threshold-ms.
+;; :prev-streak :pending-claims :in-process-claims :overdue-threshold-ms,
+;; :offending-commits :ancestry-unavailable? (BL-631, check-pipeline-code-on-main).
 
 (defn assemble-findings
   [{:keys [roles handoffd-alive? handoffd-supervisor-alive? handoffd-log-age-secs
            handoffd-max-age-secs failed-count stuck-parcels available-mb mem-floor-mb
            claim-risks rotate-note pause now-ms active-ticket-count any-pane-busy?
            prev-streak pending-claims in-process-claims overdue-threshold-ms
-           pending-max-age-min]}]
+           pending-max-age-min offending-commits ancestry-unavailable?]}]
   (let [paused? (boolean (:active? pause))
         role-findings (mapcat (fn [role]
                                  (remove nil?
@@ -311,11 +342,15 @@
                                                       :now-ms now-ms
                                                       :until-ms (:until-ms pause)
                                                       :overdue-threshold-ms overdue-threshold-ms})
+        pipeline-code-on-main-findings (check-pipeline-code-on-main
+                                        {:offending-commits offending-commits
+                                         :ancestry-unavailable? ancestry-unavailable?})
         findings (vec (remove nil?
                               (concat role-findings
                                       [handoffd-finding dead-letter-finding]
                                       stuck-findings
                                       [memory-finding]
                                       claim-findings
-                                      [rotate-finding starved-finding resume-overdue-finding])))]
+                                      [rotate-finding starved-finding resume-overdue-finding]
+                                      pipeline-code-on-main-findings)))]
     {:findings findings :new-streak new-streak}))
