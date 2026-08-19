@@ -732,19 +732,32 @@
 (defn control-plane-report!
   "Re-probe after the repair loop ran and report honestly: FIXED only when
    the server actually answers again (open incidents are then resolved),
-   FAILED with the decision's reason when it does not."
+   FAILED with the decision's reason when it does not.
+
+   BL-958 D1: under :halt no recovery ran at all - recreation is impossible
+   (no persisted launch scripts), so report FAILED carrying the escalation
+   policy's own next action and leave the open incident UNTOUCHED. Resolving
+   an incident requires a recovery that actually restored roles, never
+   merely a tmux server that answers a probe."
   [{:keys [socket decision]}]
-  (let [after (control-plane-lib/probe-server! socket)]
-    (if (:responds? after)
-      (do (control-plane-lib/resolve-open-incidents!
-           (control-plane-lib/incidents-file state-dir)
-           (str (java.time.Instant/now)))
-          {:component "control-plane" :status :fixed
-           :action (str "control-plane-missing: " (:reason decision)
-                        "; tmux server restored")})
+  (if (= :halt (:action decision))
+    (let [policy (control-plane-lib/response-policy
+                  {:incident {:socket-path socket}
+                   :launch-scripts-present? false})]
       {:component "control-plane" :status :failed
        :action (str "control-plane-missing: " (:reason decision)
-                    "; tmux server still not responding")})))
+                    "; " (:next-action policy))})
+    (let [after (control-plane-lib/probe-server! socket)]
+      (if (:responds? after)
+        (do (control-plane-lib/resolve-open-incidents!
+             (control-plane-lib/incidents-file state-dir)
+             (str (java.time.Instant/now)))
+            {:component "control-plane" :status :fixed
+             :action (str "control-plane-missing: " (:reason decision)
+                          "; tmux server restored")})
+        {:component "control-plane" :status :failed
+         :action (str "control-plane-missing: " (:reason decision)
+                      "; tmux server still not responding")}))))
 
 (defn -main []
   (let [cp-state (control-plane-state)
@@ -776,7 +789,22 @@
         resident-session (some #(when (= :resident (mono-router-lib/classify-role ordered (:role %)))
                                    (:session %))
                                 rows)
-        role-results (if socket
+        ;; BL-958 D1: the recovery decision GATES the repair loop - under
+        ;; :halt (control plane missing, no persisted launch scripts) the
+        ;; per-role loop must not run at all: ensure-standing-role!'s
+        ;; create-session! would restart the bare tmux server, the re-probe
+        ;; would answer, and the report would claim FIXED while every role
+        ;; is dead - exactly invariant 2's forbidden half-alive state.
+        halt? (= :halt (get-in cp-state [:decision :action]))
+        role-results (cond
+                       halt?
+                       (vec (mapcat (fn [{:keys [role]}]
+                                      [{:component (str "agent:" role) :status :failed
+                                        :action "control plane missing and no persisted launch scripts exist; recreation skipped, see the control-plane row"}
+                                       {:component (str "rc:" role) :status :healthy}])
+                                    rows))
+
+                       socket
                        (vec (mapcat (fn [{:keys [role session] :as row}]
                                       (let [agent-result
                                             (if router?
@@ -793,6 +821,8 @@
                                             rc-result (ensure-rc-role! socket ordered role session)]
                                         [agent-result rc-result]))
                                     rows))
+
+                       :else
                        (vec (mapcat (fn [{:keys [role]}]
                                       (let [detail "no tmux socket found for this project root"]
                                         [{:component (str "agent:" role) :status :failed

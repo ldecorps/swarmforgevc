@@ -631,6 +631,57 @@ grep -q '"resolved"' "$ROOT/.swarmforge/incidents/control-plane.json" \
 pass "BL-958: control-plane loss is classified, recovered, reported, and its incident resolved"
 
 # ---------------------------------------------------------------------------
+# Extra (BL-958 D1, architect bounce pass 1): the SAME loss shape but with NO
+# persisted launch scripts — recovery-decision = :halt. Ensure must honor the
+# decision it computed: skip the per-role recreation loop entirely (the
+# stateful fake's server marker stays absent), report the control-plane row
+# FAILED naming the no-scripts reason plus the escalation's next action, keep
+# the open incident OPEN (resolution requires an actual recovery, not a bare
+# server answering), and report no role as repaired.
+# ---------------------------------------------------------------------------
+make_fixture
+rm -f "$ROOT/.swarmforge/launch/"*.sh
+printf 'swarmforge-coder\t123\n' > "$ROOT/.swarmforge/sessions.tsv"
+mkdir -p "$ROOT/.swarmforge/incidents"
+cat > "$ROOT/.swarmforge/incidents/control-plane.json" <<JSON
+[{"classification":"control-plane-missing","socket-path":"$ROOT/fake.sock","probe-output":"no server running","expected-sessions":["swarmforge-coder"],"observed-at":"2026-08-19T18:00:00Z","source":"handoffd-chase","status":"open"}]
+JSON
+SERVER_MARKER="$ROOT/server_started"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "new-session" ]]; then
+  touch "$SERVER_MARKER"
+  exit 0
+fi
+if [[ ! -f "$SERVER_MARKER" ]]; then
+  echo "no server running on \$2" >&2
+  exit 1
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q 'control-plane: FAILED' \
+  || fail "BL-958 D1: control-plane row not FAILED under :halt, got: $OUTPUT"
+echo "$OUTPUT" | grep -q 'no persisted launch scripts to respawn roles from' \
+  || fail "BL-958 D1: FAILED row does not name the no-scripts reason, got: $OUTPUT"
+echo "$OUTPUT" | grep -q 'relaunch the swarm' \
+  || fail "BL-958 D1: FAILED row does not surface the escalation next action, got: $OUTPUT"
+[[ -f "$SERVER_MARKER" ]] && fail "BL-958 D1: per-role recreation ran under :halt (tmux new-session restarted the server)"
+echo "$OUTPUT" | grep -q ': FIXED' && fail "BL-958 D1: something was reported repaired under :halt, got: $OUTPUT"
+grep -q '"open"' "$ROOT/.swarmforge/incidents/control-plane.json" \
+  || fail "BL-958 D1: the open incident did not remain open under :halt"
+grep -q '"resolved"' "$ROOT/.swarmforge/incidents/control-plane.json" \
+  && fail "BL-958 D1: the incident was resolved under :halt with every role dead"
+pass "BL-958 D1: :halt is honored - no recreation churn, FAILED with escalation, incident preserved"
+
+# ---------------------------------------------------------------------------
 # Extra (BL-537): a dormant rotate target whose own launch script is missing
 # must report FAILED, not DORMANT — rotate_to_role would hit "no-launch-script"
 # even though the resident (coder) is perfectly healthy. Never let "no
