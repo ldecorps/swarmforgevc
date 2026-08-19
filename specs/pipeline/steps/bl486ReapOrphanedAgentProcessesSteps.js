@@ -26,6 +26,7 @@ const DECISION_RUNNER = path.join(
   'orphan_agent_reapable_decision_acceptance_runner.bb'
 );
 const REAP_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'reap_orphan_agents.bb');
+const { track } = require('./lib/fixtureReaper');
 
 const FEATURE_NAME = 'the swarm auto-reaps orphaned SwarmForge agent processes, and never a live agent';
 
@@ -197,6 +198,9 @@ function registerSteps(registry) {
   registry.define(/^an old agent process whose pid is a member of the live control socket's tmux window set$/, (ctx) => {
     ctx.projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl486-project-'));
     fs.mkdirSync(path.join(ctx.projectRoot, '.swarmforge'), { recursive: true });
+    // BL-817: registered BEFORE the tmux server below is spawned, so even a
+    // crash mid-launch is covered.
+    track(ctx.projectRoot);
     ctx.fixtureSocket = path.join(ctx.projectRoot, '.swarmforge', 'fixture-tmux.sock');
     // A REAL, disposable tmux server whose one pane IS the remote-control-
     // tagged candidate process directly (no intermediate shell), so

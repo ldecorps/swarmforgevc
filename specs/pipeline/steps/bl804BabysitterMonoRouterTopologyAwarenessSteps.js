@@ -18,6 +18,7 @@ const { spawnSync, execFileSync } = require('node:child_process');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const CHECK_SH = path.join(SCRIPTS, 'babysitter_check.sh');
+const { track } = require('./lib/fixtureReaper');
 
 const FEATURE = 'BL-804 babysitter health sweep is mono-router topology aware';
 
@@ -176,7 +177,11 @@ function runSweep(ctx) {
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.defineScoped(/^a fixture project root with a \.swarmforge directory$/, (ctx) => {
-    ensureState(ctx).root = mkFixtureRoot();
+    const st = ensureState(ctx);
+    st.root = mkFixtureRoot();
+    // BL-817: registered BEFORE any tmux server is spawned (later, by
+    // startTmuxSessions), so even a crash mid-launch is covered.
+    track(st.root);
   }, FEATURE);
 
   registry.defineScoped(/^a roles\.tsv listing eight roles whose first non-coordinator session is the resident$/, (ctx) => {

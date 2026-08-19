@@ -1,6 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-923: the closing-ceremony packet's
+**Last Updated:** August 19, 2026 (BL-817: seven acceptance step-handler
+files started real, detached tmux servers as fixtures and tore them down
+only from a terminal `Then` step's hand-rolled `cleanup()` — a mutant
+failing an assertion early, or the runner receiving `SIGTERM`, skips
+`cleanup()` and leaks the server (the BL-807 hardening pass measured this
+directly: 22 mutations, 5 leaked servers, 2 still alive hours later). All
+seven (six originally named by the hardener's count plus a genuine seventh,
+`bl807BabysitterStuckInProcessOwnerLivenessSteps.js`, found by scanning
+every step file for the literal `new-session` tmux subcommand rather than
+trusting that count) now call the shared `fixtureReaper.track(root)`
+(BL-458) before spawning their server, so `exit`/`SIGINT`/`SIGTERM`
+handlers cover it even when a scenario's own inline `cleanup()` never runs.
+Because these fixtures reuse the live swarm's own session names (e.g.
+`swarmforge-coder`), `killTmuxServer` now refuses to touch a socket that
+matches any real production socket shape
+(`.swarmforge/tmux/<hash>.sock`, `.swarmforge/operator/operator-tmux.sock`,
+`.swarmforge/operator/front-desk-operator-tmux.sock`) — reaping is
+discriminated by socket path alone, never session name. A new standing gate,
+`tmuxReaperGuard.js` (mirroring BL-459/872's `tempDirTrapGuard.js`), scans
+`specs/pipeline/steps/*.js` for a `new-session` token with no paired
+`fixtureReaper`/`track()` call, so the idiom cannot return unnoticed; it
+runs in `extension/test/tmuxReaperGuard.test.js`, the one suite every
+parcel runs. The hardener's manual "after a mutation pass, `pgrep` and reap
+strays by socket path" stopgap bullet, added when this ticket was filed and
+marked for deletion once it landed, is removed from
+`swarmforge/roles/hardender.prompt`. See
+[BL-817: Fixture Tmux-Server Reaper Adoption](BL-817-fixture-tmux-server-reaper-adoption.md).
+New human-facing surface: none — this closes a leak in the acceptance test
+harness itself, not any extension command, setting, or UI.); Previously
+August 19, 2026 (BL-923: the closing-ceremony packet's
 dwell-hotspot fold summed each parcel's `processingMs` into a per-role total
 by plain addition — valid only if a role handles its parcels one after
 another, which the two BATCH roles (cleaner, hardender; Article 2.4) do not:
