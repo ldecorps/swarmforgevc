@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-947: `swarmforge/scripts/swarmforge.sh`
+**Last Updated:** August 19, 2026 (BL-950: BL-806's review-forward
+evidence gate originally excluded both of QA's send paths together
+(approval-to-coordinator, integration-on-`main`), "to avoid entangling
+integration mechanics." On 2026-08-19, BL-585's QA pass dequeued at
+07:05:47Z and approved at 07:10:31Z — 4m09s later, naming the
+**documenter's own received commit**, with no `backlog/evidence/BL-585-qa-*`
+file anywhere in history; the pass genuinely ran (mailbox trail confirms
+dequeue, merge-up broadcast, and the approval send) but left no durable
+trace of it — the identical BL-536 shape, one hop past where BL-806
+reached, and the last hop before the ticket closed with a red
+`conciergeTick.test.js` already on `main` from BL-585's own change
+(BL-949): a four-minute pass cannot have run the extension unit suite.
+Adding `QA` to BL-806's review-roles set alone would have changed
+nothing — confirmed before implementing, not assumed:
+`required_stages_lib/routes-forward?`'s `canonical-order` has no
+`coordinator` entry, so `routes-forward? "QA" "coordinator"` is `false`.
+The approval hop instead gets its own narrow direction predicate,
+`qa-approval-hop?` (sender `QA` **and** recipient `coordinator`, nothing
+else), OR-ed into the gate's existing direction test; `canonical-order`
+itself is untouched, so `route-required-stages`'s other callers never see
+a `coordinator` stage. Every other exclusion the gate already granted —
+a QA bounce, a QA merge-up `note`, a marked-detour approval, an approval
+naming the commit QA actually made — still passes through unchanged; only
+a same-commit approval to the coordinator is newly refused. QA's
+integration send (landing on `main`, pushing origin) stays out of scope,
+for the same reason BL-806 gave. Property coverage found a real reach gap
+during development: the existing broad generator hit the full refused
+conjunction at only ~1-in-9000 per run, so 1000 runs at a fixed seed still
+passed even with the new disjunct deleted entirely — fixed with an
+additional by-construction generator pass that fixes sender/recipient/type
+to the hop and varies only the discriminating fields, with asserted
+reachability floors. See the widened
+"Review-Forward Evidence Gate (BL-806, widened by BL-950)" section in
+`swarmforge/handoff-protocol.md`. No human-facing command or setting —
+fork/operator-substrate tooling under `swarmforge/scripts/`.); Previously
+August 19, 2026 (BL-947: `swarmforge/scripts/swarmforge.sh`
 contained 27 `echo -e "${RED}Error:${RESET} ..."` diagnostics, none
 redirected to stderr, so every launcher failure was reported on stdout — a
 caller capturing stderr saw silence on every failure path, and a caller

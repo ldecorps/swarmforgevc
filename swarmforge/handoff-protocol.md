@@ -925,7 +925,7 @@ this ticket).
 Acceptance:
 `specs/features/BL-922-unreadable-acceptance-declaration-caught-at-mint.feature`.
 
-## Review-Forward Evidence Gate (BL-806)
+## Review-Forward Evidence Gate (BL-806, widened by BL-950)
 
 A structural backstop for Article 4.4's "commit your explicit-NONE evidence
 (or your fix) and forward THAT commit" — a clean review pass that leaves no
@@ -940,10 +940,10 @@ re-running work that had already been done once.
   roles — **cleaner, architect, hardender, documenter** — moving forward
   (`required_stages_lib/routes-forward?`, the same direction predicate
   BL-606 routing already uses, never an optional header) to exactly one
-  recipient. `coder` is excluded (nothing "received" yet to compare
-  against on a fresh task); `QA` is excluded (its approval-to-coordinator
-  and integration-on-`main` sends are out of scope this slice, to avoid
-  entangling integration mechanics).
+  recipient, **or** for QA's own **approval hop to the coordinator**
+  (BL-950, below). `coder` is excluded (nothing "received" yet to compare
+  against on a fresh task); QA's other send path — integration on `main`
+  — stays out of scope, to avoid entangling integration mechanics.
 - **Refuses** when the outgoing `commit:` is exactly the commit that role
   received for the same `task:` — read from the sender's own `in_process`
   mailbox (the newest matching `git_handoff` parcel, since batch roles hold
@@ -951,7 +951,7 @@ re-running work that had already been done once.
   `rule_proposal`, and any send carrying a non-blank `reroute_reason` (the
   BL-425 cannot-fix-forward-onward exemption) all pass through untouched —
   the gate's refusal surface is exactly review-role forward-direction
-  `git_handoff`s.
+  `git_handoff`s, plus the one QA-approval-hop shape below.
 - **Fails open** — never blocks — when there is nothing to compare against:
   no received `git_handoff` for the task in the sender's `in_process` box
   (an initiating send, or a drained box), an unreadable box, or a sender
@@ -977,6 +977,38 @@ filesystem read (`received-commit-for-task`, itself fail-open on every
 "nothing to check" shape). Wired live into `swarm_handoff.bb`'s validate
 path alongside the existing ticket-close, duplicate-chain (BL-760), and
 pre-QA (BL-531) gates — not only reachable through the lib.
+
+### QA's approval hop joins the gate (BL-950)
+
+BL-806 originally excluded both of QA's send paths (approval-to-coordinator
+and integration-on-`main`) together. On 2026-08-19, BL-585's QA pass
+dequeued at 07:05:47Z and sent its approval to the coordinator at
+07:10:31Z — four minutes nine seconds later, naming the **documenter's own
+received commit**, with no `backlog/evidence/BL-585-qa-*` file anywhere in
+history. The pass genuinely ran (mailbox trail confirms dequeue, a
+merge-up broadcast, and the approval send), but nothing durable proved it
+— the identical BL-536 shape, one hop past where BL-806 reached. The
+approval was also the last hop before the ticket closed with a red
+`extension/conciergeTick.test.js` already on `main` from BL-585's own
+change (BL-949) — a pass that took four minutes cannot have run the
+extension unit suite.
+
+Adding `QA` to the review-roles set alone would have changed nothing:
+`required_stages_lib/routes-forward?`'s `canonical-order` has no
+`coordinator` entry, so `routes-forward? "QA" "coordinator"` is `false`
+and the existing direction test would never fire (confirmed before
+implementing, not assumed). The approval hop instead gets its own
+narrow direction predicate, `qa-approval-hop?` — sender `QA` **and**
+recipient `coordinator`, nothing else — OR-ed into `blocked?`'s direction
+test. `canonical-order` itself is untouched, so `route-required-stages`'s
+other callers never see a `coordinator` stage; every other conjunct
+`blocked?` already required (single recipient, `git_handoff` type, blank
+`reroute_reason`, commit equality) still applies unchanged to this hop, so
+a QA bounce, a QA merge-up `note`, a marked-detour approval, and an
+approval naming the commit QA actually made all pass through exactly as
+before — only a same-commit approval to the coordinator is new-refused.
+QA's integration send (landing on `main`, pushing origin) remains excluded,
+for the same entangles-integration-mechanics reason BL-806 gave.
 
 ## Dynamic Routing via Specifier-Declared required_stages (BL-606)
 
