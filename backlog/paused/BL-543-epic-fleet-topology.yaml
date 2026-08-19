@@ -30,6 +30,12 @@ notes: |
   ranking gap, not a stuck-work signal; BL-543 itself is not starved since it
   was never eligible to promote in the first place.
 
+  2026-08-19 00:49 coordinator: same nudge repeated a third time (000511).
+  Same non-reason, same outcome — slot independently filled by BL-927 (~00:49)
+  before this note was processed. Not re-explaining further on recurrence;
+  see the two entries above for the standing root cause (epic type excluded
+  from promotion, nudge-ranking logic doesn't filter it out).
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high
