@@ -11,7 +11,7 @@ direction: human-directed
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-956-pipeline-board-caption-and-cap-hotfix.feature
+acceptance: specs/features/BL-956-pipeline-board-caption-and-cap-hotfix.feature.draft
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl956::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
