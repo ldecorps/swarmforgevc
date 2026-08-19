@@ -225,6 +225,48 @@
      :message (str "pause untilMs expired " (quot (- (long now-ms) (long until-ms)) 60000)
                    "min ago but control-pause.json still active — auto-resume sweep failed, swarm sleeping past its window")}))
 
+;; ── check: resident-stranded (BL-685, Class B) ──────────────────────────────
+;; A mono-router resident that ended its turn in a NON-HOME role without the
+;; protocol's mandatory rotate step sits dormant forever: dormant roles are
+;; never poked, so the pipeline stops silently while every dashboard reads
+;; green. Both existing safeguards miss this by construction - ROTATE_HOME
+;; only fires if the resident runs ready_for_next.sh (it didn't run
+;; anything), and rotate-unhonored (check 9, additive, deliberately
+;; untouched) looks for a rotate instruction that was never written. So
+;; every input here is observable from OUTSIDE the resident's own turn
+;; (invariant 1): the active-role marker file, its mtime, the pane's busy
+;; state, mailbox contents on disk, and a pending dispatch note - never
+;; anything the stranded resident would have had to do.
+;;
+;; Grace rides the marker file's own mtime (how long the resident has been
+;; in its current role) - no new persisted counter, so it cannot collide
+;; with check-swarm-starved's single-scalar streak-file (the ticket's own
+;; Wiring finding 2).
+
+(def default-resident-stranded-grace-min 10)
+
+(defn check-resident-stranded
+  [{:keys [rotation-router? rotation-home resident-active-role
+           resident-active-role-mtime-ms resident-pane-busy?
+           resident-mailbox-empty? dispatch-note-pending? paused? now-ms
+           resident-stranded-grace-min]
+    :or {resident-stranded-grace-min default-resident-stranded-grace-min}}]
+  (when (and rotation-router? (not paused?)
+             resident-active-role rotation-home
+             (not= (str/lower-case (str resident-active-role))
+                   (str/lower-case (str rotation-home)))
+             (not resident-pane-busy?)
+             resident-mailbox-empty?
+             (not dispatch-note-pending?)
+             resident-active-role-mtime-ms now-ms
+             (> (- (long now-ms) (long resident-active-role-mtime-ms))
+                (* (long resident-stranded-grace-min) 60000)))
+    {:key (str "resident-stranded-" resident-active-role) :severity "CRIT"
+     :message (str "mono-router resident stranded as '" resident-active-role
+                   "' (home: " rotation-home ") for >" resident-stranded-grace-min
+                   "m - pane idle, mailbox empty, no dispatch note pending, no rotate instruction ever issued;"
+                   " coordinator should re-dispatch (route work or rotate_to_role.sh " rotation-home ")")}))
+
 ;; ── check N: pipeline-code-on-main (BL-631) ─────────────────────────────────
 ;; Detects pipeline code landing on `main` outside QA's own integration path
 ;; (Article 4.2/BL-247) - the BL-590 post-mortem gap: nothing errored, and
@@ -311,7 +353,11 @@
            handoffd-max-age-secs failed-count stuck-parcels available-mb mem-floor-mb
            claim-risks rotate-note pause now-ms active-ticket-count any-pane-busy?
            prev-streak pending-claims in-process-claims overdue-threshold-ms
-           pending-max-age-min offending-commits ancestry-unavailable?]}]
+           pending-max-age-min offending-commits ancestry-unavailable?
+           rotation-router? rotation-home resident-active-role
+           resident-active-role-mtime-ms resident-pane-busy?
+           resident-mailbox-empty? dispatch-note-pending?
+           resident-stranded-grace-min]}]
   (let [paused? (boolean (:active? pause))
         role-findings (mapcat (fn [role]
                                  (remove nil?
@@ -345,12 +391,24 @@
         pipeline-code-on-main-findings (check-pipeline-code-on-main
                                         {:offending-commits offending-commits
                                          :ancestry-unavailable? ancestry-unavailable?})
+        resident-stranded-finding (check-resident-stranded
+                                   {:rotation-router? rotation-router?
+                                    :rotation-home rotation-home
+                                    :resident-active-role resident-active-role
+                                    :resident-active-role-mtime-ms resident-active-role-mtime-ms
+                                    :resident-pane-busy? resident-pane-busy?
+                                    :resident-mailbox-empty? resident-mailbox-empty?
+                                    :dispatch-note-pending? dispatch-note-pending?
+                                    :paused? paused?
+                                    :now-ms now-ms
+                                    :resident-stranded-grace-min (or resident-stranded-grace-min default-resident-stranded-grace-min)})
         findings (vec (remove nil?
                               (concat role-findings
                                       [handoffd-finding dead-letter-finding]
                                       stuck-findings
                                       [memory-finding]
                                       claim-findings
-                                      [rotate-finding starved-finding resume-overdue-finding]
+                                      [rotate-finding starved-finding resume-overdue-finding
+                                       resident-stranded-finding]
                                       pipeline-code-on-main-findings)))]
     {:findings findings :new-streak new-streak}))

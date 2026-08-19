@@ -1,6 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-950: BL-806's review-forward
+**Last Updated:** August 19, 2026 (BL-685: the babysitter sweep (ported to
+`swarmforge/scripts/` by BL-611) monitored only one half of a stranded
+mono-router resident — `rotate-unhonored` (check 9) fires when a rotate
+INSTRUCTION exists and is never honored, but a resident that ends its turn
+without ever WRITING that instruction (Class B, confirmed live 2026-07-26:
+the resident finished a real batch as specifier, then stopped — reasonably,
+by its own account — without the protocol's mandatory last rotate step) left
+`mono-router-active-role` stuck on the non-home role for 9+ minutes with
+both safeguards reading green. Added `check-resident-stranded` to
+`babysitterd_sweep_lib.bb`, wired into `assemble-findings` (not a
+BL-419-shaped uncalled predicate): it fires only when all five signals hold
+together — pane idle, active role not home, both mailboxes empty, no
+dispatch note pending to the coordinator, and the active-role marker's own
+mtime past a 10-minute grace — every one observable from OUTSIDE the
+stranded resident's own turn (invariant 1), since the defect IS the
+resident failing to act. `babysitter_check.bb` gained a new TOP-LEVEL
+`:resident-active-role` snapshot key read straight off the marker file,
+deliberately never through `gather-rotate-note` (which is `nil` in exactly
+the Class B case this check exists to detect — a wiring trap the specifier's
+promotion-time probe caught before the coder started). Grace rides the
+marker's existing mtime rather than a new streak counter, so it cannot
+collide with `check-swarm-starved`'s single-scalar `streak-file`. Additive
+to `rotate-unhonored`, never remediates (reports and nudges the coordinator
+only). No human-facing command or setting — fork/operator-substrate tooling
+under `swarmforge/scripts/`.); Previously
+August 19, 2026 (BL-950: BL-806's review-forward
 evidence gate originally excluded both of QA's send paths together
 (approval-to-coordinator, integration-on-`main`), "to avoid entangling
 integration mechanics." On 2026-08-19, BL-585's QA pass dequeued at
