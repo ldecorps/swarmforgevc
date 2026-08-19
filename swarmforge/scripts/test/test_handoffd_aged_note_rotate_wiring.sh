@@ -81,6 +81,33 @@ setup_common_fixture() {
     printf 'cleaner\tcleaner\t%s\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n' "$clean_wt"
   } > "$root/.swarmforge/roles.tsv"
 
+  # BL-938: BL-931's rotate-resident-to! refuses any pack that does not
+  # resolve as a rotation router (mono_router_lib.bb's
+  # resolve-rotation-router-mode?) - declare one, same as
+  # test_handoffd_starve_rotate_wiring.sh's precedent (the only sibling
+  # fixture whose declaration is actually exercised end to end through the
+  # real daemon, same as this test). The swarm-identity file is
+  # TAB-separated key/value lines (swarm_identity_lib.bb/mono_router_lib.bb
+  # both split on \t), never `=`.
+  #
+  # rotation_starve_after_ms is explicitly disabled: BL-651's starve
+  # override fires whenever a same-priority row's oldest actionable parcel
+  # has waited past its threshold (default 10 minutes), oldest-first -
+  # structurally incompatible with this fixture's own ages, since
+  # note_actionable_after_ms (20 minutes) already requires the note to be
+  # older than the starve default before it can even become actionable at
+  # all. Scenario A's 25/40-minute ages are both then past the starve
+  # threshold too, so without this line BL-651's OLDEST-wins override
+  # silently overrides BL-636/BL-576's NEWEST-wins ordering this test
+  # exists to prove, picking cleaner's 40-minute git_handoff over
+  # specifier's 25-minute note - the opposite of what F1 requires. `off`
+  # scopes this test back to the ordering-key wiring it actually targets;
+  # the starve override itself has its own dedicated coverage in
+  # test_handoffd_starve_rotate_wiring.sh.
+  printf 'config rotation router\nconfig rotation_home coder\nconfig rotation_starve_after_ms off\n' > "$root/swarmforge.conf"
+  printf 'active_backlog_max_depth_conf_path\t%s\nrotation\trouter\n' \
+    "$root/swarmforge.conf" > "$root/.swarmforge/swarm-identity"
+
   touch "$root/fake.sock"
   echo "$root/fake.sock" > "$root/.swarmforge/tmux-socket"
 
