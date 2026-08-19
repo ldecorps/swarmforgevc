@@ -587,6 +587,90 @@ BL-949, not to the task's ticket BL-935 - one of the two headers is wrong
 task: or the commit: line and re-send.
 ```
 
+## Bounce Revert Verification (BL-954)
+
+A bounce requires the bouncing role to remove the bounced commit's content
+from its own `swarmforge-<role>` review branch in the same step ("A Bounce
+Must Be Reverted Out Of The Bouncing Branch", BL-490/BL-495). That step was
+pure discipline — nothing checked it happened — and twice in one day
+(2026-08-19) it was skipped and only caught by hand, hours later: QA/BL-945
+and, the case that founded this ticket, the architect's two BL-935 bounces,
+where 5 of the 7 bounced files stayed byte-identical at `swarmforge-architect`'s
+tip with no revert commit anywhere, and both landed on `main` and
+`origin/main` before BL-935 itself was ever approved.
+
+`record-bounce.js`/`record-bounce.ts` now runs a **bounce revert check**
+immediately after it durably writes the bounce record (never before —
+invariant 3: recording is never contingent on the check, and a check that
+cannot complete reports its cause rather than reading as clean). The check
+is **report-only**: it never blocks the bounce recording and never reverts
+anything itself — an agent silently rewriting its own branch on a heuristic
+is a worse failure than the one being fixed.
+
+Mechanics (`src/quality/bounceRevertVerdict.ts` decides, pure;
+`src/metrics/bounceRevertGitAdapter.ts` gathers the git facts — split across
+the dependency-gate's no-io-from-policy boundary, same as `coChange.ts` /
+`gitHistoryAdapter.ts`):
+
+- **Content decides, never ancestry (invariant 1).** A touched path counts
+  as still-live only when the bouncing branch's tip holds byte-identical
+  content to the bounced commit's version AND the bounced commit actually
+  changed that path (differs from its parent) — a path the commit never
+  touched proves nothing. A commit that stays a permanent ancestor of the
+  bouncing branch (a properly reverted bounce always does) reads clean
+  regardless.
+- **Touched files use `diff-tree -m --first-parent`, not a bare
+  invocation** — the bare form is blind to merge commits (empty output),
+  which would read a bounced *merge* commit as clean no matter what the
+  branch held.
+- **Already-published is a breach report, never a revert instruction
+  (invariant 2).** When the bounced commit is already an ancestor of
+  EITHER local `main` or `origin/main` (either ref can be the stale one,
+  BL-891), the constitution's own exception applies — reverting published
+  history is out of bounds — and the verdict is `breach-report` with no
+  `remedy` field at all.
+- **Four verdicts:** `clean`, `violation` (unreverted; `remedy` names the
+  exact command — `git revert --no-edit <commit>` on the bouncing branch —
+  and `liveFiles` lists the still-live paths), `breach-report` (already
+  published, no remedy), `undeterminable` (the bounced commit or the
+  bouncing branch can't be resolved, or the check itself throws — `cause`
+  names why; never silently read as clean).
+- The bouncing branch is derived from the recorded `--by` role as
+  `swarmforge-<by>` — the same field BL-635 already made mandatory on
+  every `record-bounce` call.
+
+This is the entrance-side companion to the **push sweep's** `is_qa_ancestor.sh`
+check ("QA ancestor is bounce-aware", BL-952, below): BL-952 blocks an
+unreverted bounce from reading as approved at publish time, scoped to the
+`swarmforge-QA` ref; this check fires at bounce time, on whichever branch
+the bouncing role actually owns — architect, cleaner, hardener, or any other
+reviewing role, not only QA. The BL-935 case this ticket is built from
+(bouncing role: architect) is exactly the shape a QA-ref-only check cannot
+see. Neither replaces the other — BL-954 catches the branch never getting
+cleaned; BL-952 catches the leak if it does reach a downstream approval
+read anyway.
+
+Recording is unaffected by the verdict — `revertCheck` rides alongside the
+existing fields in the CLI's JSON stdout:
+
+```json
+{
+  "recorded": true,
+  "ticketRecordUpdated": true,
+  "revertCheck": {
+    "verdict": "violation",
+    "branch": "swarmforge-architect",
+    "commit": "e4b327e031",
+    "remedy": "on swarmforge-architect: git revert --no-edit e4b327e031",
+    "cause": null,
+    "liveFiles": ["extension/test/example.property.test.js"]
+  }
+}
+```
+
+Going forward only — this does not retro-check the existing month's bounce
+records; a sweep over history is a separate ticket if wanted.
+
 ## Multi-Ticket Close Guard (BL-869)
 
 `ticket_close_guard_lib.bb`'s closed-ticket check (referenced above as the

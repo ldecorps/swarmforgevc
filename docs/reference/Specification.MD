@@ -1,6 +1,82 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-953: `swarm_handoff.bb`'s `validate`
+**Last Updated:** August 19, 2026 (BL-827: adopted the spec-dependent
+flow-watchdog percentile thresholds that had been sitting ticket-less in
+the master working tree since 2026-08-06 (retro-ticketed, coordinator
+ruling: keep), then closed the three gaps the adopt left open. The alarm
+text now states the threshold it fired against — `format-alarm-text`
+appends `Threshold <humanized> via <key>.`, since a threshold that varies
+per route is unjudgeable at 3am if the alarm stays silent about which
+number it used. The coarsest `*->*|type` fallback row, previously written
+but never consulted, is now neither written nor consulted anywhere — dead
+data that was only ever going to stay dead came out rather than staying
+half-wired. A new acceptance feature
+(`BL-827-flow-watchdog-spec-dependent-thresholds-adopt.feature`) covers
+what the prior `.bb` unit suite alone did not. Closes the adaptation
+hazard the adopt's own approval_context flagged for a human: calibrating
+a threshold from a route's own history means a hop that has been
+chronically slow for two weeks teaches the table that slow is normal, and
+the alarm quietly stops firing on it — the human chose option (b), a
+ceiling multiple (`flow_watchdog_calibration_ceiling_factor`, default 4)
+over a hard ceiling or freshness-weighted samples, so a genuinely
+slow-but-healthy hop (a rotation-pack wait) can still calibrate above the
+global 15-minute warn while a runaway cannot; implemented, like the
+existing BL-835 60s floor, as a reject gate rather than a clamp, and the
+two compose. See the updated "Flow Watchdog (BL-577)" section below. No
+new extension command or setting — swarm-substrate daemon tooling under
+`swarmforge/scripts/`.); Previously August 19, 2026 (BL-954: bouncing a
+parcel requires the
+bouncing role to revert the bounced commit's content out of its own
+`swarmforge-<role>` review branch in the same step (BL-490/BL-495), but
+nothing checked that this happened — measured live 2026-08-19, the
+architect's two BL-935 bounces left 5 of 7 bounced files byte-identical at
+`swarmforge-architect`'s tip with no revert commit anywhere, and both
+landed on `main` and `origin/main` before BL-935 itself was approved,
+caught only by a role that happened to look by eye. `record-bounce.js` now
+runs a report-only bounce revert check immediately after it durably writes
+the bounce record (never gating the record itself — a check that cannot
+complete reports its cause, never reads as clean). The verdict is decided
+by CONTENT at the bouncing branch's tip, never by ancestry — a properly
+reverted bounce, whose commit stays a permanent ancestor, always reads
+clean — with one exception: a bounced commit already an ancestor of either
+`main` or `origin/main` (either ref can be the stale one, BL-891) resolves
+to a breach report, never a revert instruction, since reverting published
+history is out of the constitution's bounds. This is the entrance-side
+companion to BL-952's exit-side `is_qa_ancestor.sh` check: BL-952 is scoped
+to the `swarmforge-QA` ref, so it could not have seen this bounce, whose
+bouncing role was the architect. See the new "Bounce Revert Verification
+(BL-954)" section of `swarmforge/handoff-protocol.md`. No new extension
+command or setting — fork/operator-substrate tooling under
+`extension/src/tools/`.); Previously August 19, 2026 (BL-955: BL-620's
+shared `messageTextOf`
+seam (`text ?? caption`) taught every text-reading surface of the Telegram
+front desk to read photo captions in one commit, but BL-620 wired its
+`annotateRoutedMediaText` "no vision, said out loud" note into only the
+three backlog-topic call sites inside `processMessageUpdate` — an architect
+send-back on BL-620 (Article 4.4) found six other forwarding surfaces still
+passing caption-derived words onward with no note, so a human in a topic, an
+agent taking a steering nudge in its pane, or anyone reading a durable
+record later had no way to know an unread image was attached: the exact
+false belief the original incident directive forbids. Fixed by reaching the
+same `annotateRoutedMediaText` seam from each remaining boundary, applied at
+the FORWARDING/record boundary only, never at decision time (a caption's
+classification must equal the identical plain text's) — steering
+(`processSteeringUpdate`, covering both `redirectToRole`'s live-pane path
+and the BL-607 queued-answer note for a dormant role), agent-questions
+(`postToBridge`), onboarding (`handleOnboarderMessage`), the negotiation
+relay (a new `annotateNegotiationRelayText` export in
+`negotiationTelegramRouting.ts`, applied by `negotiationTelegramRelay`'s
+`handleObjection`), and the two DURABLE surfaces — an approvals rejection
+reason and a recert amend proposal — where the note is written into the
+STORED value itself (`deliverApprovalsTopicReply` / `deliverRecertTopicReply`
+now thread the update through `deliverReservedSubjectReply`), per the
+ticket's approved directive that a caption-derived record must carry the
+note permanently, not only in the chat echo. Control-topic delivery stays
+deliberately unannotated — its text is PARSED as a command, and a note would
+corrupt the parse — a standing guard scenario locks that exclusion in
+against a future "annotate everything" sweep. No new extension command or
+setting — Telegram incarnation behavior (Architecture Rule 7).); Previously
+August 19, 2026 (BL-953: `swarm_handoff.bb`'s `validate`
 never cross-checked a `git_handoff`'s `task:` and `commit:` headers against
 each other, so a commit belonging to one ticket could ride under another
 ticket's name. Measured live 2026-08-19: the coder sent commit `896e1d5cb2`
@@ -3133,6 +3209,7 @@ Flow watchdog alarms are **unsuppressable by design** — they go to Telegram (t
   - `rotate` — the holding role has no live session; rotate it to process the parcel
   - `investigate` — the role is live but stalled in `in_process/`; check the pane for unexpected waits or loops
   - `expedite` — the role is live but the parcel sat in `new/` too long; nudge or wake it
+- **Threshold (BL-827):** which resolved warn/escalate value fired and where it came from — appended as `Threshold <humanized> via <key>.`, `<key>` being the matched `from->to|type` / `*->to|type` spec or `global`. Since the fired threshold is now variable per route rather than one fixed pair, an alarm that omitted it could not be judged at 3am; the suffix is only ever absent when neither value was computed (a pre-BL-827 caller path).
 
 ### Configuration
 
@@ -3141,6 +3218,7 @@ Configure the flow watchdog in `swarmforge.conf`:
 ```
 config flow_watchdog_warn_ms 900000           # global fallback warn at 15 minutes (default)
 config flow_watchdog_escalate_ms 3600000      # global fallback escalate at 1 hour (default)
+config flow_watchdog_calibration_ceiling_factor 4      # BL-827: calibrated warn may exceed the global warn by at most this factor (default)
 config provider_outage_observe_min_interval_ms 60000   # BL-840: throttle for provider-outage evidence writes (default)
 ```
 
@@ -3152,9 +3230,11 @@ themselves. Per-spec thresholds are resolved outside `decide-tier` from a calibr
 
 - **Warn tier (≈ p67):** fires when age exceeds the 67th percentile of historical mailbox residence for that spec — roughly the slowest third of cases
 - **Escalate tier (≈ p97):** fires when age exceeds the 97th percentile — roughly the slowest 3%
-- **Fallback chain:** exact `from->to|type` → `*->to|type` → the global conf pair above (when a key lacks ≥8 samples). A coarser `*->*|type` row is recorded for observability but not consulted — mixing unrelated routes under one type would mis-calibrate dormant pipeline roles.
+- **Fallback chain:** exact `from->to|type` → `*->to|type` → the global conf pair above (when a key lacks ≥8 samples). A coarser `*->*|type` row mixing unrelated routes under one type would mis-calibrate dormant pipeline roles; as of BL-827 it is neither written nor consulted at any point in the chain — a value that would only ever have been dead data.
 - **60s is a reject gate, not a floor (BL-835):** a route whose raw warn percentile falls below 60s has not earned a calibrated threshold — no exact/to-type entry is written for that key, and resolution falls through the chain above instead. Earlier behavior clamped a sub-60s raw percentile *up to* 60000ms and wrote it as if calibrated, which false-alarmed WARN on parcels sitting a healthy ~1 minute on fast hops (e.g. `QA→coordinator`); the gate rejects those keys outright rather than inventing a number the history never showed.
+- **Calibration ceiling, reject not clamp (BL-827):** a calibrated warn percentile derives from whatever a route has actually been doing, so a hop that has been chronically slow for two weeks would otherwise teach the table that slow is normal and the alarm would quietly stop firing on it. `flow_watchdog_calibration_ceiling_factor` (default 4) bounds this: a raw warn percentile above `global warn × factor` is REJECTED — the key falls through to the global pair, which then fires — never clamped down to the ceiling. Same reject-not-clamp posture as the 60s floor above, and it composes with it: a key must clear the 60s floor AND stay under the ceiling to calibrate at all.
 - **No suppression:** once a parcel reaches its resolved warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm. Spec dependence changes which numbers are fed into `decide-tier`, never whether the alarm may speak.
+- **Escalate is always strictly greater than warn (BL-827):** every resolved pair — calibrated or the global fallback itself — is sanitized so escalate is at least warn + 1ms, closing the case of a misconfigured `flow_watchdog_escalate_ms` sitting at or below `flow_watchdog_warn_ms`.
 
 Malformed or absent config values fall back to the defaults above — the watchdog never disables itself. The percentile table is refreshed at most every 6 hours from each role's `completed/` and `abandoned/` audits.
 
