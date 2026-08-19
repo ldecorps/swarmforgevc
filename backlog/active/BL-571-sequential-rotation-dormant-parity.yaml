@@ -113,12 +113,16 @@ qa_e2e_procedure: |
   1. `bash swarmforge/scripts/test/test_swarm_ensure.sh` → ALL PASS, including
      the new sequential-dormant case and the existing classic half-launch case.
   2. `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` → ok.
-  3. Non-vacuity: revert the predicate in `swarm_ensure.bb` to router-only and
+  3. `bb swarmforge/scripts/test/bl571_single_resident_rotation_property_runner.bb`
+     → exit 0. This is the declared invariant's property runner — a separate
+     lane per the property-test isolation rule; steps 1-2 do NOT run it
+     (spec-gap amendment 2026-08-19, architect pass-1 S1).
+  4. Non-vacuity: revert the predicate in `swarm_ensure.bb` to router-only and
      re-run (1) — the new sequential case must FAIL, naming the respawned middle
      roles. Restore.
-  4. Non-vacuity the other way: widen the predicate to match any rotation value
+  5. Non-vacuity the other way: widen the predicate to match any rotation value
      and re-run (1) — the classic-pack case must FAIL. Restore.
-  5. Confirm `grep -rn 'conf-rotation-router?' swarmforge/scripts/ready_for_next_*.bb`
+  6. Confirm `grep -rn 'conf-rotation-router?' swarmforge/scripts/ready_for_next_*.bb`
      is unchanged from `main` — the ROTATE_HOME path must not have moved.
 
 notes: |
@@ -198,3 +202,20 @@ notes: |
   ONLY, and leave `conf-rotation-router?`, `resolve-rotation-router-mode?` and
   every other call site untouched. The out-of-scope refactor below is now a
   six-site closure rather than four - more reason to keep it in its own ticket.
+
+  ## Spec-gap amendment (specifier, 2026-08-19, architect pass-1 S1)
+
+  qa_e2e_procedure amended: the declared invariant's property runner
+  (swarmforge/scripts/test/bl571_single_resident_rotation_property_runner.bb,
+  added by the coder's parcel commit 15baafa579) was omitted from the
+  procedure, so a QA pass following it literally never executed the
+  invariant's own gate. Added as step 3; former steps 3-5 renumbered 4-6
+  (their internal "re-run (1)" references are unaffected). No scenario
+  changed; no step handler is affected (BL-233 does not apply).
+
+  One obligation on the D1 re-fix (architect bounce, same pass): the new
+  bash<->Babashka parity test must be reachable from a step this procedure
+  names. If it lands inside test_swarm_ensure.sh, step 1 already covers it;
+  if it lands as a standalone runner, the coder adds its exact command to
+  this procedure in the re-fix parcel — a lane QA never runs is this same
+  S1 gap repeating.
