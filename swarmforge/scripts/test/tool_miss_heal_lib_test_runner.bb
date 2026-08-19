@@ -370,6 +370,42 @@
     (assert= "BL-960 misdirection guard: the failing segment ran exactly once - declined, not healed"
              1 (count (str/split-lines (str/trim (slurp counter)))))))
 
+;; ── BL-960: the capture file is cleaned up, not leaked ───────────────────
+;; The wrapper now creates a temp file on EVERY Bash call the swarm makes,
+;; so a leak is per-call, not per-incident. The source-shape assertion above
+;; (`rm -f "$__sfh_out_file"` present) cannot show it actually runs on the
+;; paths that matter, so drive real bash with TMPDIR pointed at a fresh dir
+;; and look at what is left behind.
+
+(defn- sfh-leftovers [tmpdir]
+  (map (comp str fs/file-name) (fs/glob tmpdir "sfh.*")))
+
+(defn assert-no-capture-leak [label original-command pinned-worktree session-dir]
+  (let [tmpdir (mk-tmp)
+        wrapper (tool-miss-heal-lib/build-healing-wrapper-command original-command pinned-worktree)]
+    (process/sh ["bash" "-c" wrapper]
+                (cond-> {:extra-env {"TMPDIR" tmpdir}}
+                  session-dir (assoc :dir session-dir)))
+    (assert= (str label ": no capture file left behind in TMPDIR") [] (vec (sfh-leftovers tmpdir)))))
+
+(let [tmp (mk-tmp)
+      ok (str tmp "/ok.sh")
+      heals (str tmp "/heals.sh")
+      red (str tmp "/red.sh")]
+  (spit ok "#!/usr/bin/env bash\nprintf 'ok'\n")
+  (spit heals (str "#!/usr/bin/env bash\n"
+                   "if [ \"$(pwd)\" = " (tool-miss-heal-lib/shell-quote tmp) " ]; then\n"
+                   "  printf 'healed-ok'; exit 0\n"
+                   "else\n"
+                   "  echo 'fatal: not a git repository (or any of the parent directories): .git' >&2\n"
+                   "  exit 128\n"
+                   "fi\n"))
+  (spit red "#!/usr/bin/env bash\necho '1 test failed: expected 2, got 3' >&2\nexit 1\n")
+  (doseq [f [ok heals red]] (.setExecutable (fs/file f) true))
+  (assert-no-capture-leak "BL-960 cleanup, no-heal success path" (str "bash " ok) tmp nil)
+  (assert-no-capture-leak "BL-960 cleanup, healed re-run path" (str "bash " heals) tmp (mk-tmp))
+  (assert-no-capture-leak "BL-960 cleanup, real-failure passthrough path" (str "bash " red) tmp nil))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
