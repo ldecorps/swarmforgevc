@@ -145,6 +145,17 @@ notes: >
   amending an already-active ticket (Consolidation Authority: an active
   ticket is never consolidated).
 
+  AMENDMENT 2026-08-19, after promotion: the master checkout's working
+  tree was reverted to HEAD during the specifier's own turn, so
+  `pipelineBoard.ts` there is back at `PIPELINE_BOARD_PAUSED_MAX = 10`
+  and the human's change is no longer in any working tree. NOTHING YOU
+  BUILD CHANGES - the patch was always the stated starting point - but it
+  is now the ONLY copy: `backlog/evidence/BL-956-pipeline-board-hotfix.patch`,
+  re-verified with `git apply --check` against `main` after the revert. Do
+  not go looking for the change in the shared checkout; apply the patch.
+  This is also why the capture exists: without it the revert would have
+  destroyed a live, human-authored behaviour outright.
+
   IR-DRY: the checker reports one medium-confidence `possible-synonym`
   finding, pairing scenario 03's two assertions ("are adjacent" and "a
   blank line separates"). Reviewed and kept - they are the deliberate
