@@ -170,3 +170,20 @@ out_of_scope: |
     plus the LINKS list is the whole overflow strategy for this ticket.
 
 assigned_to: coder
+notes_retroactive_route: |
+  2026-08-19 (coordinator): CORRECTION, self-reverted. Coordinator
+  mistakenly believed this ticket closed with no QA gate at all (git log
+  grep + evidence-file check found nothing) and, on human direction,
+  reopened it done/ -> active/ and sent a redundant re-review git_handoff
+  to QA. Specifier corrected the record: QA DID approve this ticket -
+  .swarmforge/handoffs/coordinator/inbox/abandoned/00_20260819T071031Z_000324_from_QA_to_coordinator_for_coordinator.handoff
+  is QA's real approval note (commit ace11b6cfa, approved 2026-08-19T07:10:31Z,
+  4m09s turnaround), landed in the coordinator's own mailbox and correctly
+  consumed at the original close (12257c4b8) - it simply wrote no separate
+  evidence file, which this investigation mistook for no approval at all.
+  The redundant re-review handoff to QA was abandoned before QA claimed it
+  (never processed). Real, narrower gap tracked by BL-950: the QA
+  approval hop for a clean pass sits outside the BL-806 evidence gate, so
+  a fast clean approval leaves no durable evidence trail to check against
+  later - fix that process gap there, not by re-litigating this ticket.
+  Reclosing to done/ as a follow-up commit.
