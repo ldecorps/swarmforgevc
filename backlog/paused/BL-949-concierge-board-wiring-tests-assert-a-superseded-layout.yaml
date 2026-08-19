@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: pipeline-board
-human_approval: pending
+human_approval: approved
 priority: 20
 direction: swarm-surfaced
 depends_on: []
