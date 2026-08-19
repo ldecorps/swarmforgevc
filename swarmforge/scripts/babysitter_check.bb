@@ -482,6 +482,47 @@
        :active-role-file-mtime-ms (or active-role-file-mtime 0)
        :active-role (or (active-role-marker) "")})))
 
+;; ── BL-685: resident-stranded gathering (Class B - no rotate note) ────────
+;; Every read here is observable from OUTSIDE the resident's own turn
+;; (invariant 1): the marker file + its mtime, mailbox contents on disk,
+;; and a pending dispatch note. Nothing depends on the stranded resident
+;; having run anything - that absence IS the defect being detected.
+
+(defn resident-home-role
+  "The mono-router resident's home identity: the first non-coordinator role
+   in roles.tsv order - the same derivation mono_router_lib/classify-role
+   uses for :resident, extracted from the rows this sweep already parsed
+   (never a second roles.tsv read)."
+  [ordered-roles]
+  (first (remove #(= "coordinator" %) ordered-roles)))
+
+(defn resident-mailbox-empty?
+  "Whether the ACTIVE role's inbox (new + in_process) holds nothing - the
+   role the resident is currently stuck AS, resolved over both mailbox
+   shapes via the same owning-role machinery the stuck-parcel gather uses
+   (worktree roles flat, master-resident roles nested)."
+  [active-role]
+  (when active-role
+    (not-any? #(= active-role (owning-role-for-path %))
+              (concat (glob-handoffs "{,**/}inbox/new/*.handoff")
+                      (glob-handoffs "{,**/}inbox/in_process/*.handoff")))))
+
+(defn dispatch-note-pending?
+  "Whether a `type: note` FROM the active role is sitting unresolved in the
+   coordinator's inbox (new or in_process) - the mono-router idle protocol's
+   own 'ask the coordinator to promote+route, then idle for a wake'. A
+   resident that already asked is waiting, not stranded."
+  [active-role]
+  (when active-role
+    (boolean
+     (some (fn [p]
+             (when (= "coordinator" (owning-role-for-path p))
+               (let [content (try (slurp p) (catch Exception _ ""))]
+                 (and (re-find #"(?m)^type: note$" content)
+                      (re-find (re-pattern (str "(?m)^from: " active-role "$")) content)))))
+           (concat (glob-handoffs "{,**/}inbox/new/*.handoff")
+                   (glob-handoffs "{,**/}inbox/in_process/*.handoff"))))))
+
 ;; ── nudge-dedup persisted state ───────────────────────────────────────────
 
 ;; BL-631: NEVER keywordize (no `true` third arg) - write-dedup-state!
@@ -539,6 +580,8 @@
         ;; be hardcoded per role (invariant 1).
         rotation-router? (rotation-router-mode?)
         ordered-roles (mapv :role role-rows)
+        resident-home (resident-home-role ordered-roles)
+        resident-active-role (active-role-marker)
         roles (mapv #(assoc % :should-stand?
                              (should-stand-role? rotation-router? ordered-roles (:role %)))
                     roles)
@@ -566,7 +609,18 @@
          :in-process-claims (in-process-claims busy-by-role)
          :pending-max-age-min pending-max-age-min
          :offending-commits (:offending-commits pipeline-code-on-main)
-         :ancestry-unavailable? (:ancestry-unavailable? pipeline-code-on-main)}
+         :ancestry-unavailable? (:ancestry-unavailable? pipeline-code-on-main)
+         ;; BL-685 required_wiring: :resident-active-role is a TOP-LEVEL
+         ;; snapshot key read straight off the marker file - NEVER via
+         ;; gather-rotate-note, whose map is nil in exactly the Class B
+         ;; case (no rotate note exists) this check exists to detect.
+         :rotation-router? rotation-router?
+         :rotation-home resident-home
+         :resident-active-role resident-active-role
+         :resident-active-role-mtime-ms (active-role-marker-mtime-ms)
+         :resident-pane-busy? (boolean (get busy-by-role resident-home))
+         :resident-mailbox-empty? (resident-mailbox-empty? resident-active-role)
+         :dispatch-note-pending? (dispatch-note-pending? resident-active-role)}
         {:keys [findings new-streak]} (babysitterd-sweep-lib/assemble-findings snapshot)
         ts (now-iso)]
     (write-streak! new-streak)
