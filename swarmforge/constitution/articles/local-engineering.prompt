@@ -59,13 +59,15 @@ shared article remains in force.
    (Recurred 3x in 2026-07-10: BL-252 suite-duration trend, BL-265
    gate-answer view, BL-257 slices 3-4 changed-since-visit + live trends.)
    See **local-engineering-detailed.prompt** for the full pre-trim wording.
-6. Epics have icons representing musical forms, on TWO distinct surfaces —
-   never one implementation assumed to cover both: PWA/fleet-console/
-   bot-avatar carry the owned orchestra FORM marks (`docs/branding/icon-system.md`
-   §4d); Telegram topic icons stand in with the closest stock PERFORMANCE
-   sticker (`getForumTopicIconStickers` offers no notation glyphs). See
-   **local-engineering-detailed.prompt** for the full pre-trim wording and
-   BL-449 rationale.
+6. Epics have icons on TWO distinct surfaces — never one implementation
+   assumed to cover both: PWA/fleet-console/bot-avatar carry the owned
+   orchestra FORM marks, still musical (`docs/branding/icon-system.md` §4d);
+   Telegram topic icons draw from the WHOLE stock
+   `getForumTopicIconStickers` set, not only its performance glyphs, which
+   capped the pool far below the live epic count. Each must exist in the
+   live set and collide with no other icon table. See
+   **local-engineering-detailed.prompt** for the pre-amendment wording and
+   BL-449/BL-946 rationale.
 7. Interface vs incarnation — two naming layers, deliberately. Architecture
    names the INTERFACES (**messaging**, **host agent**); everyday speech
    names the live INCARNATIONS (**Telegram**, **Cursor**). The phone app is
