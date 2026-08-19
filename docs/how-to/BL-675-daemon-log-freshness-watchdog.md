@@ -180,6 +180,21 @@ Acceptance feature: `specs/features/BL-675-daemon-log-freshness.feature`. The
 deliberate-stop behaviour above has its own feature file,
 `specs/features/BL-785-freshness-deliberate-stop.feature`.
 
+## Consumer: cost-health sidecar's `daemonRestarts` (BL-904)
+
+`.swarmforge/daemon/freshness-incidents.log` (above) has a second reader
+besides this watchdog itself: the daily cost-health sidecar
+(`extension/src/notify/costHealthSidecar.ts`) derives its
+`reliability.daemonRestarts` figure from it, counting `action=restart`
+records only per day — `action=escalate` records (a declined restart during
+cool-off, see "Cool-off" above) are read but excluded, a distinct event
+that would overstate restarts if folded in. A missing or unreadable log
+reports as "no data" (`direction: "unknown"`, empty series), never a
+fabricated zero. See the "BL-904" entry in
+[the Specification](../reference/Specification.MD) for the full history —
+this field was a hardcoded `0` until this ticket. No format or write-path
+change here: this section only documents the new reader.
+
 ## Live e2e (operator)
 
 1. Note handoffd's pid. `kill -STOP <pid>` (process alive, log frozen).
