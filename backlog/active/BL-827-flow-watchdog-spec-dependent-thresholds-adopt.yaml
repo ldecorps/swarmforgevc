@@ -7,7 +7,7 @@ epic: swarm-reliability
 human_approval: approved
 priority: 101
 direction: normal
-assigned_to: none
+assigned_to: coder
 depends_on: [BL-835]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
