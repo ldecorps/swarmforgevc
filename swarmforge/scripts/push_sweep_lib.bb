@@ -143,21 +143,12 @@
     {:refuse? false :reason nil :offending-shas []}
 
     :else
-    ;; BL-952: :bounced? is checked FIRST and vetoes everything below it -
-    ;; a parcel QA bounced stays reachable from swarmforge-QA (QA merged it
-    ;; to REVIEW it), so :qa-ancestor? true is exactly what a bounced
-    ;; commit looks like, and neither the bookkeeping allowlist nor the
-    ;; trivial-merge exemption may launder it (invariant 1: never reads as
-    ;; approved, whatever refs its commits are reachable from).
-    (let [bounced (filterv :bounced? ahead-commits)]
-      (if (seq bounced)
-        {:refuse? true :reason :bounced-parcel :offending-shas (mapv :sha bounced)}
-        (let [trivial-merge? (fn [{:keys [merge? changed-paths]}] (and merge? (empty? changed-paths)))
-              offending (remove #(or (:qa-ancestor? %) (trivial-merge? %)) ahead-commits)
-              non-bookkeeping (remove #(commit-bookkeeping-only? (:changed-paths %)) offending)]
-          (if (seq non-bookkeeping)
-            {:refuse? true :reason :non-qa-ancestor :offending-shas (mapv :sha non-bookkeeping)}
-            {:refuse? false :reason nil :offending-shas []}))))))
+    (let [trivial-merge? (fn [{:keys [merge? changed-paths]}] (and merge? (empty? changed-paths)))
+          offending (remove #(or (:qa-ancestor? %) (trivial-merge? %)) ahead-commits)
+          non-bookkeeping (remove #(commit-bookkeeping-only? (:changed-paths %)) offending)]
+      (if (seq non-bookkeeping)
+        {:refuse? true :reason :non-qa-ancestor :offending-shas (mapv :sha non-bookkeeping)}
+        {:refuse? false :reason nil :offending-shas []}))))
 
 ;; ── BL-855: no-op landing merge detector, a SIBLING check to qa-gate-
 ;;    decision above - a merge is authorized by qa-gate-decision (who

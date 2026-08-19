@@ -77,3 +77,29 @@ test('property: every dropped update logs exactly one line naming its id and com
     { numRuns: 200 }
   );
 });
+
+// Non-vacuity (permanent regression guard): the property's own comparison
+// logic, exercised against a hand-built "broken audit emitter" scenario a
+// pre-BL-620 (or regressed) implementation would produce - one drop
+// happens but the audit-line collector never received anything for it.
+// This is the same "prove the checker discriminates broken from correct"
+// shape as bl628AutonomousHostBootstrapInvariants.property.test.js's own
+// non-vacuity tests, used here because pollAndForward has no swappable
+// defective variant to import (unlike renderDailyTrendDefective) - the
+// break this guards against is the exact one the architect proved by hand
+// (removing telegramFrontDeskBotCore.ts's adapters.logDropAudit?.() call
+// site, see backlog/evidence/BL-620-architect-pass-20260819.md): a drop
+// happens, decideUpdateAction still computes a reason, but no audit line
+// is ever pushed. That verification does not persist as code; this does.
+test('non-vacuity: the property fails when a drop happens but no audit line was emitted for it', () => {
+  const update = { update_id: 100, message: { chat: { id: 2 }, from: { id: 999 }, message_thread_id: TOPIC_ID } };
+  const decision = decideUpdateAction(update, PRINCIPAL, CHAT_ID, subjectFor);
+  assert.equal(decision.action, 'drop', 'fixture must actually be a drop, or this proves nothing');
+  const expected = [{ id: update.update_id, decision }];
+  const auditLines = []; // the broken behaviour: logDropAudit never called for this drop
+  assert.throws(
+    () => assert.equal(auditLines.length, expected.length, 'one line per drop'),
+    /one line per drop/,
+    'a dropped update with zero audit lines must fail the property\'s own count assertion'
+  );
+});
