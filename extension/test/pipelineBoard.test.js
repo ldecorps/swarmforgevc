@@ -20,9 +20,12 @@ const {
   PIPELINE_BOARD_PAUSED_MAX,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
+  PIPELINE_BOARD_GRID_MAX_WIDTH,
   isEpicTrackerPausedItem,
   formatCollapsedEpicLine,
 } = require('../out/concierge/pipelineBoard');
+
+const NBSP = '\u00a0';
 
 // BL-452/BL-455 pipeline-board-01/02: a ticket held by a role becomes a row
 // marked only in that role's column; every other column in that row stays
@@ -242,10 +245,9 @@ test('computePipelineBoard: a not-started row carries its ticket meta (epic/slug
 test('renderPipelineBoardBody: a not-started row marks only the not-started column, no pipeline role column', () => {
   const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }], parked: [] });
   const lines = text.split('\n');
-  assert.equal(lines.find((l) => l.trim() === '1')?.trim(), '1');
-  assert.equal(lines.find((l) => l.startsWith('NS '))?.trim(), 'NS X');
+  assert.equal(lines.find((l) => l.startsWith('NS')), matrixLine('NS', ['X'], 3));
   for (const role of ['SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA']) {
-    assert.equal(lines.find((l) => l.startsWith(`${role} `))?.trim(), `${role} .`);
+    assert.equal(lines.find((l) => l.startsWith(role)), matrixLine(role, ['.'], 3));
   }
 });
 
@@ -262,29 +264,51 @@ test('computePipelineBoard: a paused ticket with a title gets its derived (list)
 // BL-452/BL-455 pipeline-board-01: each ticket block lists every pipeline
 // stage vertically; exactly one stage line carries X, every other stage . .
 
-test('renderPipelineBoardBody: an empty board shows a no-active-tickets grid placeholder', () => {
+test('renderPipelineBoardBody: an empty board shows a bare no-active-tickets placeholder, no dashes', () => {
   const text = renderPipelineBoardBody({ rows: [], parked: [] });
-  assert.equal(text.trim(), '-- (no active tickets) --');
+  assert.equal(text.trim(), '(no active tickets)');
 });
 
-test('renderPipelineBoardBody: a pivoted ticket block lists every stage column vertically', () => {
+// BL-585: matches the real matrix line shape exactly - a fixed gutter, then
+// one NBSP separator plus a right-aligned cell per visible column. Tests
+// build EXPECTED lines with this instead of hand-typing NBSP runs, but
+// still compare the real rendered string byte-for-byte (never a whitespace-
+// normalized comparison, which would pass while the phone render is
+// broken - the ticket's own explicit warning).
+function matrixLine(gutter, cells, cellWidth) {
+  return gutter + cells.map((c) => NBSP + c.padStart(cellWidth, NBSP)).join('');
+}
+
+test('renderPipelineBoardBody: the matrix header carries every visible ticket id, right-aligned', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-9', column: 'coder', slug: '' },
+      { id: 'BL-123456', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const header = text.split('\n')[0];
+  assert.equal(header, matrixLine(NBSP.repeat(2), ['9', '123456'], 6));
+});
+
+test('renderPipelineBoardBody: one shared row per stage, in NS/SP/CO/CL/AR/HD/DC/QA order', () => {
   const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] });
-  for (const label of ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA']) {
-    assert.ok(text.includes(`${label} `), `expected stage line ${label} in:\n${text}`);
-  }
+  const lines = text.split('\n');
+  const labels = lines.slice(1, 9).map((l) => l.slice(0, 2));
+  assert.deepEqual(labels, ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA']);
 });
 
-test('renderPipelineBoardBody: a row is marked only in its own stage line', () => {
+test('renderPipelineBoardBody: a row is marked X only on the holding role, "." everywhere else', () => {
   const text = renderPipelineBoardBody({ rows: [{ id: 'BL-387', column: 'coder', slug: 'x' }], parked: [] });
   const lines = text.split('\n');
-  assert.equal(lines.find((l) => l.trim() === '387')?.trim(), '387');
-  assert.equal(lines.find((l) => l.startsWith('CO '))?.trim(), 'CO X');
-  for (const label of ['NS', 'SP', 'CL', 'AR', 'HD', 'DC', 'QA']) {
-    assert.equal(lines.find((l) => l.startsWith(`${label} `))?.trim(), `${label} .`);
+  const expectedMarkByLabel = { NS: '.', SP: '.', CO: 'X', CL: '.', AR: '.', HD: '.', DC: '.', QA: '.' };
+  for (const [label, mark] of Object.entries(expectedMarkByLabel)) {
+    const line = lines.find((l) => l.startsWith(label));
+    assert.equal(line, matrixLine(label, [mark], 3), `stage ${label}`);
   }
 });
 
-test('renderPipelineBoardBody: two tickets in different columns each mark only their own stage line', () => {
+test('renderPipelineBoardBody: two tickets in different columns each mark only their own row/column cell', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-387', column: 'coder', slug: '' },
@@ -293,26 +317,8 @@ test('renderPipelineBoardBody: two tickets in different columns each mark only t
     parked: [],
   });
   const lines = text.split('\n');
-  assert.ok(lines.some((l) => l.trim() === '387'));
-  assert.ok(lines.some((l) => l.trim() === '413'));
-  const block387Start = lines.findIndex((l) => l.trim() === '387');
-  const block413Start = lines.findIndex((l) => l.trim() === '413');
-  const block387 = lines.slice(block387Start, block387Start + 9);
-  const block413 = lines.slice(block413Start, block413Start + 9);
-  assert.ok(block387.some((l) => l.trim() === 'CO X'));
-  assert.ok(block413.some((l) => l.trim() === 'QA X'));
-});
-
-test('renderPipelineBoardBody: each ticket id renders on its own line in the pivoted grid', () => {
-  const text = renderPipelineBoardBody({
-    rows: [
-      { id: 'BL-9', column: 'coder', slug: '' },
-      { id: 'BL-123456', column: 'QA', slug: '' },
-    ],
-    parked: [],
-  });
-  const idLines = text.split('\n').filter((l) => /^\d+$/.test(l.trim()));
-  assert.deepEqual(idLines.map((l) => l.trim()).sort(), ['123456', '9']);
+  assert.equal(lines.find((l) => l.startsWith('CO')), matrixLine('CO', ['X', '.'], 3));
+  assert.equal(lines.find((l) => l.startsWith('QA')), matrixLine('QA', ['.', 'X'], 3));
 });
 
 test('renderPipelineBoardBody: rendering is a pure function of its data - same input, same text', () => {
@@ -320,10 +326,11 @@ test('renderPipelineBoardBody: rendering is a pure function of its data - same i
   assert.equal(renderPipelineBoardBody(data), renderPipelineBoardBody(data));
 });
 
-// BL-455 pipeline-board-epic-01/05: rows are grouped by epic under a
-// heading; a no-epic bucket is grouped together too.
+// BL-585 pipeline-board-ticket-columns-03: the epic prints as a per-ticket
+// caption line below the matrix - no section heading, no grouping. Replaces
+// BL-455's own epic-heading tests, which pinned a shape this ticket retires.
 
-test('renderPipelineBoardBody: rows sharing an epic render under one heading', () => {
+test('renderPipelineBoardBody: two tickets sharing an epic each get their own identical caption, not a shared heading', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
@@ -332,13 +339,12 @@ test('renderPipelineBoardBody: rows sharing an epic render under one heading', (
     parked: [],
   });
   const lines = text.split('\n');
-  assert.equal(lines.filter((l) => l.includes('Alpha')).length, 1, 'expected exactly one Alpha heading');
-  const headingIndex = lines.findIndex((l) => l.includes('Alpha'));
-  assert.ok(lines.some((l) => l.trim() === '1'));
-  assert.ok(lines.some((l) => l.trim() === '2'));
+  assert.ok(lines.includes('1 Alpha'));
+  assert.ok(lines.includes('2 Alpha'));
+  assert.ok(!lines.some((l) => l.startsWith('--')), 'expected no epic heading line');
 });
 
-test('renderPipelineBoardBody: a no-epic row renders under its own heading, distinct from a named epic', () => {
+test('renderPipelineBoardBody: an epic-less ticket gets the (no epic) caption, distinct from a named epic', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
@@ -347,15 +353,12 @@ test('renderPipelineBoardBody: a no-epic row renders under its own heading, dist
     parked: [],
   });
   const lines = text.split('\n');
-  const alphaIndex = lines.findIndex((l) => l.includes('Alpha'));
-  const noEpicIndex = lines.findIndex((l) => l.startsWith('--') && !l.includes('Alpha'));
-  assert.ok(alphaIndex >= 0 && noEpicIndex > alphaIndex);
-  // BL-505: the grid TICKET column shows the ticket NUMBER only.
-  assert.ok(lines[noEpicIndex + 1].trim().startsWith('2'));
+  assert.ok(lines.includes('1 Alpha'));
+  assert.ok(lines.includes('2 (no epic)'));
 });
 
 // BL-455 pipeline-board-epic-02/03: parked/awaiting-approval tickets render
-// in a below-grid list, never as stage-grid rows.
+// in a below-grid list, never as grid rows/columns.
 
 test('renderPipelineBoardBody: an empty parked list renders no below-grid section', () => {
   const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] });
@@ -502,7 +505,7 @@ test('deriveDisplayTicketId: an id with no recognised ticket prefix is left unch
   assert.equal(deriveDisplayTicketId('INTAKE-pipeline-board-grid'), 'INTAKE-pipeline-board-grid');
 });
 
-test('renderPipelineBoardBody: the grid shows ticket numbers without BL-/GH- prefix on their own lines', () => {
+test('renderPipelineBoardBody: the matrix header strips both BL- and GH- ticket prefixes', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-493', column: 'coder', slug: '' },
@@ -510,32 +513,26 @@ test('renderPipelineBoardBody: the grid shows ticket numbers without BL-/GH- pre
     ],
     parked: [],
   });
-  const lines = text.split('\n');
-  assert.ok(lines.some((l) => l.trim() === '493'));
-  assert.ok(lines.some((l) => l.trim() === '42'));
+  const header = text.split('\n')[0];
+  assert.equal(header, matrixLine(NBSP.repeat(2), ['493', '42'], 3));
 });
 
-test('renderPipelineBoardBody: pivoted ticket ids align with the mark column, not the label column', () => {
-  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-513', column: 'not-started', epic: 'pipeline-board', slug: '' }], parked: [] });
-  const lines = text.split('\n');
-  const ticketLine = lines.find((l) => l.includes('513') && !l.includes('pipeline-board'));
-  const nsLine = lines.find((l) => l.startsWith('NS '));
-  assert.ok(ticketLine, `expected ticket id line, got:\n${text}`);
-  assert.equal(nsLine?.trim(), 'NS X');
-  assert.equal(ticketLine.indexOf('513'), nsLine?.indexOf('X'), 'ticket id should start where stage marks start');
-  assert.ok(ticketLine.startsWith('\u00a0'), 'expected NBSP padding so Telegram does not strip the indent');
-});
-
-test('renderPipelineBoardBody: pivoted ticket ids are never padded with trailing spaces', () => {
+test('renderPipelineBoardBody: a ticket id column aligns with its own mark column, not the label gutter', () => {
   const text = renderPipelineBoardBody({
-    rows: [
-      { id: 'BL-493', column: 'coder', slug: '' },
-      { id: 'BL-504', column: 'QA', slug: '' },
-    ],
+    rows: [{ id: 'BL-513', column: 'not-started', epic: 'pipeline-board', slug: '' }],
     parked: [],
   });
-  const idLines = text.split('\n').filter((l) => /^\d+$/.test(l.trim()));
-  assert.deepEqual(idLines.map((l) => l.trim()).sort(), ['493', '504']);
+  const lines = text.split('\n');
+  const header = lines[0];
+  const nsLine = lines.find((l) => l.startsWith('NS'));
+  assert.equal(header, matrixLine(NBSP.repeat(2), ['513'], 3));
+  assert.equal(nsLine, matrixLine('NS', ['X'], 3));
+  // Right-alignment means the LAST character of the id and the mark share
+  // one column - not their start, which differs for a multi-char id next
+  // to a single-char mark.
+  assert.equal(header.length, nsLine.length);
+  assert.ok(header.endsWith('513'));
+  assert.ok(nsLine.endsWith('X'));
 });
 
 test('renderPipelineBoardBody: a below-grid list line shows the short kebab slug only and a number-only id', () => {
@@ -591,18 +588,18 @@ test('computePipelineBoard: a coordinator-held ticket is marked at the QA stage,
   assert.deepEqual(rows, [{ id: 'BL-950', column: 'QA', epic: undefined, slug: '' }]);
 });
 
-test('renderPipelineBoardBody: the not-started ticket mark falls on the NS line before specifier', () => {
+test('renderPipelineBoardBody: the not-started row (NS) comes before specifier (SP), header before both', () => {
   const text = renderPipelineBoardBody({
     rows: [{ id: 'BL-503', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }],
     parked: [],
   });
   const lines = text.split('\n');
-  const ticketIndex = lines.findIndex((l) => l.trim() === '503');
-  const nsIndex = lines.findIndex((l) => l.startsWith('NS '));
-  const spIndex = lines.findIndex((l) => l.startsWith('SP '));
-  assert.ok(ticketIndex >= 0 && nsIndex > ticketIndex && spIndex > nsIndex, lines.join('\n'));
-  assert.equal(lines[nsIndex].trim(), 'NS X');
-  assert.equal(lines[spIndex].trim(), 'SP .');
+  const nsIndex = lines.findIndex((l) => l.startsWith('NS'));
+  const spIndex = lines.findIndex((l) => l.startsWith('SP'));
+  assert.ok(nsIndex > 0 && spIndex > nsIndex, lines.join('\n'));
+  assert.equal(lines[0], matrixLine(NBSP.repeat(2), ['503'], 3));
+  assert.equal(lines[nsIndex], matrixLine('NS', ['X'], 3));
+  assert.equal(lines[spIndex], matrixLine('SP', ['.'], 3));
 });
 
 // ── BL-465: computePipelineBoard's new rootIntake/recentlyClosed/links ───
@@ -1021,14 +1018,15 @@ test('PIPELINE_BOARD_MESSAGE_MAX_LENGTH stays at or under Telegram\'s real 4096-
 
 // ── BL-526: grid-only render for the phone miniapp ────────────────────────
 
-test('BL-526 renderPipelineBoardGridOnly: includes pivoted STATUS GRID and row marks', () => {
+test('BL-526 renderPipelineBoardGridOnly: includes the matrix header and row marks', () => {
   const text = renderPipelineBoardGridOnly({
     rows: [{ id: 'BL-526', column: 'coder', slug: 'console-menu' }],
     parked: [],
   });
-  assert.match(text, /526/);
-  assert.ok(text.includes('CO X'), text);
-  assert.ok(text.includes('NS .'), text);
+  const lines = text.split('\n');
+  assert.equal(lines[0], matrixLine(NBSP.repeat(2), ['526'], 3));
+  assert.equal(lines.find((l) => l.startsWith('CO')), matrixLine('CO', ['X'], 3));
+  assert.equal(lines.find((l) => l.startsWith('NS')), matrixLine('NS', ['.'], 3));
   assert.ok(!text.includes('PARKED:'));
 });
 
@@ -1161,7 +1159,7 @@ test('composePipelineBoardHtml: status grid stays inside one <pre>; <a> tags nev
   const preBody = html.slice(preOpen, preClose + '</pre>'.length);
   assert.ok(preBody.includes('528'), preBody);
   assert.ok(preBody.includes('NS'), preBody);
-  assert.ok(preBody.includes('CO X'), preBody);
+  assert.ok(preBody.includes(matrixLine('CO', ['X'], 3)), preBody);
   assert.ok(!preBody.includes('<a href'), preBody);
   assert.ok(html.indexOf('<a href') > preClose, html);
 });
