@@ -722,13 +722,7 @@
    comes from the lib, never from blundering into per-role repairs."
   []
   (let [socket (tmux-socket)
-        probe (control-plane-lib/probe-server! socket)
-        classification (control-plane-lib/classify
-                        {:socket-file-exists? (fs/exists? socket-file)
-                         :server-responds? (:responds? probe)
-                         :role-metadata-present?
-                         (or (fs/exists? roles-file)
-                             (fs/exists? (fs/path state-dir "sessions.tsv")))})]
+        {:keys [classification]} (control-plane-lib/observe! state-dir socket)]
     {:socket socket
      :classification classification
      :decision (control-plane-lib/recovery-decision
