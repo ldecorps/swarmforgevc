@@ -81,6 +81,7 @@ here.
 - [Pinned Shell + One Classified Retry (Tool-Miss Auto-Heal, Slice A)](how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md) — the `PreToolUse` hook that pins every role's Bash command to its own worktree and heals one recoverable miss (wrong-cwd, wrong-surface, missing-root-argv) in silence before the model ever sees a failure, versus a real failure returned untouched.
 - [The Batch-Claim Progress Sidecar](how-to/BL-678-batch-claim-progress-sidecar.md) — the live-owner half of BL-648's source near-miss: the sidecar every batch claim now writes at claim time, the chase sweep that refreshes it and surfaces (never re-forwards or re-delivers) a stale one to the coordinator, and the two staleness/cooldown config knobs.
 - [The Reference-Freshness Pre-Turn Guard](how-to/BL-640-reference-freshness-guard.md) — why `ready_for_next.sh` can now refuse a turn with `STALE_REFERENCE_ELABORATION`, what it checks (worktree vs. whichever of `main`/`origin/main` is ahead), and what to do when it fires.
+- [Clearing Byte-Identical Hot-Synced Copies Before a Worktree Merge](how-to/BL-924-clear-identical-untracked-copies-before-merge.md) — the `clear_identical_untracked_and_merge.bb` script to run instead of a bare `git merge` when untracked, hot-synced script copies block a worktree fast-forward, its all-or-nothing identity proof, and what it deliberately never touches.
 
 ## Reference
 
