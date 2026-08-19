@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-585: the Pipeline Board's grid is now
+**Last Updated:** August 19, 2026 (BL-923: the closing-ceremony packet's
+dwell-hotspot fold summed each parcel's `processingMs` into a per-role total
+by plain addition — valid only if a role handles its parcels one after
+another, which the two BATCH roles (cleaner, hardender; Article 2.4) do not:
+every parcel in one batch shares the same wall-clock occupancy window, so
+summing counted that window once per parcel and inflated exactly those two
+roles. Measured on the 2026-08-18 shift, reported hardener dwell (11350s)
+was 1.82x its real occupied time (6235s) and cleaner 2.65x (9730s reported
+vs 3672s real), while every serial role (QA, architect, coder, documenter)
+came out exactly 1.00x — the signature of the defect. The ranking
+consequence was the point: reported hardender > cleaner > QA > architect,
+real QA (7635s) > hardender (6235s) > architect (6222s) > cleaner (3672s).
+Recomputed across all twelve recorded shifts, the packet's top-dwell
+hypothesis — one of only 1-3 hypothesis slots the ceremony hands the
+specifier — named the wrong role on five, always displacing QA in favor of
+a batch role. `computeDwellHotspots` (`extension/src/quality/closingCeremony.ts`)
+now reconstructs each parcel's interval as `[at - processingMs, at]` and
+totals the UNION of those intervals per role, covering both the
+identical-window (batch) case and a partial-overlap case without hardcoding
+which roles are batch roles today — a fix keyed to the current two batch
+roles, or to exactly-equal timestamps, would rot at the next topology
+change. Deliberately not the same fix shape as BL-918's stall-classifier
+correction: the per-parcel ledger events are not misclassified, they are
+correct, so the fix belongs in the fold (this aggregation), never pushed
+down to the emitter — that would corrupt per-ticket lifecycle views, which
+legitimately want a shared window's full duration. Corrects a claim BL-918
+made in passing ("dwell is sound") — that check was real but single-axis: it
+verified `queueWaitMs` exclusion, never whether summing per-parcel windows
+is a valid fold. See the new "`dwellHotspots` is occupied time, not summed
+parcel time" section in
+[BL-820: Closing-Ceremony Lean Pass](BL-820-closing-ceremony-lean-pass.md).
+New human-facing surface: none directly (the packet is delivered to the
+specifier as a `note`, not shown to the human elsewhere), but the dwell
+hypothesis a specifier acts on now names the real hotspot instead of
+systematically accusing a batch role.); Previously August 19, 2026 (BL-585:
+the Pipeline Board's grid is now
 ONE matrix — pipeline stages as shared rows, active tickets as columns, so an
 extra ticket adds a column instead of another 8-line block — retiring the old
 per-ticket pivoted block and its `-- <epic> --` section heading entirely.
