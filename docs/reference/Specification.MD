@@ -1,6 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-905: certifies the
+**Last Updated:** August 19, 2026 (BL-904: the cost-health sidecar's
+`reliability.daemonRestarts` field was a literal `{value: 0, trend:
+computeTrend([])}` sitting among four real measurements — honest when
+written, but locked in by a test asserting the placeholder itself, so a day
+with 248 real daemon restarts still reported a confident `0` with a trend
+object attached. `bucketDailyDaemonRestarts` (`costHealthSidecar.ts`) now
+derives it from BL-675's `.swarmforge/daemon/freshness-incidents.log`,
+counting `action=restart` records only — `action=escalate` (the watchdog
+declining a second restart during cool-off) is a distinct event and is not
+folded in, which would have overstated restarts by roughly two thirds on
+real data. A missing or unreadable log yields `null` through to
+`trendedDaemonRestarts`, which reports `direction: "unknown"` with an empty
+series — never a fabricated zero — so "no data" stays distinguishable from
+a genuine zero-restart day (the same invariant `resourceSamplesObserved`
+already established for the sampler). Architect reviewed and accepted a
+single TOTAL count rather than a per-daemon breakdown for this ticket — the
+per-daemon `daemon` field is still captured by
+`readFreshnessIncidentEvents` and available for a future ticket, but a
+`Record<string, TrendedNumber>` shape would ripple into the renderer and
+PWA, both out of this ticket's scope. See the new "BL-904" note in
+[the freshness-watchdog how-to](../how-to/BL-675-daemon-log-freshness-watchdog.md).); Previously August 19, 2026 (BL-905: certifies the
 hide-childless-epics reorder-screen hotfix (`0f5394a2d0`, landed on `main`
 2026-08-16 outside the normal pipeline with `Hotfix-Certification:
 pending`) — a paused `type: epic` tracker with no live child (`paused/` +
@@ -1859,6 +1879,8 @@ Both are available via the `GET /cost-telemetry` bridge endpoint and the CLI (be
 **Resource health also reports host load, not only per-role RSS/CPU (BL-822).** A host thrashing under overall load can degrade every role at once without any single role's own RSS/CPU trend crossing its per-role threshold — the per-role signal above is blind to that shape entirely. `sampleRolesOnce` now also samples `os.loadavg()[0] / os.cpus().length` on the same tick, independently of whether any role's pid resolved (the day a host is on fire but every role pid happens to be unresolvable is exactly the day this signal must not go silent), and records it as a distinct `host_load_sample` event in the same `chaser-*.jsonl` telemetry family `resource_sample` events already use. `computeHostLoadVerdict` marks a day **severe** only when the ratio clears a configurable threshold (`host_load_severe_ratio`, default 4x cores — deliberately above `mutation_cooldown_lib.bb`'s `mutation_busy_load_multiplier` default of 2, since "too busy to start mutation testing" is a lower bar than "this day was resource-abnormal" and the two dials must not drift into contradiction) **and** that ratio has held for a configurable sustained window (`host_load_sustained_minutes`, default 15 minutes) — a single spike or a long ordinary-load stretch alone does not qualify. The cost-health sidecar's `hostLoad` field carries this verdict, additive and optional (never folded into `resourceAnomalies` — a `ResourceAnomaly` always carries `{role, rssBytes}` and the static PWA renders those fields unconditionally, while a host-wide measurement has neither): a severe day's "none found" anomalies rendering is overridden regardless of whether a per-role anomaly is also present, while per-role RSS/CPU detection and `resourceSamplesObserved` (BL-350, above) stay untouched and independent of this signal.
 
 **The per-role sampler was measuring the pane's shell, not the agent — every RSS/CPU figure and every anomaly it ever emitted was shell noise (BL-847).** `resolvePanePid`'s tmux `#{pane_pid}` names the pane's ROOT SHELL, the process tmux itself forked, never whatever that shell went on to exec — so `sampleProcessStats` was running `ps` against a ~100 KB idle shell while the real agent (`claude`, hundreds of MB) went unmeasured, and `cpuPercent` read 0 on every sample of every role. `resolveAgentPid` (`resourceSamplerActivation.ts`) now composes `resolvePanePid` with `selectAgentDescendant` — a BFS over the pane pid's process-tree descendants, nearest generation first, matching a per-role configured agent command name (`DEFAULT_AGENT_COMMAND_NAME = 'claude'`, overridden per role from `swarmRole.agent` so a non-claude role's sampler looks for its own agent, never a hardcoded name) — resolved via one `ps -A` shell-out per tick rather than one call per candidate pid. When no matching descendant exists, the role records **no sample at all** rather than falling back to the shell pid (invariant 2): a wrong number wearing a right number's clothes is worse than an honest gap, and `resourceSamplesObserved` keeps meaning "we measured the agent." Samples recorded before this fix remain in the telemetry trend as shell measurements, alongside corrected samples going forward — a known, accepted discontinuity, not silently mixed. Orthogonal to BL-822 (which fixes the detector's blind spot to host load) and BL-350 (headless sampling, unaffected): this fixes which process the existing per-role sampler measures. `PaneTailer`'s own use of `getPanePid` for respawn detection is correct and unchanged — the pane's shell pid IS the right identity for "did this pane get respawned."
+
+**The reliability count `daemonRestarts` was a hardcoded zero, not a measurement (BL-904).** Its four sibling reliability fields (`chases`, `nudges`, `respawns`, `failedDeliveries`) all read a real daily series; `daemonRestarts` alone was a literal `{value: 0, trend: computeTrend([])}`, placed among them so it read like one — a day with 248 real daemon restarts (BL-675's freshness watchdog, above) still reported a confident `0` with a trend object attached. `bucketDailyDaemonRestarts` (`costHealthSidecar.ts`) now derives it from `.swarmforge/daemon/freshness-incidents.log`, counting `action=restart` records only — `action=escalate` (a declined restart during cool-off) is a distinct event, not folded in. A missing or unreadable log propagates as `null` through to `trendedDaemonRestarts`, which reports `direction: "unknown"` with an empty series rather than a fabricated zero, so "no data" stays distinguishable from a genuine zero-restart day — the same posture `resourceSamplesObserved` (BL-350, above) already established for the resource sampler. Per-daemon breakdown (which daemon is storming) was reviewed and deliberately deferred: the `daemon` field is still captured per event and available to a future ticket, but a `Record<string, TrendedNumber>` shape would ripple into the briefing renderer and PWA, out of this ticket's scope.
 
 #### Agent CLI
 
