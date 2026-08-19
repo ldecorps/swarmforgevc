@@ -6,8 +6,8 @@ severity: medium
 status: todo
 epic: tool-miss-auto-heal
 human_approval: approved
-priority: 25
-direction: operator-reported
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -135,10 +135,22 @@ qa_e2e_procedure: >
      green), and swarmforge.sh at the parcel commit contains the restored
      "PreToolUse": [ block — the required_wiring gate must have passed on
      substance, not on a comment.
-  7. Non-vacuity: disable the parse-check call and confirm outline rows
-     quoted-heredoc and literal-close-paren fail; restore. A fix whose
-     heredoc row still passes without the parse-check is not testing the
-     defect.
+  7. Non-vacuity, two distinct halves (amended 2026-08-19, coder-reported
+     spec gap: the original step presumed the parse-check is what keeps
+     the heredoc/paren rows green, but under the landed composition those
+     rows parse by construction — disabling the gate cannot make them
+     fail, and their surviving it is correct behavior, not a defect):
+     (a) corpus rows vs defect 1 — proven by step 1 already: the same
+     quoted-heredoc and literal-close-paren shapes fail bash -n at the
+     merge-base composition; that is the rows' break-direction evidence.
+     (b) the parse gate itself (invariant 1) — force the injectable
+     parses? seam in safe-wrapper-command to always-true and confirm the
+     fail-open scenarios (step 4's shapes, e.g. an unterminated heredoc
+     that swallows the group closer) now FAIL, because the hook hands
+     back unparseable wrapper text instead of the untouched original;
+     restore. A gate whose removal changes nothing anywhere is dead
+     code, not a guard. The property runner's recorded break-restore
+     runs (step 2) are supporting evidence, not a substitute for (b).
   8. Regression: BL-913 and BL-934 feature scenarios and suites green and
      unweakened; at most one retry still holds structurally.
 
@@ -184,3 +196,41 @@ notes: >
   the required_wiring gate on the restored "PreToolUse": [ block is the
   thing that must carry it. Do not re-enable ahead of this ticket, and do
   not close this ticket with the registration still absent.
+
+  2026-08-19 coordinator — AT CLOSE, the restored registration is INERT
+  until every role respawns. Learned from the disable itself (3bac496ec):
+  swarmforge.sh's write_claude_settings_file only writes
+  .swarmforge/launch/<role>.claude-settings.json at LAUNCH, those files are
+  gitignored runtime state untouched by any merge, and a running session
+  holds its hooks in memory. So landing this parcel restores the hook for
+  FUTURE launches only — the live pack keeps running hook-free, and the
+  ticket would read green over an unchanged system (the BL-328 failure
+  exactly). Closing procedure: run the BL-328 build_freshness_cli sync
+  step, then respawn each role
+  (tmux respawn-pane -k -t swarmforge-<role> '.swarmforge/launch/<role>.sh'),
+  skipping any role with a live spinner, and CONFIRM the settings files
+  actually carry the hook again before reporting it re-enabled. The
+  coordinator pane must NOT respawn itself (BL-107 — that tears down the
+  whole swarm); ask the operator to respawn it.
+
+  **Qjump 2026-08-19 ~20:28 CEST** (human via Cursor): "Qjump 960" —
+  promoted ahead of ordinary paused work; `direction: queue-jump`,
+  `priority: 0`. Hook re-enable rides this parcel per operator confirmation
+  above.
+
+  ## Spec-gap amendment (specifier, 2026-08-19, coder note re 499f3e2d4b)
+
+  qa_e2e_procedure step 7 rewritten. As minted it presumed the splice
+  composition survives and the parse-check is the load-bearing fix, so it
+  told QA to disable the parse-check and expect the quoted-heredoc and
+  literal-close-paren rows to fail. The landed design — the temp-file
+  capture/replay shape the ticket's own "How (direction, not mandate)"
+  endorsed — composes those rows into valid bash by construction, so they
+  survive a disabled gate CORRECTLY; the old step would have made QA fail
+  a right implementation. Step 7 now checks (a) the corpus rows' bite via
+  step 1's merge-base reproduction and (b) the parse gate's own
+  load-bearing-ness via the injectable parses? seam against the fail-open
+  scenarios. No scenario, invariant, or step handler changed (BL-233 n/a);
+  purely a QA-procedure correction — the cleaner does not rework anything.
+
+assigned_to: coder

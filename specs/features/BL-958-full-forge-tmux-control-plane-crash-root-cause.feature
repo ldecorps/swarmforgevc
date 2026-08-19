@@ -34,3 +34,13 @@ Feature: BL-958 control-plane loss is classified, recorded once, and owned
     When the response policy evaluates the incident
     Then the decision names exactly one owning daemon
     And the decision is either a recovery action or a single escalation carrying the reason and the next action
+
+  # BL-958 control-plane-loss-04
+  Scenario: when recovery is impossible ensure reports failure and preserves the incident
+    Given no persisted launch scripts exist for any role
+    And one control-plane incident is already recorded for this loss
+    When the ensure recovery path evaluates the fixture
+    Then the control-plane outcome is reported as failed, naming that no launch scripts exist to respawn roles from
+    And no per-role recreation is attempted
+    And the recorded incident remains open
+    And no role is reported as repaired
