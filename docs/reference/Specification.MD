@@ -1,6 +1,44 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-924: `sync_worktree_scripts()` copies
+**Last Updated:** August 19, 2026 (BL-944: the `operator_runtime.bb`
+acceptance-fixture dependency list — `OPERATOR_RUNTIME_BB_FILES` in
+`specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js`, which four step
+handlers copy into a disposable fixture root before shelling out to a real
+`bb operator_runtime.bb <root> --tick-once` — had silently drifted from the
+real transitive `load-file` closure: the closure is 28 files, the list
+named 22, and the seven-file gap made thirteen scenarios across three
+feature files (BL-647-rotation-router-liveness,
+BL-368-control-loss-is-not-agent-death, BL-359-always-on-operator-presence)
+fail identically on a `FileNotFoundException` naming a file no scenario
+mentions — unnoticed for fourteen days despite five prior occurrences of the
+exact same failure mode (BL-412/413/458/647/655), each closed only by adding
+the one reported name. The list now carries the seven missing entries
+(`mono_router_lib.bb`, `prompt_engine_lib.bb`, `orphan_janitor_sweep_lib.bb`,
+`orphan_janitor_lib.bb`, `hotfix_certification_lib.bb`,
+`process_table_lib.bb`, `babysitterd_freshness_lib.bb`) and drops
+`operator_ask.bb` — verified unreachable by any load-file chain and never
+spawned from this fixture root by any of the four consumers. The durable
+half: a new `operatorRuntimeBbClosure.js` derives the real closure from
+source, walking every `load-file` form transitively from
+`operator_runtime.bb` and diffing it against the maintained list (missing
+entries and undeclared extras reported separately, the latter via a new
+`OPERATOR_RUNTIME_BB_DECLARED_EXTRAS` escape hatch, empty today); the
+resulting standing gate, `extension/test/operatorRuntimeBbFixtureClosure.test.js`,
+fails on exactly the one file that drifted instead of every consumer
+scenario at once — the BL-897 "a kept-in-sync comment is not a gate" rule
+applied to a list whose own header comment had already recorded this same
+failure mode five times. Re-verified against the originally-failing
+features: BL-647 7/7 (was 0/7), BL-359 7/7 (was 5/7), BL-368 3/4 (was 0/4) —
+the one remaining BL-368 failure is a genuine, separate defect the fix
+surfaced, not fixed here: `role_lifecycle.sh`'s unpark path refuses on a
+fixture root's own macOS temp-dir path exceeding the unix-socket length
+guard before ever reaching the "still alive" check the scenario means to
+exercise. Recorded with evidence and raised as its own ticket (BL-948)
+rather than folded into this parcel. See
+[Keeping the operator_runtime.bb JS fixture list honest](../how-to/BL-944-operator-runtime-fixture-closure-guard.md).
+No human-facing command, setting, or UI — same internal
+test-infrastructure-hygiene class as BL-671/BL-878/BL-897.); Previously
+August 19, 2026 (BL-924: `sync_worktree_scripts()` copies
 helper scripts into every role worktree at launch with `cp -R`, landing
 them untracked; `git merge` refuses to overwrite an untracked file even
 when it is byte-identical to the tracked content coming in, and only names
