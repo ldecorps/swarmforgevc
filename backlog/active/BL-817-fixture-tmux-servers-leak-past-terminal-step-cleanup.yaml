@@ -9,7 +9,7 @@ severity: medium
 priority: 68
 direction: swarm-proposed
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "No tmux server started by an acceptance step handler outlives the run that started it, whatever ends the scenario — pass, thrown assertion, killed mutant, or signal."
