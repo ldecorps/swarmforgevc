@@ -73,3 +73,24 @@ notes: >
   step-file fix rides the parcel) handled by note to the BL-571 holder;
   job 3 (this gate) is this ticket. The directive sentence is quoted
   verbatim in the description per Article 5.3.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20: not promoted. Two blockers:
+  human_approval: pending, and active/ holds 7 against an effective cap of 7
+  (live full-forge pack). type: chore, so NOT expedited under Article 3.2.4;
+  it queues on its ordinary priority: 60, behind BL-962 (defect/high,
+  expedited) and BL-963 (priority 30).
+
+  COORDINATOR NOTE ON TIMING (not a promotion override, a flag for the human):
+  BL-964 is the regression gate for the dead SWARMFORGE_ENSURE_* spelling, and
+  that regression is LIVE RIGHT NOW on in-flight branches - swarmforge-hardender
+  carries 7 dead occurrences and swarm/coder / swarmforge-architect carry 30
+  each, against 0 on main after human hotfix 596098dc3. Two BL-958 control-plane
+  fixtures (lines 628-630 and 673-675 on the hardener branch) would, if landed,
+  partially revert that hotfix and silently resume spawning real processes -
+  the hardener's own line-568 comment records a measured run leaving a PPID-1
+  babysitterd in $TMPDIR. At priority 60 behind an approval gate, this ticket
+  arrives well after those fixtures could land, so it must not be treated as
+  the mitigation. The branch-level fix was routed to the hardener directly
+  (note 000632, evidence af1f66406). Raising BL-964's priority would NOT close
+  the gap either - the fix has to happen on the branch. Evidence: af1f66406.
