@@ -6,8 +6,8 @@ severity: medium
 status: todo
 epic: tool-miss-auto-heal
 human_approval: approved
-priority: 25
-direction: operator-reported
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -184,3 +184,10 @@ notes: >
   the required_wiring gate on the restored "PreToolUse": [ block is the
   thing that must carry it. Do not re-enable ahead of this ticket, and do
   not close this ticket with the registration still absent.
+
+  **Qjump 2026-08-19 ~20:28 CEST** (human via Cursor): "Qjump 960" —
+  promoted ahead of ordinary paused work; `direction: queue-jump`,
+  `priority: 0`. Hook re-enable rides this parcel per operator confirmation
+  above.
+
+assigned_to: coder
