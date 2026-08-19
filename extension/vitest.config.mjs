@@ -14,13 +14,23 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // always run `tsc` before Vitest (see package.json), so out/ already exists
 // by the time this config loads.
 const require = createRequire(import.meta.url);
-const { PER_WORKER_HEAP_MB, resolveWorkerPoolSize } = require('./out/tools/vitest-worker-memory-budget');
+const { PER_WORKER_HEAP_MB, resolveWorkerPoolSize, resolveVitestForkCeiling } = require('./out/tools/vitest-worker-memory-budget');
 // BL-792: MAX_WORKERS is a ceiling tuned for the 15360MB reference incident
 // host, not a promise that every host running this suite has that much RAM.
 // resolveWorkerPoolSize shrinks the actual fork count to what THIS host's
 // real RAM can safely hold (still capped at MAX_WORKERS, still floored at
 // 1) - unchanged on a well-provisioned host, smaller on a tighter one.
-const WORKER_POOL_SIZE = resolveWorkerPoolSize(os.totalmem() / (1024 * 1024));
+// BL-935: a SECOND, independent CPU-axis ceiling, composed in via
+// resolveWorkerPoolSize's own `ceiling` parameter rather than replacing its
+// memory-derived floor - a full-forge pack on macOS runs 8 concurrent
+// Claude sessions on 2 physical cores before any test tooling starts, a gap
+// the RAM-only budget above has no signal for at all.
+const FORK_CEILING = resolveVitestForkCeiling({
+  pack: process.env.SWARMFORGE_PACK,
+  platform: os.platform(),
+  override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
+});
+const WORKER_POOL_SIZE = resolveWorkerPoolSize(os.totalmem() / (1024 * 1024), FORK_CEILING);
 
 export default defineConfig({
   test: {
