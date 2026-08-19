@@ -67,6 +67,31 @@
   [s]
   (str "'" (str/replace s "'" "'\\''") "'"))
 
+;; The file every attempt's combined output is captured to, as it appears in
+;; the generated bash (already quoted). Named once so the first attempt, each
+;; heal clause, the replay and the cleanup can never disagree about it.
+(def ^:private OUT-FILE "\"$__sfh_out_file\"")
+
+;; The ONE way this module embeds command text into generated bash: a
+;; multi-line subshell group on its own lines, so heredocs, literal parens,
+;; nested quotes, pipelines and ;-sequences all parse exactly as they would
+;; standalone (BL-960 defect 1 - inline $( ... ) splicing did not) and an
+;; `exit` stays contained. indent is cosmetic only (bash ignores it); it
+;; keeps a nested clause readable in the wrapper source a human may have to
+;; read off a screenshot.
+(defn- subshell-group
+  [text indent]
+  (str indent "(\n" text "\n" indent ")"))
+
+;; One attempt: run text as a group and capture BOTH streams whole to
+;; OUT-FILE, recording its exit code. The `> file 2>&1` sits OUTSIDE the
+;; group, so the merge covers every segment - matching the unwrapped command
+;; run with 2>&1 - and the truncating redirect means a healed re-run REPLACES
+;; the failed attempt's output rather than appending to it.
+(defn- capture-attempt
+  [text indent]
+  (str (subshell-group text indent) " > " OUT-FILE " 2>&1; __sfh_ec=$?\n"))
+
 ;; Given the miss class a failure classified as, returns the command text to
 ;; re-run ONCE from the healed environment - nil for :real-failure, which is
 ;; never re-run at all. :missing-root-argv appends the pinned worktree as a
@@ -110,8 +135,8 @@
     ;; a multi-command original, every segment (not just the first) re-runs
     ;; from the healed directory, so the rewrite's target stays well-defined
     ;; for any shape (BL-960 invariant 3).
-    :wrong-cwd (str "cd " (shell-quote pinned-worktree) " && (\n" original-command "\n)")
-    :wrong-surface (str "cd " (shell-quote (str pinned-worktree "/extension")) " && (\n" original-command "\n)")
+    :wrong-cwd (str "cd " (shell-quote pinned-worktree) " && " (subshell-group original-command ""))
+    :wrong-surface (str "cd " (shell-quote (str pinned-worktree "/extension")) " && " (subshell-group original-command ""))
     ;; nil when the append target is ambiguous: the clause is omitted from
     ;; the wrapper entirely and the failure returns as-is (:real-failure
     ;; posture), never a syntactically valid but misdirected re-run.
@@ -121,8 +146,8 @@
 
 (defn- bash-clause
   [first? pattern healed]
-  (str (if first? "  if" "  elif") " grep -qiE " (shell-quote pattern) " \"$__sfh_out_file\"; then\n"
-       "    (\n" healed "\n    ) > \"$__sfh_out_file\" 2>&1; __sfh_ec=$?\n"))
+  (str (if first? "  if" "  elif") " grep -qiE " (shell-quote pattern) " " OUT-FILE "; then\n"
+       (capture-attempt healed "    ")))
 
 ;; The whole self-healing wrapper, as bash source text - this is what
 ;; becomes the PreToolUse hook's updatedInput.command (tool_miss_heal_hook.bb's
@@ -162,17 +187,14 @@
                         active))]
     (str "__sfh_root=" (shell-quote pinned-worktree) "\n"
          "__sfh_out_file=\"$(mktemp \"${TMPDIR:-/tmp}/sfh.XXXXXX\")\" || exit 1\n"
-         "(\n"
-         original-command "\n"
-         ") > \"$__sfh_out_file\" 2>&1; __sfh_ec=$?\n"
-         (if (seq active)
+         (capture-attempt original-command "")
+         (when (seq active)
            (str "if [ $__sfh_ec -ne 0 ]; then\n"
                 clauses
                 "  fi\n"
-                "fi\n")
-           "")
-         "cat \"$__sfh_out_file\"\n"
-         "rm -f \"$__sfh_out_file\"\n"
+                "fi\n"))
+         "cat " OUT-FILE "\n"
+         "rm -f " OUT-FILE "\n"
          "exit $__sfh_ec\n")))
 
 ;; The parse gate (BL-960 invariant 1): true only when bash itself can parse
