@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   extractDocCitations,
   findUnresolvedCitations,
@@ -38,39 +38,31 @@ test('extractDocCitations ignores URLs and article-name references', () => {
 
 // ── break-then-fix (impure, real fs) - proves the scan reaches disk ────────
 test('findUnresolvedCitations names the citing article and the unresolved path, then clears once the doc exists', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl945-'));
-  try {
-    fs.writeFileSync(
-      path.join(dir, 'fake-article.md'),
-      'Authority: `docs/does-not-exist.md`.\n'
-    );
+  const dir = mkTmpDir('sfvc-bl945-');
+  fs.writeFileSync(
+    path.join(dir, 'fake-article.md'),
+    'Authority: `docs/does-not-exist.md`.\n'
+  );
 
-    const before = findUnresolvedCitations(dir, dir);
-    assert.deepEqual(before, [{ file: 'fake-article.md', citation: 'docs/does-not-exist.md' }]);
+  const before = findUnresolvedCitations(dir, dir);
+  assert.deepEqual(before, [{ file: 'fake-article.md', citation: 'docs/does-not-exist.md' }]);
 
-    fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'docs', 'does-not-exist.md'), 'now it exists\n');
+  fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'does-not-exist.md'), 'now it exists\n');
 
-    const after = findUnresolvedCitations(dir, dir);
-    assert.deepEqual(after, []);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const after = findUnresolvedCitations(dir, dir);
+  assert.deepEqual(after, []);
 });
 
 test('a citation resolving only in a subdirectory (reference/) is still found', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl945-'));
-  try {
-    fs.mkdirSync(path.join(dir, 'reference'), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'reference', 'detail.prompt'),
-      'See `docs/missing-detail.md`.\n'
-    );
-    const found = findUnresolvedCitations(dir, dir);
-    assert.deepEqual(found, [{ file: 'reference/detail.prompt', citation: 'docs/missing-detail.md' }]);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const dir = mkTmpDir('sfvc-bl945-');
+  fs.mkdirSync(path.join(dir, 'reference'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'reference', 'detail.prompt'),
+    'See `docs/missing-detail.md`.\n'
+  );
+  const found = findUnresolvedCitations(dir, dir);
+  assert.deepEqual(found, [{ file: 'reference/detail.prompt', citation: 'docs/missing-detail.md' }]);
 });
 
 // BL-945's own gate: the real constitution against the real repo root.

@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const {
   computeWorkerMemoryBudget,
   resolveWorkerPoolSize,
+  resolveVitestForkCeiling,
   MAX_WORKERS,
   PER_WORKER_HEAP_MB,
   SAFE_HOST_RAM_FRACTION,
@@ -88,4 +89,60 @@ test('never resolves above the ceiling, even on a host with abundant RAM', () =>
 
 test('respects an explicit ceiling/perWorkerHeapMB override rather than only the module defaults', () => {
   assert.equal(resolveWorkerPoolSize(4096, 2, 1024), 2);
+});
+
+// ── resolveVitestForkCeiling (pure) - BL-935 ────────────────────────────────
+// A second, independent (CPU-axis) ceiling layered alongside the memory
+// budget via resolveWorkerPoolSize's existing `ceiling` parameter - never a
+// replacement for it. Precedence (ticket's own table):
+//   1. an explicit positive-integer override replaces the pack rule
+//   2. otherwise, full-forge pack on macOS -> 1
+//   3. otherwise, the module default ceiling (MAX_WORKERS), unchanged
+// The composed clamp-to-memory-and-floor-at-1 step is resolveWorkerPoolSize's
+// own job, exercised separately above - this function only ever answers
+// "what ceiling to hand it", never applies the memory floor itself.
+
+test('a full-forge pack on macOS resolves the ceiling to 1', () => {
+  assert.equal(resolveVitestForkCeiling({ pack: 'full-forge', platform: 'darwin' }), 1);
+});
+
+test('a full-forge pack on a non-macOS platform does not lower the ceiling', () => {
+  assert.equal(resolveVitestForkCeiling({ pack: 'full-forge', platform: 'linux' }), MAX_WORKERS);
+});
+
+test('a non-full-forge pack on macOS does not lower the ceiling', () => {
+  assert.equal(resolveVitestForkCeiling({ pack: 'mono-router', platform: 'darwin' }), MAX_WORKERS);
+});
+
+test('no pack at all (a solo human, SWARMFORGE_PACK unset) does not lower the ceiling', () => {
+  assert.equal(resolveVitestForkCeiling({ pack: undefined, platform: 'darwin' }), MAX_WORKERS);
+});
+
+test('an explicit positive-integer override replaces the pack rule, even under full-forge on macOS', () => {
+  assert.equal(resolveVitestForkCeiling({ pack: 'full-forge', platform: 'darwin', override: '2' }), 2);
+});
+
+test('an explicit override also applies with no pack rule in play', () => {
+  assert.equal(resolveVitestForkCeiling({ pack: undefined, platform: 'darwin', override: '5' }), 5);
+});
+
+for (const bad of ['0', '-1', 'nope', '', '1.5', '  ']) {
+  test(`a non-positive or non-numeric override (${JSON.stringify(bad)}) is ignored, not floored`, () => {
+    assert.equal(resolveVitestForkCeiling({ pack: 'full-forge', platform: 'darwin', override: bad }), 1);
+    assert.equal(resolveVitestForkCeiling({ pack: undefined, platform: 'darwin', override: bad }), MAX_WORKERS);
+  });
+}
+
+test('override absent (undefined) falls through to the pack rule, same as an ignored malformed value', () => {
+  assert.equal(resolveVitestForkCeiling({ pack: 'full-forge', platform: 'darwin', override: undefined }), 1);
+});
+
+test('the resolved ceiling is never below 1 for any combination of inputs', () => {
+  for (const pack of ['full-forge', 'mono-router', undefined]) {
+    for (const platform of ['darwin', 'linux']) {
+      for (const override of [undefined, '0', '-3', 'x', '1']) {
+        assert.ok(resolveVitestForkCeiling({ pack, platform, override }) >= 1);
+      }
+    }
+  }
 });
