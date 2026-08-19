@@ -183,3 +183,6 @@ notes: |
   already passed a stage.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 16d7301e31, evidence: backlog/evidence/BL-905-swarm-stamp-hide-childless-epics-reorder-bounce-20260819.md }
