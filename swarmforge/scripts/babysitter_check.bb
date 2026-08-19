@@ -197,6 +197,122 @@
      :has-remote-control? has-rc? :menu-blocked? menu? :busy? busy?
      :hash-history history :pane-text pane-text}))
 
+;; ── pipeline-code-on-main gathering (BL-631) ─────────────────────────────
+;; The QA-exclusive path set is read from BL-632's own single source at
+;; runtime (invariant 2) - never restated, never hand-copied. Ancestry uses
+;; is_qa_ancestor.sh, the ONE shared "is this sha QA-approved" predicate
+;; (BL-925 invariant 2) - the same shape handoffd.bb's own private
+;; qa-ancestor? already established, mirrored here rather than shared
+;; (it is defn- in handoffd.bb's own namespace); never a second git
+;; merge-base invocation. `git rev-list swarmforge-QA..<ref>` enumerates
+;; CANDIDATES efficiently (the same reachability primitive merge-base
+;; --is-ancestor uses internally, batch-applied), and is_qa_ancestor.sh
+;; then CONFIRMS each one individually before it is ever treated as
+;; offending - belt and suspenders, and the literal reuse the ticket asks
+;; for. Both refs that name main are swept (main and origin/main diverge
+;; routinely under the current worktree layout, BL-891) - sweeping only one
+;; leaves a hole the declared invariant forbids. Any failure anywhere in
+;; this resolution chain (the path-set read, either ref's rev-list, or any
+;; single sha's ancestor confirmation) fails the WHOLE sweep closed to
+;; :ancestry-unavailable? true (invariant 3) - never a partial result that
+;; could read as "nothing else was wrong".
+
+;; BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT overrides which --list-paths script
+;; is consulted - the same hermetic-test-seam shape BABYSITTER_MEMINFO_PATH
+;; already uses below, and exactly what scenario 07 needs to prove
+;; classification follows BL-632's own reported set rather than a hand-
+;; copied literal (invariant 2): point the sweep at a stub emitting a path
+;; set it has never seen and confirm it fires on that set instead.
+(defn check-pipeline-sh []
+  (or (System/getenv "BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT")
+      (str (fs/path script-dir "check_pipeline_code_on_main.sh"))))
+(def is-qa-ancestor-sh (str (fs/path script-dir "is_qa_ancestor.sh")))
+
+(defn qa-exclusive-paths []
+  (let [r (sh! "bash" (check-pipeline-sh) "--list-paths")]
+    (when (zero? (:exit r))
+      (vec (remove str/blank? (str/split-lines (:out r)))))))
+
+;; is_qa_ancestor.sh operates on the CALLER's cwd, never its own location
+;; (its own header) - :dir must be set explicitly to project-root, the
+;; exact shape handoffd.bb's own qa-ancestor? already uses. sh!'s own
+;; variadic wrapper hardcodes a leading {:continue true} with no room for
+;; :dir, so this calls process/sh directly rather than widening that
+;; shared helper's contract for one caller.
+(defn qa-ancestor? [sha]
+  (let [r (process/sh {:continue true :dir (str project-root)} "bash" is-qa-ancestor-sh sha)]
+    (cond
+      (zero? (:exit r)) {:ok? true :ancestor? true}
+      (= 1 (:exit r)) {:ok? true :ancestor? false}
+      :else {:ok? false :ancestor? false})))
+
+(defn ref-resolves? [ref]
+  (zero? (:exit (sh! "git" "-C" project-root "rev-parse" "-q" "--verify" ref))))
+
+(defn shas-ahead-of-qa [ref]
+  (let [r (sh! "git" "-C" project-root "rev-list" (str "swarmforge-QA.." ref))]
+    (when (zero? (:exit r))
+      (vec (remove str/blank? (str/split-lines (:out r)))))))
+
+(defn commit-is-merge? [sha]
+  (zero? (:exit (sh! "git" "-C" project-root "rev-parse" "-q" "--verify" (str sha "^2")))))
+
+;; A merge commit's own content is invisible to a plain `git show`/
+;; `diff-tree` (no --first-parent) - BL-590's own f8dc07963 reports zero
+;; files that way, 13 via -m --first-parent. `-m` shows the diff against
+;; each parent for a merge; --first-parent restricts that to the ONE
+;; comparison that matters here (what this merge introduced relative to
+;; what was already on the branch), matching a non-merge commit's own
+;; single-parent diff exactly.
+(defn commit-touched-paths [sha]
+  (let [r (if (commit-is-merge? sha)
+            (sh! "git" "-C" project-root "diff-tree" "-m" "--first-parent" "--no-commit-id" "--name-only" "-r" sha)
+            (sh! "git" "-C" project-root "diff-tree" "--no-commit-id" "--name-only" "-r" sha))]
+    (when (zero? (:exit r))
+      (vec (remove str/blank? (str/split-lines (:out r)))))))
+
+(defn commit-subject [sha]
+  (let [r (sh! "git" "-C" project-root "log" "-1" "--format=%s" sha)]
+    (if (zero? (:exit r)) (str/trim (:out r)) sha)))
+
+(defn- offending-paths [paths qa-paths]
+  (filterv (fn [p] (some #(str/starts-with? p %) qa-paths)) paths))
+
+(defn gather-pipeline-code-on-main []
+  (let [qa-paths (qa-exclusive-paths)]
+    (cond
+      (nil? qa-paths)
+      {:offending-commits [] :ancestry-unavailable? true}
+
+      ;; The one ref invariant 3 actually names: swarmforge-QA MUST resolve,
+      ;; fail closed otherwise. main/origin/main are checked separately,
+      ;; below, and a legitimately-absent origin/main (no configured
+      ;; remote, e.g. this very fixture-driven sweep) is never treated as
+      ;; an ancestry failure - only swept as "nothing to report from there".
+      (not (ref-resolves? "swarmforge-QA"))
+      {:offending-commits [] :ancestry-unavailable? true}
+
+      :else
+      (let [existing-refs (filter ref-resolves? ["main" "origin/main"])
+            per-ref (map shas-ahead-of-qa existing-refs)]
+        (if (some nil? per-ref)
+          {:offending-commits [] :ancestry-unavailable? true}
+          (let [all-shas (distinct (apply concat per-ref))
+                confirmations (mapv (fn [sha] [sha (qa-ancestor? sha)]) all-shas)]
+            (if (some (fn [[_ {:keys [ok?]}]] (not ok?)) confirmations)
+              {:offending-commits [] :ancestry-unavailable? true}
+              (let [non-ancestor-shas (->> confirmations
+                                            (remove (fn [[_ {:keys [ancestor?]}]] ancestor?))
+                                            (map first))
+                    offenders (->> non-ancestor-shas
+                                   (keep (fn [sha]
+                                           (let [touched (commit-touched-paths sha)
+                                                 offending (offending-paths (or touched []) qa-paths)]
+                                             (when (seq offending)
+                                               {:sha sha :subject (commit-subject sha) :paths offending}))))
+                                   vec)]
+                {:offending-commits offenders :ancestry-unavailable? false}))))))))
+
 ;; ── handoffd / dead-letters / stuck parcels ──────────────────────────────
 
 (defn proc-alive? [pattern]
@@ -368,9 +484,22 @@
 
 ;; ── nudge-dedup persisted state ───────────────────────────────────────────
 
+;; BL-631: NEVER keywordize (no `true` third arg) - write-dedup-state!
+;; persists a finding-:key-keyed map whose keys are plain STRINGS (every
+;; check-* fn builds :key via (str ...), never a keyword), and
+;; decide-nudges's own due? looks values up by that same string. Parsing
+;; back with keywordize-keys silently turns "pipeline-code-on-main-<sha>"
+;; into the keyword :pipeline-code-on-main-<sha>, which a string lookup can
+;; never match - confirmed directly: write-dedup-state!'s own
+;; json/generate-string output, round-tripped through the old `true` flag,
+;; makes (get reloaded "any-real-key") return nil unconditionally. That
+;; silently broke EVERY check's nudge dedup, not just this ticket's own
+;; (BL-631's own scenario 05/06 require it to actually work) - pre-existing
+;; since BL-611, found and fixed here because this ticket's acceptance
+;; criteria cannot pass against a dedup layer that never dedupes.
 (defn read-dedup-state []
   (if (fs/exists? dedup-file)
-    (try (json/parse-string (slurp (str dedup-file)) true) (catch Exception _ {}))
+    (try (json/parse-string (slurp (str dedup-file))) (catch Exception _ {}))
     {}))
 
 (defn write-dedup-state! [m]
@@ -398,6 +527,12 @@
         pause (read-pause)
         claim-risks (try (babysitter-assess-lib/scan-claim-risks project-root)
                           (catch Exception _ []))
+        ;; BL-631: an unexpected exception anywhere in the resolution chain
+        ;; (e.g. bash/git genuinely missing) fails closed to unavailable,
+        ;; same posture as every explicit git-failure branch inside the
+        ;; gatherer itself - never a silent [] that would read as clean.
+        pipeline-code-on-main (try (gather-pipeline-code-on-main)
+                                    (catch Exception _ {:offending-commits [] :ancestry-unavailable? true}))
         ;; BL-804: resolve topology ONCE per sweep, then stamp each role's
         ;; :should-stand? — the sweep lib's check-live-session only ever sees
         ;; the resolved boolean, never a role name, so suppression can never
@@ -429,7 +564,9 @@
          :prev-streak (read-streak)
          :pending-claims (pending-claims)
          :in-process-claims (in-process-claims busy-by-role)
-         :pending-max-age-min pending-max-age-min}
+         :pending-max-age-min pending-max-age-min
+         :offending-commits (:offending-commits pipeline-code-on-main)
+         :ancestry-unavailable? (:ancestry-unavailable? pipeline-code-on-main)}
         {:keys [findings new-streak]} (babysitterd-sweep-lib/assemble-findings snapshot)
         ts (now-iso)]
     (write-streak! new-streak)
