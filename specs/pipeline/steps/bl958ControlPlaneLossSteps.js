@@ -18,6 +18,7 @@ const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const STATUS = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_status.bb');
+const ENSURE = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_ensure.bb');
 const CPL = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'control_plane_lib.bb');
 const FEATURE = 'BL-958 control-plane loss is classified, recorded once, and owned';
 
@@ -122,6 +123,108 @@ function registerSteps(registry) {
       } else {
         assert.ok(!fs.existsSync(ctx.incidentsFile), 'fixture must start with no incident store');
       }
+    },
+    FEATURE
+  );
+
+  // ── Scenario 04 (BL-958 D1): recovery impossible -> :halt honored ────
+  registry.defineScoped(
+    /^no persisted launch scripts exist for any role$/,
+    (ctx) => {
+      for (const r of ROLES) {
+        fs.rmSync(path.join(ctx.stateDir, 'launch', `${r}.sh`), { force: true });
+      }
+      // Stateful fake tmux, mirroring the real coupling: the first
+      // new-session restarts the tmux server. If ensure honors :halt it
+      // never runs, so the marker's absence IS "no per-role recreation was
+      // attempted" - asserted below, never inferred from report text alone.
+      ctx.serverMarker = path.join(ctx.root, 'server_started');
+      fs.writeFileSync(
+        path.join(ctx.root, 'bin', 'tmux'),
+        '#!/usr/bin/env bash\n' +
+          `if [[ "$3" == "new-session" ]]; then touch "${ctx.serverMarker}"; exit 0; fi\n` +
+          `if [[ ! -f "${ctx.serverMarker}" ]]; then echo "no server running on $2" >&2; exit 1; fi\n` +
+          'if [[ "$3" == "list-panes" ]]; then echo "0"; exit 0; fi\n' +
+          'exit 0\n'
+      );
+      fs.chmodSync(path.join(ctx.root, 'bin', 'tmux'), 0o755);
+      // Healthy stand-ins so ensure's other components stay out of the way
+      // (same live-pid idiom as test_swarm_ensure.sh's own fixture).
+      for (const [dir, file] of [
+        ['daemon', 'handoffd.pid'],
+        ['babysitterd', 'babysitterd.pid'],
+        ['operator', 'runtime.pid'],
+      ]) {
+        fs.mkdirSync(path.join(ctx.stateDir, dir), { recursive: true });
+        fs.writeFileSync(path.join(ctx.stateDir, dir, file), `${process.pid}\n`);
+      }
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^the ensure recovery path evaluates the fixture$/,
+    (ctx) => {
+      const env = fixtureEnv(ctx);
+      delete env.TELEGRAM_BOT_TOKEN;
+      delete env.TELEGRAM_CHAT_ID;
+      delete env.TELEGRAM_PRINCIPAL_USER_ID;
+      delete env.CURSOR_BRIDGE_BOT_TOKEN;
+      env.SWARM_ENSURE_EXTENSION_CHECK_CMD = 'true';
+      env.SWARM_ENSURE_EXTENSION_BOUNCE_CMD = 'true';
+      env.SWARM_ENSURE_SUPERVISOR_CMD = 'true';
+      env.SWARMFORGE_SKIP_OPERATOR = '1';
+      env.SWARMFORGE_SKIP_FRONT_DESK = '1';
+      const res = spawnSync('bb', [ENSURE, ctx.root], { encoding: 'utf8', env });
+      ctx.ensureOutput = `${res.stdout || ''}${res.stderr || ''}`;
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^the control-plane outcome is reported as failed, naming that no launch scripts exist to respawn roles from$/,
+    (ctx) => {
+      const line = ctx.ensureOutput.split('\n').find((l) => l.startsWith('control-plane:'));
+      assert.ok(line, `no control-plane row in ensure output:\n${ctx.ensureOutput}`);
+      assert.ok(line.includes('FAILED'), `control-plane row is not FAILED: ${line}`);
+      assert.ok(
+        line.includes('no persisted launch scripts to respawn roles from'),
+        `control-plane row does not name the no-scripts reason: ${line}`
+      );
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^no per-role recreation is attempted$/,
+    (ctx) => {
+      assert.ok(
+        !fs.existsSync(ctx.serverMarker),
+        'tmux new-session ran: the per-role recreation loop churned under :halt'
+      );
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^the recorded incident remains open$/,
+    (ctx) => {
+      const incidents = readIncidents(ctx);
+      assert.equal(incidents.length, 1, `expected the one seeded incident, got ${JSON.stringify(incidents)}`);
+      assert.equal(
+        incidents[0].status,
+        'open',
+        `the incident was ${incidents[0].status} - resolving requires an actual recovery, not a halt`
+      );
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^no role is reported as repaired$/,
+    (ctx) => {
+      const fixedRows = ctx.ensureOutput.split('\n').filter((l) => /^agent:.*: FIXED/.test(l));
+      assert.deepEqual(fixedRows, [], `roles falsely reported repaired:\n${fixedRows.join('\n')}`);
     },
     FEATURE
   );
