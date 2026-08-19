@@ -296,14 +296,9 @@
    with no server answering is the loss shape, never a routine stop."
   []
   (let [sock (resolve-swarm-socket)
-        probe (control-plane-lib/probe-server! sock)]
+        {:keys [classification]} (control-plane-lib/observe! state-dir sock)]
     {:socket sock
-     :classification (control-plane-lib/classify
-                      {:socket-file-exists? (fs/exists? socket-file)
-                       :server-responds? (:responds? probe)
-                       :role-metadata-present?
-                       (or (fs/exists? roles-file)
-                           (fs/exists? (fs/path state-dir "sessions.tsv")))})}))
+     :classification classification}))
 
 (defn -main []
   (let [now (now-ms)

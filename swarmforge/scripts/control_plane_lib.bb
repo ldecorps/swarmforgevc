@@ -176,6 +176,33 @@
       {:responds? (zero? (:exit result))
        :output (str/trim (str (:out result) " " (:err result)))})))
 
+;; ── IO edge: observe (the ONE fact-set all three consumers share) ────────────
+
+(defn control-plane-facts
+  "The single definition of WHICH on-disk artifacts decide a classification.
+   BL-958 cleaner pass: this fact map was hand-copied into swarm_status.bb,
+   swarm_ensure.bb and this lib's own record-chase-failure-incident!, three
+   byte-identical copies of the same rule. That is precisely the hand-copy
+   drift BL-571 documented across six sites for the rotation predicates: a
+   fourth metadata file, or a moved socket path, silently changes what ONE
+   consumer thinks a loss is while the others keep the old answer. Written
+   once here, so `classify`'s inputs cannot diverge by consumer."
+  [state-dir server-responds?]
+  {:socket-file-exists? (fs/exists? (fs/path state-dir "tmux-socket"))
+   :server-responds? server-responds?
+   :role-metadata-present? (or (fs/exists? (fs/path state-dir "roles.tsv"))
+                               (fs/exists? (fs/path state-dir "sessions.tsv")))})
+
+(defn observe!
+  "Probe the control plane and classify it in one step — the single route
+   status, ensure and the chase hook all take. Returns the probe result too,
+   since every caller needs it (evidence, or a FIXED/FAILED verdict)."
+  [state-dir socket]
+  (let [probe (probe-server! socket)]
+    {:socket socket
+     :probe probe
+     :classification (classify (control-plane-facts state-dir (:responds? probe)))}))
+
 ;; ── IO edge: persistence ─────────────────────────────────────────────────────
 
 (defn incidents-file [state-dir]
@@ -227,12 +254,8 @@
    the evidence and the response decision embedded. Returns
    {:classification .. :recorded? ..}; never throws state back at the sweep."
   [{:keys [state-dir socket expected-sessions observed-at source]}]
-  (let [probe-result (probe-server! socket)
-        facts {:socket-file-exists? (fs/exists? (fs/path state-dir "tmux-socket"))
-               :server-responds? (:responds? probe-result)
-               :role-metadata-present? (or (fs/exists? (fs/path state-dir "roles.tsv"))
-                                           (fs/exists? (fs/path state-dir "sessions.tsv")))}
-        classification (classify facts)]
+  (let [{:keys [probe classification]} (observe! state-dir socket)
+        probe-result probe]
     (if (= :control-plane-missing classification)
       (let [incident (build-incident {:socket-path socket
                                       :probe-output (:output probe-result)

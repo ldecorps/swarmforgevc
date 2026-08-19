@@ -174,6 +174,42 @@
     (finally
       (fs/delete-tree dir))))
 
+;; ── control-plane-facts / observe! (BL-958 cleaner pass) ─────────────────────
+;; The fact map used to be hand-copied into swarm_status.bb, swarm_ensure.bb
+;; and record-chase-failure-incident!. These pin the ONE definition, so a
+;; consumer that stops agreeing with it fails here rather than silently
+;; misclassifying a live loss. Fixture dir removed in a `finally`
+;; (engineering.prompt's mkdtemp rule).
+
+(let [dir (fs/create-temp-dir {:prefix "cp-facts-"})]
+  (try
+    (let [state-dir (fs/path dir ".swarmforge")]
+      (fs/create-dirs state-dir)
+      (assert= "an empty state dir sees neither socket file nor role metadata"
+               {:socket-file-exists? false :server-responds? false :role-metadata-present? false}
+               (control-plane-lib/control-plane-facts state-dir false))
+      (spit (str (fs/path state-dir "tmux-socket")) "")
+      (assert-true "the tmux-socket file is what socket-file-exists? reads"
+                   (:socket-file-exists? (control-plane-lib/control-plane-facts state-dir false)))
+      (assert-true "roles.tsv alone counts as role metadata"
+                   (do (spit (str (fs/path state-dir "roles.tsv")) "coder\t0")
+                       (:role-metadata-present? (control-plane-lib/control-plane-facts state-dir false))))
+      (fs/delete (fs/path state-dir "roles.tsv"))
+      (assert-true "sessions.tsv alone also counts as role metadata"
+                   (do (spit (str (fs/path state-dir "sessions.tsv")) "coder")
+                       (:role-metadata-present? (control-plane-lib/control-plane-facts state-dir false))))
+      (assert-true "server-responds? is passed straight through, not re-probed"
+                   (:server-responds? (control-plane-lib/control-plane-facts state-dir true)))
+      ;; observe! composes probe + facts + classify. A blank socket cannot have
+      ;; a server answering, so this is the loss shape with the artifacts present.
+      (assert= "observe! classifies the live loss shape through the shared facts"
+               :control-plane-missing
+               (:classification (control-plane-lib/observe! state-dir "")))
+      (assert-true "observe! returns the probe result its callers need for evidence"
+                   (some? (:probe (control-plane-lib/observe! state-dir "")))))
+    (finally
+      (fs/delete-tree dir))))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

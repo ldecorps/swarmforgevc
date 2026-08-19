@@ -219,3 +219,6 @@ notes: |
   if it lands as a standalone runner, the coder adds its exact command to
   this procedure in the re-fix parcel — a lane QA never runs is this same
   S1 gap repeating.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: bbb14382d8, evidence: backlog/evidence/BL-571-sequential-rotation-dormant-parity-bounce-20260819.md }

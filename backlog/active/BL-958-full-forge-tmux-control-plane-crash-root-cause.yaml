@@ -159,3 +159,5 @@ notes: >
   0.889 family adjudicated at mint (outline <prior> placeholder vs the
   shared literal Given, now with scenario 04's occurrence) — deliberate
   shared setup, kept for the same reason. Lint gate: clean parse.
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: ec033029e2, evidence: backlog/evidence/BL-958-full-forge-tmux-control-plane-crash-root-cause-bounce-20260819.md }
