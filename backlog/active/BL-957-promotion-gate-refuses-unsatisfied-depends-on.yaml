@@ -157,6 +157,13 @@ description: |
     sitting. File separately if wanted.
   - The sibling promotion-gate tickets BL-626 (unmaterialized `.feature`
     pointer) and BL-634 (slice size envelope) stay independent slices.
+  - The BL-798 open-slot nudge's candidate selection and eligibility count
+    (chase_sweep_lib.bb / handoffd.bb) — it ranks without running evaluate,
+    so it cannot see this gate; that is BL-963's sibling slice
+    (depends_on: [BL-957]), minted 2026-08-20 from the architect's
+    spec-gap note 20260819T231719Z_000266. This ticket's invariant 1
+    covers promotion ROUTES; the nudge only recommends, and stays as-is
+    until BL-963 lands.
 
 qa_e2e_procedure: |
   Against the live repo, with the swarm stopped or the coordinator idle:

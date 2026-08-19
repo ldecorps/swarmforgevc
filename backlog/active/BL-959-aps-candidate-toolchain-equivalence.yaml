@@ -10,6 +10,7 @@ depends_on: []
 mutation_cost: low
 acceptance: specs/features/BL-959-aps-candidate-toolchain-equivalence.feature
 human_approval: approved
+assigned_to: coder
 approval_context: >
   Three things need sign-off. (1) The new feature file (specifier draft, not
   yet human-reviewed). (2) The adopt/defer/reject decision this ticket
