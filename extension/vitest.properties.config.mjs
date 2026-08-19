@@ -24,18 +24,18 @@ import { defineConfig } from 'vitest/config';
 // same createRequire bridge vitest.config.mjs's own ESM-to-CommonJS load
 // uses (this config is ESM, the budget module is CommonJS).
 const require = createRequire(import.meta.url);
-const { PER_WORKER_HEAP_MB, resolveWorkerPoolSize, resolveVitestForkCeiling } = require('./out/tools/vitest-worker-memory-budget');
-// BL-935: same second, independent CPU-axis ceiling as vitest.config.mjs's
-// own call - the second required call site named by this ticket's own
-// required_wiring (the property lane sizes its pool through the identical
-// resolveWorkerPoolSize(os.totalmem()/1MB) expression and is the easy one
-// to miss a fix in).
-const FORK_CEILING = resolveVitestForkCeiling({
+const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool } = require('./out/tools/vitest-worker-memory-budget');
+// BL-935: the SAME single pool-resolution route as vitest.config.mjs - the
+// second required call site named by this ticket's own required_wiring, and
+// historically the easy one to miss a fix in. Both lanes now call the one
+// resolveVitestWorkerPool composition rather than each re-composing the
+// ceiling and the memory budget themselves (BL-935 invariant 3).
+const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   pack: process.env.SWARMFORGE_PACK,
   platform: os.platform(),
   override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
+  hostRamMB: os.totalmem() / (1024 * 1024),
 });
-const WORKER_POOL_SIZE = resolveWorkerPoolSize(os.totalmem() / (1024 * 1024), FORK_CEILING);
 
 export default defineConfig({
   test: {
