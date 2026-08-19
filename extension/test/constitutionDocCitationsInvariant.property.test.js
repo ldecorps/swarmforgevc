@@ -1,8 +1,8 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   extractDocCitations,
   findUnresolvedCitations,
@@ -66,41 +66,33 @@ test('property: a non-docs backtick token is never extracted as a citation, howe
 });
 
 test('property: a docs/ citation that genuinely resolves on disk is never reported', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl945-prop-'));
-  try {
-    fc.assert(
-      fc.property(pathSegmentsArb, segmentArb, extArb, (dirs, name, ext) => {
-        const rel = `docs/${dirs.join('/')}/${name}.${ext}`;
-        const abs = path.join(root, rel);
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, 'content\n');
-        fs.writeFileSync(path.join(root, 'article.md'), `Authority: \`${rel}\`.\n`);
+  const root = mkTmpDir('sfvc-bl945-prop-');
+  fc.assert(
+    fc.property(pathSegmentsArb, segmentArb, extArb, (dirs, name, ext) => {
+      const rel = `docs/${dirs.join('/')}/${name}.${ext}`;
+      const abs = path.join(root, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, 'content\n');
+      fs.writeFileSync(path.join(root, 'article.md'), `Authority: \`${rel}\`.\n`);
 
-        const unresolved = findUnresolvedCitations(root, root);
-        assert.deepEqual(unresolved, [], `expected ${rel} to resolve, got: ${JSON.stringify(unresolved)}`);
-      }),
-      { numRuns: 50 }
-    );
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
+      const unresolved = findUnresolvedCitations(root, root);
+      assert.deepEqual(unresolved, [], `expected ${rel} to resolve, got: ${JSON.stringify(unresolved)}`);
+    }),
+    { numRuns: 50 }
+  );
 });
 
 test('property: a docs/ citation to a path that does not exist is always reported', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl945-prop-'));
-  try {
-    fc.assert(
-      fc.property(pathSegmentsArb, segmentArb, extArb, (dirs, name, ext) => {
-        const rel = `docs/${dirs.join('/')}/${name}.${ext}`;
-        // Deliberately never created on disk.
-        fs.writeFileSync(path.join(root, 'article.md'), `Authority: \`${rel}\`.\n`);
+  const root = mkTmpDir('sfvc-bl945-prop-');
+  fc.assert(
+    fc.property(pathSegmentsArb, segmentArb, extArb, (dirs, name, ext) => {
+      const rel = `docs/${dirs.join('/')}/${name}.${ext}`;
+      // Deliberately never created on disk.
+      fs.writeFileSync(path.join(root, 'article.md'), `Authority: \`${rel}\`.\n`);
 
-        const unresolved = findUnresolvedCitations(root, root);
-        assert.deepEqual(unresolved, [{ file: 'article.md', citation: rel }]);
-      }),
-      { numRuns: 50 }
-    );
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
+      const unresolved = findUnresolvedCitations(root, root);
+      assert.deepEqual(unresolved, [{ file: 'article.md', citation: rel }]);
+    }),
+    { numRuns: 50 }
+  );
 });
