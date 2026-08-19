@@ -3,11 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const {
-  bouncingBranchForRole,
-  decideBounceRevertVerdict,
-  bounceRevertCheck,
-} = require('../out/quality/bounceRevertCheck');
+const { bouncingBranchForRole, decideBounceRevertVerdict } = require('../out/quality/bounceRevertVerdict');
+const { bounceRevertCheck } = require('../out/metrics/bounceRevertGitAdapter');
 
 // BL-954: the bounce recorder verifies its own BL-490/BL-495 revert. The
 // verdict is decided by whether the bounced commit's CONTENT is present at
@@ -15,6 +12,8 @@ const {
 // already-on-main bounce is a breach report and never a revert instruction
 // (invariant 2). The check REPORTS - it never blocks the recording
 // (invariant 3, covered at the CLI layer in recordBounceCli.test.js).
+// Pure verdict lives under src/quality/ (the dependency-gate policy zone);
+// the git-IO adapter under src/metrics/ (architect bounce D1).
 
 function git(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -178,4 +177,61 @@ test('a file DELETED by the bounced commit counts as live while the tip still la
   const report = bounceRevertCheck({ repoRoot: root, commit: bounced, by: 'cleaner' });
   assert.equal(report.verdict, 'violation');
   assert.deepEqual(report.liveFiles, ['src/gone.txt']);
+});
+
+// ── Architect bounce D2: a bounced MERGE commit must never read clean by blindness ──
+
+// The bounced commit is a MERGE whose first-parent-side diff carries the
+// bounced content. A bare diff-tree lists nothing for it - the pre-fix
+// implementation read every such bounce as 'clean' unconditionally.
+function mkMergeBounceFixture() {
+  const root = mkTmpDir('sfvc-bl954-merge-');
+  initRepo(root);
+  commitFile(root, 'src/a.txt', 'base\n', 'seed');
+  git(root, ['checkout', '-q', '-b', 'feature']);
+  commitFile(root, 'src/a.txt', 'bounced content\n', 'BL-997: side work');
+  git(root, ['checkout', '-q', '-b', 'swarmforge-architect', 'main']);
+  git(root, ['merge', '-q', '--no-ff', '--no-edit', 'feature']);
+  const bounced = git(root, ['rev-parse', 'HEAD']);
+  git(root, ['checkout', '-q', 'main']);
+  return { root, bounced };
+}
+
+test('BL-954 D2: an unreverted MERGE-commit bounce reports a violation, never a blind clean', () => {
+  const { root, bounced } = mkMergeBounceFixture();
+  const report = bounceRevertCheck({ repoRoot: root, commit: bounced, by: 'architect' });
+  assert.equal(report.verdict, 'violation');
+  assert.deepEqual(report.liveFiles, ['src/a.txt']);
+});
+
+test('BL-954 D2: a properly reverted MERGE-commit bounce reads clean', () => {
+  const { root, bounced } = mkMergeBounceFixture();
+  git(root, ['checkout', '-q', 'swarmforge-architect']);
+  git(root, ['revert', '--no-edit', '-m', '1', bounced]);
+  git(root, ['checkout', '-q', 'main']);
+  const report = bounceRevertCheck({ repoRoot: root, commit: bounced, by: 'architect' });
+  assert.equal(report.verdict, 'clean');
+});
+
+// ── Architect bounce D3: a commit published on origin/main only is still a breach ──
+
+test('BL-954 D3: a commit that is an ancestor of origin/main but NOT of a stale local main is a breach report, never a revert instruction', () => {
+  const { root, bounced } = mkBounceFixture();
+  // origin/main advanced past the bounced commit while local main stayed at
+  // the seed - the exact BL-891 divergence shape.
+  git(root, ['update-ref', 'refs/remotes/origin/main', bounced]);
+  git(root, ['merge-base', '--is-ancestor', bounced, 'origin/main']);
+  const localMainHasIt = (() => {
+    try {
+      git(root, ['merge-base', '--is-ancestor', bounced, 'main']);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  assert.equal(localMainHasIt, false, 'fixture precondition: local main must NOT contain the bounced commit');
+  const report = bounceRevertCheck({ repoRoot: root, commit: bounced, by: 'architect' });
+  assert.equal(report.verdict, 'breach-report');
+  assert.equal(report.remedy, null);
+  assert.doesNotMatch(JSON.stringify(report), /git revert/);
 });

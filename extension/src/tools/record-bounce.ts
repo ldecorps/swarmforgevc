@@ -22,7 +22,8 @@
  */
 import { BounceRecord } from '../quality/qaBounce';
 import { appendBounceRecordIfNew } from '../metrics/bounceStore';
-import { BounceRevertCheckReport, bounceRevertCheck, bouncingBranchForRole } from '../quality/bounceRevertCheck';
+import { bounceRevertCheck } from '../metrics/bounceRevertGitAdapter';
+import { BounceRevertCheckReport, bouncingBranchForRole } from '../quality/bounceRevertVerdict';
 import { makeArgsGuardedMain, printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { parseArgs, USAGE, RecordBounceArgs } from './recordBounceArgs';
 import { updateTicketBounceHistory } from './recordQaBounceTicket';

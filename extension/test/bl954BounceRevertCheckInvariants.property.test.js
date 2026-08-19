@@ -4,7 +4,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const fc = require('fast-check');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { bounceRevertCheck } = require('../out/quality/bounceRevertCheck');
+const { bounceRevertCheck } = require('../out/metrics/bounceRevertGitAdapter');
 const { main, revertCheckSeam } = require('../out/tools/record-bounce');
 const { readBounceRecords } = require('../out/metrics/bounceStore');
 
@@ -23,7 +23,11 @@ const { readBounceRecords } = require('../out/metrics/bounceStore');
 // pair; blanking the breach-report early return fails invariant 2
 // immediately; making record-bounce run the check BEFORE
 // appendBounceRecordIfNew and rethrow fails invariant 3's throwing shape.
-// All restored.
+// After the architect bounce (D2/D3): reverting diff-tree to the bare
+// merge-blind invocation fails every gathering case here (the fake answers
+// ONLY the -m --first-parent form) and the D2 unit fixtures; dropping the
+// origin/main ancestry check fails invariant 2's origin-only rows and the
+// D3 unit fixture. All restored.
 
 // ── A fake GitReader simulating one repo state in memory ───────────────────
 // The state carries `ancestorOfBranch` even though a content-based check
@@ -46,10 +50,18 @@ function fakeGit(state) {
     if (joined === `merge-base --is-ancestor ${COMMIT} main`) {
       return { status: state.ancestorOfMain ? 0 : 1, stdout: '' };
     }
+    // D3: origin/main answered independently of local main - either ref can
+    // be the stale one (BL-891), so the fake carries both flags.
+    if (joined === `merge-base --is-ancestor ${COMMIT} origin/main`) {
+      return { status: state.ancestorOfOriginMain ? 0 : 1, stdout: '' };
+    }
     if (joined === `merge-base --is-ancestor ${COMMIT} ${BRANCH}`) {
       return { status: state.ancestorOfBranch ? 0 : 1, stdout: '' };
     }
-    if (joined === `diff-tree --no-commit-id --name-only -r ${COMMIT}`) {
+    // D2: only the merge-aware invocation is answered - the bare diff-tree
+    // (blind to merge commits) falls through to the unknown-call throw, so
+    // a regression back to it fails every gathering property immediately.
+    if (joined === `diff-tree --no-commit-id --name-only -r -m --first-parent ${COMMIT}`) {
       return { status: 0, stdout: state.files.map((f) => f.path).join('\n') + (state.files.length ? '\n' : '') };
     }
     const show = args[0] === 'show' && args[1];
@@ -94,7 +106,7 @@ test('BL-954 invariant 1: for any content state, the verdict is identical whethe
   let revertedSeen = 0;
   fc.assert(
     fc.property(uniqueFilesArb, (files) => {
-      const base = { commitOk: true, branchOk: true, ancestorOfMain: false, files };
+      const base = { commitOk: true, branchOk: true, ancestorOfMain: false, ancestorOfOriginMain: false, files };
       const asAncestor = check({ ...base, ancestorOfBranch: true });
       const asUnreachable = check({ ...base, ancestorOfBranch: false });
       assert.deepEqual(asAncestor, asUnreachable);
@@ -118,20 +130,39 @@ test('BL-954 invariant 1: for any content state, the verdict is identical whethe
 
 // ── Invariant 2: already-on-main never yields a revert instruction ─────────
 
-test('BL-954 invariant 2: an already-on-main bounce is a breach report and its output nowhere instructs a revert, whatever the content state', () => {
+test('BL-954 invariant 2: a bounce published on EITHER main ref is a breach report and its output nowhere instructs a revert, whatever the content state', () => {
   let liveOnMainSeen = 0;
+  let originOnlySeen = 0;
   fc.assert(
-    fc.property(uniqueFilesArb, fc.boolean(), (files, ancestorOfBranch) => {
-      const report = check({ commitOk: true, branchOk: true, ancestorOfMain: true, ancestorOfBranch, files });
-      assert.equal(report.verdict, 'breach-report');
-      assert.equal(report.remedy, null);
-      assert.doesNotMatch(JSON.stringify(report), /revert/i);
-      if (files.some((f) => f.shape === 'live')) liveOnMainSeen += 1;
-    }),
+    fc.property(
+      uniqueFilesArb,
+      fc.boolean(),
+      // D3 BY CONSTRUCTION: at least one of the two main refs holds the
+      // commit - including the stale-local-main shape (origin only), where
+      // the pre-fix implementation emitted a revert instruction for
+      // published history.
+      fc.constantFrom('local-only', 'origin-only', 'both'),
+      (files, ancestorOfBranch, publishedOn) => {
+        const report = check({
+          commitOk: true,
+          branchOk: true,
+          ancestorOfMain: publishedOn !== 'origin-only',
+          ancestorOfOriginMain: publishedOn !== 'local-only',
+          ancestorOfBranch,
+          files,
+        });
+        assert.equal(report.verdict, 'breach-report', `publishedOn=${publishedOn}`);
+        assert.equal(report.remedy, null);
+        assert.doesNotMatch(JSON.stringify(report), /revert/i);
+        if (files.some((f) => f.shape === 'live')) liveOnMainSeen += 1;
+        if (publishedOn === 'origin-only') originOnlySeen += 1;
+      }
+    ),
     { numRuns: 200 }
   );
-  // the dangerous corner - content still live AND published - must be reached
+  // the dangerous corners must be reached, never hoped-for
   assert.ok(liveOnMainSeen >= 20, `only ${liveOnMainSeen} live-content-on-main states generated`);
+  assert.ok(originOnlySeen >= 20, `only ${originOnlySeen} stale-local-main states generated`);
 });
 
 // ── Invariant 3: recording never contingent on the check ───────────────────

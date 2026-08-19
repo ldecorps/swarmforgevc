@@ -1,44 +1,30 @@
 /**
- * BL-954: verification that a recorded bounce's BL-490/BL-495 revert
- * actually happened. The constitution requires the bouncing role to remove
- * the bounced commit's CONTENT from its own review branch in the same step
- * as the bounce - confirmed by content, never by ancestry, with one
- * exception: a commit already an ancestor of main is reported as a breach
- * and never reverted. Nothing checked any of this until BL-954; both
- * BL-935 architect bounces skipped the revert and the content rode to main
- * unnoticed.
+ * BL-954: the git-IO adapter behind the bounce revert check - gathers
+ * BounceRevertFacts from a real repo and composes the pure verdict
+ * (src/quality/bounceRevertVerdict.ts). Lives in src/metrics/ beside
+ * gitHistoryAdapter.ts because src/quality/ is the dependency-gate's POLICY
+ * zone (no-io-from-policy, BL-259 hard gate) - the architect bounce D1 this
+ * file answers.
  *
- * The check REPORTS - it never blocks or performs the revert itself
- * (ticket constraints: an agent silently rewriting its own branch on a
- * heuristic is worse than the skipped step). Verdicts:
- *   - 'violation':      bounced content is live at the bouncing branch tip
- *                       (some touched path matches the bounced version AND
- *                       the bounced version differs from its parent) -
- *                       remedy carries the revert command.
- *   - 'clean':          no touched path still holds the bounced version.
- *   - 'breach-report':  the bounced commit is already an ancestor of main;
- *                       per the constitution's exception the remedy is
- *                       ALWAYS null here - published history is never to
- *                       be reverted (invariant 2).
- *   - 'undeterminable': the commit or the branch cannot be resolved; the
- *                       cause names which. Never silently read as clean
- *                       (invariant 3).
- *
- * This file is the git adapter: it gathers BounceRevertFacts from a real
- * repo and hands them to the pure decision in bounceRevertVerdict.ts, which
- * has no git IO of its own.
+ * Two gathering rules with their own bounce provenance:
+ * - Touched files use `diff-tree -m --first-parent` (D2): the bare
+ *   invocation is BLIND to merge commits - empty output, so a bounced MERGE
+ *   commit (routine in this repo's practice) read as 'clean' no matter what
+ *   the bouncing branch held, the exact silent-clean BL-954 exists to close.
+ * - Already-published means an ancestor of EITHER local `main` OR
+ *   `origin/main` (D3): the two refs diverge in both directions across
+ *   worktrees (BL-891 measured 8/22), and a stale local `main` would
+ *   otherwise turn a genuinely published commit into a 'violation' carrying
+ *   a revert instruction for published history - invariant 2's forbidden
+ *   outcome.
  */
 import { execFileSync } from 'child_process';
 import {
   BounceRevertCheckReport,
   BounceRevertFacts,
-  BounceRevertVerdict,
-  BounceRevertFileFact,
   bouncingBranchForRole,
   decideBounceRevertVerdict,
-} from './bounceRevertVerdict';
-
-export { BounceRevertVerdict, BounceRevertCheckReport, BounceRevertFileFact, BounceRevertFacts, bouncingBranchForRole, decideBounceRevertVerdict };
+} from '../quality/bounceRevertVerdict';
 
 /** stdout on success (status 0), null content on failure - never throws. */
 export type GitReader = (args: string[]) => { status: number; stdout: string };
@@ -58,6 +44,10 @@ function resolves(runGit: GitReader, rev: string): boolean {
   return runGit(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]).status === 0;
 }
 
+function isAncestorOf(runGit: GitReader, commit: string, ref: string): boolean {
+  return runGit(['merge-base', '--is-ancestor', commit, ref]).status === 0;
+}
+
 /** File content at rev:path, or null when the path is absent there. */
 function contentAt(runGit: GitReader, rev: string, filePath: string): string | null {
   const res = runGit(['show', `${rev}:${filePath}`]);
@@ -74,8 +64,13 @@ export function gatherBounceRevertFacts(
   if (!commitResolves || !branchResolves) {
     return { commit: opts.commit, branch, commitResolves, branchResolves, ancestorOfMain: false, files: [] };
   }
-  const ancestorOfMain = runGit(['merge-base', '--is-ancestor', opts.commit, 'main']).status === 0;
-  const touched = runGit(['diff-tree', '--no-commit-id', '--name-only', '-r', opts.commit])
+  const ancestorOfMain =
+    isAncestorOf(runGit, opts.commit, 'main') || isAncestorOf(runGit, opts.commit, 'origin/main');
+  // -m --first-parent: a bare diff-tree is blind to merge commits (empty
+  // output -> silent 'clean', D2). First-parent side is the branch the merge
+  // landed ON, so the listed paths are what the bounced commit introduced
+  // there.
+  const touched = runGit(['diff-tree', '--no-commit-id', '--name-only', '-r', '-m', '--first-parent', opts.commit])
     .stdout.split('\n')
     .filter((line) => line.length > 0);
   const files = touched.map((filePath) => {

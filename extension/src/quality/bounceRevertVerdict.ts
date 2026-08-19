@@ -1,11 +1,17 @@
 /**
  * BL-954: the pure verdict logic for whether a recorded bounce's
- * BL-490/BL-495 revert actually happened. No git IO here - see
- * bounceRevertCheck.ts for the adapter that gathers BounceRevertFacts from a
- * real repo. Kept separate so the decision (content wins, ancestry is not
- * even an input; already-on-main is a breach-report exception; an
- * unresolvable commit/branch is undeterminable, never silently clean) can be
- * tested and read without any git process in the picture.
+ * BL-490/BL-495 revert actually happened. No git IO here - the adapter that
+ * gathers BounceRevertFacts from a real repo is
+ * src/metrics/bounceRevertGitAdapter.ts, OUTSIDE this directory:
+ * src/quality/ is the dependency-gate's POLICY zone (no-io-from-policy,
+ * BL-259 hard gate - the architect bounce this parcel answers), same split
+ * as coChange.ts vs gitHistoryAdapter.ts. Kept separate so the decision
+ * (content wins, ancestry is not even an input; already-on-main is a
+ * breach-report exception; an unresolvable commit/branch is undeterminable,
+ * never silently clean) can be tested and read without any git process in
+ * the picture. `ancestorOfMain` is the adapter's already-published fact -
+ * true when the commit is an ancestor of EITHER local main or origin/main
+ * (either ref can be the stale one, BL-891).
  */
 export type BounceRevertVerdict = 'clean' | 'violation' | 'breach-report' | 'undeterminable';
 
