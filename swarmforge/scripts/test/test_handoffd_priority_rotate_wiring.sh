@@ -67,7 +67,17 @@ print_preferred() {
 
 # ── A: older priority-00 beats newer priority-50 ───────────────────────────
 ROOT_A="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup_a() { rm -rf "$ROOT_A"; }
+cleanup_a() {
+  # BL-943: capture the code we were entered with BEFORE running anything
+  # fallible, and return it explicitly at the end - never the trailing rm's
+  # own status. A cleanup failure must never change the script's verdict,
+  # only report on stderr which fixture root it could not remove.
+  local exit_code=$?
+  if ! rm -rf "$ROOT_A" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_A" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup_a EXIT
 
 # BL-937: bash 3.2 has no `mapfile`/`readarray` builtin (bash 4.0+ only) -
@@ -101,7 +111,14 @@ cleanup_a
 
 # ── B: role ranked by best priority, not newest parcel's priority ──────────
 ROOT_B="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup_b() { rm -rf "$ROOT_B"; }
+cleanup_b() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
+  if ! rm -rf "$ROOT_B" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_B" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup_b EXIT
 
 # BL-937: portable mapfile replacement (see the note at FIX_A above).
@@ -135,7 +152,14 @@ cleanup_b
 
 # ── C: fresh priority-00 note is NOT actionable (aged-note gate unchanged) ─
 ROOT_C="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup_c() { rm -rf "$ROOT_C"; }
+cleanup_c() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
+  if ! rm -rf "$ROOT_C" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_C" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup_c EXIT
 
 # BL-937: portable mapfile replacement (see the note at FIX_A above).
@@ -168,7 +192,14 @@ cleanup_c
 
 # ── D: missing priority never jumps a valid 90 ─────────────────────────────
 ROOT_D="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup_d() { rm -rf "$ROOT_D"; }
+cleanup_d() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
+  if ! rm -rf "$ROOT_D" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_D" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup_d EXIT
 
 # BL-937: portable mapfile replacement (see the note at FIX_A above).
