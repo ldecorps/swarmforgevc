@@ -23,74 +23,25 @@
  *   - 'undeterminable': the commit or the branch cannot be resolved; the
  *                       cause names which. Never silently read as clean
  *                       (invariant 3).
+ *
+ * This file is the git adapter: it gathers BounceRevertFacts from a real
+ * repo and hands them to the pure decision in bounceRevertVerdict.ts, which
+ * has no git IO of its own.
  */
 import { execFileSync } from 'child_process';
+import {
+  BounceRevertCheckReport,
+  BounceRevertFacts,
+  BounceRevertVerdict,
+  BounceRevertFileFact,
+  bouncingBranchForRole,
+  decideBounceRevertVerdict,
+} from './bounceRevertVerdict';
 
-export type BounceRevertVerdict = 'clean' | 'violation' | 'breach-report' | 'undeterminable';
-
-export interface BounceRevertCheckReport {
-  verdict: BounceRevertVerdict;
-  branch: string;
-  commit: string;
-  /** The revert command to run on the bouncing branch; only for 'violation'. */
-  remedy: string | null;
-  /** Which obstacle stopped the check; only for 'undeterminable'. */
-  cause: string | null;
-  /** Touched paths whose bounced content is live at the branch tip. */
-  liveFiles: string[];
-}
-
-export interface BounceRevertFileFact {
-  path: string;
-  tipMatchesBounced: boolean;
-  bouncedDiffersFromParent: boolean;
-}
-
-export interface BounceRevertFacts {
-  commit: string;
-  branch: string;
-  commitResolves: boolean;
-  branchResolves: boolean;
-  ancestorOfMain: boolean;
-  files: BounceRevertFileFact[];
-}
+export { BounceRevertVerdict, BounceRevertCheckReport, BounceRevertFileFact, BounceRevertFacts, bouncingBranchForRole, decideBounceRevertVerdict };
 
 /** stdout on success (status 0), null content on failure - never throws. */
 export type GitReader = (args: string[]) => { status: number; stdout: string };
-
-/** Every reviewing role bounces from its swarmforge-<role> review branch. */
-export function bouncingBranchForRole(by: string): string {
-  return `swarmforge-${by}`;
-}
-
-/**
- * The pure verdict. Content decides (invariant 1): a path is live iff the
- * tip holds the bounced version AND the bounced commit actually changed it
- * - a path the commit never touched proves nothing. Ancestry of the
- * bouncing branch is not even an input.
- */
-export function decideBounceRevertVerdict(facts: BounceRevertFacts): BounceRevertCheckReport {
-  const base = { branch: facts.branch, commit: facts.commit, remedy: null, cause: null, liveFiles: [] as string[] };
-  if (!facts.commitResolves) {
-    return { ...base, verdict: 'undeterminable', cause: `the bounced commit ${facts.commit} cannot be resolved` };
-  }
-  if (!facts.branchResolves) {
-    return { ...base, verdict: 'undeterminable', cause: `the bouncing branch ${facts.branch} cannot be resolved` };
-  }
-  if (facts.ancestorOfMain) {
-    return { ...base, verdict: 'breach-report' };
-  }
-  const liveFiles = facts.files.filter((f) => f.tipMatchesBounced && f.bouncedDiffersFromParent).map((f) => f.path);
-  if (liveFiles.length > 0) {
-    return {
-      ...base,
-      verdict: 'violation',
-      liveFiles,
-      remedy: `on ${facts.branch}: git revert --no-edit ${facts.commit}`,
-    };
-  }
-  return { ...base, verdict: 'clean' };
-}
 
 function execGitReader(repoRoot: string): GitReader {
   return (args) => {
