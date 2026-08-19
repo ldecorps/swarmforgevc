@@ -510,7 +510,8 @@ const DOMAINS = [
   require('./bl949ConciergeBoardWiringSteps'),
   require('./bl685StrandedResidentDetectionSteps'),
   require('./bl620FrontDeskCaptionAndDropAuditSteps'),
-  require('./bl951StageSkipsRecordedSteps')
+  require('./bl951StageSkipsRecordedSteps'),
+  require('./bl952BouncedParcelNeverApprovedSteps')
 ];
 
 function registerSteps(registry) {
