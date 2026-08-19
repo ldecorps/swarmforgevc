@@ -20,6 +20,29 @@ function skipStringLiteral(text, i) {
   return i + 1;
 }
 
+// If `text[i]` begins a string literal or a `//`/`/*` comment, returns the
+// index of the last character consumed by it (the caller's own `for` loop
+// increment then lands one past it); returns null otherwise. Shared by
+// `scanBalanced` and `splitTopLevelArgs`, whose bracket/comma scans are
+// otherwise identical for-loops over the same string/comment cases.
+function stringOrCommentEnd(text, i) {
+  const c = text[i];
+  if (c === '"' || c === "'" || c === '`') {
+    return skipStringLiteral(text, i) - 1;
+  }
+  if (c === '/' && text[i + 1] === '/') {
+    let j = i;
+    while (j < text.length && text[j] !== '\n') j++;
+    return j;
+  }
+  if (c === '/' && text[i + 1] === '*') {
+    let j = i + 2;
+    while (j < text.length && !(text[j] === '*' && text[j + 1] === '/')) j++;
+    return j + 1;
+  }
+  return null;
+}
+
 function skipWhitespaceAndComments(text, i) {
   for (;;) {
     while (i < text.length && /\s/.test(text[i])) i++;
@@ -46,18 +69,9 @@ function scanBalanced(text, openIdx) {
   let i = openIdx;
   for (; i < text.length; i++) {
     const c = text[i];
-    if (c === '"' || c === "'" || c === '`') {
-      i = skipStringLiteral(text, i) - 1;
-      continue;
-    }
-    if (c === '/' && text[i + 1] === '/') {
-      while (i < text.length && text[i] !== '\n') i++;
-      continue;
-    }
-    if (c === '/' && text[i + 1] === '*') {
-      i += 2;
-      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i++;
+    const skip = stringOrCommentEnd(text, i);
+    if (skip !== null) {
+      i = skip;
       continue;
     }
     if (c === '(' || c === '{' || c === '[') {
@@ -80,18 +94,9 @@ function splitTopLevelArgs(argsText) {
   let start = 0;
   for (let i = 0; i < argsText.length; i++) {
     const c = argsText[i];
-    if (c === '"' || c === "'" || c === '`') {
-      i = skipStringLiteral(argsText, i) - 1;
-      continue;
-    }
-    if (c === '/' && argsText[i + 1] === '/') {
-      while (i < argsText.length && argsText[i] !== '\n') i++;
-      continue;
-    }
-    if (c === '/' && argsText[i + 1] === '*') {
-      i += 2;
-      while (i < argsText.length && !(argsText[i] === '*' && argsText[i + 1] === '/')) i++;
-      i++;
+    const skip = stringOrCommentEnd(argsText, i);
+    if (skip !== null) {
+      i = skip;
       continue;
     }
     if (c === '(' || c === '{' || c === '[') {
