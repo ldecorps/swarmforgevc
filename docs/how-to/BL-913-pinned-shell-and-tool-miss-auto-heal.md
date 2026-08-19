@@ -50,7 +50,7 @@ using). The hook is registered per role at settings-generation time
 |---|---|---|
 | `wrong-cwd` | `fatal: not a git repository` | re-run with `cd <pinned worktree> &&` prepended |
 | `wrong-surface` | `npm error code enoent`, `could not read package.json`, or `no such file or directory ... package.json` | re-run with `cd <pinned worktree>/extension &&` prepended |
-| `missing-root-argv` | `usage: ... <project-root>`, `usage: ... <target-repo-path>`, or `missing required argument` | re-run with the pinned worktree appended as a trailing positional argument |
+| `missing-root-argv` | `usage: ... <project-root>`, `usage: ... <target-repo-path>`, or `missing required argument` | re-run with the pinned worktree appended as a trailing positional argument (via a `$__sfh_root` shell variable in the generated source — see BL-934 below, not a literal path spliced next to the command) |
 | `real-failure` | anything else | never re-run — returned exactly as it happened |
 
 The classifier is deliberately **conservative**: anything it isn't sure about
@@ -83,6 +83,34 @@ Only ever one result:
 - **Real failure** (no class matched): the model sees the original failure,
   once, untouched — a red test, a merge conflict, or a permission error is
   never disguised as something else.
+
+## Classified text vs. runtime text (BL-934)
+
+Claude Code classifies the wrapper's whole **static source** for
+dangerous-command checks (e.g. the `rm` working-directory gate) before
+anything executes — dead `elif` branches included, even ones that never
+run for the command actually issued. Through 2026-08-18 the
+`missing-root-argv` heal built that dead branch as the literal original
+command with the pinned worktree spliced on as an adjacent trailing
+argument, so for a role running `rm -f tmp/foo.json` the classified source
+literally contained `rm -f tmp/foo.json '/path/to/worktree'` — read by the
+classifier as an `rm` of the working directory itself, even though that
+branch never ran (a real `rm -f` doesn't fail with a missing-root usage
+error, so nothing but the `wrong-cwd` class ever fires for it). Every `rm`
+of a temp file therefore tripped a Yes/No "dangerous rm" prompt with no
+don't-ask-again, on every role, every time — reported live by the operator
+on 2026-08-19 ("Why does it keep asking?").
+
+The fix ([BL-934](../reference/Specification.MD)) references the pinned
+worktree through a `$__sfh_root` shell variable defined once at the top of
+the generated wrapper instead of splicing it as literal adjacent text. The
+runtime heal is unchanged — a genuine `missing-root-argv` miss still gets
+the project root appended when it actually re-runs — only the **classified
+representation** changed. The original command's own text is untouched by
+this fix: a role's command that itself already names the pinned worktree
+as an `rm` target still appears as a real command in the wrapper source
+and is still classified as one (the ticket's invariant 2 — the fix must
+never hide a genuine dangerous `rm` from the classifier).
 
 ## What it deliberately does not do
 
@@ -118,4 +146,4 @@ Only ever one result:
 ## See also
 
 - [SwarmForge VS Code Extension — Specification](../reference/Specification.MD)
-  — the BL-913 changelog entry.
+  — the BL-913 and BL-934 changelog entries.

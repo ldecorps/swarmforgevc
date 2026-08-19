@@ -1,6 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-929: the Live Screen
+**Last Updated:** August 19, 2026 (BL-934: the BL-913 tool-miss heal
+wrapper's `missing-root-argv` branch spliced the pinned worktree directly
+next to the original command as a literal trailing argument in the
+generated wrapper's static source — so for a live `rm -f tmp/foo.json`
+that dead `elif` branch (never actually run for a real `rm -f`, since it
+never fails with a missing-root usage error) read to Claude Code's
+dangerous-command classifier, which checks the whole static source before
+anything executes, as `rm -f tmp/foo.json '/path/to/worktree'`: an `rm` of
+the working directory itself. Every role runs with
+`--dangerously-skip-permissions`, and the dangerous-rm gate has no
+don't-ask-again, so every `rm` of a temp file prompted Yes/No — reported
+live by the operator ("Why does it keep asking?") on 2026-08-19. Fix
+(`tool_miss_heal_lib.bb`): the pinned worktree is now referenced via a
+`$__sfh_root` shell variable defined once at the top of the generated
+wrapper instead of being spliced as literal adjacent text — the runtime
+heal for a genuine missing-root-argv miss is unchanged, only the
+classified representation is. The original command's own text is
+untouched, so a genuine `rm` of the worktree already present in a role's
+command stays fully visible to the classifier (invariant 2) — this fix
+narrows what looks dangerous, it does not hide anything that actually is.
+See the updated ["Classified text vs. runtime text
+(BL-934)"](../how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md#classified-text-vs-runtime-text-bl-934)
+section.); Previously August 19, 2026 (BL-929: the
+Live Screen
 (`/resident-spy`, shared by the Mini App and Bubble Live) decided its whole
 layout — a `RESIDENT` tile, a global top ticket strip, another role's
 identity leaking onto a tile's subtitle — from whether
