@@ -9,20 +9,7 @@ priority: 20
 direction: operator-intake
 depends_on: []
 mutation_cost: low
-abandoned_commits:
-  # BL-958's coder-side bounce merge, whose SUBJECT names BL-935 ("carry
-  # BL-935 lineage") so the pre-QA ancestry check reads it as a stranded
-  # BL-935 commit. It is not one. Every BL-935 file in it -
-  # vitest-worker-memory-budget.ts, vitestWorkerMemoryBudget.test.js,
-  # vitest.config.mjs, vitest.properties.config.mjs - is byte-identical to
-  # the documenter tip, so nothing of this ticket's is missing. What the
-  # commit DOES carry beyond that is 357 lines of BL-958's still-bounced
-  # work (control_plane_lib.bb, swarm_ensure.bb, swarm_status.bb), absent
-  # from main; merging it to satisfy the check would fold another ticket's
-  # in-flight content into this parcel, which an approval here does not
-  # authorise (BL-506). Dropped deliberately, per BL-531's documented
-  # override. Recorded by documenter 2026-08-19.
-  - "e63d364863"
+abandoned_commits: ["e63d364863"]
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-935-vitest-fork-pool-is-capped-under-a-live-full-forge-pack.feature
 
@@ -122,6 +109,19 @@ qa_e2e_procedure: >
      test` runs its normal fork count and the suite is green.
 
 notes: >
+  abandoned_commits (recorded by documenter, 2026-08-19): e63d364863 is
+  BL-958's coder-side bounce merge, which the pre-QA ancestry check reads as
+  a stranded BL-935 commit only because its SUBJECT ends "carry bounce
+  evidence and BL-935 lineage". It is not one. All four BL-935 files in it
+  (vitest-worker-memory-budget.ts, vitestWorkerMemoryBudget.test.js,
+  vitest.config.mjs, vitest.properties.config.mjs) are byte-identical to the
+  documenter tip, so nothing of this ticket is missing from the parcel. What
+  merging it would ADD is 357 lines of BL-958's still-bounced work
+  (control_plane_lib.bb, swarm_ensure.bb, swarm_status.bb), absent from main
+  - folding another ticket's in-flight content into this parcel, which an
+  approval here does not authorise (BL-506). Dropped deliberately, per
+  BL-531's documented override.
+
   Source intake: backlog/INTAKE-cap-vitest-to-1-core-on-full-forge-macos.md
   (drained 2026-08-19, archived on mint per the backlog-root drain rule).
   1:1 - the intake produced this ticket and no other.
