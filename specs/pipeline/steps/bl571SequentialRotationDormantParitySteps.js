@@ -111,9 +111,9 @@ function runEnsure(ctx) {
   delete env.TELEGRAM_PRINCIPAL_USER_ID;
   delete env.CURSOR_BRIDGE_BOT_TOKEN;
   env.PATH = `${path.join(ctx.root, 'bin')}:${env.PATH}`;
-  env.SWARMFORGE_ENSURE_EXTENSION_CHECK = path.join(ctx.root, 'bin', 'fake_ext_check.sh');
-  env.SWARMFORGE_ENSURE_EXTENSION_BOUNCE = path.join(ctx.root, 'bin', 'fake_ext_bounce.sh');
-  env.SWARMFORGE_ENSURE_SUPERVISOR = path.join(ctx.root, 'bin', 'fake_supervisor.bb');
+  env.SWARM_ENSURE_EXTENSION_CHECK_CMD = path.join(ctx.root, 'bin', 'fake_ext_check.sh');
+  env.SWARM_ENSURE_EXTENSION_BOUNCE_CMD = path.join(ctx.root, 'bin', 'fake_ext_bounce.sh');
+  env.SWARM_ENSURE_SUPERVISOR_CMD = path.join(ctx.root, 'bin', 'fake_daemon_start.sh');
   env.SWARMFORGE_SKIP_OPERATOR = '1';
   env.SWARMFORGE_SKIP_FRONT_DESK = '1';
   const res = spawnSync('bb', [ENSURE, ctx.root], { encoding: 'utf8', env });
