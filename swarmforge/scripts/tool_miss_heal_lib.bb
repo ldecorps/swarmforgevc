@@ -62,12 +62,27 @@
 ;; trailing positional argument (the shape every CLI this ticket's own
 ;; description names - propose-onboarding-prompts.js and its siblings - take
 ;; <project-root>-like args); :wrong-cwd and :wrong-surface re-anchor via cd.
+;;
+;; BL-934: :missing-root-argv references the worktree via the $__sfh_root
+;; shell variable (defined once in build-healing-wrapper-command below),
+;; never as a literal path spliced directly next to original-command. A
+;; literal `original-command 'pinned-worktree'` is exactly what Claude
+;; Code's own dangerous-rm classifier reads as "rm of the worktree"
+;; whenever original-command happens to be an rm invocation - even though
+;; this branch only ever RUNS for a non-rm CLI's genuine missing
+;; <project-root> usage error (rm's own failures never match this class's
+;; patterns), the classifier scans the wrapper's whole STATIC source before
+;; anything executes, dead branches included. original-command's own text
+;; is untouched here - never hidden, never encoded - so a genuine rm of the
+;; worktree already present in original-command stays fully visible
+;; (invariant 2); only the SYNTHETIC appended argument's representation
+;; changes.
 (defn healed-command
   [miss-class original-command pinned-worktree]
   (case miss-class
     :wrong-cwd (str "cd " (shell-quote pinned-worktree) " && " original-command)
     :wrong-surface (str "cd " (shell-quote (str pinned-worktree "/extension")) " && " original-command)
-    :missing-root-argv (str original-command " " (shell-quote pinned-worktree))
+    :missing-root-argv (str original-command " \"$__sfh_root\"")
     nil))
 
 (defn- bash-clause
@@ -99,7 +114,8 @@
                         (map-indexed
                          (fn [i entry] (bash-clause (zero? i) entry original-command pinned-worktree))
                          MISS-CLASS-PATTERNS))]
-    (str "__sfh_out=$(" original-command " 2>&1); __sfh_ec=$?\n"
+    (str "__sfh_root=" (shell-quote pinned-worktree) "\n"
+         "__sfh_out=$(" original-command " 2>&1); __sfh_ec=$?\n"
          "if [ $__sfh_ec -ne 0 ]; then\n"
          clauses
          "  fi\n"

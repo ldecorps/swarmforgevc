@@ -481,7 +481,8 @@ const DOMAINS = [
   require('./bl925ReconcileMergeOfPublishedTipSteps'),
   require('./bl930OrphanJanitorTmpOnboarderSteps'),
   require('./bl929LiveScreenPackLayoutSteps'),
-  require('./bl931RotatePackGateSteps')
+  require('./bl931RotatePackGateSteps'),
+  require('./bl934HealWrapperRmFalsePositiveSteps')
 ];
 
 function registerSteps(registry) {
