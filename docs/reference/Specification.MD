@@ -1,6 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-945: Architecture Rule 6 (in
+**Last Updated:** August 19, 2026 (BL-943: six self-contained
+`handoffd` daemon-fixture wiring tests
+(`test_handoffd_aged_note_rotate_wiring.sh`, `_ambulance_wiring.sh`,
+`_rule_proposal_rotate_wiring.sh`, `_wake_attribution_wiring.sh`,
+`_priority_rotate_wiring.sh`, `_starve_rotate_wiring.sh`) ended each
+scenario with a bare cleanup call whose last statement was `rm -rf
+"$ROOT"`; under `set -euo pipefail` the cleanup function's own exit status
+was that remove's status, so a failing `rm` aborted the whole script —
+every assertion had already passed and printed its `PASS:` line, but the
+run reported exit 1, never printed its final `ALL PASS:` line, silently
+skipped every scenario after the aborting one, and leaked the fixture root
+the failed remove was meant to delete. Since Babashka/Clojure has no
+mutation/CRAP/DRY tooling wired, this suite is the only gate these scripts
+have — a gate that reports red when it passed is not a gate. Fixed
+identically at all 18 cleanup call sites across the six scripts: `$?` is
+captured as the first executable statement, the fallible `rm -rf` is
+guarded so its own status never propagates as a bare failing command under
+`set -e`, a failure warns on stderr naming the surviving root instead of
+being swallowed, and the captured entry code is returned explicitly at the
+end — a real `fail()`-triggered exit code still survives even when cleanup
+also fails. Verified live on the host under real background load: two of
+three consecutive reruns of one script hit the actual flake organically,
+and the fix correctly warned and completed with `ALL PASS` both times, not
+only in the stub-`rm`-simulated case (never `chmod`, banned outright for
+failure simulation) the acceptance layer also exercises. A coder-authored
+property test (`bl943_cleanup_wrapper_property_test.sh`, 320 trials) covers
+the two declared invariants — a cleanup failure never decides the verdict
+or skips a later scenario, and is always reported — over the exact wrapper
+shape landed at all 18 sites, the accepted form for Bash's own lack of a
+property-test framework. No production behavior changed; same internal
+test-infrastructure-hygiene class as BL-412/413/458/647/655/878/944.);
+Previously
+August 19, 2026 (BL-945: Architecture Rule 6 (in
 `swarmforge/constitution/articles/local-engineering.prompt`) and two
 production source comments (`extension/src/concierge/epicIcon.ts`,
 `topicIcon.ts`) cited `docs/branding/icon-system.md` as normative
