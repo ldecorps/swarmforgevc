@@ -159,3 +159,6 @@ notes: |
   explicit KNOWN_VALUES, not pass through.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 576f466b28, evidence: backlog/evidence/BL-924-bounce-20260819.md }
