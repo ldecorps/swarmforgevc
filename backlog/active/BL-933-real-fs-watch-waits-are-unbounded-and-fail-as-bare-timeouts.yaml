@@ -174,3 +174,5 @@ qa_e2e_procedure: |
      new bounded-wait path still reaches their cleanup when the wait EXPIRES,
      not only when it succeeds. A deadline that throws past a cleanup leaks a
      fixture dir on every timeout, which is the BL-928 failure re-introduced.
+
+assigned_to: coder
