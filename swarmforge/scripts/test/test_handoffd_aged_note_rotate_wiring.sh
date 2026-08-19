@@ -129,7 +129,15 @@ TMUX_LOG="$ROOT_A/tmux-calls.log"
 export TMUX_LOG
 touch "$TMUX_LOG"
 
-mapfile -t FIXTURE_A < <(setup_common_fixture "$ROOT_A")
+# BL-937: bash 3.2 has no `mapfile`/`readarray` builtin (bash 4.0+ only) -
+# portable read-loop equivalent (`|| [[ -n "$line" ]]` keeps a final line
+# with no trailing newline; `line=""` before each loop guards against a
+# stale value from a prior loop surviving into a genuinely empty read).
+FIXTURE_A=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  FIXTURE_A+=("$line")
+done < <(setup_common_fixture "$ROOT_A")
 SPEC_WT_A="${FIXTURE_A[0]}"
 CLEAN_WT_A="${FIXTURE_A[1]}"
 
@@ -190,7 +198,12 @@ TMUX_LOG="$ROOT_B/tmux-calls.log"
 export TMUX_LOG
 touch "$TMUX_LOG"
 
-mapfile -t FIXTURE_B < <(setup_common_fixture "$ROOT_B")
+# BL-937: portable mapfile replacement (see the note at FIXTURE_A above).
+FIXTURE_B=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  FIXTURE_B+=("$line")
+done < <(setup_common_fixture "$ROOT_B")
 SPEC_WT_B="${FIXTURE_B[0]}"
 
 # specifier: ONE note enqueued 2 minutes ago - well short of the 20-minute
