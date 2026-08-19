@@ -9,7 +9,7 @@ direction: human-requested
 depends_on: [BL-585, BL-670]
 assigned_to: coder
 mutation_cost: medium
-human_approval: pending
+human_approval: approved
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 approval_context: >
