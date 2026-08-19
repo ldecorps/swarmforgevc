@@ -517,7 +517,8 @@ const DOMAINS = [
   require('./bl956PipelineBoardCaptionCapSteps'),
   require('./bl955ForwardingAnnotationSteps'),
   require('./bl827FlowWatchdogSpecThresholdsSteps'),
-  require('./bl571SequentialRotationDormantParitySteps')
+  require('./bl571SequentialRotationDormantParitySteps'),
+  require('./bl958ControlPlaneLossSteps')
 ];
 
 function registerSteps(registry) {
