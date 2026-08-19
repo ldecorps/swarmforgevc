@@ -146,8 +146,20 @@ ROOT_A="$(cd "$(mktemp -d)" && pwd -P)"
 FAKE_BIN_A="$ROOT_A/bin"
 PID_A=""
 cleanup_a() {
+  # BL-943: capture the code we were entered with BEFORE running anything
+  # fallible, and return it explicitly at the end - never the trailing rm's
+  # own status. Called two ways: as a normal end-of-scenario statement
+  # (after `trap - EXIT`, $? here is always 0) and as the real EXIT trap
+  # handler (a crash or an explicit `exit N` from fail() - bash sets $? to
+  # exactly N before invoking the trap). A cleanup failure must never
+  # change either outcome, only report on stderr which fixture root it
+  # could not remove.
+  local exit_code=$?
   [[ -n "$PID_A" ]] && kill "$PID_A" 2>/dev/null || true
-  rm -rf "$ROOT_A"
+  if ! rm -rf "$ROOT_A" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_A" >&2
+  fi
+  return "$exit_code"
 }
 trap cleanup_a EXIT
 
@@ -215,8 +227,13 @@ ROOT_B="$(cd "$(mktemp -d)" && pwd -P)"
 FAKE_BIN_B="$ROOT_B/bin"
 PID_B=""
 cleanup_b() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
   [[ -n "$PID_B" ]] && kill "$PID_B" 2>/dev/null || true
-  rm -rf "$ROOT_B"
+  if ! rm -rf "$ROOT_B" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_B" >&2
+  fi
+  return "$exit_code"
 }
 trap cleanup_b EXIT
 

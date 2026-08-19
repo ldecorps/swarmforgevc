@@ -7,10 +7,11 @@ lives under the mode that matches what a reader is trying to do with it.
 Generated/asset directories that are not part of this classification —
 `docs/archive/` (superseded material), `docs/briefings/` (daily briefing
 artifacts), `docs/benchmarks/` (recorded benchmark data), `docs/i18n/`
-(translation cache), `docs/roles-future/` (draft future-role prompts), and
-`docs/diagrams/` (Mermaid sources, linked from Reference below) — stay where
-the tooling that reads them expects them, and are not migrated or rewritten
-here.
+(translation cache), `docs/roles-future/` (draft future-role prompts),
+`docs/branding/` (design-exploration doc + image/generator assets, marked
+not-yet-ratified at its own top), and `docs/diagrams/` (Mermaid sources,
+linked from Reference below) — stay where the tooling that reads them
+expects them, and are not migrated or rewritten here.
 
 ## Tutorials
 
@@ -55,7 +56,7 @@ here.
 - [Queued questions answer where they were asked](how-to/BL-767-queued-question-answers-in-origin-topic.md)
 - [Named tunnel Bubble — fixed URL on a Cloudflare zone you own](how-to/named-tunnel-bubble-musicalsifu.md)
 - [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
-- [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks, what a nudge looks like, start/stop/ensure, state layout, the flipped env skip, and the Operator's tell-never-restart freshness watchdog (down/pidfile-lie/announce-mute/healthy).
+- [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks, what a nudge looks like, start/stop/ensure, state layout, the flipped env skip, the Operator's tell-never-restart freshness watchdog (down/pidfile-lie/announce-mute/healthy), and the detector that tells someone when pipeline code lands on `main` outside QA.
 - [Provider auth-error auto-respawn: healing a wedged standing role](how-to/BL-536-provider-auth-error-auto-respawn.md) — how the chase sweep detects and heals an `AuthenticationError`-wedged role, the `auth_respawn_max_attempts` cap, and the operator alert.
 - [The coordinator raises a clarifying question through `role_ask.bb`](how-to/BL-773-coordinator-role-ask-clarifying-question.md) — wiring the coordinator into the same per-role ask path the specifier already uses, so its questions reach Telegram instead of blocking on an unwatched surface.
 - [`/pilot safe` — auto-pick a low-blast defect for offline pilot](how-to/BL-722-pilot-safe-defects.md) — the safe-pool filter (approved, low-mutation, specced defect, not needs_design), its ranking, and the empty-pool refusal.
@@ -83,6 +84,7 @@ here.
 - [The Reference-Freshness Pre-Turn Guard](how-to/BL-640-reference-freshness-guard.md) — why `ready_for_next.sh` can now refuse a turn with `STALE_REFERENCE_ELABORATION`, what it checks (worktree vs. whichever of `main`/`origin/main` is ahead), and what to do when it fires.
 - [Clearing Byte-Identical Hot-Synced Copies Before a Worktree Merge](how-to/BL-924-clear-identical-untracked-copies-before-merge.md) — the `clear_identical_untracked_and_merge.bb` script to run instead of a bare `git merge` when untracked, hot-synced script copies block a worktree fast-forward, its all-or-nothing identity proof, and what it deliberately never touches.
 - [Keeping the operator_runtime.bb JS fixture list honest](how-to/BL-944-operator-runtime-fixture-closure-guard.md) — the source-derived load-file closure guard that replaced a six-times-drifted hand-maintained list, how to add a new dependency without repeating the drift, and how this differs from BL-671's separate shell-fixture sandbox.
+- [The Constitution Doc-Citation Guard](how-to/BL-945-constitution-doc-citation-guard.md) — why a constitution article citing a `docs/...` path now fails the standing extension suite if that path doesn't resolve on `main`, what it deliberately does and doesn't scan, and how it differs from BL-640's worktree-freshness guard.
 
 ## Reference
 
