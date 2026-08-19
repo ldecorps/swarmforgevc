@@ -96,6 +96,34 @@ You are the hardender.
   equivalent survivors, so the manifest wrote `scenarios: []`, indistinguishable
   from a broken/no-op run unless you know a non-clean scenario is always
   excluded.)
+- BL-927: a SURVIVED Gherkin mutant that only FLIPS THE CASE of a value used as
+  a path component — a role name above all — may have survived because this
+  host's volume is case-insensitive, not because the code treats the two values
+  alike. Verify the host first: `touch ./tmp/x/CoDeR && ls ./tmp/x/coder`
+  succeeding proves the collision. Measured 2026-08-19: APFS, `ls` resolves the
+  flipped name onto the same file, and the BL-927 fixture builds `wt-coder` /
+  `wt-cleaner` straight from the column, so `wt-Coder` reopens the real coder
+  mailbox and no assertion can see the mutation.
+- **That probe explains the survival; it does NOT make the mutant equivalent,
+  and this is NOT the BL-234 exception.** BL-234 equivalence must be
+  demonstrable FROM THE CODE — interchangeable by design, where *no* assertion
+  could ever differentiate. Here an assertion on a case-SENSITIVE volume would
+  differentiate immediately, so the survivor is *host-masked*, a third category
+  sitting between killed and equivalent. Recording it as a BL-234 equivalent
+  files a real open question as settled, and the follow-up never gets asked.
+- **Do not conclude "not a real gap" from the probe.** This project supports
+  macOS AND Linux (local-engineering.prompt: "Target OS: macOS and Linux only"),
+  and role names are genuinely case-bearing in its paths — `.worktrees/QA/` is
+  mixed-case on disk today, so on ext4 `qa` and `QA` are two different
+  directories. A case-flip that is invisible here can be a live portability
+  defect there.
+- Action on such a survivor: record it as HOST-MASKED with the `touch`/`ls`
+  evidence and the path it collided on — never as equivalent — then read the
+  code path once to answer the question the mutant actually raised: does it
+  derive the role name from a fixed known set, or normalize case, before
+  building the path? If it does, say so in the record and move on. If it
+  trusts arbitrary casing, that is a defect to raise on its own ticket
+  (`type: defect`, severity per impact), not an equivalence to accept.
 - Final CRAP and DRY verification after the cleaner's local cleanup: confirm CRAP
   and duplication have not regressed in the hardened result.
 - Keep mutation/hardening tests separate from the unit and acceptance suites.
