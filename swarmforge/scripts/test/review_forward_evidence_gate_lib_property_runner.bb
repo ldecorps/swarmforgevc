@@ -70,7 +70,13 @@
 
 (def type-pool ["git_handoff" "note" "rule_proposal" "awake"])
 
-(def stage-pool required-stages-lib/canonical-order) ; ["coder" cleaner architect hardender documenter "QA"]
+;; BL-950: coordinator joins the recipient pool - QA's approval hop is a
+;; QA -> coordinator git_handoff, and a pool without coordinator can never
+;; generate it (the property would have stayed green over a space that
+;; excludes the one new shape entirely - the generator-reach failure mode
+;; coder.prompt's Invariants section names). Reachability is ASSERTED below,
+;; never hoped for.
+(def stage-pool (conj required-stages-lib/canonical-order "coordinator"))
 
 (defn gen-recipients [s]
   (let [[n s1] (gen-int s 3)]
@@ -110,19 +116,26 @@
 ;; ── independent oracle ────────────────────────────────────────────────────
 
 (defn expected-blocked?
-  "A fresh statement of the two declared invariants' English text - not a
-   copy of blocked?'s own conjunction."
+  "A fresh statement of the declared invariants' English text - not a
+   copy of blocked?'s own conjunction. BL-950 extends BL-806's invariant 1:
+   the refused surface is a review role's forward-direction git_handoff OR
+   QA's approval git_handoff to the coordinator (invariant 1: 'the gate
+   refuses exactly one shape... every other QA send passes untouched');
+   invariant 2's fail-open shapes are unchanged (a nil received-commit can
+   never equal a non-blank commit)."
   [{:keys [type sender recipients task-name commit reroute-reason received-commit]}]
   (let [is-review-role? (contains? #{"cleaner" "architect" "hardender" "documenter"} sender)
         is-git-handoff? (= type "git_handoff")
         single-recipient? (= (count recipients) 1)
         moves-forward? (and single-recipient?
-                            (required-stages-lib/routes-forward? sender (first recipients)))
+                            (or (and is-review-role?
+                                     (required-stages-lib/routes-forward? sender (first recipients)))
+                                (and (= sender "QA") (= (first recipients) "coordinator"))))
         detour-marked? (not (str/blank? reroute-reason))
         has-task? (not (str/blank? task-name))
         has-commit? (not (str/blank? commit))
         names-received-commit? (and has-commit? (= commit received-commit))]
-    (boolean (and is-git-handoff? is-review-role? moves-forward? (not detour-marked?)
+    (boolean (and is-git-handoff? moves-forward? (not detour-marked?)
                   has-task? names-received-commit?))))
 
 ;; ── the property ──────────────────────────────────────────────────────────
@@ -135,6 +148,51 @@
                (if (= expected actual)
                  true
                  (format "expected %s, got %s" expected actual)))))
+
+;; ── BL-950: the QA approval hop, BY CONSTRUCTION ──────────────────────────
+;; The broad generator above reaches the exact refused shape (git_handoff +
+;; QA + [coordinator] + same commit + no reroute + task present) at roughly
+;; 1-in-9000 per run - measured at authoring time: a gate with the QA-hop
+;; disjunct deleted still passed 1000 broad runs, because the fixed seed
+;; never landed the full conjunction (coder.prompt's own named failure
+;; shape: a deep state technically reachable but astronomically rare). So
+;; the new hop gets its own by-construction pass: sender/recipient/type are
+;; FIXED to the hop and only the discriminating fields (commit kind,
+;; reroute, task) vary - every generated case is a hop candidate by
+;; construction, and both the refused shape and each exclusion are asserted
+;; reached, never hoped for.
+(def qa-hop-refused-shapes-reached (atom 0))
+(def qa-hop-excluded-shapes-reached (atom 0))
+
+(defn gen-qa-hop-scenario [s]
+  (let [[{:keys [commit received-commit]} s1] (gen-commit-pair s)
+        [has-reroute? s2] (gen-bool s1)
+        [has-task? s3] (gen-bool s2)]
+    [{:type "git_handoff"
+      :sender "QA"
+      :recipients ["coordinator"]
+      :task-name (if has-task? "BL-T" "")
+      :commit commit
+      :reroute-reason (if has-reroute? "operator asked for a reroute" nil)
+      :received-commit received-commit}
+     s3]))
+
+(check-all "BL-950: the QA approval hop matches the invariant text, by construction"
+           gen-qa-hop-scenario
+           (fn [scenario]
+             (let [expected (expected-blocked? scenario)]
+               (if expected
+                 (swap! qa-hop-refused-shapes-reached inc)
+                 (swap! qa-hop-excluded-shapes-reached inc))
+               (let [actual (review-forward-evidence-gate-lib/blocked? scenario)]
+                 (if (= expected actual)
+                   true
+                   (format "expected %s, got %s" expected actual))))))
+
+(when (zero? @qa-hop-refused-shapes-reached)
+  (swap! failures conj "FAIL BL-950 reachability: the by-construction generator never produced the REFUSED shape (same commit, no reroute, task present)"))
+(when (zero? @qa-hop-excluded-shapes-reached)
+  (swap! failures conj "FAIL BL-950 reachability: the by-construction generator never produced an EXCLUDED shape"))
 
 ;; ── non-vacuity companion: a naive "block every review-role same-commit
 ;;    send, ignoring reroute_reason" gate would fail this same property ────

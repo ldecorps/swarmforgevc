@@ -418,6 +418,81 @@
     (assert-true "an unresolvable swarmforge-QA ref reaches assemble-findings's own output as UNAVAILABLE, never a silent all-clear"
                  (some #(and (= "pipeline-code-on-main" (:key %)) (= "UNAVAILABLE" (:severity %))) findings))))
 
+;; ── BL-685: check-resident-stranded (Class B - no rotate note exists) ──────
+
+(def stranded-base
+  {:rotation-router? true
+   :rotation-home "coder"
+   :resident-active-role "specifier"
+   :resident-active-role-mtime-ms 0
+   :resident-pane-busy? false
+   :resident-mailbox-empty? true
+   :dispatch-note-pending? false
+   :paused? false
+   :now-ms (* 20 60 1000)})
+
+(assert-true "stranded shape (non-home, idle, empty box, no dispatch note, past grace) fires CRIT"
+             (let [f (sw/check-resident-stranded stranded-base)]
+               (and f (= "CRIT" (:severity f)) (= "resident-stranded-specifier" (:key f)))))
+
+(assert-true "the finding names the role the resident is stuck in"
+             (str/includes? (:message (sw/check-resident-stranded stranded-base)) "specifier"))
+
+(assert-nil "suppressor: at home (active role IS the home role) -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-active-role "coder")))
+
+(assert-nil "suppressor: home comparison is case-insensitive (QA vs qa never reads as stranded-away)"
+            (sw/check-resident-stranded (assoc stranded-base :rotation-home "QA" :resident-active-role "qa")))
+
+(assert-nil "suppressor: resident pane busy -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-pane-busy? true)))
+
+(assert-nil "suppressor: mailbox holds work (new or in_process) -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-mailbox-empty? false)))
+
+(assert-nil "suppressor: a dispatch note to the coordinator is pending -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :dispatch-note-pending? true)))
+
+(assert-nil "suppressor: within the grace period -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :now-ms (* 5 60 1000))))
+
+(assert-nil "suppressor: not a rotation-router pack -> no finding (topology out of scope)"
+            (sw/check-resident-stranded (assoc stranded-base :rotation-router? false)))
+
+(assert-nil "suppressor: swarm paused -> no finding (consistent with rotate-not-honored)"
+            (sw/check-resident-stranded (assoc stranded-base :paused? true)))
+
+(assert-nil "fail open: no active-role marker at all -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-active-role nil)))
+
+(assert-nil "fail open: marker mtime unavailable -> no finding (grace cannot be proven)"
+            (sw/check-resident-stranded (assoc stranded-base :resident-active-role-mtime-ms nil)))
+
+(assert-true "a stranded finding is nudge-eligible (CRIT rides the standard dedup/cooldown)"
+             (sw/nudge-eligible? (sw/check-resident-stranded stranded-base)))
+
+;; BL-685 required_wiring: the check must be reached from assemble-findings's
+;; own vector (the BL-419 shape guard), and it must fire with NO rotate note
+;; in the snapshot at all - Class B is DEFINED by no rotate note existing, so
+;; a wiring that reads the role off :rotate-note reads nil in every real
+;; occurrence (the ticket's own Wiring finding 1).
+(let [snapshot-stranded
+      (merge {:now-ms (* 20 60 1000) :roles [] :handoffd-alive? true :handoffd-supervisor-alive? true
+              :handoffd-log-age-secs 5 :handoffd-max-age-secs 300 :failed-count 0 :stuck-parcels []
+              :available-mb 4000 :mem-floor-mb 1500 :claim-risks [] :rotate-note nil
+              :pause {:active? false :until-ms nil} :active-ticket-count 0 :any-pane-busy? false
+              :prev-streak 0 :pending-claims [] :in-process-claims []}
+             {:rotation-router? true :rotation-home "coder"
+              :resident-active-role "specifier" :resident-active-role-mtime-ms 0
+              :resident-pane-busy? false :resident-mailbox-empty? true
+              :dispatch-note-pending? false})]
+  (let [{:keys [findings]} (sw/assemble-findings snapshot-stranded)
+        keys-found (set (map :key findings))]
+    (assert-true "a stranded resident reaches assemble-findings's own output, with :rotate-note nil"
+                 (contains? keys-found "resident-stranded-specifier"))
+    (assert-true "no rotate-unhonored finding accompanies it (the two checks are additive, scenario 03)"
+                 (not-any? #(str/starts-with? (str %) "rotate-unhonored") keys-found))))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
