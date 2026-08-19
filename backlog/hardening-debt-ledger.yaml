@@ -12,3 +12,9 @@
   reason: "host busy, cooldown gate skip-busy/skip-cooldown"
   load: "14.29/17.21/16.99"
   detected_at: 2026-08-19
+- parcel: BL-955
+  gate: mutation
+  file_set: extension/src/onboarding/negotiationTelegramRelay.ts,extension/src/onboarding/negotiationTelegramRouting.ts,extension/src/tools/telegramFrontDeskBotCore.ts
+  reason: "host busy, load 35/36/29 on 4 cores"
+  load: "35.11/35.79/28.92"
+  detected_at: 2026-08-19
