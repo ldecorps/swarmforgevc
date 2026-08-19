@@ -1,0 +1,124 @@
+id: BL-963
+title: "The open-slot nudge ranks candidates without running the promotion gate chain - once BL-957's depends_on gate lands it will name gate-refused candidates, fire on nothing promotable, and drive false SUP-1 escalations"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 30
+direction: pipeline-note
+depends_on: [BL-957]
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-963-open-slot-nudge-consults-promotion-gate-chain.feature
+
+invariants:
+  - "The open-slot nudge never names, counts toward its fire decision, or accrues escalation state on a candidate the promotion_gates evaluate chain refuses for any reason other than human_approval - eligibility is decided by the same evaluate chain promotion uses, never a second implementation (BL-663)."
+  - "A candidate whose only refusal is human_approval remains nudge-eligible and is named flagged awaiting approval - BL-798 scenario 03's surface-not-skip behavior is preserved."
+
+description: >
+  Severity rationale: medium - no live misbehavior today, but the defect
+  arms the moment BL-957 lands: the nudge and the promotion path will then
+  disagree about who is promotable, recurring on every open slot.
+
+  Source: architect priority-00 note 20260819T231719Z_000266 while reviewing
+  BL-957 ("BL-957 spec gap: BL-798 open-slot nudge cannot see depends_on
+  gate"), per Article 4.4's spec-gap-leaves-by-note rule. Specifier probe
+  confirmed all three legs:
+
+  - chase_sweep_lib.bb's top-open-slot-candidate calls
+    promotion-gates-lib/rank-candidates - the Article 3.2.4 ORDERING only -
+    over ALL paused candidates; the evaluate gate chain never runs. Its
+    BL-900 comment claims the candidate "matches the one promotion actually
+    picks"; BL-957 makes that claim false, because cmd-select drops
+    gate-refused candidates from selection while the nudge keeps naming
+    them.
+  - handoffd.bb (~line 1796) feeds decide-open-slot-nudge? a bare
+    count-backlog-yaml of paused/ - so the nudge fires even when every
+    paused candidate is gate-refused, the eternal-nudge shape SUP-1
+    escalation was built to bound.
+  - next-open-slot-escalation-state counts repeated unacted nudges for the
+    SAME named candidate and escalates at the threshold - a permanently
+    dependency-refused top candidate guarantees a false "coordinator
+    inaction" escalation while promotable lower-ranked candidates go
+    unnamed.
+
+  Fix wanted: the nudge's candidate selection and its fire-decision
+  eligibility both consult the one promotion_gates evaluate chain. A
+  candidate refused for any reason OTHER than human_approval (depends_on
+  once BL-957 lands, and any gate added later) is excluded from naming,
+  from the eligible count, and from escalation tracking. A candidate whose
+  ONLY refusal is human_approval stays eligible and is named with the
+  existing "awaiting approval" flag - approval is human-actionable, which
+  is why BL-798 chose to surface it rather than skip it; a depends_on
+  refusal is not actionable by promoting or approving the named ticket,
+  which is why it filters instead. When no candidate survives the filter,
+  no nudge fires. Update the BL-900 comment to state the now-true property.
+
+  How (direction, not mandate): run promotion-gates-lib/evaluate per paused
+  candidate at nudge-decision time and partition refusals by gate; do not
+  re-read depends_on or any other ticket field in chase_sweep_lib - the
+  chain is the single source (BL-663), so future gates are inherited for
+  free. The escalation state machine itself is unchanged; it simply only
+  ever sees actionable candidates now.
+
+constraints: >
+  Out of scope:
+
+  - Any change to promotion_gates_lib.bb's evaluate chain or to BL-957's
+    gate - this ticket is a consumer.
+  - The nudge's cooldown, pending-note dedup, ambulance freeze, and
+    escalate-once semantics - all unchanged.
+  - top-expedited-paused-candidate (BL-679's ambulance release
+    announcement) - it names what QUEUED during a freeze, a different
+    contract; file separately if it needs the same filter.
+  - Nudge message format beyond the existing phrase + id + awaiting-approval
+    flag.
+
+qa_e2e_procedure: >
+  1. Fixture scenarios (no live state): run the BL-963 acceptance scenarios
+     through the sweep-lib test runner shape - gate-refused top candidate
+     skipped in favor of an allowed one; approval-pending-only candidate
+     still named flagged; all-refused backlog fires no nudge.
+  2. Live check (read-only, after BL-957 is landed): with active/ at cap
+     nothing fires; note the observed candidate the next time a real slot
+     opens and confirm bb promotion_gates_cli.bb evaluate ALLOWs it (or its
+     only refusal is human_approval).
+  3. Escalation regression: in the fixture, hold a dependency-refused
+     candidate as top-ranked across repeated sweep ticks and confirm the
+     escalation counter never advances for it.
+
+notes: >
+  1:1 - the architect's note produced this ticket and no other. BL-957
+  itself is amended only with an out-of-scope pointer naming this slice
+  (bookkeeping, no rebuild); its own gate work is untouched and its
+  invariant 1 (promotion routes) genuinely does not cover the nudge, which
+  recommends rather than promotes.
+
+  depends_on: [BL-957] is deliberate dogfood: the evaluate chain must carry
+  the depends_on gate before the nudge can consult it, and BL-957's own
+  gate is what will hold this ticket in paused/ until then.
+
+  Hardening note: Babashka code - no mutation/CRAP/DRY wired (BL-472
+  deferred); hardening gates on the unit suite and must record the
+  degraded fallback.
+
+  IR-DRY reviewed 2026-08-20: 1 medium-confidence possible-synonym, kept -
+  the one-tick vs three-consecutive-ticks When steps assert genuinely
+  different behavior (naming vs escalation accrual); scenarios 01/04
+  deliberately share their exact Given pair and one handler.
+
+approval_context: >
+  One design ruling to confirm, the rest is consumer plumbing. Refusal
+  handling is asymmetric by design: human_approval refusals stay surfaced
+  (named + flagged, per the BL-798 scenario 03 ruling you already approved)
+  because approving is the human's own next action; every OTHER gate
+  refusal filters the candidate out of naming, counting, and escalation,
+  because promoting or approving it cannot succeed and repeated nudges for
+  it are exactly the SUP-1 noise shape. The alternative - naming the
+  top-ranked candidate flagged "blocked by <deps>" - was considered and
+  rejected: it makes the nudge suggest a non-action, keeps the eternal-fire
+  problem when everything is blocked, and duplicates information the
+  coordinator gets from the gate's own REFUSE reason at promotion time. Say
+  the word if you want blocked candidates surfaced instead of filtered.

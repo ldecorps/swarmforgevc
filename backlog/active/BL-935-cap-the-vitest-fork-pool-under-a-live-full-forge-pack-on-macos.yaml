@@ -90,8 +90,19 @@ constraints: >
 qa_e2e_procedure: >
   On the live swarm host, from extension/:
 
-  1. Confirm the pack signal the change keys off is really present in an
-     agent shell: `echo "$SWARMFORGE_PACK"` reports full-forge.
+  1. RE-AMENDED 2026-08-19 ~22:55Z: live role shells DO report
+     SWARMFORGE_PACK=full-forge since the 22:26Z relaunch - the launching
+     shell exported it and the tmux server global environment carries it
+     into every pane (documenter note 20260819T225211Z_000212, specifier
+     re-verified via a pane's own `env`; per-session `tmux
+     show-environment` misses the global table, use `-g`). Verify
+     engagement directly: in an agent shell `echo "$SWARMFORGE_PACK"`
+     reports full-forge - the consumer reads the process env, so the
+     source does not matter for THIS ticket. That presence is inherited
+     launch context, not launcher wiring (BL-961 is the durability
+     slice); only if a future relaunch loses the variable, record this
+     step BLOCKED BY BL-961, never as a failure of this ticket - steps
+     2-5 verify the mechanism over injected env either way.
   2. Baseline, bypassing the new rule:
      `SWARMFORGE_PACK= node -e "import('./vitest.config.mjs').then(m =>
      console.log(m.default.test.poolOptions.forks.maxForks))"` - expect 3 on
@@ -138,6 +149,32 @@ notes: >
     with the identical expression. A change landing in only the unit config
     leaves the property lane uncapped - hence invariant 3 and the second
     required_wiring entry.
+
+  CORRECTION 2026-08-19 (hardender priority-00 note, specifier re-verified):
+  the description's "SWARMFORGE_PACK is already exported into every agent's
+  environment (verified live)" is FALSE on this host. The only export sites
+  are the five alternative-provider wrappers (*-mono-router values, never
+  full-forge); default start-swarm.sh resolves the pack and passes it as
+  --pack, which swarmforge.sh consumes as a config-file selector - a plain
+  local, never exported, and write_role_launch_script does not bake it into
+  the role launch scripts. The env var and the selector are two mechanisms
+  sharing a name. Consequence: the mechanism this ticket builds is correct
+  and fully verified over injected env, but it engages live only once
+  BL-961 (the named wiring slice: export SWARMFORGE_PACK in every generated
+  role launch script) lands and shells relaunch. No rebuild of this ticket
+  is needed; only qa_e2e step 1 changed (now BLOCKED BY BL-961).
+
+  RE-CORRECTION 2026-08-19 ~22:55Z (documenter note 20260819T225211Z_000212,
+  specifier re-verified): after the 22:26Z relaunch live role shells DO
+  carry SWARMFORGE_PACK=full-forge - the relaunch shell had it exported and
+  the tmux server global environment passes it to every pane; the earlier
+  probes were method-flawed (per-session `tmux show-environment` misses the
+  global table; the own-shell probe predated the relaunch). The
+  committed-code gap is real and unchanged - presence today is
+  launch-context inheritance, which is exactly what BL-961 makes durable.
+  This ticket's cap therefore engages live TODAY; qa_e2e step 1 re-amended
+  accordingly (verify directly, BLOCKED BY BL-961 only if a future
+  relaunch drops the variable). Still no rebuild needed.
 
 approval_context: >
   Two things want your sign-off; the rest is settled.
