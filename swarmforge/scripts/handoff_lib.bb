@@ -6,6 +6,7 @@
 
 (ns handoff-lib
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.java.shell :as sh]
             [clojure.string :as str])
@@ -620,11 +621,20 @@
    marker. Returns the role name, or nil when the session is gone, the tmux
    call fails, or the command names no launch script - an identity that
    cannot be read must never be treated as agreement (see
-   mono-router-lib/live-role-agrees?)."
+   mono-router-lib/live-role-agrees?).
+
+   BL-927 architect bounce (2026-08-19): uses babashka.process/sh, NOT
+   clojure.java.shell/sh - this file's own handoffd.bb sibling documents
+   why (BL-061: clojure.java.shell's stream-read shim can deadlock on
+   successive subprocess calls within one process run). This function is
+   called from handoffd.bb's chase hot path alongside other
+   clojure.java.shell/sh calls (session-exists?) in the same sweep - losing
+   the safe mechanism here specifically reintroduces that exact deadlock
+   shape in the daemon's highest-frequency call path."
   [socket session]
   (when-not (str/blank? session)
     (try
-      (let [result (sh/sh "tmux" "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
+      (let [result (process/sh "tmux" "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
         (when (zero? (:exit result))
           (let [line (first (str/split-lines (str (:out result))))]
             (when-let [[_ role] (re-find #"launch/([^/]+)\.sh" (or line ""))]
