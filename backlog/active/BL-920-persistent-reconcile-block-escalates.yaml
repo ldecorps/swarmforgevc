@@ -157,3 +157,5 @@ notes: |
   **No `required_wiring:` deliberately.** The sweep is already called from
   `handoffd.bb:3163`; this ticket adds no new call site, so any pattern would
   match vacuously today (BL-874).
+
+assigned_to: coder
