@@ -39,6 +39,12 @@ notes: |
   2026-08-19 00:55 coordinator: 4th repeat (000514), same non-reason, slot
   filled by BL-909 first.
 
+  2026-08-19 02:38 coordinator: 5th repeat (000517), same non-reason, slot
+  filled by BL-920 first. This is recurring reliably enough that the
+  underlying nudge-ranking gap (exclude type:epic from "top candidate")
+  is worth the specifier minting a real fix rather than more hand-recorded
+  entries here.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high
