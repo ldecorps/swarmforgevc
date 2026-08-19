@@ -60,6 +60,22 @@ interface CeremonyRun {
 no_change`. `CeremonyAdjustment.kind` is one of `promotion_order |
 throttle_posture`. Both closed vocabularies — no passthrough.
 
+### `dwellHotspots` is occupied time, not summed parcel time (BL-923)
+
+A role's `totalMs` is the union of its wall-clock occupancy windows, not a
+plain sum of each parcel's `processingMs`. This matters because **cleaner
+and hardener are batch roles** (Article 2.4): every parcel in one batch
+shares the *same* occupancy window, so summing per-parcel windows counts
+that window once per parcel and inflates exactly those two roles — on the
+2026-08-18 shift, reported hardener dwell (11350s) was 1.82x its real
+occupied time (6235s). `computeDwellHotspots`
+(`extension/src/quality/closingCeremony.ts`) reconstructs each parcel's
+interval and totals the union per role instead, which covers both the
+identical-window (batch) case and a partial-overlap case, without hardcoding
+which roles are batch roles today. The per-parcel ledger events themselves
+are untouched and still report each parcel's own full window; only the
+per-role fold changed.
+
 ### Reversible, not silent (human decision 7)
 
 Every `CeremonyAdjustment` carries a `record: { form: 'ticket' | 'note', ref:

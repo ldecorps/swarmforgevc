@@ -48,7 +48,7 @@ test('packet names the path taken - distinct roles, first-seen order', () => {
   assert.deepEqual(packet.pathTaken, ['coder', 'cleaner']);
 });
 
-test('packet names dwell hotspots - summed processingMs per role, descending', () => {
+test('packet names dwell hotspots - disjoint parcel windows sum to their total, descending', () => {
   const events = [
     event({ role: 'coder', data: { processingMs: 5000 }, at: '2026-08-08T09:00:00.000Z' }),
     event({ role: 'coder', data: { processingMs: 3000 }, at: '2026-08-08T09:05:00.000Z' }),
@@ -59,6 +59,58 @@ test('packet names dwell hotspots - summed processingMs per role, descending', (
     { role: 'architect', totalMs: 20000 },
     { role: 'coder', totalMs: 8000 },
   ]);
+});
+
+// BL-923: cleaner/hardender are batch roles - several parcels dequeue and
+// complete together, so their stage-transition exit events carry the SAME
+// (or overlapping) [at - processingMs, at] window. Summing double/triple
+// counts that one window. Dwell must total the UNION of occupied time.
+test('BL-923: two parcels sharing the exact same window count that window once, not twice', () => {
+  const events = [
+    event({ role: 'hardender', data: { processingMs: 1772000 }, at: '2026-08-18T07:44:39.000Z' }),
+    event({ role: 'hardender', data: { processingMs: 1772000 }, at: '2026-08-18T07:44:39.000Z' }),
+  ];
+  const packet = buildClosingCeremonyPacket('2026-08-18', events);
+  assert.deepEqual(packet.dwellHotspots, [{ role: 'hardender', totalMs: 1772000 }]);
+});
+
+test('BL-923: three parcels sharing one batch window count that window once', () => {
+  const events = [
+    event({ role: 'hardender', data: { processingMs: 1772000 }, at: '2026-08-18T07:44:39.000Z' }),
+    event({ role: 'hardender', data: { processingMs: 1772000 }, at: '2026-08-18T07:44:39.000Z' }),
+    event({ role: 'hardender', data: { processingMs: 1772000 }, at: '2026-08-18T07:44:39.000Z' }),
+  ];
+  const packet = buildClosingCeremonyPacket('2026-08-18', events);
+  assert.deepEqual(packet.dwellHotspots, [{ role: 'hardender', totalMs: 1772000 }]);
+});
+
+test('BL-923: two parcel windows that partially overlap count the span they jointly occupied', () => {
+  // window A: [09:00:00, 09:00:40) (40000ms up to 09:00:40)
+  // window B: [09:00:20, 09:01:10) (50000ms up to 09:01:10)
+  // joint span: 09:00:00 -> 09:01:10 = 70000ms, not 40000+50000=90000ms
+  const events = [
+    event({ role: 'cleaner', data: { processingMs: 40000 }, at: '2026-08-08T09:00:40.000Z' }),
+    event({ role: 'cleaner', data: { processingMs: 50000 }, at: '2026-08-08T09:01:10.000Z' }),
+  ];
+  const packet = buildClosingCeremonyPacket('2026-08-08', events);
+  assert.deepEqual(packet.dwellHotspots, [{ role: 'cleaner', totalMs: 70000 }]);
+});
+
+test('BL-923: a batch role whose summed windows exceed a serial role but whose occupied time does not ranks below it, and the hypothesis names the serial role', () => {
+  const events = [
+    // hardender: three parcels sharing one 6000ms window - summed would be 18000ms.
+    event({ role: 'hardender', data: { processingMs: 6000 }, at: '2026-08-08T09:00:06.000Z' }),
+    event({ role: 'hardender', data: { processingMs: 6000 }, at: '2026-08-08T09:00:06.000Z' }),
+    event({ role: 'hardender', data: { processingMs: 6000 }, at: '2026-08-08T09:00:06.000Z' }),
+    // QA: one parcel, a disjoint 10000ms window - genuinely occupied longer than hardender's real 6000ms.
+    event({ role: 'QA', data: { processingMs: 10000 }, at: '2026-08-08T10:00:10.000Z' }),
+  ];
+  const packet = buildClosingCeremonyPacket('2026-08-08', events);
+  assert.deepEqual(packet.dwellHotspots, [
+    { role: 'QA', totalMs: 10000 },
+    { role: 'hardender', totalMs: 6000 },
+  ]);
+  assert.ok(packet.hypotheses.some((h) => h.startsWith('Longest dwell this shift: QA')), `expected the QA hypothesis, got: ${JSON.stringify(packet.hypotheses)}`);
 });
 
 test('packet names bounce classes - counted, descending', () => {
