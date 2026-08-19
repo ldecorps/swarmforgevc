@@ -197,7 +197,6 @@ notes: >
   thing that must carry it. Do not re-enable ahead of this ticket, and do
   not close this ticket with the registration still absent.
 
-<<<<<<< HEAD:backlog/active/BL-960-heal-wrapper-parse-safe-round-trip.yaml
   2026-08-19 coordinator — AT CLOSE, the restored registration is INERT
   until every role respawns. Learned from the disable itself (3bac496ec):
   swarmforge.sh's write_claude_settings_file only writes
@@ -235,7 +234,5 @@ notes: >
   purely a QA-procedure correction — the cleaner does not rework anything.
 
 assigned_to: coder
-=======
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 68721df5d9, evidence: backlog/evidence/BL-960-heal-wrapper-parse-safe-round-trip-bounce-20260819.md }
->>>>>>> 830db2de9b:backlog/paused/BL-960-heal-wrapper-parse-safe-round-trip.yaml
