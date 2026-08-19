@@ -169,6 +169,22 @@ notes: >
   UNIT tests pin the old caption. Verified statically against the patch on
   2026-08-19, not assumed.
 
+  REBUILD (specifier amendment 2026-08-19, bookkeeping only - nothing you
+  build changes): the hardener's scoped bounce revert (96882d743) removed
+  this ticket's step handler, so it parked the feature as a
+  `.feature.draft` and repointed `acceptance:` at that draft (959cd340d).
+  That was correct per BL-233 - a live feature whose handler is gone throws
+  on every scenario - but the parking is TEMPORARY. This is a one-parcel
+  ticket, not a multi-slice deliverable: when you rebuild, restore the live
+  `specs/features/BL-956-pipeline-board-caption-and-cap-hotfix.feature`,
+  delete the `.feature.draft`, and flip `acceptance:` back to the
+  `.feature` path in the SAME parcel. Nothing downstream enforces this:
+  `required_wiring` only checks the `bl956` registry line in
+  `specs/pipeline/steps/index.js`, and `acceptance_pointer_gate_lib.bb`
+  deliberately PASSES a parked `.feature.draft`. A rebuild that leaves the
+  pointer on the draft therefore ships green with its scenarios never
+  executed by the acceptance runner.
+
 approval_context: >
   Two lines this adds back to a board you had just decluttered, so you
   should see them before they appear:
