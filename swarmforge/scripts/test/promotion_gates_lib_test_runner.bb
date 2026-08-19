@@ -212,6 +212,76 @@
 (assert-nil "not held passes" (promotion-gates-lib/hold-refusal false))
 (assert= "held refuses naming hold marker" "hold marker" (:gate (promotion-gates-lib/hold-refusal true)))
 
+;; ── BL-957: read-depends-on, the gate's OWN reader ───────────────────────
+;; read-field is unusable here by documented design (nil for a blank value,
+;; so a block list reads as NO dependencies - fail-open on exactly the
+;; tickets the gate exists to catch). Every live form measured 2026-08-19.
+
+(assert= "read-depends-on: flow list"
+         {:ids ["BL-620" "BL-948"] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on: [BL-620, BL-948]\n"))
+(assert= "read-depends-on: explicit empty list means NO dependencies (118 live tickets)"
+         {:ids [] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on: []\n"))
+(assert= "read-depends-on: absent field means no dependencies"
+         {:ids [] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "id: BL-1\n"))
+(assert= "read-depends-on: block list is READ, never treated as absent (the fail-open trap)"
+         {:ids ["BL-547" "BL-556"] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on:\n  - BL-547\n  - BL-556\n"))
+(assert= "read-depends-on: block list stops at the first non-indented line"
+         {:ids ["BL-547"] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on:\n  - BL-547\npriority: 3\n"))
+(assert= "read-depends-on: bare scalar with trailing prose reads the ids and ignores the prose"
+         {:ids ["BL-090" "BL-091"] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on: BL-090, BL-091 (both must land first)\n"))
+(assert= "read-depends-on: GH-seeded ids are read too"
+         {:ids ["GH-12"] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on: [GH-12]\n"))
+(assert= "read-depends-on: duplicates collapse, first occurrence order kept"
+         {:ids ["BL-620" "BL-948"] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on: [BL-620, BL-948, BL-620]\n"))
+(assert= "read-depends-on: an inline comment never contributes ids"
+         {:ids [] :unparseable? false}
+         (promotion-gates-lib/read-depends-on "depends_on: []  # unblocks after BL-620 lands\n"))
+(assert= "read-depends-on: a present, non-empty value with no parseable id is UNPARSEABLE, never silently empty (invariant 2)"
+         {:ids [] :unparseable? true}
+         (promotion-gates-lib/read-depends-on "depends_on: someday maybe\n"))
+
+;; ── BL-957: done-ids (flat files AND done/<Mx>/ subfolders) ──────────────
+
+(let [root (mk-root)]
+  (fs/create-dirs (fs/path root "backlog" "done" "M7"))
+  (spit (str (fs/path root "backlog" "done" "BL-700-flat.yaml")) "id: BL-700\n")
+  (spit (str (fs/path root "backlog" "done" "M7" "BL-333-nested.yaml")) "id: BL-333\n")
+  (spit (str (fs/path root "backlog" "done" "oddly-named.yaml")) "id: BL-444\n")
+  (let [ids (promotion-gates-lib/done-ids root)]
+    (assert-true "done-ids: a flat done file resolves" (contains? ids "BL-700"))
+    (assert-true "done-ids: a done/<Mx>/ nested file resolves (close-into-done/Mx convention)" (contains? ids "BL-333"))
+    (assert-true "done-ids: a file whose NAME carries no id still resolves via its id: field" (contains? ids "BL-444"))))
+
+(assert= "done-ids: no done/ directory at all is the empty set, never a crash"
+         #{} (promotion-gates-lib/done-ids (mk-root)))
+
+;; ── BL-957: depends-on-refusal ────────────────────────────────────────────
+
+(assert-nil "every dependency landed in done/ passes"
+            (promotion-gates-lib/depends-on-refusal "depends_on: [BL-700]\n" #{"BL-700"}))
+(assert-nil "no dependencies at all passes"
+            (promotion-gates-lib/depends-on-refusal "depends_on: []\n" #{}))
+(let [r (promotion-gates-lib/depends-on-refusal "depends_on: [BL-620]\n" #{"BL-700"})]
+  (assert= "an unlanded dependency refuses naming the gate" "depends_on" (:gate r))
+  (assert-true "the refusal names the unsatisfied id" (clojure.string/includes? (:reason r) "BL-620")))
+(let [r (promotion-gates-lib/depends-on-refusal "depends_on: [BL-700, BL-620, BL-948]\n" #{"BL-700"})]
+  (assert-true "the refusal names every unsatisfied id" (and (clojure.string/includes? (:reason r) "BL-620")
+                                                             (clojure.string/includes? (:reason r) "BL-948")))
+  (assert-false "the refusal never names a satisfied id" (clojure.string/includes? (:reason r) "BL-700")))
+(assert= "a typo id resolving to no ticket anywhere fails CLOSED (approval ruling 2)"
+         "depends_on"
+         (:gate (promotion-gates-lib/depends-on-refusal "depends_on: [BL-99999]\n" #{"BL-700"})))
+(let [r (promotion-gates-lib/depends-on-refusal "depends_on: someday maybe\n" #{"BL-700"})]
+  (assert= "an unparseable depends_on fails CLOSED (invariant 2)" "depends_on" (:gate r)))
+
 ;; ── evaluate: the chokepoint, gate precedence and non-vacuous compliant pass ──
 
 (assert= "held short-circuits before any other gate"
@@ -228,6 +298,21 @@
          "active_backlog_max_depth"
          (:gate (promotion-gates-lib/evaluate {:content "human_approval: approved\n" :held? false
                                                 :active-count 5 :max-depth 5 :active-epics {}})))
+
+;; BL-957 chain position: after human_approval, before depth - a
+;; ticket-property refusal beats a transient global one (ticket's own
+;; ordering decision), and the fixed first-failing-gate-wins contract holds.
+(assert= "BL-957: human_approval still beats depends_on when both would fire"
+         "human_approval"
+         (:gate (promotion-gates-lib/evaluate {:content "human_approval: pending\ndepends_on: [BL-620]\n" :held? false
+                                                :active-count 0 :max-depth 5 :active-epics {} :done-ids #{}})))
+(assert= "BL-957: depends_on beats depth when both would fire"
+         "depends_on"
+         (:gate (promotion-gates-lib/evaluate {:content "human_approval: approved\ndepends_on: [BL-620]\n" :held? false
+                                                :active-count 5 :max-depth 5 :active-epics {} :done-ids #{}})))
+(assert-true "BL-957: satisfied dependencies pass straight through the chain"
+             (:ok (promotion-gates-lib/evaluate {:content "human_approval: approved\ndepends_on: [BL-700]\n" :held? false
+                                                  :active-count 0 :max-depth 5 :active-epics {} :done-ids #{"BL-700"}})))
 
 (let [r (promotion-gates-lib/evaluate {:content "human_approval: approved\nepic: shared\n" :held? false
                                         :active-count 1 :max-depth 5 :active-epics {"shared" ["BL-9"]}})]

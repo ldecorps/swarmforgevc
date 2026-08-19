@@ -86,6 +86,75 @@
       {:gate "human_approval"
        :reason (format "human_approval is %s, not approved" v)})))
 
+;; ── gate: depends_on (BL-957) ─────────────────────────────────────────────
+;; read-field is unusable here by its own documented design: it returns nil
+;; for a blank value (`field: >`/`field: |` must read as absent), so a
+;; block-style dependency list would read as NO dependencies at all -
+;; failing OPEN on exactly the tickets this gate exists to catch (two live
+;; paused tickets use that form today). This gate has its own reader.
+
+(def ^:private ticket-id-pattern #"(?:BL|GH)-\d+")
+
+(defn read-depends-on
+  "{:ids [..] :unparseable? bool} - every BL-<n>/GH-<n> token in the
+   depends_on field's own value and its indented continuation lines (block
+   lists AND folded blocks alike), deduplicated in first-occurrence order,
+   inline ` # ...` comments stripped per line so an annotation never
+   contributes an id. All four live forms (measured 2026-08-19) are read:
+   `[]`, a flow list, a block list, and a bare scalar with trailing prose
+   (prose around the ids is ignored without being parsed). :unparseable?
+   is true when the field is PRESENT with a non-empty value that yields no
+   id token at all - the caller fails closed on it (invariant 2), never
+   treats it as dependency-free."
+  [content]
+  (let [lines (str/split-lines (or content ""))
+        [field-line & after] (drop-while #(not (str/starts-with? (str/trim %) "depends_on:"))
+                                         lines)]
+    (if (nil? field-line)
+      {:ids [] :unparseable? false}
+      (let [value (strip-comment (str/trim (subs (str/trim field-line) (count "depends_on:"))))
+            continuation (->> after
+                              (take-while #(and (not (str/blank? %))
+                                                (re-find #"^\s" %)))
+                              (map (comp strip-comment str/trim)))
+            texts (cons value continuation)
+            ids (vec (distinct (mapcat #(re-seq ticket-id-pattern %) texts)))
+            explicitly-empty? (and (= "[]" value) (empty? continuation))
+            value-present? (boolean (some #(and (not (str/blank? %))
+                                                (not (#{">" "|"} %)))
+                                          texts))]
+        ;; explicitly-empty? guards :unparseable? only - `[]` is a
+        ;; present, non-blank value that yields no id, and is the one such
+        ;; value that means "no dependencies" rather than "unreadable".
+        ;; It never has to clear :ids: a value of `[]` with no continuation
+        ;; carries no id token to begin with.
+        {:ids ids
+         :unparseable? (boolean (and value-present?
+                                     (not explicitly-empty?)
+                                     (empty? ids)))}))))
+
+;; The set of landed ids the refusal below resolves against is read by
+;; done-ids, which lives with the other directory-scanning readers in this
+;; file's impure half rather than here among the pure decisions.
+
+(defn depends-on-refusal
+  "nil when every declared dependency is positively resolved in done-id-set;
+   otherwise {:gate :reason} naming EVERY unsatisfied id (and no satisfied
+   one), so the coordinator's next action is obvious without re-deriving
+   them. Fails CLOSED both ways (invariant 2): an id resolving to no ticket
+   anywhere refuses (a typo refuses rather than promotes - approval ruling
+   2), and a present-but-unparseable field refuses rather than reading as
+   dependency-free. A dependency counts as satisfied ONLY in backlog/done/ -
+   an ACTIVE dependency still refuses (approval ruling 1)."
+  [content done-id-set]
+  (let [{:keys [ids unparseable?]} (read-depends-on content)]
+    (if unparseable?
+      {:gate "depends_on"
+       :reason "depends_on is present but names no parseable BL-/GH- ticket id - failing closed"}
+      (when-let [unsatisfied (seq (remove (or done-id-set #{}) ids))]
+        {:gate "depends_on"
+         :reason (str "depends_on not yet landed in backlog/done/: " (str/join ", " unsatisfied))}))))
+
 ;; ── gate: Article 3.2.4 expedite lane ──────────────────────────────────────
 
 (def ^:private expedited-types
@@ -243,23 +312,51 @@
 (defn evaluate
   "{:ok true} (optionally carrying :advisory) or {:ok false :gate .. :reason
    ..} for ONE candidate against every BLOCKING gate (human_approval,
-   active_backlog_max_depth, hold marker - assignee/spec-stage is not a
-   promotion blocker; see route-target above). First failing gate wins, in a
+   depends_on (BL-957), active_backlog_max_depth, hold marker -
+   assignee/spec-stage is not a promotion blocker; see route-target above). First failing gate wins, in a
    fixed order, so the refusal is deterministic even when more than one gate
    would fire. held? is checked first: a held ticket's other fields are
    irrelevant, it is not a promotion candidate at all. BL-854 invariant 1:
    orthogonality is never in this refusal chain - once every blocking gate
    passes, the result is always :ok true, optionally carrying an
    orthogonality :advisory (never instead of :ok true)."
-  [{:keys [content held? active-count max-depth active-epics]}]
+  [{:keys [content held? active-count max-depth active-epics done-ids]}]
+  ;; BL-957: depends_on sits after human_approval and before depth - a
+  ;; ticket-property refusal beats a transient global one, so the
+  ;; coordinator gets the actionable reason. The fixed first-failing-gate-
+  ;; wins order is unchanged for every pre-existing gate.
   (or (some->> (hold-refusal held?) (merge {:ok false}))
       (some->> (human-approval-refusal content) (merge {:ok false}))
+      (some->> (depends-on-refusal content done-ids) (merge {:ok false}))
       (some->> (depth-refusal active-count max-depth) (merge {:ok false}))
       (merge {:ok true}
              (when-let [advisory (orthogonality-advisory (read-epic content) active-epics)]
                {:advisory advisory}))))
 
-;; ── active/-scanning readers (the small impure half) ─────────────────────
+;; ── backlog-scanning readers (the small impure half) ───────────────────
+
+(defn- status-yaml-files
+  "Every ticket YAML under backlog/<status>/, recursing into milestone
+   subfolders (the close-into-done/<Mx>/ convention); empty when the
+   directory does not exist. active-yaml-files below deliberately does NOT
+   go through this - active/ is flat by contract and its non-recursive glob
+   is part of what the depth cap counts."
+  [root status]
+  (let [dir (fs/path root "backlog" status)]
+    (if (fs/exists? dir) (fs/glob dir "**.yaml") [])))
+
+(defn done-ids
+  "The set of ticket ids landed under backlog/done/ - flat files AND <Mx>/
+   subfolders alike (see status-yaml-files). A file's id comes from its
+   filename's leading BL-/GH- token (the naming convention every
+   locate/glob path already relies on), falling back to its id: field when
+   the name carries none."
+  [root]
+  (->> (status-yaml-files root "done")
+       (keep (fn [f]
+               (or (re-find ticket-id-pattern (fs/file-name f))
+                   (read-id (slurp (str f))))))
+       set))
 
 (defn active-yaml-files [root]
   (let [dir (fs/path root "backlog" "active")]
@@ -297,10 +394,7 @@
 (def ^:private epic-tracker-status-dirs ["active" "paused" "done"])
 
 (defn- epic-tracker-yaml-files [root]
-  (mapcat (fn [status]
-            (let [dir (fs/path root "backlog" status)]
-              (if (fs/exists? dir) (fs/glob dir "**.yaml") [])))
-          epic-tracker-status-dirs))
+  (mapcat (partial status-yaml-files root) epic-tracker-status-dirs))
 
 (defn epic-priority-index
   "Map of epic-name -> the minimum read-priority among every `type: epic`
