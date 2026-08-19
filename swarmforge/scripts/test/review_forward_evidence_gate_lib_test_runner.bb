@@ -119,9 +119,43 @@
               (review-forward-evidence-gate-lib/blocked?
                (assoc (base-args) :sender "coder" :recipients ["cleaner"])))
 
-(assert-false "QA sender -> not blocked (excluded this slice)"
+;; ── BL-950: QA's approval hop is now inside the gate ────────────────────
+;; (replaces BL-806's "QA sender -> not blocked (excluded this slice)" row -
+;; the exclusion was that slice's approved scope, taken back for the
+;; approval hop only by BL-950's own human approval)
+
+(assert-true "BL-950: QA -> coordinator approval naming the received commit -> blocked"
+             (review-forward-evidence-gate-lib/blocked?
+              (assoc (base-args) :sender "QA" :recipients ["coordinator"])))
+
+(assert-false "BL-950: QA -> coordinator approval naming a DIFFERENT commit -> not blocked"
               (review-forward-evidence-gate-lib/blocked?
-               (assoc (base-args) :sender "QA" :recipients ["coordinator"])))
+               (assoc (base-args) :sender "QA" :recipients ["coordinator"] :commit "cccccccccc")))
+
+(assert-false "BL-950: QA -> coordinator same commit WITH reroute_reason -> not blocked (marked detour)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "QA" :recipients ["coordinator"]
+                      :reroute-reason "deliberate detour")))
+
+(assert-false "BL-950: QA -> coder bounce naming the same commit -> not blocked (bounce direction ungated)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "QA" :recipients ["coder"])))
+
+(assert-false "BL-950: QA note to coordinator -> not blocked (type gate unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "QA" :recipients ["coordinator"] :type "note")))
+
+(assert-false "BL-950: QA -> coordinator with no received-commit -> not blocked (fail open, invariant 2)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "QA" :recipients ["coordinator"] :received-commit nil)))
+
+(assert-false "BL-950: a review role -> coordinator is NOT the approval hop (only QA gets it)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "architect" :recipients ["coordinator"])))
+
+(assert-false "BL-950: QA -> QA-and-coordinator multi-recipient -> not blocked (single-recipient gate unchanged)"
+              (review-forward-evidence-gate-lib/blocked?
+               (assoc (base-args) :sender "QA" :recipients ["coordinator" "coder"])))
 
 (assert-false "no received-commit on file -> not blocked (fail open)"
               (review-forward-evidence-gate-lib/blocked?
