@@ -9,10 +9,12 @@ severity: medium
 priority: 66
 direction: human-requested
 depends_on: [BL-611]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
-  - "Every landing of pipeline work on `main` outside QA's integration path raises a CRIT finding — no role, path, or timing is exempt from the sweep."
+  - "Every landing of pipeline work on `main` outside QA's integration path raises a CRIT finding — no role, path, commit shape, or timing is exempt from the sweep."
+  - "The QA-exclusive path set has exactly ONE definition, BL-632's `check_pipeline_code_on_main.sh --list-paths`. This ticket's code never holds a second copy of those literals, in any language."
+  - "A check that cannot determine ancestry reports UNAVAILABLE, never a clean sweep — an unresolvable `swarmforge-QA` ref must not read as 'nothing landed'."
 
 approval_context: >
   Operator ruling 2026-07-25, during the BL-590 post-mortem: "il faut absolument
@@ -124,6 +126,43 @@ description: |
 
 acceptance: specs/features/BL-631-babysitter-detects-pipeline-work-on-main.feature
 
+required_wiring:
+  - "swarmforge/scripts/babysitter_check.bb::pipeline-code-on-main::the 5-minute sweep entry point is the ONLY thing that runs on the tick. A gather fn and a pure check that are fully unit-tested but never reach this file's snapshot/assemble path leave the detection at zero — the BL-419 shape. Use this exact kebab literal in the snapshot key so the gate is decidable."
+  - "swarmforge/scripts/babysitterd_sweep_lib.bb::pipeline-code-on-main::the pure check must live alongside the other `check-*` fns and be reached by `assemble-findings`; a finding that never enters that vector is never nudged."
+  - "swarmforge/scripts/babysitter_check.bb::check_pipeline_code_on_main.sh::invariant 2 — the path set must be READ from BL-632's single source at runtime. If this literal is absent the implementation has copied the paths instead, which is exactly the drift both tickets' notes warn about."
+
+qa_e2e_procedure: |
+  1. Confirm the detector is silent on a clean repo: with `main` as it stands,
+     run the babysitter sweep and confirm no pipeline-code-on-main finding
+     appears. (Measured 2026-08-19: 21 commits in `swarmforge-QA..main`, zero
+     offending — so a finding here is a false positive, not a real landing.)
+  2. Replay the historical regression WITHOUT mutating any ref: classify the
+     2026-07-25 set and confirm 4851901ed, 73706d79e, 8e76f8f10, ebd12542d,
+     e05c025d4, cce634a6c and the merge f8dc07963 are CRIT, while b03e17429
+     (a specifier backlog drain) and cb85b9e4b (a cost sidecar) are clean.
+     This is the zero-false-positive claim the refined path filter rests on.
+  3. Prove the merge case specifically. `git show --pretty=format: --name-only
+     f8dc07963` reports ZERO QA-exclusive files; `git diff-tree -m
+     --first-parent` reports 13. Confirm the shipped detector reports 13-worth
+     — i.e. it fires. A detector built on plain `git show` passes every other
+     scenario and silently misses every merge landing, which is 4 of the 21
+     commits currently on main.
+  4. Prove the single source is live, not copied: run
+     `swarmforge/scripts/check_pipeline_code_on_main.sh --list-paths`,
+     temporarily point the sweep at a stub emitting a different path set, and
+     confirm classification follows the stub. Then `grep -rn 'extension/src/'`
+     over the code this ticket added and confirm the literal appears only as
+     test/fixture data, never as the operative path set (invariant 2).
+  5. Prove fail-closed: run the sweep in a checkout with no resolvable
+     `swarmforge-QA` ref and confirm an UNAVAILABLE finding, not an "OK all
+     checks green" line (invariant 3).
+  6. Prove nudge dedup over two real ticks: with one offending commit present,
+     run the sweep twice ~5 minutes apart and confirm the FINDING appears both
+     times while the NUDGE fires once; then introduce a second offending
+     commit and confirm it nudges while the first stays deduped. Check
+     `.swarmforge/babysitterd/nudge-dedup.json` carries a per-sha key, not a
+     single static check name.
+
 out_of_scope: |
   - Preventing the landing. Detection only. Prevention at commit time is the
     reopened hook question on BL-629; publish-time is BL-630; deploy-time is
@@ -186,3 +225,74 @@ notes: |
   implementation mirrors the literal instead of reading BL-632's single source,
   engineering.prompt's BL-897 rule binds — a test must assert both literals
   agree. A "kept in sync" comment is not a gate and the drift fails silently.
+
+  2026-08-19 specifier — spec finalized for build. Four things settled, three
+  of them found by probing rather than by reading the ticket.
+
+  CROSS-LANGUAGE CAVEAT (the 2026-08-17 note asked for this): SETTLED, and it
+  does NOT need a BL-897 sync test. BL-632 shipped `--list-paths` explicitly
+  for this consumer — its own header says so: "The QA-exclusive path set is
+  defined ONCE, here, so a future consumer (e.g. BL-631's detector) can read
+  it via --list-paths instead of hand-copying the literals into a second
+  place". So the detector SHELLS the definition rather than mirroring it, and
+  no mirrored constant exists for a sync test to guard. BL-897's rule binds
+  only when a literal is duplicated across the boundary; the correct move here
+  is to not duplicate it. Same for ancestry: `is_qa_ancestor.sh` is already the
+  ONE shared predicate, already called from Babashka by handoffd.bb — reuse it,
+  never a second `git merge-base` invocation.
+
+  MERGE COMMITS WERE INVISIBLE (new; the ticket's own measured set missed it).
+  `git show --pretty=format: --name-only <merge>` prints nothing for a merge
+  commit. Measured on f8dc07963 — the BL-590 cleaner's own bad
+  `git merge 73706d79ed --no-ff` onto main, event e38 in this ticket's source
+  section: plain `git show` reports 0 QA-exclusive files, while
+  `git diff-tree -m --first-parent` reports 13. A detector built the obvious
+  way would have passed every scenario in the old feature file and still
+  missed the very merge this ticket exists to catch. Merges are not rare: 4 of
+  the 21 commits in `swarmforge-QA..main` on 2026-08-19 are merges. New
+  scenario 02 pins it, and f8dc07963 joins the regression fixture (making it
+  7 CRIT, not 6).
+
+  BOTH REFS THAT NAME MAIN (new scenario 09). Local `main` and `origin/main`
+  diverge routinely under the current worktree layout — QA can only push
+  `HEAD:main` from `.worktrees/QA`, so origin advances while the local ref does
+  not, and the master checkout adds bookkeeping commits of its own (BL-891
+  measured 8 ahead / 22 behind; 21 ahead / 0 behind on 2026-08-19). Sweeping
+  only one ref leaves a hole the declared invariant forbids. Cost is one extra
+  `git rev-list`: the whole refined rule over 21 commits measured 0.34s, so
+  this is comfortably inside a 5-minute tick. Honest limit, stated so nobody
+  over-reads it: `origin/main` is a remote-tracking ref, so coverage of a
+  push-only landing is only as fresh as the last fetch — that is still strictly
+  more than sweeping local `main` alone.
+
+  FAIL-CLOSED ON AN UNUSABLE REF (new scenario 08, invariant 3).
+  `is_qa_ancestor.sh` documents three outcomes and its header explicitly warns
+  callers to fail closed on the third: 0 = ancestor, 1 = a clean no, anything
+  else = a real git failure. For a GUARD, failing closed means refuse; for a
+  DETECTOR, it means report UNAVAILABLE. `babysitterd_sweep_lib.bb` already has
+  that severity and two precedents for it (`proc-gather-*` at :42, `memory` at
+  :132). A detector that swallows an unresolvable ref and prints "OK all checks
+  green" is worse than no detector, because it manufactures an all-clear.
+
+  SHAPE CONFIRMED AGAINST THE LIVE CODE (nothing here contradicts the
+  2026-08-01 rework). `babysitter_check.bb` gathers (impure, shells out) and
+  `babysitterd_sweep_lib.bb` classifies (pure `check-*` fns over a snapshot
+  map). This ticket adds one gather + one pure check + the snapshot key that
+  joins them, mirroring `scan-claim-risks` / `check-claim-risk`. There is still
+  no wake queue; findings are recomputed every sweep and the NUDGE is what
+  dedups, via `decide-nudges` against
+  `.swarmforge/babysitterd/nudge-dedup.json`. Note the description's "Shape"
+  section above still says findings "enqueue through the existing wake-queue" —
+  that wording predates the 2026-08-01 rework and is stale; the nudge path
+  described here is the live contract.
+
+  ACCEPTANCE HYGIENE: the feature file parses clean under
+  `gherkin_lint_gate.sh`, and IR-DRY is down from 6 findings to 3 (scenario
+  02's Given/Then were reworded to reuse scenario 01's steps). The 3 remaining
+  are deliberate semantic distinctions — first sweep vs second sweep, a fresh
+  offender vs one persisting across ticks — not drift. Both Scenario Outline
+  handlers must validate `<outcome>` and `<ref>` against explicit KNOWN_VALUES
+  per the specifier's Scenario Outline rule; no passthrough checks.
+
+  All 10 scenarios belong to this one slice and are built in this one parcel,
+  so the live `.feature` is correct as-is (no `.feature.draft` split needed).
