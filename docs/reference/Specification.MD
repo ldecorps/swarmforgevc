@@ -1,6 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-952: `is_qa_ancestor.sh` — the one
+**Last Updated:** August 19, 2026 (BL-953: `swarm_handoff.bb`'s `validate`
+never cross-checked a `git_handoff`'s `task:` and `commit:` headers against
+each other, so a commit belonging to one ticket could ride under another
+ticket's name. Measured live 2026-08-19: the coder sent commit `896e1d5cb2`
+(subject naming BL-949) under task `BL-935-...`, 39 seconds after correctly
+sending it under BL-949; the cleaner faithfully preserved the task name
+(PIPELINE.md step 3, correct as written) and the mislabelled parcel rode
+two hops before the architect caught it by eye — containment held only
+because a human-attention stage happened to look. BL-760's duplicate-chain
+guard could not have caught this: it keys on the task's own ticket id, so
+one commit under two different task names reads as two unrelated tickets
+and both pass. New `task_commit_coherence_gate_lib.bb` closes the
+complementary axis: `blocked?` refuses ONLY a positive, resolved
+contradiction — the cited commit's tip subject names at least one ticket id
+(via the BL-869 multi-id extractor) AND the task's ticket id is not among
+them, by exact id equality. Fail-open is absolute: no id in the subject, a
+task resolving to no ticket, or an unreadable commit subject all accept (the
+unreadable case logs a `TASK_COMMIT_COHERENCE WARNING` and passes,
+unverified). The check reads the commit's own subject only, not a merge's
+introduced-history range — the deeper range was probed against the ticket's
+own live incident hashes and found to wrongly refuse the lawful Article 2.6
+multi-ticket batch forward, while subject-only accepts that batch and still
+catches the incident at both hops. See the new "Task/Commit Coherence Gate
+(BL-953)" section of `swarmforge/handoff-protocol.md`. No human-facing
+command or setting — fork/operator-substrate tooling under
+`swarmforge/scripts/`.); Previously
+August 19, 2026 (BL-952: `is_qa_ancestor.sh` — the one
 shared "is this sha QA-approved" predicate behind both the push sweep
 and `check_pipeline_code_on_main.sh` — was pure git reachability:
 `git merge-base --is-ancestor <sha> swarmforge-QA`. QA merges a parcel into

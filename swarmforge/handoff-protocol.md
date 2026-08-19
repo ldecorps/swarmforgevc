@@ -540,6 +540,53 @@ changed nothing. Because blocking can wedge a ticket if a stale parcel is
 left behind, the refusal always names the `redo_from.sh` command that clears
 it.
 
+## Task/Commit Coherence Gate (BL-953)
+
+`swarm_handoff.sh` refuses a `git_handoff` send when the `commit:` header
+POSITIVELY contradicts the ticket named by the `task:` header. This is the
+send-time backstop for the 2026-08-19 incident where the coder sent commit
+`896e1d5cb2` (subject "BL-949: concierge board-wiring tests...") under task
+`BL-935-...`, 39 seconds after correctly sending the same commit under
+BL-949. The cleaner faithfully preserved the task name — PIPELINE.md step 3
+is correct as written — and a parcel carrying zero BL-935 content rode two
+hops before the architect caught the mislabel by eye. BL-760's
+duplicate-chain guard keys on the task's OWN ticket id, so one commit sent
+under two different task names reads as two unrelated tickets and both
+pass; this gate covers the complementary axis.
+
+Mechanics (`task_commit_coherence_gate_lib.bb`):
+
+- **Fail-open is absolute.** `blocked?` returns true ONLY for a positive,
+  resolved contradiction: the cited commit's own tip **subject** names at
+  least one ticket id (`pipeline-stage-lib/extract-ticket-ids`, the same
+  BL-869 multi-id extractor the close guard uses) AND the task's ticket id
+  is not among them. Every other shape accepts: no ticket id in the
+  subject, a task name resolving to no ticket, or an unreadable commit
+  subject (the caller logs a `TASK_COMMIT_COHERENCE WARNING` to stderr and
+  passes, unverified).
+- **Ticket identity is exact-id equality**, via `pipeline-stage-lib`'s own
+  extractors — never a prefix/substring match, so `BL-93` can never
+  collide with `BL-935`.
+- **Range is the commit's own subject, not its introduced history.** A
+  merge's second-parent-side subjects were probed and rejected — they
+  would refuse the lawful Article 2.6 multi-ticket batch forward (§2.6)
+  that legitimately sends one non-ticket-named merge commit under several
+  different task names in turn. Subject-only accepts that batch forward
+  and still catches the incident at both hops (the cleaner's own merge
+  subject already named BL-949).
+- If the send is refused, it rides `validate`'s shared error path —
+  nothing is delivered to any mailbox, no wake is injected.
+
+Refusal message names the task, the commit, the ticket(s) the commit's
+subject actually resolves to, and the usual cause:
+
+```text
+Cannot send git_handoff for BL-935-...: commit 896e1d5cb2 belongs to
+BL-949, not to the task's ticket BL-935 - one of the two headers is wrong
+(a stale field in a reused draft is the usual cause; BL-953). Fix the
+task: or the commit: line and re-send.
+```
+
 ## Multi-Ticket Close Guard (BL-869)
 
 `ticket_close_guard_lib.bb`'s closed-ticket check (referenced above as the
