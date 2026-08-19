@@ -129,20 +129,28 @@
 (defn- oracle-old-gate-should-mutate? [{:keys [behind dirty-paths]}]
   (and (pos? behind) (empty? dirty-paths)))
 
+;; A single scenario is always exercised as ONE isolated tick against a
+;; fresh temp dir (ticks can never exceed 1), so a threshold far above any
+;; single tick keeps invariants 1-3 (which say nothing about escalation)
+;; free of any incidental :escalate! firing.
+(def single-tick-threshold 100)
+
 (defn- run-sweep-with-scenario [{:keys [behind dirty-paths merge-changed-paths merge-success?]}]
   (let [dirty-paths-calls (atom 0)
         merge-changed-paths-calls (atom 0)
         merge-calls (atom 0)
         surface-calls (atom 0)
+        escalate-calls (atom 0)
         adapters {:rev-counts! (fn [] {:ahead 0 :behind behind})
                   :dirty-paths! (fn [] (swap! dirty-paths-calls inc) dirty-paths)
                   :merge-changed-paths! (fn [] (swap! merge-changed-paths-calls inc) merge-changed-paths)
                   :merge! (fn [] (swap! merge-calls inc)
                              (if merge-success? {:success true} {:success false :error "conflict"}))
                   :surface! (fn [_msg] (swap! surface-calls inc))
+                  :escalate! (fn [_payload] (swap! escalate-calls inc))
                   :log! (fn [& _parts] nil)}]
-    (master-main-reconcile-lib/sweep! (mk-tmp) adapters)
-    {:merge-calls @merge-calls :surface-calls @surface-calls}))
+    (master-main-reconcile-lib/sweep! (mk-tmp) single-tick-threshold adapters)
+    {:merge-calls @merge-calls :surface-calls @surface-calls :escalate-calls @escalate-calls}))
 
 ;; ── invariant 1: never mutates a tree it is unsafe to touch, always
 ;;    attempts when safe ────────────────────────────────────────────────
@@ -187,6 +195,93 @@
       (if (and old-would-reconcile? (not= 1 merge-calls))
         (str "REGRESSION: the pre-BL-919 gate would have reconciled this exact state (behind>0, fully clean tree) but merge! fired " merge-calls " time(s) instead of 1")
         true))))
+
+;; ── BL-920's own 2 declared invariants: escalation is additive to the
+;;    coordinator note and only fires once persistence crosses a threshold
+;;    (invariant 4), and resolving a block clears escalation state so a
+;;    later unrelated block is judged fresh (invariant 5). Unlike
+;;    invariants 1-3 above, these are properties of a SEQUENCE of ticks
+;;    against the SAME state dir, not a single isolated scenario - the
+;;    generator below produces a randomized sequence of blocked/resolved
+;;    ticks and a randomized threshold, and an independent oracle
+;;    (streak-reason/streak-count/escalated, tracked fresh in the test
+;;    driver, never by calling next-block-state/escalation-due? themselves)
+;;    predicts exactly which ticks surface and which escalate. ───────────
+
+;; BL-654 generator-reach: :resolved is weighted lighter than the two
+;; blocked kinds so multi-tick STREAKS (the case escalation logic actually
+;; exercises) are common, while resolution/reset is still reached often
+;; enough across a run of many sequences to exercise invariant 5.
+(def tick-kind-pool [:dirty :dirty :conflict :conflict :resolved])
+(def threshold-pool [2 3 5])
+
+(defn gen-tick-sequence [s]
+  (let [[threshold s1] (gen-pick s threshold-pool)
+        [len-idx s2] (gen-int s1 6)
+        len (inc len-idx)]
+    (loop [i 0 s s2 kinds []]
+      (if (= i len)
+        [{:threshold threshold :kinds kinds} s]
+        (let [[k s'] (gen-pick s tick-kind-pool)]
+          (recur (inc i) s' (conj kinds k)))))))
+
+;; ── independent oracle: a fresh restatement of the tick-persistence/
+;;    escalate-once state machine, never calling next-block-state or
+;;    escalation-due? itself. ─────────────────────────────────────────────
+(defn- oracle-tick-step
+  [{:keys [reason count escalated]} tick-kind threshold]
+  (if (= tick-kind :resolved)
+    {:state {:reason nil :count 0 :escalated false} :surface? false :escalate? false}
+    (let [tick-reason (name tick-kind)]
+      (if (= reason tick-reason)
+        (let [count' (inc count)
+              escalate? (and (>= count' threshold) (not escalated))]
+          {:state {:reason tick-reason :count count' :escalated (or escalated escalate?)}
+           :surface? false :escalate? escalate?})
+        (let [count' 1
+              escalate? (>= count' threshold)]
+          {:state {:reason tick-reason :count count' :escalated escalate?}
+           :surface? true :escalate? escalate?})))))
+
+;; Runs the whole generated sequence against ONE real state dir (mirroring
+;; production: ticks of the same episode share persisted state) and returns
+;; a seq of mismatch strings, one per tick where the actual surface!/
+;; escalate! call count disagreed with the independent oracle - empty when
+;; every tick in the sequence matched.
+(defn- run-tick-sequence [{:keys [threshold kinds]}]
+  (let [dir (mk-tmp)]
+    (loop [remaining kinds oracle-state {:reason nil :count 0 :escalated false} i 0 mismatches []]
+      (if (empty? remaining)
+        mismatches
+        (let [kind (first remaining)
+              {:keys [state surface? escalate?]} (oracle-tick-step oracle-state kind threshold)
+              behind (if (= kind :resolved) 0 22)
+              merge-success? (= kind :resolved)
+              surface-calls (atom 0)
+              escalate-calls (atom 0)
+              adapters {:rev-counts! (fn [] {:ahead 0 :behind behind})
+                        :dirty-paths! (fn [] (if (= kind :dirty) #{"seed.txt"} #{}))
+                        :merge-changed-paths! (fn [] (if (= kind :dirty) #{"seed.txt"} #{}))
+                        :merge! (fn [] (if merge-success? {:success true} {:success false :error "conflict"}))
+                        :surface! (fn [_msg] (swap! surface-calls inc))
+                        :escalate! (fn [_payload] (swap! escalate-calls inc))
+                        :log! (fn [& _parts] nil)}]
+          (master-main-reconcile-lib/sweep! dir threshold adapters)
+          (recur (rest remaining)
+                 state
+                 (inc i)
+                 (cond-> mismatches
+                   (not= (boolean surface?) (pos? @surface-calls))
+                   (conj (str "tick " i " kind=" kind " expected surface?=" surface? " got surface-calls=" @surface-calls))
+
+                   (not= (boolean escalate?) (pos? @escalate-calls))
+                   (conj (str "tick " i " kind=" kind " expected escalate?=" escalate? " got escalate-calls=" @escalate-calls)))))))))
+
+(check-all "master_main_reconcile_lib invariants 4 & 5 (BL-920): escalation is additive to the coordinator note and fires iff the SAME block reason has persisted >= threshold consecutive ticks without already having escalated this episode (inv 4); resolving a block (or the reason changing) clears escalation state, so a later episode is judged on its own merits and never suppressed by a stale flag from one that already ended (inv 5)"
+  gen-tick-sequence
+  (fn [sequence]
+    (let [mismatches (run-tick-sequence sequence)]
+      (if (seq mismatches) (clojure.string/join "; " mismatches) true))))
 
 ;; ── non-vacuity: each property MUST actually fail against a deliberately
 ;;    broken implementation, proven here rather than asserted (BL-654's own
@@ -278,6 +373,80 @@
           (System/exit 1)))))
 
 (non-vacuity-check-narrower-than-old-gate)
+
+;; Mutant D: escalates on the very FIRST tick of a block, ignoring
+;; persistence entirely - exactly the bug invariant 4 exists to prevent (an
+;; operator escalation must be a SECOND, later signal added only once a
+;; block has persisted, never immediate).
+(defn- mutant-escalates-immediately! [dir adapters]
+  (let [{:keys [behind]} ((:rev-counts! adapters))
+        dirty-paths ((:dirty-paths! adapters))
+        merge-changed-paths ((:merge-changed-paths! adapters))
+        overlap? (boolean (seq (set/intersection (set dirty-paths) (set merge-changed-paths))))]
+    (when (and (pos? behind) overlap?)
+      ((:surface! adapters) "blocked")
+      ((:escalate! adapters) {:reason "dirty" :behind behind :ticks 1}))))
+
+(defn- non-vacuity-check-escalates-immediately []
+  (let [escalate-calls (atom 0)
+        adapters {:rev-counts! (fn [] {:ahead 0 :behind 22})
+                  :dirty-paths! (fn [] #{"seed.txt"})
+                  :merge-changed-paths! (fn [] #{"seed.txt"})
+                  :surface! (fn [_msg] nil)
+                  :escalate! (fn [_payload] (swap! escalate-calls inc))
+                  :log! (fn [& _parts] nil)}
+        ;; correct behavior for a FIRST tick with threshold 3: escalate?
+        ;; is always false (ticks=1 < 3) - independent restatement, no call
+        ;; into next-block-state/escalation-due?.
+        oracle-first-tick-escalate? false]
+    (mutant-escalates-immediately! (mk-tmp) adapters)
+    (if (and (not oracle-first-tick-escalate?) (pos? @escalate-calls))
+      (println "non-vacuity confirmed: invariant 4's oracle would flag a mutant that escalates on the very first tick, ignoring persistence (escalate! fired when it must not)")
+      (do (println (str "NON-VACUITY FAILURE (escalates-immediately mutant): expected the oracle to forbid escalation on tick 1 and the mutant to violate it; escalate-calls=" @escalate-calls))
+          (System/exit 1)))))
+
+(non-vacuity-check-escalates-immediately)
+
+;; Mutant E: never clears persisted state when a block resolves - a stale
+;; :escalated flag from an episode that already ended silently survives and
+;; suppresses a LATER episode of the SAME reason. Exactly the bug
+;; invariant 5 exists to prevent ("never suppressed by a stale flag from an
+;; episode that already ended"). Drives the SAME pure primitives
+;; production sweep! uses (next-block-state/escalation-due?) directly, but
+;; - unlike sweep! - never resets state to {} between episodes, simulating
+;; a broken :up-to-date/successful-reconcile branch that forgot to clear.
+(defn- mutant-resolve-doesnt-clear-state! [dir threshold]
+  (let [escalate-calls (atom 0)
+        tick! (fn [reason]
+                (let [state (master-main-reconcile-lib/read-state dir)
+                      next-state (master-main-reconcile-lib/next-block-state state reason)]
+                  (if (master-main-reconcile-lib/escalation-due? next-state threshold)
+                    (do (swap! escalate-calls inc)
+                        (master-main-reconcile-lib/write-state! dir (assoc next-state :escalated true)))
+                    (master-main-reconcile-lib/write-state! dir next-state))))]
+    ;; episode 1: two dirty ticks, escalates on the second (threshold 2).
+    (tick! "dirty")
+    (tick! "dirty")
+    ;; BUG: episode 1 resolves here in a real sweep - this mutant never
+    ;; clears state, so episode 2 below is wrongly read as a CONTINUATION.
+    ;; episode 2: a fresh dirty block, two more ticks - correct behavior
+    ;; escalates again on the second tick of THIS episode.
+    (tick! "dirty")
+    (tick! "dirty")
+    @escalate-calls))
+
+(defn- non-vacuity-check-resolve-doesnt-clear-state []
+  (let [dir (mk-tmp)
+        ;; oracle: two INDEPENDENT episodes, each escalating once on its own
+        ;; second tick = 2 total escalate! calls.
+        oracle-total-escalate-calls 2
+        mutant-escalate-calls (mutant-resolve-doesnt-clear-state! dir 2)]
+    (if (and (not= oracle-total-escalate-calls mutant-escalate-calls) (= 1 mutant-escalate-calls))
+      (println "non-vacuity confirmed: invariant 5's oracle would flag a mutant that never clears resolved-episode state (episode 2's escalation was wrongly suppressed by episode 1's stale flag)")
+      (do (println (str "NON-VACUITY FAILURE (resolve-doesnt-clear-state mutant): expected the oracle to require 2 independent escalations and the mutant to wrongly deliver only 1; got " mutant-escalate-calls))
+          (System/exit 1)))))
+
+(non-vacuity-check-resolve-doesnt-clear-state)
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "master_main_reconcile_lib property: " runs " runs"))
