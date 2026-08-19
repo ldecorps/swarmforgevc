@@ -1,6 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-933: three unit tests
+**Last Updated:** August 19, 2026 (BL-905: certifies the
+hide-childless-epics reorder-screen hotfix (`0f5394a2d0`, landed on `main`
+2026-08-16 outside the normal pipeline with `Hotfix-Certification:
+pending`) — a paused `type: epic` tracker with no live child (`paused/` +
+`hold/` + `active/`, never `done/`, never another epic tracker) is now
+omitted from both the Reorder-epics tile list AND its Move up / Move down
+neighbour set, so a tap intended for a real epic can no longer land on an
+empty shell tracker sitting between two live epics. GET
+`/epic-reorder-state` and POST `/epic-reorder/move` both resolve through
+one shared `readEpicReorderMembership` reader (`bridgeServer.ts`) — the
+load-bearing detail that keeps the visible tile list and the neighbours a
+move resolves against from ever disagreeing. Hiding is presentation-only:
+`filterEpicsWithTopics` (`epicTopicSlugMatch.ts`) only filters an
+in-memory array, writes/moves nothing to disk, and Make-top's own
+domination set (`readLiveBacklogItems`) is a wholly independent read
+unaffected by which trackers are hidden. This certification ticket wrote
+the acceptance coverage the hotfix shipped without
+(`bl905HideChildlessEpicsReorderSteps.js`, 9 scenarios) and ran every gate
+on the pre-existing code for the first time; architect bounced the first
+pass for a fixture-directory leak in the new step-handler file (measured
+36→45 leaked `sfvc-bl905-*` temp dirs across one 9-scenario run, the same
+missing-`finally` defect class as the sibling BL-927 bounce, fixed the
+same way). Hardener's targeted CRAP pass confirms every function this
+ticket actually certifies scores clean (CRAP ≤5, 100% coverage);
+`bridgeServer.ts`'s pre-existing complexity debt elsewhere in the same
+shared file is out of this ticket's scope. Stryker mutation deferred to a
+quieter host (load measured at 4–6.7x cores), recorded as blocked rather
+than skipped.); Previously August 19, 2026 (BL-933: three unit tests
 (`activateBounceWatcher.test.js`, `bounceDrain.test.js`,
 `bounceWatcher.test.js`) each prove a real `fs.watch` event reaches a
 debounce — BL-131 already injected and fired every controllable part
