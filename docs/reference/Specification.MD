@@ -1,6 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-934: the BL-913 tool-miss heal
+**Last Updated:** August 19, 2026 (BL-931: the resident-invoked rotate
+(`rotate_to_role.sh` → `respawn-as!` → `rotate-resident-to!`) never asked
+whether the pack it was running under rotates at all before addressing
+`mono-router-resident-session` ("first non-coordinator `roles.tsv` row") —
+correct on a `config rotation router` pack, where that row is the one
+resident pane, but on a standing full-forge pack (seven roles, each its
+own tmux session) that row is a working colleague's pane. Twice on
+2026-08-18 this evicted the standing specifier mid-shift — once via
+`SWARMFORGE_ROLE=coder` respawned directly onto `swarmforge-specifier`,
+leaving a QA note unread for 54 minutes and producing two `coder`
+processes sharing `.worktrees/coder` under one `--remote-control` name,
+the same concurrent-same-worktree-writer shape as a same-day operator
+incident. `mono_router_lib.bb` gains `resolve-rotation-router-mode?`, the
+ONE resolution of "is this pack a rotation router" (swarm-identity's
+`rotation` key, else the persisted active pack conf, else the default
+conf) — lifting logic four other callers (`handoffd.bb`, `swarm_ensure.bb`,
+`babysitter_check.bb`, `swarm_status.bb`) each already hand-copied, so this
+fix's own check does not become a fifth independent copy. `rotate-
+resident-to!` now checks this FIRST and refuses `{:ok false :reason
+"not-a-rotation-router"}` before ever touching tmux — the one chokepoint
+both the resident-invoked path and handoffd's daemon-driven chase share —
+with a refusal message naming the pack ("this pack does not rotate — every
+role has its own pane") rather than the previously-misleading "is this
+swarm a mono-router launch?" text. `SWARMFORGE_ROTATE_FORCE=1` (BL-805's
+departing-role-parcel override) does not reach this gate at all —
+deliberately not overloaded into also meaning "steal a colleague's pane".
+A router pack's own rotation is untouched (invariant 3) and
+`mono-router-resident-session`'s "first non-coordinator row" definition is
+out of scope — the fix refuses the rotation, it does not re-address it.
+Hardener closed a fixture-cleanup gap the architect's own bounce fix
+missed (an early-throwing rotation-mode validation step skipped the later
+steps' `finally` cleanup entirely) and confirmed via BL-113 Gherkin
+mutation (4/4 killed) since this feature, unlike BL-929/BL-934 in the same
+batch, has a `Scenario Outline`.); Previously August 19, 2026 (BL-934: the BL-913 tool-miss heal
 wrapper's `missing-root-argv` branch spliced the pinned worktree directly
 next to the original command as a literal trailing argument in the
 generated wrapper's static source — so for a live `rm -f tmp/foo.json`
