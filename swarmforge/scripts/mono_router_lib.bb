@@ -38,6 +38,31 @@
   [identity-text]
   (= "router" (get (parse-identity-map identity-text) "rotation")))
 
+;; BL-571: the launcher (swarmforge.sh's is_sequential_dormant) treats
+;; `rotation sequential` and `rotation router` as the SAME single-resident
+;; topology - only the resident and the coordinator get real sessions, the
+;; middle pipeline roles stay deliberately dormant. These two predicates
+;; recognise that topology by every value the launcher accepts, so ensure
+;; stops respawning roles the launcher left dormant on a mono-rotate pack.
+;; conf-rotation-router?/rotation-router-from-identity? above deliberately
+;; stay router-only: ready_for_next's ROTATE_HOME backstop consumes them,
+;; and widening THAT is a behavior change with its own spec (the ticket's
+;; own fence).
+
+(defn single-resident-rotation?
+  "True when pack/conf text declares a single-resident rotation topology -
+   `config rotation router` OR `config rotation sequential` (mono-rotate)."
+  [conf-text]
+  (boolean
+   (when conf-text
+     (re-find #"(?m)^(?:config\s+)?rotation\s+(?:router|sequential)\b"
+              (str conf-text)))))
+
+(defn single-resident-rotation-from-identity?
+  "True when identity records a single-resident rotation value."
+  [identity-text]
+  (contains? #{"router" "sequential"} (get (parse-identity-map identity-text) "rotation")))
+
 (defn resolve-rotation-router-mode?
   "BL-931 invariant 1: the ONE resolution of whether a pack is a rotation
    router - swarm-identity's rotation key, else the persisted active pack
