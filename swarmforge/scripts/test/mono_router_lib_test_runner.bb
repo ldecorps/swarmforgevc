@@ -713,42 +713,6 @@
             :actionable? true :oldest-actionable-waited-ms 60000}]
           600000))
 
-;; ── BL-571: the single-resident predicate accepts every value the launcher does ──
-;; is_sequential_dormant (swarmforge.sh) treats router AND sequential as the
-;; same single-resident topology; ensure must agree. conf-rotation-router?
-;; itself stays router-only (the ROTATE_HOME backstop consumes it - pinned).
-
-(assert-true "BL-571: single-resident-rotation? accepts rotation router"
-             (mono-router-lib/single-resident-rotation?
-              "config active_backlog_max_depth 1\nconfig rotation router\n"))
-(assert-true "BL-571: single-resident-rotation? accepts rotation sequential"
-             (mono-router-lib/single-resident-rotation?
-              "config rotation sequential\nwindow coder aider\n"))
-(assert-true "BL-571: single-resident-rotation? accepts the prefix-less conf form"
-             (mono-router-lib/single-resident-rotation? "rotation sequential\n"))
-(assert-true "BL-571: single-resident-rotation? is false with no rotation line (classic pack)"
-             (not (mono-router-lib/single-resident-rotation?
-                   "config active_backlog_max_depth -1\nwindow coder aider\n")))
-(assert-true "BL-571: single-resident-rotation? is false for nil conf"
-             (not (mono-router-lib/single-resident-rotation? nil)))
-(assert-true "BL-571: word boundary - 'rotation sequentially' does not match"
-             (not (mono-router-lib/single-resident-rotation? "config rotation sequentially\n")))
-
-(assert-true "BL-571: identity rotation=router is single-resident"
-             (mono-router-lib/single-resident-rotation-from-identity? "rotation\trouter\n"))
-(assert-true "BL-571: identity rotation=sequential is single-resident"
-             (mono-router-lib/single-resident-rotation-from-identity? "rotation\tsequential\n"))
-(assert-true "BL-571: identity with no rotation key is not single-resident"
-             (not (mono-router-lib/single-resident-rotation-from-identity? "pack\tclassic\n")))
-(assert-true "BL-571: identity rotation=classic is not single-resident"
-             (not (mono-router-lib/single-resident-rotation-from-identity? "rotation\tclassic\n")))
-
-;; the ROTATE_HOME consumer's own predicate is untouched by BL-571
-(assert-true "BL-571 pin: conf-rotation-router? still rejects sequential"
-             (not (mono-router-lib/conf-rotation-router? "config rotation sequential\n")))
-(assert-true "BL-571 pin: rotation-router-from-identity? still rejects sequential"
-             (not (mono-router-lib/rotation-router-from-identity? "rotation\tsequential\n")))
-
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

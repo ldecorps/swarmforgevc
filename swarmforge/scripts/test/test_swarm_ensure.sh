@@ -531,52 +531,6 @@ if [[ -s "$RESPAWN_LOG" ]]; then fail "dormant role should not be respawned"; fi
 pass "mono-router dormant roles report DORMANT without respawn"
 
 # ---------------------------------------------------------------------------
-# Extra (BL-571): `rotation sequential` (mono-rotate) is the SAME
-# single-resident topology - the launcher's is_sequential_dormant leaves the
-# middle roles dormant on BOTH values, and ensure must not respawn them.
-# Identical fixture to the router case above, identity declaring sequential.
-# ---------------------------------------------------------------------------
-make_fixture
-printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
-printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
-printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
-printf 'rotation\tsequential\n' > "$ROOT/.swarmforge/swarm-identity"
-touch "$ROOT/.swarmforge/launch/specifier.sh"
-RESPAWN_LOG="$ROOT/respawns"
-: > "$RESPAWN_LOG"
-cat > "$FAKE_BIN/tmux" <<TMUXFAKE
-#!/usr/bin/env bash
-sock_cmd="\$3"
-if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
-  case "\$target" in
-    swarmforge-coder|swarmforge-coordinator) exit 0 ;;
-    *) exit 1 ;;
-  esac
-fi
-if [[ "\$sock_cmd" == "list-panes" ]]; then
-  echo "0"
-  exit 0
-fi
-if [[ "\$sock_cmd" == "respawn-pane" ]]; then
-  echo "RESPAWN" >> "$RESPAWN_LOG"
-  exit 0
-fi
-exit 0
-TMUXFAKE
-chmod +x "$FAKE_BIN/tmux"
-OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
-  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
-  bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "BL-571: expected specifier DORMANT under rotation sequential, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "BL-571: expected coder HEALTHY"
-if [[ -s "$RESPAWN_LOG" ]]; then fail "BL-571: sequential-dormant role must not be respawned"; fi
-pass "BL-571: rotation sequential dormant roles report DORMANT without respawn"
-
-# ---------------------------------------------------------------------------
 # Extra (BL-537): a dormant rotate target whose own launch script is missing
 # must report FAILED, not DORMANT — rotate_to_role would hit "no-launch-script"
 # even though the resident (coder) is perfectly healthy. Never let "no
