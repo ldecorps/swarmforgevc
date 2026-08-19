@@ -1723,6 +1723,25 @@ other commit's changed paths. This never force-pushes or rewrites history —
 only the deploy-time gate (BL-629), detection/alerting (BL-631), and
 commit-time guard (BL-632) are separate, companion protections.
 
+**"QA ancestor" itself is bounce-aware (BL-952).** QA merges a parcel into
+`swarmforge-QA` in order to review it, so a parcel QA then BOUNCES stays
+reachable from that ref forever — plain ancestry alone cannot distinguish
+"QA approved this" from "QA merged this to look at it and rejected it".
+`is_qa_ancestor.sh` (the one shared predicate script behind both this sweep
+and `check_pipeline_code_on_main.sh`) now checks ancestry AND the durable
+bounce verdict QA already writes, unioning two stores — the machine-local
+JSONL `record-bounce.js` appends under `.swarmforge/bounces/`, and tracked
+ticket-YAML `bounce_history` entries under `backlog/**` — either naming the
+sha vetoes approval. Exit 0 is approved (ancestor AND no bounce verdict on
+file); exit 1 is a clean refusal (not an ancestor, or a bounce record names
+it — the bounce case prints a `bounced: <sha> ... (BL-952)` line to stderr
+naming the record); any other exit is undeterminable (unresolvable sha,
+missing ref, or an unreadable/corrupt verdict store) and every caller fails
+closed on it, never reading unknown as approved. In `qa-gate-decision`
+(`push_sweep_lib.bb`) a bounced ahead-commit is checked FIRST and refused
+under its own `:bounced-parcel` reason — before the bookkeeping allowlist or
+the trivial-merge exemption ever get a chance to launder it.
+
 Both alarms are delivered via the shared `daemon_alarm_lib.bb` email sender
 and follow the project's delivery-based arming rule: a transient send failure
 never arms the "already alarmed" flag (it retries, bounded), while a terminal
