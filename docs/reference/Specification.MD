@@ -1,6 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-909: `nameBottleneck`
+**Last Updated:** August 19, 2026 (BL-920: the master-main-reconcile
+sweep (`swarmforge/scripts/master_main_reconcile_lib.bb`, BL-891/BL-919)
+surfaced exactly one coordinator note on the first tick of a
+dirty-blocked or conflict-aborted episode, then went quiet for every
+later tick of that same episode — deliberate, so a standing block does
+not spam the coordinator every tick, but nothing ever escalated past it:
+silence was indistinguishable between "resolved a minute later" and
+"still stuck", and in the incident behind this ticket 84 landed commits
+sat off local `main` for 8+ hours with the coordinator idled and no
+further signal. `sweep!`'s per-episode state gains a second, independent
+tick counter: the same block reason persisting past a configurable
+threshold (new `master_main_reconcile_escalation_threshold` in
+`swarmforge/swarmforge.conf`, default 3 — absent/malformed/zero/negative
+all degrade to the default, mirroring chase-sweep-lib's own open-slot
+escalation default) fires ONE additional operator escalation, naming the
+reason and how far behind local `main` the block has left it, over the
+same Telegram OPERATOR-topic-plus-email channel `daemon-alarm-lib` already
+uses elsewhere — additive to, never a replacement for, the existing
+first-tick coordinator note, never repeating for the same episode, and
+clearing fully once the sweep reconciles so a later, unrelated block is
+judged on its own tick count rather than suppressed by a stale flag.
+Hardener's hand-authored mutation sweep (no Babashka mutation/CRAP/DRY
+tooling exists — engineering article Startup Tools) found and closed two
+real coverage gaps: threshold=1 collapses the coordinator note and the
+escalation onto the SAME tick, untested by either suite's threshold pool
+(now pinned by a dedicated `sweep!` integration test); and a pre-BL-920
+on-disk state file with no `:ticks`/`:escalated` keys at all degrades
+safely but had no round-trip test through `write-state!`/`sweep!` (now
+added).); Previously August 19, 2026 (BL-909: `nameBottleneck`
 (`extension/src/metrics/stageDwell.ts`) ranked the briefing/CLI
 "Bottleneck:" line on queue-wait-plus-processing median, so a dormant
 stage's mailbox time — while the mono-router's single resident plays some
@@ -54,8 +82,16 @@ proceed/refuse decision, so a garbled marker/live-identity string could
 coincidentally reach "proceed" via the old unrelated unknown-role
 fail-open path and mask a broken live-role-resolution mechanism behind
 the same observable outcome — fixed by asserting the resolved role
-itself, not only the decision; the remaining 3 survivors are a documented
-case-insensitive-APFS equivalent mutant (BL-234), not a real gap.);
+itself, not only the decision; the remaining 3 survivors were re-examined
+and reclassified **host-masked**, not BL-234 equivalent — this
+worktree's case-insensitive APFS volume masks the case-flip so no
+assertion here can observe it, but equivalence under BL-234 requires the
+mutation to be undetectable by design, and a traced code-path check
+confirmed the real mailbox-path resolution goes through `load-role-info`'s
+exact-string match against `roles.tsv`, never an unresolved or
+case-varied caller string — a case mismatch degrades to the existing,
+already-accepted BL-805/BL-921 fail-open, not a new gap or a defect
+ticket.);
 Previously August 19, 2026 (BL-932: the property lane's own
 20000ms `testTimeout` default (`extension/vitest.properties.config.mjs`)
 covers ALL of a property's `numRuns` combined, not one run — a distinction
