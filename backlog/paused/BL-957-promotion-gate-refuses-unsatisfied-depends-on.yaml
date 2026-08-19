@@ -9,8 +9,7 @@ priority: 40
 depends_on: []
 mutation_cost: low
 acceptance: specs/features/BL-957-promotion-gate-refuses-unsatisfied-depends-on.feature
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Two judgement calls are mine, not derived from any existing rule, and both
   are worth a human ruling before the coder builds.
