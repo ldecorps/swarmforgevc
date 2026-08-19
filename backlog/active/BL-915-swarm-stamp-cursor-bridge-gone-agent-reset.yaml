@@ -151,3 +151,5 @@ notes: |
   All five scenarios need handlers landed in THIS parcel. The runner throws on
   any scenario it cannot resolve, so a partial handler set fails the
   hardener's gate rather than degrading quietly.
+
+assigned_to: coder
