@@ -27,6 +27,17 @@ make_root() {
   d="$(mktemp -d)"
   mkdir -p "$d/.swarmforge/handoffs/failed" "$d/backlog/active"
   printf 'MemAvailable:    8000000 kB\n' > "$d/meminfo"
+  # BL-631: babysitter_check.bb's pipeline-code-on-main check fails closed
+  # (UNAVAILABLE) whenever it can't resolve a swarmforge-QA ref - correct in
+  # production, but every root here was previously git-independent, so it
+  # never resolved and "OK all checks green" (scenarios A, E) could never
+  # pass. Same minimal git fixture shape as
+  # bl631BabysitterDetectsPipelineCodeOnMainSteps.js's own mkFixtureRepo():
+  # one commit, main and swarmforge-QA both pointing at it (nothing ahead of
+  # QA, so the check reads clean rather than merely available).
+  git -C "$d" -c user.email=t@t -c user.name=t init -q -b main
+  git -C "$d" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  git -C "$d" -c user.email=t@t -c user.name=t branch swarmforge-QA
   printf "$d"
 }
 
