@@ -34,6 +34,7 @@ captures, an available-memory reading) against these checks, in
 | 11 | claim-risk | the salvaged `babysitter_assess_lib.bb` scan (a role heading for bounce/halt with HEAD unchanged) |
 | — | planned-pause awareness | while `.swarmforge/operator/control-pause.json` marks an active pause, checks 9 and 10 are suppressed (planned quiet is not starvation) |
 | 12 | resume-overdue | a pause is still marked active but its `untilMs` expired more than 15 minutes ago (the auto-resume sweep itself failed) |
+| 13 | pipeline-code-on-main | a commit reachable from `main` or `origin/main`, not an ancestor of `swarmforge-QA`, touches a QA-exclusive path (BL-631, below); reports `UNAVAILABLE`, never a clean sweep, when `swarmforge-QA` itself can't be resolved |
 
 Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
 the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
@@ -57,6 +58,16 @@ by its key with a 30-minute cooldown, so a persistent condition nudges once,
 not every sweep. If the coordinator pane/process is down, the daemon logs
 `NUDGE-SKIP` — it never nudges into a dead pane and never falls back to acting
 on the swarm itself.
+
+**Dedup was silently broken for every check until BL-631.**
+`read-dedup-state!` parsed `nudge-dedup.json` with Cheshire's
+`keywordize-keys` flag on, turning every finding's plain string `:key` into a
+Clojure keyword on reload; `decide-nudges`' lookup is string-keyed and can
+never match a keyword, so no check's dedup ever actually took effect — every
+eligible finding renudged on every single sweep, for every check, since the
+daemon shipped. Fixed by dropping that flag (the file's only reader). Not
+specific to check 13 below; found only because that check's own acceptance
+scenarios couldn't pass against it.
 
 If you see a coordinator pane message starting `babysitter health sweep:`,
 treat it as a trusted, deterministic report — not something to re-verify from
@@ -290,6 +301,46 @@ never delete the orphan's own pidfile on its way out.
 
 Acceptance feature:
 [`specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature`](../../specs/features/BL-906-operator-babysitterd-freshness-watchdog.feature).
+
+## Detecting pipeline code that lands on `main` outside QA (BL-631)
+
+The BL-590 post-mortem: an entire cleaner pass ran in the master checkout (a
+`cd` habit, not a rotation bug), landing un-QA'd pipeline code on `main`.
+Nothing errored, and nothing told anyone — an architect found it hours later
+by eye. BL-629 refuses to deploy that state and BL-630 refuses to publish it;
+this check is the layer that **tells** someone about a bad tip that already
+exists.
+
+`check-pipeline-code-on-main` (`babysitterd_sweep_lib.bb`) flags a commit as
+CRIT when it is reachable from a main-naming ref (both `main` and
+`origin/main` are swept — they diverge routinely under the current worktree
+layout, see BL-891 in `docs/reference/Specification.MD`), is **not** an
+ancestor of `swarmforge-QA`, and touches a QA-exclusive path
+(`extension/src/`, `extension/test/`, `specs/pipeline/steps/`). The path set
+is never restated here: `gather-pipeline-code-on-main`
+(`babysitter_check.bb`) reads it at runtime from BL-632's own
+`check_pipeline_code_on_main.sh --list-paths` (a `BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT`
+env seam exists for tests only), and ancestry is decided by
+`is_qa_ancestor.sh`, the one shared "is this sha QA-approved" predicate — not
+a second `git merge-base` call. If `swarmforge-QA` itself can't be resolved,
+the whole check fails closed to `UNAVAILABLE` rather than reading as a clean
+sweep.
+
+Merge commits are diffed with `git diff-tree -m --first-parent`, never a
+plain `git show`/`diff-tree` — a merge's own plain diff reports zero files
+even when its combined content touches a QA-exclusive path (measured
+directly on this repo: 0 files plain vs. the real 13/35 via `--first-parent`
+on two different merges), which is exactly the shape that let the BL-590
+incident's own merge commit (`f8dc07963`) go unnoticed.
+
+Each finding's key carries the offending sha
+(`pipeline-code-on-main-<sha>`), so `decide-nudges`' dedup treats every
+offending commit independently — one already-nudged sha stays deduped while
+a distinct new one nudges on its own, rather than the first offender
+permanently masking every later one.
+
+Acceptance feature:
+[`specs/features/BL-631-babysitter-detects-pipeline-work-on-main.feature`](../../specs/features/BL-631-babysitter-detects-pipeline-work-on-main.feature).
 
 ## Verify
 
