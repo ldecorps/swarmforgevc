@@ -131,3 +131,6 @@ notes: >
     in-scope rather than implied.
   - Full forge was relaunched successfully with `./start-swarm.sh` and health
     verified, so this ticket focuses on diagnosis and prevention of recurrence.
+
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: ec033029e2, evidence: backlog/evidence/BL-958-full-forge-tmux-control-plane-crash-root-cause-bounce-20260819.md }

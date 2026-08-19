@@ -18,7 +18,6 @@
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
 (load-file (str (fs/path script-dir "process_table_lib.bb")))
 (load-file (str (fs/path script-dir "babysitterd_freshness_lib.bb")))
-(load-file (str (fs/path script-dir "control_plane_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -289,28 +288,12 @@
                                                  :now-ms now})))
         (list-sent-handoffs)))
 
-(defn control-plane-classification
-  "BL-958: classify the control plane through the shared control_plane_lib
-   before rendering any per-role row. A normal stop clears BOTH the
-   tmux-socket file and sessions.tsv, so socket file + role metadata present
-   with no server answering is the loss shape, never a routine stop."
-  []
-  (let [sock (resolve-swarm-socket)
-        {:keys [classification]} (control-plane-lib/observe! state-dir sock)]
-    {:socket sock
-     :classification classification}))
-
 (defn -main []
   (let [now (now-ms)
-        {:keys [socket classification]} (control-plane-classification)
-        agents (control-plane-lib/status-agents-view
-                {:classification classification
-                 :agent-rows (gather-agents now)
-                 :socket-path socket})
         report (swarm-status-lib/render-status-report
                 {:project-root project-root
                  :generated-at (now-iso)
-                 :agents agents
+                 :agents (gather-agents now)
                  :daemons (gather-daemons)
                  :telegram (gather-telegram now)
                  :handoffs (gather-handoffs now)})]
