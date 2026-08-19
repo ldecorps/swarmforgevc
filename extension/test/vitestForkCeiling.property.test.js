@@ -23,13 +23,23 @@ const { resolveWorkerPoolSize, resolveVitestForkCeiling, MAX_WORKERS } = require
 // resolveVitestForkCeiling/resolveWorkerPoolSize pair from this same
 // module.
 //
-// Non-vacuity, checked by hand before landing: forcing
-// resolveVitestForkCeiling to always return Infinity (never any ceiling)
-// fails P1 on its first generated case where the pack rule would otherwise
-// have lowered the count; forcing resolveWorkerPoolSize's own floor to
-// `Math.min` instead of `Math.max(1, Math.min(...))` fails P2 on its first
-// small-hostRamMB case. Restoring the real implementations passes both
-// again.
+// Non-vacuity, checked by hand (re-verified after the architect's D1
+// bounce disproved this file's ORIGINAL P1 claim - the first landed P1
+// compared resolveWorkerPoolSize(ram, ceiling) against the raw-RAM bound,
+// a mathematical identity of resolveWorkerPoolSize's own pre-existing
+// `Math.max(1, Math.min(...))` composition that NO finite return value of
+// resolveVitestForkCeiling could ever violate; it was structurally
+// vacuous and has been replaced):
+// - forcing resolveVitestForkCeiling to `return Infinity` fails the
+//   "never exceeds the default" property below on its first no-override
+//   case, AND the "full-forge on macOS resolves to exactly 1" anchor;
+// - inverting the pack rule (full-forge/darwin -> defaultCeiling,
+//   everything else -> 1) fails the "full-forge is never given MORE forks
+//   than any other combination" relative property;
+// - forcing resolveWorkerPoolSize's own floor to `Math.min` instead of
+//   `Math.max(1, Math.min(...))` fails the "never below 1" property on
+//   its first small-hostRamMB case.
+// Restoring the real implementations passes all again.
 
 const packArb = fc.constantFrom('full-forge', 'mono-router', undefined, 'other-pack');
 const platformArb = fc.constantFrom('darwin', 'linux', 'win32');
@@ -45,24 +55,45 @@ const overrideArb = fc.oneof(
 );
 const hostRamMbArb = fc.integer({ min: 0, max: 65536 });
 
-test('property: the pack/platform/override ceiling never RAISES the fork count above what raw RAM allows', () => {
+// Invariant 1's "the new ceiling can only LOWER the fork count, never
+// raise it", encoded over what resolveVitestForkCeiling itself CONTROLS
+// (the architect's D1 bounce showed the memory-bound comparison is a
+// property of resolveWorkerPoolSize's own pre-existing composition, which
+// no return value of the new function can violate - vacuous). Without an
+// explicit override there are only two legitimate outcomes - the default
+// ceiling, or the pack rule's LOWER 1 - so "never raise" over the pack/
+// platform space means: never above the default. An unconstrained
+// implementation (Infinity) fails this on its first case.
+test('property: without an explicit override, the ceiling never exceeds the default, for every pack/platform', () => {
   fc.assert(
-    fc.property(hostRamMbArb, packArb, platformArb, overrideArb, (hostRamMB, pack, platform, override) => {
-      // The invariant's own "absolute upper bound" is the RAW memory-derived
-      // safe count (approval_context: an explicit override "can never raise
-      // the count above what RAM allows"), not resolveWorkerPoolSize's own
-      // MAX_WORKERS-capped DEFAULT ceiling - an explicit override is allowed
-      // to exceed MAX_WORKERS (a human asking for more parallelism than the
-      // fallback default on a big-RAM box), just never exceed raw RAM
-      // safety. Number.MAX_SAFE_INTEGER as the ceiling arg strips the
-      // MAX_WORKERS cap entirely, leaving only the RAM-derived floor/safety
-      // math - the true absolute bound this invariant names.
-      const rawMemoryCeiling = resolveWorkerPoolSize(hostRamMB, Number.MAX_SAFE_INTEGER);
-      const ceiling = resolveVitestForkCeiling({ pack, platform, override });
-      const constrained = resolveWorkerPoolSize(hostRamMB, ceiling);
+    fc.property(packArb, platformArb, (pack, platform) => {
+      const ceiling = resolveVitestForkCeiling({ pack, platform, override: undefined });
       assert.ok(
-        constrained <= rawMemoryCeiling,
-        `constrained (${constrained}) exceeded raw RAM safety (${rawMemoryCeiling}) for hostRamMB=${hostRamMB} pack=${pack} platform=${platform} override=${override}`
+        ceiling <= MAX_WORKERS,
+        `ceiling (${ceiling}) exceeded the default (${MAX_WORKERS}) for pack=${pack} platform=${platform} with no override`
+      );
+    }),
+    { numRuns: 200 }
+  );
+});
+
+// The relative half of invariant 1's "for every combination of pack,
+// platform and override": full-forge on macOS - the one combination the
+// pack rule constrains - is never given MORE forks than any other
+// combination under the same override and host RAM. Catches a
+// direction-inverted pack rule (constraining everything EXCEPT the
+// intended combination), which the absolute anchor below cannot see when
+// the anchor's own combination happens to come out right.
+test('property: full-forge on macOS is never given more forks than any other combination, same override and RAM', () => {
+  fc.assert(
+    fc.property(hostRamMbArb, packArb, platformArb, overrideArb, (hostRamMB, otherPack, otherPlatform, override) => {
+      const fullForgeCeiling = resolveVitestForkCeiling({ pack: 'full-forge', platform: 'darwin', override });
+      const otherCeiling = resolveVitestForkCeiling({ pack: otherPack, platform: otherPlatform, override });
+      const fullForgeForks = resolveWorkerPoolSize(hostRamMB, fullForgeCeiling);
+      const otherForks = resolveWorkerPoolSize(hostRamMB, otherCeiling);
+      assert.ok(
+        fullForgeForks <= otherForks,
+        `full-forge/darwin resolved ${fullForgeForks} forks > ${otherForks} under pack=${otherPack} platform=${otherPlatform} override=${override} hostRamMB=${hostRamMB}`
       );
     }),
     { numRuns: 500 }
