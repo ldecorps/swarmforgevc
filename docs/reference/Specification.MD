@@ -1,6 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-817: seven acceptance step-handler
+**Last Updated:** August 19, 2026 (BL-924: `sync_worktree_scripts()` copies
+helper scripts into every role worktree at launch with `cp -R`, landing
+them untracked; `git merge` refuses to overwrite an untracked file even
+when it is byte-identical to the tracked content coming in, and only names
+the collisions it has already reached, so hand-clearing them was iterative
+— measured 2026-07-25: two rounds to fast-forward `swarmforge-QA`, with a
+`... 10 more` elision hiding the true count. This is the same
+`sync_worktree_scripts()` hot-sync mechanism already recorded as the
+phantom-revert root cause in BL-373 — same source, a different failure
+mode. A new script, `clear_identical_untracked_and_merge.bb`, run in place
+of a bare `git merge <ref>`, finds every untracked-but-incoming-tracked
+path, proves each one byte-identical to `<ref>`'s own tracked blob, and
+only if **every** candidate matches clears them and runs the real merge;
+a single genuine difference clears nothing and merges nothing, naming every
+colliding path in one report instead of an iterative discovery loop. Any
+read failure on a candidate (directory, dangling symlink, non-UTF-8
+content) fails closed — treated as not-identical, blocking the merge rather
+than risking a mistaken clear. See
+[BL-924: Clearing Byte-Identical Hot-Synced Copies Before a Worktree
+Merge](../how-to/BL-924-clear-identical-untracked-copies-before-merge.md).
+New human-facing surface: none — this is a swarm-substrate recovery script
+a role runs by hand on merge failure, not any extension command, setting,
+or UI.); Previously August 19, 2026 (BL-817: seven acceptance step-handler
 files started real, detached tmux servers as fixtures and tore them down
 only from a terminal `Then` step's hand-rolled `cleanup()` — a mutant
 failing an assertion early, or the runner receiving `SIGTERM`, skips
