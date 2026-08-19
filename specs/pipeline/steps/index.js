@@ -499,7 +499,8 @@ const DOMAINS = [
   require('./bl817FixtureTmuxServersReapedSteps'),
   require('./bl914PerTestTimeoutSteps'),
   require('./bl924HotSyncedCopiesDoNotBlockMergeSteps'),
-  require('./bl631BabysitterDetectsPipelineCodeOnMainSteps')
+  require('./bl631BabysitterDetectsPipelineCodeOnMainSteps'),
+  require('./bl944OperatorRuntimeBbFixtureDependencyClosureSteps')
 ];
 
 function registerSteps(registry) {
