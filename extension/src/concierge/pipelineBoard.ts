@@ -749,6 +749,34 @@ function pipelineBoardEpicsOverflowLine(omittedCount: number): string {
   return `+${omittedCount} more epics`;
 }
 
+// BL-956 hardener: the two overflow-line computations and the parked
+// section's emptiness guard are shared by BOTH render paths - the
+// plain-text one (change-detection content signature) and the HTML one
+// (the live Telegram message). They are near-duplicates BY DESIGN and must
+// stay in lockstep; the bounce D1 defect was precisely the moment they did
+// not. Extracting them here keeps that lockstep in one place, and keeps
+// each caller's own CRAP at or below its pre-parcel score (BL-866 pattern:
+// extract before measuring, so new code carries its own isolated number
+// rather than inheriting a shared renderer's pre-existing debt).
+function parkedOverflowLineFor(data: PipelineBoardData): string | undefined {
+  const omitted = data.parkedOmittedCount ?? 0;
+  return omitted > 0 ? pipelineBoardParkedOverflowLine(omitted) : undefined;
+}
+
+function epicsOverflowLineFor(data: PipelineBoardData): string | undefined {
+  const omitted = data.collapsedEpicsOmittedCount ?? 0;
+  return omitted > 0 ? pipelineBoardEpicsOverflowLine(omitted) : undefined;
+}
+
+function parkedSectionIsEmpty(
+  collapsedEpics: PipelineBoardCollapsedEpicEntry[],
+  plainParked: PipelineBoardParkedEntry[],
+  overflowLine: string | undefined,
+  epicsOverflowLine: string | undefined
+): boolean {
+  return collapsedEpics.length === 0 && plainParked.length === 0 && !overflowLine && !epicsOverflowLine;
+}
+
 function renderParkedSection(
   collapsedEpics: PipelineBoardCollapsedEpicEntry[],
   parked: PipelineBoardParkedEntry[],
@@ -756,12 +784,7 @@ function renderParkedSection(
   epicsOverflowLine?: string
 ): string[] {
   const plainParked = parked.filter((p) => p.status === 'parked');
-  if (
-    collapsedEpics.length === 0 &&
-    plainParked.length === 0 &&
-    (overflowLine === undefined || overflowLine === '') &&
-    (epicsOverflowLine === undefined || epicsOverflowLine === '')
-  ) {
+  if (parkedSectionIsEmpty(collapsedEpics, plainParked, overflowLine, epicsOverflowLine)) {
     return [];
   }
   const lines: string[] = ['', PARKED_SECTION_HEADER];
@@ -814,12 +837,8 @@ function renderGridOnlySections(data: PipelineBoardData): string[] {
 // rather than every one of those fixtures needing a mechanical update.
 function renderBodySections(data: PipelineBoardData): string[] {
   const parked = data.parked ?? [];
-  const parkedOverflow =
-    (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
-  const epicsOverflow =
-    (data.collapsedEpicsOmittedCount ?? 0) > 0
-      ? pipelineBoardEpicsOverflowLine(data.collapsedEpicsOmittedCount ?? 0)
-      : undefined;
+  const parkedOverflow = parkedOverflowLineFor(data);
+  const epicsOverflow = epicsOverflowLineFor(data);
   return [
     ...renderGridOnlySections(data),
     ...renderParkedSection(data.collapsedEpics ?? [], parked, parkedOverflow, epicsOverflow),
@@ -970,12 +989,7 @@ function renderParkedSectionHtml(
   epicsOverflowLine?: string
 ): string[] {
   const plainParked = parked.filter((p) => p.status === 'parked');
-  if (
-    collapsedEpics.length === 0 &&
-    plainParked.length === 0 &&
-    (overflowLine === undefined || overflowLine === '') &&
-    (epicsOverflowLine === undefined || epicsOverflowLine === '')
-  ) {
+  if (parkedSectionIsEmpty(collapsedEpics, plainParked, overflowLine, epicsOverflowLine)) {
     return [];
   }
   const lines: string[] = ['', escapeHtml(PARKED_SECTION_HEADER)];
@@ -1058,14 +1072,11 @@ function buildPipelineBoardHtml(
   const gridText = renderGridOnlySections(data).join('\n');
   const pre = `<pre>${escapeHtml(gridText)}</pre>`;
   const parked = data.parked ?? [];
-  const parkedOverflow =
-    (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
+  const parkedOverflow = parkedOverflowLineFor(data);
   // BL-956 hardener bounce D1: computed exactly like parkedOverflow above -
-  // the live message must announce the collapsed-epics cap too.
-  const epicsOverflow =
-    (data.collapsedEpicsOmittedCount ?? 0) > 0
-      ? pipelineBoardEpicsOverflowLine(data.collapsedEpicsOmittedCount ?? 0)
-      : undefined;
+  // the live message must announce the collapsed-epics cap too. Both now go
+  // through the shared helpers so the two render paths cannot drift again.
+  const epicsOverflow = epicsOverflowLineFor(data);
   const afterPre = [
     ...renderGridTapLinesHtml(data, pathById, repoBaseUrl, linkedIds),
     ...renderParkedSectionHtml(

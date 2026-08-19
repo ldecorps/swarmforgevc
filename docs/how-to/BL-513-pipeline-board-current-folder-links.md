@@ -18,6 +18,22 @@ The board covers every ticket or intake item visible in the message:
 When the message would exceed Telegram's length budget, the oldest ticket
 anchors are dropped first (numbers stay visible as plain text).
 
+## Why A Ticket You Expect Has No Link
+
+The board is capped section by section, and each cap says what it dropped
+rather than hiding it:
+
+- the grid drops its tail columns past the width budget and prints
+  `+N more active` (those tickets are still linked below the grid);
+- PARKED lists at most 3 plain parked tickets, then `+N more parked`;
+- PARKED lists at most 3 collapsed epic trackers, then `+N more epics`;
+- tickets awaiting approval are never capped.
+
+A ticket behind one of those `+N more` lines is not on the message at all,
+so it has no number to tap — unlike the length-budget case above, where the
+number is still there and only its anchor is gone. Open `backlog/paused/`
+on GitHub directly, or use the console's epic list, to reach it.
+
 ## Open The Current Backlog File
 
 Each linked number opens the backlog file in GitHub. The path reflects where
