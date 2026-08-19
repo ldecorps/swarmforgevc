@@ -22,7 +22,63 @@ boot.
    PWA. (Recurred 3x in 2026-07-10: BL-252 suite-duration trend, BL-265
    gate-answer view, BL-257 slices 3-4 changed-since-visit + live trends.)
 
-## Epics have icons representing musical forms — Full Text
+## Epics have icons — Full Text (amended 2026-08-19, human directive)
+6. Epics have icons on TWO distinct surfaces with two distinct realisations
+   — never one implementation assumed to cover both.
+
+   **The owned surfaces keep the musical vocabulary.** The PWA, the fleet
+   console and the bot avatar carry the owned orchestra FORM marks
+   (Symphony/Concerto/Suite/Fugue/Overture — `docs/branding/icon-system.md`
+   §4d). These are drawn assets, so nothing external constrains them and the
+   brand reading survives intact. This half is unchanged by the amendment
+   below; a future editor must not "simplify" the rule by dropping it.
+
+   **The Telegram surface draws from the WHOLE stock sticker set.** A
+   Telegram topic icon may be any glyph in the live
+   `getForumTopicIconStickers` set, not only its performance glyphs. Two
+   conditions bind every pick, and they are the whole of the rule: the glyph
+   must be PRESENT in the live set, and it must COLLIDE with no other icon
+   table (ticket-state, standing-topic, role-topic, or another epic).
+
+### Why the musical restriction was dropped (BL-946, human directive 2026-08-19)
+
+The platform wall named in BL-449 is real and unchanged: `getForumTopicIcon
+Stickers` offers no notation or instrument glyphs, so an SVG form mark can
+never be pushed onto a Telegram topic icon. BL-449's response was to
+approximate the form marks with the closest stock PERFORMANCE sticker. That
+response is what the amendment retires, not the wall that caused it.
+
+The approximation never actually delivered the musical reading — a megaphone
+or a top hat does not say "fugue" to anyone — while the restriction it
+imposed was severe and arithmetic. Measured 2026-08-19: the live set holds
+112 stickers, of which roughly 14 are musical/performance. `EPIC_ICON_POOL`
+already held 10 of them; 🎵 is reserved for ticket-state `feature`, 🎶 is
+excluded because it reads as 🎵 at badge size, and 🎟/🏛 and the role-topic
+picks take most of the rest. The reachable ceiling was about 12 distinct
+epic icons. The backlog carried 29 distinct epics in `active/` + `paused/`
+alone, and epics only accrue.
+
+So the rule as written made distinct-icon-per-epic unreachable by
+construction. The visible symptom was `resolveEpicIcon` falling through to
+its graceful-reuse tail for every epic past the tenth, and the concierge tick
+logging an exhaustion line per overflowing epic — roughly 20 lines a tick,
+a 50 MB log in under 30 minutes. Enlarging the pool within the musical subset
+could not fix that, and neither could a hash-to-icon strategy: hashing
+changes WHICH icon repeats, it does not create icons.
+
+Broadening to the full stock set lifts the ceiling from ~12 to ~85 after the
+reserved tables are subtracted — comfortably above 29 with room for growth —
+at the cost of a brand reading the Telegram surface never actually carried.
+The owned surfaces, where the reading does land, keep it.
+
+Two prior QA bounces (BL-469, twice on 2026-07-17) were both caused by hand-
+picked glyphs that were either absent from the live set or collided with
+another table. That is why the amendment states the two conditions as the
+rule itself: an absent glyph fails silently — `syncTopicIcon` returns
+`skipped-unresolved-icon` and the topic simply stays unbadged, with no error
+anywhere.
+
+### Pre-amendment wording, verbatim (BL-449, superseded 2026-08-19)
 6. Epics have icons representing musical forms. An epic is a large-scale
    musical FORM, so its icon is drawn from that vocabulary, on TWO distinct
    surfaces with two distinct realisations — never one implementation
