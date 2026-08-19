@@ -77,6 +77,34 @@ the class of silent drops the incident surfaced. Voice notes are
 unaffected (pre-empted to their own path before this decision, per
 BL-426, and never carry `photo`). No new extension command or setting —
 Telegram incarnation behavior (Architecture Rule 7).); Previously
+August 19, 2026 (BL-952: `is_qa_ancestor.sh` — the one
+shared "is this sha QA-approved" predicate behind both the push sweep
+and `check_pipeline_code_on_main.sh` — was pure git reachability:
+`git merge-base --is-ancestor <sha> swarmforge-QA`. QA merges a parcel into
+that ref in order to REVIEW it, so a parcel QA then BOUNCES stays reachable
+and reads as approved forever unless a human remembers the BL-490/BL-495
+revert. Measured live on 2026-08-19: QA bounced BL-945's documenter parcel
+at 12:22 without reverting, and the 12:23/12:39 landings carried its
+commits onto `origin/main` while BL-945 itself sat `backlog/active/`,
+bounced twice, with no approval anywhere. Approval is now ancestry AND the
+durable bounce verdict QA already writes, read from ONE definition two
+stores union into: the machine-local JSONL `record-bounce.js` appends, and
+tracked ticket-YAML `bounce_history` entries — either vetoes. Exit 0
+approved; exit 1 a clean refusal (naming the bounce record on stderr); any
+other exit undeterminable, and every consumer fails closed on it rather than
+reading unknown as approved. `handoffd.bb`'s ahead-commit gatherer now
+always enumerates and consults the predicate per commit (its previous
+tip-is-ancestor fast path skipped enumeration entirely, so a bounced commit
+riding under an already-approved tip published with zero scrutiny — exactly
+BL-945's own landing shape), and `push_sweep_lib.bb`'s `qa-gate-decision`
+checks `:bounced?` first, before the bookkeeping allowlist or the
+trivial-merge exemption get a chance to launder it. See the new
+"'QA ancestor' itself is bounce-aware (BL-952)" note in the "Push sweep"
+section of `swarmforge/handoff-protocol.md`. Disposition of BL-945's
+already-published commits (the constitution bars reverting something
+already an ancestor of `main`) is an open operator call, not this change's
+to make. No human-facing command or setting — fork/operator-substrate
+tooling under `swarmforge/scripts/`.); Previously
 August 19, 2026 (BL-685: the babysitter sweep (ported to
 `swarmforge/scripts/` by BL-611) monitored only one half of a stranded
 mono-router resident — `rotate-unhonored` (check 9) fires when a rotate

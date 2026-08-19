@@ -17,6 +17,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "required_stages_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "review_forward_evidence_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -297,6 +298,25 @@
         dup-chain-block
         (when (and (= "git_handoff" type) (not (str/blank? task-name)))
           (duplicate-chain-guard-lib/blocking-parcel (project-root) task-name sender))
+        ;; BL-953 task/commit coherence gate: refuses a git_handoff whose
+        ;; commit POSITIVELY contradicts its task's ticket (see
+        ;; task_commit_coherence_gate_lib.bb - fail-open is absolute; an
+        ;; unreadable subject warns and passes).
+        coherence-block
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
+                {:keys [exit out]} (sh "git" "-C" (str (project-root))
+                                        "log" "-1" "--format=%s" canonical)]
+            (if-not (zero? exit)
+              (do (binding [*out* *err*]
+                    (println (str "TASK_COMMIT_COHERENCE WARNING: "
+                                  (task-commit-coherence-gate-lib/warning-line task-ticket-id canonical))))
+                  nil)
+              (let [ids (task-commit-coherence-gate-lib/commit-ticket-ids (str/trim out))]
+                (when (task-commit-coherence-gate-lib/blocked?
+                       {:task-ticket-id task-ticket-id :commit-ticket-ids ids})
+                  {:task-name task-name :task-ticket-id task-ticket-id
+                   :commit canonical :commit-ticket-ids ids})))))
         ;; BL-806 review-forward-evidence gate: refuses a review role's
         ;; forward-direction git_handoff naming exactly the commit it
         ;; received for this task (Article 4.4 backstop; see
@@ -329,6 +349,8 @@
                              ;; (see duplicate_chain_guard_lib.bb).
                              dup-chain-block
                              (conj (duplicate-chain-guard-lib/refusal-message dup-chain-block))
+                             coherence-block
+                             (conj (task-commit-coherence-gate-lib/refusal-message coherence-block))
                              (and (not (str/blank? task-name)) canonical)
                              (-> (into (pre-qa-gate-errors type to task-name canonical))
                                  (into (pointer-gate-errors type to task-name canonical)))
