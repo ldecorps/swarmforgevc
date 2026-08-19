@@ -45,11 +45,11 @@
 
 ;; ── healed-command ────────────────────────────────────────────────────────
 
-(assert= "healed-command: wrong-cwd cd's into the pinned worktree"
-         "cd '/w' && git status"
+(assert= "healed-command: wrong-cwd cd's into the pinned worktree, re-anchoring the WHOLE original via a subshell group (BL-960: well-defined for multi-command shapes too)"
+         "cd '/w' && (\ngit status\n)"
          (tool-miss-heal-lib/healed-command :wrong-cwd "git status" "/w"))
-(assert= "healed-command: wrong-surface cd's into the pinned worktree's extension/ subdirectory"
-         "cd '/w/extension' && npm test"
+(assert= "healed-command: wrong-surface cd's into the pinned worktree's extension/ subdirectory, grouping the whole original"
+         "cd '/w/extension' && (\nnpm test\n)"
          (tool-miss-heal-lib/healed-command :wrong-surface "npm test" "/w"))
 (assert= "healed-command: missing-root-argv references the pinned worktree via $__sfh_root, never as a literal path (BL-934)"
          "node cli.js \"$__sfh_root\""
@@ -57,8 +57,50 @@
 (assert= "healed-command: real-failure has no healed command at all"
          nil (tool-miss-heal-lib/healed-command :real-failure "anything" "/w"))
 (assert= "healed-command: a worktree path containing a single quote is safely escaped"
-         "cd '/it'\\''s/w' && git status"
+         "cd '/it'\\''s/w' && (\ngit status\n)"
          (tool-miss-heal-lib/healed-command :wrong-cwd "git status" "/it's/w"))
+
+;; ── BL-960 defect 2: the missing-root-argv heal is gated to a single
+;;    simple command - anywhere the append target is ambiguous (pipeline,
+;;    ;-sequence, &&/||, grouping, redirection, substitution, multi-line),
+;;    the heal DECLINES (nil) and the failure returns as-is. A false
+;;    negative merely declines a heal (safe, per the ticket's approved
+;;    conservative posture); a false positive misdirects the appended root
+;;    onto the wrong segment - the exact live defect. ─────────────────────
+
+(assert-true "single-simple-command?: a plain CLI invocation is simple"
+             (tool-miss-heal-lib/single-simple-command? "node cli.js --flag value"))
+(assert-true "single-simple-command?: a bare rm of relative paths is simple"
+             (tool-miss-heal-lib/single-simple-command? "rm -f tmp/a.json tmp/b.json"))
+(assert= "single-simple-command?: a pipeline is not simple"
+         false (tool-miss-heal-lib/single-simple-command? "node cli.js | tee log"))
+(assert= "single-simple-command?: a ;-sequence is not simple"
+         false (tool-miss-heal-lib/single-simple-command? "node cli.js; echo \"---done---\""))
+(assert= "single-simple-command?: an &&-chain is not simple"
+         false (tool-miss-heal-lib/single-simple-command? "node cli.js && echo done"))
+(assert= "single-simple-command?: a multi-line command is not simple"
+         false (tool-miss-heal-lib/single-simple-command? "node cli.js\necho done"))
+(assert= "single-simple-command?: a heredoc is not simple"
+         false (tool-miss-heal-lib/single-simple-command? "cat <<EOF\nhi\nEOF"))
+(assert= "single-simple-command?: a command substitution is not simple"
+         false (tool-miss-heal-lib/single-simple-command? "echo $(date)"))
+(assert= "single-simple-command?: a redirection is not simple (conservative decline)"
+         false (tool-miss-heal-lib/single-simple-command? "node cli.js > out.txt"))
+(assert= "single-simple-command?: blank is not simple"
+         false (tool-miss-heal-lib/single-simple-command? "   "))
+(assert= "single-simple-command?: nil is not simple, never throws"
+         false (tool-miss-heal-lib/single-simple-command? nil))
+
+(assert= "healed-command: missing-root-argv DECLINES (nil) for a pipeline - a misdirected append is a defect, not a heal (BL-960 invariant 3)"
+         nil (tool-miss-heal-lib/healed-command :missing-root-argv "node cli.js | tee log" "/w"))
+(assert= "healed-command: missing-root-argv DECLINES (nil) for a ;-sequence"
+         nil (tool-miss-heal-lib/healed-command :missing-root-argv "node cli.js; echo \"---done---\"" "/w"))
+
+(let [wrapper (tool-miss-heal-lib/build-healing-wrapper-command "node cli.js && echo \"---done---\"" "/w")]
+  (assert-true "build: a multi-command original's wrapper carries NO missing-root append anywhere (the clause is omitted, not misdirected)"
+               (not (str/includes? wrapper "\"$__sfh_root\"")))
+  (assert-true "build: the multi-command original still gets the cd-based heals (clause chain still present)"
+               (str/includes? wrapper "elif")))
 
 ;; ── BL-934: the missing-root-argv false positive ─────────────────────────
 ;; Claude Code's own dangerous-rm classifier reads a literal
@@ -95,10 +137,51 @@
                (str/includes? wrapper "elif"))
   (assert= "build-healing-wrapper-command: exactly one if/elif chain (one 'if [' guard for the outer exit check, one classify 'if')"
            2 (count (re-seq #"(?m)^\s*if " wrapper)))
-  (assert-true "build-healing-wrapper-command: prints the final captured output"
-               (str/includes? wrapper "printf '%s' \"$__sfh_out\"\n"))
+  (assert-true "build-healing-wrapper-command: captures to a temp file and replays it with cat, never a $()-stripped variable (BL-960: byte-exact output, trailing bytes included)"
+               (str/includes? wrapper "cat \"$__sfh_out_file\"\n"))
+  (assert-true "build-healing-wrapper-command: removes its temp file before exiting"
+               (str/includes? wrapper "rm -f \"$__sfh_out_file\"\n"))
   (assert-true "build-healing-wrapper-command: exits with the final captured exit code"
                (str/includes? wrapper "exit $__sfh_ec")))
+
+;; ── BL-960 defect 1: the composition parses as bash for the whole hostile
+;;    corpus, and anything that cannot compose fail-opens to the untouched
+;;    original. wrapper-parses? is the real bash -n gate; safe-wrapper-command
+;;    is what the hook calls, with parses? injectable as the test seam. ────
+
+(assert-true "wrapper-parses?: a plain command's composed wrapper parses"
+             (tool-miss-heal-lib/wrapper-parses?
+              (tool-miss-heal-lib/build-healing-wrapper-command "echo hi" "/w")))
+(assert= "wrapper-parses?: raw unparseable text is rejected"
+         false (tool-miss-heal-lib/wrapper-parses? "echo ("))
+
+(def HOSTILE-CORPUS
+  {"quoted-heredoc" "cat <<'SFH960'\nline with 'quotes' and a ) paren\nSFH960"
+   "literal-close-paren" "printf '%s\\n' \"a)b\" \")\" \"(c\""
+   "nested-quotes" "printf '%s\\n' \"outer 'inner' \\\"deep\\\"\" 'single \"double\" done'"
+   "pipeline" "printf 'b\\na\\n' | sort"
+   "semicolon-sequence" "printf 'one\\n'; printf 'two\\n' >&2; printf 'three\\n'"})
+
+(doseq [[shape original] HOSTILE-CORPUS]
+  (assert-true (str "BL-960 parse safety: the composed wrapper for a " shape " command parses as bash")
+               (tool-miss-heal-lib/wrapper-parses?
+                (tool-miss-heal-lib/build-healing-wrapper-command original "/w"))))
+
+;; An UNTERMINATED heredoc is valid bash on its own (bash warns and treats
+;; end-of-file as the terminator) but swallows the wrapper's own scaffolding
+;; when embedded - the composition genuinely does not parse, so the gate
+;; must fail-open. This is the parse-check's load-bearing case, not a
+;; synthetic one.
+(assert= "BL-960 fail-open: an unterminated-heredoc original's composition does not parse, so safe-wrapper-command returns nil (hook hands back the untouched original)"
+         nil (tool-miss-heal-lib/safe-wrapper-command "cat <<SFH960\nstill open" "/w"))
+(assert-true "BL-960: a plain command's safe-wrapper-command returns the wrapper itself"
+             (some? (tool-miss-heal-lib/safe-wrapper-command "echo hi" "/w")))
+(assert= "BL-960 fail-open seam: an injected always-false parse gate forces nil"
+         nil (tool-miss-heal-lib/safe-wrapper-command "echo hi" "/w" (constantly false)))
+(assert= "BL-960 fail-open seam: a THROWING parse gate fail-opens to nil, never propagates"
+         nil (tool-miss-heal-lib/safe-wrapper-command "echo hi" "/w" (fn [_] (throw (Exception. "boom")))))
+(assert-true "BL-960 fail-open seam: an injected always-true parse gate returns the composed wrapper"
+             (str/includes? (tool-miss-heal-lib/safe-wrapper-command "echo hi" "/w" (constantly true)) "echo hi"))
 
 ;; ── build-healing-wrapper-command: actually executed, end to end ─────────
 ;; No fake adapters here - a self-contained bash snippet is the whole
@@ -218,6 +301,110 @@
                  (str/includes? out "1 test failed"))
     (assert= "end to end real-failure: never re-run at all - exactly one invocation"
              1 (count (str/split-lines (str/trim (slurp counter)))))))
+
+;; ── BL-960 invariant 2, end to end: when no heal fires, wrapping is
+;;    observationally invisible - exit code, combined output (compared
+;;    against the unwrapped command run with 2>&1, trailing bytes included),
+;;    and file side effects are byte-identical, for the hostile corpus.
+;;    `exec 2>&1` merges the streams OUTSIDE the whole command, exactly the
+;;    invariant's own comparison baseline. ─────────────────────────────────
+
+(defn run-unwrapped-combined
+  [original-command session-dir]
+  (let [{:keys [out exit]} (process/sh ["bash" "-c" (str "exec 2>&1\n" original-command)]
+                                       (if session-dir {:dir session-dir} {}))]
+    {:out out :exit exit}))
+
+(defn- dir-file-bytes [d]
+  (into {} (map (fn [f] [(str (fs/relativize d f)) (slurp (str f))])
+                (filter fs/regular-file? (fs/glob d "**")))))
+
+(defn assert-invisible-roundtrip [label original-command]
+  (let [dir-a (mk-tmp) dir-b (mk-tmp)
+        unwrapped (run-unwrapped-combined original-command dir-a)
+        wrapped (run-wrapper original-command "/sfh-pin-never-used" dir-b)]
+    (assert= (str label ": exit code identical") (:exit unwrapped) (:exit wrapped))
+    (assert= (str label ": combined output byte-identical, trailing bytes included")
+             (:out unwrapped) (:out wrapped))
+    (assert= (str label ": file side effects byte-identical")
+             (dir-file-bytes dir-a) (dir-file-bytes dir-b))))
+
+(assert-invisible-roundtrip "BL-960 round-trip trailing-newline" "echo hi")
+(assert-invisible-roundtrip "BL-960 round-trip no-trailing-newline" "printf 'no-newline'")
+(assert-invisible-roundtrip "BL-960 round-trip quoted-heredoc file write"
+                            (str "cat <<'SFH960' > out.txt\n"
+                                 "line one with 'quotes' and a ) paren\n"
+                                 "line (two \"doubles\"\n"
+                                 "SFH960\n"
+                                 "printf 'bytes:'\n"
+                                 "wc -c < out.txt"))
+(assert-invisible-roundtrip "BL-960 round-trip literal-close-paren" "printf '%s\\n' \"a)b\" \")\"")
+(assert-invisible-roundtrip "BL-960 round-trip pipeline" "printf 'b\\na\\n' | sort")
+(assert-invisible-roundtrip "BL-960 round-trip semicolon+stderr merge"
+                            "printf 'one\\n'; printf 'two\\n' >&2; printf 'three\\n'")
+(assert-invisible-roundtrip "BL-960 round-trip real-failure passthrough with trailing newline"
+                            "echo 'nope this failed'; exit 3")
+
+;; ── BL-960 defect 2, end to end: the live misdirection shape (a failing
+;;    CLI with a usage error, then an unrelated echo). The heal must
+;;    DECLINE - never re-run with the root landed on the echo. ─────────────
+
+(let [tmp (mk-tmp)
+      counter (str tmp "/calls")
+      cli (str tmp "/cli.sh")]
+  (spit cli (str "#!/usr/bin/env bash\n"
+                 "echo x >> " counter "\n"
+                 "echo 'Usage: node cli.js <project-root>' >&2\n"
+                 "exit 1\n"))
+  (.setExecutable (fs/file cli) true)
+  (let [original (str "bash " cli " && echo \"---done---\"")
+        wrapper (tool-miss-heal-lib/build-healing-wrapper-command original tmp)
+        {:keys [out exit]} (run-wrapper original tmp)]
+    (assert-true "BL-960 misdirection guard: the wrapper source never appends the root to a multi-command original"
+                 (not (str/includes? wrapper "\"$__sfh_root\"")))
+    (assert= "BL-960 misdirection guard: the failure returns as-is (exit unchanged)" 1 exit)
+    (assert-true "BL-960 misdirection guard: the usage failure's own text is what comes back"
+                 (str/includes? out "Usage: node cli.js <project-root>"))
+    (assert-true "BL-960 misdirection guard: the unrelated final segment never ran with the root appended"
+                 (not (str/includes? out "---done---")))
+    (assert= "BL-960 misdirection guard: the failing segment ran exactly once - declined, not healed"
+             1 (count (str/split-lines (str/trim (slurp counter)))))))
+
+;; ── BL-960: the capture file is cleaned up, not leaked ───────────────────
+;; The wrapper now creates a temp file on EVERY Bash call the swarm makes,
+;; so a leak is per-call, not per-incident. The source-shape assertion above
+;; (`rm -f "$__sfh_out_file"` present) cannot show it actually runs on the
+;; paths that matter, so drive real bash with TMPDIR pointed at a fresh dir
+;; and look at what is left behind.
+
+(defn- sfh-leftovers [tmpdir]
+  (map (comp str fs/file-name) (fs/glob tmpdir "sfh.*")))
+
+(defn assert-no-capture-leak [label original-command pinned-worktree session-dir]
+  (let [tmpdir (mk-tmp)
+        wrapper (tool-miss-heal-lib/build-healing-wrapper-command original-command pinned-worktree)]
+    (process/sh ["bash" "-c" wrapper]
+                (cond-> {:extra-env {"TMPDIR" tmpdir}}
+                  session-dir (assoc :dir session-dir)))
+    (assert= (str label ": no capture file left behind in TMPDIR") [] (vec (sfh-leftovers tmpdir)))))
+
+(let [tmp (mk-tmp)
+      ok (str tmp "/ok.sh")
+      heals (str tmp "/heals.sh")
+      red (str tmp "/red.sh")]
+  (spit ok "#!/usr/bin/env bash\nprintf 'ok'\n")
+  (spit heals (str "#!/usr/bin/env bash\n"
+                   "if [ \"$(pwd)\" = " (tool-miss-heal-lib/shell-quote tmp) " ]; then\n"
+                   "  printf 'healed-ok'; exit 0\n"
+                   "else\n"
+                   "  echo 'fatal: not a git repository (or any of the parent directories): .git' >&2\n"
+                   "  exit 128\n"
+                   "fi\n"))
+  (spit red "#!/usr/bin/env bash\necho '1 test failed: expected 2, got 3' >&2\nexit 1\n")
+  (doseq [f [ok heals red]] (.setExecutable (fs/file f) true))
+  (assert-no-capture-leak "BL-960 cleanup, no-heal success path" (str "bash " ok) tmp nil)
+  (assert-no-capture-leak "BL-960 cleanup, healed re-run path" (str "bash " heals) tmp (mk-tmp))
+  (assert-no-capture-leak "BL-960 cleanup, real-failure passthrough path" (str "bash " red) tmp nil))
 
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)

@@ -6,7 +6,7 @@ type: epic
 epic: tool-miss-auto-heal
 priority: 12
 depends_on: []
-decomposes_into: [BL-913, BL-934]
+decomposes_into: [BL-913, BL-934, BL-960]
 
 source: |
   Minted 2026-08-17 by the specifier from raw intake
@@ -65,6 +65,14 @@ notes: |
     `original-command 'worktree'` in the source Claude Code classifies, so
     every `rm` of a temp file looks like rm of the repo. Human: "Why does
     it keep asking?" then "Mint it" (2026-08-19).
+  - **BL-960** — slice A's wrapper splices the original command raw into
+    `$( ... )`, unescaped and never parse-checked: heredocs/literal parens
+    become silent-partial syntax errors (QA stalled 50 min, 2026-08-19) and
+    the missing-root heal lands on a pipeline's tail segment. Operator
+    disabled the hook (3bac496ec) pending the fix; BL-960 parse-checks with
+    silent fail-open, proves byte-exact round-trip, and restores the
+    registration (from intake
+    INTAKE-20260819-tool-miss-heal-wrapper-emits-invalid-bash.md).
 
   ## Remaining slices (recorded, deliberately NOT minted)
 

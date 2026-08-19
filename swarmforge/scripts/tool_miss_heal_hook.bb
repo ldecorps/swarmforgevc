@@ -40,10 +40,16 @@
           pinned-worktree (System/getenv "SWARMFORGE_ROLE_WORKTREE")]
       (when (or (nil? command) (str/blank? pinned-worktree))
         (pass-through!))
-      (let [wrapper (tool-miss-heal-lib/build-healing-wrapper-command command pinned-worktree)]
-        (println (json/generate-string
-                  {:hookSpecificOutput
-                   {:hookEventName "PreToolUse"
-                    :updatedInput {:command wrapper}}}))))))
+      ;; BL-960: safe-wrapper-command parse-checks the composition (bash -n)
+      ;; and returns nil when it does not parse - fail-open to the
+      ;; byte-untouched original via the same {} no-op every other
+      ;; pass-through case uses, with no narration on any stream.
+      (let [wrapper (tool-miss-heal-lib/safe-wrapper-command command pinned-worktree)]
+        (if wrapper
+          (println (json/generate-string
+                    {:hookSpecificOutput
+                     {:hookEventName "PreToolUse"
+                      :updatedInput {:command wrapper}}}))
+          (pass-through!))))))
 
 (apply -main *command-line-args*)
