@@ -165,3 +165,4 @@ approval_context: >
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: invariant-unencoded, commit: e4b327e031, evidence: backlog/evidence/BL-935-architect-bounce-20260819.md }
+assigned_to: coder
