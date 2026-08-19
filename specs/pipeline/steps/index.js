@@ -488,7 +488,8 @@ const DOMAINS = [
   require('./bl909BottleneckRanksOnProcessingSteps'),
   require('./bl933BoundedWatchWaitSteps'),
   require('./bl905HideChildlessEpicsReorderSteps'),
-  require('./bl904SidecarDaemonRestartsSteps')
+  require('./bl904SidecarDaemonRestartsSteps'),
+  require('./bl936Bl805PropertyLaneExercisesTheParcelGateSteps')
 ];
 
 function registerSteps(registry) {
