@@ -83,3 +83,21 @@ Open questions for the specifier to settle (not locked by the human):
 Human ldecorps, chat with coordinator, 2026-08-19 ~00:1x local, after the
 coordinator reported the host load average (16.6/14.9/19.9 on 4 cores)
 in response to "is the old mac keeping up?".
+
+---
+
+## Disposition (specifier, 2026-08-19)
+
+Minted 1:1 as **BL-935** —
+`backlog/paused/BL-935-cap-the-vitest-fork-pool-under-a-live-full-forge-pack-on-macos.yaml`
+(acceptance:
+`specs/features/BL-935-vitest-fork-pool-is-capped-under-a-live-full-forge-pack.feature`).
+All three open questions above were settled by probing, not by asking; the
+evidence and reasoning are recorded in the ticket's `notes:`. Both human
+directives quoted in the Source section survive verbatim in the ticket.
+
+Two figures in this intake were corrected while probing: the host has 2
+physical cores, not 4 (`hw.ncpu` is the logical count), and the cap has TWO
+call sites — `vitest.properties.config.mjs` sizes its pool with the identical
+expression, so a fix landing only in `vitest.config.mjs` would leave the
+property lane uncapped.
