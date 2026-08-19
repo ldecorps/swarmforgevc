@@ -1,4 +1,5 @@
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { awaitRealWatchEvent } = require('./helpers/boundedWatchWait');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -298,11 +299,12 @@ test('startGracefulBounceFileWatcher detects a bounce-graceful file and deletes 
   const watcher = startGracefulBounceFileWatcher(target, (type) => triggered.push(type), undefined, scheduleTick);
   assert.ok(watcher);
   try {
-    fs.writeFileSync(path.join(target, '.swarmforge', 'bounce-graceful'), 'swarm\n');
-    await captured;
+    const gracefulBounceFile = path.join(target, '.swarmforge', 'bounce-graceful');
+    fs.writeFileSync(gracefulBounceFile, 'swarm\n');
+    await awaitRealWatchEvent(captured, { eventLabel: 'bounce-graceful file creation', watchedPath: gracefulBounceFile });
     capturedTick();
     assert.deepEqual(triggered, ['swarm']);
-    assert.equal(fs.existsSync(path.join(target, '.swarmforge', 'bounce-graceful')), false);
+    assert.equal(fs.existsSync(gracefulBounceFile), false);
   } finally {
     watcher.close();
   }
