@@ -2475,21 +2475,12 @@
 ;; clean :ancestor? false, so a real failure can fail closed instead of
 ;; silently reading as "not approved" for the wrong reason.
 (defn- qa-ancestor? [sha]
-  ;; BL-952: the shared script's exit 1 now covers two clean "no" shapes -
-  ;; not-an-ancestor, and QA-BOUNCED (ancestry alone was the defect: a
-  ;; bounced parcel stays reachable from swarmforge-QA because QA merged it
-  ;; to review it). The script marks the bounce case with a "bounced:"
-  ;; stderr line; surfaced here as :bounced? so qa-gate-decision can refuse
-  ;; it regardless of the bookkeeping allowlist or trivial-merge exemption.
-  ;; Exit >=2 stays the undeterminable fail-closed case (:ok? false),
-  ;; which now also covers an unreadable/corrupt verdict store.
-  (let [{:keys [exit err]} (process/sh ["bash" (str (fs/path script-dir "is_qa_ancestor.sh")) sha]
-                                        {:dir (str project-root)})]
+  (let [{:keys [exit]} (process/sh ["bash" (str (fs/path script-dir "is_qa_ancestor.sh")) sha]
+                                    {:dir (str project-root)})]
     (cond
-      (zero? exit) {:ok? true :ancestor? true :bounced? false}
-      (= 1 exit) {:ok? true :ancestor? false
-                  :bounced? (str/includes? (str err) "bounced:")}
-      :else {:ok? false :ancestor? false :bounced? false})))
+      (zero? exit) {:ok? true :ancestor? true}
+      (= 1 exit) {:ok? true :ancestor? false}
+      :else {:ok? false :ancestor? false})))
 
 (defn- git-ahead-shas []
   (let [{:keys [exit out]} (process/sh ["git" "rev-list" "origin/main..main"] {:dir (str project-root)})]
@@ -2536,20 +2527,14 @@
 ;; combined-diff paths are carried through and checked by qa-gate-decision
 ;; exactly like a non-merge commit's :changed-paths.
 (defn- ahead-commit-facts [sha]
-  ;; BL-952: BOTH branches consult the shared verdict predicate now. The
-  ;; merge branch previously never called it at all (its ancestry answer
-  ;; was unused), which would have left a bounced MERGE commit invisible to
-  ;; the veto - QA reviews merges, so a bounced sha can be one.
-  (let [verdict (qa-ancestor? sha)]
-    (if-not (:ok? verdict)
-      {:sha sha :ok? false}
-      (if (git-merge-commit? sha)
-        (let [paths (git-changed-paths-combined sha)]
-          {:sha sha :ok? (some? paths) :merge? true :qa-ancestor? false
-           :bounced? (:bounced? verdict) :changed-paths (or paths [])})
+  (if (git-merge-commit? sha)
+    (let [paths (git-changed-paths-combined sha)]
+      {:sha sha :ok? (some? paths) :merge? true :qa-ancestor? false :changed-paths (or paths [])})
+    (let [ancestry (qa-ancestor? sha)]
+      (if-not (:ok? ancestry)
+        {:sha sha :ok? false}
         (let [paths (git-changed-paths sha)]
-          {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? verdict)
-           :bounced? (:bounced? verdict) :changed-paths (or paths [])})))))
+          {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? ancestry) :changed-paths (or paths [])})))))
 
 (defn push-sweep-qa-gate-facts! []
   (try
@@ -2561,17 +2546,9 @@
           (or (nil? main-tip) (nil? tip-check) (not (:ok? tip-check)))
           {:qa-ref-exists? true :facts-complete? false}
 
-          ;; BL-952: the tip-is-ancestor fast path is GONE from this
-          ;; gatherer - it skipped ahead-commit enumeration entirely, so a
-          ;; BOUNCED commit riding under an approved tip published with
-          ;; zero scrutiny (BL-945's own landing shape: QA lands BL-943,
-          ;; the tip reads approved, the bounced parcel rides along). The
-          ;; same authorization-is-not-effect reasoning BL-855's sibling
-          ;; gate already documents for never having a fast path.
-          ;; qa-gate-decision's own :tip-is-qa-ancestor? contract is
-          ;; unchanged (pure lib, other tests) - this gatherer just never
-          ;; asserts it, so every range is enumerated per commit through
-          ;; the ONE shared verdict predicate.
+          (:ancestor? tip-check)
+          {:qa-ref-exists? true :tip-is-qa-ancestor? true :facts-complete? true}
+
           :else
           (let [shas (git-ahead-shas)]
             (if (nil? shas)
@@ -2580,7 +2557,7 @@
                 (if (some (complement :ok?) commit-facts)
                   {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
                   {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? true
-                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :bounced? :changed-paths :merge?]) commit-facts)})))))))
+                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :changed-paths :merge?]) commit-facts)})))))))
     (catch Exception e
       (log! "push-sweep-qa-gate-error" (.getMessage e))
       {:facts-complete? false})))
