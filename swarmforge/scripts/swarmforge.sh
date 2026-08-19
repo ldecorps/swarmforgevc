@@ -1269,27 +1269,24 @@ write_claude_settings_file() {
   # unknown pin or a non-Bash call is an untouched no-op) - a bug here must
   # never block a role from running commands at all.
   #
-  # RE-ENABLED by BL-960 (disabled 2026-08-19, 3bac496ec, after the wrapper
-  # spliced heredocs/literal parens into unparseable bash with silent-PARTIAL
-  # execution). The disable comment's re-enable condition is met exactly and
-  # the restoration is operator-confirmed on the ticket: the hook now
-  # parse-checks every composed wrapper (bash -n, safe-wrapper-command in
-  # tool_miss_heal_lib.bb) and fail-opens to the byte-untouched original,
-  # silently, when the composition does not parse; capture is by temp file +
-  # cat replay, so a wrapped command's exit code and combined output are
-  # byte-identical to the unwrapped command's.
+  # DISABLED 2026-08-19 by operator decision. The premise above did NOT hold:
+  # the hook fails open only on its OWN errors, but when it SUCCEEDS it can
+  # emit invalid bash. build-healing-wrapper-command splices the original
+  # command as raw text into __sfh_out=$(<ORIGINAL> 2>&1), unescaped and never
+  # parse-checked, so heredocs and literal parens become syntax errors and the
+  # role sees "Background shell failed __sfh_root=...". Worse, failure is
+  # silent-PARTIAL: part of the mangled command often runs before the shell
+  # dies, so state lands while an error is reported. Live cost: QA stalled 50
+  # minutes with no commit while its shell calls failed.
+  # Re-enable ONLY once the wrapper is parse-checked (bash -n) with fail-open
+  # to the untouched original. Tracked by
+  # backlog/INTAKE-20260819-tool-miss-heal-wrapper-emits-invalid-bash.md
+  # (see also backlog/paused/BL-912-epic-tool-miss-auto-heal.yaml).
+  # To restore: replace the empty object below with the PreToolUse block from
+  # git history (this file, before commit of 2026-08-19).
   local hooks_block
   hooks_block="$(cat <<HOOKS
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "bb '$role_script_dir/tool_miss_heal_hook.bb'" }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 HOOKS
 )"
 

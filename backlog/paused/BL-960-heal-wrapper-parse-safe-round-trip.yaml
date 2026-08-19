@@ -184,3 +184,6 @@ notes: >
   the required_wiring gate on the restored "PreToolUse": [ block is the
   thing that must carry it. Do not re-enable ahead of this ticket, and do
   not close this ticket with the registration still absent.
+
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 68721df5d9, evidence: backlog/evidence/BL-960-heal-wrapper-parse-safe-round-trip-bounce-20260819.md }

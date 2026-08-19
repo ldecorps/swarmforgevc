@@ -15,19 +15,8 @@
 ;; classifies a failure, and re-runs ONCE from the healed environment, all
 ;; inside that one invocation. The model never observes an intermediate
 ;; failed attempt.
-;; BL-960: composition is parse-checked and byte-faithful. The original
-;; command is embedded as a multi-line (\n...\n) subshell group captured to
-;; a temp file and replayed with cat - never spliced inline into a $( ... )
-;; substitution, which swallowed heredoc bodies, let a literal ")" close the
-;; substitution early, and stripped trailing newlines (the 2026-08-19
-;; incident: silent-PARTIAL syntax errors, QA stalled 50 minutes). Anything
-;; that still cannot compose (an unterminated heredoc swallows the group's
-;; own closer) fail-opens to the byte-untouched original, silently -
-;; safe-wrapper-command below, the one function in this module that may
-;; touch a subprocess (the bash -n parse gate, injectable as a seam).
 (ns tool-miss-heal-lib
-  (:require [babashka.process :as process]
-            [clojure.string :as str]))
+  (:require [clojure.string :as str]))
 
 ;; Closed taxonomy of recoverable shell misses - a shape to copy from
 ;; agent_runtime_lib.bb's own error-category-patterns, not a table to extend
@@ -67,31 +56,6 @@
   [s]
   (str "'" (str/replace s "'" "'\\''") "'"))
 
-;; The file every attempt's combined output is captured to, as it appears in
-;; the generated bash (already quoted). Named once so the first attempt, each
-;; heal clause, the replay and the cleanup can never disagree about it.
-(def ^:private OUT-FILE "\"$__sfh_out_file\"")
-
-;; The ONE way this module embeds command text into generated bash: a
-;; multi-line subshell group on its own lines, so heredocs, literal parens,
-;; nested quotes, pipelines and ;-sequences all parse exactly as they would
-;; standalone (BL-960 defect 1 - inline $( ... ) splicing did not) and an
-;; `exit` stays contained. indent is cosmetic only (bash ignores it); it
-;; keeps a nested clause readable in the wrapper source a human may have to
-;; read off a screenshot.
-(defn- subshell-group
-  [text indent]
-  (str indent "(\n" text "\n" indent ")"))
-
-;; One attempt: run text as a group and capture BOTH streams whole to
-;; OUT-FILE, recording its exit code. The `> file 2>&1` sits OUTSIDE the
-;; group, so the merge covers every segment - matching the unwrapped command
-;; run with 2>&1 - and the truncating redirect means a healed re-run REPLACES
-;; the failed attempt's output rather than appending to it.
-(defn- capture-attempt
-  [text indent]
-  (str (subshell-group text indent) " > " OUT-FILE " 2>&1; __sfh_ec=$?\n"))
-
 ;; Given the miss class a failure classified as, returns the command text to
 ;; re-run ONCE from the healed environment - nil for :real-failure, which is
 ;; never re-run at all. :missing-root-argv appends the pinned worktree as a
@@ -113,41 +77,20 @@
 ;; worktree already present in original-command stays fully visible
 ;; (invariant 2); only the SYNTHETIC appended argument's representation
 ;; changes.
-;; BL-960 defect 2: appending a trailing argument is only well-defined for a
-;; SINGLE SIMPLE command - on a pipeline or ;-sequence it lands on the final
-;; segment, not the program that produced the usage error (observed live:
-;; echo "---done---" "$__sfh_root"). Conservatively true only for a single
-;; line with no shell control operators, redirections, substitutions,
-;; grouping, or escapes - quoted or not (quote-awareness would need a real
-;; parser, and the asymmetry decides it: a false negative merely DECLINES a
-;; heal, returning the failure as-is per the classifier's own conservative
-;; posture; a false positive misdirects the append, the exact live defect).
-(defn single-simple-command?
-  [command]
-  (let [c (or command "")]
-    (boolean (and (not (str/blank? c))
-                  (not (re-find #"[|;&<>()`\n\\]" c))))))
-
 (defn healed-command
   [miss-class original-command pinned-worktree]
   (case miss-class
-    ;; The cd-heals re-anchor the WHOLE original via a subshell group - for
-    ;; a multi-command original, every segment (not just the first) re-runs
-    ;; from the healed directory, so the rewrite's target stays well-defined
-    ;; for any shape (BL-960 invariant 3).
-    :wrong-cwd (str "cd " (shell-quote pinned-worktree) " && " (subshell-group original-command ""))
-    :wrong-surface (str "cd " (shell-quote (str pinned-worktree "/extension")) " && " (subshell-group original-command ""))
-    ;; nil when the append target is ambiguous: the clause is omitted from
-    ;; the wrapper entirely and the failure returns as-is (:real-failure
-    ;; posture), never a syntactically valid but misdirected re-run.
-    :missing-root-argv (when (single-simple-command? original-command)
-                         (str original-command " \"$__sfh_root\""))
+    :wrong-cwd (str "cd " (shell-quote pinned-worktree) " && " original-command)
+    :wrong-surface (str "cd " (shell-quote (str pinned-worktree "/extension")) " && " original-command)
+    :missing-root-argv (str original-command " \"$__sfh_root\"")
     nil))
 
 (defn- bash-clause
-  [first? pattern healed]
-  (str (if first? "  if" "  elif") " grep -qiE " (shell-quote pattern) " " OUT-FILE "; then\n"
-       (capture-attempt healed "    ")))
+  [first? [cls pattern] original-command pinned-worktree]
+  (let [keyword (if first? "if" "elif")
+        healed (healed-command cls original-command pinned-worktree)]
+    (str keyword " printf '%s' \"$__sfh_out\" | grep -qiE " (shell-quote pattern) "; then\n"
+         "    __sfh_out=$(" healed " 2>&1); __sfh_ec=$?\n")))
 
 ;; The whole self-healing wrapper, as bash source text - this is what
 ;; becomes the PreToolUse hook's updatedInput.command (tool_miss_heal_hook.bb's
@@ -167,57 +110,15 @@
 ;; one result no matter how many of the up-to-two attempts actually ran.
 (defn build-healing-wrapper-command
   [original-command pinned-worktree]
-  ;; BL-960: the original runs inside a multi-line (\n...\n) subshell group
-  ;; (heredocs, literal parens, nested quotes, pipelines and ;-sequences all
-  ;; parse exactly as they would standalone; an `exit` stays contained, as
-  ;; it was under the old $()-capture), redirected WHOLE to a temp file
-  ;; (`> file 2>&1` outside the group merges both streams for every
-  ;; segment, matching the unwrapped command run with 2>&1) and replayed
-  ;; with cat - byte-exact, trailing bytes included, where $()-capture
-  ;; stripped trailing newlines. Classes whose heal declines for this
-  ;; command's shape (healed-command returns nil) are omitted from the
-  ;; chain entirely, falling through to :real-failure.
-  (let [active (keep (fn [[cls pattern]]
-                       (when-let [healed (healed-command cls original-command pinned-worktree)]
-                         [pattern healed]))
-                     MISS-CLASS-PATTERNS)
-        clauses (apply str
-                       (map-indexed
-                        (fn [i [pattern healed]] (bash-clause (zero? i) pattern healed))
-                        active))]
+  (let [clauses (apply str
+                        (map-indexed
+                         (fn [i entry] (bash-clause (zero? i) entry original-command pinned-worktree))
+                         MISS-CLASS-PATTERNS))]
     (str "__sfh_root=" (shell-quote pinned-worktree) "\n"
-         "__sfh_out_file=\"$(mktemp \"${TMPDIR:-/tmp}/sfh.XXXXXX\")\" || exit 1\n"
-         (capture-attempt original-command "")
-         (when (seq active)
-           (str "if [ $__sfh_ec -ne 0 ]; then\n"
-                clauses
-                "  fi\n"
-                "fi\n"))
-         "cat " OUT-FILE "\n"
-         "rm -f " OUT-FILE "\n"
+         "__sfh_out=$(" original-command " 2>&1); __sfh_ec=$?\n"
+         "if [ $__sfh_ec -ne 0 ]; then\n"
+         clauses
+         "  fi\n"
+         "fi\n"
+         "printf '%s' \"$__sfh_out\"\n"
          "exit $__sfh_ec\n")))
-
-;; The parse gate (BL-960 invariant 1): true only when bash itself can parse
-;; wrapper-text (`bash -n -c` reads the text without executing anything).
-;; The one subprocess boundary in this module; anything unexpected is false
-;; (fail toward "do not hand this to Claude Code"), never an exception.
-(defn wrapper-parses?
-  [wrapper-text]
-  (try
-    (zero? (:exit (process/sh ["bash" "-n" "-c" wrapper-text])))
-    (catch Exception _ false)))
-
-;; What the hook actually calls: composes the wrapper and returns it ONLY
-;; when the composition parses as bash; nil means fail-open - the caller
-;; hands back the byte-untouched original with no narration (BL-913's
-;; locked decision 5, "the first miss must not reach the model as a
-;; confession", extended to the wrapper's own composition failures).
-;; parses? is the injectable parse-gate seam; the 2-arity uses the real
-;; bash -n gate. A parse gate that THROWS also fail-opens.
-(defn safe-wrapper-command
-  ([original-command pinned-worktree]
-   (safe-wrapper-command original-command pinned-worktree wrapper-parses?))
-  ([original-command pinned-worktree parses?]
-   (let [wrapper (build-healing-wrapper-command original-command pinned-worktree)]
-     (when (try (boolean (parses? wrapper)) (catch Exception _ false))
-       wrapper))))
