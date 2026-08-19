@@ -22,12 +22,35 @@
  */
 import { BounceRecord } from '../quality/qaBounce';
 import { appendBounceRecordIfNew } from '../metrics/bounceStore';
+import { BounceRevertCheckReport, bounceRevertCheck, bouncingBranchForRole } from '../quality/bounceRevertCheck';
 import { makeArgsGuardedMain, printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { parseArgs, USAGE, RecordBounceArgs } from './recordBounceArgs';
 import { updateTicketBounceHistory } from './recordQaBounceTicket';
 
 // Re-export for tests
 export { parseArgs, RecordBounceArgs };
+
+// BL-954 seam: tests substitute the check to drive every outcome (including
+// a throw) and prove the recording is never contingent on it (invariant 3).
+export const revertCheckSeam = { run: bounceRevertCheck };
+
+// BL-954 invariant 3: whatever the check concludes - or fails to conclude -
+// the bounce record above is already written. A check that cannot complete
+// reports its cause and never reads as clean.
+function runBounceRevertCheck(projectRoot: string, args: RecordBounceArgs): BounceRevertCheckReport {
+  try {
+    return revertCheckSeam.run({ repoRoot: projectRoot, commit: args.commit, by: args.by });
+  } catch (err) {
+    return {
+      verdict: 'undeterminable',
+      branch: bouncingBranchForRole(args.by),
+      commit: args.commit,
+      remedy: null,
+      cause: `the bounce revert check itself failed: ${err instanceof Error ? err.message : String(err)}`,
+      liveFiles: [],
+    };
+  }
+}
 
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
   const { projectRoot, mainWorktreePath } = resolveCliMainWorktreeContext();
@@ -68,11 +91,16 @@ export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
         })
       : { updated: false, reason: 'not-attempted' };
 
+  // BL-954: runs strictly AFTER appendBounceRecordIfNew - the record is
+  // durable before the branch state is ever examined.
+  const revertCheck = runBounceRevertCheck(projectRoot, args);
+
   printJsonToStdout({
     recorded,
     ticketRecordUpdated: ticketRecord.updated,
     ticketRecordReason: ticketRecord.reason,
     inventoryDegradeReason,
+    revertCheck,
   });
 });
 

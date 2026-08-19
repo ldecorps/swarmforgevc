@@ -124,3 +124,5 @@ approval_context: >
   have caught a mislabel whose commit subject happened to name no ticket. If you
   would rather it refused on ambiguity and forced an explicit override header,
   say so and the scenarios change accordingly.
+
+assigned_to: coder

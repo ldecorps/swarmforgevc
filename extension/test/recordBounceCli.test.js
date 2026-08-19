@@ -468,3 +468,34 @@ for (const [items, reason] of [
     assert.equal(parsed.inventoryDegradeReason, reason);
   });
 }
+
+// ── BL-954: the recording is never contingent on the revert check ──────────
+
+const { revertCheckSeam } = require('../out/tools/record-bounce');
+
+test('BL-954: the output carries a revertCheck verdict alongside the record', async () => {
+  const root = mkRepo();
+  const result = await runCli(root, flagArgs());
+  // the bare fixture has no swarmforge-architect branch and no such commit,
+  // so the honest verdict is undeterminable - never a silent clean
+  assert.equal(result.revertCheck.verdict, 'undeterminable');
+  assert.ok(result.revertCheck.cause);
+  assert.equal(readBounceRecords(root).length, 1);
+});
+
+test('BL-954 invariant 3: a check that THROWS still writes the record and reports its own failure as the cause', async () => {
+  const root = mkRepo();
+  const original = revertCheckSeam.run;
+  revertCheckSeam.run = () => {
+    throw new Error('fixture-forced check failure');
+  };
+  try {
+    const result = await runCli(root, flagArgs());
+    assert.equal(result.recorded, true);
+    assert.equal(readBounceRecords(root).length, 1);
+    assert.equal(result.revertCheck.verdict, 'undeterminable');
+    assert.match(result.revertCheck.cause, /fixture-forced check failure/);
+  } finally {
+    revertCheckSeam.run = original;
+  }
+});
