@@ -17,6 +17,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { afterEach } = require('node:test');
+const { track, reap } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -25,25 +26,27 @@ const SWEEP_LIB = path.join(SCRIPTS, 'babysitterd_sweep_lib.bb');
 
 const FEATURE = 'babysitter sweep detects pipeline code landing on main outside the QA path';
 
-// Every fixture root/tmux socket this file creates is tracked here and torn
-// down in afterEach - regardless of which assertion throws, matching the
-// bl915/bl938 precedent this session already established. A fixture-dir
-// leak measured at 273 directories across repeated non-vacuity runs before
-// this existed.
+// Every fixture root this file creates is tracked here and torn down in
+// afterEach - regardless of which assertion throws, matching the bl915/
+// bl938 precedent this session already established. A fixture-dir leak
+// measured at 273 directories across repeated non-vacuity runs before this
+// existed.
+//
+// QA bounce D1 (2026-08-19): reap(root) (shared fixtureReaper.js, BL-458)
+// replaces the hand-rolled tmux kill-server this file used to do inline -
+// an afterEach-only teardown installs no exit/SIGINT/SIGTERM handlers, so a
+// runner killed by timeout/Ctrl-C/OOM leaked the fake coordinator's
+// detached tmux server permanently, the exact project-wide failure mode
+// BL-458/BL-817 exist to close. reap() is a safe no-op for the roots that
+// never got a tmux server (most of them) - it only acts on a root that
+// actually has .swarmforge/tmux-socket or the front-desk pidfile/status
+// shape, neither of which the non-coordinator-pane fixtures ever write.
 let trackedRoots = [];
-let trackedSockets = [];
 
 afterEach(() => {
-  while (trackedSockets.length) {
-    const sock = trackedSockets.pop();
-    try {
-      execFileSync('tmux', ['-S', sock, 'kill-server'], { stdio: 'ignore' });
-    } catch {
-      /* already gone */
-    }
-  }
   while (trackedRoots.length) {
     const root = trackedRoots.pop();
+    reap(root);
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
@@ -101,13 +104,16 @@ function runSweep(root, { nudge = false, env = {} } = {}) {
 // message) is actually caught here.
 function addFakeCoordinatorPane(root) {
   const sock = path.join(root, 'fake.sock');
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  // Written BEFORE the tmux server is spawned (and track() called
+  // immediately after), so reap()'s own .swarmforge/tmux-socket lookup
+  // finds it even if the process dies between these two lines.
+  fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), sock);
   execFileSync('tmux', [
     '-S', sock, 'new-session', '-d', '-s', 'swarmforge-coordinator',
     'bash', '-c', 'exec -a "claude --remote-control fake" sleep 999 & wait',
   ]);
-  trackedSockets.push(sock);
-  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
-  fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), sock);
+  track(root);
   fs.writeFileSync(
     path.join(root, '.swarmforge', 'roles.tsv'),
     `coordinator\tmaster\t${root}\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n`

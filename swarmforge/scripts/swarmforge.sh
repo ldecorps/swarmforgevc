@@ -10,6 +10,18 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+# BL-947: every launcher diagnostic leaves by stderr. stdout carries VALUES
+# - several call sites capture a command substitution for its value (the
+# control socket path is the live example), so an error echoed to stdout
+# does not merely go unseen by a caller watching stderr, it corrupts the
+# captured value. All error reporting goes through this one helper so the
+# next error line cannot be added on the wrong channel (a standing guard in
+# extension/test/ enforces exactly that). Text, colour and exit statuses
+# are untouched - only the channel.
+error_msg() {
+  echo -e "${RED}Error:${RESET} $*" >&2
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # BL-657: harness scrub helpers available to create_role_session / launch path.
@@ -122,7 +134,7 @@ PROJECT_SOCKET_ID="$(project_socket_id "$WORKING_DIR")"
 # primary path overruns the unix-socket path limit, never a blind bind past
 # that limit) - see swarm_socket_lib.bb.
 if ! TMUX_SOCKET="$(bb "$SCRIPT_DIR/resolve_swarm_socket.bb" "$WORKING_DIR" "$PROJECT_SOCKET_ID" 2>&1)"; then
-  echo -e "${RED}Error:${RESET} $TMUX_SOCKET"
+  error_msg "$TMUX_SOCKET"
   exit 1
 fi
 TMUX_SOCKET_DIR="$(dirname "$TMUX_SOCKET")"
@@ -176,7 +188,7 @@ typeset -i i=0
 
 check_dependency() {
   if ! command -v "$1" &>/dev/null; then
-    echo -e "${RED}Error:${RESET} '$1' is required but not installed."
+    error_msg "'$1' is required but not installed."
     exit 1
   fi
 }
@@ -348,7 +360,7 @@ validate_agent() {
   case "$agent" in
     claude|codex|copilot|grok|aider|vibe|gemini) ;;
     *)
-      echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
+      error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
       ;;
   esac
@@ -391,12 +403,12 @@ register_role() {
 
 parse_config() {
   if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo -e "${RED}Error:${RESET} Config not found at $CONFIG_FILE"
+    error_msg "Config not found at $CONFIG_FILE"
     exit 1
   fi
 
   if [[ ! -f "$CONSTITUTION_FILE" ]]; then
-    echo -e "${RED}Error:${RESET} Constitution prompt not found at $CONSTITUTION_FILE"
+    error_msg "Constitution prompt not found at $CONSTITUTION_FILE"
     exit 1
   fi
 
@@ -410,7 +422,7 @@ parse_config() {
     local -a fields extra_args
     fields=(${=line})
     if (( ${#fields[@]} < 2 )); then
-      echo -e "${RED}Error:${RESET} Invalid config line $line_no: $line"
+      error_msg "Invalid config line $line_no: $line"
       exit 1
     fi
 
@@ -418,13 +430,13 @@ parse_config() {
 
     if [[ "$keyword" == "config" ]]; then
       if (( ${#fields[@]} < 3 )); then
-        echo -e "${RED}Error:${RESET} Invalid config line $line_no: $line"
+        error_msg "Invalid config line $line_no: $line"
         exit 1
       fi
       case "${fields[2]}" in
         swarm_name)
           if [[ -z "${fields[3]:-}" ]]; then
-            echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_name requires a name"
+            error_msg "Invalid config line $line_no: swarm_name requires a name"
             exit 1
           fi
           SWARM_NAME="${fields[3]}"
@@ -437,14 +449,14 @@ parse_config() {
               ;;
             secondary)
               if [[ -z "${fields[4]:-}" ]]; then
-                echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_mode secondary requires a primary swarm name"
+                error_msg "Invalid config line $line_no: swarm_mode secondary requires a primary swarm name"
                 exit 1
               fi
               SWARM_MODE="secondary"
               SWARM_MODE_PRIMARY="${fields[4]}"
               ;;
             *)
-              echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_mode must be 'autonomous' or 'secondary <primary-name>'"
+              error_msg "Invalid config line $line_no: swarm_mode must be 'autonomous' or 'secondary <primary-name>'"
               exit 1
               ;;
           esac
@@ -458,7 +470,7 @@ parse_config() {
               REMOTE_CONTROL_DEFAULT=0
               ;;
             *)
-              echo -e "${RED}Error:${RESET} Invalid config line $line_no: remote_control must be 'on' or 'off'"
+              error_msg "Invalid config line $line_no: remote_control must be 'on' or 'off'"
               exit 1
               ;;
           esac
@@ -478,7 +490,7 @@ parse_config() {
               ROTATION_MODE="router"
               ;;
             *)
-              echo -e "${RED}Error:${RESET} Invalid config line $line_no: rotation must be 'sequential' or 'router'"
+              error_msg "Invalid config line $line_no: rotation must be 'sequential' or 'router'"
               exit 1
               ;;
           esac
@@ -488,7 +500,7 @@ parse_config() {
     fi
 
     if (( ${#fields[@]} < 4 )); then
-      echo -e "${RED}Error:${RESET} Invalid config line $line_no: $line"
+      error_msg "Invalid config line $line_no: $line"
       exit 1
     fi
 
@@ -515,12 +527,12 @@ parse_config() {
     fi
 
     if [[ "$keyword" != "window" ]]; then
-      echo -e "${RED}Error:${RESET} Unknown config directive on line $line_no: $keyword"
+      error_msg "Unknown config directive on line $line_no: $keyword"
       exit 1
     fi
 
     if [[ "$role" == *"_"* ]]; then
-      echo -e "${RED}Error:${RESET} Invalid role '$role' on line $line_no: role names may not contain underscores"
+      error_msg "Invalid role '$role' on line $line_no: role names may not contain underscores"
       exit 1
     fi
 
@@ -531,22 +543,22 @@ parse_config() {
     # operator accidentally reconfigure guaranteed-present infrastructure
     # as if it were a regular pack-configurable role.
     if [[ "$role" == "coordinator" ]]; then
-      echo -e "${RED}Error:${RESET} coordinator is reserved infrastructure and may not be declared as a window in $CONFIG_FILE (line $line_no) - it is always provisioned automatically."
+      error_msg "coordinator is reserved infrastructure and may not be declared as a window in $CONFIG_FILE (line $line_no) - it is always provisioned automatically."
       exit 1
     fi
 
     if [[ -n "${ROLE_INDEX[$role]:-}" ]]; then
-      echo -e "${RED}Error:${RESET} Duplicate role '$role' in $CONFIG_FILE"
+      error_msg "Duplicate role '$role' in $CONFIG_FILE"
       exit 1
     fi
 
     if [[ "$worktree" != "none" && "$worktree" != "master" && -n "${WORKTREE_INDEX[$worktree]:-}" ]]; then
-      echo -e "${RED}Error:${RESET} Duplicate worktree '$worktree' in $CONFIG_FILE"
+      error_msg "Duplicate worktree '$worktree' in $CONFIG_FILE"
       exit 1
     fi
 
     if [[ "$worktree" == *"/"* || "$worktree" == "." || "$worktree" == ".." ]]; then
-      echo -e "${RED}Error:${RESET} Invalid worktree '$worktree' for role '$role'"
+      error_msg "Invalid worktree '$worktree' for role '$role'"
       exit 1
     fi
 
@@ -555,13 +567,13 @@ parse_config() {
     case "$receive_mode" in
       task|batch) ;;
       *)
-        echo -e "${RED}Error:${RESET} Invalid receive mode '$receive_mode' for role '$role' on line $line_no: expected task or batch"
+        error_msg "Invalid receive mode '$receive_mode' for role '$role' on line $line_no: expected task or batch"
         exit 1
         ;;
     esac
 
     if [[ "$agent" != "none" && ! -f "$ROLES_DIR/$role.prompt" ]]; then
-      echo -e "${RED}Error:${RESET} Missing role prompt $ROLES_DIR/$role.prompt"
+      error_msg "Missing role prompt $ROLES_DIR/$role.prompt"
       exit 1
     fi
 
@@ -583,7 +595,7 @@ parse_config() {
   done < "$CONFIG_FILE"
 
   if (( ${#ROLES[@]} == 0 )); then
-    echo -e "${RED}Error:${RESET} No windows defined in $CONFIG_FILE"
+    error_msg "No windows defined in $CONFIG_FILE"
     exit 1
   fi
 
@@ -731,7 +743,7 @@ check_primacy() {
   current_primary="${current_primary%% }"
 
   if [[ -n "$current_primary" && "$current_primary" != "$SWARM_NAME" ]]; then
-    echo -e "${RED}Error:${RESET} swarm '$SWARM_NAME' cannot launch autonomous: the committed primacy marker names '$current_primary' as the current primary. Launch as 'config swarm_mode secondary $current_primary', or have the operator deliberately transfer primacy by committing a new $marker_file."
+    error_msg "swarm '$SWARM_NAME' cannot launch autonomous: the committed primacy marker names '$current_primary' as the current primary. Launch as 'config swarm_mode secondary $current_primary', or have the operator deliberately transfer primacy by committing a new $marker_file."
     exit 1
   fi
 }
@@ -811,14 +823,14 @@ check_helper_scripts() {
   local helper
   for helper in handoff-lib.sh swarm_handoff.sh swarm_handoff.bb ready_for_next.sh ready_for_next.bb done_with_current.sh done_with_current.bb ready_for_next_task.sh ready_for_next_task.bb done_with_current_task.sh done_with_current_task.bb ready_for_next_batch.sh ready_for_next_batch.bb done_with_current_batch.sh done_with_current_batch.bb handoffd.bb handoffd_supervisor.bb swarm-cleanup.sh swarm-window-watchdog.sh swarm-terminal-adapter.sh; do
     if [[ ! -x "$SCRIPT_DIR/$helper" ]]; then
-      echo -e "${RED}Error:${RESET} Required helper script not found or not executable: $SCRIPT_DIR/$helper"
+      error_msg "Required helper script not found or not executable: $SCRIPT_DIR/$helper"
       exit 1
     fi
   done
 
   for helper in terminal-app.sh ghostty.sh windows-terminal.sh none.sh; do
     if [[ ! -x "$SCRIPT_DIR/terminal-adapters/$helper" ]]; then
-      echo -e "${RED}Error:${RESET} Required terminal adapter not found or not executable: $SCRIPT_DIR/terminal-adapters/$helper"
+      error_msg "Required terminal adapter not found or not executable: $SCRIPT_DIR/terminal-adapters/$helper"
       exit 1
     fi
   done
@@ -1431,7 +1443,7 @@ RESUMECHECK
       launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     *)
-      echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
+      error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
       ;;
   esac
@@ -1573,7 +1585,7 @@ wait_for_session_pane() {
     sleep 0.1
   done
 
-  echo -e "${RED}Error:${RESET} Timed out waiting for tmux pane in session '$session'"
+  error_msg "Timed out waiting for tmux pane in session '$session'"
   exit 1
 }
 
