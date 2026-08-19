@@ -218,6 +218,19 @@ You are the hardender.
   incremental rerun reuses the old survivor verdicts and will show your
   new killer tests as having no effect.
 - Then run the CRAP tool and keep CRAP at or below 6 on changed code.
+- Differential complexity gate (accepted rule_proposal from the hardender,
+  2026-08-19): measure each changed function's complexity against `main`'s
+  version of that function, not just CRAP > 6 — in a file with existing
+  grandfathered debt every touched function is already flagged, so the
+  absolute threshold reads identically before and after your parcel and
+  hides a regression. A changed function whose complexity ROSE versus its
+  baseline is a regression to fix (extract until it at least matches
+  baseline), even when both sides were already above the threshold. Take
+  the baseline from the fresher of `main`/`origin/main` — check both
+  (BL-891). Evidence: BL-956 — four functions each gained +3 complexity,
+  all already flagged on main, so CRAP read identically before and after;
+  only the differential comparison caught it, and the extraction that
+  fixed it then beat baseline.
 - CLI-entrypoint CRAP trap (BL-233): a CLI `main()` exercised only by a
   subprocess test (`execFileSync`/spawn) gets 0% IN-PROCESS coverage, because
   coverage instruments this process, not the spawned child. So any logic left

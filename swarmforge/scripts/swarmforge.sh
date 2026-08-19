@@ -1268,18 +1268,25 @@ write_claude_settings_file() {
   # Bash tool only (matcher). tool_miss_heal_hook.bb itself fails open (an
   # unknown pin or a non-Bash call is an untouched no-op) - a bug here must
   # never block a role from running commands at all.
+  #
+  # DISABLED 2026-08-19 by operator decision. The premise above did NOT hold:
+  # the hook fails open only on its OWN errors, but when it SUCCEEDS it can
+  # emit invalid bash. build-healing-wrapper-command splices the original
+  # command as raw text into __sfh_out=$(<ORIGINAL> 2>&1), unescaped and never
+  # parse-checked, so heredocs and literal parens become syntax errors and the
+  # role sees "Background shell failed __sfh_root=...". Worse, failure is
+  # silent-PARTIAL: part of the mangled command often runs before the shell
+  # dies, so state lands while an error is reported. Live cost: QA stalled 50
+  # minutes with no commit while its shell calls failed.
+  # Re-enable ONLY once the wrapper is parse-checked (bash -n) with fail-open
+  # to the untouched original. Tracked by
+  # backlog/INTAKE-20260819-tool-miss-heal-wrapper-emits-invalid-bash.md
+  # (see also backlog/paused/BL-912-epic-tool-miss-auto-heal.yaml).
+  # To restore: replace the empty object below with the PreToolUse block from
+  # git history (this file, before commit of 2026-08-19).
   local hooks_block
   hooks_block="$(cat <<HOOKS
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "bb '$role_script_dir/tool_miss_heal_hook.bb'" }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 HOOKS
 )"
 
