@@ -1,6 +1,61 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-956: gates the human's live
+**Last Updated:** August 19, 2026 (BL-935: the vitest worker pool gains a
+SECOND, independent ceiling on the CPU axis, layered alongside the
+RAM-derived budget rather than replacing it. `resolveWorkerPoolSize`
+(BL-422, refined by BL-792) sizes the fork pool from `os.totalmem()` alone
+— a MEMORY budget, built to stop an OOM-killer death-spiral, with no
+signal at all for how many cores are already busy. On this project's own
+swarm host that gap is measurable: 2 physical cores (`hw.physicalcpu`;
+`hw.ncpu` reports 4 logical) carrying a full-forge pack's 8 concurrent
+Claude sessions plus handoffd and the front-desk bridge before any test
+tooling starts, while the RAM rule still returns 3 forks on its 8192MB —
+and the coordinator observed two `vitest run` invocations overlapping, so
+~6 test forks layered on an already-saturated box (load average
+16.62/14.91/19.85 when the intake was filed, 39.27/24.66/17.16 when it was
+specced, 246/301/195 through the hardener's own pass). That matters beyond
+"tests run slower": the standing rule to skip Stryker whenever load runs
+far above 2x the core count means a hardener reaching a mutation-heavy
+ticket while a vitest run is in flight times out rather than merely
+crawling. A new `resolveVitestForkCeiling` in
+`extension/src/tools/vitest-worker-memory-budget.ts` derives that second
+ceiling from three inputs the CALLER passes in — `SWARMFORGE_PACK`,
+`os.platform()`, and an optional `SWARMFORGE_VITEST_MAX_FORKS` override —
+under a pinned precedence: an explicit positive-integer override replaces
+the pack rule (an override that cannot override is not an override);
+otherwise a `full-forge` pack on `darwin` resolves to 1 fork; otherwise
+the existing memory-derived count, unchanged. A non-positive or
+non-numeric override (`0`, `-1`, `1.5`, empty, whitespace-only, any text)
+is IGNORED and falls through to the pack rule — never floored to 1, never
+otherwise coerced. That ceiling is then passed as `resolveWorkerPoolSize`'s
+own `ceiling` argument, so the memory-derived count stays an absolute
+upper bound and the pool is still floored at 1: even an explicit
+`SWARMFORGE_VITEST_MAX_FORKS=9` can only ever LOWER the fork count, never
+raise it. The pack needed no new wiring — `SWARMFORGE_PACK` is already
+exported into every agent's environment, and a human running the suite on
+a quiet laptop has no such variable, so they keep the full budget. Both
+lanes resolve through ONE route: the eight identical composition lines
+that `vitest.config.mjs` and `vitest.properties.config.mjs` each carried
+collapsed onto a single `resolveVitestWorkerPool`, which makes the
+"neither lane may size its pool by a route the other does not share"
+invariant true BY CONSTRUCTION rather than by parallel maintenance — a
+property over a pure function cannot tell "both configs compose it the
+same way" from "one config was miswired". Gated to match: two properties
+now run over that real composed route (every earlier property re-composed
+the parts by hand inside the test and would have stayed green through a
+miswire), the acceptance step handler drives `resolveVitestWorkerPool`
+itself rather than re-composing it — proven, not asserted, by a control
+run in which the pre-hardening acceptance suite passed 9/9 with the
+ceiling dropped — scenario 02 pins the capped VALUE (`both report exactly
+1 fork`) instead of mere lane agreement, which had become structural once
+the two lanes shared a route, and two Examples rows (`0`, `-1`) close the
+ignored-override half of the precedence rule the table had left untested.
+Stryker is unaffected as before: its vitest-runner hardcodes
+`pool: 'threads'`/`maxThreads: 1` and overrides these caps entirely. New
+human-facing surface: `SWARMFORGE_VITEST_MAX_FORKS`, an env override for
+the vitest fork count that applies to both lanes, and the behaviour change
+that `npm test` and `npm run test:properties` inside a full-forge pack on
+macOS now run 1 fork instead of 3.); Previously August 19, 2026 (BL-956: gates the human's live
 pipeline-board hotfix — grid captions carry the ticket TITLE instead of
 its epic, plain parked entries cap at 3 (`PIPELINE_BOARD_PAUSED_MAX` 10
 -> 3), collapsed epic trackers cap at 3 (new
@@ -2978,6 +3033,38 @@ runaway agent, was the OOM source.
   for its two read-only assertions (well-formed PNG, render width),
   keeping the determinism test's own independent second render — same
   assertions, half the redundant real elkjs-layout + resvg work.
+- **A second, CPU-axis ceiling (BL-935).** Everything above is a MEMORY
+  budget: `resolveWorkerPoolSize` derives the fork count from
+  `os.totalmem()` and nothing else, so it has no signal for how many cores
+  are already busy. Under a live full-forge pack — 8 concurrent Claude
+  sessions plus handoffd and the front-desk bridge on a 2-physical-core
+  macOS host — it still returns 3, and two overlapping `vitest run`
+  invocations put ~6 forks on a box already running at 8-150x its core
+  count. `resolveVitestForkCeiling` adds a second, independent ceiling
+  beside the memory one, resolved from `SWARMFORGE_PACK`, `os.platform()`
+  and an optional `SWARMFORGE_VITEST_MAX_FORKS`, in this order:
+  1. an explicit **positive integer** `SWARMFORGE_VITEST_MAX_FORKS`
+     replaces the pack rule (an override that cannot override is not an
+     override);
+  2. otherwise a `full-forge` pack on `darwin` resolves to **1 fork**;
+  3. otherwise the existing memory-derived count, unchanged.
+
+  A non-positive or non-numeric override (`0`, `-1`, `1.5`, empty,
+  whitespace-only, any text) is **ignored** and falls through to rule 2 —
+  never floored, never coerced. The ceiling is then handed to
+  `resolveWorkerPoolSize` as its own `ceiling` argument, so the RAM budget
+  remains an absolute upper bound and the pool keeps its floor of 1: this
+  can only ever LOWER the fork count, never raise it (`…MAX_FORKS=9` on
+  the 8192MB host still resolves to 3). No pack plumbing was needed —
+  `SWARMFORGE_PACK` is already in every agent's environment, and a human
+  running the suite outside a pack has no such variable, so a quiet laptop
+  keeps the full budget. Both lanes compose the ceiling and the memory
+  budget through **one** shared `resolveVitestWorkerPool`, rather than the
+  identical eight lines each config used to carry: neither lane can size
+  its pool by a route the other does not share, by construction. The module
+  stays pure — pack, platform, override and host RAM are all passed in by
+  the caller, so nothing reads `process.env` or `os` inside it. Stryker is
+  unaffected for the same reason as the caps above.
 
 ### Whole-suite duration budget verdict (BL-445)
 
@@ -4577,7 +4664,7 @@ On completion (BL-299), a `TaskCompleted` event posts a completion summary namin
 
 **BL-459's cleanup-trap guard verdict rotted because its zero-violation assertion lived where no standing gate runs it, letting 18 files land unguarded over three weeks (BL-872).** BL-459 shipped a static regression guard (`specs/pipeline/steps/lib/tempDirTrapGuard.js`) flagging any `.sh`/`.bb` file under `swarmforge/scripts` that creates a temp root (`mktemp -d` / `fs/create-temp-dir`) without a cleanup mechanism — the shell/babashka sibling of BL-420's extension-side `rawMkdtempGuard`. The guard itself was correct; what rotted was where its verdict was consumed: the zero-violation assertion lived only in `specs/pipeline/test/tempDirTrapGuard.test.js`, invoked ad hoc by a role naming individual files, never by a standing gate — unlike its BL-420 sibling, which rides the Vitest suite every parcel runs. Measured on a clean `main` working tree, 2026-08-10, over the regression window BL-519 (2026-07-18) through BL-849 (2026-08-09): 18 violations — 13 babashka test runners, 4 shell harnesses, and one production file, `swarmforge/scripts/pre_qa_gate_gather_lib.bb`, which creates two `fs/create-temp-dir` roots per pre-QA gate evaluation (a gate that runs on every documenter → QA handoff) and cleaned up neither, feeding the very `/tmp` accumulation BL-413/BL-459 exist to stop. Fix: all 18 remediated — the 4 shell files register directly in the parent shell via `swarmforge/scripts/test/lib/tmp_cleanup.sh`'s `register_tmp_dir` (never the `ROOT="$(make_root)"` command-substitution pattern BL-801 fixed the registration-loss for), the babashka test runners add a shutdown hook matching the 11 already-clean runners, and `pre_qa_gate_gather_lib.bb`'s two production roots move to a caller-level atom cleaned up in one `finally` covering every branch — and the guard gets a standing home: `extension/test/tempDirTrapGuard.test.js` calls the same `scanForTempDirTrapViolations` the acceptance contract and BL-459's own suite already use, riding the Vitest suite every parcel runs, mirroring BL-420's `tmpDirMigrationGuard.test.js`. A same-parcel property suite (`extension/test/tempDirTrapGuard.property.test.js`, BL-654) covers the ticket's three declared invariants against a deliberately broken classifier to prove non-vacuousness. No human-facing command or setting; internal swarm machinery only, same internal test-infrastructure-hygiene category as BL-412/BL-413/BL-420/BL-458/BL-459/BL-714/BL-720/BL-800/BL-801/BL-867/BL-868/BL-460.
 
-**The property lane ran an uncapped worker pool while the unit lane deliberately caps its own, so a full property run's failing file moved between repeats instead of being a function of the code under test (BL-871).** `extension/vitest.properties.config.mjs` set `globals`/`environment`/`include`/`testTimeout` only — no `pool`, no `poolOptions`, no worker ceiling, no per-worker heap limit — while the unit lane's `vitest.config.mjs` reads `MAX_WORKERS`/`PER_WORKER_HEAP_MB` from the shared `vitest-worker-memory-budget` module (see "Bounded test-run memory footprint (BL-422)" above) through `resolveWorkerPoolSize`, sized to the host's real RAM. On the reference 4-CPU/8192MB host the two lanes diverged exactly where it mattered: the property lane ran 4 forks with no heap bound at all, over 65 files that spawn real subprocesses, while the unit lane ran 3 forks capped at 1280MB. The observable symptom was a full `npm run test:properties` run whose failing file moved between repeats (`bl760DuplicateChainGuard`, then `bl787NamedTunnelInvariants`, then `bl805RotateGateOnUnfinishedInProcessParcel` — each passes 3-for-3 run alone), making the lane's verdict a function of host contention rather than of the code under test. Fix: `vitest.properties.config.mjs` now reads the same shared budget module through the same `resolveWorkerPoolSize` call as the unit config, so neither lane carries its own copy of the worker/heap numbers — a change to the caps reaches both lanes or neither. Stryker's own vitest-runner hardcodes `pool: 'threads'`/`maxThreads: 1` and reads `poolOptions.threads`, so mutation runs are unaffected, matching the BL-422 note above. No production script changed; same internal test-infrastructure-hygiene category as BL-412/BL-413/BL-420/BL-422/BL-445/BL-458/BL-459/BL-714/BL-720/BL-800/BL-801/BL-867/BL-868/BL-872.
+**The property lane ran an uncapped worker pool while the unit lane deliberately caps its own, so a full property run's failing file moved between repeats instead of being a function of the code under test (BL-871).** `extension/vitest.properties.config.mjs` set `globals`/`environment`/`include`/`testTimeout` only — no `pool`, no `poolOptions`, no worker ceiling, no per-worker heap limit — while the unit lane's `vitest.config.mjs` reads `MAX_WORKERS`/`PER_WORKER_HEAP_MB` from the shared `vitest-worker-memory-budget` module (see "Bounded test-run memory footprint (BL-422)" above) through `resolveWorkerPoolSize`, sized to the host's real RAM. On the reference 4-CPU/8192MB host the two lanes diverged exactly where it mattered: the property lane ran 4 forks with no heap bound at all, over 65 files that spawn real subprocesses, while the unit lane ran 3 forks capped at 1280MB. The observable symptom was a full `npm run test:properties` run whose failing file moved between repeats (`bl760DuplicateChainGuard`, then `bl787NamedTunnelInvariants`, then `bl805RotateGateOnUnfinishedInProcessParcel` — each passes 3-for-3 run alone), making the lane's verdict a function of host contention rather than of the code under test. Fix: `vitest.properties.config.mjs` now reads the same shared budget module through the same `resolveWorkerPoolSize` call as the unit config, so neither lane carries its own copy of the worker/heap numbers — a change to the caps reaches both lanes or neither. (BL-935 later moved that shared call one level down: both lanes now call `resolveVitestWorkerPool`, which composes the CPU-axis ceiling with the same `resolveWorkerPoolSize` budget — one route for both lanes still, and now for both ceilings.) Stryker's own vitest-runner hardcodes `pool: 'threads'`/`maxThreads: 1` and reads `poolOptions.threads`, so mutation runs are unaffected, matching the BL-422 note above. No production script changed; same internal test-infrastructure-hygiene category as BL-412/BL-413/BL-420/BL-422/BL-445/BL-458/BL-459/BL-714/BL-720/BL-800/BL-801/BL-867/BL-868/BL-872.
 
 QA's re-verification of this fix found the worker-pool cap alone was not sufficient to make the lane reliably green, and bounced two further items in the same mechanism class: the three property files that shell out to real subprocesses per iteration (`bl760DuplicateChainGuard`, `bl787NamedTunnelInvariants`, `bl797MutationGateProbeCrashFallback`) still timed out under contention even with the fork/heap cap in place, since the cap bounds Vitest's own workers, not the CPU a worker's real child processes consume; and the acceptance scenario's own `spawnSync` timeout (300s) was shorter than the fix's real passing runtime (400-470s) on the reference host. Both are tuning-constant fixes: the three files' outer `testTimeout`s and inner `spawnSync` timeouts were raised (20-120s → 240s outer, 15s → 30s inner; `bl787`'s launcher poll budget widened 2s → 20s), and the acceptance step handler's own `spawnSync` timeout raised 300000ms → 900000ms (`specs/pipeline/steps/bl871PropertyLaneWorkerPoolCapSteps.js`). Re-verifying those fixes surfaced a third, independent mechanism with no config knob: Vitest's worker-RPC layer (`birpc`) hardcodes a 60-second timeout on a worker's own `onTaskUpdate` status callback to the main thread; a worker fork spending 100-240s+ inside a synchronous `spawnSync`/`execFileSync` call blocks its event loop for that whole span, so it cannot service the heartbeat, which fires an "Unhandled Error: timeout calling onTaskUpdate" close to unconditionally for these specific files — flipping an otherwise-clean 232/232-test run to a non-zero exit code even though no test failed. Fixed by adding `dangerouslyIgnoreUnhandledErrors: true` to `vitest.properties.config.mjs` only (the unit lane has no analogous long-blocking-sync-subprocess pattern); this only gates the exit-code side effect of an unhandled error, the "Unhandled Errors" section still prints so a genuinely different unhandled error remains visible, and it was verified against all logged instances across three runs being the identical benign `onTaskUpdate` message before being added.
 
