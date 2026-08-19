@@ -478,28 +478,54 @@
           identity-result
           (let [ticket-id (pipeline-stage-lib/extract-ticket-id task)
                 content (active-ticket-yaml-content root ticket-id)]
-            (if (nil? content)
+            (if (nil? ticket-id)
               identity-result
-              (let [decision (required-stages-lib/resolve-effective
-                               (required-stages-lib/read-required-stages content))]
-                (if (= :default-full (:source decision))
-                  identity-result
-                  (let [literal-to (first recipients)
-                        effective (:effective decision)
-                        reasons (required-stages-lib/read-stage-skip-reasons content)
-                        ;; BL-623: record derives from what the hop actually skipped
-                        ;; (sender → delivered), not only from whether the router rewrote.
-                        emit-skip (fn [delivered rewritten-away]
-                                    (let [between (required-stages-lib/hop-skipped-stages sender delivered)
-                                          skipped (vec (distinct
-                                                         (concat (when rewritten-away [rewritten-away])
-                                                                 between)))]
-                                      (when (seq skipped)
-                                        {:ticket-id ticket-id
-                                         :from sender
-                                         :to delivered
-                                         :skipped skipped
-                                         :reasons reasons})))]
+              ;; BL-951: content may be nil (no active ticket copy in the
+              ;; SENDER'S worktree - the BL-317/BL-325 staleness window, the
+              ;; ticket's own third data point) - the skip RECORD no longer
+              ;; needs it: it derives from the hop itself
+              ;; (hop-skipped-stages sender delivered), so recording runs
+              ;; for every forward hop whatever the declaration state.
+              ;; Only the REWRITE decision still needs a usable declaration.
+              (let [decision (when content
+                               (required-stages-lib/resolve-effective
+                                 (required-stages-lib/read-required-stages content)))
+                    reasons (when content
+                              (required-stages-lib/read-stage-skip-reasons content))
+                    ;; BL-951: resolve-effective's own docstring requires a
+                    ;; present-but-invalid declaration to be surfaced loudly
+                    ;; by the caller, never folded into "no declaration at
+                    ;; all" - carried onto the record, previously never read.
+                    rejection-reason (when (:rejected? decision) (:rejection-reason decision))
+                    ;; BL-623: record derives from what the hop actually skipped
+                    ;; (sender → delivered), not only from whether the router rewrote.
+                    emit-skip (fn [delivered rewritten-away]
+                                (let [between (required-stages-lib/hop-skipped-stages sender delivered)
+                                      skipped (vec (distinct
+                                                     (concat (when rewritten-away [rewritten-away])
+                                                             between)))]
+                                  (when (seq skipped)
+                                    (cond-> {:ticket-id ticket-id
+                                             :from sender
+                                             :to delivered
+                                             :skipped skipped
+                                             :reasons reasons}
+                                      rejection-reason (assoc :rejection-reason rejection-reason)))))
+                    literal-to (first recipients)]
+                ;; BL-951: :default-full (absent, unparseable, or invalid
+                ;; declaration - and nil content) previously RETURNED here,
+                ;; before any recording, so the conservative default was the
+                ;; one case with no audit trail - a coder->QA hop that
+                ;; jumped four stages left no envelope header and no log
+                ;; line (BL-631's own bounce-fix hop, measured). Recording
+                ;; now runs for every forward hop; only the rewrite is
+                ;; gated on a usable declaration.
+                (if (or (nil? decision) (= :default-full (:source decision)))
+                  (let [skip (emit-skip literal-to nil)]
+                    (if skip
+                      {:recipients recipients :routing-skipped skip}
+                      identity-result))
+                  (let [effective (:effective decision)]
                     (if (contains? effective literal-to)
                       (let [skip (emit-skip literal-to nil)]
                         (if skip
@@ -517,11 +543,15 @@
                                                  :to next-stage
                                                  :skipped [literal-to]
                                                  :reasons reasons})})))))))))))))
-(defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons]}]
+(defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons rejection-reason]}]
   (str ticket-id " " from "->" to
        " skipped=" (str/join "," skipped)
        (when (seq reasons)
-         (str " reasons=" (str/join ";" (map (fn [[k v]] (str k ":" v)) reasons))))))
+         (str " reasons=" (str/join ";" (map (fn [[k v]] (str k ":" v)) reasons))))
+       ;; BL-951: a present-but-invalid declaration's rejection travels on
+       ;; the record (required_stages_lib's own loud-surfacing contract).
+       (when rejection-reason
+         (str " rejected=\"" rejection-reason "\""))))
 
 (defn- log-routing-skip! [root entry]
   (let [path (fs/path root ".swarmforge" "routing-skips.jsonl")]
