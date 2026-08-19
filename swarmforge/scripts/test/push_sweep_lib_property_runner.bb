@@ -87,10 +87,17 @@
 ;; are exercised as often as any other case, not a rare corner (BL-654
 ;; generator-reach: weight it in, don't hope for it).
 (defn gen-ahead-commit [s idx]
+  ;; BL-952: :bounced? is drawn on equal footing with every other flag, so
+  ;; the bounced-veto shape (bounced AND qa-ancestor?, bounced AND
+  ;; bookkeeping-only, bounced AND trivial-merge) is common, never a rare
+  ;; corner - the same generator-weighting lesson the :merge? note above
+  ;; records. Reachability of the veto shape is ASSERTED below.
   (let [[qa-ancestor? s1] (gen-bool s)
         [paths s2] (gen-changed-paths s1)
-        [merge? s3] (gen-bool s2)]
-    [{:sha (str "sha" idx) :qa-ancestor? qa-ancestor? :changed-paths paths :merge? merge?} s3]))
+        [merge? s3] (gen-bool s2)
+        [bounced? s4] (gen-bool s3)]
+    [{:sha (str "sha" idx) :qa-ancestor? qa-ancestor? :changed-paths paths
+      :merge? merge? :bounced? bounced?} s4]))
 
 (defn gen-ahead-commits [s]
   (let [[n s1] (gen-int s 4)] ; 0..3 commits
@@ -122,11 +129,18 @@
 (defn- oracle-trivial-merge? [{:keys [merge? changed-paths]}]
   (and merge? (empty? changed-paths)))
 
+(def bl952-veto-shapes-reached (atom 0))
+
 (defn oracle-lacks-qa-approval? [{:keys [qa-ref-exists? facts-complete? tip-is-qa-ancestor? ahead-commits]}]
   (cond
     (not facts-complete?) true
     (not qa-ref-exists?) true
     tip-is-qa-ancestor? false
+    ;; BL-952 invariant 1: a commit QA bounced never reads as approved,
+    ;; whatever else is true of it - :qa-ancestor? true, bookkeeping-only
+    ;; paths, and the trivial-merge shape are all vetoed.
+    (some :bounced? ahead-commits)
+    (do (swap! bl952-veto-shapes-reached inc) true)
     :else (boolean (some (fn [c]
                            (and (not (oracle-trivial-merge? c))
                                 (not (:qa-ancestor? c))
@@ -165,6 +179,11 @@
         (str "OVER-REFUSAL: oracle says QA-approved but no push was attempted; logs=" (pr-str @logs))
 
         :else true))))
+
+;; BL-952 reachability floor: the bounced-veto branch of the oracle must
+;; genuinely fire across the run - asserted, never hoped for.
+(when (zero? @bl952-veto-shapes-reached)
+  (swap! failures conj "FAIL BL-952 reachability: the generator never produced a bounced ahead commit on a decided (non-fast-path) scenario"))
 
 ;; ── non-vacuity: this property MUST actually fail against a deliberately
 ;;    broken implementation, proven here rather than asserted - a property

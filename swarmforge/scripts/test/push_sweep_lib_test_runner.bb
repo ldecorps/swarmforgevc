@@ -127,6 +127,47 @@
            :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false
                             :changed-paths ["backlog/active/BL-1.yaml"]}]}))
 
+;; ── BL-952: a commit QA BOUNCED never publishes, whatever else is true ─────
+;; QA merges a parcel into swarmforge-QA to REVIEW it, so a bounced parcel
+;; stays reachable from the ref and read as approved forever - BL-945's
+;; twice-bounced code rode onto origin/main exactly this way. :bounced? is
+;; the durable verdict (the bounce stores QA already writes), threaded per
+;; commit by the facts gatherer, and it vetoes EVERYTHING: qa-ancestor?
+;; true, the bookkeeping allowlist, and the trivial-merge exemption.
+
+(assert= "BL-952: a bounced commit refuses with reason :bounced-parcel, named, even though it reads as a qa-ancestor"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["bad12345a"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "bad12345a" :qa-ancestor? true :bounced? true :changed-paths ["extension/src/foo.ts"]}
+                           {:sha "good1234a" :qa-ancestor? true :changed-paths ["extension/src/bar.ts"]}]}))
+
+(assert= "BL-952: a bounced commit touching only bookkeeping paths still refuses - the allowlist never launders a bounce"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["bad12345a"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "bad12345a" :qa-ancestor? true :bounced? true :changed-paths ["backlog/active/BL-1.yaml"]}]}))
+
+(assert= "BL-952: a bounced TRIVIAL merge still refuses - the trivial-merge exemption never launders a bounce"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["merge1234"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false :bounced? true :changed-paths []}]}))
+
+(assert= "BL-952: two bounced commits are BOTH named"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["bad12345a" "bad12345b"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "bad12345a" :qa-ancestor? true :bounced? true :changed-paths ["extension/src/foo.ts"]}
+                           {:sha "bad12345b" :qa-ancestor? true :bounced? true :changed-paths ["extension/src/bar.ts"]}]}))
+
+(assert= "BL-952: an approved, un-bounced range publishes exactly as before (no legitimate landing regressed)"
+         {:refuse? false :reason nil :offending-shas []}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "good1234a" :qa-ancestor? true :bounced? false :changed-paths ["extension/src/foo.ts"]}
+                           {:sha "good1234b" :qa-ancestor? true :changed-paths ["extension/src/bar.ts"]}]}))
+
 ;; ── BL-855: noop-landing-merge? / noop-merge-decision ──────────────────────
 ;; Gherkin BL-855 noop-landing-merge-drops-approved-work-01 (Scenario Outline)
 
