@@ -117,6 +117,50 @@ out_of_scope: |
   - Making the teardown's own reporting honest — BL-637.
 
 notes: |
+  ## SUPERSEDED — do not build. Specifier verification, 2026-08-19.
+
+  This ticket's invariant is already satisfied on main by landed work, and
+  building it now would add a second, competing age path. Recommending closure
+  as superseded rather than routing it to the coder; the coordinator owns the
+  bookkeeping.
+
+  What was verified, in the live call order:
+
+  1. `handoffd.bb:2019 flow-watchdog-sweep!` is the only live entry, and it
+     calls `flow-watchdog-lib/run-sweep!`.
+  2. `run-sweep!` computes each parcel's age via `evaluate-effective-age`
+     (`flow_watchdog_lib.bb:409`) — wall age minus BL-823 availability-ledger
+     intervals and provider-outage intervals, merged into one union so nothing
+     is double-subtracted, clamped to [0, wall age], failing closed on an
+     unparseable age source. `decide-tier` is handed that effective age, and
+     is itself untouched — the structural no-suppression guarantee this ticket
+     insisted on is preserved exactly as demanded.
+  3. `availability_ledger_lib.bb/fold-intervals` emits `:class "swarm-stop"`,
+     pairing a recorded stop with the NEXT recorded start — so a deliberate
+     stop is credited.
+  4. The crash case this ticket warned about is handled by construction, not by
+     policy: credit comes only from a recorded interval, and a crash writes no
+     stop event, so it yields no interval and no credit. An unpaired open stop
+     is flagged `:unreconstructable?` rather than silently credited.
+  5. The "cheapest honest partial" this ticket offered as a fallback slice also
+     shipped: `format-alarm-text` appends `(active 40m of 2h43m wall)` and names
+     each subtracted interval.
+  6. BL-650 and BL-823 are both in `backlog/done/`.
+
+  The delivered design is better-sourced than this ticket's own recommendation.
+  This ticket proposed reading `kill-all-audit.log` for the last
+  `kill_all_swarm SUCCESS`; BL-650 instead uses BL-823's durable availability
+  ledger, which distinguishes clean from crashed the same way but is a
+  purpose-built record rather than a log scrape.
+
+  One loose end, noted not ticketed: `parcel-age-ms`
+  (`flow_watchdog_lib.bb:301`) — the exact function this ticket names as "the
+  cause, and it is one line" — now has ZERO call sites. It survives only in
+  docstrings. That is dead code for the cleaner to remove in passing, not work
+  worth its own parcel.
+
+  ## Original notes
+
   Priced `severity: medium`: nothing is broken and no work is lost. The harm is
   attention, and it compounds — the operator who learns to swipe past ESCALATE will
   swipe past a real one. Filed the same day as BL-637 and BL-638, which are the same
