@@ -8,7 +8,7 @@
 import { TelegramUpdate } from '../notify/telegramClient';
 import { nextUpdateOffset } from '../tools/telegramFrontDeskBotCore';
 import { ProposedContract } from './contractTypes';
-import { decideNegotiationUpdateAction, formatContractForTelegram } from './negotiationTelegramRouting';
+import { annotateNegotiationRelayText, decideNegotiationUpdateAction, formatContractForTelegram } from './negotiationTelegramRouting';
 
 // BL-389's own lesson applied here: a negotiation that has ALREADY ended
 // (approved earlier, or round-limited earlier) can never succeed on a
@@ -103,7 +103,10 @@ export async function processNegotiationUpdate(
   if (decision.action === 'agree') {
     return handleAgreement(adapters);
   }
-  return handleObjection(decision.text, adapters);
+  // BL-955: forwarding boundary - the annotation is applied here, after
+  // classification, so the session (and the durable objection it stores)
+  // knows an unread image was attached.
+  return handleObjection(annotateNegotiationRelayText(decision.text, update), adapters);
 }
 
 export interface NegotiationRelayResult {
