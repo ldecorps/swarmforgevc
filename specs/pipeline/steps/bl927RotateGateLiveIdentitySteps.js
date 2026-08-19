@@ -66,6 +66,20 @@ function writeMarker(dir, content) {
   fs.writeFileSync(path.join(dir, '.swarmforge', 'mono-router-active-role'), content);
 }
 
+// BL-927 bounce (fixture-dir leak, same shape as BL-929's/BL-931's own
+// remediations): the Background's mkFixture() creates ctx.dir, but a Given
+// step below (marker-state validation) can throw BEFORE either When step's
+// own try/finally ever runs - a try/finally local to the throwing step
+// can't save it either, since the dir was created by the earlier Background
+// step. Every throw that can fire before a When step's cleanup must release
+// the fixture itself; idempotent (force: true) so a later, already-cleaned
+// ctx.dir is a no-op.
+function cleanupFixture(ctx) {
+  if (ctx.dir) {
+    fs.rmSync(ctx.dir, { recursive: true, force: true });
+  }
+}
+
 function queueParcel(dir, role, name) {
   const inProcess = path.join(dir, '.swarmforge', 'handoffs', role, 'inbox', 'in_process');
   fs.mkdirSync(inProcess, { recursive: true });
@@ -105,7 +119,13 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the active-role marker is (missing|blank)$/,
     (ctx, state) => {
-      const known = knownMarkerState(state);
+      let known;
+      try {
+        known = knownMarkerState(state);
+      } catch (err) {
+        cleanupFixture(ctx);
+        throw err;
+      }
       // "missing": write nothing - no marker file at all.
       if (known === 'blank') {
         writeMarker(ctx.dir, '   \n');
@@ -144,31 +164,39 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the resident invokes rotation to "([^"]+)"$/,
     (ctx, target) => {
-      const liveExpr = ctx.liveRole == null ? 'nil' : cljStr(ctx.liveRole);
-      const source = [
-        `(load-file ${cljStr(HANDOFF_LIB)})`,
-        `(handoff-lib/set-project-root! ${cljStr(ctx.dir)})`,
-        `(let [result (handoff-lib/departing-role-blocking-handoff {:live-role-fn (fn [] ${liveExpr})})`,
-        `      decision (mono-router-lib/rotate-gate-decision`,
-        `                {:blocking-file (:blocking-file result)`,
-        `                 :force? false`,
-        `                 :active-role (:role result)`,
-        `                 :target-role ${cljStr(target)}})]`,
-        `  (println (or (:role result) "NONE"))`,
-        `  (println (name decision)))`,
-      ].join('\n');
-      // BL-932-batch hardening (BL-909/BL-927): capture the RESOLVED
-      // departing role alongside the decision, not just the decision.
-      // BL-113 gherkin mutation found that mutating <marker>/<live> to an
-      // unresolvable role string still yields the SAME "proceed" decision
-      // (via the pre-existing unknown-role fail-open path) as a correctly
-      // resolved, diverged live role with an empty box - two different
-      // mechanisms converging on one observable decision. Recording the
-      // resolved role lets "the departing role resolved is the pane's live
-      // identity" (scenario 01 only) distinguish them.
-      const [roleLine, decisionLine] = runBb(source).split('\n');
-      ctx.resolvedRole = roleLine === 'NONE' ? null : roleLine;
-      ctx.decision = decisionLine;
+      try {
+        const liveExpr = ctx.liveRole == null ? 'nil' : cljStr(ctx.liveRole);
+        const source = [
+          `(load-file ${cljStr(HANDOFF_LIB)})`,
+          `(handoff-lib/set-project-root! ${cljStr(ctx.dir)})`,
+          `(let [result (handoff-lib/departing-role-blocking-handoff {:live-role-fn (fn [] ${liveExpr})})`,
+          `      decision (mono-router-lib/rotate-gate-decision`,
+          `                {:blocking-file (:blocking-file result)`,
+          `                 :force? false`,
+          `                 :active-role (:role result)`,
+          `                 :target-role ${cljStr(target)}})]`,
+          `  (println (or (:role result) "NONE"))`,
+          `  (println (name decision)))`,
+        ].join('\n');
+        // BL-932-batch hardening (BL-909/BL-927): capture the RESOLVED
+        // departing role alongside the decision, not just the decision.
+        // BL-113 gherkin mutation found that mutating <marker>/<live> to an
+        // unresolvable role string still yields the SAME "proceed" decision
+        // (via the pre-existing unknown-role fail-open path) as a correctly
+        // resolved, diverged live role with an empty box - two different
+        // mechanisms converging on one observable decision. Recording the
+        // resolved role lets "the departing role resolved is the pane's live
+        // identity" (scenario 01 only) distinguish them.
+        const [roleLine, decisionLine] = runBb(source).split('\n');
+        ctx.resolvedRole = roleLine === 'NONE' ? null : roleLine;
+        ctx.decision = decisionLine;
+      } finally {
+        // BL-927 bounce: both Then steps that follow read only the
+        // in-memory ctx.resolvedRole/ctx.decision captured above, never
+        // ctx.dir again - safe to release the fixture here even if runBb
+        // threw.
+        cleanupFixture(ctx);
+      }
     },
     FEATURE_NAME
   );
@@ -207,34 +235,46 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the handoff daemon's own chase rotates the resident to "([^"]+)"$/,
     (ctx, target) => {
-      const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'bl927-fakebin-'));
-      const tmuxLog = path.join(ctx.dir, 'tmux-calls.log');
-      fs.writeFileSync(tmuxLog, '');
-      fs.writeFileSync(path.join(fakeBin, 'tmux'), `#!/usr/bin/env bash\necho "$*" >> ${JSON.stringify(tmuxLog)}\nexit 0\n`);
-      fs.chmodSync(path.join(fakeBin, 'tmux'), 0o755);
+      try {
+        // BL-927 bounce: nested inside ctx.dir (not a second, independent
+        // mkdtempSync under os.tmpdir()) so cleanupFixture's single rmSync
+        // of ctx.dir below releases it too - same "no sibling temp roots"
+        // idiom BL-931's own fixture uses for its fake tmux bin.
+        const fakeBin = path.join(ctx.dir, 'bin');
+        fs.mkdirSync(fakeBin, { recursive: true });
+        const tmuxLog = path.join(ctx.dir, 'tmux-calls.log');
+        fs.writeFileSync(tmuxLog, '');
+        fs.writeFileSync(path.join(fakeBin, 'tmux'), `#!/usr/bin/env bash\necho "$*" >> ${JSON.stringify(tmuxLog)}\nexit 0\n`);
+        fs.chmodSync(path.join(fakeBin, 'tmux'), 0o755);
 
-      const launchDir = path.join(ctx.dir, '.swarmforge', 'launch');
-      fs.mkdirSync(launchDir, { recursive: true });
-      fs.writeFileSync(path.join(launchDir, `${target}.sh`), '#!/bin/sh\nexit 0\n');
-      fs.chmodSync(path.join(launchDir, `${target}.sh`), 0o755);
+        const launchDir = path.join(ctx.dir, '.swarmforge', 'launch');
+        fs.mkdirSync(launchDir, { recursive: true });
+        fs.writeFileSync(path.join(launchDir, `${target}.sh`), '#!/bin/sh\nexit 0\n');
+        fs.chmodSync(path.join(launchDir, `${target}.sh`), 0o755);
 
-      fs.writeFileSync(path.join(ctx.dir, 'fake.sock'), '');
-      fs.writeFileSync(path.join(ctx.dir, '.swarmforge', 'tmux-socket'), `${path.join(ctx.dir, 'fake.sock')}\n`);
+        fs.writeFileSync(path.join(ctx.dir, 'fake.sock'), '');
+        fs.writeFileSync(path.join(ctx.dir, '.swarmforge', 'tmux-socket'), `${path.join(ctx.dir, 'fake.sock')}\n`);
 
-      const confDir = path.join(ctx.dir, 'swarmforge');
-      fs.mkdirSync(confDir, { recursive: true });
-      fs.writeFileSync(path.join(confDir, 'swarmforge.conf'), 'config rotation router\n');
+        const confDir = path.join(ctx.dir, 'swarmforge');
+        fs.mkdirSync(confDir, { recursive: true });
+        fs.writeFileSync(path.join(confDir, 'swarmforge.conf'), 'config rotation router\n');
 
-      const source = [
-        `(load-file ${cljStr(HANDOFF_LIB)})`,
-        `(handoff-lib/set-project-root! ${cljStr(ctx.dir)})`,
-        `(println (:ok (handoff-lib/rotate-resident-to! ${cljStr(target)})))`,
-      ].join('\n');
-      ctx.rotateResult = runBb(source, {
-        cwd: ctx.dir,
-        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` },
-      });
-      ctx.tmuxLog = fs.readFileSync(tmuxLog, 'utf8');
+        const source = [
+          `(load-file ${cljStr(HANDOFF_LIB)})`,
+          `(handoff-lib/set-project-root! ${cljStr(ctx.dir)})`,
+          `(println (:ok (handoff-lib/rotate-resident-to! ${cljStr(target)})))`,
+        ].join('\n');
+        ctx.rotateResult = runBb(source, {
+          cwd: ctx.dir,
+          env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` },
+        });
+        ctx.tmuxLog = fs.readFileSync(tmuxLog, 'utf8');
+      } finally {
+        // BL-927 bounce: the one Then step that follows reads only
+        // ctx.rotateResult/ctx.tmuxLog, already captured in memory above -
+        // safe to release the fixture here even if runBb threw.
+        cleanupFixture(ctx);
+      }
     },
     FEATURE_NAME
   );
