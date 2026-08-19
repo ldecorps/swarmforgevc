@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { resolveWorkerPoolSize, resolveVitestForkCeiling, MAX_WORKERS } = require('../out/tools/vitest-worker-memory-budget');
+const { resolveWorkerPoolSize, resolveVitestForkCeiling, resolveVitestWorkerPool, MAX_WORKERS } = require('../out/tools/vitest-worker-memory-budget');
 
 // BL-935 (coder.prompt's Invariants section - first authorship rests with
 // the coder): coder-authored property tests for two of this ticket's three
@@ -18,10 +18,11 @@ const { resolveWorkerPoolSize, resolveVitestForkCeiling, MAX_WORKERS } = require
 // catch: both real config files are spawned as real subprocesses with
 // stubbed env and their reported maxForks compared
 // (specs/pipeline/steps/bl935VitestForkPoolSteps.js), and the wiring itself
-// is visible by inspection - both vitest.config.mjs and
-// vitest.properties.config.mjs import and call the identical
-// resolveVitestForkCeiling/resolveWorkerPoolSize pair from this same
-// module.
+// is visible by inspection - since the cleaner pass both vitest.config.mjs
+// and vitest.properties.config.mjs import and call the single
+// resolveVitestWorkerPool composition from this same module, which is what
+// makes invariant 3 true by construction rather than by parallel
+// maintenance.
 //
 // Non-vacuity, checked by hand (re-verified after the architect's D1
 // bounce disproved this file's ORIGINAL P1 claim - the first landed P1
@@ -143,5 +144,54 @@ test('property: a non-positive-integer override is always ignored, resolving ide
       assert.equal(withMalformed, withoutOverride, `override=${JSON.stringify(malformed)} was not ignored`);
     }),
     { numRuns: 300 }
+  );
+});
+
+// ── architect property-coverage pass (BL-935 cleaner parcel) ────────────────
+// The cleaner collapsed both lanes onto ONE composition, resolveVitestWorkerPool,
+// and both vitest.config.mjs and vitest.properties.config.mjs now call only
+// that. Every property above tests the resolveVitestForkCeiling /
+// resolveWorkerPoolSize PAIR composed by hand in the test itself - none of them
+// calls the route the configs actually use, so a miswire inside
+// resolveVitestWorkerPool (swapped arguments, a dropped ceiling, a stray
+// default) would leave every property green. The decision-table unit test in
+// vitestWorkerMemoryBudget.test.js is currently the only gate on that route;
+// these two properties extend it to the whole generated input space.
+//
+// Non-vacuity, verified by breaking resolveVitestWorkerPool and restoring it:
+// - dropping the ceiling (`return resolveWorkerPoolSize(hostRamMB)`) fails the
+//   equivalence property on its first full-forge/darwin case;
+// - passing the ceiling as the perWorkerHeapMB argument
+//   (`resolveWorkerPoolSize(hostRamMB, undefined, ceiling)`) fails both.
+
+test('property: resolveVitestWorkerPool is exactly the ceiling composed with the memory budget, over the whole input space', () => {
+  fc.assert(
+    fc.property(hostRamMbArb, packArb, platformArb, overrideArb, (hostRamMB, pack, platform, override) => {
+      assert.equal(
+        resolveVitestWorkerPool({ pack, platform, override, hostRamMB }),
+        resolveWorkerPoolSize(hostRamMB, resolveVitestForkCeiling({ pack, platform, override })),
+        `composed route diverged for pack=${pack} platform=${platform} override=${override} hostRamMB=${hostRamMB}`
+      );
+    }),
+    { numRuns: 500 }
+  );
+});
+
+// Invariant 1 ("the new ceiling can only LOWER the fork count, never raise it")
+// asserted through the REAL route rather than the hand-composed pair: whatever
+// the pack/platform rule decides, the result never exceeds what the memory
+// budget alone would have allowed.
+test('property: resolveVitestWorkerPool never exceeds the memory-only budget, for every pack/platform', () => {
+  fc.assert(
+    fc.property(hostRamMbArb, packArb, platformArb, (hostRamMB, pack, platform) => {
+      const memoryOnly = resolveWorkerPoolSize(hostRamMB);
+      const composed = resolveVitestWorkerPool({ pack, platform, override: undefined, hostRamMB });
+      assert.ok(
+        composed <= memoryOnly,
+        `composed ${composed} exceeded memory-only ${memoryOnly} for pack=${pack} platform=${platform} hostRamMB=${hostRamMB}`
+      );
+      assert.ok(composed >= 1, `composed fork count below 1: ${composed}`);
+    }),
+    { numRuns: 500 }
   );
 });
