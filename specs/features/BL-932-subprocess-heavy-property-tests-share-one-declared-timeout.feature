@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d150ef3b46914a596f26f9ad92bbc7b44f42662f06ddab87d74e72410115342d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-19T02:05:05.980426Z","feature_name":"subprocess-heavy property tests carry the shared heavy timeout, declared once","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-932-subprocess-heavy-property-tests-share-one-declared-timeout.feature","background_hash":"ad7f9c565269396fa204e80a462534245fe53994aa98bf877ae9e7e87e66fa61","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the two timeout knobs stay distinct","scenario_hash":"a3634bea5815947164fa28aff170e8f61ed722cc82856b01042341bdee0d641b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-19T02:05:05.980426Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: subprocess-heavy property tests carry the shared heavy timeout, declared once
 
   # BL-932 (swarm-reliability). The property lane runs under its own config
