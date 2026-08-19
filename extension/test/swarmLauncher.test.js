@@ -755,6 +755,22 @@ test('configHasRotationRouter fails closed (false) for a config path that does n
   assert.equal(configHasRotationRouter(path.join(targetPath, 'missing.conf')), false);
 });
 
+// Hardening (BL-929): the match must be the WHOLE line, not a substring -
+// confirmed a hand-authored `.includes(...)` mutant survives every other
+// test in this file (the fixtures above never put the phrase in a
+// non-directive line). A comment mentioning the directive by name, or a
+// window/role name that happens to contain it, must not be read as the
+// pack declaring itself a rotation pack.
+test('configHasRotationRouter is false when the phrase appears only inside a comment, not as its own directive line', () => {
+  const targetPath = mkTmp();
+  const configPath = path.join(targetPath, 'full-forge.conf');
+  fs.writeFileSync(
+    configPath,
+    '# note: this pack deliberately has no "config rotation router" line\nconfig active_backlog_max_depth 3\nwindow coder claude coder\n'
+  );
+  assert.equal(configHasRotationRouter(configPath), false);
+});
+
 test('runningSwarmMatchesConfig is false when roles.tsv count differs from config', () => {
   const targetPath = mkTmp();
   const configPath = path.join(targetPath, 'seven.conf');
