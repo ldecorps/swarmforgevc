@@ -25,6 +25,7 @@ export interface PipelineBoardRow {
   // the 8 stage columns). Distinct from PipelineBoardParkedEntry/
   // PipelineBoardListEntry's own `slug` below, which carries MORE text.
   slug: string;
+  title?: string;
 }
 
 // BL-465: shared shape for every below-grid list line (parked, root-intake,
@@ -61,6 +62,10 @@ export interface PipelineBoardData {
   // approval tickets are never capped). Rendered as "+N more parked" under
   // the PARKED section — never a silent cap.
   parkedOmittedCount?: number;
+  // BL-956: epic trackers omitted by PIPELINE_BOARD_COLLAPSED_EPICS_MAX.
+  // Rendered as "+N more epics" under the PARKED section — same
+  // never-a-silent-cap posture as parkedOmittedCount above.
+  collapsedEpicsOmittedCount?: number;
 }
 
 export interface PipelineBoardCollapsedEpicEntry {
@@ -189,7 +194,7 @@ export const PIPELINE_BOARD_RECENTLY_CLOSED_MAX = 5;
 // paused tickets by priority (lower number = higher urgency), same ordering
 // as the paused-pager bridge route. Awaiting-approval tickets are always
 // shown in full regardless of this cap.
-export const PIPELINE_BOARD_PAUSED_MAX = 10;
+export const PIPELINE_BOARD_PAUSED_MAX = 3;
 
 const PAUSED_PRIORITY_FALLBACK = Number.MAX_SAFE_INTEGER;
 
@@ -242,8 +247,13 @@ export function deriveKebabSlug(title: string | undefined, maxWords = 2): string
 // projection); that wide tail is dropped here to fit a phone screen. A
 // missing title still renders an empty slug rather than throwing
 // (deriveKebabSlug's own contract).
+// BL-956 invariant 1: bounded - a single-word title has no word cap to
+// catch it (deriveKebabSlug caps WORDS, not characters), so an arbitrarily
+// long title used to flow straight into a below-grid list line and from
+// there past the whole-message send limit (the body is never trimmed by
+// composePipelineBoardHtml; found by this ticket's own property test).
 export function deriveListEntryText(title: string | undefined): string {
-  return deriveKebabSlug(title);
+  return truncateCaptionDescription(deriveKebabSlug(title));
 }
 
 // BL-505: the SHORT display form of a ticket/list id, shared by the grid
@@ -375,7 +385,15 @@ function buildGridRows(
     // it renders at the end-of-line stage instead of matching no column at
     // all (an all-dots row) or falling through to not-started.
     const column = heldRole === 'coordinator' ? 'QA' : heldRole;
-    rowsById.set(id, { id, column, epic: meta?.epic, slug: deriveKebabSlug(meta?.title) });
+    rowsById.set(id, {
+      id,
+      column,
+      epic: meta?.epic,
+      slug: deriveKebabSlug(meta?.title),
+      // BL-956: only set when the backlog meta actually carries one - a
+      // meta-less row keeps its pre-BL-956 shape exactly.
+      ...(meta?.title !== undefined ? { title: meta.title } : {}),
+    });
   }
   return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
 }
@@ -427,23 +445,30 @@ function countEpicSliceChildren(
   return { paused, active };
 }
 
+export const PIPELINE_BOARD_COLLAPSED_EPICS_MAX = 3;
+
+// BL-956 invariant 3: the cap is never silent - alongside the sliced list
+// the omitted count comes back, rendered as "+N more epics" (the same
+// visible-overflow treatment PIPELINE_BOARD_PAUSED_MAX and the grid's
+// "+N more active" already have).
 function buildCollapsedEpicEntries(
   paused: PipelineBoardPausedItem[],
   ticketMeta: Record<string, PipelineBoardTicketMeta>
-): PipelineBoardCollapsedEpicEntry[] {
-  return paused
+): { collapsedEpics: PipelineBoardCollapsedEpicEntry[]; collapsedEpicsOmittedCount: number } {
+  const trackers = paused
     .filter((item) => isEpicTrackerPausedItem(item) && item.humanApproval !== 'pending')
-    .sort(comparePausedByPriority)
-    .map((item) => {
-      const epicSlug = item.epic ?? ticketMeta[item.id]?.epic ?? '';
-      const counts = countEpicSliceChildren(epicSlug, ticketMeta);
-      return {
-        epicSlug,
-        trackerId: item.id,
-        pausedChildCount: counts.paused,
-        activeChildCount: counts.active,
-      };
-    });
+    .sort(comparePausedByPriority);
+  const collapsedEpics = trackers.slice(0, PIPELINE_BOARD_COLLAPSED_EPICS_MAX).map((item) => {
+    const epicSlug = item.epic ?? ticketMeta[item.id]?.epic ?? '';
+    const counts = countEpicSliceChildren(epicSlug, ticketMeta);
+    return {
+      epicSlug,
+      trackerId: item.id,
+      pausedChildCount: counts.paused,
+      activeChildCount: counts.active,
+    };
+  });
+  return { collapsedEpics, collapsedEpicsOmittedCount: trackers.length - collapsedEpics.length };
 }
 
 export function formatCollapsedEpicLine(entry: PipelineBoardCollapsedEpicEntry): string {
@@ -467,6 +492,7 @@ function buildParkedEntries(
   parked: PipelineBoardParkedEntry[];
   collapsedEpics: PipelineBoardCollapsedEpicEntry[];
   parkedOmittedCount: number;
+  collapsedEpicsOmittedCount: number;
 } {
   const { selected, parkedOmittedCount } = selectPausedForBoard(paused);
   const parked = selected.map(
@@ -476,8 +502,8 @@ function buildParkedEntries(
       status: item.humanApproval === 'pending' ? 'awaiting-approval' : 'parked',
     })
   );
-  const collapsedEpics = buildCollapsedEpicEntries(paused, ticketMeta);
-  return { parked, collapsedEpics, parkedOmittedCount };
+  const { collapsedEpics, collapsedEpicsOmittedCount } = buildCollapsedEpicEntries(paused, ticketMeta);
+  return { parked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount };
 }
 
 // The four link SOURCES below each mirror one of the board's own sections
@@ -590,7 +616,7 @@ export function computePipelineBoard(
   extras: PipelineBoardExtras = {}
 ): PipelineBoardData {
   const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds);
-  const { parked, collapsedEpics, parkedOmittedCount } = buildParkedEntries(paused, ticketMeta);
+  const { parked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount } = buildParkedEntries(paused, ticketMeta);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
   // BL-465 bounce (architect review): unlike rootIntake/parked above,
   // recently-closed order IS the whole point of the section - re-sorting
@@ -603,7 +629,7 @@ export function computePipelineBoard(
   const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
   const links = extras.repoBaseUrl ? buildLinks(rows, parked, collapsedEpics, extras, ticketMeta) : [];
 
-  return { rows, parked, collapsedEpics, rootIntake, recentlyClosed, links, parkedOmittedCount };
+  return { rows, parked, collapsedEpics, rootIntake, recentlyClosed, links, parkedOmittedCount, collapsedEpicsOmittedCount };
 }
 
 // BL-585: caption/overflow lines sit outside the matrix proper and may use
@@ -627,8 +653,30 @@ function gridOverflowLine(droppedCount: number): string {
   return `+${droppedCount} more active`;
 }
 
+// BL-956: the caption carries the full ticket TITLE (the human's hotfix -
+// the epic moved out of this line when captions became per-ticket), but
+// bounded: an unbounded title is a new path into the whole-message send
+// limit that composePipelineBoardHtml only budgets LINKS against (the
+// body is never trimmed there, and an oversized body is rejected whole -
+// live outage 2026-07-17). Truncation is visible (ellipsis), never silent.
+export const PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX = 64;
+
+// BL-956 invariant 2: a caption always identifies SOMETHING - a role-held
+// ticket with no backlog entry (no title, empty slug) gets this label
+// rather than rendering as a bare id followed by nothing.
+const NO_BACKLOG_ENTRY_LABEL = '(no backlog entry)';
+
+function truncateCaptionDescription(text: string): string {
+  if (text.length <= PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX) {
+    return text;
+  }
+  return `${text.slice(0, PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX - 1)}…`;
+}
+
 function gridCaptionLine(row: PipelineBoardRow): string {
-  return `${deriveDisplayTicketId(row.id)} ${row.epic ?? NO_EPIC_LABEL}`;
+  const displayId = deriveDisplayTicketId(row.id);
+  const description = (row.title ?? '').trim() || row.slug.trim() || NO_BACKLOG_ENTRY_LABEL;
+  return `${displayId} ${truncateCaptionDescription(description)}`;
 }
 
 // Split out of renderGridLines below for the same CRAP-budget reason as
@@ -673,8 +721,18 @@ function renderGridLines(rows: PipelineBoardRow[]): string[] {
 
   const lines = renderGridMatrixLines(visibleRows, visibleIds, cellWidth);
   lines.push('');
+  // BL-956: captions are grouped by epic - same-epic captions sit adjacent,
+  // and ONE blank line marks where the epic changes (scenario 03 pins this
+  // shape; rows already arrive epic-sorted via buildGridRows).
+  let prevEpic: string | undefined;
+  let prevEpicSet = false;
   for (const row of visibleRows) {
+    if (prevEpicSet && row.epic !== prevEpic) {
+      lines.push('');
+    }
     lines.push(gridCaptionLine(row));
+    prevEpic = row.epic;
+    prevEpicSet = true;
   }
   if (droppedCount > 0) {
     lines.push(gridOverflowLine(droppedCount));
@@ -686,18 +744,32 @@ function pipelineBoardParkedOverflowLine(omittedCount: number): string {
   return `+${omittedCount} more parked`;
 }
 
+// BL-956 invariant 3: the collapsed-epic cap's own visible overflow line.
+function pipelineBoardEpicsOverflowLine(omittedCount: number): string {
+  return `+${omittedCount} more epics`;
+}
+
 function renderParkedSection(
   collapsedEpics: PipelineBoardCollapsedEpicEntry[],
   parked: PipelineBoardParkedEntry[],
-  overflowLine?: string
+  overflowLine?: string,
+  epicsOverflowLine?: string
 ): string[] {
   const plainParked = parked.filter((p) => p.status === 'parked');
-  if (collapsedEpics.length === 0 && plainParked.length === 0 && (overflowLine === undefined || overflowLine === '')) {
+  if (
+    collapsedEpics.length === 0 &&
+    plainParked.length === 0 &&
+    (overflowLine === undefined || overflowLine === '') &&
+    (epicsOverflowLine === undefined || epicsOverflowLine === '')
+  ) {
     return [];
   }
   const lines: string[] = ['', PARKED_SECTION_HEADER];
   for (const epic of collapsedEpics) {
     lines.push(formatCollapsedEpicLine(epic));
+  }
+  if (epicsOverflowLine) {
+    lines.push(`  ${epicsOverflowLine}`);
   }
   for (const entry of plainParked) {
     lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd());
@@ -744,9 +816,13 @@ function renderBodySections(data: PipelineBoardData): string[] {
   const parked = data.parked ?? [];
   const parkedOverflow =
     (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
+  const epicsOverflow =
+    (data.collapsedEpicsOmittedCount ?? 0) > 0
+      ? pipelineBoardEpicsOverflowLine(data.collapsedEpicsOmittedCount ?? 0)
+      : undefined;
   return [
     ...renderGridOnlySections(data),
-    ...renderParkedSection(data.collapsedEpics ?? [], parked, parkedOverflow),
+    ...renderParkedSection(data.collapsedEpics ?? [], parked, parkedOverflow, epicsOverflow),
     ...renderListSection(
       AWAITING_APPROVAL_SECTION_HEADER,
       parked.filter((p) => p.status === 'awaiting-approval')
