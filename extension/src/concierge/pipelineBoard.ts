@@ -631,6 +631,29 @@ function gridCaptionLine(row: PipelineBoardRow): string {
   return `${deriveDisplayTicketId(row.id)} ${row.epic ?? NO_EPIC_LABEL}`;
 }
 
+// Split out of renderGridLines below for the same CRAP-budget reason as
+// buildGridRows/buildParkedEntries above - the header row and the per-role
+// mark rows are one cohesive block (they share cellWidth and iterate
+// PIPELINE_BOARD_COLUMN_ORDER together) but pushed renderGridLines itself
+// over the CRAP budget. Pure formatting, no behavior of its own.
+function renderGridMatrixLines(visibleRows: PipelineBoardRow[], visibleIds: string[], cellWidth: number): string[] {
+  const lines: string[] = [];
+  let header = NBSP.repeat(2);
+  for (const id of visibleIds) {
+    header += NBSP + padStartNbsp(id, cellWidth);
+  }
+  lines.push(header);
+  for (const column of PIPELINE_BOARD_COLUMN_ORDER) {
+    let line = COLUMN_LABEL[column];
+    for (const row of visibleRows) {
+      const mark = column === row.column ? 'X' : '.';
+      line += NBSP + padStartNbsp(mark, cellWidth);
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
 // ONE matrix: pipeline stages as shared rows, active tickets as columns.
 // Rows already arrive epic-grouped via computePipelineBoard's own stable
 // sort (buildGridRows) - dropped-by-width columns are simply the tail of
@@ -648,20 +671,7 @@ function renderGridLines(rows: PipelineBoardRow[]): string[] {
   const visibleIds = displayIds.slice(0, visibleCount);
   const droppedCount = rows.length - visibleCount;
 
-  const lines: string[] = [];
-  let header = NBSP.repeat(2);
-  for (const id of visibleIds) {
-    header += NBSP + padStartNbsp(id, cellWidth);
-  }
-  lines.push(header);
-  for (const column of PIPELINE_BOARD_COLUMN_ORDER) {
-    let line = COLUMN_LABEL[column];
-    for (const row of visibleRows) {
-      const mark = column === row.column ? 'X' : '.';
-      line += NBSP + padStartNbsp(mark, cellWidth);
-    }
-    lines.push(line);
-  }
+  const lines = renderGridMatrixLines(visibleRows, visibleIds, cellWidth);
   lines.push('');
   for (const row of visibleRows) {
     lines.push(gridCaptionLine(row));
