@@ -139,3 +139,24 @@ approval_context: >
   and the merge is the sanctioned reconcile mechanism). Say the word if you
   want a different exemption shape; otherwise approving adopts the BL-925
   rule for the history sweep too.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20: not promoted. TWO independent blockers, either
+  one sufficient:
+
+  1. human_approval: pending - not `approved`, so the approval gate refuses
+     regardless of everything else. This is an answer owed to a human, not the
+     swarm being idle: BL-962 is queued behind an operator decision.
+  2. Capacity: backlog/active/ holds 7 against an effective cap of 7
+     (effective_backlog_depth_cli.bb, live full-forge pack). At the cap, no slot.
+
+  RANK WHEN UNBLOCKED: BL-962 is type: defect / severity: high, so it IS
+  expedited under Article 3.2.4 and is currently the ONLY expedited ticket in
+  backlog/paused/ (re-ranked this turn; BL-961 left the lane when the specifier
+  dropped it to medium). It therefore takes the next open slot ahead of every
+  non-expedited candidate - once BOTH the approval lands and a slot frees.
+  Expedite reorders only; it never creates an extra slot and never overrides
+  the approval gate.
+
+  No orthogonality conflict, no ambulance freeze (status: inactive), no
+  onboarding-contract hold, depends_on empty.
