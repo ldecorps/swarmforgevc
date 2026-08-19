@@ -16,6 +16,9 @@ acceptance: specs/features/BL-949-concierge-board-wiring-asserts-the-live-layout
 required_wiring:
   - "specs/pipeline/steps/index.js::bl949::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
 
+abandoned_commits:
+  - "655ba4bd4f"
+
 invariants:
   - "A wiring test asserts only what the wiring proves. The matrix's internal padding, its caption format and its column ordering are pipelineBoard's own contract, gated by pipelineBoard.test.js and BL-585's acceptance suite; a conciergeTick test that re-asserts them adds no coverage and goes red the moment that contract legitimately changes - which is exactly how these two broke."
   - "Every corrected assertion stays non-vacuous: removing the folders-to-board join, or the role-held join, must make it fail. A test rewritten until it passes is worse than a deleted one, because it still reads as coverage."
