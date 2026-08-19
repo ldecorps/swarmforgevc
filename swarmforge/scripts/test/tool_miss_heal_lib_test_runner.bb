@@ -80,6 +80,12 @@
          false (tool-miss-heal-lib/single-simple-command? "node cli.js && echo done"))
 (assert= "single-simple-command?: a multi-line command is not simple"
          false (tool-miss-heal-lib/single-simple-command? "node cli.js\necho done"))
+(assert= "single-simple-command?: a trailing comment is not simple - an appended argument would land INSIDE the comment, inert (BL-960 bounce D1)"
+         false (tool-miss-heal-lib/single-simple-command? "node tool.js # BL-960 note"))
+(assert= "single-simple-command?: any # declines, quoted or not (conservative: a false negative merely declines a heal)"
+         false (tool-miss-heal-lib/single-simple-command? "node tool.js \"a#b\""))
+(assert= "healed-command: missing-root-argv DECLINES (nil) for a command with a trailing comment (BL-960 bounce D1)"
+         nil (tool-miss-heal-lib/healed-command :missing-root-argv "node tool.js # BL-960 note" "/w"))
 (assert= "single-simple-command?: a heredoc is not simple"
          false (tool-miss-heal-lib/single-simple-command? "cat <<EOF\nhi\nEOF"))
 (assert= "single-simple-command?: a command substitution is not simple"

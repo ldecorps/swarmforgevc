@@ -125,8 +125,11 @@
 (defn single-simple-command?
   [command]
   (let [c (or command "")]
+    ;; # included (BL-960 bounce D1): a trailing comment swallows an
+    ;; appended argument - valid bash, inert heal. Quote-blind like the
+    ;; rest of the class: declining a quoted "a#b" is the safe direction.
     (boolean (and (not (str/blank? c))
-                  (not (re-find #"[|;&<>()`\n\\]" c))))))
+                  (not (re-find #"[|;&<>()`\n\\#]" c))))))
 
 (defn healed-command
   [miss-class original-command pinned-worktree]

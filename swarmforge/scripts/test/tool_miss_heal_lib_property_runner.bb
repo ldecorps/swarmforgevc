@@ -398,7 +398,10 @@
 ;; candidate by construction, never a lucky collision.
 (def BL960-SIMPLE-BASE-POOL
   ["node cli.js" "node cli.js --flag value" "bb propose_onboarding_prompts.bb" "python3 tool.py -v"])
-(def BL960-SEPARATOR-POOL ["; " " && " " | " "\n"])
+;; " # " derives the trailing-comment sibling (BL-960 bounce D1): the append
+;; would land inside the comment, inert - the same conflation-by-derivation
+;; principle as the other separators, so every draw covers it by construction.
+(def BL960-SEPARATOR-POOL ["; " " && " " | " "\n" " # "])
 (def BL960-TAIL-POOL ["echo \"---done---\"" "printf done" "true"])
 
 (defn- gen-bl960-misdirect-scenario [s]
