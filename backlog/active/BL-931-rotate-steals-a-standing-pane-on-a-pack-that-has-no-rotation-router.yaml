@@ -259,3 +259,6 @@ qa_e2e_procedure: |
      mutation ran.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-18, by: architect, blamed: coder, class: behavior, commit: 396a1de1df, evidence: backlog/evidence/BL-931-bounce-20260819.md }
