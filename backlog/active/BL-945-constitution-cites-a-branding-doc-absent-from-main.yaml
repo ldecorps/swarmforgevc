@@ -137,6 +137,7 @@ approval_context: >
   the remedy for this one instance changes.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 0bfd52db4a, evidence: backlog/evidence/BL-945-architect-bounce-20260819.md }
+  - { at: 2026-08-19, by: QA, blamed: coder, class: unit, commit: 65e0154ed, evidence: backlog/evidence/BL-945-qa-bounce-20260819.md }
