@@ -1038,6 +1038,10 @@ changes, config tweaks, pure refactors with existing coverage).
      stage after the current one
    - Rewrites the handoff `to:` field to skip directly to that stage
    - Records the skipped stages in the handoff envelope and in a durable log
+     — **recording runs for every forward hop regardless of declaration
+     state** (absent, invalid, or the sender's worktree simply lacking the
+     field yet); only the *rewrite* is gated on a usable declaration
+     (BL-951, see `docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md`)
 
 3. **Skipped stages are visible** — the handoff trail shows:
    - `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change` envelope header (grammar: `ticket-id from->to skipped=a,b reasons=stage:reason;...`)
@@ -1083,7 +1087,7 @@ the old predictable pipeline.
 
 `.swarmforge/routing-skips.jsonl` (one JSON event per line) records every skip:
 
-Envelope header grammar: `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change`
+Envelope header grammar: `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change`. A hop whose `required_stages` declaration is present but invalid also appends `rejected="<reason>"` (BL-951); the jsonl line carries the same reason under `rejection-reason`.
 
 ```json
 {"ticket-id":"BL-042","from":"coder","to":"QA","skipped":["cleaner","architect","hardender","documenter"],"reasons":{"cleaner":"style-only, no code logic","architect":"configuration change","hardender":"no new code paths","documenter":"no user-facing docs change"},"sender":"coder","created_at":"2026-07-23T14:30:15Z"}

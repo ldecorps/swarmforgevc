@@ -1,6 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-620: the Telegram front desk's
+**Last Updated:** August 19, 2026 (BL-951: `route-required-stages`
+(`swarmforge/scripts/swarm_handoff.bb`) short-circuited before any skip was
+recorded whenever a ticket's `required_stages` resolved to `:default-full`
+— field absent, unparseable, present-but-invalid, or (the sharper finding)
+the sender's own worktree simply lacking an active-ticket copy of the field
+yet, the BL-317/BL-325 staleness window between a specifier's `main`-side
+declaration and the sender's next merge. Measured live: BL-631's coder→QA
+bounce-fix hop jumped four stages with no `routing_skipped` header and no
+`.swarmforge/routing-skips.jsonl` line, while BL-945's identical jump six
+minutes later recorded both — purely because BL-945 declared and BL-631 did
+not, exactly inverting the design intent that the conservative "no
+declaration" default should be the LOUDEST case, not the silent one. A
+third data point (BL-935) showed the same blind spot even on a ticket that
+DID declare on `main`, because the sender's worktree had not yet merged it
+at hop time. Fixed by deriving the record from the hop itself
+(`hop-skipped-stages sender delivered`), which needs no declaration to
+compute, so recording now runs for every forward hop; only the REWRITE
+decision (whether the router rewrites the literal recipient) stays gated on
+a usable declaration — delivery is unchanged for every case (`:recipients`
+byte-identical before and after). The second strand — `resolve-effective`'s
+own `:rejected?`/`:rejection-reason` keys, computed but never read by the
+caller against the library's own docstring — now travel onto the record: a
+present-but-invalid declaration appends `rejected="<reason>"` to the
+envelope header and a `rejection-reason` key to the jsonl line. Whether
+`required_stages` should become an enforcement floor (refusing an
+undeclared jump outright) is explicitly out of scope and raised with the
+operator as a separate question. No new extension command or setting —
+swarm-substrate handoff tooling under `swarmforge/scripts/`.); Previously
+August 19, 2026 (BL-620: the Telegram front desk's
 `messageTextOf` read only `update.message.text`, so any photo the principal
 sent with a caption — Telegram carries a media message's words in
 `caption`, never `text` — failed eligibility as `no-text` and was dropped
