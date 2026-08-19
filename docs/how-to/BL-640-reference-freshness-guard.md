@@ -62,9 +62,12 @@ Merge `main` (or `origin/main`, whichever the message's context implies is
 ahead) into your worktree, then run `ready_for_next.sh` again. The guard
 does not attempt the merge for you and does not require one to succeed
 cleanly on the first try — if your worktree also carries untracked,
-hot-synced script copies that block a fast-forward, that is a separate,
-already-tracked gap (BL-924, not yet built) and outside this guard's scope;
-resolve the merge by hand and re-run.
+hot-synced script copies that block a fast-forward, that is a separate gap,
+outside this guard's scope. Run
+`swarmforge/scripts/clear_identical_untracked_and_merge.bb <worktree-root>
+<ref>` instead of a bare `git merge` (BL-924, see
+`docs/how-to/BL-924-clear-identical-untracked-copies-before-merge.md`), then
+re-run `ready_for_next.sh`.
 
 ## What This Deliberately Does Not Do
 
@@ -91,4 +94,5 @@ resolve the merge by hand and re-run.
 - The "Reference-freshness pre-turn guard (BL-640)" section in
   `swarmforge/handoff-protocol.md`.
 - **BL-924** — the untracked hot-synced-copy defect that can block the
-  merge this guard asks for; deliberately a separate ticket.
+  merge this guard asks for; deliberately a separate ticket, now built
+  (`docs/how-to/BL-924-clear-identical-untracked-copies-before-merge.md`).
