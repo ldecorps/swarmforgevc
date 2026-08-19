@@ -31,9 +31,23 @@ otherwise coerced. That ceiling is then passed as `resolveWorkerPoolSize`'s
 own `ceiling` argument, so the memory-derived count stays an absolute
 upper bound and the pool is still floored at 1: even an explicit
 `SWARMFORGE_VITEST_MAX_FORKS=9` can only ever LOWER the fork count, never
-raise it. The pack needed no new wiring — `SWARMFORGE_PACK` is already
-exported into every agent's environment, and a human running the suite on
-a quiet laptop has no such variable, so they keep the full budget. Both
+raise it. A human running the suite on a quiet laptop has no
+`SWARMFORGE_PACK` at all, so they keep the full budget — but how that
+variable reaches an agent shell is INHERITED, not wired, and that decides
+whether the ceiling engages: no launcher in this repo exports
+`SWARMFORGE_PACK=full-forge` (the five alternative-provider wrappers each
+export a `*-mono-router` value; default `start-swarm.sh` only reads it and
+passes the result as `--pack`, a config-file selector consumed as
+`swarmforge/packs/NAME.conf`, leaving `PACK` an unexported local — the env
+var and the `--pack` selector are two mechanisms sharing one name). It
+engages only when the launching shell already carried the value and the
+panes inherited it, which is the case measured on this host 2026-08-19: a
+role shell reports `full-forge` and resolves 1 fork (3 with it cleared),
+while `tmux show-environment` reports `unknown variable` for all 8
+sessions — so confirm against the pane's own shell, never
+`tmux show-environment`. Making that inheritance explicit at launch — so
+the ceiling does not depend on how the swarm happened to be started — is
+BL-961's job, not this ticket's. Both
 lanes resolve through ONE route: the eight identical composition lines
 that `vitest.config.mjs` and `vitest.properties.config.mjs` each carried
 collapsed onto a single `resolveVitestWorkerPool`, which makes the
@@ -3055,10 +3069,29 @@ runaway agent, was the OOM source.
   `resolveWorkerPoolSize` as its own `ceiling` argument, so the RAM budget
   remains an absolute upper bound and the pool keeps its floor of 1: this
   can only ever LOWER the fork count, never raise it (`…MAX_FORKS=9` on
-  the 8192MB host still resolves to 3). No pack plumbing was needed —
-  `SWARMFORGE_PACK` is already in every agent's environment, and a human
-  running the suite outside a pack has no such variable, so a quiet laptop
-  keeps the full budget. Both lanes compose the ceiling and the memory
+  the 8192MB host still resolves to 3). A human running the suite outside a
+  pack has no `SWARMFORGE_PACK` at all, so a quiet laptop keeps the full
+  budget. **How the variable reaches an agent shell is inherited, not
+  wired**, and the distinction decides whether this ceiling engages at all:
+  no launcher in this repo exports `SWARMFORGE_PACK=full-forge`. The five
+  alternative-provider wrappers (`start-swarm-{gpt,mistral,qwen,anthropic,
+  gemini}.sh`) each export a `*-mono-router` value; the default
+  `start-swarm.sh` only READS the variable (`resolve_launch_pack`) and
+  passes the result to `swarmforge/scripts/swarmforge.sh` as `--pack`,
+  which consumes it as a **config-file selector** (`swarmforge/packs/
+  NAME.conf`) and keeps `PACK` a plain unexported local. The env var the
+  resolver reads and the `--pack` config selector are two different
+  mechanisms sharing one name. So the ceiling engages only when the shell
+  that launched the swarm already carried `SWARMFORGE_PACK=full-forge`,
+  which the pane processes then inherit. Measured on this host 2026-08-19,
+  both halves: a role shell reports `SWARMFORGE_PACK=full-forge` and its
+  `vitest.config.mjs` resolves 1 fork (3 with the variable cleared), while
+  `tmux show-environment` reports `unknown variable` for all 8 sessions —
+  the tmux SESSION environment never carried it, only the inherited process
+  environment did. Check the pane's own shell, not `tmux show-environment`,
+  when confirming whether the cap is live. Making that inheritance explicit
+  at launch — so the ceiling does not depend on how the swarm happened to
+  be started — is BL-961's job, not this ticket's. Both lanes compose the ceiling and the memory
   budget through **one** shared `resolveVitestWorkerPool`, rather than the
   identical eight lines each config used to carry: neither lane can size
   its pool by a route the other does not share, by construction. The module
