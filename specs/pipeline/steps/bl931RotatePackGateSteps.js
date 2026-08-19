@@ -146,6 +146,21 @@ function captureFixtureState(ctx) {
   ctx.specifierScriptExists = fs.existsSync(path.join(ctx.root, '.swarmforge', 'launch', 'specifier.sh'));
 }
 
+// Hardening (BL-931): seedFixture (the Background step) creates ctx.root,
+// but the "Given the pack declares <rotation mode>" step below can throw
+// while VALIDATING the example value, before the When step's own
+// try/finally ever runs - exactly the shape a Gherkin mutant of
+// <rotation mode> exercises (confirmed leaking two real fixture dirs into
+// $TMPDIR during this ticket's own BL-113 pass). A try/finally local to
+// the throwing step cannot save it either: the dir was created by a
+// DIFFERENT (earlier) step. Every throw that can fire before the When
+// step's cleanup must release the fixture itself.
+function cleanupFixture(ctx) {
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+  }
+}
+
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.defineScoped(
@@ -161,6 +176,7 @@ function registerSteps(registry) {
     /^the pack declares (.+)$/,
     (ctx, raw) => {
       if (!Object.prototype.hasOwnProperty.call(KNOWN_ROTATION_MODES, raw)) {
+        cleanupFixture(ctx);
         throw new Error(`bl931: unrecognized <rotation mode> example value "${raw}"`);
       }
       writeConf(ctx, KNOWN_ROTATION_MODES[raw]);
@@ -193,7 +209,7 @@ function registerSteps(registry) {
         runResidentRotate(ctx);
         captureFixtureState(ctx);
       } finally {
-        fs.rmSync(ctx.root, { recursive: true, force: true });
+        cleanupFixture(ctx);
       }
     },
     FEATURE_NAME
@@ -206,7 +222,7 @@ function registerSteps(registry) {
         runDaemonRotate(ctx);
         captureFixtureState(ctx);
       } finally {
-        fs.rmSync(ctx.root, { recursive: true, force: true });
+        cleanupFixture(ctx);
       }
     },
     FEATURE_NAME
