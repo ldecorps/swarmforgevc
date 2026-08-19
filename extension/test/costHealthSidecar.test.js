@@ -8,6 +8,7 @@ const {
   COST_HEALTH_SIDECAR_SCHEMA_VERSION,
   bucketDailyFlowBalance,
   bucketDailyReliabilityEvents,
+  bucketDailyDaemonRestarts,
   buildCostHealthSidecar,
   renderCostHealthSection,
   renderCostTrendChartLines,
@@ -17,6 +18,7 @@ const {
   computeCostHealthSidecar,
 } = require('../out/notify/costHealthSidecar');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
+const { freshnessIncidentLogPath } = require('../out/metrics/swarmMetrics');
 const { appendHostLoadSample } = require('../out/metrics/resourceTelemetry');
 const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
@@ -317,17 +319,141 @@ test('flowBalance.rework.bouncesPerDay renders unavailable (null) before the epo
   assert.equal(onEpoch.value, 1);
 });
 
-test('reliability counts carry a trend per field, and daemonRestarts is always zero (no telemetry source exists yet)', () => {
+test('reliability counts carry a trend per field, and daemonRestarts is derived from the freshness incident series like its siblings, not a hardcoded literal', () => {
   const reliability = {
     chases: [{ periodStart: '2026-07-08T00:00:00Z', value: 1 }, { periodStart: '2026-07-09T00:00:00Z', value: 4 }],
     nudges: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
     respawns: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
     failedDeliveries: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    daemonRestarts: [{ periodStart: '2026-07-08T00:00:00Z', value: 2 }, { periodStart: '2026-07-09T00:00:00Z', value: 5 }],
   };
   const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, reliability, [], []);
   assert.equal(sidecar.reliability.chases.value, 4);
   assert.equal(sidecar.reliability.chases.trend.direction, 'up');
+  assert.equal(sidecar.reliability.daemonRestarts.value, 5);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.direction, 'up');
+});
+
+// BL-904 invariant 2: a missing/unreadable incident log (daemonRestarts:
+// null/undefined on the input series) must report "no data" - an empty
+// trend series with currentValue null - never fall back to a measured
+// zero. Distinguished from BL-904's OWN "genuine zero" case below, which
+// has a real (non-empty) series.
+test('BL-904: daemonRestarts reports no data (empty trend series) when the input series is null, distinguishable from a measured zero', () => {
+  const reliability = {
+    chases: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    nudges: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    respawns: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    failedDeliveries: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    daemonRestarts: null,
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, reliability, [], []);
   assert.equal(sidecar.reliability.daemonRestarts.value, 0);
+  assert.deepEqual(sidecar.reliability.daemonRestarts.trend.series, []);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.currentValue, null);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.direction, 'unknown');
+});
+
+// BL-904 invariant 2: a MEASURED zero (log readable, real day(s) of
+// history, zero restarts) must be distinguishable from the null case
+// above via a non-null currentValue, even though direction is 'unknown'
+// in both cases for a single-point series.
+test('BL-904: daemonRestarts reports a measured zero (non-null currentValue) distinctly from the no-data case', () => {
+  const reliability = {
+    chases: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    nudges: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    respawns: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    failedDeliveries: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    daemonRestarts: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, reliability, [], []);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 0);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.series.length, 1);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.currentValue, 0);
+});
+
+// ── bucketDailyDaemonRestarts (pure) ─────────────────────────────────────
+
+test('bucketDailyDaemonRestarts returns null when events is null (no data source)', () => {
+  assert.equal(bucketDailyDaemonRestarts(null, Date.now()), null);
+});
+
+test('bucketDailyDaemonRestarts counts only action=restart, excluding action=escalate', () => {
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const events = [
+    { epoch: Math.floor(Date.parse('2026-07-09T01:00:00Z') / 1000), daemon: 'handoffd', action: 'restart' },
+    { epoch: Math.floor(Date.parse('2026-07-09T02:00:00Z') / 1000), daemon: 'handoffd', action: 'restart' },
+    { epoch: Math.floor(Date.parse('2026-07-09T03:00:00Z') / 1000), daemon: 'babysitterd', action: 'escalate' },
+  ];
+  const series = bucketDailyDaemonRestarts(events, nowMs);
+  const today = series.find((p) => p.periodStart.startsWith('2026-07-09'));
+  assert.equal(today.value, 2);
+});
+
+test('bucketDailyDaemonRestarts gap-fills every day between the earliest event and now, same as the sibling reliability fields', () => {
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const events = [{ epoch: Math.floor(Date.parse('2026-07-07T01:00:00Z') / 1000), daemon: 'handoffd', action: 'restart' }];
+  const series = bucketDailyDaemonRestarts(events, nowMs);
+  assert.deepEqual(
+    series.map((p) => p.periodStart.slice(0, 10)),
+    ['2026-07-07', '2026-07-08', '2026-07-09']
+  );
+});
+
+// ── computeCostHealthSidecar end-to-end wiring (BL-904) ──────────────────
+
+function writeFreshnessIncidentLog(targetPath, lines) {
+  const logPath = freshnessIncidentLogPath(targetPath);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, lines.join('\n') + (lines.length > 0 ? '\n' : ''));
+}
+
+function freshnessLine(epochSeconds, daemon, action) {
+  return `epoch=${epochSeconds} daemon=${daemon} age_secs=999 threshold=600 action=${action}`;
+}
+
+// BL-904 acceptance scenario 01/02: the real end-to-end wiring, not just
+// the pure functions - a real fixture log read through computeCostHealthSidecar.
+test('computeCostHealthSidecar counts real restart records from the freshness incident log and excludes escalates', () => {
+  const target = mkTmpDir('sfvc-costhealth-daemonrestarts-');
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const todayEpoch = Math.floor(Date.parse('2026-07-09T01:00:00Z') / 1000);
+  const lines = [];
+  for (let i = 0; i < 155; i++) {
+    lines.push(freshnessLine(todayEpoch + i, 'handoffd', 'restart'));
+  }
+  for (let i = 0; i < 100; i++) {
+    lines.push(freshnessLine(todayEpoch + i, 'handoffd', 'escalate'));
+  }
+  writeFreshnessIncidentLog(target, lines);
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], nowMs);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 155);
+});
+
+// BL-904 invariant 2 / acceptance scenario 04: no log file at all reports
+// no data, not a measured zero.
+test('computeCostHealthSidecar reports daemonRestarts as no-data when the freshness incident log does not exist', () => {
+  const target = mkTmpDir('sfvc-costhealth-daemonrestarts-');
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 0);
+  assert.deepEqual(sidecar.reliability.daemonRestarts.trend.series, []);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.currentValue, null);
+});
+
+// BL-904 acceptance scenario 05: a malformed line does not discard the
+// good records, driven through the real reader end to end.
+test('computeCostHealthSidecar still counts good restart records when the log also has a truncated line', () => {
+  const target = mkTmpDir('sfvc-costhealth-daemonrestarts-');
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const todayEpoch = Math.floor(Date.parse('2026-07-09T01:00:00Z') / 1000);
+  writeFreshnessIncidentLog(target, [
+    freshnessLine(todayEpoch, 'handoffd', 'restart'),
+    freshnessLine(todayEpoch + 1, 'handoffd', 'restart'),
+    'epoch=' + (todayEpoch + 2) + ' daemon=handoffd age_secs=999 thresho',
+    freshnessLine(todayEpoch + 3, 'handoffd', 'restart'),
+  ]);
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], nowMs);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 3);
 });
 
 test('resource anomalies include only roles whose rss or cpu moved meaningfully', () => {
