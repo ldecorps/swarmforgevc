@@ -101,6 +101,23 @@
             :reason "busy host" :load "12/11/10" :detected-at "2026-08-01"}]
           hand-parsed))
 
+;; ── BL-942 architect bounce D1: reason/load survive an embedded quote ─────
+(def d-quoted {:parcel "BL-999" :gate "mutation" :file-set ["a.ts"]
+               :reason "blocked by the \"quiet host\" promise"
+               :load "44/27/22" :detected-at "2026-08-19"})
+(def quoted-rendered (hdl/render-ledger [d-quoted]))
+(check "render-ledger escapes an embedded double-quote in reason (never a bare unescaped \")"
+       (clojure.string/includes? quoted-rendered "\\\"quiet host\\\""))
+(check "parse-ledger round-trips a reason/load containing an embedded double-quote exactly"
+       (= [d-quoted] (hdl/parse-ledger quoted-rendered)))
+
+;; a literal backslash immediately adjacent to a quote - the exact shape
+;; that breaks a naive two-pass (replace \, then replace ") escaper
+(def d-backslash-quote {:parcel "BL-921" :gate "CRAP" :file-set ["z.ts"]
+                         :reason "path is a\\\"b" :load "1/1/1" :detected-at "2026-08-19"})
+(check "a literal backslash immediately before a quote also round-trips exactly"
+       (= [d-backslash-quote] (hdl/parse-ledger (hdl/render-ledger [d-backslash-quote]))))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

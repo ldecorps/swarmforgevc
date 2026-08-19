@@ -39,17 +39,50 @@
   {"parcel" :parcel "gate" :gate "file_set" :file-set
    "reason" :reason "load" :load "detected_at" :detected-at})
 
+;; BL-942 architect bounce D1: reason/load are free-form prose (the "why" a
+;; hardening pass deferred), and a naive first-"-scan for the closing quote
+;; silently truncated at the FIRST embedded `"` with no error - "blocked by
+;; the \"quiet host\" promise\" round-tripped to just "blocked by the ".
+;; escape-quoted/unescape-quoted are single-pass character walks (never
+;; sequential str/replace calls, which mis-round-trip once an escaped `\`
+;; and an escaped `"` can appear adjacent to each other) so `\` -> `\\` and
+;; `"` -> `\"` on the way out, and the exact reverse on the way in, compose
+;; correctly for any input, not just the one reproduced case.
+(defn- escape-quoted [s]
+  (apply str (mapcat (fn [c] (case c \\ "\\\\" \" "\\\"" (str c))) (or s ""))))
+
+(defn- unescape-quoted [s]
+  (loop [cs (seq s) out []]
+    (if (empty? cs)
+      (apply str out)
+      (let [c (first cs)]
+        (if (and (= c \\) (seq (rest cs)))
+          (recur (nnext cs) (conj out (second cs)))
+          (recur (rest cs) (conj out c)))))))
+
+(defn- find-closing-quote
+  "Index of the closing (unescaped) double-quote in s (s[0] is the opening
+   quote, search starts at 1). A \\\" pair never closes the string - skips
+   the escaped character whole, so it can never land mid-escape-sequence."
+  [s]
+  (loop [i 1]
+    (cond
+      (>= i (count s)) nil
+      (= (nth s i) \\) (recur (+ i 2))
+      (= (nth s i) \") i
+      :else (recur (inc i)))))
+
 (defn- strip-inline-comment [s]
   (let [s (str/trim (or s ""))]
     (if (str/starts-with? s "\"")
-      (let [end (str/index-of s "\"" 1)]
+      (let [end (find-closing-quote s)]
         (if end (subs s 0 (inc end)) s))
       (let [idx (str/index-of s " #")]
         (str/trim (if idx (subs s 0 idx) s))))))
 
 (defn- unquote-str [s]
   (if (and (str/starts-with? s "\"") (str/ends-with? s "\"") (> (count s) 1))
-    (subs s 1 (dec (count s)))
+    (unescape-quoted (subs s 1 (dec (count s))))
     s))
 
 (defn- parse-scalar [raw]
@@ -92,8 +125,8 @@
   (str "- parcel: " parcel "\n"
        "  gate: " gate "\n"
        "  file_set: " (str/join "," (normalize-file-set file-set)) "\n"
-       "  reason: \"" reason "\"\n"
-       "  load: \"" load "\"\n"
+       "  reason: \"" (escape-quoted reason) "\"\n"
+       "  load: \"" (escape-quoted load) "\"\n"
        "  detected_at: " detected-at "\n"))
 
 (def ledger-header
