@@ -114,6 +114,22 @@ notes: >
   pairs assert genuinely different behaviour, and 02's cross-role
   invariant cannot be folded into 01's single-role Outline.
 
+  COORDINATOR HOLD 2026-08-19 (22:07Z, CORRECTED 22:30Z): not promoted
+  despite defect/high expedite eligibility (Article 3.2.4) and
+  human_approval: approved - backlog/active/ holds 7 tickets against an
+  effective depth cap of 7 (effective_backlog_depth_cli.bb, live
+  full-forge pack; no circuit-breaker throttle in force). Active is AT
+  the cap, not below it, so no slot exists. The 22:07Z wording of this
+  hold cited a cap of 2 read from mono-router.conf - the wrong pack's
+  conf, not the live one; the promotion decision is unchanged but the
+  stated reason was wrong and is superseded here.
+
+  Expedite reorders the queue only, it never creates an extra active
+  slot - BL-961 stays TOP of the paused queue and takes the next open
+  slot ahead of every non-expedited candidate. No orthogonality
+  conflict, no onboarding-contract gate, no ambulance freeze
+  (ambulance_cli.bb status: inactive) - depth alone is the blocker.
+
 approval_context: >
   One decision to confirm, the rest is settled. The fix direction is "export
   the env var from the launcher" rather than "teach the vitest resolver to
