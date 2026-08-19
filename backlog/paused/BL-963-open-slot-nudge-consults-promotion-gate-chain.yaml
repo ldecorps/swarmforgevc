@@ -90,7 +90,16 @@ qa_e2e_procedure: >
      escalation counter never advances for it.
 
 notes: >
-  1:1 - the architect's note produced this ticket and no other. BL-957
+  N:1 consolidation - TWO sources produced this ticket and no other: the
+  architect's spec-gap note above (20260819T231719Z_000266 to specifier;
+  000267 to coordinator), and the coordinator's independent CONFIRMED
+  verification (note 20260819T231945Z_000630, evidence
+  backlog/evidence/BL-957-coordinator-nudge-depends-on-gap-20260820.md,
+  commit 76cbd1067 - same three legs this ticket's description states, plus
+  the observation that a spent escalate-once on a never-promotable
+  candidate goes silent afterwards and reads as resolution; scenario 04
+  covers it). The evidence file's open scope question (extend BL-957 vs
+  sibling slice) is answered: sibling slice, this ticket. BL-957
   itself is amended only with an out-of-scope pointer naming this slice
   (bookkeeping, no rebuild); its own gate work is untouched and its
   invariant 1 (promotion routes) genuinely does not cover the nudge, which
