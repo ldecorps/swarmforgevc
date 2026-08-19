@@ -1,6 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-952: `is_qa_ancestor.sh` — the one
+**Last Updated:** August 19, 2026 (BL-620: the Telegram front desk's
+`messageTextOf` read only `update.message.text`, so any photo the principal
+sent with a caption — Telegram carries a media message's words in
+`caption`, never `text` — failed eligibility as `no-text` and was dropped
+with zero log output anywhere; diagnosing a live incident (a usage
+screenshot with a caption directive that got no reply) took a full replay
+session. `messageTextOf` now returns `text ?? caption` — one seam every
+consumer inherits (main routing, steering, agent-questions, control
+delivery, negotiation relay). Deliberately **no vision**: routed caption
+content is annotated `[image attached - not read by the front desk]` at
+the posting boundary, so no one mistakes a routed caption for the front
+desk having seen the picture, and a photo with an absent or empty caption
+gets its own distinct, visible drop reason `media-no-caption` rather than
+folding into ordinary `no-text` silence. Every drop path (`not-my-chat`,
+`not-principal`, `no-text`, `media-no-caption`) now writes exactly one
+bounded audit line to the supervisor log naming the update id and reason
+— no message content — through an injected `logDropAudit` seam, closing
+the class of silent drops the incident surfaced. Voice notes are
+unaffected (pre-empted to their own path before this decision, per
+BL-426, and never carry `photo`). No new extension command or setting —
+Telegram incarnation behavior (Architecture Rule 7).); Previously
+August 19, 2026 (BL-952: `is_qa_ancestor.sh` — the one
 shared "is this sha QA-approved" predicate behind both the push sweep
 and `check_pipeline_code_on_main.sh` — was pure git reachability:
 `git merge-base --is-ancestor <sha> swarmforge-QA`. QA merges a parcel into
