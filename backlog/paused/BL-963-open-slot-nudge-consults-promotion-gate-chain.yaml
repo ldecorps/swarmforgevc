@@ -131,3 +131,29 @@ approval_context: >
   problem when everything is blocked, and duplicates information the
   coordinator gets from the gate's own REFUSE reason at promotion time. Say
   the word if you want blocked candidates surfaced instead of filtered.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20: not promoted. THREE independent blockers, any
+  one sufficient:
+
+  1. depends_on: [BL-957] is UNSATISFIED - BL-957 is in backlog/active/, not
+     backlog/done/. Per BL-957's own approval_context ruling (1), a dependency
+     counts as satisfied ONLY when it is in done/; an ACTIVE dependency still
+     refuses. Applied here by hand, since the gate that will enforce it is
+     precisely what BL-957 is building.
+  2. human_approval: pending - not `approved`. An answer owed by a human.
+  3. Capacity: active/ holds 7 against an effective cap of 7 (live full-forge
+     pack). At the cap, no slot.
+
+  RANK WHEN UNBLOCKED: type defect / severity medium, so NOT expedited under
+  Article 3.2.4. It queues on its ordinary priority: 30, behind BL-962
+  (defect/high, currently the only expedited ticket in paused/).
+
+  NOTE FOR WHOEVER BUILDS THIS: BL-963 is itself a live instance of the defect
+  it fixes. It is dependency-blocked right now, yet nothing in
+  chase_sweep_lib.bb's candidate picker knows that - so the open-slot nudge is
+  free to name BL-963 as a top candidate that the promotion gate would refuse.
+  A concrete regression fixture, not a hypothetical. See evidence 76cbd1067.
+
+  No orthogonality conflict, no ambulance freeze (status: inactive), no
+  onboarding-contract hold.
