@@ -96,6 +96,34 @@ You are the hardender.
   equivalent survivors, so the manifest wrote `scenarios: []`, indistinguishable
   from a broken/no-op run unless you know a non-clean scenario is always
   excluded.)
+- BL-927: a SURVIVED Gherkin mutant that only FLIPS THE CASE of a value used as
+  a path component — a role name above all — may have survived because this
+  host's volume is case-insensitive, not because the code treats the two values
+  alike. Verify the host first: `touch ./tmp/x/CoDeR && ls ./tmp/x/coder`
+  succeeding proves the collision. Measured 2026-08-19: APFS, `ls` resolves the
+  flipped name onto the same file, and the BL-927 fixture builds `wt-coder` /
+  `wt-cleaner` straight from the column, so `wt-Coder` reopens the real coder
+  mailbox and no assertion can see the mutation.
+- **That probe explains the survival; it does NOT make the mutant equivalent,
+  and this is NOT the BL-234 exception.** BL-234 equivalence must be
+  demonstrable FROM THE CODE — interchangeable by design, where *no* assertion
+  could ever differentiate. Here an assertion on a case-SENSITIVE volume would
+  differentiate immediately, so the survivor is *host-masked*, a third category
+  sitting between killed and equivalent. Recording it as a BL-234 equivalent
+  files a real open question as settled, and the follow-up never gets asked.
+- **Do not conclude "not a real gap" from the probe.** This project supports
+  macOS AND Linux (local-engineering.prompt: "Target OS: macOS and Linux only"),
+  and role names are genuinely case-bearing in its paths — `.worktrees/QA/` is
+  mixed-case on disk today, so on ext4 `qa` and `QA` are two different
+  directories. A case-flip that is invisible here can be a live portability
+  defect there.
+- Action on such a survivor: record it as HOST-MASKED with the `touch`/`ls`
+  evidence and the path it collided on — never as equivalent — then read the
+  code path once to answer the question the mutant actually raised: does it
+  derive the role name from a fixed known set, or normalize case, before
+  building the path? If it does, say so in the record and move on. If it
+  trusts arbitrary casing, that is a defect to raise on its own ticket
+  (`type: defect`, severity per impact), not an equivalence to accept.
 - Final CRAP and DRY verification after the cleaner's local cleanup: confirm CRAP
   and duplication have not regressed in the hardened result.
 - Keep mutation/hardening tests separate from the unit and acceptance suites.
@@ -976,3 +1004,47 @@ You are the hardender.
   fixture was either tip-equals-sha or unrelated refs. A single
   descendant-of-published-tip fixture discriminated the direction and killed
   it.)
+
+## A run that legitimately needs more than ~120s escapes the cap only via `python3` double-fork + `os.setsid` — never via a bigger `timeout` (rule_proposal 2026-08-19, accepted)
+- **Reach for the smaller answer first.** The escape hatch below costs a
+  detached process and a second turn to collect it, so it is the LAST resort,
+  not the default: prefer static/parse-based verification (source-text checks,
+  `node --check`, loading a Babashka file minus its side-effecting entrypoint),
+  then the smallest meaningful slice (the one file that changed, not three),
+  then handing the full heavy run to QA — many tickets' `qa_e2e_procedure`
+  already expects QA to run it under real host load. Only when a real execution
+  genuinely must happen HERE and genuinely exceeds the ceiling do you detach.
+- **The ceiling is not a parameter you can raise.** A `Bash` call with
+  `timeout: 300000` or `480000` still returns `Command timed out after 2m 0s`
+  (exit 143); `run_in_background: true` does not detach either, returning the
+  same 2m timeout instead of a task handle; and `nohup … & disown` dies too
+  (exit 144) — this sandbox reaps the child when the tool call returns,
+  whatever job-control trick wrapped it. Retrying with a larger number is the
+  one response guaranteed to waste a turn.
+- **What survives is a double fork with `os.setsid()` between the two**, stdin
+  opened from `/dev/null`, and stdout+stderr redirected into a log file under
+  your worktree's `./tmp/`. `setsid(1)` itself is NOT available here — stock
+  macOS ships no util-linux `setsid` (`command -v setsid` is empty on this
+  host), so `python3` is the portable way to make the same call. The launcher
+  returns in well under a second; collect the result on a LATER turn by
+  `tail`ing the log (or with the `Monitor` tool where it is available), never
+  by sleeping in the foreground.
+- **Embed the absolute `cd` inside the detached command, and verify the tool's
+  identity from the run's own first output lines.** A run that crosses into
+  background execution does not reliably inherit the cwd that was active when
+  you launched it, and nothing warns you: BL-815 launched `npx vitest` from
+  `extension/` with a confirming `pwd` immediately beforehand, and the
+  89-minute run that came back had executed from the repo root under a
+  different, unpinned vitest with no config. Its whole output was spurious and
+  had to be discarded.
+- **This is not a restatement of the `setsid cmd &` rule above.** That one is
+  about what `$!` means to a SCRIPT on a host where `setsid(1)` exists. This
+  one is about YOUR OWN `Bash` tool calls on this host, where it does not.
+- (Incident: BL-932 hardening 2026-08-19. The pass burned attempts on plain
+  `npm test`, on `run_in_background`, on `nohup … & disown`, and on `setsid`
+  before finding the pattern. It is a standing condition for the property lane
+  rather than one ticket's bad luck: BL-932's own `SUBPROCESS_HEAVY_TIMEOUT_MS`
+  is 240000 — four minutes, twice the ceiling — and the bl760/bl787/bl797-class
+  tests sit in the same band. Verified 2026-08-19: the launcher returned in
+  under a second and its detached child was still writing 172 seconds
+  later, well past the 120s any foreground call gets.)
