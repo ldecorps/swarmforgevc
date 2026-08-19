@@ -296,3 +296,6 @@ notes: |
 
   All 10 scenarios belong to this one slice and are built in this one parcel,
   so the live `.feature` is correct as-is (no `.feature.draft` split needed).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: cleaner, blamed: coder, class: integration, commit: 6851869053, evidence: backlog/evidence/BL-631-cleaner-bounce-20260819.md }
