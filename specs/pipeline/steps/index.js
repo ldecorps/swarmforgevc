@@ -513,10 +513,10 @@ const DOMAINS = [
   require('./bl620FrontDeskCaptionAndDropAuditSteps'),
   require('./bl951StageSkipsRecordedSteps'),
   require('./bl953TaskCommitCoherenceSteps'),
-  require('./bl955ForwardingAnnotationSteps'),
   require('./bl954BounceRevertVerifiedSteps'),
-  require('./bl827FlowWatchdogSpecThresholdsSteps'),
   require('./bl956PipelineBoardCaptionCapSteps'),
+  require('./bl955ForwardingAnnotationSteps'),
+  require('./bl827FlowWatchdogSpecThresholdsSteps'),
   require('./bl571SequentialRotationDormantParitySteps'),
   require('./bl958ControlPlaneLossSteps'),
   require('./bl960HealWrapperParseSafetySteps')

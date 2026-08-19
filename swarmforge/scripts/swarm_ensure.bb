@@ -60,7 +60,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -712,49 +711,8 @@
                   (when category (str " [" (name category) "]"))
                   (when action (str " (" action ")")))))
 
-(defn control-plane-state
-  "BL-958: classify the control plane through the shared control_plane_lib
-   before any per-role repair, and decide recovery through the same lib.
-   The loss shape (socket file + role metadata present, server gone) is what
-   the live 2026-08-19 incident looked like; the per-role repair loop below
-   IS the :relaunch-roles recovery — recreating the first session restarts
-   the tmux server itself — but the decision to run it, and what to report,
-   comes from the lib, never from blundering into per-role repairs."
-  []
-  (let [socket (tmux-socket)
-        probe (control-plane-lib/probe-server! socket)
-        classification (control-plane-lib/classify
-                        {:socket-file-exists? (fs/exists? socket-file)
-                         :server-responds? (:responds? probe)
-                         :role-metadata-present?
-                         (or (fs/exists? roles-file)
-                             (fs/exists? (fs/path state-dir "sessions.tsv")))})]
-    {:socket socket
-     :classification classification
-     :decision (control-plane-lib/recovery-decision
-                {:classification classification
-                 :launch-scripts-present? (control-plane-lib/launch-scripts-present? state-dir)})}))
-
-(defn control-plane-report!
-  "Re-probe after the repair loop ran and report honestly: FIXED only when
-   the server actually answers again (open incidents are then resolved),
-   FAILED with the decision's reason when it does not."
-  [{:keys [socket decision]}]
-  (let [after (control-plane-lib/probe-server! socket)]
-    (if (:responds? after)
-      (do (control-plane-lib/resolve-open-incidents!
-           (control-plane-lib/incidents-file state-dir)
-           (str (java.time.Instant/now)))
-          {:component "control-plane" :status :fixed
-           :action (str "control-plane-missing: " (:reason decision)
-                        "; tmux server restored")})
-      {:component "control-plane" :status :failed
-       :action (str "control-plane-missing: " (:reason decision)
-                    "; tmux server still not responding")})))
-
 (defn -main []
-  (let [cp-state (control-plane-state)
-        socket (tmux-socket)
+  (let [socket (tmux-socket)
         extension-result (if (fs/exists? headless-marker-file)
                            {:component "extension" :status :healthy
                             :action "skipped bounce (headless swarm owns tmux)"}
@@ -787,14 +745,9 @@
                                       (let [agent-result
                                             (if router?
                                               (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
-                                              ;; BL-958: ensure-standing-role!, not bare respawn-role!
-                                              ;; — after control-plane loss the SESSION is gone too,
-                                              ;; and respawn-pane against a missing session can never
-                                              ;; recover it; create-if-missing also restarts the tmux
-                                              ;; server itself on the first recreated session.
                                               (ensure-role! (str "agent:" role)
                                                             #(pane-alive? socket session)
-                                                            #(ensure-standing-role! socket role session)
+                                                            #(respawn-role! socket role session)
                                                             contract-broken?))
                                             rc-result (ensure-rc-role! socket ordered role session)]
                                         [agent-result rc-result]))
@@ -806,18 +759,6 @@
                                           :category (:category (agent-runtime-lib/classify-provider-error detail))}
                                          {:component (str "rc:" role) :status :healthy}]))
                                     rows)))
-        control-plane-result
-        (cond
-          (= :control-plane-missing (:classification cp-state))
-          (control-plane-report! cp-state)
-
-          (= :up (:classification cp-state))
-          (do (control-plane-lib/resolve-open-incidents!
-               (control-plane-lib/incidents-file state-dir)
-               (str (java.time.Instant/now)))
-              nil)
-
-          :else nil)
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
         operator-result (when (operator-enabled?)
@@ -832,9 +773,7 @@
         cursor-bridge-result (when (cursor-bridge-enabled?)
                                 (ensure-component! "cursor-bridge" cursor-bridge-healthy? ensure-cursor-bridge!
                                                     "restarted the Cursor Remote bridge"))
-        results (concat [extension-result] role-results
-                        (remove nil? [control-plane-result])
-                        [daemon-result launch-contract-check]
+        results (concat [extension-result] role-results [daemon-result launch-contract-check]
                         (remove nil? [operator-result front-desk-result babysitterd-result cursor-bridge-result]))]
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
