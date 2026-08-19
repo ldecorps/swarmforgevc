@@ -6,6 +6,22 @@
 pack on macOS", By coder), forwarded unchanged by cleaner (`d342d12772`
 is a pure merge commit).
 
+**Bookkeeping note, not part of this bounce's own defect**: this ticket's
+YAML lives under `backlog/paused/`, not `backlog/active/`, and had no
+`assigned_to:` field. `record-bounce.js` only searches
+`backlog/active/<TICKET>-*.yaml` (`extension/src/tools/
+recordQaBounceTicket.ts:13`), so it recorded this bounce in the durable
+JSONL log (`"recorded": true`) but could not merge it into the ticket's
+own `bounce_history` (`"ticketRecordUpdated": false, "reason":
+"not-found"`). Per this project's own standing lesson (a bounce dropped
+from `bounce_history` is unrecoverable — the JSONL store alone is not
+sufficient), I added the `bounce_history` entry to the paused-location
+file by hand, matching the exact shape `record-bounce.js` would have
+written. Not investigating or correcting the paused-vs-active placement
+itself — that is the coordinator's own backlog bookkeeping, out of this
+review's scope — but flagging it here since it is why the automated
+merge silently degraded.
+
 ## Checks run (complete inventory, not first-failure-stop)
 
 1. **required_wiring (2 anchors)**: both `BL-935` literals confirmed
