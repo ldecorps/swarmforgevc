@@ -164,9 +164,9 @@ export type BotUpdateDecision =
   | { action: 'recert-unrecognized'; text: string }
   | { action: 'open-default'; text: string }
   | { action: 'open-for-topic'; topicId: number; text: string }
-  | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' };
+  | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' | 'media-no-caption' };
 
-type UpdateEligibility = { ok: true; text: string } | { ok: false; reason: 'not-my-chat' | 'not-principal' | 'no-text' };
+type UpdateEligibility = { ok: true; text: string } | { ok: false; reason: 'not-my-chat' | 'not-principal' | 'no-text' | 'media-no-caption' };
 
 // Pure: the guard ahead of decideUpdateAction's routing below - split out
 // so each function's own decision complexity stays under the project's
@@ -188,9 +188,48 @@ function checkUpdateEligibility(update: TelegramUpdate, principalUserId: string,
   }
   const text = messageTextOf(update);
   if (!text) {
-    return { ok: false, reason: 'no-text' };
+    // BL-620: a media message with no usable caption (absent or empty -
+    // `??` passes an empty string through, so both land here) gets its own
+    // DISTINCT reason: a visible refusal, never a vanish indistinguishable
+    // from ordinary textless chatter. Voice notes are pre-empted to their
+    // own path before this decision is ever reached (BL-426), and carry no
+    // `photo`, so they can never classify as media-no-caption.
+    return { ok: false, reason: update.message?.photo ? 'media-no-caption' : 'no-text' };
   }
   return { ok: true, text };
+}
+
+// BL-620: the front desk has NO vision - a routed caption rides alone, and
+// the routed content says so out loud, so nobody believes the picture was
+// seen. Pure; applied at the posting boundary (never inside
+// decideUpdateAction, whose decision for a caption must equal the decision
+// for the identical plain text).
+export function annotateRoutedMediaText(text: string, update: TelegramUpdate): string {
+  if (!update.message?.photo) {
+    return text;
+  }
+  return `${text}\n[image attached - not read by the front desk]`;
+}
+
+// BL-620: the one-line drop audit - bounded, names the update id and the
+// already-computed reason, never message content. The writer is injected
+// (PollAdapters.logDropAudit, postFn-style) - this stays pure.
+export function formatDropAuditLine(updateId: number, reason: string): string {
+  return `front-desk drop update_id=${updateId} reason=${reason}`;
+}
+
+// BL-620 (hardener CRAP isolation, matching the bridgeServer.ts
+// tryServeSideloadApk precedent): processMessageUpdate is a pre-existing
+// dispatcher already over the CRAP<=6 threshold before this ticket - the
+// branch itself, not just its body, is extracted so the audit emission
+// carries its own isolated CRAP score instead of compounding the
+// dispatcher's. Self-contained (checks decision.action itself) so it is
+// safe to call unconditionally at the one call site that only ever
+// reaches it once every other decision shape has already returned.
+function emitDropAuditIfDropped(decision: BotUpdateDecision, update: TelegramUpdate, adapters: PollAdapters): void {
+  if (decision.action === 'drop') {
+    adapters.logDropAudit?.(formatDropAuditLine(update.update_id, decision.reason));
+  }
 }
 
 // Pure: the bot's whole per-update decision - given the update, the
@@ -505,6 +544,11 @@ export interface PollAdapters {
   // processUpdate/pollAndForward/runPollCycle, so those signatures - and
   // their many existing callers - are unaffected.
   chatId: string;
+  // BL-620: the injected drop-audit writer - one bounded line per dropped
+  // update (formatDropAuditLine), never a bare console call inside the
+  // pure decision code. Optional: every pre-BL-620 fixture keeps working,
+  // and production wires it to the supervisor log.
+  logDropAudit?: (line: string) => void;
   getUpdates: (offset: number) => Promise<GetUpdatesResult>;
   // BL-369: updateId (the Telegram update's own update_id) rides every call
   // so the bridge can dedupe a redelivered message by its natural
@@ -2319,11 +2363,13 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
   }
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
-    const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
+    // BL-620: annotation happens HERE, at the posting boundary - the pure
+    // decision for a caption equals the decision for the identical text.
+    const ok = await adapters.postToBridge(decision.subjectId, annotateRoutedMediaText(decision.text, update), update.update_id);
     return deliveryOutcome(ok);
   }
   if (decision.action === 'operator-context') {
-    const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
+    const ok = await deliverOperatorContext(decision.backlogId, annotateRoutedMediaText(decision.text, update), update.update_id, adapters);
     return deliveryOutcome(ok);
   }
   const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), adapters);
@@ -2331,11 +2377,16 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     return reserved;
   }
   if (isOpenDecision(decision)) {
-    await adapters.openSubjectAndRecord(openTopicIdFor(decision), decision.text, update.update_id);
+    await adapters.openSubjectAndRecord(openTopicIdFor(decision), annotateRoutedMediaText(decision.text, update), update.update_id);
     return 'posted';
   }
   // decision.action === 'drop': a DECISION, never a delivery attempt at
   // all - the offset must advance past it (see offsetAfterDelivery below).
+  // BL-620: the computed reason was previously DISCARDED right here - a
+  // dropped update produced zero log output anywhere, and diagnosing the
+  // 2026-07-24 caption incident took a live replay session. Exactly one
+  // bounded line per drop, through the injected writer (emitDropAuditIfDropped).
+  emitDropAuditIfDropped(decision, update, adapters);
   return 'dropped';
 }
 
