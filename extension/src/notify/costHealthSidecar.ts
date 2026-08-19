@@ -13,7 +13,13 @@ import {
   hostLoadSustainedMs,
   HostLoadVerdict,
 } from '../metrics/resourceTelemetry';
-import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '../metrics/swarmMetrics';
+import {
+  RoleWorktree,
+  readChaserTelemetryEvents,
+  ChaserTelemetryEvent,
+  readFreshnessIncidentEvents,
+  FreshnessIncidentEvent,
+} from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
 import { readLifecycleSnapshot } from '../metrics/lifecycleSnapshot';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
@@ -93,10 +99,10 @@ export interface ReliabilityCounts {
   nudges: TrendedNumber;
   respawns: TrendedNumber;
   failedDeliveries: TrendedNumber;
-  // BL-213: always zero - no daemon-restart telemetry event type exists in
-  // the current chaser-*.jsonl schema (chase|nudge|dead-letter|respawn
-  // only). A real, deterministic zero (nothing recorded), not a fabricated
-  // figure - filled in once that event type exists.
+  // BL-904: derived from BL-675's freshness-incident-log restart records
+  // (readFreshnessIncidentEvents/bucketDailyDaemonRestarts below), not the
+  // chaser-*.jsonl schema the other four fields read - a distinct source,
+  // never a hardcoded placeholder.
   daemonRestarts: TrendedNumber;
 }
 
@@ -222,9 +228,17 @@ export interface DailyReliabilitySeries {
   nudges: TrendSeriesPoint[];
   respawns: TrendSeriesPoint[];
   failedDeliveries: TrendSeriesPoint[];
+  // BL-904: null/undefined means "no data source" (the freshness incident
+  // log is missing or unreadable) - optional so existing callers/fixtures
+  // that predate this field keep type-checking unchanged. Never conflate
+  // this with an empty array, which means "log readable, zero restarts".
+  daemonRestarts?: TrendSeriesPoint[] | null;
 }
 
-type ReliabilityField = keyof DailyReliabilitySeries;
+// daemonRestarts is excluded - it comes from a different source
+// (the freshness incident log, bucketDailyDaemonRestarts below), never
+// from a ChaserTelemetryEvent.
+type ReliabilityField = Exclude<keyof DailyReliabilitySeries, 'daemonRestarts'>;
 
 const RELIABILITY_EVENT_TYPE_TO_FIELD: Record<string, ReliabilityField> = {
   chase: 'chases',
@@ -263,10 +277,44 @@ export function bucketDailyReliabilityEvents(events: ChaserTelemetryEvent[], now
   };
 }
 
+// BL-904: pure, restart-only daily counts from the freshness incident log.
+// `events === null` (log missing/unreadable) propagates straight through
+// as null - the "no data" signal invariant 2 requires - never silently
+// treated as zero restarts. `action=escalate` records are read but not
+// counted here (a different event: the watchdog declining a second
+// restart during cool-off - folding it in would overstate restarts by
+// roughly two thirds on real data).
+export function bucketDailyDaemonRestarts(events: FreshnessIncidentEvent[] | null, nowMs: number): TrendSeriesPoint[] | null {
+  if (events === null) {
+    return null;
+  }
+  const counts = new Map<number, number>();
+  for (const event of events) {
+    if (event.action !== 'restart') {
+      continue;
+    }
+    const bucket = bucketStartMs(event.epoch * 1000, DAY_MS);
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+  }
+  return fillDailyBuckets(counts, nowMs);
+}
+
 // ── pure sidecar assembly ────────────────────────────────────────────────
 
 function trendedFromSeries(series: TrendSeriesPoint[]): TrendedNumber {
   return { value: series.length > 0 ? series[series.length - 1].value : 0, trend: computeTrend(series) };
+}
+
+// BL-904 invariant 2: series === null/undefined (no data source) reports
+// value:0 with an EMPTY trend series (currentValue: null, direction:
+// 'unknown') - never the single always-present point trendedFromSeries
+// synthesizes for an empty Map, which is exactly what would make "no
+// data" indistinguishable from "measured, zero restarts today".
+function trendedDaemonRestarts(series: TrendSeriesPoint[] | null | undefined): TrendedNumber {
+  if (series == null) {
+    return { value: 0, trend: computeTrend([]) };
+  }
+  return trendedFromSeries(series);
 }
 
 function latestAgentDailyCost(role: string, roleCostTelemetry: RoleCostTelemetry | undefined): AgentDailyCost {
@@ -378,7 +426,7 @@ export function buildCostHealthSidecar(
       nudges: trendedFromSeries(reliabilityDailySeries.nudges),
       respawns: trendedFromSeries(reliabilityDailySeries.respawns),
       failedDeliveries: trendedFromSeries(reliabilityDailySeries.failedDeliveries),
-      daemonRestarts: { value: 0, trend: computeTrend([]) },
+      daemonRestarts: trendedDaemonRestarts(reliabilityDailySeries.daemonRestarts),
     },
     resourceAnomalies: computeResourceAnomalies(resourceTrendsByRole),
     resourceSamplesObserved: computeResourceSamplesObserved(resourceTrendsByRole),
@@ -711,7 +759,10 @@ export function computeCostHealthSidecar(
   const dateIso = toIso(nowMs).slice(0, 10);
   const costTelemetryByRole = computeCostTelemetry(targetPath, roles, claudeProjectsDir);
   const resourceTrendsByRole = computeResourceTrends(readResourceSampleEvents(targetPath), roles.map((r) => r.role), nowMs);
-  const reliabilityDailySeries = bucketDailyReliabilityEvents(readChaserTelemetryEvents(targetPath), nowMs);
+  const reliabilityDailySeries: DailyReliabilitySeries = {
+    ...bucketDailyReliabilityEvents(readChaserTelemetryEvents(targetPath), nowMs),
+    daemonRestarts: bucketDailyDaemonRestarts(readFreshnessIncidentEvents(targetPath), nowMs),
+  };
   // BL-897: the shared snapshot's records win over a fresh full-history
   // walk when usable (present, readable, from today).
   const sharedLifecycles = snapshotPath ? readLifecycleSnapshot(snapshotPath, nowMs) : null;
