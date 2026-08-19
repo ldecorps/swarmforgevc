@@ -82,6 +82,7 @@ here.
 - [The Batch-Claim Progress Sidecar](how-to/BL-678-batch-claim-progress-sidecar.md) — the live-owner half of BL-648's source near-miss: the sidecar every batch claim now writes at claim time, the chase sweep that refreshes it and surfaces (never re-forwards or re-delivers) a stale one to the coordinator, and the two staleness/cooldown config knobs.
 - [The Reference-Freshness Pre-Turn Guard](how-to/BL-640-reference-freshness-guard.md) — why `ready_for_next.sh` can now refuse a turn with `STALE_REFERENCE_ELABORATION`, what it checks (worktree vs. whichever of `main`/`origin/main` is ahead), and what to do when it fires.
 - [Clearing Byte-Identical Hot-Synced Copies Before a Worktree Merge](how-to/BL-924-clear-identical-untracked-copies-before-merge.md) — the `clear_identical_untracked_and_merge.bb` script to run instead of a bare `git merge` when untracked, hot-synced script copies block a worktree fast-forward, its all-or-nothing identity proof, and what it deliberately never touches.
+- [Keeping the operator_runtime.bb JS fixture list honest](how-to/BL-944-operator-runtime-fixture-closure-guard.md) — the source-derived load-file closure guard that replaced a six-times-drifted hand-maintained list, how to add a new dependency without repeating the drift, and how this differs from BL-671's separate shell-fixture sandbox.
 
 ## Reference
 
