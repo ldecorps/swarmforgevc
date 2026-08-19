@@ -24,3 +24,15 @@
   reason: "host load 9.98/20.10/27.01, well over 2x-cores threshold"
   load: "20.10"
   detected_at: 2026-08-19
+- parcel: BL-956-pipeline-board-caption-and-cap-hotfix
+  gate: mutation
+  file_set: extension/src/concierge/pipelineBoard.ts
+  reason: "cooldown gate DECISION: skip-cooldown (file_age_days 0.47 of 3) and host busy"
+  load: "85.56/4-cores"
+  detected_at: 2026-08-19
+- parcel: BL-956-pipeline-board-caption-and-cap-hotfix
+  gate: gherkin-mutation
+  file_set: specs/features/BL-956-pipeline-board-caption-and-cap-hotfix.feature
+  reason: "run stalled at completed=0 running=0, worker CPU flat 0.10s for 2.5min (BL-687 signature); BL-788 pre-check clean - no bridge in step file; killed and reaped, NO verdict recorded"
+  load: "96.55-145.56/4-cores"
+  detected_at: 2026-08-19
