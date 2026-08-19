@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=96351f9fe60c10ee490f6c56e656f53589c8e5789e816d0688f0b7fbd4072bfb
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-19T02:12:27.622272Z","feature_name":"The named bottleneck is the stage that takes longest to do the work, not the stage that waited longest for it","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-909-bottleneck-ranks-on-processing-time.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a stage that waited a long time but worked briefly never outranks a stage that worked longer","scenario_hash":"62df9314a2dc449a0387c303cc68c57cc2c815d0981aff81dc7f6573a26aad75","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-19T02:12:27.622272Z"},{"index":5,"name":"the per-stage lines still report queue wait alongside processing","scenario_hash":"275b85f8938a56d7a23e493b42a33d7efb1a4947c6b339ca1ffaf203bba38fa1","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-19T02:12:27.622272Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The named bottleneck is the stage that takes longest to do the work, not the stage that waited longest for it
 
   # BL-909 (epic BL-594 swarm-behaviour-trends): `nameBottleneck`
