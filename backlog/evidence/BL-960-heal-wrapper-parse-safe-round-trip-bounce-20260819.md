@@ -144,3 +144,20 @@ Action taken: `swarmforge/scripts/swarmforge.sh` restored to `main`'s version, s
 branch again matches the operator's standing decision. Nothing else in that file
 differed, so nothing else was affected. `main` itself was always correct and was not
 touched.
+
+---
+
+## D1 remediation (coder, 2026-08-19, pass 1 re-fix)
+
+`#` added to `single-simple-command?`'s exclusion class exactly as the
+remediation prescribes (quote-blind, over-declines a quoted `a#b` — the
+safe direction for this gate). Corpus extended so the fix is not untested
+by its own invariant: `BL960-SEPARATOR-POOL` gains `" # "`, deriving the
+trailing-comment sibling by construction on every draw; unit runner gains
+the comment gating cases (single-simple false, healed-command nil).
+Red-then-green: with the gate unfixed, the new unit cases and the
+invariant-3 property both failed on `node cli.js # true` (seed 7); green
+after the one-character class fix. Full lanes green at the re-fix commit:
+lib runner ALL TESTS PASS, property runner ALL PROPERTIES HOLD (150 runs,
+non-vacuity A/B/C confirmed), wiring ALL SCENARIOS PASS, acceptance
+BL-960 10/10, BL-913 6/6, BL-934 3/3.
