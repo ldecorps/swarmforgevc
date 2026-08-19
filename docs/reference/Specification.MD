@@ -1,6 +1,57 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-953: `swarm_handoff.bb`'s `validate`
+**Last Updated:** August 19, 2026 (BL-954: bouncing a parcel requires the
+bouncing role to revert the bounced commit's content out of its own
+`swarmforge-<role>` review branch in the same step (BL-490/BL-495), but
+nothing checked that this happened — measured live 2026-08-19, the
+architect's two BL-935 bounces left 5 of 7 bounced files byte-identical at
+`swarmforge-architect`'s tip with no revert commit anywhere, and both
+landed on `main` and `origin/main` before BL-935 itself was approved,
+caught only by a role that happened to look by eye. `record-bounce.js` now
+runs a report-only bounce revert check immediately after it durably writes
+the bounce record (never gating the record itself — a check that cannot
+complete reports its cause, never reads as clean). The verdict is decided
+by CONTENT at the bouncing branch's tip, never by ancestry — a properly
+reverted bounce, whose commit stays a permanent ancestor, always reads
+clean — with one exception: a bounced commit already an ancestor of either
+`main` or `origin/main` (either ref can be the stale one, BL-891) resolves
+to a breach report, never a revert instruction, since reverting published
+history is out of the constitution's bounds. This is the entrance-side
+companion to BL-952's exit-side `is_qa_ancestor.sh` check: BL-952 is scoped
+to the `swarmforge-QA` ref, so it could not have seen this bounce, whose
+bouncing role was the architect. See the new "Bounce Revert Verification
+(BL-954)" section of `swarmforge/handoff-protocol.md`. No new extension
+command or setting — fork/operator-substrate tooling under
+`extension/src/tools/`.); Previously August 19, 2026 (BL-955: BL-620's
+shared `messageTextOf`
+seam (`text ?? caption`) taught every text-reading surface of the Telegram
+front desk to read photo captions in one commit, but BL-620 wired its
+`annotateRoutedMediaText` "no vision, said out loud" note into only the
+three backlog-topic call sites inside `processMessageUpdate` — an architect
+send-back on BL-620 (Article 4.4) found six other forwarding surfaces still
+passing caption-derived words onward with no note, so a human in a topic, an
+agent taking a steering nudge in its pane, or anyone reading a durable
+record later had no way to know an unread image was attached: the exact
+false belief the original incident directive forbids. Fixed by reaching the
+same `annotateRoutedMediaText` seam from each remaining boundary, applied at
+the FORWARDING/record boundary only, never at decision time (a caption's
+classification must equal the identical plain text's) — steering
+(`processSteeringUpdate`, covering both `redirectToRole`'s live-pane path
+and the BL-607 queued-answer note for a dormant role), agent-questions
+(`postToBridge`), onboarding (`handleOnboarderMessage`), the negotiation
+relay (a new `annotateNegotiationRelayText` export in
+`negotiationTelegramRouting.ts`, applied by `negotiationTelegramRelay`'s
+`handleObjection`), and the two DURABLE surfaces — an approvals rejection
+reason and a recert amend proposal — where the note is written into the
+STORED value itself (`deliverApprovalsTopicReply` / `deliverRecertTopicReply`
+now thread the update through `deliverReservedSubjectReply`), per the
+ticket's approved directive that a caption-derived record must carry the
+note permanently, not only in the chat echo. Control-topic delivery stays
+deliberately unannotated — its text is PARSED as a command, and a note would
+corrupt the parse — a standing guard scenario locks that exclusion in
+against a future "annotate everything" sweep. No new extension command or
+setting — Telegram incarnation behavior (Architecture Rule 7).); Previously
+August 19, 2026 (BL-953: `swarm_handoff.bb`'s `validate`
 never cross-checked a `git_handoff`'s `task:` and `commit:` headers against
 each other, so a commit belonging to one ticket could ride under another
 ticket's name. Measured live 2026-08-19: the coder sent commit `896e1d5cb2`
