@@ -14,6 +14,66 @@ const {
   RESIDENT_PANE_CACHE_TTL_MS,
 } = require('../out/bridge/residentPaneLive');
 
+// BL-929: isMonoRouterLayout resolves its config-based signal via
+// resolveSwarmConfigPath(), which under `node --test`/Vitest (no `vscode`
+// module) reduces to reading process.env.SWARMFORGE_CONFIG. A test that
+// depends on isMonoRouterLayout's outcome must control that var explicitly
+// rather than letting it inherit whatever the host shell happens to have
+// set (same hazard the engineering article's shell tests already guard
+// with `env -u SWARMFORGE_CONFIG` - see this project's Test Speed and
+// Isolation rule). Vitest's own envRestoreGuardSetup.js still fails the
+// test if this leaves the var different from how it found it, so restore
+// is not optional even here.
+function withSwarmforgeConfig(configPath, fn) {
+  const saved = process.env.SWARMFORGE_CONFIG;
+  if (configPath === undefined) {
+    delete process.env.SWARMFORGE_CONFIG;
+  } else {
+    process.env.SWARMFORGE_CONFIG = configPath;
+  }
+  try {
+    fn();
+  } finally {
+    if (saved === undefined) {
+      delete process.env.SWARMFORGE_CONFIG;
+    } else {
+      process.env.SWARMFORGE_CONFIG = saved;
+    }
+  }
+}
+
+const FULL_PACK_ROLES = ['coordinator', 'specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
+
+// BL-929: a standing full pack - 8 live sessions, the mono-router marker
+// present and pointed at 'coder' (the exact 2026-08-18 incident shape: the
+// marker is actively rewritten under a full pack, not merely stale). Pane
+// text carries no `SwarmForge <Role>` banner, so resolveResidentRoleIdentity
+// falls through to each pane's OWN roster displayName rather than a banner
+// match - the fixture must not accidentally supply the very evidence
+// (a role name in the text) the fix is supposed to make unnecessary.
+function seedFullPackFixture(tmp, { withMarker = true } = {}) {
+  const stateDir = path.join(tmp, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
+  const lines = FULL_PACK_ROLES.map(
+    (role, i) => `${i + 1}\t${role}\tswarmforge-${role}\t${role === 'QA' ? 'QA' : role[0].toUpperCase() + role.slice(1)}\tclaude\n`
+  ).join('');
+  fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), lines);
+  if (withMarker) {
+    fs.writeFileSync(path.join(stateDir, 'mono-router-active-role'), 'coder');
+  }
+  return '$ some command\n> plain output, no role banner';
+}
+
+function seedFullPackFakeTmux(paneText) {
+  return installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'has-session', exitCode: 0 },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+}
+
 function seedResidentPaneFixture(tmp, { role = 'coder', paneText, model = 'claude-sonnet-5' } = {}) {
   const stateDir = path.join(tmp, '.swarmforge');
   const launchDir = path.join(stateDir, 'launch');
@@ -165,19 +225,125 @@ test('captureMonoRouterLiveScreen returns resident and coordinator panes', () =>
     { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
   ]);
   try {
-    const screen = captureMonoRouterLiveScreen(tmp);
-    assert.equal(screen.available, true);
-    assert.equal(screen.resident.available, true);
-    assert.match(screen.resident.header ?? '', /^Resident:/);
-    assert.doesNotMatch(screen.resident.header ?? '', /swarmforge-coder/);
-    assert.ok(screen.resident.claimEnteredAgo?.startsWith('entered '));
-    assert.ok(screen.resident.claimEnteredAtMs);
-    assert.equal(typeof screen.coordinator.available, 'boolean');
-    assert.ok(screen.coordinator);
-    assert.ok(Array.isArray(screen.panes));
-    assert.ok(screen.panes.length >= 1);
-    assert.equal(screen.panes[0].id, 'resident');
-    assert.equal(screen.panes[0].label, 'Resident');
+    withSwarmforgeConfig(undefined, () => {
+      const screen = captureMonoRouterLiveScreen(tmp);
+      assert.equal(screen.available, true);
+      assert.equal(screen.resident.available, true);
+      assert.match(screen.resident.header ?? '', /^Resident:/);
+      assert.doesNotMatch(screen.resident.header ?? '', /swarmforge-coder/);
+      assert.ok(screen.resident.claimEnteredAgo?.startsWith('entered '));
+      assert.ok(screen.resident.claimEnteredAtMs);
+      assert.equal(typeof screen.coordinator.available, 'boolean');
+      assert.ok(screen.coordinator);
+      assert.ok(Array.isArray(screen.panes));
+      assert.ok(screen.panes.length >= 1);
+      assert.equal(screen.panes[0].id, 'resident');
+      assert.equal(screen.panes[0].label, 'Resident');
+      assert.equal(screen.monoRouterLayout, true);
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-929 invariant 1 (headline regression, the exact 2026-08-18 incident
+// shape): the mono-router marker is present and actively points at 'coder',
+// but 8 sessions are live - a standing full pack, not a rotation pack. No
+// tile may be labelled Resident, and monoRouterLayout must read false.
+test('BL-929: a live marker never turns a standing full pack into mono-router layout', () => {
+  const tmp = mkTmpDir('sfvc-full-pack-marker-');
+  const paneText = seedFullPackFixture(tmp, { withMarker: true });
+  const fake = seedFullPackFakeTmux(paneText);
+  try {
+    withSwarmforgeConfig(undefined, () => {
+      const panes = captureLiveScreenPanes(tmp);
+      assert.equal(panes.length, FULL_PACK_ROLES.length);
+      assert.ok(!panes.some((p) => p.id === 'resident'), 'no tile may be labelled Resident under a full pack');
+      assert.ok(!panes.some((p) => p.label === 'Resident'));
+
+      const screen = captureMonoRouterLiveScreen(tmp);
+      assert.equal(screen.monoRouterLayout, false);
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-929 invariant 2 (headline regression): under the same full-pack +
+// live-marker fixture, no tile other than the coder's own pane may carry
+// the coder's identity - the exact 2026-08-18 reading was "SPECIFIER
+// subtitled Coder on Sonnet 5".
+test('BL-929: a live marker never leaks the coder role identity onto another tile', () => {
+  const tmp = mkTmpDir('sfvc-full-pack-identity-leak-');
+  const paneText = seedFullPackFixture(tmp, { withMarker: true });
+  const fake = seedFullPackFakeTmux(paneText);
+  try {
+    withSwarmforgeConfig(undefined, () => {
+      const panes = captureLiveScreenPanes(tmp);
+      const specifierPane = panes.find((p) => p.id === 'specifier');
+      assert.ok(specifierPane, 'expected a specifier tile in a full pack');
+      assert.notEqual(specifierPane.pane.roleLabel, 'Coder');
+
+      const coderPane = panes.find((p) => p.id === 'coder');
+      assert.ok(coderPane);
+      assert.equal(coderPane.pane.roleLabel, 'Coder');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-929: the config signal must survive a full pack's launch window, when
+// only 1-2 sessions have come up so far and the live-count fallback alone
+// would misread this as mono-router (the documented flicker).
+test('BL-929: the config signal keeps a full pack out of mono-router layout during its own launch flicker', () => {
+  const tmp = mkTmpDir('sfvc-full-pack-launch-flicker-');
+  const stateDir = path.join(tmp, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
+  // Only the coordinator + coder sessions are up so far - liveRoles.length
+  // is 2, which the live-count fallback alone would read as mono-router.
+  fs.writeFileSync(
+    path.join(stateDir, 'sessions.tsv'),
+    '1\tcoordinator\tswarmforge-coordinator\tCoordinator\tclaude\n2\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+  const configPath = path.join(tmp, 'full-forge.conf');
+  fs.writeFileSync(
+    configPath,
+    'config active_backlog_max_depth 3\nwindow specifier claude master\nwindow coder claude coder\n'
+  );
+  const fake = seedFullPackFakeTmux('$ some command\n> plain output, no role banner');
+  try {
+    withSwarmforgeConfig(configPath, () => {
+      const panes = captureLiveScreenPanes(tmp);
+      assert.ok(!panes.some((p) => p.id === 'resident'), 'the config signal must override the transient low session count');
+
+      const screen = captureMonoRouterLiveScreen(tmp);
+      assert.equal(screen.monoRouterLayout, false);
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-929: sanity check that the config signal correctly recognizes an
+// actual rotation pack too (not just the standing-pack negative above).
+test('BL-929: the config signal recognizes a real rotation (mono-router) pack', () => {
+  const tmp = mkTmpDir('sfvc-mono-router-config-');
+  const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: 'claude-sonnet-5' });
+  const configPath = path.join(tmp, 'mono-router.conf');
+  fs.writeFileSync(configPath, 'config active_backlog_max_depth 2\nconfig rotation router\nwindow coder claude coder\n');
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    withSwarmforgeConfig(configPath, () => {
+      const screen = captureMonoRouterLiveScreen(tmp);
+      assert.equal(screen.monoRouterLayout, true);
+      assert.equal(screen.panes[0]?.id, 'resident');
+    });
   } finally {
     fake.restore();
   }

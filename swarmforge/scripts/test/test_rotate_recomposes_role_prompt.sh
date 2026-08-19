@@ -60,6 +60,13 @@ mkdir -p "$CODER_WT/.swarmforge/handoffs/inbox/new" \
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" > "$ROOT/.swarmforge/roles.tsv"
 printf 'hardender\thardender\t%s\tswarmforge-hardender\tHardender\tclaude\tbatch\n' "$HARD_WT" >> "$ROOT/.swarmforge/roles.tsv"
 
+# BL-931: this fixture's own concern is prompt recomposition, not the
+# pack-router gate test_rotate_pack_router_gate.sh covers - declare a
+# rotation-router pack so every rotate-resident-to! call below still
+# reaches the recompose/respawn logic instead of being refused upstream.
+mkdir -p "$ROOT/swarmforge"
+printf 'config rotation router\n' > "$ROOT/swarmforge/swarmforge.conf"
+
 touch "$ROOT/fake.sock"
 echo "$ROOT/fake.sock" > "$ROOT/.swarmforge/tmux-socket"
 
@@ -202,6 +209,18 @@ pass "04: a role whose sources are unchanged since the swarm was composed boots 
 # out that leftover parcel.
 rm -f "$HARD_WT/.swarmforge/handoffs/inbox/new"/*.handoff \
       "$HARD_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+
+# BL-931: ready_for_next_task.bb's OWN pre-existing ROTATE_HOME check
+# (report-no-task-or-rotate!, BL-550) resolves router-mode from this SAME
+# default conf path - so the router conf scenarios 01-04 needed for MY new
+# gate would otherwise also activate ROTATE_HOME here, sending hardender
+# (correctly, under a real router pack - it is not the resident) to rotate
+# home instead of running the idle-boundary clear scenarios 05-07 exist to
+# test. That is real router-pack behavior, but it is BL-926/927 territory
+# this ticket must not touch (out_of_scope) - remove the conf so this
+# fixture goes back to exactly what it was before this ticket, isolating
+# BL-917's respawn-self! concern from BL-931's new gate.
+rm -f "$ROOT/swarmforge/swarmforge.conf"
 
 # ── Scenario 05: an idle-boundary clear boots the same role on a freshly ───
 # composed prompt - BL-917's own fix (respawn-self! did not recompose
