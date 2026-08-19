@@ -577,6 +577,60 @@ if [[ -s "$RESPAWN_LOG" ]]; then fail "BL-571: sequential-dormant role must not 
 pass "BL-571: rotation sequential dormant roles report DORMANT without respawn"
 
 # ---------------------------------------------------------------------------
+# Extra (BL-958): the control-plane-loss shape — socket file + role metadata
+# still present, tmux server gone. Ensure must classify through
+# control_plane_lib (a control-plane row, decided recovery), recreate the
+# role session (tmux restarts its server on the first new-session, mirrored
+# by the stateful fake), report FIXED only after the re-probe answers, and
+# resolve the open incident the daemon persisted for the loss.
+# ---------------------------------------------------------------------------
+make_fixture
+echo "coder-launch" > "$ROOT/.swarmforge/launch/coder.sh"
+printf 'swarmforge-coder\t123\n' > "$ROOT/.swarmforge/sessions.tsv"
+mkdir -p "$ROOT/.swarmforge/incidents"
+cat > "$ROOT/.swarmforge/incidents/control-plane.json" <<JSON
+[{"classification":"control-plane-missing","socket-path":"$ROOT/fake.sock","probe-output":"no server running","expected-sessions":["swarmforge-coder"],"observed-at":"2026-08-19T18:00:00Z","source":"handoffd-chase","status":"open"}]
+JSON
+RESPAWN_LOG="$ROOT/respawns"
+: > "$RESPAWN_LOG"
+SERVER_MARKER="$ROOT/server_started"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "new-session" ]]; then
+  touch "$SERVER_MARKER"
+  exit 0
+fi
+if [[ ! -f "$SERVER_MARKER" ]]; then
+  echo "no server running on \$2" >&2
+  exit 1
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RESPAWN_LOG"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q 'control-plane: FIXED (control-plane-missing: recreating role sessions from persisted launch scripts; tmux server restored)' \
+  || fail "BL-958: control-plane row not reported FIXED with the lib's decision, got: $OUTPUT"
+echo "$OUTPUT" | grep -q 'agent:coder: FIXED' || fail "BL-958: coder session was not repaired, got: $OUTPUT"
+[[ -s "$RESPAWN_LOG" ]] || fail "BL-958: recovery did not respawn the role from its launch script"
+grep -q '"resolved"' "$ROOT/.swarmforge/incidents/control-plane.json" \
+  || fail "BL-958: the open control-plane incident was not resolved after recovery"
+pass "BL-958: control-plane loss is classified, recovered, reported, and its incident resolved"
+
+# ---------------------------------------------------------------------------
 # Extra (BL-537): a dormant rotate target whose own launch script is missing
 # must report FAILED, not DORMANT — rotate_to_role would hit "no-launch-script"
 # even though the resident (coder) is perfectly healthy. Never let "no
