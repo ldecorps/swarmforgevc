@@ -683,9 +683,10 @@
          "*->architect|git_handoff"
          (flow-watchdog-lib/to-type-key {:to "architect" :type "git_handoff"}))
 
-(assert= "type-key wildcards both ends"
-         "*->*|git_handoff"
-         (flow-watchdog-lib/type-key {:type "git_handoff"}))
+;; BL-827 gap 2: the *->*|type row (and its type-key builder) are GONE -
+;; written "for observability", consulted by nothing, and its own docstring
+;; said consulting it would mis-calibrate dormant roles. The calibrated
+;; table must never emit one (asserted on calibrate-threshold-table below).
 
 ;; 10 samples [10..100]: ceil-rank p67 → index 6 → 70; p97 → index 9 → 100.
 (assert= "percentile-ms p67 over 10 evenly spaced samples"
@@ -768,10 +769,12 @@
   (assert= "calibrate-threshold-table emits an exact-spec entry once sample gate clears"
            true
            (boolean exact))
-  (assert= "calibrate-threshold-table also emits to-type and type fallbacks"
+  (assert= "calibrate-threshold-table also emits the to-type fallback"
            true
-           (boolean (and (get-in table [:specs "*->architect|git_handoff"])
-                         (get-in table [:specs "*->*|git_handoff"])))))
+           (boolean (get-in table [:specs "*->architect|git_handoff"])))
+  (assert= "BL-827 gap 2: calibrate-threshold-table emits NO *->*|type row"
+           nil
+           (get-in table [:specs "*->*|git_handoff"])))
 
 ;; BL-835 acceptance floored-percentile-reject-01/02: a route whose full
 ;; history sits below min-warn-ms calibrates to NO entry at all (exact,
@@ -879,14 +882,17 @@
       completed-dir (fs/path root "architect" "inbox" "completed")
       now-ms (* 1784900000 1000)
       alarms (atom [])
-      ;; Seed 10 completed hops whose residence is ~30 minutes → calibrated
-      ;; warn well above the 90s live parcel age.
+      ;; Seed 10 completed hops whose residence is ~3 minutes → calibrated
+      ;; warn above the 90s live parcel age, and still inside the BL-827
+      ;; adaptation ceiling (global 60s × factor 4 = 240s; a ~30m history
+      ;; would now be REJECTED by that ceiling and fall back to global —
+      ;; covered by its own test below).
       _ (doseq [i (range 10)]
           (write-handoff! (str (fs/path completed-dir (str "hist" i ".handoff")))
                            [["id" (str "hist" i)] ["from" "cleaner"] ["to" "architect"]
                             ["type" "git_handoff"]
                             ["enqueued_at" "2026-08-01T00:00:00Z"]
-                            ["completed_at" (str "2026-08-01T00:30:" (format "%02d" i) "Z")]]))]
+                            ["completed_at" (str "2026-08-01T00:03:" (format "%02d" i) "Z")]]))]
   (write-handoff! (str (fs/path new-dir "live.handoff"))
                    [["id" "live"] ["from" "cleaner"] ["to" "architect"] ["type" "git_handoff"]
                     ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
@@ -1127,7 +1133,8 @@
   (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
         "config rotation router\nconfig flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
   (assert= "read-pack-aware-global-thresholds uses the router pair under `config rotation router`"
-           {:warn-ms flow-watchdog-lib/default-router-warn-ms :escalate-ms flow-watchdog-lib/default-router-escalate-ms}
+           {:warn-ms flow-watchdog-lib/default-router-warn-ms :escalate-ms flow-watchdog-lib/default-router-escalate-ms
+            :calibration-ceiling-warn-ms (* flow-watchdog-lib/default-router-warn-ms flow-watchdog-lib/default-calibration-ceiling-factor)}
            (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
 
 (let [root (mk-tmp)]
@@ -1135,7 +1142,7 @@
   (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
         "config flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
   (assert= "read-pack-aware-global-thresholds keeps the plain pair with no rotation directive (parallel/all-resident)"
-           {:warn-ms 60000 :escalate-ms 240000}
+           {:warn-ms 60000 :escalate-ms 240000 :calibration-ceiling-warn-ms 240000}
            (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
 
 (let [root (mk-tmp)]
@@ -1143,7 +1150,7 @@
   (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
         "config rotation sequential\nconfig flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
   (assert= "read-pack-aware-global-thresholds keeps the plain pair under `config rotation sequential` (mono-rotate, not router)"
-           {:warn-ms 60000 :escalate-ms 240000}
+           {:warn-ms 60000 :escalate-ms 240000 :calibration-ceiling-warn-ms 240000}
            (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
 
 ;; End-to-end acceptance-06: the SAME nominal-rotation-wait parcel (wall age
@@ -1253,6 +1260,120 @@
   (assert= "the fired alarm is WARN, not the ESCALATE wall-clock-alone would have fired"
            true
            (clojure.string/includes? (first @alarms) "⚠️ WARN")))
+
+;; ── BL-827: adaptation ceiling (option b), alarm threshold provenance, ──────
+;; injectable recalibration interval
+
+(assert= "parse-calibration-ceiling-factor falls back to the default when absent"
+         flow-watchdog-lib/default-calibration-ceiling-factor
+         (flow-watchdog-lib/parse-calibration-ceiling-factor nil))
+
+(assert= "parse-calibration-ceiling-factor reads the conf value"
+         2
+         (flow-watchdog-lib/parse-calibration-ceiling-factor
+          "config flow_watchdog_calibration_ceiling_factor 2"))
+
+;; 10 samples at ~30m: raw p67 well above a 240s ceiling → REJECTED, nil -
+;; never clamped down to the ceiling (same posture as min-warn-ms, BL-835).
+(assert= "BL-827 ceiling: thresholds-from-samples rejects a warn above ceiling-warn-ms"
+         nil
+         (flow-watchdog-lib/thresholds-from-samples (repeat 10 1800000) 240000))
+
+(assert= "BL-827 ceiling: a warn exactly AT the ceiling still calibrates"
+         1800000
+         (:warn-ms (flow-watchdog-lib/thresholds-from-samples (repeat 10 1800000) 1800000)))
+
+(assert= "BL-827 ceiling: the nil-ceiling arity applies no ceiling (pre-existing callers)"
+         1800000
+         (:warn-ms (flow-watchdog-lib/thresholds-from-samples (repeat 10 1800000))))
+
+(let [records (map (fn [_] {:from "cleaner" :to "architect" :type "git_handoff" :duration-ms 1800000}) (range 10))]
+  (assert= "BL-827 ceiling: build-threshold-table emits no key for an over-ceiling route"
+           {}
+           (flow-watchdog-lib/build-threshold-table records {:ceiling-warn-ms 240000}))
+  (assert= "BL-827 ceiling: the same route calibrates when the ceiling allows it"
+           true
+           (boolean (get (flow-watchdog-lib/build-threshold-table records {:ceiling-warn-ms 3600000})
+                         "cleaner->architect|git_handoff"))))
+
+(let [headers (map (fn [i]
+                     {:from "cleaner" :to "architect" :type "git_handoff"
+                      :enqueued_at "2026-08-01T00:00:00Z"
+                      :completed_at (str "2026-08-01T00:30:" (format "%02d" i) "Z")})
+                   (range 10))
+      table (flow-watchdog-lib/calibrate-threshold-table headers 12345 {:ceiling-warn-ms 240000})]
+  (assert= "BL-827 ceiling: calibrate-threshold-table records the applied ceiling in metadata"
+           240000
+           (:ceilingWarnMs table))
+  (assert= "BL-827 ceiling: an over-ceiling route's history yields an empty specs map"
+           {}
+           (:specs table)))
+
+;; Gap 1: the alarm names the threshold it fired against and its source.
+(assert= "BL-827 gap 1: alarm text names the calibrated threshold and its spec key"
+         true
+         (clojure.string/includes?
+          (flow-watchdog-lib/format-alarm-text
+           {:id "p1" :from "cleaner" :to "architect" :type "git_handoff"
+            :age-ms 200000 :role "architect" :mailbox :new :verb :nudge :tier :warn
+            :threshold-ms 180000 :resolved-via "cleaner->architect|git_handoff"})
+          "Threshold 3m via cleaner->architect|git_handoff."))
+
+(assert= "BL-827 gap 1: a global fallback alarm says via global"
+         true
+         (clojure.string/includes?
+          (flow-watchdog-lib/format-alarm-text
+           {:id "p2" :from "a" :to "b" :type "note"
+            :age-ms 1000000 :role "b" :mailbox :new :verb :nudge :tier :warn
+            :threshold-ms 900000 :resolved-via "global"})
+          "Threshold 15m via global."))
+
+(assert= "BL-827 gap 1: an alarm without the new keys is byte-identical to the pre-BL-827 text"
+         (flow-watchdog-lib/format-alarm-text
+          {:id "p3" :from "a" :to "b" :type "note"
+           :age-ms 1000000 :role "b" :mailbox :new :verb :nudge :tier :warn})
+         "⚠️ WARN flow-stall: parcel p3 (a->b, note) aged 16m in b new - nudge.")
+
+;; The recalibration interval is injectable (never slept out by a suite).
+(assert= "BL-827: threshold-table-stale? honors an injected interval"
+         true
+         (flow-watchdog-lib/threshold-table-stale? {:calibratedAt 1000} 3001 2000))
+
+(assert= "BL-827: the same table is fresh under the injected interval"
+         false
+         (flow-watchdog-lib/threshold-table-stale? {:calibratedAt 1000} 2999 2000))
+
+;; End-to-end: the adaptation hazard closed. A route 30x slower than the
+;; global pair does NOT teach the watchdog to tolerate it - calibration is
+;; rejected by the ceiling, the route resolves global, and the stalled
+;; parcel still alarms (naming the global source).
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "architect" "inbox" "new")
+      completed-dir (fs/path root "architect" "inbox" "completed")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])
+      _ (doseq [i (range 10)]
+          (write-handoff! (str (fs/path completed-dir (str "slow" i ".handoff")))
+                           [["id" (str "slow" i)] ["from" "cleaner"] ["to" "architect"]
+                            ["type" "git_handoff"]
+                            ["enqueued_at" "2026-08-01T00:00:00Z"]
+                            ["completed_at" (str "2026-08-01T00:30:" (format "%02d" i) "Z")]]))]
+  (write-handoff! (str (fs/path new-dir "stuck.handoff"))
+                   [["id" "stuck"] ["from" "cleaner"] ["to" "architect"] ["type" "git_handoff"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "architect" :new-dir new-dir
+     :in-process-dir (fs/path root "architect" "inbox" "in_process")
+     :completed-dir completed-dir}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "BL-827 ceiling end-to-end: a 30x-slower route is rejected and the 90s parcel alarms under global"
+           1
+           (count @alarms))
+  (assert= "BL-827 ceiling end-to-end: that alarm names the global source"
+           true
+           (clojure.string/includes? (first @alarms) "via global")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
