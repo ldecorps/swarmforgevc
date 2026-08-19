@@ -62,7 +62,17 @@ print_preferred() {
 
 # ── A: rule_proposal alone is preferred ────────────────────────────────────
 ROOT_A="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup_a() { rm -rf "$ROOT_A"; }
+cleanup_a() {
+  # BL-943: capture the code we were entered with BEFORE running anything
+  # fallible, and return it explicitly at the end - never the trailing rm's
+  # own status. A cleanup failure must never change the script's verdict,
+  # only report on stderr which fixture root it could not remove.
+  local exit_code=$?
+  if ! rm -rf "$ROOT_A" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_A" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup_a EXIT
 
 FIX_A="$(setup_fixture "$ROOT_A")"
@@ -82,7 +92,14 @@ cleanup_a
 
 # ── B: fresh note alone is still not preferred ─────────────────────────────
 ROOT_B="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup_b() { rm -rf "$ROOT_B"; }
+cleanup_b() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
+  if ! rm -rf "$ROOT_B" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_B" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup_b EXIT
 
 FIX_B="$(setup_fixture "$ROOT_B")"
@@ -102,7 +119,14 @@ cleanup_b
 
 # ── C: in_process priority-00 beats rule_proposal priority-50 ──────────────
 ROOT_C="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup_c() { rm -rf "$ROOT_C"; }
+cleanup_c() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
+  if ! rm -rf "$ROOT_C" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_C" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup_c EXIT
 
 FIX_C="$(setup_fixture "$ROOT_C")"

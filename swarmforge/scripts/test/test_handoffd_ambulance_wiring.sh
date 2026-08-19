@@ -37,8 +37,16 @@ ROOT_A="$(cd "$(mktemp -d)" && pwd -P)"
 export SWARMFORGE_ALLOW_TMP_DAEMON=1
 PID_A=""
 cleanup_a() {
+  # BL-943: capture the code we were entered with BEFORE running anything
+  # fallible, and return it explicitly at the end - never the trailing rm's
+  # own status. A cleanup failure must never change the script's verdict,
+  # only report on stderr which fixture root it could not remove.
+  local exit_code=$?
   [[ -n "$PID_A" ]] && kill "$PID_A" 2>/dev/null || true
-  rm -rf "$ROOT_A"
+  if ! rm -rf "$ROOT_A" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_A" >&2
+  fi
+  return "$exit_code"
 }
 trap cleanup_a EXIT
 
@@ -137,8 +145,13 @@ ROOT_B="$(cd "$(mktemp -d)" && pwd -P)"
 export SWARMFORGE_ALLOW_TMP_DAEMON=1
 PID_B=""
 cleanup_b() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
   [[ -n "$PID_B" ]] && kill "$PID_B" 2>/dev/null || true
-  rm -rf "$ROOT_B"
+  if ! rm -rf "$ROOT_B" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_B" >&2
+  fi
+  return "$exit_code"
 }
 trap cleanup_b EXIT
 

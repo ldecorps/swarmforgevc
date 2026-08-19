@@ -500,7 +500,10 @@ const DOMAINS = [
   require('./bl914PerTestTimeoutSteps'),
   require('./bl924HotSyncedCopiesDoNotBlockMergeSteps'),
   require('./bl631BabysitterDetectsPipelineCodeOnMainSteps'),
-  require('./bl944OperatorRuntimeBbFixtureDependencyClosureSteps')
+  require('./bl944OperatorRuntimeBbFixtureDependencyClosureSteps'),
+  require('./bl945ConstitutionDocCitationsResolveOnMainSteps'),
+  require('./bl942DeferredHardeningDebtIsDurableSteps'),
+  require('./bl943FixtureCleanupVerdictSteps')
 ];
 
 function registerSteps(registry) {

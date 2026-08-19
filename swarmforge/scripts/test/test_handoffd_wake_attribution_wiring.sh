@@ -92,7 +92,18 @@ TMUX
 
 ROOT1="$(cd "$(mktemp -d)" && pwd -P)"
 DAEMON1=""
-cleanup1() { [[ -n "$DAEMON1" ]] && kill "$DAEMON1" 2>/dev/null || true; rm -rf "$ROOT1"; }
+cleanup1() {
+  # BL-943: capture the code we were entered with BEFORE running anything
+  # fallible, and return it explicitly at the end - never the trailing rm's
+  # own status. A cleanup failure must never change the script's verdict,
+  # only report on stderr which fixture root it could not remove.
+  local exit_code=$?
+  [[ -n "$DAEMON1" ]] && kill "$DAEMON1" 2>/dev/null || true
+  if ! rm -rf "$ROOT1" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT1" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup1 EXIT
 
 mk_fixture "$ROOT1"
@@ -151,7 +162,15 @@ trap - EXIT
 
 ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
 DAEMON2=""
-cleanup2() { [[ -n "$DAEMON2" ]] && kill "$DAEMON2" 2>/dev/null || true; rm -rf "$ROOT2"; }
+cleanup2() {
+  # BL-943: see cleanup1's comment - same discipline, per-scenario root.
+  local exit_code=$?
+  [[ -n "$DAEMON2" ]] && kill "$DAEMON2" 2>/dev/null || true
+  if ! rm -rf "$ROOT2" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT2" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup2 EXIT
 
 mk_fixture "$ROOT2"
@@ -200,7 +219,15 @@ trap - EXIT
 
 ROOT3="$(cd "$(mktemp -d)" && pwd -P)"
 DAEMON3=""
-cleanup3() { [[ -n "$DAEMON3" ]] && kill "$DAEMON3" 2>/dev/null || true; rm -rf "$ROOT3"; }
+cleanup3() {
+  # BL-943: see cleanup1's comment - same discipline, per-scenario root.
+  local exit_code=$?
+  [[ -n "$DAEMON3" ]] && kill "$DAEMON3" 2>/dev/null || true
+  if ! rm -rf "$ROOT3" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT3" >&2
+  fi
+  return "$exit_code"
+}
 trap cleanup3 EXIT
 
 mk_fixture "$ROOT3"
