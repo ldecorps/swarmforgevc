@@ -882,6 +882,22 @@ You are the hardender.
   mutation then found the SAME leak in 2 further steps nobody had looked at
   (indicator and shape lookup-miss). A leak found by review is a sample; the
   file's other validation throws are the population.
+- **A bounce fix that wraps only the CITED throw site is a partial fix — grep
+  the file for every `throw` before you trust it.** The evidence names the
+  site someone happened to observe; the fix must cover the ones nobody ran.
+  Check which throw fires FIRST: a `Given` validating an example value throws
+  UPSTREAM of the `When`, so a `try/finally` added around the `When`'s
+  invocation never executes at all. Acceptance will not tell you — every
+  example value a scenario names is valid, so the validating throw only fires
+  under a Gherkin mutant. The lane stays green while dirs pile up, and BL-113
+  is the only gate that sees it.
+- (Recurrence: BL-931 hardening 2026-08-19, ONE DAY after this rule was
+  accepted. The fix for the reported leak wrapped the `When` step; the
+  `Given`'s `unrecognized <rotation mode>` throw still leaked 2 real fixture
+  dirs into `$TMPDIR` during that ticket's own BL-113 pass. Fixed by calling
+  `cleanupFixture(ctx)` before each validating throw in
+  `bl931RotatePackGateSteps.js`. That this recurred against a written rule is
+  why the check is phrased as a grep you RUN, not a property you recall.)
 - (Incident: BL-921/BL-922 hardening 2026-08-18, fixed `7f71bad6b`. Measured
   the same day across `specs/pipeline/steps/`: 285 step files create a fixture
   dir, and 255 of them contain a `throw` with no `cleanup(` call in the three
