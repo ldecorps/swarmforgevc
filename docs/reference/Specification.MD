@@ -1,6 +1,47 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-827: adopted the spec-dependent
+**Last Updated:** August 19, 2026 (BL-956: gates the human's live
+pipeline-board hotfix — grid captions carry the ticket TITLE instead of
+its epic, plain parked entries cap at 3 (`PIPELINE_BOARD_PAUSED_MAX` 10
+-> 3), collapsed epic trackers cap at 3 (new
+`PIPELINE_BOARD_COLLAPSED_EPICS_MAX`), and caption lines group with one
+blank line where the epic changes. The change was edited straight into
+`pipelineBoard.ts` in the shared master checkout and was already live in
+the running concierge, but `extension/src/` may only reach `main` through
+QA (Article 1.8/4.2, BL-247), so `check_pipeline_code_on_main.sh`
+correctly refused the specifier's certification commit and the diff
+survived only as `backlog/evidence/BL-956-pipeline-board-hotfix.patch` —
+which is what saved it when the master working tree was reverted to HEAD
+mid-ticket. This parcel re-lands it through the chain with the three
+things the raw hotfix left open closed. A caption is now always bounded:
+`PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX` (64) truncates with a visible
+ellipsis, and `deriveListEntryText` truncates too, because
+`deriveKebabSlug` caps WORDS not characters — a single-word 400-character
+title flowed straight into a below-grid list line and past the
+whole-message send budget, which `composePipelineBoardHtml` only trims
+LINKS against (an oversized body is rejected whole by Telegram and
+retrying the same payload never succeeds — live outage 2026-07-17). A
+caption always identifies something: a role-held ticket with no backlog
+entry rendered as a bare id and nothing after it once the epic left the
+line, and now takes a `(no backlog entry)` label in the slot
+`NO_EPIC_LABEL` vacated. And the new epics cap is visible like its two
+siblings (`+N more active`, `+N more parked`): `+N more epics` renders
+under the PARKED header on BOTH paths — the plain-text one that feeds the
+change-detection content signature AND the HTML one that is the message a
+human actually reads. That second path is the hardener's D1 send-back on
+this ticket: the first implementation wired the indicator into the
+plain-text sibling only, where every test layer happened to assert, so the
+live board would have kept capping silently while the suite stayed green.
+`renderParkedSection` and `renderParkedSectionHtml` now share their
+overflow-line and empty-section decisions through common helpers so the
+two cannot drift apart again. Human-approved before build
+(approval_context): both the fallback label and the extra `+N more epics`
+line are additions to a board the human had just decluttered. New
+human-facing surface: the Pipeline Board's per-column captions now read
+`<display id> <ticket title>` instead of `<display id> <epic>`,
+blank-line-grouped by epic; the PARKED section shows at most 3 plain
+parked entries and at most 3 collapsed epic trackers, each overflow named
+on its own line.); Previously August 19, 2026 (BL-827: adopted the spec-dependent
 flow-watchdog percentile thresholds that had been sitting ticket-less in
 the master working tree since 2026-08-06 (retro-ticketed, coordinator
 ruling: keep), then closed the three gaps the adopt left open. The alarm
