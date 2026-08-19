@@ -96,3 +96,24 @@ export function resolveVitestForkCeiling({ pack, platform, override, defaultCeil
   if (pack === FULL_FORGE_PACK && platform === MACOS_PLATFORM) return 1;
   return defaultCeiling;
 }
+
+// BL-935 cleaner pass: both vitest lanes composed the ceiling and the
+// memory-derived pool size themselves, in eight identical lines each
+// (vitest.config.mjs and vitest.properties.config.mjs). That duplication was
+// the whole risk invariant 3 names - "neither lane may size its pool by a
+// route the other does not share" - and a duplicated composition can only be
+// KEPT true by parallel maintenance, which is exactly the drift the property
+// test cannot see (a property over the pure function cannot distinguish
+// "both configs compose it the same way" from "one config was miswired").
+// Composing once here makes invariant 3 true BY CONSTRUCTION: there is one
+// route, so there is nothing for a second lane to diverge from. Kept pure -
+// every environment input (pack, platform, override, hostRamMB) is passed in
+// by the caller, so this stays unit-testable with no process.env or os read
+// inside the module (engineering.prompt's design-and-testability rule).
+export interface VitestWorkerPoolInput extends VitestForkCeilingInput {
+  hostRamMB: number;
+}
+
+export function resolveVitestWorkerPool({ pack, platform, override, defaultCeiling, hostRamMB }: VitestWorkerPoolInput): number {
+  return resolveWorkerPoolSize(hostRamMB, resolveVitestForkCeiling({ pack, platform, override, defaultCeiling }));
+}

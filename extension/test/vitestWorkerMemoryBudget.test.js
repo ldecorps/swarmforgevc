@@ -3,6 +3,7 @@ const {
   computeWorkerMemoryBudget,
   resolveWorkerPoolSize,
   resolveVitestForkCeiling,
+  resolveVitestWorkerPool,
   MAX_WORKERS,
   PER_WORKER_HEAP_MB,
   SAFE_HOST_RAM_FRACTION,
@@ -145,4 +146,50 @@ test('the resolved ceiling is never below 1 for any combination of inputs', () =
       }
     }
   }
+});
+
+// ── resolveVitestWorkerPool (pure) - BL-935 cleaner pass ────────────────────
+// The one route both vitest lanes now take. These assert it is EXACTLY the
+// composition the two configs each used to spell out for themselves, so the
+// DRY move is pinned as behavior-preserving rather than merely believed to
+// be: any drift between this and resolveWorkerPoolSize(ram, ceiling) fails
+// here instead of silently resizing a lane's pool.
+
+test('resolveVitestWorkerPool equals resolveWorkerPoolSize composed with resolveVitestForkCeiling, across the decision table', () => {
+  const RAMS = [0, 512, 2048, 8192, 15360, 65536];
+  const PACKS = ['full-forge', 'mono-router', undefined];
+  const PLATFORMS = ['darwin', 'linux'];
+  const OVERRIDES = [undefined, '', 'abc', '0', '-5', '1', '4', '99'];
+  for (const hostRamMB of RAMS) {
+    for (const pack of PACKS) {
+      for (const platform of PLATFORMS) {
+        for (const override of OVERRIDES) {
+          const expected = resolveWorkerPoolSize(hostRamMB, resolveVitestForkCeiling({ pack, platform, override }));
+          assert.equal(
+            resolveVitestWorkerPool({ pack, platform, override, hostRamMB }),
+            expected,
+            `pack=${pack} platform=${platform} override=${override} ram=${hostRamMB}`
+          );
+        }
+      }
+    }
+  }
+});
+
+test('a full-forge pack on macOS resolves the pool to exactly 1, at every host RAM size', () => {
+  for (const hostRamMB of [0, 512, 2048, 8192, 15360, 65536]) {
+    assert.equal(resolveVitestWorkerPool({ pack: 'full-forge', platform: 'darwin', hostRamMB }), 1);
+  }
+});
+
+test('the resolved pool is never below 1, including absent/malformed/zero/negative overrides', () => {
+  for (const hostRamMB of [0, 1, 512, 15360]) {
+    for (const override of [undefined, '', 'abc', '0', '-5']) {
+      assert.ok(resolveVitestWorkerPool({ pack: undefined, platform: 'linux', override, hostRamMB }) >= 1);
+    }
+  }
+});
+
+test('an explicit defaultCeiling is carried through the composition, not dropped', () => {
+  assert.equal(resolveVitestWorkerPool({ pack: undefined, platform: 'linux', defaultCeiling: 2, hostRamMB: 15360 }), 2);
 });
