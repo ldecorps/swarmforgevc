@@ -187,3 +187,6 @@ approval_context: >
   changed.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: hardender, blamed: coder, class: behavior, commit: b08d0a817e, evidence: backlog/evidence/BL-956-hardener-bounce-20260819.md }
