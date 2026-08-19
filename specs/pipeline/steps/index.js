@@ -503,7 +503,8 @@ const DOMAINS = [
   require('./bl944OperatorRuntimeBbFixtureDependencyClosureSteps'),
   require('./bl945ConstitutionDocCitationsResolveOnMainSteps'),
   require('./bl942DeferredHardeningDebtIsDurableSteps'),
-  require('./bl943FixtureCleanupVerdictSteps')
+  require('./bl943FixtureCleanupVerdictSteps'),
+  require('./bl935VitestForkPoolSteps')
 ];
 
 function registerSteps(registry) {

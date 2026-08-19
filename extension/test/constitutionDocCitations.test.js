@@ -13,6 +13,7 @@ const {
 // precedent - a check parked only under specs/pipeline/test/ rots unrun.
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
+// swarmforge/constitution/articles is the scanned corpus (required_wiring anchor).
 const ARTICLES_DIR = path.join(REPO_ROOT, 'swarmforge', 'constitution', 'articles');
 
 test('extractDocCitations finds a backtick-quoted docs/ path', () => {
