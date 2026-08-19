@@ -514,7 +514,8 @@ const DOMAINS = [
   require('./bl951StageSkipsRecordedSteps'),
   require('./bl953TaskCommitCoherenceSteps'),
   require('./bl954BounceRevertVerifiedSteps'),
-  require('./bl955ForwardingAnnotationSteps')
+  require('./bl955ForwardingAnnotationSteps'),
+  require('./bl827FlowWatchdogSpecThresholdsSteps')
 ];
 
 function registerSteps(registry) {

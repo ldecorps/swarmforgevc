@@ -75,6 +75,16 @@
 (defn parse-escalate-ms [conf-text]
   (parse-ms-config conf-text "flow_watchdog_escalate_ms" default-escalate-ms))
 
+(defn sanitize-global-pair
+  "BL-827 invariant 3: escalate is STRICTLY above warn for every resolved
+   pair, from every source - including a misconfigured conf whose
+   flow_watchdog_escalate_ms sits at or below its warn. Forced to warn+1
+   (the same posture thresholds-from-samples already applies to a flat
+   sample) rather than degrading both to defaults, so the operator's warn
+   choice survives their escalate mistake. Pure."
+  [{:keys [warn-ms escalate-ms] :as pair}]
+  (assoc pair :escalate-ms (max (inc (long warn-ms)) (long escalate-ms))))
+
 (defn read-thresholds
   "The impure fs-reading half: reads the EFFECTIVE config (backlog-depth-lib's
    own conf-file-path, so a --pack/SWARMFORGE_CONFIG override is honored the
@@ -85,8 +95,9 @@
   [project-root]
   (let [conf-text (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
                        (catch Exception _ nil))]
-    {:warn-ms (parse-warn-ms conf-text)
-     :escalate-ms (parse-escalate-ms conf-text)}))
+    (sanitize-global-pair
+     {:warn-ms (parse-warn-ms conf-text)
+      :escalate-ms (parse-escalate-ms conf-text)})))
 
 ;; ── BL-650: pack-aware GLOBAL fallback (rotation-aware thresholds) ─────────
 ;; Item 2 of the ticket's shape: under a `rotation router` pack a broadcast
@@ -115,6 +126,20 @@
 (defn parse-router-escalate-ms [conf-text]
   (parse-ms-config conf-text "flow_watchdog_router_escalate_ms" default-router-escalate-ms))
 
+(def default-calibration-ceiling-factor
+  "BL-827 adaptation-hazard ruling (option b, the specifier's recommendation
+   the human approved unvetoed): a calibrated warn may exceed the effective
+   GLOBAL warn by at most this factor. Adaptive thresholds learn whatever a
+   route has been doing - a hop broken for two weeks teaches the table that
+   slow is normal and the alarm quietly stops firing. The factor keeps the
+   rotation-wait case calibratable above the global pair while bounding a
+   runaway; above the ceiling the key is REJECTED (falls through to global,
+   which then fires), never clamped - same posture as min-warn-ms (BL-835)."
+  4)
+
+(defn parse-calibration-ceiling-factor [conf-text]
+  (parse-ms-config conf-text "flow_watchdog_calibration_ceiling_factor" default-calibration-ceiling-factor))
+
 (defn read-pack-aware-global-thresholds
   "The GLOBAL fallback pair, pack-aware. Under `config rotation router`
    (swarm-identity-lib/conf-rotation-mode on the EFFECTIVE conf, same
@@ -128,18 +153,26 @@
   [project-root]
   (let [conf-path (backlog-depth-lib/conf-file-path project-root)
         conf-text (try (slurp (str conf-path)) (catch Exception _ nil))
-        router? (= "router" (swarm-identity-lib/conf-rotation-mode conf-path))]
-    (if router?
-      {:warn-ms (parse-router-warn-ms conf-text) :escalate-ms (parse-router-escalate-ms conf-text)}
-      {:warn-ms (parse-warn-ms conf-text) :escalate-ms (parse-escalate-ms conf-text)})))
+        router? (= "router" (swarm-identity-lib/conf-rotation-mode conf-path))
+        pair (sanitize-global-pair
+              (if router?
+                {:warn-ms (parse-router-warn-ms conf-text) :escalate-ms (parse-router-escalate-ms conf-text)}
+                {:warn-ms (parse-warn-ms conf-text) :escalate-ms (parse-escalate-ms conf-text)}))]
+    ;; BL-827: the calibration ceiling rides along (warn x factor) so the
+    ;; sweep can hand it to calibration without a second conf read. Additive
+    ;; - every existing caller destructures :warn-ms/:escalate-ms only.
+    (assoc pair :calibration-ceiling-warn-ms
+           (* (long (:warn-ms pair)) (long (parse-calibration-ceiling-factor conf-text))))))
 
 ;; ── spec-dependent percentile thresholds (warn ≈ p67 / top 33%, escalate ≈ p97 / top 3%) ─
 ;; Spec identity is the alarm's own (from→to, type) key. Threshold RESOLUTION
 ;; happens here — outside decide-tier — so the structural no-suppression
 ;; guarantee (acceptance-05) stays intact: decide-tier still never sees
-;; :from/:to/:type. Sparse specs fall through *->to|type → global (the
-;; coarser *->*|type row is still written into the table for observability,
-;; but resolve-thresholds below does not consult it).
+;; :from/:to/:type. Sparse specs fall through *->to|type → global. (BL-827
+;; gap 2: the coarser *->*|type row is GONE - it was written "for
+;; observability" and consulted by nothing, and its own docstring explained
+;; why consulting it would mis-calibrate dormant roles. Dead data with a
+;; justification is still dead data.)
 
 (def warn-percentile
   "Warn catches roughly the slowest third of historical ages for a spec."
@@ -175,11 +208,6 @@
   [{:keys [to type]}]
   (str "*->" (or (not-empty to) "?") "|" (or (not-empty type) "?")))
 
-(defn type-key
-  "Coarsest typed fallback: \"*->*|type\"."
-  [{:keys [type]}]
-  (str "*->*|" (or (not-empty type) "?")))
-
 (defn percentile-ms
   "Pure: p-th percentile over a non-empty seq of durations (ms). Uses the
    same ceil-rank rule as extension/src/metrics/stageDwell.ts so calibrator
@@ -196,42 +224,50 @@
    percentiles, or nil when under min-samples-for-calibration OR when the
    raw warn percentile does not clear min-warn-ms (BL-835 reject gate - a
    sub-gate raw percentile has not earned a calibrated threshold and must
-   fall through, never be clamped up to a fake one). Escalation is forced
-   strictly above warn (a tiny/flat sample must not collapse the two tiers
-   into one fire)."
-  [samples-ms]
-  (let [n (count samples-ms)]
-    (when (>= n min-samples-for-calibration)
-      (let [warn-ms (long (or (percentile-ms samples-ms warn-percentile) 0))]
-        (when (>= warn-ms min-warn-ms)
-          (let [esc-raw (or (percentile-ms samples-ms escalate-percentile) 0)
-                escalate-ms (max (inc warn-ms) (long esc-raw))]
-            {:warn-ms warn-ms :escalate-ms escalate-ms :n n}))))))
+   fall through, never be clamped up to a fake one) OR when it exceeds
+   ceiling-warn-ms (BL-827 adaptation-hazard ceiling, option b: a route that
+   taught itself to tolerate a fault is not trusted - the key falls through
+   to the global pair, which then fires; rejected, never clamped, same
+   posture as min-warn-ms). A nil ceiling applies no ceiling (pre-BL-827
+   callers). Escalation is forced strictly above warn (a tiny/flat sample
+   must not collapse the two tiers into one fire)."
+  ([samples-ms] (thresholds-from-samples samples-ms nil))
+  ([samples-ms ceiling-warn-ms]
+   (let [n (count samples-ms)]
+     (when (>= n min-samples-for-calibration)
+       (let [warn-ms (long (or (percentile-ms samples-ms warn-percentile) 0))]
+         (when (and (>= warn-ms min-warn-ms)
+                    (or (nil? ceiling-warn-ms) (<= warn-ms (long ceiling-warn-ms))))
+           (let [esc-raw (or (percentile-ms samples-ms escalate-percentile) 0)
+                 escalate-ms (max (inc warn-ms) (long esc-raw))]
+             {:warn-ms warn-ms :escalate-ms escalate-ms :n n})))))))
 
 (defn build-threshold-table
   "Pure: seq of {:from :to :type :duration-ms} → a specs map keyed by
-   exact / to-type / type fallback strings. Only keys that clear the
-   min-sample gate are emitted."
-  [dwell-records]
-  (let [entry (fn [source samples]
-                (when-let [t (thresholds-from-samples (map :duration-ms samples))]
-                  (assoc t :source source)))
-        fallback-levels [[spec-key "exact"]
-                          [to-type-key "to-type"]
-                          [type-key "type"]]]
-    (into {}
-          (mapcat (fn [[key-fn source]]
-                    (keep (fn [[k samples]]
-                            (when-let [e (entry source samples)] [k e]))
-                          (group-by key-fn dwell-records)))
-                  fallback-levels))))
+   exact / to-type fallback strings (BL-827 gap 2: no *->*|type row - it
+   was consulted by nothing). Only keys that clear the min-sample,
+   min-warn-ms and ceiling gates are emitted. opts: {:ceiling-warn-ms} -
+   nil/absent applies no ceiling."
+  ([dwell-records] (build-threshold-table dwell-records {}))
+  ([dwell-records {:keys [ceiling-warn-ms]}]
+   (let [entry (fn [source samples]
+                 (when-let [t (thresholds-from-samples (map :duration-ms samples) ceiling-warn-ms)]
+                   (assoc t :source source)))
+         fallback-levels [[spec-key "exact"]
+                           [to-type-key "to-type"]]]
+     (into {}
+           (mapcat (fn [[key-fn source]]
+                     (keep (fn [[k samples]]
+                             (when-let [e (entry source samples)] [k e]))
+                           (group-by key-fn dwell-records)))
+                   fallback-levels)))))
 
 (defn resolve-thresholds
   "Pure: pick warn/escalate for one parcel. Prefers exact spec, then
-   *->to|type, then the global conf pair. (The coarser *->*|type row is
-   still written into the calibrated table for observability, but is NOT
-   consulted here — a type-level mix of QA→specifier hops and rotation
-   waits would mis-calibrate dormant pipeline roles.) Returns
+   *->to|type, then the global conf pair. (BL-827 gap 2: the *->*|type row
+   is no longer written at all — a type-level mix of QA→specifier hops and
+   rotation waits would mis-calibrate dormant pipeline roles, which is why
+   nothing ever consulted it.) Returns
    {:warn-ms :escalate-ms :resolved-via} — resolved-via is the matched key
    or \"global\". decide-tier never sees the route identity."
   [{:keys [from to type]} specs-table global-thresholds]
@@ -276,16 +312,20 @@
 
 (defn calibrate-threshold-table
   "Pure orchestration over already-parsed header maps: build the specs table
-   and wrap it with calibration metadata."
-  [header-maps now-ms]
-  (let [records (keep dwell-record-from-headers header-maps)
-        specs (build-threshold-table records)]
-    {:calibratedAt now-ms
-     :warnPercentile warn-percentile
-     :escalatePercentile escalate-percentile
-     :minSamples min-samples-for-calibration
-     :sampleCount (count records)
-     :specs specs}))
+   and wrap it with calibration metadata. opts: {:ceiling-warn-ms} (BL-827
+   ceiling, recorded in the metadata so an operator reading the table can
+   see which bound applied); nil/absent applies no ceiling."
+  ([header-maps now-ms] (calibrate-threshold-table header-maps now-ms {}))
+  ([header-maps now-ms {:keys [ceiling-warn-ms] :as opts}]
+   (let [records (keep dwell-record-from-headers header-maps)
+         specs (build-threshold-table records opts)]
+     (cond-> {:calibratedAt now-ms
+              :warnPercentile warn-percentile
+              :escalatePercentile escalate-percentile
+              :minSamples min-samples-for-calibration
+              :sampleCount (count records)
+              :specs specs}
+       ceiling-warn-ms (assoc :ceilingWarnMs (long ceiling-warn-ms))))))
 
 ;; ── age (mirrors mono_router_lib's note-aged? precedence exactly) ──────────
 
@@ -530,13 +570,16 @@
   (* 6 60 60 1000))
 
 (defn threshold-table-stale?
-  "True when the durable table is missing, untimestamped, or older than
-   threshold-recalibration-ms."
-  [table now-ms]
-  (let [at (:calibratedAt table)]
-    (or (nil? at)
-        (not (number? at))
-        (>= (- now-ms (long at)) threshold-recalibration-ms))))
+  "True when the durable table is missing, untimestamped, or older than the
+   recalibration interval. The interval is injectable (BL-827 verification:
+   the acceptance suite must not sleep out the 6 h default); the 2-arity
+   keeps every pre-existing caller on threshold-recalibration-ms."
+  ([table now-ms] (threshold-table-stale? table now-ms threshold-recalibration-ms))
+  ([table now-ms recalibration-ms]
+   (let [at (:calibratedAt table)]
+     (or (nil? at)
+         (not (number? at))
+         (>= (- now-ms (long at)) (long recalibration-ms))))))
 
 (defn calibration-headers-from-file
   "Impure: one handoff file → header map for dwell-record-from-headers, or
@@ -628,19 +671,23 @@
   "Refresh the durable percentile table when stale. dirs: completed/abandoned
    mailbox paths across roles. Returns the (possibly freshly written) table.
    A calibration failure leaves the prior table in place — never disables
-   the watchdog."
-  [daemon-dir dirs now-ms]
-  (let [current (read-threshold-table daemon-dir)]
-    (if-not (threshold-table-stale? current now-ms)
-      current
-      (try
-        (let [fresh (calibrate-threshold-table
-                     (collect-calibration-headers dirs)
-                     now-ms)]
-          (write-threshold-table! daemon-dir fresh)
-          fresh)
-        (catch Exception _
-          current)))))
+   the watchdog. opts (BL-827): {:ceiling-warn-ms} threads the adaptation
+   ceiling into calibration; {:recalibration-ms} overrides the 6 h interval
+   (injectable for the acceptance suite, never slept out)."
+  ([daemon-dir dirs now-ms] (ensure-threshold-table! daemon-dir dirs now-ms {}))
+  ([daemon-dir dirs now-ms {:keys [recalibration-ms collect-fn] :as opts}]
+   (let [current (read-threshold-table daemon-dir)]
+     (if-not (threshold-table-stale? current now-ms (or recalibration-ms threshold-recalibration-ms))
+       current
+       (try
+         (let [fresh (calibrate-threshold-table
+                      ((or collect-fn collect-calibration-headers) dirs)
+                      now-ms
+                      (select-keys opts [:ceiling-warn-ms]))]
+           (write-threshold-table! daemon-dir fresh)
+           fresh)
+         (catch Exception _
+           current))))))
 
 ;; ── humanized age + alarm text ───────────────────────────────────────────────
 
@@ -669,13 +716,19 @@
    - outage-intervals: when non-empty, names each subtracted
      provider-outage interval (scenario 07/08).
    - unreconstructable?: when true, flags that a pause/stop interval could
-     not be reconstructed and fell back to wall clock (scenario 05)."
+     not be reconstructed and fell back to wall clock (scenario 05).
+   BL-827 gap 1 additions, same optional/no-op-when-absent posture:
+   - threshold-ms: the fired tier's own threshold - now variable per route,
+     so an alarm that does not state it cannot be judged at 3am.
+   - resolved-via: which spec key produced it (or \"global\")."
   [{:keys [id from to type age-ms wall-age-ms role mailbox verb tier
-           outage-intervals unreconstructable?]}]
+           outage-intervals unreconstructable? threshold-ms resolved-via]}]
   (str (if (= tier :escalate) "🚨 ESCALATE" "⚠️ WARN")
        " flow-stall: parcel " id " (" from "->" to ", " type ") aged "
        (humanize-age-ms age-ms) " in " role " " (name mailbox)
        " - " (name verb) "."
+       (when (and threshold-ms resolved-via)
+         (str " Threshold " (humanize-age-ms threshold-ms) " via " resolved-via "."))
        (when (and wall-age-ms (not= (long wall-age-ms) (long (or age-ms 0))))
          (str " (active " (humanize-age-ms age-ms) " of " (humanize-age-ms wall-age-ms) " wall)"))
        (when (seq outage-intervals)
@@ -773,7 +826,14 @@
   [role-inboxes now-ms project-root daemon-dir adapters]
   (let [global (read-pack-aware-global-thresholds project-root)
         calib-dirs (mapcat (fn [row] [(:completed-dir row) (:abandoned-dir row)]) role-inboxes)
-        table (ensure-threshold-table! daemon-dir calib-dirs now-ms)
+        ;; :calibration-collect-fn is an optional adapter seam (same postFn
+        ;; convention as :emit-alarm!/:live-session?) - acceptance scenario
+        ;; 06 injects a throwing collector to prove a calibration failure
+        ;; keeps the prior table and never disables the watchdog.
+        table (ensure-threshold-table! daemon-dir calib-dirs now-ms
+                                       (cond-> {:ceiling-warn-ms (:calibration-ceiling-warn-ms global)}
+                                         (:calibration-collect-fn adapters)
+                                         (assoc :collect-fn (:calibration-collect-fn adapters))))
         specs (:specs table {})
         state (read-state daemon-dir)
         state-dir (fs/parent daemon-dir)
@@ -802,7 +862,7 @@
                          :ledger-intervals ledger-intervals
                          :provider-evidence (provider-evidence-for (:role parcel))})
                    age-ms (:effective-age-ms eff)
-                   {:keys [warn-ms escalate-ms]} (resolve-thresholds parcel specs global)
+                   {:keys [warn-ms escalate-ms resolved-via]} (resolve-thresholds parcel specs global)
                    held? (parcel-ambulance-held? ambulance-state (:file-path parcel))
                    tier (evaluate-parcel-tier age-ms warn-ms escalate-ms acc-state (:id parcel) held?)]
                (if (= tier :none)
@@ -813,6 +873,10 @@
                              (assoc parcel :age-ms age-ms :wall-age-ms (:wall-age-ms eff)
                                     :outage-intervals (:outage-intervals eff)
                                     :unreconstructable? (:unreconstructable? eff)
+                                    ;; BL-827 gap 1: the alarm names the fired
+                                    ;; tier's threshold and its source.
+                                    :threshold-ms (if (= tier :escalate) escalate-ms warn-ms)
+                                    :resolved-via resolved-via
                                     :verb verb :tier tier))
                        confirmed? (try
                                     (boolean ((:emit-alarm! adapters) text))
