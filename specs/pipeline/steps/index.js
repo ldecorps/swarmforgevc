@@ -508,7 +508,8 @@ const DOMAINS = [
   require('./bl947SwarmforgeShErrorsReachStderrSteps'),
   require('./bl950QaApprovalEvidenceCommitSteps'),
   require('./bl949ConciergeBoardWiringSteps'),
-  require('./bl685StrandedResidentDetectionSteps')
+  require('./bl685StrandedResidentDetectionSteps'),
+  require('./bl952BouncedParcelNeverApprovedSteps')
 ];
 
 function registerSteps(registry) {
