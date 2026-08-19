@@ -202,3 +202,6 @@ notes: |
   (parcel survival and resume, against the force override). Left as written.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: QA, blamed: coder, class: behavior, commit: 95b0e5108, evidence: backlog/evidence/BL-927-rotate-gate-resolves-departing-role-from-the-raw-marker-bounce-20260819.md }
