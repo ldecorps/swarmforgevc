@@ -42,6 +42,13 @@ check), not assumed.
 | Acceptance — BL-958 | **5/5**, exit 0 |
 | Acceptance — BL-960 | **10/10**, exit 0 |
 | Standing whole-tree guards (7 files) | **51/51** — after the fix below |
+| `test_swarm_ensure.sh` (BL-958 adds 105 lines to it) | **47 PASS / 0 FAIL, exit 0 — ran to completion** |
+
+The ensure suite completing matters beyond this batch: four attempts during the
+preceding BL-571 pass were killed by host saturation before reaching the tail.
+This run covers BL-958's new control-plane cases, BL-571's sequential-dormant
+case, and the whole `RC-*` tail, so it also retires the open verification
+caveat recorded in `BL-571-hardener-pass-20260819.md`.
 
 Static leak checks on all three new step files: each creates its fixture with
 `mkdtempSync` and removes it in an `afterEach` tracked-roots reaper (survives a
