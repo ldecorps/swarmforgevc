@@ -130,6 +130,51 @@ notes: >
   conflict, no onboarding-contract gate, no ambulance freeze
   (ambulance_cli.bb status: inactive) - depth alone is the blocker.
 
+  COORDINATOR EVIDENCE ADJUDICATION 2026-08-19 (22:55Z) - the documenter's
+  priority-00 note "SWARMFORGE_PACK IS set in pane shells; tmux show-env is
+  the wrong probe" is CORRECT on its narrow claim, and this ticket's
+  description overstates the consequence. Verified this turn:
+
+  - `tmux show-environment -g` reports SWARMFORGE_PACK=full-forge. The
+    per-SESSION probe (`tmux show-environment -t swarmforge-<role>`) reports
+    nothing, because the value lives in tmux's GLOBAL environment and panes
+    inherit it. The hardender's "unknown variable in all 8 sessions" evidence
+    used the per-session probe - the wrong one. Recorded so nobody re-runs it.
+  - This coordinator's own pane shell reads SWARMFORGE_PACK=full-forge.
+  - `ps eww` is ALSO a wrong probe on macOS: it returns 0 env vars for another
+    process regardless of truth, so it yields a false UNSET. Only a shell
+    reading its own env, or `tmux show-environment -g`, is reliable here.
+  - Consumer measured both ways from extension/: with the var set
+    maxForks=1; with `env -u SWARMFORGE_PACK` maxForks=3.
+
+  So the description's "the cap never engages in production" is FALSE as of
+  this launch - BL-935's cap IS engaging right now (maxForks=1). The
+  hardender's 21:21Z reading of an empty shell was true then: it predates the
+  22:26Z relaunch.
+
+  THE DEFECT REMAINS REAL, but it is fragility, not inertness. Nothing in the
+  repo or the operator's shell profile exports SWARMFORGE_PACK: not
+  .swarmforge/launch/<role>.sh (still exports only SWARMFORGE_ROLE and
+  SWARMFORGE_ROLE_WORKTREE - re-verified), not swarmforge.sh (line 112 only
+  READS it as a pack-resolution input), not start-swarm.sh (lines 135-136
+  likewise read-only), and not ~/.zshrc/.zprofile/.bash_profile/.bashrc.
+  The five start-swarm-*.sh provider wrappers remain the only export sites and
+  all name *-mono-router, never full-forge. The live value therefore reaches
+  tmux's global env only because the shell that invoked ./swarm at 22:26Z
+  happened to carry an ad-hoc export. The next ./swarm from a clean shell
+  silently drops the cap back to maxForks=3, with no error - exactly the
+  silent-revert shape invariant 2 exists to close.
+
+  SPECIFIER ACTION (this is a spec change, not a coordinator edit): revise the
+  severity rationale and description to claim fragility/silent-revert rather
+  than "never engages", and correct the root-cause probe evidence per the
+  above. The fix direction, required_wiring, and both invariants are UNCHANGED
+  and still correct - baking the export into the generated launch script is
+  still exactly right, and invariant 2 is precisely what today's
+  inherited-from-an-ad-hoc-shell value fails to satisfy. Do NOT downgrade this
+  to no-op: a mechanism that works only by accident of the launching shell is
+  the defect.
+
 approval_context: >
   One decision to confirm, the rest is settled. The fix direction is "export
   the env var from the launcher" rather than "teach the vitest resolver to
