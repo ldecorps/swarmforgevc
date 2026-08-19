@@ -103,8 +103,8 @@ Not fixed here deliberately: adding a `trap` changes the generated wrapper —
 production behaviour, the coder's domain, and it would move the byte-identity
 baselines BL-960's own round-trip test asserts against. So it wants its own
 spec and tests rather than a hardener edit. Raised by `note` to specifier and
-coordinator. The 13 existing files were left in place — they are not this
-worktree's to delete.
+coordinator; **the specifier has minted it as `BL-965` (`b329509bf`)**. The 13
+existing files were left in place — they are not this worktree's to delete.
 
 ## Follow-up: BL-958's own fixtures carried the same dead seams
 
