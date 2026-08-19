@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: tool-miss-auto-heal
-human_approval: pending
+human_approval: approved
 priority: 40
 direction: pipeline-note
 depends_on: [BL-960]
