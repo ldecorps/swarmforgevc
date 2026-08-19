@@ -94,3 +94,8 @@ notes_coordinator_hold: >
   the mitigation. The branch-level fix was routed to the hardener directly
   (note 000632, evidence af1f66406). Raising BL-964's priority would NOT close
   the gap either - the fix has to happen on the branch. Evidence: af1f66406.
+
+  APPROVAL LANDED 2026-08-20: human_approval is now `approved`. Capacity (active
+  7 = cap 7) remains the blocker. Still NOT expedited (type: chore, priority 60),
+  so it queues behind BL-962 and BL-963. The timing flag above is UNCHANGED and
+  still matters: the branch-level fix cannot wait for this ticket.
