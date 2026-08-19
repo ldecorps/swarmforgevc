@@ -53,6 +53,69 @@ function mkFixture() {
   return root;
 }
 
+// BL-905 architect bounce (fixture-dir leak, same shape as BL-927's own
+// remediation for its sibling step-handler file): mkFixture() above creates
+// a fresh, real mkdtemp root for every scenario and nothing removed it -
+// this framework has no after-scenario hook (stepRegistry.js/runtime.js),
+// so cleanup has to be wired into the step handlers themselves. Idempotent
+// (force: true) so calling it more than once for the same ctx.root is safe.
+function cleanupFixture(ctx) {
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+  }
+}
+
+// Wraps a non-final step: on throw, releases the fixture before rethrowing
+// (a Given/When step can fail BEFORE any later, correctly-cleaning-up step
+// ever runs - the exact gap the bounce evidence measured, 9 leaked dirs for
+// 9 scenarios that all completed normally, let alone one that throws).
+function guarded(fn) {
+  return async (ctx, ...args) => {
+    try {
+      return await fn(ctx, ...args);
+    } catch (err) {
+      cleanupFixture(ctx);
+      throw err;
+    }
+  };
+}
+
+// Wraps a step that is gherkin-LAST for EVERY scenario it appears in:
+// cleans up unconditionally, on both success and throw.
+function terminal(fn) {
+  return async (ctx, ...args) => {
+    try {
+      return await fn(ctx, ...args);
+    } finally {
+      cleanupFixture(ctx);
+    }
+  };
+}
+
+// Wraps "that epic is (listed|not listed)" specifically: it is
+// gherkin-LAST for scenarios 02/03, but scenario 01 reuses the exact same
+// step function with one more fs-touching step after it ("that epic's file
+// is unchanged on disk") - ctx.deferCleanup (set only by scenario 01's own
+// Given) skips cleanup here so that step's own `terminal` wrapper is the
+// one that actually releases the fixture. Always cleans up on throw
+// regardless of deferCleanup - a throw here means the scenario is aborting
+// either way, and no later step will run to do it instead.
+function terminalMaybeDeferred(fn) {
+  return async (ctx, ...args) => {
+    let result;
+    try {
+      result = await fn(ctx, ...args);
+    } catch (err) {
+      cleanupFixture(ctx);
+      throw err;
+    }
+    if (!ctx.deferCleanup) {
+      cleanupFixture(ctx);
+    }
+    return result;
+  };
+}
+
 function ticketPath(ctx, folder, id) {
   return path.join(ctx.root, 'backlog', folder, `${id}.yaml`);
 }
@@ -158,74 +221,81 @@ function registerSteps(registry) {
   // ── Scenario 01: no children at all ──────────────────────────────────
   registry.defineScoped(
     /^an epic tracker with no children in any folder$/,
-    (ctx) => {
+    guarded((ctx) => {
       ctx.testEpicId = 'BL-905-EMPTY';
+      // One more fs-touching step ("that epic's file is unchanged on
+      // disk") runs after the shared visibility check below - defer that
+      // step's cleanup to this scenario's own true last step instead.
+      ctx.deferCleanup = true;
       writeEpic(ctx, ctx.testEpicId, 10, 'empty-slug');
       snapshot(ctx, [ctx.testEpicId]);
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^that epic's file is unchanged on disk$/,
-    (ctx) => {
+    terminal((ctx) => {
       assertUnchanged(ctx, [ctx.testEpicId]);
-    },
+    }),
     FEATURE
   );
 
   // ── Scenario 02 (Outline): exactly one live child, per folder ───────────
   registry.defineScoped(
     /^an epic tracker whose only child is in (.+)$/,
-    (ctx, token) => {
+    guarded((ctx, token) => {
       const folder = parseFolder(token);
       ctx.testEpicId = `BL-905-${folder.toUpperCase()}-CHILD`;
       const slug = `${folder}-slug`;
       writeEpic(ctx, ctx.testEpicId, 10, slug);
       writeChild(ctx, folder, `${ctx.testEpicId}-T`, slug);
-    },
+    }),
     FEATURE
   );
 
   // ── Shared When across scenarios 01/02/03/05 ─────────────────────────
   registry.defineScoped(
     /^the reorder state is requested$/,
-    async (ctx) => {
+    guarded(async (ctx) => {
       ctx.state = await fetchReorderState(ctx);
       ctx.listedIds = ctx.state.items.map((item) => item.id);
-    },
+    }),
     FEATURE
   );
 
   // ── Shared Then across scenarios 01/02/03 ────────────────────────────
+  // Gherkin-terminal for scenarios 02/03; scenario 01 sets
+  // ctx.deferCleanup above so this one function is safely non-terminal
+  // there instead of splitting into a near-duplicate step for one scenario.
   registry.defineScoped(
     /^that epic is (listed|not listed)$/,
-    (ctx, token) => {
+    terminalMaybeDeferred((ctx, token) => {
       const expectedListed = token === 'listed';
       assert.equal(
         ctx.listedIds.includes(ctx.testEpicId),
         expectedListed,
         `expected ${ctx.testEpicId} listed=${expectedListed}, got items ${JSON.stringify(ctx.listedIds)}`
       );
-    },
+    }),
     FEATURE
   );
 
   // ── Scenario 03: an epic is not a child of itself ────────────────────
   registry.defineScoped(
     /^an epic tracker whose only slug match is another epic tracker$/,
-    (ctx) => {
+    guarded((ctx) => {
       ctx.testEpicId = 'BL-905-SELF-A';
       writeEpic(ctx, ctx.testEpicId, 10, 'shared-epic-slug');
       writeEpic(ctx, 'BL-905-SELF-B', 20, 'shared-epic-slug');
-    },
+    }),
     FEATURE
   );
 
   // ── Scenario 04: a hidden epic cannot swallow a move ─────────────────
   registry.defineScoped(
     /^a childless epic tracker positioned between two epics with children$/,
-    (ctx) => {
+    guarded((ctx) => {
       ctx.upperId = 'BL-905-UPPER';
       ctx.childlessId = 'BL-905-MIDDLE-EMPTY';
       ctx.lowerId = 'BL-905-LOWER';
@@ -235,43 +305,43 @@ function registerSteps(registry) {
       writeEpic(ctx, ctx.lowerId, 30, 'lower-slug');
       writeChild(ctx, 'paused', `${ctx.lowerId}-T`, 'lower-slug');
       snapshot(ctx, [ctx.childlessId]);
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^the lower epic with children is moved up$/,
-    async (ctx) => {
+    guarded(async (ctx) => {
       ctx.lastResponse = await moveEpic(ctx, ctx.lowerId, 'up');
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^it exchanges places with the upper epic with children$/,
-    (ctx) => {
+    guarded((ctx) => {
       assert.equal(ctx.lastResponse.status, 200);
       assert.equal(ctx.lastResponse.body && ctx.lastResponse.body.success, true);
       assert.equal(ctx.lastResponse.body.changed, true);
       assert.equal(readPriority(ctx, ctx.lowerId), 10, 'expected the moved epic to take the upper epic\'s old priority');
       assert.equal(readPriority(ctx, ctx.upperId), 30, 'expected the displaced epic to take the moved epic\'s old priority');
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^the childless epic tracker keeps its position on disk$/,
-    (ctx) => {
+    terminal((ctx) => {
       assertUnchanged(ctx, [ctx.childlessId]);
       assert.equal(readPriority(ctx, ctx.childlessId), 20);
-    },
+    }),
     FEATURE
   );
 
   // ── Scenario 05: the listing and the move neighbours never disagree ─────
   registry.defineScoped(
     /^a backlog mixing epics with and without live children$/,
-    (ctx) => {
+    guarded((ctx) => {
       ctx.hiddenIds = ['BL-905-MIX-HIDDEN-A', 'BL-905-MIX-HIDDEN-C'];
       writeEpic(ctx, ctx.hiddenIds[0], 5, 'mix-hidden-a-slug');
       writeEpic(ctx, 'BL-905-MIX-B', 10, 'mix-b-slug');
@@ -284,21 +354,21 @@ function registerSteps(registry) {
       ctx.selectedId = 'BL-905-MIX-D';
       ctx.neighbourId = 'BL-905-MIX-B';
       snapshot(ctx, [...ctx.hiddenIds, 'BL-905-MIX-E']);
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^an epic is moved$/,
-    async (ctx) => {
+    guarded(async (ctx) => {
       ctx.lastResponse = await moveEpic(ctx, ctx.selectedId, 'up');
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^the move resolves against exactly the epics that were listed$/,
-    (ctx) => {
+    terminal((ctx) => {
       assert.equal(ctx.lastResponse.status, 200);
       assert.equal(ctx.lastResponse.body && ctx.lastResponse.body.success, true);
       assert.equal(ctx.lastResponse.body.changed, true);
@@ -312,34 +382,34 @@ function registerSteps(registry) {
       // Every epic outside the resolved pair - hidden or listed - is
       // untouched, so the move's write set never exceeds the listed set.
       assertUnchanged(ctx, [...ctx.hiddenIds, 'BL-905-MIX-E']);
-    },
+    }),
     FEATURE
   );
 
   // ── Scenario 06: make-top still dominates hidden epics ───────────────
   registry.defineScoped(
     /^a childless epic tracker and an epic with children$/,
-    (ctx) => {
+    guarded((ctx) => {
       ctx.childlessId = 'BL-905-TOP-HIDDEN';
       ctx.withChildrenId = 'BL-905-TOP-LIVE';
       writeEpic(ctx, ctx.childlessId, 5, 'top-hidden-slug');
       writeEpic(ctx, ctx.withChildrenId, 15, 'top-live-slug');
       writeChild(ctx, 'paused', `${ctx.withChildrenId}-T`, 'top-live-slug');
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^the epic with children is made top$/,
-    async (ctx) => {
+    guarded(async (ctx) => {
       ctx.lastResponse = await makeTop(ctx, ctx.withChildrenId);
-    },
+    }),
     FEATURE
   );
 
   registry.defineScoped(
     /^its priority dominates the childless epic tracker$/,
-    (ctx) => {
+    terminal((ctx) => {
       assert.equal(ctx.lastResponse.status, 200);
       assert.equal(ctx.lastResponse.body && ctx.lastResponse.body.success, true);
       assert.equal(ctx.lastResponse.body.changed, true);
@@ -349,7 +419,7 @@ function registerSteps(registry) {
         withChildren < childless,
         `expected the made-top epic (${withChildren}) to dominate the hidden childless tracker (${childless})`
       );
-    },
+    }),
     FEATURE
   );
 }
