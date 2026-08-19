@@ -13,18 +13,38 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const TOOL = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'clear_identical_untracked_and_merge.bb');
 
 const FEATURE = 'a byte-identical hot-synced copy never blocks a worktree merge';
 
+// BL-924 architect bounce (2026-08-19): every mkTmp root is removed in
+// afterEach regardless of which assertion throws or a scenario bounces -
+// measured 32 leaked full git-repo-plus-worktree fixtures across repeated
+// runs before this existed. Mirrors the bl631/bl915/bl938 precedent this
+// session already established (a per-terminal-step try/finally, the
+// bl413StaleSandboxSweepSteps.js shape the bounce also names, works too;
+// this file uses the centralized-afterEach shape for consistency with this
+// session's other new fixture-heavy step files).
+let trackedRoots = [];
+
+afterEach(() => {
+  while (trackedRoots.length) {
+    const root = trackedRoots.pop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
 }
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  trackedRoots.push(root);
+  return root;
 }
 
 // main tracks foo.sh from the start; the role branch's pointer is created
