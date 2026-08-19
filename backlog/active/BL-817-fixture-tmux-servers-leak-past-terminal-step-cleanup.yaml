@@ -143,7 +143,7 @@ description: |
   repoint this ticket's `acceptance:` in the SAME parcel as the step handlers —
   not before.
 
-acceptance: specs/features/BL-817-fixture-tmux-servers-reaped-on-abnormal-scenario-end.feature.draft
+acceptance: specs/features/BL-817-fixture-tmux-servers-reaped-on-abnormal-scenario-end.feature
 
 required_wiring:
   - "specs/pipeline/steps/bl647RotationRouterLivenessSteps.js::fixtureReaper::the file whose leak was actually observed must be one of the adopters, not merely a cited example."

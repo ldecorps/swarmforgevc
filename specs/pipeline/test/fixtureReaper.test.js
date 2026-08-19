@@ -127,6 +127,43 @@ test('reap() kills a live tmux server referenced by the tmux-socket pointer file
   }
 });
 
+// BL-817 invariant 2: the discriminator is the socket PATH alone, never the
+// session name - these fixtures deliberately reuse the live swarm's own
+// session names. A real tmux server whose socket happens to sit at the
+// exact shape swarm_socket_lib.bb's primary-socket-path writes
+// (.swarmforge/tmux/<hash>.sock) must survive reap(), even though this one
+// is a disposable fixture server with nothing special about it otherwise -
+// proving the refusal is driven by the path shape, not by anything else
+// about this particular socket.
+test('reap() refuses to kill a tmux server whose socket path matches the live repo .swarmforge/tmux/*.sock shape', async () => {
+  // Deliberately NOT mkRoot() (os.tmpdir(), which resolves to macOS's long
+  // /var/folders/.../T/ path) - a unix socket's sun_path is capped at ~104
+  // bytes on macOS (the exact constraint swarm_socket_lib.bb's own header
+  // documents), and os.tmpdir() plus '.swarmforge/tmux/<name>.sock' alone
+  // can exceed it. /tmp is short enough with plenty of room to spare.
+  const root = fs.mkdtempSync('/tmp/sfvc-r2-');
+  fs.mkdirSync(path.join(root, '.swarmforge', 'tmux'), { recursive: true });
+  const socketPath = path.join(root, '.swarmforge', 'tmux', 'abc123.sock');
+  execFileSync('tmux', ['-S', socketPath, 'new-session', '-d', '-s', 'fixture-reaper-guard-test']);
+  fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), socketPath);
+  try {
+    reap(root);
+    // Give reap() every chance it would need to have killed a real one.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.doesNotThrow(
+      () => execFileSync('tmux', ['-S', socketPath, 'list-sessions'], { stdio: 'ignore' }),
+      'expected the tmux server at a live-shaped socket path to survive reap()'
+    );
+  } finally {
+    try {
+      execFileSync('tmux', ['-S', socketPath, 'kill-server'], { stdio: 'ignore' });
+    } catch {
+      /* already gone */
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('reap() on a root with no operator dir and no tmux pointer does nothing and does not throw', () => {
   const root = mkRoot();
   try {

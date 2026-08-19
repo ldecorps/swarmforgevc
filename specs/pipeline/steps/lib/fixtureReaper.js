@@ -43,8 +43,39 @@ function killPid(pid) {
   }
 }
 
+// BL-817 invariant 2: the ONLY safe discriminator between a fixture's
+// throwaway tmux server and the live swarm's own is the socket PATH -
+// these fixtures deliberately reuse the live swarm's own session names
+// (swarmforge-coder, swarmforge-QA, ...), so anything that reaped by
+// session name would kill the running swarm and the operator with it.
+// Matches every real production socket shape (verified against the actual
+// writers, not guessed): swarm_socket_lib.bb's primary-socket-path
+// (.swarmforge/tmux/<hash>.sock) and operator_runtime.bb's two own sockets
+// (.swarmforge/operator/operator-tmux.sock,
+// .swarmforge/operator/front-desk-operator-tmux.sock). A fixture never
+// names its own socket one of these three exact shapes (every fixture in
+// this repo uses its own arbitrary name, e.g. bl647.sock, role.sock), so
+// this never refuses a legitimate fixture reap.
+const LIVE_REPO_SWARMFORGE_SOCKET_PATTERNS = [
+  /\.swarmforge\/tmux\/[^/]+\.sock$/,
+  /\.swarmforge\/operator\/operator-tmux\.sock$/,
+  /\.swarmforge\/operator\/front-desk-operator-tmux\.sock$/,
+];
+
+function isLiveRepoSwarmforgeSocket(socketPath) {
+  if (!socketPath) {
+    return false;
+  }
+  return LIVE_REPO_SWARMFORGE_SOCKET_PATTERNS.some((re) => re.test(socketPath));
+}
+
 function killTmuxServer(socketPath) {
   if (!socketPath || !fs.existsSync(socketPath)) {
+    return;
+  }
+  if (isLiveRepoSwarmforgeSocket(socketPath)) {
+    // Refuse outright - never kill the live swarm's own socket, however a
+    // fixture's session happens to be named.
     return;
   }
   try {
@@ -157,4 +188,4 @@ function track(root) {
   tracked.add(root);
 }
 
-module.exports = { track, reap, onAbnormalExit };
+module.exports = { track, reap, onAbnormalExit, isLiveRepoSwarmforgeSocket };

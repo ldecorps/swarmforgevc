@@ -24,6 +24,7 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const CHECK_SH = path.join(SCRIPTS, 'babysitter_check.sh');
 const SWEEP_LIB = path.join(SCRIPTS, 'babysitterd_sweep_lib.bb');
+const { track } = require('./lib/fixtureReaper');
 
 const FEATURE = 'the stuck-in-process check reads owner liveness, and can see every mailbox';
 
@@ -197,8 +198,15 @@ function runMotionConsistencyProbe(ownerBusy) {
 
 function ensureState(ctx) {
   if (!ctx.bl807) {
+    const root = mkFixtureRoot();
+    // BL-817: registered BEFORE any tmux server is spawned (later, by
+    // startTmuxSession), so even a crash mid-launch is covered - the
+    // inline cleanup() this file already has only runs from a `finally` in
+    // each terminal step, which does not survive a SIGTERM/SIGKILL to the
+    // whole process.
+    track(root);
     ctx.bl807 = {
-      root: mkFixtureRoot(),
+      root,
       sock: null,
       sockDir: null,
       role: null,
