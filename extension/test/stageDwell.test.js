@@ -163,9 +163,9 @@ test('buildStageDwellReport trend compares current vs prior window total median 
   assert.equal(report.trend.delta, 180000);
 });
 
-// ── nameBottleneck (pure, dwell-02) ──────────────────────────────────────
+// ── nameBottleneck (pure, dwell-02, BL-909 processing-only ranking) ─────
 
-test('nameBottleneck names the stage whose total median dwell dominates, with its multiple over the next slowest', () => {
+test('nameBottleneck names the stage whose median PROCESSING dominates, with its multiple over the next slowest', () => {
   const stages = [
     buildStageDwellReport('coder', [record('coder', 0, 100)], [], 'now', 'prior'),
     buildStageDwellReport('cleaner', [record('cleaner', 0, 1000)], [], 'now', 'prior'),
@@ -173,7 +173,41 @@ test('nameBottleneck names the stage whose total median dwell dominates, with it
   ];
   const bottleneck = nameBottleneck(stages);
   assert.equal(bottleneck.role, 'cleaner');
+  assert.equal(bottleneck.processingDwellMs, 1000);
   assert.equal(bottleneck.multipleOverNext, 1000 / 300);
+});
+
+// BL-909 regression: the exact human-reported shape - a dormant stage with
+// a huge queue wait but a tiny processing median must never outrank a
+// stage that genuinely takes longer to do the work, even though its
+// queue-wait-inclusive TOTAL is far larger.
+test('nameBottleneck never lets queue wait make a dormant stage the bottleneck (BL-909)', () => {
+  const stages = [
+    // specifier: total 6,660,000ms (huge), processing only 60,000ms
+    buildStageDwellReport('specifier', [record('specifier', 6600000, 60000)], [], 'now', 'prior'),
+    // hardender: total 1,560,000ms (far smaller), processing 1,500,000ms (dominant)
+    buildStageDwellReport('hardender', [record('hardender', 60000, 1500000)], [], 'now', 'prior'),
+  ];
+  const bottleneck = nameBottleneck(stages);
+  assert.equal(bottleneck.role, 'hardender');
+  assert.notEqual(bottleneck.role, 'specifier');
+  assert.equal(bottleneck.processingDwellMs, 1500000);
+  assert.equal(bottleneck.multipleOverNext, 1500000 / 60000);
+});
+
+// BL-909 invariant 2: totalDwellMs keeps its pre-existing meaning
+// (wait + processing for the NAMED stage) - a distinct field from
+// processingDwellMs, never silently collapsed into the same value.
+test('nameBottleneck reports totalDwellMs as wait+processing for the named stage, distinct from processingDwellMs', () => {
+  const stages = [
+    buildStageDwellReport('hardender', [record('hardender', 60000, 1500000)], [], 'now', 'prior'),
+    buildStageDwellReport('QA', [record('QA', 43000 * 60, 14000 * 60)], [], 'now', 'prior'),
+  ];
+  const bottleneck = nameBottleneck(stages);
+  assert.equal(bottleneck.role, 'hardender');
+  assert.equal(bottleneck.totalDwellMs, 60000 + 1500000);
+  assert.equal(bottleneck.processingDwellMs, 1500000);
+  assert.notEqual(bottleneck.totalDwellMs, bottleneck.processingDwellMs);
 });
 
 test('nameBottleneck returns null when no stage has processed a parcel', () => {
@@ -185,6 +219,7 @@ test('nameBottleneck reports a null multiple when only one stage has data', () =
   const stages = [buildStageDwellReport('coder', [record('coder', 0, 100)], [], 'now', 'prior')];
   const bottleneck = nameBottleneck(stages);
   assert.equal(bottleneck.role, 'coder');
+  assert.equal(bottleneck.processingDwellMs, 100);
   assert.equal(bottleneck.multipleOverNext, null);
 });
 
