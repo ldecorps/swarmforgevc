@@ -15,6 +15,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { afterEach } = require('node:test');
+const fixtureReaper = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const STATUS = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_status.bb');
@@ -28,12 +29,20 @@ const OBSERVED_AT = '2026-08-19T18:00:00Z';
 let trackedRoots = [];
 afterEach(() => {
   while (trackedRoots.length) {
-    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+    const root = trackedRoots.pop();
+    // Hardening (BL-958): reap() before rmSync so the fixture's tmux socket
+    // is torn down, not just unlinked. The afterEach alone cannot cover an
+    // abnormal exit - a SIGKILL mid-run (routine on a saturated host) skips
+    // it entirely, which is exactly the leak fixtureReaper's exit handlers
+    // exist to catch. Required by extension/test/tmuxReaperGuard.test.js.
+    fixtureReaper.reap(root);
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
 function mkFixture(ctx) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl958-'));
+  fixtureReaper.track(root);
   trackedRoots.push(root);
   for (const dir of ['.swarmforge/launch', 'bin']) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });
