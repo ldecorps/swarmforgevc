@@ -1,6 +1,111 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-944: the `operator_runtime.bb`
+**Last Updated:** August 19, 2026 (BL-943: six self-contained
+`handoffd` daemon-fixture wiring tests
+(`test_handoffd_aged_note_rotate_wiring.sh`, `_ambulance_wiring.sh`,
+`_rule_proposal_rotate_wiring.sh`, `_wake_attribution_wiring.sh`,
+`_priority_rotate_wiring.sh`, `_starve_rotate_wiring.sh`) ended each
+scenario with a bare cleanup call whose last statement was `rm -rf
+"$ROOT"`; under `set -euo pipefail` the cleanup function's own exit status
+was that remove's status, so a failing `rm` aborted the whole script —
+every assertion had already passed and printed its `PASS:` line, but the
+run reported exit 1, never printed its final `ALL PASS:` line, silently
+skipped every scenario after the aborting one, and leaked the fixture root
+the failed remove was meant to delete. Since Babashka/Clojure has no
+mutation/CRAP/DRY tooling wired, this suite is the only gate these scripts
+have — a gate that reports red when it passed is not a gate. Fixed
+identically at all 18 cleanup call sites across the six scripts: `$?` is
+captured as the first executable statement, the fallible `rm -rf` is
+guarded so its own status never propagates as a bare failing command under
+`set -e`, a failure warns on stderr naming the surviving root instead of
+being swallowed, and the captured entry code is returned explicitly at the
+end — a real `fail()`-triggered exit code still survives even when cleanup
+also fails. Verified live on the host under real background load: two of
+three consecutive reruns of one script hit the actual flake organically,
+and the fix correctly warned and completed with `ALL PASS` both times, not
+only in the stub-`rm`-simulated case (never `chmod`, banned outright for
+failure simulation) the acceptance layer also exercises. A coder-authored
+property test (`bl943_cleanup_wrapper_property_test.sh`, 320 trials) covers
+the two declared invariants — a cleanup failure never decides the verdict
+or skips a later scenario, and is always reported — over the exact wrapper
+shape landed at all 18 sites, the accepted form for Bash's own lack of a
+property-test framework. No production behavior changed; same internal
+test-infrastructure-hygiene class as BL-412/413/458/647/655/878/944.);
+Previously
+August 19, 2026 (BL-945: Architecture Rule 6 (in
+`swarmforge/constitution/articles/local-engineering.prompt`) and two
+production source comments (`extension/src/concierge/epicIcon.ts`,
+`topicIcon.ts`) cited `docs/branding/icon-system.md` as normative
+authority, but the file existed only on the unmerged
+`origin/branding/epic-marks` branch and was unreadable from every agent's
+own worktree, each a checkout of `main` — the citations survived only as
+whatever an article's one-line summary happened to say, and it cost real
+spec quality: an operator intake proposing to expand `EPIC_ICON_POOL` was
+unbuildable for a reason only the doc's own §5a Telegram-sticker-set
+census explained. The document (a design-exploration doc, marked
+not-yet-ratified at its own top; its generator scripts and rendered image
+assets stay on the design branch, out of scope here) now lands on `main`
+as-is — no change to `EPIC_ICON_POOL`, `ICON_EMOJI`, or Architecture Rule 6
+itself, which the live icon-pool decision with the human could still
+amend. The durable half: a new standing guard,
+`extension/test/constitutionDocCitations.test.js`, scans every
+constitution article for backtick-quoted `` `docs/...` `` citations and
+fails naming the article and the path whenever one does not resolve on
+disk — scoped to constitution articles only (not source comments, which
+surfaced this drift but are a noisier, separate problem) and to a citation
+existing or not (never its spelling, casing, or punctuation, since a guard
+that flags a resolvable path is worse than no guard). Two architect
+bounces on the way: the scanner only recognizes backtick-quoted paths and
+missed `project.prompt`'s own two plain-prose citations, fixed by
+backtick-quoting them (the corpus-wide convention already used everywhere
+else) rather than widening the regex; and a `required_wiring` anchor
+required the literal substring `constitution/articles` in source, which a
+four-argument `path.join` never produced, fixed with a one-line comment
+carrying it. See the new
+[Constitution Doc-Citation Guard](../how-to/BL-945-constitution-doc-citation-guard.md).
+No new extension command, setting, or UI — a spec-drift/tooling fix, same
+class as BL-640/BL-897/BL-944.); Previously
+August 19, 2026 (BL-631: `babysitterd`'s deterministic
+5-minute sweep gains a new check, `check-pipeline-code-on-main`
+(`babysitterd_sweep_lib.bb`), closing the detection gap named in the BL-590
+post-mortem — an entire cleaner pass ran in the master checkout, landing
+un-QA'd pipeline code on `main`, and nothing errored, and nothing told
+anyone, until an architect found it hours later by eye. BL-629 refuses to
+deploy that state and BL-630 refuses to publish it; this is the layer that
+tells someone about a bad tip that already exists. A commit reachable from
+`main` or `origin/main`, not an ancestor of `swarmforge-QA`, that touches a
+QA-exclusive path (`extension/src/`, `extension/test/`,
+`specs/pipeline/steps/`) is CRIT; the path set is read at runtime from
+BL-632's own `check_pipeline_code_on_main.sh --list-paths` rather than
+restated, and ancestry is decided by the one shared `is_qa_ancestor.sh`
+predicate. An unresolvable `swarmforge-QA` ref fails the whole check closed
+to `UNAVAILABLE`, never a silent clean sweep. Merge commits are diffed with
+`git diff-tree -m --first-parent`, never plain `git show`/`diff-tree` —
+measured directly against real merges in this repo, a plain diff reports
+zero files where `--first-parent` reports the true 13-35, the exact gap
+that let the BL-590 incident's own merge commit go unnoticed the first
+time. Each finding's key carries the offending sha
+(`pipeline-code-on-main-<sha>`), so the existing nudge dedup treats every
+offending commit independently rather than letting the first one mask every
+later one. A genuine, pre-existing, unrelated defect was found and fixed in
+the same parcel because this ticket's own acceptance scenarios could not
+pass against it: `read-dedup-state!` parsed the persisted
+`nudge-dedup.json` with Cheshire's `keywordize-keys` flag on, silently
+turning every check's plain string finding key into a Clojure keyword on
+reload against `decide-nudges`' string-keyed lookup — dedup had never
+actually worked for ANY babysitterd check since the daemon shipped; every
+eligible finding renudged on every single sweep. Fixed by dropping the
+erroneous flag at its only call site. Cleaner-bounced once: the shell
+fixture's `test_babysitter_check.sh::make_root()` built a bare, non-git tmp
+dir that every earlier check tolerated but this new check's own invariant 3
+correctly fails closed against, breaking two scenarios; fixed by
+git-initializing the fixture root with both `main` and `swarmforge-QA`
+pointing at one commit. See the new "Detecting pipeline code that lands on
+`main` outside QA" section in
+[`docs/how-to/BL-611-babysitterd-runbook.md`](../how-to/BL-611-babysitterd-runbook.md).
+No new extension command, setting, or UI — this is a swarm-substrate
+detection layer, same class as BL-629/BL-630/BL-632.); Previously
+August 19, 2026 (BL-944: the `operator_runtime.bb`
 acceptance-fixture dependency list — `OPERATOR_RUNTIME_BB_FILES` in
 `specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js`, which four step
 handlers copy into a disposable fixture root before shelling out to a real
