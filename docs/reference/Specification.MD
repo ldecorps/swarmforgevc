@@ -1,6 +1,62 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-932: the property lane's own
+**Last Updated:** August 19, 2026 (BL-909: `nameBottleneck`
+(`extension/src/metrics/stageDwell.ts`) ranked the briefing/CLI
+"Bottleneck:" line on queue-wait-plus-processing median, so a dormant
+stage's mailbox time — while the mono-router's single resident plays some
+other role, not that stage's own capacity — could outrank a stage
+genuinely doing slow work; measured 2026-08-16, specifier (1m of
+processing) was named at 1.3x while hardender (25m of processing) went
+unnamed. Per the human's own ruling ("rank on processing time... do not
+fix it by excluding specifier — the formula is wrong for every dormant
+role"), the named role and its "Nx the next slowest" multiple now derive
+from median processing time alone; per-stage queue wait stays visible on
+its own line, and the trend computation is untouched since it never reads
+inside the bottleneck sentence. `BottleneckSummary` gains
+`processingDwellMs` (the figure that actually decided the ranking)
+alongside the pre-existing `totalDwellMs`, which keeps its old wait+
+processing meaning rather than being repurposed — no existing consumer
+silently starts reading a different number. `stage-dwell-report.js` and
+the morning briefing's stage-dwell section both read the same compiled
+CLI, so one fix reaches both surfaces. Hardener live-verified (CRAP 3.00,
+100% coverage, 40/40 unit, 3/3 property, 9/9 acceptance, 16/16 Gherkin
+mutants killed); Stryker mutation deferred to a quieter host per the
+documented load-over-2x-cores skip guidance, not blocking forward.);
+Previously August 19, 2026 (BL-927: the resident-invoked rotate gate
+(`departing-role-blocking-handoff` in `swarmforge/scripts/handoff_lib.bb`)
+resolved which role's mailbox to protect from the raw
+`mono-router-active-role` marker file alone — a marker that is present,
+well-formed, and simply wrong (the divergence BL-921 already measured at
+535 landed wakes in one day) made the gate fail CLOSED into exactly the
+outcome its own fail-open docstring said it existed to avoid, and BL-926's
+target-equality fix alone leaves a residual case open: marker diverged
+AND the rotation target a third role, where BL-926's equality check never
+fires. The marker still gates whether a candidate is considered at all
+(missing/blank marker or unknown `roles.tsv` row still fails open,
+unchanged from BL-805); once a candidate exists, the departing role
+returned now resolves from the resident pane's live identity via an
+injectable `:live-role-fn` seam, reusing `mono-router-lib/live-role-agrees?`
+for the unreadable-is-divergence rule (BL-921) rather than a second
+definition — agreement is byte-identical to the old behavior, a readable
+but different live role protects THAT role's mailbox instead, and an
+unreadable live identity fails open exactly like a missing marker
+(invariant 2: divergence only ever widens the fail-open set, never
+narrows one BL-805 already covered). `resident-live-role` relocates from
+`handoffd.bb` into `handoff_lib.bb` so both the daemon's chase call sites
+and this gate share the one probe; the daemon's own chase-driven rotation
+stays ungated (invariant 3). Architect bounced the first pass for
+swapping `resident-live-role`'s subprocess mechanism to a deadlock-prone
+one (`clojure.java.shell/sh`, the same shape as the handoffd hang
+root-caused in `specifier_bl057`) — refixed onto `babashka.process` and
+re-passed clean. Hardener's Gherkin mutation (soft) on the live-identity
+scenario found a real gap: the `Then` assertion checked only the final
+proceed/refuse decision, so a garbled marker/live-identity string could
+coincidentally reach "proceed" via the old unrelated unknown-role
+fail-open path and mask a broken live-role-resolution mechanism behind
+the same observable outcome — fixed by asserting the resolved role
+itself, not only the decision; the remaining 3 survivors are a documented
+case-insensitive-APFS equivalent mutant (BL-234), not a real gap.);
+Previously August 19, 2026 (BL-932: the property lane's own
 20000ms `testTimeout` default (`extension/vitest.properties.config.mjs`)
 covers ALL of a property's `numRuns` combined, not one run — a distinction
 `onboarderLauncherPidGuard.property.test.js` never accounted for.
