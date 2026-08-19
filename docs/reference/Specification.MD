@@ -1,6 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-953: `swarm_handoff.bb`'s `validate`
+**Last Updated:** August 19, 2026 (BL-955: BL-620's shared `messageTextOf`
+seam (`text ?? caption`) taught every text-reading surface of the Telegram
+front desk to read photo captions in one commit, but BL-620 wired its
+`annotateRoutedMediaText` "no vision, said out loud" note into only the
+three backlog-topic call sites inside `processMessageUpdate` — an architect
+send-back on BL-620 (Article 4.4) found six other forwarding surfaces still
+passing caption-derived words onward with no note, so a human in a topic, an
+agent taking a steering nudge in its pane, or anyone reading a durable
+record later had no way to know an unread image was attached: the exact
+false belief the original incident directive forbids. Fixed by reaching the
+same `annotateRoutedMediaText` seam from each remaining boundary, applied at
+the FORWARDING/record boundary only, never at decision time (a caption's
+classification must equal the identical plain text's) — steering
+(`processSteeringUpdate`, covering both `redirectToRole`'s live-pane path
+and the BL-607 queued-answer note for a dormant role), agent-questions
+(`postToBridge`), onboarding (`handleOnboarderMessage`), the negotiation
+relay (a new `annotateNegotiationRelayText` export in
+`negotiationTelegramRouting.ts`, applied by `negotiationTelegramRelay`'s
+`handleObjection`), and the two DURABLE surfaces — an approvals rejection
+reason and a recert amend proposal — where the note is written into the
+STORED value itself (`deliverApprovalsTopicReply` / `deliverRecertTopicReply`
+now thread the update through `deliverReservedSubjectReply`), per the
+ticket's approved directive that a caption-derived record must carry the
+note permanently, not only in the chat echo. Control-topic delivery stays
+deliberately unannotated — its text is PARSED as a command, and a note would
+corrupt the parse — a standing guard scenario locks that exclusion in
+against a future "annotate everything" sweep. No new extension command or
+setting — Telegram incarnation behavior (Architecture Rule 7).); Previously
+August 19, 2026 (BL-953: `swarm_handoff.bb`'s `validate`
 never cross-checked a `git_handoff`'s `task:` and `commit:` headers against
 each other, so a commit belonging to one ticket could ride under another
 ticket's name. Measured live 2026-08-19: the coder sent commit `896e1d5cb2`
