@@ -211,6 +211,16 @@ notes: >
   to no-op: a mechanism that works only by accident of the launching shell is
   the defect.
 
+  COORDINATOR QUEUE-RANK CORRECTION 2026-08-20 (23:05Z): superseding this
+  ticket's earlier hold note, which said BL-961 "stays TOP of the paused queue
+  and takes the next open slot ahead of every non-expedited candidate". That
+  is no longer true. The specifier's 69a0c0b66 dropped severity high->medium
+  on the corrected premise, so BL-961 LEAVES the expedite lane (Article 3.2.4)
+  and now ranks on its ordinary priority: 20 like any other candidate. It is
+  NOT the next candidate. A re-rank of backlog/paused/ this turn found ZERO
+  expedited tickets remaining - BL-961 was the only one. Promotion is still
+  blocked regardless: active 7 = effective cap 7.
+
 approval_context: >
   One decision to confirm, the rest is settled. The fix direction is "export
   the env var from the launcher" rather than "teach the vitest resolver to
