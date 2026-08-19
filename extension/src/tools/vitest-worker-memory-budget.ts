@@ -60,3 +60,39 @@ export function resolveWorkerPoolSize(hostRamMB: number, ceiling: number = MAX_W
   const safeCount = Math.floor((hostRamMB * SAFE_HOST_RAM_FRACTION) / perWorkerHeapMB);
   return Math.max(1, Math.min(ceiling, safeCount));
 }
+
+// BL-935: a full-forge pack on macOS runs 8 concurrent Claude sessions plus
+// handoffd/front-desk on 2 physical cores before any test tooling starts -
+// resolveWorkerPoolSize above sizes purely off RAM (BL-422/BL-792) and has
+// no CPU-axis signal at all. This is a SECOND, independent ceiling, meant
+// to be passed as resolveWorkerPoolSize's own `ceiling` argument (never a
+// replacement for the memory floor) - composing the two there is what keeps
+// invariant 1 ("this ticket adds a constraint, it does not relax one")
+// structurally true rather than merely tested true.
+export interface VitestForkCeilingInput {
+  pack: string | undefined;
+  platform: string;
+  override?: string;
+  defaultCeiling?: number;
+}
+
+const FULL_FORGE_PACK = 'full-forge';
+const MACOS_PLATFORM = 'darwin';
+
+// A positive integer only - "0", "-1", "1.5", "", whitespace-only, and any
+// non-numeric text are all IGNORED (fall through to the pack rule), never
+// floored to 1 or otherwise coerced. undefined (the override was never set)
+// is the same "ignored" case, checked first so Number(undefined) (NaN) is
+// never reached.
+function parsePositiveIntOverride(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+export function resolveVitestForkCeiling({ pack, platform, override, defaultCeiling = MAX_WORKERS }: VitestForkCeilingInput): number {
+  const parsedOverride = parsePositiveIntOverride(override);
+  if (parsedOverride !== undefined) return parsedOverride;
+  if (pack === FULL_FORGE_PACK && platform === MACOS_PLATFORM) return 1;
+  return defaultCeiling;
+}
