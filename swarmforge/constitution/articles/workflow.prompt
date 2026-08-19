@@ -67,7 +67,11 @@
 - Bouncing sends a `note` back but does NOT remove the bounced commit —
   revert it in the same step (`git revert -m 1 <your-review-merge>`;
   confirm CONTENT is gone, never by ancestry). **EXCEPTION: already an
-  ancestor of `main` → do NOT revert**; report the breach. See
+  ancestor of `main` → do NOT revert**; report the breach.
+- **Entangled batch merge**: if `-m 1` would revert OTHER tickets' work,
+  revert the bounced ticket's own commits/paths instead — never the batch
+  merge, never nothing. If you cannot, the branch is QUARANTINED: forward
+  nothing from it until the content is gone (BL-956). See
   **workflow-detailed.prompt**.
 
 ## Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)

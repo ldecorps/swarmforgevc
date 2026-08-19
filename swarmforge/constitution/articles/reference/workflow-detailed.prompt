@@ -157,6 +157,40 @@ the three modes it actually means):
   awkward", which is what it must never become. If this exception starts firing
   routinely, read it as a signal that the guards keeping un-reviewed work off `main`
   are not holding.
+- **ENTANGLED BATCH MERGE — the third situation (BL-956, 2026-08-19).** The rule above
+  assumes your review-merge carries ONE ticket. For the batch roles (cleaner,
+  hardener) that assumption is structurally wrong: batch receive mode (Article 2.4)
+  means a single merge routinely carries several tickets, so `git revert -m 1` undoes
+  all of them. This is NOT the already-on-main exception and NOT "the merge looks
+  messy" — it is a third case with its own answer.
+  **Revert the bounced TICKET's own commits or paths, never the batch merge.** What
+  the rule protects is that the bounced CONTENT is absent from your tip; the `-m 1`
+  incantation is one way to get there, not the requirement itself. Verify by content
+  exactly as above.
+  **If you cannot do even that safely, the branch is QUARANTINED**: forward NOTHING
+  from it until the content is gone, and tell the coordinator so the stall is visible.
+  Quarantine is a real cost — that is the point. It is never "document the skip and
+  carry on".
+- **"Nothing forwards it right now" is a statement about an INSTANT, not a property of
+  your branch — and it expires at your very next merge.** BL-956 is the worked example,
+  and the reasoning was careful rather than lazy, which is why it is worth recording.
+  The hardener bounced BL-956, attempted `git revert -m 1` on its architect merge,
+  found it would delete BL-955's ticket YAML, move BL-620/685/949/950 back out of
+  `done/`, revert BL-953/954 to `paused` and destroy three unrelated evidence files,
+  aborted cleanly, and wrote up the decision (`backlog/evidence/
+  BL-956-hardener-revert-decision-20260819.md`) concluding it was safe because "I am
+  not forwarding my own HEAD anywhere." That was true when written. Its very next act
+  was to merge BL-955 into the same branch, so all five of BL-956's defective files
+  — including tests the bounce had found to be checking the wrong render function —
+  sat live in the tip that BL-955 would be forwarded from. Verified file-by-file
+  2026-08-19; caught before the forward, so nothing leaked. Had BL-955 gone out, QA
+  approving BL-955 would have silently authorised BL-956's bounced content: an
+  Article-4.2/BL-506 breach committed by a role that had reasoned carefully and
+  surfaced honestly. Do not treat your own non-forwarding intent as a guard.
+- Detection is BL-954's job (a bounce verifies its own revert, by CONTENT at the
+  branch tip), and it reads a skipped revert as a breach whatever the justification.
+  This section is the REMEDIATION half: what to actually do so that check comes back
+  clean. A documented skip still fails it.
 - The bounced content is latent in EVERY branch that already merged it, not only the
   final reviewer's — the coder and cleaner branches that produced and forwarded it
   still carry it. If the bounce is a REWORK (the coder fixes the SAME ticket and it
@@ -442,6 +476,14 @@ same ground in pieces that no longer match the diff's own boundaries.
   the revert's favour, silently stripping `main`'s own code from your tree. Narrow and
   obligatory: only when `is-ancestor <bounced-commit> main` is TRUE, and BOTH the
   evidence note and the coordinator report are required.
+- **ENTANGLED BATCH MERGE (BL-956).** Batch roles (cleaner, hardener) merge several
+  tickets per review-merge by design, so `-m 1` would undo other tickets' legitimate
+  work. Distinct from the on-`main` exception and from "the merge looks messy":
+  revert the bounced TICKET's own commits/paths instead — content absent from the tip
+  is the requirement, `-m 1` only one route to it. If you cannot, the branch is
+  QUARANTINED (forward nothing from it until the content is gone; tell the
+  coordinator). Never "document the skip and carry on": **"nothing forwards it right
+  now" describes an instant, not your branch, and expires at your next merge.**
 - If a bounced parcel is ABANDONED (not reworked), every branch that merged it
   must revert it — not only the final reviewer.
 - See **workflow-detailed.prompt** for the BL-490/BL-495 landed-without-review
