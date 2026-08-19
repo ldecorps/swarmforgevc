@@ -1,8 +1,14 @@
-// BL-452/BL-455/BL-465: a live pipeline-board grid - active BL tickets on
-// the X axis (one vertical block per ticket), pipeline stages on the Y axis
-// (each role/stage on its own line: "NS .", "CO X", …) — pivoted for phone
-// portrait so the grid fits without horizontal scroll; grouped by epic;
-// parked/awaiting-approval/root-intake/recently-closed items are listed
+// BL-452/BL-455/BL-465/BL-585: a live pipeline-board grid - ONE matrix,
+// pipeline stages as shared rows down the Y axis, active BL tickets as
+// columns across the X axis (an extra ticket adds a column, not another
+// 8-line block). The epic is a short caption line per visible column below
+// the matrix, not a section heading - BL-585 retired the old per-ticket
+// pivoted block + "-- epic --" heading shape entirely. The matrix carries
+// its own character-width budget (PIPELINE_BOARD_GRID_MAX_WIDTH) and drops
+// the tail of the epic-grouped row order past it, announcing the drop
+// rather than truncating silently or wrapping (Telegram's <pre> does not
+// wrap, so an unbudgeted grid needs horizontal scrolling on a phone).
+// Parked/awaiting-approval/root-intake/recently-closed items are listed
 // separately below the grid. Telegram cannot nest <a> inside the grid's
 // <pre>, so ticket numbers in the below-grid lists (and grid-only tickets)
 // are composed as HTML anchors after that <pre> by composePipelineBoardHtml
@@ -162,7 +168,7 @@ const COLUMN_LABEL: Record<string, string> = {
 };
 
 // BL-505: shortened from "TICKET" (6 chars) — kept for deriveDisplayTicketId
-// docs only; the pivoted grid shows ticket numbers on their own line.
+// docs only; BL-585 the matrix caption line uses it directly for an epic-less ticket.
 const NO_EPIC_LABEL = '(no epic)';
 // Steady state when backlog/active/ is empty — keeps the Telegram <pre>
 // grid from rendering as a blank block between pipeline clears.
@@ -195,6 +201,16 @@ const PAUSED_PRIORITY_FALLBACK = Number.MAX_SAFE_INTEGER;
 // pipelineBoardSync.ts) reads this ONE constant, never a hardcoded number
 // of its own.
 export const PIPELINE_BOARD_MESSAGE_MAX_LENGTH = 4000;
+
+// BL-585: the matrix's own character-width budget - mirrors, for the grid,
+// what PIPELINE_BOARD_MESSAGE_MAX_LENGTH already does for the link list: an
+// explicit budget with derived truncation and a visible "+N more" line,
+// never a silent cap. 30 fits 7 ticket columns at today's 3-digit ids (2
+// for the label gutter + 4 per column: 1 NBSP separator + 3-wide cell);
+// automatically fewer once ids get wider (maxVisibleGridColumns below
+// derives the count from the real per-render cell width, never a hardcoded
+// column count of its own).
+export const PIPELINE_BOARD_GRID_MAX_WIDTH = 30;
 
 // BL-465: the grid's own short kebab slug - 2-3 significant words, lower-
 // cased and hyphenated, mirroring the ticket's own backlog-filename slug
@@ -590,43 +606,78 @@ export function computePipelineBoard(
   return { rows, parked, collapsedEpics, rootIntake, recentlyClosed, links, parkedOmittedCount };
 }
 
-// Every stage line is "<2-char label> <mark>". Pad the ticket id to the mark
-// column with NBSP — Telegram HTML collapses leading regular spaces inside
-// <pre>, which would left-flush the id against the label column.
-const PIVOTED_MARK_COLUMN_PADDING = '\u00a0'.repeat(3);
+// BL-585: caption/overflow lines sit outside the matrix proper and may use
+// plain spaces (they are ordinary text, not column-aligned).
+const NBSP = '\u00a0';
 
-function renderPivotedTicketBlock(row: PipelineBoardRow): string[] {
-  const displayId = deriveDisplayTicketId(row.id);
-  const lines: string[] = [`${PIVOTED_MARK_COLUMN_PADDING}${displayId}`];
-  for (const c of PIPELINE_BOARD_COLUMN_ORDER) {
-    const mark = c === row.column ? 'X' : '.';
-    lines.push(`${COLUMN_LABEL[c]} ${mark}`);
+function padStartNbsp(text: string, width: number): string {
+  return text.length >= width ? text : NBSP.repeat(width - text.length) + text;
+}
+
+// The largest N (0..rows.length) with `2 + N * (1 + cellWidth) <= maxWidth`
+// - the 2-char label gutter, plus one NBSP separator and one cellWidth-wide
+// cell per visible column. Never negative; never more than rows.length.
+function maxVisibleGridColumns(totalColumns: number, cellWidth: number, maxWidth: number): number {
+  const perColumn = 1 + cellWidth;
+  const n = Math.floor((maxWidth - 2) / perColumn);
+  return Math.max(0, Math.min(totalColumns, n));
+}
+
+function gridOverflowLine(droppedCount: number): string {
+  return `+${droppedCount} more active`;
+}
+
+function gridCaptionLine(row: PipelineBoardRow): string {
+  return `${deriveDisplayTicketId(row.id)} ${row.epic ?? NO_EPIC_LABEL}`;
+}
+
+// Split out of renderGridLines below for the same CRAP-budget reason as
+// buildGridRows/buildParkedEntries above - the header row and the per-role
+// mark rows are one cohesive block (they share cellWidth and iterate
+// PIPELINE_BOARD_COLUMN_ORDER together) but pushed renderGridLines itself
+// over the CRAP budget. Pure formatting, no behavior of its own.
+function renderGridMatrixLines(visibleRows: PipelineBoardRow[], visibleIds: string[], cellWidth: number): string[] {
+  const lines: string[] = [];
+  let header = NBSP.repeat(2);
+  for (const id of visibleIds) {
+    header += NBSP + padStartNbsp(id, cellWidth);
+  }
+  lines.push(header);
+  for (const column of PIPELINE_BOARD_COLUMN_ORDER) {
+    let line = COLUMN_LABEL[column];
+    for (const row of visibleRows) {
+      const mark = column === row.column ? 'X' : '.';
+      line += NBSP + padStartNbsp(mark, cellWidth);
+    }
+    lines.push(line);
   }
   return lines;
 }
 
-function renderEpicHeading(epic: string | undefined): string {
-  return `-- ${epic ?? NO_EPIC_LABEL} --`;
-}
-
-// Interleaves an epic-group heading before the first row of each epic -
-// rows already arrive epic-grouped via computePipelineBoard's own stable
-// sort, so this is a pure formatting pass, never a re-sort. Each ticket
-// renders as a vertical block (ticket id, then one line per stage column).
+// ONE matrix: pipeline stages as shared rows, active tickets as columns.
+// Rows already arrive epic-grouped via computePipelineBoard's own stable
+// sort (buildGridRows) - dropped-by-width columns are simply the tail of
+// that same order, no second ordering rule. Cell width is computed over
+// EVERY candidate row's display id, not just the visible ones, so it never
+// depends circularly on how many columns end up fitting.
 function renderGridLines(rows: PipelineBoardRow[]): string[] {
   if (rows.length === 0) {
-    return [renderEpicHeading(NO_ACTIVE_TICKETS_LABEL)];
+    return [NO_ACTIVE_TICKETS_LABEL];
   }
-  const lines: string[] = [];
-  let started = false;
-  let currentEpic: string | undefined;
-  for (const row of rows) {
-    if (!started || row.epic !== currentEpic) {
-      lines.push(renderEpicHeading(row.epic));
-      currentEpic = row.epic;
-      started = true;
-    }
-    lines.push(...renderPivotedTicketBlock(row));
+  const displayIds = rows.map((row) => deriveDisplayTicketId(row.id));
+  const cellWidth = Math.max(3, ...displayIds.map((id) => id.length));
+  const visibleCount = maxVisibleGridColumns(rows.length, cellWidth, PIPELINE_BOARD_GRID_MAX_WIDTH);
+  const visibleRows = rows.slice(0, visibleCount);
+  const visibleIds = displayIds.slice(0, visibleCount);
+  const droppedCount = rows.length - visibleCount;
+
+  const lines = renderGridMatrixLines(visibleRows, visibleIds, cellWidth);
+  lines.push('');
+  for (const row of visibleRows) {
+    lines.push(gridCaptionLine(row));
+  }
+  if (droppedCount > 0) {
+    lines.push(gridOverflowLine(droppedCount));
   }
   return lines;
 }
@@ -677,7 +728,7 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[], ov
   return lines;
 }
 
-// BL-526: STATUS GRID only (pivoted epic blocks + stage lines) — no
+// BL-526/BL-585: STATUS GRID only (ticket-column matrix + captions) - no
 // below-grid lists and never the LINKS fragment. Phone miniapp portrait
 // destination; Telegram pin continues to use renderBodySections below.
 function renderGridOnlySections(data: PipelineBoardData): string[] {
