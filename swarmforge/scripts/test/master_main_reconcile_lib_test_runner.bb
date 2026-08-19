@@ -315,6 +315,43 @@
   (assert= "sweep!: first tick of a block surfaces the coordinator note" 1 (:surface! @calls))
   (assert= "sweep!: first tick of a block never escalates" 0 (:escalate! @calls)))
 
+;; threshold=1 is a real, reachable config value (parse-escalation-threshold
+;; only rejects absent/zero/negative/malformed, never 1) and collapses the
+;; first tick and the escalation onto the SAME tick: escalation-due? reads
+;; (>= ticks 1), and the first tick's next-block-state already carries
+;; :ticks 1. Both signals still fire - additive, never instead-of (invariant
+;; 1 holds even at this boundary) - but nothing exercised this before, and
+;; it is exactly the boundary condition most likely for an off-by-one to
+;; silently invert (e.g. a caller mistaking "escalated on tick 1" for "the
+;; threshold was never actually 1").
+(let [{:keys [calls escalated adapters]} (mk-adapters {:ahead 0 :behind 22
+                                                         :dirty-paths #{"seed.txt"}
+                                                         :merge-changed-paths #{"seed.txt"}})]
+  (master-main-reconcile-lib/sweep! (mk-tmp) 1 adapters)
+  (assert= "sweep!: threshold=1 still surfaces the coordinator note on tick 1" 1 (:surface! @calls))
+  (assert= "sweep!: threshold=1 also escalates on that same tick 1" 1 (:escalate! @calls))
+  (assert= "sweep!: threshold=1 escalation payload's tick count is 1" 1 (:ticks (first @escalated))))
+
+;; A state file written by pre-BL-920 code (or a mid-upgrade daemon restart)
+;; has no :ticks/:escalated keys at all - only {:surfaced "dirty"}. This is
+;; a real on-disk shape, not a hypothetical: it is exactly what write-state!
+;; wrote before this ticket. next-block-state must treat the missing keys as
+;; "no ticks yet" / "not escalated" (fnil/not-nil degrade), never crash, and
+;; never silently skip the coordinator's already-fired note into a second
+;; first-tick surface.
+(let [dir (mk-tmp)]
+  (master-main-reconcile-lib/write-state! dir {:surfaced "dirty"})
+  (let [{:keys [calls escalated adapters]} (mk-adapters {:ahead 0 :behind 22
+                                                           :dirty-paths #{"seed.txt"}
+                                                           :merge-changed-paths #{"seed.txt"}})]
+    (master-main-reconcile-lib/sweep! dir 1 adapters)
+    (assert= "sweep!: an old-format state file (no :ticks/:escalated) for the SAME reason never re-surfaces"
+             0 (:surface! @calls))
+    (assert= "sweep!: an old-format state file's missing :ticks starts counting from this tick, not crashing"
+             1 (:escalate! @calls))
+    (assert= "sweep!: an old-format state file's first counted tick reports ticks=1"
+             1 (:ticks (first @escalated)))))
+
 ;; The SAME reason persisting past threshold=2 escalates on the SECOND
 ;; consecutive tick - additive to (not instead of) the first tick's note.
 (let [dir (mk-tmp)
