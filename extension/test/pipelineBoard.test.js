@@ -1327,3 +1327,33 @@ test('BL-956: no +N more epics line when every epic tracker fits the cap', () =>
   assert.equal(data.collapsedEpicsOmittedCount, 0);
   assert.doesNotMatch(renderPipelineBoardBody(data), /more epics/);
 });
+
+// ── BL-956 hardener bounce D1: the LIVE HTML surface announces every cap ──
+// The plain-text body is only pipelineBoardSync's change-detection content
+// signature; composePipelineBoardHtml is what actually posts. Every cap
+// assertion below drives the LIVE path.
+
+test('BL-956 D1: the live HTML message carries the +N more epics line when trackers are dropped', () => {
+  const paused = Array.from({ length: 5 }, (_, i) => ({ id: `BL-${800 + i}`, type: 'epic', epic: `epic-${i}`, priority: i }));
+  const data = computePipelineBoard({}, paused, {});
+  const { html } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y');
+  assert.match(html, /\+2 more epics/);
+});
+
+test('BL-956 D1: no +N more epics line in the live HTML when every tracker fits the cap', () => {
+  const paused = Array.from({ length: PIPELINE_BOARD_COLLAPSED_EPICS_MAX }, (_, i) => ({ id: `BL-${800 + i}`, type: 'epic', epic: `epic-${i}`, priority: i }));
+  const data = computePipelineBoard({}, paused, {});
+  const { html } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y');
+  assert.doesNotMatch(html, /more epics/);
+});
+
+test('BL-956 D1: the live HTML still carries the +N more parked line alongside the epics one', () => {
+  const paused = [
+    ...Array.from({ length: PIPELINE_BOARD_PAUSED_MAX + 2 }, (_, i) => ({ id: `BL-${100 + i}`, priority: i })),
+    ...Array.from({ length: 5 }, (_, i) => ({ id: `BL-${800 + i}`, type: 'epic', epic: `epic-${i}`, priority: i })),
+  ];
+  const data = computePipelineBoard({}, paused, {});
+  const { html } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y');
+  assert.match(html, /\+2 more parked/);
+  assert.match(html, /\+2 more epics/);
+});

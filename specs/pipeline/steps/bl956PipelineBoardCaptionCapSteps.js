@@ -228,6 +228,10 @@ function registerSteps(registry) {
         ctx.lines.some((l) => l.trim() === expected),
         `no line reads ${JSON.stringify(expected)}:\n${ctx.body}`
       );
+      // hardener bounce D1: the plain-text body is only the change-detection
+      // content signature - the LIVE HTML message must carry the cap line too
+      const { html } = composePipelineBoardHtml(ctx.data, 0, 'https://github.com/x/y');
+      assert.ok(html.includes(expected), `the live HTML lacks ${JSON.stringify(expected)}:\n${html}`);
     },
     FEATURE
   );

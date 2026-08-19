@@ -961,10 +961,21 @@ function renderParkedSectionHtml(
   pathById: Map<string, string>,
   repoBaseUrl: string | undefined,
   linkedIds: Set<string> | undefined,
-  overflowLine?: string
+  overflowLine?: string,
+  // BL-956 hardener bounce D1: the LIVE HTML surface silently dropped the
+  // collapsed-epics cap indicator - only the plain-text content-signature
+  // sibling (renderParkedSection) carried it, and every test layer asserted
+  // that sibling. Same parameter shape as the plain sibling, kept in
+  // lockstep.
+  epicsOverflowLine?: string
 ): string[] {
   const plainParked = parked.filter((p) => p.status === 'parked');
-  if (collapsedEpics.length === 0 && plainParked.length === 0 && (overflowLine === undefined || overflowLine === '')) {
+  if (
+    collapsedEpics.length === 0 &&
+    plainParked.length === 0 &&
+    (overflowLine === undefined || overflowLine === '') &&
+    (epicsOverflowLine === undefined || epicsOverflowLine === '')
+  ) {
     return [];
   }
   const lines: string[] = ['', escapeHtml(PARKED_SECTION_HEADER)];
@@ -972,6 +983,9 @@ function renderParkedSectionHtml(
     const path =
       linkedIds !== undefined && !linkedIds.has(epic.trackerId) ? undefined : pathById.get(epic.trackerId);
     lines.push(formatCollapsedEpicLineHtml(epic, path, repoBaseUrl));
+  }
+  if (epicsOverflowLine) {
+    lines.push(`  ${escapeHtml(epicsOverflowLine)}`);
   }
   for (const entry of plainParked) {
     const path =
@@ -1046,6 +1060,12 @@ function buildPipelineBoardHtml(
   const parked = data.parked ?? [];
   const parkedOverflow =
     (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
+  // BL-956 hardener bounce D1: computed exactly like parkedOverflow above -
+  // the live message must announce the collapsed-epics cap too.
+  const epicsOverflow =
+    (data.collapsedEpicsOmittedCount ?? 0) > 0
+      ? pipelineBoardEpicsOverflowLine(data.collapsedEpicsOmittedCount ?? 0)
+      : undefined;
   const afterPre = [
     ...renderGridTapLinesHtml(data, pathById, repoBaseUrl, linkedIds),
     ...renderParkedSectionHtml(
@@ -1054,7 +1074,8 @@ function buildPipelineBoardHtml(
       pathById,
       repoBaseUrl,
       linkedIds,
-      parkedOverflow
+      parkedOverflow,
+      epicsOverflow
     ),
     ...renderListSectionHtml(
       AWAITING_APPROVAL_SECTION_HEADER,
