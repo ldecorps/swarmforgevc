@@ -6,3 +6,9 @@
 # duplicate the row (debt-key). Read back with hardening_debt_ledger_read.bb
 # — never by parsing a per-parcel evidence markdown file.
 
+- parcel: BL-620
+  gate: mutation
+  file_set: extension/src/tools/telegram-front-desk-bot.ts,extension/src/tools/telegramFrontDeskBotCore.ts,extension/src/tools/telegramTopicDecisions.ts
+  reason: "host busy, cooldown gate skip-busy/skip-cooldown"
+  load: "14.29/17.21/16.99"
+  detected_at: 2026-08-19
