@@ -2704,15 +2704,55 @@
       (log! "master-main-reconcile-surfaced" msg)
       (log! "master-main-reconcile-surface-error" (str (:err result))))))
 
+;; BL-920: the effective config's master_main_reconcile_escalation_threshold
+;; - resolved via backlog-depth-lib/conf-file-path (whatever pack swarm-
+;; identity recorded at launch), same resolution as open-slot-escalation-
+;; threshold above.
+(defn- master-main-reconcile-escalation-threshold []
+  (master-main-reconcile-lib/parse-escalation-threshold
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
+;; BL-920: a persistent block escalates to the operator - reuses the SAME
+;; operator alert channel send-open-slot-escalation-alert! above already
+;; established (Telegram OPERATOR topic outbox + email via daemon-alarm-
+;; lib, sharing its ONE escalation-email-missing-key-warned? atom), notify
+;; only, never halts the swarm - reconciling local `main` blocked is not the
+;; daemon-death/endless-loop class of failure halt-for-endless-loop!/
+;; halt-for-claim-progress! exist for.
+(defn- master-main-reconcile-escalate! [{:keys [reason behind ticks]}]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+        subject (master-main-reconcile-lib/escalation-email-subject reason)
+        tg-text (master-main-reconcile-lib/escalation-telegram-text reason behind ticks)
+        body (master-main-reconcile-lib/escalation-reason reason behind ticks)]
+    (log! "master-main-reconcile-escalation" (name reason) body)
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+            :append true)
+      (log! "master-main-reconcile-escalation-telegram" (name reason))
+      (catch Exception e (log! "master-main-reconcile-escalation-telegram-error" (.getMessage e))))
+    (try
+      (daemon-alarm-lib/send-configured-email!
+       project-root conf-file subject body
+       {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+      (log! "master-main-reconcile-escalation-email" (name reason))
+      (catch Exception e (log! "master-main-reconcile-escalation-email-error" (.getMessage e))))))
+
 (defn master-main-reconcile-sweep! []
   (try
     (master-main-reconcile-lib/sweep!
      (str daemon-dir)
+     (master-main-reconcile-escalation-threshold)
      {:rev-counts! push-sweep-rev-counts!
       :dirty-paths! master-main-reconcile-dirty-paths!
       :merge-changed-paths! master-main-reconcile-merge-changed-paths!
       :merge! master-main-reconcile-merge!
       :surface! master-main-reconcile-surface!
+      :escalate! master-main-reconcile-escalate!
       :log! (fn [& parts] (apply log! parts))})
     (catch Exception e
       (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
