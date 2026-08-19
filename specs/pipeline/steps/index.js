@@ -507,7 +507,8 @@ const DOMAINS = [
   require('./bl935VitestForkPoolSteps'),
   require('./bl947SwarmforgeShErrorsReachStderrSteps'),
   require('./bl950QaApprovalEvidenceCommitSteps'),
-  require('./bl949ConciergeBoardWiringSteps')
+  require('./bl949ConciergeBoardWiringSteps'),
+  require('./bl685StrandedResidentDetectionSteps')
 ];
 
 function registerSteps(registry) {
