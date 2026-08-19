@@ -145,14 +145,73 @@ function computePathTaken(events: LeanLedgerEvent[]): string[] {
   return firstSeenOrder(events.filter((e) => e.type === 'stage_transition' && e.role).map((e) => e.role as string));
 }
 
-function computeDwellHotspots(events: LeanLedgerEvent[]): CeremonyDwellHotspot[] {
-  const dwellByRole = new Map<string, number>();
-  for (const e of events) {
-    if (e.type === 'stage_transition' && e.role && typeof e.data.processingMs === 'number') {
-      dwellByRole.set(e.role, (dwellByRole.get(e.role) ?? 0) + e.data.processingMs);
+interface OccupancyInterval {
+  startMs: number;
+  endMs: number;
+}
+
+// BL-923: a stage-transition exit event's own window is [at - processingMs,
+// at] - correct per parcel (invariant 2: the event itself is never touched).
+// null when `at` doesn't parse, which the aggregation below treats as "no
+// occupancy contribution" rather than crashing.
+function eventOccupancyInterval(e: LeanLedgerEvent): OccupancyInterval | null {
+  if (e.type !== 'stage_transition' || !e.role || typeof e.data.processingMs !== 'number') {
+    return null;
+  }
+  const endMs = Date.parse(e.at);
+  if (Number.isNaN(endMs)) {
+    return null;
+  }
+  return { startMs: endMs - e.data.processingMs, endMs };
+}
+
+// The fold that actually fixes the defect: a role's dwell is the UNION of
+// its occupancy intervals, not their sum. Two batch parcels sharing (or
+// overlapping) a window contribute that window once; disjoint windows still
+// add normally. No knowledge of which roles are "batch roles" is needed -
+// this is what invariant 1's "any role that later becomes a batch role"
+// clause asks for.
+function sumOccupiedMs(intervals: OccupancyInterval[]): number {
+  const ordered = [...intervals].sort((a, b) => a.startMs - b.startMs);
+  let totalMs = 0;
+  let mergedStart: number | null = null;
+  let mergedEnd: number | null = null;
+  for (const { startMs, endMs } of ordered) {
+    if (mergedEnd === null) {
+      mergedStart = startMs;
+      mergedEnd = endMs;
+    } else if (startMs <= mergedEnd) {
+      mergedEnd = Math.max(mergedEnd, endMs);
+    } else {
+      totalMs += mergedEnd - (mergedStart as number);
+      mergedStart = startMs;
+      mergedEnd = endMs;
     }
   }
-  return [...dwellByRole.entries()].map(([role, totalMs]) => ({ role, totalMs })).sort((a, b) => b.totalMs - a.totalMs);
+  if (mergedEnd !== null) {
+    totalMs += mergedEnd - (mergedStart as number);
+  }
+  return totalMs;
+}
+
+function computeDwellHotspots(events: LeanLedgerEvent[]): CeremonyDwellHotspot[] {
+  const intervalsByRole = new Map<string, OccupancyInterval[]>();
+  for (const e of events) {
+    const interval = eventOccupancyInterval(e);
+    if (!interval) {
+      continue;
+    }
+    const role = e.role as string;
+    const intervals = intervalsByRole.get(role);
+    if (intervals) {
+      intervals.push(interval);
+    } else {
+      intervalsByRole.set(role, [interval]);
+    }
+  }
+  return [...intervalsByRole.entries()]
+    .map(([role, intervals]) => ({ role, totalMs: sumOccupiedMs(intervals) }))
+    .sort((a, b) => b.totalMs - a.totalMs);
 }
 
 function computeBounceClasses(events: LeanLedgerEvent[]): CeremonyBounceClass[] {
