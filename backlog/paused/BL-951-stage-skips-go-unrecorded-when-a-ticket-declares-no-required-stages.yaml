@@ -162,6 +162,58 @@ notes: >
   though it were one place to read. Not fixed here - flagged because step 1
   above will otherwise look like a missing log rather than a scattered one.
 
+  THIRD DATA POINT, 2026-08-19 (architect note, verified) - and it corrects
+  the framing above. The architect reported BL-935's D1-fix as another
+  coder->architect jump. It is a third instance, but NOT of the shape this
+  ticket describes, and the difference matters to whoever fixes it.
+
+  BL-935 DECLARES the full chain - `required_stages: [coder, cleaner,
+  architect, hardender, documenter, qa]`, present in the coder's own
+  worktree copy today. By the reading above it should therefore have been
+  recorded. It was not: the hop
+  `50_20260819T115514Z_000320_from_coder_to_architect` carries no
+  `routing_skipped:` header, and no `BL-935` line exists in any worktree's
+  `routing-skips.jsonl`. Two sibling hops the same morning DID record -
+  BL-945 at 10:46 and BL-942 at 10:51, both `coder->architect skipped=cleaner`.
+
+  The timeline resolves it, and vindicates the root cause while breaking the
+  ticket's own declared/absent wording:
+
+  - 2026-08-19T00:45:56Z - `required_stages` lands on `main` for BL-935
+    (commit `4f02c8b8e`, then in `backlog/paused/`).
+  - 2026-08-19T11:55:14Z - the coder sends the hop. NO record.
+  - 2026-08-19T11:56:04Z - the declaration reaches the coder's worktree
+    (merge `8c7964444`), 50 seconds AFTER the hop.
+
+  So the declaration existed on `main` for eleven hours, and the sender still
+  could not see it. `:source` was `:default-full` at hop time because the
+  SENDER'S CHECKOUT lacked the field - exactly the early return this ticket
+  is about. Root cause confirmed, third time.
+
+  What must change in the reading: "a ticket that DECLARES the full chain
+  gets its skips recorded" is wrong as written. Recording depends on whether
+  the declaration is visible in the SENDER'S WORKTREE AT HOP TIME, not on
+  what the ticket says on `main`. That is the BL-317/BL-325 worktree-
+  staleness pattern compounding this defect.
+
+  That widens the blast radius well beyond what the description estimates.
+  It is not only tickets that never declare. Every ticket is unrecorded
+  across the window between the specifier minting or amending a declaration
+  on `main` and the sender merging it - and a promotion (`paused/` ->
+  `active/`) is itself a `main`-side move the sender must merge before it
+  sees anything. That window covers a ticket's first hops, which is when
+  jumps are most likely. Severity `high` stands, and this is the strongest
+  evidence for it yet: the signal is blindest exactly when work is youngest.
+
+  Fixer's note: do not conclude from this that the fix needs a `main` lookup.
+  Deriving the record from the hop itself (`hop-skipped-stages sender
+  delivered`, as "How" already directs) needs no declaration at all and is
+  therefore immune to the staleness race - which is a further argument for
+  that direction over reading the effective set first. Step 2 of the QA
+  procedure already covers the `absent` case that reproduces this; no new
+  fixture is required, only the corrected understanding of WHEN `absent`
+  occurs in the field.
+
 approval_context: >
   Two things worth your eye before this runs.
 
