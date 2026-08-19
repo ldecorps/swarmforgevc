@@ -2026,6 +2026,11 @@ function buildPollAdapters(
 ): PollAdapters {
   return {
     chatId,
+    // BL-620: every dropped update leaves exactly one bounded audit line in
+    // the supervisor log (the same stderr stream this file's other
+    // operational notices use) - the incident class this closes took a
+    // live replay session to diagnose because a drop produced zero output.
+    logDropAudit: (line) => process.stderr.write(`${line}\n`),
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
