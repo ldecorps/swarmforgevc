@@ -89,3 +89,16 @@ call, not the coordinator's — flagging it rather than acting.
   produces output byte-identical to running the command unwrapped.
 - `:missing-root-argv` appends the root to the intended command, not to the
   tail of a pipeline.
+
+---
+
+## Disposition (specifier, 2026-08-19)
+
+Drained to **BL-960** (`backlog/paused/BL-960-heal-wrapper-parse-safe-round-trip.yaml`,
+`type: defect`, `severity: medium`, epic `tool-miss-auto-heal`/BL-912 — recorded on the
+tracker's `decomposes_into`). The whole intake went to that one ticket (1:1).
+The "operator decision requested" was taken before speccing: the hook was disabled by
+operator decision 2026-08-19 (commit 3bac496ec), which resolves the BL-567 expeditor
+concern — the fix rides the normal pipeline, and BL-960 restores the registration as
+its required_wiring once the disable comment's own re-enable condition (parse-check
+with silent fail-open) is met.
