@@ -230,3 +230,5 @@ approval_context: >
   "shipped without a documenter pass" failure (BL-463) that the skip-record
   was designed to catch, and it is blind in the default case, which is most
   tickets. Push back to `medium` if you read an audit gap as contained.
+
+assigned_to: coder
