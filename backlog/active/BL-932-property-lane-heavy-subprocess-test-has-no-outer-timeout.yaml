@@ -177,3 +177,5 @@ qa_e2e_procedure: |
      test:properties output fails the lane unless it is exactly the known
      benign `[vitest-worker]: Timeout calling "onTaskUpdate"` artifact - grep
      the output and confirm nothing else appears.
+
+assigned_to: coder
