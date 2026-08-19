@@ -45,6 +45,12 @@ notes: |
   is worth the specifier minting a real fix rather than more hand-recorded
   entries here.
 
+  2026-08-19 05:11 coordinator: 6th repeat (000529) — this time a genuine
+  open slot (cap raised to 4), not already filled. Same non-reason (epic,
+  not directly promotable) applies regardless; promoted BL-915 (top
+  eligible non-epic defect) into the slot instead. Flagged in today's
+  briefing (docs/briefings/2026-08-19.md) for a real fix.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high

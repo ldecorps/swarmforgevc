@@ -70,7 +70,15 @@ ROOT_A="$(cd "$(mktemp -d)" && pwd -P)"
 cleanup_a() { rm -rf "$ROOT_A"; }
 trap cleanup_a EXIT
 
-mapfile -t FIX_A < <(setup_fixture "$ROOT_A")
+# BL-937: bash 3.2 has no `mapfile`/`readarray` builtin (bash 4.0+ only) -
+# portable read-loop equivalent (`|| [[ -n "$line" ]]` keeps a final line
+# with no trailing newline; `line=""` before each loop guards against a
+# stale value from a prior loop surviving into a genuinely empty read).
+FIX_A=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  FIX_A+=("$line")
+done < <(setup_fixture "$ROOT_A")
 CODER_A="${FIX_A[0]}"
 SPEC_A="${FIX_A[1]}"
 
@@ -96,7 +104,12 @@ ROOT_B="$(cd "$(mktemp -d)" && pwd -P)"
 cleanup_b() { rm -rf "$ROOT_B"; }
 trap cleanup_b EXIT
 
-mapfile -t FIX_B < <(setup_fixture "$ROOT_B")
+# BL-937: portable mapfile replacement (see the note at FIX_A above).
+FIX_B=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  FIX_B+=("$line")
+done < <(setup_fixture "$ROOT_B")
 CODER_B="${FIX_B[0]}"
 SPEC_B="${FIX_B[1]}"
 
@@ -125,7 +138,12 @@ ROOT_C="$(cd "$(mktemp -d)" && pwd -P)"
 cleanup_c() { rm -rf "$ROOT_C"; }
 trap cleanup_c EXIT
 
-mapfile -t FIX_C < <(setup_fixture "$ROOT_C")
+# BL-937: portable mapfile replacement (see the note at FIX_A above).
+FIX_C=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  FIX_C+=("$line")
+done < <(setup_fixture "$ROOT_C")
 CODER_C="${FIX_C[0]}"
 SPEC_C="${FIX_C[1]}"
 
@@ -153,7 +171,12 @@ ROOT_D="$(cd "$(mktemp -d)" && pwd -P)"
 cleanup_d() { rm -rf "$ROOT_D"; }
 trap cleanup_d EXIT
 
-mapfile -t FIX_D < <(setup_fixture "$ROOT_D")
+# BL-937: portable mapfile replacement (see the note at FIX_A above).
+FIX_D=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  FIX_D+=("$line")
+done < <(setup_fixture "$ROOT_D")
 CODER_D="${FIX_D[0]}"
 CLEAN_D="${FIX_D[2]}"
 

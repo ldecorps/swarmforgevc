@@ -24,7 +24,14 @@ ok() { echo "SMOKE OK: $*"; }
 
 [[ -f "$PROFILE" ]] || fail "stabilize-two-pack profile missing at $PROFILE"
 
-mapfile -t roles < <(grep -E '^window ' "$PROFILE" | awk '{print $2}')
+# BL-937: bash 3.2 has no `mapfile`/`readarray` builtin (bash 4.0+ only) -
+# portable read-loop equivalent (`|| [[ -n "$line" ]]` keeps a final line
+# with no trailing newline; the read still populates $line at EOF).
+roles=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  roles+=("$line")
+done < <(grep -E '^window ' "$PROFILE" | awk '{print $2}')
 expected=(coordinator coder cleaner)
 if [[ "${roles[*]:-}" != "${expected[*]}" ]]; then
   fail "profile defines roles [${roles[*]:-<none>}], expected [${expected[*]}] (coordinator+coder+cleaner only, per BL-203 scope)"
