@@ -124,28 +124,35 @@ test('BL-956 invariant 3: grid, parked and collapsed-epic caps each name exactly
   fc.assert(
     fc.property(boardArb, (shape) => {
       const { data, activeIds } = buildBoard(shape);
-      const text = renderPipelineBoardBody(data);
+      // BOTH surfaces, by construction: the plain-text body is only the
+      // change-detection content signature - composePipelineBoardHtml is
+      // what actually posts, and it silently dropped the epics cap once
+      // (hardener bounce D1: all three test layers had asserted only the
+      // body). Every cap must announce itself on the LIVE surface too.
+      const surfaces = [renderPipelineBoardBody(data), composePipelineBoardHtml(data, 0, 'https://github.com/x/y').html];
       const parkedDropped = Math.max(0, shape.plainParkedCount - PIPELINE_BOARD_PAUSED_MAX);
       const epicsDropped = Math.max(0, shape.epicTrackerCount - PIPELINE_BOARD_COLLAPSED_EPICS_MAX);
       const gridDropped = expectedGridDropped(activeIds);
-      if (parkedDropped > 0) {
-        assert.match(text, new RegExp(`\\+${parkedDropped} more parked`));
-        parkedOverflowSeen += 1;
-      } else {
-        assert.doesNotMatch(text, /more parked/);
+      for (const text of surfaces) {
+        if (parkedDropped > 0) {
+          assert.match(text, new RegExp(`\\+${parkedDropped} more parked`));
+        } else {
+          assert.doesNotMatch(text, /more parked/);
+        }
+        if (epicsDropped > 0) {
+          assert.match(text, new RegExp(`\\+${epicsDropped} more epics`));
+        } else {
+          assert.doesNotMatch(text, /more epics/);
+        }
+        if (gridDropped > 0) {
+          assert.match(text, new RegExp(`\\+${gridDropped} more active`));
+        } else {
+          assert.doesNotMatch(text, /more active/);
+        }
       }
-      if (epicsDropped > 0) {
-        assert.match(text, new RegExp(`\\+${epicsDropped} more epics`));
-        epicsOverflowSeen += 1;
-      } else {
-        assert.doesNotMatch(text, /more epics/);
-      }
-      if (gridDropped > 0) {
-        assert.match(text, new RegExp(`\\+${gridDropped} more active`));
-        gridOverflowSeen += 1;
-      } else {
-        assert.doesNotMatch(text, /more active/);
-      }
+      if (parkedDropped > 0) parkedOverflowSeen += 1;
+      if (epicsDropped > 0) epicsOverflowSeen += 1;
+      if (gridDropped > 0) gridOverflowSeen += 1;
     }),
     { numRuns: 150 }
   );
