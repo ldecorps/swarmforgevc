@@ -46,6 +46,19 @@ set -euo pipefail
 
 SHA="${1:?Usage: is_qa_ancestor.sh <sha>}"
 
+# Shared by both bounce-store checks below: a token is a verdict on FULL_SHA
+# exactly when the full sha starts with it (records abbreviate to whatever
+# length the recorder used, so prefix match, never string equality).
+match_bounce_token() {
+  local token="$1" message="$2"
+  case "$FULL_SHA" in
+    "$token"*)
+      echo "bounced: $SHORT_SHA $message (recorded as $token) - a bounced parcel never reads as approved (BL-952)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 # ── the sha itself must resolve (invariant 3: an unresolvable commit is an
 #    undeterminable verdict, never a clean "no") ──────────────────────────
 if ! FULL_SHA="$(git rev-parse --verify -q "${SHA}^{commit}" 2>/dev/null)"; then
@@ -78,16 +91,9 @@ if [[ -d "$BOUNCES_DIR" ]]; then
       echo "is_qa_ancestor.sh: undeterminable - verdict store $f holds a corrupt record line" >&2
       exit 2
     fi
-    # Prefix match, never string equality: records abbreviate the sha to
-    # whatever length the recorder used, so a record is a verdict on this
-    # commit exactly when the full sha starts with the recorded field.
     while IFS= read -r token; do
-      case "$FULL_SHA" in
-        "$token"*)
-          echo "bounced: $SHORT_SHA has a QA bounce verdict on file ($f, recorded as $token) - a bounced parcel never reads as approved (BL-952)" >&2
-          exit 1
-          ;;
-      esac
+      [[ -n "$token" ]] || continue
+      match_bounce_token "$token" "has a QA bounce verdict on file ($f)"
     done < <(grep -oE '"commit":"[0-9a-fA-F]{7,40}"' "$f" | sed -E 's/"commit":"([0-9a-fA-F]+)"/\1/')
   done
 fi
@@ -103,12 +109,7 @@ if [[ -d backlog ]]; then
   # writes) and prefix-match it against the full sha.
   while IFS= read -r token; do
     [[ -n "$token" ]] || continue
-    case "$FULL_SHA" in
-      "$token"*)
-        echo "bounced: $SHORT_SHA appears in a ticket's bounce_history (recorded as $token) - a bounced parcel never reads as approved (BL-952)" >&2
-        exit 1
-        ;;
-    esac
+    match_bounce_token "$token" "appears in a ticket's bounce_history"
   done < <(grep -rh -E 'by: [a-zA-Z]+.*commit: [0-9a-fA-F]{7,40}' backlog --include='*.yaml' 2>/dev/null \
              | sed -E 's/.*commit: ([0-9a-fA-F]+).*/\1/')
 fi
