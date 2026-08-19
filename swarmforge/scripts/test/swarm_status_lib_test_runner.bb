@@ -108,6 +108,17 @@
   (assert-true "shows ticket" (str/includes? text "Spec BL-528"))
   (assert-true "shows relative ago" (str/includes? text "12 mins ago")))
 
+;; ── BL-958: control-plane-missing renders its own status word ──────────────
+(let [line (swarm-status-lib/format-component-line
+            {:name "control-plane"
+             :status :control-plane-missing
+             :uptime nil
+             :detail "tmux server not responding; socket=/p/1.sock; run ./swarm ensure"})]
+  (assert-true "control-plane-missing status word rendered"
+               (str/includes? line "control-plane-missing"))
+  (assert-true "control-plane row keeps its detail"
+               (str/includes? line "run ./swarm ensure")))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
