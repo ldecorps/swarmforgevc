@@ -509,7 +509,6 @@ const DOMAINS = [
   require('./bl950QaApprovalEvidenceCommitSteps'),
   require('./bl949ConciergeBoardWiringSteps'),
   require('./bl685StrandedResidentDetectionSteps'),
-  require('./bl952BouncedParcelNeverApprovedSteps'),
   require('./bl620FrontDeskCaptionAndDropAuditSteps'),
   require('./bl951StageSkipsRecordedSteps')
 ];
