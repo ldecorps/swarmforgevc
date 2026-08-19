@@ -209,6 +209,82 @@
       (println "non-vacuity confirmed: invariant 1's own oracle would flag a mutant that retries a second time when the heal fails the same way again")
       (swap! failures conj (str "FAIL non-vacuity: expected the double-retry mutant fixture to actually invoke 3 times, got " invocations)))))
 
+;; ── BL-934 (coder-authored, per BL-654): the two invariants this ticket's
+;;    own YAML declares ─────────────────────────────────────────────────
+;;
+;;   1. "The generated wrapper's classified source never concatenates the
+;;      original command with the pinned worktree as an additional
+;;      positional argument." Generates arbitrary original commands - both
+;;      rm-shaped (the false-positive's own shape) and non-rm CLIs (the
+;;      shape this heal exists for) - against arbitrary worktree paths, and
+;;      asserts the literal concatenation never appears anywhere in the
+;;      generated source.
+;;   2. "A genuine original command that already names the pinned worktree
+;;      as an rm target remains visible as a command in the wrapper
+;;      source." Generates arbitrary rm invocations whose OWN argument list
+;;      already includes the pinned worktree, and asserts that exact
+;;      original-command text still appears verbatim in the wrapper.
+;;
+;; Generator-reach: the original-command pool is built from the real
+;; command shapes this ticket's own description names - a bare `rm -f`/
+;; `rm -rf` of one or more paths (the false-positive's shape) and a
+;; node/bb CLI invocation (the genuine missing-root-argv shape) - plus
+;; worktree paths drawn from a pool including special characters (a single
+;; quote, a space) so the shell-quote escaping itself is exercised, not
+;; just the plain-path common case.
+
+(def BL934-ORIGINAL-COMMAND-POOL
+  ["rm -f tmp/a.json tmp/b.json"
+   "rm -rf tmp/scratch"
+   "rm tmp/single.json"
+   "node cli.js --flag value"
+   "bb some_script.bb arg1"])
+
+(def BL934-WORKTREE-POOL
+  ["/Users/ldecorps/projects/swarmforgevc"
+   "/Users/ldecorps/projects/swarmforgevc/.worktrees/coder"
+   "/it's/a/path with a space"
+   "/tmp/tmp.abc123"])
+
+(defn- gen-bl934-scenario [s]
+  (let [[original s1] (gen-pick s BL934-ORIGINAL-COMMAND-POOL)
+        [worktree s2] (gen-pick s1 BL934-WORKTREE-POOL)]
+    [{:original original :worktree worktree} s2]))
+
+(check-all "BL-934 invariant 1: the wrapper source never concatenates the original command with the pinned worktree as a trailing arg"
+  gen-bl934-scenario
+  (fn [{:keys [original worktree]}]
+    (let [wrapper (tool-miss-heal-lib/build-healing-wrapper-command original worktree)
+          forbidden (str original " " (tool-miss-heal-lib/shell-quote worktree))]
+      (if (str/includes? wrapper forbidden)
+        (str "wrapper contains the forbidden literal concatenation: " (pr-str forbidden))
+        true))))
+
+(defn- gen-bl934-dangerous-original-scenario [s]
+  (let [[worktree s1] (gen-pick s BL934-WORKTREE-POOL)
+        [suffix s2] (gen-pick s1 ["" "/subdir" "/.git"])
+        [flag s3] (gen-pick s2 ["-rf" "-f" "-r"])]
+    [{:worktree worktree :dangerous-original (str "rm " flag " " worktree suffix)} s3]))
+
+(check-all "BL-934 invariant 2: a genuine rm of the pinned worktree in the ORIGINAL command stays fully visible in the wrapper source"
+  gen-bl934-dangerous-original-scenario
+  (fn [{:keys [worktree dangerous-original]}]
+    (let [wrapper (tool-miss-heal-lib/build-healing-wrapper-command dangerous-original worktree)]
+      (if (str/includes? wrapper dangerous-original)
+        true
+        (str "the dangerous original command was not found verbatim in the wrapper: " (pr-str dangerous-original))))))
+
+;; Non-vacuity (BL-654): confirmed by hand at authoring time - temporarily
+;; restoring healed-command's :missing-root-argv branch to the pre-fix
+;; literal `(str original-command " " (shell-quote pinned-worktree))` made
+;; the FIRST property above fail immediately (the forbidden substring is
+;; then exactly what that branch emits, for every generated scenario, not
+;; just a corner case). The second property does not regress under that
+;; same mutant - it is a check on the UNTOUCHED first line, which this
+;; ticket's fix never modifies - so it stays green on its own throughout,
+;; which is the expected shape for an invariant this fix does not change.
+;; Restored before this commit.
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PROPERTIES HOLD")
