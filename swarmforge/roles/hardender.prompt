@@ -1026,3 +1026,31 @@ You are the hardender.
   tests sit in the same band. Verified 2026-08-19: the launcher returned in
   under a second and its detached child was still writing 172 seconds
   later, well past the 120s any foreground call gets.)
+
+## A parcel that touches `specs/pipeline/steps/` or `extension/test/` runs the standing whole-tree guards — no targeted run can see a repo-wide invariant (rule_proposal 2026-08-19, accepted)
+- Your verification is per-file by construction, so it structurally cannot see
+  an invariant asserted over a WHOLE tree: a guard test that scans every file
+  under `specs/pipeline/steps/` or `extension/test/` and fails on one violating
+  site. ADDING a file to either tree is exactly what trips one, and yours is
+  the last gate before the documenter and QA.
+- So: when the parcel adds, renames, or edits a file under either tree, run
+  every standing guard before you forward. Enumerate them, never recall them —
+  the set grows, and naming two by memory understates it:
+  ```
+  cd extension && npx vitest run $(ls test/*Guard*.test.js | grep -v '\.property\.')
+  ```
+  Six files as of 2026-08-19. The `.property.` siblings are excluded
+  deliberately — property tests run in their own lane and are never folded into
+  a unit run (shared engineering rule).
+- These are file-tree scans, not mutation runs. The load rules in Hardening
+  Order let you fall back from Stryker or a full suite to targeted tests; they
+  do NOT exempt this. The slowest guard measured 32.98s run isolated at low
+  load (BL-631's QA evidence) — set against a QA bounce and a full re-entry
+  cycle.
+- Evidence (proposed by the hardender, 2026-08-19): QA bounced two tickets the
+  same day for exactly this class, both after a clean targeted pass here.
+  BL-631 — `tmuxReaperGuard.test.js`: its new step handler started a tmux
+  server without the shared `fixtureReaper` `track()`. BL-945 —
+  `tmpDirMigrationGuard.test.js`: "the real extension/test/ tree has zero raw
+  mkdtemp call sites outside the shared helper", failing against its own two
+  new test files.
