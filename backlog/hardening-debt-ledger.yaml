@@ -1,0 +1,8 @@
+# backlog/hardening-debt-ledger.yaml — BL-942 hardening gate debt ledger.
+# One row per hardening pass that deferred a mutation or CRAP gate under
+# host load, recorded by hardening_debt_ledger_update.bb --defer. A gate that
+# RAN records no row (a ledger that fills on successes tells the operator
+# nothing). Deferring the same gate for the same file set again does not
+# duplicate the row (debt-key). Read back with hardening_debt_ledger_read.bb
+# — never by parsing a per-parcel evidence markdown file.
+
