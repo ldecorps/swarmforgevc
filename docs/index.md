@@ -105,6 +105,7 @@ here.
 - [Closing-Ceremony Lean Pass (BL-820)](reference/BL-820-closing-ceremony-lean-pass.md) — the shift-close step that folds BL-819's ledger into a packet, delivers it to the specifier, and records a coordinator adjustment / specifier outcome; storage, CLIs, and boundary.
 - Architecture and swarm-flow diagrams: [architecture.mmd](diagrams/architecture.mmd), [swarm-flow.mmd](diagrams/swarm-flow.mmd) (Mermaid sources)
 - [Non-Pipeline Agents — Reference Table](reference/BL-643-non-pipeline-agents-reference-table.md) — every launcher, stop path, role prompt (or its stated absence), log location, and supervising service, checked against the repo.
+- [Fixture Tmux-Server Reaper Adoption (BL-817)](reference/BL-817-fixture-tmux-server-reaper-adoption.md) — the seven step-handler files that now register their fixture tmux servers with the shared `fixtureReaper`, the socket-path-only kill guardrail, and the standing `tmuxReaperGuard` gate that catches the idiom returning.
 
 ## Explanation
 
