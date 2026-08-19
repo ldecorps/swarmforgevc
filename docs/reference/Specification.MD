@@ -1,6 +1,67 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-942: `hardender.prompt`'s
+**Last Updated:** August 19, 2026 (BL-950: BL-806's review-forward
+evidence gate originally excluded both of QA's send paths together
+(approval-to-coordinator, integration-on-`main`), "to avoid entangling
+integration mechanics." On 2026-08-19, BL-585's QA pass dequeued at
+07:05:47Z and approved at 07:10:31Z — 4m09s later, naming the
+**documenter's own received commit**, with no `backlog/evidence/BL-585-qa-*`
+file anywhere in history; the pass genuinely ran (mailbox trail confirms
+dequeue, merge-up broadcast, and the approval send) but left no durable
+trace of it — the identical BL-536 shape, one hop past where BL-806
+reached, and the last hop before the ticket closed with a red
+`conciergeTick.test.js` already on `main` from BL-585's own change
+(BL-949): a four-minute pass cannot have run the extension unit suite.
+Adding `QA` to BL-806's review-roles set alone would have changed
+nothing — confirmed before implementing, not assumed:
+`required_stages_lib/routes-forward?`'s `canonical-order` has no
+`coordinator` entry, so `routes-forward? "QA" "coordinator"` is `false`.
+The approval hop instead gets its own narrow direction predicate,
+`qa-approval-hop?` (sender `QA` **and** recipient `coordinator`, nothing
+else), OR-ed into the gate's existing direction test; `canonical-order`
+itself is untouched, so `route-required-stages`'s other callers never see
+a `coordinator` stage. Every other exclusion the gate already granted —
+a QA bounce, a QA merge-up `note`, a marked-detour approval, an approval
+naming the commit QA actually made — still passes through unchanged; only
+a same-commit approval to the coordinator is newly refused. QA's
+integration send (landing on `main`, pushing origin) stays out of scope,
+for the same reason BL-806 gave. Property coverage found a real reach gap
+during development: the existing broad generator hit the full refused
+conjunction at only ~1-in-9000 per run, so 1000 runs at a fixed seed still
+passed even with the new disjunct deleted entirely — fixed with an
+additional by-construction generator pass that fixes sender/recipient/type
+to the hop and varies only the discriminating fields, with asserted
+reachability floors. See the widened
+"Review-Forward Evidence Gate (BL-806, widened by BL-950)" section in
+`swarmforge/handoff-protocol.md`. No human-facing command or setting —
+fork/operator-substrate tooling under `swarmforge/scripts/`.); Previously
+August 19, 2026 (BL-947: `swarmforge/scripts/swarmforge.sh`
+contained 27 `echo -e "${RED}Error:${RESET} ..."` diagnostics, none
+redirected to stderr, so every launcher failure was reported on stdout — a
+caller capturing stderr saw silence on every failure path, and a caller
+capturing a command substitution's VALUE (the control-socket path is the
+live example, `swarmforge.sh:124-127`) got the error text mixed into it.
+This cost a correct diagnosis on the day it was found: BL-944's coder
+evidence misdiagnosed a socket-path-length refusal as `resolve_swarm_socket.bb`
+putting its error on stdout, when that script is correct (binds `*out*` to
+`*err*`, exits 1) and `swarmforge.sh` was the one re-emitting the captured
+diagnostic on the wrong channel. Fixed by routing all 27 sites (plus one in
+`ancillary_provider_lib.sh`) through a single `error_msg()` helper whose
+body carries the `>&2` redirect, so the next error line cannot be added on
+the wrong channel one site at a time — the same way this returned before. A
+standing guard, `extension/test/swarmforgeShErrorChannelGuard.test.js`
+(over `specs/pipeline/steps/lib/swarmforgeShErrorChannel.js`), scans the
+whole script and fails naming any raw `${RED}Error` echo missing the
+redirect. Message text, colouring, and every exit status are byte-identical
+— only the channel changed (invariant 2); the success-path stdout-only
+contract for a captured value (invariant 1) is unaffected. Recorded as a
+deliberate local deviation from the `unclebob/swarm-forge` fork per
+Architecture Rule 2 — see the new "2026-08-19 — local deviation: launcher
+diagnostics moved to stderr (BL-947)" entry in
+[`docs/upstream-deviations.md`](../upstream-deviations.md). No new
+extension command, setting, or UI — a swarm-substrate launcher fix, same
+class as BL-878's `setsid` portability fix.); Previously
+August 19, 2026 (BL-942: `hardender.prompt`'s
 office-hours mutation/CRAP bypass defers a heavy gate on a busy host and
 promises "the full pass still runs — just against a quiet host" — but
 nothing recorded what was skipped, and nothing brought it back. Measured
