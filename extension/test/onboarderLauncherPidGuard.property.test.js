@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 // BL-684 invariant 2 (property authorship rests with the coder, first pass -
 // BL-654): "The rename can never produce two live supervisors nor a stale
@@ -28,6 +29,13 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 // exited), and arbitrary non-numeric garbage (whitespace, unicode, empty,
 // near-numeric-looking text) - the three states the invariant's own
 // Scenario 3/5 examples name.
+// BL-932: this property's 15 runs each spawnSync the REAL launch_onboarder.sh
+// with an inner allowance of up to 15000ms (75% of the property lane's own
+// 20000ms suite-wide testTimeout, all by itself) - the two knobs are not the
+// same one; the OUTER per-test timeout (test()'s third argument, below) was
+// simply absent, so all fifteen runs shared the lane's 20000ms default
+// regardless of the inner spawnSync allowance. SUBPROCESS_HEAVY_TIMEOUT_MS
+// is the established treatment (BL-871, same as bl760/bl787/bl797).
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAUNCHER_SRC = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'launch_onboarder.sh');
 const SUPERVISOR_SRC = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'onboarder_supervisor.bb');
@@ -124,46 +132,50 @@ const oldPidFileContentArb = fc.oneof(
   }
 );
 
-test('property: launch_onboarder.sh declines to start iff the old-named pid file holds a genuinely live numeric pid', () => {
-  fc.assert(
-    fc.property(oldPidFileContentArb, (spec) => {
-      const dir = makeFixture();
-      let liveChild;
-      try {
-        let content = spec;
-        let expectedLive;
-        if (spec === '__LIVE__') {
-          liveChild = spawn('sleep', ['5']);
-          content = String(liveChild.pid);
-          expectedLive = true;
-        } else if (spec === '__DEAD__') {
-          content = String(spawnDeadPid());
-          expectedLive = false;
-        } else {
-          expectedLive = oracleConsidersOldPidLive(content);
-        }
-        fs.writeFileSync(oldPidFile(dir), content);
+test(
+  'property: launch_onboarder.sh declines to start iff the old-named pid file holds a genuinely live numeric pid',
+  () => {
+    fc.assert(
+      fc.property(oldPidFileContentArb, (spec) => {
+        const dir = makeFixture();
+        let liveChild;
+        try {
+          let content = spec;
+          let expectedLive;
+          if (spec === '__LIVE__') {
+            liveChild = spawn('sleep', ['5']);
+            content = String(liveChild.pid);
+            expectedLive = true;
+          } else if (spec === '__DEAD__') {
+            content = String(spawnDeadPid());
+            expectedLive = false;
+          } else {
+            expectedLive = oracleConsidersOldPidLive(content);
+          }
+          fs.writeFileSync(oldPidFile(dir), content);
 
-        const result = spawnSync('bash', [path.join(dir, 'swarmforge', 'scripts', 'launch_onboarder.sh'), dir], {
-          encoding: 'utf8',
-          timeout: 15000,
-        });
+          const result = spawnSync('bash', [path.join(dir, 'swarmforge', 'scripts', 'launch_onboarder.sh'), dir], {
+            encoding: 'utf8',
+            timeout: 15000,
+          });
 
-        if (expectedLive) {
-          assert.equal(result.status, 0, `expected exit 0 (decline), got ${result.status}: ${result.stderr}`);
-          assert.match(result.stderr, /pre-rename supervisor is already running/);
-          assert.equal(fs.existsSync(newPidFile(dir)), false, 'must never start a second (new-named) supervisor');
-        } else {
-          assert.doesNotMatch(
-            result.stderr,
-            /pre-rename supervisor is already running/,
-            `must not decline for a non-live old pid file content ${JSON.stringify(content)}: ${result.stderr}`
-          );
+          if (expectedLive) {
+            assert.equal(result.status, 0, `expected exit 0 (decline), got ${result.status}: ${result.stderr}`);
+            assert.match(result.stderr, /pre-rename supervisor is already running/);
+            assert.equal(fs.existsSync(newPidFile(dir)), false, 'must never start a second (new-named) supervisor');
+          } else {
+            assert.doesNotMatch(
+              result.stderr,
+              /pre-rename supervisor is already running/,
+              `must not decline for a non-live old pid file content ${JSON.stringify(content)}: ${result.stderr}`
+            );
+          }
+        } finally {
+          cleanupFixture(dir, liveChild);
         }
-      } finally {
-        cleanupFixture(dir, liveChild);
-      }
-    }),
-    { numRuns: 15 }
-  );
-});
+      }),
+      { numRuns: 15 }
+    );
+  },
+  SUBPROCESS_HEAVY_TIMEOUT_MS
+);

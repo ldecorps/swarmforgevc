@@ -50,7 +50,9 @@ const SWARM_HANDOFF = path.join(SCRIPTS_DIR, 'swarm_handoff.bb');
 // lane's global 20000ms testTimeout - a false failure, not a real one (this
 // file passes 3-for-3 when run alone). 240000ms leaves comfortable headroom
 // above the worst measured run.
-const SUBPROCESS_HEAVY_TIMEOUT_MS = 240000;
+// BL-932: the value itself now lives in one place, imported here rather
+// than hand-copied - see helpers/subprocessHeavyTimeout.js.
+const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 const ROLES = ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 

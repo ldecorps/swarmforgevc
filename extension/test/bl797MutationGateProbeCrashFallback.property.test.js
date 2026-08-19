@@ -47,7 +47,9 @@ const GIT_BIN = execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf
 // failed on each of the other two, the "moving failure" this ticket
 // exists to fix). Raised to match the other subprocess-heavy property
 // files' post-fix budget.
-const SUBPROCESS_HEAVY_TIMEOUT_MS = 240000;
+// BL-932: the value itself now lives in one place, imported here rather
+// than hand-copied - see helpers/subprocessHeavyTimeout.js.
+const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 const PROBE_STATES = ['success', 'fail', 'absent'];
 const ALL_COMBOS = [];

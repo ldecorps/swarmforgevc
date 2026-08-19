@@ -21,7 +21,9 @@ const { isolatedEnv } = require('./helpers/namedTunnelEnvIsolation');
 // launch/stop-real-background-process shape and the same original 60000ms
 // budget, so it carries the same risk even though it was not the one QA's
 // particular 3 runs happened to catch.
-const SUBPROCESS_HEAVY_TIMEOUT_MS = 240000;
+// BL-932: the value itself now lives in one place, imported here rather
+// than hand-copied - see helpers/subprocessHeavyTimeout.js.
+const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 // BL-787 invariants (property authorship rests with the coder, first pass -
 // BL-654). Drives the REAL launch_resident_spy_tunnel.sh /
