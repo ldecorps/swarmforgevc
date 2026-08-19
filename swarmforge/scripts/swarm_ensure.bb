@@ -60,7 +60,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -747,8 +746,7 @@
                     "; tmux server still not responding")})))
 
 (defn -main []
-  (let [cp-state (control-plane-state)
-        socket (tmux-socket)
+  (let [socket (tmux-socket)
         extension-result (if (fs/exists? headless-marker-file)
                            {:component "extension" :status :healthy
                             :action "skipped bounce (headless swarm owns tmux)"}
@@ -781,14 +779,9 @@
                                       (let [agent-result
                                             (if router?
                                               (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
-                                              ;; BL-958: ensure-standing-role!, not bare respawn-role!
-                                              ;; — after control-plane loss the SESSION is gone too,
-                                              ;; and respawn-pane against a missing session can never
-                                              ;; recover it; create-if-missing also restarts the tmux
-                                              ;; server itself on the first recreated session.
                                               (ensure-role! (str "agent:" role)
                                                             #(pane-alive? socket session)
-                                                            #(ensure-standing-role! socket role session)
+                                                            #(respawn-role! socket role session)
                                                             contract-broken?))
                                             rc-result (ensure-rc-role! socket ordered role session)]
                                         [agent-result rc-result]))
@@ -800,18 +793,6 @@
                                           :category (:category (agent-runtime-lib/classify-provider-error detail))}
                                          {:component (str "rc:" role) :status :healthy}]))
                                     rows)))
-        control-plane-result
-        (cond
-          (= :control-plane-missing (:classification cp-state))
-          (control-plane-report! cp-state)
-
-          (= :up (:classification cp-state))
-          (do (control-plane-lib/resolve-open-incidents!
-               (control-plane-lib/incidents-file state-dir)
-               (str (java.time.Instant/now)))
-              nil)
-
-          :else nil)
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
         operator-result (when (operator-enabled?)
@@ -826,9 +807,7 @@
         cursor-bridge-result (when (cursor-bridge-enabled?)
                                 (ensure-component! "cursor-bridge" cursor-bridge-healthy? ensure-cursor-bridge!
                                                     "restarted the Cursor Remote bridge"))
-        results (concat [extension-result] role-results
-                        (remove nil? [control-plane-result])
-                        [daemon-result launch-contract-check]
+        results (concat [extension-result] role-results [daemon-result launch-contract-check]
                         (remove nil? [operator-result front-desk-result babysitterd-result cursor-bridge-result]))]
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
