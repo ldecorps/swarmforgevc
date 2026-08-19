@@ -51,14 +51,40 @@
 (assert= "healed-command: wrong-surface cd's into the pinned worktree's extension/ subdirectory"
          "cd '/w/extension' && npm test"
          (tool-miss-heal-lib/healed-command :wrong-surface "npm test" "/w"))
-(assert= "healed-command: missing-root-argv appends the pinned worktree as a trailing arg"
-         "node cli.js '/w'"
+(assert= "healed-command: missing-root-argv references the pinned worktree via $__sfh_root, never as a literal path (BL-934)"
+         "node cli.js \"$__sfh_root\""
          (tool-miss-heal-lib/healed-command :missing-root-argv "node cli.js" "/w"))
 (assert= "healed-command: real-failure has no healed command at all"
          nil (tool-miss-heal-lib/healed-command :real-failure "anything" "/w"))
 (assert= "healed-command: a worktree path containing a single quote is safely escaped"
          "cd '/it'\\''s/w' && git status"
          (tool-miss-heal-lib/healed-command :wrong-cwd "git status" "/it's/w"))
+
+;; ── BL-934: the missing-root-argv false positive ─────────────────────────
+;; Claude Code's own dangerous-rm classifier reads a literal
+;; `rm ... 'pinned-worktree'` in the wrapper's STATIC source as rm of the
+;; worktree, even inside a dead elif branch that never executes for a real
+;; `rm -f` of temp files (rm's own failures never match this class). The
+;; exact live incident: rm -f of two temp files under the pinned worktree.
+
+(let [worktree "/Users/ldecorps/projects/swarmforgevc"
+      original "rm -f tmp/bl933-ir.json tmp/bl933-dry.json"
+      wrapper (tool-miss-heal-lib/build-healing-wrapper-command original worktree)]
+  (assert-true "BL-934 invariant 1: the wrapper source never concatenates the original command with the pinned worktree as a trailing arg"
+               (not (str/includes? wrapper (str original " " (tool-miss-heal-lib/shell-quote worktree)))))
+  (assert-true "BL-934: the original rm command still appears, visibly, as a command in the wrapper"
+               (str/includes? wrapper original))
+  (assert-true "BL-934: the pinned worktree is referenced via $__sfh_root, not spliced as a literal path next to the rm invocation"
+               (str/includes? wrapper (str original " \"$__sfh_root\""))))
+
+;; Invariant 2: a genuine rm OF the worktree (the original command itself,
+;; not the synthetic heal) must remain visible - the fix must not hide a
+;; real rm of the worktree from the classifier.
+(let [worktree "/Users/ldecorps/projects/swarmforgevc"
+      dangerous-original (str "rm -rf " worktree)
+      wrapper (tool-miss-heal-lib/build-healing-wrapper-command dangerous-original worktree)]
+  (assert-true "BL-934 invariant 2: a genuine rm of the pinned worktree in the ORIGINAL command stays fully visible in the wrapper source"
+               (str/includes? wrapper dangerous-original)))
 
 ;; ── build-healing-wrapper-command: structural shape ──────────────────────
 
@@ -131,6 +157,29 @@
     (assert= "end to end wrong-cwd: the healed re-run (from the pinned worktree) succeeds" 0 exit)
     (assert= "end to end wrong-cwd: the model receives ONLY the healed result" "healed-ok" out)
     (assert= "end to end wrong-cwd: exactly one retry (two invocations total: the miss + the one heal)"
+             2 (count (str/split-lines (str/trim (slurp counter)))))))
+
+;; BL-934: the $__sfh_root indirection must not just LOOK safe - the real
+;; scenario 03 neighbour (a non-rm CLI missing its <project-root> arg)
+;; must still functionally heal, receiving the pinned worktree as its
+;; trailing argv, exactly as before this fix.
+(let [tmp (mk-tmp)
+      counter (str tmp "/calls")
+      script (str tmp "/missing-root-argv.sh")]
+  (spit script
+        (str "#!/usr/bin/env bash\n"
+             "echo x >> " counter "\n"
+             "if [ \"$#\" -ge 1 ] && [ \"$1\" = " (tool-miss-heal-lib/shell-quote tmp) " ]; then\n"
+             "  printf 'healed-ok'; exit 0\n"
+             "else\n"
+             "  echo 'Usage: node cli.js <project-root>' >&2\n"
+             "  exit 1\n"
+             "fi\n"))
+  (.setExecutable (fs/file script) true)
+  (let [{:keys [out exit]} (run-wrapper (str "bash " script) tmp)]
+    (assert= "end to end missing-root-argv: the healed re-run (with the project root appended) succeeds" 0 exit)
+    (assert= "end to end missing-root-argv: the model receives ONLY the healed result" "healed-ok" out)
+    (assert= "end to end missing-root-argv: exactly one retry (two invocations total: the miss + the one heal)"
              2 (count (str/split-lines (str/trim (slurp counter)))))))
 
 (let [tmp (mk-tmp)
