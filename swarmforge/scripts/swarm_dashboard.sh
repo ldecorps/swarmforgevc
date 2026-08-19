@@ -34,7 +34,14 @@ SWARM_SOCK="$(cat "$SOCK_FILE")"
 DASH_SOCK="$ROOT/.swarmforge/dashboard-tmux.sock"
 SESSION="swarm-dashboard"
 
-mapfile -t ROLE_SESSIONS < <(tmux -S "$SWARM_SOCK" list-sessions -F '#S' 2>/dev/null | grep '^swarmforge-' | sort)
+# BL-937: bash 3.2 has no `mapfile`/`readarray` builtin (bash 4.0+ only) -
+# portable read-loop equivalent (`|| [[ -n "$line" ]]` keeps a final line
+# with no trailing newline; the read still populates $line at EOF).
+ROLE_SESSIONS=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  ROLE_SESSIONS+=("$line")
+done < <(tmux -S "$SWARM_SOCK" list-sessions -F '#S' 2>/dev/null | grep '^swarmforge-' | sort)
 if [[ "${#ROLE_SESSIONS[@]}" -eq 0 ]]; then
   echo "swarm_dashboard: no swarmforge-* sessions live on $SWARM_SOCK" >&2
   exit 1
