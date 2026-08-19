@@ -81,6 +81,46 @@ test('awaitRealWatchEvent defaults its timeout well below the 20000ms lane budge
   assert.ok(DEFAULT_TIMEOUT_MS < 20000);
 });
 
+// BL-933 hardening: the test above only bounds the EXPORTED constant's
+// value - it never proves the function's own default parameter actually
+// uses that constant. A default hardcoded to a different literal (e.g. the
+// coder's own commit message documents 10000ms as a specifically
+// load-tested value, tuned up from an initial 4000ms) would pass every
+// existing test unnoticed, including the property test, which always
+// supplies an explicit timeoutMs and never exercises the omitted-argument
+// default path at all.
+test('awaitRealWatchEvent, when timeoutMs is omitted, actually times out at DEFAULT_TIMEOUT_MS - not merely a value near it', async () => {
+  vi.useFakeTimers();
+  try {
+    const neverResolves = new Promise(() => {});
+    const pending = awaitRealWatchEvent(neverResolves, {
+      eventLabel: 'bounce file creation',
+      watchedPath: '/tmp/example/bounce',
+    });
+    let settled = false;
+    let caught = null;
+    pending.then(
+      () => {
+        settled = true;
+      },
+      (err) => {
+        settled = true;
+        caught = err;
+      }
+    );
+
+    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS - 1);
+    assert.equal(settled, false, 'must not settle even 1ms before DEFAULT_TIMEOUT_MS');
+
+    await vi.advanceTimersByTimeAsync(1);
+    assert.equal(settled, true, 'must settle once DEFAULT_TIMEOUT_MS has fully elapsed');
+    assert.ok(caught, 'expected the omitted-timeoutMs default to reject, not resolve');
+    assert.match(caught.message, new RegExp(`${DEFAULT_TIMEOUT_MS}ms`));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('describeWatchWaitTimeout names the event, the path, and the deadline', () => {
   const message = describeWatchWaitTimeout('a bounce-graceful file', '/tmp/example/bounce-graceful', 4000);
   assert.match(message, /a bounce-graceful file/);
