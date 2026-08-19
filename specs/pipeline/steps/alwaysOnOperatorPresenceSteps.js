@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
+const { track } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -245,6 +246,9 @@ function registerSteps(registry) {
   registry.define(/^the Operator presence is live$/, (ctx) => {
     ctx.roles = ['coder', 'QA'];
     ctx.runtimeTarget = mkRuntimeFixture();
+    // BL-817: registered BEFORE the tmux server the next step spawns, so
+    // even a crash mid-launch is covered.
+    track(ctx.runtimeTarget);
     writeRolesTsv(ctx.runtimeTarget, ctx.roles);
     // A live, registered slot-holder - the SAME signal attend_operator.sh
     // itself writes, proven directly here without needing a real claude
