@@ -42,10 +42,13 @@ passes the result as `--pack`, a config-file selector consumed as
 var and the `--pack` selector are two mechanisms sharing one name). It
 engages only when the launching shell already carried the value and the
 panes inherited it, which is the case measured on this host 2026-08-19: a
-role shell reports `full-forge` and resolves 1 fork (3 with it cleared),
-while `tmux show-environment` reports `unknown variable` for all 8
-sessions — so confirm against the pane's own shell, never
-`tmux show-environment`. Making that inheritance explicit at launch — so
+role shell reports `full-forge` and resolves 1 fork (3 with it cleared).
+The variable rides the tmux SERVER's global environment, which every pane
+inherits, so probe it with `tmux show-environment -g SWARMFORGE_PACK` or
+the pane's own `env` — the PER-SESSION table (`tmux show-environment -t
+<session>`) does not read the global one and answers `unknown variable`
+for all 8 sessions, which is a wrong probe rather than a missing
+variable. Making that inheritance explicit at launch — so
 the ceiling does not depend on how the swarm happened to be started — is
 BL-961's job, not this ticket's. Both
 lanes resolve through ONE route: the eight identical composition lines
@@ -3086,10 +3089,12 @@ runaway agent, was the OOM source.
   which the pane processes then inherit. Measured on this host 2026-08-19,
   both halves: a role shell reports `SWARMFORGE_PACK=full-forge` and its
   `vitest.config.mjs` resolves 1 fork (3 with the variable cleared), while
-  `tmux show-environment` reports `unknown variable` for all 8 sessions —
-  the tmux SESSION environment never carried it, only the inherited process
-  environment did. Check the pane's own shell, not `tmux show-environment`,
-  when confirming whether the cap is live. Making that inheritance explicit
+  the PER-SESSION `tmux show-environment -t <session>` table answers
+  `unknown variable` for all 8 sessions. That is a wrong probe, not a
+  missing variable: the value rides the tmux SERVER's global environment,
+  which every pane inherits and which only `tmux show-environment -g`
+  reads. Confirm the cap is live with `-g` or with the pane's own `env`,
+  never with the per-session table. Making that inheritance explicit
   at launch — so the ceiling does not depend on how the swarm happened to
   be started — is BL-961's job, not this ticket's. Both lanes compose the ceiling and the memory
   budget through **one** shared `resolveVitestWorkerPool`, rather than the
