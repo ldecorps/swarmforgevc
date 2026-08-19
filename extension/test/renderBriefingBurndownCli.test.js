@@ -37,18 +37,35 @@ test('renderBriefingBurndown uses the shared snapshot records when a fresh one i
   assert.ok(png.subarray(0, 8).equals(PNG_MAGIC));
 });
 
-test('renderBriefingBurndown falls back to deriving its own history when no snapshot path is given (smoke test against the real repo)', () => {
-  const repoRoot = path.join(__dirname, '..', '..');
-  const diagrams = renderBriefingBurndown(repoRoot);
-  assert.equal(diagrams.length, 1);
-  assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
-});
+// BL-914: derives burndown history from the REAL repo's git log, then
+// renders a PNG through the same real mermaidRender.ts (beautiful-mermaid +
+// native resvg) path as renderBriefingDiagramsCli.test.js - measures
+// consistently within a few percent of the 20000ms suite default even in
+// isolation (BL-815 evidence, adopted into this ticket 2026-08-18 on a QA
+// report). A per-test override buys headroom without touching the
+// suite-wide default every other test still relies on. The file's other
+// three tests take a fixture snapshot and stay fast - deliberately no
+// override there.
+test(
+  'renderBriefingBurndown falls back to deriving its own history when no snapshot path is given (smoke test against the real repo)',
+  () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const diagrams = renderBriefingBurndown(repoRoot);
+    assert.equal(diagrams.length, 1);
+    assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
+  },
+  45000
+);
 
-test('renderBriefingBurndown falls back to deriving its own history when the given snapshot path does not exist', () => {
-  const repoRoot = path.join(__dirname, '..', '..');
-  const diagrams = renderBriefingBurndown(repoRoot, Date.now(), '/no/such/snapshot.json');
-  assert.equal(diagrams.length, 1);
-});
+test(
+  'renderBriefingBurndown falls back to deriving its own history when the given snapshot path does not exist',
+  () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const diagrams = renderBriefingBurndown(repoRoot, Date.now(), '/no/such/snapshot.json');
+    assert.equal(diagrams.length, 1);
+  },
+  45000
+);
 
 // ── main(): argv parsing + stdout plumbing ───────────────────────────────
 
