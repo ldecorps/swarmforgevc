@@ -176,3 +176,6 @@ qa_e2e_procedure: |
      fixture dir on every timeout, which is the BL-928 failure re-introduced.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: invariant-unencoded, commit: b8e416241a, evidence: backlog/evidence/BL-933-real-fs-watch-waits-are-unbounded-and-fail-as-bare-timeouts-bounce-20260819.md }

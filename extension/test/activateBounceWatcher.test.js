@@ -1,4 +1,5 @@
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { awaitRealWatchEvent } = require('./helpers/boundedWatchWait');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -87,13 +88,14 @@ test('startBounceWatcher detects bounce file creation', async () => {
   );
 
   const bounceFile = path.join(swarmforgeDir, 'bounce');
-  fs.writeFileSync(bounceFile, 'swarm\n');
-  await captured;
-  capturedTick();
-  assert.equal(bounceDetected, 'swarm');
-  watcher.close();
-
-  fs.rmSync(tmpDir, { recursive: true });
+  try {
+    fs.writeFileSync(bounceFile, 'swarm\n');
+    await awaitRealWatchEvent(captured, { eventLabel: 'bounce file creation', watchedPath: bounceFile });
+    capturedTick();
+    assert.equal(bounceDetected, 'swarm');
+  } finally {
+    watcher.close();
+  }
 });
 
 // BL-131: no real fs.watch event needed at all - the guard that ignores
