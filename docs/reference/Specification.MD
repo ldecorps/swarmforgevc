@@ -1,6 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-920: the master-main-reconcile
+**Last Updated:** August 19, 2026 (BL-933: three unit tests
+(`activateBounceWatcher.test.js`, `bounceDrain.test.js`,
+`bounceWatcher.test.js`) each prove a real `fs.watch` event reaches a
+debounce — BL-131 already injected and fired every controllable part
+synchronously, keeping only the OS's own event delivery genuinely async,
+deliberately real rather than faked. That one real wait had no deadline:
+on a loaded host a late or dropped OS event ran out the whole unit lane's
+20000ms `testTimeout` and reported a bare "test timed out" naming only
+the test, with nothing saying a watch event never arrived — expensive to
+chase, and the actual cost this ticket closes. New helper
+`extension/test/helpers/boundedWatchWait.js` races the real event promise
+against an explicit, much shorter deadline (`DEFAULT_TIMEOUT_MS = 10000`)
+and rejects on expiry with a message naming both the awaited event and
+the watched path; all three tests adopt it, and the real `fs.watch`/
+`fs.writeFileSync` setup in each is untouched — no fake or stubbed
+watcher, since replacing the real one would delete the only thing these
+tests exist to prove. Architect bounced the first pass: the coder's
+commit claimed "no invariants declared on this ticket" when the ticket's
+`invariants:` block had been present for nearly an hour before work
+started, and invariant 2 ("no wait left unbounded") does admit a
+non-vacuous property encoding that was missing — refixed with a
+fast-check property test on the new helper, invariant 1 (real events stay
+real, a structural fact about fixed source text) left to the existing
+source-text acceptance scenario with the reasoning now stated rather than
+skipped. Hardener's hand-authored mutation probe (no mutation/CRAP
+tooling applies to test infrastructure) found the omitted-`timeoutMs`
+default path itself was unexercised by either the example or property
+tests — swapping the default literal survived both — and closed it with a
+fake-timer test pinning the omitted-argument path to exactly
+`DEFAULT_TIMEOUT_MS`.); Previously August 19, 2026 (BL-920: the
+master-main-reconcile
 sweep (`swarmforge/scripts/master_main_reconcile_lib.bb`, BL-891/BL-919)
 surfaced exactly one coordinator note on the first tick of a
 dirty-blocked or conflict-aborted episode, then went quiet for every
