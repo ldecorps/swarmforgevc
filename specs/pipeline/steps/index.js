@@ -493,7 +493,8 @@ const DOMAINS = [
   require('./bl937ShellScriptsRunOnStockMacosBash32Steps'),
   require('./bl915CursorBridgeGoneAgentSessionResetSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
-  require('./bl938AgedNoteRotateFixtureRotationRouterSteps')
+  require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
+  require('./bl923DwellCountsOccupiedTimeSteps')
 ];
 
 function registerSteps(registry) {
