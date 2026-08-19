@@ -36,6 +36,9 @@ notes: |
   see the two entries above for the standing root cause (epic type excluded
   from promotion, nudge-ranking logic doesn't filter it out).
 
+  2026-08-19 00:55 coordinator: 4th repeat (000514), same non-reason, slot
+  filled by BL-909 first.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high

@@ -162,6 +162,83 @@
    "priority: 00"
    (str "message: " msg)])
 
+;; ── BL-920: persistent-block operator escalation ────────────────────────
+;; The coordinator note above fires once per episode and then goes quiet
+;; (deliberately, so a standing block does not spam every tick) - but
+;; nothing ever escalates past that single note, so a block that outlives
+;; the note is silently indistinguishable from one that resolved a minute
+;; later. This section adds a SECOND, independent per-episode counter: how
+;; many consecutive ticks has the SAME reason persisted, and has the
+;; operator already been escalated to for this episode.
+
+(def escalation-default-threshold
+  "BL-920 approval_context: the human intake left this number unnamed
+   ('still persists across ticks') and asked the implementer to pick a
+   defensible default rather than invent one in the spec. 3 mirrors
+   chase-sweep-lib/open-slot-escalation-default-threshold's own default for
+   the identical 'bounded-count-then-alert-once' shape (BL-798) - this
+   project's existing precedent for how many unacted ticks earn an operator
+   escalation. Amendable via swarmforge.conf."
+  3)
+
+(defn parse-escalation-threshold
+  "Pure: `config master_main_reconcile_escalation_threshold <n>` from conf
+   text. Honors a POSITIVE integer only - absent, malformed, zero, and
+   negative all degrade to the default, mirroring chase-sweep-lib/parse-
+   open-slot-escalation-threshold's own degrade-to-default failure mode."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config master_main_reconcile_escalation_threshold"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) n escalation-default-threshold)))
+
+(defn next-block-state
+  "Advance the persisted per-episode block state for one blocked tick with
+   `reason` (\"dirty\" or \"conflict\"). A reason that differs from the
+   PREVIOUS tick's (including no previous tick at all) starts a fresh
+   episode - ticks reset to 1, escalated cleared - so a later, unrelated
+   block is judged on its own merits rather than inheriting a prior
+   episode's count (invariant 2). The SAME reason persisting increments the
+   tick count and otherwise carries the state (including a true :escalated)
+   forward unchanged."
+  [state reason]
+  (if (= (:surfaced state) reason)
+    (update state :ticks (fnil inc 0))
+    {:surfaced reason :ticks 1 :escalated false}))
+
+(defn escalation-due?
+  "Pure predicate: has this (already-advanced) block state crossed the
+   escalation threshold, and has this episode not already escalated? Once
+   true and acted on, the caller is responsible for persisting :escalated
+   true so a later tick of the SAME episode never re-fires (invariant 1:
+   escalation is a second signal added once, not repeated every tick)."
+  [state threshold]
+  (and (>= (:ticks state 0) threshold) (not (:escalated state))))
+
+(defn escalation-reason
+  "Standing evidence text for the escalation email body / log - same role
+   as chase-sweep-lib/open-slot-escalation-reason."
+  [reason behind ticks]
+  (str "BL-920: master-main-reconcile has been " (name reason) "-blocked for "
+       ticks " consecutive sweep ticks (local main " behind
+       " behind origin/main) with no coordinator action able to resolve it. "
+       "The coordinator's first-tick note has already fired; this is the "
+       "escalation past that, because the block has persisted. A human "
+       "needs to look at the master checkout directly."))
+
+(defn escalation-telegram-text
+  "Standing Operator-topic text (telegram-reply-outbox.jsonl threadId
+   OPERATOR) - same role as chase-sweep-lib/open-slot-escalation-telegram-text."
+  [reason behind ticks]
+  (str "⚠️ master main reconcile still " (name reason) "-blocked after "
+       ticks " ticks, " behind " behind origin - needs a human."))
+
+(defn escalation-email-subject
+  [reason]
+  (str "SwarmForge: master main reconcile stuck (" (name reason) ")"))
+
 ;; ── adapter-injected orchestration ───────────────────────────────────────
 ;; adapters: {:rev-counts!          (fn [] -> {:ahead int :behind int}) -
 ;;                                   already fetches origin/main as a side
@@ -192,15 +269,26 @@
 ;;                                   one to hide.
 ;;           :surface!              (fn [msg] -> nil) - sends the surfaced
 ;;                                   note
+;;           :escalate!             (fn [{:keys [reason behind ticks]}] -> nil) -
+;;                                   BL-920: fires ONCE per episode, only
+;;                                   after the SAME block reason has
+;;                                   persisted `threshold` consecutive ticks
+;;                                   and this episode has not already
+;;                                   escalated - the operator-facing
+;;                                   escalation, additive to (never instead
+;;                                   of) the coordinator note :surface!
+;;                                   already sent on this episode's first
+;;                                   tick.
 ;;           :log!                  (fn [& parts])}
 ;;
 ;; Self-healing across transitions, mirroring push_sweep_lib.bb's own
 ;; sweep!: reaching :up-to-date or a successful :should-reconcile always
-;; clears persisted state, so a LATER, unrelated block always surfaces
-;; fresh rather than being silently suppressed by a stale flag from a
-;; resolved episode.
+;; clears persisted state (surfaced reason, tick count, AND escalated flag),
+;; so a LATER, unrelated block always surfaces - and, on its own schedule,
+;; escalates - fresh rather than being silently suppressed by a stale flag
+;; from a resolved episode (BL-920 invariant 2).
 (defn sweep!
-  [daemon-dir adapters]
+  [daemon-dir threshold adapters]
   (let [state (read-state daemon-dir)
         counts ((:rev-counts! adapters))
         {:keys [ahead behind]} (drift-report counts)]
@@ -209,7 +297,23 @@
           merge-changed-paths (if (pos? behind) (set ((:merge-changed-paths! adapters))) #{})
           decision (reconcile-decision {:behind behind
                                          :dirty-paths dirty-paths
-                                         :merge-changed-paths merge-changed-paths})]
+                                         :merge-changed-paths merge-changed-paths})
+          ;; BL-920: shared by both blocked branches below - the first tick
+          ;; of a (possibly new) episode still gets exactly the SAME
+          ;; coordinator note as before (invariant 1's "additive, never
+          ;; instead of"); escalation is a SEPARATE decision layered on top,
+          ;; keyed off the advanced tick count.
+          handle-blocked!
+          (fn [reason surface-msg]
+            (let [first-tick? (not= (:surfaced state) reason)
+                  next-state (next-block-state state reason)]
+              (when first-tick?
+                ((:surface! adapters) surface-msg))
+              (if (escalation-due? next-state threshold)
+                (do
+                  ((:escalate! adapters) {:reason reason :behind behind :ticks (:ticks next-state)})
+                  (write-state! daemon-dir (assoc next-state :escalated true)))
+                (write-state! daemon-dir next-state))))]
       (case decision
         :up-to-date
         (do
@@ -219,12 +323,8 @@
         :dirty-blocked
         (do
           ((:log! adapters) "master-main-reconcile" "dirty-blocked")
-          (if (= (:surfaced state) "dirty")
-            nil
-            (do
-              ((:surface! adapters) (surface-message {:behind behind :reason :dirty
-                                                        :overlapping-paths (overlapping-paths dirty-paths merge-changed-paths)}))
-              (write-state! daemon-dir {:surfaced "dirty"}))))
+          (handle-blocked! "dirty" (surface-message {:behind behind :reason :dirty
+                                                       :overlapping-paths (overlapping-paths dirty-paths merge-changed-paths)})))
 
         :should-reconcile
         (let [result ((:merge! adapters))]
@@ -234,8 +334,4 @@
               (write-state! daemon-dir {}))
             (do
               ((:log! adapters) "master-main-reconcile" "conflict" (str (:error result)))
-              (if (= (:surfaced state) "conflict")
-                nil
-                (do
-                  ((:surface! adapters) (surface-message {:behind behind :reason :conflict}))
-                  (write-state! daemon-dir {:surfaced "conflict"}))))))))))
+              (handle-blocked! "conflict" (surface-message {:behind behind :reason :conflict})))))))))
