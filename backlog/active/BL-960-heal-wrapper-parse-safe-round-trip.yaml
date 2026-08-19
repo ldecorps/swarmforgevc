@@ -185,6 +185,22 @@ notes: >
   thing that must carry it. Do not re-enable ahead of this ticket, and do
   not close this ticket with the registration still absent.
 
+  2026-08-19 coordinator — AT CLOSE, the restored registration is INERT
+  until every role respawns. Learned from the disable itself (3bac496ec):
+  swarmforge.sh's write_claude_settings_file only writes
+  .swarmforge/launch/<role>.claude-settings.json at LAUNCH, those files are
+  gitignored runtime state untouched by any merge, and a running session
+  holds its hooks in memory. So landing this parcel restores the hook for
+  FUTURE launches only — the live pack keeps running hook-free, and the
+  ticket would read green over an unchanged system (the BL-328 failure
+  exactly). Closing procedure: run the BL-328 build_freshness_cli sync
+  step, then respawn each role
+  (tmux respawn-pane -k -t swarmforge-<role> '.swarmforge/launch/<role>.sh'),
+  skipping any role with a live spinner, and CONFIRM the settings files
+  actually carry the hook again before reporting it re-enabled. The
+  coordinator pane must NOT respawn itself (BL-107 — that tears down the
+  whole swarm); ask the operator to respawn it.
+
   **Qjump 2026-08-19 ~20:28 CEST** (human via Cursor): "Qjump 960" —
   promoted ahead of ordinary paused work; `direction: queue-jump`,
   `priority: 0`. Hook re-enable rides this parcel per operator confirmation
