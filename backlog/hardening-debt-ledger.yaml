@@ -18,3 +18,9 @@
   reason: "host busy, load 35/36/29 on 4 cores"
   load: "35.11/35.79/28.92"
   detected_at: 2026-08-19
+- parcel: BL-954-a-bounce-verifies-its-own-revert
+  gate: mutation
+  file_set: extension/src/metrics/bounceRevertGitAdapter.ts,extension/src/quality/bounceRevertVerdict.ts,extension/src/tools/record-bounce.ts
+  reason: "host load 9.98/20.10/27.01, well over 2x-cores threshold"
+  load: "20.10"
+  detected_at: 2026-08-19
