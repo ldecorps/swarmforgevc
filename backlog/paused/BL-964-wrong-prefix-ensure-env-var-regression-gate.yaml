@@ -31,8 +31,17 @@ description: >
   appear in `specs/pipeline/steps/` or `swarmforge/scripts/test/`) so
   this class cannot recur silently."
 
-  Fix wanted: a standing gate that fails loud when the retired prefix
-  appears in test code. Cover at least the two directories the directive
+  Precision note (2026-08-20): the gate's needles are the FULL retired
+  var names (the scenario Examples pin them), never the bare
+  "SWARMFORGE_ENSURE_" prefix - main legitimately carries two comment
+  mentions of the old spelling as "SWARMFORGE_ENSURE_*" (explanatory
+  comments in test_swarm_ensure.sh ~570 and the BL-571 steps file ~122,
+  in the QA-bound parcel), and a bare-prefix grep would trip on them.
+  qa_e2e step 1 (gate passes on current main) is the check that catches
+  a too-broad implementation.
+
+  Fix wanted: a standing gate that fails loud when a retired
+  SWARMFORGE_ENSURE_* var name appears in test code. Cover at least the two directories the directive
   names; include SWARMFORGE_ENSURE_SUPERVISOR in the refused set (same
   incident, same class). The gate must run somewhere that actually
   executes for every parcel (the extension/test/ suite or an existing
