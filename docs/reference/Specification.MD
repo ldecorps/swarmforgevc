@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-904: the cost-health sidecar's
+**Last Updated:** August 19, 2026 (BL-585: the Pipeline Board's grid is now
+ONE matrix — pipeline stages as shared rows, active tickets as columns, so an
+extra ticket adds a column instead of another 8-line block — retiring the old
+per-ticket pivoted block and its `-- <epic> --` section heading entirely.
+`renderGridLines` (`pipelineBoard.ts`) builds a header line of right-aligned
+display ids over a fixed 2-character role-label gutter, one role-labelled row
+per pipeline stage (`NS SP CO CL AR HD DC QA`) with `X`/`.` marks aligned
+under each column's id, then a blank line, then one caption per visible
+column (`<display id> <epic>`, `NO_EPIC_LABEL` for an epic-less ticket) — the
+epic is now a per-column caption, never a section heading. Every gap inside
+the matrix itself is a non-breaking space (Telegram's `<pre>` collapses plain
+spaces and would left-flush the grid); the captions and the overflow line
+below are ordinary text and may use plain spaces. The matrix now carries its
+own width budget, mirroring what `PIPELINE_BOARD_MESSAGE_MAX_LENGTH` already
+does for the link list: a new `PIPELINE_BOARD_GRID_MAX_WIDTH` constant (30
+characters) derives the visible column count as the largest N with
+`2 + N * (1 + W) <= 30` (7 columns at today's 3-digit ids), dropping the tail
+of the existing epic-grouped row order and printing a visible `+N more
+active` line rather than truncating silently or letting the grid scroll
+horizontally on a phone. A dropped column is not lost information: link
+building still runs over every row, so every active ticket — including ones
+the matrix had to drop — still appears in the LINKS list below the grid. The
+empty-board placeholder lost its decorative dashes: `(no active tickets)`,
+not `-- (no active tickets) --`, since the dashes were the retired
+epic-heading style. Both the Telegram pin (`renderPipelineBoardBody`/
+`renderPipelineBoard`) and the BL-526 phone-miniapp grid-only view
+(`renderPipelineBoardGridOnly`) render the grid/caption/overflow lines from
+the same `renderGridOnlySections`, so there is exactly one layout path for
+the new matrix. Everything below the grid (PARKED/AWAITING
+APPROVAL/ROOT INTAKE/RECENTLY CLOSED, and the LINKS list's own budget and
+ordering) and which tickets appear on the board are unchanged. New
+human-facing surface: the Pipeline Board now shows one ticket-columns ×
+role-rows matrix with an epic caption per column instead of a repeated
+per-ticket block grouped under epic headings, and — once more tickets are
+active than the width budget fits — a `+N more active` line under the
+matrix.); Previously August 19, 2026 (BL-904: the cost-health sidecar's
 `reliability.daemonRestarts` field was a literal `{value: 0, trend:
 computeTrend([])}` sitting among four real measurements — honest when
 written, but locked in by a test asserting the placeholder itself, so a day
