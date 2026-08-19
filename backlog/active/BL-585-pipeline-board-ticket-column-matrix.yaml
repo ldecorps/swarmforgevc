@@ -169,4 +169,14 @@ out_of_scope: |
   - Pagination or a scrollable/interactive grid. The cap plus "+N more active"
     plus the LINKS list is the whole overflow strategy for this ticket.
 
-assigned_to: coder
+assigned_to: QA
+notes_retroactive_route: |
+  2026-08-19 (coordinator, human directive): closed done/ -> active/ and
+  re-routed directly to QA. This ticket was closed 2026-08-19 (commit
+  12257c4b8) straight from the documenter's commit (ace11b6cf) with NO QA
+  git_handoff, NO QA evidence file, and NO "Merge QA-approved" commit
+  anywhere in its history - a real Article 4.2 gate skip, surfaced by the
+  specifier while investigating BL-949 (pre-existing conciergeTick.test.js
+  failures traced to this ticket's matrix rewrite). Human ruling: run the
+  normal QA gate now against the already-landed commit, retroactively.
+  Reviewed commit: ace11b6cfa.
