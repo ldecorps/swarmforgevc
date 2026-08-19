@@ -23,8 +23,6 @@ const {
   PIPELINE_BOARD_GRID_MAX_WIDTH,
   isEpicTrackerPausedItem,
   formatCollapsedEpicLine,
-  PIPELINE_BOARD_COLLAPSED_EPICS_MAX,
-  PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX,
 } = require('../out/concierge/pipelineBoard');
 
 const NBSP = '\u00a0';
@@ -161,10 +159,10 @@ test('computePipelineBoard: plain parked tickets are capped at PIPELINE_BOARD_PA
   const { parked, parkedOmittedCount } = computePipelineBoard({}, paused, {});
   const plainParked = parked.filter((p) => p.status === 'parked');
   assert.equal(plainParked.length, PIPELINE_BOARD_PAUSED_MAX);
-  assert.equal(parkedOmittedCount, 15 - PIPELINE_BOARD_PAUSED_MAX);
+  assert.equal(parkedOmittedCount, 5);
   assert.deepEqual(
     plainParked.map((p) => p.id),
-    Array.from({ length: PIPELINE_BOARD_PAUSED_MAX }, (_, i) => `BL-${100 + i}`)
+    ['BL-100', 'BL-101', 'BL-102', 'BL-103', 'BL-104', 'BL-105', 'BL-106', 'BL-107', 'BL-108', 'BL-109']
   );
 });
 
@@ -179,7 +177,7 @@ test('computePipelineBoard: awaiting-approval tickets are never capped by the pa
 });
 
 test('renderPipelineBoardBody: shows a visible +N more parked line when plain parked tickets are omitted', () => {
-  const paused = Array.from({ length: PIPELINE_BOARD_PAUSED_MAX + 2 }, (_, i) => ({ id: `BL-${i}`, priority: i }));
+  const paused = Array.from({ length: 12 }, (_, i) => ({ id: `BL-${i}`, priority: i }));
   const data = computePipelineBoard({}, paused, {});
   const text = renderPipelineBoardBody(data);
   assert.match(text, /\+2 more parked/);
@@ -206,7 +204,6 @@ test('computePipelineBoard: no active or paused tickets renders an empty board',
     recentlyClosed: [],
     links: [],
     parkedOmittedCount: 0,
-    collapsedEpicsOmittedCount: 0,
   });
 });
 
@@ -242,7 +239,7 @@ test('computePipelineBoard: every activeIds entry is a row exactly once, even wi
 
 test('computePipelineBoard: a not-started row carries its ticket meta (epic/slug) same as a held row would', () => {
   const { rows } = computePipelineBoard({}, [], { 'BL-1': { epic: 'Alpha', title: 'fix the widget' } }, { activeIds: ['BL-1'] });
-  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the', title: 'fix the widget' }]);
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the' }]);
 });
 
 test('renderPipelineBoardBody: a not-started row marks only the not-started column, no pipeline role column', () => {
@@ -330,38 +327,34 @@ test('renderPipelineBoardBody: rendering is a pure function of its data - same i
 });
 
 // BL-585 pipeline-board-ticket-columns-03: the epic prints as a per-ticket
-// caption line below the matrix - no section heading. BL-956 (the human's
-// caption hotfix) re-expressed these against a TITLE-derived caption: the
-// caption carries backlog-derived context for its own ticket, never a
-// pinned single field and never a bare id.
+// caption line below the matrix - no section heading, no grouping. Replaces
+// BL-455's own epic-heading tests, which pinned a shape this ticket retires.
 
-test('renderPipelineBoardBody: each ticket captions with its own backlog-derived context, not a shared heading', () => {
+test('renderPipelineBoardBody: two tickets sharing an epic each get their own identical caption, not a shared heading', () => {
   const text = renderPipelineBoardBody({
     rows: [
-      { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: 'first-slice', title: 'First slice of work' },
-      { id: 'BL-2', column: 'QA', epic: 'Alpha', slug: 'second-slice', title: 'Second slice of work' },
+      { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
+      { id: 'BL-2', column: 'QA', epic: 'Alpha', slug: '' },
     ],
     parked: [],
   });
   const lines = text.split('\n');
-  assert.ok(lines.includes('1 First slice of work'));
-  assert.ok(lines.includes('2 Second slice of work'));
+  assert.ok(lines.includes('1 Alpha'));
+  assert.ok(lines.includes('2 Alpha'));
   assert.ok(!lines.some((l) => l.startsWith('--')), 'expected no epic heading line');
 });
 
-test('renderPipelineBoardBody: a title-less ticket still captions with context after its id, distinct from a titled one', () => {
+test('renderPipelineBoardBody: an epic-less ticket gets the (no epic) caption, distinct from a named epic', () => {
   const text = renderPipelineBoardBody({
     rows: [
-      { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: 'first-slice', title: 'First slice of work' },
+      { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
       { id: 'BL-2', column: 'QA', slug: '' },
     ],
     parked: [],
   });
   const lines = text.split('\n');
-  assert.ok(lines.includes('1 First slice of work'));
-  const bl2Caption = lines.find((l) => /^2 /.test(l));
-  assert.ok(bl2Caption, 'expected a caption line for BL-2');
-  assert.ok(bl2Caption.slice(2).trim().length > 0, `expected context after the id, got ${JSON.stringify(bl2Caption)}`);
+  assert.ok(lines.includes('1 Alpha'));
+  assert.ok(lines.includes('2 (no epic)'));
 });
 
 // BL-455 pipeline-board-epic-02/03: parked/awaiting-approval tickets render
@@ -1280,50 +1273,4 @@ test('computePipelineBoard: epic trackers do not consume the plain parked cap', 
   const { parkedOmittedCount, collapsedEpics } = computePipelineBoard({}, paused, {});
   assert.equal(collapsedEpics.length, 1);
   assert.equal(parkedOmittedCount, 2);
-});
-
-// ── BL-956: caption/cap hotfix - title captions, epic grouping, visible caps ──
-
-test('BL-956: a caption longer than the description budget truncates with a visible ellipsis, never silently', () => {
-  const title = 'x'.repeat(PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX + 40);
-  const text = renderPipelineBoardBody({
-    rows: [{ id: 'BL-1', column: 'coder', slug: 'x-x', title }],
-    parked: [],
-  });
-  const caption = text.split('\n').find((l) => /^1 /.test(l));
-  assert.ok(caption.endsWith('…'), `expected a visible ellipsis, got ${JSON.stringify(caption)}`);
-  assert.equal(caption.length, '1 '.length + PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX);
-});
-
-test('BL-956: same-epic captions sit adjacent and one blank line marks the epic change', () => {
-  const text = renderPipelineBoardBody({
-    rows: [
-      { id: 'BL-1', column: 'coder', epic: 'concerto', slug: '', title: 'Alpha work' },
-      { id: 'BL-2', column: 'QA', epic: 'concerto', slug: '', title: 'Beta work' },
-      { id: 'BL-3', column: 'cleaner', epic: 'fugue', slug: '', title: 'Gamma work' },
-    ],
-    parked: [],
-  });
-  const lines = text.split('\n');
-  const i1 = lines.indexOf('1 Alpha work');
-  const i2 = lines.indexOf('2 Beta work');
-  const i3 = lines.indexOf('3 Gamma work');
-  assert.equal(i2, i1 + 1, 'same-epic captions must be adjacent');
-  assert.equal(i3, i2 + 2, 'exactly one blank line where the epic changes');
-  assert.equal(lines[i2 + 1], '');
-});
-
-test('BL-956: epic trackers are capped at PIPELINE_BOARD_COLLAPSED_EPICS_MAX and the omitted count is reported', () => {
-  const paused = Array.from({ length: 5 }, (_, i) => ({ id: `BL-${800 + i}`, type: 'epic', epic: `epic-${i}`, priority: i }));
-  const data = computePipelineBoard({}, paused, {});
-  assert.equal(data.collapsedEpics.length, PIPELINE_BOARD_COLLAPSED_EPICS_MAX);
-  assert.equal(data.collapsedEpicsOmittedCount, 5 - PIPELINE_BOARD_COLLAPSED_EPICS_MAX);
-  assert.match(renderPipelineBoardBody(data), /\+2 more epics/);
-});
-
-test('BL-956: no +N more epics line when every epic tracker fits the cap', () => {
-  const paused = Array.from({ length: PIPELINE_BOARD_COLLAPSED_EPICS_MAX }, (_, i) => ({ id: `BL-${800 + i}`, type: 'epic', epic: `epic-${i}`, priority: i }));
-  const data = computePipelineBoard({}, paused, {});
-  assert.equal(data.collapsedEpicsOmittedCount, 0);
-  assert.doesNotMatch(renderPipelineBoardBody(data), /more epics/);
 });
