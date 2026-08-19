@@ -490,7 +490,8 @@ const DOMAINS = [
   require('./bl905HideChildlessEpicsReorderSteps'),
   require('./bl904SidecarDaemonRestartsSteps'),
   require('./bl936Bl805PropertyLaneExercisesTheParcelGateSteps'),
-  require('./bl937ShellScriptsRunOnStockMacosBash32Steps')
+  require('./bl937ShellScriptsRunOnStockMacosBash32Steps'),
+  require('./bl915CursorBridgeGoneAgentSessionResetSteps')
 ];
 
 function registerSteps(registry) {
