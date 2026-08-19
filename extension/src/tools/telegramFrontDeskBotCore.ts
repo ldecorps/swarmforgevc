@@ -218,6 +218,20 @@ export function formatDropAuditLine(updateId: number, reason: string): string {
   return `front-desk drop update_id=${updateId} reason=${reason}`;
 }
 
+// BL-620 (hardener CRAP isolation, matching the bridgeServer.ts
+// tryServeSideloadApk precedent): processMessageUpdate is a pre-existing
+// dispatcher already over the CRAP<=6 threshold before this ticket - the
+// branch itself, not just its body, is extracted so the audit emission
+// carries its own isolated CRAP score instead of compounding the
+// dispatcher's. Self-contained (checks decision.action itself) so it is
+// safe to call unconditionally at the one call site that only ever
+// reaches it once every other decision shape has already returned.
+function emitDropAuditIfDropped(decision: BotUpdateDecision, update: TelegramUpdate, adapters: PollAdapters): void {
+  if (decision.action === 'drop') {
+    adapters.logDropAudit?.(formatDropAuditLine(update.update_id, decision.reason));
+  }
+}
+
 // Pure: the bot's whole per-update decision - given the update, the
 // principal's user id, the bot's own configured chat id, a lookup from
 // topic id -> already-mapped SUP-### subject id (the bot's own persisted
@@ -2371,10 +2385,8 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
   // BL-620: the computed reason was previously DISCARDED right here - a
   // dropped update produced zero log output anywhere, and diagnosing the
   // 2026-07-24 caption incident took a live replay session. Exactly one
-  // bounded line per drop, through the injected writer.
-  if (decision.action === 'drop') {
-    adapters.logDropAudit?.(formatDropAuditLine(update.update_id, decision.reason));
-  }
+  // bounded line per drop, through the injected writer (emitDropAuditIfDropped).
+  emitDropAuditIfDropped(decision, update, adapters);
   return 'dropped';
 }
 
