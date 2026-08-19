@@ -80,8 +80,11 @@ function craftCommit(ctx, subject) {
 
 // A passthrough git stub whose ONLY failure is the subject read the gate
 // makes (`log -1 --format=%s ...`) - every other git call swarm_handoff.bb
-// performs (rev-parse canonicalization etc.) reaches the real binary.
+// performs (rev-parse canonicalization etc.) reaches the real binary. The
+// real binary's path is resolved here, not hardcoded, so the stub works on
+// both Linux (/usr/bin/git) and Homebrew-on-Apple-Silicon (/opt/homebrew/bin/git).
 function mkSubjectBlindGit(ctx) {
+  const realGit = execFileSync('command', ['-v', 'git'], { shell: '/bin/bash', encoding: 'utf8' }).trim();
   const bin = path.join(ctx.root, 'stub-bin');
   fs.mkdirSync(bin, { recursive: true });
   const script = `#!/usr/bin/env bash
@@ -91,7 +94,7 @@ for arg in "$@"; do
     exit 1
   fi
 done
-exec /usr/local/bin/git "$@"
+exec ${realGit} "$@"
 `;
   fs.writeFileSync(path.join(bin, 'git'), script);
   fs.chmodSync(path.join(bin, 'git'), 0o755);

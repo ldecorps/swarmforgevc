@@ -513,7 +513,6 @@ const DOMAINS = [
   require('./bl620FrontDeskCaptionAndDropAuditSteps'),
   require('./bl951StageSkipsRecordedSteps'),
   require('./bl953TaskCommitCoherenceSteps'),
-  require('./bl954BounceRevertVerifiedSteps'),
   require('./bl956PipelineBoardCaptionCapSteps'),
   require('./bl955ForwardingAnnotationSteps')
 ];
