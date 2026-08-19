@@ -512,7 +512,9 @@ const DOMAINS = [
   require('./bl952BouncedParcelNeverApprovedSteps'),
   require('./bl620FrontDeskCaptionAndDropAuditSteps'),
   require('./bl951StageSkipsRecordedSteps'),
-  require('./bl953TaskCommitCoherenceSteps')
+  require('./bl953TaskCommitCoherenceSteps'),
+  require('./bl954BounceRevertVerifiedSteps'),
+  require('./bl955ForwardingAnnotationSteps')
 ];
 
 function registerSteps(registry) {

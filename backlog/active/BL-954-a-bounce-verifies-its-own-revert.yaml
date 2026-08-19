@@ -194,3 +194,6 @@ approval_context: >
   that breach per the constitution and deliberately does not act on it.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 9ff346f85, evidence: backlog/evidence/BL-954-a-bounce-verifies-its-own-revert-bounce-20260819.md }
