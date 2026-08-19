@@ -307,25 +307,11 @@
 (defn capture-pane-text [socket session]
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
 
-(defn resident-live-role
-  "BL-921: probes the resident pane's OWN start command for the launch
-   script it is actually running - independent of the mono-router-active-
-   role marker file chase would otherwise trust alone. rotate-resident-to!
-   respawns the pane as `zsh '<root>/.swarmforge/launch/<role>.sh'`, so the
-   live role name is read directly off #{pane_start_command}, never off the
-   marker. Returns the role name, or nil when the session is gone, the tmux
-   call fails, or the command names no launch script - an identity that
-   cannot be read must never be treated as agreement (see
-   mono-router-lib/live-role-agrees?)."
-  [socket session]
-  (when-not (str/blank? session)
-    (try
-      (let [result (tmux! "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
-        (when (zero? (:exit result))
-          (let [line (first (str/split-lines (str (:out result))))]
-            (when-let [[_ role] (re-find #"launch/([^/]+)\.sh" (or line ""))]
-              role))))
-      (catch Exception _ nil))))
+;; BL-927: resident-live-role relocated to handoff-lib (handoffd.bb already
+;; load-files handoff_lib.bb, so the reverse would be circular) - it is the
+;; single definition, reused by both the chase call sites below and
+;; departing-role-blocking-handoff's resident-invoked rotation gate. Do not
+;; redefine it here.
 
 (defn last-non-blank-line [pane-text]
   (last (remove str/blank? (str/split-lines (or pane-text "")))))
@@ -401,7 +387,7 @@
       :resident-session-exists? (boolean (and resident (handoff-lib/session-exists? socket resident)))
       :active-role (handoff-lib/read-mono-router-active-role)
       :target-role role
-      :live-role (resident-live-role socket resident)})))
+      :live-role (handoff-lib/resident-live-role socket resident)})))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
@@ -1362,7 +1348,7 @@
                :target-role target-role
                ;; BL-921: a stale marker claiming the resident is already
                ;; target-role must not refuse the very rotate that would fix it.
-               :live-role (resident-live-role socket (handoff-lib/mono-router-resident-session))
+               :live-role (handoff-lib/resident-live-role socket (handoff-lib/mono-router-resident-session))
                :resident-busy? (resident-pane-busy? socket)
                :last-rotate-at-ms @last-chase-rotate-at-ms
                :now-ms (System/currentTimeMillis)

@@ -24,8 +24,24 @@ pass() { echo "PASS: $*"; }
 make_fake_tmux() {
   local bin_dir="$1"
   mkdir -p "$bin_dir"
+  # BL-927: resident-live-role probes `tmux list-panes -F "#{pane_start_command}"`
+  # to read the resident pane's OWN live identity, independent of the
+  # active-role marker file. LIVE_ROLE (an env var this fixture sets before
+  # each scenario) is this stub's answer - blank/unset means "unreadable"
+  # (resident-live-role's own contract when the probe finds nothing), which
+  # scenario 12 below exercises deliberately. Every other tmux subcommand
+  # keeps the original log-and-succeed behavior scenarios 01-09 already
+  # depend on.
   cat > "$bin_dir/tmux" <<'TMUX'
 #!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "list-panes" ]]; then
+    if [[ -n "${LIVE_ROLE:-}" ]]; then
+      echo "zsh '/fake/.swarmforge/launch/${LIVE_ROLE}.sh'"
+    fi
+    exit 0
+  fi
+done
 echo "$*" >> "$TMUX_LOG"
 exit 0
 TMUX
@@ -40,14 +56,23 @@ git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty
 
 CODER_WT="$ROOT/wt-coder"
 CLEAN_WT="$ROOT/wt-cleaner"
+# BL-927 scenarios 10-11 need a THIRD role, distinct from both the marker
+# role and the live role, so a proceed there can only be explained by the
+# departing role's own (empty) mailbox - never by BL-926's active-role ==
+# target-role shortcut, which would make the same-role case a false proof
+# of this ticket's fix.
+DOC_WT="$ROOT/wt-documenter"
 mkdir -p "$CODER_WT/.swarmforge/handoffs/inbox/new" \
          "$CODER_WT/.swarmforge/handoffs/inbox/in_process" \
          "$CLEAN_WT/.swarmforge/handoffs/inbox/new" \
          "$CLEAN_WT/.swarmforge/handoffs/inbox/in_process" \
+         "$DOC_WT/.swarmforge/handoffs/inbox/new" \
+         "$DOC_WT/.swarmforge/handoffs/inbox/in_process" \
          "$ROOT/.swarmforge/launch"
 
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" > "$ROOT/.swarmforge/roles.tsv"
 printf 'cleaner\tcleaner\t%s\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n' "$CLEAN_WT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'documenter\tdocumenter\t%s\tswarmforge-documenter\tDocumenter\tclaude\ttask\n' "$DOC_WT" >> "$ROOT/.swarmforge/roles.tsv"
 
 # BL-931: this fixture's own concern is the stuck-parcel gate, not the
 # pack-router gate test_rotate_pack_router_gate.sh covers - declare a
@@ -66,6 +91,9 @@ chmod +x "$ROOT/.swarmforge/launch/cleaner.sh"
 # own owner), so coder needs its own launch script too.
 printf '#!/bin/sh\nexit 0\n' > "$ROOT/.swarmforge/launch/coder.sh"
 chmod +x "$ROOT/.swarmforge/launch/coder.sh"
+# BL-927 scenarios 10-11 rotate to documenter (the third role).
+printf '#!/bin/sh\nexit 0\n' > "$ROOT/.swarmforge/launch/documenter.sh"
+chmod +x "$ROOT/.swarmforge/launch/documenter.sh"
 
 FAKE_BIN="$ROOT/bin"
 make_fake_tmux "$FAKE_BIN"
@@ -78,6 +106,9 @@ touch "$TMUX_LOG"
 # inside rotate-resident-to! returns immediately instead of polling 30s.
 printf 'id: fwd\nfrom: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-000\ncommit: aaaaaaaaaa\n\nmerge_and_process coder aaaaaaaaaa\n' \
   > "$CLEAN_WT/.swarmforge/handoffs/inbox/new/00_fwd.handoff"
+# Same for documenter (BL-927 scenarios 10-11's rotation target).
+printf 'id: fwd2\nfrom: coder\nto: documenter\npriority: 50\ntype: git_handoff\ntask: BL-001\ncommit: bbbbbbbbbb\n\nmerge_and_process coder bbbbbbbbbb\n' \
+  > "$DOC_WT/.swarmforge/handoffs/inbox/new/00_fwd2.handoff"
 
 queue_stuck_parcel() {
   local name="$1"
@@ -85,12 +116,27 @@ queue_stuck_parcel() {
     "$name" "$name" > "$CODER_WT/.swarmforge/handoffs/inbox/in_process/00_${name}.handoff"
 }
 
+# BL-927: same shape as queue_stuck_parcel, but for CLEAN_WT/in_process -
+# scenarios 10-11 need a real blocking parcel sitting under the MARKER role
+# (cleaner) while the LIVE role (coder) is the one departing-role-blocking-
+# handoff must actually resolve against.
+queue_stuck_parcel_cleaner() {
+  local name="$1"
+  printf 'id: %s\nfrom: coordinator\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-%s\ncommit: aaaaaaaaaa\n\nmerge_and_process coordinator aaaaaaaaaa\n' \
+    "$name" "$name" > "$CLEAN_WT/.swarmforge/handoffs/inbox/in_process/00_${name}.handoff"
+}
+
 run_rotate() {
-  (cd "$CODER_WT" && PATH="$FAKE_BIN:$PATH" bash "$ROTATE_SH" "$1")
+  (cd "$CODER_WT" && PATH="$FAKE_BIN:$PATH" LIVE_ROLE="$LIVE_ROLE" bash "$ROTATE_SH" "$1")
 }
 
 # coder is the departing/active role for every resident-invoked scenario.
 echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+# BL-927: the resident pane's own LIVE identity, independent of the marker
+# above - scenarios 01-09 (predating this ticket) all assume marker and live
+# identity AGREE (the common case, and QA scenario 3's own fixture), so the
+# default matches the marker exactly. Scenarios 10-12 override it.
+LIVE_ROLE="coder"
 
 # ── 01: refused while the departing role's in_process holds a real parcel ──
 queue_stuck_parcel stuck1
@@ -143,7 +189,7 @@ echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
 # ── 05: an explicit force override rotates anyway with a loud warning ──────
 queue_stuck_parcel stuck5
 : > "$TMUX_LOG"
-OUT="$(cd "$CODER_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROTATE_FORCE=1 bash "$ROTATE_SH" cleaner 2>&1)"
+OUT="$(cd "$CODER_WT" && PATH="$FAKE_BIN:$PATH" LIVE_ROLE="$LIVE_ROLE" SWARMFORGE_ROTATE_FORCE=1 bash "$ROTATE_SH" cleaner 2>&1)"
 grep -q "respawn-pane" "$TMUX_LOG" || fail "05: force override must still rotate, log: $(cat "$TMUX_LOG")"
 echo "$OUT" | grep -qi "WARNING" || fail "05: force override must warn loudly, got: $OUT"
 echo "$OUT" | grep -q "stuck5" || fail "05: warning must name the stuck parcel left behind, got: $OUT"
@@ -217,5 +263,72 @@ IN_PROCESS_COUNT="$(find "$CODER_WT/.swarmforge/handoffs/inbox/in_process" -name
 pass "09: rotation into the parcel's own owner proceeds and leaves the parcel untouched"
 rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
 echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+
+# ── 10: BL-927 residual case - diverged marker, third-role target, LIVE
+#         role's own box is empty - must proceed ─────────────────────────
+# Marker names cleaner (A), the pane's LIVE identity is really coder (B),
+# A's in_process holds a real parcel, B's own box is empty, rotation target
+# is documenter (C, distinct from both A and B so a proceed can only be
+# explained by B's empty mailbox - never BL-926's active-role==target-role
+# shortcut). Today (pre-BL-927) this refuses on A's parcel even though the
+# pane never held it.
+echo "cleaner" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="coder"
+queue_stuck_parcel_cleaner stuck10
+: > "$TMUX_LOG"
+OUT="$(run_rotate documenter 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" \
+  || fail "10: expected the residual case to proceed (live role's own box is empty), log: $(cat "$TMUX_LOG")"
+pass "10: diverged marker + third-role target proceeds when the LIVE role's own box is empty"
+rm -f "$CLEAN_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="coder"
+
+# ── 11: BL-927 residual case - diverged marker, LIVE role's own box HAS a
+#         real parcel - must refuse, naming the LIVE role's parcel ────────
+# Same fixture as 10, but now BOTH cleaner (A, marker) and coder (B, live)
+# hold a real parcel. The refusal must protect B's mailbox (what the pane
+# actually owns), not A's (what the marker merely claims) - proceeding here
+# would be a NEW defect (losing coder's own unfinished work).
+echo "cleaner" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="coder"
+queue_stuck_parcel_cleaner stuck11a
+queue_stuck_parcel stuck11b
+: > "$TMUX_LOG"
+set +e
+OUT="$(run_rotate documenter 2>&1)"
+STATUS=$?
+set -e
+[[ "$STATUS" -ne 0 ]] || fail "11: expected nonzero exit (refused), got 0 (output: $OUT)"
+grep -q "respawn-pane" "$TMUX_LOG" && fail "11: pane must NOT be respawned on refusal, log: $(cat "$TMUX_LOG")"
+echo "$OUT" | grep -q "stuck11b" || fail "11: refusal must name the LIVE role's own parcel (coder/stuck11b), got: $OUT"
+echo "$OUT" | grep -q "stuck11a" && fail "11: refusal must NOT name the marker role's parcel (cleaner/stuck11a), got: $OUT"
+pass "11: diverged marker refuses on the LIVE role's own parcel, never the marker role's"
+rm -f "$CLEAN_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff \
+      "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="coder"
+
+# ── 12: BL-927 invariant 2 - an unreadable live identity fails OPEN, never
+#         a refusal derived from the marker alone ─────────────────────────
+# Marker names coder (a real, known role) and coder genuinely holds a real
+# stuck parcel - exactly scenario 01's fixture. The only difference is the
+# live-identity probe itself returns nothing (LIVE_ROLE empty - the stub's
+# own "unreadable" signal), simulating "no resident session" / "probe
+# fails". Pre-BL-927 there was no probe at all, so this fixture is
+# identical to 01 and would refuse; BL-927 must instead fail open, since an
+# identity that cannot be read is divergence, never agreement (BL-921's
+# rule) - it must never fall back to trusting the marker's claim alone.
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE=""
+queue_stuck_parcel stuck12
+: > "$TMUX_LOG"
+OUT="$(run_rotate cleaner 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" \
+  || fail "12: expected fail-open when the live identity is unreadable, log: $(cat "$TMUX_LOG")"
+pass "12: an unreadable live identity fails open, never refusing on the marker alone"
+rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="coder"
 
 echo "test_rotate_to_role_stuck_parcel_gate: ALL CHECKS PASSED"
