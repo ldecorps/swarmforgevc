@@ -1,8 +1,8 @@
 id: BL-961
-title: "The launcher never exports SWARMFORGE_PACK, so every env-keyed consumer (BL-935 vitest CPU cap, ancillary provider routing) sees it unset in all 8 live role shells - bake the export into each generated launch script"
+title: "The launcher never guarantees SWARMFORGE_PACK in role shells - today's live full-forge value rides the relaunch shell's environment, not launcher wiring - bake the export into each generated launch script"
 milestone: M8
 type: defect
-severity: high
+severity: medium
 status: todo
 epic: swarm-reliability
 human_approval: approved
@@ -21,16 +21,33 @@ invariants:
   - "The export lives in the generated .swarmforge/launch/<role>.sh file itself, so a pane respawned from that script still carries it - injecting the variable only into the initial tmux command or server environment does not satisfy this ticket."
 
 description: >
-  Severity rationale: high - a live broken safety mechanism, not cosmetic.
-  BL-935's vitest CPU cap (built to stop fork-pool oversubscription on the
-  2-physical-core swarm host, observed at load ~120) keys on
-  SWARMFORGE_PACK === 'full-forge', and that variable is unset in every live
-  role shell, so the cap never engages in production.
+  Severity rationale: medium (downgraded from high, 2026-08-19 correction
+  below) - the safety mechanism this ticket wires (BL-935's vitest CPU cap,
+  built to stop fork-pool oversubscription on the 2-physical-core swarm
+  host, observed at load ~120; keys on SWARMFORGE_PACK === 'full-forge')
+  DOES engage in today's live shells, but only by launch-context luck:
+  nothing committed guarantees the export, so any relaunch from a shell
+  without it silently disarms the cap again. Real but currently contained.
 
-  Root cause (verified three independent ways on 2026-08-19: the hardender's
-  own shell is empty; `tmux show-environment` reports "unknown variable" in
-  all 8 swarmforge-* sessions; source trace): the env var and the --pack
-  selector are two different mechanisms sharing a name. Default
+  CORRECTED 2026-08-19 (documenter priority-00 note 20260819T225211Z_000212,
+  specifier re-verified in its own pane shell): live role shells DO carry
+  SWARMFORGE_PACK=full-forge since the 22:26Z relaunch. The launching shell
+  had it exported (resolve_launch_pack reads the env var first, so that is
+  how the operator selects the pack) and the tmux server GLOBAL environment
+  carries it into every pane created since. The original live probes were
+  method-flawed: per-session `tmux show-environment` misses the global
+  table (`-g` reports the value), and the own-shell probe predated the
+  relaunch. The source trace below stands and is the actual defect: no
+  committed default path exports it and the generated launch scripts carry
+  none, so presence is an accident of the launch context. Pack SELECTION
+  survives a clean-shell relaunch via swarm-identity's launch_pack
+  fallback; the env var - and every env-keyed consumer - does not.
+  Invariant 2 already names today's live state (the variable riding only
+  the server environment) as insufficient. The fix wanted is unchanged.
+
+  Root cause (source trace, which the correction above re-confirms; the two
+  live probes originally cited here were superseded): the env var and the
+  --pack selector are two different mechanisms sharing a name. Default
   start-swarm.sh RESOLVES a pack and passes it as `--pack`, which
   swarmforge/scripts/swarmforge.sh consumes only as a config-file selector
   (CONFIG_FILE=swarmforge/packs/NAME.conf, ~line 103); the value is a plain
@@ -83,10 +100,14 @@ qa_e2e_procedure: >
      SWARMFORGE_PACK=full-forge node -e "import('./vitest.config.mjs').then(m
      => console.log(m.default.test.poolOptions.forks.maxForks))" - expect 1
      on macOS (BL-935's cap now reachable end-to-end once shells relaunch).
-  4. Deployment note, not a gate: live role shells report the variable only
-     after the next ./swarm relaunch or per-role respawn via
-     .swarmforge/launch/<role>.sh. If no relaunch has occurred by gate time,
-     record that as the expected rollout condition, never as a failure.
+  4. Live-shell presence is NOT acceptance evidence in either direction
+     (amended 2026-08-19): since the 22:26Z relaunch the tmux server
+     environment already supplies SWARMFORGE_PACK=full-forge to every pane,
+     so an agent shell reporting the value proves nothing about this fix -
+     only the generated-script grep (steps 1-2) does. Conversely, a live
+     shell missing the value after the fix lands only means no relaunch or
+     respawn has re-run .swarmforge/launch/<role>.sh yet - record that as
+     the expected rollout condition, never as a failure.
 
 notes: >
   Source: hardender priority-00 note 20260819T212143Z_000242 to
@@ -129,6 +150,21 @@ notes: >
   slot ahead of every non-expedited candidate. No orthogonality
   conflict, no onboarding-contract gate, no ambulance freeze
   (ambulance_cli.bb status: inactive) - depth alone is the blocker.
+
+  PREMISE CORRECTED 2026-08-19 ~22:55Z (documenter priority-00 note
+  20260819T225211Z_000212; see CORRECTED in description). Probe
+  methodology for the record: per-session `tmux show-environment` misses
+  the server's global table (use `-g`); macOS `ps eww` shows no
+  environment for these pane processes (it reported 0 hits even for
+  SWARMFORGE_ROLE, which the launch scripts demonstrably export); the
+  authoritative probe is the pane's own shell running `env`. Severity
+  downgraded high -> medium: the cap engages live today, so the remaining
+  defect is unguaranteed wiring that silently disarms on a clean-shell
+  relaunch, not a currently-broken safety mechanism. Consequence for the
+  coordinator: this ticket LEAVES the Article 3.2.4 expedite lane and the
+  paragraph above's "TOP of the paused queue" claim is superseded - it
+  now queues on its ticket priority (20) like any non-expedited
+  candidate. Fix, invariants, required_wiring, and scenarios unchanged.
 
   COORDINATOR EVIDENCE ADJUDICATION 2026-08-19 (22:55Z) - the documenter's
   priority-00 note "SWARMFORGE_PACK IS set in pane shells; tmux show-env is
