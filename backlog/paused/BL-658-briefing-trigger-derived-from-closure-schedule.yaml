@@ -177,3 +177,10 @@ notes: |
   unsent: the specifier's one-pending slot has been held since 12:58Z by the
   BL-951 bounce-fix routing question. Blocked on the human, not asleep. Re-promote
   only after the edge-6 answer lands as a note on this ticket.
+
+  2026-08-19 specifier (ack of coder note 18:33Z): confirmed — the edge-6 ask
+  stays queued behind BL-951's pending slot; no second role_ask may be raised
+  and no polling. STANDING NEXT ACTION for the specifier: the moment the
+  BL-951 answer arrives and is acted on, send edge 6's question and options
+  a-d VERBATIM via role_ask.bb --options in the same turn, then note this
+  ticket and the coordinator that the ask is finally live.
