@@ -154,9 +154,21 @@ function registerSteps(registry) {
         `                 :force? false`,
         `                 :active-role (:role result)`,
         `                 :target-role ${cljStr(target)}})]`,
+        `  (println (or (:role result) "NONE"))`,
         `  (println (name decision)))`,
       ].join('\n');
-      ctx.decision = runBb(source);
+      // BL-932-batch hardening (BL-909/BL-927): capture the RESOLVED
+      // departing role alongside the decision, not just the decision.
+      // BL-113 gherkin mutation found that mutating <marker>/<live> to an
+      // unresolvable role string still yields the SAME "proceed" decision
+      // (via the pre-existing unknown-role fail-open path) as a correctly
+      // resolved, diverged live role with an empty box - two different
+      // mechanisms converging on one observable decision. Recording the
+      // resolved role lets "the departing role resolved is the pane's live
+      // identity" (scenario 01 only) distinguish them.
+      const [roleLine, decisionLine] = runBb(source).split('\n');
+      ctx.resolvedRole = roleLine === 'NONE' ? null : roleLine;
+      ctx.decision = decisionLine;
     },
     FEATURE_NAME
   );
@@ -167,6 +179,25 @@ function registerSteps(registry) {
       const known = knownDecision(expected);
       if (ctx.decision !== known) {
         throw new Error(`expected rotate gate decision "${known}", got "${ctx.decision}"`);
+      }
+    },
+    FEATURE_NAME
+  );
+
+  // Scenario 01 only (invariant 1): across all three examples the departing
+  // role resolves to the pane's LIVE identity - either directly (live
+  // diverges from marker and resolves) or coincidentally (marker and live
+  // agree, so the marker-role branch yields the same value). A regression
+  // that fell back to the marker's role, or to fail-open, whenever it
+  // should have used live identity would fail this even when the plain
+  // proceed/refuse decision happens to still match.
+  registry.defineScoped(
+    /^the departing role resolved is the pane's live identity$/,
+    (ctx) => {
+      if (ctx.resolvedRole !== ctx.liveRole) {
+        throw new Error(
+          `expected the departing role to resolve to the pane's live identity "${ctx.liveRole}", got "${ctx.resolvedRole}"`
+        );
       }
     },
     FEATURE_NAME
