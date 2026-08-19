@@ -1,0 +1,127 @@
+id: BL-961
+title: "The launcher never exports SWARMFORGE_PACK, so every env-keyed consumer (BL-935 vitest CPU cap, ancillary provider routing) sees it unset in all 8 live role shells - bake the export into each generated launch script"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 20
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-961-launcher-exports-swarmforge-pack-into-role-shells.feature
+
+required_wiring:
+  - "swarmforge/scripts/swarmforge.sh::export SWARMFORGE_PACK::the fix IS this export landing in write_role_launch_script's generated-script template; a helper that computes the pack name but never writes the export line is the BL-419 shape this field exists to catch"
+
+invariants:
+  - "For one launch, the SWARMFORGE_PACK value exported in every generated role launch script is identical and equals the basename (sans .conf) of the conf file the launcher actually loaded - the env var and the --pack config selector can never name different packs for the same launch."
+  - "The export lives in the generated .swarmforge/launch/<role>.sh file itself, so a pane respawned from that script still carries it - injecting the variable only into the initial tmux command or server environment does not satisfy this ticket."
+
+description: >
+  Severity rationale: high - a live broken safety mechanism, not cosmetic.
+  BL-935's vitest CPU cap (built to stop fork-pool oversubscription on the
+  2-physical-core swarm host, observed at load ~120) keys on
+  SWARMFORGE_PACK === 'full-forge', and that variable is unset in every live
+  role shell, so the cap never engages in production.
+
+  Root cause (verified three independent ways on 2026-08-19: the hardender's
+  own shell is empty; `tmux show-environment` reports "unknown variable" in
+  all 8 swarmforge-* sessions; source trace): the env var and the --pack
+  selector are two different mechanisms sharing a name. Default
+  start-swarm.sh RESOLVES a pack and passes it as `--pack`, which
+  swarmforge/scripts/swarmforge.sh consumes only as a config-file selector
+  (CONFIG_FILE=swarmforge/packs/NAME.conf, ~line 103); the value is a plain
+  local, never exported. The only `export SWARMFORGE_PACK` sites in the tree
+  are the five alternative-provider wrappers (start-swarm-{gpt,mistral,qwen,
+  anthropic,gemini}.sh), each setting a *-mono-router value - never
+  full-forge. The generated .swarmforge/launch/<role>.sh scripts (written by
+  write_role_launch_script, ~line 1325) export SWARMFORGE_ROLE and
+  SWARMFORGE_ROLE_WORKTREE but not the pack.
+
+  Fix wanted: the launcher bakes `export SWARMFORGE_PACK='<pack>'` into every
+  generated role launch script, where <pack> is the basename (sans .conf) of
+  the CONFIG_FILE the launcher actually loaded - the exact derivation
+  ancillary_provider_lib.sh already uses for its swarm-identity fallback, so
+  the two resolution paths converge on the same name. The launch script is
+  the right home (not tmux set-environment alone) because single-role
+  respawns re-run .swarmforge/launch/<role>.sh directly.
+
+  How (direction, not mandate): one line in write_role_launch_script's
+  heredoc template alongside the existing SWARMFORGE_ROLE export, plus the
+  derivation of the pack name from CONFIG_FILE (a `basename "$CONFIG_FILE"
+  .conf` at generation time; baking the literal into the script is fine and
+  matches how role and worktree are baked). The established test harness in
+  swarmforge/scripts/test/test_remote_control_launch.sh (zsh-source
+  swarmforge.sh against a scratch fixture root, run parse_config +
+  write_role_launch_script, grep the generated file) drives the acceptance
+  scenarios without any live tmux.
+
+constraints: >
+  Out of scope:
+
+  - Changing BL-935's vitest resolver or any other CONSUMER of the variable -
+    this ticket only makes the already-specced signal actually arrive.
+  - The five start-swarm-*.sh provider wrappers' own exports - they already
+    agree with the --pack they pass, and swarm_launch_pack_guard.bb owns
+    detecting env/selector disagreement at launch time.
+  - Retrofitting the variable into currently-running shells - live panes pick
+    it up at the next ./swarm relaunch or single-role respawn; that is a
+    deployment note, not a code path.
+
+qa_e2e_procedure: >
+  1. Fixture generation check (no live tmux): using the harness pattern from
+     swarmforge/scripts/test/test_remote_control_launch.sh, source
+     swarmforge.sh against a scratch root with packs/full-forge.conf
+     selected, write a role launch script, and grep it for
+     export SWARMFORGE_PACK='full-forge'.
+  2. Repeat with the default swarmforge.conf - expect
+     export SWARMFORGE_PACK='swarmforge'.
+  3. Consumer engagement: from extension/,
+     SWARMFORGE_PACK=full-forge node -e "import('./vitest.config.mjs').then(m
+     => console.log(m.default.test.poolOptions.forks.maxForks))" - expect 1
+     on macOS (BL-935's cap now reachable end-to-end once shells relaunch).
+  4. Deployment note, not a gate: live role shells report the variable only
+     after the next ./swarm relaunch or per-role respawn via
+     .swarmforge/launch/<role>.sh. If no relaunch has occurred by gate time,
+     record that as the expected rollout condition, never as a failure.
+
+notes: >
+  Source: hardender priority-00 note 20260819T212143Z_000242 to
+  specifier+coordinator, "BL-935 cap inert on this host: SWARMFORGE_PACK
+  unset in all 8 role shells" (sent per Article 4.4's spec-gap-leaves-by-note
+  rule rather than bounced - BL-935's mechanism is correct and fully
+  verified over injected env; required_wiring on that ticket is satisfied).
+  1:1 - the note produced this ticket and no other.
+
+  This is the NAMED wiring slice for BL-935's live engagement, per the
+  specifier rule that a consumer of a shared signal needs a real producer in
+  production or a named sibling slice. BL-935 stays independent: it closes on
+  its mechanism + env-injected verification; its qa_e2e step 1 was amended
+  the same day to record the live-shell check as BLOCKED BY this ticket.
+
+  Also benefits ancillary_provider_lib.sh: its primary SWARMFORGE_PACK path
+  starts working in role shells instead of always falling through to the
+  swarm-identity file.
+
+  IR-DRY reviewed 2026-08-19: 3 medium-confidence findings, all between
+  scenario 01 (one role, conf varies) and 02 (conf fixed, every role) -
+  kept as-is, not drift. The two Given steps are the SAME phrasing (the
+  checker does not normalize quoted literals, so a placeholder and a
+  literal read as near-duplicates) and share one handler; the When/Then
+  pairs assert genuinely different behaviour, and 02's cross-role
+  invariant cannot be folded into 01's single-role Outline.
+
+approval_context: >
+  One decision to confirm, the rest is settled. The fix direction is "export
+  the env var from the launcher" rather than "teach the vitest resolver to
+  read the pack from .swarmforge/swarm-identity". The env-keyed design is
+  what you already approved on BL-935, the export also fixes ancillary
+  provider routing's primary path, and reading swarm-identity from a vitest
+  config crosses the fs boundary for something the launcher can state in one
+  line. Say the word if you would rather flip the consumer instead. The
+  default-conf value ('swarmforge' from swarmforge.conf) is deliberate: it
+  matches ancillary_provider_lib's existing fallback derivation, and no
+  consumer keys on that name.
