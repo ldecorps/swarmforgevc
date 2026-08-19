@@ -98,6 +98,7 @@ exit 0
   for (const [name, body] of [
     ['fake_ext_check.sh', '#!/usr/bin/env bash\nexit 0\n'],
     ['fake_ext_bounce.sh', '#!/usr/bin/env bash\nexit 0\n'],
+    ['fake_daemon_start.sh', `#!/usr/bin/env bash\nsleep 100 >"${root}/fake-daemon.log" 2>&1 &\necho $! > "${root}/.swarmforge/daemon/handoffd.pid"\n`],
   ]) {
     fs.writeFileSync(path.join(root, 'bin', name), body);
     fs.chmodSync(path.join(root, 'bin', name), 0o755);
@@ -111,11 +112,22 @@ function runEnsure(ctx) {
   delete env.TELEGRAM_PRINCIPAL_USER_ID;
   delete env.CURSOR_BRIDGE_BOT_TOKEN;
   env.PATH = `${path.join(ctx.root, 'bin')}:${env.PATH}`;
-  env.SWARMFORGE_ENSURE_EXTENSION_CHECK = path.join(ctx.root, 'bin', 'fake_ext_check.sh');
-  env.SWARMFORGE_ENSURE_EXTENSION_BOUNCE = path.join(ctx.root, 'bin', 'fake_ext_bounce.sh');
-  env.SWARMFORGE_ENSURE_SUPERVISOR = path.join(ctx.root, 'bin', 'fake_supervisor.bb');
+  env.SWARM_ENSURE_EXTENSION_CHECK_CMD = path.join(ctx.root, 'bin', 'fake_ext_check.sh');
+  env.SWARM_ENSURE_EXTENSION_BOUNCE_CMD = path.join(ctx.root, 'bin', 'fake_ext_bounce.sh');
+  env.SWARM_ENSURE_SUPERVISOR_CMD = path.join(ctx.root, 'bin', 'fake_daemon_start.sh');
   env.SWARMFORGE_SKIP_OPERATOR = '1';
   env.SWARMFORGE_SKIP_FRONT_DESK = '1';
+  // Hardening (BL-571): fence off the remaining side-effecting components
+  // too. The names above MUST be the ones swarm_ensure.bb actually reads
+  // (SWARM_ENSURE_*_CMD); under the earlier SWARMFORGE_ENSURE_* spelling the
+  // stubs were inert and ensure invoked the REAL commands against this temp
+  // fixture root - the scenario still passed (it only asserts DORMANT and
+  // the respawn log) while spawning live processes, and a measured run left
+  // a PPID-1 babysitterd rooted in $TMPDIR behind. These two components have
+  // no stub of their own here, so skip them outright rather than let a
+  // future unset *_CMD reach production again.
+  env.SWARMFORGE_SKIP_CURSOR_BRIDGE = '1';
+  env.SWARMFORGE_SKIP_BABYSITTERD = '1';
   const res = spawnSync('bb', [ENSURE, ctx.root], { encoding: 'utf8', env });
   ctx.output = `${res.stdout || ''}${res.stderr || ''}`;
 }

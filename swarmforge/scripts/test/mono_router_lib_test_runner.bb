@@ -735,6 +735,27 @@
 (assert-true "BL-571: word boundary - 'rotation sequentially' does not match"
              (not (mono-router-lib/single-resident-rotation? "config rotation sequentially\n")))
 
+;; Hardening (BL-571): the LINE ANCHOR is load-bearing and was untested.
+;; rotation-declared-in-conf?'s docstring claims "a commented mention or a
+;; longer word never matches" - the longer-word half is pinned above, the
+;; commented half was not, and a mutant dropping the `^` from the pattern
+;; agreed with the original on EVERY other fixture in this file (verified
+;; 2026-08-19: the whole suite above is blind to it). A commented or
+;; otherwise mid-line mention is the only shape that discriminates it, so
+;; it is pinned here for both value-sets - the two pairs share one
+;; mechanism, so an anchor mutant would otherwise survive on both sides.
+(assert-true "BL-571: a COMMENTED rotation line does not declare a topology (pins the ^ anchor)"
+             (not (mono-router-lib/single-resident-rotation? "# config rotation sequential\n")))
+(assert-true "BL-571: a mid-line 'rotation router' mention does not declare a topology (pins the ^ anchor)"
+             (not (mono-router-lib/single-resident-rotation? "see docs about rotation router here\n")))
+(assert-true "BL-571 pin: conf-rotation-router? also ignores a commented rotation line"
+             (not (mono-router-lib/conf-rotation-router? "# config rotation router\n")))
+;; and the anchor must not over-reach: a real directive still matches when it
+;; is not the first line of the file (guards a mutant swapping (?m) off).
+(assert-true "BL-571: a real rotation directive on a later line still matches (pins the (?m) flag)"
+             (mono-router-lib/single-resident-rotation?
+              "# leading comment\nconfig active_backlog_max_depth 1\nconfig rotation sequential\n"))
+
 (assert-true "BL-571: identity rotation=router is single-resident"
              (mono-router-lib/single-resident-rotation-from-identity? "rotation\trouter\n"))
 (assert-true "BL-571: identity rotation=sequential is single-resident"

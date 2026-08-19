@@ -520,9 +520,9 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "expected specifier DORMANT, got: $OUTPUT"
@@ -565,11 +565,19 @@ fi
 exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
+# Hardening (BL-571): these MUST be the names swarm_ensure.bb actually reads
+# (SWARM_ENSURE_*_CMD) pointing at stubs make_fixture actually creates. The
+# older SWARMFORGE_ENSURE_* spelling is read by nothing, and fake_supervisor.bb
+# is never created - so ensure ran the REAL extension bounce and the REAL
+# daemon start against this temp root. The assertions still passed (they only
+# look at DORMANT and the respawn log) while live processes were spawned; a
+# measured run left a PPID-1 babysitterd rooted in $TMPDIR behind.
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  SWARMFORGE_SKIP_CURSOR_BRIDGE=1 SWARMFORGE_SKIP_BABYSITTERD=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "BL-571: expected specifier DORMANT under rotation sequential, got: $OUTPUT"
 echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "BL-571: expected coder HEALTHY"
@@ -610,9 +618,9 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 echo "$OUTPUT" | grep -q '^agent:specifier: FAILED (rotate_to_role would fail: missing launch script for role)$' \
@@ -655,9 +663,9 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 echo "$OUTPUT" | grep -q '^agent:coder: FAILED' \
@@ -709,9 +717,9 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 echo "$OUTPUT" | grep -q 'DORMANT' && fail "classic pack must not classify any role as DORMANT, got: $OUTPUT"
@@ -792,9 +800,9 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 grep -q "^KILL swarmforge-specifier$" "$KILL_LOG" \
@@ -835,9 +843,9 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 RC=$?
@@ -900,9 +908,9 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 grep -q "^CREATE swarmforge-coder$" "$CREATE_LOG" \
