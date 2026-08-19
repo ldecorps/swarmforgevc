@@ -110,3 +110,14 @@ Reasoning:
    neither of which requires a standing role. **Revisit trigger:** a concrete
    escaped-defect that all three existing review stages structurally could not have
    caught; absent that evidence, adopting a role pre-emptively is unwarranted.
+
+### 2026-08-19 — local deviation: launcher diagnostics moved to stderr (BL-947)
+
+Not a drift review — a deliberate local change to the fork's own
+`swarmforge/scripts/swarmforge.sh`, recorded here per Architecture Rule 2 so a
+future upstream comparison reads the divergence as intentional rather than
+drift.
+
+| Change | Rationale |
+|--------|-----------|
+| All 27 `echo -e "${RED}Error:${RESET} ..."` diagnostics now route through one `error_msg()` helper that writes to **stderr** (`>&2`). Message text, colouring and every exit status are byte-identical — only the channel changed. | stdout carries VALUES: callers capture command substitutions (the control socket path is the live example), so a diagnostic on stdout corrupts the captured value and reads as silence to anything watching stderr. BL-944's evidence misdiagnosed a socket-path refusal as "no output" for exactly this reason. A standing guard (`extension/test/swarmforgeShErrorChannelGuard.test.js`, over `specs/pipeline/steps/lib/swarmforgeShErrorChannel.js`) keeps the next error line off the wrong channel. |

@@ -1,6 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-942: `hardender.prompt`'s
+**Last Updated:** August 19, 2026 (BL-947: `swarmforge/scripts/swarmforge.sh`
+contained 27 `echo -e "${RED}Error:${RESET} ..."` diagnostics, none
+redirected to stderr, so every launcher failure was reported on stdout — a
+caller capturing stderr saw silence on every failure path, and a caller
+capturing a command substitution's VALUE (the control-socket path is the
+live example, `swarmforge.sh:124-127`) got the error text mixed into it.
+This cost a correct diagnosis on the day it was found: BL-944's coder
+evidence misdiagnosed a socket-path-length refusal as `resolve_swarm_socket.bb`
+putting its error on stdout, when that script is correct (binds `*out*` to
+`*err*`, exits 1) and `swarmforge.sh` was the one re-emitting the captured
+diagnostic on the wrong channel. Fixed by routing all 27 sites (plus one in
+`ancillary_provider_lib.sh`) through a single `error_msg()` helper whose
+body carries the `>&2` redirect, so the next error line cannot be added on
+the wrong channel one site at a time — the same way this returned before. A
+standing guard, `extension/test/swarmforgeShErrorChannelGuard.test.js`
+(over `specs/pipeline/steps/lib/swarmforgeShErrorChannel.js`), scans the
+whole script and fails naming any raw `${RED}Error` echo missing the
+redirect. Message text, colouring, and every exit status are byte-identical
+— only the channel changed (invariant 2); the success-path stdout-only
+contract for a captured value (invariant 1) is unaffected. Recorded as a
+deliberate local deviation from the `unclebob/swarm-forge` fork per
+Architecture Rule 2 — see the new "2026-08-19 — local deviation: launcher
+diagnostics moved to stderr (BL-947)" entry in
+[`docs/upstream-deviations.md`](../upstream-deviations.md). No new
+extension command, setting, or UI — a swarm-substrate launcher fix, same
+class as BL-878's `setsid` portability fix.); Previously
+August 19, 2026 (BL-942: `hardender.prompt`'s
 office-hours mutation/CRAP bypass defers a heavy gate on a busy host and
 promises "the full pass still runs — just against a quiet host" — but
 nothing recorded what was skipped, and nothing brought it back. Measured
