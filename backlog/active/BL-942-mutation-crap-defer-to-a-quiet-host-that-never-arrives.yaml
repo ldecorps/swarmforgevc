@@ -175,3 +175,5 @@ notes: |
   that sets the row up. "holds a row" versus "holds no row" versus "still holds
   exactly one row" are three different claims; merging any pair would delete a
   scenario's point. Left as-is deliberately; do not "resolve" them.
+
+assigned_to: coder
