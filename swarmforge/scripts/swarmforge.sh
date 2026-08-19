@@ -1268,6 +1268,16 @@ write_claude_settings_file() {
   # Bash tool only (matcher). tool_miss_heal_hook.bb itself fails open (an
   # unknown pin or a non-Bash call is an untouched no-op) - a bug here must
   # never block a role from running commands at all.
+  #
+  # RE-ENABLED by BL-960 (disabled 2026-08-19, 3bac496ec, after the wrapper
+  # spliced heredocs/literal parens into unparseable bash with silent-PARTIAL
+  # execution). The disable comment's re-enable condition is met exactly and
+  # the restoration is operator-confirmed on the ticket: the hook now
+  # parse-checks every composed wrapper (bash -n, safe-wrapper-command in
+  # tool_miss_heal_lib.bb) and fail-opens to the byte-untouched original,
+  # silently, when the composition does not parse; capture is by temp file +
+  # cat replay, so a wrapped command's exit code and combined output are
+  # byte-identical to the unwrapped command's.
   local hooks_block
   hooks_block="$(cat <<HOOKS
   "hooks": {

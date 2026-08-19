@@ -518,7 +518,8 @@ const DOMAINS = [
   require('./bl955ForwardingAnnotationSteps'),
   require('./bl827FlowWatchdogSpecThresholdsSteps'),
   require('./bl571SequentialRotationDormantParitySteps'),
-  require('./bl958ControlPlaneLossSteps')
+  require('./bl958ControlPlaneLossSteps'),
+  require('./bl960HealWrapperParseSafetySteps')
 ];
 
 function registerSteps(registry) {
