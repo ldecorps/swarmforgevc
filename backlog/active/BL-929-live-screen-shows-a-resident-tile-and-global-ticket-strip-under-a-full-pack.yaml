@@ -250,3 +250,6 @@ notes: |
   merging them would delete the comparison. Left as written.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-18, by: architect, blamed: coder, class: behavior, commit: b00458d2f2, evidence: backlog/evidence/BL-929-bounce-20260819.md }

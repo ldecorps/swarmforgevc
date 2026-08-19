@@ -741,11 +741,31 @@
         (>= (System/currentTimeMillis) deadline) false
         :else (do (Thread/sleep 500) (recur))))))
 
+(defn rotation-router-pack?
+  "BL-931: whether THIS project is currently running (or last launched as)
+   a rotation-router pack, via mono-router-lib's shared resolution
+   (invariant 1 - the ONE resolution every gate uses, not a fifth
+   independent copy)."
+  []
+  (mono-router-lib/resolve-rotation-router-mode?
+   (fs/path (target-root) ".swarmforge")
+   (str (fs/path (target-root) "swarmforge" "swarmforge.conf"))))
+
 (defn rotate-resident-to!
   "Rotate the resident pane to <target-role>. Returns {:ok true} or
-   {:ok false :reason ...}. Never System/exit — safe for handoffd chase."
+   {:ok false :reason ...}. Never System/exit — safe for handoffd chase.
+
+   BL-931: refuses outright on a pack that is not a rotation router - a
+   standing pack (e.g. full-forge) gives every role its own pane, so there
+   is no resident to rotate and mono-router-resident-session's 'first
+   non-coordinator roles.tsv row' would otherwise address and evict a
+   working colleague's pane (the specifier, twice, on 2026-08-18). Checked
+   here rather than only in respawn-as! so handoffd's daemon-driven chase
+   (the OTHER caller, invariant 2) is covered by the same gate."
   [target-role]
   (try
+    (if-not (rotation-router-pack?)
+      {:ok false :reason "not-a-rotation-router"}
     (let [socket (tmux-socket)
           session (or (mono-router-resident-session) (pane-id socket))
           script (launch-script-path target-role)
@@ -783,7 +803,7 @@
               (do (write-mono-router-active-role! target-role)
                   {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
-                                     (str "tmux-exit-" (:exit result)))})))))
+                                     (str "tmux-exit-" (:exit result)))}))))))
     (catch Exception e
       {:ok false :reason (.getMessage e)})))
 
@@ -820,6 +840,9 @@
                         (when-not (:ok result)
                           (binding [*out* *err*]
                             (case (:reason result)
+                              "not-a-rotation-router"
+                              (println (str "rotate: this pack does not rotate - every role has its own pane"
+                                            " (target '" target-role "')"))
                               "no-resident-session"
                               (println "rotate: could not resolve mono-router resident session")
                               "no-launch-script"
@@ -827,6 +850,7 @@
                                             "' - is this swarm a mono-router (config rotation router) launch?"))
                               (println (str "rotate: failed for '" target-role "': " (:reason result)))))
                           (System/exit (case (:reason result)
+                                         "not-a-rotation-router" 6
                                          "no-resident-session" 4
                                          "no-launch-script" 3
                                          1)))

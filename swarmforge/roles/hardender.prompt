@@ -932,3 +932,31 @@ You are the hardender.
   first try while leaving two PPID-1 orphans — a `bb onboarder_supervisor.bb`
   and its `node onboarder-reconcile.js` — rooted under a `/var/folders` fixture
   dir. Reaped by hand, re-verified clean twice at load 26-65.)
+
+## An asymmetric predicate needs a STRICTLY-ORDERED fixture in the losing direction — reflexive and disjoint cases cannot kill an argument-swap mutant (rule_proposal 2026-08-18, accepted)
+- For any binary predicate whose truth depends on the ORDER of its two
+  arguments — `is-ancestor(A,B)`, subset, before/after, contains, dominates,
+  `is-prefix-of` — a suite made only of reflexive fixtures (`A` and `B` the
+  same object) and disjoint fixtures (`A` and `B` unrelated) can never kill a
+  swapped-argument mutant. Both fixture shapes are SYMMETRIC: the reflexive
+  one answers true whichever way round the arguments go, the disjoint one
+  answers false either way. The mutant and the original agree on every case,
+  so it survives a suite that looks thorough.
+- The discriminating case is a STRICT ordering, asserted in the direction that
+  must FAIL: not just "an ancestor is accepted", but "a DESCENDANT of the
+  published tip is REJECTED". One such fixture kills the mutant on its own;
+  without it, no number of the other two shapes will.
+- Before hardening any order-sensitive guard, ask: which fixture here would
+  change its answer if I swapped the two arguments? If none would, that is the
+  test you are missing — write it before running mutation, not after reading
+  the survivor report.
+- Verified on the real command 2026-08-18: with `TIP` a child of `BASE`,
+  `git merge-base --is-ancestor $TIP $TIP` is true both ways round, while
+  `--is-ancestor $BASE $TIP` is true and `--is-ancestor $TIP $BASE` is false.
+  Only the second pair carries any information about argument order.
+- (Incident: BL-925 hardening 2026-08-18. `is_qa_ancestor.sh`'s entire body is
+  `exec git merge-base --is-ancestor "$SHA" swarmforge-QA`. A mutant swapping
+  those two operands survived all 18 checks in the guard suite, because every
+  fixture was either tip-equals-sha or unrelated refs. A single
+  descendant-of-published-tip fixture discriminated the direction and killed
+  it.)
