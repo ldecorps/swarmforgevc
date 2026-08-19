@@ -1,6 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-943: six self-contained
+**Last Updated:** August 19, 2026 (BL-942: `hardender.prompt`'s
+office-hours mutation/CRAP bypass defers a heavy gate on a busy host and
+promises "the full pass still runs — just against a quiet host" — but
+nothing recorded what was skipped, and nothing brought it back. Measured
+2026-08-19: 35 of 60 August hardener evidence files recorded a deferral,
+only 2 recorded a gate actually running, and since continuous 3x8 shifts
+armed 2026-08-18 (eight agent sessions around the clock on 4 cores) the
+quiet host the bypass waits on can never arrive — a gate whose fallback
+waits for a state that cannot occur is not deferred, it is unenforced. This
+ticket builds the RECORDING half only, per its own scope; choosing the
+remedy (a reserved quiet window, rescoping Stryker to run under load, or
+formally downgrading the gate) stays a live human decision. New
+`backlog/hardening-debt-ledger.yaml`, following `backlog/hotfix-ledger.yaml`'s
+own flat-scalar-row shape (BL-848) rather than a new storage idiom:
+`hardening_debt_ledger_update.bb --defer <parcel> <gate> <file-set> <reason>
+<load>` is the one mechanical way a deferral gets recorded (never what
+decides whether to defer — that stays the hardener's own judgement, and no
+call site is wired into its live workflow yet); `hardening_debt_ledger_read.bb`
+reads outstanding debt back as JSON, `file_set` a real array, never a
+caller re-parsing the on-disk comma-joined shape. A second deferral for the
+same gate+file-set — even from a different parcel — collapses to the
+existing row rather than duplicating it; a gate that ran records nothing.
+**Architect bounce, same ticket:** `render-row` wrapped `reason`/`load` in
+literal quotes with no escaping, and the parser's closing-quote search
+stopped at the first embedded `"`, silently truncating any reason
+containing one (reproduced both at the pure-lib level and through the real
+CLIs) — fixed with a single-pass escape/unescape pair, verified against a
+literal-backslash-adjacent-to-quote edge case a naive two-pass replace gets
+wrong. See the new
+[Hardening-Debt Ledger](../how-to/BL-942-hardening-debt-ledger.md) how-to.
+No new extension command, setting, or UI — a swarm-substrate accounting
+tool, same class as BL-848's hotfix ledger.); Previously
+August 19, 2026 (BL-943: six self-contained
 `handoffd` daemon-fixture wiring tests
 (`test_handoffd_aged_note_rotate_wiring.sh`, `_ambulance_wiring.sh`,
 `_rule_proposal_rotate_wiring.sh`, `_wake_attribution_wiring.sh`,
