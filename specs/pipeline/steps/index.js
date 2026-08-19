@@ -483,7 +483,9 @@ const DOMAINS = [
   require('./bl929LiveScreenPackLayoutSteps'),
   require('./bl931RotatePackGateSteps'),
   require('./bl934HealWrapperRmFalsePositiveSteps'),
-  require('./bl932SharedHeavyTimeoutSteps')
+  require('./bl932SharedHeavyTimeoutSteps'),
+  require('./bl927RotateGateLiveIdentitySteps'),
+  require('./bl909BottleneckRanksOnProcessingSteps')
 ];
 
 function registerSteps(registry) {

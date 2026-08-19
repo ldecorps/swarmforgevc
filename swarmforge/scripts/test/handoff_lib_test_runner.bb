@@ -376,6 +376,120 @@
     (assert-true "ambulance-hold-04: the held candidate is still sitting in new/, not moved anywhere"
                  (fs/exists? only-660))))
 
+;; ── BL-927: departing-role-blocking-handoff resolves the departing role
+;;    from LIVE identity (via the injectable :live-role-fn seam), never the
+;;    raw marker alone - unit-level coverage of the pure decision shape;
+;;    the real tmux probe end of resident-live-role is covered by
+;;    test_rotate_to_role_stuck_parcel_gate.sh's fake-tmux fixture. ────────
+
+(defn bl927-fixture
+  "A fresh target-root with roles.tsv rows for coder/cleaner/documenter, all
+   master-resident (so mailbox-dir gives each its own <role> subfolder under
+   the SAME worktree-path) - kept minimal since departing-role-blocking-
+   handoff never reads worktree-path for anything but mailbox resolution."
+  []
+  (let [dir (mk-tmp-dir)
+        swarm-dir (fs/path dir ".swarmforge")]
+    (fs/create-dirs swarm-dir)
+    (spit (str (fs/path swarm-dir "roles.tsv"))
+          (str "coder\tmaster\t" dir "\tswarmforge-coder\tCoder\tclaude\ttask\n"
+               "cleaner\tmaster\t" dir "\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n"
+               "documenter\tmaster\t" dir "\tswarmforge-documenter\tDocumenter\tclaude\ttask\n"))
+    dir))
+
+(defn bl927-write-marker! [dir content]
+  (when content
+    (spit (str (fs/path dir ".swarmforge" "mono-router-active-role")) content)))
+
+(defn bl927-queue-parcel! [dir role name]
+  (let [in-process (fs/path dir ".swarmforge" "handoffs" role "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    (spit (str (fs/path in-process (str "00_" name ".handoff")))
+          (git-handoff-content "aaaaaaaaaa" name))))
+
+(defmacro bl927-with-fixture [[dir-sym marker] & body]
+  `(let [~dir-sym (bl927-fixture)]
+     (bl927-write-marker! ~dir-sym ~marker)
+     (handoff-lib/set-project-root! ~dir-sym)
+     (try
+       ~@body
+       (finally (handoff-lib/set-project-root! nil)))))
+
+;; Agreement (the common, pre-BL-927 case): marker and live identity name
+;; the same role - byte-identical result whether resolved from the marker
+;; or from live-role-fn, with or without a real blocking parcel.
+(bl927-with-fixture [dir "coder"]
+  (assert= "bl927 agree, no parcel: proceeds (nil blocking-file)"
+           {:role "coder" :blocking-file nil}
+           (handoff-lib/departing-role-blocking-handoff {:live-role-fn (constantly "coder")})))
+
+(bl927-with-fixture [dir "coder"]
+  (bl927-queue-parcel! dir "coder" "stuck-agree")
+  (let [result (handoff-lib/departing-role-blocking-handoff {:live-role-fn (constantly "coder")})]
+    (assert= "bl927 agree, real parcel: :role is the marker/live role" "coder" (:role result))
+    (assert-true "bl927 agree, real parcel: blocking-file names it"
+                 (str/includes? (str (:blocking-file result)) "stuck-agree"))))
+
+;; BL-927 residual case: marker diverged, live identity readable and
+;; DIFFERENT - the departing role and its mailbox resolve from LIVE, never
+;; the marker, regardless of what the marker role's own box holds.
+(bl927-with-fixture [dir "cleaner"]
+  (bl927-queue-parcel! dir "cleaner" "stuck-marker-only")
+  (assert= "bl927 residual, live role's box empty: proceeds despite the marker role's real parcel"
+           {:role "coder" :blocking-file nil}
+           (handoff-lib/departing-role-blocking-handoff {:live-role-fn (constantly "coder")})))
+
+(bl927-with-fixture [dir "cleaner"]
+  (bl927-queue-parcel! dir "cleaner" "stuck-marker")
+  (bl927-queue-parcel! dir "coder" "stuck-live")
+  (let [result (handoff-lib/departing-role-blocking-handoff {:live-role-fn (constantly "coder")})]
+    (assert= "bl927 residual, live role's box also blocked: :role is the LIVE role, never the marker" "coder" (:role result))
+    (assert-true "bl927 residual: blocking-file names the LIVE role's own parcel"
+                 (str/includes? (str (:blocking-file result)) "stuck-live"))
+    (assert-false "bl927 residual: blocking-file never names the marker role's parcel"
+                  (str/includes? (str (:blocking-file result)) "stuck-marker"))))
+
+;; BL-927 invariant 2: an unreadable live identity fails OPEN - never falls
+;; back to trusting the marker's claim alone, even with a real parcel
+;; sitting under the marker role.
+(bl927-with-fixture [dir "coder"]
+  (bl927-queue-parcel! dir "coder" "stuck-unreadable")
+  (assert= "bl927 unreadable live identity (nil): fails open despite a real marker-role parcel"
+           {:role nil :blocking-file nil}
+           (handoff-lib/departing-role-blocking-handoff {:live-role-fn (constantly nil)})))
+
+(bl927-with-fixture [dir "coder"]
+  (bl927-queue-parcel! dir "coder" "stuck-blank")
+  (assert= "bl927 unreadable live identity (blank): fails open, blank is divergence not agreement"
+           {:role nil :blocking-file nil}
+           (handoff-lib/departing-role-blocking-handoff {:live-role-fn (constantly "   ")})))
+
+;; BL-805 unchanged: missing/blank marker, or a marker naming a role absent
+;; from roles.tsv, still fails open WITHOUT ever consulting live identity -
+;; live-role-fn throwing proves the gate short-circuits before the probe,
+;; not merely that it happens to agree with a nil result.
+(let [never-called (fn [] (throw (ex-info "live-role-fn must not be called when the marker alone is undetermined" {})))]
+  (bl927-with-fixture [dir nil]
+    (assert= "bl927 missing marker: fails open, never consulting live-role-fn"
+             {:role nil :blocking-file nil}
+             (handoff-lib/departing-role-blocking-handoff {:live-role-fn never-called})))
+
+  (bl927-with-fixture [dir "   "]
+    (assert= "bl927 blank marker: fails open, never consulting live-role-fn"
+             {:role nil :blocking-file nil}
+             (handoff-lib/departing-role-blocking-handoff {:live-role-fn never-called})))
+
+  (bl927-with-fixture [dir "nonexistent-role"]
+    (assert= "bl927 unknown-role marker: fails open, never consulting live-role-fn"
+             {:role nil :blocking-file nil}
+             (handoff-lib/departing-role-blocking-handoff {:live-role-fn never-called}))))
+
+;; The default (0-arg) form's real resident-live-role probe is deliberately
+;; NOT exercised here - it needs a live tmux session, which is exactly what
+;; this seam exists to keep out of the unit suite (see coder.prompt's
+;; Design And Testability rule). Its integration coverage lives in
+;; test_rotate_to_role_stuck_parcel_gate.sh's fake-tmux fixture instead.
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")
