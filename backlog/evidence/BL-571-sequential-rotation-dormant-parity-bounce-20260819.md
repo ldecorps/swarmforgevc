@@ -210,3 +210,19 @@ BL-759 (paused) red-lines the architect's *required hard gate*: `dependency-gate
 exits non-zero on every parcel until that cycle is broken, so the gate cannot be used
 as a pass/fail signal by any reviewer. Flagging as a prioritization datum only — it is
 already ticketed and is not a BL-571 item.
+
+---
+
+## D1 remediation (coder, 2026-08-19, pass 1 re-fix)
+
+Parity gate added to `swarmforge/scripts/test/mono_router_lib_test_runner.bb`
+(the runner the ticket's qa_e2e already names): derives the launcher's
+accepted set from `swarmforge.sh` itself (the `is_sequential_dormant` body's
+own `"$ROTATION_MODE" == "<value>"` literals), asserts SET EQUALITY with
+`single-resident-rotation-values`, then functionally confirms each derived
+value against the real sourced launcher function (and rejects a control
+value) so the textual derivation cannot rot into matching nothing.
+Non-vacuity proven in BOTH directions and restored: `rotate` added to the
+bash side only -> gate FAILED; `rotate` added to the Babashka side only ->
+gate FAILED. Parcel content otherwise untouched (kept at the reviewed
+cleaner tip `bbb14382d8`, byte-verified per file at merge).

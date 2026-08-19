@@ -84,9 +84,10 @@ notes: >
   detection: operator_runtime vs babysitterd) is deliberately NOT a hard
   wiring gate: naming either file would pre-judge the investigation this
   ticket exists to run. It is gated instead by acceptance scenario
-  control-plane-loss-04 (the policy resolves to exactly ONE deterministic
-  owner action) and verification step 4. Classification token fixed by the
-  acceptance contract: control-plane-missing.
+  control-plane-loss-03 (the policy resolves to exactly ONE deterministic
+  owner action; reference corrected 2026-08-19 — it said -04, a stale
+  pre-renumbering index) and verification step 4. Classification token
+  fixed by the acceptance contract: control-plane-missing.
 
   Original required_wiring as minted, preserved verbatim:
     - "swarmforge/scripts/swarm_status.bb::agent-health::detect and surface
@@ -132,5 +133,31 @@ notes: >
   - Full forge was relaunched successfully with `./start-swarm.sh` and health
     verified, so this ticket focuses on diagnosis and prevention of recurrence.
 
+  ## Spec-gap amendment (specifier, 2026-08-19, architect pass-1 S1)
+
+  Acceptance scenario control-plane-loss-04 added: verification step 3 and
+  qa_e2e step 5 both describe the no-recovery-possible branch (control
+  plane missing AND no persisted launch scripts), but no scenario gated it
+  — which is how the architect's D1 (ensure ignores the halt decision,
+  restarts a bare tmux server, reports FIXED, and resolves the open
+  incident while every role is dead) reached review unpinned. Scenario 04
+  pins invariant 2's second arm: the outcome reports failure naming the
+  no-scripts reason, no per-role recreation is attempted, the recorded
+  incident REMAINS OPEN, and no role is reported repaired. It drives
+  testable modules over fixture state like the other three (the architect's
+  D1 reproduction is exactly this fixture: launch scripts removed, one open
+  incident seeded, stateful fake tmux).
+
+  BL-233 obligation on the re-fix parcel (coder): scenario 04's step
+  handlers must land in the SAME parcel as the D1 fix — the acceptance
+  runner hard-fails on any scenario lacking a handler, so forwarding the
+  re-fix without them blocks the hardener's gate. Scenario 04 reuses
+  scenario 03's literal Given ("one control-plane incident is already
+  recorded for this loss") so both bind one handler.
+
+  IR-DRY re-run after the addition: still exactly one finding, the same
+  0.889 family adjudicated at mint (outline <prior> placeholder vs the
+  shared literal Given, now with scenario 04's occurrence) — deliberate
+  shared setup, kept for the same reason. Lint gate: clean parse.
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: ec033029e2, evidence: backlog/evidence/BL-958-full-forge-tmux-control-plane-crash-root-cause-bounce-20260819.md }
