@@ -25,7 +25,12 @@ export function topicIdOf(update: TelegramUpdate): number | undefined {
 }
 
 export function messageTextOf(update: TelegramUpdate): string | undefined {
-  return update.message?.text;
+  // BL-620: Telegram carries a media message's words in `caption`, not
+  // `text` - reading only text silently dropped every principal
+  // photo+caption directive as "no-text" (incident 2026-07-24). One seam:
+  // every consumer (main routing, steering, agent-questions, control
+  // delivery, negotiation relay) inherits caption support from here.
+  return update.message?.text ?? update.message?.caption;
 }
 
 // BL-294: reserved key for private DM subjects (no message_thread_id).
