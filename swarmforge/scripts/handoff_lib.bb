@@ -604,33 +604,87 @@
 (defn rotate-force-override? []
   (= "1" (System/getenv rotate-force-env-var)))
 
+;; BL-921/BL-927: single definition of "the resident pane's live identity" -
+;; originally handoffd.bb-local (BL-921), relocated here so
+;; departing-role-blocking-handoff below can reuse it too without a circular
+;; load-file (handoffd.bb already load-files this file, not the reverse).
+;; handoffd.bb's own two call sites now read handoff-lib/resident-live-role -
+;; the engineering article's mirrored-predicate rule applies with no
+;; language boundary forcing a duplicate here, so there must be exactly one.
+(defn resident-live-role
+  "Probes the resident pane's OWN start command for the launch script it is
+   actually running - independent of the mono-router-active-role marker file
+   chase/rotation gates would otherwise trust alone. rotate-resident-to!
+   respawns the pane as `zsh '<root>/.swarmforge/launch/<role>.sh'`, so the
+   live role name is read directly off #{pane_start_command}, never off the
+   marker. Returns the role name, or nil when the session is gone, the tmux
+   call fails, or the command names no launch script - an identity that
+   cannot be read must never be treated as agreement (see
+   mono-router-lib/live-role-agrees?)."
+  [socket session]
+  (when-not (str/blank? session)
+    (try
+      (let [result (sh/sh "tmux" "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
+        (when (zero? (:exit result))
+          (let [line (first (str/split-lines (str (:out result))))]
+            (when-let [[_ role] (re-find #"launch/([^/]+)\.sh" (or line ""))]
+              role))))
+      (catch Exception _ nil))))
+
 (defn departing-role-blocking-handoff
   "The currently-active (about-to-depart) role, and its own inbox/in_process/
    *.handoff file if any - what the resident-invoked rotation gate refuses
    on. Returns {:role ... :blocking-file ...}, both nil when undetermined.
-   Deliberately reads the RAW active-role marker (not
-   read-mono-router-active-role's home-role fallback): fails OPEN (:role and
-   :blocking-file both nil, so rotation proceeds) whenever the departing
-   role can't actually be determined - missing/blank marker, or no
-   roles.tsv row for it - rather than guessing an identity and gating on
-   the wrong role's mailbox. handoff-files already filters to real
-   *.handoff parcels only, so a lone claim-progress/nudge/chase sidecar
-   never blocks.
+
+   The RAW active-role marker only gates whether a candidate is considered
+   at all: fails OPEN (both nil, rotation proceeds) exactly as BL-805
+   specified whenever a candidate can't even be found - missing/blank
+   marker, or no roles.tsv row for it. handoff-files already filters to
+   real *.handoff parcels only, so a lone claim-progress/nudge/chase
+   sidecar never blocks.
+
+   BL-927: once a marker candidate exists, the marker's OWN claim is never
+   sufficient evidence on its own - the :role actually returned is resolved
+   from the resident pane's LIVE identity via the :live-role-fn option (an
+   injectable arity-0 seam so tests never need a live tmux session; defaults
+   to a real resident-live-role probe), reusing mono-router-lib/live-role-agrees? for
+   the unreadable-is-divergence rule (BL-921) rather than a second
+   definition. Three outcomes:
+     - live identity agrees with the marker -> byte-identical to the
+       pre-BL-927 result (the common case).
+     - live identity is readable but names a DIFFERENT known role -> the
+       departing role and its mailbox resolve from THAT role instead - the
+       residual case BL-926 alone does not close (marker diverged, target a
+       third role).
+     - live identity cannot be read at all -> fails OPEN, same as a missing
+       marker. Divergence only ever WIDENS the fail-open set here, never
+       narrows a case BL-805 already covered (invariant 2).
 
    BL-926: :role is the departing role rotate-gate-decision compares
    against the rotation target under :active-role - rotating INTO the role
-   that owns the blocking parcel is not abandonment. BL-927 (out of scope
-   here) is resolving this from the pane's live identity rather than the
-   raw marker."
-  []
-  (let [marker-path (mono-router-active-role-path)]
-    (or (when (fs/exists? marker-path)
-          (let [role (str/trim (slurp (str marker-path)))]
-            (when-not (str/blank? role)
-              (when-let [role-info (load-role-info role)]
-                {:role role
-                 :blocking-file (first (handoff-files (mailbox-dir role-info :in_process)))}))))
-        {:role nil :blocking-file nil})))
+   that owns the blocking parcel is not abandonment."
+  ([] (departing-role-blocking-handoff {}))
+  ([{:keys [live-role-fn]
+     :or {live-role-fn (fn [] (resident-live-role (tmux-socket) (mono-router-resident-session)))}}]
+   (let [marker-path (mono-router-active-role-path)]
+     (or (when (fs/exists? marker-path)
+           (let [marker-role (str/trim (slurp (str marker-path)))]
+             (when-not (str/blank? marker-role)
+               (when-let [marker-role-info (load-role-info marker-role)]
+                 (let [live-role (live-role-fn)]
+                   (cond
+                     (mono-router-lib/live-role-agrees? live-role marker-role)
+                     {:role marker-role
+                      :blocking-file (first (handoff-files (mailbox-dir marker-role-info :in_process)))}
+
+                     (some-> live-role str str/trim not-empty)
+                     (let [live-role* (str/trim (str live-role))]
+                       (when-let [live-role-info (load-role-info live-role*)]
+                         {:role live-role*
+                          :blocking-file (first (handoff-files (mailbox-dir live-role-info :in_process)))}))
+
+                     :else nil))))))
+         {:role nil :blocking-file nil}))))
 
 (defn session-exists?
   "True when tmux has a live session of this name on the project socket."
