@@ -54,6 +54,20 @@ notes: |
   2026-08-19 06:05 coordinator: 7th repeat (000535), same non-reason, slot
   filled by BL-938 first.
 
+  2026-08-19 21:28 coordinator: 8th repeat (nudge "BL-543 awaiting
+  approval"). THREE specific blockers, none of them "not now":
+  (1) `human_approval` is ABSENT from this ticket entirely — not pending,
+  not rejected, simply never recorded — so the approval gate holds it
+  closed. This is the one a human can clear.
+  (2) `type: epic` with `acceptance: none` ("tracker only — see
+  decomposes_into children"). Even approved it is NOT routable as a parcel:
+  routing a tracker to the coder hands them no acceptance contract. Its
+  CHILDREN are the promotable units, and they carry their own approval.
+  (3) The slot that triggered this sweep was filled in the SAME turn by
+  BL-910 (23f70be5f), leaving active 7 = cap 7.
+  Blocked on a human for (1) and on decomposition for (2) — not asleep.
+  Recorded per SUP-1 rather than cleared as a duplicate.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high
