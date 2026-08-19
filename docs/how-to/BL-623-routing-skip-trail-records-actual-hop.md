@@ -12,6 +12,29 @@ After BL-623, the record derives from **what the hop actually skipped**: canonic
 
 Delivery behaviour is unchanged. Recording only.
 
+**As of BL-951**, the fourth bullet below no longer applies — a record is
+produced whatever the declaration state, not only when the ticket carries a
+valid `required_stages`. Before BL-951, `route-required-stages` returned
+before recording whenever `resolve-effective` read `:default-full` — field
+absent, unparseable, present-but-invalid, or the sender's worktree simply had
+no active-ticket copy of the field yet (the BL-317/BL-325 staleness window).
+That made the conservative default — "no declaration, assume everything is
+required" — the one case with no audit trail: a coder→QA hop that jumped four
+stages left no `routing_skipped` header and no jsonl line whenever the
+sender's ticket copy lacked the field, even though an identical jump on a
+declaring ticket recorded both. The record now derives from the hop itself
+(`hop-skipped-stages sender delivered`), which needs no declaration to
+compute, so it runs for every forward hop. Only the **rewrite** decision — not
+recording — is still gated on a usable declaration.
+
+A present-but-invalid declaration also now surfaces its rejection reason on
+the record itself: `rejected="<reason>"` on the envelope header, and a
+`rejection-reason` key on the jsonl line (see "Emitted shapes" below).
+Previously `resolve-effective`'s `:rejected?`/`:rejection-reason` were
+computed but never read by the caller — folded silently into the same
+no-record bucket as "no declaration at all", against `required_stages_lib`'s
+own docstring.
+
 ## When a record is produced
 
 All of the following must hold:
@@ -19,8 +42,9 @@ All of the following must hold:
 - `SWARMFORGE_REQUIRED_STAGES_ROUTING=1` (or routing enabled in config)
 - The handoff is a forward hop (`routes-forward?` — sender before recipient in the canonical chain)
 - Single recipient, no `rejection_reason` or `reroute_reason` header
-- The ticket has a valid `required_stages` declaration (not default-full)
 - The hop skips at least one canonical stage between sender and delivered recipient
+
+The ticket's `required_stages` declaration state (absent, invalid, staleness-window-nil, or fully declared) no longer gates recording — see "As of BL-951" above. It still gates whether the router **rewrites** the literal recipient.
 
 **No record** when:
 
@@ -35,7 +59,7 @@ All of the following must hold:
 Grammar (from `format-routing-skipped` in `swarmforge/scripts/swarm_handoff.bb`):
 
 ```
-routing_skipped: <ticket-id> <from>-><to> skipped=<stage>[,<stage>...][ reasons=<stage>:<reason>[;<stage>:<reason>...]]
+routing_skipped: <ticket-id> <from>-><to> skipped=<stage>[,<stage>...][ reasons=<stage>:<reason>[;<stage>:<reason>...]][ rejected="<reason>"]
 ```
 
 Example:
@@ -45,6 +69,13 @@ routing_skipped: BL-900 coder->QA skipped=cleaner,architect,hardender,documenter
 ```
 
 `routing_skipped` is reserved — agents must not write it in drafts.
+
+**As of BL-951**, a hop whose `required_stages` declaration is
+present-but-invalid also carries a trailing `rejected="<reason>"` clause,
+e.g. `routing_skipped: BL-042 coder->QA skipped=cleaner,architect rejected="unknown or out-of-chain stage(s) in required_stages: revieweer"`.
+The clause is present only when `resolve-effective` rejected the
+declaration (unknown/duplicate stages, or coder present without QA); an
+absent or fully-valid declaration never carries it.
 
 ### Journal line
 
@@ -63,6 +94,7 @@ Keys:
 | `to` | Delivered recipient after routing |
 | `skipped` | Stages skipped on this hop |
 | `reasons` | Ticket's declared `stage_skip_reasons` where present |
+| `rejection-reason` | Present only when the ticket's `required_stages` was present but invalid (BL-951) — why `resolve-effective` rejected it |
 | `sender` | Same as `from` (duplicate for grep convenience) |
 | `created_at` | ISO timestamp when the handoff was written |
 
@@ -85,5 +117,6 @@ Stages **not** listed in `skipped` for a hop are the ones that ran on that hop. 
 ## Related
 
 - BL-606: required-stages routing, kill-switch, rewrite behaviour
+- BL-951: recording no longer gated on a valid/present declaration; adds `rejected="..."` / `rejection-reason`
 - `swarmforge/handoff-protocol.md` — "Reading the Routing Log" section
-- `swarmforge/scripts/required_stages_lib.bb` — `hop-skipped-stages`, `ran-and-skipped`
+- `swarmforge/scripts/required_stages_lib.bb` — `hop-skipped-stages`, `ran-and-skipped`, `resolve-effective`
