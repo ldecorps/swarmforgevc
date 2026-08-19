@@ -134,6 +134,33 @@ function runDaemonRotate(ctx) {
   ctx.daemonOutput = out;
 }
 
+// BL-931 architect bounce: every Then step below reads only plain
+// in-memory data - none of them touch ctx.root (or anything under it)
+// again after the When step, so the fixture root is safe to remove right
+// after this capture runs, even if the invocation above threw. Captured
+// here (inside the When step, before cleanup) rather than lazily in each
+// Then step.
+function captureFixtureState(ctx) {
+  ctx.tmuxLogContent = fs.readFileSync(ctx.tmuxLog, 'utf8');
+  ctx.markerContent = fs.readFileSync(ctx.markerFile, 'utf8').trim();
+  ctx.specifierScriptExists = fs.existsSync(path.join(ctx.root, '.swarmforge', 'launch', 'specifier.sh'));
+}
+
+// Hardening (BL-931): seedFixture (the Background step) creates ctx.root,
+// but the "Given the pack declares <rotation mode>" step below can throw
+// while VALIDATING the example value, before the When step's own
+// try/finally ever runs - exactly the shape a Gherkin mutant of
+// <rotation mode> exercises (confirmed leaking two real fixture dirs into
+// $TMPDIR during this ticket's own BL-113 pass). A try/finally local to
+// the throwing step cannot save it either: the dir was created by a
+// DIFFERENT (earlier) step. Every throw that can fire before the When
+// step's cleanup must release the fixture itself.
+function cleanupFixture(ctx) {
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+  }
+}
+
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.defineScoped(
@@ -149,6 +176,7 @@ function registerSteps(registry) {
     /^the pack declares (.+)$/,
     (ctx, raw) => {
       if (!Object.prototype.hasOwnProperty.call(KNOWN_ROTATION_MODES, raw)) {
+        cleanupFixture(ctx);
         throw new Error(`bl931: unrecognized <rotation mode> example value "${raw}"`);
       }
       writeConf(ctx, KNOWN_ROTATION_MODES[raw]);
@@ -177,7 +205,12 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the resident rotate helper is invoked for another role$/,
     (ctx) => {
-      runResidentRotate(ctx);
+      try {
+        runResidentRotate(ctx);
+        captureFixtureState(ctx);
+      } finally {
+        cleanupFixture(ctx);
+      }
     },
     FEATURE_NAME
   );
@@ -185,7 +218,12 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the handoff daemon invokes the rotate helper directly$/,
     (ctx) => {
-      runDaemonRotate(ctx);
+      try {
+        runDaemonRotate(ctx);
+        captureFixtureState(ctx);
+      } finally {
+        cleanupFixture(ctx);
+      }
     },
     FEATURE_NAME
   );
@@ -206,7 +244,7 @@ function registerSteps(registry) {
         }
         return;
       }
-      const tmuxLogContent = fs.readFileSync(ctx.tmuxLog, 'utf8');
+      const tmuxLogContent = ctx.tmuxLogContent;
       if (expected === 'proceed') {
         if (ctx.exitCode !== 0 || !tmuxLogContent.includes('respawn-pane')) {
           throw new Error(`bl931: expected the rotation to proceed, exit=${ctx.exitCode} output=${ctx.output} log=${tmuxLogContent}`);
@@ -224,9 +262,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^no pane is respawned$/,
     (ctx) => {
-      const tmuxLogContent = fs.readFileSync(ctx.tmuxLog, 'utf8');
-      if (tmuxLogContent.trim() !== '') {
-        throw new Error(`bl931: expected no tmux command at all, log: ${tmuxLogContent}`);
+      if (ctx.tmuxLogContent.trim() !== '') {
+        throw new Error(`bl931: expected no tmux command at all, log: ${ctx.tmuxLogContent}`);
       }
     },
     FEATURE_NAME
@@ -238,15 +275,14 @@ function registerSteps(registry) {
       // No respawn-pane call was ever issued (proven by the prior step), so
       // the pane's own live process (out of this fixture's reach - the
       // fake tmux never actually runs anything) was never touched at all.
-      // What IS provable here: the specifier launch script itself is
-      // untouched on disk, and the pane's session name was never a target
-      // of any tmux command.
-      const tmuxLogContent = fs.readFileSync(ctx.tmuxLog, 'utf8');
-      if (tmuxLogContent.includes('swarmforge-specifier')) {
-        throw new Error(`bl931: the standing specifier pane's session was addressed by a tmux command, log: ${tmuxLogContent}`);
+      // What IS provable here: the specifier launch script itself was
+      // still on disk (untouched) and the pane's session name was never a
+      // target of any tmux command - both captured by the When step,
+      // before the fixture root was removed.
+      if (ctx.tmuxLogContent.includes('swarmforge-specifier')) {
+        throw new Error(`bl931: the standing specifier pane's session was addressed by a tmux command, log: ${ctx.tmuxLogContent}`);
       }
-      const scriptPath = path.join(ctx.root, '.swarmforge', 'launch', 'specifier.sh');
-      if (!fs.existsSync(scriptPath)) {
+      if (!ctx.specifierScriptExists) {
         throw new Error('bl931: the specifier launch script itself must still exist, untouched');
       }
     },
@@ -256,9 +292,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the active-role marker is unchanged$/,
     (ctx) => {
-      const marker = fs.readFileSync(ctx.markerFile, 'utf8').trim();
-      if (marker !== 'specifier') {
-        throw new Error(`bl931: expected the active-role marker to stay "specifier", got: "${marker}"`);
+      if (ctx.markerContent !== 'specifier') {
+        throw new Error(`bl931: expected the active-role marker to stay "specifier", got: "${ctx.markerContent}"`);
       }
     },
     FEATURE_NAME
