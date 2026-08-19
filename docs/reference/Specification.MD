@@ -1,6 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 18, 2026 (BL-925: the commit-time guard (BL-632)
+**Last Updated:** August 19, 2026 (BL-929: the Live Screen
+(`/resident-spy`, shared by the Mini App and Bubble Live) decided its whole
+layout — a `RESIDENT` tile, a global top ticket strip, another role's
+identity leaking onto a tile's subtitle — from whether
+`.swarmforge/mono-router-active-role` existed, but `handoff_lib.bb`'s
+`write-mono-router-active-role!` keeps that marker actively maintained
+through a standing full pack's entire run (measured 2026-08-18: mtime 14
+minutes into a full-forge launch), so a standing pack with its own pane
+per role always rendered as if it were a single rotating resident.
+`residentPaneLive.ts`'s `isMonoRouterLayout` now delegates to a pure
+`decideMonoRouterLayout({configRotationRouter, liveRoleCount})`: a new
+`configHasRotationRouter()` (`swarmLauncher.ts`) reading whether the
+resolved pack config declares `config rotation router` wins whenever
+resolvable (no launch-time transient), with live session count — already
+correct on its own, `<= 2` for a real mono-router pack — as fallback only.
+The marker has no place in the new function's signature at all, so
+invariant 1 (the marker never decides layout) is structural, not just
+behavioral. `residentSpyUiHtml.ts`'s `updateTicketStrip` now hides
+`#ticket-strip` outright whenever the snapshot's new `monoRouterLayout`
+boolean is false (defaulting false before the first poll — fails closed
+toward no strip). One renderer still serves both surfaces (Bubble's
+`RemotePageHost.kt` hosts a generic WebView on the same served page, no
+Kotlin change needed). **Architect bounce:** the acceptance step handler's
+`fs.mkdtempSync` fixture was never removed, leaking 4 dirs per run — fixed
+by folding `fs.rmSync` into the capture step's existing `finally`, since
+every later `Then` step already worked from in-memory data captured
+earlier. **Hardener:** hand-authored mutant kills (Stryker skip-busy under
+load, no Scenario Outline for BL-113) on `configHasRotationRouter`'s exact-
+line match (an `.includes()` loosening would false-match a comment merely
+mentioning the directive) and on deriving `monoRouterLayout` from a live
+resident pane instead of recomputing it (diverges exactly when a
+mono-router pack's resident session isn't currently up).); Previously
+August 18, 2026 (BL-925: the commit-time guard (BL-632)
 refused completing a merge that only *imports* an already-QA-published
 `origin/main` — indistinguishable, to a guard that asked only branch and
 `SWARMFORGE_ROLE`, from fresh non-QA pipeline authorship — so BL-891's
