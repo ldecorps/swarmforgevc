@@ -177,3 +177,6 @@ notes: |
   scenario's point. Left as-is deliberately; do not "resolve" them.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: bfeeef67ea, evidence: backlog/evidence/BL-942-architect-bounce-20260819.md }
