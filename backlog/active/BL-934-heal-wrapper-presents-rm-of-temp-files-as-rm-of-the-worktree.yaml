@@ -131,3 +131,5 @@ qa_e2e_procedure: |
      original command still appears as a command in the wrapper source,
      not only inside an encoded string the classifier would not parse
      as rm.
+
+assigned_to: coder

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=1e8f97634cd6c06a4624b66e88f8ede9bef92de79bd16aa35af41f8466c84f43
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-19T00:29:48.948355Z","feature_name":"a pack without rotation router never has a standing pane respawned as another role","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-931-rotation-is-refused-on-a-pack-that-has-no-rotation-router.feature","background_hash":"b9bd8403cede50f468d5cd9aefe66c1420aa292cf794e6c066d57efd5e15d5b3","implementation_hash":"unknown","scenarios":[{"index":0,"name":"rotation is decided by whether the pack rotates at all","scenario_hash":"182fe199695fc6bd5a24d4cab103b0e22b2472261e0349fe78286051315eb7d9","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-19T00:29:48.948355Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a pack without rotation router never has a standing pane respawned as another role
 
   # BL-931 (swarm-reliability). Rotation exists for `config rotation router`
