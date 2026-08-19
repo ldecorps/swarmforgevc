@@ -494,7 +494,8 @@ const DOMAINS = [
   require('./bl915CursorBridgeGoneAgentSessionResetSteps'),
   require('./bl585PipelineBoardTicketColumnMatrixSteps'),
   require('./bl938AgedNoteRotateFixtureRotationRouterSteps'),
-  require('./bl923DwellCountsOccupiedTimeSteps')
+  require('./bl923DwellCountsOccupiedTimeSteps'),
+  require('./bl939TwoPackSmokeCheckDropsCoordinatorWindowSteps')
 ];
 
 function registerSteps(registry) {
