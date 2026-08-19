@@ -6,7 +6,9 @@ const {
   deriveDisplayTicketId,
   compareLinksMostRecentFirst,
   computePipelineBoard,
+  renderPipelineBoardGridOnly,
   PIPELINE_BOARD_COLUMN_ORDER,
+  PIPELINE_BOARD_GRID_MAX_WIDTH,
 } = require('../out/concierge/pipelineBoard');
 const { ALL_SWARM_ROLES } = require('../out/concierge/roleTopicMapStore');
 
@@ -189,6 +191,65 @@ test('property: a ticket held by any ALL_SWARM_ROLES role always renders on a re
       assert.ok(
         PIPELINE_BOARD_COLUMN_ORDER.includes(rows[0].column),
         `role=${role} produced column=${rows[0].column}, not a member of PIPELINE_BOARD_COLUMN_ORDER=${PIPELINE_BOARD_COLUMN_ORDER.join(', ')}`
+      );
+    })
+  );
+});
+
+// BL-585 (architect, property-testing support): the width budget
+// (PIPELINE_BOARD_GRID_MAX_WIDTH) is the sharp new correctness surface this
+// ticket adds - pipelineBoard.test.js and the BL-585 acceptance feature only
+// pin it at 3 hand-picked active-ticket counts, all with 3-character-wide
+// ids ("3", "7", "10"). Ticket ids are not always 3 digits wide (this very
+// backlog already has BL-938/BL-939), and the formula
+// (maxVisibleGridColumns) recomputes its column count from the WIDEST id
+// across every candidate row, so a 4+ digit id changes the visible column
+// count too - a case none of the fixed examples exercise. This property
+// holds for any distinct set of ticket numbers (1 to 6 digits, so cell width
+// varies) assigned round-robin across every real pipeline role: (1) no
+// matrix line (header + one line per pipeline-stage row) ever exceeds the
+// budget - the ticket's own "no grid line is wider than 30 characters"
+// wording, restated generically; (2) conservation - every active ticket is
+// accounted for exactly once, either as a visible column+caption or folded
+// into the "+N more active" count, for any N and any id-width mix, not only
+// the three sizes pinned above. Verified non-vacuous by temporarily
+// widening PIPELINE_BOARD_GRID_MAX_WIDTH's effective budget in
+// maxVisibleGridColumns's own maxWidth argument (simulating a dropped width
+// check) - the width property failed immediately on wider inputs, as
+// expected; reverted after.
+const ticketNumbersArb = fc.uniqueArray(fc.integer({ min: 1, max: 999999 }), { minLength: 1, maxLength: 60 });
+
+test('property: the rendered grid never exceeds the width budget and accounts for every active ticket, for any ticket-id-width mix', () => {
+  fc.assert(
+    fc.property(ticketNumbersArb, (numbers) => {
+      const ids = numbers.map((n) => `BL-${n}`);
+      const roleHeldTickets = {};
+      ids.forEach((id, i) => {
+        const role = ALL_SWARM_ROLES[i % ALL_SWARM_ROLES.length];
+        (roleHeldTickets[role] ??= []).push(id);
+      });
+      const data = computePipelineBoard(roleHeldTickets, [], {}, { activeIds: ids });
+      const lines = renderPipelineBoardGridOnly(data).split('\n');
+
+      const matrixLineCount = PIPELINE_BOARD_COLUMN_ORDER.length + 1; // header + one row per stage
+      const matrixLines = lines.slice(0, matrixLineCount);
+      for (const line of matrixLines) {
+        assert.ok(
+          line.length <= PIPELINE_BOARD_GRID_MAX_WIDTH,
+          `matrix line "${line}" (${line.length} chars) exceeds PIPELINE_BOARD_GRID_MAX_WIDTH=${PIPELINE_BOARD_GRID_MAX_WIDTH} for ${ids.length} tickets`
+        );
+      }
+
+      assert.equal(lines[matrixLineCount], '', 'expected a blank line between the matrix and its captions');
+      const tail = lines.slice(matrixLineCount + 1);
+      const overflowMatch = tail.length > 0 && /^\+(\d+) more active$/.exec(tail[tail.length - 1]);
+      const dropped = overflowMatch ? Number(overflowMatch[1]) : 0;
+      const captionCount = overflowMatch ? tail.length - 1 : tail.length;
+
+      assert.equal(
+        captionCount + dropped,
+        ids.length,
+        `expected ${captionCount} shown + ${dropped} dropped to account for all ${ids.length} active tickets`
       );
     })
   );
