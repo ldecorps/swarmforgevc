@@ -1,6 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-955: BL-620's shared `messageTextOf`
+**Last Updated:** August 19, 2026 (BL-954: bouncing a parcel requires the
+bouncing role to revert the bounced commit's content out of its own
+`swarmforge-<role>` review branch in the same step (BL-490/BL-495), but
+nothing checked that this happened — measured live 2026-08-19, the
+architect's two BL-935 bounces left 5 of 7 bounced files byte-identical at
+`swarmforge-architect`'s tip with no revert commit anywhere, and both
+landed on `main` and `origin/main` before BL-935 itself was approved,
+caught only by a role that happened to look by eye. `record-bounce.js` now
+runs a report-only bounce revert check immediately after it durably writes
+the bounce record (never gating the record itself — a check that cannot
+complete reports its cause, never reads as clean). The verdict is decided
+by CONTENT at the bouncing branch's tip, never by ancestry — a properly
+reverted bounce, whose commit stays a permanent ancestor, always reads
+clean — with one exception: a bounced commit already an ancestor of either
+`main` or `origin/main` (either ref can be the stale one, BL-891) resolves
+to a breach report, never a revert instruction, since reverting published
+history is out of the constitution's bounds. This is the entrance-side
+companion to BL-952's exit-side `is_qa_ancestor.sh` check: BL-952 is scoped
+to the `swarmforge-QA` ref, so it could not have seen this bounce, whose
+bouncing role was the architect. See the new "Bounce Revert Verification
+(BL-954)" section of `swarmforge/handoff-protocol.md`. No new extension
+command or setting — fork/operator-substrate tooling under
+`extension/src/tools/`.); Previously August 19, 2026 (BL-955: BL-620's
+shared `messageTextOf`
 seam (`text ?? caption`) taught every text-reading surface of the Telegram
 front desk to read photo captions in one commit, but BL-620 wired its
 `annotateRoutedMediaText` "no vision, said out loud" note into only the
