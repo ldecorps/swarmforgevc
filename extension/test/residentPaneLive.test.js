@@ -349,6 +349,44 @@ test('BL-929: the config signal recognizes a real rotation (mono-router) pack', 
   }
 });
 
+// Hardening (BL-929): confirmed a hand-authored mutant that derives
+// monoRouterLayout from `panes.some(id === 'resident')` instead of
+// recomputing it survives every other test and the full acceptance suite -
+// in every existing fixture the coder/resident role is itself live, so the
+// two computations happen to agree. They diverge exactly when the pack is
+// mono-router BY CONFIG but the resident session is not currently live (not
+// yet started, or crashed): captureLiveScreenPanes then has no entry to
+// carry id 'resident' at all, while the config signal is unaffected by
+// session count and still reports mono-router layout. The snapshot's
+// monoRouterLayout must track the pack's declared shape, not merely
+// whether a resident tile happened to render this tick - a screen with NO
+// resident pane and NO top strip (the "derived" mutant's answer) would be
+// the exact full-pack misread this ticket exists to prevent, just reached
+// from a mono-router config instead of a full-pack one.
+test('BL-929: the config signal still reports mono-router layout when the resident session is not yet live', () => {
+  const tmp = mkTmpDir('sfvc-mono-router-resident-down-');
+  const stateDir = path.join(tmp, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
+  // Only the coordinator session is up - the resident/coder session has not
+  // started yet (or has crashed), so no 'resident' id can appear in panes.
+  fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), '1\tcoordinator\tswarmforge-coordinator\tCoordinator\tclaude\n');
+  const configPath = path.join(tmp, 'mono-router.conf');
+  fs.writeFileSync(configPath, 'config active_backlog_max_depth 2\nconfig rotation router\nwindow coder claude coder\n');
+  const fake = seedFullPackFakeTmux('$ some command\n> plain output, no role banner');
+  try {
+    withSwarmforgeConfig(configPath, () => {
+      const panes = captureLiveScreenPanes(tmp);
+      assert.ok(!panes.some((p) => p.id === 'resident'), 'no resident tile can exist while the coder session is not live');
+
+      const screen = captureMonoRouterLiveScreen(tmp);
+      assert.equal(screen.monoRouterLayout, true, 'the config signal must hold even with no resident tile to derive it from');
+    });
+  } finally {
+    fake.restore();
+  }
+});
+
 test('orderLiveScreenRoles sorts coordinator first then pipeline chain', () => {
   const roles = orderLiveScreenRoles([
     { role: 'QA', session: 's', displayName: 'QA', index: 1, agent: 'claude' },
