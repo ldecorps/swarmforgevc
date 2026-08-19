@@ -26,18 +26,26 @@ function mkFixtureProjectRoot() {
 // only ever used to test renderBriefingDiagrams() directly, below).
 const REAL_PROJECT_ROOT = path.join(__dirname, '..', '..');
 
-test('renders exactly the two maintained diagrams, named and base64-encoded', async () => {
-  const diagrams = await renderBriefingDiagrams(mkFixtureProjectRoot());
+// BL-914: real CPU-bound mermaid layout + native resvg rendering, by design
+// - measures consistently within a few percent of the 20000ms suite default
+// even in isolation (BL-815 evidence). A per-test override buys headroom
+// without touching the suite-wide default every other test still relies on.
+test(
+  'renders exactly the two maintained diagrams, named and base64-encoded',
+  async () => {
+    const diagrams = await renderBriefingDiagrams(mkFixtureProjectRoot());
 
-  assert.deepEqual(
-    diagrams.map((d) => d.name),
-    ['architecture', 'swarm-flow']
-  );
-  for (const { base64 } of diagrams) {
-    const png = Buffer.from(base64, 'base64');
-    assert.ok(png.subarray(0, 8).equals(PNG_MAGIC), 'each entry must decode to a well-formed PNG');
-  }
-});
+    assert.deepEqual(
+      diagrams.map((d) => d.name),
+      ['architecture', 'swarm-flow']
+    );
+    for (const { base64 } of diagrams) {
+      const png = Buffer.from(base64, 'base64');
+      assert.ok(png.subarray(0, 8).equals(PNG_MAGIC), 'each entry must decode to a well-formed PNG');
+    }
+  },
+  45000
+);
 
 test('a missing diagram source file rejects rather than silently omitting it (handoffd.bb\'s shell-out treats any failure as "rendering unavailable this run")', async () => {
   const root = mkFixtureProjectRoot();
@@ -78,30 +86,42 @@ async function runCli(cwd) {
   return JSON.parse(writes.join(''));
 }
 
-test("main() runs in-process against the real repo and prints the two maintained diagrams as JSON", async () => {
-  const diagrams = await runCli(REAL_PROJECT_ROOT);
+// BL-914: same real render path as above, in-process this time - same
+// headroom rationale.
+test(
+  "main() runs in-process against the real repo and prints the two maintained diagrams as JSON",
+  async () => {
+    const diagrams = await runCli(REAL_PROJECT_ROOT);
 
-  assert.deepEqual(
-    diagrams.map((d) => d.name),
-    ['architecture', 'swarm-flow']
-  );
-  for (const { base64 } of diagrams) {
-    assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));
-  }
-});
+    assert.deepEqual(
+      diagrams.map((d) => d.name),
+      ['architecture', 'swarm-flow']
+    );
+    for (const { base64 } of diagrams) {
+      assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));
+    }
+  },
+  45000
+);
 
 // A single subprocess smoke test locks the compiled CLI's own wiring
 // (require.main === module, real argv/env boundary) - an ADDITION to the
 // in-process test above, never the only cover for the real logic.
-test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
-  const output = runCliSubprocess(REAL_PROJECT_ROOT);
-  const diagrams = JSON.parse(output);
+// BL-914: a real subprocess on top of the same real render path - same
+// headroom rationale.
+test(
+  'the compiled CLI runs standalone as a subprocess and produces the same result',
+  () => {
+    const output = runCliSubprocess(REAL_PROJECT_ROOT);
+    const diagrams = JSON.parse(output);
 
-  assert.deepEqual(
-    diagrams.map((d) => d.name),
-    ['architecture', 'swarm-flow']
-  );
-  for (const { base64 } of diagrams) {
-    assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));
-  }
-});
+    assert.deepEqual(
+      diagrams.map((d) => d.name),
+      ['architecture', 'swarm-flow']
+    );
+    for (const { base64 } of diagrams) {
+      assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));
+    }
+  },
+  45000
+);
