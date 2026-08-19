@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-19T02:20:16.121066Z","feature_name":"the rotate gate protects the mailbox of the role the pane is really running","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-927-rotate-gate-resolves-departing-role-from-the-raw-marker.feature","background_hash":"3e399d13f0f1e5c8e418cbc9a8f85fcf79a60b99797779034efb4f2dcfc3c79e","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a departing role that cannot be determined at all still fails open","scenario_hash":"bd8226432bd052f119900c4d87a6ff337f33c95d9b2a1dbfacf8f59a909c9c83","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-19T02:14:04.089654Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the rotate gate protects the mailbox of the role the pane is really running
 
   # BL-927 (swarm-reliability). handoff-lib/departing-role-blocking-handoff
@@ -32,6 +36,7 @@ Feature: the rotate gate protects the mailbox of the role the pane is really run
     And role "<box owner>" holds a real parcel in its in_process box
     When the resident invokes rotation to "documenter"
     Then the rotate gate decision is "<decision>"
+    And the departing role resolved is the pane's live identity
 
     Examples:
       | marker  | live  | box owner | decision |
