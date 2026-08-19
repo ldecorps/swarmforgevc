@@ -153,15 +153,48 @@ function makeFixture() {
       `cleaner\tcleaner\t${cleanWt}\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n`
   );
 
+  // BL-936: this fixture's own concern is BL-805's stuck-parcel gate, not
+  // BL-931's pack-router gate - declare a rotation-router pack here (same
+  // conf route swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh
+  // already uses for the identical reason) so every SHAPES row below still
+  // exercises what it always did, rather than being refused upstream by
+  // the newer gate before it ever reaches the stuck-parcel check it exists
+  // to test.
+  fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'swarmforge', 'swarmforge.conf'), 'config rotation router\n');
+
   fs.writeFileSync(path.join(root, 'fake.sock'), '');
   fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), path.join(root, 'fake.sock'));
 
   fs.writeFileSync(path.join(root, '.swarmforge', 'launch', 'cleaner.sh'), '#!/bin/sh\nexit 0\n');
   fs.chmodSync(path.join(root, '.swarmforge', 'launch', 'cleaner.sh'), 0o755);
 
+  // BL-936 (found live while restoring this file to green, not in the
+  // ticket's own diagnosis - see the property test's own comments):
+  // BL-927 made departing-role-blocking-handoff distrust the marker file
+  // alone and confirm it against the resident pane's LIVE identity, probed
+  // via a real `tmux list-panes -F "#{pane_start_command}"` call
+  // (handoff_lib.bb's resident-live-role). A fake tmux that only logs its
+  // args and exits 0 - correct for the respawn-pane calls this fixture
+  // already asserts on - answers list-panes with an EMPTY stdout, so the
+  // live-identity probe reads as unresolvable and departing-role-blocking-handoff
+  // fails OPEN (same as a missing marker, by design - BL-921), silently
+  // defeating property 2's gate regardless of in_process contents. The
+  // departing role is always "coder" in every scenario this file drives
+  // (fx.coderWt is the fixed CWD, resetMarkerAndLog always writes
+  // "coder\n"), so the fake answers list-panes with a fixed
+  // launch/coder.sh line rather than tracking real pane state.
   const binDir = path.join(root, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
-  fs.writeFileSync(path.join(binDir, 'tmux'), '#!/usr/bin/env bash\necho "$*" >> "$TMUX_LOG"\nexit 0\n');
+  fs.writeFileSync(
+    path.join(binDir, 'tmux'),
+    '#!/usr/bin/env bash\n' +
+      'echo "$*" >> "$TMUX_LOG"\n' +
+      'case "$*" in\n' +
+      '  *list-panes*) echo "zsh .swarmforge/launch/coder.sh" ;;\n' +
+      'esac\n' +
+      'exit 0\n'
+  );
   fs.chmodSync(path.join(binDir, 'tmux'), 0o755);
 
   // cleaner's inbox/new already holds the just-forwarded parcel so
