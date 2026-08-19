@@ -168,3 +168,5 @@ out_of_scope: |
   - BL-559's property-test prefix bug — separate ticket, land it first.
   - Pagination or a scrollable/interactive grid. The cap plus "+N more active"
     plus the LINKS list is the whole overflow strategy for this ticket.
+
+assigned_to: coder
