@@ -98,11 +98,24 @@ function mkVerdictFixture() {
   return { root, approved, bounced, fix, unreviewed };
 }
 
+// QA bounce (2026-08-19): every subprocess here neutralizes the invoking
+// role's own SWARMFORGE_ROLE before spawning - the same posture
+// startDaemon() below takes with the Telegram/Resend vars. The scenarios
+// simulate a generic caller, and inheriting the runner's role identity
+// made scenario 10 flip pass/fail by WHO ran it: under QA's own shell,
+// check_pipeline_code_on_main.sh's deliberate role-QA early exit fired
+// before the merge-head/bounce logic under test was ever reached.
+function neutralizedEnv(extra) {
+  const env = { ...process.env, ...(extra || {}) };
+  delete env.SWARMFORGE_ROLE;
+  return env;
+}
+
 function askPredicate(root, sha, { env } = {}) {
   const res = spawnSync('bash', [PREDICATE, sha], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, ...(env || {}) },
+    env: neutralizedEnv(env),
   });
   return { exitCode: res.status ?? 99, stdout: res.stdout || '', stderr: res.stderr || '' };
 }
@@ -386,7 +399,7 @@ function registerSteps(registry) {
       const guard = spawnSync('bash', ['swarmforge/scripts/check_pipeline_code_on_main.sh'], {
         cwd: root,
         encoding: 'utf8',
-        env: { ...process.env, [`GITHEAD_${ctx.sha}`]: 'review-merge' },
+        env: neutralizedEnv({ [`GITHEAD_${ctx.sha}`]: 'review-merge' }),
       });
       ctx.guardAnswer = { exitCode: guard.status ?? 99, output: `${guard.stdout || ''}${guard.stderr || ''}` };
     },

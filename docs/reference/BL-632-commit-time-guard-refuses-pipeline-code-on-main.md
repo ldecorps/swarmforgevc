@@ -4,7 +4,7 @@ Two versioned git hooks refuse, at commit time, a commit or `--no-ff` merge
 that would put pipeline code (`extension/src/`, `extension/test/`,
 `specs/pipeline/steps/`) onto `main` from any role but QA.
 
-**Last Updated:** 2026-08-18
+**Last Updated:** 2026-08-19
 
 ## Background
 
@@ -82,13 +82,17 @@ path's staged content is byte-identical to what that parent holds:
   merge-driver tools rely on — and only when *exactly one* such variable
   is present, so an ambiguous or absent signal never grants the exemption
   (fails closed).
-- **One shared definition of "QA-approved tip."** The ancestry check
-  (`git merge-base --is-ancestor <sha> swarmforge-QA`) lives in exactly
-  one place, `swarmforge/scripts/is_qa_ancestor.sh` — called directly here
-  and shelled to by `handoffd.bb`'s push-sweep gate (`qa-ancestor?`).
-  Neither caller re-implements the ancestry question; a "kept in sync"
-  comment across that bash/Babashka boundary was explicitly rejected as
-  not a gate.
+- **One shared definition of "QA-approved tip."** The approval check lives
+  in exactly one place, `swarmforge/scripts/is_qa_ancestor.sh` — called
+  directly here and shelled to by `handoffd.bb`'s push-sweep gate
+  (`qa-ancestor?`). Originally pure ancestry (`git merge-base --is-ancestor
+  <sha> swarmforge-QA`); as of BL-952 it also refuses a sha carrying an
+  unreverted QA bounce verdict (either the JSONL store `record-bounce.js`
+  appends or a ticket's tracked `bounce_history`), since QA merges a parcel
+  into `swarmforge-QA` to review it, so a bounced parcel stays reachable
+  from that ref and otherwise reads as approved forever. Neither caller
+  re-implements the check; a "kept in sync" comment across that
+  bash/Babashka boundary was explicitly rejected as not a gate.
 - **A genuine conflict is untouched** — git itself fails the merge before
   any hook runs, so a real conflict still aborts exactly as before.
 

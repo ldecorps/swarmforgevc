@@ -214,3 +214,6 @@ approval_context: >
   now. That disposition is yours, not this ticket's.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: QA, blamed: coder, class: acceptance, commit: 398ac46d0, evidence: backlog/evidence/BL-952-qa-bounce-20260819.md }
