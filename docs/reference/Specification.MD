@@ -1,6 +1,46 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-944: the `operator_runtime.bb`
+**Last Updated:** August 19, 2026 (BL-631: `babysitterd`'s deterministic
+5-minute sweep gains a new check, `check-pipeline-code-on-main`
+(`babysitterd_sweep_lib.bb`), closing the detection gap named in the BL-590
+post-mortem — an entire cleaner pass ran in the master checkout, landing
+un-QA'd pipeline code on `main`, and nothing errored, and nothing told
+anyone, until an architect found it hours later by eye. BL-629 refuses to
+deploy that state and BL-630 refuses to publish it; this is the layer that
+tells someone about a bad tip that already exists. A commit reachable from
+`main` or `origin/main`, not an ancestor of `swarmforge-QA`, that touches a
+QA-exclusive path (`extension/src/`, `extension/test/`,
+`specs/pipeline/steps/`) is CRIT; the path set is read at runtime from
+BL-632's own `check_pipeline_code_on_main.sh --list-paths` rather than
+restated, and ancestry is decided by the one shared `is_qa_ancestor.sh`
+predicate. An unresolvable `swarmforge-QA` ref fails the whole check closed
+to `UNAVAILABLE`, never a silent clean sweep. Merge commits are diffed with
+`git diff-tree -m --first-parent`, never plain `git show`/`diff-tree` —
+measured directly against real merges in this repo, a plain diff reports
+zero files where `--first-parent` reports the true 13-35, the exact gap
+that let the BL-590 incident's own merge commit go unnoticed the first
+time. Each finding's key carries the offending sha
+(`pipeline-code-on-main-<sha>`), so the existing nudge dedup treats every
+offending commit independently rather than letting the first one mask every
+later one. A genuine, pre-existing, unrelated defect was found and fixed in
+the same parcel because this ticket's own acceptance scenarios could not
+pass against it: `read-dedup-state!` parsed the persisted
+`nudge-dedup.json` with Cheshire's `keywordize-keys` flag on, silently
+turning every check's plain string finding key into a Clojure keyword on
+reload against `decide-nudges`' string-keyed lookup — dedup had never
+actually worked for ANY babysitterd check since the daemon shipped; every
+eligible finding renudged on every single sweep. Fixed by dropping the
+erroneous flag at its only call site. Cleaner-bounced once: the shell
+fixture's `test_babysitter_check.sh::make_root()` built a bare, non-git tmp
+dir that every earlier check tolerated but this new check's own invariant 3
+correctly fails closed against, breaking two scenarios; fixed by
+git-initializing the fixture root with both `main` and `swarmforge-QA`
+pointing at one commit. See the new "Detecting pipeline code that lands on
+`main` outside QA" section in
+[`docs/how-to/BL-611-babysitterd-runbook.md`](../how-to/BL-611-babysitterd-runbook.md).
+No new extension command, setting, or UI — this is a swarm-substrate
+detection layer, same class as BL-629/BL-630/BL-632.); Previously
+August 19, 2026 (BL-944: the `operator_runtime.bb`
 acceptance-fixture dependency list — `OPERATOR_RUNTIME_BB_FILES` in
 `specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js`, which four step
 handlers copy into a disposable fixture root before shelling out to a real
