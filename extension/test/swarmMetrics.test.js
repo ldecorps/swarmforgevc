@@ -15,6 +15,8 @@ const {
   groupRolesByWorktreePath,
   combinedRoleKey,
   extractTicketId,
+  readFreshnessIncidentEvents,
+  freshnessIncidentLogPath,
 } = require('../out/metrics/swarmMetrics');
 
 function mkTmp() {
@@ -766,4 +768,86 @@ test('combinedRoleKey joins a colliding group\'s role names, sorted so the label
     ]),
     'coordinator+specifier'
   );
+});
+
+// ── readFreshnessIncidentEvents (BL-904) ──────────────────────────────────
+
+function writeIncidentLog(targetPath, lines) {
+  const logPath = freshnessIncidentLogPath(targetPath);
+  mkdirp(path.dirname(logPath));
+  fs.writeFileSync(logPath, lines.join('\n') + (lines.length > 0 ? '\n' : ''));
+}
+
+test('readFreshnessIncidentEvents returns null when the log file does not exist', () => {
+  const target = mkTmp();
+  assert.equal(readFreshnessIncidentEvents(target), null);
+});
+
+test('readFreshnessIncidentEvents returns null when the log path is unreadable (a directory, not a file)', () => {
+  const target = mkTmp();
+  mkdirp(freshnessIncidentLogPath(target));
+  assert.equal(readFreshnessIncidentEvents(target), null);
+});
+
+test('readFreshnessIncidentEvents returns an empty array (not null) for a present, empty log', () => {
+  const target = mkTmp();
+  writeIncidentLog(target, []);
+  assert.deepEqual(readFreshnessIncidentEvents(target), []);
+});
+
+test('readFreshnessIncidentEvents parses restart and escalate records, ignoring the escalate-only extra field', () => {
+  const target = mkTmp();
+  writeIncidentLog(target, [
+    'epoch=1785625446 daemon=babysitterd age_secs=999999999 threshold=600 action=restart',
+    'epoch=1785625500 daemon=handoffd age_secs=700 threshold=600 action=escalate cool_off_remaining=120',
+  ]);
+  assert.deepEqual(readFreshnessIncidentEvents(target), [
+    { epoch: 1785625446, daemon: 'babysitterd', action: 'restart' },
+    { epoch: 1785625500, daemon: 'handoffd', action: 'escalate' },
+  ]);
+});
+
+test('readFreshnessIncidentEvents skips a malformed/truncated line but keeps the well-formed ones', () => {
+  const target = mkTmp();
+  writeIncidentLog(target, [
+    'epoch=1785625446 daemon=babysitterd age_secs=999999999 threshold=600 action=restart',
+    'epoch=1785625500 daemon=handoffd age_secs=700 thresho', // truncated mid-line
+    'not a record at all',
+    'epoch=1785625600 daemon=handoffd age_secs=800 threshold=600 action=restart',
+  ]);
+  assert.deepEqual(readFreshnessIncidentEvents(target), [
+    { epoch: 1785625446, daemon: 'babysitterd', action: 'restart' },
+    { epoch: 1785625600, daemon: 'handoffd', action: 'restart' },
+  ]);
+});
+
+test('readFreshnessIncidentEvents skips blank lines', () => {
+  const target = mkTmp();
+  writeIncidentLog(target, ['', '  ', 'epoch=1785625446 daemon=babysitterd age_secs=1 threshold=600 action=restart', '']);
+  assert.deepEqual(readFreshnessIncidentEvents(target), [{ epoch: 1785625446, daemon: 'babysitterd', action: 'restart' }]);
+});
+
+// BL-904 hardening: distinct from the truncated-line case above (which is
+// missing the `action` field entirely) - this line has every field
+// present, `epoch` included, but `epoch`'s VALUE is non-numeric. Confirmed
+// by mutation probe: removing parseFreshnessIncidentLine's
+// `!Number.isFinite(epoch)` guard left all 137 existing tests green, and
+// the corrupted event would have gone on to poison the WHOLE day's series
+// downstream - bucketDailyDaemonRestarts buckets it under a NaN key, and
+// fillDailyBuckets's `Math.min(...counts.keys())` propagates that NaN into
+// `earliestDay`, which makes its `day <= nowDay` loop condition false on
+// the very first iteration (NaN compares false to everything) - collapsing
+// the ENTIRE series to `[]`. That is not null, so trendedDaemonRestarts
+// renders it exactly like the "no data" case (value 0, empty trend) -
+// silently defeating invariant 2's whole distinguishability purpose for a
+// day that may have had real restarts. The guard below is what stands
+// between one corrupt line and the sidecar lying again, so it needs its
+// own coverage.
+test('readFreshnessIncidentEvents rejects a record whose epoch value is present but non-numeric', () => {
+  const target = mkTmp();
+  writeIncidentLog(target, [
+    'epoch=not-a-number daemon=babysitterd age_secs=999999999 threshold=600 action=restart',
+    'epoch=1785625600 daemon=handoffd age_secs=800 threshold=600 action=restart',
+  ]);
+  assert.deepEqual(readFreshnessIncidentEvents(target), [{ epoch: 1785625600, daemon: 'handoffd', action: 'restart' }]);
 });
