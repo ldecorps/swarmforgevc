@@ -4,16 +4,22 @@
 # every other *-sweep! above it (mirror-image direction of BL-356's
 # push-sweep!). BL-919 narrowed the gate: a dirty tree only blocks when a
 # dirty path actually overlaps a path the incoming merge would change.
+# BL-920 adds a second, additive signal: a block that PERSISTS past the
+# coordinator's first-tick note escalates once to the operator (Telegram
+# OPERATOR topic + email).
 #
 # The DECISION/STATE logic itself (gating on dirty/merge-changed path
-# overlap, self-healing surfaced-once state) is exhaustively covered by
+# overlap, self-healing surfaced-once state, BL-920's tick-persistence/
+# escalate-once state machine) is exhaustively covered by
 # master_main_reconcile_lib_test_runner.bb (pure unit tests) and
-# master_main_reconcile_lib_property_runner.bb (BL-891's and BL-919's own
-# declared invariants, generator-based); this test only proves the real
-# daemon reaches and fires master-main-reconcile-sweep! against a REAL git
-# repo and a REAL local remote, on its own cadence - same "one real wiring
-# proof, not re-run per scenario" posture as test_handoffd_push_sweep_
-# wiring.sh, walking BL-919's own qa_e2e_procedure (a)-(f) against real git.
+# master_main_reconcile_lib_property_runner.bb (BL-891's, BL-919's, and
+# BL-920's own declared invariants, generator-based); this test only proves
+# the real daemon reaches and fires master-main-reconcile-sweep! - and, for
+# BL-920, its new :escalate! adapter - against a REAL git repo and a REAL
+# local remote, on its own cadence - same "one real wiring proof, not
+# re-run per scenario" posture as test_handoffd_push_sweep_wiring.sh,
+# walking BL-919's own qa_e2e_procedure (a)-(f) against real git, plus
+# BL-920's own qa_e2e_procedure step 2 (persistent-block escalation).
 
 set -euo pipefail
 
@@ -277,6 +283,18 @@ LOCAL_EDIT_STILL_PRESENT="$(grep -c "root-conflicting-local-edit" "$ROOT/seed.tx
 [[ "$LOCAL_EDIT_STILL_PRESENT" -ge 1 ]] \
   || fail "expected the overlapping local edit to survive untouched while blocked (never reset/stashed away)"
 pass "an overlapping dirty path is never touched while blocked - no reset, stash, or force-update, no merge attempted"
+
+# ── BL-920: the block above has now sat through several 1s-cadence poll
+#    ticks (the surfaced-note wait plus the 3s hold above) - well past the
+#    default escalation threshold of 3 consecutive ticks. Confirm the
+#    operator escalation actually fires end-to-end (real daemon, real
+#    Telegram-outbox file write), additive to the coordinator note already
+#    asserted above (qa_e2e_procedure step 2). ────────────────────────────
+wait_for_log "master-main-reconcile-escalation dirty" 20 \
+  || fail "expected a dirty block persisting past the escalation threshold to escalate to the operator (BL-920); log: $(cat "$LOG_FILE" 2>/dev/null)"
+wait_for_content "$ROOT/.swarmforge/operator/telegram-reply-outbox.jsonl" "dirty-blocked" 5 \
+  || fail "expected the operator escalation to reach the Telegram OPERATOR-topic outbox"
+pass "a dirty block persisting past the escalation threshold escalates to the operator, additive to the first-tick coordinator note (BL-920)"
 
 # ── resolving the overlap lets a later tick reconcile normally
 #    (self-healing, not permanently stuck) ─────────────────────────────────
