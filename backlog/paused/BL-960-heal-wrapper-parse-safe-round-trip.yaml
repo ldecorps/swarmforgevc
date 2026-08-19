@@ -175,3 +175,12 @@ notes: >
 
   Epic: recorded on BL-912's tracker (decomposes_into + live follow-on
   note) in the same commit as this mint.
+
+  2026-08-19 coordinator — human answer to the approval_context question
+  above ("if the hook should stay off longer, say so here"). The operator
+  was asked and replied, verbatim: "reenable the ho9k after 960" ("ho9k"
+  is a typo for "hook"). So the restoration is CONFIRMED, not merely
+  presumed by approval: the hook stays off until this ticket lands, and
+  the required_wiring gate on the restored "PreToolUse": [ block is the
+  thing that must carry it. Do not re-enable ahead of this ticket, and do
+  not close this ticket with the registration still absent.
