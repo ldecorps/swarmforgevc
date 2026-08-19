@@ -2154,7 +2154,7 @@ test('BL-467: the pin sync follows a board repost to the new message id with unp
   assert.deepEqual(pinCalls, ['unpinAll', 'pin:101'], 'expected unpin-all then pin on the new board when the old board is still top');
 });
 
-test('BL-455: role-held tickets are joined to their backlog item epic/title - grouped by epic, and shown with a derived slug', async () => {
+test('BL-455: role-held tickets are joined to their backlog item epic/title - the caption carries backlog context, the marks carry the holders', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
@@ -2174,22 +2174,43 @@ test('BL-455: role-held tickets are joined to their backlog item epic/title - gr
 
   await runConciergeTick(adapters);
 
-  const lines = posted[0].split('\n');
-  // Break-then-fix would show this line missing/empty if the join were
-  // dropped - the epic heading and slug only appear when folders.active's
-  // epic/title actually reach computePipelineBoard, proving the wiring load-
-  // bearing rather than the pure function's own (separately unit-tested)
-  // grouping logic.
-  const concertoIndex = lines.findIndex((l) => l.includes('Concerto'));
-  assert.ok(concertoIndex >= 0, `expected a Concerto epic heading, got:\n${posted[0]}`);
-  const bl1LineIdx = lines.findIndex(
-    (l, i) => i > concertoIndex && l.replace(/\u00a0/g, '').trim() === displayId('BL-1')
+  // BL-949: re-expressed against the BL-585 shared matrix (the old
+  // assertions encoded the superseded pivoted-block layout - a bare-id
+  // header line, dashed epic headings). This wiring test asserts only what
+  // the wiring proves: that folders.active's epic/title and the roles'
+  // held tickets actually REACH the posted board. Padding, caption field
+  // choice and column ordering are pipelineBoard's own contract, gated by
+  // pipelineBoard.test.js and BL-585's acceptance suite - deliberately not
+  // re-asserted here (NBSP is normalised away before every comparison,
+  // never expected literally).
+  const norm = (l) => l.replace(/\u00a0/g, ' ').trim().replace(/ {2,}/g, ' ');
+  const lines = posted[0].split('\n').map(norm);
+  // folders.active -> board join: both active ids appear as matrix columns.
+  const headerIds = lines[0].split(' ');
+  assert.deepEqual(
+    [...headerIds].sort(),
+    [displayId('BL-1'), displayId('BL-2')].sort(),
+    `expected the matrix header to carry both active ids, got:\n${posted[0]}`
   );
-  assert.ok(bl1LineIdx > concertoIndex, 'expected BL-1 grouped under its Concerto epic heading in the pivoted grid');
-  // BL-526 pivoted grid: the status block shows ticket number + stage marks
-  // only — short kebab slugs moved to below-grid list sections, not inline.
-  const noEpicIndex = lines.findIndex((l) => l.trim() === '-- (no epic) --');
-  assert.ok(noEpicIndex > concertoIndex, 'expected the no-epic group to sort after the named epic group');
+  // The epic/title join: ticket 1's caption line carries backlog-derived
+  // context from the fixture (whichever field the caption contract picks).
+  const caption1 = lines.find((l, i) => i > 0 && l.startsWith(`${displayId('BL-1')} `) && !/^[A-Z]{2} /.test(l));
+  assert.ok(caption1, `expected a caption line for ticket ${displayId('BL-1')}, got:\n${posted[0]}`);
+  assert.ok(
+    caption1.includes('Concerto') || caption1.includes('fix the pipeline board'),
+    `expected ticket 1's caption to carry its backlog epic/title, got: ${caption1}`
+  );
+  // The role-held join: exactly the two held tickets are marked, one mark
+  // each, on the rows for the roles that hold them - and nowhere else.
+  // Which COLUMN each mark sits in is ordering, pipelineBoard's contract.
+  const stageRows = lines.filter((l) => /^[A-Z]{2}( [.X])+$/.test(l));
+  const marksIn = (row) => (row.match(/X/g) || []).length;
+  const coRow = stageRows.find((l) => l.startsWith('CO '));
+  const qaRow = stageRows.find((l) => l.startsWith('QA '));
+  assert.ok(coRow && marksIn(coRow) === 1, `expected exactly one mark on the coder row, got:\n${posted[0]}`);
+  assert.ok(qaRow && marksIn(qaRow) === 1, `expected exactly one mark on the QA row, got:\n${posted[0]}`);
+  const strayMarks = stageRows.filter((l) => l !== coRow && l !== qaRow).reduce((n, l) => n + marksIn(l), 0);
+  assert.equal(strayMarks, 0, `expected no mark outside the two holding roles' rows, got:\n${posted[0]}`);
 });
 
 test('BL-455: a paused ticket awaiting human approval and a plain paused ticket both render in the below-grid parked list, not as grid rows', async () => {
@@ -2396,12 +2417,25 @@ test('BL-473: a ticket physically in backlog/active/ that no role holds still re
   assert.equal(posted.length, 1, 'expected the not-started ticket to still post a board, never silently skipped');
   const lines = posted[0].split('\n');
   assert.ok(hasRowFor(posted[0], 'BL-1'), `expected BL-1 to be a board row, got:\n${posted[0]}`);
-  const ticketLineIdx = lines.findIndex((l) => l.replace(/\u00a0/g, '').trim() === displayId('BL-1'));
-  assert.ok(ticketLineIdx >= 0, `expected BL-1 ticket line in pivoted grid, got:\n${posted[0]}`);
-  const stageLines = lines.slice(ticketLineIdx + 1, ticketLineIdx + 8);
-  assert.equal(stageLines[0].trim(), 'NS X', `expected BL-1 marked not-started, got: ${stageLines[0]}`);
-  for (let i = 1; i < stageLines.length; i += 1) {
-    assert.match(stageLines[i].trim(), /^[A-Z]{2} \.$/, `expected pipeline stage unmarked for a not-started ticket, got: ${stageLines[i]}`);
+  // BL-949: re-expressed against the BL-585 shared matrix. What this
+  // wiring test proves: a folders.active ticket NO role holds still
+  // renders, carrying its mark on the not-started row and on no other
+  // stage row. Padding (NBSP normalised away, never expected literally)
+  // and the stage-row count are pipelineBoard's own contract - not
+  // re-asserted here.
+  const norm473 = (l) => l.replace(/\u00a0/g, ' ').trim().replace(/ {2,}/g, ' ');
+  const normLines = lines.map(norm473);
+  assert.ok(
+    normLines[0].split(' ').includes(displayId('BL-1')),
+    `expected the matrix header to carry the unheld active ticket's id, got:\n${posted[0]}`
+  );
+  const stageRows473 = normLines.filter((l) => /^[A-Z]{2}( [.X])+$/.test(l));
+  const nsRow = stageRows473.find((l) => l.startsWith('NS '));
+  assert.ok(nsRow && nsRow.includes('X'), `expected BL-1 marked on the not-started row, got:\n${posted[0]}`);
+  for (const row of stageRows473) {
+    if (row !== nsRow) {
+      assert.ok(!row.includes('X'), `expected no stage mark for an unheld ticket, got: ${row}`);
+    }
   }
 });
 
