@@ -192,3 +192,5 @@ approval_context: >
   BL-952 that this ticket does not touch: BL-935's two unapproved commits are
   on origin/main right now, the same way BL-945's are. This ticket reports
   that breach per the constitution and deliberately does not act on it.
+
+assigned_to: coder
