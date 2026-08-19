@@ -1298,7 +1298,7 @@ async function deliverApprovalsTopicQjump(backlogId: string, topicId: number | u
   return 'posted';
 }
 
-async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision, topicId: number | undefined, update: TelegramUpdate, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (decision.action === 'approvals-topic-unrecognized') {
     return 'dropped';
   }
@@ -1306,10 +1306,14 @@ async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision,
   if (decision.action === 'approvals-topic-qjump') {
     return deliverApprovalsTopicQjump(backlogId, topicId, adapters);
   }
+  // BL-955: a caption-derived reason lands in a DURABLE ticket record -
+  // whoever reads that rejection a week later is exactly the reader who
+  // cannot otherwise tell an unread image was attached, so the note goes
+  // into the STORED value, at record time.
   const result =
     decision.action === 'approvals-topic-approve'
       ? await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'approved' })
-      : await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: decision.reason });
+      : await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: annotateRoutedMediaText(decision.reason, update) });
   if (!result.changed) {
     await adapters.notifyApprovalsTopic?.(topicId, `${backlogId} isn't awaiting approval.`);
     return 'dropped';
@@ -1388,7 +1392,7 @@ async function deliverRecertDeleteRequest(scenarioId: string, topicId: number | 
 // a not-currently-up-for-recert id are both DELIBERATE DROPS, never
 // delivery FAILURES (the engineering article's own drop-vs-failure rule) -
 // the offset must advance past either.
-async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topicId: number | undefined, update: TelegramUpdate, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (decision.action === 'recert-unrecognized') {
     return 'dropped';
   }
@@ -1399,10 +1403,11 @@ async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topic
     return deliverRecertDeleteRequest(decision.scenarioId, topicId, adapters);
   }
   const { scenarioId } = decision;
+  // BL-955: same durable-record annotation as the approvals reject reason.
   const changed =
     decision.action === 'recert-validate'
       ? await adapters.recordRecertValidate?.(scenarioId)
-      : await adapters.queueRecertAmendProposal?.(scenarioId, decision.newText);
+      : await adapters.queueRecertAmendProposal?.(scenarioId, annotateRoutedMediaText(decision.newText, update));
   if (!changed) {
     await adapters.notifyRecertTopic?.(topicId, `${scenarioId} isn't awaiting recertification.`);
     return 'dropped';
@@ -1419,13 +1424,14 @@ async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topic
 async function deliverReservedSubjectReply(
   decision: BotUpdateDecision,
   topicId: number | undefined,
+  update: TelegramUpdate,
   adapters: PollAdapters
 ): Promise<UpdateDeliveryOutcome | undefined> {
   if (isApprovalsTopicReplyDecision(decision)) {
-    return deliverApprovalsTopicReply(decision, topicId, adapters);
+    return deliverApprovalsTopicReply(decision, topicId, update, adapters);
   }
   if (isRecertTopicReplyDecision(decision)) {
-    return deliverRecertTopicReply(decision, topicId, adapters);
+    return deliverRecertTopicReply(decision, topicId, update, adapters);
   }
   return undefined;
 }
@@ -1916,7 +1922,12 @@ async function processSteeringUpdate(
   if (decision.kind === 'refuse') {
     return 'dropped';
   }
-  const result = await redirectToRole(decision.role, decision.text);
+  // BL-955: the annotation is applied HERE, at the forwarding boundary -
+  // decideSteeringAction above already classified the raw text, and both
+  // onward paths (the live pane and the queued answer note below) carry
+  // the same annotated text, so no reader believes the image was seen.
+  const forwardedText = annotateRoutedMediaText(decision.text, update);
+  const result = await redirectToRole(decision.role, forwardedText);
   // BL-607: when this role has a clarifying question pending, this reply
   // IS the answer (Leg 1 reuses redirectToRole exactly as above - the
   // ticket's own "reuse it verbatim" for the live-pane case). A dormant
@@ -1927,7 +1938,7 @@ async function processSteeringUpdate(
   // actually captured (delivered or queued) so the role is free to ask
   // its next question - see captureRoleAnswer above.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
-    await captureRoleAnswer(decision.role, result.kind === 'delivered', decision.text, enqueueRoleAnswerNote, clearRolePendingQuestion);
+    await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion);
   }
   // Optional adapter: absent means no receipt, the exact pre-receipt
   // behavior - the same "a new capability degrades to prior behavior"
@@ -2232,7 +2243,9 @@ async function attemptAgentQuestionsTopicDelivery(
   if (!pendingThreadId) {
     return 'dropped';
   }
-  const ok = await adapters.postToBridge(pendingThreadId, decision.text, update.update_id);
+  // BL-955: forwarding boundary - the asking role must know an unread
+  // image rode along with its answer.
+  const ok = await adapters.postToBridge(pendingThreadId, annotateRoutedMediaText(decision.text, update), update.update_id);
   return deliveryOutcome(ok);
 }
 
@@ -2263,7 +2276,8 @@ async function attemptOnboardingTopicDelivery(
   if (!adapters.handleOnboarderMessage || topicId === undefined) {
     return 'dropped';
   }
-  const ok = await adapters.handleOnboarderMessage(topicId, decision.text, update.update_id);
+  // BL-955: forwarding boundary - same annotation as every other surface.
+  const ok = await adapters.handleOnboarderMessage(topicId, annotateRoutedMediaText(decision.text, update), update.update_id);
   return deliveryOutcome(ok);
 }
 
@@ -2372,7 +2386,7 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     const ok = await deliverOperatorContext(decision.backlogId, annotateRoutedMediaText(decision.text, update), update.update_id, adapters);
     return deliveryOutcome(ok);
   }
-  const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), adapters);
+  const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), update, adapters);
   if (reserved) {
     return reserved;
   }

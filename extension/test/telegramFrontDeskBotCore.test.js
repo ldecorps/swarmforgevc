@@ -6202,3 +6202,146 @@ test('BL-620: a routed photo caption posts with the image-not-read annotation; t
   assert.match(posted[0], /image.*not read/i);
   assert.equal(posted[1], 'route these words');
 });
+
+// ── BL-955: every forwarding surface annotates caption-derived text ───────
+
+const IMAGE_NOTE = '[image attached - not read by the front desk]';
+
+test('BL-955: a photo-caption steer reaches the role pane with the image-not-read note appended', async () => {
+  const redirected = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'focus on the edge case' })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'delivered' };
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'coder', text: `focus on the edge case\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a plain-text steer is forwarded byte-identical, no stray note', async () => {
+  const redirected = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'focus on the edge case' })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'delivered' };
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'coder', text: 'focus on the edge case' }]);
+});
+
+test('BL-955: a photo-caption answer queued for a dormant role carries the note into the answer note too', async () => {
+  const queued = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'use the blue variant' })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async () => {},
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return true;
+    },
+  });
+  assert.deepEqual(queued, [{ role: 'coder', text: `use the blue variant\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a photo-caption reply in the Agent Questions topic reaches the asking role with the note', async () => {
+  const posted = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    agentQuestionsPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'staging' })] }),
+      postToBridge: async (subjectId, text, updateId) => {
+        posted.push({ subjectId, text, updateId });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: `staging\n${IMAGE_NOTE}`, updateId: 1 }]);
+});
+
+test('BL-955: a photo-caption message in the Onboarding topic reaches the onboarder with the note', async () => {
+  const handled = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    onboardingPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'https://github.com/acme/widget' })] }),
+      handleOnboarderMessage: async (topicId, text, updateId) => {
+        handled.push({ topicId, text, updateId });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(handled, [{ topicId: 42, text: `https://github.com/acme/widget\n${IMAGE_NOTE}`, updateId: 1 }]);
+});
+
+test('BL-955: a photo-caption reject stores the note in the DURABLE rejection reason', async () => {
+  const rejections = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 750, caption: 'reject BL-433 no good' })] }),
+    postToBridge: async () => true,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+  });
+  assert.deepEqual(rejections, [{ backlogId: 'BL-433', reason: `no good\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a photo-caption amend stores the note in the DURABLE amend proposal text', async () => {
+  const amends = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 900, caption: 'amend BL-207-thing-01 Given a revised precondition' })],
+      }),
+      queueRecertAmendProposal: async (scenarioId, newText) => {
+        amends.push({ scenarioId, newText });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(amends, [{ scenarioId: 'BL-207-thing-01', newText: `Given a revised precondition\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a control command sent as a photo caption executes as the command - the parser text is never annotated', async () => {
+  const armed = [];
+  const menus = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 900, caption: '/stop' })] }),
+      setPendingControlConfirm: async (c) => armed.push(c),
+      postControlStopModesMenu: async () => menus.push(true),
+    })
+  );
+  assert.deepEqual(armed, [{ kind: 'stop-modes' }], 'the caption command must parse exactly like plain text');
+  assert.deepEqual(menus, [true]);
+  assert.equal(result.posted, 1);
+});

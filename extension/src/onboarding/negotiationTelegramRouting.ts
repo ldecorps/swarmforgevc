@@ -6,7 +6,7 @@
 // than restating them; this module only ever adds the negotiation-topic
 // check and the objection-vs-agreement classification on top.
 import { TelegramUpdate } from '../notify/telegramClient';
-import { isFromMyChat, isFromPrincipal, messageTextOf, topicIdOf } from '../tools/telegramFrontDeskBotCore';
+import { annotateRoutedMediaText, isFromMyChat, isFromPrincipal, messageTextOf, topicIdOf } from '../tools/telegramFrontDeskBotCore';
 import { ProposedContract } from './contractTypes';
 
 // A closed, deliberately narrow pattern - the whole reply, not a substring
@@ -94,6 +94,17 @@ export function decideNegotiationUpdateAction(
     return { action: 'ask' };
   }
   return { action: 'objection', text };
+}
+
+// BL-955: the negotiation relay's own forwarding-time transform - an
+// objection derived from a photo caption must reach the negotiation
+// session saying the image was not read. Lives HERE (this module owns the
+// surface's text semantics) and is applied by the relay at forwarding
+// time, never inside decideNegotiationUpdateAction above, whose
+// classification for a caption must equal the classification for the
+// identical plain text.
+export function annotateNegotiationRelayText(text: string, update: TelegramUpdate): string {
+  return annotateRoutedMediaText(text, update);
 }
 
 function renderBulletList(entries: string[]): string {

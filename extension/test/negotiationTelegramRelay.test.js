@@ -195,3 +195,50 @@ test('relayNegotiationUpdates on an empty batch leaves the offset unchanged', as
   assert.equal(result.posted, 0);
   assert.equal(result.dropped, 0);
 });
+
+// ── BL-955: the negotiation relay annotates caption-derived objections ────
+
+function mkPhotoUpdate({ updateId = 1, fromId = 111, chatId = CHAT_ID, topicId = NEGOTIATION_TOPIC_ID, caption } = {}) {
+  return {
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      chat: { id: chatId },
+      from: { id: fromId },
+      message_thread_id: topicId,
+      photo: [{ file_id: 'photo-1', width: 90, height: 60 }],
+      ...(caption === undefined ? {} : { caption }),
+    },
+  };
+}
+
+test('BL-955: a photo-caption objection reaches the negotiation session with the image-not-read note', async () => {
+  const objections = [];
+  const adapters = mkAdapters({
+    objectToContract: async (text) => {
+      objections.push(text);
+      return { outcome: 'revised', contract: mkContract() };
+    },
+  });
+  const outcome = await processNegotiationUpdate(
+    mkPhotoUpdate({ caption: 'also add accessibility support' }),
+    PRINCIPAL_ID,
+    CHAT_ID,
+    NEGOTIATION_TOPIC_ID,
+    adapters
+  );
+  assert.equal(outcome, 'posted');
+  assert.deepEqual(objections, ['also add accessibility support\n[image attached - not read by the front desk]']);
+});
+
+test('BL-955: a plain-text objection is forwarded byte-identical, no stray note', async () => {
+  const objections = [];
+  const adapters = mkAdapters({
+    objectToContract: async (text) => {
+      objections.push(text);
+      return { outcome: 'revised', contract: mkContract() };
+    },
+  });
+  await processNegotiationUpdate(mkUpdate({ text: 'tighten the scope' }), PRINCIPAL_ID, CHAT_ID, NEGOTIATION_TOPIC_ID, adapters);
+  assert.deepEqual(objections, ['tighten the scope']);
+});

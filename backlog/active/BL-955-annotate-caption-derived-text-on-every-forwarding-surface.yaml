@@ -97,7 +97,7 @@ description: |
   Orthogonality). BL-620 must be in backlog/done/ before this is promoted:
   it is what lands `annotateRoutedMediaText` in the first place.
 
-acceptance: specs/features/BL-955-annotate-caption-derived-text-on-every-forwarding-surface.feature.draft
+acceptance: specs/features/BL-955-annotate-caption-derived-text-on-every-forwarding-surface.feature
 
 required_wiring:
   - "extension/src/onboarding/negotiationTelegramRouting.ts::annotateRoutedMediaText::the negotiation relay is the one forwarding surface in a different file; it forwards messageTextOf output today with no annotation, and a fix that only touches telegramFrontDeskBotCore.ts leaves it dark"
