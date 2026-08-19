@@ -51,6 +51,9 @@ notes: |
   eligible non-epic defect) into the slot instead. Flagged in today's
   briefing (docs/briefings/2026-08-19.md) for a real fix.
 
+  2026-08-19 06:05 coordinator: 7th repeat (000535), same non-reason, slot
+  filled by BL-938 first.
+
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"
 mutation_cost: high
