@@ -70,3 +70,23 @@ for a stderr-only diagnostic.
 
 The fail-open design finding above stands unchanged and is the reason a total
 registry failure surfaced as a scrolling warning instead of a blocked send.
+
+## Verbatim capture supplied by the documenter (4c49b466e)
+
+The evidence this file asked for is now recorded at
+`backlog/evidence/BL-968-acceptance-contract-gate-warning-verbatim-20260820.md`:
+
+    PRE_QA_GATE WARNING: acceptance-contract:BL-960 step registry could not be
+    loaded at the cited commit (Command failed: git rev-parse --git-common-dir
+    fatal: not a git repository (or any of the parent directories): .git)
+
+Identical on **3/3** sends (BL-957, BL-958, BL-960 — only the ticket id varies), and
+emitted on runs that SUCCEED: `EXIT: 0`, `HANDOFF DELIVERED:`, with no accompanying
+`PRE_QA_GATE_FAIL`. That is the fail-open path taken in production, confirmed from the
+sender's side.
+
+It also rules out the obvious wrong answer: the sender's own cwd was healthy on those
+runs (`pwd` and `git rev-parse --git-common-dir` both resolved), so the failure is
+inside the gate's materialized temp tree, exactly as BL-968 root-caused. Combined with
+the specifier's independent reproduction, three roles now agree from three vantage
+points.
