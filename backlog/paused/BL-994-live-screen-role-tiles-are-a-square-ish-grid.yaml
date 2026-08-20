@@ -47,7 +47,7 @@ description: >
   - `backlog/evidence/INTAKE-live-screen-role-tile-grid-hotfix.patch` exists,
     is TRACKED on `main`, and is BYTE-IDENTICAL to
     `git diff -- extension/src/bridge/residentSpyUiHtml.ts` in the master
-    checkout (158 lines each, `diff -q` clean). The patch is therefore a
+    checkout (`diff -q` clean against the live tree). The patch is therefore a
     complete record; the dirty working tree carries nothing extra.
   - `getResidentSpyUiHtml()` is a pure function returning an HTML string, and
     `extension/test/residentSpyUiHtml.test.js` already exercises it - so the
@@ -66,6 +66,9 @@ description: >
   - `.split .pane-col > pre { display: none }` hides the transcript in the
     grid, and `renderPane`'s tile header becomes role name plus an absolutely
     positioned Expand hint.
+  - Fullscreen Expand with a ticket: drop the bold role `pane-kind` line
+    under the ticket strip (role already appears in `ticket-strip-meta`) —
+    human follow-on, saves one header line on the zoomed view.
 
   How (direction, not mandate): apply the captured patch in the coder
   worktree and drive it through the chain. The layout decisions are the
