@@ -360,6 +360,81 @@
                       (job-in-scope? pid cmd))))
        (map (fn [[pid _ pgid cmd]] [pid pgid cmd]))))
 
+;; ── BL-995: deliberate-detach registry ──────────────────────────────────
+;; detach_job.sh (the ONE sanctioned >120s escape hatch) registers each
+;; detached job's process GROUP here before the job can ever look orphaned.
+;; The reaper below consults this registry so it can tell deliberate
+;; detachment from abandonment - BL-108's protection is never weakened
+;; (invariant 1: an unregistered orphan is reaped exactly as before), and
+;; registration is not immunity (invariant 2: an entry aged past its own
+;; expires_at_ms is reaped like any crash orphan, and its entry removed so
+;; the next sweep never re-reads it).
+
+(def detached-jobs-dir (fs/path daemon-dir "detached-jobs"))
+
+(defn read-detached-registrations
+  "{pgid-string entry-map} for every parseable entry; unreadable files are
+   skipped (a torn write must never fail the sweep)."
+  []
+  (if (fs/exists? detached-jobs-dir)
+    (into {}
+          (keep (fn [f]
+                  (try
+                    (let [entry (json/parse-string (slurp (str f)) true)]
+                      (when (:pgid entry) [(str (:pgid entry)) (assoc entry :file (str f))]))
+                    (catch Exception _ nil))))
+          (filter #(str/ends-with? (str %) ".json") (fs/list-dir detached-jobs-dir)))
+    {}))
+
+(defn registration-expired? [entry now-ms]
+  (>= now-ms (or (:expires_at_ms entry) 0)))
+
+(defn- remove-registration! [entry]
+  (try (fs/delete-if-exists (:file entry)) (catch Exception _ nil)))
+
+(defn- append-reap-notice!
+  "Invariant 3: the owner collects a run from its own artifacts, so the
+   kill is written into the job's OWN log when the registry (or a best-
+   effort cmdline scan for an unregistered job's redirect target) names
+   one. Best-effort throughout - a missing/unwritable log never fails the
+   sweep."
+  [entry cmd reason]
+  (let [log-path (or (:log entry)
+                     (second (re-find #"(?:>>?)\s*(\S+\.(?:log|txt|out))" (or cmd ""))))]
+    (when log-path
+      (try
+        (spit log-path
+              (str "[handoffd_supervisor] REAPED pgid group (BL-108 orphan reaper): " reason
+                   " - see .swarmforge/daemon/handoffd-supervisor.log\n")
+              :append true)
+        (catch Exception _ nil)))))
+
+(def ^:private prune-grace-ms
+  "An entry younger than this is never pruned, however dead its group
+   looks - a registration can land between this sweep's process listing
+   and its prune pass, and pruning it would reintroduce the exact
+   register-then-orphan race the write ordering closes."
+  120000)
+
+(defn- pgid-alive? [pgid]
+  (try
+    (zero? (:exit (process/sh {:continue true} "kill" "-0" "--" (str "-" pgid))))
+    (catch Exception _ true)))
+
+(defn prune-dead-registrations!
+  "Housekeeping: an entry is removed only when its process GROUP is probed
+   dead (kill -0) AND the entry is past the registration grace period -
+   the registry only ever holds live or fresh detaches, and a stale entry
+   can never accumulate forever (BL-995 invariant 2's cleanup half)."
+  [now-ms]
+  (doseq [[pgid entry] (read-detached-registrations)]
+    ;; A missing started_at_ms reads as infinitely OLD, not fresh: our own
+    ;; writer always stamps it, so an unstamped entry is torn/foreign and
+    ;; must stay prunable or it sits in the registry forever.
+    (when (and (> (- now-ms (or (:started_at_ms entry) 0)) prune-grace-ms)
+               (not (pgid-alive? pgid)))
+      (remove-registration! entry))))
+
 (defn reap-orphaned-job-processes!
   "Reaps crash-orphaned mutation/test-batch process groups (BL-108 defenses
    4-5). Runs every check tick, independent of the tracked handoffd daemon's
@@ -367,15 +442,33 @@
    process's ACTUAL group (looked up via ps, never assumed equal to its
    pid), since Stryker keeps respawning sandbox workers under its own root
    and killing only the root pid leaves the respawned workers running (the
-   original BL-108 incident)."
+   original BL-108 incident).
+   BL-995: a group registered by detach_job.sh with an UNEXPIRED entry is
+   spared - deliberate detachment, not abandonment; an expired entry is
+   reaped exactly like an unregistered orphan, its entry removed, and the
+   kill written into the job's own log so its owner can discover it."
   []
-  (doseq [[pid pgid cmd] (orphaned-job-groups)]
-    (log! "reap-job-orphan" (str pid) cmd)
-    (process/sh {:continue true} "kill" "-TERM" "--" (str "-" pgid))
-    (when-not (wait-until-dead pid kill-timeout-ms)
-      (process/sh {:continue true} "kill" "-KILL" "--" (str "-" pgid))
-      (when-not (wait-until-dead pid kill-timeout-ms)
-        (log! "reap-job-orphan-failed" (str pid) "still alive after SIGKILL")))))
+  (let [regs (read-detached-registrations)
+        now-ms (System/currentTimeMillis)
+        candidates (orphaned-job-groups)]
+    (doseq [[pid pgid cmd] candidates]
+      (let [entry (get regs (str pgid))]
+        (if (and entry (not (registration-expired? entry now-ms)))
+          nil ;; spared: a live, registered, unexpired deliberate detach
+          (do
+            (log! "reap-job-orphan" (str pid)
+                  (str cmd (when entry " [registered but EXPIRED - BL-995 invariant 2]")))
+            (append-reap-notice! entry cmd
+                                 (if entry
+                                   (str "registration expired at " (:expires_at_ms entry))
+                                   "orphaned and never registered (detach_job.sh is the sanctioned escape hatch)"))
+            (process/sh {:continue true} "kill" "-TERM" "--" (str "-" pgid))
+            (when-not (wait-until-dead pid kill-timeout-ms)
+              (process/sh {:continue true} "kill" "-KILL" "--" (str "-" pgid))
+              (when-not (wait-until-dead pid kill-timeout-ms)
+                (log! "reap-job-orphan-failed" (str pid) "still alive after SIGKILL")))
+            (when entry (remove-registration! entry))))))
+    (prune-dead-registrations! now-ms)))
 
 ;; ── BL-144: daemon-death alarm+halt (adapters for daemon_alarm_lib.bb) ──────
 
