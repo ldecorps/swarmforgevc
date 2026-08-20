@@ -128,9 +128,33 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^it projects no completion date$/, (ctx) => {
-    if (/complet/i.test(ctx.burndownSvg) || /\bETA\b/i.test(ctx.burndownSvg)) {
+  // BL-910 supersession (specifier ruling 2026-08-20, ticket notes on
+  // BL-910): this step used to assert ETA-absence by SILENCE - it grepped
+  // /\bETA\b/i over the whole chart and threw on any hit. BL-910 makes the
+  // rising case state the answer aloud, in the human's verbatim wording
+  // ("no ETA - backlog still growing", Article 5.3 - it cannot be reworded to
+  // dodge a stale regex). Both contracts agree in MEANING for this fixture:
+  // no completion date exists. The step now asserts that positively, and
+  // keeps the original intent mechanically enforced over the REMAINDER of the
+  // chart - so a genuine fabricated forecast appearing anywhere else still
+  // fails, exactly as before.
+  registry.define(/^it projects no completion date, stating "([^"]+)"$/, (ctx, stated) => {
+    const { NOT_SHRINKING_REASON } = notDoneBurndownModule();
+    // Pin the Gherkin literal against the production constant, both ways: a
+    // drift in either is a failure, so neither the scenario text nor the
+    // rendered wording can move without the other.
+    if (stated !== NOT_SHRINKING_REASON) {
+      throw new Error(`the scenario states "${stated}" but the chart's wording is "${NOT_SHRINKING_REASON}"`);
+    }
+    if (!ctx.burndownSvg.includes(stated)) {
+      throw new Error(`expected the chart to state "${stated}"; got: ${ctx.burndownSvg}`);
+    }
+    if (/complet/i.test(ctx.burndownSvg)) {
       throw new Error(`expected no projected completion date; got: ${ctx.burndownSvg}`);
+    }
+    const remainder = ctx.burndownSvg.split(stated).join('');
+    if (/\bETA\b/i.test(remainder)) {
+      throw new Error(`expected no projected completion date outside the stated reason; got: ${ctx.burndownSvg}`);
     }
   });
 
