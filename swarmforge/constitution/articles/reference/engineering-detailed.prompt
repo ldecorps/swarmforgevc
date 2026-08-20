@@ -1005,3 +1005,38 @@ conclusions from it; this one is about tests WRITING durable state and not
 taking it back. Both point at the same underlying discipline — a test leaves
 the host as it found it — but they fail in opposite directions and are worth
 stating separately.
+
+## A merge can silently revert already-LANDED work — diff every merge against BOTH parents (hardender rule_proposal 2026-08-20, accepted)
+
+Proposer's rule, verbatim: "A merge can silently revert already-LANDED work;
+the sender-tip diff cannot see it (the sender never had it). Also diff every
+merge against the ref whose content you last merged."
+
+BL-954 (workflow.prompt) established diffing a re-fix merge against the
+sender's tip, which catches the case where the merge silently re-applies YOUR
+OWN revert's deletion of the sender's work. That check has a structural blind
+side: content that already LANDED on `main` — a QA-approved sibling ticket,
+carried into your worktree by a merge-up — which the sender's branch never
+contained at all. When the parcel merge resolves, git can take the sender's
+side of those files and drop the landed lines with no conflict marker; the
+sender-tip diff then reads clean, because the sender's tip never had those
+lines either. A diff can only witness a loss from a ref that HAD the content,
+so the second baseline must be the ref whose content you last merged — your
+own pre-merge side of the merge.
+
+Discipline: after EVERY merge — parcel receive, QA merge-up, re-fix — diff
+the result against both parents and read the DELETIONS in each direction.
+Against the sender's tip you see what the merge dropped of theirs (the
+BL-954 case); against your own pre-merge side you see what it dropped of
+already-landed work (this case). A deletion of lines a QA-approved ticket
+added is a silent revert: restore the content before committing, and say so
+in the commit message.
+
+Evidence (proposed by the hardender, 2026-08-20): merging the BL-571 parcel
+deleted 110 lines of approved BL-958 code (the `swarm_ensure.bb` wiring /
+control-plane), with no conflict marker, and the sender-tip diff read clean.
+The coder, architect, and hardener each hit and repaired the same loss
+independently on the same day — three independent repairs of one failure
+class in one day is what promoted this from an incident note to a standing
+engineering rule. The inline Guardrails sentence in `engineering.prompt` is
+the binding rule; this section is the narrative.

@@ -45,3 +45,36 @@ between them is no longer a blast-radius argument and can follow ordinary priori
 BL-967 (defect/high, `human_approval: approved`, priority 20) is the fix for exactly
 this, and it cannot promote: active 7 = effective cap 7. Its defect is now LIVE in
 production. Capacity is a human decision; surfaced, not acted on.
+
+## Second alert, 02:32Z — it is FLAPPING, and each fresh daemon re-stalls in ~20s
+
+Alert: "silent 368s". Investigation shows a different failure texture than the first:
+
+- The original pid **38213 is gone**; handoffd now cycles through new pids. Three matched
+  at one instant (82075, 82327, 82778); two had exited seconds later.
+- The survivor `82327` (ppid 1, launchd) was **20 seconds old and already in state `U`** —
+  uninterruptible wait, the same block as before.
+- The log is fresh (written 8s before the check) because each restart emits a burst, then
+  the new daemon stalls and it goes quiet again.
+
+This is **direct confirmation of the 2026-08-05 playbook's central claim** — *"a plain
+restart does NOT fix it; each fresh daemon re-stalls"* — now observed live with a ~20s
+time-to-stall. It also confirms the restart loop is doing the restarting for us, which is
+the strongest possible argument against a manual restart: that remedy is already running,
+continuously, and failing.
+
+## Cascade still absent; pipeline still moving
+- `pgrep -f handoffd_supervisor` = **1**. No `swarm-cleanup` processes. No alarm/halt lines.
+- Queues DRAINED across the same window: architect 2 new + 1 proc -> **0/0**; QA 8 -> **7**
+  queued; coder holds BL-967 in process. Roles are consuming work normally, because
+  delivery does not route through the daemon.
+
+Conclusion unchanged: **degraded auto-routing, stable, no intervention.** What is lost is
+chase/wake, open-slot nudges and stale-claim detection — which is why the aged-parcel
+numbers must be read as "no chaser" rather than "roles asleep".
+
+Note the restart cadence is now governed by the UNCOMMITTED `daemon_log_freshness.conf`
+threshold bump (120 -> 300s). Committing or reverting that is still owed a human decision;
+it is currently the only thing throttling the flap.
+
+**BL-967 — the fix — is now IN FLIGHT at the coder** (promoted and routed 01:43Z).
