@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6c881830fae30480e1829d08d49c89e42a4bed011a95458cabf156733594d60a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-20T15:07:24.787847Z","feature_name":"BL-982 a pipeline stage can host a second seat, booting with its own identity and its own model","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-982-second-seat-of-a-stage-boots-with-its-own-model.feature","background_hash":"fe673a252be77acfec0bdbe9833770b222e6ce7e00eaa814b8f14ffd691207cf","implementation_hash":"unknown","scenarios":[{"index":4,"name":"identity collisions are still refused at parse","scenario_hash":"0627bb9e76b842e1ef39af141d67cc2b361cfded681d9ee7419baa63f440d685","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-20T15:07:24.787847Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-982 a pipeline stage can host a second seat, booting with its own identity and its own model
 
   Today swarmforge.sh refuses a pack that names one stage twice ("Duplicate role
