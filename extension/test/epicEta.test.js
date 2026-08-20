@@ -96,6 +96,26 @@ test('an all-blocked epic shows a blocked state naming why in a word - no durati
   assert.ok(typeof eta.reason === 'string' && eta.reason.length > 0 && !eta.reason.includes(' '));
 });
 
+// The prior test always has a needs_design child present, so it can never
+// discriminate blockedReason's two-word choice - a mutant collapsing the
+// ternary to always 'designing' would still pass it. Isolate each arm.
+
+test('an all-blocked epic with no needs_design child reports reason "blocked", not "designing"', () => {
+  const eta = estimateEpicEta(
+    baseInput({ children: [{ blockUntil: ['GH-22'] }, { held: true }] })
+  );
+  assert.equal(eta.kind, 'blocked');
+  assert.equal(eta.reason, 'blocked');
+});
+
+test('an all-blocked epic with at least one needs_design child reports reason "designing"', () => {
+  const eta = estimateEpicEta(
+    baseInput({ children: [{ blockUntil: ['GH-22'] }, { statusText: 'needs_design' }] })
+  );
+  assert.equal(eta.kind, 'blocked');
+  assert.equal(eta.reason, 'designing');
+});
+
 test('weights are strictly monotonic low < medium < high, absent cost counts medium', () => {
   assert.ok(childWeight({ mutationCost: 'low' }) < childWeight({ mutationCost: 'medium' }));
   assert.ok(childWeight({ mutationCost: 'medium' }) < childWeight({ mutationCost: 'high' }));
@@ -127,4 +147,48 @@ test('confidence degrades strictly as blocked weight dominates, naming the reaso
     `expected strictly lower confidence, got ${mostlyBlocked.confidence} vs ${allBuildable.confidence}`
   );
   assert.equal(mostlyBlocked.confidenceReason, 'blocked');
+});
+
+// The three confidence rules (blocked/noisy/heavy) each degrade the SAME
+// way (one weight-1 degradation -> medium) unless nothing distinguishes
+// them from a passing suite that only ever exercises 'blocked'. Each of
+// these isolates exactly one rule so a mutant collapsing 'noisy'/'heavy'
+// into always-'steady' (or always-'blocked') cannot hide behind the other.
+
+test('a minority-blocked epic (<=50% of remaining weight) degrades confidence by exactly one step, reason "blocked"', () => {
+  const eta = estimateEpicEta(
+    baseInput({
+      children: [
+        { mutationCost: 'medium' },
+        { mutationCost: 'medium' },
+        { mutationCost: 'medium' },
+        { mutationCost: 'high', blockUntil: ['GH-1'] },
+      ],
+    })
+  );
+  assert.equal(eta.kind, 'ranged');
+  assert.equal(eta.confidence, 'medium');
+  assert.equal(eta.confidenceReason, 'blocked');
+});
+
+test('a bursty completion history (fast/slow rate ratio > 3, no blocked/heavy children) degrades confidence, reason "noisy"', () => {
+  // All completions land in the last few seconds of the window's RECENT
+  // half - none in the older half - so the fast half-rate dwarfs the
+  // floored slow half-rate (floored at half the mean, never zero/Infinity).
+  const burst = Array.from({ length: 20 }, (_, i) => NOW - (i + 1) * 1000);
+  const eta = estimateEpicEta(baseInput({ completionsMs: burst }));
+  assert.equal(eta.kind, 'ranged');
+  assert.equal(eta.confidence, 'medium');
+  assert.equal(eta.confidenceReason, 'noisy');
+});
+
+test('a majority-high-cost buildable set (no blocked children, steady pace) degrades confidence, reason "heavy"', () => {
+  const eta = estimateEpicEta(
+    baseInput({
+      children: [{ mutationCost: 'high' }, { mutationCost: 'high' }, { mutationCost: 'low' }],
+    })
+  );
+  assert.equal(eta.kind, 'ranged');
+  assert.equal(eta.confidence, 'medium');
+  assert.equal(eta.confidenceReason, 'heavy');
 });
