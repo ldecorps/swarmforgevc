@@ -144,3 +144,29 @@ approval_context: >
   directly to QA, skipping the build stages, which is unusual but
   matches the work (read logs, record verdict). If you prefer it to
   walk the normal chain, say so.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20 05:57Z: not promoted. human_approval: pending,
+  and capacity (active/ 7 of 7). type chore / severity low, priority 20; not
+  expedited. Routing noted: qa-only when promoted, not via coder.
+
+  PRECONDITION STATUS CHANGED SINCE THE BLOCKER WAS FILED (evidence 9fe9d3a74):
+  local main NOW carries BL-967 (a5ecfc281b is an ancestor; divergence 16 ahead
+  / 0 behind - someone merged origin/main). So the code half is satisfied.
+
+  STILL NOT RUNNABLE: the live daemon is `22544178a`, which PREDATES the fix,
+  pid age 8m14s, state `U` (stalled). The soak measures the running process,
+  not the checkout, so it must wait for the next flap-restart to load the new
+  code. Verify before starting:
+    git merge-base --is-ancestor a5ecfc281b <running_sha>
+
+  BASELINE FOR THE MEASUREMENT (record this or "ZERO new entries" is not
+  measurable): at 05:57Z `.swarmforge/daemon/freshness-incidents.log` holds
+  **661 lines**. Step 3 passes only if that count is UNCHANGED across a
+  30-minute window that begins AFTER the daemon is confirmed running the fix.
+
+  DO NOT READ THE CURRENT CYCLE COUNT AS EVIDENCE: handoffd.log now shows 21
+  completed heartbeat cycles, up from 1 earlier tonight. That is the PRE-FIX
+  daemon, so it says nothing about BL-967 either way; attributing it to the fix
+  would be crediting a process that never loaded it.
+
