@@ -39,14 +39,9 @@ export function isKnownEpic(epicId: string): boolean {
 }
 
 export function resolveEpicIcon(epicId: string, alreadyAssignedIcons: string[] = []): string {
-  // Branch on the SAME own-property guard isKnownEpic uses, so the two can
-  // never disagree: a bare KNOWN_EPIC_ICON[epicId] lookup reaches
-  // Object.prototype, and an epic id named after a prototype member
-  // ('valueOf', 'toString', ...) would resolve to the inherited FUNCTION -
-  // which both live callers pass straight to the Telegram API (BL-946
-  // bounce D1).
-  if (isKnownEpic(epicId)) {
-    return KNOWN_EPIC_ICON[epicId];
+  const known = KNOWN_EPIC_ICON[epicId];
+  if (known !== undefined) {
+    return known;
   }
   const used = new Set(alreadyAssignedIcons);
   const next = EPIC_ICON_POOL.find((icon) => !used.has(icon));
