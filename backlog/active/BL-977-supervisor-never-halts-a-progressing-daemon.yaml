@@ -169,3 +169,5 @@ approval_context: >
   and a silent daemon still halts in 30s - but it is a new number, and
   the ticket requires it to be derived from a recorded measurement rather
   than chosen. Flag if you want it bounded differently.
+
+assigned_to: coder

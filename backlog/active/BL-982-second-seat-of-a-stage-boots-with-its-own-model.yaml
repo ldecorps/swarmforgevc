@@ -115,3 +115,5 @@ approval_context: >
   your addendum - is a later slice and needs one decision from you: when the
   seat whose model tier matches the ticket is busy and a different-tier seat is
   idle, should the ticket WAIT for the right seat or SPILL to the idle one?
+
+assigned_to: coder
