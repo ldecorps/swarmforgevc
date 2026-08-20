@@ -75,6 +75,22 @@ BL-962's token choice.
 
 ---
 
+## Coder re-fix pass (2026-08-20) — D1 cleared
+
+- **D1 cleared**: the invariant-2 gate's `merge-base`/`--is-ancestor` scan
+  now runs over `strip-comments-keep-strings` output - ;-comments blanked
+  (whole-line AND trailing), string contents PRESERVED, exactly where a bb
+  shell-out's git subcommands live. **Re-proven with the review's own
+  injection**: a rival `(sh! "git" ... "merge-base" "--is-ancestor" ...)`
+  predicate appended to `babysitter_check.bb` now FAILS the gate (1 failure,
+  naming the assertion); removed and green again. The one-site
+  `is_qa_ancestor.sh` count (the sound half) now also runs over the same
+  comment-stripped text, so a trailing-comment mention can no longer skew it
+  either. Unit runner ALL PASS; property runner ALL PROPERTIES HOLD
+  (P1=500, P2=500).
+
+---
+
 ## Everything else — run and PASSED
 
 | Check | Result |

@@ -18,6 +18,7 @@ const { readBacklogFolders } = require(path.join(EXTENSION_OUT, 'panel', 'backlo
 const { mailboxDir } = require(path.join(EXTENSION_OUT, 'swarm', 'swarmState.js'));
 const { computeDaemonProcessStatus, isDaemonReady } = require(path.join(EXTENSION_OUT, 'swarm', 'daemonHealth.js'));
 const { stopSwarmCompletely, verifySwarmStopped } = require(path.join(EXTENSION_OUT, 'swarm', 'swarmStopper.js'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const SMOKE_CHECK_SCRIPT = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'smoke_check_stabilize_two_pack.sh');
 const PIPELINE_ROLES = ['coordinator', 'coder', 'cleaner'];
@@ -34,7 +35,7 @@ function spawnDisposableProcess() {
 
 function ensureTargetPath(ctx) {
   if (!ctx.targetPath) {
-    ctx.targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-daemon-workflow-'));
+    ctx.targetPath = mkSocketFixtureRoot('aps-daemon-workflow-');
   }
   return ctx.targetPath;
 }

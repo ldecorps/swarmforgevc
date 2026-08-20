@@ -29,6 +29,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
 const { afterEach } = require('node:test');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SHELL_TEST = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'test_handoffd_aged_note_rotate_wiring.sh');
@@ -72,7 +73,7 @@ exit 0
 `;
 
 function buildChaseSweepFixture({ declareRotation }) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl938-acc-'));
+  const root = mkSocketFixtureRoot('sfvc-bl938-acc-');
   execFileSync('git', ['init', '-q'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: root });
 

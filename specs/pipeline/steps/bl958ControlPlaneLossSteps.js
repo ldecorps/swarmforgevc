@@ -16,6 +16,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { afterEach } = require('node:test');
 const fixtureReaper = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const STATUS = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_status.bb');
@@ -41,7 +42,7 @@ afterEach(() => {
 });
 
 function mkFixture(ctx) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl958-'));
+  const root = mkSocketFixtureRoot('sfvc-bl958-');
   fixtureReaper.track(root);
   trackedRoots.push(root);
   for (const dir of ['.swarmforge/launch', 'bin']) {

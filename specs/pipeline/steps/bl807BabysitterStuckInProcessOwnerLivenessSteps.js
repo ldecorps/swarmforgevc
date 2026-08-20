@@ -25,6 +25,7 @@ const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const CHECK_SH = path.join(SCRIPTS, 'babysitter_check.sh');
 const SWEEP_LIB = path.join(SCRIPTS, 'babysitterd_sweep_lib.bb');
 const { track } = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'the stuck-in-process check reads owner liveness, and can see every mailbox';
 
@@ -63,7 +64,7 @@ function knownOutcome(value) {
 }
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function mkFixtureRoot() {

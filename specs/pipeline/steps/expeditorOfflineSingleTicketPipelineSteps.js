@@ -32,6 +32,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -42,7 +43,7 @@ const CHAIN = ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'docum
 const FORBIDDEN_COMMANDS = ['tmux', 'handoffd.bb', 'swarm_handoff.bb', 'rotate_to_role.sh', 'ready_for_next.sh'];
 
 function mkTmpRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'bl567-'));
+  return mkSocketFixtureRoot('bl567-');
 }
 
 function buildFixture(ctx, activeTickets) {

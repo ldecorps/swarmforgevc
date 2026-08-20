@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -39,7 +40,7 @@ process.on('exit', () => {
 });
 
 function mkFixtureRoot() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'bl802-'));
+  const d = mkSocketFixtureRoot('bl802-');
   fs.mkdirSync(path.join(d, '.swarmforge', 'handoffs', 'failed'), { recursive: true });
   fs.mkdirSync(path.join(d, 'backlog', 'active'), { recursive: true });
   return d;
@@ -91,7 +92,7 @@ const REQUIRED_TOOLS = [
 ];
 
 function buildPathWithoutSetsid() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl802-no-setsid-'));
+  const dir = mkSocketFixtureRoot('bl802-no-setsid-');
   for (const tool of REQUIRED_TOOLS) {
     const resolved = spawnSync('command', ['-v', tool], { shell: true, encoding: 'utf8' }).stdout.trim();
     if (!resolved) continue;
@@ -105,7 +106,7 @@ function buildPathWithoutSetsid() {
 }
 
 function buildPathWithSetsidStub() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl802-setsid-stub-'));
+  const dir = mkSocketFixtureRoot('bl802-setsid-stub-');
   const stub = path.join(dir, 'setsid');
   fs.writeFileSync(stub, '#!/usr/bin/env bash\nexec "$@"\n');
   fs.chmodSync(stub, 0o755);
@@ -205,7 +206,7 @@ function registerSteps(registry) {
   // ── Scenario 03: pane process gather on BSD-style ps ────────────────────
   registry.defineScoped(/^a ps stub on PATH that rejects the --ppid option but supports BSD syntax$/, (ctx) => {
     const st = ensureState(ctx);
-    st.fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'bl802-fakebin-'));
+    st.fakeBin = mkSocketFixtureRoot('bl802-fakebin-');
     const ps = path.join(st.fakeBin, 'ps');
     fs.writeFileSync(
       ps,

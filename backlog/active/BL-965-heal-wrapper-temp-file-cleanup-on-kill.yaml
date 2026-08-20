@@ -141,3 +141,5 @@ notes_coordinator_hold: >
   BL-965 lands. Coordinator has no authority to pick; flagged for a ruling.
 
   No orthogonality conflict, no ambulance freeze, no onboarding-contract hold.
+
+assigned_to: coder
