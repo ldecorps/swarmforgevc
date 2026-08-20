@@ -123,3 +123,20 @@ approval_context: >
   considered and set aside because a never-launched repo legitimately has
   no identity and existing scripted callers parse stdout with errors
   suppressed. Say the word for fail-closed instead and scenario 03 flips.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20: not promoted. Two blockers:
+  human_approval: pending, and capacity (active/ holds 7 against an effective
+  cap of 7, live full-forge pack). depends_on is empty, no orthogonality
+  conflict, no ambulance freeze, no onboarding-contract hold.
+
+  RANK WHEN UNBLOCKED: defect/medium, so NOT expedited under Article 3.2.4;
+  queues on priority 30 alongside BL-963, behind BL-962 (defect/high, the only
+  expedited candidate).
+
+  PROVENANCE: minted from the coordinator's evidence d0c649827 after the
+  architect challenged an all-roles cap broadcast. The two of us resolved the
+  same value from opposite checkouts (7 from master, 3 from a worktree) and
+  converged; the defect is the CLI's silent per-checkout split, not either
+  reading. Note the ticket is self-describing: while it is unbuilt, any role
+  checking the cap from its own worktree still gets 3.
