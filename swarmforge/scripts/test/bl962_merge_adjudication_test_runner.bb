@@ -84,16 +84,23 @@
 ;; babysitter_check.bb must contain NO second ancestry primitive of its own
 ;; (`merge-base` / `--is-ancestor` are the shapes a second predicate would
 ;; take), and must name is_qa_ancestor.sh at exactly ONE site (the resolver
-;; behind qa-ancestor?, seam included). Comments and string contents are
-;; stripped before scanning so prose about the rule never trips the gate -
-;; except that the one is_qa_ancestor.sh literal IS a string, so that count
-;; runs over raw source lines with only full-line comments removed.
+;; behind qa-ancestor?, seam included).
+;;
+;; Architect bounce D1 (2026-08-20): the first cut stripped STRING CONTENTS
+;; before scanning - but in Babashka a git subcommand is always a
+;; string-literal argument to a shell-out, so `merge-base`/`--is-ancestor`
+;; can ONLY ever appear inside strings, and a rival predicate passed the
+;; gate unnoticed (a gate green against a deliberately broken
+;; implementation). The scan now strips ;-comments only - whole-line AND
+;; trailing - while PRESERVING string contents, so string data trips the
+;; gate and prose about the rule still cannot.
 
-(defn strip-comments-and-strings
-  "Blanks ;-comments and the CONTENTS of double-quoted strings (keeping
-   their newlines). A backslash outside a string starts a char literal -
-   its next char is skipped, so the \\\" char literal never opens a
-   phantom string."
+(defn strip-comments-keep-strings
+  "Blanks ;-comments (any ; outside a string, to end of line) while KEEPING
+   string contents - the text a bb shell-out's git subcommands live in. A
+   backslash outside a string starts a char literal; its next char is
+   copied through, so the \\\" and \\; char literals never confuse the
+   walker."
   [content]
   (let [sb (StringBuilder.)]
     (loop [chars (seq content) in-string? false escaped? false]
@@ -101,23 +108,24 @@
         (cond
           in-string?
           (cond
-            escaped? (recur (rest chars) true false)
-            (= c \\) (recur (rest chars) true true)
+            escaped? (do (.append sb c) (recur (rest chars) true false))
+            (= c \\) (do (.append sb c) (recur (rest chars) true true))
             (= c \") (do (.append sb c) (recur (rest chars) false false))
-            (= c \newline) (do (.append sb c) (recur (rest chars) true false))
-            :else (recur (rest chars) true false))
-          (= c \\) (recur (rest (rest chars)) false false)
+            :else (do (.append sb c) (recur (rest chars) true false)))
+          (= c \\) (do (.append sb c)
+                       (when-let [n (second chars)] (.append sb n))
+                       (recur (rest (rest chars)) false false))
           (= c \") (do (.append sb c) (recur (rest chars) true false))
           (= c \;) (recur (drop-while #(not= % \newline) chars) false false)
           :else (do (.append sb c) (recur (rest chars) false false)))
         (str sb)))))
 
 (let [raw (slurp check-file)
-      stripped (strip-comments-and-strings raw)
-      code-lines (remove #(str/starts-with? (str/trim %) ";") (str/split-lines raw))
-      ancestry-refs (count (filter #(str/includes? % "is_qa_ancestor.sh") code-lines))]
-  (assert= "no second ancestry predicate: `merge-base` never appears in babysitter_check.bb's code"
-           nil (re-find #"merge-base|--is-ancestor" stripped))
+      code (strip-comments-keep-strings raw)
+      ancestry-refs (count (filter #(str/includes? % "is_qa_ancestor.sh")
+                                   (str/split-lines code)))]
+  (assert= "no second ancestry predicate: `merge-base`/`--is-ancestor` never appears in babysitter_check.bb's code, string arguments included"
+           nil (re-find #"merge-base|--is-ancestor" code))
   (assert= "is_qa_ancestor.sh is named at exactly one code site (the qa-ancestor? resolver)"
            1 ancestry-refs))
 
