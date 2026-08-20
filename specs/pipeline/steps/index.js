@@ -529,7 +529,6 @@ const DOMAINS = [
   require('./bl966DepthSameAnswerSteps'),
   require('./bl948SocketFixtureShortRootSteps'),
   require('./bl964RetiredEnsureEnvVarGateSteps'),
-  require('./bl963NudgeGateChainSteps'),
   require('./bl965HealWrapperTempCleanupSteps')
 ];
 
