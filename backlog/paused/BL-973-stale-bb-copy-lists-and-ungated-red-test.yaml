@@ -145,3 +145,24 @@ approval_context: >
   legitimately slow or live-touching. If you want an actual all-tests
   runner lane instead (accepting its runtime), say so. Severity
   medium: infra rot, loud once run, nothing live degraded.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20 04:52Z: not promoted. human_approval: pending,
+  and capacity (active/ 7 of 7). defect/MEDIUM, so not expedited; queues on
+  priority 30.
+
+  Verified by the coordinator before minting (evidence 4a6c1e6f1): the four
+  copy-lists are genuinely red - `test_lean_ledger_bb_wiring.sh` exits 1 with
+  `FileNotFoundException .../prompt_engine_lib.bb` - because handoff_lib.bb:37
+  began loading that lib in 818bd3826 (BL-911) and the fixture copy-lists were
+  never updated. Affected, precisely: test_lean_ledger_bb_wiring.sh,
+  test_sidecar_tolerant_completion.sh, test_handoff_state_dir_worktree_root.sh,
+  test_idle_clear_respawn.sh.
+
+  SEVERITY OBSERVATION (not a request to re-rate; severity is the specifier's):
+  the copy-list edits are one line each, but the load-bearing half is that NO
+  runner or workflow references these tests, so they have been red and silent
+  since BL-911. Without a gate the next lib added to handoff_lib.bb breaks all
+  four again, equally invisibly. A medium rating fits the fix; it understates
+  the blind spot.
+
