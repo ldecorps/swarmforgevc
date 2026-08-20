@@ -7,6 +7,21 @@ status: todo
 epic: swarm-reliability
 priority: 30
 direction: operator-reported
+human_approval: pending
+approval_context: >
+  The coordinator's 06:50Z retract note ("no ticket needed") and its own
+  06:52Z hold annotation on this ticket disagree; the annotation is the
+  later, fuller probe and it says the defect is live and will recur. Facts:
+  the hand-injected RESEND_API_KEY lives only in the current daemon
+  generation's env (pid 76358); the supervisor's environment is keyless; the
+  next supervisor- or watchdog-driven relaunch spawns a keyless generation
+  and briefing + death-alarm email silently stop again - likely before
+  tomorrow's 04:30Z briefing window. Approve = build the fix (launch path
+  re-sources .swarmforge/operator/daemon.env when present; a still-keyless
+  generation sends exactly one Telegram alert; the key's value never enters
+  repo or logs). Reject = retire the ticket and accept hand-re-exporting the
+  key after every relaunch. Firm either way: the BL-215 posture (the repo
+  never stores the key) is unchanged.
 depends_on: []
 mutation_cost: low
 invariants:
