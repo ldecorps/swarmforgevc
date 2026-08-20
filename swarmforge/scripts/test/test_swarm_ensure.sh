@@ -98,15 +98,24 @@ printf '%s SUCCESS handoffd+supervisor running\n' "\$(date -u +%Y-%m-%dT%H:%M:%S
 EOF
   chmod +x "$FAKE_BIN/fake_daemon_start.sh"
 
-  # Operator healthy by default (this test script's pid as a live stand-in).
+  # Operator healthy by default. BL-993: operator-healthy? now checks the
+  # pid's own command line, not just kill-0 (a bare pid-alive? cannot tell a
+  # live operator_runtime.bb apart from an unrelated process that reused its
+  # pid) - this script's own pid ($$) is never operator_runtime.bb, so the
+  # stand-in must be a real background process with that name in its argv,
+  # same shape bl993_watch_survives_runtime_death.sh's own fixture uses.
   # Front desk is omitted unless a fixture sets TELEGRAM_* or a pid file.
-  echo "$$" > "$ROOT/.swarmforge/operator/runtime.pid"
+  bb -e '(Thread/sleep 100000)' operator_runtime.bb >/dev/null 2>&1 &
+  echo $! > "$ROOT/.swarmforge/operator/runtime.pid"
 
-  # Use a real background sleep so the repair leaves a live pid - same
-  # survival rule as the fake daemon supervisor above.
+  # Use a real background process so the repair leaves a live pid - same
+  # survival rule as the fake daemon supervisor above. BL-993: the pid this
+  # leaves behind must pass operator-healthy?'s own command-line check, not
+  # just kill-0 - a bare `sleep` no longer does (confirmed live: this fake
+  # left scenario 05a reporting FAILED instead of FIXED before this fix).
   cat > "$FAKE_BIN/fake_operator_start.sh" <<EOF
 #!/usr/bin/env bash
-sleep 100 >"$ROOT/fake-operator.log" 2>&1 &
+bb -e '(Thread/sleep 100000)' operator_runtime.bb >"$ROOT/fake-operator.log" 2>&1 &
 echo \$! > "$ROOT/.swarmforge/operator/runtime.pid"
 EOF
   chmod +x "$FAKE_BIN/fake_operator_start.sh"
