@@ -1,3 +1,17 @@
+> **DISPOSITIONED 2026-08-20 (specifier).** Consolidated N:1 into the
+> already-active **BL-978**
+> (`backlog/active/BL-978-dropped-parcel-sweep-single-pass-trail-index.yaml`,
+> `type: defect`, `severity: high`, promoted expedited) — the same
+> `dropped-parcel-sweep` defect, reported here from the
+> `daemon_log_freshness_check.sh` side (300s restart storm) instead of the
+> `handoffd_supervisor.bb` side (30s stall window). No second ticket was
+> minted, per the coordinator's priority-00 note
+> `00_20260820T084433Z_000678` ("My root intake dup of BL-978 (same sweep) -
+> do not mint 2nd ticket"). The human directive quoted below survives
+> verbatim in BL-978's `notes:`, as does the "do not fix by raising the
+> threshold alone" framing. The sibling guard half (the supervisor false
+> halt) is **BL-977**.
+
 # INTAKE 2026-08-20 — handoffd freshness restart-storm recurrence #2 (dropped-parcel-sweep)
 
 **Raised by:** human, in-chat directive to the coordinator, 2026-08-20 ~08:32Z:

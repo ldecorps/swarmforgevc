@@ -133,6 +133,32 @@ notes: >
   dropped-parcel-sweep! wiring. Overlaps BL-977 only on handoffd.bb -
   prefer sequencing the two rather than running them co-active.
 
+  Second source intake, consolidated N:1 into this ticket rather than
+  minted as a second ticket (Consolidation Authority; coordinator note
+  00_20260820T084433Z_000678 "My root intake dup of BL-978 (same sweep) -
+  do not mint 2nd ticket"): backlog root item
+  INTAKE-handoffd-freshness-restart-storm-recurrence-dropped-parcel-sweep.md,
+  raised by the coordinator 2026-08-20 ~08:32Z, archived to
+  backlog/archive/ in the same pass. It reports the SAME sweep from the
+  other guard's side: daemon_log_freshness_check.sh (threshold 300s,
+  swarmforge/scripts/daemon_log_freshness.conf) restarting handoffd 5
+  times between 05:38Z and 08:00Z at ages 327-396s, with a live
+  cycle-0 measurement of `sweep-boundary sweep=dropped-parcel-sweep
+  ms=202158` at 2026-08-20T08:31:19Z on top of ~19.4s of chase/dispatch/
+  nudge sweeps ahead of it - an independent confirmation of this
+  ticket's own 30-143269 ms range, at a second worst case of ~202s.
+  Nothing in it changes what this ticket builds; the fix wanted is the
+  same single-pass trail index. Its human directive, preserved verbatim:
+  "treat the handoffd intake as a high priority deffect" (in-chat,
+  2026-08-20 ~08:32Z) - already satisfied by this ticket's type: defect
+  / severity: high / expedited promotion. Its framing direction,
+  preserved: do not fix by raising the freshness threshold alone, "this
+  is silence with no end-of-cycle heartbeat, not slow-but-healthy work".
+  Note for whoever verifies: the live daemon_log_freshness.conf handoffd
+  threshold currently reads 300 as an UNCOMMITTED working-tree change
+  (was 120); that raise is not this ticket's fix and must not be treated
+  as one.
+
 approval_context: >
   One call to say the word on: this is minted as a SIBLING of BL-977
   rather than one combined daemon ticket. Either alone reduces the risk
@@ -143,3 +169,5 @@ approval_context: >
   rather than minted - a shared per-cycle scan index, and a retention
   policy for the ever-growing completed/ and sent/ dirs - both wanting
   your word before they become tickets.
+
+assigned_to: coder
