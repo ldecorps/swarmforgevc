@@ -124,3 +124,5 @@ notes_coordinator_hold: >
   rather than later, but severity does not create a slot and the coordinator
   does not set priority - flagged, not acted on.
 
+
+assigned_to: coder
