@@ -19,13 +19,6 @@
 (load-file (str (fs/path script-dir "process_table_lib.bb")))
 (load-file (str (fs/path script-dir "babysitterd_freshness_lib.bb")))
 (load-file (str (fs/path script-dir "control_plane_lib.bb")))
-;; BL-993 architect bounce (backlog/evidence/BL-993-bounce-20260820.md): the
-;; operator-runtime row below now checks the SAME thing swarm_ensure.bb's
-;; operator-healthy? and the always-on watch check (pid liveness AND its
-;; command line), not the bare pid-alive? every other daemon row here uses -
-;; a pidfile naming a live but unrelated process (pid reuse) must read as
-;; DOWN, and a bare kill-0 cannot tell that apart from the real thing.
-(load-file (str (fs/path script-dir "operator_runtime_watch_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -188,26 +181,6 @@
                                  detail
                                  (when (and pid (not alive)) "stale-pid")]))})))
 
-(defn gather-operator-runtime
-  "Same daemon-status-row shape as daemon-from-pid, but aliveness is
-   operator_runtime_watch_lib.bb's own healthy? (pid AND its command line)
-   rather than the generic bare pid-alive? every other row here uses -
-   BL-993's own fix, so this row can never disagree with swarm_ensure.bb's
-   operator-healthy? or the always-on watch on the pid-reuse case."
-  []
-  (let [path (fs/path state-dir "operator" "runtime.pid")
-        pid (read-pid path)
-        alive (and pid (operator-runtime-watch-lib/healthy? project-root))
-        et (pid-etime pid)]
-    (swarm-status-lib/daemon-status-row
-     {:name "operator-runtime"
-      :alive? (boolean alive)
-      :uptime et
-      :detail (str/join " "
-                        (remove str/blank?
-                                [(when pid (str "pid=" pid))
-                                 (when (and pid (not alive)) "stale-pid")]))})))
-
 (defn gather-babysitterd
   "Pidfile is not the source of truth: a live babysitterd.sh for this root
    with a missing/stale pidfile still reports UP (the incident ./swarm status
@@ -238,7 +211,7 @@
         daemon (fs/path state-dir "daemon")]
     [(daemon-from-pid "handoffd" (fs/path daemon "handoffd.pid"))
      (daemon-from-pid "handoffd-supervisor" (fs/path daemon "handoffd-supervisor.pid"))
-     (gather-operator-runtime)
+     (daemon-from-pid "operator-runtime" (fs/path op "runtime.pid"))
      (gather-babysitterd)
      (daemon-from-pid "cloudflare-tunnel" (fs/path op "tunnel.pid"))]))
 

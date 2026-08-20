@@ -22,10 +22,7 @@
 ;; negotiation_relay_supervisor.bb already established for a single
 ;; supervised child - never a second, drifting copy of that state machine)
 ;; and operator_runtime_watch_lib.bb for the one true liveness/stop
-;; decision - the SAME check swarm_ensure.bb's operator-healthy? and
-;; swarm_status.bb's operator-runtime row now also delegate to (BL-993
-;; architect bounce: this must never be a second, diverging liveness
-;; check - see operator_runtime_watch_lib.bb's own header).
+;; decision, shared with this ticket's own test/acceptance runners.
 ;;
 ;; Restart goes THROUGH start_operator_runtime.sh (this feature's own
 ;; Background: "the operator runtime is started through its normal entry
