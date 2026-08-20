@@ -11,6 +11,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -60,7 +61,7 @@ function writeFakeTmux(fixtureRoot) {
 // stays compliant, matching scripted-fail-02's one-violation-at-a-time
 // scenario shape.
 function buildFixture(violation) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-compliance-battery-'));
+  const root = mkSocketFixtureRoot('aps-compliance-battery-');
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 'test@test']);
   git(root, ['config', 'user.name', 'test']);
@@ -226,7 +227,7 @@ function registerSteps(registry) {
   // ── per-role-04 ──────────────────────────────────────────────────────
   registry.define(/^a candidate agent under test as the "([^"]+)"$/, (ctx, role) => {
     ctx.role = role;
-    ctx.fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-compliance-battery-role-'));
+    ctx.fixtureRoot = mkSocketFixtureRoot('aps-compliance-battery-role-');
   });
 
   registry.define(/^the battery runs that role's gate$/, (ctx) => {
@@ -323,7 +324,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the scorecard is produced$/, (ctx) => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-compliance-battery-scorecard-'));
+    const tmpDir = mkSocketFixtureRoot('aps-compliance-battery-scorecard-');
     const entriesFile = path.join(tmpDir, 'entries.json');
     fs.writeFileSync(entriesFile, JSON.stringify(ctx.entries));
     ctx.scorecard = battery(['scorecard', 'reference-model', entriesFile]);

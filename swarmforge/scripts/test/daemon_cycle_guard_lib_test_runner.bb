@@ -35,7 +35,8 @@
     (let [r (daemon-cycle-guard-lib/sh! ["pwd"] {:dir d})]
       (assert-true "sh! vector+opts form: :dir honored"
                    (str/includes? (str/trim (:out r)) (fs/file-name d))))
-    (finally (fs/delete-tree d))))
+    (finally
+      (fs/delete-tree d))))
 
 (let [r (daemon-cycle-guard-lib/sh! "false")]
   (assert= "sh! non-zero exit passes through untouched" 1 (:exit r)))

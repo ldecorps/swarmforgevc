@@ -16,6 +16,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { afterEach } = require('node:test');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const ENSURE = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_ensure.bb');
@@ -41,7 +42,7 @@ function bbEval(expr) {
 }
 
 function mkFixture(ctx) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl571-'));
+  const root = mkSocketFixtureRoot('sfvc-bl571-');
   trackedRoots.push(root);
   for (const dir of ['.swarmforge/daemon', '.swarmforge/operator', '.swarmforge/launch', '.swarmforge/babysitterd', '.worktrees/coder', 'bin']) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });

@@ -190,6 +190,20 @@
                         active))]
     (str "__sfh_root=" (shell-quote pinned-worktree) "\n"
          "__sfh_out_file=\"$(mktemp \"${TMPDIR:-/tmp}/sfh.XXXXXX\")\" || exit 1\n"
+         ;; BL-965: the capture file is removed on EVERY catchable
+         ;; termination, not only the tail path - kills are routine here
+         ;; (the Bash tool's ~120s cap, respawn-pane -k, swarm teardown)
+         ;; and each one leaked a file. EXIT owns the rm; the signal traps
+         ;; exit with the conventional 128+N codes rather than doing the rm
+         ;; themselves, because a bare rm-only trap CONSUMES the signal:
+         ;; bash would resume after the interrupted foreground child and
+         ;; cat a just-removed file, changing the killed run's output.
+         ;; Only an uncatchable SIGKILL can leave residue, and that residue
+         ;; keeps the recognizable sfh.* name. Stock bash 3.2 safe.
+         "trap 'rm -f \"$__sfh_out_file\"' EXIT\n"
+         "trap 'exit 129' HUP\n"
+         "trap 'exit 130' INT\n"
+         "trap 'exit 143' TERM\n"
          (capture-attempt original-command "")
          (when (seq active)
            (str "if [ $__sfh_ec -ne 0 ]; then\n"

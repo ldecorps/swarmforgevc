@@ -22,11 +22,12 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const HARNESS = path.join(__dirname, 'lib', 'fixtureReaperTmuxOnlyHarness.js');
 const { reap } = require('./lib/fixtureReaper');
 const { scanForTmuxReaperViolations } = require('./lib/tmuxReaperGuard');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'fixture tmux servers are reaped however a scenario ends, and the live swarm is never touched';
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function sessionAlive(sock, session) {

@@ -12,6 +12,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const SWARMFORGE_SCRIPTS = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
 const NUDGE = path.join(SWARMFORGE_SCRIPTS, 'remote_wakeup_nudge.bb');
@@ -28,12 +29,12 @@ function ensureUpstreamAndClone(ctx) {
   if (ctx.upstream) {
     return;
   }
-  ctx.upstream = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-remote-wakeup-upstream-'));
+  ctx.upstream = mkSocketFixtureRoot('aps-remote-wakeup-upstream-');
   git(ctx.upstream, ['init', '-q']);
   git(ctx.upstream, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   git(ctx.upstream, ['branch', '-m', 'main']);
 
-  ctx.remoteCheckout = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-remote-wakeup-clone-'));
+  ctx.remoteCheckout = mkSocketFixtureRoot('aps-remote-wakeup-clone-');
   execFileSync('git', ['clone', '-q', ctx.upstream, ctx.remoteCheckout], { encoding: 'utf8' });
 
   fs.mkdirSync(path.join(ctx.remoteCheckout, '.swarmforge'), { recursive: true });
@@ -45,7 +46,7 @@ function ensureUpstreamAndClone(ctx) {
     `specifier\tmaster\t${ctx.remoteCheckout}\tswarmforge-second-specifier\tSpecifier\tclaude\ttask\n`
   );
 
-  ctx.fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-remote-wakeup-bin-'));
+  ctx.fakeBin = mkSocketFixtureRoot('aps-remote-wakeup-bin-');
   ctx.tmuxCallLog = path.join(ctx.fakeBin, 'tmux-calls.log');
   fs.writeFileSync(ctx.tmuxCallLog, '');
   fs.writeFileSync(

@@ -18,12 +18,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const SUPERVISOR_SCRIPT = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'handoffd_supervisor.bb');
 
 function mkTmp(prefix) {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  return mkSocketFixtureRoot(prefix);
 }
 
 // Mirrors test_handoffd_supervisor_job_reaper.sh's make_fixture(): a project
@@ -73,7 +74,7 @@ function spawnOwnedFixture({ cwd, cmdline }) {
 // with argv0 set to the cmdline shape under test. Polls real `ps` until
 // the reparent has actually happened before returning, never assumed.
 async function spawnOrphanFixture({ cwd, cmdline }) {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'bl886-orphan-spawn-'));
+  const scratch = mkSocketFixtureRoot('bl886-orphan-spawn-');
   const pidFile = path.join(scratch, 'pid');
   const script = path.join(scratch, 'spawn.py');
   fs.writeFileSync(

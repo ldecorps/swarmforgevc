@@ -24,6 +24,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { onAbnormalExit } = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'Ensure repairs the handoff daemon by starting it, never by halting the swarm';
 
@@ -114,7 +115,7 @@ function pidAlive(pid) {
 const SESSIONS = ['swarmforge-coder', 'swarmforge-cleaner'];
 
 function buildFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl690-ensure-daemon-'));
+  const root = mkSocketFixtureRoot('bl690-ensure-daemon-');
   trackedRoots.add(root);
   const bin = path.join(root, 'bin');
   fs.mkdirSync(daemonDir(root), { recursive: true });

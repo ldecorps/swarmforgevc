@@ -14,6 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -59,7 +60,7 @@ function logFile(ctx) {
 }
 
 function buildMinimalFixture(ctx) {
-  ctx.projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl878-project-'));
+  ctx.projectRoot = mkSocketFixtureRoot('bl878-project-');
   const sock = path.join(ctx.projectRoot, 'fake.sock');
   fs.writeFileSync(sock, '');
   for (const dir of [
@@ -97,7 +98,7 @@ function buildMinimalFixture(ctx) {
 }
 
 function makeSetsidStubBin(ctx) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl878-setsid-stub-'));
+  const dir = mkSocketFixtureRoot('bl878-setsid-stub-');
   const stub = path.join(dir, 'setsid');
   fs.writeFileSync(stub, '#!/usr/bin/env bash\nexec "$@"\n');
   fs.chmodSync(stub, 0o755);

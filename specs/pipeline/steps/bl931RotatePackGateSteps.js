@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -41,7 +42,7 @@ function sh(cmd) {
 }
 
 function seedFixture(ctx) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl931-acceptance-'));
+  const root = mkSocketFixtureRoot('bl931-acceptance-');
   ctx.root = root;
   sh(`git -C ${JSON.stringify(root)} init -q`);
   sh(`git -C ${JSON.stringify(root)} -c user.email=test@test -c user.name=test commit -q --allow-empty -m init`);
