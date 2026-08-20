@@ -737,6 +737,17 @@ You are the hardender.
   stalls only AFTER a mutant has started. **Flat CPU is the discriminator** —
   a process merely starved by host load still accumulates CPU time; one
   wedged waiting on the worker protocol does not.
+- **EXCEPT during PRE-RUN generation, where flat CPU is legitimate (accepted
+  rule_proposal, 2026-08-20):** Gherkin mutation's PRE-RUN phase shows flat
+  CPU legitimately. Judge progress by the mutant-dir count under the work
+  dir; BL-687's flat-CPU stall test applies only once `completed=` is
+  advancing. Read together: before any mutant runs, "alive" means the
+  mutant-dir count is still growing (e.g. `mutations/m4 → m5`) — kill a
+  pre-run only when that count has been STATIC for the same few minutes
+  (which is also what validates the BL-687 kill above: its dirs were not
+  growing). (Incident: BL-961, 2026-08-20 — a run killed at 4min on flat
+  CPU had just grown mutations/ m4→m5; the relaunch finished in 113s, 6/6
+  killed. The BL-788 pre-check was clean; the kill wasted a healthy run.)
 - Rule: kill it after a few minutes rather than waiting out a shift — reap
   `bb gherkin-mutator`, `mutationWorker.js` and `run_gherkin_mutation.sh` by
   name, confirm reaped, and confirm nothing leaked (`git status --short`,

@@ -41,3 +41,24 @@ from a worktree returns 3.
 Resolve identity from the git common dir / master checkout rather than the cwd root, or
 fail closed with a clear error when `swarm-identity` is absent instead of silently
 falling back to the default conf.
+
+## RESOLVED — BL-966's fix verified live on main (coordinator, 2026-08-20 06:12Z)
+
+    master             -> 7
+    .worktrees/architect -> 7
+    .worktrees/coder     -> 7
+
+Earlier tonight the same three answered 7 / 3 / 3. The per-checkout split is gone.
+
+**Caveat on how it landed.** BL-966's coder commit `5c8b0835f` is on `origin/main`, but
+BL-966 has **not passed its own QA gate** — QA reports the code rode onto main entangled
+with BL-961's landing (`c9c6a34d13`) and flagged it (note 000403). BL-966 is now held by
+QA and will be gated there. So this verification is an independent coordinator
+observation, NOT a substitute for that gate: it confirms the behaviour claimed, on one
+host, read-only. Coverage, mutation and the rest remain QA's to run.
+
+**Consequence for the all-roles broadcast.** On 2026-08-20 00:00Z the coordinator
+broadcast "cap is 7 (master); depth CLI wrongly says 3 from a worktree" to all seven
+roles. That warning is now STALE — the CLI answers 7 from any checkout. A follow-up
+broadcast has been sent so no role keeps applying a workaround for a defect that no
+longer exists.
