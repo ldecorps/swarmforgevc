@@ -249,6 +249,17 @@ notes: |
   assertions across the two layouts, which is the whole point of the feature -
   merging them would delete the comparison. Left as written.
 
+  AMENDED 2026-08-20 (this ticket is closed; the amendment is to its durable
+  feature file, not to the ticket). BL-994 moves a tile's ticket metadata off
+  the grid tile head and into the fullscreen Expand view, per its own locked
+  human decision 2. Scenario 03's second Then was retargeted accordingly -
+  the documenter tile is now expanded and the ticket asserted in its Expand
+  view. The property is unchanged: a tile holding a ticket still never
+  resurrects the global top strip, and the ticket stays attributed to the
+  tile that holds it. Locked decision 1 above already named the fullscreen
+  head as a valid home for it, so nothing human was overridden. The two new
+  step handlers land in BL-994's parcel.
+
 assigned_to: coder
 bounce_count: 1
 bounce_history:
