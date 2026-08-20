@@ -51,13 +51,21 @@ test('BL-946 invariant 2 (exhaustive): EPIC_ICON_POOL is disjoint from ICON_EMOJ
 //    exhausted, and is deterministic for identical inputs. ────────────────
 const poolMember = new Set(EPIC_ICON_POOL);
 
+// Object.prototype member names drawn BY CONSTRUCTION (bounce D2): a bare
+// table lookup resolves these to an inherited function/object, and leaving
+// them to fc.string made the gate fire only on a lucky seed - the exact
+// shape BL-654 names (a live defect a property can pass hundreds of runs
+// against). A reach floor below asserts the arm is actually common.
+const PROTOTYPE_EPIC_IDS = ['valueOf', 'toString', 'constructor', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__proto__'];
+
 const epicIdArb = fc.oneof(
   fc.string({ maxLength: 40 }),
   fc.string({ unit: 'grapheme', maxLength: 40 }),
   fc.constant(''),
   fc.constant('role-benchmarking'),
   fc.constant('dynamic-routing'),
-  fc.constant('onboarding-target-repo')
+  fc.constant('onboarding-target-repo'),
+  fc.constantFrom(...PROTOTYPE_EPIC_IDS)
 );
 
 // Assignment states: arbitrary subsets of the pool, junk strings that were
@@ -74,9 +82,11 @@ const assignedArb = fc.oneof(
 
 test('BL-946 invariant 3 (property): resolveEpicIcon never throws, always returns a pool member, and is deterministic - for any epic id and any assignment state, exhausted pool included', () => {
   let exhaustedDraws = 0;
+  let prototypeIdDraws = 0;
   fc.assert(
     fc.property(epicIdArb, assignedArb, (epicId, assigned) => {
       if (EPIC_ICON_POOL.every((g) => assigned.includes(g))) exhaustedDraws += 1;
+      if (PROTOTYPE_EPIC_IDS.includes(epicId)) prototypeIdDraws += 1;
       const first = resolveEpicIcon(epicId, assigned);
       const second = resolveEpicIcon(epicId, assigned);
       assert.equal(typeof first, 'string');
@@ -88,7 +98,8 @@ test('BL-946 invariant 3 (property): resolveEpicIcon never throws, always return
     }),
     { numRuns: 300 }
   );
-  // Generator-reach floor (BL-654): the exhausted state must actually be
-  // common, not merely reachable.
+  // Generator-reach floors (BL-654): the exhausted state and the
+  // prototype-named ids must actually be common, not merely reachable.
   assert.ok(exhaustedDraws >= 30, `exhausted-pool draws must be common by construction, got ${exhaustedDraws}/300`);
+  assert.ok(prototypeIdDraws >= 20, `prototype-named-id draws must be common by construction, got ${prototypeIdDraws}/300`);
 });
