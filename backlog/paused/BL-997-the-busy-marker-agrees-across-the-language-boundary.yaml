@@ -186,3 +186,10 @@ approval_context: >
   remove the duplication rather than merely policing it, so if you would
   rather pay a subprocess in the UI path to get one true definition, say so
   and this becomes a different ticket.
+
+  COORDINATOR, 2026-08-20 ~16:06: cannot promote yet - backlog/active/ is at
+  the effective cap (7/7, no ambulance, onboarding gate allow) with no
+  closable ticket right now (QA/documenter/cleaner queues empty; nothing
+  approved-pending-close). BL-997 is now the top promotion candidate for the
+  next open slot, ranked ahead of BL-996 (which additionally depends_on
+  BL-970, still unlanded). Will promote+route the instant a slot frees.
