@@ -160,3 +160,28 @@ approval_context: >
   fallback), never weakens the limit. Severity medium: broad but
   test-infra, silent only because the suite is also ungated
   (BL-973).
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20 05:45Z: not promoted. human_approval: pending,
+  and capacity (active/ 7 of 7). defect/MEDIUM, so not expedited; queues on
+  priority 40.
+
+  This is the sibling the coordinator asked for on the BL-323 root cause
+  (evidence efcff9dd5): the specifier scoped the shell-fixture half here rather
+  than widening BL-948, which stays on the acceptance fixtures. Both halves of
+  one mechanism are now ticketed, so the fix cannot be applied to only half the
+  affected fixtures.
+
+  Verified before minting: `test_resume_on_start.sh` exits 1 with ZERO bytes of
+  output; the swallowed error is `resolve_swarm_socket.bb: Socket path exceeds
+  the operating system's unix-socket path limit (100 chars)` at 102 chars, from
+  macOS's long $TMPDIR plus `.swarmforge/tmux/<n>.sock`.
+
+  KEEP THE SECOND DEFECT IN SCOPE: the overrun is only half of it. The
+  `env -u SWARMFORGE_CONFIG zsh -c '...'` block discards its own stderr, which
+  is why a real configuration failure presents as a bare `exit 1` and why the
+  architect logged it as "red 3/5" - the 102-vs-100 margin is
+  mktemp-name-length dependent, so it passes intermittently. Fixing only the
+  path length leaves the next config failure just as silent, and a
+  2-chars-over guard just as easy to re-cross.
+
