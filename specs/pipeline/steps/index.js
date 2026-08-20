@@ -544,7 +544,6 @@ const DOMAINS = [
   require('./bl969BurndownNoflagsTimeoutSteps'),
   require('./bl992UnmergedDeclarationSteps'),
   require('./bl995DetachedJobSteps'),
-  require('./bl993OperatorRuntimeWatchSteps'),
   require('./bl997BusyMarkerAgreementSteps'),
   require('./bl994LiveScreenGridSteps'),
   require('./bl976EmailKeylessAlertSteps'),

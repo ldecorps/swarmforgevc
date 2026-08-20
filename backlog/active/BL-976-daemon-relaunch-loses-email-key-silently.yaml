@@ -163,3 +163,6 @@ notes_coordinator_hold: >
 
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: hardender, blamed: cleaner, class: behavior, commit: 37f4badd83, evidence: backlog/evidence/BL-976-daemon-relaunch-loses-email-key-silently-bounce-20260820.md }
