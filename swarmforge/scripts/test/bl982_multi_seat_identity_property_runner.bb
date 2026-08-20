@@ -27,6 +27,20 @@
 ;; multi-seat confs >= 8, a 3-seat stage >= 3, compose-checked draws >= 6,
 ;; delivery-checked draws >= 5.
 ;;
+;; Cleaner note (2026-08-20): the default `runs` (24) makes the single-seat
+;; floor a coin flip, not a reliable trap - gen-pack draws a single-seat
+;; PACK only when every one of its 1-3 stages independently lands n=1 seat
+;; (P(seat=1)=1/3 per stage), giving P(pack is single) ~= 0.16 and an
+;; expected single-seat count of ~3.85 over 24 draws against a floor of 5.
+;; A 20000-trial simulation of exactly this draw shape measured P(single
+;; count < floor) = 0.65 at runs=24 - the floor was FAILING roughly two
+;; draws in three, not from a real regression but from under-sampling; the
+;; same simulation measured runs=100 at P(fail) ~= 0.0001. Raised runs'
+;; default to 100 so the "absolute, never scaled" floors are actually met
+;; reliably; every floor and generator shape is unchanged. ~2.4s/draw
+;; measured on this host puts 100 draws at ~240s, inside this repo's
+;; established SUBPROCESS_HEAVY_TIMEOUT_MS budget for subprocess-heavy
+;; property runs.
 ;; Non-vacuity (staged-first restore, run 2026-08-20, recorded in the
 ;; parcel commit):
 ;;   - inv-1 break: write_agent_instruction_file's compose arg reverted to
@@ -49,7 +63,7 @@
 (def swarmforge-sh (str (fs/path scripts-dir "swarmforge.sh")))
 (def pre-blob "2edd9a17ba9d40709c0f436d12395b638563c0ca")
 
-(def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 24))
+(def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 100))
 (def rng (java.util.Random. (System/nanoTime)))
 (defn rand-nth* [xs] (nth xs (.nextInt rng (count xs))))
 (defn rand-int* [n] (.nextInt rng n))
