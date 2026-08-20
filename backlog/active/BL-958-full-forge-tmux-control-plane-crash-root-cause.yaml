@@ -161,3 +161,31 @@ notes: >
   shared setup, kept for the same reason. Lint gate: clean parse.
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: ec033029e2, evidence: backlog/evidence/BL-958-full-forge-tmux-control-plane-crash-root-cause-bounce-20260819.md }
+
+notes_coordinator_status: >
+  NOT DROPPED - QA-PASSED, UNLANDED (coordinator, 2026-08-20 02:44Z). The
+  unassigned-active sweep flagged "BL-958 no parcel in flight - possible
+  drop". The sweep is CORRECT: QA holds parcels for BL-910, BL-959 and
+  BL-960, but none for BL-958, and QA's sent/ has zero BL-958 references.
+
+  It is not a drop. QA passed it:
+
+    79b2fe143 "BL-958: QA pass inventory - all gates run, zero defects;
+               pre-QA ancestry red adjudicated as subject-line false positive."
+
+  This is the SECOND ticket in the same state - BL-957 is also QA-passed with
+  its landing explicitly deferred "pending BL-958/BL-960 sibling
+  verification". QA is working BL-960 (in_process) now, the third sibling, so
+  the coherent reading is that QA intends to land BL-957/BL-958/BL-960
+  together once all three verify.
+
+  SAME NO-RETURN RISK, NOW DOUBLED: neither BL-957 nor BL-958 has a parcel,
+  and nothing will re-deliver either. Two tickets now depend on QA's memory
+  rather than on a mechanism. QA was already told about the BL-957 deferral
+  (note 000646, still unread in its new/); deliberately not sending a second
+  note for BL-958 rather than adding noise to a queue QA has not yet drained.
+
+  Do NOT treat a future "no parcel in flight" hit on BL-958 as a drop while
+  this note stands. If BL-960 lands and BL-957/BL-958 do NOT follow shortly
+  after, that is the point at which this becomes a real stall worth chasing.
+
