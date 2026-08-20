@@ -652,13 +652,21 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
 //     showing it means the pane is not stuck, no matter what the caller's
 //     (possibly stale) liveness signal claimed. ---
 
+// BL-1003: the precheck now matches chase_sweep_lib.bb's own structural
+// definition (BL-970) - a real live status frame, not a bare marker
+// substring. A bare substring with no frame around it no longer refuses a
+// respawn (that was exactly the false-busy shape BL-970 fixed on the swarm
+// side); see bl1003BusyVerdictParity.property.test.js and
+// specs/pipeline/steps/bl1003BusyVerdictMatchesSwarmSteps.js for the
+// consequence this fixed - a REAL 10-minute-mid-turn capture with no
+// marker substring at all used to slip through this precheck.
 test('respawnAgent refuses to type into a pane that is actively processing a turn (BL-137 misfire guard)', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
   const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
-    { subcommand: 'capture-pane', exitCode: 0, stdout: '  auto mode on · esc to interrupt' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: '✻ Thinking… (5s · ⚒ tool)' },
   ]);
   try {
     const result = respawnAgent(tmp, 'coder');
