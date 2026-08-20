@@ -16,7 +16,11 @@ consumes those; the router-ONLY predicates keep their exact meaning for
 widen. A parity gate now derives the launcher's accepted set from
 `swarmforge.sh` itself and asserts set equality, so the bash↔Babashka mirror
 cannot drift silently (BL-897). No human-facing command or setting changes;
-the swarm running today declares `rotation router` and is unaffected.);
+the swarm running today declares `rotation router` and is unaffected. See the
+new "`./swarm ensure` respects the dormant roles (BL-571)" section in
+[`docs/how-to/BL-439-fes-second-swarm-bringup.md`](../how-to/BL-439-fes-second-swarm-bringup.md)
+— the runbook for the one shipped `mono-rotate` pack, whose "one resident
+process" promise this restores through a repair pass.);
 Previously August 20, 2026 (BL-959: the APS Babashka toolchain our
 Gherkin gates consume is pinned, and bumping that pin is a human commit, so
 the adopt/defer/reject question the 2026-08-19 upstream scan raised is now
