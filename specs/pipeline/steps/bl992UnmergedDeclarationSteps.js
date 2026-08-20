@@ -19,11 +19,23 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { afterEach } = require('node:test');
 
 const FEATURE = 'A declaration the sender has not merged is still read';
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_HANDOFF = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_handoff.bb');
+
+// A step earlier in the scenario (mkFixture, commitTicket, ...) can throw
+// before the terminal assertion step's own `finally` runs - track every
+// root here so afterEach removes it regardless of which step failed
+// (same guaranteed-cleanup pattern as bl951StageSkipsRecordedSteps.js).
+let trackedRoots = [];
+afterEach(() => {
+  while (trackedRoots.length) {
+    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+  }
+});
 
 // KNOWN_VALUES: the declaration tokens scenarios name.
 const DECLARATIONS = {
@@ -41,6 +53,7 @@ function git(cwd, args) {
 
 function mkFixture(ctx, { branch = 'main' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl992-'));
+  trackedRoots.push(root);
   ctx.root = root;
   git(root, ['init', '-q']);
   git(root, ['branch', '-M', branch]);
@@ -97,20 +110,9 @@ function send(ctx, { from, to, task }) {
 }
 
 function assertDeliveredOnlyTo(ctx, role) {
-  try {
-    assert.equal(ctx.sendStatus, 0, `send must succeed:\n${ctx.sendOut}`);
-    const toLine = ctx.envelope.split('\n').find((l) => l.startsWith('to: '));
-    assert.equal(toLine, `to: ${role}`, `expected delivery to ${role} only, envelope:\n${ctx.envelope}`);
-  } finally {
-    cleanup(ctx);
-  }
-}
-
-function cleanup(ctx) {
-  if (ctx.root) {
-    fs.rmSync(ctx.root, { recursive: true, force: true });
-    ctx.root = null;
-  }
+  assert.equal(ctx.sendStatus, 0, `send must succeed:\n${ctx.sendOut}`);
+  const toLine = ctx.envelope.split('\n').find((l) => l.startsWith('to: '));
+  assert.equal(toLine, `to: ${role}`, `expected delivery to ${role} only, envelope:\n${ctx.envelope}`);
 }
 
 function registerSteps(registry) {
@@ -185,25 +187,21 @@ function registerSteps(registry) {
     assertDeliveredOnlyTo(ctx, 'cleaner');
   });
   scoped(/^the send exits successfully$/, (ctx) => {
-    // assertDeliveredOnlyTo already checked status BEFORE cleanup; this
-    // re-states the invariant-2 contract explicitly for the scenario text.
+    // assertDeliveredOnlyTo already checks status; this re-states the
+    // invariant-2 contract explicitly for the scenario text.
     assert.equal(ctx.sendStatus, 0, `the send must exit zero:\n${ctx.sendOut}`);
   });
 
   scoped(/^the recorded skip carries the rejection reason for that declaration$/, (ctx) => {
-    try {
-      assert.equal(ctx.sendStatus, 0, `send must succeed:\n${ctx.sendOut}`);
-      const jsonlPath = path.join(ctx.root, '.swarmforge', 'routing-skips.jsonl');
-      assert.ok(fs.existsSync(jsonlPath), 'a routing-skips.jsonl record must exist');
-      const lines = fs.readFileSync(jsonlPath, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
-      const withReason = lines.filter((l) => typeof l['rejection-reason'] === 'string' && l['rejection-reason'].length > 0);
-      assert.ok(
-        withReason.length > 0,
-        `the skip record must carry the declaration's rejection reason (only a REF-read declaration can supply it): ${JSON.stringify(lines)}`
-      );
-    } finally {
-      cleanup(ctx);
-    }
+    assert.equal(ctx.sendStatus, 0, `send must succeed:\n${ctx.sendOut}`);
+    const jsonlPath = path.join(ctx.root, '.swarmforge', 'routing-skips.jsonl');
+    assert.ok(fs.existsSync(jsonlPath), 'a routing-skips.jsonl record must exist');
+    const lines = fs.readFileSync(jsonlPath, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+    const withReason = lines.filter((l) => typeof l['rejection-reason'] === 'string' && l['rejection-reason'].length > 0);
+    assert.ok(
+      withReason.length > 0,
+      `the skip record must carry the declaration's rejection reason (only a REF-read declaration can supply it): ${JSON.stringify(lines)}`
+    );
   });
 }
 
