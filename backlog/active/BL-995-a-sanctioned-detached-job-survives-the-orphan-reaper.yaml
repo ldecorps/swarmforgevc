@@ -165,6 +165,20 @@ notes: >
   should send the specifier a note; the specifier lands the prose and records
   the commit here.
 
+  PROSE HALF LANDED 2026-08-20: `65d104947` on `main`, amending
+  `swarmforge/roles/hardender.prompt`'s >120s escape-hatch rule to say a
+  detached run is REGISTERED via `swarmforge/scripts/detach_job.sh`, not merely
+  detached - plus the expiry default (120 min, `--expires-minutes N`), how to
+  collect a run from its own `[detach_job] EXIT=` / `KILLED by SIGTERM` markers,
+  and the three measured reap kills of 2026-08-20 as the rule's own evidence.
+  Triggered by the architect's note `20260820T182556Z_000309` once the mechanism
+  settled. This obligation is now DISCHARGED; nothing downstream builds against
+  it. The prose is written against the mechanism as it stands at `e8c9635e` /
+  `bc692ffe89` (helper path, `<log-file> [--expires-minutes N] -- <command...>`
+  usage, the `.swarmforge/daemon/detached-jobs/<pgid>.json` registry, the 120-min
+  default and the two log markers) - if a later review reshapes any of those, the
+  prose must be re-amended on `main` by the specifier, since no gate checks it.
+
   IR-DRY: zero findings.
 
 approval_context: >

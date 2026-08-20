@@ -1007,7 +1007,7 @@ You are the hardender.
   descendant-of-published-tip fixture discriminated the direction and killed
   it.)
 
-## A run that legitimately needs more than ~120s escapes the cap only via `python3` double-fork + `os.setsid` — never via a bigger `timeout` (rule_proposal 2026-08-19, accepted)
+## A run that legitimately needs more than ~120s escapes the cap only via a REGISTERED detach — `swarmforge/scripts/detach_job.sh` (rule_proposal 2026-08-19, accepted; amended by BL-995 2026-08-20)
 - **Reach for the smaller answer first.** The escape hatch below costs a
   detached process and a second turn to collect it, so it is the LAST resort,
   not the default: prefer static/parse-based verification (source-text checks,
@@ -1023,22 +1023,41 @@ You are the hardender.
   (exit 144) — this sandbox reaps the child when the tool call returns,
   whatever job-control trick wrapped it. Retrying with a larger number is the
   one response guaranteed to waste a turn.
-- **What survives is a double fork with `os.setsid()` between the two**, stdin
-  opened from `/dev/null`, and stdout+stderr redirected into a log file under
-  your worktree's `./tmp/`. `setsid(1)` itself is NOT available here — stock
-  macOS ships no util-linux `setsid` (`command -v setsid` is empty on this
-  host), so `python3` is the portable way to make the same call. The launcher
-  returns in well under a second; collect the result on a LATER turn by
-  `tail`ing the log (or with the `Monitor` tool where it is available), never
-  by sleeping in the foreground.
-- **Embed the absolute `cd` inside the detached command, and verify the tool's
-  identity from the run's own first output lines.** A run that crosses into
-  background execution does not reliably inherit the cwd that was active when
-  you launched it, and nothing warns you: BL-815 launched `npx vitest` from
-  `extension/` with a confirming `pwd` immediately beforehand, and the
-  89-minute run that came back had executed from the repo root under a
-  different, unpinned vitest with no config. Its whole output was spurious and
-  had to be discarded.
+- **Detach through the helper — a detached run must be REGISTERED, not merely
+  detached.** `swarmforge/scripts/detach_job.sh <log-file> [--expires-minutes N]
+  -- <command…>`. It does the double fork with `os.setsid()` between the two
+  (stock macOS ships no util-linux `setsid`, so `python3` makes the call),
+  opens stdin from `/dev/null`, redirects the job's stdout+stderr into your log,
+  and returns in well under a second — and it registers the job's process GROUP
+  under `.swarmforge/daemon/detached-jobs/<pgid>.json` before the worker can
+  ever be seen as orphaned. Do NOT hand-roll that incantation any more: a
+  `setsid` detach produces a PPID-1 orphan BY CONSTRUCTION, and that is exactly
+  what `handoffd_supervisor`'s BL-108 reaper kills on argv match — `npm exec
+  vitest`, `npx vitest`, the property-lane config, `node --test` batches and
+  Stryker roots are all in its pattern verbatim. Unregistered, your job does not
+  fail; it disappears. (If the helper is not in your worktree, the commit
+  carrying it has not reached you — merge first, rather than falling back to the
+  raw fork.)
+- **Registration EXPIRES — 120 minutes by default, `--expires-minutes N` to
+  extend.** That is deliberate, not a wart: registration is not immunity, or a
+  crashed owner's job would run forever and BL-108 comes back through the front
+  door. A run that could plausibly outlast the window says so AT LAUNCH; past
+  expiry it is reaped exactly like an unregistered orphan.
+- **Collect by reading the log's own markers, never by inferring from silence.**
+  The helper writes `[detach_job] STARTED pgid=…` first, then exactly one of
+  two endings: `[detach_job] EXIT=<code>` (the run finished — that code is your
+  result) or `[detach_job] KILLED by SIGTERM …` (something killed it; an expired
+  or missing registration makes the reaper the likely sender). Neither marker
+  means it is still running. A log that stops mid-run is not evidence of a flaky
+  suite or an overloaded host until you have looked for those lines.
+- **The directory you launch from is the directory the job runs in — make it
+  absolute.** The helper pins the worker's cwd to your invocation cwd, so
+  `cd /abs/path && swarmforge/scripts/detach_job.sh …` is the shape, and you
+  still verify the tool's identity from the run's own first output lines. BL-815
+  launched `npx vitest` from `extension/` with a confirming `pwd` immediately
+  beforehand, and the 89-minute run that came back had executed from the repo
+  root under a different, unpinned vitest with no config. Its whole output was
+  spurious and had to be discarded.
 - **This is not a restatement of the `setsid cmd &` rule above.** That one is
   about what `$!` means to a SCRIPT on a host where `setsid(1)` exists. This
   one is about YOUR OWN `Bash` tool calls on this host, where it does not.
@@ -1050,6 +1069,17 @@ You are the hardender.
   tests sit in the same band. Verified 2026-08-19: the launcher returned in
   under a second and its detached child was still writing 172 seconds
   later, well past the 120s any foreground call gets.)
+- (Incident: BL-995, 2026-08-20 — why the REGISTERED half exists. For a day
+  this rule and the BL-108 reaper destroyed each other silently: the rule
+  instructed you to create precisely the orphan the reaper exists to kill.
+  `.swarmforge/daemon/handoffd-supervisor.log` recorded `reap-job-orphan` three
+  times on 2026-08-20 alone — 13:05:52 a coder property run, 14:09:10 and
+  14:19:54 the same hardener property test twice — each one this rule being
+  followed correctly and the job killed within seconds. Nothing errored; the log
+  just stopped, and the only record sat in a supervisor log the owner had no
+  reason to open. The fix teaches the reaper to spare a REGISTERED detach
+  without narrowing its pattern or disguising argv, which is why the helper is
+  now the only sanctioned path rather than one convenience among several.)
 
 ## A parcel that touches `specs/pipeline/steps/` or `extension/test/` runs the standing whole-tree guards — no targeted run can see a repo-wide invariant (rule_proposal 2026-08-19, accepted)
 - Your verification is per-file by construction, so it structurally cannot see

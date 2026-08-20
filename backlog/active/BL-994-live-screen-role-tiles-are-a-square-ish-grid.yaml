@@ -44,11 +44,26 @@ description: >
   Verified by the specifier at spec time, because the whole ticket rests on
   the capture being faithful:
 
-  - `backlog/evidence/INTAKE-live-screen-role-tile-grid-hotfix.patch` exists,
-    is TRACKED on `main`, and is BYTE-IDENTICAL to
-    `git diff -- extension/src/bridge/residentSpyUiHtml.ts` in the master
-    checkout (`diff -q` clean against the live tree). The patch is therefore a
-    complete record; the dirty working tree carries nothing extra.
+  - `backlog/evidence/INTAKE-live-screen-role-tile-grid-hotfix.patch` exists
+    and is TRACKED on `main` (169 lines). At spec time it was verified
+    BYTE-IDENTICAL to `git diff -- extension/src/bridge/residentSpyUiHtml.ts`
+    in the master checkout (`diff -q` clean), so it is a complete record of
+    the hotfix.
+
+    AMENDED 2026-08-20 - READ THIS BEFORE VERIFYING: that `git diff` is now
+    EMPTY and the live file no longer carries the fix. Nothing was discarded -
+    QA deliberately set the master checkout's uncommitted work aside before a
+    main<->origin reconcile, as `stash@{0}`
+    ("QA-BL983-board-seat-leak-fix-set-aside-20260820 ... real work, wrong
+    worktree - needs rescue to coder's worktree, not discard"), and the phone
+    grid UI hotfix went with it.
+
+    So: do NOT read the empty diff as "the patch is wrong" or "the work is
+    already done", and do NOT try to reconstruct the hotfix from the live file.
+    The tracked 169-line patch file is the authoritative record and is
+    unaffected - apply it in your worktree and drive it through the chain
+    exactly as written. You do not need the stash for THIS ticket; it is
+    mentioned only so the empty diff is not mistaken for a lost fix.
   - `getResidentSpyUiHtml()` is a pure function returning an HTML string, and
     `extension/test/residentSpyUiHtml.test.js` already exercises it - so the
     layout is testable at the module boundary without booting a webview.
@@ -200,3 +215,5 @@ approval_context: >
 
   Everything else follows your three locked decisions as written, and the
   coordinator has been notified as you asked.
+
+assigned_to: coder
