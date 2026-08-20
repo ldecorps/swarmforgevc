@@ -585,8 +585,6 @@ if [[ -s "$RESPAWN_LOG" ]]; then fail "BL-571: sequential-dormant role must not 
 pass "BL-571: rotation sequential dormant roles report DORMANT without respawn"
 
 # ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 # Extra (BL-958): the control-plane-loss shape — socket file + role metadata
 # still present, tmux server gone. Ensure must classify through
 # control_plane_lib (a control-plane row, decided recovery), recreate the

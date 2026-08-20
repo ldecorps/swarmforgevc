@@ -154,6 +154,39 @@ No check was blocked.
 
 ---
 
+## Coder re-fix pass (2026-08-20) — D1, D2, D4 cleared; D3 travels to cleaner
+
+- **D1a cleared**: `agent_runtime_inject.bb`'s `tmux!` now routes through
+  `daemon-cycle-guard-lib/sh!` (guard-lib `load-file` added; the vestigial
+  `babashka.process` require removed).
+- **D1b cleared**: `master_checkout_drift_lib.bb`'s `run-git` now routes
+  through the chokepoint (same two-line wiring); a bounded timeout returns
+  exit 124 → `{:ok? false}` — fail-closed, matching the lib's own invariant 2.
+- **D2 cleared, fix-the-class**: the structural half is now an executable
+  gate in `daemon_cycle_guard_lib_test_runner.bb` — over the **transitive
+  `load-file` closure from `handoffd.bb`** (computed by
+  `master_checkout_drift_lib`'s existing BFS, never a hand list), no file
+  except the guard lib may reference `babashka.process`, `clojure.java.shell`,
+  `process/sh`, or `process/process`; comments and string contents are
+  stripped so prose never trips it. **Non-vacuity proven**: an injected
+  `babashka.process/sh` call in `chase_sweep_lib.bb` failed the gate naming
+  `chase_sweep_lib.bb:1359`, then was removed. `handoffd.bb`'s now-unused
+  `babashka.process` require was deleted so the namespace-token ban is
+  complete (an aliased call cannot exist without naming its namespace). The
+  property runner's falsified stated reason is rewritten to cite this gate.
+- **D4 cleared**: the step file's Background comment now cites
+  `WAIT_BOUND_MS (5000)`.
+- **D3 (cleaner's)**: untouched here — travels with this inventory.
+- **Verification**: guard-lib unit runner ALL PASS (incl. the new gate);
+  guard-lib property runner ALL PROPERTIES HOLD (P1=50 real children,
+  P2=450); `master_checkout_drift_lib` unit + BL-839 property runners pass;
+  `agent_runtime` unit runner + inject-mock + lib shell tests ALL PASS;
+  `test_handoffd_master_checkout_drift_wiring.sh` (boots the REAL daemon —
+  proves handoffd runs without the removed require) ALL TESTS PASSED;
+  acceptance `BL-967-…​.feature` **4/4 pass** against the real `handoffd.bb`.
+
+---
+
 ## Bounce disposition
 Bounced to **coder** (earliest blamed role, D1/D2). D3 is the cleaner's to clear as
 the inventory travels back through it. BL-967's two commits (`95eebfcbf`,
