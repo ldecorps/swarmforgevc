@@ -1,5 +1,5 @@
 id: BL-971
-title: "property lane never green: bl868 + bl632 property tests exhaust their wall-clock budgets under swarm load (126s/60s, 154s/90s) - make the lane's verdict trustworthy again"
+title: "property lane never green: bl868 + bl632 + bl760 property tests exhaust their wall-clock budgets under swarm load (126s/60s, 154s/90s, 240s/240s) - make the lane's verdict trustworthy again"
 milestone: M8
 type: defect
 severity: high
@@ -36,6 +36,37 @@ description: >
   not assertion failures; both overshoot ~1.7-2x, pointing at duration
   (under-budgeted work and/or host-load inflation), not logic. The
   host was running 8 agents plus concurrent vitest and mutation work.
+
+  AMENDMENT 2026-08-20 (specifier, from hardender note
+  20260820T121826Z_000276) - a THIRD file, and the reason this stays one
+  ticket. bl760DuplicateChainGuard timed out at 240s in a full-lane run
+  under load. That is not merely one more file: 240000ms is
+  SUBPROCESS_HEAVY_TIMEOUT_MS, the SHARED constant declared once in
+  extension/test/helpers/subprocessHeavyTimeout.js (BL-932 moved it there
+  precisely so it would stop being hand-copied). bl760 therefore exhausted
+  the whole shared subprocess-heavy budget, not a budget of its own.
+
+  Consequence for the fix, and why the amendment is load-bearing rather than
+  bookkeeping: the two originally-named files carry their OWN explicit
+  budgets (60s, 90s), so a fix scoped to just those two would leave the
+  shared 240s budget untouched and this ticket could close with the lane
+  still red - exactly what invariant 1 forbids. The three other adopters of
+  the same constant (bl787NamedTunnelInvariants,
+  bl797MutationGateProbeCrashFallback, onboarderLauncherPidGuard) sit on the
+  identical budget and are the blast radius if it is raised; they have NOT
+  been observed failing, so they are named here as context and deliberately
+  NOT added to the acceptance Examples table.
+
+  No new ticket was minted for bl760: invariant 1 already reads "any test in
+  the lane failing by timeout is a violation of this ticket, whatever the
+  host load", so a sibling ticket would fragment one defect across two and
+  let both close while the lane stayed red.
+
+  Confound ruled out, not assumed: the BL-984 fixture leak (stranded
+  *.property.test.js files adding real child-vitest load to the lane) was
+  checked per worktree at amendment time. Five leaked files exist ONLY in
+  .worktrees/architect; the hardender's worktree had none, so the bl760
+  timeout was not inflated by stranded fixtures.
 
   Specifier probe (what the failing tests actually cost): both files
   already declare deliberate explicit per-test timeouts with
@@ -208,3 +239,6 @@ notes_coordinator_hold: >
 
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: QA, blamed: coder, class: acceptance, commit: 8956d30eee, evidence: backlog/evidence/BL-971-property-lane-never-green-two-timeouts-bounce-20260820.md }
