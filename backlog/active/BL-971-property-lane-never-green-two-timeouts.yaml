@@ -206,3 +206,5 @@ notes_coordinator_hold: >
   operator choice, not a coordinator one, and it freezes ALL promotion for
   the ride's duration - not recommended unless the wait proves long.
 
+
+assigned_to: coder
