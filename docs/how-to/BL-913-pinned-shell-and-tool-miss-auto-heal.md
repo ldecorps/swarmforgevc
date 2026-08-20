@@ -175,23 +175,46 @@ condition and restores the registration in the same parcel.
    misdirects the append — the exact live defect. When the target is
    ambiguous the clause is omitted from the wrapper entirely.
 
-### Known limitation: the capture file is not trap-cleaned (BL-965)
+### The capture file is trap-cleaned on any catchable kill (BL-965)
 
-The temp file each attempt is captured to is removed by an `rm -f` at the end
-of the generated wrapper. There is no `trap`, so **if the wrapped command is
-killed, the file is stranded** in `$TMPDIR`. This is introduced by BL-960,
-not inherited — the pre-fix wrapper used `$()` capture and called `mktemp`
-zero times — and the blast radius is every Bash call in every role shell,
-since the hook is registered again. It is measured, not theoretical: 13
-stranded `sfh.*` files were already sitting in `$TMPDIR` from the window this
-code was being exercised.
+BL-960's wrapper removed its `mktemp` capture file with a plain `rm -f` on
+the tail path only — no `trap` — so a kill before the tail (a signal, the
+Bash tool's ~120s timeout, `tmux respawn-pane -k`, swarm teardown) stranded
+the file in `$TMPDIR`. Kills are routine on this host, so every Bash call in
+every role shell leaked one file; 13 stranded `sfh.*` files were already
+measured sitting in `$TMPDIR` before the fix.
 
-Deliberately not fixed in this parcel: adding a `trap` changes the generated
-wrapper, which is production behavior and would move the byte-identity
-baselines BL-960's own round-trip test asserts against — so it wants its own
-spec and tests. Tracked as **BL-965**. Until it lands, `sfh.*` files
-accumulating in `$TMPDIR` are expected, and safe to delete when no swarm is
-running.
+`build-healing-wrapper-command` now installs, right after the `mktemp` line:
+
+```
+trap 'rm -f "$__sfh_out_file"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+```
+
+The `EXIT` trap owns the `rm`; the signal traps only re-exit with the
+conventional `128+N` code rather than doing the `rm` themselves. That split
+is deliberate, not stylistic: a single combined `rm`-only trap on a signal
+**consumes** it — bash then resumes past the interrupted foreground child
+and `cat`s the file the trap just removed, changing a killed run's output
+and leaving the wrapper alive after a `respawn-pane -k` instead of dying
+with it. Exiting from the signal trap lets the `EXIT` trap fire on the way
+out and do the one `rm`. Only an uncatchable `SIGKILL` can still leave
+residue — that residue keeps the recognizable `sfh.*` name so external
+cleanup can identify it — and the tail `rm` on the happy path stays
+(idempotent, now redundant with the `EXIT` trap but harmless). Stock bash
+3.2 safe.
+
+Verified against the real composed wrapper, signalled as a process group
+(`perl setpgrp`, since bash defers traps while a foreground child runs and
+macOS ships no `setsid`): a hardening pass hand-mutated the trap block and
+confirmed dropping the `EXIT` trap, and collapsing it back to a combined
+rm-only trap, are both caught; the property runner's signalled-run check now
+asserts the `128+signum` exit code alongside the no-residue check for every
+catchable signal. Every BL-960 guarantee is unchanged — the byte-identity,
+parse-gate, and one-retry-structure baselines all still hold over the
+original corpus.
 
 The `cd`-based heals (`wrong-cwd`, `wrong-surface`) re-anchor the **whole**
 original through a subshell group, so for a multi-command original every
