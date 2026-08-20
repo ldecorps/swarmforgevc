@@ -201,3 +201,6 @@ approval_context: >
   that the manual relaunch is not the fix.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: architect, blamed: coder, class: behavior, commit: ce7cb1fb71, evidence: backlog/evidence/BL-993-bounce-20260820.md }
