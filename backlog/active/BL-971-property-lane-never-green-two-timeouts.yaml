@@ -239,3 +239,6 @@ notes_coordinator_hold: >
 
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: QA, blamed: coder, class: acceptance, commit: 8956d30eee, evidence: backlog/evidence/BL-971-property-lane-never-green-two-timeouts-bounce-20260820.md }
