@@ -217,6 +217,126 @@ test('BL-672 bounce #1: the leading epic\'s "Make top" button is not disabled, e
   );
 });
 
+// BL-591: the per-epic velocity ETA readout. required_wiring gates exactly
+// this - "the tile must actually render the range, blocked count,
+// confidence and pace assumption" - the BL-419 shape being a green
+// estimator wired into nothing downstream. These assert the REAL compiled
+// renderTiles()/renderEpicEta() output against every typed tile state the
+// estimator can emit, not just that the estimator itself is correct.
+
+function rowEtaText(dom, id) {
+  const row = dom.window.document.querySelector(`.row[data-id="${id}"]`);
+  assert.ok(row, `no row rendered for ${id}`);
+  const etaEl = row.querySelector('.row-eta');
+  return etaEl ? etaEl.textContent : null;
+}
+
+test('BL-591: a ranged tile renders the low/high band, confidence, blocked count and pace assumption', async () => {
+  const items = [
+    {
+      id: 'BL-100',
+      title: 'first',
+      priority: 0,
+      epicEta: {
+        kind: 'ranged',
+        lowDays: 3,
+        highDays: 21,
+        blockedCount: 2,
+        confidence: 'medium',
+        confidenceReason: 'noisy',
+        paceAssumption: 'at current full-forge pace over the trailing 28d window',
+      },
+    },
+  ];
+  const dom = renderScreen((url) => {
+    if (url.startsWith('/epic-reorder-state')) {
+      return stateResponse(items);
+    }
+    return Promise.reject(new Error('unexpected fetch: ' + url));
+  });
+  await flush();
+
+  const text = rowEtaText(dom, 'BL-100');
+  assert.ok(text.includes('~3d'), text);
+  assert.ok(text.includes('~3w'), text);
+  assert.ok(text.includes('medium confidence'), text);
+  assert.ok(text.includes('noisy'), text);
+  assert.ok(text.includes('2 blocked'), text);
+  assert.ok(text.includes('full-forge'), text);
+  assert.ok(text.includes('28d'), text);
+});
+
+test('BL-591: a ranged tile with zero blocked children omits the blocked-count clause entirely', async () => {
+  const items = [
+    {
+      id: 'BL-100',
+      title: 'first',
+      priority: 0,
+      epicEta: {
+        kind: 'ranged',
+        lowDays: 3,
+        highDays: 5,
+        blockedCount: 0,
+        confidence: 'high',
+        confidenceReason: 'steady',
+        paceAssumption: 'at current full-forge pace over the trailing 28d window',
+      },
+    },
+  ];
+  const dom = renderScreen((url) => stateResponse(items));
+  await flush();
+
+  const text = rowEtaText(dom, 'BL-100');
+  assert.ok(!text.includes('blocked'), text);
+});
+
+test('BL-591: a complete tile renders "complete", never a range or pace assumption', async () => {
+  const items = [{ id: 'BL-100', title: 'first', priority: 0, epicEta: { kind: 'complete' } }];
+  const dom = renderScreen((url) => stateResponse(items));
+  await flush();
+
+  assert.equal(rowEtaText(dom, 'BL-100'), 'complete');
+});
+
+test('BL-591: a blocked tile renders the reason word and blocked count, never a duration', async () => {
+  const items = [
+    { id: 'BL-100', title: 'first', priority: 0, epicEta: { kind: 'blocked', reason: 'designing', blockedCount: 3 } },
+  ];
+  const dom = renderScreen((url) => stateResponse(items));
+  await flush();
+
+  const text = rowEtaText(dom, 'BL-100');
+  assert.ok(text.includes('designing'), text);
+  assert.ok(text.includes('3 blocked'), text);
+  assert.ok(!/\d+[dw]/.test(text), `must not render a duration: ${text}`);
+});
+
+test('BL-591: a no-recent-pace tile renders "no recent pace", with the blocked count only when nonzero', async () => {
+  const items = [
+    { id: 'BL-100', title: 'no-blocked', priority: 0, epicEta: { kind: 'no-recent-pace', blockedCount: 0 } },
+    { id: 'BL-200', title: 'with-blocked', priority: 1, epicEta: { kind: 'no-recent-pace', blockedCount: 4 } },
+  ];
+  const dom = renderScreen((url) => stateResponse(items));
+  await flush();
+
+  const noBlocked = rowEtaText(dom, 'BL-100');
+  assert.ok(noBlocked.includes('no recent pace'), noBlocked);
+  assert.ok(!noBlocked.includes('blocked'), noBlocked);
+
+  const withBlocked = rowEtaText(dom, 'BL-200');
+  assert.ok(withBlocked.includes('no recent pace'), withBlocked);
+  assert.ok(withBlocked.includes('4 blocked'), withBlocked);
+});
+
+test('BL-591: a tile with no epicEta field renders no .row-eta at all, never a crash', async () => {
+  const items = [{ id: 'BL-100', title: 'first', priority: 0 }];
+  const dom = renderScreen((url) => stateResponse(items));
+  await flush();
+
+  const row = dom.window.document.querySelector('.row[data-id="BL-100"]');
+  assert.equal(row.querySelector('.row-eta'), null);
+});
+
 test('BL-672: a failed make-top renders the SERVER-supplied reason, not just an HTTP status', async () => {
   const items = [
     { id: 'BL-100', title: 'first', priority: 0 },
