@@ -50,6 +50,26 @@ description: >
   this project once - typing a forced respawn into a pane that is genuinely
   mid-turn.
 
+  AMENDMENT 2026-08-20 16:05 (specifier). THE DRIFT IS NO LONGER PENDING -
+  IT IS HOURS AWAY. When this ticket was written, BL-970 was merely active.
+  It has since passed BOTH coder and cleaner: the fix is commit `fa060af3e`,
+  merged for cleanup as `3ced65a86`, and it is now walking architect ->
+  hardender -> documenter -> QA.
+
+  That commit does not tweak the Babashka definition, it REPLACES it. The
+  classifier now recognizes a live status frame STRUCTURALLY - a
+  spinner-glyph-led line with verb words, an ellipsis and a digit-led
+  parenthesized elapsed - and it consults only the snapshot's TAIL WINDOW,
+  so a byte-perfect frame line quoted deep in scrollback no longer counts.
+  The hand-maintained verb list is removed outright.
+
+  The TypeScript side does none of that. It still matches the marker as a
+  substring anywhere in the pane. So the moment `fa060af3e` reaches `main`,
+  the two sides genuinely disagree: a pane quoting the marker in old
+  scrollback is IDLE to the swarm and BUSY to the extension host. The
+  TypeScript copy will be carrying, alone, the exact defect class BL-970
+  rated `high` - and no test will say so.
+
   How (direction, not mandate): give each side one definition and a test that
   feeds BOTH the same fixtures and asserts identical verdicts. The fixtures
   are the natural carrier - the marker literal should live in a fixture file
@@ -124,11 +144,15 @@ notes: >
   `tmuxClient.ts`, this ticket; comment-only, `extension.ts:422` and
   `wedgedRespawn.ts:8`, left alone.
 
-  Severity `medium` rather than `high`: today the two sides agree, so nothing
-  is currently misclassified by drift. What is missing is the gate that keeps
-  them agreeing - a latent fault rather than a live one. It becomes live the
-  moment BL-970 lands, which is why the ordering note in
-  `approval_context` matters more than the severity does.
+  Severity `medium`, held deliberately after re-examining it when the
+  amendment above landed. The argument for raising it is real - once
+  `fa060af3e` lands, the TypeScript side alone carries a defect class BL-970
+  itself rated `high`. I have not raised it because the blast radius is much
+  narrower than BL-970's was: BL-970's `high` came from wake delivery, where
+  a false-busy left a role unwakeable for hours. The TypeScript copy gates
+  only the extension host's forced-respawn precheck and its pane-state
+  rendering, where a false-busy means a refused respawn - visible,
+  recoverable, and rare. Same defect, far smaller surface.
 
   IR-DRY: zero findings.
 
@@ -147,6 +171,13 @@ approval_context: >
   Nothing enforces that ordering, so it is a promotion decision rather than a
   dependency. If you would rather not hold BL-970 for it, that is entirely
   reasonable - just expect this to arrive red and to spawn a follow-up.
+
+  TIMING, added 2026-08-20 16:05: that window is now nearly shut. BL-970 has
+  passed coder and cleaner and is walking the review stages; this ticket is
+  the only one of the recent batch still `human_approval: pending`, so it
+  cannot even be promoted until you approve it. Approving it does not commit
+  you to promoting it first - but leaving it pending removes the choice,
+  because BL-970 will land in the meantime.
 
   Second, smaller judgement: I ruled out having the extension host shell out
   to Babashka for classification, on the two-layer rule. It would genuinely
