@@ -1848,8 +1848,23 @@
 (defn open-slot-nudge-sweep! [roles]
   (try
     (let [active-count (chase-sweep-lib/count-backlog-yaml backlog-active-dir)
-          paused-count (chase-sweep-lib/count-backlog-yaml backlog-paused-dir)
           cap (backlog-depth-lib/read-max-depth project-root)
+          ;; BL-963: candidate naming, the fire decision's eligible count,
+          ;; and escalation tracking all consult the ONE promotion_gates
+          ;; evaluate chain (BL-663) - a candidate the chain refuses for
+          ;; anything but human_approval is invisible to every one of them.
+          ;; Read/evaluate only when a slot is actually open: done-ids scans
+          ;; backlog/done/ recursively, and with capacity closed the decide
+          ;; below is false regardless.
+          eligible (when (and (number? active-count) (number? cap) (< active-count cap))
+                     (chase-sweep-lib/nudge-eligible-candidates
+                      (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
+                      {:active-count active-count
+                       :max-depth cap
+                       ;; advisory-only in evaluate (never a refusal), so the
+                       ;; active-epics scan is skipped here.
+                       :active-epics nil
+                       :done-ids (promotion-gates-lib/done-ids project-root)}))
           pending-dirs (or (coordinator-pending-dirs roles) [])
           pending? (chase-sweep-lib/open-slot-nudge-pending? pending-dirs)
           now-ms (System/currentTimeMillis)
@@ -1861,14 +1876,14 @@
           ;; the coordinator to do exactly that must not fire either.
           ambulance-active? (boolean (:active (ambulance-lib/read-ambulance-state (str project-root))))]
       (when (chase-sweep-lib/decide-open-slot-nudge?
-             active-count cap paused-count
+             active-count cap (count eligible)
              {:pending-nudge? pending? :within-cooldown? cool? :ambulance-active? ambulance-active?})
         ;; BL-798: name the top Article-3.2.4 candidate (invariant 1) and
         ;; escalate repeated unacted nudges for the SAME candidate rather
-        ;; than repeating a ticketless poke forever (invariant 2).
-        (let [candidates (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
-              candidate (chase-sweep-lib/top-open-slot-candidate
-                         candidates (promotion-gates-lib/epic-priority-index project-root))
+        ;; than repeating a ticketless poke forever (invariant 2). BL-963:
+        ;; ranked over the gate-eligible set only.
+        (let [candidate (chase-sweep-lib/top-open-slot-candidate
+                         eligible (promotion-gates-lib/epic-priority-index project-root))
               decision (chase-sweep-lib/decide-open-slot-escalation
                         @open-slot-escalation-state (:id candidate)
                         (open-slot-escalation-threshold))]

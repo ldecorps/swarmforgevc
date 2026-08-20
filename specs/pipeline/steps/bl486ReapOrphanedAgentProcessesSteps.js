@@ -27,6 +27,7 @@ const DECISION_RUNNER = path.join(
 );
 const REAP_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'reap_orphan_agents.bb');
 const { track } = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE_NAME = 'the swarm auto-reaps orphaned SwarmForge agent processes, and never a live agent';
 
@@ -163,7 +164,7 @@ function registerSteps(registry) {
   registry.define(
     /^a candidate agent process that is old, has a deleted working directory, has no children, and is not in any live window set$/,
     (ctx) => {
-      ctx.projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl486-project-'));
+      ctx.projectRoot = mkSocketFixtureRoot('bl486-project-');
       fs.mkdirSync(path.join(ctx.projectRoot, '.swarmforge'), { recursive: true });
       // No .swarmforge/tmux-socket file at all -> live-window-pid-set!
       // resolves to the empty set, exactly the "not in any live window
@@ -196,7 +197,7 @@ function registerSteps(registry) {
 
   // ── reap-orphaned-agent-processes-03 ────────────────────────────────────
   registry.define(/^an old agent process whose pid is a member of the live control socket's tmux window set$/, (ctx) => {
-    ctx.projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl486-project-'));
+    ctx.projectRoot = mkSocketFixtureRoot('bl486-project-');
     fs.mkdirSync(path.join(ctx.projectRoot, '.swarmforge'), { recursive: true });
     // BL-817: registered BEFORE the tmux server below is spawned, so even a
     // crash mid-launch is covered.

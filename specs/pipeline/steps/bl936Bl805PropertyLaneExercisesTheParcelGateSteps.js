@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'the BL-805 rotation-gate property lane exercises the parcel gate, not the pack gate';
 
@@ -78,7 +79,7 @@ function terminal(fn) {
 // the property file itself) ─────────────────────────────────────────────
 
 function mkFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl936-'));
+  const root = mkSocketFixtureRoot('sfvc-bl936-');
   execFileSync(GIT_BIN, ['-C', root, 'init', '-q']);
   execFileSync(GIT_BIN, ['-C', root, 'config', 'user.email', 'test@test']);
   execFileSync(GIT_BIN, ['-C', root, 'config', 'user.name', 'test']);
