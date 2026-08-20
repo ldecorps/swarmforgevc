@@ -1,7 +1,20 @@
 # BL-976 hardener bounce — 2026-08-20
 
 Reviewed commit: 37f4badd83 (architect's merge of cleaner e1d5e6a565 into
-architect), merged into the hardener worktree.
+architect), merged into the hardener worktree. `bounce_history` records
+`commit: 37f4badd83` — the tip received from the architect (BL-992 bounce
+precedent: name the reviewed tip, not this pass's own evidence commit).
+
+**On `record-bounce.js`'s revertCheck remedy**: it suggested reverting
+whichever commit was passed to `--commit`, which is never the right target
+here — reverting the reviewed tip on MY branch would just drop BL-976's own
+good work along with the contamination, and reverting my own evidence
+commit (its first suggestion, before this correction) would destroy the
+record of the finding. Unlike the BL-994 bounce earlier today, this one is
+NOT an omission — there genuinely IS content that needs reverting, but the
+revert has to happen on the CLEANER's branch, scoped to BL-993's specific
+paths (listed below), not to whatever tip a downstream role happens to be
+reviewing. That is D1's actual remediation.
 
 ## D1 — BL-993's twice-bounced, unresolved implementation is entangled in this parcel and is ACTIVELY WIRED (class: behavior, blamed: cleaner)
 
