@@ -97,6 +97,29 @@ constraints: >
     (BL-906), so a mutual pair recovers either single death but neither
     double death. That may be an acceptable limit, but it must be a stated
     decision rather than an accident.
+  - If the design introduces a NEW launched agent - a `launch_*.sh` of its
+    own, which the "tiny dedicated supervisor" option does - then the BL-643
+    non-pipeline-agent inventory is a co-change of the SAME parcel, not a
+    follow-up. `specs/pipeline/steps/bl643NonPipelineAgentsSteps.js` THROWS
+    on any `swarmforge/scripts/launch_*.sh` that has no
+    `LAUNCH_SCRIPT_AGENT_NAMES` entry, and that throw fails EVERY scenario in
+    BL-643's feature file - a red that reads as an unrelated ticket's
+    breakage rather than as this parcel's omission. Three things land
+    together or none of them do: the mapping entry (launcher basename ->
+    Agent name); a row in
+    `docs/reference/BL-643-non-pipeline-agents-reference-table.md` keyed by
+    that exact Agent name, with all seven columns non-empty and every path
+    column either resolving against the repo or written as the deliberate
+    "none" marker; and a Log location literal whose BASENAME appears in the
+    launcher script itself - if the log path is written by some other file,
+    that file needs a `LOG_VERIFICATION_SOURCE_OVERRIDES` entry instead.
+    Reported live by QA on 2026-08-20 against the coder's
+    `launch_operator_runtime_supervisor.sh`, which had none of the three.
+  - Conversely, a host that adds no launcher of its own (babysitterd, the
+    front-desk supervisor, an ensure-on-a-timer) owes the BL-643 inventory
+    nothing. Do not manufacture a row for a watch that is not an agent in
+    its own right - scenario agent-class-doc-01 fails just as loudly on a
+    table row with no discovered launcher behind it.
 
 qa_e2e_procedure: >
   From the repo root. The runtime is currently UP (pid 59115, the human's
@@ -136,6 +159,11 @@ qa_e2e_procedure: >
      handler is registered in `specs/pipeline/steps/index.js`.
   9. Prove non-vacuity: disable the new watch and confirm scenario 01 fails
      on all three rows while scenarios 02 and 03 still pass, then re-enable.
+  10. If the design added a `launch_*.sh` of its own, run BL-643's feature
+      file and confirm it is GREEN at the parcel commit - specifically that
+      the new agent has both a `LAUNCH_SCRIPT_AGENT_NAMES` mapping and a
+      complete reference-table row. A bl643 red at this point is this
+      parcel's defect, not BL-643's.
 
 notes: >
   Source: `.swarmforge/operator/INTAKE-operator-runtime-no-always-on-watchdog.md`
@@ -166,6 +194,16 @@ notes: >
   park flag exists for operator-runtime yet, so scenario 03's "park flag
   file" row is a NEW artifact this ticket introduces, mirroring that shape -
   it is not an existing file to wire up.
+
+  Amended 2026-08-20 (specifier) after QA reported `bl643 red: BL-993's
+  launch script missing LAUNCH_SCRIPT_AGENT_NAMES entry`. The original spec
+  left the host open on purpose and never said what a NEW launched agent
+  owes the BL-643 inventory, so the coder's
+  `launch_operator_runtime_supervisor.sh` tripped a guard on another
+  ticket's feature file. That obligation is now stated in `constraints:` as
+  a conditional co-change, with a matching step 10 in the e2e procedure.
+  Nothing about the behaviour being built changes - this is a documentation
+  co-change the parcel already owed, made explicit.
 
   Deliberately NOT bundled: BL-653 (escalation-driven operator - the runtime
   wakes only on a real event) touches the same process but is a wake-policy
