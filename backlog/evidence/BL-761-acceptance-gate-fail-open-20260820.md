@@ -42,3 +42,31 @@ two sends) so the failing read can be identified rather than guessed at. The des
 question — whether an infrastructure-blind gate should fail open at all, given
 "complete means run-or-blocked, never assumed-clean" (Article 4.4) — is routed to the
 specifier independently of that.
+
+---
+
+## RESOLVED 2026-08-20 — documenter was right; minted as BL-968 (cc870cfea)
+
+The specifier reproduced it exactly against a third send's inputs: it is
+**effectively every send**, not 2/2. Root cause: the gate's gather materializes the
+cited commit's `specs/pipeline` into a temp dir under `/var/folders`
+(`fs/create-temp-dir` — deliberately NOT a git repo), then runs
+`resolve_contract_steps.js` over it. Three step files call
+`resolveMainCheckout(__dirname)` at MODULE TOP LEVEL
+(`headlessDarkEmitterAuditSteps.js:22`, `routingBreakEvenSteps.js:34`,
+`standingRuleViolationsSteps.js:23`), which runs `git rev-parse --git-common-dir`
+with cwd inside that non-repo tree → "fatal: not a git repository" → the require
+chain dies → registry unloadable → gate warns and SKIPS.
+
+**Why this coordinator's "not reproduced" was wrong-headed, recorded so the method
+improves:** I checked `roles.tsv` worktree paths (all healthy — irrelevant, the
+failure is inside a throwaway temp dir that never appears in roles.tsv) and grepped
+logs for the warning (no hits — because the warning goes to **stderr only** and
+scrolls past; it is never written to any log file). Both checks were sound and both
+were looking in the wrong place. The lesson: when a claim is "a gate fails open",
+reproduce by CALLING the gate, as the specifier did — do not infer its health from
+the environment around it, and never treat "absent from logs" as "did not happen"
+for a stderr-only diagnostic.
+
+The fail-open design finding above stands unchanged and is the reason a total
+registry failure surfaced as a scrolling warning instead of a blocked send.

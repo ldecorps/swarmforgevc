@@ -143,3 +143,34 @@ approval_context: >
   class at the offending parcel. Say the word if you want fail-closed
   (or warn-plus-Telegram-surfacing) as a follow-on and I will spec it
   separately.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20: not promoted. Two blockers - human_approval:
+  pending, and capacity (active/ holds 7 against an effective cap of 7).
+
+  EXPEDITED AND RANKED FIRST ONCE APPROVED. defect/high under Article 3.2.4.
+  There are now THREE expedited candidates all tied at priority 20. Coordinator
+  ranking, by blast radius:
+
+    1. BL-968 (this) - a QUALITY GATE SILENTLY DISABLED on effectively every
+       QA-bound send. Acceptance contracts have not been enforced, and the
+       damage is cumulative and invisible: work has been reaching QA with the
+       BL-761 check skipped and only a scrolling stderr warning to show for it.
+    2. BL-967 - handoffd cycle stall. Higher immediate severity (it can halt
+       the swarm) but LOUD and recoverable by restart; it announces itself.
+    3. BL-962 - false-positive babysitter CRITs. Costs coordinator turns only.
+
+  Silent non-enforcement outranks a loud halt here: a stalled swarm stops
+  producing, but a blind gate keeps producing UNVERIFIED work that looks
+  verified - the same "green ticket over inert code" lie BL-328 exists to end.
+  This supersedes the earlier two-way tie-break recorded on BL-967/BL-962.
+
+  OPERATIONAL ORDER RIGHT NOW: BL-968 is `human_approval: pending`, so it
+  cannot promote whatever its rank. Until it is approved the promotable order
+  stays BL-967 then BL-962. **This ticket is the one most worth a human's
+  attention**, since approval is the only thing between it and first place.
+
+  Provenance: documenter's note 000218 (observed 2/2 sends), coordinator
+  verification ad4d26201 (confirmed the fail-open design, could not reproduce
+  the trigger), specifier reproduction (root-caused it as every send).
+
