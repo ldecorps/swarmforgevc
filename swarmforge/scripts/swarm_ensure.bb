@@ -157,7 +157,15 @@
     []))
 
 (defn rotation-router-mode?
-  "True when this project is running (or last launched as) rotation router."
+  "True when this project is running (or last launched as) a SINGLE-RESIDENT
+   rotation topology - `rotation router` OR `rotation sequential` (BL-571).
+   The launcher's is_sequential_dormant leaves the middle roles dormant on
+   both values; matching router alone made ensure respawn five roles the
+   launcher deliberately left dormant on a mono-rotate pack, on precisely
+   the memory-constrained host that pack exists to serve. The name is kept
+   (every internal caller means 'single-resident'); the router-ONLY
+   predicates still exist in mono_router_lib for the ROTATE_HOME backstop,
+   which this ticket deliberately does not widen."
   []
   (let [identity-path (fs/path state-dir "swarm-identity")
         identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
@@ -167,8 +175,8 @@
         conf-text (when (and conf-path (fs/exists? conf-path))
                     (slurp conf-path))]
     (boolean
-     (or (mono-router-lib/rotation-router-from-identity? identity-text)
-         (mono-router-lib/conf-rotation-router? conf-text)))))
+     (or (mono-router-lib/single-resident-rotation-from-identity? identity-text)
+         (mono-router-lib/single-resident-rotation? conf-text)))))
 
 ;; ── extension component ──────────────────────────────────────────────────────
 

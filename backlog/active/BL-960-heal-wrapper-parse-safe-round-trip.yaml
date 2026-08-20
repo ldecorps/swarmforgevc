@@ -248,3 +248,5 @@ notes: >
   purely a QA-procedure correction — the cleaner does not rework anything.
 
 assigned_to: coder
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 68721df5d9, evidence: backlog/evidence/BL-960-heal-wrapper-parse-safe-round-trip-bounce-20260819.md }
