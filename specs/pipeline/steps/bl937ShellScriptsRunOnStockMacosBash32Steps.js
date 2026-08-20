@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'every tracked shell script runs on the stock macOS /bin/bash 3.2 this repo targets';
 
@@ -110,14 +111,14 @@ const OPERATOR_ARGS_VALUES = new Set(['a fixture root whose swarm has no session
 const OPERATOR_OBSERVABLE_VALUES = new Set(['the no-live-sessions diagnostic', 'the ticket id accepted in upper case']);
 
 function mkDashboardFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl937-dash-'));
+  const root = mkSocketFixtureRoot('sfvc-bl937-dash-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), path.join(os.tmpdir(), 'sfvc-bl937-dead.sock'));
   return root;
 }
 
 function mkReexpediteFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl937-reexp-'));
+  const root = mkSocketFixtureRoot('sfvc-bl937-reexp-');
   execFileSync('git', ['-C', root, '-c', 'init.defaultBranch=main', 'init', '-q']);
   execFileSync('git', ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   return root;

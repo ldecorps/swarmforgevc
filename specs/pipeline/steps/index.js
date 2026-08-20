@@ -527,7 +527,8 @@ const DOMAINS = [
   require('./bl962OnMainMergeAdjudicationSteps'),
   require('./bl961PackExportSteps'),
   require('./bl966DepthSameAnswerSteps'),
-  require('./bl946EpicIconPoolSteps')
+  require('./bl946EpicIconPoolSteps'),
+  require('./bl948SocketFixtureShortRootSteps')
 ];
 
 function registerSteps(registry) {

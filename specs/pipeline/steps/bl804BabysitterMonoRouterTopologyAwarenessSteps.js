@@ -19,6 +19,7 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const CHECK_SH = path.join(SCRIPTS, 'babysitter_check.sh');
 const { track } = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-804 babysitter health sweep is mono-router topology aware';
 
@@ -48,7 +49,7 @@ function knownRequiredSession(value) {
 }
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function mkFixtureRoot() {

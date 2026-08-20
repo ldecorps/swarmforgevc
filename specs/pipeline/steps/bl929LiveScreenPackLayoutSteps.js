@@ -30,13 +30,14 @@ const {
   clearResidentPaneLiveCache,
 } = require(path.join(EXT_DIR, 'out', 'bridge', 'residentPaneLive.js'));
 const { getResidentSpyUiHtml } = require(path.join(EXT_DIR, 'out', 'bridge', 'residentSpyUiHtml.js'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE_NAME = 'The Live Screen renders the pack that is actually running';
 
 const FULL_PACK_ROLES = ['coordinator', 'specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 
 function seedProjectRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'bl929-acceptance-'));
+  return mkSocketFixtureRoot('bl929-acceptance-');
 }
 
 function writeSessions(targetPath, roles) {

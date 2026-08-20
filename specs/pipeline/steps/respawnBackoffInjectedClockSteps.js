@@ -21,9 +21,10 @@ const tmuxClient = require(path.join(EXT_DIR, 'out', 'swarm', 'tmuxClient'));
 const sleepSyncModule = require(path.join(EXT_DIR, 'out', 'swarm', 'sleepSync'));
 const { installExecutable } = require(path.join(EXT_DIR, 'test', 'helpers', 'sharedBin'));
 const { installFakeTmux } = require(path.join(EXT_DIR, 'test', 'helpers', 'fakeTmux'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl376-acceptance-'));
+  return mkSocketFixtureRoot('sfvc-bl376-acceptance-');
 }
 
 function writeRespawnState(tmp, role) {
