@@ -1,6 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-959: the APS Babashka toolchain our
+**Last Updated:** August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
+the five middle pipeline roles a `mono-rotate` launch deliberately leaves
+dormant. The launcher's `is_sequential_dormant` treats `rotation sequential`
+and `rotation router` as the same single-resident topology; ensure's
+`rotation-router-mode?` matched `router` alone, so on the one shipped pack
+declaring `config rotation sequential` it read five deliberately dormant roles
+as broken panes and repaired them — reporting "healed" rather than
+"over-provisioned", and starting five extra agent processes on precisely the
+memory-constrained host that pack exists to serve. `mono_router_lib.bb` gains
+`single-resident-rotation?`/`single-resident-rotation-from-identity?`,
+recognising the topology by every value the launcher accepts, and ensure
+consumes those; the router-ONLY predicates keep their exact meaning for
+`ready_for_next_*`'s ROTATE_HOME backstop, which this deliberately does not
+widen. A parity gate now derives the launcher's accepted set from
+`swarmforge.sh` itself and asserts set equality, so the bash↔Babashka mirror
+cannot drift silently (BL-897). No human-facing command or setting changes;
+the swarm running today declares `rotation router` and is unaffected. See the
+new "`./swarm ensure` respects the dormant roles (BL-571)" section in
+[`docs/how-to/BL-439-fes-second-swarm-bringup.md`](../how-to/BL-439-fes-second-swarm-bringup.md)
+— the runbook for the one shipped `mono-rotate` pack, whose "one resident
+process" promise this restores through a repair pass.);
+Previously August 20, 2026 (BL-959: the APS Babashka toolchain our
 Gherkin gates consume is pinned, and bumping that pin is a human commit, so
 the adopt/defer/reject question the 2026-08-19 upstream scan raised is now
 answered by measurement rather than changelog reading.
@@ -122,23 +143,6 @@ appears as a literal extra argument and a genuine `rm` of the worktree
 stays visible to Claude Code's classifier. See the new "Parse-safe
 composition and byte-exact round-trip (BL-960)" section in
 [`docs/how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md`](../how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md).);
-Previously August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
-the five middle pipeline roles a `mono-rotate` launch deliberately leaves
-dormant. The launcher's `is_sequential_dormant` treats `rotation sequential`
-and `rotation router` as the same single-resident topology; ensure's
-`rotation-router-mode?` matched `router` alone, so on the one shipped pack
-declaring `config rotation sequential` it read five deliberately dormant roles
-as broken panes and repaired them — reporting "healed" rather than
-"over-provisioned", and starting five extra agent processes on precisely the
-memory-constrained host that pack exists to serve. `mono_router_lib.bb` gains
-`single-resident-rotation?`/`single-resident-rotation-from-identity?`,
-recognising the topology by every value the launcher accepts, and ensure
-consumes those; the router-ONLY predicates keep their exact meaning for
-`ready_for_next_*`'s ROTATE_HOME backstop, which this deliberately does not
-widen. A parity gate now derives the launcher's accepted set from
-`swarmforge.sh` itself and asserts set equality, so the bash↔Babashka mirror
-cannot drift silently (BL-897). No human-facing command or setting changes;
-the swarm running today declares `rotation router` and is unaffected.);
 Previously August 20, 2026 (BL-958: the tmux control plane can
 disappear mid-run while every support daemon stays healthy. Live on
 2026-08-19: every role read DOWN, `handoffd`/supervisor/front-desk/
