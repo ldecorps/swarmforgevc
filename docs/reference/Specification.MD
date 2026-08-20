@@ -1,6 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-964: a standing gate now fails loud
+**Last Updated:** August 20, 2026 (BL-965: BL-960's heal wrapper captures
+each attempt's output to a `mktemp` file and only removed it via a plain
+`rm -f` on the tail path, so any termination before the tail — a signal, a
+Bash-tool timeout kill, `tmux respawn-pane -k`, swarm teardown — skipped
+the cleanup and stranded the file in `$TMPDIR`; kills are routine on this
+host, so every role's every killed Bash call leaked one file (13 stranded
+`sfh.*` files were already measured sitting in `$TMPDIR`).
+`build-healing-wrapper-command` now installs, right after the `mktemp`
+line, an `EXIT` trap owning the `rm` plus per-signal `exit 128+N` traps for
+`HUP`/`INT`/`TERM` — deliberately not one combined rm-only trap, which
+would CONSUME the signal: bash would resume past the interrupted foreground
+child and `cat` the just-removed file, changing a killed run's output and
+leaving the wrapper alive after a `respawn-pane -k`. Only an uncatchable
+`SIGKILL` can still leave residue, and that residue keeps the recognizable
+`sfh.*` name so external cleanup can identify it; the tail `rm` stays
+(idempotent). Verified over the real composed wrapper, signalled as a
+process group (`perl setpgrp`, since bash defers traps while a foreground
+child runs and macOS ships no `setsid`): dropping the `EXIT` trap and the
+rm-only combined-trap variant are both killed by the property runner, and
+a hand-mutation sweep closed an exit-code blind spot the same runner had
+(128+signum was unchecked on the catchable-signal arms). Every BL-960
+guarantee is unchanged: the wrapper's byte-identity, parse-gate, and
+one-retry-structure baselines all hold over the original corpus. See the
+updated "Known limitation: the capture file is not trap-cleaned (BL-965)"
+section, now describing the fix, in
+[`docs/how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md`](../how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md).);
+Previously August 20, 2026 (BL-964: a standing gate now fails loud
 when a retired `SWARMFORGE_ENSURE_*` env-var name reappears in
 `specs/pipeline/steps/` or `swarmforge/scripts/test/` — on 2026-08-20
 several test paths exported fake ensure hooks under that retired prefix
