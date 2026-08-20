@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0d6825385585a5fd5ddfea40c6a6942534a8ced7062530b568314d2dcd8c344d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-20T05:51:28.151878Z","feature_name":"BL-961 launcher exports the resolved pack into every role shell","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-961-launcher-exports-swarmforge-pack-into-role-shells.feature","background_hash":"5c091d90cc19b18b3c09bbf8f1fce7e3402bdea06311c36a823fdcd4df0d93be","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a generated role launch script exports the pack the launcher loaded","scenario_hash":"184cf5150dc67a5539b2b1d48dc507eb1548ff00544bb9e6e0d5cb4b4590bade","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-20T05:51:28.151878Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-961 launcher exports the resolved pack into every role shell
 
   The default launcher resolves the pack conf (--pack NAME selects
