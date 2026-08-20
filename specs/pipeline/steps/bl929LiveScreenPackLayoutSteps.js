@@ -128,7 +128,43 @@ async function renderLiveScreen(snapshot) {
   const result = {
     hasResidentPaneCol: !!document.querySelector('.pane-col[data-pane-id="resident"]'),
     ticketStripHidden: document.getElementById('ticket-strip').hidden,
-    documenterPaneHeadHtml: document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head')?.innerHTML ?? null,
+  };
+  dom.window.close();
+  return result;
+}
+
+// BL-994 amendment (fabecba4c): a tile's ticket metadata moved off the grid
+// tile head and into the fullscreen Expand view, per BL-994's own locked
+// human decision 2. Re-renders from the SAME in-memory ctx.snapshot (never
+// reopening the already-closed dom from renderLiveScreen above, nor
+// ctx.targetPath, already removed by the When step's own finally) - the
+// pattern this ticket's own amendment cites as already established in
+// BL-994's own bl994LiveScreenGridSteps.js: dispatch a bubbling click on
+// the .pane-col, flush, then read #fs-head. requestBrowserFullscreen is
+// fully guarded in the served page (`if (!req) return`, plus try/catch),
+// so jsdom's missing requestFullscreen is not a problem.
+async function renderLiveScreenAndExpand(snapshot, paneId) {
+  const html = getResidentSpyUiHtml();
+  const dom = new JSDOM(html, {
+    runScripts: 'outside-only',
+    url: 'https://example.github.io/resident-spy/?bearer=test-token',
+    pretendToBeVisual: true,
+  });
+  dom.window.fetch = () =>
+    Promise.resolve({ ok: true, json: () => Promise.resolve(snapshot) });
+  dom.window.eval(extractInlineScript(html));
+  await flush();
+  const { document, window } = dom.window;
+  const col = document.querySelector(`.pane-col[data-pane-id="${paneId}"]`);
+  if (!col) {
+    dom.window.close();
+    throw new Error(`no rendered tile for pane id "${paneId}"`);
+  }
+  col.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await flush();
+  const result = {
+    fullscreenActive: document.body.classList.contains('pane-fullscreen-active'),
+    fsHeadHtml: document.getElementById('fs-head')?.innerHTML ?? null,
   };
   dom.window.close();
   return result;
@@ -257,12 +293,26 @@ function registerSteps(registry) {
   );
 
   // ── live-screen-pack-layout-03 ───────────────────────────────────────
+  // BL-994 amendment (fabecba4c): the ticket line moved from the grid tile
+  // head to the fullscreen Expand view - "on its own tile" retired in favor
+  // of these two steps.
   registry.defineScoped(
-    /^the documenter tile shows that ticket on its own tile$/,
+    /^the documenter tile is expanded$/,
+    async (ctx) => {
+      ctx.expandResult = await renderLiveScreenAndExpand(ctx.snapshot, 'documenter');
+    },
+    FEATURE_NAME
+  );
+
+  registry.defineScoped(
+    /^the documenter tile shows that ticket in its Expand view$/,
     (ctx) => {
-      const html = ctx.rendered.documenterPaneHeadHtml;
+      if (!ctx.expandResult?.fullscreenActive) {
+        throw new Error('expected fullscreen Expand to be active after expanding the documenter tile');
+      }
+      const html = ctx.expandResult.fsHeadHtml;
       if (!html || !/BL-929/.test(html)) {
-        throw new Error(`expected the documenter tile to render its own ticket, got: ${html ?? '(no tile)'}`);
+        throw new Error(`expected the documenter tile's Expand view to show its own ticket, got: ${html ?? '(no fullscreen head)'}`);
       }
     },
     FEATURE_NAME
