@@ -1,16 +1,48 @@
-// BL-449: an epic is a large-scale musical FORM, so each epic topic gets its
-// own performance-emoji icon - a NEW, separate assignment path from
-// topicIcon.ts's ticket-state icons (ICON_EMOJI/resolveIconState) and
-// STANDING_TOPIC_ICON, never a member of either. The three epic topics the
-// human hand-created before this ticket existed (147 Swarm Role
-// Benchmarking, 149 Dynamic Routing, 151 Onboarding a New Target Repo) get
-// finalised, distinct glyphs; any further epic is auto-assigned the next
-// distinct icon from this ordered pool. Pool order and membership per
-// icon-system.md §5a (verified against the live getForumTopicIconStickers
-// set 2026-07-15) - 🎶 is deliberately excluded: at badge size it reads as
-// 🎵, the ticket-state feature-in-flight icon, so including it would
-// reintroduce the exact collision this pool exists to avoid.
-export const EPIC_ICON_POOL: readonly string[] = ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚'];
+// BL-449: each epic topic gets its own distinct icon - a NEW, separate
+// assignment path from topicIcon.ts's ticket-state icons
+// (ICON_EMOJI/resolveIconState), STANDING_TOPIC_ICON and ROLE_TOPIC_ICON,
+// never a member of any of them. The three epic topics the human
+// hand-created before this ticket existed (147 Swarm Role Benchmarking,
+// 149 Dynamic Routing, 151 Onboarding a New Target Repo) get finalised,
+// distinct glyphs; any further epic is auto-assigned the next distinct icon
+// from this ordered pool.
+//
+// BL-946 (Architecture Rule 6 as amended 2026-08-19): the pool draws from
+// the WHOLE stock getForumTopicIconStickers set, not only its
+// musical/performance corner - 10 glyphs against 39 live epics collapsed
+// three epics in four onto the pool's reuse tail. The pool is DERIVED, not
+// hand-picked: the committed live-set snapshot minus every glyph reserved
+// by the three other icon tables and minus the badge-size read-alikes of
+// reserved glyphs (🎶 reads as 🎵, the ticket-state feature icon, at badge
+// size - the collision this pool exists to avoid). Deriving is what makes
+// "every member resolves in the live set" true by construction; hand-picking
+// is the step that bounced BL-469 twice on 2026-07-17. The original 10
+// glyphs stay as the order prefix so every already-assigned epic keeps its
+// badge; everything after them follows the snapshot's own stable order.
+import { FORUM_TOPIC_ICON_STICKER_SET } from './forumTopicIconStickerSet';
+import { ICON_EMOJI, STANDING_TOPIC_ICON, ROLE_TOPIC_ICON } from './topicIcon';
+
+const ORIGINAL_POOL_ORDER_PREFIX: readonly string[] = ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚'];
+
+// Glyphs that read as a reserved table's icon at badge size, generalised
+// from the original musical-note pair. Each entry names its reserved twin.
+const BADGE_SIZE_READ_ALIKES: readonly string[] = [
+  '🎶', // reads as 🎵 (ICON_EMOJI.feature)
+];
+
+const RESERVED_GLYPHS: ReadonlySet<string> = new Set([
+  ...Object.values(ICON_EMOJI),
+  ...Object.values(STANDING_TOPIC_ICON),
+  ...Object.values(ROLE_TOPIC_ICON),
+  ...BADGE_SIZE_READ_ALIKES,
+]);
+
+export const EPIC_ICON_POOL: readonly string[] = [
+  ...ORIGINAL_POOL_ORDER_PREFIX,
+  ...FORUM_TOPIC_ICON_STICKER_SET.filter(
+    (glyph) => !RESERVED_GLYPHS.has(glyph) && !ORIGINAL_POOL_ORDER_PREFIX.includes(glyph)
+  ),
+];
 
 // Fixed glyphs for the three epics the human named directly (finalised with
 // him 2026-07-16) - never displaced by the pool-assignment branch below,
@@ -39,9 +71,14 @@ export function isKnownEpic(epicId: string): boolean {
 }
 
 export function resolveEpicIcon(epicId: string, alreadyAssignedIcons: string[] = []): string {
-  const known = KNOWN_EPIC_ICON[epicId];
-  if (known !== undefined) {
-    return known;
+  // Branch on the SAME own-property guard isKnownEpic uses, so the two can
+  // never disagree: a bare KNOWN_EPIC_ICON[epicId] lookup reaches
+  // Object.prototype, and an epic id named after a prototype member
+  // ('valueOf', 'toString', ...) would resolve to the inherited FUNCTION -
+  // which both live callers pass straight to the Telegram API (BL-946
+  // bounce D1).
+  if (isKnownEpic(epicId)) {
+    return KNOWN_EPIC_ICON[epicId];
   }
   const used = new Set(alreadyAssignedIcons);
   const next = EPIC_ICON_POOL.find((icon) => !used.has(icon));
