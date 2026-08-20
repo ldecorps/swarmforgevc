@@ -146,14 +146,23 @@
                            "worktree has uncommitted changes"))))
 
 (defn -main []
-  (let [new-dir        (handoff-lib/my-mailbox-dir :new)
+  ;; BL-983: a seat CLAIMS from its STAGE's queue (the stage-named row's
+  ;; new/ - for a bare seat this IS its own new/, byte-identical path) into
+  ;; its OWN in_process/completed/abandoned, so task-mode single-claim
+  ;; holds per seat while the stage keeps one addressable queue.
+  (let [new-dir        (handoff-lib/stage-queue-dir :new)
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
         completed-dir  (handoff-lib/my-mailbox-dir :completed)
         abandoned-dir  (handoff-lib/my-mailbox-dir :abandoned)]
     (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files   (handoff-lib/my-handoff-files in-process-dir)]
+          ;; BL-983: a claimed stage-queue parcel keeps its stamped
+          ;; recipient (the STAGE), so a seat's own in_process listing must
+          ;; accept the stage as "mine" - with the seat-blind mine? filter a
+          ;; busy seat looked idle and claimed a second parcel (invariant 2
+          ;; violation, caught by this parcel's own e2e probe).
+          in-process-files   (handoff-lib/stage-handoff-files in-process-dir)]
       ;; If any batch work is in process, this helper must not run; batch mode
       ;; has its own ready/done helpers.
       (when (seq in-process-batches)
@@ -177,9 +186,27 @@
           (handoff-lib/print-task (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files            (handoff-lib/my-handoff-files new-dir)
-                completed-basenames  (handoff-lib/terminal-basenames completed-dir)
-                abandoned-basenames  (handoff-lib/terminal-basenames abandoned-dir)
+          (let [new-files            (handoff-lib/stage-handoff-files new-dir)
+                ;; BL-983: a redelivered copy of a parcel a PEER seat has
+                ;; already claimed (live in its in_process) or already
+                ;; finished (its completed/abandoned) must never be claimed
+                ;; here - fold sibling basenames into the BL-218 terminal
+                ;; sets, so the existing dedup path refuses the resurrection
+                ;; identically to a same-seat duplicate. Empty for bare
+                ;; single-seat stages - sets unchanged, path unchanged.
+                siblings             (handoff-lib/stage-sibling-seats)
+                sibling-basenames    (fn [state]
+                                       (set (mapcat (fn [ri]
+                                                      (map fs/file-name
+                                                           (handoff-lib/handoff-files
+                                                            (apply fs/path (handoff-lib/mailbox-base-dir ri)
+                                                                   (handoff-lib/mailbox-state->relative-segments state)))))
+                                                    siblings)))
+                completed-basenames  (into (into (handoff-lib/terminal-basenames completed-dir)
+                                                 (sibling-basenames :completed))
+                                           (sibling-basenames :in_process))
+                abandoned-basenames  (into (handoff-lib/terminal-basenames abandoned-dir)
+                                           (sibling-basenames :abandoned))
                 ;; BL-365: quarantines any corrupt candidate in place (as
                 ;; *.handoff.dead, the suffix the existing dead-letter sweep
                 ;; already scans and alerts a human on) so it can never be
@@ -188,18 +215,30 @@
                 dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
               (report-no-task-or-rotate!)
-              (let [source-file (first dequeueable)
-                    target-file (fs/path in-process-dir (fs/file-name source-file))]
-                (when (fs/exists? target-file)
-                  (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target in-process file already exists: " target-file)))
-                (fs/move source-file target-file)
-                ;; BL-232: drops any .chase.json/.nudge sidecar left behind
-                ;; at source-file's now-stale new/ location - it only ever
-                ;; described state about this handoff waiting in new/, and
-                ;; must not outlive it there.
-                (handoff-lib/remove-sidecars-of! source-file)
-                (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
-                (enforce-branch-claim-guard! target-file in-process-dir new-dir)
-                (handoff-lib/print-task target-file)))))))))
+              ;; BL-983: two idle seats can race for the same stage-queue
+              ;; file; fs/move's rename is the atomic arbiter. The loser's
+              ;; move throws (source gone) - it falls through to the next
+              ;; candidate rather than failing the turn, so a parcel is
+              ;; claimed by exactly one seat and a racing peer simply keeps
+              ;; looking.
+              (loop [candidates dequeueable]
+                (if (empty? candidates)
+                  (report-no-task-or-rotate!)
+                  (let [source-file (first candidates)
+                        target-file (fs/path in-process-dir (fs/file-name source-file))]
+                    (when (fs/exists? target-file)
+                      (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target in-process file already exists: " target-file)))
+                    (if (try (fs/move source-file target-file) true
+                             (catch Exception _ false))
+                      (do
+                        ;; BL-232: drops any .chase.json/.nudge sidecar left
+                        ;; behind at source-file's now-stale new/ location -
+                        ;; it only ever described state about this handoff
+                        ;; waiting in new/, and must not outlive it there.
+                        (handoff-lib/remove-sidecars-of! source-file)
+                        (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
+                        (enforce-branch-claim-guard! target-file in-process-dir new-dir)
+                        (handoff-lib/print-task target-file))
+                      (recur (rest candidates)))))))))))))
 
 (-main)
