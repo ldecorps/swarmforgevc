@@ -170,4 +170,20 @@ approval_context: >
   the ticket requires it to be derived from a recorded measurement rather
   than chosen. Flag if you want it bounded differently.
 
+abandoned_commits: ["20e315ceb1", "c3218df421"]
+
+abandoned_commits_rationale: >
+  NOT dropped BL-977 work. Both are BL-968 commits (a landing commit and its
+  own straight revert) whose bodies merely NAME BL-977 in passing prose - a
+  full-npm-test summary line noting that a separate, already-merged commit
+  (5f77b02f3a, BL-977's own fixture-leak fix, landed independently in this
+  parcel) fixed a guard trip found while running BL-968's suite. Neither
+  touches any BL-977 file (daemon_cycle_guard_lib.bb, handoffd_supervisor.bb,
+  handoffd.bb, bl977_supervisor_progress_property_runner.bb,
+  bl977SupervisorProgressSteps.js) - only BL-968's own materialized-tree
+  registry files, per the engineering rule "a gate blocks on dropped-work
+  EVIDENCE, never on a ticket id merely named in a commit subject" (BL-972,
+  enforcement unbuilt; rule binding). Evidence:
+  backlog/evidence/BL-977-pre-qa-gate-false-positive-20260820.md.
+
 assigned_to: coder
