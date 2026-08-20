@@ -96,7 +96,13 @@
     (let [original (str "bash " cli " && echo \"---done---\"")
           wrapper (tool-miss-heal-lib/build-healing-wrapper-command original tmp)
           {:keys [out exit]} (process/sh ["bash" "-c" wrapper])]
-      {:rootAppendedInSource (str/includes? wrapper "\"$__sfh_root\"")
+      ;; BL-985 co-change: any-reference-to-$__sfh_root was the old proxy
+      ;; for "the append heal exists", but the proactive anchor now
+      ;; legitimately references "$__sfh_root" in EVERY wrapper (its cd) -
+      ;; the forbidden shape is precisely the ORIGINAL with the root
+      ;; spliced on as a trailing argument, so that exact composition is
+      ;; what the check looks for.
+      {:rootAppendedInSource (str/includes? wrapper (str original " \"$__sfh_root\""))
        :doneRan (str/includes? out "---done---")
        :usageReturned (str/includes? out "Usage: node cli.js <project-root>")
        :invocations (count (str/split-lines (str/trim (slurp (str tmp "/calls")))))
