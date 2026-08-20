@@ -1,5 +1,5 @@
 diff --git a/extension/src/bridge/residentSpyUiHtml.ts b/extension/src/bridge/residentSpyUiHtml.ts
-index 61ffe66c9..746203fc1 100644
+index 61ffe66c9..182a69e82 100644
 --- a/extension/src/bridge/residentSpyUiHtml.ts
 +++ b/extension/src/bridge/residentSpyUiHtml.ts
 @@ -109,58 +109,68 @@ export function getResidentSpyUiHtml(): string {
@@ -127,7 +127,18 @@ index 61ffe66c9..746203fc1 100644
    }
    .pane-title {
      font-size: 12px;
-@@ -694,17 +711,24 @@ export function getResidentSpyUiHtml(): string {
+@@ -497,8 +514,9 @@ export function getResidentSpyUiHtml(): string {
+     if (!pane || pane.available === false) {
+       return buildPaneHeadHtml(null, label, paneId, false);
+     }
++    // Ticket strip already carries role · model · claim age — no bold pane-kind repeat.
+     if (pane.ticketId) {
+-      return buildTicketBlockHtml(pane) + '<div class="pane-kind">' + escapeHtml(label) + '</div>';
++      return buildTicketBlockHtml(pane);
+     }
+     return buildPaneHeadHtml(pane, label, paneId, showClaimEntered);
+   }
+@@ -694,17 +712,24 @@ export function getResidentSpyUiHtml(): string {
    }
  
    function renderPane(pane, headEl, paneEl, label, paneId, showClaimEntered) {

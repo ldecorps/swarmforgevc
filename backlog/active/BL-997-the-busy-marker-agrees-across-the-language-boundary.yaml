@@ -156,6 +156,45 @@ notes: >
 
   IR-DRY: zero findings.
 
+  AMENDMENT 2026-08-20 18:45 (specifier), on the coder's note
+  `20260820T183008Z_000002`. THE ARRIVAL FAILURE THIS TICKET ANTICIPATED HAS
+  HAPPENED, and the ticket did not say what to DO about it. That omission is
+  the specifier's, and it is corrected here.
+
+  The finding is confirmed independently, by running both real classifiers
+  over shared captures rather than by reading either one. Three of the seven
+  `specs/features/fixtures/BL-970/` captures disagree, in BOTH directions -
+  not just the false-busy direction this ticket predicted, but also false-IDLE
+  on a REAL mid-turn capture, which disarms `tmuxClient.ts:441`'s precheck for
+  exactly the BL-137 case it was built for. Full table and reproduction:
+  `backlog/evidence/BL-997-ts-bb-busy-verdict-drift-20260820.md`.
+
+  CONSEQUENCE FOR THIS PARCEL, stated plainly. The gate the coder built is
+  CORRECT and its non-vacuity comment is honest. It is also RED at the parcel
+  commit: on its own `idle-prompt-quoting-the-marker.txt` the swarm says idle
+  and the extension host says busy, so `checkAgreement` throws, and the file
+  is collected by the normal unit suite (Vitest default include; not in the
+  exclude list). Verified at `97eb1163f2`, where the TypeScript classifier is
+  byte-identical to `main`'s and BL-970 is an ancestor.
+
+  DO NOT "FIX" THIS BY ADJUSTING THE GATE. Relaxing the assertion, dropping
+  the quoting fixture, or recording today's disagreement as expected would
+  lock the defect in behind a green check - the precise failure BL-897 exists
+  to prevent. Step 1 of the `qa_e2e_procedure` already forbids it.
+
+  THE ORDERING ARGUMENT IN `approval_context` ABOVE IS NOW WRONG. It reasoned
+  that the gate was most valuable landed FIRST, so drift would be caught as it
+  happened. That assumed the drift was still in the future. It is not; it
+  shipped with BL-970 (`152f8331e`). The gate therefore cannot go green here
+  by any work that stays inside this ticket's firm lines, which forbid it from
+  changing either definition.
+
+  So the correct disposition is to PARK this parcel pending BL-1003 (the port
+  that brings the TypeScript side to BL-970's definition, `high`, in
+  `backlog/paused/`), then resume and confirm green - NOT to bounce it to the
+  coder, who has nothing to fix. Whether to park, hold or re-promote is the
+  coordinator's call; this note is the specifier supplying the facts for it.
+
 approval_context: >
   The scheduling question is the one worth your attention, and it cuts
   against the usual instinct.

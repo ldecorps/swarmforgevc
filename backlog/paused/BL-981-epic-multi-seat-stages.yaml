@@ -6,17 +6,17 @@ type: epic
 epic: multi-seat-stages
 priority: 25
 depends_on: []
-decomposes_into: [BL-982, BL-983]
+decomposes_into: [BL-982, BL-983, BL-1001]
 
 remaining_slices:
   - "Difficulty-aware routing among seats of a stage: map a ticket difficulty
      signal (prefer reusing mutation_cost low/medium/high) to a model tier, prefer
      the more capable seat (motivating instance: more capable coder) for hard
      tickets and the cheaper seat for easy ones when idle, and define the
-     busy-preferred-tier fallback. NOT MINTED YET - it turns on human decision 2
-     below (wait vs spill), and the specifier already had a clarifying question
-     pending when this epic was written, so it could not be asked. Mint once that
-     decision is answered."
+     busy-preferred-tier fallback. MINTED 2026-08-20 as BL-1001, after the
+     operator ruled on the seat/tier mapping (coder1 = the `coder` seat, Fable,
+     takes hard work) and the specifier answered wait-vs-spill asymmetrically
+     (hard waits and never spills down; easy may spill up)."
   - "Supervisor / chase / ensure / board / stage-dwell treat seats as instances of a
      stage: dwell still names the STAGE as the bottleneck, while ops surfaces may
      show seat-level detail including each seat's model."
