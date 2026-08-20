@@ -1,6 +1,100 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-966: the effective-depth resolution
+**Last Updated:** August 20, 2026 (BL-964: a standing gate now fails loud
+when a retired `SWARMFORGE_ENSURE_*` env-var name reappears in
+`specs/pipeline/steps/` or `swarmforge/scripts/test/` — on 2026-08-20
+several test paths exported fake ensure hooks under that retired prefix
+instead of the real `SWARM_ENSURE_*_CMD` seams `swarm_ensure.bb` reads, so
+the fakes were silently ignored and the REAL extension bounce ran,
+opening two unprompted VS Code Extension Development Host windows from
+test runs (human hotfix `596098dc3`). The gate's needle set is DERIVED
+from `swarm_ensure.bb`'s own `SWARM_ENSURE_*` reads rather than
+hand-written: a hand-written roster of the three names the incident
+happened to expose covered only 3 of the mechanism's 11 real seams, so 8
+of 9 retired spellings outside the original incident went unflagged. The
+needles are the FULL retired names, never the bare prefix, so `main`'s two
+legitimate `SWARMFORGE_ENSURE_*` prose comments are never flagged; an
+empty derivation raises rather than silently passing every file. Enforced
+by `extension/test/retiredEnsureEnvVarGuard.test.js` in the standing suite
+every parcel runs. No extension command, setting, or UI: a test-harness
+regression gate. See
+[BL-964](BL-964-retired-ensure-env-var-regression-gate.md).);
+Previously August 20, 2026 (BL-962: the babysitter's
+pipeline-code-on-main sweep — the ONE detector for Article 4.2/BL-247
+breaches — raised a false CRIT on every operator reconciliation merge of
+QA-landed work, and `main`/`origin/main` divergence is routine (BL-891), so
+the guard that must stay trustworthy was training everyone to ignore CRITs.
+Observed 2026-08-20 on `da6031c60` and `b3ba48bfc`: for every flagged file
+the merge result was byte-identical to parent 2, and each parent 2 was
+contained in `swarmforge-QA` — the content entered `main` through QA's own
+landing and the merges authored none of it. The commit-time hook
+(`check_pipeline_code_on_main.sh`) already adjudicated merges via BL-925;
+the gap was only in the HISTORY sweep, where
+`gather-pipeline-code-on-main` diffed a merge with `git diff-tree -m
+--first-parent` alone — correct for catching a merge's own content
+(BL-590's f8dc07963) but blind to WHERE that content came from, so
+everything the QA-side parent brought in was attributed to the merge. The
+gatherer in `swarmforge/scripts/babysitter_check.bb` now adjudicates each
+merge's offending paths against its non-first parents before reporting
+them: a path is exempt only when some parent is BOTH QA-approved — decided
+by `is_qa_ancestor.sh`, the one shared predicate, never a second ancestry
+check — AND holds byte-identical content for it. A path differing from
+every QA-approved parent still reports, so a writer cannot ride fresh
+pipeline edits through on a legitimate merge's coat-tails, and identity to
+a NON-approved parent never clears. Commit subjects are never consulted:
+they are spoofable, and only ancestry plus content identity may clear a
+path. Any failure in parent enumeration, the ancestry call, or a content
+diff fails the WHOLE sweep closed to ancestry-unavailable rather than
+yielding a partial result that reads as clean. Non-merge commits are
+untouched — a property that had zero unit coverage until the hardening
+pass's mutant sweep found that deleting the non-merge branch converts an
+ordinary offender into a total sweep failure whenever an extra git call
+fails. Pure adjudication (`adjudicate-merge-paths`,
+`assemble-offending-commits`) is split from impure fact-gathering
+(`merge-parent-facts`), and the ancestry call is resolved through a
+`BABYSITTER_QA_ANCESTOR_SCRIPT` hermetic test seam.
+`babysitterd_sweep_lib.bb`'s classifier is unchanged — it labels what the
+gatherer hands it — and its comment block describing the diff method is
+refreshed to state the adjudication. No extension command, setting, or UI:
+a swarm health-signal fix.);
+Previously August 20, 2026 (BL-948: acceptance fixtures that build a
+control socket rooted at `os.tmpdir()`, whose long macOS base
+(`/var/folders/<hash>/<hash>/T/`) plus `<root>/.swarmforge/tmux/<hash>.sock`
+overruns `swarm_socket_lib.bb`'s 100-char fail-closed socket-path guard
+(BL-367) — measured at 107 — so a scenario died on the refusal BEFORE
+reaching the behavior it asserts. Three separate step files hit it on
+2026-08-19 and each was patched locally; the third was recorded rather than
+patched a fourth time. The guard is correct and is untouched: the fixtures
+were wrong. A new `specs/pipeline/steps/lib/socketFixtureRoot.js` hands out
+roots under a short base (`/tmp`), asserting worst-case socket-path headroom
+at creation so a too-long prefix fails loudly instead of downstream, tracks
+every root, and removes stragglers on process exit — reaping any fixture
+tmux server by SOCKET PATH first (BL-817/BL-458 hygiene) — which is the
+backstop for scenarios that throw before their own cleanup. A new
+`lib/socketFixtureRootGuard.js` decides the adoption set BY INSPECTION at
+gate time rather than from a checked-in roster (which would go stale on the
+next step file and reproduce the one-at-a-time patching): a file is flagged
+iff its comment-stripped code references a control socket AND it roots a
+fixture at the long base, keyed on the base itself rather than on how it was
+spelled, so all six realistic spellings — direct, hoisted local,
+destructured `tmpdir`, template interpolation, concatenation, inline
+`require('os')` — are caught, while an `os.tmpdir()` appearing inside a
+quoted string reads as an EXAMPLE, not a call site. It runs over the real
+tree in the standing suite every parcel runs (`socketFixtureShortRootGuard`,
+the `tempDirTrapGuard`/`tmuxReaperGuard` shape), with a BL-897 parity test
+reading `swarm_socket_lib.bb`'s own `max-safe-socket-path-len` and
+`primary-socket-path` literals so the two hand-mirrored constants cannot
+drift silently across the language boundary. 54 files adopted (51 step files
+plus three under `steps/lib/`); the ~254 fixtures that never touch a socket
+were deliberately left alone. The reported symptom is closed: BL-368's
+feature goes 3/4 to 4/4, with "A role whose process is still alive is never
+relaunched" now reaching its real assertion. One live leak was found and
+closed on the way — a short-base root built directly with `mkdtempSync`
+bypassed the helper's tracking and had stranded three `/tmp/sfvc-bl817-loc-*`
+directories on disk. No `.bb` file changed and no extension command,
+setting, or UI: this is a defect in the acceptance harness itself. See the
+new [socket-fixture short root and gate reference](BL-948-socket-fixture-short-root-and-gate.md).);
+Previously August 20, 2026 (BL-966: the effective-depth resolution
 answered a DIFFERENT governance cap depending on which checkout asked, with
 no signal — 7 from the master checkout, 3 from `.worktrees/coder`, clean
 stderr and exit 0 both times. `.swarmforge/` is master-checkout runtime

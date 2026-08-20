@@ -2,7 +2,7 @@ id: BL-963
 title: "The open-slot nudge ranks candidates without running the promotion gate chain - once BL-957's depends_on gate lands it will name gate-refused candidates, fire on nothing promotable, and drive false SUP-1 escalations"
 milestone: M8
 type: defect
-severity: medium
+severity: high
 status: todo
 epic: swarm-reliability
 human_approval: approved
@@ -18,9 +18,25 @@ invariants:
   - "A candidate whose only refusal is human_approval remains nudge-eligible and is named flagged awaiting approval - BL-798 scenario 03's surface-not-skip behavior is preserved."
 
 description: >
-  Severity rationale: medium - no live misbehavior today, but the defect
-  arms the moment BL-957 lands: the nudge and the promotion path will then
-  disagree about who is promotable, recurring on every open slot.
+  Severity rationale (RE-TRIAGED 2026-08-20, medium -> high): the original
+  medium rating was conditioned on "no live misbehavior today, but the
+  defect arms the moment BL-957 lands". BL-957 has landed
+  (backlog/done/M8/) and this ticket's own partly-defective consumer
+  shipped to main with it, so that precondition is spent. The residual
+  fault is live on main right now: a candidate refused by BOTH
+  human_approval and depends_on reports only the first-failing gate
+  (human_approval), survives the filter, and is named, counted, and
+  accrued into SUP-1 escalation state - degrading the supervisor
+  escalation signal in both directions (a false "coordinator inaction"
+  alert for a ticket no promotion could succeed on, then escalate-once
+  silence that reads as resolution). High, not critical: the blast radius
+  is one Telegram + email alert, nothing halts, no work is lost, and zero
+  paused tickets carry the trigger shape at this instant - though the
+  shape (a newly minted ticket pending approval and depending on unlanded
+  work) is routine, and was this ticket's own shape at mint. NOTE: this
+  re-triage changes NO scheduling - Article 3.2.4 expedites promotion
+  only, and this ticket is already active and with the coder. See
+  backlog/evidence/BL-963-severity-retriage-and-missing-scenario-20260820.md.
 
   Source: architect priority-00 note 20260819T231719Z_000266 while reviewing
   BL-957 ("BL-957 spec gap: BL-798 open-slot nudge cannot see depends_on
@@ -112,6 +128,28 @@ notes: >
   Hardening note: Babashka code - no mutation/CRAP/DRY wired (BL-472
   deferred); hardening gates on the unit suite and must record the
   degraded fallback.
+
+  SEVERITY RE-TRIAGE + ONE MISSING SCENARIO 2026-08-20 (specifier, from the
+  architect's priority-00 note 20260820T093412Z_000291): severity is now
+  `high` and the description's rationale paragraph is corrected. This is
+  BOOKKEEPING for the rebuild already in flight - the scope, constraints,
+  qa_e2e_procedure, and BOTH invariants are untouched, and nothing about the
+  D1 fix the architect bounced to the coder changes because of it.
+
+  The ONE substantive addition: the acceptance contract never gated
+  invariant 2's boundary. Scenario 02 is scoped to a ticket refused "solely"
+  by human_approval and scenario 03 to candidates refused for a reason
+  "other than" human_approval - the overlap case (refused by human_approval
+  AND another gate), which is exactly D1, falls between them. Scenario 05 is
+  written verbatim in
+  backlog/evidence/BL-963-severity-retriage-and-missing-scenario-20260820.md
+  and must be added to the feature file IN THE SAME PARCEL as its step
+  handler (BL-233 - the runner throws on a handler-less scenario, which is
+  why it is deliberately not pre-committed to main). Do not author a
+  different one; three of its five steps reuse scenario 01's handlers
+  unchanged and only the first Given is new. The property-runner generator
+  hole is the coder's per the architect's remediation, unchanged by this
+  amendment.
 
   IR-DRY reviewed 2026-08-20: 1 medium-confidence possible-synonym, kept -
   the one-tick vs three-consecutive-ticks When steps assert genuinely

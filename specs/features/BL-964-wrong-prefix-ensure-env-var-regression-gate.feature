@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e3686d3f9a3849f38fd7b80f9725039fb941de15944aeaa53c99eae5385db415
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-20T07:46:25.038951Z","feature_name":"BL-964 wrong-prefix ensure env-var regression gate","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-964-wrong-prefix-ensure-env-var-regression-gate.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the gate fails naming a file that reintroduces the retired prefix","scenario_hash":"d03bf211d26e9dfa3de28aae9b7cc7231595a4a73d932e173b885d4461fe48aa","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-20T07:46:25.038951Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-964 wrong-prefix ensure env-var regression gate
 
   Test code that exports fake ensure hooks under the retired

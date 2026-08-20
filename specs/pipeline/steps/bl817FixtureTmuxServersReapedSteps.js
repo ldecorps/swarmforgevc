@@ -169,8 +169,16 @@ function registerSteps(registry) {
       // Deliberately NOT mkTmp()/os.tmpdir() (macOS's long /var/folders/...
       // path) - a unix socket's sun_path is capped at ~104 bytes on macOS,
       // and os.tmpdir() plus a nested .swarmforge/operator/operator-tmux.sock
-      // suffix alone can exceed it. /tmp is short enough with room to spare.
-      ctx.root02 = fs.mkdtempSync('/tmp/sfvc-bl817-loc-');
+      // suffix alone can exceed it.
+      //
+      // BL-948 hardening (hardender): this was a direct mkdtempSync('/tmp/...')
+      // - short enough, so the gate never flagged it, but created OUTSIDE
+      // mkSocketFixtureRoot and therefore untracked, so invariant 2's exit-hook
+      // backstop could not remove it. The step reaps the tmux server (below)
+      // but never removes the ROOT, and three sfvc-bl817-loc-* directories were
+      // found stranded in /tmp on 2026-08-20. Routing it through the helper
+      // keeps the same short base and adds the tracking that removes it.
+      ctx.root02 = mkSocketFixtureRoot('sfvc-bl817-loc-');
       ctx.sock02 = buildSock(ctx.root02);
       fs.mkdirSync(path.dirname(ctx.sock02), { recursive: true });
       execFileSync('tmux', ['-S', ctx.sock02, 'new-session', '-d', '-s', 'swarmforge-coder']);

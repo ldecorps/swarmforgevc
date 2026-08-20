@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2cd6cc33d99e84215d6de23712449af1e3ab9ff7240c4a162d733019a68178ee
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-20T07:32:23.443822Z","feature_name":"Acceptance fixtures that build a control socket use a short root","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-948-socket-fixtures-use-a-short-root.feature","background_hash":"721a927da07ce232c544873de9a42b058e21fd339b9a01edc74adbcef7f9ef5d","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The gate flags only socket-building fixtures on the long base","scenario_hash":"3efb7f5b18313dce5def21d9c72fa15d609655c5df60b31af6692c27a728458d","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-20T07:32:23.443822Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Acceptance fixtures that build a control socket use a short root
 
   macOS resolves os.tmpdir() under /var/folders/<hash>/<hash>/T/, so a
