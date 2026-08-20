@@ -1,6 +1,54 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-946: `EPIC_ICON_POOL` (the per-epic
+**Last Updated:** August 20, 2026 (BL-977: `handoffd_supervisor.bb`'s
+stall detection (`evaluate-health`) used heartbeat-file mtime alone to
+decide `:stalled` — but `handoffd.bb` (BL-789) writes that heartbeat only
+at cycle start/end, so a single heavy in-cycle sweep past the 30s window
+read as silence. On 2026-08-20T07:55:35Z that combination false-positived
+on a demonstrably progressing daemon (six `sweep-boundary` log lines in
+the prior 26s, one dropped-parcel-sweep alone timed at 143269 ms) and
+`alarm-and-halt!` killed every agent tmux session — by BL-144 design
+nothing auto-relaunches them, so the swarm sat dead until a human ran
+`swarmforge ensure`. The daemon now publishes what it is doing:
+`daemon_cycle_guard_lib/run-sweep!`'s own sweep-start/sweep-end
+transitions write a marker file
+(`.swarmforge/daemon/handoffd.sweep-marker`, wired by `handoffd.bb`)
+naming the in-flight sweep and its start instant — advancing only with
+the poll loop's own real progress, never on a free-running timer, so a
+genuinely wedged loop cannot forge liveness. `evaluate-health` reads the
+marker as one more observation: a sweep in flight under a new
+`SUPERVISOR_IN_SWEEP_BUDGET_MS` (default 225000ms, derived from the
+measured worst legitimate sweep that morning — 202158ms — with headroom,
+expected to shrink once BL-978 lands) reads healthy regardless of
+heartbeat age; past that budget the heartbeat evidence is voided and the
+verdict falls through to exactly what a missing heartbeat produces today.
+`SUPERVISOR_STALL_MS` (30s) is unchanged, and a silent daemon with
+nothing in flight still halts in 30s exactly as before — this changes
+only when a genuinely progressing daemon is believed, never the halt
+behavior itself or the already-untouched `:dead` (pid-gone) path. No
+human-facing extension command or setting — a swarm-substrate daemon fix;
+see BL-978, immediately below, for the sweep-cost half of the same
+2026-08-20 incident.); Previously August 20, 2026 (BL-978: the
+dropped-parcel chase sweep (BL-719, `chase_sweep_lib.bb`'s
+`dropped-parcel-items`) called `newest-trail-event-ms` once PER active
+ticket, and every call re-listed and re-slurped every handoff file across
+all 40 scan dirs — with ~5900 completed/sent files accumulated by
+2026-08-20 and 8 active tickets, roughly 47000 file reads per sweep,
+measured at 30-143269 ms and directly blocking mail delivery for the
+whole daemon poll thread for that window (the false halt BL-977 fixes).
+The sweep now walks the scan dirs ONCE per cycle, via a new
+`build-dropped-parcel-trail-index`, reading each handoff file exactly
+once and deriving every ticket's has-trail/live-mail/newest-trail-event
+facts from that single pass; `dropped-parcel-items` decides from the
+index instead of rescanning per item. The decision itself —
+`decide-dropped-parcel?`, the trail/live-mail definitions, BL-719's
+self-nudge exclusion, and the fail-closed rule for a ticket whose whole
+trail is unparseable — is byte-identical; this is a data-access change
+only, and the candidate set a sweep nudges is unchanged for any given
+tree. No human-facing extension command or setting — a swarm-substrate
+daemon fix; see BL-977, immediately above, for the false halt this cost
+triggered.);
+Previously August 20, 2026 (BL-946: `EPIC_ICON_POOL` (the per-epic
 Telegram forum-topic icon pool) held only 10 musical/performance glyphs
 against 39 distinct epics (active+paused+hold+done), so roughly three
 epics in four fell through to the pool's graceful-reuse tail and shared
