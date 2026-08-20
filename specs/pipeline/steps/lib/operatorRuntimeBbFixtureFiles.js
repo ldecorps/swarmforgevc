@@ -42,10 +42,6 @@ const OPERATOR_RUNTIME_BB_FILES = [
   'operator_memory_store.bb',
   'ticket_status_lib.bb',
   'handoff_lib.bb',
-  // BL-967: handoff_lib.bb (and several sibling libs) now load-file the
-  // bounded-subprocess chokepoint - the same recurrence shape as BL-655/
-  // BL-944 below, caught by this list's own closure gate.
-  'daemon_cycle_guard_lib.bb',
   // BL-655: handoff_lib.bb now load-files this too (ambulance mode's hold
   // predicate) - same "a new load-file dependency throws in every consumer
   // fixture at once" gap this list exists to close.
