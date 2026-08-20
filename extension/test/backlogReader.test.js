@@ -51,7 +51,9 @@ test('parseBacklogYaml parses a ticket with no status field, leaving status unde
 test('parseBacklogYaml parses a ticket with an unrecognized status value, normalizing status to undefined', () => {
   const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: in-progress\n';
   const item = parseBacklogYaml(yaml);
-  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel' });
+  // BL-591: the dropped raw value now survives as statusText (the epic-ETA
+  // blocked predicate's input); the normalized status stays omitted.
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', statusText: 'in-progress' });
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
@@ -644,7 +646,9 @@ test('BL-129: a strict-parseable object missing a required field (id) yields nul
 // still yields a ticket via the strict path, with status simply omitted.
 test('BL-129/BL-234: a strict-parseable object with an invalid status enum value still yields a ticket, status omitted', () => {
   const item = parseBacklogYaml('id: BL-999\ntitle: bad status\nstatus: cancelled\n');
-  assert.deepEqual(item, { id: 'BL-999', title: 'bad status' });
+  // BL-591: the dropped raw value now survives as statusText; the
+  // normalized status stays omitted, exactly as before.
+  assert.deepEqual(item, { id: 'BL-999', title: 'bad status', statusText: 'cancelled' });
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 

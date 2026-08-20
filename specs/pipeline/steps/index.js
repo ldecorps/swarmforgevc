@@ -531,7 +531,8 @@ const DOMAINS = [
   require('./bl948SocketFixtureShortRootSteps'),
   require('./bl964RetiredEnsureEnvVarGateSteps'),
   require('./bl963NudgeGateChainSteps'),
-  require('./bl965HealWrapperTempCleanupSteps')
+  require('./bl965HealWrapperTempCleanupSteps'),
+  require('./bl591EpicEtaSteps')
 ];
 
 function registerSteps(registry) {
