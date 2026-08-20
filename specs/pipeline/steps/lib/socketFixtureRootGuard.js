@@ -45,14 +45,76 @@ function stripFullLineComments(text) {
 }
 
 const SOCKET_REFERENCE = /\.swarmforge\/tmux|tmux-socket|\.sock\b/;
-const LONG_BASE_ROOT = /mkdtempSync\(\s*path\.join\(\s*os\.tmpdir\(\)/;
+
+// Any `tmpdir()` call, whatever the receiver: `os.tmpdir()`, a destructured
+// `tmpdir()`, `require('os').tmpdir()`. The long base is the VALUE, so the
+// spelling that produced it must not decide whether the gate sees it.
+const TMPDIR_CALL = /\btmpdir\s*\(\s*\)/;
+
+// A binding whose value comes from tmpdir(): `const base = os.tmpdir()`.
+// Captured so a root built from the alias is still recognised as the long
+// base - hoisting it into a variable is the most natural way to write this
+// and was invisible to the original single-form pattern.
+const TMPDIR_ALIAS = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\btmpdir\s*\(\s*\)/g;
+
+const MKDTEMP_CALL = /\bmkdtempSync\s*\(/g;
+
+// Quoted-string CONTENTS are blanked before the long-base check (and only
+// there - SOCKET_REFERENCE deliberately keeps literals, since real socket
+// paths live in them). Real code never spells `os.tmpdir()` inside a quoted
+// string; a file that contains that text in a literal is carrying an
+// EXAMPLE, which is what BL-948's own acceptance steps do. Without this,
+// broadening the rule makes the gate read this parcel's test DATA as a call
+// site. Template literals are left intact on purpose: `${os.tmpdir()}` is a
+// real spelling, and its tmpdir call is an expression, not text.
+function blankQuotedStrings(code) {
+  return code
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+}
+
+// The argument text of one `mkdtempSync(` call, sliced by paren balance so
+// the check reads that call's OWN base rather than anything else on the
+// line. Unbalanced source (a truncated fragment) yields what is there.
+function mkdtempArgText(code, openParenIndex) {
+  let depth = 0;
+  for (let i = openParenIndex; i < code.length; i += 1) {
+    const ch = code[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) return code.slice(openParenIndex + 1, i);
+    }
+  }
+  return code.slice(openParenIndex + 1);
+}
+
+// BL-948 invariant 1, applied to the RULE as well as to the roster: a gate
+// that recognises exactly one syntactic form is a hand-maintained list of
+// spellings rather than of file names, and the fourth recurrence only has
+// to be written differently. Measured 2026-08-20: the original pattern
+// caught 1 of 6 realistic long-base spellings. Every `mkdtempSync(` call is
+// therefore inspected for a tmpdir() reference of any spelling, including
+// one reached through a local alias.
+function rootsAtLongBase(rawCode) {
+  const code = blankQuotedStrings(rawCode);
+  const aliases = [];
+  for (const match of code.matchAll(TMPDIR_ALIAS)) aliases.push(match[1]);
+
+  for (const call of code.matchAll(MKDTEMP_CALL)) {
+    const args = mkdtempArgText(code, call.index + call[0].length - 1);
+    if (TMPDIR_CALL.test(args)) return true;
+    if (aliases.some((name) => new RegExp(`\\b${name}\\b`).test(args))) return true;
+  }
+  return false;
+}
 
 function findSocketFixtureRootViolation(filePath, text) {
   const code = stripFullLineComments(text);
   if (!SOCKET_REFERENCE.test(code)) {
     return null;
   }
-  if (!LONG_BASE_ROOT.test(code)) {
+  if (!rootsAtLongBase(code)) {
     return null;
   }
   return {
@@ -79,4 +141,4 @@ function scanForSocketFixtureRootViolations(dir) {
   return violations;
 }
 
-module.exports = { findSocketFixtureRootViolation, scanForSocketFixtureRootViolations };
+module.exports = { findSocketFixtureRootViolation, scanForSocketFixtureRootViolations, rootsAtLongBase };
