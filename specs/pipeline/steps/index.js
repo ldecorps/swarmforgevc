@@ -541,7 +541,8 @@ const DOMAINS = [
   require('./bl983StageQueueSteps'),
   require('./bl985ProactiveAnchorSteps'),
   require('./bl970BusyGateSteps'),
-  require('./bl969BurndownNoflagsTimeoutSteps')
+  require('./bl969BurndownNoflagsTimeoutSteps'),
+  require('./bl992UnmergedDeclarationSteps')
 ];
 
 function registerSteps(registry) {
