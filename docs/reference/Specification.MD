@@ -1,6 +1,97 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
+**Last Updated:** August 20, 2026 (BL-966: the effective-depth resolution
+answered a DIFFERENT governance cap depending on which checkout asked, with
+no signal — 7 from the master checkout, 3 from `.worktrees/coder`, clean
+stderr and exit 0 both times. `.swarmforge/` is master-checkout runtime
+state that no linked worktree carries, so reading swarm-identity at the
+caller's own root silently fell through to the tracked default
+`swarmforge/swarmforge.conf`; this was the third depth-cap confusion incident
+in two days. `backlog_depth_lib.bb` gains `resolve-identity-root`, which
+finds the repository's master checkout from any linked worktree via
+`git rev-parse --git-common-dir` (its parent), memoized per root because the
+lib runs inside `handoffd`'s poll cycle and routed through BL-967's bounded
+`sh!` chokepoint; `conf-file-path` then reads identity — and resolves every
+path derived from it — there. A non-git root (the standard plain-temp-dir
+test-harness shape) still resolves against itself with today's stdout and
+exit code, as does any git failure: fixtures are never required to be git
+repositories. The remaining no-identity fall-through is now LOUD on stderr
+(`no swarm-identity for <root> - falling back to the tracked default conf
+<path>`) while exit stays 0, so scripted callers keep parsing stdout
+unchanged, and the CLI's usage text states that `<project-root>` accepts the
+master checkout or any linked worktree of it. Behavior change for callers
+that assert empty stderr: the one such harness case
+(`test_effective_backlog_depth_cli.sh`'s live-wiring case) was adjusted in
+the same parcel per the ticket's third invariant. No extension command,
+setting, or UI change.);
+Previously August 20, 2026 (BL-961: the launcher never guaranteed
+`SWARMFORGE_PACK` in a role shell — the value reached the panes only because
+the shell that invoked `./swarm` happened to carry it, riding the tmux
+server's global environment from there, so every env-keyed consumer (BL-935's
+vitest CPU cap, `ancillary_provider_lib.sh`'s primary provider-routing path)
+worked by launch-context luck and would have gone quiet on the next launch
+from a clean shell, with no error. The env var and the `--pack` selector were
+two mechanisms sharing one name: `--pack` is consumed only as a config-file
+selector and left `PACK` an unexported local. `write_role_launch_script` in
+`swarmforge/scripts/swarmforge.sh` now derives the pack at generation time as
+`basename "$CONFIG_FILE" .conf` — the conf the launcher actually loaded, the
+same derivation `ancillary_provider_lib.sh` uses for its swarm-identity
+fallback — and bakes `export SWARMFORGE_PACK='<pack>'` into the generated
+`.swarmforge/launch/<role>.sh` beside the existing `SWARMFORGE_ROLE` export.
+The two declared invariants follow: one launch exports one identical pack
+name in every role's script, equal to the loaded conf's basename; and because
+the export is in the FILE rather than a `tmux set-environment` call, a
+single-role respawn re-running that file still carries it. Rollout: running
+panes pick it up at the next relaunch or respawn, so a live shell is not
+acceptance evidence in either direction — only a grep of a freshly generated
+launch script is. No extension command, setting, or UI change.);
+Previously August 20, 2026 (BL-967: `handoffd`'s poll cycle went
+silent mid-sweep past the freshness threshold and the watchdog killed and
+restarted the daemon every ~6 minutes — 30+ times from 20:38Z on 2026-08-19 —
+costing handoff latency and chase freshness and spamming the operator topic.
+The daemon process stayed alive; only its cycle stalled, and because every
+sweep after the chase loop logs ONLY on events, a healthy-but-later sweep was
+indistinguishable in the log from a stalled one, so each recurrence demanded a
+fresh live hunt. Three parts land together, and the two structural ones are
+deliberately the load-bearing half. (1) Bounded waits: every subprocess wait on
+the cycle path — all 48 `process/sh` sites and the shared `tmux!` helper in
+`handoffd.bb`, plus the in-cycle calls in `briefing_email_lib.bb` and
+`control_plane_lib.bb` — now routes through one chokepoint,
+`daemon_cycle_guard_lib.bb`'s `sh!`, whose wait defaults to 60s
+(`SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` seam) and on a hit destroys the child's
+process tree, logs `subprocess-timeout sweep=<name> bound-ms=<n> cmd=<cmd>`,
+and returns an ordinary `{:exit 124}` result mirroring `timeout(1)` — survived,
+never thrown, so callers' existing exit checks treat it as a normal failure and
+a wedged tmux/git/child costs one bounded wait rather than the heartbeat.
+(2) Self-localizing boundaries: every sweep in the heavy bundle runs under
+`run-sweep!`, which emits `sweep-boundary sweep=<name> ms=<n>` even when the
+sweep took no action, so "last log line" always names the guilty sweep; the 1s
+idle ticks emit none, keeping the volume bounded. (3) The real wait, identified
+from three converging evidence lines rather than a caught-in-the-act timeout
+(it needs a genuinely wedged tmux server under load and did not reproduce under
+a fixture): `handoff_lib.bb`'s `session-exists?` and six sibling call sites
+still ran on `clojure.java.shell/sh`, the BL-057/BL-061 stream-read-shim family
+that blocks in `read()` forever on a wedged child — the very reason `handoffd`
+itself moved to `babashka.process` long ago, on a library that never followed;
+the chase sweep's tail calls it once per role, unbounded and unlogged, exactly
+between the last logged chase action and the next sweep that logs anything. All
+seven sites are converted and the `clojure.java.shell` require is gone. Also
+closed under the same engineering rule: `with-pid-lock`'s previously unbounded
+50ms spin now fails loudly after 30s naming the stale lock dir. The caveat is
+stated rather than papered over — if some OTHER wait was the real culprit it is
+now equally bounded and the next occurrence names it, which is what makes the
+identification self-correcting. Deliberately NOT done: raising the 300s
+handoffd threshold as the fix (the operator's directive forbids it; BL-789
+documented Mac cycles near 120-232s as slow-but-healthy, and that posture is
+preserved unchanged), touching the freshness watchdog itself (BL-675, working
+as designed), or redesigning any sweep's CONTENT. New operator-facing surface:
+the two log lines above and the wait-bound env seam. Babashka has no
+mutation/CRAP/DRY tooling wired here, so this is gated by the daemon
+wiring/unit suites plus the `daemon_cycle_guard_lib` runners — the degraded
+fallback, recorded as such. Evidence:
+`backlog/evidence/BL-967-identified-wait-20260820.md`; runbook:
+[`docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`](../how-to/BL-967-handoffd-cycle-stall-diagnosis.md).);
+Previously August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
 the five middle pipeline roles a `mono-rotate` launch deliberately leaves
 dormant. The launcher's `is_sequential_dormant` treats `rotation sequential`
 and `rotation router` as the same single-resident topology; ensure's
@@ -209,8 +300,9 @@ upper bound and the pool is still floored at 1: even an explicit
 `SWARMFORGE_VITEST_MAX_FORKS=9` can only ever LOWER the fork count, never
 raise it. A human running the suite on a quiet laptop has no
 `SWARMFORGE_PACK` at all, so they keep the full budget — but how that
-variable reaches an agent shell is INHERITED, not wired, and that decides
-whether the ceiling engages: no launcher in this repo exports
+variable reached an agent shell was, AT THE TIME OF THIS TICKET, INHERITED
+rather than wired, and that decided whether the ceiling engaged: no
+launcher in this repo exported
 `SWARMFORGE_PACK=full-forge` (the five alternative-provider wrappers each
 export a `*-mono-router` value; default `start-swarm.sh` only reads it and
 passes the result as `--pack`, a config-file selector consumed as
@@ -225,8 +317,9 @@ the pane's own `env` — the PER-SESSION table (`tmux show-environment -t
 <session>`) does not read the global one and answers `unknown variable`
 for all 8 sessions, which is a wrong probe rather than a missing
 variable. Making that inheritance explicit at launch — so
-the ceiling does not depend on how the swarm happened to be started — is
-BL-961's job, not this ticket's. Both
+the ceiling does not depend on how the swarm happened to be started — was
+BL-961's job, not this ticket's; BL-961 has since landed, and every generated
+role launch script now exports the pack the launcher loaded. Both
 lanes resolve through ONE route: the eight identical composition lines
 that `vitest.config.mjs` and `vitest.properties.config.mjs` each carried
 collapsed onto a single `resolveVitestWorkerPool`, which makes the
@@ -2942,7 +3035,7 @@ The coordinator's promotion path no longer reads `active_backlog_max_depth` from
 bb swarmforge/scripts/effective_backlog_depth_cli.bb <project-root>
 ```
 
-which refreshes the throttle recommendation fresh on every call (never trusts a periodic sweep that might be stale between coordinator wake-ups), then prints `min(configured cap, recommended cap)` — `backlog_depth_lib.bb`'s `effective-max-depth`. The recommendation only ever *lowers* the effective cap, never raises it above the human-configured value; a configured cap of `-1` (no ceiling) is not run through a bare `min` (a negative sentinel would otherwise always "win") — it resolves straight to the recommendation instead, so an unlimited cap can still be temporarily throttled during a severe diagnosis. When the diagnosis clears, the recommendation lifts and the effective cap returns to the configured value on the very next call — the swarm is never permanently stuck throttled. A failed refresh (CLI not yet compiled, `node` missing) degrades to a logged skip and falls through to whatever recommendation is already on disk, the same shell-and-degrade posture `handoffd.bb`'s other `emit-*.js` callers already use.
+where `<project-root>` may be the master checkout or any linked worktree of it (BL-966, below). It refreshes the throttle recommendation fresh on every call (never trusts a periodic sweep that might be stale between coordinator wake-ups), then prints `min(configured cap, recommended cap)` — `backlog_depth_lib.bb`'s `effective-max-depth`. The recommendation only ever *lowers* the effective cap, never raises it above the human-configured value; a configured cap of `-1` (no ceiling) is not run through a bare `min` (a negative sentinel would otherwise always "win") — it resolves straight to the recommendation instead, so an unlimited cap can still be temporarily throttled during a severe diagnosis. When the diagnosis clears, the recommendation lifts and the effective cap returns to the configured value on the very next call — the swarm is never permanently stuck throttled. A failed refresh (CLI not yet compiled, `node` missing) degrades to a logged skip and falls through to whatever recommendation is already on disk, the same shell-and-degrade posture `handoffd.bb`'s other `emit-*.js` callers already use.
 
 This slice moves only this one knob — it does not self-generate tickets, respawn a role, reroute work, or touch code; those stay BL-431's escalate-only recommendations for a human, exactly the epic's safety contract (BL-429).
 
@@ -2966,6 +3059,8 @@ A fully compliant ticket (approved, correctly laned, already correctly assigned)
 **The orthogonality gate advises on epic overlap instead of refusing on it (BL-854).** `epic:` is the gate's only scope proxy — no ticket field declares real file/module scope — and the buckets it groups by are large: measured against `backlog/paused/` (204 tickets), 76 share `epic: swarm-reliability` alone, so a single active defect in that epic refused 112 of the 204 (55%) on this gate. The coordinator was already overriding it by hand every time, comparing the tickets' actual declared file paths and finding zero real overlap (`3fbe05e9`) — the automated layer could raise the question but had no data to answer it. `promotion_gates_lib.bb`'s `orthogonality-refusal` is now `orthogonality-advisory`: it returns alongside `{:ok true}` rather than in place of it, so `evaluate`'s stdout contract (`ALLOW` / `REFUSE|<gate>|<reason>`, same exit codes) is byte-identical for every existing caller. When a paused candidate shares an epic with one or more active tickets, `promotion_gates_cli.bb` additionally writes `ADVISORY|orthogonality|epic <epic> is also active on <BL-id>[, <BL-id>...]` to **stderr**, naming every overlapping active ticket (not just the epic) so the coordinator can check real file overlap without re-deriving which ticket to compare against. `select` mode's Article 3.2.4 ranking is unchanged by construction — an advisory drops nothing from the candidate set. `promote_and_route_next.sh` prints the winning candidate's advisory once, for the ticket it actually promotes; a non-blocking verdict nobody sees would read as a clean promotion and bury the signal it exists to raise. The file-overlap judgement itself stays exactly where the constitution's Concurrent Work Orthogonality rule already puts it — with the coordinator; this fix only stops the automated proxy from refusing on an answer it never had. `human_approval`, the depth cap, the hold marker, and Article 3.2.4 ranking are all unchanged (BL-854's own invariants). Out of scope: a declared file-scope ticket field to replace the epic proxy entirely — rejected for now because no ticket carries one today and a wrong backfilled scope would reproduce this same false positive less visibly; the advisory is where that field would hang if it is built later.
 
 **The chain never read `depends_on`, so a dependent ticket could reach the coder before the work it depends on had landed (BL-957).** `depends_on:` was honoured only on the TypeScript side (`makeTopPrioritySafety.ts`, `bridgeServer.ts`), whose own comment deferred the completion question to "the coordinator's promotion gate" — a gate that had never been built; the field was read nowhere in `swarmforge/scripts/` at all. The coordinator spent four commits on 2026-08-19 fighting its absence, the auto-picker re-promoting the same blocked BL-955 immediately after each hand revert because nothing in the promotion path had changed. It was never a one-off: measured against the live backlog that day, **20 otherwise-promotable candidates carried at least one dependency not in `backlog/done/`** — half of the 48 candidates declaring any dependency at all — including BL-603 and BL-604 with nine unlanded dependencies each. `promotion_gates_lib.bb` gains a `depends_on` link in `evaluate`'s fixed chain, placed **after `human_approval` and before `depth`** so a ticket-property refusal beats a transient global one and the coordinator gets the actionable reason; both invocation modes inherit it from the one BL-663 chokepoint (`cmd-select` drops a refused candidate from the ranking rather than crashing the selection, `cmd-evaluate` prints `REFUSE|depends_on|<reason>` and exits 2), which is why the "every route, including one added later" invariant is cheap to hold here and expensive anywhere else. The gate **fails closed in both directions**: a dependency counts as satisfied ONLY in `backlog/done/`, so an ACTIVE dependency still refuses (the standard the coordinator had already applied by hand during the incident), and an id resolving to no ticket anywhere refuses rather than promotes — the same posture Article 3.2.4 takes on a missing `severity:`. The refusal names every unsatisfied id and no satisfied one (`depends_on not yet landed in backlog/done/: BL-620`), so the next action needs no re-derivation by hand. The gate carries its **own reader** rather than reusing `read-field`, which returns nil for a blank value by documented design (`field: >`/`field: |` must read as absent) and would therefore have failed OPEN on block-style lists — exactly the tickets the gate exists to catch, two of which sit in `paused/` today. `read-depends-on` extracts every `BL-<n>`/`GH-<n>` token from the field's value and its indented continuation lines, stripping inline comments, which reads all four live forms (`[]` 118 tickets, flow list 47, block list 2, bare scalar with trailing prose 1) without parsing the prose; a present-but-unparseable value is flagged and refused, never silently read as dependency-free. Resolving a dependency uses `done-ids`, which recurses `backlog/done/` over flat files AND `<Mx>/` subfolders (the close-into-`done/<Mx>` convention), taking the filename's leading ticket token and falling back to the `id:` field. No existing gate is weakened or reordered, and a ticket with `depends_on: []` promotes exactly as before. Out of scope: auto-promoting the dependency instead of refusing (the coordinator decides what to promote; this gate only refuses), and transitive cycle detection across `depends_on` — `makeTopPrioritySafety.ts` already handles cycles for the make-top primitive, and nothing in the promotion path traverses. The sibling open-slot nudge that consults this chain when a slot frees is BL-963, a separate slice; BL-626 (unmaterialized `.feature` pointer) and BL-634 (slice-size envelope) stay independent too.
+
+**The same repository answered two different caps depending on which checkout asked (BL-966).** `effective_backlog_depth_cli.bb` documents a `<project-root>` argument, and every role following that usage from its own worktree got a confidently wrong governance constant: measured 2026-08-20, the master checkout returned **7** (swarm-identity present, `launch_pack full-forge` → `packs/full-forge.conf`) while `.worktrees/coder` returned **3** — the tracked default — with no warning, nothing on stderr, and exit 0 in both cases. The cause is that `.swarmforge/` is master-checkout runtime state which no linked worktree carries, so `conf-file-path` read swarm-identity at the caller's own root, found none, and fell through silently. This is the BL-897 mirrored-constant shape moved across checkouts, and it was the third depth-cap confusion in two days (BL-961's hold cited `2` read from the wrong pack's conf; the all-roles broadcast said `7`; the architect measured `3`). `backlog_depth_lib.bb` now resolves identity at the repository's MASTER checkout regardless of who asks: `resolve-identity-root` runs `git rev-parse --git-common-dir` against the given root and takes its parent — the one place `.swarmforge/` lives — memoized per root (the mapping is stable for a process lifetime and this lib is loaded by `handoffd.bb` inside its poll cycle), with the subprocess wait routed through BL-967's shared bounded `sh!` chokepoint rather than an unbounded one. `conf-file-path` reads identity there and resolves the persisted conf path relative to that same root. Degradation is deliberate and total: a non-git root — the standard test-harness shape, a plain temp dir — resolves to itself unchanged, and so does any git failure, so the fix never requires fixtures to be git repositories (the ticket's third invariant). What remains is the genuine no-identity case, a repository that was never launched: it still gets the tracked default conf's value on stdout with exit 0, but the fall-through is now announced on stderr (`backlog_depth_lib: no swarm-identity for <root> - falling back to the tracked default conf <path>`) — a cap that does not derive from a resolvable swarm-identity is never returned silently again, while every existing scripted caller keeps parsing stdout exactly as before. The CLI's own usage text now states what the argument accepts: the master checkout or any linked worktree of it. The one harness case that asserted empty stderr on the fall-through path (`test_effective_backlog_depth_cli.sh`'s live-wiring case) was adjusted in the same parcel, which is the only caller-visible behavior change. `backlog_depth_conf_path_cli.bb` shares the lib and therefore moves with it, keeping the two CLIs in agreement by construction. Out of scope and unchanged: `promote_and_route_next.sh`'s own `2>/dev/null || true` stderr swallow (noted as shared fragility — it runs from master, so promotion was always correct, and its caller contract is untouched), the throttle-recommendation and pause-marker layers of the effective cap, and how OTHER `swarm_identity_lib` consumers (ancillary provider routing, babysitter topology) resolve identity — the same fallback family, separate slices.
 
 ---
 
@@ -3274,13 +3369,52 @@ runaway agent, was the OOM source.
   reads. Confirm the cap is live with `-g` or with the pane's own `env`,
   never with the per-session table. Making that inheritance explicit
   at launch — so the ceiling does not depend on how the swarm happened to
-  be started — is BL-961's job, not this ticket's. Both lanes compose the ceiling and the memory
+  be started — was BL-961's job, not this ticket's, and BL-961 has since
+  landed it: every generated `.swarmforge/launch/<role>.sh` now exports the
+  pack the launcher loaded, so this paragraph describes the pre-BL-961
+  inheritance path (see the next bullet). Both lanes compose the ceiling and the memory
   budget through **one** shared `resolveVitestWorkerPool`, rather than the
   identical eight lines each config used to carry: neither lane can size
   its pool by a route the other does not share, by construction. The module
   stays pure — pack, platform, override and host RAM are all passed in by
   the caller, so nothing reads `process.env` or `os` inside it. Stryker is
   unaffected for the same reason as the caps above.
+
+- **The launcher now WIRES that variable instead of inheriting it
+  (BL-961).** The paragraph above describes the state before this ticket:
+  `SWARMFORGE_PACK` reached a role shell only because the shell that
+  invoked `./swarm` happened to carry it, so the CPU-axis ceiling engaged
+  by launch-context luck. Nothing was broken on this host — the cap was
+  measurably live (`maxForks` 1 with the variable set, 3 with it cleared)
+  — but the next `./swarm` from a clean shell would have dropped it back
+  to 3 silently, with no error: fragility, not inertness. The launcher now
+  states the pack explicitly. `write_role_launch_script` in
+  `swarmforge/scripts/swarmforge.sh` derives `launch_pack_name` as
+  `basename "$CONFIG_FILE" .conf` — the conf file the launcher ACTUALLY
+  loaded, the same derivation `ancillary_provider_lib.sh` already uses for
+  its swarm-identity fallback — and writes
+  `export SWARMFORGE_PACK='<pack>'` into the generated
+  `.swarmforge/launch/<role>.sh` heredoc, beside the existing
+  `SWARMFORGE_ROLE` export. Two consequences are the point of the ticket.
+  (1) The env var and the `--pack` config selector can no longer name
+  different packs for one launch: both resolve from the single
+  `CONFIG_FILE`, so the exported value is identical in every role's script
+  and equals that file's basename. (2) The export lives in the generated
+  FILE, not in a `tmux set-environment` call or the initial tmux command,
+  so a single-role respawn — which re-runs `.swarmforge/launch/<role>.sh`
+  directly — still carries it. A default `swarmforge.conf` launch exports
+  `swarmforge`; a `--pack full-forge` launch exports `full-forge`. No
+  consumer keys on the default name, and a human running the suite outside
+  a swarm still has no `SWARMFORGE_PACK` at all and keeps the full budget.
+  Rollout note: this changes what future launch scripts SAY, so
+  already-running panes pick the export up at the next `./swarm` relaunch
+  or single-role respawn — a live shell missing the value before then is
+  the expected rollout condition, not a regression. Probing a live shell
+  is not evidence about this fix in either direction (the tmux server's
+  global environment can already supply the value); only grepping a
+  freshly generated `.swarmforge/launch/<role>.sh` is. No extension
+  command, setting, or UI changes — launcher wiring for a signal the
+  extension's own test tooling consumes.
 
 ### Whole-suite duration budget verdict (BL-445)
 
