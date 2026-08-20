@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-20T06:03:36.821511Z","feature_name":"BL-966 depth CLI gives the same answer from every checkout","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-966-depth-cli-same-answer-from-every-checkout.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-966 depth CLI gives the same answer from every checkout
 
   The effective-depth resolution reads swarm-identity at the caller's own

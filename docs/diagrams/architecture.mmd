@@ -123,7 +123,7 @@ flowchart TB
     PANES["One tmux pane per pipeline role\n(coordinator, specifier, coder, cleaner,\narchitect, hardender, documenter, QA)"]
   end
 
-  subgraph SWARMSTATE[".swarmforge/ State (files, shared)"]
+  subgraph SWARMSTATE[".swarmforge/ State (files, shared;\nlives in the MASTER checkout - linked\nworktrees carry none, BL-966)"]
     ROLESTSV["roles.tsv, sessions.tsv"]
     HANDOFFS["handoffs/{inbox,outbox,sent,failed}/"]
     DAEMONDIR["daemon/ (handoffd pid, heartbeat, log)"]
@@ -133,6 +133,7 @@ flowchart TB
     LEANDIR["lean/ (BL-819: coordinator-owned ticket\nlifecycle ledger, *.jsonl + per-ticket snapshot)"]
     CEREMONYDIR["lean/ceremony/ (BL-820: closing-ceremony\nrun records, one JSON per shift)"]
     INCIDENTDIR["incidents/control-plane.json (BL-958: control-plane-loss\nincidents, at most one open at a time)"]
+    IDENTITY["swarm-identity (BL-313: the conf this launch\nactually loaded; BL-966: read at the master checkout\nfrom any worktree via git rev-parse --git-common-dir)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
