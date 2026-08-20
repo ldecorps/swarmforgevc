@@ -1,5 +1,5 @@
 id: BL-989
-title: "test_role_lifecycle_cli.sh uses GNU-only `grep -qP`, which stock macOS BSD grep rejects - BL-343's acceptance contract fails on the swarm host"
+title: "three shell test helpers use GNU-only `grep -P`, which stock macOS BSD grep rejects - BL-343's acceptance contract fails, and an agent shell CANNOT reproduce it because Claude Code shadows grep with a function"
 milestone: M8
 type: defect
 severity: medium
@@ -45,6 +45,45 @@ description: >
     rejects it outright with the usage block above - so the predicate never
     evaluates and the setup assertion never finds its expected line.
 
+  AMENDMENT 2026-08-20 (specifier, from coder note 20260820T141740Z_000385).
+  TWO changes: the scope is wider than one file, and there is a trap that has
+  already produced one wrong conclusion.
+
+  SCOPE - derived by sweeping the tree, not hand-listed. Three files, four
+  sites, all reaching for `-P` for the same reason (a literal TAB anchor):
+
+  - swarmforge/scripts/test/test_role_lifecycle_cli.sh:102,103
+      `grep -qP "^$2\t"`            (the originally-named site)
+  - swarmforge/scripts/test/test_backlog_depth_pack_override.sh:38
+      `grep -P "^${key}\t"`          (the coder's report)
+  - swarmforge/scripts/test/test_coordinator_provider_configurable.sh:130
+      `grep -P '^coordinator\t'`     (found by the sweep; unreported so far)
+
+  Fixing only the named file would have left two live. Re-run the sweep before
+  closing rather than trusting this list.
+
+  THE TRAP - an agent shell cannot reproduce this, and one investigation
+  already concluded the opposite because of it. backlog/evidence/
+  BL-962-BL-961-BL-966-cleaner-batch-20260820.md lines 71-73 record, for
+  test_backlog_depth_pack_override.sh: *claimed cause "grep -P (stock BSD
+  grep)". Measured: grep -P works on this host (printf 'a\tb\n' | grep -P
+  "^a\t" succeeds). The real failure is [other]*. That measurement is
+  contaminated and its conclusion about grep is wrong.
+
+  Why, measured directly 2026-08-20: in an agent shell `type grep` reports
+  **grep is a function** - a Claude Code wrapper backed by ripgrep, which DOES
+  support -P. (`find` is shadowed the same way; egrep/fgrep/sed/awk/ls/cat are
+  not.) So:
+
+      agent shell:      grep -P            -> WORKS   (the function)
+      agent shell:      /usr/bin/grep -P   -> FAILS   (stock BSD)
+      inside a script:  grep -P            -> FAILS   (bash script.sh, no function)
+
+  The suites under test are run by the acceptance runner via
+  spawnSync('bash', [script]) - no shell function - so they get stock
+  /usr/bin/grep and the observed `grep: invalid option -- P`. Both observations
+  were honest; only one was measuring grep.
+
   The attribution is safe to state here because the tool named itself: the
   error is literally `grep: invalid option -- P` followed by the BSD usage
   string. (A previous incident on this repo blamed BSD grep for what turned
@@ -71,6 +110,13 @@ constraints: >
   - Both predicates change together (roles_tsv_has and roles_tsv_lacks, lines
     102-103). Fixing only the positive one leaves the negative predicate
     silently always-true, which is worse than the current loud failure.
+  - ALL FOUR sites change in the same parcel, across all three files. This is
+    one defect with three instances, not three tickets - and a partial fix
+    leaves a suite red for a cause already understood.
+  - NEVER verify this from an agent shell. `grep` there is a Claude Code
+    function backed by ripgrep and accepts -P, so an agent shell will always
+    report the bug absent. Verify with `/usr/bin/grep` explicitly, or from
+    inside a real `bash script.sh` - the way the runner invokes it.
   - Do not "fix" this by raising the step's 120000ms spawnSync timeout. The
     slowness is real but separate (see notes); the red is the grep flag.
 
@@ -114,6 +160,12 @@ qa_e2e_procedure: >
      always-true.
   5. Portability spot-check: confirm the chosen spelling contains no `-P`,
      no `\s`, and no ggrep/gnu-prefixed binary.
+  6. Derived sweep, not a hand list: re-run
+     `grep -rn -- "grep -qP\|grep -P\|grep -oP" --include=*.sh .` (excluding
+     node_modules, .worktrees, out/) and assert ZERO remaining hits in shell
+     helpers. `pgrep -P` is a different tool and is not a hit. Run this from
+     an agent shell is fine for FINDING sites; do not use an agent shell to
+     decide whether -P works.
 
 approval_context: >
   Nothing here needs a product decision - the failure names its own cause and
