@@ -1,6 +1,92 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 19, 2026 (BL-935: the vitest worker pool gains a
+**Last Updated:** August 20, 2026 (BL-960: BL-913's `PreToolUse` heal
+wrapper spliced every Bash command every role issues as raw text into a
+command substitution (`__sfh_out=$(<ORIGINAL> 2>&1)`), unescaped and never
+validated, so any command valid on its own but unable to survive that
+embedding became a syntax error: heredoc bodies were swallowed (a
+heredoc-written file landed truncated at 776 bytes), a literal `)` in an
+argument closed the substitution early, and trailing newlines were
+stripped. The failure was silent-PARTIAL — the shell could execute part of
+the mangled command before dying, so state changes landed while an error
+was reported, making blind retries unsafe; QA sat 50 minutes with every
+shell call failing and an unactioned handoff queue behind it, and the
+coordinator and hardener panes hit the same thing. A second defect
+misdirected the `missing-root-argv` heal, which appended the pinned
+worktree to the END of the whole command string, so on a pipeline or
+`;`-sequence it landed on the final segment rather than the program that
+produced the usage error (captured live: `echo "---done---"
+"$__sfh_root"`). Three fixes: `safe-wrapper-command` parse-checks every
+composition with `bash -n -c` and returns the byte-untouched original,
+silently, when it does not parse (BL-913's locked decision 5 extended to
+the wrapper's own composition failures; a parse gate that throws also
+fail-opens); the original is embedded as a multi-line subshell group
+captured whole to a temp file and replayed with `cat`, never spliced
+inline, with the `> file 2>&1` outside the group so the stream merge covers
+every segment and the truncating redirect makes a healed re-run replace
+rather than append; and the `missing-root-argv` heal fires only for a
+single simple command, omitting its clause entirely when the append target
+is ambiguous — a false negative merely declines a heal, a false positive
+misdirects it. The operator had disabled the hook registration on
+2026-08-19 (`3bac496ec`) gating re-enable on exactly this parse-checked
+fail-open; that condition is met and the registration is restored in the
+same parcel, so the hook is live again. Unchanged: the one-retry structure
+(BL-913 invariant 1) and every BL-934 guarantee — the worktree never
+appears as a literal extra argument and a genuine `rm` of the worktree
+stays visible to Claude Code's classifier. See the new "Parse-safe
+composition and byte-exact round-trip (BL-960)" section in
+[`docs/how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md`](../how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md).);
+Previously August 20, 2026 (BL-958: the tmux control plane can
+disappear mid-run while every support daemon stays healthy. Live on
+2026-08-19: every role read DOWN, `handoffd`/supervisor/front-desk/
+`babysitterd` all UP, repeated `tmux send-literal failed` chases, the
+socket file still on disk, and `tmux -S <socket> ls` answering "no server
+running" — not a policy pause, not a daemon stop. Each consumer saw only
+its own slice (status rendered per-role DOWN from a dead probe, handoffd
+logged and retried forever, ensure repaired panes one at a time) and
+nobody said "the control plane is gone" out loud. `control_plane_lib.bb`
+is now the single classifier, with three consumers wired to it:
+`swarm_status.bb` renders ONE `control-plane` row carrying the socket path
+and the `./swarm ensure` remedy, deliberately replacing the per-role rows
+(with the server gone there is no live truth about any role, and DOWN
+derived from stale `sessions.tsv` is the misdiagnosis the incident
+produced); `handoffd.bb`'s failed chase send persists exactly one open
+incident to `.swarmforge/incidents/control-plane.json` with the probe
+output, expected sessions, and the response decision embedded, so a chase
+storm records the loss once; and `swarm_ensure.bb` decides through
+`recovery-decision` — relaunch role sessions from the persisted launch
+scripts (creating the first session restarts the tmux server itself), or
+halt when none exist rather than churn through repairs that cannot work.
+The loss shape is abnormal by construction: a normal stop removes both the
+socket file and `sessions.tsv`, so a surviving socket alongside surviving
+role metadata can only mean the server died under a swarm that believes it
+is running. `ensure` reports FIXED only when the server actually answers
+again, and only then resolves open incidents; under the halt path it
+reports FAILED carrying the escalation's own next action and leaves the
+open incident untouched — a failed restart never retracts the record of a
+loss. Response ownership is `babysitterd`, settled by the incident itself:
+`operator-runtime` was down/stale while the control plane was gone, so the
+owner cannot be a daemon this same shape can take out; its absence was
+parallel damage, not the detection path. No new extension command,
+setting, or UI — a swarm-substrate detection/recovery layer. See the new
+[control-plane-loss runbook](../how-to/BL-958-control-plane-loss-recovery.md).);
+Previously August 20, 2026 (BL-957: the promotion gate chain never
+read `depends_on`, so a ticket could be promoted and routed to the coder
+before the work it declared a dependency on had landed — the auto-picker
+re-promoted the same blocked BL-955 immediately after each of the
+coordinator's hand reverts, four commits in one afternoon, because nothing
+in the promotion path had changed. Twenty otherwise-promotable candidates
+carried an unlanded dependency when it was measured. `promotion_gates_lib.bb`
+gains a `depends_on` link in `evaluate`'s fixed chain, after `human_approval`
+and before `depth`, so both invocation modes inherit it from the one BL-663
+chokepoint; a dependency counts as satisfied ONLY in `backlog/done/` (an
+ACTIVE one still refuses) and an id resolving to no ticket refuses rather
+than promotes, with the refusal naming every unsatisfied id. The gate reads
+the field itself rather than through `read-field`, which returns nil for a
+blank value and would have failed OPEN on block-style lists — the exact
+tickets it exists to catch. No human-facing command or setting changes; a
+ticket with `depends_on: []` promotes exactly as before.);
+Previously August 19, 2026 (BL-935: the vitest worker pool gains a
 SECOND, independent ceiling on the CPU axis, layered alongside the
 RAM-derived budget rather than replacing it. `resolveWorkerPoolSize`
 (BL-422, refined by BL-792) sizes the fork pool from `os.totalmem()` alone
@@ -2788,6 +2874,8 @@ A fully compliant ticket (approved, correctly laned, already correctly assigned)
 **The promotion path never asked whether the depth cap is unlimited: a configured `-1` silently resolved to `5` (BL-853).** With the pack conf declaring `active_backlog_max_depth -1` and five tickets already active, every promotion through the sanctioned path refused with "active count 5 >= cap 5 — no open slot" — a coincidental collision (the resolved fallback happened to equal the active count), not an intentional cap, and the one time a human caught it the workaround was to un-promote in-flight work by hand to free a slot for an expedited defect. Four faults in one resolution chain, all fixed together: (1) `promote_and_route_next.sh`'s cap validation was unsigned-only (`^[0-9]+$`), so the documented `-1` sentinel was rejected as malformed before it could even reach the fallback; (2) the fallback called `backlog_depth_cli.bb` with the project **root**, but that CLI documents (and `swarmforge.sh` already correctly passes) a **config file path** — `slurp` on a directory threw, and the library silently degraded to its own `default-max-depth`; (3) if both readers failed, the shell declared its own second, tighter default (`CAP=5`) rather than deferring to the library's; (4) even a correctly-resolved `-1` still refused at any active count, because `promotion_gates_lib.bb`'s `depth-refusal` was a bare `(>= active-count max-depth)` with no no-limit branch. The fix: `promote_and_route_next.sh` now accepts a signed integer at every step and declares no depth default of its own (a new `backlog_depth_conf_path_cli.bb` resolves the correct conf path for the fallback, replacing the root-as-conf-path bug), and `depth-refusal` consults the shared `backlog-depth-lib/no-limit?` predicate before comparing — the same sentinel `swarm_handoff.bb`'s `depth-exceeded?` warning and `ready_for_next.bb`'s auto-promote gate already honoured correctly. A finite cap (including the `1`/`0` values Article 3.5's circuit breaker throttles to) refuses exactly as before — only the no-limit sentinel's own path changed. Landing this alone moves the blocker rather than removing it: with the depth gate no longer refusing, the separate *orthogonality* gate (two active tickets sharing an `epic:`) becomes the sole blocker on a large share of paused tickets — a distinct fix, [BL-854](../../backlog/active/BL-854-orthogonality-advises-instead-of-blocking-on-the-epic-tag.yaml), below.
 
 **The orthogonality gate advises on epic overlap instead of refusing on it (BL-854).** `epic:` is the gate's only scope proxy — no ticket field declares real file/module scope — and the buckets it groups by are large: measured against `backlog/paused/` (204 tickets), 76 share `epic: swarm-reliability` alone, so a single active defect in that epic refused 112 of the 204 (55%) on this gate. The coordinator was already overriding it by hand every time, comparing the tickets' actual declared file paths and finding zero real overlap (`3fbe05e9`) — the automated layer could raise the question but had no data to answer it. `promotion_gates_lib.bb`'s `orthogonality-refusal` is now `orthogonality-advisory`: it returns alongside `{:ok true}` rather than in place of it, so `evaluate`'s stdout contract (`ALLOW` / `REFUSE|<gate>|<reason>`, same exit codes) is byte-identical for every existing caller. When a paused candidate shares an epic with one or more active tickets, `promotion_gates_cli.bb` additionally writes `ADVISORY|orthogonality|epic <epic> is also active on <BL-id>[, <BL-id>...]` to **stderr**, naming every overlapping active ticket (not just the epic) so the coordinator can check real file overlap without re-deriving which ticket to compare against. `select` mode's Article 3.2.4 ranking is unchanged by construction — an advisory drops nothing from the candidate set. `promote_and_route_next.sh` prints the winning candidate's advisory once, for the ticket it actually promotes; a non-blocking verdict nobody sees would read as a clean promotion and bury the signal it exists to raise. The file-overlap judgement itself stays exactly where the constitution's Concurrent Work Orthogonality rule already puts it — with the coordinator; this fix only stops the automated proxy from refusing on an answer it never had. `human_approval`, the depth cap, the hold marker, and Article 3.2.4 ranking are all unchanged (BL-854's own invariants). Out of scope: a declared file-scope ticket field to replace the epic proxy entirely — rejected for now because no ticket carries one today and a wrong backfilled scope would reproduce this same false positive less visibly; the advisory is where that field would hang if it is built later.
+
+**The chain never read `depends_on`, so a dependent ticket could reach the coder before the work it depends on had landed (BL-957).** `depends_on:` was honoured only on the TypeScript side (`makeTopPrioritySafety.ts`, `bridgeServer.ts`), whose own comment deferred the completion question to "the coordinator's promotion gate" — a gate that had never been built; the field was read nowhere in `swarmforge/scripts/` at all. The coordinator spent four commits on 2026-08-19 fighting its absence, the auto-picker re-promoting the same blocked BL-955 immediately after each hand revert because nothing in the promotion path had changed. It was never a one-off: measured against the live backlog that day, **20 otherwise-promotable candidates carried at least one dependency not in `backlog/done/`** — half of the 48 candidates declaring any dependency at all — including BL-603 and BL-604 with nine unlanded dependencies each. `promotion_gates_lib.bb` gains a `depends_on` link in `evaluate`'s fixed chain, placed **after `human_approval` and before `depth`** so a ticket-property refusal beats a transient global one and the coordinator gets the actionable reason; both invocation modes inherit it from the one BL-663 chokepoint (`cmd-select` drops a refused candidate from the ranking rather than crashing the selection, `cmd-evaluate` prints `REFUSE|depends_on|<reason>` and exits 2), which is why the "every route, including one added later" invariant is cheap to hold here and expensive anywhere else. The gate **fails closed in both directions**: a dependency counts as satisfied ONLY in `backlog/done/`, so an ACTIVE dependency still refuses (the standard the coordinator had already applied by hand during the incident), and an id resolving to no ticket anywhere refuses rather than promotes — the same posture Article 3.2.4 takes on a missing `severity:`. The refusal names every unsatisfied id and no satisfied one (`depends_on not yet landed in backlog/done/: BL-620`), so the next action needs no re-derivation by hand. The gate carries its **own reader** rather than reusing `read-field`, which returns nil for a blank value by documented design (`field: >`/`field: |` must read as absent) and would therefore have failed OPEN on block-style lists — exactly the tickets the gate exists to catch, two of which sit in `paused/` today. `read-depends-on` extracts every `BL-<n>`/`GH-<n>` token from the field's value and its indented continuation lines, stripping inline comments, which reads all four live forms (`[]` 118 tickets, flow list 47, block list 2, bare scalar with trailing prose 1) without parsing the prose; a present-but-unparseable value is flagged and refused, never silently read as dependency-free. Resolving a dependency uses `done-ids`, which recurses `backlog/done/` over flat files AND `<Mx>/` subfolders (the close-into-`done/<Mx>` convention), taking the filename's leading ticket token and falling back to the `id:` field. No existing gate is weakened or reordered, and a ticket with `depends_on: []` promotes exactly as before. Out of scope: auto-promoting the dependency instead of refusing (the coordinator decides what to promote; this gate only refuses), and transitive cycle detection across `depends_on` — `makeTopPrioritySafety.ts` already handles cycles for the make-top primitive, and nothing in the promotion path traverses. The sibling open-slot nudge that consults this chain when a slot frees is BL-963, a separate slice; BL-626 (unmaterialized `.feature` pointer) and BL-634 (slice-size envelope) stay independent too.
 
 ---
 
