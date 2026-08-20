@@ -95,3 +95,29 @@ it, so the fix is gated rather than just applied.
 | Architecture | Pure eligibility filter in `chase_sweep_lib`, impure context assembly in `handoffd` — the right split. |
 
 No check was blocked.
+
+---
+
+## Revert disposition — and the `record-bounce.js` false `violation` verdict
+
+BL-963's parcel is reverted out of `swarmforge-architect` at `09f97f2ece`,
+**scoped to BL-963's own commit `5040d45b9`** — never `-m 1` on the review merge.
+The same cleaner tip carries **BL-948, BL-962, BL-964** (all three reviewed and
+already forwarded to the hardender) and **BL-965** (still queued for me); a
+whole-merge revert would have destroyed four tickets' work.
+
+`specs/pipeline/steps/index.js` needed care: the revert's own side would have
+dropped `bl965HealWrapperTempCleanupSteps` as well, because BL-963's commit had
+added both lines. I kept `bl964` and `bl965` and removed only `bl963` — registry
+now `bl963=0, bl964=1, bl965=1, bl962=1, bl948=1`, zero duplicates, module loads.
+
+Verified by CONTENT: `nudge-eligible-candidates` is gone from **both**
+`chase_sweep_lib.bb` and `handoffd.bb` (grep count 0 each), the steps file and
+property runner are deleted, and both `.bb` files still parse.
+
+`record-bounce.js` reports `verdict: violation` with `liveFiles:
+[backlog/evidence/BL-948-962-963-964-965-cleaner-batch-20260820.md]`. That is a
+**false positive for this bounce**: the named file is the cleaner's batch evidence
+for FIVE tickets, four of which are not bounced, so deleting it would strip
+BL-948/962/964/965 of their cleaner record. No BL-963 code or test survives. Same
+disposition, and same tool behaviour, as the BL-962 bounce earlier today.
