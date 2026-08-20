@@ -62,6 +62,29 @@
 
 (def all-roles ["coder" "QA" "cleaner"])
 
+;; BL-961 hardening: `:extra-env` MERGES into the inherited environment, so
+;; each draw's zsh would otherwise read this pane's own SWARMFORGE_* exports.
+;; That is not hypothetical here - every live role shell exports
+;; SWARMFORGE_PACK, and swarmforge.sh resolves
+;; CONFIG_FILE="${SWARMFORGE_CONFIG:-.../swarmforge.conf}", so an inherited
+;; SWARMFORGE_CONFIG re-points the ~1-in-4 default-conf draws at the ambient
+;; conf: a false red when its basename differs, and a silent false green
+;; whenever it is itself named swarmforge.conf. Clear every SWARMFORGE_* the
+;; script under test reads, and set XDG_RUNTIME_DIR through the same `env`
+;; call. Enumerated from `grep -o 'SWARMFORGE_[A-Z_]*' swarmforge.sh`; re-run
+;; that grep when swarmforge.sh grows a new one.
+(def read-swarmforge-vars
+  ["SWARMFORGE_ALLOW_FULL_PACK" "SWARMFORGE_CONFIG" "SWARMFORGE_DAEMON_START_CALLER"
+   "SWARMFORGE_GEMINI_API_KEY" "SWARMFORGE_MAILBOX_ONLY" "SWARMFORGE_OPENROUTER_ROLES"
+   "SWARMFORGE_PACK" "SWARMFORGE_REMOTE_CONTROL" "SWARMFORGE_ROLE"
+   "SWARMFORGE_ROLE_WORKTREE" "SWARMFORGE_SKIP_DAEMON" "SWARMFORGE_SKIP_FRONT_DESK"
+   "SWARMFORGE_SKIP_OPERATOR" "SWARMFORGE_SKIP_SHELL_RUN_RECORD" "SWARMFORGE_TERMINAL"
+   "SWARMFORGE_TERMINAL_BACKEND" "SWARMFORGE_USE_CEREBRAS" "SWARMFORGE_USE_PERPLEXITY"
+   "SWARMFORGE_USE_QWEN"])
+
+(def clean-env-prefix
+  (concat ["env"] (mapcat (fn [v] ["-u" v]) read-swarmforge-vars) ["XDG_RUNTIME_DIR=/tmp"]))
+
 (defn- gen-case [s]
   (let [[default? s1] (gen-int s 4)          ; 1-in-4 draws the default conf
         [pack s2] (gen-pack-name s1)
@@ -96,8 +119,9 @@
                           (str "source '" swarmforge-sh "' '" root "'")
                           (str "source '" swarmforge-sh "' '" root "' --pack '" pack "'"))
             writes (str/join "; " (map #(str "write_role_launch_script \"$(index_of_role " % ")\"") roles))
-            r (process/sh {:continue true :extra-env {"XDG_RUNTIME_DIR" "/tmp"}}
-                          "zsh" "-c" (str source-args "; parse_config; " index-snippet "; " writes))]
+            r (apply process/sh {:continue true}
+                     (concat clean-env-prefix
+                             ["zsh" "-c" (str source-args "; parse_config; " index-snippet "; " writes)]))]
         (if-not (zero? (:exit r))
           (str "generation failed: " (:err r))
           (let [lines (for [role roles]

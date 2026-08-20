@@ -1,6 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-967: `handoffd`'s poll cycle went
+**Last Updated:** August 20, 2026 (BL-961: the launcher never guaranteed
+`SWARMFORGE_PACK` in a role shell — the value reached the panes only because
+the shell that invoked `./swarm` happened to carry it, riding the tmux
+server's global environment from there, so every env-keyed consumer (BL-935's
+vitest CPU cap, `ancillary_provider_lib.sh`'s primary provider-routing path)
+worked by launch-context luck and would have gone quiet on the next launch
+from a clean shell, with no error. The env var and the `--pack` selector were
+two mechanisms sharing one name: `--pack` is consumed only as a config-file
+selector and left `PACK` an unexported local. `write_role_launch_script` in
+`swarmforge/scripts/swarmforge.sh` now derives the pack at generation time as
+`basename "$CONFIG_FILE" .conf` — the conf the launcher actually loaded, the
+same derivation `ancillary_provider_lib.sh` uses for its swarm-identity
+fallback — and bakes `export SWARMFORGE_PACK='<pack>'` into the generated
+`.swarmforge/launch/<role>.sh` beside the existing `SWARMFORGE_ROLE` export.
+The two declared invariants follow: one launch exports one identical pack
+name in every role's script, equal to the loaded conf's basename; and because
+the export is in the FILE rather than a `tmux set-environment` call, a
+single-role respawn re-running that file still carries it. Rollout: running
+panes pick it up at the next relaunch or respawn, so a live shell is not
+acceptance evidence in either direction — only a grep of a freshly generated
+launch script is. No extension command, setting, or UI change.);
+Previously August 20, 2026 (BL-967: `handoffd`'s poll cycle went
 silent mid-sweep past the freshness threshold and the watchdog killed and
 restarted the daemon every ~6 minutes — 30+ times from 20:38Z on 2026-08-19 —
 costing handoff latency and chase freshness and spamming the operator topic.
@@ -255,8 +276,9 @@ upper bound and the pool is still floored at 1: even an explicit
 `SWARMFORGE_VITEST_MAX_FORKS=9` can only ever LOWER the fork count, never
 raise it. A human running the suite on a quiet laptop has no
 `SWARMFORGE_PACK` at all, so they keep the full budget — but how that
-variable reaches an agent shell is INHERITED, not wired, and that decides
-whether the ceiling engages: no launcher in this repo exports
+variable reached an agent shell was, AT THE TIME OF THIS TICKET, INHERITED
+rather than wired, and that decided whether the ceiling engaged: no
+launcher in this repo exported
 `SWARMFORGE_PACK=full-forge` (the five alternative-provider wrappers each
 export a `*-mono-router` value; default `start-swarm.sh` only reads it and
 passes the result as `--pack`, a config-file selector consumed as
@@ -271,8 +293,9 @@ the pane's own `env` — the PER-SESSION table (`tmux show-environment -t
 <session>`) does not read the global one and answers `unknown variable`
 for all 8 sessions, which is a wrong probe rather than a missing
 variable. Making that inheritance explicit at launch — so
-the ceiling does not depend on how the swarm happened to be started — is
-BL-961's job, not this ticket's. Both
+the ceiling does not depend on how the swarm happened to be started — was
+BL-961's job, not this ticket's; BL-961 has since landed, and every generated
+role launch script now exports the pack the launcher loaded. Both
 lanes resolve through ONE route: the eight identical composition lines
 that `vitest.config.mjs` and `vitest.properties.config.mjs` each carried
 collapsed onto a single `resolveVitestWorkerPool`, which makes the
@@ -3320,13 +3343,52 @@ runaway agent, was the OOM source.
   reads. Confirm the cap is live with `-g` or with the pane's own `env`,
   never with the per-session table. Making that inheritance explicit
   at launch — so the ceiling does not depend on how the swarm happened to
-  be started — is BL-961's job, not this ticket's. Both lanes compose the ceiling and the memory
+  be started — was BL-961's job, not this ticket's, and BL-961 has since
+  landed it: every generated `.swarmforge/launch/<role>.sh` now exports the
+  pack the launcher loaded, so this paragraph describes the pre-BL-961
+  inheritance path (see the next bullet). Both lanes compose the ceiling and the memory
   budget through **one** shared `resolveVitestWorkerPool`, rather than the
   identical eight lines each config used to carry: neither lane can size
   its pool by a route the other does not share, by construction. The module
   stays pure — pack, platform, override and host RAM are all passed in by
   the caller, so nothing reads `process.env` or `os` inside it. Stryker is
   unaffected for the same reason as the caps above.
+
+- **The launcher now WIRES that variable instead of inheriting it
+  (BL-961).** The paragraph above describes the state before this ticket:
+  `SWARMFORGE_PACK` reached a role shell only because the shell that
+  invoked `./swarm` happened to carry it, so the CPU-axis ceiling engaged
+  by launch-context luck. Nothing was broken on this host — the cap was
+  measurably live (`maxForks` 1 with the variable set, 3 with it cleared)
+  — but the next `./swarm` from a clean shell would have dropped it back
+  to 3 silently, with no error: fragility, not inertness. The launcher now
+  states the pack explicitly. `write_role_launch_script` in
+  `swarmforge/scripts/swarmforge.sh` derives `launch_pack_name` as
+  `basename "$CONFIG_FILE" .conf` — the conf file the launcher ACTUALLY
+  loaded, the same derivation `ancillary_provider_lib.sh` already uses for
+  its swarm-identity fallback — and writes
+  `export SWARMFORGE_PACK='<pack>'` into the generated
+  `.swarmforge/launch/<role>.sh` heredoc, beside the existing
+  `SWARMFORGE_ROLE` export. Two consequences are the point of the ticket.
+  (1) The env var and the `--pack` config selector can no longer name
+  different packs for one launch: both resolve from the single
+  `CONFIG_FILE`, so the exported value is identical in every role's script
+  and equals that file's basename. (2) The export lives in the generated
+  FILE, not in a `tmux set-environment` call or the initial tmux command,
+  so a single-role respawn — which re-runs `.swarmforge/launch/<role>.sh`
+  directly — still carries it. A default `swarmforge.conf` launch exports
+  `swarmforge`; a `--pack full-forge` launch exports `full-forge`. No
+  consumer keys on the default name, and a human running the suite outside
+  a swarm still has no `SWARMFORGE_PACK` at all and keeps the full budget.
+  Rollout note: this changes what future launch scripts SAY, so
+  already-running panes pick the export up at the next `./swarm` relaunch
+  or single-role respawn — a live shell missing the value before then is
+  the expected rollout condition, not a regression. Probing a live shell
+  is not evidence about this fix in either direction (the tmux server's
+  global environment can already supply the value); only grepping a
+  freshly generated `.swarmforge/launch/<role>.sh` is. No extension
+  command, setting, or UI changes — launcher wiring for a signal the
+  extension's own test tooling consumes.
 
 ### Whole-suite duration budget verdict (BL-445)
 
