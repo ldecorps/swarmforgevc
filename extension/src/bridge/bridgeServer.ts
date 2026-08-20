@@ -93,6 +93,8 @@ import {
   parseCursorBridgeState,
   splitTelegramChunks,
 } from '../tools/telegramCursorBridgeCore';
+import { execFileSync } from 'child_process';
+import { estimateEpicEta } from '../metrics/epicEta';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -886,6 +888,75 @@ function readEpicReorderMembership(targetPath: string) {
   return { epics, topics, reorderable: filterEpicsWithTopics(epics, topics) };
 }
 
+// ── BL-591: per-epic velocity ETA, folded into the reorder tiles ─────────────
+// The estimator itself is pure (extension/src/metrics/epicEta.ts); this is
+// its impure collector. Completion events are when each backlog/done
+// ticket YAML was ADDED (`git log --diff-filter=A`, the same approach
+// leanLedgerComposeClose uses - burnRate.ts measures TOKEN burn, a
+// different quantity). One commit can land several done files, so events
+// are counted per FILE via --name-only, never per commit. The git spawn is
+// TTL-cached in the bridge process: never one `git log` per
+// /epic-reorder-state poll.
+
+const EPIC_ETA_WINDOW_MS = 28 * 24 * 60 * 60 * 1000;
+const EPIC_ETA_CACHE_TTL_MS = 5 * 60 * 1000;
+// Keyed on targetPath: one process can serve several bridges over
+// DIFFERENT targets (the test fixtures do exactly this), and an unkeyed
+// slot would leak one repo's completion history into another's ETA.
+let epicEtaCompletionCache: { targetPath: string; atMs: number; events: number[] } | null = null;
+
+function readEpicEtaCompletionEvents(targetPath: string, nowMs: number): number[] {
+  if (
+    epicEtaCompletionCache &&
+    epicEtaCompletionCache.targetPath === targetPath &&
+    nowMs - epicEtaCompletionCache.atMs < EPIC_ETA_CACHE_TTL_MS
+  ) {
+    return epicEtaCompletionCache.events;
+  }
+  let events: number[] = [];
+  try {
+    const out = execFileSync(
+      'git',
+      ['log', '--diff-filter=A', '--since=28 days ago', '--format=%ct', '--name-only', '--', 'backlog/done/'],
+      { cwd: targetPath, encoding: 'utf8' }
+    );
+    let currentMs = NaN;
+    for (const line of out.split('\n')) {
+      const trimmed = line.trim();
+      if (/^\d+$/.test(trimmed)) {
+        currentMs = parseInt(trimmed, 10) * 1000;
+      } else if (trimmed.endsWith('.yaml') && Number.isFinite(currentMs)) {
+        events.push(currentMs);
+      }
+    }
+  } catch {
+    // Advisory display only: an unreadable history degrades to the
+    // estimator's honest no-recent-pace state, never a fabricated range.
+    events = [];
+  }
+  epicEtaCompletionCache = { targetPath, atMs: nowMs, events };
+  return events;
+}
+
+// The pack the pace assumption names (invariant 1) - the measured ~5x
+// throughput swing between packs dwarfs every other factor, so an ETA that
+// does not name its pack is close to meaningless.
+function epicEtaPackLabel(targetPath: string): string {
+  if (process.env.SWARMFORGE_PACK) {
+    return process.env.SWARMFORGE_PACK;
+  }
+  try {
+    const identity = fs.readFileSync(path.join(targetPath, '.swarmforge', 'swarm-identity'), 'utf8');
+    const match = identity.match(/^launch_pack\t(.+)$/m);
+    if (match && match[1].trim()) {
+      return match[1].trim();
+    }
+  } catch {
+    // fall through to the honest label below
+  }
+  return 'unknown-pack';
+}
+
 function computeEpicReorderState(targetPath: string): unknown {
   const { topics, reorderable } = readEpicReorderMembership(targetPath);
   // BL-672's own paused+hold domination set - kept for hasLiveDependency's
@@ -896,8 +967,25 @@ function computeEpicReorderState(targetPath: string): unknown {
   // Childless trackers are omitted from `items` (and from the move neighbour
   // set) so an empty shell cannot swallow a tap. Topics still span paused +
   // hold + active (BL-687), resolved by slug (BL-686).
+  // BL-591: fold the pure estimator's per-epic output into the tiles. An
+  // epic's children are the SAME slug-resolved topics the drill-down uses
+  // (active+paused+hold, BL-686/BL-687) - never a second membership notion.
+  const etaNowMs = Date.now();
+  const etaCompletionsMs = readEpicEtaCompletionEvents(targetPath, etaNowMs);
+  const etaPackLabel = epicEtaPackLabel(targetPath);
   return {
-    items: reorderable.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
+    items: reorderable.map((epic) => ({
+      id: epic.id,
+      title: epic.title,
+      priority: epic.priority,
+      epicEta: estimateEpicEta({
+        children: topics.filter((topic) => topic.epicIds.includes(epic.id)),
+        completionsMs: etaCompletionsMs,
+        nowMs: etaNowMs,
+        windowMs: EPIC_ETA_WINDOW_MS,
+        packLabel: etaPackLabel,
+      }),
+    })),
     total: reorderable.length,
     // BL-674/BL-686: every live topic, tagged with every epic TICKET ID
     // (unique, unlike its raw slug) whose own slug matches it - the
@@ -1071,17 +1159,26 @@ export function combineWithinEpicLiveItems<T extends BacklogItem>(folders: {
   paused: T[];
   hold: T[];
   active: T[];
-}): (T & MakeTopItem & { inFlight: boolean })[] {
+}): (T & MakeTopItem & { inFlight: boolean; held: boolean })[] {
   const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+  // BL-591: `held` marks the hold/ folder - one input of the epic-ETA
+  // blocked predicate (a held child never contributes weight to a
+  // velocity-derived duration). Additive alongside inFlight; no consumer
+  // of the existing fields changes.
   const tag =
-    (inFlight: boolean) =>
-    (item: T): T & MakeTopItem & { inFlight: boolean } => ({
+    (inFlight: boolean, held: boolean) =>
+    (item: T): T & MakeTopItem & { inFlight: boolean; held: boolean } => ({
       ...item,
       priority: item.priority ?? MAX_PRIORITY,
       dependsOn: item.dependsOn ?? [],
       inFlight,
+      held,
     });
-  const within = [...folders.paused.map(tag(false)), ...folders.hold.map(tag(false)), ...folders.active.map(tag(true))];
+  const within = [
+    ...folders.paused.map(tag(false, false)),
+    ...folders.hold.map(tag(false, true)),
+    ...folders.active.map(tag(true, false)),
+  ];
   return sortEpicsByPriority(within);
 }
 

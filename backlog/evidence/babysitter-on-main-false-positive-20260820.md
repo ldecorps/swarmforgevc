@@ -119,3 +119,29 @@ someone reconciles.** And the reference-freshness guard actively COMPELS the coo
 to reconcile in order to work at all. So the swarm's own tooling now generates the
 condition that this sweep misreports as an Article 4.2 breach. Six for six, every one
 traceable to a QA landing arriving via a reconciliation merge.
+
+### Recurrences 7 and 8 — backfilled 2026-08-20 07:0xZ (they were adjudicated but NEVER RECORDED)
+
+Both were adjudicated in-conversation and reported to the operator, but neither sha was
+written to this file. That broke the fast path this very document prescribes ("check this
+file for the sha first"): a later reader grepping for either would find nothing and
+re-diagnose from scratch. Backfilled now.
+
+**`942b7220c`** — false positive. `vs_p2 = 0`; parent2 `a5ecfc281` = *"BL-967: QA pass
+inventory"*. This is the merge that carried BL-967 into local `main` — i.e. the merge that
+unblocked the BL-975 soak. Coordinator-authored, forced by the reference-freshness guard.
+
+**`26bf7b3c8`** — false positive. `vs_p2 = 0` on both flagged step files; parent2
+`c9c6a34d1` = *"BL-961: QA pass inventory"*. Noted at the time as the one alert that
+brushed something real: `bl966DepthSameAnswerSteps.js` had reached main via coder commit
+`5c8b0835f` while BL-966 was still ungated. **That is now resolved** — BL-966 passed its
+own gate (`8125898b7`, zero defects) and is closed to `done/M8`, with its three previously
+missing hardening artifacts confirmed landed. So the sha is now pure noise.
+
+Running total: **8 distinct shas**, every one traceable to a QA landing arriving via a
+reconciliation merge, each re-firing once per sweep indefinitely.
+
+**Lesson for whoever keeps this file:** adjudicating an alert and *recording* it are two
+different acts. Doing only the first leaves the next reader — including a later shift of
+this same coordinator — with no record, and the whole point of the file is to make the
+second and third fire cost seconds instead of minutes.
