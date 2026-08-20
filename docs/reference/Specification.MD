@@ -1,6 +1,43 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-963: the open-slot promotion nudge
+**Last Updated:** August 20, 2026 (BL-946: `EPIC_ICON_POOL` (the per-epic
+Telegram forum-topic icon pool) held only 10 musical/performance glyphs
+against 39 distinct epics (active+paused+hold+done), so roughly three
+epics in four fell through to the pool's graceful-reuse tail and shared
+its last icon — the exact collision the pool exists to prevent — and
+`conciergeTick.ts` logged one exhaustion line per overflowing epic on
+every tick. Architecture Rule 6 was amended 2026-08-19 to draw a Telegram
+epic icon from the WHOLE stock `getForumTopicIconStickers` set rather than
+only its musical corner (the PWA/fleet-console/bot-avatar surfaces keep
+their drawn musical FORM marks unchanged — those are SVG assets, not stock
+emoji, so no platform ceiling applies there); this ticket brings the code
+to that amendment. A new committed snapshot,
+`extension/src/concierge/forumTopicIconStickerSet.ts` (112 stickers,
+captured live 2026-08-20, matching the 2026-07-15 census), replaces the
+hand-picked literal: `EPIC_ICON_POOL` is now DERIVED as the snapshot minus
+every glyph reserved by `ICON_EMOJI`/`STANDING_TOPIC_ICON`/`ROLE_TOPIC_ICON`
+minus the badge-size read-alikes of a reserved glyph (generalizing the
+original musical-note-pair exclusion), with the original 10 glyphs kept as
+the pool's order prefix so every already-assigned epic keeps its badge —
+98 icons against 39 live epics. Deriving rather than hand-picking is what
+makes "every pool member resolves in the live set" true by construction,
+the exact class of mistake that bounced the pool's original build twice.
+The three pinned `KNOWN_EPIC_ICON` glyphs (role-benchmarking,
+dynamic-routing, onboarding-target-repo, finalized 2026-07-16) are
+untouched. A bounce fix folded into the same parcel: `resolveEpicIcon`
+now branches on the same own-property guard `isKnownEpic` already uses
+instead of a bare `KNOWN_EPIC_ICON[epicId]` lookup, so an epic id that
+happens to match an `Object.prototype` member name (`'valueOf'`,
+`'toString'`, `'constructor'`, ...) can no longer resolve to the
+inherited function (or `'__proto__'` to an object) — both live callers
+pass the result straight to the Telegram API. No human-facing extension
+command or setting; the effect is that new epics past the tenth get their
+own distinct Telegram topic icon instead of sharing one. See
+[`docs/branding/icon-system.md`](../branding/icon-system.md) for the
+icon-system design this pool is one piece of (§5a's sticker census and
+ceiling-of-12 arithmetic predate this widening and are refreshed only by
+a separate follow-up, not this ticket).);
+Previously August 20, 2026 (BL-963: the open-slot promotion nudge
 (BL-798) named, counted toward its fire decision, and accrued SUP-1
 escalation state on a candidate the promotion gate chain would actually
 refuse, once BL-957's `depends_on` gate landed — a candidate reporting
