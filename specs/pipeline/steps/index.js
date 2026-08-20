@@ -533,7 +533,8 @@ const DOMAINS = [
   require('./bl963NudgeGateChainSteps'),
   require('./bl965HealWrapperTempCleanupSteps'),
   require('./bl591EpicEtaSteps'),
-  require('./bl971PropertyLaneTimeoutGreenSteps')
+  require('./bl971PropertyLaneTimeoutGreenSteps'),
+  require('./bl978TrailIndexSteps')
 ];
 
 function registerSteps(registry) {
