@@ -22,7 +22,9 @@ const REAL_SCRIPTS_DIR = path.join(__dirname, '..', '..', 'swarmforge', 'scripts
 // mono_router_lib.bb, BL-911 added prompt_engine_lib.bb - each time this
 // copy list went stale and the fixture missed it, because the failure it
 // produced was a passing-shaped {} rather than an error (see BL-814).
-const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb', 'prompt_engine_lib.bb'];
+// BL-967 added daemon_cycle_guard_lib.bb (handoff_lib.bb's bounded-
+// subprocess chokepoint) - the fourth recurrence of this list going stale.
+const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'daemon_cycle_guard_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb', 'prompt_engine_lib.bb'];
 
 function mkFixtureRoot(omit) {
   const root = mkTmpDir('bl487-live-role-held-');
