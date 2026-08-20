@@ -189,6 +189,25 @@
                         (fn [i [pattern healed]] (bash-clause (zero? i) pattern healed))
                         active))]
     (str "__sfh_root=" (shell-quote pinned-worktree) "\n"
+         ;; BL-985: the PROACTIVE anchor - decided from where the shell IS,
+         ;; before the original runs, never from whether it failed. The one
+         ;; drift the output-heal below is structurally blind to is a
+         ;; sibling WORKTREE (it is a git repository, so nothing fails), so
+         ;; the verdict compares git's own toplevel of the shell's cwd
+         ;; against the pinned worktree's: different (another worktree) or
+         ;; empty (outside any repository) re-anchors to the pin; equal -
+         ;; the pin itself or any subdirectory inside it - leaves the shell
+         ;; exactly where it is and the original reaches it byte-untouched.
+         ;; An unresolvable PIN (fixture roots that are not repositories)
+         ;; skips the guard entirely - fail-open, the pre-BL-985 behavior.
+         ;; The :wrong-cwd output heal below stays: it still catches the
+         ;; outside-any-repo case on failure, and covers a shell that
+         ;; drifts AFTER this check. Stock bash 3.2 throughout.
+         "__sfh_pin_top=\"$(cd \"$__sfh_root\" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)\"\n"
+         "__sfh_cwd_top=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n"
+         "if [ -n \"$__sfh_pin_top\" ] && [ \"$__sfh_cwd_top\" != \"$__sfh_pin_top\" ]; then\n"
+         "  cd \"$__sfh_root\" || exit 1\n"
+         "fi\n"
          "__sfh_out_file=\"$(mktemp \"${TMPDIR:-/tmp}/sfh.XXXXXX\")\" || exit 1\n"
          ;; BL-965: the capture file is removed on EVERY catchable
          ;; termination, not only the tail path - kills are routine here
