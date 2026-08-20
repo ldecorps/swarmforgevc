@@ -93,3 +93,14 @@ Pattern now confirmed across FOUR distinct shas (`da6031c60`, `b3ba48bfc`,
 produces exactly one new false CRIT, which then re-fires once per sweep forever. So
 the alert rate scales with delivery throughput — the better the pipeline performs, the
 more of this noise it generates. BL-962 (the fix) is active at coder.
+
+### Recurrence 5 — `d6c05d331` (PREDICTED)
+
+False positive. `vs_p2 = 0`; parent2 is `32e78ebe1` — QA's BL-959 landing, closed by
+this coordinator ~5 minutes earlier.
+
+This one was **predicted before it fired**: recurrence 4 recorded that each QA landing
+produces exactly one new false CRIT. BL-959 landed, and this appeared. The model is now
+predictive, not merely descriptive — five for five, each traceable to a QA landing.
+Future instances need no investigation beyond confirming parent2 is the QA commit for a
+recently closed ticket. BL-962 (the fix) is active at coder.
