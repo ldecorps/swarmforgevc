@@ -11,11 +11,14 @@
 ;; with its own diagram-html concern (merge-diagram-html below).
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str])
   (:import [java.time LocalDate]
            [java.time.temporal ChronoUnit]))
+
+;; BL-967: subprocess waits are bounded at the shared chokepoint - this
+;; lib runs inside handoffd's poll cycle.
+(load-file (str (babashka.fs/path (babashka.fs/parent (babashka.fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "markdown_to_html_lib.bb")))
 
@@ -104,7 +107,7 @@
 ;; (handoffd.bb's own header comment, BL-061) - the same failure shape this
 ;; call site would reproduce under a multi-briefing sweep.
 (defn- real-sh [dir & args]
-  (let [{:keys [exit out err]} (apply process/sh {:continue true :dir dir} args)]
+  (let [{:keys [exit out err]} (apply daemon-cycle-guard-lib/sh! {:continue true :dir dir} args)]
     {:exit exit :out out :err err}))
 
 (defn commit-sent-marker!
