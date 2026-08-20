@@ -66,9 +66,13 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   // BL-994 locked decision 2: a grid tile carries the role name and an
   // Expand control ONLY - ticket metadata (and the transcript) moved to the
   // fullscreen Expand view, not the tile head. This assertion pinned the
-  // PRE-BL-994 behavior (ticket id inline in the tile head); see
-  // bl994LiveScreenGrid.test.js's own "Expand still opens the full
-  // metadata and transcript" test for where BL-640 is now asserted.
+  // PRE-BL-994 behavior (ticket id inline in the tile head). BL-994's own
+  // "Expand still opens the full metadata and transcript" test
+  // (bl994LiveScreenGrid.test.js) uses ticketless fixtures and does not
+  // cover the RELOCATED ticket line; that positive assertion lives in
+  // BL-929's own amended acceptance scenario 03 (fabecba4c) instead -
+  // specs/pipeline/steps/bl929LiveScreenPackLayoutSteps.js's "the
+  // documenter tile shows that ticket in its Expand view" step.
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
   assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
   assert.match(documenterHead.innerHTML, /Documenter/);
