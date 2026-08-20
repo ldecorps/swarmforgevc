@@ -1508,10 +1508,21 @@ RESUMECHECK
   # passed at respawn-pane time via `-e`, ephemeral to that tmux command, in
   # launch_role below - never persisted to disk.
 
+  # BL-961: bake the resolved pack into the file itself. Derived from the
+  # CONFIG_FILE this launcher actually loaded - the same basename-sans-.conf
+  # derivation ancillary_provider_lib.sh uses for its swarm-identity
+  # fallback, so the env var and the --pack selector can never name
+  # different packs for one launch (invariant 1). Written into the
+  # generated script (not tmux set-environment alone) because single-role
+  # respawns re-run this file directly (invariant 2).
+  local launch_pack_name
+  launch_pack_name="$(basename "$CONFIG_FILE" .conf)"
+
   cat > "$launch_script" <<LAUNCH
 #!/usr/bin/env zsh
 set -euo pipefail
 export SWARMFORGE_ROLE='$role'
+export SWARMFORGE_PACK='$launch_pack_name'
 # BL-913: the swarm's own record of where this role lives, exported from
 # the SAME WORKTREE_PATHS this script's own `cd` line below uses - the
 # tool_miss_heal_hook.bb PreToolUse hook pins every Bash command to this,

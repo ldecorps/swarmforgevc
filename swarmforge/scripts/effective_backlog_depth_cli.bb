@@ -28,7 +28,10 @@
 
 (defn usage []
   (binding [*out* *err*]
-    (println "Usage: effective_backlog_depth_cli.bb <project-root>"))
+    (println "Usage: effective_backlog_depth_cli.bb <project-root>")
+    (println "  <project-root>: the master checkout or ANY linked worktree of it -")
+    (println "  identity resolves at the repository's master checkout either way")
+    (println "  (BL-966); a non-git root resolves against itself."))
   (System/exit 1))
 
 (defn refresh-recommendation! [project-root]
