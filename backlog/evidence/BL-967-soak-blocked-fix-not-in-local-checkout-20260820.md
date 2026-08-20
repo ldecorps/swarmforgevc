@@ -37,3 +37,28 @@ the next sweep either way.
 Do not record step 3 as passed on the basis of a quiet interval measured BEFORE the fix
 is in the running daemon. Check `git merge-base --is-ancestor a5ecfc281b <running_sha>`
 first.
+
+## Follow-up: nothing tracks the owed soak (documenter note 20260820T…, priority 20)
+
+BL-967 is **closed to `done/M8`** with `qa_e2e` step 3 unfulfilled, and no ticket carries
+it. Step 3's own text confirms the precondition this file documents:
+
+> "3. Live soak (read-only observation): **after the parcel lands and the daemon restarts
+> on it**, `.swarmforge/daemon/freshness-incidents.log` gains ZERO new handoffd restart
+> entries over a 30-minute window while the swarm is active, and handoffd.log shows
+> completed cycles"
+
+So the step was written expecting exactly the gap that now exists — it cannot run until
+the daemon is actually executing the fix, which it is not.
+
+**On the close.** The coordinator closed BL-967 on QA's `git_handoff` approval, which is
+the documented trigger; the close gate requires a QA approval referencing the ticket and
+nothing more. It does **not** verify that `qa_e2e` steps completed. QA approved and landed
+first, then separately reported step 3 as owed. So the close was procedurally correct and
+still left a verification orphaned — that combination is the point worth recording, not
+the individual actions.
+
+Consequence if unaddressed: should the soak later fail, nothing reopens BL-967, and the
+handoffd stall would be believed fixed on the strength of a landing rather than a
+measurement. Routed to the specifier to decide whether this warrants a small tracking
+ticket or an amendment to the close gate; the coordinator does not mint.
