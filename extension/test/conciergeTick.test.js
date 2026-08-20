@@ -997,11 +997,7 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
   // Every pool icon needs its own sticker so resolveIconStickerId can match
   // it and setTopicIcon actually fires for all 11 epics below - EPIC_STICKERS
   // only covers 4 of the pool's 10 icons, not enough to exhaust it.
-  // BL-946: derived from the REAL pool, not a hand-copy of it - the pool
-  // grew from 10 to the whole permitted stock set, and this test's job is
-  // the exhaustion tail, whatever the pool's size is.
-  const { EPIC_ICON_POOL } = require('../out/concierge/epicIcon');
-  const FULL_POOL_STICKERS = EPIC_ICON_POOL.map((emoji, i) => ({
+  const FULL_POOL_STICKERS = ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚'].map((emoji, i) => ({
     emoji,
     customEmojiId: `id-${i}`,
   }));
@@ -1016,11 +1012,9 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
       recordSwarmIconId: () => {},
     },
   });
-  // One distinct epic per pool icon plus one more in the same tick - the
-  // overflow epic must fall back to reusing the pool's last icon rather
-  // than crashing, however large the pool is.
-  const epicCount = EPIC_ICON_POOL.length + 1;
-  const active = Array.from({ length: epicCount }, (_, i) => ({
+  // EPIC_ICON_POOL has 10 icons; an 11th distinct epic in the same tick
+  // must fall back to reusing the pool's last icon rather than crashing.
+  const active = Array.from({ length: 11 }, (_, i) => ({
     id: `BL-${i}`,
     title: `slice ${i}`,
     epic: `undocumented-epic-${i}`,
@@ -1038,7 +1032,7 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(iconsSet.length, epicCount, `expected every one of the ${epicCount} epics to still get an icon assigned`);
+  assert.equal(iconsSet.length, 11, 'expected every one of the 11 epics to still get an icon assigned');
   assert.ok(errors.some((e) => e.includes('epic icon pool exhausted')), `expected a pool-exhaustion warning, got: ${JSON.stringify(errors)}`);
 });
 
