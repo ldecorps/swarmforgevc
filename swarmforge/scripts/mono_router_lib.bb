@@ -15,28 +15,13 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
-;; The rotation predicates below are TWO pairs over ONE mechanism: a conf
-;; line `[config ]rotation <value>`, or a swarm-identity `rotation` key,
-;; whose value falls in an accepted set. The pairs differ ONLY in that set,
-;; and that difference is load-bearing (see the BL-571 note further down) -
-;; so the mechanism is written once here and each pair names its own set.
-
-(defn- rotation-declared-in-conf?
-  "Does conf text carry a `[config ]rotation <value>` directive whose value
-   is one of accepted-values? Line-anchored and word-bounded, so a commented
-   mention or a longer word (`sequentially`) never matches."
-  [accepted-values conf-text]
-  (boolean
-   (when conf-text
-     (re-find (re-pattern (str "(?m)^(?:config\\s+)?rotation\\s+(?:"
-                              (str/join "|" accepted-values)
-                              ")\\b"))
-              (str conf-text)))))
-
 (defn conf-rotation-router?
   "True when pack/conf text declares `config rotation router`."
   [conf-text]
-  (rotation-declared-in-conf? ["router"] conf-text))
+  (boolean
+   (when conf-text
+     (re-find #"(?m)^(?:config\s+)?rotation\s+router\b"
+              (str conf-text)))))
 
 (defn parse-identity-map
   "Parse swarm-identity TSV (key\\tvalue lines) into a string map."
@@ -48,43 +33,10 @@
                  (when (and k v) [k v]))))
        (into {})))
 
-(defn- rotation-recorded-in-identity?
-  "Does swarm-identity record a `rotation` value in accepted-values?"
-  [accepted-values identity-text]
-  (contains? (set accepted-values)
-             (get (parse-identity-map identity-text) "rotation")))
-
 (defn rotation-router-from-identity?
   "True when identity already records rotation=router."
   [identity-text]
-  (rotation-recorded-in-identity? ["router"] identity-text))
-
-;; BL-571: the launcher (swarmforge.sh's is_sequential_dormant) treats
-;; `rotation sequential` and `rotation router` as the SAME single-resident
-;; topology - only the resident and the coordinator get real sessions, the
-;; middle pipeline roles stay deliberately dormant. These two predicates
-;; recognise that topology by every value the launcher accepts, so ensure
-;; stops respawning roles the launcher left dormant on a mono-rotate pack.
-;; conf-rotation-router?/rotation-router-from-identity? above deliberately
-;; stay router-only: ready_for_next's ROTATE_HOME backstop consumes them,
-;; and widening THAT is a behavior change with its own spec (the ticket's
-;; own fence).
-
-(def ^:private single-resident-rotation-values
-  "Every rotation value swarmforge.sh's is_sequential_dormant treats as the
-   single-resident topology. Widen this ONLY alongside the launcher."
-  ["router" "sequential"])
-
-(defn single-resident-rotation?
-  "True when pack/conf text declares a single-resident rotation topology -
-   `config rotation router` OR `config rotation sequential` (mono-rotate)."
-  [conf-text]
-  (rotation-declared-in-conf? single-resident-rotation-values conf-text))
-
-(defn single-resident-rotation-from-identity?
-  "True when identity records a single-resident rotation value."
-  [identity-text]
-  (rotation-recorded-in-identity? single-resident-rotation-values identity-text))
+  (= "router" (get (parse-identity-map identity-text) "rotation")))
 
 (defn resolve-rotation-router-mode?
   "BL-931 invariant 1: the ONE resolution of whether a pack is a rotation
