@@ -167,3 +167,5 @@ qa_e2e_procedure: >
      and that the full unit lane from `extension/` is green - this ticket's
      purpose is a green lane, so a lane still red for any other reason must
      be reported, not absorbed.
+
+assigned_to: coder
