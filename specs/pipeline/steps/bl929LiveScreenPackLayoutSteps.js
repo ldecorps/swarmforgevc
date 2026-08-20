@@ -133,41 +133,37 @@ async function renderLiveScreen(snapshot) {
   return result;
 }
 
-// BL-994 amendment (fabecba4c): a tile's ticket metadata moved off the grid
-// tile head and into the fullscreen Expand view, per BL-994's own locked
-// human decision 2. Re-renders from the SAME in-memory ctx.snapshot (never
-// reopening the already-closed dom from renderLiveScreen above, nor
-// ctx.targetPath, already removed by the When step's own finally) - the
-// pattern this ticket's own amendment cites as already established in
-// BL-994's own bl994LiveScreenGridSteps.js: dispatch a bubbling click on
-// the .pane-col, flush, then read #fs-head. requestBrowserFullscreen is
-// fully guarded in the served page (`if (!req) return`, plus try/catch),
-// so jsdom's missing requestFullscreen is not a problem.
-async function renderLiveScreenAndExpand(snapshot, paneId) {
+// Same render-read-close discipline as renderLiveScreen above, plus a
+// bubbling click on the target tile before reading the fullscreen ids -
+// the served page's own splitEl click delegation runs enterFullscreen
+// synchronously, and requestBrowserFullscreen is fully guarded for jsdom's
+// missing requestFullscreen.
+async function renderLiveScreenExpanded(snapshot, paneId) {
   const html = getResidentSpyUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',
     url: 'https://example.github.io/resident-spy/?bearer=test-token',
     pretendToBeVisual: true,
   });
-  dom.window.fetch = () =>
-    Promise.resolve({ ok: true, json: () => Promise.resolve(snapshot) });
-  dom.window.eval(extractInlineScript(html));
-  await flush();
-  const { document, window } = dom.window;
-  const col = document.querySelector(`.pane-col[data-pane-id="${paneId}"]`);
-  if (!col) {
+  try {
+    dom.window.fetch = () =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve(snapshot) });
+    dom.window.eval(extractInlineScript(html));
+    await flush();
+    const { document } = dom.window;
+    const tile = document.querySelector(`.pane-col[data-pane-id="${paneId}"]`);
+    if (!tile) {
+      throw new Error(`no rendered tile with data-pane-id="${paneId}" to expand`);
+    }
+    tile.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    return {
+      ticketStripHidden: document.getElementById('ticket-strip').hidden,
+      fullscreenHidden: document.getElementById('pane-fullscreen').hidden,
+      fsHeadText: document.getElementById('fs-head').textContent,
+    };
+  } finally {
     dom.window.close();
-    throw new Error(`no rendered tile for pane id "${paneId}"`);
   }
-  col.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-  await flush();
-  const result = {
-    fullscreenActive: document.body.classList.contains('pane-fullscreen-active'),
-    fsHeadHtml: document.getElementById('fs-head')?.innerHTML ?? null,
-  };
-  dom.window.close();
-  return result;
 }
 
 function registerSteps(registry) {
@@ -293,13 +289,21 @@ function registerSteps(registry) {
   );
 
   // ── live-screen-pack-layout-03 ───────────────────────────────────────
-  // BL-994 amendment (fabecba4c): the ticket line moved from the grid tile
-  // head to the fullscreen Expand view - "on its own tile" retired in favor
-  // of these two steps.
+  // BL-994 amendment (fabecba4c): the grid tile head is role name + Expand
+  // only, so the held-ticket contract MOVED from the tile head to the
+  // tile's fullscreen Expand (BL-929 locked decision 1 already names the
+  // fullscreen head as a valid home). The old "shows that ticket on its
+  // own tile" handler is deleted with it - the retired text appears in no
+  // .feature file (grepped per the step-registry deletion rule).
   registry.defineScoped(
     /^the documenter tile is expanded$/,
     async (ctx) => {
-      ctx.expandResult = await renderLiveScreenAndExpand(ctx.snapshot, 'documenter');
+      // renderLiveScreen above closed its window (its Then steps read only
+      // plain data), so expansion re-renders from the in-memory snapshot -
+      // the fixture root is already deleted and is not needed.
+      ctx.expanded = await renderLiveScreenExpanded(ctx.snapshot, 'documenter');
+      // Scenario 03's strip assertion now describes the expanded view.
+      ctx.rendered.ticketStripHidden = ctx.expanded.ticketStripHidden;
     },
     FEATURE_NAME
   );
@@ -307,12 +311,13 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the documenter tile shows that ticket in its Expand view$/,
     (ctx) => {
-      if (!ctx.expandResult?.fullscreenActive) {
-        throw new Error('expected fullscreen Expand to be active after expanding the documenter tile');
+      // The POSITIVE half, per the amendment: the ticket id must actually
+      // render in the Expand head - never settle for strip-hidden alone.
+      if (ctx.expanded.fullscreenHidden) {
+        throw new Error('expected the fullscreen Expand view to be revealed');
       }
-      const html = ctx.expandResult.fsHeadHtml;
-      if (!html || !/BL-929/.test(html)) {
-        throw new Error(`expected the documenter tile's Expand view to show its own ticket, got: ${html ?? '(no fullscreen head)'}`);
+      if (!/BL-929/.test(ctx.expanded.fsHeadText)) {
+        throw new Error(`expected the documenter Expand head to carry its held ticket BL-929, got: ${ctx.expanded.fsHeadText}`);
       }
     },
     FEATURE_NAME

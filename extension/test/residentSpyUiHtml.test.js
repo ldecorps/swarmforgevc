@@ -63,19 +63,22 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   await flush();
   const { document } = dom.window;
   assert.equal(document.getElementById('ticket-strip').hidden, true);
-  // BL-994 locked decision 2: a grid tile carries the role name and an
-  // Expand control ONLY - ticket metadata (and the transcript) moved to the
-  // fullscreen Expand view, not the tile head. This assertion pinned the
-  // PRE-BL-994 behavior (ticket id inline in the tile head). BL-994's own
-  // "Expand still opens the full metadata and transcript" test
-  // (bl994LiveScreenGrid.test.js) uses ticketless fixtures and does not
-  // cover the RELOCATED ticket line; that positive assertion lives in
-  // BL-929's own amended acceptance scenario 03 (fabecba4c) instead -
-  // specs/pipeline/steps/bl929LiveScreenPackLayoutSteps.js's "the
-  // documenter tile shows that ticket in its Expand view" step.
+  // BL-994 locked human decision 2 supersedes the tile-level half of this
+  // assertion: grid tiles carry role name + Expand ONLY, so a held ticket
+  // no longer surfaces in the tile head - it surfaces in the tile's
+  // fullscreen Expand instead (spec amendment fabecba4c retargeted BL-929
+  // scenario 03 the same way). The BL-929 concern this test protects - a
+  // standing pack shows no top strip yet the operator can still find the
+  // ticket - is preserved through that Expand path, asserted POSITIVELY
+  // below (bounce D2: the negative half alone left the relocated contract
+  // asserted nowhere in the unit lane).
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
   assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
   assert.match(documenterHead.innerHTML, /Documenter/);
+  document.querySelector('.pane-col[data-pane-id="documenter"]').dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true })
+  );
+  assert.match(document.getElementById('fs-head').textContent, /BL-640/);
 });
 
 test('BL-929: no tile is labelled Resident under a standing full pack', async () => {
