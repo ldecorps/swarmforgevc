@@ -93,9 +93,10 @@
   Actions never interpolates `${{ }}` in `run:` bodies. Bounded retries with
   backoff; max-wait deadlines on lock loops; absolutize CLI paths before
   `cd`; three-way drop/deliver/fail gates with idempotent side effects.
-  Strip/escape external text in structured files; honor 429 `retry_after` on
-  first-tick backfills; optional JSON CLI flags degrade to a documented
-  fallback on parse error. A console screen must show the server's actual
+  Strip/escape external text in structured files. A gate blocks on
+  dropped-work EVIDENCE (touched paths/diff content), never on a ticket id
+  merely named in a commit subject (4 QA blocks in one day; BL-972). A
+  console screen must show the server's actual
   failure reason, never a bare HTTP status (BL-572/BL-662). A constant
   mirrored by hand across a language boundary no import can bridge (here
   TS ↔ Babashka) needs a test asserting both literals agree — a "kept in
