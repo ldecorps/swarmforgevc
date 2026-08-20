@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-1003: the extension host's own
+**Last Updated:** August 20, 2026 (BL-976: `RESEND_API_KEY` deliberately
+rides only the daemon process's own environment (BL-215 — the repo never
+stores it), but the supervisor/watchdog relaunch chain spawns each new
+daemon generation from whatever environment happens to run it, so a
+generation launched from a keyless shell lost ALL email capability at
+once — the BL-214 briefing sweep skipped every file and the BL-144
+daemon-death alarm was equally dead, with the only trace a log line the
+operator had no reason to read; the first real symptom was a briefing that
+simply never arrived (reproduced live 2026-08-20, coordinator hand-patched
+one generation's env to unblock the morning briefing before this ticket
+landed). Two legs close it, one observable outcome after any relaunch —
+either email still works, or the operator hears about it within one sweep
+cycle: `start_handoff_daemon.sh`, the launch chokepoint every launcher
+already goes through, now re-sources `.swarmforge/operator/daemon.env`
+(gitignored, operator-created, never committed — only its PATH is ever
+audited, never a value it defines) into the launch environment before
+either daemon starts, so a relaunch from a keyless shell still inherits a
+key the operator provisioned durably; `handoffd.bb` gains an unconditional
+`email-keyless-alert-sweep!` on the existing sweep cadence so a still-keyless
+generation reaches the operator's Telegram outbox — the daemon's existing
+alert channel, no new client — exactly once per generation, naming
+`RESEND_API_KEY` and the env file path, within the generation's first
+cycle even with nothing else to mail. See the updated `RESEND_API_KEY`
+section in `docs/how-to/BL-091-wsl2-second-swarm-bringup.md`.); Previously
+August 20, 2026 (BL-1003: the extension host's own
 mid-turn check, `isPaneActivelyProcessing`
 (`extension/src/panel/agentPaneState.ts`), still decided "busy" by
 case-insensitively substring-matching one marker anywhere in a pane
