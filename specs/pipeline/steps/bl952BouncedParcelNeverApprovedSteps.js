@@ -16,6 +16,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { afterEach } = require('node:test');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -48,7 +49,7 @@ afterEach(() => {
 });
 
 function mkTmp(prefix) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = mkSocketFixtureRoot(prefix);
   trackedRoots.push(root);
   return root;
 }

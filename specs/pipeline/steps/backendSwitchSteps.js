@@ -21,6 +21,7 @@ const OUT_DIR = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { AVAILABLE_CLAUDE_MODELS, switchRoleModel } = require(path.join(OUT_DIR, 'swarm', 'backendSwitch'));
 const { installExecutable } = require(path.join(__dirname, '..', '..', '..', 'extension', 'test', 'helpers', 'sharedBin'));
 const { installFakeTmux } = require(path.join(__dirname, '..', '..', '..', 'extension', 'test', 'helpers', 'fakeTmux'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const OTHER_ROLE = 'cleaner';
 
@@ -32,7 +33,7 @@ function settingsPath(targetPath, role) {
 // minimal live-swarm state respawnAgent needs, for two roles so "no other
 // role's agent is respawned" is checkable.
 function seedSwarmFixture(model) {
-  const targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-backend-switch-'));
+  const targetPath = mkSocketFixtureRoot('aps-backend-switch-');
   const launchDir = path.join(targetPath, '.swarmforge', 'launch');
   fs.mkdirSync(launchDir, { recursive: true });
   fs.writeFileSync(path.join(targetPath, '.swarmforge', 'tmux-socket'), '/tmp/fake.sock');

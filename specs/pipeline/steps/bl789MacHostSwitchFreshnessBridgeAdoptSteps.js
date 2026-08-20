@@ -40,6 +40,7 @@ const { spawnSync, spawn } = require('node:child_process');
 // existing path, same as frontDeskHeadlessLauncherSteps.js does for its own
 // fixture roots.
 const { onAbnormalExit, track } = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE_NAME = 'Freshness and bridge supervision survive a cron environment and a slow host';
 
@@ -51,7 +52,7 @@ const SUPERVISOR = path.join(SWARMFORGE_SCRIPTS, 'front_desk_supervisor.bb');
 const HANDOFFD = path.join(SWARMFORGE_SCRIPTS, 'handoffd.bb');
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function runShellSuite(ctx) {

@@ -18,6 +18,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const SCRIPTS_DIR = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
 const CLI = path.join(SCRIPTS_DIR, 'relaunch_resume_cli.bb');
@@ -48,7 +49,7 @@ function writeFakeTmux(fixtureDir) {
 }
 
 function mkRouterFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl648-'));
+  const root = mkSocketFixtureRoot('aps-bl648-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
 
   const worktrees = {};

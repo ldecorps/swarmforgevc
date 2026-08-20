@@ -14,6 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -48,7 +49,7 @@ function cljStr(s) {
 }
 
 function mkFixture() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl927-rotate-gate-'));
+  const dir = mkSocketFixtureRoot('bl927-rotate-gate-');
   const swarmDir = path.join(dir, '.swarmforge');
   fs.mkdirSync(swarmDir, { recursive: true });
   fs.writeFileSync(

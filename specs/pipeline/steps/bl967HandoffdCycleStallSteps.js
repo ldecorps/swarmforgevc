@@ -16,6 +16,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { afterEach } = require('node:test');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const HANDOFFD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'handoffd.bb');
@@ -72,7 +73,7 @@ afterEach(() => {
 });
 
 function initRoot(ctx) {
-  ctx.root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl967-cycle-'));
+  ctx.root = mkSocketFixtureRoot('bl967-cycle-');
   trackedRoots.push(ctx.root);
   const sf = path.join(ctx.root, '.swarmforge');
   fs.mkdirSync(path.join(sf, 'handoffs', 'inbox', 'new'), { recursive: true });

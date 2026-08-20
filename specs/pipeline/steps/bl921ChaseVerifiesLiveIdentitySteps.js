@@ -14,6 +14,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'mono_router_lib.bb');
@@ -146,7 +147,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^the chase sweep runs (\d+) times$/, (ctx, timesStr) => {
     const st = ensureState(ctx);
     const times = Number(timesStr);
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl921-chase-'));
+    const root = mkSocketFixtureRoot('bl921-chase-');
     st.fixtureRoot = root;
 
     spawnSync('git', ['init', '-q'], { cwd: root });

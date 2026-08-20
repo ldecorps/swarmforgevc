@@ -36,6 +36,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -79,7 +80,7 @@ function writeExec(filePath, content) {
 // everything healthy by default (this process's own pid stands in for a
 // live tracked process, same convention the shell fixture uses).
 function buildFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl461-ensure-'));
+  const root = mkSocketFixtureRoot('bl461-ensure-');
   const bin = path.join(root, 'bin');
   fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
