@@ -1,0 +1,108 @@
+id: BL-987
+title: "headless dark-emitter audit canary has been firing unanswered: audit-04 expects zero resource-sample entries in live chaser telemetry, finds 1022 - decide whether H1 is stale or a headless caller was added"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+human_approval: approved
+priority: 30
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-336-headless-dark-emitter-audit.feature
+
+invariants:
+  - "The audit's recorded headless verdicts match the live system at the moment the audit runs - a verdict that no longer holds fails the audit rather than being carried forward."
+
+description: >
+  Severity rationale: medium - a real, contained defect. The contract is
+  doing its job (it detected drift); what is broken is that nobody answered
+  it, so the acceptance suite has carried a standing red.
+
+  Reported by the coder as one of four pre-existing acceptance reds
+  (BL-336/337/343/578, note 20260820T122656Z_000380).
+
+  Measured 2026-08-20 13:29 by the specifier - 1 of 8 scenarios red, the
+  other 7 green. Verbatim:
+
+    Scenario "The verdict comes from a real headless run, not from reading
+    the code" failed at step "Then each verdict is supported by which
+    surfaces populated in that run": audit-04: expected zero resource-sample
+    entries in the live chaser telemetry (H1's own re-verification) - found
+    1022. Either H1 is stale or a headless caller was added without updating
+    the audit.
+
+  This is NOT a contract that rotted and should be loosened. It is a canary
+  that fired: the audit deliberately re-verifies its own recorded verdict
+  (H1) against the live system, and the contract's own error text names the
+  two possible answers. The fix is to answer it, not to widen the assertion.
+
+  Which of the two it is, is exactly the work of this ticket and is
+  deliberately NOT guessed at spec time:
+
+  - If a headless caller WAS added since H1 was recorded, the audit is
+    correct and out of date - update the audit to record the new caller and
+    its verdict.
+  - If H1 is simply stale (the verdict no longer describes the system),
+    re-derive it from a real headless run and record the new verdict.
+
+  1022 entries is a large number, which weakly favours "a caller was added
+  and has been running for some time" over "an off-by-a-few drift" - offered
+  as a starting hypothesis to test, not a conclusion.
+
+  How (direction, not mandate): re-run the audit's own headless procedure to
+  establish ground truth first, then correct whichever side is wrong. The
+  contract already describes the procedure; scenario 01's other 7 passing
+  scenarios show the harness itself is sound.
+
+constraints: >
+  Firm lines:
+
+  - Do NOT re-baseline the expectation to 1022 to make the suite green.
+    Recording "whatever the system currently does" turns the canary into a
+    tautology and is the precise failure the audit exists to prevent.
+  - Do NOT fix it silently inside the audit. Scenario 08 ("Nothing is fixed
+    silently inside the audit") is a passing contract today and must stay
+    passing; a newly discovered dark emitter becomes its own ticket
+    (scenario 07), not an in-place repair.
+  - The verdict must come from a real headless run, not from reading the
+    code. That is scenario 04's whole subject - the one that is failing.
+
+notes: >
+  Source: coder note 20260820T122656Z_000380, one of four reds. The other
+  three have genuinely different causes and are separately ticketed
+  (BL-986 scanner blindness, BL-988 orphaned contract, BL-989 grep -P).
+
+  Diagnosis captured at 13:29 on 2026-08-20, BEFORE the 13:38
+  `git pull --rebase --autostash` detached the master checkout, so it is not
+  contaminated by that swapped tree.
+
+  Sibling in kind: BL-816 (paused) is the process rule that a red suite
+  observed and waved through must leave a recorded decision. This ticket is
+  what BL-816 exists to prevent - a canary that fired and was carried
+  silently. Worth citing there as a live instance.
+
+qa_e2e_procedure: >
+  1. Run the contract and assert all 8 scenarios green:
+     `node specs/pipeline/cli.js
+     specs/features/BL-336-headless-dark-emitter-audit.feature <outdir>` -
+     runner exit 0. Do not pipe through tail; that masks the exit code.
+  2. Assert the answer is recorded, not assumed: the ticket must state which
+     branch was true (caller added vs H1 stale) with the real headless run
+     that established it.
+  3. Negative check on the re-baseline constraint: confirm the expected value
+     in audit-04 is still a derived zero-or-justified figure, not the literal
+     1022 observed today.
+  4. Confirm scenarios 07 and 08 still pass - a newly found emitter became a
+     ticket and nothing was repaired in place.
+
+approval_context: >
+  I did not guess which branch is true (headless caller added vs H1 stale),
+  because the contract's own message says both are possible and neither is
+  determinable without a real headless run. That determination is the
+  ticket's work rather than a spec-time assumption.
+
+  Severity is medium rather than high: unlike BL-986, this signal is not
+  reporting a false ZERO - it is loudly correct and merely unanswered.
