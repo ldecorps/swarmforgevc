@@ -2201,6 +2201,41 @@
         :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
     reason))
 
+;; BL-976: one-shot per GENERATION Telegram alert when notify_email_to is
+;; configured but this generation's environment has no RESEND_API_KEY. The
+;; email-misconfigured log line above is invisible to an operator who is
+;; not reading the log - the defect was a silent keyless generation whose
+;; only symptom was a briefing that never arrived. Swept on the shared
+;; cadence UNCONDITIONALLY (not only when a briefing is mailable) so the
+;; alert lands within the generation's FIRST sweep cycle regardless of
+;; pending briefings. The atom is per-process = per daemon generation,
+;; same rationale as briefing-missing-key-warned? above - and marked only
+;; after a successful outbox write (alert-keyless-if-needed!'s contract),
+;; so a transport hiccup retries next cycle instead of silently counting
+;; as delivered. daemon_alarm_lib.bb owns the pure decision + text; this
+;; is the environment-specific transport wiring only (the same
+;; OPERATOR-topic outbox every other operator alert in this file uses -
+;; the bridge polls telegram-reply-outbox.jsonl).
+(def email-keyless-alerted? (atom false))
+
+(def operator-daemon-env-file
+  (str (fs/path project-root ".swarmforge" "operator" "daemon.env")))
+
+(defn email-keyless-alert-sweep! []
+  (daemon-alarm-lib/alert-keyless-if-needed!
+   (daemon-alarm-lib/configured-email-send-reason conf-file)
+   {:already-alerted?! (fn [] @email-keyless-alerted?)
+    :send-alert!
+    (fn []
+      (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+            tg-text (daemon-alarm-lib/format-keyless-alert operator-daemon-env-file)]
+        (fs/create-dirs (fs/parent reply-outbox))
+        (spit (str reply-outbox)
+              (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+              :append true)
+        (log! "email-keyless-alert" operator-daemon-env-file)))
+    :mark-alerted! (fn [] (reset! email-keyless-alerted? true))}))
+
 ;; BL-967 cleaner pass: "shell out to a compiled node tool under
 ;; extension/out/tools and take its trimmed stdout" was hand-copied across
 ;; nine briefing fns, each carrying a comment saying "same shell-out pattern
@@ -3342,6 +3377,14 @@
                     ;; tick of a new UTC day (see ensure-lifecycle-snapshot!).
                     (run-sweep! "ensure-lifecycle-snapshot"
                         #(ensure-lifecycle-snapshot!))
+                    ;; BL-976: keyless-email alert sweep shares the same
+                    ;; cadence and runs UNCONDITIONALLY (same posture as
+                    ;; flow-watchdog-sweep! above) - the alert must land
+                    ;; within the generation's FIRST sweep cycle even when
+                    ;; no briefing is mailable, and its own one-shot atom
+                    ;; keeps every later cycle a cheap conf-slurp no-op.
+                    (run-sweep! "email-keyless-alert-sweep"
+                        #(email-keyless-alert-sweep!))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (run-sweep! "briefing-email-sweep"
