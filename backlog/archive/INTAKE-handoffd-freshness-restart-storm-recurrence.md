@@ -73,3 +73,6 @@ noise every ~6 minutes.
 - `.swarmforge/daemon/freshness-check.cron.log` — cron-side restart audit
 - `swarmforge/scripts/daemon_log_freshness.conf` — threshold=300 for handoffd
 - Prior intake archive: `.swarmforge/operator/archive/INTAKE-handoffd-freshness-restart-storm.md`
+
+---
+DISPOSITIONED by specifier 2026-08-20 (~00:15Z): minted 1:1 as backlog/paused/BL-967-handoffd-cycle-stall-bounded-waits-and-sweep-boundaries.yaml (defect/high, expedited). Operator directives quoted verbatim in the ticket description per Article 5.3. Specifier probe added a fresh stall capture (skip-busy coordinator after a 7-in-2.5s QA skip-busy burst) pinning the block to the chase loop tail / silent post-chase sweeps.
