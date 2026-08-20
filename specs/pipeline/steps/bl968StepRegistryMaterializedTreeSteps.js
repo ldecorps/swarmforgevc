@@ -37,11 +37,11 @@ const TICKET_YAML_REL = path.join('backlog', 'active', 'BL-968-step-registry-loa
 // each must carry (and the eager marker each must NOT) at any commit the
 // gate is asked to judge in scenario 03.
 const FIXED_FILES = [
-  { rel: 'specs/pipeline/steps/headlessDarkEmitterAuditSteps.js', lazy: "require('./lib/lazy')", eager: 'const MAIN_CHECKOUT = resolveMainCheckout(__dirname)' },
-  { rel: 'specs/pipeline/steps/routingBreakEvenSteps.js', lazy: "require('./lib/lazy')", eager: 'const MAIN_CHECKOUT = resolveMainCheckout(__dirname)' },
-  { rel: 'specs/pipeline/steps/standingRuleViolationsSteps.js', lazy: "require('./lib/lazy')", eager: 'const MAIN_CHECKOUT = resolveMainCheckout(__dirname)' },
-  { rel: 'specs/pipeline/steps/devHostLauncherSteps.js', lazy: "require('./lib/lazy')", eager: 'const swarmEnsureSource = require' },
-  { rel: 'specs/pipeline/steps/bl936Bl805PropertyLaneExercisesTheParcelGateSteps.js', lazy: "require('./lib/lazy')", eager: "const BB_BIN = execFileSync" },
+  { rel: 'specs/pipeline/steps/headlessDarkEmitterAuditSteps.js', lazy: 'let lazyMainCheckout', eager: 'const MAIN_CHECKOUT = resolveMainCheckout(__dirname)' },
+  { rel: 'specs/pipeline/steps/routingBreakEvenSteps.js', lazy: 'let lazyMainCheckout', eager: 'const MAIN_CHECKOUT = resolveMainCheckout(__dirname)' },
+  { rel: 'specs/pipeline/steps/standingRuleViolationsSteps.js', lazy: 'let lazyMainCheckout', eager: 'const MAIN_CHECKOUT = resolveMainCheckout(__dirname)' },
+  { rel: 'specs/pipeline/steps/devHostLauncherSteps.js', lazy: 'let lazySwarmEnsureSource', eager: 'const swarmEnsureSource = require' },
+  { rel: 'specs/pipeline/steps/bl936Bl805PropertyLaneExercisesTheParcelGateSteps.js', lazy: 'let lazyBins', eager: "const BB_BIN = execFileSync" },
 ];
 
 function rmTreeQuietly(root) {

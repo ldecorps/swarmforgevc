@@ -23,19 +23,22 @@ const {
   isMarkerFresh,
   decideNextStep,
 } = require(path.join(__dirname, '..', '..', '..', 'extension', 'scripts', 'bounceLib'));
-const { lazy } = require('./lib/lazy');
 // BL-968: read LAZILY at step-execution time, memoized - never at module
 // load. The BL-761 gate materializes only specs/pipeline into its non-repo
 // temp tree, so a load-time read of live repo state outside it makes the
 // whole registry unloadable and the acceptance-contract check
 // warn-and-skip (the fourth offender - shadowed behind the three
 // resolveMainCheckout ones until the BL-968 standing guard surfaced it).
-const swarmEnsureSource = lazy(() =>
-  require('node:fs').readFileSync(
-    path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'swarm_ensure.bb'),
-    'utf8'
-  )
-);
+let lazySwarmEnsureSource = null;
+function swarmEnsureSource() {
+  if (lazySwarmEnsureSource === null) {
+    lazySwarmEnsureSource = require('node:fs').readFileSync(
+      path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'swarm_ensure.bb'),
+      'utf8'
+    );
+  }
+  return lazySwarmEnsureSource;
+}
 
 const EXT_DIR = '/repo/extension';
 const WORKSPACE_PATH = '/repo/extension/swarmforge-vc.code-workspace';

@@ -25,7 +25,6 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const { resolveMainCheckout } = require('./lib/mainCheckout');
-const { lazy } = require('./lib/lazy');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -37,7 +36,13 @@ const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
 // the BL-761 gate's materialized non-repo temp tree, silently skipping the
 // acceptance-contract check for EVERY send whose cited commit contains it
 // (the BL-863 caller-binding-time lesson; the helper itself is fine).
-const mainCheckout = lazy(() => resolveMainCheckout(__dirname));
+let lazyMainCheckout = null;
+function mainCheckout() {
+  if (!lazyMainCheckout) {
+    lazyMainCheckout = resolveMainCheckout(__dirname);
+  }
+  return lazyMainCheckout;
+}
 
 function runRoleLifecycleTest(ctx) {
   if (ctx.roleLifecycleOutput) {

@@ -17,7 +17,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
-const { lazy } = require('./lib/lazy');
 
 const FEATURE = 'the BL-805 rotation-gate property lane exercises the parcel gate, not the pack gate';
 
@@ -32,10 +31,16 @@ const PROPERTY_FILE_REL = 'test/bl805RotateGateOnUnfinishedInProcessParcel.prope
 // exactly the class that makes the registry unloadable/slow inside the
 // BL-761 gate's materialized non-repo temp tree (the BL-863
 // caller-binding-time lesson).
-const resolveBins = lazy(() => ({
-  bb: execFileSync('bash', ['-lc', 'command -v bb'], { encoding: 'utf8' }).trim(),
-  git: execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8' }).trim(),
-}));
+let lazyBins = null;
+function resolveBins() {
+  if (!lazyBins) {
+    lazyBins = {
+      bb: execFileSync('bash', ['-lc', 'command -v bb'], { encoding: 'utf8' }).trim(),
+      git: execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8' }).trim(),
+    };
+  }
+  return lazyBins;
+}
 
 const HANDOFF_BODY =
   'id: x\nfrom: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-000\ncommit: aaaaaaaaaa\n\nmerge_and_process coder aaaaaaaaaa\n';
