@@ -531,6 +531,58 @@ if [[ -s "$RESPAWN_LOG" ]]; then fail "dormant role should not be respawned"; fi
 pass "mono-router dormant roles report DORMANT without respawn"
 
 # ---------------------------------------------------------------------------
+# Extra (BL-571): `rotation sequential` (mono-rotate) is the SAME
+# single-resident topology - the launcher's is_sequential_dormant leaves the
+# middle roles dormant on BOTH values, and ensure must not respawn them.
+# Identical fixture to the router case above, identity declaring sequential.
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
+printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\tsequential\n' > "$ROOT/.swarmforge/swarm-identity"
+touch "$ROOT/.swarmforge/launch/specifier.sh"
+RESPAWN_LOG="$ROOT/respawns"
+: > "$RESPAWN_LOG"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  case "\$target" in
+    swarmforge-coder|swarmforge-coordinator) exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RESPAWN_LOG"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+# Hardening (BL-571): these MUST be the names swarm_ensure.bb actually reads
+# (SWARM_ENSURE_*_CMD) pointing at stubs make_fixture actually creates. The
+# older SWARMFORGE_ENSURE_* spelling is read by nothing, and fake_supervisor.bb
+# is never created - so ensure ran the REAL extension bounce and the REAL
+# daemon start against this temp root. The assertions still passed (they only
+# look at DORMANT and the respawn log) while live processes were spawned; a
+# measured run left a PPID-1 babysitterd rooted in $TMPDIR behind.
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  SWARMFORGE_SKIP_CURSOR_BRIDGE=1 SWARMFORGE_SKIP_BABYSITTERD=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "BL-571: expected specifier DORMANT under rotation sequential, got: $OUTPUT"
+echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "BL-571: expected coder HEALTHY"
+if [[ -s "$RESPAWN_LOG" ]]; then fail "BL-571: sequential-dormant role must not be respawned"; fi
+pass "BL-571: rotation sequential dormant roles report DORMANT without respawn"
 
 # ---------------------------------------------------------------------------
 # Extra (BL-958): the control-plane-loss shape — socket file + role metadata
