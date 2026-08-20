@@ -43,7 +43,7 @@
 ;; BL-967: subprocess waits are bounded at the shared chokepoint - this
 ;; lib runs inside handoffd's poll cycle (the heavy-bundle drift sweep), and
 ;; its git calls hit the shared, chronically-contended master checkout.
-(load-file (str (babashka.fs/path (babashka.fs/parent (babashka.fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (def default-entrypoints
   "The daemons this check covers: handoffd.bb (delivery/chase/flow-watchdog/

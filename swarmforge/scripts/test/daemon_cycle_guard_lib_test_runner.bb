@@ -27,6 +27,9 @@
 (let [r (daemon-cycle-guard-lib/sh! ["echo" "vec"])]
   (assert= "sh! vector form: exit 0 and stdout" ["vec" 0] [(str/trim (:out r)) (:exit r)]))
 
+;; The fixture dir is removed in a FINALLY, never merely after the last
+;; assertion: an assert that throws would otherwise leak the temp root
+;; permanently (engineering rule; enforced by tempDirTrapGuard.test.js).
 (let [d (str (fs/create-temp-dir {:prefix "dcg-test-"}))]
   (try
     (let [r (daemon-cycle-guard-lib/sh! ["pwd"] {:dir d})]

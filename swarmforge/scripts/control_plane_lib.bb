@@ -29,7 +29,7 @@
 
 ;; BL-967: subprocess waits are bounded at the shared chokepoint - this
 ;; lib runs inside handoffd's poll cycle.
-(load-file (str (babashka.fs/path (babashka.fs/parent (babashka.fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (def classification-token
   "Fixed by the BL-958 acceptance contract."
