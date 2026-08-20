@@ -80,6 +80,16 @@
 %% word "burndown" is kept per an explicit 2026-08-16 human ruling that
 %% overrides BL-659's PWA/milestone-dashboard ban for this email chart only
 %% (see docs/how-to/BL-896-briefing-open-ticket-chart.md).
+%% BL-958 (2026-08-20): the tmux server can vanish mid-run while every
+%% support daemon stays healthy - the socket file survives on disk and
+%% roles.tsv/sessions.tsv still describe a running swarm, so status read
+%% per-role DOWN from stale metadata and nobody said the control plane was
+%% gone. control_plane_lib.bb is now the one classifier, with three
+%% consumers: swarm_status.bb renders ONE control-plane row instead of the
+%% stale per-role rows, handoffd.bb's failed chase send persists exactly
+%% one open incident to .swarmforge/incidents/control-plane.json, and
+%% swarm_ensure.bb decides recovery (relaunch roles from the persisted
+%% launch scripts, or halt loudly when none exist) through the same lib.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -122,6 +132,7 @@ flowchart TB
     QADEFER["qa_deferrals/ (BL-532: deferral records, *.jsonl)"]
     LEANDIR["lean/ (BL-819: coordinator-owned ticket\nlifecycle ledger, *.jsonl + per-ticket snapshot)"]
     CEREMONYDIR["lean/ceremony/ (BL-820: closing-ceremony\nrun records, one JSON per shift)"]
+    INCIDENTDIR["incidents/control-plane.json (BL-958: control-plane-loss\nincidents, at most one open at a time)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
