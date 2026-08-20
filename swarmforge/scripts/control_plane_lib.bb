@@ -28,6 +28,10 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+;; BL-967: subprocess waits are bounded at the shared chokepoint - this
+;; lib runs inside handoffd's poll cycle.
+(load-file (str (babashka.fs/path (babashka.fs/parent (babashka.fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+
 (def classification-token
   "Fixed by the BL-958 acceptance contract."
   "control-plane-missing")
@@ -170,7 +174,7 @@
   [socket]
   (if (str/blank? (str socket))
     {:responds? false :output "no socket path resolved"}
-    (let [result (process/sh {:continue true}
+    (let [result (daemon-cycle-guard-lib/sh! {:continue true}
                              "tmux" "-S" (str socket) "list-sessions"
                              "-F" "#{session_name}")]
       {:responds? (zero? (:exit result))
