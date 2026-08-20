@@ -11,7 +11,6 @@
 ;; with its own diagram-html concern (merge-diagram-html below).
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str])
   (:import [java.time LocalDate]

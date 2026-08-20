@@ -2180,15 +2180,33 @@
 ;; disagree with the live UI about what "regressing" means. Must use the
 ;; [cmd & args] + opts-map form of process/sh, not flat varargs - the
 ;; latter silently drops :dir (see auto-route!'s own comment above). Any
+;; BL-967 cleaner pass: "shell out to a compiled node tool under
+;; extension/out/tools and take its trimmed stdout" was hand-copied across
+;; nine briefing fns, each carrying a comment saying "same shell-out pattern
+;; as <sibling> above" - the duplication was being DOCUMENTED rather than
+;; removed, and the tools directory itself was spelled out at twenty call
+;; sites. Two definitions instead: WHERE the compiled tools live, and the
+;; degrade-never-crash contract every caller depends on (nil on a non-zero
+;; exit or any failure - CLI not yet compiled on this checkout, etc. - so
+;; the line is omitted, never fabricated, and the sweep never crashes).
+(defn node-tool-path [script-name]
+  (str (fs/path project-root "extension" "out" "tools" script-name)))
+
+(defn node-tool-line
+  "Trimmed stdout of a compiled node tool, or nil on any failure."
+  [script-name & args]
+  (try
+    (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                              (into ["node" (node-tool-path script-name)] args)
+                              {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 ;; failure (CLI not yet compiled on this checkout, etc.) degrades to
 ;; omitting the line entirely - never crashes the sweep, never a fabricated
 ;; value.
 (defn suite-duration-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suite-duration-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "suite-duration-line.js"))
 
 ;; BL-251: same shell-out pattern as suite-duration-briefing-line above -
 ;; reuses computeBacklogDashboard's own needsApproval field unchanged, the
@@ -2196,11 +2214,7 @@
 ;; disagree with the PWA about what's pending. Any failure degrades to
 ;; omitting the section entirely - never crashes the sweep.
 (defn needs-approval-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "needs-approval-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "needs-approval-line.js"))
 
 ;; BL-256: same shell-out pattern as suite-duration-briefing-line/
 ;; needs-approval-briefing-section above - each CLI reuses existing
@@ -2210,27 +2224,15 @@
 ;; with the live UI/CLI about what these numbers are. Any failure degrades
 ;; to omitting the section entirely - never crashes the sweep.
 (defn merged-blocked-digest-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "briefing-digest-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "briefing-digest-line.js" "--snapshot" lifecycle-snapshot-path))
 
 ;; Reuses BL-102's own stage-dwell-report.js CLI directly (no new wrapper
 ;; needed - its default text output is already briefing-ready).
 (defn stage-dwell-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "stage-dwell-report.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "stage-dwell-report.js"))
 
 (defn chase-trend-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "chase-trend-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "chase-trend-line.js"))
 
 ;; BL-263: same shell-out pattern as needs-approval-briefing-section above -
 ;; reuses computeBacklogDashboard's own notDoneCount field unchanged, the
@@ -2238,11 +2240,7 @@
 ;; disagree with the PWA about the not-done total. Any failure degrades to
 ;; omitting the line entirely - never crashes the sweep.
 (defn not-done-count-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "not-done-count-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "not-done-count-line.js"))
 
 ;; BL-337: pure Babashka text-parsing, no compiled TS needed - unlike the
 ;; *-briefing-line fns above, this reads standing_rule_violations_lib.bb's
@@ -2261,11 +2259,7 @@
 ;; case, same as every sibling section here; any other failure (CLI not
 ;; yet compiled, etc.) degrades identically - never crashes the sweep.
 (defn suboptimality-verdict-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suboptimality-verdict-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "suboptimality-verdict-line.js"))
 
 ;; BL-454: shells to the compiled qa-bounce-line.js CLI, same shell-out
 ;; pattern as the *-briefing-line fns above, fed by the durable bounce log
@@ -2278,11 +2272,7 @@
 ;; failure (CLI not yet compiled, etc.) degrades identically - never crashes
 ;; the sweep.
 (defn qa-bounce-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "qa-bounce-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "qa-bounce-line.js"))
 
 ;; BL-511: shells to the compiled telegram-bridge-cost-line.js CLI, same
 ;; shell-out pattern as the *-briefing-line fns above - reuses
@@ -2296,11 +2286,7 @@
 ;; crashes the sweep. No day-key arg is passed - the CLI defaults to real
 ;; UTC-today in production (a test fixes it via an explicit arg instead).
 (defn telegram-bridge-cost-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "telegram-bridge-cost-line.js"))
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "telegram-bridge-cost-line.js"))
 
 ;; BL-619: shells to the compiled token-burn-section.js CLI, same shell-out
 ;; pattern as the *-briefing-line fns above, but the CLI's stdout is JSON
@@ -2316,7 +2302,7 @@
 ;; surface, not an interactive terminal.
 (defn token-burn-briefing-section []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "token-burn-section.js"))
+    (let [cli-path (node-tool-path "token-burn-section.js")
           {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (when (zero? exit)
         (let [{:keys [leadingText appendedText subjectMarker warning]} (json/parse-string out true)]
@@ -2347,7 +2333,7 @@
 ;; CLI here - never crashes the sweep.
 (defn briefing-diagrams-json []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "render-briefing-diagrams.js"))
+    (let [cli-path (node-tool-path "render-briefing-diagrams.js")
           {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (when (zero? exit) (json/parse-string out true)))
     (catch Exception _ nil)))
@@ -2357,7 +2343,7 @@
 ;; never suppresses architecture diagrams (and vice versa).
 (defn briefing-burndown-json []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "render-briefing-burndown.js"))
+    (let [cli-path (node-tool-path "render-briefing-burndown.js")
           {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
       (when (zero? exit) (json/parse-string out true)))
     (catch Exception _ nil)))
@@ -2405,7 +2391,7 @@
 ;; arming; this adapter only owns invoking it.
 (defn dead-letter-notify-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "notify-dead-letters.js"))
+    (let [cli-path (node-tool-path "notify-dead-letters.js")
           {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (when (zero? exit)
         (log! "dead-letter-notify" (str/trim out))))
@@ -2426,7 +2412,7 @@
 ;; gate, not two independently-tuned timers).
 (defn resource-sample-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "sample-resources.js"))
+    (let [cli-path (node-tool-path "sample-resources.js")
           {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (when (zero? exit)
         (log! "resource-sample" (str/trim out))))
@@ -2847,7 +2833,7 @@
 ;; (coordinator lost)".
 (defn fleet-status-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-fleet-status.js"))
+    (let [cli-path (node-tool-path "emit-fleet-status.js")
           {:keys [exit err]} (daemon-cycle-guard-lib/sh! ["node" cli-path (str project-root)] {:dir (str project-root)})]
       (when-not (zero? exit)
         (log! "fleet-status-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
@@ -2871,7 +2857,7 @@
 ;; yet compiled, etc.) degrades to a logged error - never crashes the sweep.
 (defn answer-file-drain-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "drain-answer-files.js"))
+    (let [cli-path (node-tool-path "drain-answer-files.js")
           {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path (str project-root)] {:dir (str project-root)})]
       (if (zero? exit)
         (log! "answer-file-drain" (str/trim out))
@@ -2888,7 +2874,7 @@
 ;; adapter only owns invoking it.
 (defn pause-auto-resume-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "resume-expired-pauses.js"))
+    (let [cli-path (node-tool-path "resume-expired-pauses.js")
           {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (if (zero? exit)
         (log! "pause-auto-resume" (str/trim out))
@@ -2908,7 +2894,7 @@
 ;; suppression below (which only ever gates delivery/nudge/chase wakes).
 (defn cooldown-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "apply-cooldown-pause.js"))
+    (let [cli-path (node-tool-path "apply-cooldown-pause.js")
           {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (if (zero? exit)
         (log! "cooldown-sweep" (str/trim out))
@@ -2937,7 +2923,7 @@
 ;; briefing - never propagated as an exception.
 (defn ensure-lifecycle-snapshot! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-lifecycle-snapshot.js"))
+    (let [cli-path (node-tool-path "emit-lifecycle-snapshot.js")
           {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (if (zero? exit)
         (log! "lifecycle-snapshot-ensured" (str/trim out))
@@ -2954,7 +2940,7 @@
 ;; :emit-sidecar! stays the single place that makes this best-effort;
 ;; this adapter does not need its own try/catch.
 (defn emit-cost-health-sidecar! []
-  (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-cost-health-sidecar.js"))
+  (let [cli-path (node-tool-path "emit-cost-health-sidecar.js")
         {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
     (if (zero? exit)
       (log! "cost-health-sidecar-emitted" (str/trim out))

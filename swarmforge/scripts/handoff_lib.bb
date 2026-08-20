@@ -6,7 +6,6 @@
 
 (ns handoff-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str])
   (:import [java.nio.channels FileChannel]
@@ -632,13 +631,15 @@
    cannot be read must never be treated as agreement (see
    mono-router-lib/live-role-agrees?).
 
-   BL-927 architect bounce (2026-08-19): uses babashka.process/sh, NOT
-   clojure.java.shell/sh - this file's own handoffd.bb sibling documents
-   why (BL-061: clojure.java.shell's stream-read shim can deadlock on
-   successive subprocess calls within one process run). BL-967 closed the
-   remainder: the sibling clojure.java.shell/sh calls this comment used to
-   name (session-exists? in the same sweep) are gone - every subprocess in
-   this file now runs through daemon-cycle-guard-lib/sh!, bounded."
+   BL-927 architect bounce (2026-08-19): must NOT use clojure.java.shell/sh
+   - this file's own handoffd.bb sibling documents why (BL-061:
+   clojure.java.shell's stream-read shim can deadlock on successive
+   subprocess calls within one process run). BL-967 closed the remainder:
+   the sibling clojure.java.shell/sh calls this comment used to name
+   (session-exists? in the same sweep) are gone, and this call itself no
+   longer goes to babashka.process/sh either - every subprocess in this
+   file now runs through daemon-cycle-guard-lib/sh!, which keeps the safe
+   mechanism AND bounds the wait."
   [socket session]
   (when-not (str/blank? session)
     (try

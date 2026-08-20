@@ -37,12 +37,21 @@
 ;; The sweep (or cycle phase) any timeout is attributed to. The daemon's
 ;; run-sweep! keeps this current; "outside-sweep" covers startup and
 ;; between-sweep gaps.
-(def current-context (atom "outside-sweep"))
+;;
+;; defonce, not def, for both atoms below: four files load-file this lib
+;; (handoffd.bb directly, plus handoff_lib.bb / briefing_email_lib.bb /
+;; control_plane_lib.bb, each of which handoffd also loads), so the ns is
+;; evaluated several times in one daemon process. Under `def` every reload
+;; installs a FRESH atom, and any reload landing after handoffd wires its
+;; logger would silently restore the silent default - the timeout
+;; attribution would vanish with nothing to show for it. defonce makes the
+;; wiring order-independent instead of merely lucky.
+(defonce current-context (atom "outside-sweep"))
 
 ;; Wired by the daemon to its log!; the default is silent so library
 ;; consumers (swarm_handoff.bb and tests loading handoff_lib.bb) never
 ;; crash for lack of a logger.
-(def on-timeout! (atom (fn [_info] nil)))
+(defonce on-timeout! (atom (fn [_info] nil)))
 
 (defn- split-sh-args
   "Normalizes the three call shapes the codebase uses (mirroring
