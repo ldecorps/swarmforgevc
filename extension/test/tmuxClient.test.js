@@ -681,6 +681,33 @@ test('respawnAgent refuses to type into a pane that is actively processing a tur
   }
 });
 
+// BL-997/BL-897 scenario 03: the same shared fixture bl997BusyMarkerAgreement
+// .test.js proves the swarm's own Babashka classifier calls busy - proving
+// this precheck (not just isPaneActivelyProcessing in isolation) refuses a
+// respawn against the REAL fixture, not a hand-typed inline copy of the
+// marker. This is the consequence the BL-137 test above exists for; this
+// test pins it to the one fixture file both classifiers are tested against.
+test('respawnAgent refuses to respawn the shared "live turn-status frame" fixture (BL-997 cross-boundary agreement)', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp);
+  const fixture = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'specs', 'features', 'fixtures', 'BL-997', 'live-turn-status-frame.txt'),
+    'utf8'
+  );
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: fixture },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, false);
+    assert.equal(result.skippedBusy, true);
+  } finally {
+    fake.restore();
+  }
+});
+
 test('respawnAgent types the launch command in literal mode, not tmux key-name mode', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
