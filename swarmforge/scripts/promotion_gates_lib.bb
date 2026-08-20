@@ -123,26 +123,19 @@
             value-present? (boolean (some #(and (not (str/blank? %))
                                                 (not (#{">" "|"} %)))
                                           texts))]
-        {:ids (if explicitly-empty? [] ids)
+        ;; explicitly-empty? guards :unparseable? only - `[]` is a
+        ;; present, non-blank value that yields no id, and is the one such
+        ;; value that means "no dependencies" rather than "unreadable".
+        ;; It never has to clear :ids: a value of `[]` with no continuation
+        ;; carries no id token to begin with.
+        {:ids ids
          :unparseable? (boolean (and value-present?
                                      (not explicitly-empty?)
                                      (empty? ids)))}))))
 
-(defn done-ids
-  "The set of ticket ids landed under backlog/done/ - flat files AND <Mx>/
-   subfolders (the close-into-done/Mx convention), so the reader recurses.
-   A file's id comes from its filename's leading BL-/GH- token (the naming
-   convention every locate/glob path already relies on), falling back to
-   its id: field when the name carries none."
-  [root]
-  (let [dir (fs/path root "backlog" "done")]
-    (if (fs/exists? dir)
-      (->> (fs/glob dir "**.yaml")
-           (keep (fn [f]
-                   (or (re-find ticket-id-pattern (fs/file-name f))
-                       (read-id (slurp (str f))))))
-           set)
-      #{})))
+;; The set of landed ids the refusal below resolves against is read by
+;; done-ids, which lives with the other directory-scanning readers in this
+;; file's impure half rather than here among the pure decisions.
 
 (defn depends-on-refusal
   "nil when every declared dependency is positively resolved in done-id-set;
@@ -340,7 +333,30 @@
              (when-let [advisory (orthogonality-advisory (read-epic content) active-epics)]
                {:advisory advisory}))))
 
-;; ── active/-scanning readers (the small impure half) ─────────────────────
+;; ── backlog-scanning readers (the small impure half) ───────────────────
+
+(defn- status-yaml-files
+  "Every ticket YAML under backlog/<status>/, recursing into milestone
+   subfolders (the close-into-done/<Mx>/ convention); empty when the
+   directory does not exist. active-yaml-files below deliberately does NOT
+   go through this - active/ is flat by contract and its non-recursive glob
+   is part of what the depth cap counts."
+  [root status]
+  (let [dir (fs/path root "backlog" status)]
+    (if (fs/exists? dir) (fs/glob dir "**.yaml") [])))
+
+(defn done-ids
+  "The set of ticket ids landed under backlog/done/ - flat files AND <Mx>/
+   subfolders alike (see status-yaml-files). A file's id comes from its
+   filename's leading BL-/GH- token (the naming convention every
+   locate/glob path already relies on), falling back to its id: field when
+   the name carries none."
+  [root]
+  (->> (status-yaml-files root "done")
+       (keep (fn [f]
+               (or (re-find ticket-id-pattern (fs/file-name f))
+                   (read-id (slurp (str f))))))
+       set))
 
 (defn active-yaml-files [root]
   (let [dir (fs/path root "backlog" "active")]
@@ -378,10 +394,7 @@
 (def ^:private epic-tracker-status-dirs ["active" "paused" "done"])
 
 (defn- epic-tracker-yaml-files [root]
-  (mapcat (fn [status]
-            (let [dir (fs/path root "backlog" status)]
-              (if (fs/exists? dir) (fs/glob dir "**.yaml") [])))
-          epic-tracker-status-dirs))
+  (mapcat (partial status-yaml-files root) epic-tracker-status-dirs))
 
 (defn epic-priority-index
   "Map of epic-name -> the minimum read-priority among every `type: epic`
