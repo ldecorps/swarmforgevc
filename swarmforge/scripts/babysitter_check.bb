@@ -247,12 +247,22 @@
 ;; variadic wrapper hardcodes a leading {:continue true} with no room for
 ;; :dir, so this calls process/sh directly rather than widening that
 ;; shared helper's contract for one caller.
+;; Both exit-code predicates in this file answer over the SAME convention -
+;; 0 yes, 1 no, anything else "could not answer" (is_qa_ancestor.sh's contract
+;; and `git diff --quiet`'s happen to agree). Decoded once, so the fail-closed
+;; rule that matters - a non-0/1 exit is never read as a plain "no" - has a
+;; single definition rather than one copy per predicate (BL-962 added the
+;; second copy).
+(defn- exit->answer [r answer-key]
+  (case (:exit r)
+    0 {:ok? true answer-key true}
+    1 {:ok? true answer-key false}
+    {:ok? false answer-key false}))
+
 (defn qa-ancestor? [sha]
-  (let [r (process/sh {:continue true :dir (str project-root)} "bash" (qa-ancestor-sh) sha)]
-    (cond
-      (zero? (:exit r)) {:ok? true :ancestor? true}
-      (= 1 (:exit r)) {:ok? true :ancestor? false}
-      :else {:ok? false :ancestor? false})))
+  (exit->answer
+   (process/sh {:continue true :dir (str project-root)} "bash" (qa-ancestor-sh) sha)
+   :ancestor?))
 
 (defn ref-resolves? [ref]
   (zero? (:exit (sh! "git" "-C" project-root "rev-parse" "-q" "--verify" ref))))
@@ -309,11 +319,8 @@
    version? git diff --quiet: exit 0 identical, 1 different, else error
    ({:ok? false} - the caller fails the whole sweep closed, invariant 3)."
   [parent sha path]
-  (let [r (sh! "git" "-C" project-root "diff" "--quiet" parent sha "--" path)]
-    (case (:exit r)
-      0 {:ok? true :identical? true}
-      1 {:ok? true :identical? false}
-      {:ok? false :identical? false})))
+  (exit->answer (sh! "git" "-C" project-root "diff" "--quiet" parent sha "--" path)
+                :identical?))
 
 (defn merge-parent-facts
   "Impure: per non-first parent of merge sha - QA approval (qa-ancestor?,
