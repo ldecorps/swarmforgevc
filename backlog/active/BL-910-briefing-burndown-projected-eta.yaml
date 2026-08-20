@@ -161,3 +161,14 @@ notes: |
   "burndown"; no fixed-scope progress claim - the new string matches
   neither /\btarget\b/ nor /remaining to zero/). No other BL-896 scenario
   asserts ETA absence; only 01 collides.
+
+  Coordinator adjudication folded in (note 20260820T012033Z_000640,
+  evidence 8846292cc; same ruling reached in parallel: BL-896's criterion
+  is stale, BL-910's human-verbatim text must not change). Their second
+  half - the shrinking case renders a REAL date, which would fail the
+  same assertion "for the right reason" - is noted and does not manifest
+  in BL-896's scenarios: scenario 01's fixture is a RISING backlog, so
+  the evolved step never meets a real date; the shrinking-case contract
+  is this ticket's own feature. If scenario 01's fixture ever changes,
+  the evolved step's meaning (no fabricated forecast while growing)
+  travels with it.
