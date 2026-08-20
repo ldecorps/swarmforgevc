@@ -115,6 +115,13 @@ notes: >
   real closure instead of hand-maintaining it. Two lists now have
   that guard; four do not."
 
+  Second source, consolidated N:1 (Consolidation Authority): the
+  coordinator independently verified the same finding and requested a
+  mint (note 00_20260820T044456Z_000658, crossing this ticket's
+  ready-note in flight; its verification evidence is
+  backlog/evidence/bb-fixture-copy-lists-stale-since-bl911-20260820.md,
+  commit 4a6c1e6f1) - one ticket, two corroborating evidence files.
+
   Specifier probe at mint: red test reproduced (exit 1, dies loading
   prompt_engine_lib.bb at handoff_lib.bb:37); no standing entry point
   found that runs the swarmforge/scripts/test/ shell tests as a
