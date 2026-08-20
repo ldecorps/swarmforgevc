@@ -1040,3 +1040,34 @@ independently on the same day — three independent repairs of one failure
 class in one day is what promoted this from an incident note to a standing
 engineering rule. The inline Guardrails sentence in `engineering.prompt` is
 the binding rule; this section is the narrative.
+
+## A gate blocks on dropped-work evidence, never on a ticket id named in a commit subject (BL-972)
+
+Accepted from a QA rule_proposal, 2026-08-20. The inline Guardrails sentence
+in `engineering.prompt` is the binding rule; this section is the narrative.
+
+The pre-QA gate's ancestry check gathers its candidate "dropped work"
+commits from every role branch by SUBJECT-line token match alone
+(`gather-ancestry-facts` reads `--format=%H<sep>%s` and filters with
+`message-references-ticket?`), then blocks the documenter→QA forward for
+any candidate that is not an ancestor of the cited commit, main, or the
+ticket's `abandoned_commits` list. Naming a ticket is not evidence of
+carrying its work: reverts ("revert BL-x rider"), bookkeeping ("BL topic
+record for BL-x"), evidence commits, and cross-references ("checked against
+BL-x's silent revert") all name tickets whose content they deliberately do
+not carry. Each such commit on any role branch blocks that ticket's QA
+forward and forces a hand-maintained `abandoned_commits` ceremony — with
+its own failure modes (a comment line inside a block list voids it).
+
+Evidence: four QA passes on 2026-08-20 alone (BL-935, BL-958, BL-910,
+BL-959) were each blocked by a commit that only NAMED the ticket; three of
+the four blocking commits stated in their own subject that the ticket's
+content was deliberately excluded. Same-day corroboration: the coder's
+BL-571 D1 re-fix had to enumerate two abandoned commits to pass the gate.
+
+The rule: candidacy for a dropped-work block must be established by
+EVIDENCE — the commit's touched paths or diff content overlapping the
+ticket's parcel — never by the ticket id appearing in the subject line. A
+subject-only match may still surface as a WARNING for human attention; it
+must not block. Implementation ticket: BL-972 (the gate is pipeline code;
+the specifier lands prose, the pipeline lands code).

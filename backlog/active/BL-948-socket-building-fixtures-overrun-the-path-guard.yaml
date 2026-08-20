@@ -121,3 +121,5 @@ notes: >
   the currently-failing fixture first, with the remaining adopters following
   once the gate exists to prove the closure - do not split it any other way,
   since a partial adoption without the gate leaves no record of what remains.
+
+assigned_to: coder
