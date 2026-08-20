@@ -42,3 +42,26 @@ authored none of it.
 QA-landed work re-raises a CRIT and nudges the coordinator. BL-632 (commit-time
 guard) and BL-925 (reconcile-merge completion) are both closed and neither covers
 this. Routed to the specifier to decide whether to mint — not self-minted here.
+
+## Recurrence 3 — `f07e91b4f`, 2026-08-20 ~01:45Z
+
+Same adjudication, same verdict: **false positive, no remediation.**
+
+    f07e91b4f "Merge remote-tracking branch 'origin/main'"
+    parents: 0dcf6c593 (local main)  +  3dbf083ac (QA)
+
+All four flagged files (`vitest-worker-memory-budget.ts`,
+`vitestForkCeiling.property.test.js`, `vitestWorkerMemoryBudget.test.js`,
+`bl935VitestForkPoolSteps.js`) give `vs_p2 = 0` — identical to parent2.
+
+Parent2 `3dbf083ac` is *"Merge origin/main into QA before landing BL-935. By QA."* —
+the very commit this coordinator verified on `main` before closing BL-935 to
+`done/M8` twenty minutes earlier. The content reached main through QA's landing, the
+correct BL-247 path; the operator's reconciliation merge only brought the local ref
+forward.
+
+**Third occurrence tonight** (after `da6031c60` and `b3ba48bfc`). Each costs a
+coordinator turn to re-adjudicate. BL-962 — the fix that teaches the sweep to
+adjudicate merge commits — is `defect/high`, `human_approval: approved`, and is now
+the **top promotable expedited candidate**, having been passed over only because
+BL-967's defect was live in production. It takes the next freed slot.
