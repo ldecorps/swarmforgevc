@@ -1,6 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-977: `handoffd_supervisor.bb`'s
+**Last Updated:** August 20, 2026 (BL-968: the BL-761 acceptance-contract
+gate — the fuller pre-QA check on QA-bound sends — was failing OPEN on
+effectively every send: `pre_qa_gate_gather_lib.bb` materializes the cited
+commit's `specs/pipeline` into a non-git temp tree before running
+`resolve_contract_steps.js` over it, and three step files
+(`headlessDarkEmitterAuditSteps.js`, `routingBreakEvenSteps.js`,
+`standingRuleViolationsSteps.js`) called `resolveMainCheckout(__dirname)`
+at MODULE TOP LEVEL — a `git rev-parse` against a directory that, inside
+the materialized tree, is not a git repository at all, so the require
+chain died, the resolver reported the registry unloadable, and the gate
+silently warned-and-skipped instead of actually evaluating (observed on
+every recent send; only the warning printed, to the sender's own pane).
+Fixed by moving every environmental read from load time to
+step-execution time behind a new shared `lazy()` memoizer
+(`specs/pipeline/steps/lib/lazy.js`) — the three `resolveMainCheckout`
+call sites plus two further offenders the fix's own guard surfaced
+(`devHostLauncherSteps.js`'s load-time read of `swarm_ensure.bb`,
+shadowed behind the git failures until now, and two load-time
+`command -v bb`/`git` login-shell spawns) — with `lib/mainCheckout.js`'s
+derivation itself untouched (correct and parameterized; only its
+callers' binding time moved). A standing guard
+(`extension/test/bl968StepRegistryMaterializedTreeGuard.test.js`,
+`bl968MaterializedGuardSensitivity.property.test.js`, sharing
+`materializedRegistryGuard.js`) now materializes the CURRENT registry
+into a non-repo tree on every test run and asserts it loads — the
+regression trap for the whole class, so the next load-time-binding step
+file fails its own parcel's gates instead of silently blinding the check
+for everyone. The gate's warn-do-not-block classification for
+registry-load failures is deliberately unchanged — flipping it to
+fail-closed would have frozen every pipeline send on this defect; the
+guard is what makes the blind spot structurally short-lived instead. No
+human-facing extension command or setting — an internal quality-gate
+fix.); Previously August 20, 2026 (BL-977: `handoffd_supervisor.bb`'s
 stall detection (`evaluate-health`) used heartbeat-file mtime alone to
 decide `:stalled` — but `handoffd.bb` (BL-789) writes that heartbeat only
 at cycle start/end, so a single heavy in-cycle sweep past the 30s window

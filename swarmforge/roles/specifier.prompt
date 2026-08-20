@@ -475,6 +475,17 @@ You are the specifier.
   them to merge `main` and re-read the ticket. If your amendment added scenarios, say
   so: their step handlers must land in the same parcel or the acceptance runner
   hard-fails (BL-233). See the constitution's "Amending An In-Flight Ticket's Spec".
+  - **`assigned_to:` is NOT the holder — sweep the mailboxes to find who is.**
+    `assigned_to:` records where the coordinator ROUTED the ticket, and goes stale
+    the moment the parcel moves down the chain. Before sending the amendment note,
+    grep every role's `inbox/in_process/` and `inbox/new/` for the task name and
+    notify whoever actually holds it, as well as the role that will rebuild.
+    BL-971 (2026-08-20): the ticket read `assigned_to: coder`, so the note went to
+    the coder — who did merge and re-read correctly — but the parcel was already at
+    QA, holding a commit whose own copy of the `.feature` predated the amendment.
+    A parcel stranded this way is neither passable nor bounceable: it was built
+    correctly against the contract as it stood, so it is abandoned and the chain
+    re-walked, and the amendment's timing (yours) is the cause, not its workmanship.
 - For rule-proposal outcomes (accept/reject), notify the coordinator or proposer
   with a `note` as appropriate — do not promote or close tickets yourself.
 - Use `git_handoff` only when forwarding spec work into the pipeline at the
