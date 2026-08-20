@@ -63,9 +63,15 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   await flush();
   const { document } = dom.window;
   assert.equal(document.getElementById('ticket-strip').hidden, true);
-  // The ticket must still surface on the documenter tile itself.
+  // BL-994 locked decision 2: a grid tile carries the role name and an
+  // Expand control ONLY - ticket metadata (and the transcript) moved to the
+  // fullscreen Expand view, not the tile head. This assertion pinned the
+  // PRE-BL-994 behavior (ticket id inline in the tile head); see
+  // bl994LiveScreenGrid.test.js's own "Expand still opens the full
+  // metadata and transcript" test for where BL-640 is now asserted.
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
-  assert.match(documenterHead.innerHTML, /BL-640/);
+  assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
+  assert.match(documenterHead.innerHTML, /Documenter/);
 });
 
 test('BL-929: no tile is labelled Resident under a standing full pack', async () => {
