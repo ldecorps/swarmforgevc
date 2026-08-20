@@ -28,6 +28,8 @@
 ;;   SUPERVISOR_INTERVAL_MS       loop sleep between checks   (default 10000)
 ;;   SUPERVISOR_STALL_MS          heartbeat+outbox stall age  (default 30000)
 ;;   SUPERVISOR_KILL_TIMEOUT_MS   bound on confirming an exit (default 2000)
+;;   SUPERVISOR_IN_SWEEP_BUDGET_MS  how long ONE named in-flight sweep may
+;;                                legitimately run (default 225000; BL-977)
 
 (ns handoffd-supervisor
   (:require [babashka.fs :as fs]
@@ -86,6 +88,18 @@
 (def kill-timeout-ms (env-ms "SUPERVISOR_KILL_TIMEOUT_MS" 2000))
 (def kill-poll-ms 50)
 
+;; BL-977: how long ONE named in-flight sweep may legitimately run. This is
+;; deliberately NOT a raise of SUPERVISOR_STALL_MS - a silent daemon with
+;; nothing in flight still halts in 30s, unchanged. Derived from the
+;; measured worst LEGITIMATE sweep on this host, not a round number:
+;; `sweep-boundary sweep=dropped-parcel-sweep ms=202158` at
+;; 2026-08-20T08:31:19Z (the freshness-restart-storm intake's live
+;; measurement; the rotated log's own worst that morning was 143269 ms).
+;; 202158 x ~1.11 headroom = 225000. Shrinks as BL-978's single-pass index
+;; lands (post-index the same live sweep measured 21739 ms).
+(def sweep-marker-file (fs/path daemon-dir "handoffd.sweep-marker"))
+(def in-sweep-budget-ms (env-ms "SUPERVISOR_IN_SWEEP_BUDGET_MS" 225000))
+
 (defn now-ms [] (System/currentTimeMillis))
 
 (defn now-iso []
@@ -139,16 +153,54 @@
 
 (defn evaluate-health
   "Given observations, decide :healthy, :dead (pid gone) or :stalled (pid
-   lingers but the daemon stopped polling while mail is pending)."
-  [{:keys [alive? heartbeat-age-ms pending-outbox-age-ms stall-ms]}]
-  (cond
-    (not alive?) :dead
+   lingers but the daemon stopped polling while mail is pending).
 
-    (and pending-outbox-age-ms (> pending-outbox-age-ms stall-ms)
-         (or (nil? heartbeat-age-ms) (> heartbeat-age-ms stall-ms)))
-    :stalled
+   BL-977: :stalled now requires evidence of TRUE SILENCE, never
+   heartbeat-file mtime alone (invariant 1) - BL-789 writes the heartbeat
+   only at cycle start/end, so one heavy sweep (143269 ms measured
+   2026-08-20) legitimately outages the mtime signal mid-cycle.
+   in-flight-sweep-age-ms is how long the daemon's published sweep marker
+   says the CURRENT sweep has been running (nil when the marker is absent,
+   idle, or unreadable - which leaves the pre-BL-977 verdict exactly as it
+   was). A sweep in flight within in-sweep-budget-ms is demonstrable
+   progress: :healthy regardless of heartbeat age. A sweep in flight PAST
+   the budget voids the heartbeat evidence entirely - the verdict is then
+   exactly what a missing heartbeat produces today (invariant 2: a genuine
+   wedge is still caught within a bounded time, and the marker only ever
+   advances with the poll loop's own progress, so a wedged loop cannot
+   forge liveness)."
+  [{:keys [alive? heartbeat-age-ms pending-outbox-age-ms stall-ms
+           in-flight-sweep-age-ms in-sweep-budget-ms]}]
+  (let [in-flight? (and (number? in-flight-sweep-age-ms) (number? in-sweep-budget-ms)
+                        (<= 0 in-flight-sweep-age-ms))
+        under-budget? (and in-flight? (<= in-flight-sweep-age-ms in-sweep-budget-ms))
+        ;; over-budget in-flight = the heartbeat evidence is void, exactly
+        ;; as if the heartbeat were missing.
+        effective-heartbeat-age-ms (if (and in-flight? (not under-budget?)) nil heartbeat-age-ms)]
+    (cond
+      (not alive?) :dead
 
-    :else :healthy))
+      under-budget? :healthy
+
+      (and pending-outbox-age-ms (> pending-outbox-age-ms stall-ms)
+           (or (nil? effective-heartbeat-age-ms) (> effective-heartbeat-age-ms stall-ms)))
+      :stalled
+
+      :else :healthy)))
+
+(defn read-in-flight-sweep-age-ms
+  "The published sweep marker's in-flight age in ms, or nil when the marker
+   is absent, idle, unreadable, or nonsense (a started_at_ms in the future
+   is nonsense, never evidence of progress - fail toward the pre-BL-977
+   verdict, not toward :healthy)."
+  [now-ms]
+  (try
+    (when (fs/exists? sweep-marker-file)
+      (let [{:keys [sweep started_at_ms]} (json/parse-string (slurp (str sweep-marker-file)) true)]
+        (when (and sweep (not= sweep "idle") (number? started_at_ms))
+          (let [age (- now-ms started_at_ms)]
+            (when (<= 0 age) age)))))
+    (catch Exception _ nil)))
 
 ;; ── status file ──────────────────────────────────────────────────────────────
 
@@ -421,7 +473,11 @@
           verdict (evaluate-health {:alive? (pid-alive? tracked)
                                     :heartbeat-age-ms (file-age-ms heartbeat-file)
                                     :pending-outbox-age-ms (oldest-pending-outbox-age-ms)
-                                    :stall-ms stall-ms})]
+                                    :stall-ms stall-ms
+                                    ;; BL-977: the daemon's published in-flight
+                                    ;; sweep marker, as one more observation.
+                                    :in-flight-sweep-age-ms (read-in-flight-sweep-age-ms (now-ms))
+                                    :in-sweep-budget-ms in-sweep-budget-ms})]
       ;; Reaping runs every cycle, independent of the tracked daemon's own
       ;; health, so a stray orphan next to a perfectly healthy tracked
       ;; daemon still gets cleaned up (BL-081 scenario 05) instead of only

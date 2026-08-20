@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=828b4b630ccc33f5d4cc8ea632340e0d613405267c71ada0e59f481bb5a2efc6
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-20T12:40:01.141977Z","feature_name":"BL-978 the dropped-parcel sweep reads each handoff file once, not once per active ticket","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-978-dropped-parcel-sweep-single-pass-trail-index.feature","background_hash":"296bc9ed1dc884e0e29be35cc04ced862b84e174363b288d7806c531f19acf72","implementation_hash":"unknown","scenarios":[{"index":0,"name":"file reads scale with the mailbox, not with the active-ticket count","scenario_hash":"7883cc61631e25abc7baf36b6b667bd882b1bfaadc96bdfc0516040ead529d5e","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-20T12:40:01.141977Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-978 the dropped-parcel sweep reads each handoff file once, not once per active ticket
 
   chase_sweep_lib/dropped-parcel-items calls newest-trail-event-ms once per
