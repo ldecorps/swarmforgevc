@@ -34,8 +34,18 @@
           (str "NO_TASK\nNO_TASK\nNO_TASK\n"
                "TASK: /tmp/x.handoff\nFROM: coordinator\n")))
 
-(assert= "classify: Claude esc-to-interrupt footer is :busy"
+;; BL-996: was a bare "esc to interrupt" substring, which is now correctly
+;; NOT busy under chase_sweep_lib.bb's own structural contract (a marker
+;; quoted with no live status frame around it - exactly BL-970's own
+;; false-busy shape). A real live status frame line (spinner glyph, verb,
+;; ellipsis, digit-led elapsed) is what actually reads as :busy now.
+(assert= "classify: a real live status frame is :busy"
          :busy
+         (loop-detect-lib/classify-pane-loop-signal
+          "NO_TASK\nNO_TASK\nNO_TASK\nready_for_next.sh\nready_for_next.sh\n✻ Thinking… (5s · ⚒ tool)\n"))
+
+(assert= "classify: a bare quoted marker with no live status frame is NOT :busy"
+         :no-task-spin
          (loop-detect-lib/classify-pane-loop-signal
           "NO_TASK\nNO_TASK\nNO_TASK\nready_for_next.sh\nready_for_next.sh\nesc to interrupt\n"))
 
@@ -46,6 +56,18 @@
                "> ! ready_for_next.sh\nNO_TASK\n"
                "> ! ready_for_next.sh\nNO_TASK\n"
                "Waiting for openai/sonar-pro\n")))
+
+;; Proves the exclusion is a real VETO, not merely something that happens
+;; never to overlap with chase-sweep-lib's own busy pattern: chase-sweep-lib
+;; alone reads this text as busy (a genuine live status frame is present),
+;; yet the API-wait-line exclusion still forces :quiet, never :busy.
+(assert-true "chase-sweep-lib alone reads the mixed fixture as busy (sanity check on the test itself)"
+             (chase-sweep-lib/actively-processing?
+              "NO_TASK\nready_for_next.sh\n✻ Waiting… (5s · x)\nWaiting for openai/gpt-4o-mini...\n"))
+(assert= "classify: the API-wait-line exclusion vetoes even when a live status frame is ALSO present"
+         :quiet
+         (loop-detect-lib/classify-pane-loop-signal
+          "NO_TASK\nready_for_next.sh\n✻ Waiting… (5s · x)\nWaiting for openai/gpt-4o-mini...\n"))
 
 (assert= "next: first spin strike=1"
          {:strikes 1 :last-signal :no-task-spin}
