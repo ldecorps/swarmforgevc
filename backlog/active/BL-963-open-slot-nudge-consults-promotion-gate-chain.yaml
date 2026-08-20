@@ -163,3 +163,6 @@ notes_coordinator_hold: >
   still stand - BL-957 is at the hardener stage, still active. Not promotable.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: architect, blamed: coder, class: behavior, commit: 8bfecb4ae0, evidence: backlog/evidence/BL-963-architect-review-20260820.md }
