@@ -77,9 +77,24 @@ export interface BacklogItem {
   // by convention (which could 404 if a title-derived guess ever drifts
   // from the real slug on disk).
   filename?: string;
+  // BL-591: the epic-ETA estimator's weighting and blocked-predicate
+  // inputs. statusText carries a status value OUTSIDE the three normalized
+  // ones (blocked/needs_design/...) - exactly the signal BL-234's
+  // normalization above deliberately drops, which the blocked predicate
+  // needs. A recognized status never sets it (status itself carries that).
+  mutationCost?: string;
+  statusText?: string;
+  promotionBlockers?: string[];
+  blockUntil?: string[];
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
+
+// BL-591: the status values BL-234's normalization drops (blocked,
+// needs_design, ...) - kept as data for the epic-ETA blocked predicate.
+function unrecognizedStatusText(statusRaw: string | undefined): string | undefined {
+  return statusRaw !== undefined && !VALID_STATUSES.has(statusRaw) ? statusRaw : undefined;
+}
 
 function parseYamlScalar(content: string, field: string): string | undefined {
   const match = content.match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
@@ -96,6 +111,24 @@ function parseYamlList(content: string, field: string): string[] | undefined {
     .map((line) => line.replace(/^\s*-\s*/, '').replace(/#.*$/, '').trim())
     .filter((line) => line.length > 0);
   return entries.length > 0 ? entries : undefined;
+}
+
+// BL-591: like parseYamlList, but ALSO reads a flow-style list
+// (`field: [a, b]`) - real tickets write block_until/promotion_blockers in
+// both styles, and missing a flow-style entry would silently mark a
+// blocked child buildable (the exact fold-blocked-work-into-a-duration
+// failure the blocked predicate exists to prevent). An empty flow list
+// (`[]`) is undefined, same as parseYamlList's own empty-block behavior.
+function parseYamlFlowOrBlockList(content: string, field: string): string[] | undefined {
+  const flowMatch = content.match(new RegExp(`^${field}:\\s*\\[([^\\]]*)\\]`, 'm'));
+  if (flowMatch) {
+    const entries = flowMatch[1]
+      .split(',')
+      .map((entry) => entry.trim().replace(/^['"]|['"]$/g, ''))
+      .filter((entry) => entry.length > 0);
+    return entries.length > 0 ? entries : undefined;
+  }
+  return parseYamlList(content, field);
 }
 
 // BL-117: extracts a `field: |` (or `>`) literal block scalar's prose,
@@ -191,6 +224,11 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfTruthy(item, 'type', parseYamlScalar(content, 'type'));
   assignIfTruthy(item, 'severity', parseYamlScalar(content, 'severity'));
   assignIfTruthy(item, 'remainingSlices', parseYamlList(content, 'remaining_slices'));
+  // BL-591: the epic-ETA estimator's inputs (see the interface note).
+  assignIfTruthy(item, 'mutationCost', parseYamlScalar(content, 'mutation_cost'));
+  assignIfTruthy(item, 'statusText', unrecognizedStatusText(parseYamlScalar(content, 'status')));
+  assignIfTruthy(item, 'promotionBlockers', parseYamlFlowOrBlockList(content, 'promotion_blockers'));
+  assignIfTruthy(item, 'blockUntil', parseYamlFlowOrBlockList(content, 'block_until'));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -308,6 +346,13 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfTruthy(item, 'type', toOptionalString(obj.type));
   assignIfTruthy(item, 'severity', toOptionalString(obj.severity));
   assignIfTruthy(item, 'remainingSlices', toOptionalStringList(obj.remaining_slices));
+  // BL-591: the epic-ETA estimator's inputs - kept in BOTH parse paths
+  // (this strict-object one and assignOptionalFields' lenient one), same
+  // as every field above.
+  assignIfTruthy(item, 'mutationCost', toOptionalString(obj.mutation_cost));
+  assignIfTruthy(item, 'statusText', unrecognizedStatusText(toOptionalString(obj.status)));
+  assignIfTruthy(item, 'promotionBlockers', toOptionalStringList(obj.promotion_blockers));
+  assignIfTruthy(item, 'blockUntil', toOptionalStringList(obj.block_until));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {
