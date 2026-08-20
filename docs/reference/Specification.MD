@@ -1,6 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-995: the hardener's only sanctioned
+**Last Updated:** August 20, 2026 (BL-992: `swarm_handoff.bb`'s
+`required_stages`/routing lookup (`active-ticket-yaml-content`) used to glob
+only the SENDER'S OWN working tree for `backlog/active/<id>*.yaml` — a
+pipeline worktree merges `main` only at a handoff boundary, so between the
+coordinator promoting a ticket and the sender's next merge, that file
+simply did not exist there and every routing decision on it silently took
+the no-declaration path. Measured live 2026-08-20: 2 of 7 active tickets
+declaring `required_stages` were invisible to all six pipeline worktrees at
+once, worst exactly when a ticket is youngest — when its first hops
+happen. The lookup now tries the freshest resolvable ref first —
+`main`/`origin/main`, whichever `git rev-list --left-right --count` shows
+ahead, since either can be the stale one (BL-891) — and falls back to the
+working-tree glob unchanged for a root with no resolvable ref (the
+acceptance fixtures, an unusual root), so nothing here ever fails a send.
+The exact-id match survives unchanged: a candidate ref is only a filter,
+re-checked against the shown content's own `id:` field, so a ref carrying
+only `BL-9005`'s file still cannot resolve a `BL-900` lookup. Out of scope
+by the ticket's own constraint: whether a declared stage may be skipped
+(BL-991) and the decision logic in `required_stages_lib.bb` — only the
+input it reads from changed. No human-facing command or setting; see the
+updated "Dynamic Routing via Specifier-Declared required_stages (BL-606)"
+section in `swarmforge/handoff-protocol.md`.); Previously
+August 20, 2026 (BL-995: the hardener's only sanctioned
 >120s escape hatch (a python3 double-fork + `os.setsid()`, per
 `hardener.prompt:1010` — the Bash tool's own timeout, `run_in_background`,
 and `nohup … & disown` all fail on this host) produced a PPID-1 orphan by
