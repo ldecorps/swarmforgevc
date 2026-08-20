@@ -1,6 +1,58 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-995: the hardener's only sanctioned
+**Last Updated:** August 20, 2026 (BL-996: two more consumers of the busy
+marker BL-970 already fixed at its chokepoint (`chase_sweep_lib.bb`'s
+`actively-processing?`, reached by every wake predicate) turned out to
+carry their own PRIVATE whole-pane substring classifiers, never reaching
+that chokepoint at all — the same false-busy shape BL-970 fixed, still
+live at both sites. `babysitterd_sweep_lib.bb`'s `classify-pane-busy?`
+(feeding `babysitter_check.bb`'s health sweep) now delegates outright to
+`actively-processing?` instead of its own `"esc to interrupt"`/spinner-glyph
+match. `loop_detect_lib.bb`'s busy signal (feeding
+`classify-pane-loop-signal`, the endless-idle-loop circuit breaker's own
+input) delegates too — this one was the serious half: `:busy` there means
+DO NOT STRIKE, so a pane merely quoting the busy marker in old scrollback
+used to hold the breaker open forever, letting a role spin
+`ready_for_next` → `NO_TASK` indefinitely with no halt. Delegation could
+not be a bare swap here, though: the loop detector's own comment records a
+deliberate exclusion — an aider-style "Waiting for openai/…" API-wait line
+must NOT read as busy, since that line appears during a `NO_TASK` spin's
+own API calls and would reset strikes forever, defeating the breaker in a
+different way. That exclusion survives as an explicit veto
+(`api-wait-line-re`) applied AFTER the shared classifier's verdict, stated
+as its own guarantee rather than left to an incidental gap in
+`chase_sweep_lib.bb`'s own character class. Both libraries load
+`chase_sweep_lib.bb` via `load-file` (a build-time module load, not the
+live fs/tmux/clock read each file's own header disclaims for its business
+logic — `chase_sweep_lib.bb` is itself a pure classifier the same way).
+Deliberately out of scope: the TypeScript-side classifiers
+(`agentPaneState.ts`, `tmuxClient.ts`) sharing the same marker — no import
+bridges that language boundary, so that is BL-997's cross-boundary
+agreement test, not this ticket. No human-facing command or setting; same
+internal-hygiene consolidation class as BL-887.); Previously
+August 20, 2026 (BL-992: `swarm_handoff.bb`'s
+`required_stages`/routing lookup (`active-ticket-yaml-content`) used to glob
+only the SENDER'S OWN working tree for `backlog/active/<id>*.yaml` — a
+pipeline worktree merges `main` only at a handoff boundary, so between the
+coordinator promoting a ticket and the sender's next merge, that file
+simply did not exist there and every routing decision on it silently took
+the no-declaration path. Measured live 2026-08-20: 2 of 7 active tickets
+declaring `required_stages` were invisible to all six pipeline worktrees at
+once, worst exactly when a ticket is youngest — when its first hops
+happen. The lookup now tries the freshest resolvable ref first —
+`main`/`origin/main`, whichever `git rev-list --left-right --count` shows
+ahead, since either can be the stale one (BL-891) — and falls back to the
+working-tree glob unchanged for a root with no resolvable ref (the
+acceptance fixtures, an unusual root), so nothing here ever fails a send.
+The exact-id match survives unchanged: a candidate ref is only a filter,
+re-checked against the shown content's own `id:` field, so a ref carrying
+only `BL-9005`'s file still cannot resolve a `BL-900` lookup. Out of scope
+by the ticket's own constraint: whether a declared stage may be skipped
+(BL-991) and the decision logic in `required_stages_lib.bb` — only the
+input it reads from changed. No human-facing command or setting; see the
+updated "Dynamic Routing via Specifier-Declared required_stages (BL-606)"
+section in `swarmforge/handoff-protocol.md`.); Previously
+August 20, 2026 (BL-995: the hardener's only sanctioned
 >120s escape hatch (a python3 double-fork + `os.setsid()`, per
 `hardener.prompt:1010` — the Bash tool's own timeout, `run_in_background`,
 and `nohup … & disown` all fail on this host) produced a PPID-1 orphan by
