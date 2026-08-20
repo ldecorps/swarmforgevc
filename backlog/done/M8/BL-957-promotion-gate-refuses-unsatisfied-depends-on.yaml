@@ -206,3 +206,29 @@ notes: |
 
   Not to be confused with BL-951, which asks a different open question about
   routing (where a bounce-fix re-enters the pipeline). Unrelated.
+
+notes_coordinator_status: >
+  NOT DROPPED - QA-PASSED, LANDING DEFERRED (coordinator, 2026-08-20 02:35Z).
+  An unassigned-active sweep flagged "BL-957 no parcel in flight - possible
+  drop". Investigated: there is indeed NO parcel in any role mailbox, and QA
+  sent nothing for this ticket (zero BL-957 references in QA's sent/). But it
+  is not a drop:
+
+    8133043cd "BL-957: QA pass inventory - all gates run, zero defects;
+               landing deferred pending BL-958/BL-960 sibling verification."
+
+  QA consumed both inbound parcels (documenter -> QA, commit d166b82fd0),
+  passed every gate, and deliberately withheld the landing. So the absence of
+  a parcel is the INTENDED state, not a lost message.
+
+  THE RISK IS REAL ANYWAY: a consumed deferral parcel never returns. Nothing
+  will re-deliver BL-957 to QA, so the landing depends entirely on QA
+  remembering it when the siblings clear. Both blockers are in QA's own hands
+  right now (BL-958 and BL-960 are each held by QA), so the trigger is close -
+  but it is a memory, not a mechanism.
+
+  Coordinator action: reminded QA directly, and recorded here so any later
+  reader (or a fresh coordinator after a context clear) can tell a deliberate
+  deferral from an actual drop without re-deriving it. Do NOT treat a future
+  "no parcel in flight" sweep hit on BL-957 as a drop while this note stands.
+

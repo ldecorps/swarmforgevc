@@ -99,5 +99,8 @@
   failure reason, never a bare HTTP status (BL-572/BL-662). A constant
   mirrored by hand across a language boundary no import can bridge (here
   TS ↔ Babashka) needs a test asserting both literals agree — a "kept in
-  sync" comment is not a gate, and drift fails silently (BL-897). See
+  sync" comment is not a gate, and drift fails silently (BL-897). A merge
+  can silently revert already-LANDED work the sender never had — the BL-954
+  sender-tip diff reads clean: diff every merge against BOTH parents and
+  read the deletions (BL-571/BL-958). See
   **engineering-detailed.prompt** for full incident narratives on each rule.

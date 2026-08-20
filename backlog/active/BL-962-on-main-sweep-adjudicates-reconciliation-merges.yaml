@@ -175,3 +175,5 @@ notes_coordinator_hold: >
   SECOND open slot, not the first. Supersedes the "takes the NEXT open slot"
   wording above. See BL-967's own hold note for the tie-break rationale.
 
+
+assigned_to: coder
