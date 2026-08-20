@@ -26,6 +26,30 @@ memory saving comes only from having a single resident process, never from a
 lighter gate. The coordinator is still separately auto-provisioned and is
 not part of the rotation.
 
+### `./swarm ensure` respects the dormant roles (BL-571)
+
+Running `./swarm ensure` against this pack is safe: it leaves the five
+deliberately dormant middle roles alone rather than repairing them into
+existence.
+
+That was not always true. The launcher's `is_sequential_dormant` treats
+`rotation sequential` (what `mono-rotate.conf` declares) and `rotation router`
+as the same single-resident topology, but ensure's own check matched `router`
+alone — so on this pack, and only on this pack, ensure read the five dormant
+roles as broken panes and repaired them. The report said **healed** where the
+truth was **over-provisioned**, and it started five extra agent processes on
+exactly the 15GB box this pack exists to protect.
+
+Ensure now recognises the topology by every value the launcher accepts, so the
+"one resident process" promise above holds through a repair pass. Nothing about
+how you invoke it changed. Dormant roles still keep their worktree, their
+`roles.tsv` entry and a pre-generated launch script — only the process is
+absent, until the resident rotates onto that role itself.
+
+If you see ensure report repairs for `cleaner`, `architect`, `hardender`,
+`documenter` or `QA` on a `mono-rotate` pack, that is the old behavior: check
+that the checkout carries BL-571 before trusting the report.
+
 ## 1. Launch from the Windows-side checkout
 
 FES's target repo lives on `/mnt/c` (`C:\Users\...\free-email-scanner`), and
