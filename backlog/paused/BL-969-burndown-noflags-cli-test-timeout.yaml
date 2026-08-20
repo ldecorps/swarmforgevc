@@ -100,3 +100,27 @@ notes: |
   2026-08-18 to adopt this file's two fallbacks on a QA note) -> BL-969
   (the fifth test both passes missed). Third pass on this file's timeout
   class; the invariant above is what should make it the last.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20: not promoted. Two blockers - human_approval:
+  pending, and capacity (active/ holds 7 against an effective cap of 7; the
+  slot freed by BL-935's close was taken by BL-967, whose defect was live in
+  production at that moment).
+
+  EXPEDITED, RANKED THIRD. defect/high, so expedited under Article 3.2.4.
+  Current expedited order, by ordinary priority (the earlier blast-radius
+  tie-break was withdrawn as unsound):
+
+    BL-962  p20  approved  <- next open slot, no human action needed
+    BL-968  p20  pending   <- awaiting approval
+    BL-969  p30  pending   <- this ticket
+
+  So BL-969 needs BOTH an approval and two slots ahead of it to clear. No
+  orthogonality conflict, no ambulance freeze, no contract-gate hold,
+  depends_on empty.
+
+  WORTH SAYING PLAINLY: a flaky unit suite degrades every gate that depends on
+  it, so a green run stops being evidence. That argues for approving it sooner
+  rather than later, but severity does not create a slot and the coordinator
+  does not set priority - flagged, not acted on.
+
