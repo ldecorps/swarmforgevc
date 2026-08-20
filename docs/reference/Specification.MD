@@ -1,6 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-962: the babysitter's
+**Last Updated:** August 20, 2026 (BL-964: a standing gate now fails loud
+when a retired `SWARMFORGE_ENSURE_*` env-var name reappears in
+`specs/pipeline/steps/` or `swarmforge/scripts/test/` — on 2026-08-20
+several test paths exported fake ensure hooks under that retired prefix
+instead of the real `SWARM_ENSURE_*_CMD` seams `swarm_ensure.bb` reads, so
+the fakes were silently ignored and the REAL extension bounce ran,
+opening two unprompted VS Code Extension Development Host windows from
+test runs (human hotfix `596098dc3`). The gate's needle set is DERIVED
+from `swarm_ensure.bb`'s own `SWARM_ENSURE_*` reads rather than
+hand-written: a hand-written roster of the three names the incident
+happened to expose covered only 3 of the mechanism's 11 real seams, so 8
+of 9 retired spellings outside the original incident went unflagged. The
+needles are the FULL retired names, never the bare prefix, so `main`'s two
+legitimate `SWARMFORGE_ENSURE_*` prose comments are never flagged; an
+empty derivation raises rather than silently passing every file. Enforced
+by `extension/test/retiredEnsureEnvVarGuard.test.js` in the standing suite
+every parcel runs. No extension command, setting, or UI: a test-harness
+regression gate. See
+[BL-964](BL-964-retired-ensure-env-var-regression-gate.md).);
+Previously August 20, 2026 (BL-962: the babysitter's
 pipeline-code-on-main sweep — the ONE detector for Article 4.2/BL-247
 breaches — raised a false CRIT on every operator reconciliation merge of
 QA-landed work, and `main`/`origin/main` divergence is routine (BL-891), so
