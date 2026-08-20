@@ -219,6 +219,32 @@ notes: |
   if it lands as a standalone runner, the coder adds its exact command to
   this procedure in the re-fix parcel — a lane QA never runs is this same
   S1 gap repeating.
-bounce_count: 1
+
+  ## Abandoned commit 17ae8a4822 — rationale (coder, 2026-08-20, QA bounce D1)
+
+  `17ae8a4822` ("BL-571: correct fake-injection seam names in the ensure
+  tests and steps file") is deliberately dropped, not merged. It postdates
+  the parcel — committed on the coder branch 6 minutes AFTER the documenter
+  forwarded `87cfd2cbf8` — and ALL of its BL-571 content is already present
+  in the parcel by content, not ancestry: the steps file is a superset (same
+  corrected `SWARM_ENSURE_*_CMD` names plus the hardener's
+  `fake_daemon_start.sh` stub and skip fences), and `test_swarm_ensure.sh`
+  carries the same corrected names (49 new-prefix uses, 0 live old-prefix
+  uses). Merging the commit itself would fold in BL-958's still-bounced
+  control-plane work riding the same coder-branch lineage, which an approval
+  on BL-571 does not authorise (BL-506). Same disposition BL-935 recorded
+  for `e63d364863`. Full analysis: backlog/evidence/BL-571-qa-bounce-20260820.md.
+
+  `b7a6e580d7` (also declared, coder, 2026-08-20): QA's merge of the BL-957
+  parcel into the QA branch, made AFTER this bounce was sent. Its subject
+  names BL-571 only descriptively ("BL-571 content kept reverted per its
+  open QA bounce") — it carries ZERO BL-571 content, so nothing of this
+  ticket is dropped by declaring it. It cannot be merged into the re-fix
+  parcel without folding in BL-957's own unapproved in-flight work (the
+  same BL-506 rider problem as above). It is already an ancestor of the QA
+  branch, so QA's verification merge reaches it natively.
+abandoned_commits: ["17ae8a4822", "b7a6e580d7"]
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: bbb14382d8, evidence: backlog/evidence/BL-571-sequential-rotation-dormant-parity-bounce-20260819.md }
+  - { at: 2026-08-20, by: QA, blamed: coder, class: integration, commit: affac4f828, evidence: backlog/evidence/BL-571-qa-bounce-20260820.md }
