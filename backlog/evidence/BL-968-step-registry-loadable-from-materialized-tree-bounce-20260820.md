@@ -140,3 +140,27 @@ fine; the fix belongs in the helper, not the caller.
 
 No checks were blocked by D1 (it does not prevent running anything else in
 this inventory).
+
+---
+
+## Revert disposition
+
+Reverted both BL-968 content-introducing commits out of `swarmforge-architect`
+(the whole `-m 1` merge was NOT reverted: the same merge also carried
+already-reviewed, unrelated catch-up content — the specifier's BL-971
+amendment and the coder's separate BL-977 follow-up commit — that must not
+be touched; verified before reverting that this catch-up content differs
+from what my branch already had, i.e. it is real content, not a no-op):
+cleaner's `c8d791dc80` (revert `e8aeae871`), then coder's `20e315ceb`
+(revert `c3218df42`), both plain single-parent commits, both applied
+cleanly with no conflicts. `swarmforge-architect` now carries none of
+BL-968's content; the BL-971/BL-977 catch-up content is unaffected
+(verified: `backlog/active/BL-971-...yaml` still contains the bl760
+amendment after both reverts).
+
+This also removed `specs/pipeline/steps/lib/lazy.js`, which this pass's own
+new property test (`extension/test/bl968LazyMemoizationInvariant.property.test.js`)
+imports directly — so that test file was withdrawn (`git rm`) rather than
+left broken in the branch. It is unchanged in substance and will be
+re-added verbatim on the next review pass once the coder's D1 fix restores
+`lib/lazy.js`.
