@@ -71,3 +71,178 @@ test('renderNotDoneBurndownPng returns a well-formed PNG', () => {
   assert.ok(png.subarray(0, 8).equals(PNG_MAGIC));
   assert.ok(png.length > 1000);
 }, 60000);
+
+// ── BL-910: projected ETA on the burndown ──────────────────────────────────
+
+const { projectNotDoneEta, NOT_SHRINKING_REASON } = require('../out/metrics/notDoneBurndown');
+
+const NOW = Date.parse('2026-08-10T15:00:00+02:00');
+const DAY = 24 * 60 * 60 * 1000;
+
+function seriesWith(openN, closePerDay, mintPerDay) {
+  // Minimal, honest series shape around the three numbers the projection
+  // reads; projection filled by the same function production uses.
+  const base = {
+    windowDays: 7,
+    open0: openN,
+    openN,
+    net: 0,
+    totalClosed: 0,
+    totalFiled: 0,
+    closePerDay,
+    mintPerDay,
+    series: [
+      { dayMs: NOW - DAY, label: '08-09', remaining: openN, filed: 0, closed: 0 },
+      { dayMs: NOW, label: '08-10', remaining: openN, filed: 0, closed: 0 },
+    ],
+  };
+  return { ...base, projection: projectNotDoneEta(openN, closePerDay, mintPerDay, NOW) };
+}
+
+test('BL-910: a strictly positive net burn projects days and a calendar date (openN / net burn)', () => {
+  const p = projectNotDoneEta(100, 6.0, 4.0, NOW);
+  assert.equal(p.kind, 'eta');
+  assert.equal(p.etaDays, 50);
+  const expected = new Date(NOW + 50 * DAY);
+  const label = `${expected.getFullYear()}-${String(expected.getMonth() + 1).padStart(2, '0')}-${String(expected.getDate()).padStart(2, '0')}`;
+  assert.equal(p.etaDateLabel, label);
+  assert.equal(p.netBurnPerDay, 2.0);
+});
+
+test('BL-910 invariant 1: growing, flat, and zero-rate backlogs get the reason - never a date, an infinity, or a placeholder', () => {
+  for (const [close, mint] of [
+    [4.0, 6.0],
+    [5.0, 5.0],
+    [0.0, 0.0],
+  ]) {
+    const p = projectNotDoneEta(180, close, mint, NOW);
+    assert.equal(p.kind, 'no-eta', `close=${close} mint=${mint}`);
+    assert.equal(p.reason, NOT_SHRINKING_REASON);
+    assert.equal(p.etaDays, undefined);
+    assert.equal(p.etaDateLabel, undefined);
+  }
+  assert.match(NOT_SHRINKING_REASON, /no ETA/);
+  assert.match(NOT_SHRINKING_REASON, /still growing/);
+});
+
+test('BL-910 invariant 2: the projection is computed from the rates AS PRINTED (1 decimal), so it is recomputable from the chart itself', () => {
+  // Unrounded rates 5.96 and 4.04 PRINT as 6.0 and 4.0; a reader recomputing
+  // 100 / (6.0 - 4.0) must get the shown answer, not 100 / 1.92.
+  const p = projectNotDoneEta(100, 5.96, 4.04, NOW);
+  assert.equal(p.kind, 'eta');
+  assert.equal(p.etaDays, 50);
+});
+
+test('BL-910 invariant 2: an ETA that divides EXACTLY is not pushed a day out by float dust', () => {
+  // Regression: the projection used to divide by the reconstructed
+  // netBurnPerDay float, so 21 / 0.7 evaluated to 30.000000000000004 and
+  // ceiled to 31 - while a reader dividing the printed numbers by hand got
+  // 30. The division now stays in integer tenths. These are the smallest
+  // failing cases in the realistic range; each divides exactly.
+  for (const [openN, close, mint, expectedDays] of [
+    [21, 0.7, 0.0, 30],
+    [42, 0.7, 0.0, 60],
+    [21, 1.4, 0.7, 30],
+    [161, 0.7, 0.0, 230],
+  ]) {
+    const p = projectNotDoneEta(openN, close, mint, NOW);
+    assert.equal(p.kind, 'eta');
+    assert.equal(
+      p.etaDays,
+      expectedDays,
+      `openN=${openN} at net burn ${(close - mint).toFixed(1)}/d must be ${expectedDays}d, the number a reader gets by hand`
+    );
+  }
+});
+
+test('BL-910: a fractional day count rounds up to whole days for the calendar date', () => {
+  const p = projectNotDoneEta(101, 6.0, 4.0, NOW); // 50.5 days
+  assert.equal(p.kind, 'eta');
+  assert.equal(p.etaDays, 51);
+});
+
+test('BL-910: computeNotDoneBurndownSeries carries its own projection', () => {
+  const series = computeNotDoneBurndownSeries(lifecycles, NOW, 10);
+  assert.ok(series.projection, 'series must carry a projection');
+  const recomputed = projectNotDoneEta(series.openN, series.closePerDay, series.mintPerDay, NOW);
+  assert.deepEqual(series.projection, recomputed);
+});
+
+test('BL-910: the chart renders the ETA labelled as covering all open tickets, never as a milestone forecast, and keeps the burndown heading', () => {
+  const svg = buildNotDoneBurndownSvg(seriesWith(100, 6.0, 4.0));
+  assert.match(svg, /Projected clear \(all open tickets\): \d{4}-\d{2}-\d{2}/);
+  assert.match(svg, /~50d/);
+  assert.doesNotMatch(svg, /milestone|p50|p85/i);
+  assert.match(svg, /Backlog burndown/);
+});
+
+test('BL-910 required wiring: a not-shrinking backlog renders the reason on the chart itself - no date anywhere', () => {
+  const svg = buildNotDoneBurndownSvg(seriesWith(180, 5.0, 5.0));
+  assert.match(svg, /no ETA — backlog still growing/);
+  assert.doesNotMatch(svg, /\d{4}-\d{2}-\d{2}/);
+  assert.doesNotMatch(svg, /Infinity|NaN|never/i);
+});
+
+test('BL-910: a series without a projection fails loud - computed-but-not-drawn must be impossible, so is not-computed-at-all', () => {
+  const stale = seriesWith(100, 6.0, 4.0);
+  delete stale.projection;
+  assert.throws(() => buildNotDoneBurndownSvg(stale), /projection/);
+});
+
+// ── BL-910 hardening: the caption's own numbers, and its placement ─────────
+// The tests above proved the ETA day-count and the not-shrinking answer. These
+// close the gaps that survive them: the net-burn figure printed in EITHER
+// branch of the caption, the no-eta branch's netBurnPerDay, and the human's
+// explicit placement decision ("the caption, not a dashed overlay line") -
+// none of which any assertion above could see.
+
+const { formatProjectionLine } = require('../out/metrics/notDoneBurndownChart');
+
+test('BL-910: the eta caption prints the net burn it divided by, at the same one decimal as the subtitle', () => {
+  const line = formatProjectionLine(projectNotDoneEta(100, 6.0, 4.0, NOW));
+  assert.match(line, /Projected clear \(all open tickets\): \d{4}-\d{2}-\d{2} · ~50d at net burn 2\.0\/d/);
+});
+
+test('BL-910: the not-shrinking caption prints its (negative or zero) net burn and names its scope', () => {
+  assert.equal(
+    formatProjectionLine(projectNotDoneEta(180, 4.0, 6.0, NOW)),
+    `${NOT_SHRINKING_REASON} (net burn -2.0/d, all open tickets)`
+  );
+  assert.equal(
+    formatProjectionLine(projectNotDoneEta(180, 5.0, 5.0, NOW)),
+    `${NOT_SHRINKING_REASON} (net burn 0.0/d, all open tickets)`
+  );
+});
+
+test('BL-910: a not-shrinking projection still carries the measured net burn, so the caption is not the only place it exists', () => {
+  assert.equal(projectNotDoneEta(180, 4.0, 6.0, NOW).netBurnPerDay, -2.0);
+  assert.equal(projectNotDoneEta(180, 5.0, 5.0, NOW).netBurnPerDay, 0);
+  // Rounded to the printed tenths first, exactly as the eta branch is.
+  assert.equal(projectNotDoneEta(180, 4.04, 5.96, NOW).netBurnPerDay, -2.0);
+});
+
+test('BL-910 required wiring: formatProjectionLine is the guard - a series with no projection fails loud at the caption itself', () => {
+  assert.throws(() => formatProjectionLine(undefined), /projection/);
+});
+
+test('BL-910: the projection is placed in the caption block - below the subtitle, above the plot area, never drawn over the series', () => {
+  const svg = buildNotDoneBurndownSvg(seriesWith(100, 6.0, 4.0));
+  const yOf = (needle) => {
+    const m = svg.match(new RegExp(`<text x="\\d+" y="(\\d+)"[^>]*>[^<]*${needle}`));
+    assert.ok(m, `no text element found for ${needle}`);
+    return Number(m[1]);
+  };
+  const headingY = yOf('Backlog burndown');
+  const subtitleY = yOf('Open 100');
+  const projectionY = yOf('Projected clear');
+  assert.ok(headingY < subtitleY, `heading at y=${headingY} must sit above the subtitle at y=${subtitleY}`);
+  assert.ok(subtitleY < projectionY, `the projection at y=${projectionY} must sit below the subtitle at y=${subtitleY}`);
+  // The plot area starts at padT; every gridline is drawn at or below it, so
+  // the smallest gridline y is the top of the chart. The caption must clear it.
+  const gridYs = [...svg.matchAll(/<line x1="\d+" y1="([\d.]+)"/g)].map((m) => Number(m[1]));
+  assert.ok(gridYs.length > 0, 'no gridlines found');
+  assert.ok(
+    projectionY < Math.min(...gridYs),
+    `the projection at y=${projectionY} must clear the plot area starting at y=${Math.min(...gridYs)} - it is a caption, not an overlay`
+  );
+});

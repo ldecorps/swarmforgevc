@@ -1,6 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-960: BL-913's `PreToolUse` heal
+**Last Updated:** August 20, 2026 (BL-910: the morning briefing's backlog
+burndown gains a projected ETA beside the counts it is derived from. Net
+burn is the close rate minus the mint rate; when strictly positive the open
+count over net burn gives a calendar date (`Projected clear (all open
+tickets): <date> · ~<n>d at net burn <r>/d`), and when it is zero or
+negative the chart states the reason in words (`no ETA — backlog still
+growing (net burn <r>/d, all open tickets)`) — never a date, never
+"never", never a fabricated infinity or placeholder, which is the human's
+one hard condition and is enforced as an invariant rather than a branch in
+one renderer. The projection is recomputable by hand from the three numbers
+already printed in the subtitle: both rates are rounded to the one decimal
+the subtitle shows BEFORE the division, and the division is kept in integer
+tenths rather than dividing by a reconstructed float, because the float form
+reintroduces the dust the rounding removed and `Math.ceil` turns it into a
+whole extra day (at openN 21 and net burn 0.7/d, `21 / 0.7` is
+30.000000000000004 and ceils to 31 while the printed numbers give 30) —
+checked against exact rational arithmetic over 900k cases with zero
+mismatches. Scope is named on the chart so it can never read as BL-228's
+milestone p50/p85 forecast, which stays where it is and is not reused here;
+the human's "do not silently introduce a second disagreeing ETA" is met by
+naming the scope, not by hiding either number. Placement is the caption, not
+a dashed overlay, so a projection can never be misread as measured data on
+the same axes. `formatProjectionLine` is extracted into
+`notDoneBurndownChart.ts` rather than inlined (the guard plus two-branch
+caption pushed the renderer's cyclomatic complexity from 5 to 7, and CRAP
+grows superlinearly), and a series missing its projection throws rather than
+silently rendering no answer — computed-but-not-drawn is the failure the
+ticket exists to prevent. The heading still reads "burndown" per the
+2026-08-16 human ruling recorded on BL-896. Fixes a stale acceptance
+criterion inherited from BL-896, whose scenario asserted the chart shows
+"never … a completion date" — resolved on BL-896's side inside this parcel
+because the colliding string is the human's own verbatim wording (Article
+5.3). See the new "The projected ETA (BL-910)" section in
+[`docs/how-to/BL-896-briefing-open-ticket-chart.md`](../how-to/BL-896-briefing-open-ticket-chart.md).);
+Previously August 20, 2026 (BL-960: BL-913's `PreToolUse` heal
 wrapper spliced every Bash command every role issues as raw text into a
 command substitution (`__sfh_out=$(<ORIGINAL> 2>&1)`), unescaped and never
 validated, so any command valid on its own but unable to survive that
