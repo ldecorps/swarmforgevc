@@ -1,6 +1,63 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-996: two more consumers of the busy
+**Last Updated:** August 20, 2026 (BL-976: `RESEND_API_KEY` deliberately
+rides only the daemon process's own environment (BL-215 — the repo never
+stores it), but the supervisor/watchdog relaunch chain spawns each new
+daemon generation from whatever environment happens to run it, so a
+generation launched from a keyless shell lost ALL email capability at
+once — the BL-214 briefing sweep skipped every file and the BL-144
+daemon-death alarm was equally dead, with the only trace a log line the
+operator had no reason to read; the first real symptom was a briefing that
+simply never arrived (reproduced live 2026-08-20, coordinator hand-patched
+one generation's env to unblock the morning briefing before this ticket
+landed). Two legs close it, one observable outcome after any relaunch —
+either email still works, or the operator hears about it within one sweep
+cycle: `start_handoff_daemon.sh`, the launch chokepoint every launcher
+already goes through, now re-sources `.swarmforge/operator/daemon.env`
+(gitignored, operator-created, never committed — only its PATH is ever
+audited, never a value it defines) into the launch environment before
+either daemon starts, so a relaunch from a keyless shell still inherits a
+key the operator provisioned durably; `handoffd.bb` gains an unconditional
+`email-keyless-alert-sweep!` on the existing sweep cadence so a still-keyless
+generation reaches the operator's Telegram outbox — the daemon's existing
+alert channel, no new client — exactly once per generation, naming
+`RESEND_API_KEY` and the env file path, within the generation's first
+cycle even with nothing else to mail. See the updated `RESEND_API_KEY`
+section in `docs/how-to/BL-091-wsl2-second-swarm-bringup.md`.); Previously
+August 20, 2026 (BL-1003: the extension host's own
+mid-turn check, `isPaneActivelyProcessing`
+(`extension/src/panel/agentPaneState.ts`), still decided "busy" by
+case-insensitively substring-matching one marker anywhere in a pane
+capture, while BL-970 had already replaced that definition on the swarm
+side with a structural frame match confined to the capture's own tail
+window. Measured over the seven shared fixtures in
+`specs/features/fixtures/BL-970/`, the two sides disagreed in BOTH
+directions: a pane merely quoting the marker in old scrollback read as
+busy (false-busy — a legitimate respawn refused, visible and recoverable),
+and — more seriously — a REAL capture ten minutes into a genuine turn
+(`✢ Precipitating… (10m 13s · ↓ 16.7k tokens)`) read as idle because its
+verb wasn't the one substring being matched (false-idle). That second
+direction matters because `isPaneActivelyProcessing` is the exact precheck
+`tmuxClient.ts`'s forced-respawn path consults before typing a respawn
+command into a pane — the same safety check BL-137 exists to be, guarding
+against a forced respawn landing mid-turn — and on a real capture it was
+answering "not busy," letting the respawn through into a pane that was
+provably still working. `isPaneActivelyProcessing` now ports BL-970's
+two-layer definition verbatim: a spinner-glyph-led line carrying verb
+words (any verb — no hand-maintained list), an ellipsis, and a digit-led
+parenthesized elapsed, checked only within the capture's trailing 20
+lines. Both `tmuxClient.ts:441`'s respawn precheck and
+`isAgentActivelyWorking` update automatically, since both call through
+this one function. `UI_MARKERS`/`isAgentCliRunning` (agent-CLI-presence
+detection, a different question — "is an agent CLI running here at all,"
+which must stay true for an idle pane too) is deliberately untouched, and
+the Babashka side is untouched per the ticket's own firm line — this
+ticket brings the extension host to BL-970's already-approved definition,
+it does not renegotiate it. See `backlog/evidence/BL-997-ts-bb-busy-verdict-drift-20260820.md`
+for the fixture-by-fixture disagreement table. No new user-facing command;
+this hardens the existing tile-respawn safety path described in the
+Milestone 1 spec above.); Previously
+August 20, 2026 (BL-996: two more consumers of the busy
 marker BL-970 already fixed at its chokepoint (`chase_sweep_lib.bb`'s
 `actively-processing?`, reached by every wake predicate) turned out to
 carry their own PRIVATE whole-pane substring classifiers, never reaching
