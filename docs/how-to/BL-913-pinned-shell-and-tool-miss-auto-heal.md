@@ -50,7 +50,7 @@ using). The hook is registered per role at settings-generation time
 |---|---|---|
 | `wrong-cwd` | `fatal: not a git repository` | re-run with `cd <pinned worktree> &&` prepended |
 | `wrong-surface` | `npm error code enoent`, `could not read package.json`, or `no such file or directory ... package.json` | re-run with `cd <pinned worktree>/extension &&` prepended |
-| `missing-root-argv` | `usage: ... <project-root>`, `usage: ... <target-repo-path>`, or `missing required argument` | re-run with the pinned worktree appended as a trailing positional argument (via a `$__sfh_root` shell variable in the generated source — see BL-934 below, not a literal path spliced next to the command) |
+| `missing-root-argv` | `usage: ... <project-root>`, `usage: ... <target-repo-path>`, or `missing required argument` | re-run with the pinned worktree appended as a trailing positional argument (via a `$__sfh_root` shell variable in the generated source — see BL-934 below, not a literal path spliced next to the command). **Only for a single simple command** — see BL-960 below; on anything else the clause is omitted and the failure returns as-is |
 | `real-failure` | anything else | never re-run — returned exactly as it happened |
 
 The classifier is deliberately **conservative**: anything it isn't sure about
@@ -112,6 +112,96 @@ as an `rm` target still appears as a real command in the wrapper source
 and is still classified as one (the ticket's invariant 2 — the fix must
 never hide a genuine dangerous `rm` from the classifier).
 
+## Parse-safe composition and byte-exact round-trip (BL-960)
+
+**The hook was disabled between 2026-08-19 and this fix.** The wrapper used
+to splice the original command as raw text into a command substitution —
+`__sfh_out=$(<ORIGINAL> 2>&1)` — once for the first run and once per heal
+clause, unescaped and never checked. Any command valid on its own but unable
+to survive that embedding became a syntax error:
+
+- **heredoc bodies were swallowed** (a heredoc-written file landed truncated
+  at 776 bytes);
+- **a literal `)` in an argument closed the substitution early**, producing
+  `syntax error near unexpected token ')'` and then a second error from the
+  wrapper's own dangling `elif` scaffolding;
+- **trailing newlines were stripped**, because `$( ... )` discards them and
+  the closing `printf '%s'` never put them back.
+
+The failure mode was **silent-PARTIAL**: the shell could execute part of the
+mangled command before dying, so state changes landed while an error was
+reported — which makes a blind retry unsafe. Live cost: QA sat 50 minutes
+with every shell call failing and an unactioned handoff queue behind it; the
+coordinator and hardener panes hit the same thing. The operator disabled the
+`PreToolUse` registration (`3bac496ec`) with a stated re-enable condition —
+parse-check with fail-open to the untouched original. BL-960 meets that
+condition and restores the registration in the same parcel.
+
+### Three changes
+
+1. **A parse gate.** `safe-wrapper-command` composes the wrapper and returns
+   it *only* when `bash -n -c` can parse it. Anything that cannot compose —
+   an unterminated heredoc swallowing the group's own closer, say — returns
+   the **byte-untouched original, silently**. That is BL-913's locked
+   decision 5 ("the first miss must not reach the model as a confession")
+   extended to the wrapper's own composition failures: a parse gate that
+   throws also fail-opens. This is the one subprocess boundary in the
+   module, and it is an injectable seam for tests.
+
+2. **Temp file plus replay, not inline splicing.** The original command is
+   embedded as a multi-line subshell group on its own lines, captured whole
+   to a temp file and replayed with `cat`. Heredocs, literal parens, nested
+   quotes, pipelines and `;`-sequences now parse exactly as they would
+   standalone, and an `exit` stays contained. The `> file 2>&1` sits
+   *outside* the group, so the stream merge covers every segment — matching
+   the unwrapped command run with `2>&1` — and the redirect truncates, so a
+   healed re-run *replaces* the failed attempt's output rather than appending
+   to it. When no heal fires, the wrapped command's exit code, combined
+   output (trailing bytes included), and file side effects are byte-identical
+   to the unwrapped command's.
+
+3. **The `missing-root-argv` heal declines when it cannot aim.** Appending a
+   trailing argument is well-defined only for a **single simple command**. On
+   a pipeline or `;`-sequence the argument landed on the final segment rather
+   than the program that produced the usage error — captured live from the
+   hardener's session as `echo "---done---" "$__sfh_root"`. The check is
+   deliberately quote-blind (a real parser would be needed otherwise) and
+   treats any of `` | ; & < > ( ) ` ``, a newline, a backslash, or `#` as
+   disqualifying; the trailing `#` is
+   included because a comment silently swallows an appended argument, giving
+   valid bash and an inert heal. The asymmetry decides the design: a false
+   negative merely **declines** a heal and returns the failure as-is, matching
+   the classifier's existing conservative posture, while a false positive
+   misdirects the append — the exact live defect. When the target is
+   ambiguous the clause is omitted from the wrapper entirely.
+
+### Known limitation: the capture file is not trap-cleaned (BL-965)
+
+The temp file each attempt is captured to is removed by an `rm -f` at the end
+of the generated wrapper. There is no `trap`, so **if the wrapped command is
+killed, the file is stranded** in `$TMPDIR`. This is introduced by BL-960,
+not inherited — the pre-fix wrapper used `$()` capture and called `mktemp`
+zero times — and the blast radius is every Bash call in every role shell,
+since the hook is registered again. It is measured, not theoretical: 13
+stranded `sfh.*` files were already sitting in `$TMPDIR` from the window this
+code was being exercised.
+
+Deliberately not fixed in this parcel: adding a `trap` changes the generated
+wrapper, which is production behavior and would move the byte-identity
+baselines BL-960's own round-trip test asserts against — so it wants its own
+spec and tests. Tracked as **BL-965**. Until it lands, `sfh.*` files
+accumulating in `$TMPDIR` are expected, and safe to delete when no swarm is
+running.
+
+The `cd`-based heals (`wrong-cwd`, `wrong-surface`) re-anchor the **whole**
+original through a subshell group, so for a multi-command original every
+segment re-runs from the healed directory, not just the first.
+
+Unchanged by this fix: the one-retry structure (the `if`/`elif` chain still
+guarantees at most one healed re-run, structurally) and every BL-934
+guarantee — the worktree never appears as a literal extra argument, and a
+genuine `rm` of the worktree stays visible to the classifier.
+
 ## What it deliberately does not do
 
 - No new queue or state file (no `control-ambulance-next.json` analogue) —
@@ -142,6 +232,17 @@ never hide a genuine dangerous `rm` from the classifier).
   (`test_tool_miss_heal_hook_wiring.sh`) and a soft Gherkin acceptance
   mutation pass on the one `Scenario Outline:` in
   `specs/features/BL-913-pinned-shell-and-one-classified-retry.feature`.
+- The hook is **live again as of BL-960**. It was off between 2026-08-19 and
+  that fix; if you are reading a role's settings file from that window, an
+  absent `PreToolUse` block is the deliberate disable, not a launch bug.
+  Since the wrapper now fail-opens silently on any composition it cannot
+  parse, an unhealed command is no longer evidence the hook is broken — it
+  is one of the two documented no-op paths (unparseable composition, or an
+  empty/missing pin).
+- If you need to see what a role's commands are actually being rewritten
+  into, read the generated wrapper rather than inferring it: the pinned
+  worktree appears as `$__sfh_root`, and every attempt's combined output is
+  captured to a temp file and replayed with `cat`.
 
 ## See also
 

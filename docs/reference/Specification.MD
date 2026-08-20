@@ -1,6 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-958: the tmux control plane can
+**Last Updated:** August 20, 2026 (BL-960: BL-913's `PreToolUse` heal
+wrapper spliced every Bash command every role issues as raw text into a
+command substitution (`__sfh_out=$(<ORIGINAL> 2>&1)`), unescaped and never
+validated, so any command valid on its own but unable to survive that
+embedding became a syntax error: heredoc bodies were swallowed (a
+heredoc-written file landed truncated at 776 bytes), a literal `)` in an
+argument closed the substitution early, and trailing newlines were
+stripped. The failure was silent-PARTIAL — the shell could execute part of
+the mangled command before dying, so state changes landed while an error
+was reported, making blind retries unsafe; QA sat 50 minutes with every
+shell call failing and an unactioned handoff queue behind it, and the
+coordinator and hardener panes hit the same thing. A second defect
+misdirected the `missing-root-argv` heal, which appended the pinned
+worktree to the END of the whole command string, so on a pipeline or
+`;`-sequence it landed on the final segment rather than the program that
+produced the usage error (captured live: `echo "---done---"
+"$__sfh_root"`). Three fixes: `safe-wrapper-command` parse-checks every
+composition with `bash -n -c` and returns the byte-untouched original,
+silently, when it does not parse (BL-913's locked decision 5 extended to
+the wrapper's own composition failures; a parse gate that throws also
+fail-opens); the original is embedded as a multi-line subshell group
+captured whole to a temp file and replayed with `cat`, never spliced
+inline, with the `> file 2>&1` outside the group so the stream merge covers
+every segment and the truncating redirect makes a healed re-run replace
+rather than append; and the `missing-root-argv` heal fires only for a
+single simple command, omitting its clause entirely when the append target
+is ambiguous — a false negative merely declines a heal, a false positive
+misdirects it. The operator had disabled the hook registration on
+2026-08-19 (`3bac496ec`) gating re-enable on exactly this parse-checked
+fail-open; that condition is met and the registration is restored in the
+same parcel, so the hook is live again. Unchanged: the one-retry structure
+(BL-913 invariant 1) and every BL-934 guarantee — the worktree never
+appears as a literal extra argument and a genuine `rm` of the worktree
+stays visible to Claude Code's classifier. See the new "Parse-safe
+composition and byte-exact round-trip (BL-960)" section in
+[`docs/how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md`](../how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md).);
+Previously August 20, 2026 (BL-958: the tmux control plane can
 disappear mid-run while every support daemon stays healthy. Live on
 2026-08-19: every role read DOWN, `handoffd`/supervisor/front-desk/
 `babysitterd` all UP, repeated `tmux send-literal failed` chases, the
