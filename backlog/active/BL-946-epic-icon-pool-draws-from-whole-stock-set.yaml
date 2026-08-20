@@ -176,6 +176,7 @@ approval_context: >
   if you want a different one.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-20, by: cleaner, blamed: coder, class: behavior, commit: 727c4f9c81, evidence: backlog/evidence/BL-946-cleaner-bounce-20260820.md }
+  - { at: 2026-08-20, by: architect, blamed: cleaner, class: behavior, commit: 931629bc8c, evidence: backlog/evidence/BL-946-architect-bounce-20260820.md }
