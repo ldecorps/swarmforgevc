@@ -606,32 +606,61 @@
           (apply-rate-limit-expiry-wake! role adapters cooldown-until-ms))
         (sweep-role! role inbox-new-dir in-process-dir completed-dir abandoned-dir now-ms config adapters)))))
 
-;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity) ──────────────────
+;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity, BL-970 rework) ───
 ;; The daemon's own respawn action must never regress the exact incident
 ;; that motivated BL-147: typing into a pane that is genuinely mid-turn.
-;; Primary signal: "esc to interrupt" (Claude Code's busy footer). Subagent
-;; explore turns and long Whirlpooling runs often omit that footer while still
-;; mid-turn — match those high-confidence activity markers too.
+;;
+;; BL-970: classification keys on the pane's RENDERED TURN STATE, never on
+;; marker words found anywhere in the snapshot. The old anywhere-in-pane
+;; word matching failed in both directions and was self-sustaining: (1)
+;; FALSE-BUSY - persistent scrollback chrome (a backgrounded shell's
+;; still-running task line, a busy-marker phrase quoted inside displayed
+;; text) matched forever at an idle prompt, so no wake path ever fired and
+;; nothing ever scrolled the marker away (QA sat unwakeable ~70 minutes,
+;; evidence ecc14dd14); (2) FALSE-IDLE - the spinner-verb list was
+;; hand-maintained and incomplete, so a live frame with an unlisted verb
+;; and no token counter read idle and would be typed into mid-turn (the
+;; compute-the-closure lesson applied to a verb list).
+;;
+;; The one reliable signal is the LIVE STATUS FRAME Claude Code renders
+;; while (and only while) a turn is in flight, and its shape is
+;; structural, not lexical:
+;;
+;;     <spinner glyph> <Verb words><ellipsis> (<digit-led elapsed ...>
+;;
+;; e.g. a one-word or multi-word verb, any verb at all - no verb list. The
+;; finished-turn footer ("Worked for Xs ...") has no ellipsis-paren; a
+;; transcript bullet (⏺/⎿ - excluded from the glyph class) quoting frame-
+;; like text does not start with a spinner glyph; a backgrounded shell's
+;; chrome line has no glyph+frame shape. Two independent layers:
+;;   - STRUCTURE: only a frame-shaped line classifies busy.
+;;   - ZONE: only the snapshot's tail window is consulted - the frame (and
+;;     the idle prompt) live in the footer zone, so even a byte-perfect
+;;     frame line quoted deep in scrollback cannot false-busy a pane whose
+;;     tail shows an idle prompt.
+;; Both BL-970 invariants fall out: an idle prompt with any scrollback
+;; content is never busy, and a live frame with any (unlisted) verb always
+;; is. An empty/unreadable capture classifies idle - an unreadable pane
+;; must never block a wake (the feature's empty-capture contract).
 
-(def busy-activity-patterns
-  [#"(?i)esc to interrupt"
-   ;; Claude Code status spinners (e.g. "· Whirlpooling… (6m · ↓ 14k tokens)")
-   #"(?i)(?:whirlpooling|vibing|perambulating|swirling|marinating|incubating|pondering|noodling|dilly-dallying|tinkering|generating)[…\.]"
-   ;; Token counter in the status line — high-confidence mid-turn signal
-   #"(?i)↓\s*[\d.]+\s*k?\s*tokens"
-   #"(?i)Generating[…\.]"
-   #"(?i)●\s*Running\s+\d+\s+shell command"
-   ;; Long context compaction (omits "esc to interrupt" but is still mid-turn)
-   #"(?i)compacting conversation"
-   ;; Active explore/bash subagent chrome in the footer or body
-   #"[◯●✽]\s+Explore"
-   #"(?i)Explore\("
-   ;; Subagent shell commands in flight (line ends with Running…)
-   #"(?m)^\s*Running…\s*$"])
+(def ^:private busy-tail-window
+  "How many trailing snapshot lines the classifier consults - generously
+   larger than the footer zone (frame + prompt + permission chrome span
+   ~8 lines) while still excluding the scrollback body."
+  20)
+
+(def live-status-frame-pattern
+  ;; <spinner glyph (not a transcript bullet ⏺/⎿, not a quote/bracket)>
+  ;; <verb word(s)> <… or ...> (<digit-led elapsed>
+  #"^\s*[^\sA-Za-z0-9(){}\[\]\"'⏺⎿]{1,2}\s+\p{L}[\p{L} -]{0,60}(?:…|\.{3})\s*\(\s*\d")
+
+(defn live-status-frame-line? [line]
+  (boolean (re-find live-status-frame-pattern (or line ""))))
 
 (defn actively-processing? [pane-text]
-  (let [t (or pane-text "")]
-    (boolean (some #(re-find % t) busy-activity-patterns))))
+  (let [lines (str/split-lines (or pane-text ""))
+        tail (take-last busy-tail-window lines)]
+    (boolean (some live-status-frame-line? tail))))
 
 ;; ── durable needs-human escalation state (crosses the daemon/extension-host
 ;; process boundary now that the daemon, not the extension host, decides it) ─
