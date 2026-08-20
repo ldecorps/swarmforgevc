@@ -51,16 +51,11 @@ function rmTreeQuietly(root) {
 }
 
 function materializeIntoCtx(ctx) {
-  let made;
-  try {
-    made = materializeCurrentPipeline();
-  } catch (err) {
-    // A partial materialization must not leak its temp root.
-    if (made) {
-      rmTreeQuietly(made.root);
-    }
-    throw err;
-  }
+  // Architect bounce D1: partial-materialization cleanup lives INSIDE
+  // materializeCurrentPipeline (the only scope that has the root on the
+  // throw path) - the helper either returns a valid tree or leaves no
+  // temp dir behind, so there is nothing for this caller to guard.
+  const made = materializeCurrentPipeline();
   ctx.guardRoot = made.root;
   ctx.pipelineDir = made.pipelineDir;
 }

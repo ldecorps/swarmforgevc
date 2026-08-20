@@ -24,18 +24,32 @@ const RESOLVER = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'resolve_c
 // The same shape pre_qa_gate_gather_lib.bb materializes: specs/pipeline
 // mirrored under a fresh NON-git temp root, node_modules and extension
 // symlinked in from this checkout as infrastructure.
-function materializeCurrentPipeline() {
-  const root = mkSharedTmpDir('bl968-materialized-');
-  const dest = path.join(root, 'specs', 'pipeline');
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.cpSync(path.join(REPO_ROOT, 'specs', 'pipeline'), dest, { recursive: true });
-  for (const sibling of ['node_modules', 'extension']) {
-    const target = path.join(REPO_ROOT, sibling);
-    if (fs.existsSync(target)) {
-      fs.symlinkSync(fs.realpathSync(target), path.join(root, sibling));
+//
+// Contract (BL-968 architect bounce D1): either returns a valid
+// {root, pipelineDir} or leaves NO temp dir behind - the copy/symlink work
+// after mkSharedTmpDir can throw (concurrent writer mid-copy, ENOSPC,
+// permission error), and only THIS function has the root in scope on that
+// path, so the failure cleanup lives here, for every caller. Outside
+// vitest (the acceptance step handlers) no sweep exists, making this the
+// one cleanup path there. `sourceRoot`/`prefix` are test seams for the
+// failure-path guard test only - production callers pass nothing.
+function materializeCurrentPipeline({ sourceRoot = REPO_ROOT, prefix = 'bl968-materialized-' } = {}) {
+  const root = mkSharedTmpDir(prefix);
+  try {
+    const dest = path.join(root, 'specs', 'pipeline');
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.cpSync(path.join(sourceRoot, 'specs', 'pipeline'), dest, { recursive: true });
+    for (const sibling of ['node_modules', 'extension']) {
+      const target = path.join(sourceRoot, sibling);
+      if (fs.existsSync(target)) {
+        fs.symlinkSync(fs.realpathSync(target), path.join(root, sibling));
+      }
     }
+    return { root, pipelineDir: dest };
+  } catch (err) {
+    fs.rmSync(root, { recursive: true, force: true });
+    throw err;
   }
-  return { root, pipelineDir: dest };
 }
 
 // The REAL resolver's verdict over a materialized tree - loaded STRICTER
