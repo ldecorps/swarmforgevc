@@ -1351,7 +1351,8 @@ if [[ "\$3" == "respawn-pane" ]]; then
   exit 0
 fi
 if [[ "\$3" == "capture-pane" ]]; then
-  printf 'esc to interrupt\nbypass permissions on (shift+tab to cycle)  /rc failed\n'
+  # BL-970: busy is the live status frame shape, not a bare footer marker.
+  printf '\xe2\x9c\xb3 Working\xe2\x80\xa6 (2m 10s)\nbypass permissions on (shift+tab to cycle)  /rc failed\n' 
   exit 0
 fi
 exit 0
