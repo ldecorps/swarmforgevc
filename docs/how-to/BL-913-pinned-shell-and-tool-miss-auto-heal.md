@@ -225,6 +225,53 @@ guarantees at most one healed re-run, structurally) and every BL-934
 guarantee — the worktree never appears as a literal extra argument, and a
 genuine `rm` of the worktree stays visible to the classifier.
 
+## Proactive anchor: drift into a sibling worktree (BL-985)
+
+Every heal described above is **reactive** — it runs the original command
+first and only re-anchors when the *output* matches one of the four
+`MISS-CLASS-PATTERNS`. That works for drift **outside any git repository**
+(`fatal: not a git repository` is unambiguous), but a role's persistent
+shell can just as easily drift **into a sibling worktree** — say, the
+master checkout wandering into `.worktrees/documenter` after a stray `cd`.
+A sibling worktree is still a git repository, so the command **succeeds**
+there: every backlog path exists, every git command returns a real answer —
+just against the wrong branch. Nothing in the output ever matches
+`fatal: not a git repository`, so the reactive classifier was structurally
+blind to this drift; this was the mechanism behind a recurring incident
+family (a role's edits landing in the wrong worktree) previously read as
+one-off mistakes.
+
+`build-healing-wrapper-command` now runs a **proactive** check before any
+of the reactive clauses, decided purely from *where the shell is*, never
+from whether the command would fail:
+
+1. Resolve `git rev-parse --show-toplevel` for both the pinned worktree and
+   the shell's actual cwd, at run time.
+2. **Different** (another worktree, including a `.worktrees/<role>` dir
+   sitting inside the master checkout's own subtree — a naive path-prefix
+   test would wrongly bless that) or **empty** (outside any repository at
+   all): `cd` to the pin before the original command runs.
+3. **Equal** — the pin itself, or any subdirectory of it: the shell is left
+   exactly where it is and the original command reaches it byte-untouched.
+   A role legitimately working in `extension/` of its own worktree is never
+   yanked back to the worktree root.
+4. An unresolvable pin (a fixture root that isn't a repository) skips the
+   guard — fail-open, the same posture as every other heal in this module.
+
+Because the verdict is decided from shell location rather than command
+output, it catches the case the reactive classifier categorically cannot:
+a command that **succeeds** while drifted. The existing `:wrong-cwd` output
+heal is unchanged and still fires for its own cases — outside-any-repo
+failures, and a shell that drifts *after* the proactive check runs. No new
+entries were added to `MISS-CLASS-PATTERNS`; widening that reactive table
+was never viable here since output-matching cannot fire for a command that
+never failed.
+
+The generated per-role launch-script comment (`write_role_launch_script` in
+`swarmforge.sh`) was updated in the same parcel to stop overclaiming — it
+previously read as if every drifted command were already pinned, which
+this fix is what makes true.
+
 ## What it deliberately does not do
 
 - No new queue or state file (no `control-ambulance-next.json` analogue) —
@@ -266,8 +313,15 @@ genuine `rm` of the worktree stays visible to the classifier.
   into, read the generated wrapper rather than inferring it: the pinned
   worktree appears as `$__sfh_root`, and every attempt's combined output is
   captured to a temp file and replayed with `cat`.
+- As of BL-985, a drift **into a sibling worktree** is caught proactively,
+  before the command runs — not only the outside-any-repo drift the
+  original `:wrong-cwd` output heal covers. If a role's writes are landing
+  in the wrong worktree with no failed command anywhere in its history,
+  check the generated wrapper's proactive-anchor block rather than assuming
+  the guard never ran; it only skips when the pin itself cannot be
+  resolved to a git toplevel (a non-repository fixture root).
 
 ## See also
 
 - [SwarmForge VS Code Extension — Specification](../reference/Specification.MD)
-  — the BL-913 and BL-934 changelog entries.
+  — the BL-913, BL-934, and BL-985 changelog entries.
