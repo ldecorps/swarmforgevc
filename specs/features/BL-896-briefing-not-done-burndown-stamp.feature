@@ -16,7 +16,7 @@ Feature: The briefing's open-ticket chart states what it measures and never supp
     And its heading keeps the word "burndown" per the 2026-08-16 human ruling
     And its summary reports the open count at each end of the window with the filed and closed rates
     And it makes no claim of progress toward a fixed or committed scope
-    And it projects no completion date
+    And it projects no completion date, stating "no ETA — backlog still growing"
 
   # BL-896 briefing-open-chart-02
   Scenario: the open count matches the backlog's actual open set
