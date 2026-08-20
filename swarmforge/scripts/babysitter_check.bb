@@ -226,7 +226,15 @@
 (defn check-pipeline-sh []
   (or (System/getenv "BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT")
       (str (fs/path script-dir "check_pipeline_code_on_main.sh"))))
-(def is-qa-ancestor-sh (str (fs/path script-dir "is_qa_ancestor.sh")))
+
+;; BABYSITTER_QA_ANCESTOR_SCRIPT is the same hermetic-test-seam shape as
+;; BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT above (BL-962: scenario 05 needs an
+;; ancestry predicate that fails selectively during merge adjudication).
+;; is_qa_ancestor.sh stays the ONE approval predicate (invariant 2) - the
+;; seam substitutes the whole predicate in tests, never adds a second one.
+(defn qa-ancestor-sh []
+  (or (System/getenv "BABYSITTER_QA_ANCESTOR_SCRIPT")
+      (str (fs/path script-dir "is_qa_ancestor.sh"))))
 
 (defn qa-exclusive-paths []
   (let [r (sh! "bash" (check-pipeline-sh) "--list-paths")]
@@ -240,7 +248,7 @@
 ;; :dir, so this calls process/sh directly rather than widening that
 ;; shared helper's contract for one caller.
 (defn qa-ancestor? [sha]
-  (let [r (process/sh {:continue true :dir (str project-root)} "bash" is-qa-ancestor-sh sha)]
+  (let [r (process/sh {:continue true :dir (str project-root)} "bash" (qa-ancestor-sh) sha)]
     (cond
       (zero? (:exit r)) {:ok? true :ancestor? true}
       (= 1 (:exit r)) {:ok? true :ancestor? false}
@@ -278,6 +286,106 @@
 (defn- offending-paths [paths qa-paths]
   (filterv (fn [p] (some #(str/starts-with? p %) qa-paths)) paths))
 
+;; ── merge adjudication against QA-approved parents (BL-962) ───────────────
+;; -m --first-parent above charges a reconciliation merge with everything
+;; its QA-side parent brought in, so every operator merge of QA-landed work
+;; raised a false CRIT (da6031c60 / b3ba48bfc, evidence
+;; backlog/evidence/babysitter-on-main-false-positive-20260820.md). The
+;; exemption rule is BL-925's commit-time rule applied to the history sweep:
+;; a merge's path clears ONLY when some QA-approved parent holds
+;; byte-identical content for it. Only ancestry + content identity may
+;; clear a path - commit subjects are spoofable and are never consulted.
+
+(defn merge-non-first-parents
+  "The non-first parents of a merge commit (['^2' onward] - octopus merges
+   fall out of --parents naturally). nil on git failure (fail closed)."
+  [sha]
+  (let [r (sh! "git" "-C" project-root "rev-list" "--parents" "-n" "1" sha)]
+    (when (zero? (:exit r))
+      (vec (drop 2 (str/split (str/trim (:out r)) #"\s+"))))))
+
+(defn path-identical-to-parent?
+  "Is the merge RESULT's content for path byte-identical to parent's
+   version? git diff --quiet: exit 0 identical, 1 different, else error
+   ({:ok? false} - the caller fails the whole sweep closed, invariant 3)."
+  [parent sha path]
+  (let [r (sh! "git" "-C" project-root "diff" "--quiet" parent sha "--" path)]
+    (case (:exit r)
+      0 {:ok? true :identical? true}
+      1 {:ok? true :identical? false}
+      {:ok? false :identical? false})))
+
+(defn merge-parent-facts
+  "Impure: per non-first parent of merge sha - QA approval (qa-ancestor?,
+   backed by the one shared ancestry script) plus which of the offending paths
+   the merge result holds byte-identical to that parent. ANY failure in the
+   ancestry call or a content diff yields {:ok? false} (invariant 3):
+   the caller must fail the WHOLE sweep closed, never adjudicate on
+   partial facts."
+  [sha offending]
+  (let [parents (merge-non-first-parents sha)]
+    (if (nil? parents)
+      {:ok? false}
+      (reduce
+       (fn [acc parent]
+         (let [{:keys [ok? ancestor?]} (qa-ancestor? parent)]
+           (if-not ok?
+             (reduced {:ok? false})
+             (let [checks (mapv #(vector % (path-identical-to-parent? parent sha %)) offending)]
+               (if (some (fn [[_ c]] (not (:ok? c))) checks)
+                 (reduced {:ok? false})
+                 (update acc :parents conj
+                         {:parent parent
+                          :qa-approved? ancestor?
+                          :identical-paths (into #{} (keep (fn [[p c]] (when (:identical? c) p)) checks))}))))))
+       {:ok? true :parents []}
+       parents))))
+
+(defn adjudicate-merge-paths
+  "Pure (invariant 1): the offending paths that must STILL be reported for
+   a merge. A path is exempt only when some parent is BOTH QA-approved AND
+   holds byte-identical content for it; identity to a non-approved parent
+   never clears (a writer must not ride fresh pipeline edits through on a
+   legitimate merge's coat-tails - BL-925's posture). parents rows:
+   {:parent sha :qa-approved? bool :identical-paths #{path ...}}."
+  [offending parents]
+  (filterv (fn [path]
+             (not-any? (fn [{:keys [qa-approved? identical-paths]}]
+                         (and qa-approved? (contains? identical-paths path)))
+                       parents))
+           offending))
+
+(defn assemble-offending-commits
+  "Pure (invariant 3): per-commit rows -> the sweep's offending half. A row
+   is an offender map, nil (clean), or ::adjudication-failed. ANY failed
+   row fails the WHOLE sweep closed - valid offenders beside it are
+   withheld, never a partial result that could read as clean."
+  [rows]
+  (if (some #(= ::adjudication-failed %) rows)
+    {:offending-commits [] :ancestry-unavailable? true}
+    {:offending-commits (vec (remove nil? rows)) :ancestry-unavailable? false}))
+
+(defn- offender-row
+  "One swept non-ancestor sha -> offender map / nil / ::adjudication-failed.
+   Non-merge commits are untouched by BL-962: offending paths report as
+   before. A merge's offending paths go through parent adjudication first."
+  [sha qa-paths]
+  (let [touched (commit-touched-paths sha)
+        offending (offending-paths (or touched []) qa-paths)]
+    (cond
+      (empty? offending) nil
+
+      (not (commit-is-merge? sha))
+      {:sha sha :subject (commit-subject sha) :paths offending}
+
+      :else
+      (let [{:keys [ok? parents]} (merge-parent-facts sha offending)]
+        (if-not ok?
+          ::adjudication-failed
+          (let [report (adjudicate-merge-paths offending parents)]
+            (when (seq report)
+              {:sha sha :subject (commit-subject sha) :paths report})))))))
+
 (defn gather-pipeline-code-on-main []
   (let [qa-paths (qa-exclusive-paths)]
     (cond
@@ -304,14 +412,8 @@
               (let [non-ancestor-shas (->> confirmations
                                             (remove (fn [[_ {:keys [ancestor?]}]] ancestor?))
                                             (map first))
-                    offenders (->> non-ancestor-shas
-                                   (keep (fn [sha]
-                                           (let [touched (commit-touched-paths sha)
-                                                 offending (offending-paths (or touched []) qa-paths)]
-                                             (when (seq offending)
-                                               {:sha sha :subject (commit-subject sha) :paths offending}))))
-                                   vec)]
-                {:offending-commits offenders :ancestry-unavailable? false}))))))))
+                    rows (mapv #(offender-row % qa-paths) non-ancestor-shas)]
+                (assemble-offending-commits rows)))))))))
 
 ;; ── handoffd / dead-letters / stuck parcels ──────────────────────────────
 
@@ -647,4 +749,8 @@
                 (println (str ts " NUDGE-FAILED " (:detail result)))))))))
     (System/exit 0)))
 
-(-main)
+;; Run only when invoked as the script itself - load-file from a test runner
+;; (BL-962's unit/property runners exercise the pure adjudication core) must
+;; never fire a real sweep.
+(when (= *file* (System/getProperty "babashka.file"))
+  (-main))
