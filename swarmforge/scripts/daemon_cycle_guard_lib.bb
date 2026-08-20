@@ -26,6 +26,7 @@
 
 (ns daemon-cycle-guard-lib
   (:require [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 (def default-subprocess-wait-bound-ms 60000)
@@ -47,6 +48,38 @@
 ;; attribution would vanish with nothing to show for it. defonce makes the
 ;; wiring order-independent instead of merely lucky.
 (defonce current-context (atom "outside-sweep"))
+
+;; BL-977: the in-flight sweep marker hook. current-context above is
+;; in-memory only, which is exactly why the 2026-08-20T07:55:35Z halt
+;; happened: the supervisor could not see that a 143s dropped-parcel-sweep
+;; was legitimately in flight, so heartbeat-file mtime alone crossed the
+;; 30s window and alarm-and-halt! killed a progressing daemon. run-sweep!
+;; now ALSO publishes its transitions through this hook - sweep start with
+;; the sweep's name, sweep end as idle - so the marker on disk advances
+;; only with the poll loop's own progress (invariant 2: no free-running
+;; pulser; a wedged loop's marker freezes at its last transition and ages
+;; past the in-sweep budget). defonce for the same multi-load-file reason
+;; as the atoms above. Default no-op keeps every pure test caller silent.
+(defonce sweep-marker! (atom (fn [_] nil)))
+
+(defn install-sweep-marker-writer!
+  "Wires sweep-marker! to publish marker-path as one small JSON object:
+   {\"sweep\": <name>, \"started_at_ms\": <wall-clock ms>} while a sweep is
+   in flight, {\"sweep\": \"idle\"} between sweeps. The wall clock is
+   stamped HERE at transition time (the supervisor computes the in-flight
+   age from it), and a write failure is swallowed - the marker is
+   observability, never allowed to fail a sweep."
+  [marker-path]
+  (reset! sweep-marker!
+          (fn [{:keys [sweep]}]
+            (try
+              (spit marker-path
+                    (str (json/generate-string
+                          (if (= sweep "idle")
+                            {:sweep "idle"}
+                            {:sweep sweep :started_at_ms (System/currentTimeMillis)}))
+                         "\n"))
+              (catch Exception _ nil)))))
 
 ;; Wired by the daemon to its log!; the default is silent so library
 ;; consumers (swarm_handoff.bb and tests loading handoff_lib.bb) never
@@ -92,10 +125,14 @@
    error or clean. log-fn is (fn [event detail]); now-fn returns ms."
   [log-fn now-fn sweep-name thunk]
   (reset! current-context sweep-name)
+  ;; BL-977: publish the transition - the marker advances only here, with
+  ;; the poll loop's own progress, never on a timer.
+  ((deref sweep-marker!) {:sweep sweep-name})
   (let [t0 (now-fn)]
     (try
       (thunk)
       (catch Exception e
         (log-fn (str sweep-name "-error") (.getMessage e))))
     (log-fn "sweep-boundary" (str "sweep=" sweep-name " ms=" (- (now-fn) t0)))
-    (reset! current-context "outside-sweep")))
+    (reset! current-context "outside-sweep")
+    ((deref sweep-marker!) {:sweep "idle"})))

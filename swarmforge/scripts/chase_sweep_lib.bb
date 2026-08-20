@@ -748,8 +748,17 @@
 (defn- list-handoff-files-with-batches [dir]
   (concat (list-handoff-files dir) (mapcat list-handoff-files (list-batch-dirs dir))))
 
+(def ^:dynamic *read-handoff-file*
+  "BL-978 instrumentation seam: the ONE function through which ANY sweep
+   code reads a handoff file's bytes - both the single-pass index and the
+   older per-field readers below. Tests bind a counting wrapper to assert
+   the read-each-file-once invariant over the whole sweep, so a regression
+   back to per-item scanning cannot hide from the counter; production is
+   plain slurp."
+  slurp)
+
 (defn- read-header-field [file-path field]
-  (let [header (first (str/split (slurp file-path) #"\n\n" 2))
+  (let [header (first (str/split (*read-handoff-file* file-path) #"\n\n" 2))
         prefix (str field ": ")]
     (some (fn [line] (when (str/starts-with? line prefix) (subs line (count prefix))))
           (str/split-lines header))))
@@ -1289,26 +1298,95 @@
        (keep handoff-event-ms)
        (reduce (fn [best ms] (if (or (nil? best) (> ms best)) ms best)) nil)))
 
+;; ── BL-978: single-pass trail index ────────────────────────────────────────
+;; dropped-parcel-items used to call newest-trail-event-ms once PER active
+;; item, and every call re-listed and re-slurped every handoff file in all
+;; 40 scan dirs (~5900 files x 8 items = ~47000 reads; sweep boundaries
+;; measured 30-143269 ms on 2026-08-20, blocking mail delivery for the
+;; whole window and opening BL-977's false-halt window). The sweep now
+;; walks the scan dirs ONCE, reading each handoff file exactly once and
+;; deriving every per-ticket fact (has-trail, live mail, newest qualifying
+;; trail event) from that single read. The decision definitions - trail,
+;; live mail, BL-719's self-nudge exclusion, the unparseable-timestamp
+;; skip, and decide-dropped-parcel? itself - are byte-identical (invariant
+;; 2); this is a data-access change only.
+
+(defn- handoff-headers
+  "One read, one parse: every `field: value` line of file-path's header
+   block (before the first blank line) as a map. Field/value splitting
+   matches read-header-field's own `<field>: ` convention exactly."
+  [file-path]
+  (let [header (first (str/split (*read-handoff-file* file-path) #"\n\n" 2))]
+    (into {}
+          (keep (fn [line]
+                  (when-let [idx (str/index-of line ": ")]
+                    [(subs line 0 idx) (subs line (+ idx 2))])))
+          (str/split-lines header))))
+
+(defn build-dropped-parcel-trail-index
+  "BL-978 invariant 1: ONE pass over the union of all-scan-dirs and
+   live-mail-dirs, reading each handoff file exactly once, producing
+   {:trail {ticket-id {:newest-trail-ms ms-or-nil}} :live-ids #{ticket-id}}.
+   Trail evidence comes from files under all-scan-dirs (has-trail
+   membership = any file referencing the id, self-nudges included, exactly
+   as collect-dispatched-ticket-ids counted them; newest-trail-ms = the
+   freshest enqueued_at/created_at EXCLUDING this sweep's own prior nudges
+   per BL-719 invariant 3, files with no parseable timestamp skipped, nil
+   when nothing qualifies - exactly newest-trail-event-ms's definition).
+   live-ids come from files under live-mail-dirs. A dir in both sets
+   contributes to both from the same single read; adding an active ticket
+   adds no filesystem work at all."
+  [all-scan-dirs live-mail-dirs]
+  (let [trail-set (set (map str all-scan-dirs))
+        live-set (set (map str live-mail-dirs))]
+    (reduce
+     (fn [acc dir]
+       (let [trail? (contains? trail-set dir)
+             live? (contains? live-set dir)]
+         (reduce
+          (fn [acc file]
+            (let [headers (handoff-headers file)
+                  ref (or (get headers "task") (get headers "message"))
+                  id (extract-ticket-id ref)]
+              (if-not id
+                acc
+                (let [acc (if live? (update acc :live-ids conj id) acc)]
+                  (if-not trail?
+                    acc
+                    (let [msg (get headers "message")
+                          self-nudge? (boolean (and msg (str/includes? msg dropped-parcel-nudge-phrase)))
+                          event-ms (or (parse-instant-ms (get headers "enqueued_at"))
+                                       (parse-instant-ms (get headers "created_at")))
+                          acc (update-in acc [:trail id] #(or % {:newest-trail-ms nil}))]
+                      (if (and (not self-nudge?) event-ms)
+                        (update-in acc [:trail id :newest-trail-ms]
+                                   (fn [best] (if (or (nil? best) (> event-ms best)) event-ms best)))
+                        acc)))))))
+          acc
+          (list-handoff-files-with-batches dir))))
+     {:trail {} :live-ids #{}}
+     (distinct (map str (concat all-scan-dirs live-mail-dirs))))))
+
 (defn dropped-parcel-items
   "Full pipeline for one evaluation tick. active-dir: backlog/active/.
    all-scan-dirs: every role's :new/:in_process/:completed/:sent/:outbox
    (same set BL-222's dispatch-gap-scan-dirs builds - used for has-trail?
-   and newest-trail-event-ms). live-mail-dirs: every role's :new/:in_process
+   and newest-trail-ms). live-mail-dirs: every role's :new/:in_process
    ONLY (used for live-mail?). Returns the active items with a trail, no
    live mail anywhere, and a trail gone stale past stall-threshold-ms - the
-   dropped-parcel candidates for a coordinator nudge. Reuses read-active-
-   items/collect-dispatched-ticket-ids (both id+assigned_to and the trail-
-   set definition are shared with BL-222, unchanged)."
+   dropped-parcel candidates for a coordinator nudge. BL-978: the evidence
+   comes from build-dropped-parcel-trail-index's single pass; the decision
+   (decide-dropped-parcel?) and every definition it consumes are unchanged
+   (invariant 2 - the candidate set is the contract)."
   [active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
   (let [items (read-active-items active-dir)
-        dispatched-ids (collect-dispatched-ticket-ids all-scan-dirs)
-        live-ids (collect-dispatched-ticket-ids live-mail-dirs)]
+        {:keys [trail live-ids]} (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)]
     (filterv
      (fn [item]
        (decide-dropped-parcel?
-        {:has-trail? (contains? dispatched-ids (:id item))
+        {:has-trail? (contains? trail (:id item))
          :live-mail? (contains? live-ids (:id item))
-         :newest-trail-ms (newest-trail-event-ms (:id item) all-scan-dirs)}
+         :newest-trail-ms (get-in trail [(:id item) :newest-trail-ms])}
         now-ms stall-threshold-ms))
      items)))
 

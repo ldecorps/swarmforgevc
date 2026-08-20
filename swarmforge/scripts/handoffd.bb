@@ -218,6 +218,13 @@
                 (str "sweep=" context " bound-ms=" bound-ms
                      " cmd=" (str/join " " (take 4 cmd))))))
 
+;; BL-977: publish the in-flight sweep marker so the supervisor can tell a
+;; heavy-but-progressing cycle (dropped-parcel-sweep measured 143269 ms on
+;; 2026-08-20) from true silence. Written by run-sweep!'s own transitions -
+;; the marker advances only with real poll-loop progress.
+(daemon-cycle-guard-lib/install-sweep-marker-writer!
+ (str (fs/path daemon-dir "handoffd.sweep-marker")))
+
 ;; BL-967 invariant 2: one boundary line per heavy-bundle sweep, action or
 ;; no action, so the log alone localizes any stall to one sweep.
 (defn run-sweep! [sweep-name thunk]
