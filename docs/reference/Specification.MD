@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-910: the morning briefing's backlog
+**Last Updated:** August 20, 2026 (BL-959: the APS Babashka toolchain our
+Gherkin gates consume is pinned, and bumping that pin is a human commit, so
+the adopt/defer/reject question the 2026-08-19 upstream scan raised is now
+answered by measurement rather than changelog reading.
+`swarmforge/scripts/aps_equivalence_run.sh` clones the candidate at exactly
+the ticket's SHA into a throwaway work dir (refusing to proceed on any
+`rev-parse` mismatch, `install_aps_tools.sh`'s pattern), runs BOTH real
+toolchains — their own namespaces on their own classpath, called exactly as
+their CLIs call them, nothing reimplemented — over every live
+`specs/features/*.feature` through three lanes (lint-gate parse, IR
+generation + the IR-DRY checker compared as FINDING SETS rather than file
+bytes, and mutation-site enumeration over the existing fixture, enumeration
+only), and turns the two result sets into an EQUIVALENT/DIVERGENT/INCOMPLETE
+verdict matrix. It fails closed: exit 0 only for a NON-EMPTY all-EQUIVALENT
+matrix, because a missing outcome or an empty result set is "nothing
+compared", never "nothing diverged". Every pinned surface is read-only by
+construction — `swarmforge/vendor/aps/` is read, `swarmforge.lock.json` is
+read for the repo URL, `upstream-watch.json` is untouched, the candidate is
+never copied into `vendor/` — and the harness is wired into no live gate;
+live gates keep consuming the pin. The 2026-08-20 run recommends
+BUMP-WITH-SHIMS: the candidate is a clean fast-forward with compatible CLI
+entry points, but a bare bump flips 32 of 604 live features from lint-pass to
+lint-fail and reshapes 293 IR-DRY finding sets via commit `3a1d7b063`'s
+default-ON parser inference, while `--do-not-infer` at the two parser call
+sites restores 1209/1209 EQUIVALENT — the shim is measured sufficient, not
+assumed — and commit `1001283af`'s mutation-metadata relocation needs a
+work-dir/sidecar shim or soft mutation runs silently degrade to full ones.
+The pin bump, the re-vendor and any `upstream-watch.json` edit remain
+separate HUMAN commits after reading the evidence. Babashka has no
+mutation/CRAP/DRY tooling wired here, so the harness is gated by its own
+`swarmforge/scripts/test/aps_equivalence_*` unit and property runners only —
+the degraded fallback, recorded as such. Evidence:
+`backlog/evidence/BL-959-aps-equivalence-report.md`; decision log entry:
+[`docs/upstream-deviations.md`](../upstream-deviations.md) 2026-08-20; runbook:
+[`docs/how-to/BL-959-aps-candidate-toolchain-equivalence-run.md`](../how-to/BL-959-aps-candidate-toolchain-equivalence-run.md).);
+Previously August 20, 2026 (BL-910: the morning briefing's backlog
 burndown gains a projected ETA beside the counts it is derived from. Net
 burn is the close rate minus the mint rate; when strictly positive the open
 count over net burn gives a calendar date (`Projected clear (all open
