@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-985: the tool-miss auto-heal wrapper
+**Last Updated:** August 20, 2026 (BL-970: the wake busy-gate classifier
+(`chase_sweep_lib.bb`'s `actively-processing?`, the one chokepoint reached
+by all four wake predicates — deliver, chase, rotate, nudge — so no call
+site changed) now classifies from the pane's RENDERED TURN STATE instead
+of anywhere-in-snapshot marker-word matching, fixing two failure
+directions in one classifier: (1) false-busy, self-sustaining — a role at
+an idle prompt whose scrollback still shows a lingering background
+shell's running chrome, or a busy-marker phrase merely quoted inside
+displayed text, stayed permanently unwakeable because every wake path
+shared the same broken signal and only the role's own spontaneous turn
+could scroll the marker away (observed live: QA idle ~70 minutes holding
+a completed gate while every wake was refused as busy); (2) false-idle,
+latent — the old hand-maintained spinner-verb list missed real verbs, so
+a genuinely mid-turn pane could classify idle and become a wake-injection
+target. The fix recognizes the live status frame structurally (a
+spinner-glyph line with any verb, an ellipsis, and a digit-led
+parenthesized elapsed) rather than by word list — removing the verb list
+instead of growing it — and restricts classification to the snapshot's
+tail zone, so a byte-perfect frame line quoted deep in scrollback can no
+longer false-busy a pane whose tail shows the idle prompt. Wake
+retry/aging policy is unchanged; only classification changed. Noted but
+explicitly out of scope: `babysitterd_sweep_lib.bb` carries its own
+independent whole-pane busy classifier with the same defect shapes —
+untouched by this ticket, surfaced by note as a sibling gap.); Previously
+August 20, 2026 (BL-985: the tool-miss auto-heal wrapper
 (BL-913) gains a PROACTIVE anchor, closing the one drift its reactive
 `:wrong-cwd` output heal could never see — a shell wandering into a
 SIBLING worktree, which is still a git repository, so every command
