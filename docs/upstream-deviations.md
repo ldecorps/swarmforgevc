@@ -164,3 +164,25 @@ drift.
 | Change | Rationale |
 |--------|-----------|
 | All 27 `echo -e "${RED}Error:${RESET} ..."` diagnostics now route through one `error_msg()` helper that writes to **stderr** (`>&2`). Message text, colouring and every exit status are byte-identical — only the channel changed. | stdout carries VALUES: callers capture command substitutions (the control socket path is the live example), so a diagnostic on stdout corrupts the captured value and reads as silence to anything watching stderr. BL-944's evidence misdiagnosed a socket-path refusal as "no output" for exactly this reason. A standing guard (`extension/test/swarmforgeShErrorChannelGuard.test.js`, over `specs/pipeline/steps/lib/swarmforgeShErrorChannel.js`) keeps the next error line off the wrong channel. |
+
+### 2026-08-20 — outcome of the Row A adopted slice: APS `codex/bb-tools-equivalence` measured (BL-959)
+
+The 2026-08-19 entry above adopted exactly one slice — a validation run, not an
+adoption — of APS candidate head `1001283af` against our pin `accaa33d`. That
+run is done. **Recommendation: bump-with-shims.** The pin bump, the re-vendor
+and any `upstream-watch.json` edit remain **human** commits; nothing about the
+pinned surfaces changed with this ticket.
+
+| Finding | Measured |
+|---------|----------|
+| Candidate is a clean fast-forward, CLI entry points and output paths compatible for every local caller of `swarmforge/vendor/aps` | Confirmed — no shim needed at the *invocation* surface (report §3). |
+| `3a1d7b063` parser default-inference is a **behavior** change our gates depend on | A bare bump flips **32 of 604** live features from lint-pass to lint-fail and reshapes **293** IR-DRY finding sets. With `--do-not-infer` at the two parser call sites (`gherkin_lint_gate.sh`, `runnerAdapter.js`), the corpus is **1209/1209 EQUIVALENT** — the shim is *sufficient*, not merely plausible. |
+| `1001283af` gherkin-mutation metadata relocation is a **behavior** change | Source-verified, not matrix-exercised (the lanes enumerate mutation sites; they never run the mutation loop). Without a work-dir/sidecar shim a bump silently degrades every soft mutation run to a full one and strands BL-638's false-clean correction. |
+| The intake's classification of the other five commits as porting/docs | Confirmed for all five, and the intake's headline list was missing 2 of the 7 commits. |
+
+The evidence — per-commit classification for all seven commits, the verdict
+matrix, the per-caller compatibility check, and the report's own three
+"ways this could be wrong" — is
+[`backlog/evidence/BL-959-aps-equivalence-report.md`](../backlog/evidence/BL-959-aps-equivalence-report.md).
+The harness is re-runnable on demand and wired into no live gate; see
+[the how-to](how-to/BL-959-aps-candidate-toolchain-equivalence-run.md).
