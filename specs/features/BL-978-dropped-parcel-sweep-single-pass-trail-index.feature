@@ -39,10 +39,16 @@ Feature: BL-978 the dropped-parcel sweep reads each handoff file once, not once 
     Then that ticket is still reported as a dropped-parcel candidate
 
   # BL-978 dropped-parcel-sweep-single-pass-trail-index-04
-  Scenario: a trail file with no parseable timestamp never reads as fresh
-    Given an active ticket whose trail files all lack a parseable timestamp header
+  Scenario: an unparseable trail file never masks an otherwise stale trail
+    Given an active ticket whose trail holds one stale file with a parseable timestamp and further files with no parseable timestamp header
     When the dropped-parcel sweep evaluates one tick
     Then that ticket is still reported as a dropped-parcel candidate
+
+  # BL-978 dropped-parcel-sweep-single-pass-trail-index-06
+  Scenario: a ticket whose whole trail is unparseable is never nudged on missing data
+    Given an active ticket whose trail files all lack a parseable timestamp header
+    When the dropped-parcel sweep evaluates one tick
+    Then that ticket is not reported as a dropped-parcel candidate
 
   # BL-978 dropped-parcel-sweep-single-pass-trail-index-05
   Scenario: the indexed sweep stays inside the supervisor's stall window on the live tree
