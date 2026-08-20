@@ -234,7 +234,16 @@ notes: |
   control-plane work riding the same coder-branch lineage, which an approval
   on BL-571 does not authorise (BL-506). Same disposition BL-935 recorded
   for `e63d364863`. Full analysis: backlog/evidence/BL-571-qa-bounce-20260820.md.
-abandoned_commits: ["17ae8a4822"]
+
+  `b7a6e580d7` (also declared, coder, 2026-08-20): QA's merge of the BL-957
+  parcel into the QA branch, made AFTER this bounce was sent. Its subject
+  names BL-571 only descriptively ("BL-571 content kept reverted per its
+  open QA bounce") — it carries ZERO BL-571 content, so nothing of this
+  ticket is dropped by declaring it. It cannot be merged into the re-fix
+  parcel without folding in BL-957's own unapproved in-flight work (the
+  same BL-506 rider problem as above). It is already an ancestor of the QA
+  branch, so QA's verification merge reaches it natively.
+abandoned_commits: ["17ae8a4822", "b7a6e580d7"]
 bounce_count: 2
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: bbb14382d8, evidence: backlog/evidence/BL-571-sequential-rotation-dormant-parity-bounce-20260819.md }
