@@ -27,7 +27,7 @@ approval_context: >
   structure (BL-913 invariant 1) and BL-934's rm-visibility guarantees.
 
 required_wiring:
-  - "swarmforge/scripts/swarmforge.sh::\"PreToolUse\": [::the fix is not delivered while the hook stays disabled — the operator's disable comment (3bac496ec) gates re-enable on exactly this parse-checked fail-open, so the restored registration block must ride the parcel. This literal is the JSON key in the restored hooks block; it has zero occurrences in the disable-era file (comments mention PreToolUse only unquoted), so the gate cannot pass vacuously"
+  - 'swarmforge/scripts/swarmforge.sh::"PreToolUse": [::the fix is not delivered while the hook stays disabled - the operator disable comment (3bac496ec) gates re-enable on exactly this parse-checked fail-open, so the restored registration block must ride the parcel. This literal is the JSON key in the restored hooks block; it has zero occurrences in the disable-era file (comments mention PreToolUse only unquoted), so the gate cannot pass vacuously. Re-quoted 2026-08-20 (documenter note 000219): the pre-QA gate reads this line RAW and never unescapes, so the entry must be YAML single-quoted for the pattern to reach the matcher as a real double-quoted literal'
 
 invariants:
   - "Every command text the hook hands back to Claude Code parses as bash (checkable via bash -n on the composed wrapper); a composition that does not parse fail-opens to the byte-untouched original command with no narration — BL-913's locked decision 5 (the first miss must not reach the model as a confession) extends to the wrapper's own composition failures"
