@@ -88,6 +88,7 @@ expects them, and are not migrated or rewritten here.
 - [The Constitution Doc-Citation Guard](how-to/BL-945-constitution-doc-citation-guard.md) — why a constitution article citing a `docs/...` path now fails the standing extension suite if that path doesn't resolve on `main`, what it deliberately does and doesn't scan, and how it differs from BL-640's worktree-freshness guard.
 - [The Hardening-Debt Ledger](how-to/BL-942-hardening-debt-ledger.md) — why the office-hours mutation/CRAP bypass's "runs later against a quiet host" promise can no longer be kept under continuous 3x8 shifts, how to record a deferral and read outstanding debt, and its dedup/no-row-on-success rules.
 - [Running the APS candidate-toolchain equivalence harness](how-to/BL-959-aps-candidate-toolchain-equivalence-run.md) — how to measure a candidate APS toolchain against the pinned one before a human pin bump: the clone-at-SHA-and-verify run, the three gate lanes and their EQUIVALENT/DIVERGENT/INCOMPLETE matrix, the fail-closed exit, the `--do-not-infer` shim seam, and the pinned surfaces it never writes.
+- [Diagnosing a handoffd cycle stall from the log](how-to/BL-967-handoffd-cycle-stall-diagnosis.md) — how to read `sweep-boundary` and `subprocess-timeout` lines when the daemon goes quiet mid-cycle, the 60s bounded-subprocess chokepoint and its `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` seam, why raising the freshness threshold is not a fix, and why a slow 120–232s cycle is healthy rather than stalled.
 
 ## Reference
 
