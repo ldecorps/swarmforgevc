@@ -16,10 +16,16 @@ const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { makeEvidenceReader } = require('./lib/evidenceReport');
 const { resolveMainCheckout } = require('./lib/mainCheckout');
+const { lazy } = require('./lib/lazy');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKTREE_ROOT = REPO_ROOT; // this coder worktree
-const MAIN_CHECKOUT = resolveMainCheckout(__dirname);
+// BL-968: resolved LAZILY at step-execution time, memoized - never at
+// module load. A load-time `git rev-parse` makes this file unloadable from
+// the BL-761 gate's materialized non-repo temp tree, silently skipping the
+// acceptance-contract check for EVERY send whose cited commit contains it
+// (the BL-863 caller-binding-time lesson; the helper itself is fine).
+const mainCheckout = lazy(() => resolveMainCheckout(__dirname));
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
 
 const readEvidence = makeEvidenceReader(EVIDENCE_DIR, 'BL-336-headless-dark-emitter-audit-', 'BL-336');
@@ -113,7 +119,7 @@ function registerSteps(registry) {
     }
     // Re-verify H1's own claim live, right now, against the real main
     // checkout - not trusting the report's own prose.
-    const chaserPath = path.join(MAIN_CHECKOUT, '.swarmforge', 'telemetry', 'chaser-2026-07.jsonl');
+    const chaserPath = path.join(mainCheckout(), '.swarmforge', 'telemetry', 'chaser-2026-07.jsonl');
     if (!fs.existsSync(chaserPath)) {
       throw new Error(`audit-04: expected the real live chaser telemetry file to exist at ${chaserPath}`);
     }
@@ -125,11 +131,11 @@ function registerSteps(registry) {
       );
     }
     const sidecarFiles = fs
-      .readdirSync(path.join(MAIN_CHECKOUT, 'docs', 'briefings'))
+      .readdirSync(path.join(mainCheckout(), 'docs', 'briefings'))
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
       .sort();
     const latestSidecar = JSON.parse(
-      fs.readFileSync(path.join(MAIN_CHECKOUT, 'docs', 'briefings', sidecarFiles[sidecarFiles.length - 1]), 'utf8')
+      fs.readFileSync(path.join(mainCheckout(), 'docs', 'briefings', sidecarFiles[sidecarFiles.length - 1]), 'utf8')
     );
     if (!Array.isArray(latestSidecar.resourceAnomalies) || latestSidecar.resourceAnomalies.length !== 0) {
       throw new Error(
