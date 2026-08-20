@@ -407,6 +407,34 @@
 
 ;; ── orchestration (never aborts on one failed repair) ───────────────────────
 
+;; BL-993 cleaner-bounce D1: the post-repair recheck used to run exactly
+;; once, immediately after repair!-fn returned - but a freshly forked
+;; process's command line is not instantly queryable (ProcessHandle.info()
+;; .commandLine() / sysctl KERN_PROCARGS2 lag on Darwin), so a cmdline-based
+;; healthy? (operator-runtime-cmdline?) could read a genuinely successful
+;; restart as still-dead and classify :failed. Bounded retry at THIS shared
+;; chokepoint so every component's repair recheck tolerates the visibility
+;; window: first healthy read returns immediately (an already-visible repair
+;; pays zero wait); only a still-unhealthy read waits, up to
+;; attempts x interval (~1s by default) before conceding :failed. Env seams
+;; exist for tests that want a tighter budget, never for skipping the
+;; recheck.
+(def post-repair-recheck-attempts
+  (or (some-> (System/getenv "SWARM_ENSURE_RECHECK_ATTEMPTS") parse-long) 10))
+(def post-repair-recheck-interval-ms
+  (or (some-> (System/getenv "SWARM_ENSURE_RECHECK_INTERVAL_MS") parse-long) 100))
+
+(defn healthy-after-repair?
+  "healthy?-fn polled with a bounded retry budget - true on the first
+   healthy read, false only once every attempt has read unhealthy."
+  [healthy?-fn]
+  (loop [attempt 1]
+    (cond
+      (boolean (healthy?-fn)) true
+      (>= attempt post-repair-recheck-attempts) false
+      :else (do (Thread/sleep post-repair-recheck-interval-ms)
+                (recur (inc attempt))))))
+
 (defn ensure-component!
   "Runs one component's check/repair/reclassify cycle. Exceptions during the
    probe or repair are caught so one component's failure can never prevent
@@ -418,7 +446,7 @@
         {:component name :status :healthy}
         (do
           (try (repair!-fn) (catch Exception _ nil))
-          (let [after (boolean (healthy?-fn))]
+          (let [after (healthy-after-repair? healthy?-fn)]
             {:component name
              :status (classify before after)
              :action repair-description}))))

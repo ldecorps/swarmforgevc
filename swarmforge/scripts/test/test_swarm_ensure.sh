@@ -281,6 +281,32 @@ kill -0 "$NEW_OP_PID" 2>/dev/null || fail "05a: operator repair did not leave a 
 cleanup_daemon
 pass "05a: operator runtime not running is repaired and reported FIXED"
 
+# ── 05a-race: a repair whose process becomes visible only after a beat is ──
+# still FIXED (BL-993 cleaner bounce D1). The real race: ensure-component!'s
+# post-repair recheck can land before the freshly-forked process's command
+# line is queryable (ProcessHandle/sysctl visibility lag), reading a
+# genuinely successful restart as FAILED. Reproduced DETERMINISTICALLY here:
+# the start script returns immediately but backgrounds its work behind a
+# 0.3s delay, so the old immediate single recheck always misses it, while
+# the bounded post-repair retry (default ~1s budget) always catches it -
+# this scenario is a hard red on the pre-fix code, not a sometimes-red.
+make_fixture
+# kill the fixture's initial operator stand-in BEFORE orphaning its pidfile:
+# cleanup_daemon kills by pidfile only, so overwriting first would leak it.
+kill -9 "$(cat "$ROOT/.swarmforge/operator/runtime.pid")" 2>/dev/null || true
+echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"
+cat > "$FAKE_BIN/fake_operator_start.sh" <<EOF
+#!/usr/bin/env bash
+# return at once; the new process (and its pid file) appear only later
+( sleep 0.3; bb -e '(Thread/sleep 100000)' operator_runtime.bb >"$ROOT/fake-operator.log" 2>&1 & echo \$! > "$ROOT/.swarmforge/operator/runtime.pid" ) >/dev/null 2>&1 &
+EOF
+chmod +x "$FAKE_BIN/fake_operator_start.sh"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^operator: FIXED (restarted the operator runtime)$" \
+  || fail "05a-race: delayed-visibility repair must still be FIXED; got: $OUT"
+cleanup_daemon
+pass "05a-race: a repair visible only after a beat is still reported FIXED"
+
 # ── 05b: front desk is repaired when Telegram is configured ────────────────
 make_fixture
 export TELEGRAM_BOT_TOKEN="test-token"
