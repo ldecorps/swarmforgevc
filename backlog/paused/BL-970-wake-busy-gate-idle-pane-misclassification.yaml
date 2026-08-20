@@ -128,6 +128,12 @@ notes: >
   'the agent is mid-turn' from 'the agent is idle but has background
   shells'."
 
+  2026-08-20 coordinator: open-slot nudge (000698) named this ticket as
+  top candidate, but by the time I acted the slot was already filled by
+  BL-985 (priority 12, promoted+routed just before this nudge was
+  processed) - active is back at cap 7. Held on capacity, not on this
+  ticket's own merits; still top-ranked for the next open slot.
+
   Specifier probe corrections to the filed hypothesis (probe-before-
   speccing): (a) busy detection does NOT read child processes - it is
   pane-text pattern matching at a single chokepoint
