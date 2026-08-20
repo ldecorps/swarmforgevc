@@ -60,45 +60,53 @@ async function renderAndExtract(paneCount, { expandFirstTile } = {}) {
     url: 'https://example.github.io/resident-spy/?bearer=test-token',
     pretendToBeVisual: true,
   });
-  const panes = panesOf(paneCount);
-  dom.window.fetch = () =>
-    Promise.resolve({ ok: true, json: () => Promise.resolve({ available: true, monoRouterLayout: false, panes }) });
-  dom.window.eval(extractInlineScript(html));
-  await flush();
-
-  const { document } = dom.window;
-  let expandedPaneLabel = null;
-  if (expandFirstTile) {
-    expandedPaneLabel = panes[0].label;
-    const col = document.querySelector(`.pane-col[data-pane-id="${panes[0].id}"]`);
-    col.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  // The served page registers real setInterval polls (this file's own
+  // header comment: an early draft that left a window open across a throw
+  // hung the acceptance run's node --test process indefinitely with zero
+  // output). Any throw between construction and the close() below - a
+  // mutant included - must still close the window, so everything that can
+  // throw lives in this try/finally.
+  try {
+    const panes = panesOf(paneCount);
+    dom.window.fetch = () =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ available: true, monoRouterLayout: false, panes }) });
+    dom.window.eval(extractInlineScript(html));
     await flush();
-  }
 
-  const tiles = panes.map((p) => {
-    const col = document.querySelector(`.pane-col[data-pane-id="${p.id}"]`);
-    const pre = col.querySelector('pre');
+    const { document } = dom.window;
+    let expandedPaneLabel = null;
+    if (expandFirstTile) {
+      expandedPaneLabel = panes[0].label;
+      const col = document.querySelector(`.pane-col[data-pane-id="${panes[0].id}"]`);
+      col.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      await flush();
+    }
+
+    const tiles = panes.map((p) => {
+      const col = document.querySelector(`.pane-col[data-pane-id="${p.id}"]`);
+      const pre = col.querySelector('pre');
+      return {
+        id: p.id,
+        label: p.label,
+        roleNameText: col.querySelector('.pane-kind')?.textContent ?? null,
+        hasExpandHint: !!col.querySelector('.pane-expand-hint'),
+        transcriptDisplay: dom.window.getComputedStyle(pre).display,
+      };
+    });
+
     return {
-      id: p.id,
-      label: p.label,
-      roleNameText: col.querySelector('.pane-kind')?.textContent ?? null,
-      hasExpandHint: !!col.querySelector('.pane-expand-hint'),
-      transcriptDisplay: dom.window.getComputedStyle(pre).display,
+      html,
+      tiles,
+      fullscreenActive: document.body.classList.contains('pane-fullscreen-active'),
+      fullscreenHidden: document.getElementById('pane-fullscreen').hidden,
+      fsHeadHtml: document.getElementById('fs-head').innerHTML,
+      fsPreText: document.getElementById('fs-pre').textContent,
+      expandedPaneLabel,
+      expandedPaneText: expandFirstTile ? panes[0].pane.paneText : null,
     };
-  });
-
-  const result = {
-    html,
-    tiles,
-    fullscreenActive: document.body.classList.contains('pane-fullscreen-active'),
-    fullscreenHidden: document.getElementById('pane-fullscreen').hidden,
-    fsHeadHtml: document.getElementById('fs-head').innerHTML,
-    fsPreText: document.getElementById('fs-pre').textContent,
-    expandedPaneLabel,
-    expandedPaneText: expandFirstTile ? panes[0].pane.paneText : null,
-  };
-  dom.window.close();
-  return result;
+  } finally {
+    dom.window.close();
+  }
 }
 
 function registerSteps(registry) {
