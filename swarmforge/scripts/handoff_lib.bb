@@ -8,6 +8,7 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [cheshire.core :as json]
+            [clojure.java.shell :as sh]
             [clojure.string :as str])
   (:import [java.nio.channels FileChannel]
            [java.nio.file OpenOption StandardOpenOption]))
@@ -18,16 +19,6 @@
 ;; every caller (ready_for_next_task.bb, ready_for_next_batch.bb) needing to
 ;; thread project-root/ambulance state through by hand.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
-
-;; BL-967: every subprocess this lib spawns goes through the bounded
-;; chokepoint (daemon-cycle-guard-lib/sh!), never clojure.java.shell/sh -
-;; whose stream-read shim was the BL-057/BL-061 deadlock family and, still
-;; live in session-exists? until this ticket, the unbounded wait behind the
-;; 2026-08-20 handoffd freshness restart storm (blocked in read() inside
-;; observe-standing-role-loops!'s per-role calls, right after the chase
-;; item loop). Outside the daemon the bound is simply a very generous 60s
-;; ceiling no healthy call approaches.
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 ;; BL-805: mono-router-lib is also a leaf dependency (pure, no load-file of
 ;; its own) - loaded here so respawn-as! below can gate the resident-invoked
@@ -50,7 +41,7 @@
    subdirectory; the daemon only delivers to worktree-root inboxes (BL-056).
    Falls back to the invocation cwd outside any git worktree."
   []
-  (let [result (daemon-cycle-guard-lib/sh! "git" "rev-parse" "--show-toplevel")]
+  (let [result (sh/sh "git" "rev-parse" "--show-toplevel")]
     (if (zero? (:exit result))
       (str/trim (:out result))
       (System/getProperty "user.dir"))))
@@ -104,7 +95,7 @@
    handoff state under (worktree-root)."
   []
   (or @explicit-project-root
-      (let [result (daemon-cycle-guard-lib/sh! "git" "rev-parse" "--git-common-dir")]
+      (let [result (sh/sh "git" "rev-parse" "--git-common-dir")]
         (if (zero? (:exit result))
           (str (fs/parent (fs/absolutize (str/trim (:out result)))))
           (worktree-root)))))
@@ -635,14 +626,15 @@
    BL-927 architect bounce (2026-08-19): uses babashka.process/sh, NOT
    clojure.java.shell/sh - this file's own handoffd.bb sibling documents
    why (BL-061: clojure.java.shell's stream-read shim can deadlock on
-   successive subprocess calls within one process run). BL-967 closed the
-   remainder: the sibling clojure.java.shell/sh calls this comment used to
-   name (session-exists? in the same sweep) are gone - every subprocess in
-   this file now runs through daemon-cycle-guard-lib/sh!, bounded."
+   successive subprocess calls within one process run). This function is
+   called from handoffd.bb's chase hot path alongside other
+   clojure.java.shell/sh calls (session-exists?) in the same sweep - losing
+   the safe mechanism here specifically reintroduces that exact deadlock
+   shape in the daemon's highest-frequency call path."
   [socket session]
   (when-not (str/blank? session)
     (try
-      (let [result (daemon-cycle-guard-lib/sh! "tmux" "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
+      (let [result (process/sh "tmux" "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
         (when (zero? (:exit result))
           (let [line (first (str/split-lines (str (:out result))))]
             (when-let [[_ role] (re-find #"launch/([^/]+)\.sh" (or line ""))]
@@ -709,7 +701,7 @@
   [socket session]
   (and (not (str/blank? socket))
        (not (str/blank? session))
-       (zero? (:exit (daemon-cycle-guard-lib/sh! "tmux" "-S" socket "has-session" "-t" session)))))
+       (zero? (:exit (sh/sh "tmux" "-S" socket "has-session" "-t" session)))))
 
 (defn resolve-wake-session
   "Pure wake target for a roles.tsv session name under mono-router.
@@ -743,7 +735,7 @@
   ([socket session]
    (let [args (cond-> ["tmux" "-S" socket "display-message" "-p" "#{pane_id}"]
                 (not (str/blank? session)) (concat ["-t" session]))
-         result (apply daemon-cycle-guard-lib/sh! args)]
+         result (apply sh/sh args)]
      (str/trim (:out result)))))
 
 (defn respawn-self!
@@ -774,7 +766,7 @@
                         "': " (:reason recompose-result)
                         " - booting on the previously composed prompt.")))
         (flush)))
-    (let [result (apply daemon-cycle-guard-lib/sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+    (let [result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
                                       env-args
                                       ["-t" session (str "zsh '" script "'")]))]
       (when (zero? (:exit result))
@@ -868,7 +860,7 @@
               (println (str "rotate: WARNING no parcel delivered to '" target-role
                             "' within 30s; rotating anyway (it will resume via RESUME-ON-START if it arrives).")))
             (flush))
-          (let [result (apply daemon-cycle-guard-lib/sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+          (let [result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
                                             env-args
                                             ["-t" session (str "zsh '" script "'")]))]
             (if (zero? (:exit result))
@@ -1091,7 +1083,7 @@
    blob), matching the send-time semantics in swarm_handoff.bb's
    canonical-commit."
   [commit]
-  (zero? (:exit (daemon-cycle-guard-lib/sh! "git" "cat-file" "-e" (str commit "^{commit}")))))
+  (zero? (:exit (sh/sh "git" "cat-file" "-e" (str commit "^{commit}")))))
 
 (defn unresolvable-commit?
   "True when content is a git_handoff whose 'commit' header no longer

@@ -133,6 +133,28 @@ test('BL-910 invariant 2: the projection is computed from the rates AS PRINTED (
   assert.equal(p.etaDays, 50);
 });
 
+test('BL-910 invariant 2: an ETA that divides EXACTLY is not pushed a day out by float dust', () => {
+  // Regression: the projection used to divide by the reconstructed
+  // netBurnPerDay float, so 21 / 0.7 evaluated to 30.000000000000004 and
+  // ceiled to 31 - while a reader dividing the printed numbers by hand got
+  // 30. The division now stays in integer tenths. These are the smallest
+  // failing cases in the realistic range; each divides exactly.
+  for (const [openN, close, mint, expectedDays] of [
+    [21, 0.7, 0.0, 30],
+    [42, 0.7, 0.0, 60],
+    [21, 1.4, 0.7, 30],
+    [161, 0.7, 0.0, 230],
+  ]) {
+    const p = projectNotDoneEta(openN, close, mint, NOW);
+    assert.equal(p.kind, 'eta');
+    assert.equal(
+      p.etaDays,
+      expectedDays,
+      `openN=${openN} at net burn ${(close - mint).toFixed(1)}/d must be ${expectedDays}d, the number a reader gets by hand`
+    );
+  }
+});
+
 test('BL-910: a fractional day count rounds up to whole days for the calendar date', () => {
   const p = projectNotDoneEta(101, 6.0, 4.0, NOW); // 50.5 days
   assert.equal(p.kind, 'eta');

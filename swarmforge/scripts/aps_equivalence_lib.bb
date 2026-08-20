@@ -62,17 +62,27 @@
   [work-dir side entry]
   (str work-dir "/tmp/" side "/" (entry-slug entry) ".ir.json"))
 
+(def matrix-formats
+  "The renderings of the verdict matrix the harness writes, by file suffix."
+  ["txt" "md"])
+
+(defn matrix-file-path
+  "Where one rendering of the verdict matrix lives: <work>/matrix.<format>.
+   The comparator derives its own write paths from here, so the enumeration
+   in write-targets cannot drift from what is actually written."
+  [work-dir format]
+  (str work-dir "/matrix." format))
+
 (defn write-targets
   "Every path the harness writes for a run over these entries: one result
-   file per side x gate x entry, the per-side IR temps, plus the two matrix
+   file per side x gate x entry, the per-side IR temps, plus the matrix
    renderings. All of them sit under work-dir by construction."
   [work-dir entries]
   (vec (concat (for [side sides, gate gates, entry entries]
                  (result-file-path work-dir side gate entry))
                (for [side sides, entry entries]
                  (temp-ir-path work-dir side entry))
-               [(str work-dir "/matrix.txt")
-                (str work-dir "/matrix.md")])))
+               (map #(matrix-file-path work-dir %) matrix-formats))))
 
 (defn load-result-set
   "{entry {gate outcome}} read back from one side's result files. A missing
@@ -167,20 +177,27 @@
                         (str "| " entry " | " gate " | " verdict " | " (or detail "") " |"))
                       matrix))))
 
+(defn scrub-message
+  "A toolchain message reduced to its comparable core: the repo root prefix
+   dropped, then every caller-supplied volatile prefix (throwaway clone
+   dirs, temp IR paths) replaced by its stable placeholder, then trimmed.
+   Every side-by-side outcome the harness records goes through here, so two
+   toolchains' messages differ only where their BEHAVIOR differs and never
+   merely because one ran out of a temp dir with a different name."
+  ([message root] (scrub-message message root {}))
+  ([message root replacements]
+   (reduce-kv (fn [s from to] (str/replace s from to))
+              (str/trim (str/replace (str message) (str root "/") ""))
+              replacements)))
+
 (defn normalize-lint-outcome
   "The lint-gate outcome as comparable data: a pass is {\"exit\" 0} alone
-   (OK wording is not behavior); a failure carries the message with the
-   repo root - and any caller-supplied volatile prefixes (throwaway clone
-   dirs, temp IR paths) - scrubbed, so the two toolchains' outcomes differ
-   only when the behavior differs."
+   (OK wording is not behavior); a failure carries its scrub-message'd text."
   ([exit message root] (normalize-lint-outcome exit message root {}))
   ([exit message root replacements]
    (if (zero? exit)
      {"exit" 0}
-     {"exit" exit
-      "error" (reduce-kv (fn [s from to] (str/replace s from to))
-                         (str/trim (str/replace (str message) (str root "/") ""))
-                         replacements)})))
+     {"exit" exit "error" (scrub-message message root replacements)})))
 
 (defn normalize-dry-findings
   "The IR-DRY outcome as a finding SET, not file bytes (ticket deliverable

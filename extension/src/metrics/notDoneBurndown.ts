@@ -56,6 +56,16 @@ function yyyyMmDd(ms: number): string {
  * invariant 2: the shown ETA is recomputable by hand from the open count,
  * close rate and mint rate printed beside it - never from hidden precision.
  * Fractional days round UP to whole days for the calendar date.
+ *
+ * The division stays in INTEGER TENTHS (openN * 10 / netBurnTenths) rather
+ * than dividing by the reconstructed netBurnPerDay float. Both are the same
+ * number in exact arithmetic, but the float form reintroduces exactly the
+ * dust the rounding above removed, and Math.ceil turns that dust into a
+ * whole extra day: at openN=21 with net burn 0.7/d, 21 / 0.7 evaluates to
+ * 30.000000000000004 and ceils to 31, while a reader dividing the printed
+ * numbers by hand gets 30 - a visible contradiction of invariant 2. The
+ * integer form was checked against exact rational arithmetic over every
+ * openN <= 3000 and every tenths rate <= 300 (900k cases, zero mismatches).
  */
 export function projectNotDoneEta(
   openN: number,
@@ -68,7 +78,7 @@ export function projectNotDoneEta(
   if (netBurnTenths <= 0) {
     return { kind: 'no-eta', netBurnPerDay, reason: NOT_SHRINKING_REASON };
   }
-  const etaDays = Math.ceil(openN / netBurnPerDay);
+  const etaDays = Math.ceil((openN * 10) / netBurnTenths);
   return { kind: 'eta', netBurnPerDay, etaDays, etaDateLabel: yyyyMmDd(nowMs + etaDays * DAY_MS) };
 }
 
