@@ -1,6 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-968: the BL-761 acceptance-contract
+**Last Updated:** August 20, 2026 (BL-982: `swarmforge.sh` gains the
+capability for a pipeline pack to declare a second SEAT on the same
+STAGE — e.g. a Sonnet coder and a Fable coder both answering to
+`coder` — by splitting SEAT identity (tmux session, worktree/branch,
+launch script, remote-control name, model, `roles.tsv` row key) from
+STAGE identity (parcel addressing, stage-dwell/metrics keys, the
+`$ROLES_DIR/$role.prompt` lookup and PromptEngine composition), both
+previously the same thing keyed on the role name alone. A window
+line's role field is now a seat id: bare (today's shape, byte-identical)
+or `<stage>@<seat>` (`@` survives a tmux session name, directory name,
+and git branch name alike, and cannot collide with a plain role name).
+The pack parser derives each seat's stage, keeps the duplicate-worktree
+guard as-is, relaxes the duplicate-role guard to one row per SEAT id,
+and adds one rule: any stage declaring an `@`-seat must also declare
+its bare seat, because `to: <stage>` addressing resolves the row whose
+id IS the stage name — without the bare row a stage-addressed parcel
+would resolve nothing. Per-seat model rides the window line's existing
+`--model`/`--effort` `extra_cli` machinery with no new plumbing.
+Deliberately inert in this slice: a second seat boots and sits idle —
+`to: <stage>` delivery and the seat's own claim both resolve only the
+bare seat's mailbox, proven against the real `swarm_handoff.bb`/
+`ready_for_next.sh`; routing work to it is a later slice (BL-983). The
+live `swarmforge.conf` is untouched and stays one seat per stage —
+nothing about the deployed pack's shape changes as a side effect of
+the capability existing. No VS Code extension command or setting; a
+swarmforge fork capability, not yet exercised live.); Previously
+August 20, 2026 (BL-968: the BL-761 acceptance-contract
 gate — the fuller pre-QA check on QA-bound sends — was failing OPEN on
 effectively every send: `pre_qa_gate_gather_lib.bb` materializes the cited
 commit's `specs/pipeline` into a non-git temp tree before running
