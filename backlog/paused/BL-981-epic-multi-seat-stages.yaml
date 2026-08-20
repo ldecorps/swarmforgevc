@@ -11,10 +11,12 @@ decomposes_into: [BL-982, BL-983]
 remaining_slices:
   - "Difficulty-aware routing among seats of a stage: map a ticket difficulty
      signal (prefer reusing mutation_cost low/medium/high) to a model tier, prefer
-     idle seats, and define the busy-preferred-tier fallback. NOT MINTED YET - it
-     turns on human decision 2 below (wait vs spill), and the specifier already had
-     a clarifying question pending when this epic was written, so it could not be
-     asked. Mint once that decision is answered."
+     the more capable seat (motivating instance: more capable coder) for hard
+     tickets and the cheaper seat for easy ones when idle, and define the
+     busy-preferred-tier fallback. NOT MINTED YET - it turns on human decision 2
+     below (wait vs spill), and the specifier already had a clarifying question
+     pending when this epic was written, so it could not be asked. Mint once that
+     decision is answered."
   - "Supervisor / chase / ensure / board / stage-dwell treat seats as instances of a
      stage: dwell still names the STAGE as the bottleneck, while ops surfaces may
      show seat-level detail including each seat's model."
@@ -69,6 +71,13 @@ notes: |
   - SEAT - a runnable instance of a stage. Owns a session, worktree/branch
     family, launch script, mailbox, claim, and its OWN model/effort profile.
     Seats of one stage are NOT clones of each other.
+  - MORE CAPABLE CODER (motivating instance of a more-capable seat) - the
+    stronger-model seat of the coder stage, meant for harder tickets; sits
+    beside a cheaper/faster peer (e.g. Sonnet beside Fable). Named so children
+    keep the product shape visible. BL-982 provisions it; BL-983 makes it an
+    idle claimant; difficulty-aware routing (remaining slice) steers hard work
+    to it. Generic for any stage: "more-capable seat" is the stage-agnostic
+    form - never hard-code coder in implementation.
 
   Deliberately NOT this epic (from the intake's non-goals, preserved):
   - Not a substitute for BL-090/091 secondary swarm - that is fleet scale, a
@@ -101,3 +110,4 @@ notes: |
   must not both own the mapping); BL-909 / stage-dwell (bottleneck naming,
   observe-only); coordinator.prompt Swarm Optimizer (already recommends "add a
   role instance" with no substrate behind it - this epic supplies the substrate).
+mutation_cost: low

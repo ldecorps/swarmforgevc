@@ -6,9 +6,13 @@ Feature: BL-983 a parcel addressed to a stage is worked by exactly one of its se
   therefore work two different tickets at the same time - which is the point of
   duplicating a bottleneck seat.
 
-  Seat choice here is idle-first with a deterministic tie-break, deliberately
-  blind to ticket difficulty. Matching a ticket's difficulty to a seat's model
-  tier is the next slice and needs a human decision this one does not.
+  Motivating concept (named, not implemented here): a more capable coder - a
+  stronger-model seat beside a cheaper/faster peer of the same stage (e.g.
+  Sonnet beside Fable). This slice only makes that seat a real idle claimant;
+  it does not prefer it. Seat choice here is idle-first with a deterministic
+  tie-break, deliberately blind to ticket difficulty and to model tier.
+  Steering hard tickets to the more capable coder is the next slice and needs
+  a human decision this one does not.
 
   Background:
     Given a stage with two seats, each booted with its own worktree and mailbox
