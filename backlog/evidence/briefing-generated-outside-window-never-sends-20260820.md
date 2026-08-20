@@ -91,3 +91,52 @@ log ever says so.** Minted as BL-976. The "make send key off .sent.json"
 suggestion above is already the shipped design — do not rebuild it.
 
 Probed by specifier.
+
+---
+
+## CORRECTION 2026-08-20 06:50Z — the mechanism above is WRONG. Do not build it.
+
+The briefing sent successfully once `RESEND_API_KEY` was present in the daemon's
+environment:
+
+    2026-08-20T06:47:59Z  briefing-sent 2026-08-20.md
+
+**There is no defect in the send path.** Everything above about the generation trigger
+disarming on file existence is true of the GENERATION trigger and irrelevant to SENDING,
+which is a separate sweep. Proof, run against the live lib before the restart:
+
+    find-unsent-briefings  -> ["2026-08-20.md"]
+    partition-by-window    -> :mailable ["2026-08-20.md"], :suppressed []
+
+So the sweep correctly found the file, correctly judged it in-window, and correctly
+attempted to send it — every cycle. The daemon log said so plainly all along:
+
+    briefing-skip-missing-key 2026-08-20.md
+
+The real cause was an **unset `RESEND_API_KEY`** in the daemon's process environment
+(`daemon_alarm_lib.bb:111`, `System/getenv`). `briefing_email_lib.bb`'s documented
+behaviour is to log a skip and leave the file to retry on the next sweep — which is
+exactly what it did, and is correct, non-destructive behaviour.
+
+**Nothing to mint.** Any ticket raised from the earlier text should be closed as
+not-a-defect.
+
+## What this coordinator got wrong, recorded so the method improves
+Three successive causes were asserted, two of them wrong:
+
+1. "handoffd stalled, so the sweep never ran" — disproved by a healthy daemon with 341
+   cycles still not sending.
+2. "the generation trigger disarms on file existence" — read from source, plausible, and
+   **not checked against the daemon's own log** before routing a ticket on it.
+3. `briefing-skip-missing-key` — the actual answer, and it was sitting in
+   `handoffd.log` the entire time.
+
+The log line naming the failure existed before the first hypothesis was formed. Reading
+source to infer a mechanism is not evidence when the component logs its own reason:
+**grep the operational log for the artifact's own name first** (`grep -i briefing
+handoffd.log`), and only then reason about code.
+
+One genuinely open question survives, much smaller than the ticket as routed: should
+`notify_email_to` configured WITHOUT a key raise something louder than a per-cycle skip
+line? `daemon_alarm_lib.bb:157` already has a one-shot warning path for exactly this. Not
+minted here — recorded for the specifier to judge.
