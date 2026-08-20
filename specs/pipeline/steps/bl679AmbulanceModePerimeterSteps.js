@@ -37,6 +37,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -70,7 +71,7 @@ function mkdirp(p) {
 }
 
 function mkFixtureRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl679-ambulance-perimeter-'));
+  const root = mkSocketFixtureRoot('aps-bl679-ambulance-perimeter-');
   git(root, ['init', '-q']);
   git(root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   const commit = gitOut(root, ['rev-parse', '--short=10', 'HEAD']);

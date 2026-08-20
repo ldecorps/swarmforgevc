@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'bl849_orphan_janitor_acceptance_runner.bb');
@@ -57,7 +58,7 @@ function spawnDisposableAncillary(root) {
 }
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function registerSteps(registry) {

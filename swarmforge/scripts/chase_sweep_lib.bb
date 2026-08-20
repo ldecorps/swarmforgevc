@@ -993,17 +993,43 @@
          (map (fn [f] {:file f :content (slurp (str f))}))
          vec)))
 
+(defn nudge-eligible-candidates
+  "BL-963: the paused candidates the open-slot nudge may NAME, COUNT toward
+   its fire decision, or ACCRUE escalation state on - decided by the SAME
+   promotion_gates evaluate chain promotion uses, never a second
+   implementation (BL-663; invariant 1). A candidate the chain refuses for
+   any reason OTHER than human_approval (depends_on once BL-957 landed,
+   depth, hold, and any gate added later - inherited for free through the
+   chain) is excluded entirely: promoting or approving it cannot succeed,
+   and repeated nudges naming it are exactly the eternal-nudge shape SUP-1
+   escalation was built to bound. A candidate whose reported refusal is
+   human_approval stays eligible and is named flagged awaiting approval -
+   approving is the human's own next action (BL-798 scenario 03's
+   surface-not-skip ruling; invariant 2).
+
+   evaluate-ctx is the caller-supplied {:active-count :max-depth
+   :active-epics :done-ids} snapshot; :held? is always false here (paused/
+   candidates by construction, hold/ never enters this scan)."
+  [candidates evaluate-ctx]
+  (filterv (fn [{:keys [content]}]
+             (let [verdict (promotion-gates-lib/evaluate
+                            (merge evaluate-ctx {:content content :held? false}))]
+               (or (:ok verdict)
+                   (= "human_approval" (:gate verdict)))))
+           candidates))
+
 (defn top-open-slot-candidate
-  "The single Article-3.2.4-best candidate among ALL paused candidates —
+  "The single Article-3.2.4-best candidate among the given candidates —
    {:id .. :approved? bool}, or nil when candidates is empty. Approval state
    is reported, never used to filter: a sole pending-approval candidate is
    still named as the top candidate, flagged awaiting approval rather than
-   silently skipped (BL-798 scenario 03). BL-900: epic-index, defaulted to
-   {} when omitted (mirrors promotion-gates-lib/rank-candidates' own default
-   - a candidate with no epic: field, or whose epic has no tracker, ranks by
-   its own priority exactly as before BL-900), is threaded through to
-   rank-candidates so this candidate matches the one promotion actually
-   picks."
+   silently skipped (BL-798 scenario 03). BL-900/BL-963: epic-index,
+   defaulted to {} when omitted (mirrors promotion-gates-lib/rank-candidates'
+   own default - a candidate with no epic: field, or whose epic has no
+   tracker, ranks by its own priority exactly as before BL-900), is threaded
+   through to rank-candidates, and the caller passes candidates already
+   filtered through nudge-eligible-candidates above - so this candidate
+   matches the one promotion actually picks, gate refusals included."
   ([candidates] (top-open-slot-candidate candidates {}))
   ([candidates epic-index]
    (when-let [winner (promotion-gates-lib/rank-candidates candidates epic-index)]

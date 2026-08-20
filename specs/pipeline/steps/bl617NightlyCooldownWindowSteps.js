@@ -41,9 +41,10 @@ const {
   resumeNow,
 } = require(path.join(EXT_DIR, 'out', 'tools', 'telegram-front-desk-bot'));
 const { cooldownWindowMarkerPath, readCooldownWindowMarker } = require(path.join(EXT_DIR, 'out', 'tools', 'cooldownWindowState'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl617-cooldown-'));
+  return mkSocketFixtureRoot('aps-bl617-cooldown-');
 }
 
 function mkdirp(p) {

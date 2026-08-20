@@ -19,11 +19,12 @@ const {
   RESIDENT_PANE_CACHE_TTL_MS,
 } = require(path.join(EXT_DIR, 'out', 'bridge', 'residentPaneLive.js'));
 const { getResidentSpyUiHtml } = require(path.join(EXT_DIR, 'out', 'bridge', 'residentSpyUiHtml.js'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE_NAME = 'Resident-pane live capture TTL cache';
 
 function seedProjectRoot() {
-  const targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'bl881-acceptance-'));
+  const targetPath = mkSocketFixtureRoot('bl881-acceptance-');
   const stateDir = path.join(targetPath, '.swarmforge');
   const launchDir = path.join(stateDir, 'launch');
   fs.mkdirSync(launchDir, { recursive: true });
