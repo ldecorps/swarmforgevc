@@ -64,16 +64,17 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   const { document } = dom.window;
   assert.equal(document.getElementById('ticket-strip').hidden, true);
   // BL-994 locked human decision 2 supersedes the tile-level half of this
-  // assertion: grid tiles carry role name + Expand ONLY, so the ticket no
-  // longer surfaces in the tile head - it surfaces in the tile's fullscreen
-  // Expand instead (buildFullscreenHeadHtml renders the ticket block). The
-  // BL-929 concern this test protects - a standing pack shows no top strip
-  // yet the operator can still find the ticket - is preserved through that
-  // Expand path, asserted here. (BL-929's acceptance scenario 03 pins the
-  // old tile-level wording; flagged to the specifier as a spec amendment
-  // when BL-994 landed this change.)
+  // assertion: grid tiles carry role name + Expand ONLY, so a held ticket
+  // no longer surfaces in the tile head - it surfaces in the tile's
+  // fullscreen Expand instead (spec amendment fabecba4c retargeted BL-929
+  // scenario 03 the same way). The BL-929 concern this test protects - a
+  // standing pack shows no top strip yet the operator can still find the
+  // ticket - is preserved through that Expand path, asserted POSITIVELY
+  // below (bounce D2: the negative half alone left the relocated contract
+  // asserted nowhere in the unit lane).
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
   assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
+  assert.match(documenterHead.innerHTML, /Documenter/);
   document.querySelector('.pane-col[data-pane-id="documenter"]').dispatchEvent(
     new dom.window.MouseEvent('click', { bubbles: true })
   );
