@@ -7,7 +7,7 @@ status: todo
 epic: swarm-reliability
 priority: 30
 direction: operator-reported
-human_approval: pending
+human_approval: approved
 approval_context: >
   The coordinator's 06:50Z retract note ("no ticket needed") and its own
   06:52Z hold annotation on this ticket disagree; the annotation is the
