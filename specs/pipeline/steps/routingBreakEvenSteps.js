@@ -31,18 +31,7 @@ const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const ROLE_LIFECYCLE_TEST = path.join(SWARMFORGE_SCRIPTS, 'test', 'test_role_lifecycle_cli.sh');
 const EXTENSION_DIR = path.join(REPO_ROOT, 'extension');
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
-// BL-968: resolved LAZILY at step-execution time, memoized - never at
-// module load. A load-time `git rev-parse` makes this file unloadable from
-// the BL-761 gate's materialized non-repo temp tree, silently skipping the
-// acceptance-contract check for EVERY send whose cited commit contains it
-// (the BL-863 caller-binding-time lesson; the helper itself is fine).
-let lazyMainCheckout = null;
-function mainCheckout() {
-  if (!lazyMainCheckout) {
-    lazyMainCheckout = resolveMainCheckout(__dirname);
-  }
-  return lazyMainCheckout;
-}
+const MAIN_CHECKOUT = resolveMainCheckout(__dirname);
 
 function runRoleLifecycleTest(ctx) {
   if (ctx.roleLifecycleOutput) {
@@ -105,7 +94,7 @@ function runLiveParkCycleReport() {
   const result = spawnSync('node', [path.join(EXTENSION_DIR, 'out', 'tools', 'park-cycle-report.js')], {
     encoding: 'utf8',
     timeout: 30000,
-    cwd: mainCheckout(),
+    cwd: MAIN_CHECKOUT,
   });
   if (result.status !== 0) {
     throw new Error(`park-cycle-report.js failed: ${result.stderr || result.stdout}`);

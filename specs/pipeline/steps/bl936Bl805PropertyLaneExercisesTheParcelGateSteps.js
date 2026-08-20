@@ -26,21 +26,8 @@ const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const ROTATE_SH = path.join(SCRIPTS, 'rotate_to_role.sh');
 const HANDOFF_LIB = path.join(SCRIPTS, 'handoff_lib.bb');
 const PROPERTY_FILE_REL = 'test/bl805RotateGateOnUnfinishedInProcessParcel.property.test.js';
-// BL-968: resolved LAZILY at step-execution time, memoized - never at
-// module load. A load-time subprocess (two login-shell spawns here) is
-// exactly the class that makes the registry unloadable/slow inside the
-// BL-761 gate's materialized non-repo temp tree (the BL-863
-// caller-binding-time lesson).
-let lazyBins = null;
-function resolveBins() {
-  if (!lazyBins) {
-    lazyBins = {
-      bb: execFileSync('bash', ['-lc', 'command -v bb'], { encoding: 'utf8' }).trim(),
-      git: execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8' }).trim(),
-    };
-  }
-  return lazyBins;
-}
+const BB_BIN = execFileSync('bash', ['-lc', 'command -v bb'], { encoding: 'utf8' }).trim();
+const GIT_BIN = execFileSync('bash', ['-lc', 'command -v git'], { encoding: 'utf8' }).trim();
 
 const HANDOFF_BODY =
   'id: x\nfrom: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-000\ncommit: aaaaaaaaaa\n\nmerge_and_process coder aaaaaaaaaa\n';
@@ -93,10 +80,10 @@ function terminal(fn) {
 
 function mkFixture() {
   const root = mkSocketFixtureRoot('sfvc-bl936-');
-  execFileSync(resolveBins().git, ['-C', root, 'init', '-q']);
-  execFileSync(resolveBins().git, ['-C', root, 'config', 'user.email', 'test@test']);
-  execFileSync(resolveBins().git, ['-C', root, 'config', 'user.name', 'test']);
-  execFileSync(resolveBins().git, ['-C', root, 'commit', '-q', '--allow-empty', '-m', 'init']);
+  execFileSync(GIT_BIN, ['-C', root, 'init', '-q']);
+  execFileSync(GIT_BIN, ['-C', root, 'config', 'user.email', 'test@test']);
+  execFileSync(GIT_BIN, ['-C', root, 'config', 'user.name', 'test']);
+  execFileSync(GIT_BIN, ['-C', root, 'commit', '-q', '--allow-empty', '-m', 'init']);
 
   const coderWt = path.join(root, 'wt-coder');
   const cleanWt = path.join(root, 'wt-cleaner');
@@ -196,7 +183,7 @@ function runResidentInvoked(fx) {
 
 function runDaemonPath(fx) {
   const script = `(load-file "${HANDOFF_LIB}") (println (handoff-lib/rotate-resident-to! "cleaner"))`;
-  const result = spawnSync(resolveBins().bb, ['-e', script], {
+  const result = spawnSync(BB_BIN, ['-e', script], {
     cwd: fx.coderWt,
     encoding: 'utf8',
     env: { ...process.env, PATH: `${fx.binDir}:${process.env.PATH}`, TMUX_LOG: fx.tmuxLog },
