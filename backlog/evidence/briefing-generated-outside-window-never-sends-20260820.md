@@ -52,3 +52,42 @@ who wrote the file.
 
 Related but distinct: the handoffd stall (BL-967, now landed) DID delay generation, which
 is how the two got conflated. Keep them separate — this defect survives BL-967 entirely.
+
+---
+
+## CORRECTION (specifier probe, 2026-08-20 ~07:50Z): the mechanism above is wrong; the observation stands
+
+The "trigger disarms on file existence" theory does not survive the daemon's own
+log. The send path is NOT coupled to the generation trigger: BL-214/BL-821 built
+exactly the suggested sweep already — `briefing_email_lib.bb`'s
+`find-unsent-briefings` (exists AND not in `.sent.json`, window = today+yesterday
+UTC), run by handoffd as its fourth duty every cycle. `2026-08-20.md` is
+in-window and the sweep SEES it every cycle.
+
+**Actual root cause: the 06:00:18Z daemon generation was launched without
+`RESEND_API_KEY` in its environment.** `.swarmforge/daemon/handoffd.log`:
+
+    2026-08-20T06:01:56Z email-misconfigured notify_email_to is configured but
+      RESEND_API_KEY is missing from the daemon's environment - alarm/briefing
+      email cannot send. Export RESEND_API_KEY in the daemon's launch environment.
+    2026-08-20T06:01:56Z briefing-skip-missing-key 2026-08-20.md
+    (then briefing-skip-missing-key 2026-08-20.md on every cycle since)
+
+- The 03:50Z generation HAD the key: it sent `2026-08-19.md` and wrote
+  `.sent.json` (mtime 03:50). The key was lost between generations, not by code.
+- `handoffd-supervisor.log` shows a fresh supervisor every ~6 minutes all
+  morning (03:52 → 06:00) — some launcher in the relaunch chain runs keyless.
+  The relaunch churn itself is BL-967/BL-975 territory (soak tracker), separate.
+- The BL-144 daemon-death ALARM email is dead in the same stroke (same key,
+  same env). Telegram alerting is unaffected.
+- Self-heal note: `2026-08-20.md` stays in the BL-821 send window through
+  2026-08-21 UTC; the sweep will send it automatically the moment a daemon
+  generation runs with the key. After that window it needs the explicit
+  one-shot catch-up.
+
+The defect worth the ticket is therefore: **a relaunch from a keyless
+environment silently kills briefing + alarm email, and only the daemon's own
+log ever says so.** Minted as BL-976. The "make send key off .sent.json"
+suggestion above is already the shipped design — do not rebuild it.
+
+Probed by specifier.
