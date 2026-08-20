@@ -46,7 +46,9 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const { materializeCurrentPipeline, registryLoadVerdict, plantOffender } = require('./helpers/materializedRegistryGuard');
 
 let shared;
@@ -73,6 +75,23 @@ test(
   },
   120000
 );
+
+// Architect bounce D1 (fixture-leak-on-materialize-failure): the helper's
+// contract is "either returns a valid tree or leaves no temp dir behind" -
+// outside vitest no sweep exists, so a partial root leaked on the throw
+// path would accumulate forever. The seam (`sourceRoot` pointing at a dir
+// with no specs/pipeline) forces the post-mkdtemp cpSync to throw exactly
+// as the bounce's repro describes; the unique prefix makes the
+// zero-dirs-left assertion immune to concurrent runs. Non-vacuity: with
+// the helper's catch-cleanup removed this test goes RED on the
+// leaked-root assertion (staged and restored at fix time).
+test('BL-968 D1 guard: a materialization that fails mid-copy leaves no temp dir behind', () => {
+  const emptySource = mkTmpDir('bl968-d1-empty-src-');
+  const prefix = `bl968-d1-leakcheck-${Date.now()}-${Math.random().toString(36).slice(2)}-`;
+  assert.throws(() => materializeCurrentPipeline({ sourceRoot: emptySource, prefix }));
+  const leaked = fs.readdirSync(os.tmpdir()).filter((d) => d.startsWith(prefix));
+  assert.deepEqual(leaked, [], `a failed materialization leaked its temp root: ${leaked.join(', ')}`);
+});
 
 test(
   'BL-968 invariant 2 (standing sensitivity shot): a planted load-time-subprocess step file turns the guard red, naming that file',

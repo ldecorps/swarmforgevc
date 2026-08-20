@@ -23,6 +23,9 @@ const FEATURE = 'BL-971 property lane is green again - no wall-clock exhaustion 
 const KNOWN_LANE_FILES = new Set([
   'test/bl868PropertyLaneIsolationGuards.property.test.js',
   'test/bl632CommitTimeGuardInvariants.property.test.js',
+  // BL-971 amendment 3a15ebffe: the third timing-out file - it exhausted
+  // the SHARED subprocess-heavy budget, not one of its own.
+  'test/bl760DuplicateChainGuard.property.test.js',
 ]);
 
 function knownLaneFile(token) {
@@ -69,7 +72,9 @@ function registerSteps(registry) {
     assert.match(output, /Tests {2}\d+ passed/, `expected a passed-tests summary for ${file}:\n${output.slice(-2000)}`);
   });
 
-  scoped(/^the two property test files named in scenario 01$/, (ctx) => {
+  // BL-971 amendment: the feature step no longer says "two" - the Examples
+  // table owns the file list, this Given just loads whatever it names.
+  scoped(/^the property test files named in scenario 01$/, (ctx) => {
     ctx.budgetFiles = [...KNOWN_LANE_FILES].map((rel) => ({
       rel,
       source: fs.readFileSync(path.join(EXTENSION_DIR, rel), 'utf8'),
@@ -79,9 +84,15 @@ function registerSteps(registry) {
   scoped(/^their explicit per-test timeout declarations are inspected$/, (ctx) => {
     for (const f of ctx.budgetFiles) {
       // An explicit per-test budget: vitest's trailing timeout argument -
-      // both the single-line `}, 90000);` and the split `},\n  60000\n);`
-      // layouts.
-      assert.match(f.source, /\}\s*,\s*\n?\s*\d{4,6}\s*\n?\s*\)/, `${f.rel}: no explicit per-test timeout declaration found`);
+      // the single-line `}, 90000);` and split `},\n  60000\n);` layouts,
+      // and (BL-971 amendment) the shared-constant adoption bl760 uses,
+      // `},\n  SUBPROCESS_HEAVY_TIMEOUT_MS,\n);` (BL-932's one-declaration
+      // rule - the constant IS the explicit budget, imported not copied).
+      assert.match(
+        f.source,
+        /\}\s*,\s*\n?\s*(\d{4,6}|SUBPROCESS_HEAVY_TIMEOUT_MS)\s*,?\s*\n?\s*\)/,
+        `${f.rel}: no explicit per-test timeout declaration found`
+      );
     }
   });
 
