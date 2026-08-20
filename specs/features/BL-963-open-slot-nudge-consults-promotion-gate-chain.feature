@@ -37,3 +37,11 @@ Feature: BL-963 open-slot nudge consults the promotion gate chain
     And a lower-ranked paused ticket is allowed by the evaluate chain
     When the open-slot sweep decides its nudge on three consecutive ticks
     Then no escalation state is recorded for the gate-refused ticket
+
+  # BL-963 nudge-consults-gate-chain-05
+  Scenario: a candidate refused by human_approval AND another gate is filtered, not surfaced
+    Given the top-ranked paused ticket is refused by the evaluate chain for both a pending human_approval and an unsatisfied depends_on
+    And a lower-ranked paused ticket is allowed by the evaluate chain
+    When the open-slot sweep decides its nudge
+    Then a nudge fires naming the allowed ticket
+    And the gate-refused ticket is not named

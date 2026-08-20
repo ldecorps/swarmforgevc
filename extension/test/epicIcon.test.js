@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { EPIC_ICON_POOL, resolveEpicIcon } = require('../out/concierge/epicIcon');
-const { ICON_EMOJI, STANDING_TOPIC_ICON } = require('../out/concierge/topicIcon');
+const { FORUM_TOPIC_ICON_STICKER_SET } = require('../out/concierge/forumTopicIconStickerSet');
+const { ICON_EMOJI, STANDING_TOPIC_ICON, ROLE_TOPIC_ICON } = require('../out/concierge/topicIcon');
 
 // BL-449: epic topics are a distinct icon-assignment path from the
 // ticket-state sync in topicIcon.ts - the three seeded epics (Swarm Role
@@ -95,4 +96,28 @@ test('EPIC_ICON_POOL excludes the musical-notes emoji (badge-collision with the 
 
 test('EPIC_ICON_POOL has no internal duplicates', () => {
   assert.equal(new Set(EPIC_ICON_POOL).size, EPIC_ICON_POOL.length);
+});
+
+// ── BL-946: the pool draws from the whole stock set ──────────────────────
+
+test('EPIC_ICON_POOL holds at least 60 icons (39 live epics today, with headroom)', () => {
+  assert.ok(EPIC_ICON_POOL.length >= 60, `expected >= 60 pool icons, got ${EPIC_ICON_POOL.length}`);
+});
+
+test('EPIC_ICON_POOL is disjoint from ROLE_TOPIC_ICON', () => {
+  const roleIcons = new Set(Object.values(ROLE_TOPIC_ICON));
+  for (const icon of EPIC_ICON_POOL) {
+    assert.ok(!roleIcons.has(icon), `expected the epic pool to never collide with the role-topic icon "${icon}"`);
+  }
+});
+
+test('every EPIC_ICON_POOL member is in the committed sticker-set snapshot (an absent glyph fails silently in production)', () => {
+  const live = new Set(FORUM_TOPIC_ICON_STICKER_SET);
+  for (const icon of EPIC_ICON_POOL) {
+    assert.ok(live.has(icon), `pool glyph "${icon}" is not in the snapshot`);
+  }
+});
+
+test('the original 10 glyphs stay as the pool order prefix, so already-assigned epics keep their badges', () => {
+  assert.deepEqual(EPIC_ICON_POOL.slice(0, 10), ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚']);
 });
