@@ -1125,3 +1125,37 @@ You are the hardender.
   unit, and property runners all rc=0. `matrix-file-path` was unit-tested,
   which hid the gap on a reading — the writes looked covered because their
   path computation was.
+
+## A surviving signal-trap mutant may be EQUIVALENT, not a gap — bash reruns the EXIT trap on a fatal signal (rule_proposal 2026-08-20, accepted)
+- Proposer's rule, verbatim: "A trap-mutant dropping ONE signal trap (EXIT
+  stays) can survive: bash reruns EXIT on any fatal signal. Verify live
+  before calling it a gap. Pair residue checks with an exit-code assertion."
+- The failure shape: you delete `trap cleanup TERM` from a script that also
+  has `trap cleanup EXIT`, expect the residue check to go red, and it stays
+  green — so you write a test for a hole that is not there. Bash runs the
+  EXIT trap when the shell dies of an untrapped fatal signal, so the cleanup
+  still happens and the residue is still gone. The mutant is EQUIVALENT on
+  that observation, not uncovered. Chasing it costs a hardening pass and
+  leaves behind a test asserting nothing.
+- Mechanics: before treating any surviving trap mutant as a gap, run the
+  live probe — background the script under each signal it traps, send the
+  signal, and read BOTH the residue AND the shell's own exit status from the
+  parent. Residue alone cannot discriminate (the EXIT trap already cleaned
+  up, and `$?` INSIDE the EXIT trap reads 0, not 143 — asserting from inside
+  the trap does not help either). The shell's exit status can: 143 for TERM,
+  129 for HUP. So pair every residue assertion with an exit-code assertion,
+  which is what kills the exit-code mutant residue-only misses.
+- Per-signal, in the real job-control context: "any fatal signal" is the
+  common case, not a universal. Verified on stock `/bin/bash` 3.2.57
+  (macOS, 2026-08-20): TERM and HUP both ran the EXIT trap and the shell
+  exited 143 / 129; INT did NOT, because a background job in a
+  non-interactive shell has SIGINT ignored and the script simply kept
+  running. Probe each signal the script actually traps, in the same
+  foreground/background context the script really runs in — a probe run the
+  other way answers a different question.
+- Evidence (proposed by the hardender, 2026-08-20, BL-965): dropping the
+  TERM/INT/HUP traps survived via bash's EXIT-on-signal behavior, confirmed
+  on bash 3.2. The exit-code mutant also survived until an exit-code
+  assertion was added; the residue-only check missed it. Specifier
+  re-confirmed the bash behavior live before accepting (TERM/HUP yes, INT
+  no — see the per-signal note above).
