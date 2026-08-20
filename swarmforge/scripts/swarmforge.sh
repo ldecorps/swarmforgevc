@@ -1576,10 +1576,13 @@ RESUMECHECK
 set -euo pipefail
 export SWARMFORGE_ROLE='$role'
 export SWARMFORGE_PACK='$launch_pack_name'
-# BL-913: the swarm's own record of where this role lives, exported from
-# the SAME WORKTREE_PATHS this script's own `cd` line below uses - the
-# tool_miss_heal_hook.bb PreToolUse hook pins every Bash command to this,
-# never to whatever cwd the pane's persistent shell has drifted to.
+# BL-913/BL-985: the swarm's own record of where this role lives, exported
+# from the SAME WORKTREE_PATHS this script's own `cd` line below uses. The
+# tool_miss_heal_hook.bb PreToolUse wrapper re-anchors a command whose
+# shell has drifted into a DIFFERENT worktree or outside any repository -
+# decided from the shell's own git toplevel BEFORE the command runs
+# (BL-985), plus the original on-failure heal. A shell anywhere inside
+# this role's own worktree is left exactly where it is.
 export SWARMFORGE_ROLE_WORKTREE='$role_worktree'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
