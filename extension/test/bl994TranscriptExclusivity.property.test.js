@@ -65,31 +65,42 @@ function transcriptVisibleInFullscreen(dom, paneText) {
   return dom.window.document.getElementById('fs-pre').textContent === paneText;
 }
 
+// 30 draws each cost a real JSDOM render (~600-750ms warm, ~6s on the
+// process's first JSDOM instantiation) - past the file's 20000ms default
+// (vitest.properties.config.mjs), same per-test override bl628/bl632's own
+// heavy-render property tests already use.
 test('BL-994/BL-654 invariant 3: a transcript is visible in exactly one place - grid or fullscreen, never both, never neither', async () => {
   await fc.assert(
     fc.asyncProperty(fc.integer({ min: 1, max: 8 }), fc.integer({ min: 0, max: 7 }), async (paneCount, pickSeed) => {
       const { dom, panes } = await renderWithPanes(paneCount);
-      const target = panes[pickSeed % panes.length];
+      try {
+        const target = panes[pickSeed % panes.length];
 
-      // Not yet expanded: hidden in grid, absent from fullscreen.
-      assert.equal(transcriptVisibleInGrid(dom, target.id), false, 'not-expanded: grid must stay hidden');
-      assert.equal(transcriptVisibleInFullscreen(dom, target.pane.paneText), false, 'not-expanded: fullscreen must not show it yet');
+        // Not yet expanded: hidden in grid, absent from fullscreen.
+        assert.equal(transcriptVisibleInGrid(dom, target.id), false, 'not-expanded: grid must stay hidden');
+        assert.equal(transcriptVisibleInFullscreen(dom, target.pane.paneText), false, 'not-expanded: fullscreen must not show it yet');
 
-      const col = dom.window.document.querySelector(`.pane-col[data-pane-id="${target.id}"]`);
-      col.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-      await flush();
+        const col = dom.window.document.querySelector(`.pane-col[data-pane-id="${target.id}"]`);
+        col.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        await flush();
 
-      // Expanded: still hidden in grid, now shown in fullscreen - exactly one
-      // place (inGrid=false, inFullscreen=true is itself the XOR - a third
-      // possibility, both false or both true, would fail one of these two).
-      const inGrid = transcriptVisibleInGrid(dom, target.id);
-      const inFullscreen = transcriptVisibleInFullscreen(dom, target.pane.paneText);
-      assert.equal(inGrid, false, 'expanded: the grid tile must still hide the transcript');
-      assert.equal(inFullscreen, true, 'expanded: fullscreen must show this pane\'s transcript');
+        // Expanded: still hidden in grid, now shown in fullscreen - exactly one
+        // place (inGrid=false, inFullscreen=true is itself the XOR - a third
+        // possibility, both false or both true, would fail one of these two).
+        const inGrid = transcriptVisibleInGrid(dom, target.id);
+        const inFullscreen = transcriptVisibleInFullscreen(dom, target.pane.paneText);
+        assert.equal(inGrid, false, 'expanded: the grid tile must still hide the transcript');
+        assert.equal(inFullscreen, true, 'expanded: fullscreen must show this pane\'s transcript');
+      } finally {
+        // Each draw renders a real page with its own setInterval poll loop
+        // (bl994LiveScreenGridSteps.js's render-then-close convention) - left
+        // open, 30 draws' worth of live timers compound and time out the test.
+        dom.window.close();
+      }
     }),
     { numRuns: 30 }
   );
-});
+}, 60000);
 
 // Non-vacuity (staged-first restore, run 2026-08-20, recorded in the parcel
 // commit): break 1 - the grid `.split .pane-col > pre { display: none }`
