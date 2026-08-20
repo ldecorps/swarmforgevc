@@ -51,6 +51,10 @@ const OPERATOR_RUNTIME_BB_FILES = [
   // two of the seven files this ticket's closure walk found missing.
   'mono_router_lib.bb',
   'prompt_engine_lib.bb',
+  // BL-967: handoff_lib.bb now load-files the bounded-wait chokepoint every
+  // in-cycle subprocess call routes through - the seventh drift this list
+  // has taken, and the first the closure gate above caught the same day.
+  'daemon_cycle_guard_lib.bb',
   'daemon_alarm_lib.bb',
   'disk_space_lib.bb',
   'sandbox_sweep_lib.bb',

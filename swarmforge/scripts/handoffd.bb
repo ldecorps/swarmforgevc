@@ -2176,13 +2176,6 @@
         :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
     reason))
 
-;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
-;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
-;; computeSuiteDuration unchanged, the SAME functions already feeding the
-;; bridge's /metrics route the holistic UI reads, so the briefing can never
-;; disagree with the live UI about what "regressing" means. Must use the
-;; [cmd & args] + opts-map form of process/sh, not flat varargs - the
-;; latter silently drops :dir (see auto-route!'s own comment above). Any
 ;; BL-967 cleaner pass: "shell out to a compiled node tool under
 ;; extension/out/tools and take its trimmed stdout" was hand-copied across
 ;; nine briefing fns, each carrying a comment saying "same shell-out pattern
@@ -2195,6 +2188,10 @@
 (defn node-tool-path [script-name]
   (str (fs/path project-root "extension" "out" "tools" script-name)))
 
+;; The [cmd & args] + opts-map form of the shared sh! helper is mandatory
+;; here, not flat varargs - the latter silently drops :dir (see auto-route!'s
+;; own comment above). The hazard lives at THIS single call site now: every
+;; briefing line below shells through this fn and nowhere else.
 (defn node-tool-line
   "Trimmed stdout of a compiled node tool, or nil on any failure."
   [script-name & args]
@@ -2205,9 +2202,13 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
-;; failure (CLI not yet compiled on this checkout, etc.) degrades to
-;; omitting the line entirely - never crashes the sweep, never a fabricated
-;; value.
+;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
+;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
+;; computeSuiteDuration unchanged, the SAME functions already feeding the
+;; bridge's /metrics route the holistic UI reads, so the briefing can never
+;; disagree with the live UI about what "regressing" means. Any failure
+;; (CLI not yet compiled on this checkout, etc.) degrades to omitting the
+;; line entirely - never crashes the sweep, never a fabricated value.
 (defn suite-duration-briefing-line []
   (node-tool-line "suite-duration-line.js"))
 
