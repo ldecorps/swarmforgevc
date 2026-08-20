@@ -1,11 +1,14 @@
 #!/usr/bin/env bb
 
-;; Subprocess calls use babashka.process, NOT clojure.java.shell: bb's
+;; Every subprocess call goes through daemon-cycle-guard-lib/sh! (BL-967's
+;; bounded chokepoint over babashka.process), NEVER clojure.java.shell: bb's
 ;; clojure.java.shell shim can deadlock reading subprocess streams (observed
 ;; hanging notify! mid-delivery and silently stalling the whole swarm, BL-061).
+;; This ns deliberately does not require babashka.process itself - the
+;; guard-lib closure gate in daemon_cycle_guard_lib_test_runner.bb fails on
+;; any direct subprocess path outside the chokepoint.
 (ns handoffd
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]))

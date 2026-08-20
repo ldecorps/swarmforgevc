@@ -94,6 +94,66 @@
     (assert= "current-context resets after the sweep" "outside-sweep"
              @daemon-cycle-guard-lib/current-context)))
 
+;; ── invariant 1's structural half (BL-967 architect bounce D2) ────────────
+;; The routing half of invariant 1 - the daemon reaches no subprocess path
+;; outside this chokepoint - was previously a stated claim, and a false one:
+;; D1 arrived through two in-cycle libs the claim missed. This gate makes the
+;; claim executable. Over the TRANSITIVE load-file closure from handoffd.bb
+;; (computed by master_checkout_drift_lib's BFS - never a hand-maintained
+;; file list, which gets patched one name at a time and re-drifts), no file
+;; except daemon_cycle_guard_lib.bb itself may reference babashka.process,
+;; clojure.java.shell, process/sh, or process/process. Banning the two
+;; namespace tokens is complete for those namespaces - an aliased call
+;; cannot exist without naming the namespace in its require. Comments and
+;; string contents are stripped first: handoff_lib.bb's docstrings NAME
+;; clojure.java.shell while forbidding it, and prose must never trip a gate
+;; that exists to catch calls.
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "master_checkout_drift_lib.bb")))
+
+(defn strip-comments-and-strings
+  "Blanks ;-comments and the CONTENTS of double-quoted strings (keeping
+   their newlines, so line numbers survive multi-line docstrings). A
+   backslash outside a string starts a char literal - its next char is
+   skipped, so the \\\" char literal never opens a phantom string."
+  [content]
+  (let [sb (StringBuilder.)]
+    (loop [chars (seq content) in-string? false escaped? false]
+      (if-let [c (first chars)]
+        (cond
+          in-string?
+          (cond
+            escaped? (recur (rest chars) true false)
+            (= c \\) (recur (rest chars) true true)
+            (= c \") (do (.append sb c) (recur (rest chars) false false))
+            (= c \newline) (do (.append sb c) (recur (rest chars) true false))
+            :else (recur (rest chars) true false))
+          (= c \\) (recur (rest (rest chars)) false false)
+          (= c \") (do (.append sb c) (recur (rest chars) true false))
+          (= c \;) (recur (drop-while #(not= % \newline) chars) false false)
+          :else (do (.append sb c) (recur (rest chars) false false)))
+        (str sb)))))
+
+(let [scripts-dir (fs/path (fs/parent (fs/canonicalize *file*)) "..")
+      read-file (fn [bare]
+                  (let [p (fs/path scripts-dir bare)]
+                    (when (fs/exists? p) (slurp (str p)))))
+      closure (master-checkout-drift-lib/resolve-daemon-executed-paths
+               {:entrypoints #{"handoffd.bb"} :read-file read-file})
+      forbidden #"babashka\.process|clojure\.java\.shell|process/sh|process/process"
+      violations (vec (for [f (sort closure)
+                            :when (not= f "daemon_cycle_guard_lib.bb")
+                            :let [content (read-file f)]
+                            :when content
+                            [i line] (map-indexed vector
+                                                  (str/split-lines (strip-comments-and-strings content)))
+                            :when (re-find forbidden line)]
+                        (str f ":" (inc i) ": " (str/trim line))))]
+  (assert-true "closure gate sanity: the BFS actually resolved handoffd.bb's dependency closure"
+               (> (count closure) 20))
+  (assert= "invariant 1 structural half: no subprocess path outside the chokepoint anywhere in handoffd.bb's load-file closure"
+           [] violations))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS: daemon_cycle_guard_lib.bb")

@@ -152,7 +152,8 @@ function registerSteps(registry) {
   scoped(/^a fixture daemon cycle wired through the test seams with a freshness threshold budget$/, (ctx) => {
     initRoot(ctx);
     // The fixture's scaled-down stand-in for the live 300s threshold: with
-    // the wait bound at 500ms, a bounded cycle must land well inside this.
+    // the wait bound at WAIT_BOUND_MS (5000), a bounded cycle must land
+    // well inside this.
     ctx.thresholdBudgetMs = 60000;
   });
 

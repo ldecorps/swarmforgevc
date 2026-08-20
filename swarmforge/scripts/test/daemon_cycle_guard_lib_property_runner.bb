@@ -14,11 +14,14 @@
 ;;   (c) passes fast children through untouched (their own exit/out), and
 ;;   (d) never throws. The remainder of the invariant - that the DAEMON
 ;;   routes every in-cycle subprocess through this chokepoint - is wiring
-;;   over ~60 call sites, not a pure module: held structurally (handoffd.bb
-;;   and its in-cycle libs define no other subprocess path; the
-;;   clojure.java.shell require is gone from handoff_lib.bb) and asserted
-;;   end-to-end by acceptance scenario 01. Recorded here as the stated
-;;   reason per the coder role's carve-out. File-I/O waits: the cycle's file
+;;   over ~60 call sites, not a pure module, so it is not a property over
+;;   generated inputs; it IS executable, and is ENCODED as the structural
+;;   closure gate in daemon_cycle_guard_lib_test_runner.bb: the transitive
+;;   load-file closure from handoffd.bb (computed, never hand-listed) must
+;;   reference no subprocess namespace outside this lib. (Architect bounce
+;;   D2: the earlier stated reason claimed this held structurally with no
+;;   gate, and was false - two in-cycle libs still spawned directly.) Also
+;;   asserted end-to-end by acceptance scenario 01. File-I/O waits: the cycle's file
 ;;   reads are ordinary local files (no FIFOs/sockets); the subprocess pipe
 ;;   was the only blocking class observed (BL-057/BL-061 family) - also
 ;;   recorded as stated reason.

@@ -2,17 +2,19 @@
 ;; Executes agent-runtime step sequences against tmux (inject adapter).
 (ns agent-runtime-inject
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [clojure.string :as str]))
 
 (def scripts-dir (fs/path (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path scripts-dir "agent_runtime_lib.bb")))
+;; BL-967: subprocess waits are bounded at the shared chokepoint - this
+;; lib runs inside handoffd's poll cycle (wake delivery, chase, context-clear).
+(load-file (str (fs/path scripts-dir "daemon_cycle_guard_lib.bb")))
 
 (def notify-max-retries 3)
 (def notify-retry-delay-ms 200)
 
 (defn tmux! [& args]
-  (apply process/sh "tmux" args))
+  (apply daemon-cycle-guard-lib/sh! "tmux" args))
 
 (defn capture-pane-text [socket session]
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
