@@ -1,0 +1,157 @@
+id: BL-971
+title: "property lane never green: bl868 + bl632 property tests exhaust their wall-clock budgets under swarm load (126s/60s, 154s/90s) - make the lane's verdict trustworthy again"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 20
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-971-property-lane-timeout-green.feature
+
+invariants:
+  - "A red property-lane verdict on the swarm host is always an assertion failure, never wall-clock exhaustion - any test in the lane failing by timeout is a violation of this ticket, whatever the host load."
+
+description: >
+  Severity rationale: high - a broken quality-gate signal. The property
+  lane's only failures are these two timeouts (117 files, 365 tests:
+  everything else green), so the lane is red on every run. That forces
+  QA and the hardener to attribute the same two failures on every
+  parcel (alarm fatigue, wasted turns) and it masks real regressions in
+  exactly the invariants the two files protect: BL-868's property-lane
+  isolation guards, and BL-632's guarantee that no non-QA path lands
+  pipeline code on main - a safety property whose silent regression
+  would go unnoticed behind the standing red.
+
+  Measured (QA note 20260820T040425Z_000392, verified by the
+  coordinator against QA's own completed 2163s BL-910 run log,
+  evidence commit 520d35fb1): bl868PropertyLaneIsolationGuards - 1 of
+  3 tests timed out at 126s against its explicit 60s budget;
+  bl632CommitTimeGuardInvariants - its 1 test timed out at 154s
+  against its explicit 90s budget. Both are wall-clock exhaustions,
+  not assertion failures; both overshoot ~1.7-2x, pointing at duration
+  (under-budgeted work and/or host-load inflation), not logic. The
+  host was running 8 agents plus concurrent vitest and mutation work.
+
+  Specifier probe (what the failing tests actually cost): both files
+  already declare deliberate explicit per-test timeouts with
+  measured-cost comments - these are not defaulted budgets. bl868's
+  invariant-1a/1b tests each run 5 generated cases and each case
+  boots a FULL child vitest process (runAsPropertyLaneFixture), so
+  ~10 child vitest boots inside one 60s budget x2 tests; bl632 runs
+  10 generated cases, each spinning a real fixture git repo (init,
+  hook install, commit) plus 2-6 further git subprocesses. The
+  budgets were calibrated on a quieter host and no longer hold.
+
+  A confound to settle inside this ticket, not assume (coordinator's
+  evidence, verbatim): "BL-935 landed a vitest fork-pool cap aimed at
+  exactly this oversubscription, but it keys on SWARMFORGE_PACK,
+  which BL-961 (still in flight, at coder) exists to make the
+  launcher actually export... whether the cap was engaged during this
+  run is not something the log alone settles. Determining that is
+  part of the ticket, not an assumption to carry in." The cap wiring
+  is extension/vitest.properties.config.mjs (WORKER_POOL_SIZE from
+  SWARMFORGE_PACK); the variable currently reaches role shells only
+  via tmux's global env from an ad-hoc operator export - probe the
+  running pane's own env, not ps, to determine engagement.
+
+  Fix wanted: the lane exits green on the swarm host under live load,
+  and stays trustworthy - a red means an assertion failed (the
+  declared invariant). Achieve it by reducing per-case subprocess
+  cost (e.g. batching bl868's generated fixtures into fewer child
+  vitest boots), re-budgeting from measured per-case cost with stated
+  headroom, engaging the BL-935 cap for the lane, or a combination -
+  the coder owns the mix, the acceptance owns the outcome.
+
+  How (direction, not mandate): bl868's dominant cost is child vitest
+  startup, not the properties themselves - several generated cases
+  can ride one child run without weakening the property (each case's
+  assertion still lands on its own named key/prefix). bl632's comment
+  already models the discipline: numRuns chosen to sit well inside a
+  measured budget - re-measure under live load and restate. If a
+  budget is raised, the new number carries the measured basis in the
+  same comment style both files already use (acceptance scenario 02).
+
+constraints: >
+  Out of scope / firm lines:
+
+  - No budget inflation without a stated measured basis - a bare
+    doubled timeout is the threshold-raise-as-fix anti-pattern; a
+    raised budget is legitimate only alongside the measured per-case
+    cost and headroom it derives from (or a reduced cost that makes
+    it moot).
+  - Do not weaken the properties to get green: the generator coverage
+    (every action x role-shape x path-depth for bl632; the named-key /
+    named-prefix guarantees for bl868) survives. A numRuns reduction
+    needs the same measured rationale in the same comment.
+  - Property tests stay in their own lane - never folded into unit
+    coverage or mutation runs (engineering rules).
+  - BL-961's deliverable (launcher exports SWARMFORGE_PACK into role
+    shells) stays BL-961's - this ticket determines and records cap
+    engagement, and may set the env for its own lane runs, but does
+    not implement the launcher export.
+  - The BL-871 allowlist stays exact: an Unhandled Error/Rejection in
+    lane output fails the lane unless it is exactly the known benign
+    vitest-worker onTaskUpdate timeout artifact.
+
+qa_e2e_procedure: >
+  1. Acceptance scenario 01: run the property lane scoped to each of
+     the two files on the swarm host while the swarm is live - green,
+     zero timed-out tests. Run each twice consecutively (flake check).
+  2. Acceptance scenario 02: both files' timeout declarations carry
+     the measured basis (per-case cost + headroom or the reduced-cost
+     equivalent) in their comments.
+  3. Full lane: npm run test:properties (from extension/) on the live
+     host exits 0 - 365+ tests, zero wall-clock exhaustions, only the
+     BL-871 benign artifact allowlisted if it appears.
+  4. Evidence records the BL-935 cap determination: whether
+     WORKER_POOL_SIZE was capped during the verification runs (probe
+     the pane's own env for SWARMFORGE_PACK), and the conclusion or
+     explicit indeterminacy for the original 2026-08-20 failing run.
+  5. Regression: the lane's runtime is recorded before/after; a
+     dramatic drop must trace to cost reduction, not coverage loss
+     (diff numRuns and generator ranges).
+
+notes: >
+  Source: coordinator note handoff 20_20260820T041710Z_000655 ("mint:
+  property lane gated by bl868+bl632 timeouts - verified 520d35fb1"),
+  carrying QA's note 20260820T040425Z_000392, verbatim: "Standing:
+  property lane never green - bl868+bl632 time out; needs a ticket."
+  Coordinator verification evidence:
+  backlog/evidence/property-lane-never-green-two-timeouts-20260820.md
+  (commit 520d35fb1) - QA's claim reproduced exactly from QA's own run
+  log; routing there also records why this is a standing lane
+  condition, not a QA bounce (the failing files belong to no in-flight
+  ticket).
+
+  Specifier probe additions beyond the evidence: both budgets are
+  deliberate and commented (not vitest defaults), so the defect is the
+  calibration/cost, not missing discipline; bl868's per-case cost is a
+  full child vitest boot, the dominant lever; the cap determination
+  method should follow the pane-own-env lesson (tmux global env is how
+  SWARMFORGE_PACK currently propagates; per-session probes and ps
+  mislead). Related: BL-935 (the cap), BL-961 (in flight - launcher
+  export; kept out of depends_on because this ticket must make the
+  lane green regardless of BL-961's landing, and the two touch
+  different files), BL-871 (benign artifact allowlist), BL-868/BL-632
+  (the invariants the failing files protect - their coverage must
+  survive the fix).
+
+  Orthogonality for the coordinator: touches the two property test
+  files and possibly vitest.properties.config.mjs; no overlap with
+  BL-967 (bb daemon) or BL-970 (bb classifier). BL-961 (active) owns
+  launcher/export scripts - distinct files, co-activation acceptable.
+
+approval_context: >
+  Two calls to say the word on: (1) severity high - the lane is a
+  quality gate and one of the two masked invariants is BL-632's
+  no-pipeline-code-on-main safety property; if you read a standing-red
+  test lane as contained process debt instead, this drops to medium
+  and loses the expedite lane. (2) The fix mix is left to the coder
+  (cost reduction vs measured re-budget vs cap engagement) with the
+  acceptance pinned to the outcome; firm lines are no unmeasured
+  budget inflation and no coverage loss.
