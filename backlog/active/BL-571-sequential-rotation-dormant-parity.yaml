@@ -243,7 +243,36 @@ notes: |
   parcel without folding in BL-957's own unapproved in-flight work (the
   same BL-506 rider problem as above). It is already an ancestor of the QA
   branch, so QA's verification merge reaches it natively.
-abandoned_commits: ["17ae8a4822", "b7a6e580d7"]
+  `91ce11e180` (declared by the hardender, 2026-08-20): the coder's merge of
+  QA merge-up `fa34044d99` into the coder branch, made 04:20 — three minutes
+  BEFORE the architect's review commit `1c5a8b28d0` (04:23), which does not
+  contain it, so it never reached the review chain or this parcel. Verified
+  by CONTENT, not ancestry: every BL-571 file in this parcel is now
+  byte-identical to that commit's version — `mono_router_lib.bb`,
+  `bl571SequentialRotationDormantParitySteps.js`, both bb runners,
+  `test_swarm_ensure.sh`, and this ticket YAML matched already, and
+  `swarm_ensure.bb` matches after the restoration recorded below (`diff`
+  reports zero lines). Merging the commit itself would fold in BL-967's
+  unapproved in-flight work riding the same coder-branch lineage —
+  `bl967HandoffdCycleStallSteps.js`, `daemon_cycle_guard_lib.bb` and ~267
+  lines of `handoffd.bb` — which an approval on BL-571 does not authorise
+  (BL-506). Same disposition and same reason as `17ae8a4822` above.
+
+  ## swarm_ensure.bb: BL-958's landed code restored inside this parcel (hardener, 2026-08-20)
+
+  The hardener's merge of the architect's parcel silently re-applied this
+  branch's earlier stale-rider revert and deleted 110 lines of BL-958's
+  ALREADY-APPROVED control-plane recovery code from `swarm_ensure.bb` — the
+  `control_plane_lib` load and the whole `control-plane-state` function —
+  with no conflict marker. The BL-954 shape, and invisible to a diff against
+  the SENDER's tip, because the dropped content lives on QA's tip
+  (`fa34044d99`), not the sender's. `test_swarm_ensure.sh` caught it
+  independently: "FAIL: BL-958: control-plane row not reported FIXED with the
+  lib's decision". Fixed here by taking `swarm_ensure.bb` from `fa34044d99`
+  and re-applying only BL-571's docstring + two-predicate hunk, which
+  reproduces the coder's own `91ce11e180` version byte-for-byte.
+
+abandoned_commits: ["17ae8a4822", "b7a6e580d7", "91ce11e180"]
 bounce_count: 2
 bounce_history:
   - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: bbb14382d8, evidence: backlog/evidence/BL-571-sequential-rotation-dormant-parity-bounce-20260819.md }
