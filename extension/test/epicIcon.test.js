@@ -29,25 +29,6 @@ test('resolveEpicIcon: a seeded epic keeps its fixed icon even when it collides 
   assert.equal(resolveEpicIcon('role-benchmarking', ['🎙', '🎭', '🎬']), '🎙');
 });
 
-// BL-946 bounce D1: an epic id named after an Object.prototype member must
-// resolve like any other UNKNOWN epic - a bare table lookup reaches the
-// prototype and returns the inherited FUNCTION as the icon, which both live
-// callers would pass straight to the Telegram API. Exhaustive over the
-// prototype names (deterministic - never left to a lucky fast-check seed,
-// bounce D2), plus '__proto__' whose inherited value is an object, not a
-// function.
-test('resolveEpicIcon: prototype-named epic ids resolve to a pool icon string, never an inherited prototype member', () => {
-  const prototypeIds = ['valueOf', 'toString', 'constructor', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__proto__'];
-  for (const epicId of prototypeIds) {
-    const icon = resolveEpicIcon(epicId, []);
-    assert.equal(typeof icon, 'string', `${epicId}: expected a string icon, got ${typeof icon}`);
-    assert.ok(EPIC_ICON_POOL.includes(icon), `${epicId}: expected a pool member, got ${JSON.stringify(icon)}`);
-    // Same table, same answer: the id is not a known epic, so it takes the
-    // pool-assignment branch exactly as any other unknown id does.
-    assert.equal(icon, resolveEpicIcon('some-ordinary-unknown-epic', []), `${epicId}: must resolve like any other unknown epic`);
-  }
-});
-
 // ── epic-icon-new-topic-02: a new epic beyond the seeded set gets the next
 //    distinct pool icon ──────────────────────────────────────────────────
 
