@@ -102,9 +102,19 @@
 (assert= "healed-command: missing-root-argv DECLINES (nil) for a ;-sequence"
          nil (tool-miss-heal-lib/healed-command :missing-root-argv "node cli.js; echo \"---done---\"" "/w"))
 
-(let [wrapper (tool-miss-heal-lib/build-healing-wrapper-command "node cli.js && echo \"---done---\"" "/w")]
-  (assert-true "build: a multi-command original's wrapper carries NO missing-root append anywhere (the clause is omitted, not misdirected)"
-               (not (str/includes? wrapper "\"$__sfh_root\"")))
+(let [original "node cli.js && echo \"---done---\""
+      root "/w"
+      wrapper (tool-miss-heal-lib/build-healing-wrapper-command original root)]
+  ;; BL-985: the wrapper now legitimately references $__sfh_root in its own
+  ;; proactive cwd-check block (a plain `cd "$__sfh_root"`, unrelated to the
+  ;; missing-root-argv reactive heal this file otherwise tests) - a bare
+  ;; substring check for "$__sfh_root" is stale now that occurrence exists
+  ;; by design. The real BL-934/BL-960 invariant this guards - the root is
+  ;; never appended as a trailing shell argument to the original command -
+  ;; is checked directly instead, the same pattern the BL-934 checks below
+  ;; already use.
+  (assert-true "build: a multi-command original's wrapper never appends the root as a trailing argument to the original (the misdirection BL-934/BL-960 forbid)"
+               (not (str/includes? wrapper (str original " " (tool-miss-heal-lib/shell-quote root)))))
   (assert-true "build: the multi-command original still gets the cd-based heals (clause chain still present)"
                (str/includes? wrapper "elif")))
 
@@ -141,8 +151,8 @@
                (str/includes? wrapper "git status"))
   (assert-true "build-healing-wrapper-command: embeds an if/elif chain, never independent if statements"
                (str/includes? wrapper "elif"))
-  (assert= "build-healing-wrapper-command: exactly one if/elif chain (one 'if [' guard for the outer exit check, one classify 'if')"
-           2 (count (re-seq #"(?m)^\s*if " wrapper)))
+  (assert= "build-healing-wrapper-command: exactly one if/elif chain plus BL-985's proactive cwd-check guard (one 'if' for the proactive anchor, one for the outer exit check, one classify 'if')"
+           3 (count (re-seq #"(?m)^\s*if " wrapper)))
   (assert-true "build-healing-wrapper-command: captures to a temp file and replays it with cat, never a $()-stripped variable (BL-960: byte-exact output, trailing bytes included)"
                (str/includes? wrapper "cat \"$__sfh_out_file\"\n"))
   (assert-true "build-healing-wrapper-command: removes its temp file before exiting"
@@ -366,8 +376,12 @@
   (let [original (str "bash " cli " && echo \"---done---\"")
         wrapper (tool-miss-heal-lib/build-healing-wrapper-command original tmp)
         {:keys [out exit]} (run-wrapper original tmp)]
+    ;; BL-985: same stale-substring trap as the earlier build-wrapper check -
+    ;; $__sfh_root now legitimately appears in the wrapper's own proactive
+    ;; cwd-check block. Check the real invariant (never appended as a
+    ;; trailing argument to the original) instead.
     (assert-true "BL-960 misdirection guard: the wrapper source never appends the root to a multi-command original"
-                 (not (str/includes? wrapper "\"$__sfh_root\"")))
+                 (not (str/includes? wrapper (str original " " (tool-miss-heal-lib/shell-quote tmp)))))
     (assert= "BL-960 misdirection guard: the failure returns as-is (exit unchanged)" 1 exit)
     (assert-true "BL-960 misdirection guard: the usage failure's own text is what comes back"
                  (str/includes? out "Usage: node cli.js <project-root>"))

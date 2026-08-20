@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c49d52d63a5b2471509e123edef5be48138c86406f3851006d557c698b6aa0b7
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-20T16:18:08.295707Z","feature_name":"BL-985 a role's command never runs in another role's worktree","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-985-drift-into-sibling-worktree-is-re-anchored.feature","background_hash":"3cbfc811feb5617d4a4160a351d0aac5959aa19a28e6dfb31a55345634b46a3a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a command drifted into a sibling worktree is re-anchored before it runs","scenario_hash":"21a8525c0c901bba806e75af93bde1504c54c985d33659e89e1b499c3ad57cf5","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-20T16:18:08.295707Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-985 a role's command never runs in another role's worktree
 
   The heal wrapper re-anchors a drifted command only after it has already
