@@ -62,8 +62,13 @@ constraints: >
   - BL-719 invariant 3 (a sweep's own prior nudges are excluded from
     freshness, so a still-dropped ticket stays detectably stale across
     repeated nudge cycles) survives verbatim - scenario 03 pins it.
-  - Files with no parseable timestamp header are still SKIPPED, never
-    treated as fresh (scenario 04).
+  - Files with no parseable timestamp header are still SKIPPED as a
+    freshness SOURCE, never treated as fresh - which cuts two ways and
+    both are pinned: an unparseable file must not mask an otherwise stale
+    trail (scenario 04, still a candidate), and a ticket whose WHOLE trail
+    is unparseable yields a nil newest-trail-ms and fails CLOSED, so it is
+    never nudged on missing data (scenario 06, not a candidate). See the
+    2026-08-20 amendment in notes.
   - Sharing one index across dispatch-gap-sweep and
     unassigned-active-nudge-sweep in the same cycle is OUT of scope here,
     even though they each pay their own full pass (measured 18-21s and
@@ -85,8 +90,13 @@ qa_e2e_procedure: >
      nudged id set equals the set the pre-change per-item scan produces
      for the same tree (capture the pre-change set first, from the
      parent commit).
-  3. Scenarios 03-04: the two preserved-rule cases, each asserting the
-     ticket is STILL a candidate.
+  3. Scenarios 03, 04 and 06: the preserved-rule cases. 03 and 04 each
+     assert the ticket is STILL a candidate (a self-nudge, and an
+     unparseable file alongside a stale one, neither of which may read as
+     fresh); 06 asserts the OPPOSITE outcome for the all-unparseable tree -
+     nil newest-trail-ms fails closed, so the ticket is NOT a candidate.
+     Assert both directions; a fix that collapses them has broken the
+     fail-closed rule.
   4. Scenario 05: run one sweep against the live mailbox tree of this
      host and record the wall clock, before and after - the after must
      be below SUPERVISOR_STALL_MS (30000 ms). Record both numbers; the
@@ -122,6 +132,38 @@ notes: >
   which today pay three separate full passes; (b) a retention or
   compaction policy for completed/ and sent/, which grow without bound
   and set the floor for every one of those passes.
+
+  SPEC AMENDMENT 2026-08-20 (specifier), on the coder's priority-00 note
+  20260820T103238Z_000376: "BL-978 scen 04 Given (ALL unparseable) forces
+  nil=>fail-closed=>NOT candidate". The coder is RIGHT and the defect was
+  mine. Scenario 04 as minted was UNSATISFIABLE: its Given put every trail
+  file beyond parsing, so newest-trail-event-ms returns nil (its `keep
+  handoff-event-ms` drops unparseable files), and decide-dropped-parcel?
+  requires `(number? newest-trail-ms)` - so the documented fail-closed rule
+  makes the ticket NOT a candidate, while my Then demanded it still be one.
+  I had conflated "the FILE is skipped as a freshness source" with "the
+  TICKET stays a candidate". Fixed by splitting the rule into its two real
+  outcomes: scenario 04 now uses a mixed trail (one stale parseable file
+  plus unparseable ones) and still asserts candidate; new scenario 06 keeps
+  the all-unparseable Given and asserts NOT a candidate. Scenario 05 keeps
+  its index deliberately - renumbering would strand every reference to it.
+
+  WHAT CHANGES FOR THE BUILD: nothing in the fix itself - no production
+  behaviour is being redefined, and invariant 2's
+  "never-a-false-freshness-signal" wording was already correct. Only the
+  acceptance contract moves: scenario 04's fixture and one added scenario,
+  whose step handlers must land in THIS parcel (BL-233). Note that
+  scenario 06 asserts a NEGATIVE outcome, so its handler needs a real
+  not-a-candidate assertion rather than 04's shape with the fixture
+  swapped.
+
+  IR-DRY re-run after the amendment: 2 medium-confidence findings, both
+  reviewed and KEPT as intentional. (a) near-duplicate "is not reported"
+  vs "is still reported" - opposite outcomes, which is precisely the value
+  of the 04/06 pair; collapsing them would delete the fail-closed
+  assertion. (b) possible-synonym on the two Givens - different fixtures
+  (mixed vs wholly unparseable) driving different outcomes, not drift.
+  Gherkin lint gate: clean.
 
   Related: BL-977 (sibling guard - the halt this cost triggered);
   BL-967 (done/M8 - its sweep-boundary lines are the measurement this
