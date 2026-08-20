@@ -157,6 +157,21 @@ typeset -a WORKTREE_NAMES=()
 typeset -a WORKTREE_PATHS=()
 typeset -a RECEIVE_MODES=()
 typeset -a IDLE_CLEAR_FLAGS=()
+# BL-982: SEAT vs STAGE identity. ROLES holds SEAT ids (today usually equal
+# to the stage name; a second seat of a stage is declared as
+# <stage>@<seat>, e.g. coder@sonnet). STAGES holds each slot's STAGE - the
+# ONLY things keyed on it are the role-prompt lookup and PromptEngine
+# composition; every other identity (session, worktree, branch-via-
+# worktree, launch script, remote-control, roles.tsv row key) stays
+# seat-keyed. '@' is the separator because it survives a tmux session name
+# (tmux forbids only '.' and ':'), a directory name, and a git branch name
+# (branches derive from the WORKTREE name anyway), and it cannot collide
+# with a plain role name (validated single-'@', both halves non-empty).
+# A pack with no '@' seats takes none of the new paths - byte-identical
+# provisioning (BL-982 invariant 2).
+typeset -a STAGES=()
+typeset -A STAGE_BARE_SEAT=()
+typeset -A STAGE_EXTRA_SEAT=()
 # BL-090: multi-swarm identity. SWARM_NAME defaults to "primary" so an
 # existing single-swarm swarmforge.conf (no swarm_name/swarm_mode lines) is
 # untouched - it is, by definition, THE primary swarm. SWARM_MODE_PRIMARY is
@@ -389,6 +404,9 @@ role_uses_openrouter() {
 # in sync by hand.
 register_role() {
   local role="$1" agent="$2" worktree="$3" receive_mode="$4" idle_clear="$5" extra_cli="$6" worktree_path="$7"
+  # BL-982: $8 is the slot's STAGE; defaulted to the seat id so every
+  # pre-seat caller (and every single-seat pack) is byte-identical.
+  local stage="${8:-$role}"
   ROLE_INDEX[$role]=${#ROLES[@]}
   ROLES+=("$role")
   AGENTS+=("$agent")
@@ -399,6 +417,7 @@ register_role() {
   IDLE_CLEAR_FLAGS+=("$idle_clear")
   EXTRA_CLI_ARGS+=("$extra_cli")
   WORKTREE_PATHS+=("$worktree_path")
+  STAGES+=("$stage")
 }
 
 parse_config() {
@@ -536,13 +555,29 @@ parse_config() {
       exit 1
     fi
 
+    # BL-982: a window line's role field is a SEAT id; its STAGE is the part
+    # before the optional '@'. Prompt lookup and composition key on the
+    # stage; everything else keys on the seat id.
+    local seat_stage="$role"
+    if [[ "$role" == *"@"* ]]; then
+      seat_stage="${role%%@*}"
+      local seat_suffix="${role#*@}"
+      if [[ -z "$seat_stage" || -z "$seat_suffix" || "$seat_suffix" == *"@"* ]]; then
+        error_msg "Invalid seat id '$role' on line $line_no: expected <stage>@<seat> with a single '@' and both halves non-empty"
+        exit 1
+      fi
+      STAGE_EXTRA_SEAT[$seat_stage]="$role"
+    else
+      STAGE_BARE_SEAT[$seat_stage]=1
+    fi
+
     # BL-243: coordinator is provisioned infrastructure, never a
     # swarmforge.conf window line - the conf declares the PACK only.
     # provision_coordinator (below, after this parsing loop) always adds
     # exactly one, so a conf naming it here would either collide or let an
     # operator accidentally reconfigure guaranteed-present infrastructure
     # as if it were a regular pack-configurable role.
-    if [[ "$role" == "coordinator" ]]; then
+    if [[ "$seat_stage" == "coordinator" ]]; then
       error_msg "coordinator is reserved infrastructure and may not be declared as a window in $CONFIG_FILE (line $line_no) - it is always provisioned automatically."
       exit 1
     fi
@@ -572,8 +607,10 @@ parse_config() {
         ;;
     esac
 
-    if [[ "$agent" != "none" && ! -f "$ROLES_DIR/$role.prompt" ]]; then
-      error_msg "Missing role prompt $ROLES_DIR/$role.prompt"
+    # BL-982: the prompt is the STAGE's - every seat of a stage resolves the
+    # same role prompt file.
+    if [[ "$agent" != "none" && ! -f "$ROLES_DIR/$seat_stage.prompt" ]]; then
+      error_msg "Missing role prompt $ROLES_DIR/$seat_stage.prompt"
       exit 1
     fi
 
@@ -591,13 +628,25 @@ parse_config() {
     else
       worktree_path="$(worktree_path_for_name "$worktree")"
     fi
-    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path"
+    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path" "$seat_stage"
   done < "$CONFIG_FILE"
 
   if (( ${#ROLES[@]} == 0 )); then
     error_msg "No windows defined in $CONFIG_FILE"
     exit 1
   fi
+
+  # BL-982: parcels address the STAGE, and stage-addressed lookups resolve
+  # the seat whose id IS the stage name - so a stage declaring any @-seat
+  # must also declare its bare seat, or parcels to that stage would resolve
+  # no row at all.
+  local extra_seat_stage
+  for extra_seat_stage in ${(k)STAGE_EXTRA_SEAT}; do
+    if [[ -z "${STAGE_BARE_SEAT[$extra_seat_stage]:-}" ]]; then
+      error_msg "Stage '$extra_seat_stage' declares additional seat '${STAGE_EXTRA_SEAT[$extra_seat_stage]}' but no bare '$extra_seat_stage' seat in $CONFIG_FILE - the stage-named seat must exist because parcels address the stage"
+      exit 1
+    fi
+  done
 
   # BL-243: a coordinator window line is rejected inline above (role ==
   # "coordinator" can never reach this point), so the old swarm_mode
@@ -1036,6 +1085,10 @@ write_agent_instruction_file() {
   local prompt_file="$2"
   local agent="${3:-claude}"
   local model="${4:-}"
+  # BL-982: composition keys on the STAGE (every seat of a stage runs the
+  # stage's role prompt); the artifact FILE stays seat-keyed via
+  # prompt_file. Defaulted to $role so single-seat callers are unchanged.
+  local stage="${5:-$role}"
   local two_pack_flag=0
   local overlay=""
   local -a model_flag=()
@@ -1046,13 +1099,13 @@ write_agent_instruction_file() {
   # BL-546: PromptEngine is the single authority for prompt composition -
   # this CLI call is the ONLY way a launch path produces a system-prompt
   # artifact; no prompt text is assembled in this script.
-  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$role" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file"
+  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$stage" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file"
   # BL-563 Slice 2: a sidecar recording compose's :metadata (:model in
   # particular) alongside the primary .md artifact - the resolved launch
   # model is otherwise invisible outside this process, since compose's
   # system-prompt TEXT is deliberately unchanged by :model (adapter
   # consumption of it is BL-574's scope, not this one's).
-  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose-metadata "$agent" "$role" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file.metadata.json" 2>/dev/null || true
+  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose-metadata "$agent" "$stage" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file.metadata.json" 2>/dev/null || true
 }
 
 agent-runtime-needs-bootstrap() {
@@ -1177,7 +1230,7 @@ generate_dormant_role_launch_artifacts() {
   local index="$1"
   local dormant_resolved_model
   dormant_resolved_model="$(resolve_claude_model_for_index "$index")"
-  write_agent_instruction_file "${ROLES[$index]}" "$PROMPTS_DIR/${ROLES[$index]}.md" "${AGENTS[$index]}" "$dormant_resolved_model"
+  write_agent_instruction_file "${ROLES[$index]}" "$PROMPTS_DIR/${ROLES[$index]}.md" "${AGENTS[$index]}" "$dormant_resolved_model" "${STAGES[$index]}"
   write_role_launch_script "$index" >/dev/null
 }
 
@@ -1626,7 +1679,7 @@ launch_role() {
   # via the same pure resolve_role_model call is cheap and side-effect-free,
   # not fragile cross-subshell state-passing.
   resolved_model="$(resolve_claude_model_for_index "$index")"
-  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model"
+  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model" "${STAGES[$index]}"
   launch_script="$(write_role_launch_script "$index")"
   launch_script="$(resolve_launch_script_for_role "$index" "$role" "$launch_script")"
 
