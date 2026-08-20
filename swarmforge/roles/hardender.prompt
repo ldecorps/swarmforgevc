@@ -1203,3 +1203,49 @@ You are the hardender.
   and `mutate: ["out/**/*.js"]` in `stryker.config.json`. The
   "reads as covered" nuance above is the specifier's addition, argued from
   the parser's behavior rather than measured against a mutation report.
+
+## A negative substring assertion is a proxy, not the invariant — assert the forbidden COMPOSITION (rule_proposal 2026-08-20, accepted)
+- **The shape.** A test that proves an unwanted thing is absent by asserting
+  a bare substring appears NOWHERE (`(not (str/includes? output "$X"))`) is
+  not testing the invariant; it is testing a proxy that happens to coincide
+  with it. The moment the generator under test legitimately uses `$X` for
+  some OTHER, correct purpose, the proxy false-fails while the real invariant
+  still holds — and it fails loudly, in a suite that was green yesterday,
+  which reads exactly like a regression you just caused.
+- **Assert the composition instead.** Name the forbidden arrangement, not the
+  ingredient: not "the root is never mentioned" but "the ORIGINAL command is
+  never followed by the root as a trailing argument"
+  (`(not (str/includes? wrapper (str original " \"$__sfh_root\"")))`). The
+  sharpened form survives any legitimate new use of the same string, and it
+  is a strictly stronger statement of what the code must not do.
+- **This is not licence to loosen a red.** The two readings look identical
+  from the failure message, so decide which you are in BEFORE editing an
+  assertion: does the output now contain the string in a NEW and correct
+  position (sharpen the proxy), or in the OLD forbidden one (a real
+  regression — fix the code). Sharpening a proxy that is genuinely catching
+  the defect is how a guard gets quietly disarmed.
+- **Where it bites.** Any shared generator whose output is asserted by
+  several suites at once — one new correct use of the string breaks every
+  bare check simultaneously, which is why it presents as a suite-wide red
+  rather than a single test.
+- (Incident: BL-985, 2026-08-20. The heal wrapper gained a PROACTIVE
+  anchoring block that legitimately references `"$__sfh_root"` in EVERY
+  emitted wrapper. Three pre-existing bare checks false-failed —
+  `tool_miss_heal_lib_test_runner.bb:107` and `:370` asserting its absence
+  anywhere, and `bl960_heal_wrapper_acceptance_runner.bb:99`'s
+  `rootAppendedInSource` proxy asserting its presence anywhere — while the
+  real BL-934/BL-960 misdirection invariant, that the original command must
+  never be re-invoked with the root spliced on as a trailing argument, held
+  throughout. Two sibling assertions in the same family were already written
+  in the sharpened form and did not fail:
+  `tool_miss_heal_lib_property_runner.bb:420` and
+  `tool_miss_heal_lib_test_runner.bb:126`, both composing
+  `(str original " \"$__sfh_root\"")` — so the correct pattern was already
+  present in the tree, and only the un-sharpened siblings broke.)
+- **Scope note.** This is a general testing principle and applies to whoever
+  writes the assertion — under BL-654 that is usually the coder, encoding a
+  declared invariant first. It lives here rather than in the shared
+  engineering article because that article sits at exactly 44000/44000 of the
+  boot prefix budget (BL-859), so any addition there must be paid for by a
+  relocation in the same commit. If that budget is ever freed, this belongs
+  in the shared article.

@@ -1,6 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-982: `swarmforge.sh` gains the
+**Last Updated:** August 20, 2026 (BL-983: a parcel addressed `to:
+<stage>` is now claimed by exactly one SEAT of a multi-seat stage
+(BL-982's second seat stops being inert), idle-first and difficulty-blind
+— no model-tier preference, no round-robin. Design: stage stays the
+address, seat becomes the claimant. `handoff_lib.bb` gains
+`seat-stage`/`stage-queue-dir`/`stage-handoff-files`/`stage-sibling-seats`;
+`stage-queue-dir` resolves the stage-named `roles.tsv` row's mailbox as
+the shared queue (falling back to the seat's own mailbox when no
+separate stage row exists, so a bare single-seat stage is
+byte-identical to today). `ready_for_next_task.bb` dequeues from that
+shared stage queue into the seat's own `in_process`; idle-first is
+emergent, not scheduled — a busy seat's poll only ever resumes its own
+`in_process` parcel, so a busy seat never dequeues, and `fs/move`'s
+atomic rename is the tie-break when two idle seats race for the same
+file (loser falls through to the next candidate). Sibling seats'
+`in_process`/`completed`/`abandoned` basenames are folded into the
+existing BL-218 terminal-state check, so a parcel already claimed or
+finished by a peer seat is refused if redelivered — a claimed parcel
+keeps its stamped `recipient: <stage>` header rather than being
+rewritten to the seat, which is why the claim-listing helpers
+(`ready_for_next_task.bb`, `done_with_current_task.bb`) had to become
+seat-aware rather than stage-blind. `swarm_handoff.bb`'s outward sender
+identity (`from:`/`role:` headers, filename, routing/validation) is now
+the seat's STAGE, not its seat id — no downstream role, board, or
+metric can learn which seat did the work; mailbox paths on disk still
+resolve via the full seat id, kept deliberately separate from parcel
+content. `duplicate_chain_guard_lib.bb`'s BL-760 sender self-exclusion
+is stage-level for the same reason. Firm lines held: parcel addressing
+is unchanged (`to: <stage>`, no seat id ever appears in a handoff);
+batch-mode stages (cleaner, hardender) are untouched and remain
+single-claimant, so a second seat of a batch stage is still inert —
+that stays out of scope for this slice; no change to pipeline order,
+promotion, bounce/QA enums, board, or stage-dwell. The
+more-capable-coder pairing this unlocks (e.g. routing harder tickets to
+a stronger-model seat) stays named as a concept only — difficulty-aware
+seat choice is a later slice pending a human decision on wait-vs-spill
+when the right-tier seat is busy.); Previously August 20, 2026 (BL-982: `swarmforge.sh` gains the
 capability for a pipeline pack to declare a second SEAT on the same
 STAGE — e.g. a Sonnet coder and a Fable coder both answering to
 `coder` — by splitting SEAT identity (tmux session, worktree/branch,
