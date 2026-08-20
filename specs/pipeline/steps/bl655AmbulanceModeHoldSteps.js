@@ -44,6 +44,7 @@ const AMBULANCE_CLI = path.join(SCRIPTS_DIR, 'ambulance_cli.bb');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
 
 const { pollAndForward } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramFrontDeskBotCore'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const CONTROL_TOPIC_ID = 900;
 const PRINCIPAL_ID = 111;
@@ -78,7 +79,7 @@ function mkdirp(p) {
 //    dequeue's BL-610 unresolvable-commit guard) with a worktree per
 //    non-master role and roles.tsv covering every role ──────────────────
 function mkFixtureRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl655-ambulance-'));
+  const root = mkSocketFixtureRoot('aps-bl655-ambulance-');
   git(root, ['init', '-q']);
   git(root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   const commit = gitOut(root, ['rev-parse', '--short=10', 'HEAD']);

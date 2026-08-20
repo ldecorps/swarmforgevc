@@ -25,9 +25,10 @@ const path = require('node:path');
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const { emitFleetStatus } = require(path.join(EXT_DIR, 'out', 'tools', 'emit-fleet-status'));
 const { renderFleet } = require(path.join(EXT_DIR, 'out', 'tools', 'fleet-console'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function writeRolesTsv(targetPath, rows) {

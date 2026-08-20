@@ -18,13 +18,14 @@ const {
 } = require(path.join(OUT_DIR, 'swarm', 'effortDial'));
 const { installExecutable } = require(path.join(__dirname, '..', '..', '..', 'extension', 'test', 'helpers', 'sharedBin'));
 const { installFakeTmux } = require(path.join(__dirname, '..', '..', '..', 'extension', 'test', 'helpers', 'fakeTmux'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 function settingsPath(targetPath, role) {
   return path.join(targetPath, '.swarmforge', 'launch', `${role}.claude-settings.json`);
 }
 
 function seedSwarmFixture(role, agent, settings) {
-  const targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-effort-dial-'));
+  const targetPath = mkSocketFixtureRoot('aps-effort-dial-');
   const launchDir = path.join(targetPath, '.swarmforge', 'launch');
   fs.mkdirSync(launchDir, { recursive: true });
   fs.writeFileSync(path.join(targetPath, '.swarmforge', 'tmux-socket'), '/tmp/fake.sock');
