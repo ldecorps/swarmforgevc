@@ -20,7 +20,18 @@ const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const LIB_TEST_RUNNER = path.join(SWARMFORGE_SCRIPTS, 'test', 'standing_rule_violations_lib_test_runner.bb');
 const CLI = path.join(SWARMFORGE_SCRIPTS, 'standing_rule_violations_cli.bb');
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
-const MAIN_CHECKOUT = resolveMainCheckout(__dirname);
+// BL-968: resolved LAZILY at step-execution time, memoized - never at
+// module load. A load-time `git rev-parse` makes this file unloadable from
+// the BL-761 gate's materialized non-repo temp tree, silently skipping the
+// acceptance-contract check for EVERY send whose cited commit contains it
+// (the BL-863 caller-binding-time lesson; the helper itself is fine).
+let lazyMainCheckout = null;
+function mainCheckout() {
+  if (!lazyMainCheckout) {
+    lazyMainCheckout = resolveMainCheckout(__dirname);
+  }
+  return lazyMainCheckout;
+}
 
 const readEvidence = makeEvidenceReader(EVIDENCE_DIR, 'BL-337-standing-rule-violation-observable-', 'BL-337');
 
@@ -35,7 +46,7 @@ function runLibTests(ctx) {
 }
 
 function runCliReport() {
-  const result = spawnSync('bb', [CLI, MAIN_CHECKOUT, 'report'], { encoding: 'utf8', timeout: 30000 });
+  const result = spawnSync('bb', [CLI, mainCheckout(), 'report'], { encoding: 'utf8', timeout: 30000 });
   if (result.status !== 0) {
     throw new Error(`standing_rule_violations_cli.bb report failed: ${result.stderr || result.stdout}`);
   }
