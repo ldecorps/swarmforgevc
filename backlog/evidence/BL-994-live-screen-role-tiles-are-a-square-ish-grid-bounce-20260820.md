@@ -3,7 +3,21 @@
 Reviewed commit: 0e5ebd1f2 (hardener's own try/finally fix on top of
 architect's merge 423bb7f9ec, after merging main to pick up the specifier's
 same-day amendment `fabecba4c` — "BL-994 spec amendment: retarget BL-929
-scenario 03's ticket assertion to the fullscreen Expand").
+scenario 03's ticket assertion to the fullscreen Expand"). `bounce_history`
+records `commit: 423bb7f9ec` — the tip received from the architect, per the
+BL-992 bounce precedent of naming the reviewed tip, not this pass's own
+additions.
+
+**No revert applies to this bounce.** `record-bounce.js`'s revertCheck
+seam is built for the ordinary shape (bounced content is present and wrong,
+so it must be removed before anything downstream sees it) and reported
+`verdict: violation` against whichever commit was passed, because this
+bounce is the other shape: an OMISSION. Nothing received from the architect
+is wrong - `renderAndExtract`'s try/finally fix (0e5ebd1f2) is a wanted,
+kept improvement, not bounced content - the defect is that a required piece
+(D1/D2 below) was never added. There is nothing to `git revert`; reverting
+0e5ebd1f2 or 423bb7f9ec would only destroy good work. Recorded here so the
+next reader does not follow the tool's suggested remedy literally.
 
 ## Review pass (Article 4.4 complete inventory)
 
