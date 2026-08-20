@@ -188,3 +188,27 @@ notes_coordinator_hold: >
   on its own. Any role that backgrounds a long run is one skipped wake from an
   indefinite stall.
 
+  OPEN-SLOT NUDGE ANSWERED 2026-08-20 06:20Z (BL-798 SUP-1). handoffd's
+  open-slot sweep named THIS ticket: "open slot + paused work - promote+route:
+  BL-970 awaiting approval". Not promoted. Two reasons, both specific and true
+  of this candidate:
+
+  1. human_approval: pending - the standing blocker, unchanged since the ticket
+     was minted at 04:22Z. This is an answer owed by a human, not the swarm
+     being idle.
+  2. The slot the sweep saw is gone: BL-591 was promoted+routed into it between
+     the sweep and this turn (active is back at 7 of 7). Naming what filled it,
+     per the rule that a bare "cap reached" is not a reason when the sweep only
+     fires below cap.
+
+  This is the FIRST open-slot nudge to name BL-970, so no escalation count is
+  running yet. If the sweep names it again, that is the starvation signal the
+  rule describes, not a duplicate to dedup - and the cause will still be (1).
+
+  RESTATING WHY IT MATTERS, since a nudge is the moment it gets read: BL-970's
+  defect is LIVE and has now claimed two roles. QA idled ~70 minutes at a prompt
+  holding a completed gate while every wake was refused as "busy"; the hardener
+  has since acquired the same permanent-busy state from three leaked `tail -f`
+  followers (evidence ecc14dd14, ae1599a37). It is the only defect this shift
+  that actually froze a role.
+
