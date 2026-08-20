@@ -72,14 +72,19 @@ export function childWeight(child: EpicEtaChild): number {
   return WEIGHTS[cost] ?? WEIGHTS.medium;
 }
 
+const BLOCKING_STATUSES = new Set(['blocked', 'needs_design']);
+
+function hasBlockingEntries(list?: string[]): boolean {
+  return Array.isArray(list) && list.length > 0;
+}
+
 export function childBlocked(child: EpicEtaChild): boolean {
   const status = (child.statusText ?? '').toLowerCase();
-  return Boolean(
+  return (
     child.held === true ||
-      status === 'blocked' ||
-      status === 'needs_design' ||
-      (child.promotionBlockers && child.promotionBlockers.length > 0) ||
-      (child.blockUntil && child.blockUntil.length > 0)
+    BLOCKING_STATUSES.has(status) ||
+    hasBlockingEntries(child.promotionBlockers) ||
+    hasBlockingEntries(child.blockUntil)
   );
 }
 
@@ -93,41 +98,72 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-export function estimateEpicEta(input: EpicEtaInput): EpicEtaState {
-  const children = Array.isArray(input.children) ? input.children : [];
-  // Defensive: the tracker itself and done children weigh zero even if the
-  // caller's membership ever leaks them in.
-  const open = children.filter((c) => c.type !== 'epic' && c.done !== true);
-  if (open.length === 0) {
-    return { kind: 'complete' };
-  }
+interface OpenPartition {
+  open: EpicEtaChild[];
+  blocked: EpicEtaChild[];
+  buildable: EpicEtaChild[];
+}
 
+// Defensive: the tracker itself and done children weigh zero even if the
+// caller's membership ever leaks them in.
+function partitionOpen(children: EpicEtaChild[]): OpenPartition {
+  const open = children.filter((c) => c.type !== 'epic' && c.done !== true);
   const blocked = open.filter(childBlocked);
   const buildable = open.filter((c) => !childBlocked(c));
-  const blockedCount = blocked.length;
-  if (buildable.length === 0) {
-    // Every open child is blocked: no velocity number describes this work.
-    const anyDesign = blocked.some((c) => (c.statusText ?? '').toLowerCase() === 'needs_design');
-    return { kind: 'blocked', reason: anyDesign ? 'designing' : 'blocked', blockedCount };
-  }
+  return { open, blocked, buildable };
+}
 
-  // Invariant 2: the duration is a function of BUILDABLE weight only.
-  const buildableWeight = buildable.reduce((sum, c) => sum + childWeight(c), 0);
-  const blockedWeight = blocked.reduce((sum, c) => sum + childWeight(c), 0);
+function weightSum(list: EpicEtaChild[]): number {
+  return list.reduce((sum, c) => sum + childWeight(c), 0);
+}
 
-  const windowMs = finite(input.windowMs) && input.windowMs > 0 ? input.windowMs : 0;
-  const nowMs = finite(input.nowMs) ? input.nowMs : 0;
+interface ResolvedWindow {
+  windowMs: number;
+  nowMs: number;
+  windowDays: number;
+  events: number[];
+}
+
+function resolveWindowMs(raw: number): number {
+  return finite(raw) && raw > 0 ? raw : 0;
+}
+
+function resolveNowMs(raw: number): number {
+  return finite(raw) ? raw : 0;
+}
+
+function safeCompletions(list: number[]): number[] {
+  return Array.isArray(list) ? list : [];
+}
+
+// Normalizes the clock/window inputs and the git-derived completion events
+// down to nothing when there is no usable window or no completions in it -
+// the caller degrades both to the same no-recent-pace state.
+function resolveWindow(input: EpicEtaInput): ResolvedWindow | null {
+  const windowMs = resolveWindowMs(input.windowMs);
+  const nowMs = resolveNowMs(input.nowMs);
   const windowDays = windowMs / DAY_MS;
-  const events = (Array.isArray(input.completionsMs) ? input.completionsMs : []).filter(
+  const events = safeCompletions(input.completionsMs).filter(
     (t) => finite(t) && t <= nowMs && t >= nowMs - windowMs
   );
   if (windowDays <= 0 || events.length === 0) {
-    return { kind: 'no-recent-pace', blockedCount };
+    return null;
   }
+  return { windowMs, nowMs, windowDays, events };
+}
 
-  // Velocity noise, measured over the window's two halves: the honest range
-  // divides remaining weight by a fast and a slow rate rather than one mean
-  // (a point estimate is false precision - the measured swing was 3-54/day).
+interface RateRange {
+  lowDays: number;
+  highDays: number;
+  fastRate: number;
+  slowRate: number;
+}
+
+// Velocity noise, measured over the window's two halves: the honest range
+// divides remaining weight by a fast and a slow rate rather than one mean
+// (a point estimate is false precision - the measured swing was 3-54/day).
+function computeRateRange(window: ResolvedWindow, buildableWeight: number): RateRange | null {
+  const { events, nowMs, windowMs, windowDays } = window;
   const midMs = nowMs - windowMs / 2;
   const olderCount = events.filter((t) => t < midMs).length;
   const recentCount = events.length - olderCount;
@@ -140,46 +176,95 @@ export function estimateEpicEta(input: EpicEtaInput): EpicEtaState {
   const slowRate = Math.max(Math.min(...halfRates), meanRate / 2);
   const fastRate = Math.max(...halfRates, meanRate);
 
-  let lowDays = buildableWeight / fastRate;
+  const lowDays = buildableWeight / fastRate;
   let highDays = buildableWeight / slowRate;
   if (!finite(lowDays) || !finite(highDays)) {
-    return { kind: 'no-recent-pace', blockedCount };
+    return null;
   }
   // Invariant 1: low strictly below high, always - a perfectly steady pace
   // still gets an honest band rather than a false point.
   if (highDays <= lowDays) {
     highDays = lowDays * 1.5 + 0.1;
   }
+  return { lowDays, highDays, fastRate, slowRate };
+}
 
-  // Confidence: start high; degrade for blocked weight, noisy pace, and a
-  // mostly heavy/undesigned remainder - with the dominant reason in a word.
-  const noiseRatio = fastRate / slowRate;
+// Confidence: start high; degrade for blocked weight, noisy pace, and a
+// mostly heavy/undesigned remainder - with the dominant reason in a word.
+// Rules are listed in priority order: the first ACTIVE rule names the
+// reason, exactly as the original if-chain only ever overwrote a still-
+// 'steady' reason.
+function computeConfidence(
+  buildable: EpicEtaChild[],
+  blockedWeight: number,
+  buildableWeight: number,
+  rate: RateRange
+): { confidence: EpicEtaConfidence; confidenceReason: string } {
+  const noiseRatio = rate.fastRate / rate.slowRate;
   const blockedFraction = blockedWeight / (blockedWeight + buildableWeight);
   const heavyFraction =
     buildable.filter((c) => (c.mutationCost ?? '').toLowerCase() === 'high').length / buildable.length;
-  let degradations = 0;
-  let confidenceReason = 'steady';
-  if (blockedFraction > 0) {
-    degradations += blockedFraction > 0.5 ? 2 : 1;
-    confidenceReason = 'blocked';
-  }
-  if (noiseRatio > 3) {
-    degradations += 1;
-    if (confidenceReason === 'steady') confidenceReason = 'noisy';
-  }
-  if (heavyFraction > 0.5) {
-    degradations += 1;
-    if (confidenceReason === 'steady') confidenceReason = 'heavy';
-  }
-  const confidence: EpicEtaConfidence = degradations === 0 ? 'high' : degradations === 1 ? 'medium' : 'low';
 
-  const windowDaysLabel = Math.max(1, Math.round(windowDays));
-  const paceAssumption = `at current ${input.packLabel || 'unknown-pack'} pace over the trailing ${windowDaysLabel}d window`;
+  const rules = [
+    { active: blockedFraction > 0, weight: blockedFraction > 0.5 ? 2 : 1, reason: 'blocked' },
+    { active: noiseRatio > 3, weight: 1, reason: 'noisy' },
+    { active: heavyFraction > 0.5, weight: 1, reason: 'heavy' },
+  ];
+  const applied = rules.filter((r) => r.active);
+  const degradations = applied.reduce((sum, r) => sum + r.weight, 0);
+  const confidenceReason = applied.length > 0 ? applied[0].reason : 'steady';
+  const confidence: EpicEtaConfidence = degradations === 0 ? 'high' : degradations === 1 ? 'medium' : 'low';
+  return { confidence, confidenceReason };
+}
+
+function resolvePackLabel(packLabel: string): string {
+  return packLabel || 'unknown-pack';
+}
+
+function safeChildren(children: EpicEtaChild[]): EpicEtaChild[] {
+  return Array.isArray(children) ? children : [];
+}
+
+// Every open child is blocked: no velocity number describes this work.
+function blockedReason(blocked: EpicEtaChild[]): string {
+  const anyDesign = blocked.some((c) => (c.statusText ?? '').toLowerCase() === 'needs_design');
+  return anyDesign ? 'designing' : 'blocked';
+}
+
+export function estimateEpicEta(input: EpicEtaInput): EpicEtaState {
+  const { open, blocked, buildable } = partitionOpen(safeChildren(input.children));
+  if (open.length === 0) {
+    return { kind: 'complete' };
+  }
+
+  const blockedCount = blocked.length;
+  if (buildable.length === 0) {
+    return { kind: 'blocked', reason: blockedReason(blocked), blockedCount };
+  }
+
+  // Invariant 2: the duration is a function of BUILDABLE weight only.
+  const buildableWeight = weightSum(buildable);
+  const blockedWeight = weightSum(blocked);
+
+  const window = resolveWindow(input);
+  if (!window) {
+    return { kind: 'no-recent-pace', blockedCount };
+  }
+
+  const rate = computeRateRange(window, buildableWeight);
+  if (!rate) {
+    return { kind: 'no-recent-pace', blockedCount };
+  }
+
+  const { confidence, confidenceReason } = computeConfidence(buildable, blockedWeight, buildableWeight, rate);
+
+  const windowDaysLabel = Math.max(1, Math.round(window.windowDays));
+  const paceAssumption = `at current ${resolvePackLabel(input.packLabel)} pace over the trailing ${windowDaysLabel}d window`;
 
   return {
     kind: 'ranged',
-    lowDays: round1(lowDays),
-    highDays: Math.max(round1(highDays), round1(lowDays) + 0.1),
+    lowDays: round1(rate.lowDays),
+    highDays: Math.max(round1(rate.highDays), round1(rate.lowDays) + 0.1),
     blockedCount,
     confidence,
     confidenceReason,
