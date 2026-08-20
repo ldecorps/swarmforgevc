@@ -172,12 +172,14 @@ approval_context: >
   dependency. If you would rather not hold BL-970 for it, that is entirely
   reasonable - just expect this to arrive red and to spawn a follow-up.
 
-  TIMING, added 2026-08-20 16:05: that window is now nearly shut. BL-970 has
-  passed coder and cleaner and is walking the review stages; this ticket is
-  the only one of the recent batch still `human_approval: pending`, so it
-  cannot even be promoted until you approve it. Approving it does not commit
-  you to promoting it first - but leaving it pending removes the choice,
-  because BL-970 will land in the meantime.
+  TIMING, added 2026-08-20 16:05 and corrected minutes later: that window is
+  now nearly shut. BL-970 has passed coder and cleaner and is walking the
+  review stages. This ticket was still `human_approval: pending` when the
+  paragraph was first written; you approved it while the amendment was being
+  committed, so the remaining decision is no longer approval but PROMOTION
+  ORDER - and it now sits with the coordinator, who has been told. If this is
+  not promoted ahead of BL-970 landing, expect it to arrive red and to spawn
+  a follow-up rather than to act as a guardrail.
 
   Second, smaller judgement: I ruled out having the extension host shell out
   to Babashka for classification, on the two-layer rule. It would genuinely
