@@ -1,0 +1,123 @@
+id: BL-975
+title: "run BL-967's owed 30-minute live soak (qa_e2e step 3-4, recorded owed-not-passed by QA) and record the verdict - zero handoffd freshness restarts on post-fix daemons, or the attributed cause + follow-on"
+milestone: M8
+type: chore
+severity: low
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 20
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [qa]
+acceptance: specs/features/BL-975-bl967-owed-live-soak-recorded.feature
+
+invariants: []
+
+description: >
+  BL-967 landed (QA pass a5ecfc281, main 2026-08-20T05:44:55Z; closed
+  999b9fe72) with its qa_e2e step 3 explicitly recorded by QA as
+  "owed, not passed" - by its own wording it is only runnable AFTER
+  the parcel lands and the daemon restarts on it (QA evidence
+  backlog/evidence/BL-967-qa-pass-20260820.md: "Whoever observes the
+  daemon after this lands should check those two files"). The
+  documenter flagged that no ticket tracked the owed observation
+  (note 20_20260820T054749Z_000227); this chore is that tracking
+  artifact. Step 4 (BL-789's slow-but-healthy posture preserved) is
+  the same observation's other half and rides along.
+
+  The work (verification only - no code): observe a 30-minute window
+  of post-fix daemons and record the verdict in an evidence file
+  this ticket's acceptance scenarios gate. PASS: zero new handoffd
+  entries in .swarmforge/daemon/freshness-incidents.log in the
+  window, handoffd.log showing completed heartbeat cycles (boundary
+  lines appear on heavy cycles only), and no kill of a
+  legitimately-slow 120-232s cycle. FAIL: any handoffd freshness
+  restart or attributed in-cycle timeout in the window - then
+  BL-967's own step-3 branch applies: the G6 timeout line names the
+  guilty sweep and call; record that as the identified cause and
+  mint the follow-on defect naming it.
+
+  Window facts pinned at mint (2026-08-20 ~05:51Z, specifier probe):
+  the first daemon running BL-967's landed code is the one the
+  start-audit claims at 2026-08-20T05:50:19Z (pid 96980; audit line
+  "handoffd claimed pid=96980") - main only received BL-967 at
+  05:44:55Z. The three freshness restarts at epochs 1787202000 /
+  1787204281 / 1787204642 (05:26:40 / 05:38:01 / 05:44:02Z) all
+  killed PRE-fix daemons and must NOT count against the soak. The
+  observation is log-based and retro-evaluable: freshness-incidents
+  .log and daemon-start-audit.log persist across restarts, so the
+  05:50Z-onward window can be judged after the fact even if this
+  chore runs later; handoffd.log truncates per restart, but a
+  truncation implies a restart, which the persistent logs already
+  witness.
+
+  Also observed at mint, NOT this chore's scope: the fresh daemon's
+  first cycle opened with a 12-line chase-wake-skip-busy burst
+  across four roles in ~6 seconds - that is BL-970's classifier
+  surface (pending approval), recorded here only so the soak
+  reviewer does not mistake skip-busy noise for a stall by itself.
+
+constraints: >
+  - Verification only: this chore changes no code, no config, no
+    daemon state. It reads logs and writes one evidence file (plus
+    the follow-on mint request if the verdict demands one).
+  - Routing (coordinator): required_stages is [qa] - route this
+    directly to QA; there is nothing for coder/cleaner/architect/
+    hardender/documenter to do, and the verdict authority is QA's
+    (it recorded the debt). If direct-to-QA routing is unsupported
+    on this pack, route to QA via a Work note rather than walking
+    the full chain.
+  - Do not re-litigate BL-967's gates: they all ran and passed; only
+    steps 3-4 were owed.
+  - Pre-fix incidents (the 05:26/05:38/05:44Z restarts) are context,
+    never counted in the window.
+
+qa_e2e_procedure: >
+  1. Establish the window start from daemon-start-audit.log: the
+     first handoffd claim at or after 2026-08-20T05:50:19Z (the
+     first start after BL-967 reached main at 05:44:55Z).
+  2. Confirm the swarm was active during the window (roles working;
+     an idle-swarm window proves little - extend or choose a later
+     30-minute active window if needed).
+  3. Read freshness-incidents.log for handoffd entries with epoch
+     inside the window: zero -> PASS half 1. Any entry -> FAIL path.
+  4. Read handoffd.log (current daemon) for completed heartbeat
+     cycles; on heavy cycles, per-sweep boundary lines. An attributed
+     timeout line names sweep+call -> record as identified cause.
+  5. Step-4 half: confirm no kill of a slow-but-healthy cycle
+     (120-232s legit range, BL-789) occurred in the window.
+  6. Write backlog/evidence/BL-975-soak-<date>.md with: window
+     start/end epochs, daemon pids observed, incident delta, cycle
+     evidence, verdict PASS or the attributed cause + the follow-on
+     ticket id requested from the specifier. Acceptance scenarios
+     01-02 gate this file's content.
+
+notes: >
+  Source: documenter note handoff 20_20260820T054749Z_000227
+  ("BL-967 qa_e2e step 3 (30min live soak) recorded OWED by QA; no
+  ticket tracks it"), sent to specifier + coordinator. QA's own
+  owed-not-passed record is in
+  backlog/evidence/BL-967-qa-pass-20260820.md (commit a5ecfc281) -
+  the run-or-blocked discipline working as designed; this chore is
+  the missing durable tracker.
+
+  Specifier probe at mint pinned the window facts above (start-audit
+  and freshness-incident epochs quoted from the live files) so the
+  soak can be judged retroactively even if this chore is promoted
+  later. Related: BL-967 (the owed steps), BL-789 (slow-but-healthy
+  posture), BL-970 (skip-busy bursts are its surface, not a stall
+  signal by themselves), BL-942 (the hardening-debt ledger - the
+  analogous durable-debt mechanism for mutation/CRAP; a general
+  owed-qa_e2e ledger may deserve its own proposal if this recurs,
+  deliberately not built inside this chore).
+
+approval_context: >
+  The substance was already human-approved inside BL-967 (its
+  qa_e2e steps 3-4); this chore only gives the owed observation a
+  durable tracker, per the documenter's flag. One call to say the
+  word on: required_stages [qa] - a verification-only parcel routed
+  directly to QA, skipping the build stages, which is unusual but
+  matches the work (read logs, record verdict). If you prefer it to
+  walk the normal chain, say so.
