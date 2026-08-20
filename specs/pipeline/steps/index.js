@@ -537,7 +537,8 @@ const DOMAINS = [
   require('./bl978TrailIndexSteps'),
   require('./bl977SupervisorProgressSteps'),
   require('./bl968StepRegistryMaterializedTreeSteps'),
-  require('./bl982SecondSeatSteps')
+  require('./bl982SecondSeatSteps'),
+  require('./bl983StageQueueSteps')
 ];
 
 function registerSteps(registry) {

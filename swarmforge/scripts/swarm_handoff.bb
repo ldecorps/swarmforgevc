@@ -95,8 +95,15 @@
         (str/split-lines (slurp (str (roles-file))))))
 
 (defn sender-role []
+  ;; BL-983 (invariant 3): a SEAT's outward identity is its STAGE - the
+  ;; from:/role: headers, the filename, routing and every guard see the
+  ;; stage, so no downstream role, board or metric ever learns which seat
+  ;; did the work. A bare role IS its stage - byte-identical pre-seat
+  ;; behavior. Mailbox PATHS (outbox/sent) still resolve via the full
+  ;; SWARMFORGE_ROLE through handoff-lib/my-mailbox-base-dir, which is
+  ;; seat-local disk state, not parcel content.
   (if-let [role (not-empty (System/getenv "SWARMFORGE_ROLE"))]
-    role
+    (handoff-lib/seat-stage role)
     (exit! 1 "Set SWARMFORGE_ROLE.")))
 
 (defn state-dir []

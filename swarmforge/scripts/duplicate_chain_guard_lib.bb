@@ -40,7 +40,16 @@
                     {:role (:role role-info) :file file}))
                 (handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info state))))
         (for [role-info (handoff-lib/load-all-roles root)
-              :when (not= (:role role-info) exclude-role)
+              ;; BL-983: exclusion is STAGE-level - every seat of the
+              ;; sender's stage is "self" here. The sender's outward
+              ;; identity is its stage (swarm_handoff.bb's sender-role), so
+              ;; the seat actually holding the inbound parcel in ITS
+              ;; in_process is a seat-suffixed row of the same stage; a
+              ;; role-name-equality exclusion would make every seat forward
+              ;; self-refuse. For bare roles seat-stage is identity, so the
+              ;; pre-seat exclusion is byte-identical.
+              :when (not= (handoff-lib/seat-stage (:role role-info))
+                          (handoff-lib/seat-stage exclude-role))
               state [:new :in_process]]
           [role-info state])))
 

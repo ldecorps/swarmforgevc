@@ -349,6 +349,57 @@
 (defn my-handoff-files [dir]
   (vec (filter mine? (handoff-files dir))))
 
+;; ── BL-983: seat-aware stage queue ──────────────────────────────────────
+;; BL-982 split SEAT identity (<stage>@<seat> roles.tsv rows) from STAGE
+;; identity. Parcels still address the STAGE, and the stage-named row's
+;; mailbox is therefore the stage's one addressable QUEUE; a seat CLAIMS
+;; from that queue into its own in_process. For a bare seat the stage queue
+;; IS its own mailbox, so every single-seat path below is byte-identical to
+;; the pre-seat behavior by construction.
+
+(defn seat-stage
+  "The STAGE of a seat id - the part before the optional '@' (BL-982's
+   seat syntax). A bare id IS its own stage."
+  [role-name]
+  (when role-name (first (str/split role-name #"@" 2))))
+
+(defn stage-queue-dir
+  "The current role's STAGE queue in the given state - the mailbox of the
+   roles.tsv row whose id IS the stage name (BL-982's parse guarantees that
+   row exists whenever any @-seat does). Falls back to the seat's own
+   mailbox when no distinct stage row resolves (bare seats, legacy packs,
+   fixtures without roles.tsv) - the pre-BL-983 path, unchanged."
+  [state]
+  (let [me (current-role)
+        stage (seat-stage me)]
+    (if-let [ri (and stage (not= stage me) (load-role-info stage))]
+      (apply fs/path (mailbox-base-dir ri) (mailbox-state->relative-segments state))
+      (my-mailbox-dir state))))
+
+(defn stage-handoff-files
+  "Handoff files in dir addressed to the current role's STAGE (the
+   recipient the daemon stamps on stage-addressed parcels) or to the seat
+   itself; untagged files pass, exactly as mine? treats them. For a bare
+   seat this is my-handoff-files - same filter, same result."
+  [dir]
+  (let [me (current-role)
+        stage (seat-stage me)]
+    (vec (filter (fn [file]
+                   (let [recipient (header-field file "recipient")]
+                     (or (nil? me) (nil? recipient) (= recipient me) (= recipient stage))))
+                 (handoff-files dir)))))
+
+(defn stage-sibling-seats
+  "role-infos of every OTHER seat of the current role's stage - rows whose
+   id shares my stage, excluding me. Empty for bare single-seat stages."
+  []
+  (let [me (current-role)
+        stage (seat-stage me)]
+    (if (nil? me)
+      []
+      (filterv #(and (= stage (seat-stage (:role %))) (not= me (:role %)))
+               (load-all-roles)))))
+
 ;; ── BL-218: mailbox intake idempotency ──────────────────────────────────
 ;; ready_for_next_task.bb/ready_for_next_batch.bb historically only checked
 ;; whether a target in_process file already existed (AMBIGUOUS_TASK_STATE);
