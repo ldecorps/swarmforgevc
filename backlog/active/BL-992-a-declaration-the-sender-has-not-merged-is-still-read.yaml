@@ -172,3 +172,6 @@ approval_context: >
   pruning rewrite and a missing rejection reason on an audit record.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: architect, blamed: coder, class: behavior, commit: b8c57d8dba, evidence: backlog/evidence/BL-992-a-declaration-the-sender-has-not-merged-is-still-read-bounce-20260820.md }
