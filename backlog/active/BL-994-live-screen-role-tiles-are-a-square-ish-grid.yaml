@@ -15,6 +15,7 @@ acceptance: specs/features/BL-994-live-screen-role-tiles-are-a-square-ish-grid.f
 
 required_wiring:
   - "specs/pipeline/steps/index.js::bl994::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
+  - "specs/pipeline/steps/bl929LiveScreenPackLayoutSteps.js::shows that ticket in its Expand view::AMENDED 2026-08-20 - this patch moves a held ticket off the grid tile head, which retires BL-929 scenario 03's old assertion. Its replacement step must be handled in BL-929's own step file, in THIS parcel, or the acceptance runner throws on an unhandled step and BL-929 goes red"
 
 invariants:
   - "What lands is the layout the human verified. The captured patch is the reference for the behaviour; a reinterpretation that renders differently on their phone is a defect even if every scenario passes."
@@ -90,6 +91,64 @@ description: >
   human's and are already made - what the pipeline adds is the acceptance
   contract, the review passes and a legal landing, not a redesign.
 
+  AMENDED 2026-08-20 - THE BL-929 COLLISION, and it is in scope for this
+  parcel. The coder reported that this patch breaks BL-929's acceptance
+  scenario 03. Verified by reading the code, not taken on report: patched
+  `renderPane` writes the tile head unconditionally as role name plus an
+  Expand hint and never calls the ticket block, while BL-929's step handler
+  reads `.pane-col[data-pane-id="documenter"] .pane-head` innerHTML and
+  requires it to contain the held ticket id. That is a deterministic red, and
+  it is caused by locked decision 2, which is already the human's - so it is
+  a contract relocation, not a new design decision, and it does not reopen
+  this ticket's approval.
+
+  BL-929's own locked decision 1 reads "Ticket id / title / role / model /
+  age, if shown, live on the tile that actually holds the claim (already
+  rendered as `.pane-ticket` / fullscreen head)" - the fullscreen head is
+  named there as a valid home. So the contract moves rather than retires:
+  BL-929 scenario 03 now expands the documenter tile and asserts the ticket
+  in its Expand view. The amended feature file is committed on `main`; it
+  lints clean and adds no IR-DRY finding.
+
+  What this parcel must add (the step handler half - BL-233: it lands here or
+  the runner throws):
+
+  - A handler for `the documenter tile is expanded` and for `the documenter
+    tile shows that ticket in its Expand view` in
+    `specs/pipeline/steps/bl929LiveScreenPackLayoutSteps.js`.
+  - Direction, not mandate: the pattern is already established in this
+    parcel's own `bl994LiveScreenGridSteps.js` - dispatch a bubbling click on
+    the `.pane-col`, flush, then read `#fs-head`. BL-929's existing
+    `renderLiveScreen` closes its jsdom window before returning and its When
+    step deletes the fixture root in a `finally`, so the expand step
+    re-renders from the in-memory `ctx.snapshot` rather than reopening either.
+    `requestBrowserFullscreen` is fully guarded (`if (!req) return`, plus
+    try/catch), so jsdom's missing `requestFullscreen` is not a problem.
+  - The assertion must be positive - the documenter tile's Expand shows
+    `BL-929`. Do not settle for the negative half alone.
+
+  A COVERAGE HOLE THIS PARCEL CURRENTLY HAS, found while verifying the above.
+  `extension/test/residentSpyUiHtml.test.js` was already adapted here by
+  flipping `assert.match(documenterHead.innerHTML, /BL-640/)` to
+  `assert.doesNotMatch`, with a comment pointing at
+  `bl994LiveScreenGrid.test.js`'s Expand test as the new home for that
+  assertion. It is not: that test's `panesOf(n)` fixtures carry no
+  `ticketId`, so `buildFullscreenHeadHtml` takes its non-ticket branch and
+  the ticket block is never rendered there. Scenario 04 asserts only the
+  pane LABEL and the transcript. As the parcel stands, the relocated ticket
+  line is asserted NOWHERE - the negative was kept and the positive was
+  dropped. The BL-929 amendment above is what closes it; either restore a
+  positive assertion in the unit test too, or leave the comment pointing at
+  BL-929 scenario 03 instead of at a test that does not cover it.
+
+  Also verified while amending, because the ticket rests on it: the capture is
+  faithful again. `git diff -- extension/src/bridge/residentSpyUiHtml.ts` in
+  the master checkout is once more byte-identical to the tracked patch
+  (`diff -q` clean, 66 insertions / 41 deletions). The empty-diff warning
+  earlier in this description described a transient stash window and no longer
+  applies; `qa_e2e_procedure` step 1 passes as written.
+
+
 constraints: >
   Locked human decisions, verbatim from the intake:
 
@@ -151,6 +210,13 @@ qa_e2e_procedure: >
      handler is registered in `specs/pipeline/steps/index.js`.
   6. Run the existing `extension/test/residentSpyUiHtml.test.js` and confirm
      no regression - it predates this change and covers the same module.
+  6b. AMENDED 2026-08-20 - run BL-929's acceptance feature
+     (`specs/features/BL-929-live-screen-follows-the-running-pack-not-the-resident-marker.feature`)
+     and confirm all four scenarios pass, scenario 03 included. That feature
+     was amended on `main` for this patch and its two new step handlers must
+     be present in this parcel. Then prove the new assertion is not vacuous:
+     make the Expand head drop the ticket block and confirm scenario 03's
+     last Then fails, then revert.
   7. RECORDED MANUAL PROCEDURE (device surface, cannot be automated): open
      the Live Screen on a phone in portrait with the full pack running.
      Confirm four workers read as a 2x2 of square-ish tiles, each showing
@@ -162,6 +228,15 @@ qa_e2e_procedure: >
      01's 4-pane row and scenario 02 both fail, then revert.
 
 notes: >
+  AMENDED 2026-08-20 by the specifier, on the coder's priority-00 note
+  "BL-994 patch breaks BL-929 accept 03 tile-ticket line - spec amendment
+  needed". The coder was right to bounce it here rather than edit another
+  ticket's durable contract. Amendment commit is named in the note sent to
+  the architect (parcel holder, commit 70fe2ba31b in
+  `inbox/new`) and to the coder (who rebuilds the step-handler half). Nothing
+  already built in this parcel is invalidated - the amendment only ADDS the
+  BL-929 step-handler half; the layout work stands.
+
   Source: `backlog/INTAKE-live-screen-role-tile-grid-hotfix.md` (human via
   Cursor, 2026-08-20 afternoon), drained from the backlog ROOT and removed in
   the same pass that minted this ticket. One intake, one ticket - no
