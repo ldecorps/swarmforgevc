@@ -79,6 +79,50 @@
            :babysitter-check/adjudication-failed
            {:sha "b" :subject "t" :paths ["q"]}]))
 
+;; ── BL-962 hardening (hardender, 2026-08-20): non-merge commits are UNTOUCHED ─
+;; A hand-authored sweep (BL-638 fallback - this feature has no Scenario
+;; Outline, so the BL-113 gate is inapplicable, and .bb has no wired mutation
+;; tool) killed 5 of 6 mutants. The survivor deleted offender-row's
+;; `(not (commit-is-merge? sha))` branch, sending NON-merge commits through
+;; parent adjudication too, and nothing failed - offender-row had no unit
+;; coverage at all.
+;;
+;; It is NOT an equivalent mutant. On the happy path it agrees by accident:
+;; merge-non-first-parents drops the first two fields of `rev-list --parents`,
+;; so a non-merge commit yields [], parents is empty, and nothing is exempted.
+;; But that call is a git subprocess that returns nil on failure, which
+;; merge-parent-facts turns into {:ok? false} and offender-row into
+;; ::adjudication-failed - failing the WHOLE sweep closed. So the mutant
+;; converts an ordinary non-merge offender into a total sweep failure whenever
+;; that extra git call fails, and the ticket's own constraint is that non-merge
+;; commits are untouched.
+;;
+;; The test pins the property directly: with adjudication stubbed to FAIL, a
+;; non-merge commit must still report its offending paths, because it must
+;; never consult adjudication in the first place.
+
+(let [offender-row @#'babysitter-check/offender-row]
+  (with-redefs [babysitter-check/commit-touched-paths (fn [_] ["extension/src/live.ts"])
+                babysitter-check/offending-paths (fn [touched _] (vec touched))
+                babysitter-check/commit-is-merge? (fn [_] false)
+                babysitter-check/commit-subject (fn [_] "a plain commit")
+                ;; if the non-merge branch is ever removed, THIS is what the
+                ;; commit would fall through to - and it fails closed
+                babysitter-check/merge-parent-facts (fn [_ _] {:ok? false})]
+    (assert= "a NON-merge commit reports its offending paths without consulting adjudication"
+             {:sha "abc123" :subject "a plain commit" :paths ["extension/src/live.ts"]}
+             (offender-row "abc123" #{}))))
+
+(let [offender-row @#'babysitter-check/offender-row]
+  (with-redefs [babysitter-check/commit-touched-paths (fn [_] ["extension/src/live.ts"])
+                babysitter-check/offending-paths (fn [touched _] (vec touched))
+                babysitter-check/commit-is-merge? (fn [_] true)
+                babysitter-check/commit-subject (fn [_] "a merge")
+                babysitter-check/merge-parent-facts (fn [_ _] {:ok? false})]
+    (assert= "a MERGE whose parent facts cannot be gathered fails closed (the same stub, opposite side)"
+             :babysitter-check/adjudication-failed
+             (offender-row "def456" #{}))))
+
 ;; ── invariant 2 structural gate ────────────────────────────────────────────
 ;; "Whether a parent is QA-approved is decided only by is_qa_ancestor.sh" -
 ;; babysitter_check.bb must contain NO second ancestry primitive of its own
