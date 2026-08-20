@@ -180,3 +180,5 @@ notes_coordinator_hold: >
   are SILENT failures of machinery the swarm depends on, one in transport, one in the
   acceptance gate. Ordinary priority governs; the first-place claim above is withdrawn.
   BL-968 remains human_approval: pending, which is still its independent blocker.
+
+assigned_to: coder
