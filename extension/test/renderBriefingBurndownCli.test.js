@@ -43,9 +43,12 @@ test('renderBriefingBurndown uses the shared snapshot records when a fresh one i
 // consistently within a few percent of the 20000ms suite default even in
 // isolation (BL-815 evidence, adopted into this ticket 2026-08-18 on a QA
 // report). A per-test override buys headroom without touching the
-// suite-wide default every other test still relies on. The file's other
-// three tests take a fixture snapshot and stay fast - deliberately no
-// override there.
+// suite-wide default every other test still relies on. BL-969: of the
+// file's other three tests, only the TWO fixture-snapshot ones stay fast -
+// the no-flags CLI test below does this same real-repo derive+render and
+// carries its own override (BL-914's "other three are fast" inventory
+// miscounted it, which is how it sat on the suite default until it
+// hard-failed under live-swarm load).
 test(
   'renderBriefingBurndown falls back to deriving its own history when no snapshot path is given (smoke test against the real repo)',
   () => {
@@ -104,8 +107,22 @@ test('the compiled CLI reads --snapshot from argv and reflects the shared snapsh
   assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
 });
 
-test('the compiled CLI runs with no flags at all against the real repo (unchanged pre-BL-897 behavior)', async () => {
-  const diagrams = await runCli(path.join(__dirname, '..', '..'), []);
-  assert.equal(diagrams.length, 1);
-  assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
-});
+// BL-969: no --snapshot flag means the FULL real-repo derive
+// (runGitLog/deriveTicketLifecycles) plus a real PNG render - the same
+// heavy path as the two 45000ms-override tests above, not a fixture test.
+// Budget basis (measured 2026-08-20): 50808ms under live-swarm load
+// (load average 148 on 4 cores; the hardener measured ~23s at lower
+// load), and this parcel's own qa_e2e double-run then measured 54991ms
+// at load ~40-58 - so 45000ms sibling parity and even the 60000ms floor
+// itself are too tight under live-swarm load. 90000ms = ~1.6x the worst
+// measurement, satisfies the feature's >=60000ms floor, and stays within
+// BL-914's one-order-of-magnitude ceiling over the 20000ms suite default.
+test(
+  'the compiled CLI runs with no flags at all against the real repo (unchanged pre-BL-897 behavior)',
+  async () => {
+    const diagrams = await runCli(path.join(__dirname, '..', '..'), []);
+    assert.equal(diagrams.length, 1);
+    assert.equal(diagrams[0].name, NOT_DONE_BURNDOWN_DIAGRAM_NAME);
+  },
+  90000
+);
