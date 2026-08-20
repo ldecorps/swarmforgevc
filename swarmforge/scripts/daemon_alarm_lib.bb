@@ -167,6 +167,45 @@
           "daemon's launch environment."))
     (mark-warned!)))
 
+;; BL-976: a configured-but-keyless daemon generation must ALSO reach the
+;; operator through a transport that does not itself need the email key
+;; (the daemon's Telegram operator outbox) - warn-missing-key-if-needed!
+;; above is loud only to someone already reading the log, and the defect
+;; BL-976 fixes was exactly a silent keyless generation (the operator's
+;; first signal was a briefing that never arrived). Same injected-adapter
+;; shape as warn-missing-key-if-needed! so the decision stays pure and
+;; fixture-tested; the caller owns the one-per-generation atom and the
+;; transport.
+
+(defn format-keyless-alert
+  "Operator-facing alert text for a configured-but-keyless daemon
+   generation. Names RESEND_API_KEY and the operator env file path the
+   launch path re-sources (BL-976 leg 1) so the alert carries its own
+   remediation - never any key value (there is none: the whole point is
+   that it's absent)."
+  [env-file-path]
+  (str "Daemon email is DOWN this generation: notify_email_to is configured "
+       "but RESEND_API_KEY is missing from the daemon's environment - "
+       "briefing and death-alarm email cannot send. Fix: define "
+       "RESEND_API_KEY in " env-file-path " (re-sourced by "
+       "start_handoff_daemon.sh at every launch), or export it in the "
+       "launch environment, then bounce the daemon."))
+
+(defn alert-keyless-if-needed!
+  "Given email-send-reason's verdict, delivers the one-per-generation
+   keyless alert through the injected transport when the reason is
+   :missing-api-key and no alert has been delivered yet
+   (already-alerted?! false). mark-alerted! runs only AFTER send-alert!
+   returns without throwing, so a transport failure leaves the alert
+   un-marked and the next sweep cycle retries - \"exactly once per
+   generation\" means one successful delivery, never one attempt. A no-op
+   for :disabled (email intentionally off - BL-215's quiet state), a
+   sendable verdict (nil), or a repeat call once alerted."
+  [reason {:keys [already-alerted?! send-alert! mark-alerted!]}]
+  (when (and (= reason :missing-api-key) (not (already-alerted?!)))
+    (send-alert!)
+    (mark-alerted!)))
+
 ;; BL-214: the one shared "read conf, send, warn if misconfigured" wrapper -
 ;; every caller (BL-144's alarm, BL-214's briefing sweep) was independently
 ;; re-deriving the exact same to/from/api-key-from-conf steps and either
