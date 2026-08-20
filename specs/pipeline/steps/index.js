@@ -522,7 +522,8 @@ const DOMAINS = [
   require('./bl960HealWrapperParseSafetySteps'),
   require('./bl957DependsOnPromotionGateSteps'),
   require('./bl959ApsEquivalenceSteps'),
-  require('./bl910BriefingBurndownEtaSteps')
+  require('./bl910BriefingBurndownEtaSteps'),
+  require('./bl967HandoffdCycleStallSteps')
 ];
 
 function registerSteps(registry) {

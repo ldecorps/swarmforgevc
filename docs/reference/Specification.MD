@@ -1,6 +1,52 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
+**Last Updated:** August 20, 2026 (BL-967: `handoffd`'s poll cycle went
+silent mid-sweep past the freshness threshold and the watchdog killed and
+restarted the daemon every ~6 minutes — 30+ times from 20:38Z on 2026-08-19 —
+costing handoff latency and chase freshness and spamming the operator topic.
+The daemon process stayed alive; only its cycle stalled, and because every
+sweep after the chase loop logs ONLY on events, a healthy-but-later sweep was
+indistinguishable in the log from a stalled one, so each recurrence demanded a
+fresh live hunt. Three parts land together, and the two structural ones are
+deliberately the load-bearing half. (1) Bounded waits: every subprocess wait on
+the cycle path — all 48 `process/sh` sites and the shared `tmux!` helper in
+`handoffd.bb`, plus the in-cycle calls in `briefing_email_lib.bb` and
+`control_plane_lib.bb` — now routes through one chokepoint,
+`daemon_cycle_guard_lib.bb`'s `sh!`, whose wait defaults to 60s
+(`SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` seam) and on a hit destroys the child's
+process tree, logs `subprocess-timeout sweep=<name> bound-ms=<n> cmd=<cmd>`,
+and returns an ordinary `{:exit 124}` result mirroring `timeout(1)` — survived,
+never thrown, so callers' existing exit checks treat it as a normal failure and
+a wedged tmux/git/child costs one bounded wait rather than the heartbeat.
+(2) Self-localizing boundaries: every sweep in the heavy bundle runs under
+`run-sweep!`, which emits `sweep-boundary sweep=<name> ms=<n>` even when the
+sweep took no action, so "last log line" always names the guilty sweep; the 1s
+idle ticks emit none, keeping the volume bounded. (3) The real wait, identified
+from three converging evidence lines rather than a caught-in-the-act timeout
+(it needs a genuinely wedged tmux server under load and did not reproduce under
+a fixture): `handoff_lib.bb`'s `session-exists?` and six sibling call sites
+still ran on `clojure.java.shell/sh`, the BL-057/BL-061 stream-read-shim family
+that blocks in `read()` forever on a wedged child — the very reason `handoffd`
+itself moved to `babashka.process` long ago, on a library that never followed;
+the chase sweep's tail calls it once per role, unbounded and unlogged, exactly
+between the last logged chase action and the next sweep that logs anything. All
+seven sites are converted and the `clojure.java.shell` require is gone. Also
+closed under the same engineering rule: `with-pid-lock`'s previously unbounded
+50ms spin now fails loudly after 30s naming the stale lock dir. The caveat is
+stated rather than papered over — if some OTHER wait was the real culprit it is
+now equally bounded and the next occurrence names it, which is what makes the
+identification self-correcting. Deliberately NOT done: raising the 300s
+handoffd threshold as the fix (the operator's directive forbids it; BL-789
+documented Mac cycles near 120-232s as slow-but-healthy, and that posture is
+preserved unchanged), touching the freshness watchdog itself (BL-675, working
+as designed), or redesigning any sweep's CONTENT. New operator-facing surface:
+the two log lines above and the wait-bound env seam. Babashka has no
+mutation/CRAP/DRY tooling wired here, so this is gated by the daemon
+wiring/unit suites plus the `daemon_cycle_guard_lib` runners — the degraded
+fallback, recorded as such. Evidence:
+`backlog/evidence/BL-967-identified-wait-20260820.md`; runbook:
+[`docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`](../how-to/BL-967-handoffd-cycle-stall-diagnosis.md).);
+Previously August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
 the five middle pipeline roles a `mono-rotate` launch deliberately leaves
 dormant. The launcher's `is_sequential_dormant` treats `rotation sequential`
 and `rotation router` as the same single-resident topology; ensure's
