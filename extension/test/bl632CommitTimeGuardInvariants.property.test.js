@@ -24,8 +24,32 @@ const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket
 const PRE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
 const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-merge-commit');
 
-function mkFixtureRepo() {
-  const d = mkTmpDir('bl632-prop-fixture-');
+// BL-971: the measured per-case cost was NEVER the git subprocesses - it
+// was macOS Gatekeeper assessing each freshly created executable on its
+// FIRST exec (~1.2-1.8s per file, per inode, worse under load; measured
+// 2026-08-20: first exec of a fresh guard-script copy 1.16-1.84s, second
+// exec of the same inode 55ms). Four hook/guard files exec'd per case =
+// ~7-9s per case, x10 cases = the 71-154s the lane saw. So the fixture
+// repo is BUILT once (template below), its five executable files are
+// WARMED once (one exec each seeds the per-inode assessment cache), and
+// each generated case gets a recursive copy whose five executables are
+// re-HARDLINKED to the template's warmed inodes - the assessment cache
+// keys on the inode, so every case's action pays git, the REAL hooks, and
+// the REAL guards, never a fresh Gatekeeper scan. Nothing about the
+// invariant weakens: the per-case action still runs real git against real
+// hook files with identical content in the case's own repo.
+const EXEC_FIXTURE_FILES = [
+  'swarmforge/scripts/check_pipeline_code_on_main.sh',
+  'swarmforge/scripts/check_commit_size.sh',
+  'swarmforge/scripts/check_ticket_deletion.sh',
+  'swarmforge/git-hooks/pre-commit',
+  'swarmforge/git-hooks/pre-merge-commit',
+];
+
+let fixtureTemplate = null;
+
+function mkFixtureTemplate() {
+  const d = mkTmpDir('bl632-prop-template-');
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: d });
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: d });
   execFileSync('git', ['config', 'user.name', 't'], { cwd: d });
@@ -47,6 +71,37 @@ function mkFixtureRepo() {
   execFileSync('git', ['add', '-A'], { cwd: d });
   execFileSync('git', ['commit', '-q', '-m', 'seed hooks'], { cwd: d });
   execFileSync('git', ['config', 'core.hooksPath', 'swarmforge/git-hooks'], { cwd: d });
+
+  // Warm each executable's per-inode assessment cache with one direct
+  // exec. Exit codes are irrelevant here (pre-merge-commit has no merge
+  // context to succeed in) - only the exec itself matters.
+  for (const rel of EXEC_FIXTURE_FILES) {
+    spawnSync(path.join(d, rel), rel.endsWith('check_commit_size.sh') ? ['50'] : [], { cwd: d, encoding: 'utf8' });
+  }
+  return d;
+}
+
+function mkFixtureRepo() {
+  if (!fixtureTemplate) {
+    fixtureTemplate = mkFixtureTemplate();
+  }
+  const d = mkTmpDir('bl632-prop-fixture-');
+  // The template embeds no absolute paths (relative core.hooksPath, local
+  // user config), so a byte copy is a fully working repo.
+  fs.cpSync(fixtureTemplate, d, { recursive: true });
+  // Re-hardlink the executables to the template's WARMED inodes (same
+  // tmpdir volume). Fall back to the plain copy if linking ever fails -
+  // slower, never wrong.
+  for (const rel of EXEC_FIXTURE_FILES) {
+    const target = path.join(d, rel);
+    try {
+      fs.rmSync(target);
+      fs.linkSync(path.join(fixtureTemplate, rel), target);
+    } catch {
+      fs.copyFileSync(path.join(fixtureTemplate, rel), target);
+      fs.chmodSync(target, 0o755);
+    }
+  }
   return d;
 }
 
@@ -93,13 +148,22 @@ function escapeForRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Each generated case spins up a real fixture git repo (init, hook install,
-// commit) plus 2-6 further real git subprocesses for the action itself -
-// same real-subprocess-over-reimplementation tradeoff as
-// bl628AutonomousHostBootstrapInvariants.property.test.js, which sets the
-// same kind of explicit per-test timeout for the same reason. numRuns kept
-// modest (10) to stay well inside it while still exercising every action x
-// role-shape x path-depth combination the generators can reach.
+// Each generated case copies the prebuilt fixture repo (one fs call - see
+// mkFixtureRepo above, BL-971) and then runs 2-6 REAL git subprocesses for
+// the action itself through the REAL hooks - the same
+// real-subprocess-over-reimplementation tradeoff as
+// bl628AutonomousHostBootstrapInvariants.property.test.js. numRuns 10
+// unchanged, so the action x role-shape x path-depth generator coverage is
+// exactly what it was. Budget basis (measured 2026-08-20, swarm host,
+// live load): pre-BL-971 the file ran 71s moderately loaded and 154s
+// under QA's full 8-agent load (the BL-971 failure) - almost all of it
+// per-case Gatekeeper assessment of fresh executable copies (see
+// mkFixtureRepo). With warmed-inode fixtures the whole test measured
+// 16-23s over two consecutive live-load runs (~1.6-2.3s per case: the
+// action's own real git+hook subprocesses under load). 90s budget =
+// ~4-5x headroom over the measured loaded cost, kept rather than
+// tightened so a loaded host degrades toward slow-pass, never toward a
+// false red.
 test('property (invariant): no non-QA commit, merge, or amend path lands pipeline code on main', () => {
   fc.assert(
     fc.property(actionArb, nonQaRoleArb, pipelinePathArb, (action, role, relPath) => {
