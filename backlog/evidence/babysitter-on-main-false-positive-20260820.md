@@ -81,3 +81,15 @@ reconciliation merge as a fresh CRIT.
 Adjudication cost is therefore unbounded in time, not proportional to merge count.
 Recorded so the next coordinator recognises a re-fire immediately and does not
 re-diagnose: **check this file for the sha first.**
+
+### Recurrence 4 — `16a695336` (2026-08-20 ~04:20Z)
+
+False positive, same adjudication. `vs_p2 = 0` on the flagged files; parent2 is
+`aa980e00b` *"Merge origin/main into QA before landing BL-910"* — the commit this
+coordinator verified on `origin/main` and closed BL-910 on ~10 minutes earlier.
+
+Pattern now confirmed across FOUR distinct shas (`da6031c60`, `b3ba48bfc`,
+`f07e91b4f`, `16a695336`): **each one tracks a QA landing.** Every ticket QA lands
+produces exactly one new false CRIT, which then re-fires once per sweep forever. So
+the alert rate scales with delivery throughput — the better the pipeline performs, the
+more of this noise it generates. BL-962 (the fix) is active at coder.
