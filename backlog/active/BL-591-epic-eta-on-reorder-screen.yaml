@@ -9,8 +9,15 @@ severity: medium
 priority: 56
 direction: human-requested
 depends_on: [BL-572]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
+invariants:
+  - "Every velocity-derived ETA the state feed emits is a range (low strictly below high) carrying a non-empty pace assumption naming pack and trailing window — no code path emits a single-point date or duration."
+  - "Weight from a child that cannot start (held in backlog/hold/, status blocked or needs_design, or non-empty promotion_blockers/block_until) never contributes to any velocity-derived duration; every range is a function of buildable weight only."
+  - "The estimator is total and pure: for every input — zero velocity, zero children, empty window included — it returns a typed state and never throws, and no NaN or Infinity reaches the state feed."
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::epicEta::the reorder state feed must fold the estimator's per-epic output into its items — a green estimator wired into nothing is the BL-419 shape"
+  - "extension/src/bridge/epicReorderUiHtml.ts::paceAssumption::the tile must actually render the range, blocked count, confidence and pace assumption"
 source: |
   Human, 2026-07-23, after asking for the intelligence layer's ETA and being
   given a velocity-grounded range: "can we have, as a new mini app screen, an
@@ -88,28 +95,60 @@ description: |
   steady velocity is high confidence; an epic that is mostly needs_design or
   human-blocked is low, and the tile should say why in a word, not fake a date.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum:
+acceptance: specs/features/BL-591-epic-eta-on-reorder-screen.feature
 
-  1. Each epic tile shows an ETA as a RANGE (or band), never a single date, and
-     names the pace assumption it rests on.
-  2. An epic whose open children are all done shows "complete"/0, not a
-     spurious future estimate.
-  3. An epic with a blocked / needs_design / human-blocked child renders that
-     child's state distinctly and does NOT fold it into the duration; the tile
-     communicates "X weeks of buildable work + N blocked" rather than one
-     number that hides the block.
-  4. Remaining size is a mutation_cost-weighted roll-up over OPEN children
-     (active+paused+hold), excluding done children and the epic tracker itself.
-  5. The velocity estimator is a pure, unit-tested function over
-     (completion events, remaining weighted cost, window) - provable with
-     fixtures, no git and no live bridge in the test.
-  6. Confidence is shown per epic and degrades visibly as blocked/undesigned/
-     high-cost weight rises.
+qa_e2e: |
+  QA sanity-checks the live number against a hand count for at least one
+  epic, since a plausible-but-wrong ETA is worse than none. Procedure:
+  open the reorder screen on the live Mini App console; pick one epic
+  (BL-545 swarm-intelligence-layer is the reference - the operator's
+  2026-07-23 hand figures exist); hand-count its open children
+  (active+paused+hold) and their mutation_cost weights from the backlog
+  YAMLs, and completions in the trailing window from
+  `git log --diff-filter=A --since=<window> -- backlog/done/`; verify the
+  tile's range, blocked-child count, confidence, and pace label are
+  consistent with the hand count; verify an epic with blocked children
+  surfaces them distinctly rather than folding them into the duration.
 
-  QA sanity-checks the live number against a hand count for at least one epic
-  (the swarm-intelligence-layer figures the operator produced 2026-07-23 are a
-  usable reference), since a plausible-but-wrong ETA is worse than none.
+notes: |
+  Specifier decisions (2026-08-20, while speccing the acceptance contract):
+
+  - Data source (the choice the description delegated): a NEW pure
+    estimator, mirroring burnRate.ts's own pure/impure split. The pure
+    function lives in extension/src/metrics/epicEta.ts and maps
+    (completion events, the epic's open children with their
+    mutation_cost/blocked markers, an injected nowMs + trailing window, a
+    pace label naming pack + window) -> a typed per-epic tile state
+    {complete | blocked | no-recent-pace | ranged ETA + blocked count +
+    confidence}. The impure collector derives completion events from the
+    git history of when backlog/done/BL-*.yaml files were ADDED
+    (`git log --diff-filter=A` - same approach leanLedgerComposeClose.ts
+    already uses), and MUST NOT spawn git per /epic-reorder-state poll:
+    cache with a TTL in the bridge process or precompute a sidecar -
+    implementer's choice (direction, not mandate).
+  - Wiring: computeEpicReorderState folds the estimator output into its
+    `items` entries; epicReorderUiHtml.ts renders range, blocked count,
+    confidence, and pace assumption. The module name epicEta and the
+    payload field paceAssumption are LOAD-BEARING - required_wiring
+    anchors on those literals (BL-874: plain substring match), so renaming
+    them means the documenter->QA handoff gate fails.
+  - Child membership reuses the reorder screen's existing epic-membership
+    helpers (readWithinEpicLiveBacklogItems + computeEpicTopics, spanning
+    active+paused+hold, slug-resolved per BL-686/BL-687) - do not invent a
+    second membership notion.
+  - Blocked predicate (checkable): held in backlog/hold/, or
+    status: blocked, or status: needs_design, or non-empty
+    promotion_blockers, or non-empty block_until.
+  - Weights: low < medium < high, strictly monotonic; a child with no
+    mutation_cost counts at the medium weight; exact values negotiable.
+  - The description's "ideally show how it shifts under the faster pack"
+    is NOT gated - naming the pack the estimate rests on is gated
+    (epic-eta-01); a second-pack projection is a welcome extra, not a
+    scenario.
+  - Each invariant needs a coder-authored property test in the same parcel
+    (BL-654); invariant 3 is the natural property-based-test target
+    (generator over degenerate inputs: empty windows, zero velocity, zero
+    children, all-blocked).
 
 out_of_scope: |
   - The reorder interaction itself (BL-572 owns it; this only adds a readout
