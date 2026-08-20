@@ -1,0 +1,199 @@
+id: BL-994
+title: "Live Screen laid 4 worker panes out as a flex row with percentage flex-basis, so they shrank into thin vertical strips with role names stacked one letter per line - the human's phone hotfix exists only as a captured patch and needs the chain to land it legally"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarmforge-console
+human_approval: pending
+priority: 15
+direction: human-directed
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-994-live-screen-role-tiles-are-a-square-ish-grid.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl994::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
+
+invariants:
+  - "What lands is the layout the human verified. The captured patch is the reference for the behaviour; a reinterpretation that renders differently on their phone is a defect even if every scenario passes."
+  - "No pane count and no viewport width produces a tile too narrow to render its role name as unbroken text. The scenarios enumerate five combinations; the property holds for all of them."
+  - "A pane's transcript lives in exactly one place - hidden in the grid tile, shown in the fullscreen Expand. Never both, never neither."
+
+description: >
+  The Live Screen is the phone-viewable window onto the running pack. With
+  four workers visible, `.split` was `display: flex` with wrap and a
+  percentage `flex-basis`, which let the panes shrink horizontally without a
+  floor - four panes collapsed into a single thin vertical strip. The tile
+  headers used `word-break: break-word`, so each role name stacked one letter
+  per line inside the strip. The surface was unreadable on a phone.
+
+  The human hit this live, iterated on it the same afternoon (first asking for
+  role-name-only tiles, then reporting the thin-strip failure), and a Cursor
+  agent produced the layout fix. That fix is what this ticket lands.
+
+  THE POSTURE, and it is the whole point of the ticket: this is the pipeline
+  LANDING of a captured human hotfix - the BL-956 shape - not a greenfield
+  redesign and not a BL-848-style stamp-off of a commit already sitting on
+  `main`. `extension/src/` cannot reach `main` outside QA
+  (`check_pipeline_code_on_main.sh`, Article 1.8/4.2, BL-247 / BL-632), so
+  the change exists today only as a tracked patch plus a dirty master working
+  tree. Running the chain is how it becomes real.
+
+  Verified by the specifier at spec time, because the whole ticket rests on
+  the capture being faithful:
+
+  - `backlog/evidence/INTAKE-live-screen-role-tile-grid-hotfix.patch` exists,
+    is TRACKED on `main`, and is BYTE-IDENTICAL to
+    `git diff -- extension/src/bridge/residentSpyUiHtml.ts` in the master
+    checkout (158 lines each, `diff -q` clean). The patch is therefore a
+    complete record; the dirty working tree carries nothing extra.
+  - `getResidentSpyUiHtml()` is a pure function returning an HTML string, and
+    `extension/test/residentSpyUiHtml.test.js` already exercises it - so the
+    layout is testable at the module boundary without booting a webview.
+
+  What the patch changes, from reading it rather than the prose:
+
+  - `.split` becomes `display: grid` with `grid-auto-rows: 1fr` and a phone
+    default of `repeat(2, minmax(0, 1fr))` - so four workers read as a 2x2.
+    `minmax(0, 1fr)` is what removes the shrink-to-strip floor.
+  - `.split.pane-count-1` is a single column. `.pane-count-5` through `-8`
+    stay 2-column on narrow. From `@media (min-width: 700px)`, `-5`/`-6`
+    become 3 columns and `-7`/`-8` become 4.
+  - `.pane-kind` gets `word-break: normal` and `overflow-wrap: normal`, and
+    is centered at `clamp(13px, 4.5vw, 20px)`.
+  - `.split .pane-col > pre { display: none }` hides the transcript in the
+    grid, and `renderPane`'s tile header becomes role name plus an absolutely
+    positioned Expand hint.
+
+  How (direction, not mandate): apply the captured patch in the coder
+  worktree and drive it through the chain. The layout decisions are the
+  human's and are already made - what the pipeline adds is the acceptance
+  contract, the review passes and a legal landing, not a redesign.
+
+constraints: >
+  Locked human decisions, verbatim from the intake:
+
+    "1. Treat this as **pipeline landing of a captured human hotfix**, not a
+        greenfield redesign (same posture as BL-956).
+     2. Grid tiles show **role name + Expand only**; transcript stays in
+        Expand fullscreen.
+     3. Phone portrait stays **2-column** so four workers read as a 2x2 of
+        square-ish tiles - do not restore the flex shrink layout that
+        crushed them into thin strips."
+
+  Out of scope, verbatim from the intake:
+
+    "- BL-609 font-size +/- control.
+     - Changing which roles appear in the live feed / pack layout.
+     - Pipeline-grid / console menu surfaces.
+     - Attempting to bypass BL-632 by committing `extension/src/` to `main`
+       with a hotfix trailer - that path is refused; this ticket *is* the
+       landing path."
+
+  Also firm:
+
+  - Take the change from the PATCH, not from the master working tree. The
+    tree copy is uncommitted and a concurrent writer or a stray `git restore`
+    can sweep it at any time; the patch is tracked and cannot be lost. They
+    are byte-identical today, so nothing is given up by preferring the patch.
+  - Do NOT `git restore` or otherwise tidy
+    `extension/src/bridge/residentSpyUiHtml.ts` in the master checkout. It is
+    the human's live copy of a surface they are actively watching, and it is
+    not yours to revert. It stops being dirty when this parcel lands and the
+    master checkout merges.
+  - BL-609 (paused, `swarmforge-console`, resident-spy font-size control)
+    touches the SAME file. Do not fold it in and do not "while I am here"
+    it - the intake names it explicitly as a separate ask.
+
+qa_e2e_procedure: >
+  From the repo root:
+
+  1. Confirm the capture is still faithful before building anything:
+     `git diff -- extension/src/bridge/residentSpyUiHtml.ts` in the master
+     checkout must remain byte-identical to
+     `backlog/evidence/INTAKE-live-screen-role-tile-grid-hotfix.patch`. If
+     they have diverged, the human has iterated again - stop and ask rather
+     than landing a stale layout.
+  2. Reproduce the failure at the parent commit: render the Live Screen HTML
+     with 4 panes and confirm the old `.split` flex rule with a percentage
+     flex-basis is what produces the crush, and that `.pane-kind` still
+     carries `word-break: break-word`.
+  3. At the parcel commit, drive `getResidentSpyUiHtml()` and assert the five
+     pane-count/viewport combinations from scenario 01 resolve to 2, 1, 2, 3
+     and 4 columns respectively. Assert the resolved column count, not the
+     presence of a CSS string - a rule that exists but is overridden passes
+     the weaker check.
+  4. Confirm invariant 3 in both directions: the grid tile does NOT render
+     the pane transcript, and the fullscreen Expand DOES render full metadata
+     and transcript. A change that hides the transcript everywhere passes
+     scenario 03 and fails the human.
+  5. Run the acceptance feature and confirm all scenarios pass, and that the
+     handler is registered in `specs/pipeline/steps/index.js`.
+  6. Run the existing `extension/test/residentSpyUiHtml.test.js` and confirm
+     no regression - it predates this change and covers the same module.
+  7. RECORDED MANUAL PROCEDURE (device surface, cannot be automated): open
+     the Live Screen on a phone in portrait with the full pack running.
+     Confirm four workers read as a 2x2 of square-ish tiles, each showing
+     only its role name (COORDINATOR, SPECIFIER, ...) as unbroken text plus
+     an Expand control; then open one tile's Expand and confirm the full
+     metadata and transcript appear. Record the observation in the ticket -
+     this is the only step that verifies what the human actually reported.
+  8. Prove non-vacuity: restore the flex `.split` rule and confirm scenario
+     01's 4-pane row and scenario 02 both fail, then revert.
+
+notes: >
+  Source: `backlog/INTAKE-live-screen-role-tile-grid-hotfix.md` (human via
+  Cursor, 2026-08-20 afternoon), drained from the backlog ROOT and removed in
+  the same pass that minted this ticket. One intake, one ticket - no
+  consolidation.
+
+  Human directive, verbatim: "Let the coordinator know about this webpage
+  hotfix." Done as a priority-00 note when this ticket was committed, not
+  deferred to promotion.
+
+  Severity: the intake offered "medium/high" and left the call to me. I chose
+  `high`. The surface is currently BROKEN on `main` - anyone compiling from
+  `main` gets the thin-strip layout - and it is the human's phone-viewable
+  live monitoring channel, which puts it in "a live fault degrading
+  behaviour" rather than cosmetic. The counterweight is that the fix is fully
+  captured in a tracked patch, so nothing can be lost and the human's own
+  machine already renders correctly; that is why this is not `critical`.
+
+  Related tickets, kept separate deliberately (the intake's own list, all
+  confirmed): BL-609 (paused) is a font-size control on the SAME file but a
+  different ask; BL-526/BL-522 are the done console-menu and original
+  resident-spy Mini App lineage this is a follow-on defect to; BL-881 (done)
+  is the live-capture TTL cache, a feed-data path rather than the HTML grid;
+  BL-956 (done) is the prior instance of this exact landing posture and is
+  the shape to copy.
+
+  IR-DRY: 3 medium-confidence findings, all reviewed and kept. Two are the
+  inherent pairing of scenario 01's parameterized steps with the same steps
+  carrying literals in scenarios 02-04 (`<panes> worker panes` vs `4 worker
+  panes`); one step handler regex serves each pair. The third pairs "shows
+  its role name and an Expand control" against "shows its role name as
+  unbroken text" - different assertions about the same element, and merging
+  them would hide which one a regression broke. No Background hoisting beyond
+  the shared render: scenarios 02-04 share the 4-pane phone-portrait setup
+  but scenario 01 varies both, so hoisting would contradict it.
+
+approval_context: >
+  Two things for your eye.
+
+  First, severity. I called it `high` within the range your intake offered -
+  reasoning in `notes:`. Push back to `medium` if you read a broken layout on
+  a surface you can already see fixed locally as contained.
+
+  Second, and more useful: I have written the acceptance to assert the
+  RESOLVED column count for five pane-count/viewport combinations rather than
+  the presence of the CSS rules the patch adds. That is deliberate - a rule
+  that exists but is overridden would pass a string check - but it does mean
+  the contract pins the 1/2/3/4-column breakpoints as behaviour. If you want
+  the freedom to retune those breakpoints later without touching an
+  acceptance contract, say so and I will loosen scenario 01 to assert only
+  that no tile is crushed.
+
+  Everything else follows your three locked decisions as written, and the
+  coordinator has been notified as you asked.
