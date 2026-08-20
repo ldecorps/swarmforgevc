@@ -6,7 +6,7 @@ type: epic
 epic: tool-miss-auto-heal
 priority: 12
 depends_on: []
-decomposes_into: [BL-913, BL-934, BL-960]
+decomposes_into: [BL-913, BL-934, BL-960, BL-965]
 
 source: |
   Minted 2026-08-17 by the specifier from raw intake

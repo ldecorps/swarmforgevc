@@ -278,6 +278,16 @@ You are the specifier.
   the fix reached its own worktree only via a `note` — the gate reads
   `required_wiring:` from the SENDER's checkout, so a `main` commit alone does
   not clear it.)
+- **A pattern containing double quotes must ride a YAML SINGLE-quoted entry —
+  escaped quotes never unescape (BL-960, 2026-08-20).** `pre_qa_gate_lib.bb`
+  reads the entry line RAW (its `strip-quotes` removes only the surrounding
+  pair; no YAML unescaping ever runs), so writing
+  `- "path::\"Key\": [::why"` arms the gate with the literal backslashed
+  string `\"Key\": [` — unmatchable, blocking the documenter's QA send with a
+  misleading wiring-absent refusal. Write `- 'path::"Key": [::why'` instead,
+  keep the why free of apostrophes (a doubled `''` would reach the matcher
+  doubled), and verify by running `parse-wiring-entry` on the finished line —
+  the printed `:pattern` must be byte-identical to the target-file literal.
 
 ## A prompt/constitution deliverable is YOURS to land, and no gate will remind you (BL-798)
 - When a ticket's deliverable includes prose in a file you own — a
