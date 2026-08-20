@@ -176,3 +176,13 @@ notes_coordinator_hold: >
   BL-967 is second, BL-962 third. BL-968 is still approval-gated, so BL-967
   remains the first PROMOTABLE expedited ticket meanwhile.
 
+  RANKING CORRECTED 2026-08-20 (~00:55Z): the earlier note ranked BL-968 ahead of
+  this ticket because BL-967 was judged "LOUD and recoverable by restart". A LIVE
+  instance of this very defect occurred minutes later and disproves both halves:
+  handoffd hung SILENTLY (state U, log frozen 334s, one heartbeat cycle line in the
+  whole log; nothing surfaced it but a babysitter log-quiet sweep), and the
+  2026-08-05 playbook records that a plain restart does NOT recover it - three fresh
+  daemons re-stalled. BL-967 and BL-968 are now judged equally severe; order between
+  them follows ordinary priority, not a blast-radius argument. Evidence 9ad242541.
+  NOTE: this ticket's defect is LIVE IN PRODUCTION RIGHT NOW while it sits blocked on
+  capacity (active 7 = cap 7).
