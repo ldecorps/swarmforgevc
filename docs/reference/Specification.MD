@@ -1,6 +1,148 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-995: the hardener's only sanctioned
+**Last Updated:** August 20, 2026 (BL-994: the Live Screen's role tiles
+(`/resident-spy`, `residentSpyUiHtml.ts`, shared by the Mini App and Bubble
+Live) laid four worker panes out as a `display: flex` row with a
+percentage `flex-basis` and no floor, so on a phone the panes shrank into
+thin vertical strips with each role name stacked one letter per line
+(`.pane-kind` carried `word-break: break-word`) — unreadable, and reported
+live by the human. `.split` is now `display: grid` with `grid-auto-rows:
+1fr`; the phone default is `repeat(2, minmax(0, 1fr))` (the `minmax(0,
+1fr)` is what removes the shrink-to-strip floor), so four workers read as
+a 2×2 of square-ish tiles — 1 column for a single pane, 2 columns through
+`.pane-count-8` on narrow viewports, widening at `@media (min-width:
+700px)` to 3 columns for 5–6 panes and 4 for 7–8. `.pane-kind` gets
+`word-break: normal`/`overflow-wrap: normal` and centers at `clamp(13px,
+4.5vw, 20px)`. The grid tile itself now shows only the role name plus an
+Expand hint — `.split .pane-col > pre` is hidden in the grid — with the
+full transcript and metadata living exclusively in the fullscreen Expand
+view; a held ticket's id/title, previously shown on the tile head, moved
+there too, which relocated BL-929 acceptance scenario 03's assertion
+(amended in the same parcel — the documenter tile's Expand view is the
+contract's own named valid home for that data, not a new design decision).
+This landed as a pipeline landing of a human-captured hotfix (the BL-956
+posture): the fix existed only as a tracked 169-line patch
+(`backlog/evidence/INTAKE-live-screen-role-tile-grid-hotfix.patch`) plus a
+dirty, uncommittable master working tree, since `extension/src/` cannot
+reach `main` outside QA (BL-632) — running the pipeline chain is what made
+the human's already-verified layout real rather than reinterpreting it.
+Out of scope, per the intake: the BL-609 font-size control (same file,
+separate ask) and any change to which roles appear or how the
+pipeline-grid/console menu surfaces lay out. Verified against the resolved
+column count for five pane-count/viewport combinations, never a bare CSS
+string presence check, plus a recorded manual device procedure — a
+phone-viewport property this test suite cannot reach on its own.);
+Previously
+August 20, 2026 (BL-976: `RESEND_API_KEY` deliberately
+rides only the daemon process's own environment (BL-215 — the repo never
+stores it), but the supervisor/watchdog relaunch chain spawns each new
+daemon generation from whatever environment happens to run it, so a
+generation launched from a keyless shell lost ALL email capability at
+once — the BL-214 briefing sweep skipped every file and the BL-144
+daemon-death alarm was equally dead, with the only trace a log line the
+operator had no reason to read; the first real symptom was a briefing that
+simply never arrived (reproduced live 2026-08-20, coordinator hand-patched
+one generation's env to unblock the morning briefing before this ticket
+landed). Two legs close it, one observable outcome after any relaunch —
+either email still works, or the operator hears about it within one sweep
+cycle: `start_handoff_daemon.sh`, the launch chokepoint every launcher
+already goes through, now re-sources `.swarmforge/operator/daemon.env`
+(gitignored, operator-created, never committed — only its PATH is ever
+audited, never a value it defines) into the launch environment before
+either daemon starts, so a relaunch from a keyless shell still inherits a
+key the operator provisioned durably; `handoffd.bb` gains an unconditional
+`email-keyless-alert-sweep!` on the existing sweep cadence so a still-keyless
+generation reaches the operator's Telegram outbox — the daemon's existing
+alert channel, no new client — exactly once per generation, naming
+`RESEND_API_KEY` and the env file path, within the generation's first
+cycle even with nothing else to mail. See the updated `RESEND_API_KEY`
+section in `docs/how-to/BL-091-wsl2-second-swarm-bringup.md`.); Previously
+August 20, 2026 (BL-1003: the extension host's own
+mid-turn check, `isPaneActivelyProcessing`
+(`extension/src/panel/agentPaneState.ts`), still decided "busy" by
+case-insensitively substring-matching one marker anywhere in a pane
+capture, while BL-970 had already replaced that definition on the swarm
+side with a structural frame match confined to the capture's own tail
+window. Measured over the seven shared fixtures in
+`specs/features/fixtures/BL-970/`, the two sides disagreed in BOTH
+directions: a pane merely quoting the marker in old scrollback read as
+busy (false-busy — a legitimate respawn refused, visible and recoverable),
+and — more seriously — a REAL capture ten minutes into a genuine turn
+(`✢ Precipitating… (10m 13s · ↓ 16.7k tokens)`) read as idle because its
+verb wasn't the one substring being matched (false-idle). That second
+direction matters because `isPaneActivelyProcessing` is the exact precheck
+`tmuxClient.ts`'s forced-respawn path consults before typing a respawn
+command into a pane — the same safety check BL-137 exists to be, guarding
+against a forced respawn landing mid-turn — and on a real capture it was
+answering "not busy," letting the respawn through into a pane that was
+provably still working. `isPaneActivelyProcessing` now ports BL-970's
+two-layer definition verbatim: a spinner-glyph-led line carrying verb
+words (any verb — no hand-maintained list), an ellipsis, and a digit-led
+parenthesized elapsed, checked only within the capture's trailing 20
+lines. Both `tmuxClient.ts:441`'s respawn precheck and
+`isAgentActivelyWorking` update automatically, since both call through
+this one function. `UI_MARKERS`/`isAgentCliRunning` (agent-CLI-presence
+detection, a different question — "is an agent CLI running here at all,"
+which must stay true for an idle pane too) is deliberately untouched, and
+the Babashka side is untouched per the ticket's own firm line — this
+ticket brings the extension host to BL-970's already-approved definition,
+it does not renegotiate it. See `backlog/evidence/BL-997-ts-bb-busy-verdict-drift-20260820.md`
+for the fixture-by-fixture disagreement table. No new user-facing command;
+this hardens the existing tile-respawn safety path described in the
+Milestone 1 spec above.); Previously
+August 20, 2026 (BL-996: two more consumers of the busy
+marker BL-970 already fixed at its chokepoint (`chase_sweep_lib.bb`'s
+`actively-processing?`, reached by every wake predicate) turned out to
+carry their own PRIVATE whole-pane substring classifiers, never reaching
+that chokepoint at all — the same false-busy shape BL-970 fixed, still
+live at both sites. `babysitterd_sweep_lib.bb`'s `classify-pane-busy?`
+(feeding `babysitter_check.bb`'s health sweep) now delegates outright to
+`actively-processing?` instead of its own `"esc to interrupt"`/spinner-glyph
+match. `loop_detect_lib.bb`'s busy signal (feeding
+`classify-pane-loop-signal`, the endless-idle-loop circuit breaker's own
+input) delegates too — this one was the serious half: `:busy` there means
+DO NOT STRIKE, so a pane merely quoting the busy marker in old scrollback
+used to hold the breaker open forever, letting a role spin
+`ready_for_next` → `NO_TASK` indefinitely with no halt. Delegation could
+not be a bare swap here, though: the loop detector's own comment records a
+deliberate exclusion — an aider-style "Waiting for openai/…" API-wait line
+must NOT read as busy, since that line appears during a `NO_TASK` spin's
+own API calls and would reset strikes forever, defeating the breaker in a
+different way. That exclusion survives as an explicit veto
+(`api-wait-line-re`) applied AFTER the shared classifier's verdict, stated
+as its own guarantee rather than left to an incidental gap in
+`chase_sweep_lib.bb`'s own character class. Both libraries load
+`chase_sweep_lib.bb` via `load-file` (a build-time module load, not the
+live fs/tmux/clock read each file's own header disclaims for its business
+logic — `chase_sweep_lib.bb` is itself a pure classifier the same way).
+Deliberately out of scope: the TypeScript-side classifiers
+(`agentPaneState.ts`, `tmuxClient.ts`) sharing the same marker — no import
+bridges that language boundary, so that is BL-997's cross-boundary
+agreement test, not this ticket. No human-facing command or setting; same
+internal-hygiene consolidation class as BL-887.); Previously
+August 20, 2026 (BL-992: `swarm_handoff.bb`'s
+`required_stages`/routing lookup (`active-ticket-yaml-content`) used to glob
+only the SENDER'S OWN working tree for `backlog/active/<id>*.yaml` — a
+pipeline worktree merges `main` only at a handoff boundary, so between the
+coordinator promoting a ticket and the sender's next merge, that file
+simply did not exist there and every routing decision on it silently took
+the no-declaration path. Measured live 2026-08-20: 2 of 7 active tickets
+declaring `required_stages` were invisible to all six pipeline worktrees at
+once, worst exactly when a ticket is youngest — when its first hops
+happen. The lookup now tries the freshest resolvable ref first —
+`main`/`origin/main`, whichever `git rev-list --left-right --count` shows
+ahead, since either can be the stale one (BL-891) — and falls back to the
+working-tree glob unchanged for a root with no resolvable ref (the
+acceptance fixtures, an unusual root), so nothing here ever fails a send.
+The exact-id match survives unchanged: a candidate ref is only a filter,
+re-checked against the shown content's own `id:` field, so a ref carrying
+only `BL-9005`'s file still cannot resolve a `BL-900` lookup. Out of scope
+by the ticket's own constraint: whether a declared stage may be skipped
+(BL-991) and the decision logic in `required_stages_lib.bb` — only the
+input it reads from changed. No human-facing command or setting; see the
+updated "Dynamic Routing via Specifier-Declared required_stages (BL-606)"
+section in `swarmforge/handoff-protocol.md`.); Previously
+August 20, 2026 (BL-995: the hardener's only sanctioned
 >120s escape hatch (a python3 double-fork + `os.setsid()`, per
 `hardener.prompt:1010` — the Bash tool's own timeout, `run_in_background`,
 and `nohup … & disown` all fail on this host) produced a PPID-1 orphan by

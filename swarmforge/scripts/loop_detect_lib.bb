@@ -15,7 +15,17 @@
 ;;   loop-detect-lib/classify-pane-loop-signal ...
 
 (ns loop-detect-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
+
+;; BL-996: the busy signal below now delegates to chase_sweep_lib.bb's
+;; actively-processing? - the BL-970 chokepoint - instead of a private
+;; whole-pane substring match on "esc to interrupt" (the same false-busy
+;; shape BL-970 fixed: a pane merely QUOTING the marker in old scrollback
+;; used to hold this breaker open forever). A build-time module load, not
+;; the live fs/tmux/clock read this file's own header disclaims for its
+;; business logic - chase_sweep_lib.bb is itself pure the same way.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 
 (def default-config
   {;; How many NO_TASK lines must appear in the RECENT pane window to count as
@@ -31,10 +41,18 @@
 (def ^:private no-task-line-re #"(?m)^NO_TASK\s*$")
 (def ^:private task-line-re #"(?m)^TASK:")
 (def ^:private ready-for-next-re #"(?i)ready_for_next(?:_task|_batch)?\.sh")
-;; Only Claude Code's mid-turn footer. Do NOT treat aider's "Waiting for
-;; openai/..." as busy: that line appears during a NO_TASK spin's own API
-;; calls and would reset strikes forever, defeating the circuit breaker.
-(def ^:private busy-footer-re #"(?i)esc to interrupt")
+;; BL-996 invariant 2 (must survive delegation unchanged): do NOT treat
+;; aider's "Waiting for openai/..." as busy - that line appears during a
+;; NO_TASK spin's own API calls and would reset strikes forever, defeating
+;; the circuit breaker. Not a second busy classifier - a narrow VETO on
+;; chase-sweep-lib's own verdict, scoped to loop_detect_lib's own contract
+;; (chase_sweep_lib.bb's structural frame pattern matches ANY spinner-glyph-
+;; led "<Verb>… (<Ns>" shape, not only Claude's; a provider/model-style wait
+;; line like "openai/gpt-4o-mini" happens to fall outside its verb-text
+;; character class today, but this ticket's own severity is precisely that
+;; leaving that safety to an unrelated regex's character class would be
+;; fragile - this exclusion makes it a stated guarantee instead).
+(def ^:private api-wait-line-re #"(?i)waiting for\s+\S+/\S+")
 
 (defn count-matches
   [re text]
@@ -54,7 +72,8 @@
          no-task-n (count-matches no-task-line-re t)
          task-n (count-matches task-line-re t)
          ready-n (count-matches ready-for-next-re t)
-         busy? (boolean (re-find busy-footer-re t))]
+         busy? (and (chase-sweep-lib/actively-processing? t)
+                    (not (re-find api-wait-line-re t)))]
      (cond
        busy? :busy
        (pos? task-n) :progress

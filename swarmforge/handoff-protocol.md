@@ -1164,7 +1164,12 @@ changes, config tweaks, pure refactors with existing coverage).
 2. **Routing rewrites the recipient** — when `swarm_handoff.sh` sends a
    `git_handoff` with a task name, it:
    - Extracts the ticket ID from the task
-   - Reads the ticket's `required_stages` from `backlog/active/<id>*.yaml`
+   - Reads the ticket's `required_stages` from `backlog/active/<id>*.yaml` —
+     the freshest resolvable ref (`main`/`origin/main`, whichever
+     `git rev-list --left-right --count` shows ahead) is tried first, so a
+     declaration the coordinator promoted is visible even when the sender's
+     own worktree has not yet merged it; the sender's working tree is the
+     fallback for a root with no resolvable ref (BL-992)
    - If the flag is ON and required_stages is valid, computes the next required
      stage after the current one
    - Rewrites the handoff `to:` field to skip directly to that stage

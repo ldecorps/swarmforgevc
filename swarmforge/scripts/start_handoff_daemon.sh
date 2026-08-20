@@ -50,6 +50,25 @@ audit() {
 
 audit "start_handoff_daemon invoked root=$WORKING_DIR pid=$$ SKIP_DAEMON=${SWARMFORGE_SKIP_DAEMON:-} caller=${SWARMFORGE_DAEMON_START_CALLER:-unknown}"
 
+# BL-976: a relaunch from a keyless shell (the supervisor/watchdog chain
+# spawns generations from whatever environment happens to run it) must not
+# silently lose email capability - re-source the operator's env file into
+# THIS launch environment so both daemons below inherit it. The file is
+# operator-created, lives under gitignored .swarmforge/ runtime state, and
+# is never committed (BL-215 posture unchanged); only its PATH is audited,
+# never any value it defines. No file -> ambient env only, behavior
+# unchanged.
+OPERATOR_ENV_FILE="$WORKING_DIR/.swarmforge/operator/daemon.env"
+if [[ -f "$OPERATOR_ENV_FILE" ]]; then
+  audit "sourcing operator env file $OPERATOR_ENV_FILE"
+  set -a
+  # shellcheck disable=SC1090
+  source "$OPERATOR_ENV_FILE"
+  set +a
+else
+  audit "no operator env file at $OPERATOR_ENV_FILE (ambient env only)"
+fi
+
 stop_pid_file() {
   local pid_file="$1"
   if [[ ! -f "$pid_file" ]]; then

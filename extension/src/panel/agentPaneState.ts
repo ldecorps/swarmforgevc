@@ -49,17 +49,39 @@ const UI_MARKERS = /shift\+tab to cycle|esc to interrupt/i;
 const DIVIDER_AND_PROMPT = /─{3,}/;
 const ARROW_MARKER = /❯/;
 
-// "esc to interrupt" is Claude Code's own busy/generating footer, shown only
-// while a turn is actively in flight - unlike "shift+tab to cycle", which
-// appears on the idle prompt too. BL-137: a forced respawn was typed into a
-// coordinator pane that was genuinely mid-turn (the caller's liveness signal
-// was stale/misjudged); this is the narrow, high-confidence positive check a
+// BL-137: a forced respawn was typed into a coordinator pane that was
+// genuinely mid-turn (the caller's liveness signal was stale/misjudged);
+// isPaneActivelyProcessing is the narrow, high-confidence positive check a
 // fresh pane capture can make right before injecting a respawn command, to
 // refuse doing so into a pane that is provably not stuck.
-const ACTIVELY_PROCESSING = /esc to interrupt/i;
+//
+// BL-1003: ported to match chase_sweep_lib.bb's own actively-processing?
+// (BL-970, the swarm side's definition) exactly, after the two sides were
+// measured to disagree in BOTH directions on real captures - a bare
+// substring match anywhere in the pane read a quoted-in-scrollback marker
+// as busy (false-busy) AND missed a real 10-minute-old live turn whose
+// footer used an unlisted verb with no marker substring at all
+// (false-idle, the more serious direction: it let a forced respawn through
+// into a pane that was genuinely mid-turn - exactly the BL-137 case this
+// precheck exists to catch). Busy is now STRUCTURAL, not lexical: a
+// spinner-glyph-led line carrying verb words, an ellipsis, and a
+// digit-led parenthesized elapsed - any verb at all, no hand-maintained
+// list - consulted only in the capture's own trailing window (the
+// finished-turn footer and a transcript line quoting frame-like text both
+// fall outside it). See specs/features/fixtures/BL-970/ for the shared
+// captures both sides are verified against.
+const BUSY_TAIL_WINDOW = 20;
+const LIVE_STATUS_FRAME_PATTERN =
+  /^\s*[^\sA-Za-z0-9(){}[\]"'⏺⎿]{1,2}\s+\p{L}[\p{L} -]{0,60}(?:…|\.{3})\s*\(\s*\d/u;
+
+function isLiveStatusFrameLine(line: string): boolean {
+  return LIVE_STATUS_FRAME_PATTERN.test(line);
+}
 
 export function isPaneActivelyProcessing(paneText: string): boolean {
-  return ACTIVELY_PROCESSING.test(paneText);
+  const lines = paneText.split(/\r\n|\r|\n/);
+  const tail = lines.slice(-BUSY_TAIL_WINDOW);
+  return tail.some(isLiveStatusFrameLine);
 }
 
 export function isAgentActivelyWorking(paneCommand: string, paneText: string): boolean {
