@@ -279,7 +279,19 @@
 ;; (never restated here - invariant 2) - merge commits diffed with
 ;; `git diff-tree -m --first-parent`, never plain `git show`, which is
 ;; blind to a merge's own content (BL-590's f8dc07963: 0 files plain, 13
-;; via --first-parent). This fn only classifies what it is handed.
+;; via --first-parent).
+;;
+;; BL-962: that first-parent diff attributes everything a QA-side parent
+;; brought in to the merge itself, which raised a false CRIT on every
+;; operator reconciliation merge of QA-landed work. The gatherer now
+;; adjudicates each merge's offending paths against its non-first parents
+;; BEFORE handing them here: a path is exempt only when some parent is BOTH
+;; QA-approved (the same is_qa_ancestor.sh predicate) AND holds
+;; byte-identical content for it, so a path differing from every
+;; QA-approved parent still reports (the coat-tails case), and any failure
+;; in that adjudication fails the WHOLE sweep closed to
+;; ancestry-unavailable. Non-merge commits are untouched. This fn only
+;; classifies what it is handed - unchanged by BL-962.
 
 (defn check-pipeline-code-on-main
   "offending-commits: seq of {:sha :subject :paths [...]} the gatherer
