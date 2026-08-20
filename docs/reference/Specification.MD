@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-983: a parcel addressed `to:
+**Last Updated:** August 20, 2026 (BL-985: the tool-miss auto-heal wrapper
+(BL-913) gains a PROACTIVE anchor, closing the one drift its reactive
+`:wrong-cwd` output heal could never see — a shell wandering into a
+SIBLING worktree, which is still a git repository, so every command
+succeeds there and nothing in the output ever matches `fatal: not a git
+repository`. This is the mechanism behind a recurring incident family
+(role edits landing in the wrong worktree) previously read as one-off
+mistakes; the guard could never have caught them. The new check runs
+before any reactive clause and is decided from where the shell IS, never
+from whether the command would fail: `git rev-parse --show-toplevel` on
+both the pinned worktree and the shell's actual cwd; different (another
+worktree — including a `.worktrees/<role>` dir sitting inside the master
+checkout's own subtree, which a naive path-prefix test would wrongly
+bless) or empty (outside any repository) re-anchors to the pin before the
+original runs; equal — the pin itself or any subdirectory of it — leaves
+the shell exactly where it is, so a role legitimately working inside its
+own worktree's subdirectories is never yanked to the root. An unresolvable
+pin (a non-repository fixture root) skips the guard, fail-open, matching
+every other heal in this module. `MISS-CLASS-PATTERNS` is untouched — no
+new failure strings — since the whole defect is that output-matching
+cannot fire for a command that never failed. The generated per-role
+launch-script comment (`write_role_launch_script` in `swarmforge.sh`) was
+corrected in the same parcel to stop overclaiming that every drift was
+already pinned, which this fix is what makes true.); Previously August 20,
+2026 (BL-983: a parcel addressed `to:
 <stage>` is now claimed by exactly one SEAT of a multi-seat stage
 (BL-982's second seat stops being inert), idle-first and difficulty-blind
 — no model-tier preference, no round-robin. Design: stage stays the
