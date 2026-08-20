@@ -94,8 +94,18 @@ test('agentPaneStatusMessage reports the agent is not running for a non-empty sh
   assert.match(message, /Agent is not running in this pane \(shell only\)/);
 });
 
-test('isPaneActivelyProcessing detects the busy "esc to interrupt" footer', () => {
-  assert.equal(isPaneActivelyProcessing('  auto mode on · esc to interrupt'), true);
+// BL-1003: isPaneActivelyProcessing now matches chase_sweep_lib.bb's own
+// structural definition (BL-970) - a live status frame (spinner glyph,
+// verb, ellipsis, digit-led elapsed), not a bare marker substring. A bare
+// substring with no frame around it is exactly the false-busy shape BL-970
+// fixed on the swarm side; see specs/features/fixtures/BL-970/ for the
+// shared real-capture fixtures both sides are verified against.
+test('isPaneActivelyProcessing detects a real live status frame', () => {
+  assert.equal(isPaneActivelyProcessing('✻ Thinking… (5s · ⚒ tool)'), true);
+});
+
+test('isPaneActivelyProcessing returns false for a bare marker substring with no live status frame', () => {
+  assert.equal(isPaneActivelyProcessing('  auto mode on · esc to interrupt'), false);
 });
 
 test('isPaneActivelyProcessing returns false for the idle "shift+tab to cycle" footer alone', () => {

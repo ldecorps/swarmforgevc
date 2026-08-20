@@ -548,7 +548,8 @@ const DOMAINS = [
   require('./bl997BusyMarkerAgreementSteps'),
   require('./bl994LiveScreenGridSteps'),
   require('./bl976EmailKeylessAlertSteps'),
-  require('./bl996OneMidTurnDefinitionSteps')
+  require('./bl996OneMidTurnDefinitionSteps'),
+  require('./bl1003BusyVerdictMatchesSwarmSteps')
 ];
 
 function registerSteps(registry) {
