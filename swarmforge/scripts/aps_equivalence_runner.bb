@@ -32,8 +32,7 @@
 (require '[babashka.fs :as fs]
          '[babashka.classpath :as cp]
          '[babashka.process :as process]
-         '[cheshire.core :as json]
-         '[clojure.string :as str])
+         '[cheshire.core :as json])
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "aps_equivalence_lib.bb")))
 
@@ -113,9 +112,7 @@
                            (jsonify (dry/analyze (aps-json/read-json-file ir) {:include-exact false})))}
               (catch Exception e
                 {"exit" 1
-                 "error" (reduce-kv (fn [s from to] (str/replace s from to))
-                                    (str/replace (str (.getMessage e)) (str root "/") "")
-                                    scrub)}))))))
+                 "error" (aps-equivalence-lib/scrub-message (.getMessage e) root scrub)}))))))
 
   ;; mutation-sites: enumeration only over the existing fixture
   (write-outcome!
@@ -123,6 +120,6 @@
    (try {"exit" 0
          "sites" (jsonify (mutation/discover (parse-feature (str (fs/path root mutation-fixture)))))}
         (catch Exception e
-          {"exit" 1 "error" (str/replace (str (.getMessage e)) (str root "/") "")})))
+          {"exit" 1 "error" (aps-equivalence-lib/scrub-message (.getMessage e) root scrub)})))
 
   (println (str side ": done - results under " work "/results/" side)))
