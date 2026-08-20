@@ -51,7 +51,10 @@
     (doseq [dir [in-process-dir completed-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files   (handoff-lib/my-handoff-files in-process-dir)]
+          ;; BL-983: a claimed stage-queue parcel keeps its stamped STAGE
+          ;; recipient - the seat's own in_process listing must accept it
+          ;; (same fix as ready_for_next_task.bb; identical for bare roles).
+          in-process-files   (handoff-lib/stage-handoff-files in-process-dir)]
       ;; Batch work must be completed via the batch helpers; task-mode done
       ;; cannot operate on batch directories.
       (when (seq in-process-batches)
