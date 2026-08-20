@@ -17,12 +17,33 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const HARNESS = path.join(SCRIPTS, 'test', 'bl976_email_keyless_harness.bb');
 const LAUNCHER = path.join(SCRIPTS, 'start_handoff_daemon.sh');
 const ALARM_LIB = path.join(SCRIPTS, 'daemon_alarm_lib.bb');
+
+// BL-976 hardener bounce D2: cleanup used to be a hand-derived per-scenario
+// "which Then is terminal" table with a finally in each - any throw in a
+// non-terminal step (Background/Given/When, before the discriminated
+// terminal Then ran) leaked the mkdtemp root with no cleanup path. Same
+// afterEach + trackedRoots module-level pattern bl951StageSkipsRecordedSteps.js
+// already proved for this runtime - every mkdtemp'd root is swept after
+// EVERY step, terminal or not.
+let trackedRoots = [];
+afterEach(() => {
+  while (trackedRoots.length) {
+    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+  }
+});
+
+function mkTmp(prefix) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  trackedRoots.push(root);
+  return root;
+}
 
 const FEATURE = 'Daemon email capability survives relaunch or fails loudly to the operator';
 const FILE_NAME = '2026-08-16.md';
@@ -56,14 +77,14 @@ const SUPERVISOR_STUB = `(require '[babashka.fs :as fs])
 
 function ensureBriefingsDir(ctx) {
   if (!ctx.briefingsDir) {
-    ctx.briefingsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl976-briefings-'));
+    ctx.briefingsDir = mkTmp('aps-bl976-briefings-');
   }
   return ctx.briefingsDir;
 }
 
 function ensureProjectRoot(ctx) {
   if (!ctx.projectRoot) {
-    ctx.projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl976-root-'));
+    ctx.projectRoot = mkTmp('aps-bl976-root-');
     ctx.envFilePath = path.join(ctx.projectRoot, '.swarmforge', 'operator', 'daemon.env');
     ctx.confFile = path.join(ctx.projectRoot, 'swarmforge.conf');
     fs.writeFileSync(ctx.confFile, 'config notify_email_to operator@example.com\n');
@@ -87,7 +108,7 @@ function runGeneration(ctx, keyState, sweeps) {
 
 function launchDaemon(ctx) {
   ensureProjectRoot(ctx);
-  ctx.stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl976-stubs-'));
+  ctx.stubDir = mkTmp('aps-bl976-stubs-');
   fs.writeFileSync(path.join(ctx.stubDir, 'handoffd_stub.bb'), HANDOFFD_STUB);
   fs.writeFileSync(path.join(ctx.stubDir, 'supervisor_stub.bb'), SUPERVISOR_STUB);
   ctx.probeFile = path.join(ctx.projectRoot, 'probe');
@@ -119,15 +140,6 @@ function launchDaemon(ctx) {
       if (Number.isInteger(pid)) {
         try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
       }
-    }
-  }
-}
-
-function cleanup(ctx) {
-  for (const key of ['briefingsDir', 'projectRoot', 'stubDir']) {
-    if (ctx[key]) {
-      fs.rmSync(ctx[key], { recursive: true, force: true });
-      ctx[key] = null;
     }
   }
 }
@@ -219,133 +231,87 @@ function registerSteps(registry) {
   });
 
   // ── Thens ─────────────────────────────────────────────────────────────
-  // Cleanup discipline (no scenario-end hook exists in this runtime): the
-  // TERMINAL Then of each scenario cleans up in a finally; steps that are
-  // terminal in one scenario but mid-scenario in another discriminate on
-  // whether a launch happened (ctx.launchStatus set) - unique per shape:
-  //   01/02 end on skipped-not-sent (no launch), 03 on sweep-sends (launch),
-  //   04 on exactly-one-alert (launch), 05 on no-log-line, 06 on
-  //   recorded-sent-once. Every step still cleans up on its own failure.
-  const launched = (ctx) => ctx.launchStatus !== undefined;
+  // Cleanup is the module-level afterEach above (trackedRoots) - every step
+  // here is a bare assertion; no per-scenario terminal-step discrimination
+  // or try/finally needed.
 
   scoped(/^exactly one keyless-email alert is delivered through the Telegram operator transport$/, (ctx) => {
-    try {
-      assertExactlyOneAlert(ctx);
-      if (launched(ctx)) cleanup(ctx); // terminal in scenario 04
-    } catch (e) {
-      cleanup(ctx);
-      throw e;
-    }
+    assertExactlyOneAlert(ctx);
   });
 
   scoped(/^the alert names RESEND_API_KEY and the env file the launch path looks for$/, (ctx) => {
-    try {
-      const text = ctx.result.telegramAlerts[0] || '';
-      if (!text.includes('RESEND_API_KEY')) {
-        throw new Error(`alert must name RESEND_API_KEY, got: ${text}`);
-      }
-      if (!text.includes(envFilePathFor(ctx))) {
-        throw new Error(`alert must name the env file path ${envFilePathFor(ctx)}, got: ${text}`);
-      }
-    } catch (e) {
-      cleanup(ctx);
-      throw e;
+    const text = ctx.result.telegramAlerts[0] || '';
+    if (!text.includes('RESEND_API_KEY')) {
+      throw new Error(`alert must name RESEND_API_KEY, got: ${text}`);
+    }
+    if (!text.includes(envFilePathFor(ctx))) {
+      throw new Error(`alert must name the env file path ${envFilePathFor(ctx)}, got: ${text}`);
     }
   });
 
   scoped(/^the briefing is skipped, not treated as sent$/, (ctx) => {
-    try {
-      // Scenario 04 has no explicit sweep When - the launched (keyless)
-      // generation's first sweep runs here, off the launch probe's own
-      // key observation.
-      if (!ctx.result) {
-        runGeneration(ctx, ctx.generationKeyed ? 'keyed' : 'keyless', 1);
-      }
-      assertSkippedNotSent(ctx);
-      if (!launched(ctx)) cleanup(ctx); // terminal in scenarios 01/02
-    } catch (e) {
-      cleanup(ctx);
-      throw e;
+    // Scenario 04 has no explicit sweep When - the launched (keyless)
+    // generation's first sweep runs here, off the launch probe's own key
+    // observation.
+    if (!ctx.result) {
+      runGeneration(ctx, ctx.generationKeyed ? 'keyed' : 'keyless', 1);
     }
+    assertSkippedNotSent(ctx);
   });
 
   scoped(/^the daemon's email-capability decision sees the key$/, (ctx) => {
-    try {
-      if (!/^key_present=1$/m.test(ctx.probe)) {
-        throw new Error(`expected the generation to see the key, probe: ${ctx.probe}; launch: ${ctx.launchOut}`);
-      }
-      if (!/^verdict=nil$/m.test(ctx.probe)) {
-        throw new Error(`expected a sendable verdict from the real decision, probe: ${ctx.probe}`);
-      }
-    } catch (e) {
-      cleanup(ctx);
-      throw e;
+    if (!/^key_present=1$/m.test(ctx.probe)) {
+      throw new Error(`expected the generation to see the key, probe: ${ctx.probe}; launch: ${ctx.launchOut}`);
+    }
+    if (!/^verdict=nil$/m.test(ctx.probe)) {
+      throw new Error(`expected a sendable verdict from the real decision, probe: ${ctx.probe}`);
     }
   });
 
   scoped(/^the briefing sweep sends the unsent briefing through the fixture email transport$/, (ctx) => {
-    try {
-      if (!ctx.result) {
-        // Scenario 03 reaches here right after a launch, no sweep yet -
-        // run the keyed generation sweep the step asserts on. Scenario
-        // 06's keyed generation already ran; a failing 06 must never be
-        // masked by a fresh re-run here.
-        runGeneration(ctx, 'keyed', 1);
-      }
-      if (ctx.result.emailsSent !== 1) {
-        throw new Error(`expected exactly one email through the fixture transport, got ${ctx.result.emailsSent}`);
-      }
-      if (launched(ctx)) cleanup(ctx); // terminal in scenario 03
-    } catch (e) {
-      cleanup(ctx);
-      throw e;
+    if (!ctx.result) {
+      // Scenario 03 reaches here right after a launch, no sweep yet - run
+      // the keyed generation sweep the step asserts on. Scenario 06's
+      // keyed generation already ran; a failing 06 must never be masked by
+      // a fresh re-run here.
+      runGeneration(ctx, 'keyed', 1);
+    }
+    if (ctx.result.emailsSent !== 1) {
+      throw new Error(`expected exactly one email through the fixture transport, got ${ctx.result.emailsSent}`);
     }
   });
 
   scoped(/^the launch completes without error$/, (ctx) => {
-    try {
-      if (ctx.launchStatus !== 0) {
-        throw new Error(`expected launch exit 0, got ${ctx.launchStatus}: ${ctx.launchOut}`);
-      }
-    } catch (e) {
-      cleanup(ctx);
-      throw e;
+    if (ctx.launchStatus !== 0) {
+      throw new Error(`expected launch exit 0, got ${ctx.launchStatus}: ${ctx.launchOut}`);
     }
   });
 
   scoped(/^no log line produced by launch or sweep contains the key's value$/, (ctx) => {
-    try {
-      const hits = [];
-      const scan = (dir) => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          const p = path.join(dir, entry.name);
-          if (entry.isDirectory()) scan(p);
-          else if (p !== ctx.envFilePath && fs.readFileSync(p, 'utf8').includes(DUMMY_KEY)) hits.push(p);
-        }
-      };
-      scan(ctx.projectRoot);
-      if ((ctx.harnessRawOut || '').includes(DUMMY_KEY)) hits.push('(harness output)');
-      if ((ctx.launchOut || '').includes(DUMMY_KEY)) hits.push('(launcher output)');
-      if (hits.length) {
-        throw new Error(`key value leaked into: ${hits.join(', ')}`);
+    const hits = [];
+    const scan = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) scan(p);
+        else if (p !== ctx.envFilePath && fs.readFileSync(p, 'utf8').includes(DUMMY_KEY)) hits.push(p);
       }
-    } finally {
-      cleanup(ctx);
+    };
+    scan(ctx.projectRoot);
+    if ((ctx.harnessRawOut || '').includes(DUMMY_KEY)) hits.push('(harness output)');
+    if ((ctx.launchOut || '').includes(DUMMY_KEY)) hits.push('(launcher output)');
+    if (hits.length) {
+      throw new Error(`key value leaked into: ${hits.join(', ')}`);
     }
   });
 
   scoped(/^the briefing is recorded as sent exactly once$/, (ctx) => {
-    try {
-      const sentLogs = ctx.result.logs.filter((l) => l[0] === 'briefing-sent' && l[1] === FILE_NAME);
-      if (sentLogs.length !== 1 || ctx.result.emailsSent !== 1) {
-        throw new Error(`expected exactly one send across the keyed generation's sweeps, logs: ${JSON.stringify(ctx.result.logs)}, emailsSent: ${ctx.result.emailsSent}`);
-      }
-      const marker = path.join(ctx.briefingsDir, '.sent.json');
-      if (!fs.existsSync(marker) || !fs.readFileSync(marker, 'utf8').includes(FILE_NAME)) {
-        throw new Error(`expected ${FILE_NAME} recorded in .sent.json`);
-      }
-    } finally {
-      cleanup(ctx);
+    const sentLogs = ctx.result.logs.filter((l) => l[0] === 'briefing-sent' && l[1] === FILE_NAME);
+    if (sentLogs.length !== 1 || ctx.result.emailsSent !== 1) {
+      throw new Error(`expected exactly one send across the keyed generation's sweeps, logs: ${JSON.stringify(ctx.result.logs)}, emailsSent: ${ctx.result.emailsSent}`);
+    }
+    const marker = path.join(ctx.briefingsDir, '.sent.json');
+    if (!fs.existsSync(marker) || !fs.readFileSync(marker, 'utf8').includes(FILE_NAME)) {
+      throw new Error(`expected ${FILE_NAME} recorded in .sent.json`);
     }
   });
 }

@@ -102,7 +102,21 @@ or in whatever launcher/systemd unit starts it, if you want the BL-144
 daemon-death alarm or BL-214 briefing email to actually send. A
 `notify_email_to` configured in `swarmforge.conf` with no `RESEND_API_KEY`
 in the daemon's env no longer fails silently: it logs a loud warning naming
-`RESEND_API_KEY` to `.swarmforge/daemon/handoffd-supervisor.log`.
+`RESEND_API_KEY` to `.swarmforge/daemon/handoffd-supervisor.log`, and
+(BL-976) the daemon's Telegram operator outbox gets the same alert once per
+keyless generation, since the supervisor/watchdog relaunch chain spawns each
+new generation from whatever environment happens to run it — a log line
+alone is easy to miss between relaunches.
+
+A hand-exported key covers only the CURRENT process, though — the next
+supervisor- or watchdog-driven relaunch spawns a fresh, keyless generation
+unless the key is durable. For that, write it once to
+`.swarmforge/operator/daemon.env` (gitignored runtime state, never
+committed — the BL-215 posture is unchanged): every daemon launch
+(`start_handoff_daemon.sh`) re-sources that file, when present, before
+either daemon starts, so `RESEND_API_KEY` survives every relaunch without
+being hand-re-exported each time. No file present → ambient environment
+only, exactly as before BL-976.
 
 ## 5. Working the shared backlog
 
