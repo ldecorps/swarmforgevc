@@ -540,7 +540,8 @@ const DOMAINS = [
   require('./bl982SecondSeatSteps'),
   require('./bl983StageQueueSteps'),
   require('./bl985ProactiveAnchorSteps'),
-  require('./bl970BusyGateSteps')
+  require('./bl970BusyGateSteps'),
+  require('./bl969BurndownNoflagsTimeoutSteps')
 ];
 
 function registerSteps(registry) {
