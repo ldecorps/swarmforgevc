@@ -188,3 +188,61 @@ test('BL-910: a series without a projection fails loud - computed-but-not-drawn 
   delete stale.projection;
   assert.throws(() => buildNotDoneBurndownSvg(stale), /projection/);
 });
+
+// ── BL-910 hardening: the caption's own numbers, and its placement ─────────
+// The tests above proved the ETA day-count and the not-shrinking answer. These
+// close the gaps that survive them: the net-burn figure printed in EITHER
+// branch of the caption, the no-eta branch's netBurnPerDay, and the human's
+// explicit placement decision ("the caption, not a dashed overlay line") -
+// none of which any assertion above could see.
+
+const { formatProjectionLine } = require('../out/metrics/notDoneBurndownChart');
+
+test('BL-910: the eta caption prints the net burn it divided by, at the same one decimal as the subtitle', () => {
+  const line = formatProjectionLine(projectNotDoneEta(100, 6.0, 4.0, NOW));
+  assert.match(line, /Projected clear \(all open tickets\): \d{4}-\d{2}-\d{2} · ~50d at net burn 2\.0\/d/);
+});
+
+test('BL-910: the not-shrinking caption prints its (negative or zero) net burn and names its scope', () => {
+  assert.equal(
+    formatProjectionLine(projectNotDoneEta(180, 4.0, 6.0, NOW)),
+    `${NOT_SHRINKING_REASON} (net burn -2.0/d, all open tickets)`
+  );
+  assert.equal(
+    formatProjectionLine(projectNotDoneEta(180, 5.0, 5.0, NOW)),
+    `${NOT_SHRINKING_REASON} (net burn 0.0/d, all open tickets)`
+  );
+});
+
+test('BL-910: a not-shrinking projection still carries the measured net burn, so the caption is not the only place it exists', () => {
+  assert.equal(projectNotDoneEta(180, 4.0, 6.0, NOW).netBurnPerDay, -2.0);
+  assert.equal(projectNotDoneEta(180, 5.0, 5.0, NOW).netBurnPerDay, 0);
+  // Rounded to the printed tenths first, exactly as the eta branch is.
+  assert.equal(projectNotDoneEta(180, 4.04, 5.96, NOW).netBurnPerDay, -2.0);
+});
+
+test('BL-910 required wiring: formatProjectionLine is the guard - a series with no projection fails loud at the caption itself', () => {
+  assert.throws(() => formatProjectionLine(undefined), /projection/);
+});
+
+test('BL-910: the projection is placed in the caption block - below the subtitle, above the plot area, never drawn over the series', () => {
+  const svg = buildNotDoneBurndownSvg(seriesWith(100, 6.0, 4.0));
+  const yOf = (needle) => {
+    const m = svg.match(new RegExp(`<text x="\\d+" y="(\\d+)"[^>]*>[^<]*${needle}`));
+    assert.ok(m, `no text element found for ${needle}`);
+    return Number(m[1]);
+  };
+  const headingY = yOf('Backlog burndown');
+  const subtitleY = yOf('Open 100');
+  const projectionY = yOf('Projected clear');
+  assert.ok(headingY < subtitleY, `heading at y=${headingY} must sit above the subtitle at y=${subtitleY}`);
+  assert.ok(subtitleY < projectionY, `the projection at y=${projectionY} must sit below the subtitle at y=${subtitleY}`);
+  // The plot area starts at padT; every gridline is drawn at or below it, so
+  // the smallest gridline y is the top of the chart. The caption must clear it.
+  const gridYs = [...svg.matchAll(/<line x1="\d+" y1="([\d.]+)"/g)].map((m) => Number(m[1]));
+  assert.ok(gridYs.length > 0, 'no gridlines found');
+  assert.ok(
+    projectionY < Math.min(...gridYs),
+    `the projection at y=${projectionY} must clear the plot area starting at y=${Math.min(...gridYs)} - it is a caption, not an overlay`
+  );
+});

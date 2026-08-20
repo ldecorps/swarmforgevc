@@ -140,3 +140,5 @@ notes_coordinator_hold: >
   converged; the defect is the CLI's silent per-checkout split, not either
   reading. Note the ticket is self-describing: while it is unbuilt, any role
   checking the cap from its own worktree still gets 3.
+
+assigned_to: coder
