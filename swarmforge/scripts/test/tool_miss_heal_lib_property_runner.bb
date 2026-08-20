@@ -419,7 +419,12 @@
      (cond
        (not (str/includes? base-wrapper (str base " \"$__sfh_root\"")))
        "the single-simple base LOST its missing-root heal (over-gated)"
-       (str/includes? derived-wrapper "\"$__sfh_root\"")
+       ;; BL-985: derived-wrapper legitimately contains $__sfh_root now (the
+       ;; new proactive cwd-check block references it unconditionally) - a
+       ;; bare substring check is stale. Check the real invariant instead:
+       ;; the derived command is never followed by the root as a trailing
+       ;; argument (the actual misdirection this property guards against).
+       (str/includes? derived-wrapper (str derived " \"$__sfh_root\""))
        (str "the derived multi-command wrapper still appends the root: " (pr-str derived))
        (not (tool-miss-heal-lib/wrapper-parses? derived-wrapper))
        "the derived wrapper does not parse"
