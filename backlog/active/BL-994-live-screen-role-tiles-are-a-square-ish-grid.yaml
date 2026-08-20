@@ -50,14 +50,20 @@ description: >
     in the master checkout (`diff -q` clean), so it is a complete record of
     the hotfix.
 
-    AMENDED 2026-08-20 - READ THIS BEFORE VERIFYING: the in-situ hotfix has
-    since been REVERTED out of the master checkout's working tree by something
-    other than this ticket, so that `git diff` is now EMPTY and the live file
-    no longer carries the fix. Do NOT read the empty diff as "the patch is
-    wrong" or "the work is already done" - neither is true. The tracked patch
-    file is the authoritative record; apply it in your worktree and drive it
-    through the chain exactly as written. The only thing lost was the
-    operator's temporary live fix, which this ticket is what restores.
+    AMENDED 2026-08-20 - READ THIS BEFORE VERIFYING: that `git diff` is now
+    EMPTY and the live file no longer carries the fix. Nothing was discarded -
+    QA deliberately set the master checkout's uncommitted work aside before a
+    main<->origin reconcile, as `stash@{0}`
+    ("QA-BL983-board-seat-leak-fix-set-aside-20260820 ... real work, wrong
+    worktree - needs rescue to coder's worktree, not discard"), and the phone
+    grid UI hotfix went with it.
+
+    So: do NOT read the empty diff as "the patch is wrong" or "the work is
+    already done", and do NOT try to reconstruct the hotfix from the live file.
+    The tracked 169-line patch file is the authoritative record and is
+    unaffected - apply it in your worktree and drive it through the chain
+    exactly as written. You do not need the stash for THIS ticket; it is
+    mentioned only so the empty diff is not mistaken for a lost fix.
   - `getResidentSpyUiHtml()` is a pure function returning an HTML string, and
     `extension/test/residentSpyUiHtml.test.js` already exercises it - so the
     layout is testable at the module boundary without booting a webview.
