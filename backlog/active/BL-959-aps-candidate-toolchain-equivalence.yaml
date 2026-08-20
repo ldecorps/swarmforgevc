@@ -10,6 +10,7 @@ depends_on: []
 mutation_cost: low
 acceptance: specs/features/BL-959-aps-candidate-toolchain-equivalence.feature
 human_approval: approved
+assigned_to: coder
 approval_context: >
   Three things need sign-off. (1) The new feature file (specifier draft, not
   yet human-reviewed). (2) The adopt/defer/reject decision this ticket
@@ -159,3 +160,6 @@ notes: |
   Corpus note for the coder: the live feature corpus includes
   .feature files only; .feature.draft companions are excluded by design
   (they are parked future-slice Gherkin, not live contracts).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-19, by: architect, blamed: coder, class: behavior, commit: 1498580a17, evidence: backlog/evidence/BL-959-aps-candidate-toolchain-equivalence-bounce-20260820.md }
