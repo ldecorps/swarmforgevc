@@ -39,23 +39,22 @@
   before fixture confs.
 - Target **stock macOS `/bin/bash` 3.2**, not Homebrew bash: under `set -u` it
   raises `unbound variable` expanding `"${arr[@]}"` on an EMPTY array (fixed
-  only in 4.4). Write `${arr[@]+"${arr[@]}"}` instead (BL-801 — bites hardest
-  in an EXIT trap, turning a passing suite into exit 1).
+  only in 4.4). Write `${arr[@]+"${arr[@]}"}` instead (BL-801).
 - Never `kill()` the test process, `chmod` for failure simulation, or diff
   shared globals (`/tmp`, broad `ps` patterns, live runtime paths) — redirect
   through env seams. Pin fixture clocks; daemon wiring tests override
   hardcoded timeouts via env seams and redirect a backgrounded daemon's
-  stdout/stderr to a file. See **engineering-detailed.prompt** for the full
-  pre-trim wording.
+  stdout/stderr to a file. See **engineering-detailed.prompt**.
 - An `Unhandled Error`/`Unhandled Rejection` in `test:properties` output
   fails the lane unless it is the known benign `[vitest-worker]: Timeout
   calling "onTaskUpdate"` artifact — grep and allowlist exactly that
   message. See **engineering-detailed.prompt** (BL-871).
 - A fixture dir from `fs.mkdtempSync` is removed in a `finally`, never only
-  after the last assertion — a test that throws or bounces otherwise leaks it
-  permanently. Measured 2026-08-18: 236 of 287 step-handler files using it had
-  no `finally`; one ticket left 45 dirs behind. See
-  **engineering-detailed.prompt**.
+  after the last assertion — a throw or bounce otherwise leaks it forever. And
+  a generated fixture matching the suite's OWN discovery glob is swept by
+  prefix BEFORE the run, not merely cleaned up after: nothing traps SIGKILL,
+  so a killed run leaves it for the next run to collect as a false red. See
+  **engineering-detailed.prompt** (BL-971).
 
 ## Acceptance Pipeline
 - APS pinned (see Startup Tools). Features in `specs/features/`; pipeline in
