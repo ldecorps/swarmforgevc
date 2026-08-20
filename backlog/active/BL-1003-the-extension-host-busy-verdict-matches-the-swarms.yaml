@@ -189,3 +189,6 @@ notes: >
   were. Re-run clean: 11 step occurrences, 9 unique, zero findings.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: QA, blamed: coder, class: unit, commit: bca56bf5aa, evidence: backlog/evidence/BL-1003-the-extension-host-busy-verdict-matches-the-swarms-bounce-20260820.md }
