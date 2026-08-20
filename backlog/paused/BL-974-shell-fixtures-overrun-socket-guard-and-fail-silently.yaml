@@ -125,6 +125,15 @@ notes: >
   instance: cleaner status 2026-08-20g (wrong "BSD grep" attribution
   corrected to this guard).
 
+  Second source, consolidated N:1 (Consolidation Authority): the
+  coordinator independently root-caused the same silent exit (102-char
+  socket path vs the 100 limit, "same class as BL-948, different
+  scope") and asked extend-vs-sibling - note 00_20260820T053855Z_000661,
+  crossing this ticket's ready-note in flight; its evidence is
+  backlog/evidence/BL-323-resume-on-start-silent-exit-root-caused-20260820.md
+  (commit efcff9dd5). Answer recorded here: SIBLING, for the
+  BL-317/BL-325 reason below.
+
   Related: BL-948 (active - same defect class, JS step-file surface;
   this is deliberately a sibling, not an amendment, because widening
   an active ticket's scope mid-flight is the BL-317/BL-325 staleness
