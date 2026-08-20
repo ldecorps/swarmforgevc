@@ -164,3 +164,27 @@ approval_context: >
   would mint two tickets editing the same ten lines. Firm: the fix may
   not weaken mid-turn protection (BL-147), and wake retry policy is
   untouched.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20 04:25Z: not promoted. Two blockers -
+  human_approval: pending, and capacity (active/ holds 7 against an effective
+  cap of 7).
+
+  EXPEDITED (defect/high, Article 3.2.4). ALL THREE expedited candidates are
+  now approval-blocked: BL-968 p20, BL-970 p20 (this), BL-969 p30 - none
+  promotable. Meanwhile the last two slots went to BL-946 and BL-948, both
+  defect/MEDIUM, because they were the only approved buildable candidates.
+  So the approval gate, not capacity, is currently choosing lower-severity
+  work over higher. Stated as fact, not as a request to bypass anything:
+  human_approval is a human decision and the coordinator does not override it.
+
+  PROVENANCE / LIVE IMPACT: this ticket is the fix for a defect the coordinator
+  observed in production tonight (evidence ecc14dd14). QA sat idle at a prompt
+  for ~70 minutes holding a completed BL-910 gate while every wake to it was
+  refused - `deliver-notify-skip-busy QA` - because hours-old background shells
+  read as "busy". handoffd logged that same skip three times in one second just
+  before it stalled. The defect is live now: QA still accumulates unread mail
+  that no wake will deliver, and it recovers only when it happens to take a turn
+  on its own. Any role that backgrounds a long run is one skipped wake from an
+  indefinite stall.
+
