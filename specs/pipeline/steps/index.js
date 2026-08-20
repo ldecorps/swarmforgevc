@@ -524,7 +524,8 @@ const DOMAINS = [
   require('./bl959ApsEquivalenceSteps'),
   require('./bl910BriefingBurndownEtaSteps'),
   require('./bl967HandoffdCycleStallSteps'),
-  require('./bl962OnMainMergeAdjudicationSteps')
+  require('./bl962OnMainMergeAdjudicationSteps'),
+  require('./bl961PackExportSteps')
 ];
 
 function registerSteps(registry) {
