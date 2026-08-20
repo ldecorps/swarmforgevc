@@ -69,6 +69,40 @@
 (assert= "the default bound is 60s - well under the 300s freshness threshold"
          60000 daemon-cycle-guard-lib/default-subprocess-wait-bound-ms)
 
+;; ── the timeout actually KILLS the wedged child (hardener, BL-967) ────────
+;; The block above proves a timeout HAPPENS - the caller is freed, 124 comes
+;; back, on-timeout! fires. None of it proves the wedged child DIED, and a
+;; hand-authored mutation sweep confirmed the gap: deleting
+;; `(process/destroy-tree proc)` passed the whole unit and property suite.
+;;
+;; That is invariant 1's second half. "A wedged tmux/git process may cost one
+;; bounded wait, never the heartbeat" only holds if the wedged process is
+;; reaped; otherwise every timeout leaks a live child into a daemon whose
+;; whole failure mode is a restart storm, and the leak compounds silently
+;; because the caller sees an ordinary failure and moves on.
+;;
+;; Asserted by BEHAVIOUR, not by pid bookkeeping: the child would write a
+;; marker file shortly after the bound. If the tree is destroyed the marker
+;; never appears; if it is not, the orphan keeps running and writes it. Only
+;; destroy-tree can distinguish the two.
+(let [d (str (fs/create-temp-dir {:prefix "bl967-destroy-"}))
+      marker (str (fs/path d "child-survived"))]
+  (try
+    (reset! daemon-cycle-guard-lib/current-context "destroy-tree-probe")
+    (let [r (with-redefs [daemon-cycle-guard-lib/subprocess-wait-bound-ms (fn [] 200)]
+              (daemon-cycle-guard-lib/sh! "bash" "-c"
+                                          (str "sleep 1.5; echo alive > '" marker "'")))]
+      (assert= "the wedged child's bounded wait still returns 124" 124 (:exit r)))
+    ;; Outlast the child's own delay by a wide margin, so a surviving orphan
+    ;; has had every chance to write. Under load this waits longer than it
+    ;; needs to rather than racing.
+    (Thread/sleep 3000)
+    (assert-true "a bounded-wait timeout DESTROYS the wedged child - it never runs on past the bound"
+                 (not (fs/exists? marker)))
+    (finally
+      (reset! daemon-cycle-guard-lib/current-context "outside-sweep")
+      (fs/delete-tree d))))
+
 ;; ── run-sweep! boundary observability (the invariant-2 core) ──────────────
 
 (let [logged (atom [])
