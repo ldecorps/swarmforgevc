@@ -150,3 +150,25 @@ approval_context: >
   to say the word on if you disagree: severity high (expedited) - the
   storm is live and degrading transport, though self-healing keeps the
   swarm functional.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20: not promoted. ONE blocker only - capacity
+  (active/ holds 7 against an effective cap of 7, live full-forge pack).
+  human_approval is `approved`, depends_on is empty, no orthogonality
+  conflict, no ambulance freeze, no onboarding-contract hold.
+
+  EXPEDITED, AND RANKED FIRST. type: defect / severity: high, so expedited
+  under Article 3.2.4. There are now TWO approved expedited candidates tied at
+  priority 20: BL-962 and BL-967. Coordinator tie-break: **BL-967 goes first**.
+  Rationale - BL-967 fixes stalls in handoffd, the transport every parcel
+  moves through; a handoffd stall halts the whole swarm and is self-masking
+  (the endless-loop breaker can halt the stack). BL-962 fixes false-positive
+  babysitter CRITs on reconciliation merges, which costs coordinator turns but
+  stops nothing. Higher blast radius wins the tie. This is ordering only - it
+  creates no extra slot and overrides no gate.
+
+  NOT A LIVE INCIDENT: handoffd is healthy right now (4 processes; log written
+  2026-08-20T00:10:07Z, ~1 min before this check, actively emitting
+  chase-wake-skip-busy). This ticket is a latent robustness fix, so it takes
+  the next slot in the ordinary way rather than justifying an ambulance.
+
