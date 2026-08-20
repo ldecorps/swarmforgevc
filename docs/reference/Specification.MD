@@ -17,6 +17,75 @@ widen. A parity gate now derives the launcher's accepted set from
 `swarmforge.sh` itself and asserts set equality, so the bash↔Babashka mirror
 cannot drift silently (BL-897). No human-facing command or setting changes;
 the swarm running today declares `rotation router` and is unaffected.);
+Previously August 20, 2026 (BL-959: the APS Babashka toolchain our
+Gherkin gates consume is pinned, and bumping that pin is a human commit, so
+the adopt/defer/reject question the 2026-08-19 upstream scan raised is now
+answered by measurement rather than changelog reading.
+`swarmforge/scripts/aps_equivalence_run.sh` clones the candidate at exactly
+the ticket's SHA into a throwaway work dir (refusing to proceed on any
+`rev-parse` mismatch, `install_aps_tools.sh`'s pattern), runs BOTH real
+toolchains — their own namespaces on their own classpath, called exactly as
+their CLIs call them, nothing reimplemented — over every live
+`specs/features/*.feature` through three lanes (lint-gate parse, IR
+generation + the IR-DRY checker compared as FINDING SETS rather than file
+bytes, and mutation-site enumeration over the existing fixture, enumeration
+only), and turns the two result sets into an EQUIVALENT/DIVERGENT/INCOMPLETE
+verdict matrix. It fails closed: exit 0 only for a NON-EMPTY all-EQUIVALENT
+matrix, because a missing outcome or an empty result set is "nothing
+compared", never "nothing diverged". Every pinned surface is read-only by
+construction — `swarmforge/vendor/aps/` is read, `swarmforge.lock.json` is
+read for the repo URL, `upstream-watch.json` is untouched, the candidate is
+never copied into `vendor/` — and the harness is wired into no live gate;
+live gates keep consuming the pin. The 2026-08-20 run recommends
+BUMP-WITH-SHIMS: the candidate is a clean fast-forward with compatible CLI
+entry points, but a bare bump flips 32 of 604 live features from lint-pass to
+lint-fail and reshapes 293 IR-DRY finding sets via commit `3a1d7b063`'s
+default-ON parser inference, while `--do-not-infer` at the two parser call
+sites restores 1209/1209 EQUIVALENT — the shim is measured sufficient, not
+assumed — and commit `1001283af`'s mutation-metadata relocation needs a
+work-dir/sidecar shim or soft mutation runs silently degrade to full ones.
+The pin bump, the re-vendor and any `upstream-watch.json` edit remain
+separate HUMAN commits after reading the evidence. Babashka has no
+mutation/CRAP/DRY tooling wired here, so the harness is gated by its own
+`swarmforge/scripts/test/aps_equivalence_*` unit and property runners only —
+the degraded fallback, recorded as such. Evidence:
+`backlog/evidence/BL-959-aps-equivalence-report.md`; decision log entry:
+[`docs/upstream-deviations.md`](../upstream-deviations.md) 2026-08-20; runbook:
+[`docs/how-to/BL-959-aps-candidate-toolchain-equivalence-run.md`](../how-to/BL-959-aps-candidate-toolchain-equivalence-run.md).);
+Previously August 20, 2026 (BL-910: the morning briefing's backlog
+burndown gains a projected ETA beside the counts it is derived from. Net
+burn is the close rate minus the mint rate; when strictly positive the open
+count over net burn gives a calendar date (`Projected clear (all open
+tickets): <date> · ~<n>d at net burn <r>/d`), and when it is zero or
+negative the chart states the reason in words (`no ETA — backlog still
+growing (net burn <r>/d, all open tickets)`) — never a date, never
+"never", never a fabricated infinity or placeholder, which is the human's
+one hard condition and is enforced as an invariant rather than a branch in
+one renderer. The projection is recomputable by hand from the three numbers
+already printed in the subtitle: both rates are rounded to the one decimal
+the subtitle shows BEFORE the division, and the division is kept in integer
+tenths rather than dividing by a reconstructed float, because the float form
+reintroduces the dust the rounding removed and `Math.ceil` turns it into a
+whole extra day (at openN 21 and net burn 0.7/d, `21 / 0.7` is
+30.000000000000004 and ceils to 31 while the printed numbers give 30) —
+checked against exact rational arithmetic over 900k cases with zero
+mismatches. Scope is named on the chart so it can never read as BL-228's
+milestone p50/p85 forecast, which stays where it is and is not reused here;
+the human's "do not silently introduce a second disagreeing ETA" is met by
+naming the scope, not by hiding either number. Placement is the caption, not
+a dashed overlay, so a projection can never be misread as measured data on
+the same axes. `formatProjectionLine` is extracted into
+`notDoneBurndownChart.ts` rather than inlined (the guard plus two-branch
+caption pushed the renderer's cyclomatic complexity from 5 to 7, and CRAP
+grows superlinearly), and a series missing its projection throws rather than
+silently rendering no answer — computed-but-not-drawn is the failure the
+ticket exists to prevent. The heading still reads "burndown" per the
+2026-08-16 human ruling recorded on BL-896. Fixes a stale acceptance
+criterion inherited from BL-896, whose scenario asserted the chart shows
+"never … a completion date" — resolved on BL-896's side inside this parcel
+because the colliding string is the human's own verbatim wording (Article
+5.3). See the new "The projected ETA (BL-910)" section in
+[`docs/how-to/BL-896-briefing-open-ticket-chart.md`](../how-to/BL-896-briefing-open-ticket-chart.md).);
 Previously August 20, 2026 (BL-960: BL-913's `PreToolUse` heal
 wrapper spliced every Bash command every role issues as raw text into a
 command substitution (`__sfh_out=$(<ORIGINAL> 2>&1)`), unescaped and never

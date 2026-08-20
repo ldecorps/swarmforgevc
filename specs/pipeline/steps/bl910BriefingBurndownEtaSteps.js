@@ -10,8 +10,21 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out', 'metrics');
-const { projectNotDoneEta, NOT_SHRINKING_REASON } = require(path.join(OUT, 'notDoneBurndown'));
-const { buildNotDoneBurndownSvg } = require(path.join(OUT, 'notDoneBurndownChart'));
+
+// The compiled modules are required LAZILY, inside the steps that use them,
+// mirroring bl896BriefingOpenTicketChartSteps.js. extension/out/ is a
+// gitignored build output, so a top-level require makes THIS file - and
+// therefore specs/pipeline/steps/index.js, which requires every domain
+// eagerly - fail to load in any tree where out/ has not been built. That is
+// the BL-968 defect class: a step registry that cannot be loaded from a
+// materialized-from-git tree blinds the gate that loads it, and the failure
+// is a module-load throw far from the step that actually needed the build.
+function burndownModule() {
+  return require(path.join(OUT, 'notDoneBurndown'));
+}
+function chartModule() {
+  return require(path.join(OUT, 'notDoneBurndownChart'));
+}
 
 const FEATURE_NAME =
   'The morning-briefing burndown carries a projected ETA when the backlog is actually shrinking, and says why when it is not';
@@ -62,9 +75,9 @@ function registerSteps(registry) {
         { dayMs: NOW - DAY, label: '08-09', remaining: openN, filed: 0, closed: 0 },
         { dayMs: NOW, label: '08-10', remaining: openN, filed: 0, closed: 0 },
       ],
-      projection: projectNotDoneEta(openN, closePerDay, mintPerDay, NOW),
+      projection: burndownModule().projectNotDoneEta(openN, closePerDay, mintPerDay, NOW),
     };
-    ctx.svg = buildNotDoneBurndownSvg(series);
+    ctx.svg = chartModule().buildNotDoneBurndownSvg(series);
   });
 
   // ── Thens ─────────────────────────────────────────────────────────────
@@ -91,6 +104,7 @@ function registerSteps(registry) {
     if (!KNOWN_NOT_SHRINKING_RATES.has(key)) {
       throw new Error(`BL-910: unrecognized not-shrinking rates "${key}" - not in KNOWN_VALUES`);
     }
+    const { NOT_SHRINKING_REASON } = burndownModule();
     assert.ok(ctx.svg.includes(NOT_SHRINKING_REASON), `reason not rendered: expected "${NOT_SHRINKING_REASON}"`);
   });
 

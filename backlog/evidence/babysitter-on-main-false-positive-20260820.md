@@ -65,3 +65,19 @@ coordinator turn to re-adjudicate. BL-962 — the fix that teaches the sweep to
 adjudicate merge commits — is `defect/high`, `human_approval: approved`, and is now
 the **top promotable expedited candidate**, having been passed over only because
 BL-967's defect was live in production. It takes the next freed slot.
+
+### Re-fire of the SAME sha (new fact, 2026-08-20 ~01:50Z)
+
+`f07e91b4f` alerted again, byte-identical to recurrence 3 above — same sha, same four
+files. Verdict re-checked and unchanged (`vs_p2 = 0`; parent2 still `3dbf083ac`, QA's
+BL-935 landing).
+
+This changes the cost model recorded above. The sweep keeps **no memory of an
+adjudication**, so a flagged merge is not re-reported once per merge — it is
+re-reported **once per sweep, indefinitely**, until either the commit ages out of the
+sweep window or BL-962 lands. Every subsequent sweep will re-raise every historical
+reconciliation merge as a fresh CRIT.
+
+Adjudication cost is therefore unbounded in time, not proportional to merge count.
+Recorded so the next coordinator recognises a re-fire immediately and does not
+re-diagnose: **check this file for the sha first.**

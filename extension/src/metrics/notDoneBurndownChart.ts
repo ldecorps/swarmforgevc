@@ -1,5 +1,5 @@
 import { Resvg } from '@resvg/resvg-js';
-import { NotDoneBurndownSeries } from './notDoneBurndown';
+import { NotDoneBurndownSeries, NotDoneBurndownProjection } from './notDoneBurndown';
 
 // SVG/PNG rendering for the not-done (open) ticket chart on the daily
 // briefing email, split from notDoneBurndown.ts's series computation
@@ -27,14 +27,36 @@ function niceMax(value: number): number {
   return nice * mag;
 }
 
-/** Pure: SVG line chart matching the hand-built briefing burndown style. */
-export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
-  // BL-910 required wiring: computed-but-not-drawn is the failure this
-  // guard exists to prevent - a series missing its projection (a stale
-  // hand-built literal) fails loud instead of silently rendering no answer.
-  if (!data.projection) {
+/**
+ * Pure (BL-910): the caption line for the projection, derived from the same
+ * three numbers the subtitle above it prints. Scope is named on the chart
+ * ("all open tickets") so it can never read as BL-228's milestone p50/p85
+ * forecast; a not-shrinking backlog states the reason - never a date, an
+ * infinity, or a placeholder.
+ *
+ * Extracted from buildNotDoneBurndownSvg rather than inlined: the guard and
+ * the two-branch caption pushed that already-large renderer's cyclomatic
+ * complexity from 5 to 7 against main, and CRAP grows superlinearly with it,
+ * so the new logic would have inherited a score it did not earn. Here it
+ * carries its own, and is unit-testable without rendering an SVG.
+ *
+ * The undefined case is the ticket's required wiring: computed-but-not-drawn
+ * is the failure this guard exists to prevent, so a series missing its
+ * projection (a stale hand-built literal) fails loud rather than silently
+ * rendering no answer at all.
+ */
+export function formatProjectionLine(projection: NotDoneBurndownProjection | undefined): string {
+  if (!projection) {
     throw new Error('NotDoneBurndownSeries lacks its projection - compute it via computeNotDoneBurndownSeries/projectNotDoneEta');
   }
+  if (projection.kind === 'eta') {
+    return `Projected clear (all open tickets): ${projection.etaDateLabel} · ~${projection.etaDays}d at net burn ${projection.netBurnPerDay.toFixed(1)}/d`;
+  }
+  return `${projection.reason} (net burn ${projection.netBurnPerDay.toFixed(1)}/d, all open tickets)`;
+}
+
+/** Pure: SVG line chart matching the hand-built briefing burndown style. */
+export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
   const width = 960;
   const height = 420;
   const padL = 64;
@@ -95,14 +117,7 @@ export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
 
   const netSign = data.net >= 0 ? '+' : '';
   const subtitle = `Open ${data.open0} → ${data.openN} (net ${netSign}${data.net} / ${data.windowDays}d) · Close ${data.closePerDay.toFixed(1)}/d · Mint ${data.mintPerDay.toFixed(1)}/d`;
-  // BL-910: the projection line, derived from the numbers on the subtitle
-  // above it. Scope named on the chart ("all open tickets") so it can never
-  // read as BL-228's milestone p50/p85 forecast; a not-shrinking backlog
-  // states the reason - never a date, an infinity, or a placeholder.
-  const projectionLine =
-    data.projection.kind === 'eta'
-      ? `Projected clear (all open tickets): ${data.projection.etaDateLabel} · ~${data.projection.etaDays}d at net burn ${data.projection.netBurnPerDay.toFixed(1)}/d`
-      : `${data.projection.reason} (net burn ${data.projection.netBurnPerDay.toFixed(1)}/d, all open tickets)`;
+  const projectionLine = formatProjectionLine(data.projection);
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
