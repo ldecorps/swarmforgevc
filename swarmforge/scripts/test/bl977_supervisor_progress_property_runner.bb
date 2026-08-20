@@ -45,6 +45,12 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (def fixture-root (str (fs/create-temp-dir {:prefix "bl977-prop-"})))
+;; BL-459 temp-dir trap (flagged by extension/test/tempDirTrapGuard.test.js):
+;; the end-of-run delete-tree below never runs when an exception (or a
+;; mid-run System/exit) leaves early - reclaim the root on EVERY exit path.
+;; Tolerant of the happy path having already deleted it.
+(-> (Runtime/getRuntime)
+    (.addShutdownHook (Thread. #(when (fs/exists? fixture-root) (fs/delete-tree fixture-root)))))
 (def fixture-daemon-dir (fs/path fixture-root ".swarmforge" "daemon"))
 (fs/create-dirs fixture-daemon-dir)
 (spit (str (fs/path fixture-daemon-dir "stop")) "")
