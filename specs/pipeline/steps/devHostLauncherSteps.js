@@ -23,9 +23,18 @@ const {
   isMarkerFresh,
   decideNextStep,
 } = require(path.join(__dirname, '..', '..', '..', 'extension', 'scripts', 'bounceLib'));
-const swarmEnsureSource = require('node:fs').readFileSync(
-  path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'swarm_ensure.bb'),
-  'utf8'
+const { lazy } = require('./lib/lazy');
+// BL-968: read LAZILY at step-execution time, memoized - never at module
+// load. The BL-761 gate materializes only specs/pipeline into its non-repo
+// temp tree, so a load-time read of live repo state outside it makes the
+// whole registry unloadable and the acceptance-contract check
+// warn-and-skip (the fourth offender - shadowed behind the three
+// resolveMainCheckout ones until the BL-968 standing guard surfaced it).
+const swarmEnsureSource = lazy(() =>
+  require('node:fs').readFileSync(
+    path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'swarm_ensure.bb'),
+    'utf8'
+  )
 );
 
 const EXT_DIR = '/repo/extension';
@@ -173,7 +182,7 @@ function registerSteps(registry) {
     // probe's own filterDevHostPids keeps recognizing a dev host launched
     // by the NEW CLI-based mechanism (same --extensionDevelopmentPath= flag
     // as before), so a repaired extension is detected as healthy.
-    ctx.bounceCmdWired = /extension-bounce-cmd[\s\S]*start-extension-dev\.sh/.test(swarmEnsureSource);
+    ctx.bounceCmdWired = /extension-bounce-cmd[\s\S]*start-extension-dev\.sh/.test(swarmEnsureSource());
     ctx.unhealthyBefore = filterDevHostPids(ctx.psNoDevHost, EXT_DIR).length === 0;
     const launchCommand = buildDevHostLaunchCommand(PLATFORM_DEFAULT_BINARY.linux, EXT_DIR, WORKSPACE_PATH);
     const psAfterRepair = `  9001 Electron ${launchCommand.args.join(' ')}\n`;
