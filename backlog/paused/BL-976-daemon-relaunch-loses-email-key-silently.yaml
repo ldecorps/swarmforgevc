@@ -122,3 +122,27 @@ notes: |
   invariant needs a coder-authored property test in the same parcel
   (BL-654) - invariant 2 (key value never in logs) is the natural
   property-test target over generated key strings.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20 06:52Z: not promoted. Capacity (active/ 7 of 7),
+  and the ticket carries NO `human_approval` field at all - absent reads as
+  not-approved, so it cannot promote regardless of the slot. Flagged for the
+  specifier: every other ticket this shift carries the field explicitly.
+
+  defect/high, priority 30. Not expedited ahead of BL-968/BL-970/BL-971 (all
+  p20, all approved and waiting) but ahead of BL-969 on severity ordering.
+
+  THIS DEFECT IS LIVE AND WILL RECUR ON A KNOWN SCHEDULE. The coordinator put
+  RESEND_API_KEY into the CURRENT daemon's process environment by hand at
+  06:46Z to unblock the operator's missing briefing (which then sent:
+  `briefing-sent 2026-08-20.md`). That fix lives only in pid 76358's env. The
+  supervisor's own environment does NOT carry the key (probed; the macOS
+  cross-process env probe is unreliable, but nothing in the repo sets it
+  either), so the next supervisor- or watchdog-driven relaunch spawns a
+  keyless generation and the briefing silently stops sending again - most
+  likely before tomorrow's 04:30Z window.
+
+  So the hand-fix is a ONE-GENERATION patch, not a resolution. Recorded here
+  because the failure is silent by construction: the only symptom is the
+  operator not receiving a briefing, exactly as happened today.
+
