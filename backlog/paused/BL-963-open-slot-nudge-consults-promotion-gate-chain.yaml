@@ -157,3 +157,7 @@ notes_coordinator_hold: >
 
   No orthogonality conflict, no ambulance freeze (status: inactive), no
   onboarding-contract hold.
+
+  APPROVAL LANDED 2026-08-20: human_approval is now `approved`, clearing blocker
+  (2) above. Blockers (1) depends_on BL-957 not in done/ and (3) capacity BOTH
+  still stand - BL-957 is at the hardener stage, still active. Not promotable.

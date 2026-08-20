@@ -11,7 +11,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { resolveWorkerPoolSize, resolveVitestForkCeiling } = require('../../../extension/out/tools/vitest-worker-memory-budget');
+const { resolveWorkerPoolSize, resolveVitestWorkerPool } = require('../../../extension/out/tools/vitest-worker-memory-budget');
 
 const EXTENSION_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const HOST_RAM_MB_FOR_3_FORKS = 8192; // floor(8192 * 0.5 / 1280) = 3, matching the real swarm host
@@ -20,7 +20,14 @@ const FEATURE = 'a vitest run under a live full-forge pack on macOS takes one fo
 
 const PACK_VALUES = { 'full-forge': 'full-forge', 'mono-router': 'mono-router', unset: undefined };
 const PLATFORM_VALUES = { macOS: 'darwin', Linux: 'linux' };
-const OVERRIDE_VALUES = { unset: undefined, '2': '2', '9': '9', 'not-a-number': 'not-a-number' };
+// BL-935 hardening: '0' and '-1' cover the ZERO and NEGATIVE halves of the
+// ticket's own precedence rule 1 ("a non-positive or non-numeric value is
+// IGNORED, not floored"). The table previously pinned only the non-numeric
+// half, so a mutant widening the override guard to `n >= 0` passed all nine
+// scenarios. They are tabled under an UNSET pack deliberately: under
+// full-forge/macOS the pack rule's own 1 coincides with the pool floor's 1,
+// so that combination cannot tell an ignored override from an accepted zero.
+const OVERRIDE_VALUES = { unset: undefined, '2': '2', '9': '9', '0': '0', '-1': '-1', 'not-a-number': 'not-a-number' };
 
 function knownValue(map, token, label) {
   if (!Object.prototype.hasOwnProperty.call(map, token)) {
@@ -77,8 +84,20 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the worker pool size is resolved$/,
     (ctx) => {
-      const ceiling = resolveVitestForkCeiling({ pack: ctx.pack, platform: ctx.platform, override: ctx.override });
-      ctx.forks = resolveWorkerPoolSize(ctx.hostRamMB, ceiling);
+      // BL-935 hardening: drives resolveVitestWorkerPool - the ONE route both
+      // vitest.config.mjs and vitest.properties.config.mjs actually call -
+      // rather than re-composing resolveVitestForkCeiling with
+      // resolveWorkerPoolSize here. A hand-composed pair inside the step is a
+      // second implementation of the decision, so a miswire INSIDE the real
+      // route (swapped arguments, a dropped ceiling) left all eight Examples
+      // rows green; the architect closed this same gap on the property side
+      // and it stayed open on the acceptance side.
+      ctx.forks = resolveVitestWorkerPool({
+        pack: ctx.pack,
+        platform: ctx.platform,
+        override: ctx.override,
+        hostRamMB: ctx.hostRamMB,
+      });
     },
     FEATURE
   );
@@ -110,9 +129,28 @@ function registerSteps(registry) {
   );
 
   registry.defineScoped(
-    /^both report the same fork count$/,
-    (ctx) => {
-      assert.equal(ctx.unitForks, ctx.propertyForks);
+    /^both report exactly (\d+) fork$/,
+    (ctx, forks) => {
+      // BL-935 hardening (architect's pass-3 observation): asserting only that
+      // the two lanes AGREE lost its bite once the cleaner collapsed them onto
+      // one shared composition - agreement became structural, so both lanes
+      // silently dropping the ceiling and reporting the memory-derived 3 still
+      // passed. Pin the expected VALUE as well, so this scenario fails when the
+      // ceiling stops being applied in the real configs even though the lanes
+      // still agree with each other. Equality is asserted first, so a genuine
+      // lane DIVERGENCE is still reported as a divergence rather than as a
+      // wrong number.
+      const expected = Number(forks);
+      assert.equal(
+        ctx.unitForks,
+        ctx.propertyForks,
+        `unit lane resolved ${ctx.unitForks} forks but the property lane resolved ${ctx.propertyForks}`
+      );
+      assert.equal(
+        ctx.unitForks,
+        expected,
+        `both lanes agreed on ${ctx.unitForks} forks, but a full-forge pack on macOS must resolve to ${expected}`
+      );
     },
     FEATURE
   );

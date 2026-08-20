@@ -44,10 +44,12 @@ Feature: a vitest run under a live full-forge pack on macOS takes one fork, not 
       | full-forge  | macOS    | 9           | 3     |
       | full-forge  | macOS    | not-a-number| 1     |
       | unset       | Linux    | 9           | 3     |
+      | unset       | macOS    | 0           | 3     |
+      | unset       | macOS    | -1          | 3     |
 
   # BL-935 vitest-fork-pool-02
-  Scenario: the unit lane and the property lane size their pools identically
+  Scenario: the unit lane and the property lane both size their pools to the capped one fork
     Given the pack is full-forge
     And the platform is macOS
     When the unit config and the property config each resolve their worker pool
-    Then both report the same fork count
+    Then both report exactly 1 fork

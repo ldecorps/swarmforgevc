@@ -160,3 +160,18 @@ notes_coordinator_hold: >
 
   No orthogonality conflict, no ambulance freeze (status: inactive), no
   onboarding-contract hold, depends_on empty.
+
+  APPROVAL LANDED 2026-08-20: human_approval is now `approved`, so blocker (1)
+  above is CLEARED and stale. The ONLY remaining blocker is capacity (active 7 =
+  cap 7). BL-962 is defect/high and the top expedited candidate under Article
+  3.2.4, so it takes the NEXT open slot ahead of every non-expedited ticket. QA
+  currently holds 2 queued parcels; a close there frees the slot.
+
+  RANK UPDATE 2026-08-20: BL-962 is no longer the only expedited candidate.
+  BL-967 (defect/high, approved, handoffd stall fix) is also expedited and tied
+  at priority 20, and the coordinator ranked **BL-967 ahead of BL-962** on blast
+  radius - a handoffd stall halts the whole swarm, whereas this ticket's
+  false-positive CRITs cost coordinator turns only. BL-962 therefore takes the
+  SECOND open slot, not the first. Supersedes the "takes the NEXT open slot"
+  wording above. See BL-967's own hold note for the tie-break rationale.
+
