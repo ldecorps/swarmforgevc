@@ -67,7 +67,10 @@ if [[ "\$1 \$2 \$3" == "-S "*"has-session" ]]; then
   exit 0
 fi
 if [[ "\$1 \$2 \$3" == "-S "*"capture-pane" ]]; then
-  echo "  ⏵⏵ working… (esc to interrupt)"
+  # BL-970: busy is the LIVE STATUS FRAME shape (glyph + verb + ellipsis +
+  # digit-led elapsed), not a bare footer marker - this fixture renders a
+  # real mid-turn frame so the skip path it exercises still fires.
+  echo "✳ Working… (2m 10s · ↓ 5.2k tokens)"
   exit 0
 fi
 exit 0
