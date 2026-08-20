@@ -12,12 +12,19 @@
 ;; same reason provider_respawn_env_lib.bb was extracted (see swarm_ensure.bb's
 ;; own provider-respawn-env-args docstring). This lib is the operator-runtime
 ;; analog: the ONE place the liveness/stop decision lives, load-file'd by
-;; both operator_runtime_supervisor.bb and this ticket's test/acceptance
-;; runners. swarm_ensure.bb's own operator-healthy? is intentionally left
-;; untouched (test_swarm_ensure.sh's fixture fakes a healthy operator by
-;; writing the TEST'S OWN pid to runtime.pid, whose cmdline is never
-;; operator_runtime.bb - strengthening that shared check would false-DOWN an
-;; established, passing fixture for a concern outside this ticket's scope).
+;; operator_runtime_supervisor.bb, swarm_ensure.bb, swarm_status.bb, and this
+;; ticket's own test/acceptance runners.
+;;
+;; BL-993 architect bounce (backlog/evidence/BL-993-bounce-20260820.md): the
+;; first version of this ticket left swarm_ensure.bb's own operator-healthy?
+;; and swarm_status.bb's own operator-runtime row on a bare pid-alive? check,
+;; reasoning that strengthening them was outside this ticket's scope. That
+;; makes THIS lib's healthy? a SECOND, stricter liveness check that can
+;; disagree with `./swarm status`/`./swarm ensure` in exactly the pid-reuse
+;; case the ticket's own required scenario needs correct - a firm constraint
+;; violation. Both call sites now delegate here instead (swarm_ensure.bb:282,
+;; swarm_status.bb's operator-runtime row) - this IS the one true check, not
+;; a parallel one.
 ;;
 ;; A pidfile is not proof of identity: a pidfile naming a LIVE but UNRELATED
 ;; process (pid reuse after the real runtime died) must read as DOWN, not
@@ -84,9 +91,12 @@
   (runtime-alive? (pid-alive-os? pid) (when pid (process-table-lib/cmdline! pid))))
 
 (defn healthy?
-  "The one true operator-runtime liveness check for the watch (BL-993):
-   reads the pidfile, checks OS liveness, and - unlike a bare kill-0 -
-   verifies the live process's own command line before calling it healthy."
+  "The one true operator-runtime liveness check (BL-993, strengthened after
+   the architect bounce to be THE shared check, not a second one): reads
+   the pidfile, checks OS liveness, and - unlike a bare kill-0 - verifies
+   the live process's own command line before calling it healthy. Called
+   from the always-on watch, swarm_ensure.bb's operator-healthy?, and
+   swarm_status.bb's operator-runtime row alike."
   [project-root]
   (pid-alive? (read-pid project-root)))
 
