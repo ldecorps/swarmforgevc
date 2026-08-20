@@ -104,3 +104,18 @@ produces exactly one new false CRIT. BL-959 landed, and this appeared. The model
 predictive, not merely descriptive — five for five, each traceable to a QA landing.
 Future instances need no investigation beyond confirming parent2 is the QA commit for a
 recently closed ticket. BL-962 (the fix) is active at coder.
+
+### Recurrence 6 — `8de59fbce`, authored by the COORDINATOR (2026-08-20 ~04:40Z)
+
+False positive, same adjudication: `vs_p2 = 0` on both flagged files; parent2 is
+`17971f059` *"BL-571: QA re-fix pass - D1 closed, pre_qa_gate OK... By QA."*
+
+Notable because this merge was made by the **coordinator**, not the operator — a
+`git merge origin/main` required to clear the STALE_REFERENCE_ELABORATION guard, which
+refuses to dispatch any turn while local `main` trails `origin/main`.
+
+That closes a loop worth recording: **the alert does not depend on who merges, only that
+someone reconciles.** And the reference-freshness guard actively COMPELS the coordinator
+to reconcile in order to work at all. So the swarm's own tooling now generates the
+condition that this sweep misreports as an Article 4.2 breach. Six for six, every one
+traceable to a QA landing arriving via a reconciliation merge.
