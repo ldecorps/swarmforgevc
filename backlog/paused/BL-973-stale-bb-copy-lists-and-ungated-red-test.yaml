@@ -1,0 +1,140 @@
+id: BL-973
+title: "4 bb fixture copy-lists stale since BL-911 (test_lean_ledger_bb_wiring.sh red 3 days, ungated): derive/gate the lists from the real load-file closure and close the unrun-test gap"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 30
+direction: pipeline-note
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-973-copy-lists-closure-derived-and-suite-completeness.feature
+
+invariants:
+  - "A fixture copy-list of a bb script's dependencies is derived from, or gate-checked against, that script's real transitive load-file closure - never hand-maintained without a closure guard (a new load-file upstream must fail loudly here, not silently strand the fixture)."
+  - "Every test file under swarmforge/scripts/test/ is run by a standing gate or carries an explicit dated exclusion with a reason - a red test cannot sit unrun and unnoticed."
+
+description: >
+  Severity rationale: medium - test-infrastructure rot, loud once run,
+  no live swarm behavior degraded. What keeps it above low: the rot was
+  invisible for three days because the red test is run by no standing
+  gate, and the same staleness class will recur on the NEXT load-file
+  addition (BL-967, in flight, adds daemon_cycle_guard_lib.bb to the
+  same closure) unless the lists become closure-derived.
+
+  The defect, from the architect's verified sweep during BL-967 review
+  pass 2 (evidence backlog/evidence/BL-967-architect-review-pass2-
+  20260820.md, commit 2fc12e00a; specifier re-reproduced the red test
+  at mint, exit 1 failing to load prompt_engine_lib.bb from
+  handoff_lib.bb line 37): four hand-maintained copy-lists of
+  handoff_lib.bb's dependencies lack prompt_engine_lib.bb, which
+  handoff_lib.bb has load-filed since BL-911 (2026-08-17) -
+
+    - specs/pipeline/steps/bl814LiveRoleHeldLoudDegradeSteps.js
+    - specs/pipeline/steps/bl487BoardFreshnessWithoutCoordinatorSyncSteps.js
+    - swarmforge/scripts/test/lib/operator_runtime_sandbox.sh
+    - swarmforge/scripts/test/test_lean_ledger_bb_wiring.sh
+
+  All four also lack daemon_cycle_guard_lib.bb, which BL-967 (active)
+  adds to the same closure - so a hand-patch that names today's two
+  missing files goes stale again the day BL-967 merges. The architect
+  verified the defect pre-dates BL-967 against a pre-parcel base and
+  routed it here by note per Article 4.4 rather than holding BL-967
+  for a defect it did not cause.
+
+  Fix wanted, two halves of one incident:
+
+  (1) The four lists follow the closure. Use the pattern BL-944
+  already built for the guarded lists: compute handoff_lib.bb's
+  transitive load-file closure via master_checkout_drift_lib's BFS and
+  either derive the fixture's copy set from it or assert the
+  hand-list matches it (the two BL-944-guarded lists and BL-967's D2
+  gate are working precedents; the cleaner's BL-967-parcel patches to
+  readLiveRoleHeldTicketsCli.test.js and operatorRuntimeBbFixtureFiles.js
+  show the per-list shape). test_lean_ledger_bb_wiring.sh runs green.
+
+  (2) No test sits unrun. Today no standing entry point runs
+  swarmforge/scripts/test/'s shell tests as a suite, which is exactly
+  why three red days went unnoticed. Deliver a standing
+  suite-completeness check: every test_*.sh and *_test_runner.bb under
+  swarmforge/scripts/test/ is either invoked by the standing suite
+  entry point or listed in an exclusion manifest with a dated reason
+  (slow/manual/live-only are legitimate reasons - the point is an
+  explicit, visible decision, not forcing every test into every run).
+
+  How (direction, not mandate): half 2 can be an inventory gate (a
+  fast check comparing the tree against the runner's list plus the
+  manifest) rather than a run-everything suite - some tests here are
+  legitimately slow (one exceeded 2 minutes under live load at mint
+  time) and belong in an exclusion-with-reason lane, not on every
+  parcel's critical path.
+
+constraints: >
+  Out of scope / firm lines:
+
+  - Do not hand-patch the four lists with today's missing filenames
+    and stop there - the compute-the-closure discipline is the
+    deliverable (a bare hand-patch re-rots on BL-967's merge; the
+    invariant fails a list with no closure guard).
+  - BL-967's parcel content (daemon cycle guard, its D2 closure gate,
+    the two lists the cleaner already patched there) is not this
+    ticket's to touch.
+  - Do not convert slow/live tests into always-run suite members to
+    satisfy half 2 - an explicit exclusion with reason is the
+    designed outcome for those.
+  - handoff_lib.bb's own load-file list is not restructured here.
+
+qa_e2e_procedure: >
+  1. Acceptance scenario 01: test_lean_ledger_bb_wiring.sh exits 0 on
+     the parcel (run unpiped or with the exit code captured from the
+     test itself - a piped invocation reports the tail's exit).
+  2. Scenario 02 rows: each of the four lists checked against the
+     closure computed from the PARCEL's handoff_lib.bb - if BL-967 has
+     merged by then, daemon_cycle_guard_lib.bb must be present in each
+     list/derivation too, with no extra hand-edit having been needed.
+  3. Scenario 03: run the suite-completeness check; then delete one
+     test file's entry from the runner/manifest in a scratch copy and
+     confirm the check goes red (non-vacuity).
+  4. Negative regression: add a scratch load-file to a copy of
+     handoff_lib.bb and confirm the closure guard for at least one of
+     the four lists fails loudly.
+  5. bb unit suite green; record the Babashka degraded-fallback note
+     (no mutation/CRAP/DRY wired, BL-472) in the hardening evidence.
+
+notes: >
+  Source: architect note handoff 00_20260820T043136Z_000279 ("4 bb
+  copy-lists stale since BL-911; test_lean_ledger_bb_wiring.sh red,
+  ungated"), sent to specifier + coordinator per Article 4.4 during
+  BL-967 review pass 2. Full enumeration and the pre-BL-967
+  reproduction are in the architect's evidence (commit 2fc12e00a);
+  the architect's own words: "The durable fix is the one BL-944
+  already built for the guarded list: derive the copy list from the
+  real closure instead of hand-maintaining it. Two lists now have
+  that guard; four do not."
+
+  Specifier probe at mint: red test reproduced (exit 1, dies loading
+  prompt_engine_lib.bb at handoff_lib.bb:37); no standing entry point
+  found that runs the swarmforge/scripts/test/ shell tests as a
+  suite; the lesson ledger already carries both failure classes
+  (hand-maintained mirror lists patched one name at a time; a test
+  dir run by no standing gate).
+
+  Sequencing note for the coordinator: prefer landing this AFTER
+  BL-967 merges (closure then already contains
+  daemon_cycle_guard_lib.bb), or rely on derivation absorbing it -
+  hand-verification at QA covers either order via qa_e2e step 2.
+  Orthogonality: touches the four listed fixture files + a new
+  inventory check; overlaps BL-967's worktree only at
+  test_lean_ledger_bb_wiring.sh, which BL-967 deliberately does NOT
+  patch (routed here instead) - no live conflict expected.
+
+approval_context: >
+  One call to say the word on: half 2's shape - an inventory gate
+  (every test invoked-or-excluded-with-reason) rather than a
+  run-everything suite, because several bb shell tests are
+  legitimately slow or live-touching. If you want an actual all-tests
+  runner lane instead (accepting its runtime), say so. Severity
+  medium: infra rot, loud once run, nothing live degraded.
