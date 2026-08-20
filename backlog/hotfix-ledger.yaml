@@ -79,7 +79,7 @@
 - commit: ece61cbe63
   subject: "Land Cursor-bridge gone-agent session reset."
   detected_at: 2026-08-17
-  state: stamp-open
+  state: awaiting-human
   stamp_ticket: BL-915
   human_decision: null
   decided_at: null
