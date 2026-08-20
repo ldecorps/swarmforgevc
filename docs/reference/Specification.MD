@@ -1,6 +1,52 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
+**Last Updated:** August 20, 2026 (BL-967: `handoffd`'s poll cycle went
+silent mid-sweep past the freshness threshold and the watchdog killed and
+restarted the daemon every ~6 minutes — 30+ times from 20:38Z on 2026-08-19 —
+costing handoff latency and chase freshness and spamming the operator topic.
+The daemon process stayed alive; only its cycle stalled, and because every
+sweep after the chase loop logs ONLY on events, a healthy-but-later sweep was
+indistinguishable in the log from a stalled one, so each recurrence demanded a
+fresh live hunt. Three parts land together, and the two structural ones are
+deliberately the load-bearing half. (1) Bounded waits: every subprocess wait on
+the cycle path — all 48 `process/sh` sites and the shared `tmux!` helper in
+`handoffd.bb`, plus the in-cycle calls in `briefing_email_lib.bb` and
+`control_plane_lib.bb` — now routes through one chokepoint,
+`daemon_cycle_guard_lib.bb`'s `sh!`, whose wait defaults to 60s
+(`SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` seam) and on a hit destroys the child's
+process tree, logs `subprocess-timeout sweep=<name> bound-ms=<n> cmd=<cmd>`,
+and returns an ordinary `{:exit 124}` result mirroring `timeout(1)` — survived,
+never thrown, so callers' existing exit checks treat it as a normal failure and
+a wedged tmux/git/child costs one bounded wait rather than the heartbeat.
+(2) Self-localizing boundaries: every sweep in the heavy bundle runs under
+`run-sweep!`, which emits `sweep-boundary sweep=<name> ms=<n>` even when the
+sweep took no action, so "last log line" always names the guilty sweep; the 1s
+idle ticks emit none, keeping the volume bounded. (3) The real wait, identified
+from three converging evidence lines rather than a caught-in-the-act timeout
+(it needs a genuinely wedged tmux server under load and did not reproduce under
+a fixture): `handoff_lib.bb`'s `session-exists?` and six sibling call sites
+still ran on `clojure.java.shell/sh`, the BL-057/BL-061 stream-read-shim family
+that blocks in `read()` forever on a wedged child — the very reason `handoffd`
+itself moved to `babashka.process` long ago, on a library that never followed;
+the chase sweep's tail calls it once per role, unbounded and unlogged, exactly
+between the last logged chase action and the next sweep that logs anything. All
+seven sites are converted and the `clojure.java.shell` require is gone. Also
+closed under the same engineering rule: `with-pid-lock`'s previously unbounded
+50ms spin now fails loudly after 30s naming the stale lock dir. The caveat is
+stated rather than papered over — if some OTHER wait was the real culprit it is
+now equally bounded and the next occurrence names it, which is what makes the
+identification self-correcting. Deliberately NOT done: raising the 300s
+handoffd threshold as the fix (the operator's directive forbids it; BL-789
+documented Mac cycles near 120-232s as slow-but-healthy, and that posture is
+preserved unchanged), touching the freshness watchdog itself (BL-675, working
+as designed), or redesigning any sweep's CONTENT. New operator-facing surface:
+the two log lines above and the wait-bound env seam. Babashka has no
+mutation/CRAP/DRY tooling wired here, so this is gated by the daemon
+wiring/unit suites plus the `daemon_cycle_guard_lib` runners — the degraded
+fallback, recorded as such. Evidence:
+`backlog/evidence/BL-967-identified-wait-20260820.md`; runbook:
+[`docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`](../how-to/BL-967-handoffd-cycle-stall-diagnosis.md).);
+Previously August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
 the five middle pipeline roles a `mono-rotate` launch deliberately leaves
 dormant. The launcher's `is_sequential_dormant` treats `rotation sequential`
 and `rotation router` as the same single-resident topology; ensure's
@@ -56,23 +102,6 @@ the degraded fallback, recorded as such. Evidence:
 `backlog/evidence/BL-959-aps-equivalence-report.md`; decision log entry:
 [`docs/upstream-deviations.md`](../upstream-deviations.md) 2026-08-20; runbook:
 [`docs/how-to/BL-959-aps-candidate-toolchain-equivalence-run.md`](../how-to/BL-959-aps-candidate-toolchain-equivalence-run.md).);
-Previously August 20, 2026 (BL-571: `./swarm ensure` no longer respawns
-the five middle pipeline roles a `mono-rotate` launch deliberately leaves
-dormant. The launcher's `is_sequential_dormant` treats `rotation sequential`
-and `rotation router` as the same single-resident topology; ensure's
-`rotation-router-mode?` matched `router` alone, so on the one shipped pack
-declaring `config rotation sequential` it read five deliberately dormant roles
-as broken panes and repaired them — reporting "healed" rather than
-"over-provisioned", and starting five extra agent processes on precisely the
-memory-constrained host that pack exists to serve. `mono_router_lib.bb` gains
-`single-resident-rotation?`/`single-resident-rotation-from-identity?`,
-recognising the topology by every value the launcher accepts, and ensure
-consumes those; the router-ONLY predicates keep their exact meaning for
-`ready_for_next_*`'s ROTATE_HOME backstop, which this deliberately does not
-widen. A parity gate now derives the launcher's accepted set from
-`swarmforge.sh` itself and asserts set equality, so the bash↔Babashka mirror
-cannot drift silently (BL-897). No human-facing command or setting changes;
-the swarm running today declares `rotation router` and is unaffected.);
 Previously August 20, 2026 (BL-910: the morning briefing's backlog
 burndown gains a projected ETA beside the counts it is derived from. Net
 burn is the close rate minus the mint rate; when strictly positive the open
@@ -2978,7 +3007,7 @@ Both `promote_and_route_next.sh` — its auto-pick path (`select`) and its by-na
 
 A fully compliant ticket (approved, correctly laned, already correctly assigned) promotes and routes exactly as before this change — the gate layer only ever refuses or leaves a decision unchanged, it never alters a compliant promotion's outcome.
 
-**The promotion path never asked whether the depth cap is unlimited: a configured `-1` silently resolved to `5` (BL-853).** With the pack conf declaring `active_backlog_max_depth -1` and five tickets already active, every promotion through the sanctioned path refused with "active count 5 >= cap 5 — no open slot" — a coincidental collision (the resolved fallback happened to equal the active count), not an intentional cap, and the one time a human caught it the workaround was to un-promote in-flight work by hand to free a slot for an expedited defect. Four faults in one resolution chain, all fixed together: (1) `promote_and_route_next.sh`'s cap validation was unsigned-only (`^[0-9]+$`), so the documented `-1` sentinel was rejected as malformed before it could even reach the fallback; (2) the fallback called `backlog_depth_cli.bb` with the project **root**, but that CLI documents (and `swarmforge.sh` already correctly passes) a **config file path** — `slurp` on a directory threw, and the library silently degraded to its own `default-max-depth`; (3) if both readers failed, the shell declared its own second, tighter default (`CAP=5`) rather than deferring to the library's; (4) even a correctly-resolved `-1` still refused at any active count, because `promotion_gates_lib.bb`'s `depth-refusal` was a bare `(>= active-count max-depth)` with no no-limit branch. The fix: `promote_and_route_next.sh` now accepts a signed integer at every step and declares no depth default of its own (a new `backlog_depth_conf_path_cli.bb` resolves the correct conf path for the fallback, replacing the root-as-conf-path bug), and `depth-refusal` consults the shared `backlog-depth-lib/no-limit?` predicate before comparing — the same sentinel `swarm_handoff.bb`'s `depth-exceeded?` warning and `ready_for_next.bb`'s auto-promote gate already honoured correctly. A finite cap (including the `1`/`0` values Article 3.5's circuit breaker throttles to) refuses exactly as before — only the no-limit sentinel's own path changed. Landing this alone moves the blocker rather than removing it: with the depth gate no longer refusing, the separate *orthogonality* gate (two active tickets sharing an `epic:`) becomes the sole blocker on a large share of paused tickets — a distinct fix, [BL-854](../../backlog/active/BL-854-orthogonality-advises-instead-of-blocking-on-the-epic-tag.yaml), below.
+**The promotion path never asked whether the depth cap is unlimited: a configured `-1` silently resolved to `5` (BL-853).** With the pack conf declaring `active_backlog_max_depth -1` and five tickets already active, every promotion through the sanctioned path refused with "active count 5 >= cap 5 — no open slot" — a coincidental collision (the resolved fallback happened to equal the active count), not an intentional cap, and the one time a human caught it the workaround was to un-promote in-flight work by hand to free a slot for an expedited defect. Four faults in one resolution chain, all fixed together: (1) `promote_and_route_next.sh`'s cap validation was unsigned-only (`^[0-9]+$`), so the documented `-1` sentinel was rejected as malformed before it could even reach the fallback; (2) the fallback called `backlog_depth_cli.bb` with the project **root**, but that CLI documents (and `swarmforge.sh` already correctly passes) a **config file path** — `slurp` on a directory threw, and the library silently degraded to its own `default-max-depth`; (3) if both readers failed, the shell declared its own second, tighter default (`CAP=5`) rather than deferring to the library's; (4) even a correctly-resolved `-1` still refused at any active count, because `promotion_gates_lib.bb`'s `depth-refusal` was a bare `(>= active-count max-depth)` with no no-limit branch. The fix: `promote_and_route_next.sh` now accepts a signed integer at every step and declares no depth default of its own (a new `backlog_depth_conf_path_cli.bb` resolves the correct conf path for the fallback, replacing the root-as-conf-path bug), and `depth-refusal` consults the shared `backlog-depth-lib/no-limit?` predicate before comparing — the same sentinel `swarm_handoff.bb`'s `depth-exceeded?` warning and `ready_for_next.bb`'s auto-promote gate already honoured correctly. A finite cap (including the `1`/`0` values Article 3.5's circuit breaker throttles to) refuses exactly as before — only the no-limit sentinel's own path changed. Landing this alone moves the blocker rather than removing it: with the depth gate no longer refusing, the separate *orthogonality* gate (two active tickets sharing an `epic:`) becomes the sole blocker on a large share of paused tickets — a distinct fix, [BL-854](../../backlog/done/M8/BL-854-orthogonality-advises-instead-of-blocking-on-the-epic-tag.yaml), below.
 
 **The orthogonality gate advises on epic overlap instead of refusing on it (BL-854).** `epic:` is the gate's only scope proxy — no ticket field declares real file/module scope — and the buckets it groups by are large: measured against `backlog/paused/` (204 tickets), 76 share `epic: swarm-reliability` alone, so a single active defect in that epic refused 112 of the 204 (55%) on this gate. The coordinator was already overriding it by hand every time, comparing the tickets' actual declared file paths and finding zero real overlap (`3fbe05e9`) — the automated layer could raise the question but had no data to answer it. `promotion_gates_lib.bb`'s `orthogonality-refusal` is now `orthogonality-advisory`: it returns alongside `{:ok true}` rather than in place of it, so `evaluate`'s stdout contract (`ALLOW` / `REFUSE|<gate>|<reason>`, same exit codes) is byte-identical for every existing caller. When a paused candidate shares an epic with one or more active tickets, `promotion_gates_cli.bb` additionally writes `ADVISORY|orthogonality|epic <epic> is also active on <BL-id>[, <BL-id>...]` to **stderr**, naming every overlapping active ticket (not just the epic) so the coordinator can check real file overlap without re-deriving which ticket to compare against. `select` mode's Article 3.2.4 ranking is unchanged by construction — an advisory drops nothing from the candidate set. `promote_and_route_next.sh` prints the winning candidate's advisory once, for the ticket it actually promotes; a non-blocking verdict nobody sees would read as a clean promotion and bury the signal it exists to raise. The file-overlap judgement itself stays exactly where the constitution's Concurrent Work Orthogonality rule already puts it — with the coordinator; this fix only stops the automated proxy from refusing on an answer it never had. `human_approval`, the depth cap, the hold marker, and Article 3.2.4 ranking are all unchanged (BL-854's own invariants). Out of scope: a declared file-scope ticket field to replace the epic proxy entirely — rejected for now because no ticket carries one today and a wrong backfilled scope would reproduce this same false positive less visibly; the advisory is where that field would hang if it is built later.
 

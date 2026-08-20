@@ -140,3 +140,25 @@ approval_context: >
   with its parcel. If you want content-level evidence in v1 despite
   the cost, say so. Severity medium (not expedited): loud
   over-blocking with a workaround, no silenced signal.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20 04:50Z: not promoted. human_approval: pending,
+  and capacity (active/ 7 of 7). type defect / severity MEDIUM, so NOT
+  expedited (Article 3.2.4); queues on priority 30, behind the four
+  approval-blocked expedited defects (BL-968, BL-970, BL-971 at p20; BL-969
+  at p30).
+
+  CONSTITUTION SIDE ALREADY LANDED: cdb0a1d36 accepted the QA rule_proposal
+  this ticket implements (a gate blocks on dropped-work EVIDENCE - touched
+  paths / diff content - never on a ticket id merely named in a commit
+  subject; 4 QA blocks in one day across BL-935/958/910/959). So the RULE is
+  binding now while its ENFORCEMENT is unbuilt; until this ticket lands, the
+  pre-QA gate can still block on a subject-line mention.
+
+  Coordinator raised a concern on that amendment before it landed - the inline
+  edit removed two existing binding clauses (429 `retry_after`, JSON-flag
+  degrade). Answered and closed: cdb0a1d36's own message records them as
+  "relocated to reference, already covered there", with the boot prefix gate at
+  43997/44000. Deliberate headroom management, not a dropped rule. Recorded so
+  the question is not re-raised.
+

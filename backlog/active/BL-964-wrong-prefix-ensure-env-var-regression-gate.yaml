@@ -108,3 +108,5 @@ notes_coordinator_hold: >
   7 = cap 7) remains the blocker. Still NOT expedited (type: chore, priority 60),
   so it queues behind BL-962 and BL-963. The timing flag above is UNCHANGED and
   still matters: the branch-level fix cannot wait for this ticket.
+
+assigned_to: coder

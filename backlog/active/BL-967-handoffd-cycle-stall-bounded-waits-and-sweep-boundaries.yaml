@@ -187,4 +187,16 @@ notes_coordinator_hold: >
   NOTE: this ticket's defect is LIVE IN PRODUCTION RIGHT NOW while it sits blocked on
   capacity (active 7 = cap 7).
 
+abandoned_commits: ["5c8b0835f8"]
+
+abandoned_commits_rationale: >
+  NOT dropped BL-967 work. 5c8b0835f8 is a BL-966 commit whose subject merely
+  NAMES BL-967 (BL-966 consumes this parcel's daemon-cycle-guard chokepoint),
+  so the pre-QA gate's subject-token candidacy filter flagged it. It touches no
+  file in this parcel except the append-only step registry every ticket touches.
+  Declared here only to suppress a known-false candidate, per the engineering
+  rule "a gate blocks on dropped-work EVIDENCE, never on a ticket id merely
+  named in a commit subject" (BL-972, enforcement unbuilt; rule binding).
+  Evidence: backlog/evidence/BL-967-pre-qa-gate-false-positive-20260820.md.
+
 assigned_to: coder
