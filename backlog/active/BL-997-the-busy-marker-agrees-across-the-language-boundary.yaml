@@ -193,3 +193,5 @@ approval_context: >
   approved-pending-close). BL-997 is now the top promotion candidate for the
   next open slot, ranked ahead of BL-996 (which additionally depends_on
   BL-970, still unlanded). Will promote+route the instant a slot frees.
+
+assigned_to: coder

@@ -161,3 +161,5 @@ notes_coordinator_hold: >
   because the failure is silent by construction: the only symptom is the
   operator not receiving a briefing, exactly as happened today.
 
+
+assigned_to: coder
