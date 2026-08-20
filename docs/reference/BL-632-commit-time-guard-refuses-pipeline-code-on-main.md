@@ -189,3 +189,8 @@ in series, not one claimed-perfect one.
   [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md).
 - **BL-925:** Adds the merge-import exemption documented above and
   extracts `is_qa_ancestor.sh` as the one shared QA-ancestry definition.
+- **BL-962:** Carries that same merge-import exemption into BL-631's
+  history sweep, which had it only at commit time — `babysitter_check.bb`'s
+  gatherer now adjudicates a merge's offending paths against its
+  non-first parents (QA-approved AND byte-identical clears; anything else
+  still reports), using this guard's own `is_qa_ancestor.sh`.
