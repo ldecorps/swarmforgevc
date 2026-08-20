@@ -97,6 +97,36 @@ notes: |
   red while this waits. If you would rather review it first, set it to
   `pending` and it will hold.
 
+  **Corroborated independently 2026-08-20 18:50, and the cost is worse than
+  "main's lane is red".** The hardener hit this while hardening BL-995 (note
+  `20260820T184403Z_000292`, evidence
+  `backlog/evidence/hardener-found-defect-socket-fixture-root-bl982-983-20260820.md`,
+  written in the hardener worktree and committed with that parcel). They ran
+  the guard not out of curiosity but because a standing rule obliges it: any
+  parcel touching `specs/pipeline/steps/` must run every
+  `test/*Guard*.test.js` before forwarding, and BL-995 added a step file.
+
+  So this defect does not sit quietly on `main` - it TAXES EVERY UNRELATED
+  PARCEL that touches that tree. Each one inherits a red guard, has to
+  diagnose it, has to establish it is pre-existing rather than its own, and
+  has to write that up before forwarding. The hardener did exactly that for
+  BL-995 and confirmed `bl995DetachedJobSteps.js` is itself clean. That is
+  the argument for promoting this ahead of its priority band: the cost
+  recurs per parcel, not once. (It also means the process question below has
+  now been answered in the affirmative at least once - the standing rule DOES
+  reach this guard when followed, which narrows that question to why BL-982's
+  and BL-983's own passes did not.)
+
+  Verified by the specifier before folding this in, rather than relayed:
+  `npx vitest run test/socketFixtureShortRootGuard.test.js` on `main` is 1
+  failed / 15 passed, and the violation list is EXACTLY the two files already
+  scoped - no third violator has joined since this ticket was minted, so the
+  scope is unchanged. Line detail from the hardener's pass, to save the
+  implementer a search: `bl982SecondSeatSteps.js:54` and `:103` are the two
+  `mkdtempSync(path.join(os.tmpdir(), ...))` roots and `:249` writes
+  `.swarmforge/tmux-socket` beneath one; `bl983StageQueueSteps.js` has the
+  same shape.
+
   **The process question this ticket does NOT answer.** Both parcels crossed
   coder, cleaner, architect, hardener, documenter and QA while a standing
   gate in the default test lane named them by path. Whether the lane was not
