@@ -88,6 +88,34 @@ function writeConf(ctx) {
   }
 }
 
+// BL-961 hardening: the acceptance run inherits the pane's environment, and
+// every live role shell exports SWARMFORGE_PACK while an operator shell can
+// export SWARMFORGE_CONFIG. swarmforge.sh READS both - it resolves
+// CONFIG_FILE="${SWARMFORGE_CONFIG:-.../swarmforge.conf}" - so passing
+// process.env straight through makes the Outline's `swarmforge.conf` row
+// assert against the ambient configuration rather than its own fixture: a
+// false RED when that path's basename differs, and a silent false GREEN
+// whenever it is itself named swarmforge.conf, which is the default's own
+// name. Strip every SWARMFORGE_* the script under test reads. Enumerated
+// from `grep -o 'SWARMFORGE_[A-Z_]*' swarmforge/scripts/swarmforge.sh`;
+// re-run that grep when swarmforge.sh grows a new one. The same list is
+// applied by BL-961's shell test and property runner.
+const SWARMFORGE_VARS_READ_BY_LAUNCHER = [
+  'SWARMFORGE_ALLOW_FULL_PACK', 'SWARMFORGE_CONFIG', 'SWARMFORGE_DAEMON_START_CALLER',
+  'SWARMFORGE_GEMINI_API_KEY', 'SWARMFORGE_MAILBOX_ONLY', 'SWARMFORGE_OPENROUTER_ROLES',
+  'SWARMFORGE_PACK', 'SWARMFORGE_REMOTE_CONTROL', 'SWARMFORGE_ROLE',
+  'SWARMFORGE_ROLE_WORKTREE', 'SWARMFORGE_SKIP_DAEMON', 'SWARMFORGE_SKIP_FRONT_DESK',
+  'SWARMFORGE_SKIP_OPERATOR', 'SWARMFORGE_SKIP_SHELL_RUN_RECORD', 'SWARMFORGE_TERMINAL',
+  'SWARMFORGE_TERMINAL_BACKEND', 'SWARMFORGE_USE_CEREBRAS', 'SWARMFORGE_USE_PERPLEXITY',
+  'SWARMFORGE_USE_QWEN',
+];
+
+function fixtureEnv() {
+  const env = { ...process.env, XDG_RUNTIME_DIR: '/tmp' };
+  for (const name of SWARMFORGE_VARS_READ_BY_LAUNCHER) delete env[name];
+  return env;
+}
+
 function generateScripts(ctx, roles) {
   writeConf(ctx);
   const packArg = ctx.conf.startsWith('packs/')
@@ -99,7 +127,7 @@ function generateScripts(ctx, roles) {
   execFileSync(
     'zsh',
     ['-c', `source '${SWARMFORGE_SH}' '${ctx.root}'${packArg}; parse_config; ${INDEX_SNIPPET}; ${writes}`],
-    { encoding: 'utf8', env: { ...process.env, XDG_RUNTIME_DIR: '/tmp' } }
+    { encoding: 'utf8', env: fixtureEnv() }
   );
   return roles.map((r) => path.join(ctx.root, '.swarmforge', 'launch', `${r}.sh`));
 }

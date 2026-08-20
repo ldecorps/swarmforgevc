@@ -7,6 +7,27 @@
 # respawn re-runs that file, BL-323), never on any live environment.
 
 set -euo pipefail
+
+# BL-961 hardening: the pane a test runs in is a launch environment, not a
+# clean room - every live role shell exports SWARMFORGE_PACK, and an
+# operator shell can export SWARMFORGE_CONFIG. swarmforge.sh READS both
+# (CONFIG_FILE="${SWARMFORGE_CONFIG:-.../swarmforge.conf}" at line 92;
+# SWARMFORGE_PACK as check_launch_pack_guard's input at line 112), so an
+# inherited value makes this file assert against the ambient configuration
+# instead of its own fixture. Case 02 is the sharp one: with
+# SWARMFORGE_CONFIG set it reads that conf's basename - a false RED when the
+# name differs, and a silent false GREEN whenever the inherited path is
+# itself named swarmforge.conf, which is the default's own name. Unset every
+# SWARMFORGE_* the script under test reads, before any fixture conf is
+# written. Enumerated from `grep -o 'SWARMFORGE_[A-Z_]*' swarmforge.sh`;
+# re-run that grep when swarmforge.sh grows a new one.
+unset SWARMFORGE_ALLOW_FULL_PACK SWARMFORGE_CONFIG SWARMFORGE_DAEMON_START_CALLER \
+      SWARMFORGE_GEMINI_API_KEY SWARMFORGE_MAILBOX_ONLY SWARMFORGE_OPENROUTER_ROLES \
+      SWARMFORGE_PACK SWARMFORGE_REMOTE_CONTROL SWARMFORGE_ROLE \
+      SWARMFORGE_ROLE_WORKTREE SWARMFORGE_SKIP_DAEMON SWARMFORGE_SKIP_FRONT_DESK \
+      SWARMFORGE_SKIP_OPERATOR SWARMFORGE_SKIP_SHELL_RUN_RECORD SWARMFORGE_TERMINAL \
+      SWARMFORGE_TERMINAL_BACKEND SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY \
+      SWARMFORGE_USE_QWEN
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
