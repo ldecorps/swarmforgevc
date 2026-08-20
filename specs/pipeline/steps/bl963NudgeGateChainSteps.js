@@ -102,6 +102,22 @@ function registerSteps(registry) {
     ctx.allowedId = 'BL-202';
   });
 
+  // Scenario 05 (bounce D1): pending approval AND dep-blocked at once -
+  // evaluate reports only human_approval (first-failing-gate-wins), and the
+  // pre-fix filter surfaced it as awaiting approval though approving it
+  // promotes nothing. Same shared Thens as scenario 01.
+  scoped(
+    /^the top-ranked paused ticket is refused by the evaluate chain for both a pending human_approval and an unsatisfied depends_on$/,
+    (ctx) => {
+      writePaused(
+        ctx,
+        'BL-207-overlap.yaml',
+        ticketYaml('BL-207', { priority: 1, approval: 'pending', deps: ['BL-8888'] })
+      );
+      ctx.refusedId = 'BL-207';
+    }
+  );
+
   scoped(
     /^the only paused ticket not refused for another reason is refused solely by the human_approval gate$/,
     (ctx) => {
