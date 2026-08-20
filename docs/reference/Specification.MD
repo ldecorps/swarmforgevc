@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-970: the wake busy-gate classifier
+**Last Updated:** August 20, 2026 (BL-995: the hardener's only sanctioned
+>120s escape hatch (a python3 double-fork + `os.setsid()`, per
+`hardener.prompt:1010` — the Bash tool's own timeout, `run_in_background`,
+and `nohup … & disown` all fail on this host) produced a PPID-1 orphan by
+construction, which is exactly what `handoffd_supervisor.bb`'s BL-108
+`reap-orphaned-job-processes!` then killed on argv match within seconds,
+silently — the job's log simply stopped, the only record a supervisor log
+line the owning agent had no reason to read, so the natural reading was a
+flaky suite (measured 3x on 2026-08-20 alone against the property-lane and
+Stryker runs the quality gates depend on). A new
+`swarmforge/scripts/detach_job.sh <log-file> [--expires-minutes N] --
+<command...>` is now the single sanctioned home for the escape hatch: it
+wraps the double-fork/setsid sequence and registers the detached process
+GROUP under `.swarmforge/daemon/detached-jobs/<pgid>.json` (pgid, owner,
+cwd, cmd, started-at, an expiry — default 120 minutes) BEFORE the
+intermediate process exits, so the registration entry always precedes any
+state a reaper sweep could observe — no register-then-orphan race window.
+The reaper now consults that registry: a live, registered, unexpired group
+is spared (BL-108's protection is unweakened for every unregistered orphan
+— invariant 1); an entry aged past its own `expires_at_ms` is reaped
+exactly like a crash orphan and its registry entry removed (invariant 2 —
+registration is not immunity); and every kill, registered or not, is
+appended into the job's OWN log (`[handoffd_supervisor] REAPED pgid
+group…`), with the detached job's own bash wrapper separately trapping
+SIGTERM to leave a `[detach_job] KILLED by SIGTERM` notice before dying, so
+an agent collecting a run discovers the reaping from its own artifacts
+rather than a supervisor log (invariant 3). A housekeeping pass prunes dead
+registry entries past a 120s grace period so the registry can never
+accumulate stale files. No `job-process-pattern` narrowing and no argv
+disguising — both were considered and refused, since either would hide a
+true positive. No VS Code-facing command or setting; this is swarm role
+machinery. See `docs/how-to/BL-995-detached-job-registry.md`.
+`hardender.prompt:1010`'s prose still needs a specifier-owned amendment
+naming registration as mandatory, tracked separately per the ticket's own
+notes.); Previously
+August 20, 2026 (BL-970: the wake busy-gate classifier
 (`chase_sweep_lib.bb`'s `actively-processing?`, the one chokepoint reached
 by all four wake predicates — deliver, chase, rotate, nudge — so no call
 site changed) now classifies from the pane's RENDERED TURN STATE instead
