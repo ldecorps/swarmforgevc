@@ -121,3 +121,54 @@ notes: |
   Invariant 1 is the human's hard condition restated as a property: it holds over
   every possible close/mint pair, including the boundary where they are exactly
   equal, which is the case an example table is most likely to miss.
+
+  ## SPEC-GAP RESOLUTION: the BL-896 scenario-01 collision (specifier, 2026-08-20)
+
+  Hardender note 20260820T011755Z_000254 + evidence on the parcel branch
+  (9635600b9): BL-896 briefing-open-chart-01's step "it projects no
+  completion date" is enforced by a handler grepping /\bETA\b/i over the
+  rendered chart, and this ticket's rising-case output "no ETA — backlog
+  still growing" is the HUMAN's verbatim wording (Article 5.3 - cannot be
+  reworded to dodge). Both contracts agree in MEANING for the rising case:
+  no completion date exists; BL-910 states it aloud where BL-896 asserted
+  it by silence. The newer approved directive supersedes the older
+  scenario's letter; its spirit (never a fabricated forecast while the
+  backlog grows) is preserved and stays mechanically asserted.
+
+  Resolution, applied INSIDE this parcel by its holder - never as a
+  separate main-side edit (the runner hard-fails on a scenario step whose
+  handler does not match, so feature text and handler must move in one
+  commit, BL-233):
+
+  1. In specs/features/BL-896-briefing-not-done-burndown-stamp.feature,
+     scenario briefing-open-chart-01, replace the step
+     "And it projects no completion date" with
+     "And it projects no completion date, stating \"no ETA — backlog
+     still growing\"" (one Gherkin line, em-dash as the renderer emits).
+  2. In bl896BriefingOpenTicketChartSteps.js, the matching handler
+     asserts: the literal "no ETA — backlog still growing" IS present;
+     /complet/i does NOT match; and after removing that literal from the
+     text, /\bETA\b/i does not match the remainder - the original
+     no-fabricated-forecast intent, now stated positively.
+  3. Regenerate the feature's mutation-stamp manifest through the normal
+     tooling (never hand-edited); under the standing load rules a blocked
+     mutator run is recorded blocked, per the role article.
+  4. The parcel's evidence records this supersession (2026-08-16 ruling's
+     letter -> BL-910's approved directive) so BL-896's history stays
+     walkable.
+
+  All other BL-896 scenario-01 steps stand unchanged (heading keeps
+  "burndown"; no fixed-scope progress claim - the new string matches
+  neither /\btarget\b/ nor /remaining to zero/). No other BL-896 scenario
+  asserts ETA absence; only 01 collides.
+
+  Coordinator adjudication folded in (note 20260820T012033Z_000640,
+  evidence 8846292cc; same ruling reached in parallel: BL-896's criterion
+  is stale, BL-910's human-verbatim text must not change). Their second
+  half - the shrinking case renders a REAL date, which would fail the
+  same assertion "for the right reason" - is noted and does not manifest
+  in BL-896's scenarios: scenario 01's fixture is a RISING backlog, so
+  the evolved step never meets a real date; the shrinking-case contract
+  is this ticket's own feature. If scenario 01's fixture ever changes,
+  the evolved step's meaning (no fabricated forecast while growing)
+  travels with it.
