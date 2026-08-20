@@ -73,6 +73,10 @@
       (str "normal completion left residue: " (pr-str (sfh-files tmpdir)))
       :else true)))
 
+;; POSIX 128+signum, independent of this file's own literals - a real
+;; exit-code assertion, not a mirror of the trap block under test.
+(def sig->expected-exit {"HUP" 129 "INT" 130 "TERM" 143})
+
 (defn- run-signalled [wrapper tmpdir sig]
   ;; A long-running wrapped command; signal the wrapper bash mid-capture.
   ;; Its own process group (perl setpgrp - macOS ships no setsid), so the
@@ -115,6 +119,11 @@
             (and (not= sig "KILL") done
                  (str/includes? out "No such file"))
             (str sig ": the wrapper resumed after the signal and cat'd its removed capture file: " (pr-str out))
+
+            (and (not= sig "KILL") done
+                 (not= (:exit done) (sig->expected-exit sig)))
+            (str sig " exit code wrong: got " (:exit done) ", expected " (sig->expected-exit sig)
+                 " (128+signum, the conventional signal exit-status)")
 
             :else true))))))
 
