@@ -218,6 +218,20 @@ notes: >
   `priority: 0`. Hook re-enable rides this parcel per operator confirmation
   above.
 
+  ## Wiring re-quote (specifier, 2026-08-20, commit 0d203fa12)
+
+  The required_wiring entry above was re-quoted YAML-single-quoted: the
+  pre-QA gate reads the line RAW and never unescapes, so the original
+  double-quoted form armed the matcher with a backslashed, unmatchable
+  pattern and blocked the documenter-to-QA send (fails closed, with a
+  misleading wiring-absent reason). Two sources, same minute: documenter
+  note 20260820T002420Z_000219 and coordinator verification 187290a52 -
+  the coordinator also measured that the parcel lineage ALREADY carries
+  the restored unescaped block (swarm/coder: 1 occurrence), i.e. the work
+  was correct and only the gate pattern blocked. No build change; the
+  sender must merge main before re-sending (the gate reads the SENDER
+  checkout). Mint-time rule added to specifier.prompt in the same commit.
+
   ## Spec-gap amendment (specifier, 2026-08-19, coder note re 499f3e2d4b)
 
   qa_e2e_procedure step 7 rewritten. As minted it presumed the splice
