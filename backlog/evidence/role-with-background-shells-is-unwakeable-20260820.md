@@ -45,3 +45,24 @@ Busy-detection must distinguish "the agent is mid-turn" from "the agent is idle 
 background shells". Candidate signal: the pane's foreground/agent state, not the presence
 of child processes. Until then, any role that backgrounds a long run is one skipped wake
 away from an indefinite stall.
+
+## Second role now accumulating the same condition (hardener, 05:58Z)
+
+Investigating a "BL-967 batch claim stale 22m" alert, the hardener was found **idle at a
+prompt** with **three leaked `tail -f` processes** (ages 32m, 30m, 12m) following
+`tmp/bl967-acc.log`, `tmp/bl967-mutsweep.log`, `tmp/bl967-sweep2.log`.
+
+It is genuinely working — `bl967-sweep2.log` grew 24 -> 106 bytes in a 6s resample and
+two stryker/vitest processes are live — so the alert itself was a false positive. But
+**two of the three tails follow runs that already finished** (acc last written 05:36,
+mutsweep 05:51). `tail -f` never exits, so those shells persist for the rest of the
+session doing nothing.
+
+That is precisely the input this defect keys on. The hardener has now manufactured the
+same permanent-"busy" state that left QA unwakeable for 70 minutes tonight, and will
+keep it until its pane is respawned. Two of eight roles are now affected by the same
+mechanism, from unrelated causes (QA: stale shells from a long gate; hardener: leaked
+log followers).
+
+Reinforces BL-970's severity: this is not a rare shape. Any role that watches a
+background run with `tail -f` acquires it, and nothing cleans it up.
