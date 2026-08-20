@@ -1,6 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-591: the epic reorder screen's tiles
+**Last Updated:** August 20, 2026 (BL-963: the open-slot promotion nudge
+(BL-798) named, counted toward its fire decision, and accrued SUP-1
+escalation state on a candidate the promotion gate chain would actually
+refuse, once BL-957's `depends_on` gate landed — a candidate reporting
+`human_approval` because `evaluate` is first-failing-gate-wins with
+`human_approval` checked before `depends_on` (BL-957's own deliberate
+order) stayed nudge-eligible even when it was ALSO blocked on an unlanded
+dependency, so every open slot named it and accrued escalation state while
+approving it would have promoted nothing — the ticket's own stated harm,
+confirmed live on `main` once BL-957 shipped (re-triaged medium → high on
+that basis). `nudge-eligible-candidates` (`chase_sweep_lib.bb`) now keeps a
+candidate only when the chain says `ok`, or the reported refusal is
+`human_approval` **and** a second `evaluate` call with that one gate
+rewritten to satisfied also comes back `ok` — sole-refusal decided by the
+one BL-663 chokepoint itself, never a rival implementation, so any gate
+added later inherits the check for free. A doubly-refused candidate (both
+pending approval and dependency-blocked) is now excluded from naming, the
+fire-decision count, and escalation tracking alike, while a candidate whose
+only refusal is `human_approval` still surfaces, flagged awaiting approval
+(BL-798 scenario 03's surface-not-skip ruling, unchanged). No human-facing
+command, setting, or UI — a swarm-substrate daemon fix; see the "Open-slot
+nudge sweep" section in `swarmforge/handoff-protocol.md`.);
+Previously August 20, 2026 (BL-591: the epic reorder screen's tiles
 (BL-572) each gain a best-estimate ETA derived from the swarm's recent
 completion velocity, so a reorder decision is made against "how long is
 each of these" rather than just an epic's name — display-and-estimate
