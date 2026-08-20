@@ -130,7 +130,15 @@ test('BL-910 invariant 2: the shown ETA is recomputable from the subtitle the ch
       if (shownNetTenths > 0) {
         assert.ok(etaLine, 'a positive printed net burn must show a projection line');
         const shownDays = Number(etaLine[2]);
-        const recomputed = Math.ceil(shownOpen / (shownNetTenths / 10));
+        // Recomputed the way a READER does it - in exact arithmetic over the
+        // printed numbers, NOT by repeating the implementation's own float
+        // expression. Mirroring `shownOpen / (shownNetTenths / 10)` here
+        // would make this property agree with the code even when both
+        // disagree with the human doing the division by hand (the openN=21,
+        // 0.7/d case: 31 shown vs 30 computed). BigInt keeps it exact.
+        const num = BigInt(shownOpen) * 10n;
+        const den = BigInt(shownNetTenths);
+        const recomputed = Number(num % den === 0n ? num / den : num / den + 1n);
         assert.equal(shownDays, recomputed, `shown ~${shownDays}d but the printed numbers give ${recomputed}d`);
         const expected = new Date(NOW + shownDays * DAY);
         const label = `${expected.getFullYear()}-${String(expected.getMonth() + 1).padStart(2, '0')}-${String(expected.getDate()).padStart(2, '0')}`;
