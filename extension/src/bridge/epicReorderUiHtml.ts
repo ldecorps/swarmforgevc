@@ -64,6 +64,7 @@ export function getEpicReorderUiHtml(): string {
   }
   .row-title { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
   .row-priority { font-size: 11px; color: var(--tg-theme-hint-color, #8b949e); }
+  .row-eta { font-size: 11px; color: var(--tg-theme-hint-color, #8b949e); margin-top: 2px; }
   .row-actions { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
   button {
     padding: 6px 10px;
@@ -154,6 +155,33 @@ export function getEpicReorderUiHtml(): string {
     contentEl.innerHTML = '<p class="empty">No epics to reorder.</p>';
   }
 
+  // BL-591: the per-epic velocity ETA readout - display-and-estimate only.
+  // Renders exactly what the estimator's typed state says: a RANGE with its
+  // pace assumption, blocked count and confidence, or the honest
+  // complete / blocked / no-recent-pace word - never a point date and never
+  // a duration for work that cannot start.
+  function formatEtaDays(days) {
+    if (days >= 10) { return '~' + Math.round(days / 7) + 'w'; }
+    return '~' + days + 'd';
+  }
+  function renderEpicEta(eta) {
+    if (!eta || !eta.kind) { return ''; }
+    if (eta.kind === 'complete') {
+      return '<div class="row-eta">complete</div>';
+    }
+    if (eta.kind === 'blocked') {
+      return '<div class="row-eta">' + eta.reason + ' (' + eta.blockedCount + ' blocked)</div>';
+    }
+    if (eta.kind === 'no-recent-pace') {
+      return '<div class="row-eta">no recent pace' + (eta.blockedCount ? ' · ' + eta.blockedCount + ' blocked' : '') + '</div>';
+    }
+    var text = formatEtaDays(eta.lowDays) + '–' + formatEtaDays(eta.highDays)
+      + ' · ' + eta.confidence + ' confidence (' + eta.confidenceReason + ')'
+      + (eta.blockedCount ? ' · ' + eta.blockedCount + ' blocked' : '')
+      + '<br>' + eta.paceAssumption;
+    return '<div class="row-eta">' + text + '</div>';
+  }
+
   function renderTiles(data) {
     if (!data || !data.items || data.items.length === 0) {
       renderEmpty();
@@ -170,6 +198,7 @@ export function getEpicReorderUiHtml(): string {
       html += '<div class="row-id">' + item.id + '</div>';
       html += '<div class="row-title">' + (item.title || '(untitled)') + '</div>';
       html += '<div class="row-priority">priority ' + item.priority + '</div>';
+      html += renderEpicEta(item.epicEta);
       html += '</div>';
       html += '<div class="row-actions">';
       html += '<button class="move-up" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Move up</button>';
