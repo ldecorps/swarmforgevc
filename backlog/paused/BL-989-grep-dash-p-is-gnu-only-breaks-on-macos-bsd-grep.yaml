@@ -133,6 +133,44 @@ notes: >
   and folding it in here would oversize the slice. Worth its own ticket if it
   keeps costing reviewers turns.
 
+  AMENDMENT 2026-08-20 (specifier, from cleaner note
+  20260820T143555Z_000267). TWO CAUSES STACK in
+  test_backlog_depth_pack_override.sh, and whoever fixes this ticket will
+  otherwise read a correct fix as a failure.
+
+  The cleaner reproduced the file from a clean non-interactive shell and
+  found the failures fire in sequence:
+
+    $ bash swarmforge/scripts/test/test_backlog_depth_pack_override.sh
+    Error: resolve_swarm_socket.bb: Socket path exceeds ... (102 chars)
+
+    $ XDG_RUNTIME_DIR=/tmp bash swarmforge/scripts/test/test_backlog_depth_pack_override.sh
+    grep: invalid option -- P
+
+  The 100-character socket-path guard hits FIRST, at fixture setup, before
+  line 38 is ever reached. So this ticket's fix is invisible in that file
+  until the socket guard is bypassed. That guard is BL-974's domain - its
+  invariant 1 covers this file by INSPECTION at gate time rather than by a
+  checked-in roster, so the file needs no naming there. Do NOT add a
+  depends_on: the two are independently fixable and BL-974 sits at priority
+  40 behind this one; use `XDG_RUNTIME_DIR=/tmp` to verify, as step 1 now
+  says, and leave the guard alone.
+
+  Also from that note, and worth recording because it closes the loop on the
+  contaminated measurement this ticket already cites: the cleaner has
+  corrected their own batch evidence in
+  `backlog/evidence/BL-962-grep-P-correction-20260820.md`, confirming from a
+  clean shell that stock BSD grep genuinely rejects -P and that the original
+  BL-966 attribution was right. The specifier re-verified independently the
+  same day: in an agent shell `type grep` reports a function, while
+  `/usr/bin/grep -P` returns `invalid option -- P`. Three separate
+  measurements now agree.
+
+  No scope change in this amendment - the four sites and the fix direction
+  are unchanged from the 2026-08-20 widening, so the existing approval
+  stands. What changed is the QA procedure, which had been left naming only
+  the first file after the scope widened to three.
+
   Rule candidate, blocked on budget: engineering.prompt already carries
   "target stock macOS /bin/bash 3.2, not Homebrew bash" for shell syntax. The
   same discipline for GNU-only TOOL FLAGS (grep -P, sed -i semantics, date
@@ -143,9 +181,16 @@ notes: >
   relocation can silently break.
 
 qa_e2e_procedure: >
-  1. Run the shell suite alone on stock macOS:
-     `bash swarmforge/scripts/test/test_role_lifecycle_cli.sh` - it completes
-     with no "invalid option" line on stderr.
+  1. Run ALL THREE shell suites on stock macOS - not only the originally
+     named one - and confirm none emits an "invalid option" line on stderr:
+
+       bash swarmforge/scripts/test/test_role_lifecycle_cli.sh
+       bash swarmforge/scripts/test/test_coordinator_provider_configurable.sh
+       XDG_RUNTIME_DIR=/tmp bash swarmforge/scripts/test/test_backlog_depth_pack_override.sh
+
+     The third needs that env prefix and WILL still fail without it, for a
+     different reason that is not yours to fix here - read the stacking note
+     in `notes:` before concluding your fix did not work.
   2. Run the contract:
      `node specs/pipeline/cli.js
      specs/features/BL-343-routing-break-even-measurement.feature <outdir>` -
