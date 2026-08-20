@@ -187,3 +187,5 @@ notes: >
   scenarios. Resolved rather than waived, by folding them into one Scenario
   Outline parameterized on the expected refusal, which is what they always
   were. Re-run clean: 11 step occurrences, 9 unique, zero findings.
+
+assigned_to: coder
