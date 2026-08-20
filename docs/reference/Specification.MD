@@ -1,6 +1,43 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-966: the effective-depth resolution
+**Last Updated:** August 20, 2026 (BL-948: acceptance fixtures that build a
+control socket rooted at `os.tmpdir()`, whose long macOS base
+(`/var/folders/<hash>/<hash>/T/`) plus `<root>/.swarmforge/tmux/<hash>.sock`
+overruns `swarm_socket_lib.bb`'s 100-char fail-closed socket-path guard
+(BL-367) — measured at 107 — so a scenario died on the refusal BEFORE
+reaching the behavior it asserts. Three separate step files hit it on
+2026-08-19 and each was patched locally; the third was recorded rather than
+patched a fourth time. The guard is correct and is untouched: the fixtures
+were wrong. A new `specs/pipeline/steps/lib/socketFixtureRoot.js` hands out
+roots under a short base (`/tmp`), asserting worst-case socket-path headroom
+at creation so a too-long prefix fails loudly instead of downstream, tracks
+every root, and removes stragglers on process exit — reaping any fixture
+tmux server by SOCKET PATH first (BL-817/BL-458 hygiene) — which is the
+backstop for scenarios that throw before their own cleanup. A new
+`lib/socketFixtureRootGuard.js` decides the adoption set BY INSPECTION at
+gate time rather than from a checked-in roster (which would go stale on the
+next step file and reproduce the one-at-a-time patching): a file is flagged
+iff its comment-stripped code references a control socket AND it roots a
+fixture at the long base, keyed on the base itself rather than on how it was
+spelled, so all six realistic spellings — direct, hoisted local,
+destructured `tmpdir`, template interpolation, concatenation, inline
+`require('os')` — are caught, while an `os.tmpdir()` appearing inside a
+quoted string reads as an EXAMPLE, not a call site. It runs over the real
+tree in the standing suite every parcel runs (`socketFixtureShortRootGuard`,
+the `tempDirTrapGuard`/`tmuxReaperGuard` shape), with a BL-897 parity test
+reading `swarm_socket_lib.bb`'s own `max-safe-socket-path-len` and
+`primary-socket-path` literals so the two hand-mirrored constants cannot
+drift silently across the language boundary. 54 files adopted (51 step files
+plus three under `steps/lib/`); the ~254 fixtures that never touch a socket
+were deliberately left alone. The reported symptom is closed: BL-368's
+feature goes 3/4 to 4/4, with "A role whose process is still alive is never
+relaunched" now reaching its real assertion. One live leak was found and
+closed on the way — a short-base root built directly with `mkdtempSync`
+bypassed the helper's tracking and had stranded three `/tmp/sfvc-bl817-loc-*`
+directories on disk. No `.bb` file changed and no extension command,
+setting, or UI: this is a defect in the acceptance harness itself. See the
+new [socket-fixture short root and gate reference](BL-948-socket-fixture-short-root-and-gate.md).);
+Previously August 20, 2026 (BL-966: the effective-depth resolution
 answered a DIFFERENT governance cap depending on which checkout asked, with
 no signal — 7 from the master checkout, 3 from `.worktrees/coder`, clean
 stderr and exit 0 both times. `.swarmforge/` is master-checkout runtime
