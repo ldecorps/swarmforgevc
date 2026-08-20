@@ -246,8 +246,14 @@
                (and finding (= 2 new-streak))))
 
 ;; ── 6d-09: busy detection survives 80-column truncation ─────────────────────
-(assert-true "literal 'esc to interrupt' reads busy"
-             (sw/classify-pane-busy? "some output\n  esc to interrupt\n"))
+;; BL-996: classify-pane-busy? now delegates to chase_sweep_lib.bb's own
+;; structural classifier (the BL-970 chokepoint) instead of a private
+;; whole-pane substring match. A bare literal with no live status frame
+;; around it is exactly BL-970's own false-busy shape (a pane merely
+;; quoting the marker in old scrollback) - was asserted busy here before
+;; this fix; now correctly not.
+(assert-true "not busy: a bare literal 'esc to interrupt' with no live status frame around it"
+             (not (sw/classify-pane-busy? "some output\n  esc to interrupt\n")))
 (assert-true "truncated footer (spinner + elapsed pattern survive, hint text clipped) still reads busy"
              (sw/classify-pane-busy? "some output\n✻ Combobulating… (12s · e…\n"))
 (assert-true "not busy: idle prompt with no spinner or elapsed pattern"
