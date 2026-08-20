@@ -523,7 +523,8 @@ const DOMAINS = [
   require('./bl957DependsOnPromotionGateSteps'),
   require('./bl959ApsEquivalenceSteps'),
   require('./bl910BriefingBurndownEtaSteps'),
-  require('./bl967HandoffdCycleStallSteps')
+  require('./bl967HandoffdCycleStallSteps'),
+  require('./bl962OnMainMergeAdjudicationSteps')
 ];
 
 function registerSteps(registry) {
