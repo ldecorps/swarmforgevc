@@ -1,6 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-976: `RESEND_API_KEY` deliberately
+**Last Updated:** August 20, 2026 (BL-994: the Live Screen's role tiles
+(`/resident-spy`, `residentSpyUiHtml.ts`, shared by the Mini App and Bubble
+Live) laid four worker panes out as a `display: flex` row with a
+percentage `flex-basis` and no floor, so on a phone the panes shrank into
+thin vertical strips with each role name stacked one letter per line
+(`.pane-kind` carried `word-break: break-word`) — unreadable, and reported
+live by the human. `.split` is now `display: grid` with `grid-auto-rows:
+1fr`; the phone default is `repeat(2, minmax(0, 1fr))` (the `minmax(0,
+1fr)` is what removes the shrink-to-strip floor), so four workers read as
+a 2×2 of square-ish tiles — 1 column for a single pane, 2 columns through
+`.pane-count-8` on narrow viewports, widening at `@media (min-width:
+700px)` to 3 columns for 5–6 panes and 4 for 7–8. `.pane-kind` gets
+`word-break: normal`/`overflow-wrap: normal` and centers at `clamp(13px,
+4.5vw, 20px)`. The grid tile itself now shows only the role name plus an
+Expand hint — `.split .pane-col > pre` is hidden in the grid — with the
+full transcript and metadata living exclusively in the fullscreen Expand
+view; a held ticket's id/title, previously shown on the tile head, moved
+there too, which relocated BL-929 acceptance scenario 03's assertion
+(amended in the same parcel — the documenter tile's Expand view is the
+contract's own named valid home for that data, not a new design decision).
+This landed as a pipeline landing of a human-captured hotfix (the BL-956
+posture): the fix existed only as a tracked 169-line patch
+(`backlog/evidence/INTAKE-live-screen-role-tile-grid-hotfix.patch`) plus a
+dirty, uncommittable master working tree, since `extension/src/` cannot
+reach `main` outside QA (BL-632) — running the pipeline chain is what made
+the human's already-verified layout real rather than reinterpreting it.
+Out of scope, per the intake: the BL-609 font-size control (same file,
+separate ask) and any change to which roles appear or how the
+pipeline-grid/console menu surfaces lay out. Verified against the resolved
+column count for five pane-count/viewport combinations, never a bare CSS
+string presence check, plus a recorded manual device procedure — a
+phone-viewport property this test suite cannot reach on its own.);
+Previously
+August 20, 2026 (BL-976: `RESEND_API_KEY` deliberately
 rides only the daemon process's own environment (BL-215 — the repo never
 stores it), but the supervisor/watchdog relaunch chain spawns each new
 daemon generation from whatever environment happens to run it, so a
