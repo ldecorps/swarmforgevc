@@ -1006,6 +1006,51 @@ taking it back. Both point at the same underlying discipline — a test leaves
 the host as it found it — but they fail in opposite directions and are worth
 stating separately.
 
+## A generated fixture inside the suite's own discovery glob is swept BEFORE the run (architect rule_proposal 2026-08-20, accepted — sharpened)
+
+Adopted from an architect `rule_proposal`, scope `engineering`, raised out of
+the BL-971 review. `extension/test/helpers/propertyLaneFixtureRunner.js`
+generates real property-test files, writes them into `extension/test/`, runs
+them through the REAL `vitest.properties.config.mjs`, and deletes them again.
+That placement is not sloppiness: the lane's `include` is
+`test/**/*.property.test.js` resolved from `extension/`, so a fixture that
+lives ANYWHERE else is never picked up and the helper cannot prove what it
+exists to prove. The fixture must be inside the glob.
+
+Cleanup was thorough for every exit the process can observe: a `finally` per
+run, plus `process.on('exit')` and SIGINT/SIGTERM handlers that sweep every
+tracked path. **SIGKILL is the hole, and it cannot be closed.** A `kill -9`, an
+OOM kill, or a supervisor escalating past SIGTERM runs no handler at all, and
+the generated file stays exactly where the lane's own glob will collect it.
+From then on every subsequent run of that lane executes a stranded fixture
+nobody wrote, on a file nobody will recognise — a false red that survives
+reboots and outlives the ticket that produced it.
+
+Observed live, which is why this is a rule and not a note: five files,
+`bl868-fixture-74865-*.property.test.js`, orphaned by PID 74865 in
+`.worktrees/architect/extension/test/`. Each such fixture boots a child
+`vitest` process when the lane collects it, so the leak does not merely add a
+spurious verdict — it adds real load to a lane already being investigated for
+wall-clock exhaustion (BL-971). A leak of this shape can therefore masquerade
+as, or compound, the very timeout defect under study.
+
+**The rule is stated as a pre-run sweep, not as "do not leak", because "do not
+leak" is unsatisfiable.** No amount of handler discipline traps SIGKILL, so a
+rule forbidding the leak mandates the impossible and would be quietly
+unenforceable. What IS always achievable is refusing to CONSUME a leak: before
+writing its fixtures, the helper removes every pre-existing file matching its
+own basename prefix in the target directory. Cleanup-after remains correct and
+stays; the sweep-before is what makes the guarantee hold across a kill. Adding
+the prefix to the config's `exclude` is a reasonable belt-and-braces companion,
+but it is not a substitute — an excluded fixture is also an uncollectable one,
+which would break the helper.
+
+The generalisation worth carrying: whenever a test helper GENERATES an artifact
+that the suite's own discovery mechanism will match, the directory is shared
+mutable state between runs. Treat arrival at that directory as untrusted —
+sweep your own prefix on the way in — rather than trusting that the previous
+run got to finish.
+
 ## A merge can silently revert already-LANDED work — diff every merge against BOTH parents (hardender rule_proposal 2026-08-20, accepted)
 
 Proposer's rule, verbatim: "A merge can silently revert already-LANDED work;
