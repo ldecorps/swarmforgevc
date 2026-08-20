@@ -32,6 +32,14 @@
 ;;     failed 24/40 runs on invariant 2's survival assertion (that surface
 ;;     was ADDED when the first cut of this break showed 0 direct failures
 ;;     - only a coverage floor caught it, which is not an encoding).
+;; Bounce D1 (2026-08-20, second pass): the :overlap kind (pending approval
+;; AND dep-refused AT ONCE, drawn by construction - evaluate reports only
+;; the first failing gate, human_approval, hiding the dependency refusal)
+;; plus its own reach floor. Non-vacuity: against the pre-fix
+;; first-reported-gate filter, the extended runner failed on every arm that
+;; drew an overlap candidate (survived the filter, was named on best rank,
+;; accrued escalation state); the sole-refusal re-evaluate fix restored
+;; ALL PROPERTIES HOLD.
 
 (require '[babashka.fs :as fs]
          '[clojure.string :as str])
@@ -40,7 +48,7 @@
 
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 40))
 (def failures (atom []))
-(def coverage (atom {:refused-top 0 :approval-named 0 :all-refused 0 :mixed 0}))
+(def coverage (atom {:refused-top 0 :approval-named 0 :all-refused 0 :mixed 0 :overlap 0}))
 
 (defn- step [s] (mod (+ (* s 1103515245) 12345) 2147483648))
 (defn- gen-int [s n] [(mod (quot s 65536) (max 1 n)) (step s)])
@@ -61,7 +69,11 @@
 (def done-id "BL-9001")
 
 (defn- gen-candidate [s i kind]
-  ;; kind: :allowed | :approval | :dep-refused
+  ;; kind: :allowed | :approval | :dep-refused | :overlap
+  ;; :overlap (bounce D1) is pending approval AND dep-refused AT ONCE - the
+  ;; shape evaluate's first-failing-gate-wins order reports as a bare
+  ;; human_approval refusal, hiding the dependency refusal behind it. Drawn
+  ;; BY CONSTRUCTION, never left to two independent draws colliding.
   (let [[prio s1] (gen-int s 80)
         [style-n s2] (gen-int s1 2)
         style (if (zero? style-n) :flow :block)]
@@ -71,32 +83,44 @@
       :content (ticket-yaml
                 {:id (str "BL-" (+ 100 i))
                  :priority (+ 10 prio)
-                 :approval (if (= kind :approval) "pending" "approved")
-                 :deps (case kind :dep-refused ["BL-8888"] :allowed [done-id] [])
+                 :approval (if (contains? #{:approval :overlap} kind) "pending" "approved")
+                 :deps (case kind (:dep-refused :overlap) ["BL-8888"] :allowed [done-id] [])
                  :deps-style style})}
      s2]))
 
 (defn- gen-case [s]
-  (let [[arm s1] (gen-int s 3)          ; 0 refused-top, 1 all-refused, 2 mixed
+  (let [[arm s1] (gen-int s 4)  ; 0 refused-top, 1 all-refused, 2 mixed, 3 overlap-top
         [n s2] (gen-int s1 4)
         n-candidates (+ 2 n)]
     (loop [i 0 acc [] sx s2]
       (if (= i n-candidates)
-        [{:arm (nth [:refused-top :all-refused :mixed] arm) :candidates acc} sx]
-        (let [[kind sy] (case (nth [:refused-top :all-refused :mixed] arm)
+        [{:arm (nth [:refused-top :all-refused :mixed :overlap-top] arm) :candidates acc} sx]
+        (let [[kind sy] (case (nth [:refused-top :all-refused :mixed :overlap-top] arm)
                           ;; refused-top: candidate 0 is the dep-refused one
                           ;; and gets the BEST rank below; others mixed
                           :refused-top (if (zero? i)
                                          [:dep-refused sx]
                                          (let [[k sz] (gen-int sx 2)]
                                            [(if (zero? k) :allowed :approval) sz]))
-                          :all-refused [:dep-refused sx]
-                          :mixed (let [[k sz] (gen-int sx 3)]
-                                   [(nth [:allowed :approval :dep-refused] k) sz]))
+                          ;; all-refused: every candidate chain-refused, the
+                          ;; overlap kind included - zero eligible, no nudge
+                          :all-refused (let [[k sz] (gen-int sx 2)]
+                                         [(if (zero? k) :dep-refused :overlap) sz])
+                          :mixed (let [[k sz] (gen-int sx 4)]
+                                   [(nth [:allowed :approval :dep-refused :overlap] k) sz])
+                          ;; overlap-top (bounce D1's harm shape): the
+                          ;; pending+dep-refused candidate gets the BEST rank,
+                          ;; so pre-fix it is named on every open slot and
+                          ;; accrues SUP-1 state while approving it promotes
+                          ;; nothing
+                          :overlap-top (if (zero? i)
+                                         [:overlap sx]
+                                         (let [[k sz] (gen-int sx 2)]
+                                           [(if (zero? k) :allowed :approval) sz])))
               [cand sz2] (gen-candidate sy i kind)
-              ;; refused-top: force the refused candidate to the best rank
-              ;; (LOWEST priority number ranks first)
-              cand (if (and (= i 0) (str/includes? (:content cand) "BL-8888"))
+              ;; refused-top / overlap-top: force the refused candidate to
+              ;; the best rank (LOWEST priority number ranks first)
+              cand (if (and (= i 0) (contains? #{:dep-refused :overlap} (:kind cand)))
                      (update cand :content #(str/replace % #"priority: \d+" "priority: 1"))
                      cand)]
           (recur (inc i) (conj acc cand) sz2))))))
@@ -107,7 +131,11 @@
 (defn- run-case [{:keys [arm candidates]}]
   (let [eligible (chase-sweep-lib/nudge-eligible-candidates candidates evaluate-ctx)
         eligible-files (set (map :file eligible))
-        refused (filter #(= :dep-refused (:kind %)) candidates)
+        ;; Chain-refused-beyond-approval: :dep-refused AND :overlap (bounce
+        ;; D1 - a pending+dep-blocked candidate's dependency refusal is just
+        ;; as real for evaluate's later gates even though the reported
+        ;; first-failing gate is human_approval).
+        refused (filter #(contains? #{:dep-refused :overlap} (:kind %)) candidates)
         named (chase-sweep-lib/top-open-slot-candidate eligible)
         ;; three consecutive nudge-worthy ticks over the REAL machine
         states (loop [k 0 prev nil acc []]
@@ -121,6 +149,10 @@
                        (= arm :refused-top) (update :refused-top inc)
                        (= arm :all-refused) (update :all-refused inc)
                        (= arm :mixed) (update :mixed inc)
+                       ;; overlap reach floor (bounce D1): count every run
+                       ;; whose candidate set carries the pending+dep-blocked
+                       ;; shape, whatever arm drew it
+                       (some (fn [c] (= :overlap (:kind c))) candidates) (update :overlap inc)
                        (and named (not (:approved? named))) (update :approval-named inc)))
     (cond
       ;; invariant 1, surface 1: refused candidates never in the eligible set
@@ -168,9 +200,9 @@
         (swap! failures conj (str "FAIL BL-963 invariants\n  input: " (pr-str (map (juxt :file :kind) (:candidates input))) "\n  " result)))
       (recur (inc i) s'))))
 
-(let [{:keys [refused-top approval-named all-refused mixed]} @coverage]
+(let [{:keys [refused-top approval-named all-refused mixed overlap]} @coverage]
   (doseq [[k v] {:refused-top refused-top :approval-named approval-named
-                 :all-refused all-refused :mixed mixed}]
+                 :all-refused all-refused :mixed mixed :overlap overlap}]
     (when (< v 5)
       (swap! failures conj (str "FAIL generator coverage: " k " reached only " v " of " runs " runs (floor 5)")))))
 

@@ -1852,7 +1852,10 @@
           ;; BL-963: candidate naming, the fire decision's eligible count,
           ;; and escalation tracking all consult the ONE promotion_gates
           ;; evaluate chain (BL-663) - a candidate the chain refuses for
-          ;; anything but human_approval is invisible to every one of them.
+          ;; anything but human_approval as its SOLE refusal is invisible to
+          ;; every one of them (bounce D1: a pending+dep-blocked candidate
+          ;; reports human_approval first yet is still excluded - the filter
+          ;; re-asks the chain with approval satisfied).
           ;; Read/evaluate only when a slot is actually open: done-ids scans
           ;; backlog/done/ recursively, and with capacity closed the decide
           ;; below is false regardless.

@@ -993,6 +993,24 @@
          (map (fn [f] {:file f :content (slurp (str f))}))
          vec)))
 
+(defn- sole-refusal-is-approval?
+  "BL-963 bounce D1: evaluate is first-failing-gate-wins with human_approval
+   BEFORE depends_on (BL-957's deliberate order), so a reported
+   human_approval refusal says NOTHING about the later gates - a candidate
+   both pending approval and dep-blocked reports human_approval, yet
+   approving it promotes nothing. The sole-refusal question is answered by
+   the SAME chain, never a rival gate re-statement (BL-663): re-evaluate the
+   candidate with its human_approval field satisfied - ok iff approval was
+   the only thing standing. The line rewrite is an input transformation only;
+   the DECISION still belongs to evaluate. The field is guaranteed present
+   here (the human_approval gate only fires on a present non-approved value),
+   so the anchored line replace always has a line to hit."
+  [evaluate-ctx content]
+  (:ok (promotion-gates-lib/evaluate
+        (merge evaluate-ctx
+               {:content (str/replace content #"(?m)^human_approval:[^\n]*" "human_approval: approved")
+                :held? false}))))
+
 (defn nudge-eligible-candidates
   "BL-963: the paused candidates the open-slot nudge may NAME, COUNT toward
    its fire decision, or ACCRUE escalation state on - decided by the SAME
@@ -1002,10 +1020,14 @@
    depth, hold, and any gate added later - inherited for free through the
    chain) is excluded entirely: promoting or approving it cannot succeed,
    and repeated nudges naming it are exactly the eternal-nudge shape SUP-1
-   escalation was built to bound. A candidate whose reported refusal is
+   escalation was built to bound. A candidate whose SOLE refusal is
    human_approval stays eligible and is named flagged awaiting approval -
    approving is the human's own next action (BL-798 scenario 03's
-   surface-not-skip ruling; invariant 2).
+   surface-not-skip ruling; invariant 2). Sole means sole: a reported
+   human_approval refusal is only the FIRST failing gate, so eligibility
+   re-asks the chain with approval satisfied (bounce D1) - a candidate also
+   dep-blocked (or refused by any later gate) is excluded like any other
+   chain-refused candidate.
 
    evaluate-ctx is the caller-supplied {:active-count :max-depth
    :active-epics :done-ids} snapshot; :held? is always false here (paused/
@@ -1015,7 +1037,8 @@
              (let [verdict (promotion-gates-lib/evaluate
                             (merge evaluate-ctx {:content content :held? false}))]
                (or (:ok verdict)
-                   (= "human_approval" (:gate verdict)))))
+                   (and (= "human_approval" (:gate verdict))
+                        (sole-refusal-is-approval? evaluate-ctx content)))))
            candidates))
 
 (defn top-open-slot-candidate
