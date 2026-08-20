@@ -101,8 +101,23 @@ notes: >
   Source: documenter priority-10 note 20260820T000811Z_000218 to
   specifier+coordinator ("BL-761 acceptance gate fails OPEN 2/2 sends:
   git rev-parse outside a repo"), per Article 4.4's
-  spec-gap-leaves-by-note posture. 1:1 - the note produced this ticket
-  and no other. Specifier probe went from the note's headline to the
+  spec-gap-leaves-by-note posture. N:1 - the coordinator independently
+  processed the same documenter note (coordinator note
+  20260820T001055Z_000638, evidence ad4d26201) and both sources fold
+  here; this ticket and no other. The coordinator's two halves: (a)
+  fail-open-by-design CONFIRMED - corroborates this ticket's deliberate
+  non-change; (b) "trigger NOT reproduced" is SUPERSEDED by the
+  specifier's reproduction above - the coordinator probed live worktree
+  rev-parses, the ACCEPTANCE_POINTER_GATE warning grep, and
+  swarm_handoff.bb's project-root path, none of which reach the
+  acceptance-CONTRACT check's materialized-temp-tree registry load where
+  the failure actually lives (its warning prefix also differs, and it
+  prints only to the sender's pane stderr - why no grep finds it;
+  durable surfacing of gate warnings is a fair follow-on if wanted).
+  Preserved investigator trap from ad4d26201: "fatal: not a git
+  repository" hits in handoffd-supervisor.log are the tool_miss_heal
+  wrapper's own grep pattern inside reaped command lines, not git
+  errors. Specifier probe went from the note's headline to the
   exact three call sites and reproduced the warning verbatim via a
   direct lib call from the documenter worktree (findings + warning
   captured in the mint-commit message's session; the >120s runtime of a
