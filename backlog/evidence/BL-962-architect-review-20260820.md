@@ -100,3 +100,31 @@ BL-962's token choice.
 | My own property-coverage pass | The touched pure modules are exactly `adjudicate-merge-paths` and `assemble-offending-commits`, both already covered above. **No new property warranted** — stated, not manufactured. |
 
 No check was blocked.
+
+---
+
+## Revert disposition — and why `record-bounce.js` reports `verdict: violation`
+
+BL-962's parcel is reverted out of `swarmforge-architect` at `092f39701`,
+**scoped to BL-962's own commits** (`cc9b19b829` plus the cleaner's
+`babysitter_check.bb` cleanup inside `dd00974f3b`) — never `-m 1` on the review
+merge. The same cleaner tip carries **BL-961 and BL-966**, which arrived as their
+own handoffs (`000248`, `000249`, Article 2.6) and are still queued for review; a
+whole-merge revert would have destroyed both.
+
+Verified by CONTENT, not ancestry: `adjudicate-merge-paths`, `merge-parent-facts`
+and `BABYSITTER_QA_ANCESTOR_SCRIPT` are all gone from `babysitter_check.bb` (grep
+count 0), the steps file and both BL-962 runners are deleted, and `index.js` lost
+only `bl962`'s registration — `bl961`, `bl966`, `bl967`, `bl571` all still
+present, 0 duplicates, registry loads. `babysitter_check.bb` parses and
+`test_babysitter_check.sh` is still ALL PASS on the reverted tree.
+
+**One file from the bounced commit is deliberately retained**:
+`backlog/evidence/BL-962-BL-961-BL-966-cleaner-batch-20260820.md`. It is the
+cleaner's batch evidence for **three** tickets, two of which are not bounced;
+deleting it would strip BL-961 and BL-966 of their cleaner record. Because
+`record-bounce.js`'s revert check scans for any live path from the bounced
+commit, this single retained file makes it report `verdict: violation` with
+`liveFiles: [that md]`. That verdict is a false positive for this bounce — no
+BL-962 code or test survives. Recorded here so the next reader is not misled
+into thinking the revert was incomplete.
