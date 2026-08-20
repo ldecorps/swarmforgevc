@@ -573,10 +573,11 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  SWARMFORGE_SKIP_CURSOR_BRIDGE=1 SWARMFORGE_SKIP_BABYSITTERD=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 echo "$OUTPUT" | grep -q 'control-plane: FIXED (control-plane-missing: recreating role sessions from persisted launch scripts; tmux server restored)' \
   || fail "BL-958: control-plane row not reported FIXED with the lib's decision, got: $OUTPUT"
@@ -618,10 +619,11 @@ exit 0
 TMUXFAKE
 chmod +x "$FAKE_BIN/tmux"
 OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
+  SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  SWARMFORGE_SKIP_CURSOR_BRIDGE=1 SWARMFORGE_SKIP_BABYSITTERD=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
 echo "$OUTPUT" | grep -q 'control-plane: FAILED' \
   || fail "BL-958 D1: control-plane row not FAILED under :halt, got: $OUTPUT"

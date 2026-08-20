@@ -1,6 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-957: the promotion gate chain never
+**Last Updated:** August 20, 2026 (BL-958: the tmux control plane can
+disappear mid-run while every support daemon stays healthy. Live on
+2026-08-19: every role read DOWN, `handoffd`/supervisor/front-desk/
+`babysitterd` all UP, repeated `tmux send-literal failed` chases, the
+socket file still on disk, and `tmux -S <socket> ls` answering "no server
+running" — not a policy pause, not a daemon stop. Each consumer saw only
+its own slice (status rendered per-role DOWN from a dead probe, handoffd
+logged and retried forever, ensure repaired panes one at a time) and
+nobody said "the control plane is gone" out loud. `control_plane_lib.bb`
+is now the single classifier, with three consumers wired to it:
+`swarm_status.bb` renders ONE `control-plane` row carrying the socket path
+and the `./swarm ensure` remedy, deliberately replacing the per-role rows
+(with the server gone there is no live truth about any role, and DOWN
+derived from stale `sessions.tsv` is the misdiagnosis the incident
+produced); `handoffd.bb`'s failed chase send persists exactly one open
+incident to `.swarmforge/incidents/control-plane.json` with the probe
+output, expected sessions, and the response decision embedded, so a chase
+storm records the loss once; and `swarm_ensure.bb` decides through
+`recovery-decision` — relaunch role sessions from the persisted launch
+scripts (creating the first session restarts the tmux server itself), or
+halt when none exist rather than churn through repairs that cannot work.
+The loss shape is abnormal by construction: a normal stop removes both the
+socket file and `sessions.tsv`, so a surviving socket alongside surviving
+role metadata can only mean the server died under a swarm that believes it
+is running. `ensure` reports FIXED only when the server actually answers
+again, and only then resolves open incidents; under the halt path it
+reports FAILED carrying the escalation's own next action and leaves the
+open incident untouched — a failed restart never retracts the record of a
+loss. Response ownership is `babysitterd`, settled by the incident itself:
+`operator-runtime` was down/stale while the control plane was gone, so the
+owner cannot be a daemon this same shape can take out; its absence was
+parallel damage, not the detection path. No new extension command,
+setting, or UI — a swarm-substrate detection/recovery layer. See the new
+[control-plane-loss runbook](../how-to/BL-958-control-plane-loss-recovery.md).);
+Previously August 20, 2026 (BL-957: the promotion gate chain never
 read `depends_on`, so a ticket could be promoted and routed to the coder
 before the work it declared a dependency on had landed — the auto-picker
 re-promoted the same blocked BL-955 immediately after each of the

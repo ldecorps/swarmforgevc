@@ -106,6 +106,31 @@ spec and tests rather than a hardener edit. Raised by `note` to specifier and
 coordinator. The 13 existing files were left in place — they are not this
 worktree's to delete.
 
+## Follow-up: BL-958's own fixtures carried the same dead seams
+
+After this batch was forwarded, the coordinator reported (`af1f66406`) that
+BL-958's two new blocks in `test_swarm_ensure.sh` set
+`SWARMFORGE_ENSURE_EXTENSION_CHECK/_BOUNCE/SUPERVISOR` and pointed at
+`fake_supervisor.bb`. Correct, and it is the identical defect fixed during the
+BL-571 pass: `swarm_ensure.bb` reads none of those names and that stub file is
+never created, so both blocks ran the REAL extension bounce and REAL daemon
+start against a `$TMPDIR` root while their assertions — which only inspect the
+control-plane row — passed regardless.
+
+Why the earlier sweep did not catch them: these blocks arrived **with the
+BL-958 merge**, after that sweep was verified. The check was sound; the file
+changed under it.
+
+Fixed in `69663acbd1` (real `SWARM_ENSURE_*_CMD` seams plus
+`SKIP_CURSOR_BRIDGE`/`SKIP_BABYSITTERD`). The documenter already held a live
+BL-958 parcel naming the older commit, so a `note` was sent naming
+`69663acbd1` rather than forcing a duplicate parcel through `redo_from.sh`.
+
+**Re-verified after the fix: `test_swarm_ensure.sh` ran to completion again —
+47 PASS / 0 FAIL, exit 0** — with both BL-958 cases (`control-plane FIXED` and
+`D1 :halt honored`) passing with the stubs genuinely in effect for the first
+time.
+
 ## Gates NOT run (BLOCKED — never recorded as passing)
 
 - **Stryker mutation, CRAP, DRY — not applicable.** All three parcels are
