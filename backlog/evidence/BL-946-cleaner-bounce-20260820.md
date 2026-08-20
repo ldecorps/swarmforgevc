@@ -133,3 +133,29 @@ D3 for; (b) `BADGE_SIZE_READ_ALIKES` names each glyph's reserved twin only in
 a trailing comment, so a read-alike whose twin nothing reserves (a stale
 exclusion shrinking the pool) cannot be caught — making the twin data lets
 the invariant-2 test assert it.
+
+---
+
+## `record-bounce.js` note
+
+Recorded: `bounce_count: 1` with the history row on the ticket. Its
+`revertCheck` reports `verdict: "violation"` — that is an artifact of what
+`--commit` was given, not an unreverted bounce. The role prompt's
+`--commit <10-hex bounce commit>` was read as *the commit carrying the
+bounce* (`727c4f9c81`, this revert + evidence), so the tool checked whether
+**that** commit's files are live — they are, by construction, since it is the
+revert itself.
+
+Passing the bounced commit `dae4d10069` instead would not give a clean answer
+either: its file list includes the two BL-967-rider paths
+(`readLiveRoleHeldTicketsCli.test.js`,
+`operatorRuntimeBbFixtureFiles.js`) that are **deliberately still live** under
+the entangled-batch exception. Either way the automated check cannot express
+a scoped revert.
+
+The revert was therefore verified **by content** instead, which is what the
+constitution asks for: no `FORUM_TOPIC_ICON_STICKER_SET`,
+`BADGE_SIZE_READ_ALIKE`, or `bl946` reference survives anywhere under
+`extension/src`, `extension/test`, or `specs/pipeline/steps`, while both
+BL-967-rider edits were confirmed present. `epicIcon.test.js` and
+`conciergeTick.test.js` pass (123 tests) against the reverted resolver.
