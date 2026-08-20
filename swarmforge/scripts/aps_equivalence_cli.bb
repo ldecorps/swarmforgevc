@@ -28,9 +28,8 @@
       (if (empty? matrix)
         (println (str "INCOMPLETE||no results found under " work-dir "/results - nothing compared is never equivalence"))
         (println (aps-equivalence-lib/render-matrix matrix)))
-      (doseq [[format render] {"txt" aps-equivalence-lib/render-matrix
-                               "md" aps-equivalence-lib/render-markdown}]
-        (spit (aps-equivalence-lib/matrix-file-path work-dir format) (str (render matrix) "\n")))
+      (spit (str work-dir "/matrix.txt") (str (aps-equivalence-lib/render-matrix matrix) "\n"))
+      (spit (str work-dir "/matrix.md") (str (aps-equivalence-lib/render-markdown matrix) "\n"))
       (System/exit (aps-equivalence-lib/exit-code matrix)))))
 
 (apply -main *command-line-args*)

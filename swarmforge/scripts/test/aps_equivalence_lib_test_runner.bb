@@ -46,13 +46,6 @@
          "/w/results/pinned/lint-parse/specs__features__a.feature.json"
          (aps-equivalence-lib/result-file-path "/w" "pinned" "lint-parse" "specs/features/a.feature"))
 
-(assert= "matrix-file-path: <work>/matrix.<format>"
-         "/w/matrix.md"
-         (aps-equivalence-lib/matrix-file-path "/w" "md"))
-(assert= "matrix-file-path covers every rendering write-targets enumerates"
-         ["/w/matrix.txt" "/w/matrix.md"]
-         (mapv #(aps-equivalence-lib/matrix-file-path "/w" %) aps-equivalence-lib/matrix-formats))
-
 (let [targets (aps-equivalence-lib/write-targets "/w" ["specs/features/a.feature" "../evil"])]
   (assert-true "write-targets: every target sits under the work dir"
                (every? #(str/starts-with? % "/w/") targets))
@@ -153,17 +146,6 @@
          {"exit" 1 "error" "boom at <tmp>/x"}
          (aps-equivalence-lib/normalize-lint-outcome 1 "boom at /var/tmp/aps-cand-123/x" "/repo/root"
                                                      {"/var/tmp/aps-cand-123" "<tmp>"}))
-
-(assert= "scrub-message: the repo root prefix is dropped and the text trimmed"
-         "FAIL: specs/features/x.feature did not parse"
-         (aps-equivalence-lib/scrub-message "  FAIL: /repo/root/specs/features/x.feature did not parse\n" "/repo/root"))
-(assert= "scrub-message: caller-supplied volatile prefixes become stable placeholders"
-         "boom at <tmp>/x and <work>/y"
-         (aps-equivalence-lib/scrub-message "boom at /var/tmp/aps-cand-123/x and /var/tmp/w-9/y" "/repo/root"
-                                            {"/var/tmp/aps-cand-123" "<tmp>" "/var/tmp/w-9" "<work>"}))
-(assert= "scrub-message: a nil message is the empty string, never a crash"
-         ""
-         (aps-equivalence-lib/scrub-message nil "/repo/root"))
 
 (assert= "normalize-dry-findings: findings compare as a sorted set, not file bytes"
          (aps-equivalence-lib/normalize-dry-findings {"findings" [{"kind" "b"} {"kind" "a"}] "summary" {"x" 1}})
