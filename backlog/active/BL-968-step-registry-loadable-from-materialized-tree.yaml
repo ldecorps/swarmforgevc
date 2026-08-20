@@ -182,3 +182,6 @@ notes_coordinator_hold: >
   BL-968 remains human_approval: pending, which is still its independent blocker.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-20, by: architect, blamed: coder, class: behavior, commit: c8d791dc80, evidence: backlog/evidence/BL-968-step-registry-loadable-from-materialized-tree-bounce-20260820.md }
