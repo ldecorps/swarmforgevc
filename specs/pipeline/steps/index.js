@@ -544,7 +544,8 @@ const DOMAINS = [
   require('./bl969BurndownNoflagsTimeoutSteps'),
   require('./bl992UnmergedDeclarationSteps'),
   require('./bl995DetachedJobSteps'),
-  require('./bl997BusyMarkerAgreementSteps')
+  require('./bl997BusyMarkerAgreementSteps'),
+  require('./bl994LiveScreenGridSteps')
 ];
 
 function registerSteps(registry) {
