@@ -1159,3 +1159,47 @@ You are the hardender.
   assertion was added; the residue-only check missed it. Specifier
   re-confirmed the bash behavior live before accepting (TERM/HUP yes, INT
   no — see the per-signal note above).
+
+## A bridge `getXxxUiHtml()` inline `<script>` is invisible to Stryker — hand-mutate its render logic and record the degraded fallback (rule_proposal 2026-08-20, accepted)
+- Proposer's rule, verbatim: "A bridge getXxxUiHtml() inline <script> is one
+  opaque string to Stryker (never parsed as JS) - hand-mutate its render
+  logic; the JSDOM+extractInlineScript harness is its only mutation
+  coverage."
+- Why the tool cannot see it: `stryker.config.json` mutates
+  `["out/**/*.js"]`, and a `getXxxUiHtml()` body is a template literal whose
+  `<script>…</script>` block is *string content*. A JS parser does not
+  descend into a string, so no arithmetic, conditional, boundary, or
+  equality mutant is ever generated for the render logic living in there —
+  by construction, not by configuration, so no `--mutate` change fixes it.
+- **The trap is that this reads as covered, not as skipped.** Whatever
+  mutants Stryker does emit for such a file are string-level (emptying or
+  trimming the literal as a whole), never logic-level inside the script. A
+  green mutation score on a `*UiHtml.ts` file is therefore not evidence its
+  render logic is tested — it is evidence the tool found nothing to test.
+  Read the mutant list, not the percentage, before calling one of these
+  files hardened.
+- Mechanics: the JSDOM + `extractInlineScript` harness is the only place
+  these functions can be reached — pull the script text out of the returned
+  HTML, evaluate it in a JSDOM window, and drive the render functions
+  directly. Then hand-mutate: flip each comparison, off-by-one each
+  boundary, swap each separator/format branch, and confirm a test goes red
+  for every one. Record the hand-mutation in the hardening notes exactly as
+  the Babashka/no-Stryker fallback above requires — never let a pass on one
+  of these files imply Stryker mutation ran on it.
+- Scope, measured 2026-08-20: eight files share the shape —
+  `consoleMenuUiHtml`, `contextBudgetUiHtml`, `epicReorderUiHtml`,
+  `holisticUiHtml`, `letsTalkUiHtml`, `pausedPagerUiHtml`,
+  `pipelineGridUiHtml`, `residentSpyUiHtml`. Only four had the harness at
+  acceptance (`pausedPager`, `residentSpy`, `epicDrilldown`, `epicReorder`),
+  so the blind spot is live across the rest of the console surface. Note
+  that `extractInlineScript` is currently copy-pasted per test file; if you
+  reach for a fifth copy, that is a cleaner-domain observation worth
+  surfacing, not yours to refactor mid-hardening.
+- Evidence (proposed by the hardender, 2026-08-20, BL-591):
+  `renderEpicEta`/`formatEtaDays` had zero tests, sitting at lines 163/167
+  inside `epicReorderUiHtml.ts`'s `<script>` block (lines 105–391). Specifier
+  re-confirmed all four legs before accepting: the eight-file count, the
+  functions' position inside the script block, the four-file harness spread,
+  and `mutate: ["out/**/*.js"]` in `stryker.config.json`. The
+  "reads as covered" nuance above is the specifier's addition, argued from
+  the parser's behavior rather than measured against a mutation report.
