@@ -155,3 +155,28 @@ approval_context: >
   (cost reduction vs measured re-budget vs cap engagement) with the
   acceptance pinned to the outcome; firm lines are no unmeasured
   budget inflation and no coverage loss.
+
+notes_coordinator_hold: >
+  COORDINATOR HOLD 2026-08-20 04:29Z: not promoted. human_approval: pending,
+  and capacity (active/ 7 of 7). Expedited (defect/high, Article 3.2.4),
+  priority 20.
+
+  FOURTH consecutive expedited ticket to arrive approval-blocked. The full
+  expedited set is now BL-968 p20, BL-970 p20, BL-971 p20 (this), BL-969 p30 -
+  every one `human_approval: pending`, none promotable. No expedited ticket has
+  been promotable since BL-967 took the 01:43Z slot.
+
+  Verified live before this ticket was minted (evidence 520d35fb1): QA's own
+  completed run shows `Test Files 2 failed | 115 passed`, both failures pure
+  wall-clock timeouts - bl868 at 126374ms against a 60000ms budget, bl632 at
+  154346ms against 90000ms. Nothing else in the lane is red, so those two
+  permanently gate an otherwise healthy suite.
+
+  WHY THIS ONE COMPOUNDS: the property lane is part of QA's gate. While it
+  cannot come back green, QA spends ~36 minutes per parcel on a suite whose
+  verdict is known in advance to be red, and every downstream close waits on
+  that. This is throughput drag on the FINAL gate, on top of BL-967 (handoffd
+  stalled, no chaser) and BL-970 (roles unwakeable). Recorded as an
+  observation for the promotion record - the coordinator does not set
+  priority and does not override human_approval.
+
