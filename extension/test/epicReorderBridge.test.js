@@ -701,3 +701,201 @@ test('epic-reorder move route: a prose mention of "priority:" ABOVE the real fie
   assert.ok(content.includes(decoyLine), 'the prose line mentioning "priority:" must be left byte-identical');
   assert.equal(readPriority(target, 'BL-900'), 20, 'the real priority field, not the decoy prose line, must carry the new value');
 });
+
+// ── BL-591: the impure epicEta collector (readEpicEtaCompletionEvents,
+// epicEtaPackLabel) - neither is exported, and until now neither had any
+// test at all, direct or acceptance. Both are exercised only through the
+// real HTTP route, same as the rest of this file: the required_wiring gate
+// ("the reorder state feed must fold the estimator's per-epic output into
+// its items - a green estimator wired into nothing is the BL-419 shape")
+// is a claim about THIS wiring, not the pure estimator's own tests.
+
+// Commits a backlog/done/<id>.yaml at an explicit GIT_AUTHOR_DATE/
+// GIT_COMMITTER_DATE so completion-velocity fixtures are deterministic
+// against real wall-clock `git log --since` filtering, not test run time.
+function commitDoneFiles(target, ids, daysAgo) {
+  const dir = path.join(target, 'backlog', 'done');
+  mkdirp(dir);
+  for (const id of ids) {
+    fs.writeFileSync(path.join(dir, `${id}.yaml`), `id: ${id}\ntitle: ${id} title\ntype: feature\n`);
+  }
+  const dateIso = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', `done ${ids.join(',')}`], {
+    cwd: target,
+    env: { ...process.env, GIT_AUTHOR_DATE: dateIso, GIT_COMMITTER_DATE: dateIso },
+  });
+}
+
+test('BL-591: epic-reorder JSON feed folds a real, git-derived velocity ETA into each tile (required_wiring smoke test)', async () => {
+  const target = mkGitTarget();
+  writeReorderableEpic(target, 'BL-591-A', 10);
+  for (let d = 1; d <= 20; d++) {
+    commitDoneFiles(target, [`BL-DONE-${d}`], d);
+  }
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const tile = body.items.find((i) => i.id === 'BL-591-A');
+    assert.ok(tile, 'no BL-591-A tile in the response');
+    assert.ok(tile.epicEta, 'BL-419 shape: the estimator is wired into nothing - epicEta missing from the tile');
+    assert.equal(tile.epicEta.kind, 'ranged', JSON.stringify(tile.epicEta));
+    assert.ok(tile.epicEta.lowDays < tile.epicEta.highDays);
+    assert.ok(typeof tile.epicEta.paceAssumption === 'string' && tile.epicEta.paceAssumption.length > 0);
+    assert.ok(/\d+d window/.test(tile.epicEta.paceAssumption), tile.epicEta.paceAssumption);
+  });
+});
+
+test('BL-591: completion events are counted per FILE, not per commit - a 3-file commit and 3 one-file commits on the same date yield the same ETA', async () => {
+  const sameDayIds = ['BL-D1', 'BL-D2', 'BL-D3'];
+
+  const batched = mkGitTarget();
+  writeReorderableEpic(batched, 'BL-591-BATCH', 10);
+  commitDoneFiles(batched, sameDayIds, 6);
+
+  const separate = mkGitTarget();
+  writeReorderableEpic(separate, 'BL-591-SEPARATE', 10);
+  for (const id of sameDayIds) {
+    commitDoneFiles(separate, [id], 6);
+  }
+
+  const fetchTile = async (target, id) =>
+    withBridge(target, {}, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+      const body = await res.json();
+      return body.items.find((i) => i.id === id).epicEta;
+    });
+
+  const batchedEta = await fetchTile(batched, 'BL-591-BATCH');
+  const separateEta = await fetchTile(separate, 'BL-591-SEPARATE');
+
+  assert.equal(batchedEta.kind, 'ranged', JSON.stringify(batchedEta));
+  assert.equal(separateEta.kind, 'ranged', JSON.stringify(separateEta));
+  // Real-clock git fixtures: tolerate sub-second drift between the two live
+  // requests rather than asserting bit-for-bit equality.
+  assert.ok(
+    Math.abs(batchedEta.lowDays - separateEta.lowDays) < 0.2,
+    `expected the same low bound regardless of commit batching, got ${batchedEta.lowDays} vs ${separateEta.lowDays}`
+  );
+  assert.ok(
+    Math.abs(batchedEta.highDays - separateEta.highDays) < 0.2,
+    `expected the same high bound regardless of commit batching, got ${batchedEta.highDays} vs ${separateEta.highDays}`
+  );
+});
+
+test('BL-591: SWARMFORGE_PACK names the pace assumption when set', async () => {
+  const target = mkGitTarget();
+  writeReorderableEpic(target, 'BL-591-PACK', 10);
+  for (let d = 1; d <= 10; d++) {
+    commitDoneFiles(target, [`BL-DONE-${d}`], d);
+  }
+  const prevPack = process.env.SWARMFORGE_PACK;
+  process.env.SWARMFORGE_PACK = 'full-forge-test-pack';
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+      const body = await res.json();
+      const tile = body.items.find((i) => i.id === 'BL-591-PACK');
+      assert.equal(tile.epicEta.kind, 'ranged', JSON.stringify(tile.epicEta));
+      assert.ok(tile.epicEta.paceAssumption.includes('full-forge-test-pack'), tile.epicEta.paceAssumption);
+    });
+  } finally {
+    if (prevPack === undefined) {
+      delete process.env.SWARMFORGE_PACK;
+    } else {
+      process.env.SWARMFORGE_PACK = prevPack;
+    }
+  }
+});
+
+test('BL-591: falls back to the .swarmforge/swarm-identity launch_pack line when SWARMFORGE_PACK is unset', async () => {
+  const target = mkGitTarget();
+  writeReorderableEpic(target, 'BL-591-IDENTITY', 10);
+  for (let d = 1; d <= 10; d++) {
+    commitDoneFiles(target, [`BL-DONE-${d}`], d);
+  }
+  mkdirp(path.join(target, '.swarmforge'));
+  fs.writeFileSync(path.join(target, '.swarmforge', 'swarm-identity'), 'launch_pack\tmono-router\nother_field\tx\n');
+
+  const prevPack = process.env.SWARMFORGE_PACK;
+  delete process.env.SWARMFORGE_PACK;
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+      const body = await res.json();
+      const tile = body.items.find((i) => i.id === 'BL-591-IDENTITY');
+      assert.equal(tile.epicEta.kind, 'ranged', JSON.stringify(tile.epicEta));
+      assert.ok(tile.epicEta.paceAssumption.includes('mono-router'), tile.epicEta.paceAssumption);
+    });
+  } finally {
+    if (prevPack !== undefined) {
+      process.env.SWARMFORGE_PACK = prevPack;
+    }
+  }
+});
+
+test('BL-591: falls back to the honest "unknown-pack" label when neither SWARMFORGE_PACK nor swarm-identity is present', async () => {
+  const target = mkGitTarget();
+  writeReorderableEpic(target, 'BL-591-UNKNOWN', 10);
+  for (let d = 1; d <= 10; d++) {
+    commitDoneFiles(target, [`BL-DONE-${d}`], d);
+  }
+
+  const prevPack = process.env.SWARMFORGE_PACK;
+  delete process.env.SWARMFORGE_PACK;
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+      const body = await res.json();
+      const tile = body.items.find((i) => i.id === 'BL-591-UNKNOWN');
+      assert.equal(tile.epicEta.kind, 'ranged', JSON.stringify(tile.epicEta));
+      assert.ok(tile.epicEta.paceAssumption.includes('unknown-pack'), tile.epicEta.paceAssumption);
+    });
+  } finally {
+    if (prevPack !== undefined) {
+      process.env.SWARMFORGE_PACK = prevPack;
+    }
+  }
+});
+
+test('BL-591: an unreadable git history (not a git repo) degrades to no-recent-pace, never a crash or a fabricated range', async () => {
+  const target = mkTmp();
+  writeReorderableEpic(target, 'BL-591-NOGIT', 10);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const tile = body.items.find((i) => i.id === 'BL-591-NOGIT');
+    assert.ok(tile.epicEta, 'BL-419 shape: epicEta missing from the tile');
+    assert.equal(tile.epicEta.kind, 'no-recent-pace', JSON.stringify(tile.epicEta));
+  });
+});
+
+test('BL-591: the completion-events cache is keyed per targetPath - two bridges over different git histories never cross-contaminate', async () => {
+  const busy = mkGitTarget();
+  writeReorderableEpic(busy, 'BL-591-BUSY', 10);
+  for (let d = 1; d <= 20; d++) {
+    commitDoneFiles(busy, [`BL-BUSY-DONE-${d}`], d);
+  }
+
+  const quiet = mkGitTarget();
+  writeReorderableEpic(quiet, 'BL-591-QUIET', 10);
+  // No completions at all in the trailing window - must stay no-recent-pace
+  // even though the "busy" target above was just served from the same
+  // process, immediately before, well inside the 5-minute cache TTL.
+
+  const busyEta = await withBridge(busy, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    return (await res.json()).items.find((i) => i.id === 'BL-591-BUSY').epicEta;
+  });
+  const quietEta = await withBridge(quiet, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    return (await res.json()).items.find((i) => i.id === 'BL-591-QUIET').epicEta;
+  });
+
+  assert.equal(busyEta.kind, 'ranged', JSON.stringify(busyEta));
+  assert.equal(quietEta.kind, 'no-recent-pace', JSON.stringify(quietEta));
+});

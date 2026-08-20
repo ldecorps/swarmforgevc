@@ -1,6 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-965: BL-960's heal wrapper captures
+**Last Updated:** August 20, 2026 (BL-591: the epic reorder screen's tiles
+(BL-572) each gain a best-estimate ETA derived from the swarm's recent
+completion velocity, so a reorder decision is made against "how long is
+each of these" rather than just an epic's name — display-and-estimate
+only, it changes no scheduling, promotes nothing, and gates no build. A
+naive "velocity × remaining" number would lie four ways the tile must not:
+throughput swings roughly 5x between packs (measured 16-54 tickets/day on
+the full pack vs. 3-4/day on a mono-router), so every range names the pack
+and trailing window its pace rests on; blocked/design-gated children (held
+in `backlog/hold/`, `status: blocked`/`needs_design`, or a non-empty
+`promotion_blockers`/`block_until`) contribute no weight to any duration —
+they are counted and shown, never folded in; remaining size is a
+`mutation_cost`-weighted roll-up over open children only (done children and
+the epic tracker itself weigh zero); and velocity is shown as a low–high
+range, never a single point date. A new pure estimator
+(`extension/src/metrics/epicEta.ts`, mirroring `burnRate.ts`'s own
+pure/impure split) maps children + git-derived completion events + an
+injected clock/window/pack label to a typed `complete` / `blocked` /
+`no-recent-pace` / ranged state, total and NaN/Infinity-free for every
+input including zero velocity and zero children. The bridge
+(`bridgeServer.ts`) derives completion events from `git log
+--diff-filter=A` over `backlog/done/` (the same approach
+`leanLedgerComposeClose.ts` already uses, counted per file via
+`--name-only` since one commit can land several done files), TTL-cached 5
+minutes per target path so the screen never spawns `git log` on every poll,
+and folds the estimator's output into each tile as `epicEta`; child
+membership reuses the reorder screen's existing epic-membership helpers
+(BL-686/BL-687), never a second notion. `epicReorderUiHtml.ts` renders the
+range, blocked count, confidence, and pace assumption on the epic tiles
+only — never on a topic row in the drill-down. See the new "Reading an
+Epic's ETA" section in
+[`docs/how-to/BL-572-console-epic-priority-reorder.md`](../how-to/BL-572-console-epic-priority-reorder.md).);
+Previously August 20, 2026 (BL-965: BL-960's heal wrapper captures
 each attempt's output to a `mktemp` file and only removed it via a plain
 `rm -f` on the tail path, so any termination before the tail — a signal, a
 Bash-tool timeout kill, `tmux respawn-pane -k`, swarm teardown — skipped

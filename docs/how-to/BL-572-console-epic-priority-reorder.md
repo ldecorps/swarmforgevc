@@ -145,6 +145,50 @@ Like the epic-level move and **Make top**, a successful topic **Make top**
 commits through the shared commit-integrity helper, and every refusal or
 no-op shows its stated reason.
 
+## Reading an Epic's ETA
+
+Each epic tile also shows a best-estimate ETA, based on the swarm's recent
+completion velocity, so a reorder decision is made against "how long is each
+of these" and not just the epic's name. The ETA is **display-and-estimate
+only** — it changes no scheduling, promotes nothing, and gates no build; it
+never appears on a topic row in an epic's drill-down, only on the epic
+tiles themselves.
+
+What a tile shows depends on the state of that epic's own open children
+(`active/` + `paused/` + `hold/`, the same slug-resolved set the **Topics**
+drill-down uses — never a second membership notion):
+
+- **`complete`** — every child is done. No range, no pace assumption.
+- **`~2w–~4w · high confidence (steady)` plus a pace line** — the normal
+  case: a low–high range (never a single point date), a confidence word
+  with the dominant reason in parentheses, a blocked-child count when any
+  children are blocked, and a pace assumption line naming the swarm pack
+  and the trailing window the velocity was measured over (e.g. "at current
+  full-forge pace over the trailing 28d window"). Pack matters more than
+  anything else here — measured throughput has swung roughly 5x between the
+  full pack and a mono-router pack, so a range that didn't name its pack
+  would be close to meaningless.
+- **`blocked (N blocked)`** — every open child is currently unable to
+  start (held in `backlog/hold/`, `status: blocked`/`needs_design`, or
+  carrying a non-empty `promotion_blockers`/`block_until`). No range is
+  shown, because no velocity number describes work that cannot start.
+- **`no recent pace`** — there were zero completions in the trailing
+  window, or no usable window at all. The tile says so honestly rather
+  than dividing by zero into a fabricated range.
+
+A blocked child is always counted and shown next to the range, never folded
+into it — the range only ever reflects buildable (not-blocked) children's
+weight, weighted by `mutation_cost` (`low` < `medium` < `high`; a child with
+no `mutation_cost` counts as `medium`). Removing a blocked child from an
+epic's children never changes the range computed from the remaining
+buildable children.
+
+The velocity window is a trailing 28 days of `backlog/done/` ticket
+additions, cached in the bridge process for 5 minutes so the screen never
+spawns `git log` on every poll. If the swarm's own pack can't be determined
+from `.swarmforge/swarm-identity` (or the `SWARMFORGE_PACK` env var), the
+pace assumption names it `unknown-pack` rather than guessing.
+
 ## If a Move Fails
 
 The screen always shows the server's stated reason for a failed or refused
