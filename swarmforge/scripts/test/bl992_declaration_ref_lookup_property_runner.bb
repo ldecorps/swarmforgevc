@@ -43,7 +43,11 @@
 (def scripts-dir (str (fs/parent script-dir)))
 (def swarm-handoff (str (fs/path scripts-dir "swarm_handoff.bb")))
 
-(def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 24))
+;; Default sized so a BARE invocation reliably clears the ABSOLUTE reach
+;; floors below (sum 21 across 6 uniform classes; 24 draws false-redded on
+;; coverage twice in the architect's BL-992 D1 review). Mirrors the BL-982
+;; same-day fix: floors stay absolute, the default run count is raised.
+(def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 100))
 (def rng (java.util.Random. (System/nanoTime)))
 (defn rand-int* [n] (.nextInt rng n))
 (defn rand-nth* [xs] (nth xs (rand-int* (count xs))))
