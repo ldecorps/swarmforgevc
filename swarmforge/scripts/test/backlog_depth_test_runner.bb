@@ -401,6 +401,70 @@
            3
            (backlog-depth-lib/read-effective-max-depth root)))
 
+;; ── BL-966: identity resolves at the MASTER checkout from any worktree ────
+;; The cap must be the same from the master checkout and every linked
+;; worktree (invariant 1); a non-git root keeps resolving against itself
+;; (invariant 3); the no-identity fall-through is loud on *err*, never
+;; silent (invariant 2).
+(require '[babashka.process :as tproc]
+         '[clojure.string :as tstr])
+
+(defn- tgit! [dir & args]
+  (let [r (apply tproc/sh {:continue true :dir (str dir)}
+                 "git" "-c" "user.email=t@t" "-c" "user.name=t" args)]
+    (when-not (zero? (:exit r))
+      (throw (ex-info (str "fixture git failed: " (:err r)) {})))
+    (tstr/trim (:out r))))
+
+(defn- stderr-of [f]
+  (let [sw (java.io.StringWriter.)]
+    [(binding [*err* sw] (f)) (str sw)]))
+
+(let [master (mk-tmp)]
+  (assert= "bl966: a plain non-git root resolves to itself (invariant 3)"
+           (str master)
+           (backlog-depth-lib/resolve-identity-root master)))
+
+(let [master (mk-tmp)
+      wt (str master "-wt")]
+  (spit (str (fs/path master "README.md")) "init\n")
+  (tgit! master "init" "-q" "-b" "main")
+  (tgit! master "add" "-A")
+  (tgit! master "commit" "-q" "-m" "init")
+  (tgit! master "worktree" "add" "-q" wt "-b" "wt-branch")
+  ;; identity at the MASTER names a pack conf with a distinctive cap
+  (fs/create-dirs (fs/path master ".swarmforge"))
+  (fs/create-dirs (fs/path master "swarmforge" "packs"))
+  (spit (str (fs/path master "swarmforge" "packs" "big.conf"))
+        "config active_backlog_max_depth 7\n")
+  (spit (str (fs/path master ".swarmforge" "swarm-identity"))
+        (str "active_backlog_max_depth_conf_path\t" (fs/path master "swarmforge" "packs" "big.conf") "\n"))
+  ;; the tracked default conf (present in BOTH checkouts) says 3 - the old
+  ;; silent per-checkout split returned it from the worktree
+  (spit (str (fs/path master "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 3\n")
+  (fs/create-dirs (fs/path wt "swarmforge"))
+  (spit (str (fs/path wt "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 3\n")
+  (let [[from-master err-master] (stderr-of #(backlog-depth-lib/read-max-depth master))
+        [from-wt err-wt] (stderr-of #(backlog-depth-lib/read-max-depth wt))]
+    (assert= "bl966: the master checkout resolves its identity's pack cap" 7 from-master)
+    (assert= "bl966: a linked worktree resolves the SAME cap as master (invariant 1)" 7 from-wt)
+    (assert= "bl966: an identity-derived cap arrives with a clean stderr" "" (str err-master err-wt)))
+  ;; teardown the worktree registration before mk-tmp's own cleanup
+  (tgit! master "worktree" "remove" "--force" wt))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 3\n")
+  (let [[cap err] (stderr-of #(backlog-depth-lib/read-max-depth root))]
+    (assert= "bl966: a never-launched root still gets the default conf's cap (invariant 3)" 3 cap)
+    (assert= "bl966: the fall-through is loud - stderr names the default conf (invariant 2)"
+             true
+             (and (tstr/includes? err "no swarm-identity")
+                  (tstr/includes? err "swarmforge.conf")))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

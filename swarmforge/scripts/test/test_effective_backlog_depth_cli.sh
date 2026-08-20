@@ -125,7 +125,9 @@ if [[ -f "$REPO_ROOT/extension/out/tools/emit-throttle-recommendation.js" ]]; th
   cat > "$ROOT/.swarmforge/telemetry/observatory-signals.json" <<'EOF'
 {"signals":[{"kind":"rework-rate","version":1,"computedAtIso":"2026-07-16T00:00:00Z","signal":{"hasSample":true,"sampleCount":10,"reworkRate":0.5,"baselineRate":0.1,"topRole":null,"topTicketClass":null}}]}
 EOF
-  OUT="$(bb "$CLI" "$ROOT" 2>&1)"
+  # BL-966: stdout only - the no-identity fall-through now (correctly)
+  # writes its notice to stderr for this identity-less fixture root.
+  OUT="$(bb "$CLI" "$ROOT" 2>/dev/null)"
   [[ "$OUT" == "0" ]] || fail "live wiring: expected the REAL emit-throttle-recommendation.js to diagnose a severe (rate 5x baseline) rework signal and drop the effective cap to 0, got: $OUT"
   [[ -f "$ROOT/.swarmforge/coordinator/throttle-recommendation.json" ]] \
     || fail "live wiring: expected the real CLI to have persisted a throttle-recommendation.json, found none"
