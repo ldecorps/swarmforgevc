@@ -234,11 +234,30 @@ function registerSteps(registry) {
   });
 
   scoped(/^the sweep is running$/, async (ctx) => {
+    // BL-977 hardener fix (2026-08-20): waiting for existsSync alone races
+    // install-sweep-marker-writer!'s spit (daemon_cycle_guard_lib.bb) -
+    // spit is not atomic, so a reader can observe the file between its
+    // create and its content flush. Under heavy host load that window
+    // widened enough to surface as "Unexpected end of JSON input" in the
+    // very next step (a Gherkin-mutation run on this feature killed a
+    // heartbeat_age_ms mutant on this flake alone, load avg 42-45/4
+    // cores - the mutated row's own subtest had already passed). Waiting
+    // for successfully-PARSEABLE, non-idle content closes the race at its
+    // source rather than papering over it in the next step.
     const deadline = Date.now() + 10000;
-    while (Date.now() < deadline && !fs.existsSync(ctx.markerPath)) {
-      await new Promise((r) => setTimeout(r, 50));
+    let parsed = false;
+    while (Date.now() < deadline && !parsed) {
+      if (fs.existsSync(ctx.markerPath)) {
+        try {
+          const marker = JSON.parse(fs.readFileSync(ctx.markerPath, 'utf8'));
+          parsed = marker.sweep === 'dropped-parcel-sweep';
+        } catch {
+          // torn write in progress - retry
+        }
+      }
+      if (!parsed) await new Promise((r) => setTimeout(r, 50));
     }
-    assert.ok(fs.existsSync(ctx.markerPath), 'the marker file never appeared while the sweep ran');
+    assert.ok(parsed, 'the marker file never settled on a parseable dropped-parcel-sweep entry while the sweep ran');
   });
 
   scoped(/^the in-flight sweep marker names "dropped-parcel-sweep" with its start instant$/, (ctx) => {
