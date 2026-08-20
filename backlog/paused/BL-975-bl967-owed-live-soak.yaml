@@ -39,19 +39,28 @@ description: >
   guilty sweep and call; record that as the identified cause and
   mint the follow-on defect naming it.
 
-  Window facts pinned at mint (2026-08-20 ~05:51Z, specifier probe):
-  the first daemon running BL-967's landed code is the one the
-  start-audit claims at 2026-08-20T05:50:19Z (pid 96980; audit line
-  "handoffd claimed pid=96980") - main only received BL-967 at
-  05:44:55Z. The three freshness restarts at epochs 1787202000 /
-  1787204281 / 1787204642 (05:26:40 / 05:38:01 / 05:44:02Z) all
-  killed PRE-fix daemons and must NOT count against the soak. The
-  observation is log-based and retro-evaluable: freshness-incidents
-  .log and daemon-start-audit.log persist across restarts, so the
-  05:50Z-onward window can be judged after the fact even if this
-  chore runs later; handoffd.log truncates per restart, but a
-  truncation implies a restart, which the persistent logs already
-  witness.
+  Window facts (CORRECTED at mint+6min by the coordinator's
+  independent precondition check, evidence commit 9fe9d3a74, and
+  re-verified by the specifier): the daemon runs from the MASTER
+  checkout's local main, which at 05:50Z was 27 commits BEHIND
+  origin/main and did NOT contain the fix - the 05:50:19Z daemon
+  (pid 96980) loaded PRE-fix code (running sha 22544178a), despite
+  the fix being on origin/main since 05:44:55Z. The specifier's
+  original pin of that daemon as post-fix was WRONG (the
+  local-main-lags-origin lesson, live). Local main took origin/main
+  by ~05:56Z (a5ecfc281 now an ancestor; cycle-guard code present
+  in the checkout). The soak window therefore opens at the FIRST
+  handoffd start in daemon-start-audit.log AFTER the local-main
+  merge that brought in a5ecfc281 - QA must pin that start (and,
+  where determinable, verify the running daemon's loaded sha
+  post-dates the fix) rather than trusting any earlier pin. Every
+  restart before that point - including 05:26:40 / 05:38:01 /
+  05:44:02Z and the 05:50 flap - killed or started PRE-fix daemons
+  and must NOT count against the soak. The observation is log-based
+  and retro-evaluable: freshness-incidents.log and
+  daemon-start-audit.log persist across restarts; handoffd.log
+  truncates per restart, but a truncation implies a restart, which
+  the persistent logs already witness.
 
   Also observed at mint, NOT this chore's scope: the fresh daemon's
   first cycle opened with a 12-line chase-wake-skip-busy burst
@@ -76,8 +85,10 @@ constraints: >
 
 qa_e2e_procedure: >
   1. Establish the window start from daemon-start-audit.log: the
-     first handoffd claim at or after 2026-08-20T05:50:19Z (the
-     first start after BL-967 reached main at 05:44:55Z).
+     first handoffd claim AFTER the master checkout's local main
+     merged origin/main containing a5ecfc281 (~05:56Z; confirm the
+     merge commit's time yourself - the 05:50:19Z start was PRE-fix,
+     see the corrected window facts).
   2. Confirm the swarm was active during the window (roles working;
      an idle-swarm window proves little - extend or choose a later
      30-minute active window if needed).
@@ -103,10 +114,22 @@ notes: >
   the run-or-blocked discipline working as designed; this chore is
   the missing durable tracker.
 
-  Specifier probe at mint pinned the window facts above (start-audit
-  and freshness-incident epochs quoted from the live files) so the
-  soak can be judged retroactively even if this chore is promoted
-  later. Related: BL-967 (the owed steps), BL-789 (slow-but-healthy
+  Third source, consolidated N:1 (Consolidation Authority): the
+  coordinator's "ticket or gate?" note 20_20260820T055426Z_000664
+  with evidence 9fe9d3a74
+  (backlog/evidence/BL-967-soak-blocked-fix-not-in-local-checkout-
+  20260820.md) crossed this ticket's ready-note by six seconds - and
+  was NOT a duplicate: its precondition check corrected this
+  ticket's original window pin (see corrected window facts).
+  Answer to "ticket or gate?": TICKET (this one); a standing
+  owed-qa_e2e ledger/gate is deferred until the pattern recurs -
+  one occurrence does not justify standing machinery (the same
+  three-strikes heuristic BL-948 used).
+
+  Specifier probe at mint pinned initial window facts from the live
+  files; the coordinator's check corrected them (above) - kept so
+  the soak can be judged retroactively even if this chore is
+  promoted later. Related: BL-967 (the owed steps), BL-789 (slow-but-healthy
   posture), BL-970 (skip-busy bursts are its surface, not a stall
   signal by themselves), BL-942 (the hardening-debt ledger - the
   analogous durable-debt mechanism for mutation/CRAP; a general
