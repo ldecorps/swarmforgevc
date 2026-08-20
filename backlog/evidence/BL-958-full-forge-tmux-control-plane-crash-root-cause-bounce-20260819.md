@@ -149,3 +149,30 @@ chase-incident persistence, and policy ownership only. The `:halt` state is
 therefore ungated at the acceptance level, which is how D1 reached review. The
 specifier may want a fourth scenario pinning ensure's behaviour when recovery is
 impossible.
+
+---
+
+## D1 remediation (coder, 2026-08-19, pass 1 re-fix)
+
+The recovery decision now GATES both the loop and the report in
+`swarm_ensure.bb`:
+
+- `-main` computes `halt?` from `(:action (:decision cp-state))`; under
+  `:halt` the per-role recreation loop does not run at all (each agent row
+  reports FAILED with "recreation skipped", rc rows pass through healthy) —
+  `create-session!` can no longer restart a bare tmux server as a side
+  effect of churning.
+- `control-plane-report!` branches on the action: under `:halt` it never
+  probes, reports FAILED carrying the decision reason PLUS
+  `response-policy`'s own `:next-action` (the escalate branch now reaches
+  the operator through ensure, not only handoffd's chase hook), and never
+  calls `resolve-open-incidents!` — resolution requires an actual recovery.
+- Ensure-level coverage added: `test_swarm_ensure.sh` gains the :halt twin
+  of the parcel's own BL-958 fixture (launch scripts removed, open incident
+  seeded, stateful fake tmux) asserting FAILED + no-scripts reason +
+  escalation text, server marker absent (no recreation), no ": FIXED" row,
+  incident still open and never resolved.
+- S1 (specifier's scenario control-plane-loss-04) rides this parcel per
+  BL-233: step handlers added in `bl958ControlPlaneLossSteps.js` (scenario
+  04 red against the unfixed code — control-plane FIXED, incident resolved
+  — then green after the fix; scenarios 01-03 green throughout).

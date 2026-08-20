@@ -688,6 +688,158 @@
   (when (< tied floor)
     (report! "COVERAGE P10 forced-tie-pair branch" 7 {:tied tied :floor floor} "the forced-tie-pair branch is barely exercised")))
 
+;; ── P11/P12 (BL-957, declared invariants; coder-authored per BL-654) ──────
+;;
+;;   Invariant 2: "The gate fails closed: any depends_on id it cannot
+;;   positively resolve to a ticket in backlog/done/ refuses promotion,
+;;   including ids it failed to parse." P11 draws each dependency's landed?
+;;   status BY CONSTRUCTION (the id is in the done set iff the draw says
+;;   landed), over every live field form (flow list, block list, bare scalar
+;;   with prose - the block form is the read-field fail-open trap), plus an
+;;   unparseable-value sibling. Refuse iff any id is unlanded or the value
+;;   is unparseable; the reason names exactly the unlanded ids, never a
+;;   landed one; and evaluate surfaces :gate "depends_on" for the same draw
+;;   (approval approved, depth clear), so the chain placement is quantified
+;;   too, not just the bare gate function.
+;;
+;;   Invariant 1: "Every promotion route - by-name and auto-pick alike,
+;;   including any route added later - decides through the one
+;;   promotion_gates evaluate chain." The executable half: cmd-select's own
+;;   composition is (keep (:ok evaluate)) -> rank-candidates, so P12
+;;   replicates that composition at the lib level over generated candidate
+;;   sets and asserts a dependency-blocked candidate is NEVER the winner -
+;;   auto-pick and by-name agree because both are the same evaluate. The
+;;   "any route added later" quantifier is process prose, not a testable
+;;   surface (the coder role's own carve-out): no test can run a route that
+;;   does not exist yet. What holds it structurally is BL-663's own design -
+;;   both live shell routes call promotion_gates_cli.bb (its required_wiring
+;;   greps them for the literal), and the CLI has exactly one evaluate call
+;;   site per mode - recorded here as the stated reason rather than encoded.
+;;
+;; Non-vacuity proven at authoring time (2026-08-19), each break restored:
+;;   - depends-on-refusal dropped from evaluate's `or` chain -> P11's
+;;     evaluate half and P12 both failed on every unlanded draw;
+;;   - read-depends-on swapped for the read-field-based reading (nil for a
+;;     block value) -> P11 failed on every block-form draw - the exact
+;;     fail-open trap the ticket documents.
+
+(def ^:private dep-forms [:flow :block :scalar-prose])
+
+(defn- gen-dep [s i]
+  (let [[landed? s1] (gen-bool s)]
+    [{:id (str "BL-" (+ 100 i)) :landed? landed?} s1]))
+
+(defn- gen-deps-scenario [s]
+  (let [[shape s1] (gen-int s 5)]
+    (if (= 4 shape)
+      [{:form :unparseable :deps [] :content "depends_on: someday maybe\nhuman_approval: approved\n"} s1]
+      (let [[form s2] (gen-pick s1 dep-forms)
+            [n s3] (gen-int s2 4)
+            [deps s4] (reduce (fn [[acc sx] i]
+                                (let [[d sy] (gen-dep sx i)]
+                                  [(conj acc d) sy]))
+                              [[] s3] (range n))
+            ids (map :id deps)
+            field (case form
+                    :flow (str "depends_on: [" (str/join ", " ids) "]\n")
+                    :block (if (seq ids)
+                             (str "depends_on:\n" (apply str (map #(str "  - " % "\n") ids)))
+                             "depends_on: []\n")
+                    :scalar-prose (if (seq ids)
+                                    (str "depends_on: " (str/join ", " ids) " (must land first)\n")
+                                    "depends_on: []\n"))]
+        [{:form form :deps deps :content (str field "human_approval: approved\n")} s4]))))
+
+(check-all "P11 depends_on fails closed: refuse iff any id is unlanded or the value unparseable, naming exactly the unlanded ids; evaluate surfaces the gate"
+  gen-deps-scenario
+  (fn [{:keys [form deps content]}]
+    (let [done-set (set (map :id (filter :landed? deps)))
+          unlanded (map :id (remove :landed? deps))
+          refusal (promotion-gates-lib/depends-on-refusal content done-set)
+          result (promotion-gates-lib/evaluate {:content content :held? false
+                                                 :active-count 0 :max-depth 5
+                                                 :active-epics {} :done-ids done-set})
+          should-refuse? (or (= form :unparseable) (seq unlanded))]
+      (cond
+        (and should-refuse? (nil? refusal))
+        "an unlanded/unparseable depends_on was ALLOWED (fail-open)"
+
+        (and (not should-refuse?) refusal)
+        (str "fully-landed dependencies refused: " (pr-str refusal))
+
+        (and should-refuse? (not= "depends_on" (:gate refusal)))
+        (str "wrong gate: " (pr-str refusal))
+
+        (and should-refuse? (not-every? #(str/includes? (:reason refusal) %) unlanded))
+        (str "refusal fails to name every unlanded id: " (pr-str refusal))
+
+        (and should-refuse? (some #(str/includes? (:reason refusal) %)
+                                  (map :id (filter :landed? deps))))
+        (str "refusal names a LANDED id: " (pr-str refusal))
+
+        (and should-refuse? (not= "depends_on" (:gate result)))
+        (str "evaluate did not surface the depends_on gate: " (pr-str result))
+
+        (and (not should-refuse?) (not (:ok result)))
+        (str "evaluate refused a clean candidate: " (pr-str result))
+
+        :else true))))
+
+(defn- gen-select-set [s]
+  (let [[n s1] (gen-int s 3)
+        [cands s2] (reduce (fn [[acc sx] i]
+                             (let [[scenario sy] (gen-deps-scenario sx)]
+                               [(conj acc (assoc scenario :file (str "cand-" i ".yaml")
+                                                 :content (str "id: BL-" i "\npriority: " i "\n"
+                                                               (:content scenario))))
+                                sy]))
+                           [[] s1] (range (inc n)))]
+    [cands s2]))
+
+(check-all "P12 auto-pick composition: a dependency-blocked candidate is never the winner (select's own keep-eligible -> rank composition, same evaluate)"
+  gen-select-set
+  (fn [cands]
+    (let [eligible (keep (fn [{:keys [content file deps form]}]
+                           (let [done-set (set (map :id (filter :landed? deps)))
+                                 result (promotion-gates-lib/evaluate
+                                         {:content content :held? false
+                                          :active-count 0 :max-depth 5
+                                          :active-epics {} :done-ids done-set})]
+                             (when (:ok result)
+                               {:file file :content content
+                                :blocked? (or (= form :unparseable)
+                                              (boolean (seq (remove :landed? deps))))})))
+                         cands)
+          winner (promotion-gates-lib/rank-candidates eligible)]
+      (if (and winner (:blocked? winner))
+        (str "a dependency-blocked candidate won the selection: " (pr-str winner))
+        true))))
+
+;; generator coverage floors for P11 (reach asserted, never hoped): the
+;; refuse and allow branches, the block form specifically (the fail-open
+;; trap), and the unparseable sibling must each actually occur.
+(let [[refuse allow block unparseable]
+      (loop [i 0 s 7 r 0 a 0 b 0 u 0]
+        (if (= i runs)
+          [r a b u]
+          (let [[{:keys [form deps]} s'] (gen-deps-scenario s)
+                unlanded? (or (= form :unparseable) (boolean (seq (remove :landed? deps))))]
+            (recur (inc i) s'
+                   (if unlanded? (inc r) r)
+                   (if unlanded? a (inc a))
+                   (if (= form :block) (inc b) b)
+                   (if (= form :unparseable) (inc u) u)))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: P11 refuse=" refuse " allow=" allow " block-form=" block " unparseable=" unparseable))
+  (when (< refuse floor)
+    (report! "COVERAGE P11 refuse branch" 7 {:refuse refuse :floor floor} "the refuse branch is barely exercised"))
+  (when (< allow floor)
+    (report! "COVERAGE P11 allow branch" 7 {:allow allow :floor floor} "the allow branch is barely exercised"))
+  (when (< block floor)
+    (report! "COVERAGE P11 block form" 7 {:block block :floor floor} "the block form (the fail-open trap) is barely exercised"))
+  (when (< unparseable (quot runs 20))
+    (report! "COVERAGE P11 unparseable form" 7 {:unparseable unparseable :floor (quot runs 20)} "the unparseable sibling is barely exercised")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "promotion_gates_lib properties: " runs " runs each"))
 (if (empty? @failures)

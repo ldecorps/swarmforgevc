@@ -25,6 +25,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "llm_cost_ledger_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
@@ -1522,6 +1523,27 @@
      :active-role active
      :rotation-router? (rotation-router-mode?)}))
 
+(defn- note-chase-control-plane-failure!
+  "BL-958: a failed chase tmux send is the daemon's view of the crash class
+   where the tmux server disappears while the daemons stay up. Probe and
+   classify through the shared control_plane_lib and persist exactly one
+   open structured incident for the loss (socket, probe output, expected
+   sessions, response decision) — the artifact the live 2026-08-19 incident
+   never produced. Recording must never take the sweep down with it."
+  [socket roles]
+  (try
+    (let [result (control-plane-lib/record-chase-failure-incident!
+                  {:state-dir (str state-dir)
+                   :socket socket
+                   :expected-sessions (vec (sort (keep :session (vals roles))))
+                   :observed-at (str (java.time.Instant/now))
+                   :source "handoffd-chase"})]
+      (when (:recorded? result)
+        (log! "control-plane-incident-recorded"
+              (str (control-plane-lib/incidents-file state-dir)))))
+    (catch Exception e
+      (log! "control-plane-incident-error" (.getMessage e)))))
+
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         resident-wake-suppressed? (atom false)
@@ -1536,6 +1558,7 @@
                                          wake-attribution-lib/sweep-inbox-item :new)
                                         (catch Exception e
                                           (log! "chase-wake-error" role (.getMessage e))
+                                          (note-chase-control-plane-failure! socket roles)
                                           false))))
                   :send-in-process-resume! (fn [role]
                                               (if (tmux-inject-disabled?)
@@ -1548,6 +1571,7 @@
                                                    wake-attribution-lib/sweep-stuck-in-process :in_process)
                                                   (catch Exception e
                                                     (log! "chase-in-process-resume-error" role (.getMessage e))
+                                                    (note-chase-control-plane-failure! socket roles)
                                                     false))))
                   :trigger-respawn! (fn [role]
                                        (try

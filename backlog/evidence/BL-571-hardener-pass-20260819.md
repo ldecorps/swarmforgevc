@@ -133,13 +133,16 @@ mine to do. But I will not overstate its verification:
   leftovers), the wrong spelling survives only inside a comment, and every
   referenced stub (`fake_daemon_start.sh`) is one `make_fixture` really
   creates. `fake_supervisor.bb` is no longer referenced by any code path.
-- **NOT verified by a completed suite run.** The swept file's run reached
-  **7 PASS / 0 FAIL** before the host killed it. Runs 2 and 3 (40 and 31
-  PASS, 0 FAIL) predate the sweep.
+- **RESOLVED — now verified by a completed run.** Four earlier attempts were
+  killed by host saturation (furthest 40 PASS / 0 FAIL, never a failure). Once
+  load fell to ~68, a fifth run of the swept file **completed: 47 PASS / 0
+  FAIL, exit 0**, covering the `RC-9`-onward tail that every earlier attempt
+  missed. That run was made during the following BL-957/BL-958/BL-960 batch
+  and also covers BL-958's additions to the same suite.
 
-**QA: please run qa_e2e step 1 to completion on a quiet host.** No run in this
-pass completed the tail, so the suite's `RC-9`-onward cases are unverified
-against the swept fixtures — by anyone.
+So qa_e2e step 1 **is** satisfied, on evidence, including the swept fixtures.
+The earlier caveat in this file asking QA to re-run it on a quiet host is
+superseded by that completed run.
 
 ## Gates NOT run (BLOCKED — never recorded as passing)
 

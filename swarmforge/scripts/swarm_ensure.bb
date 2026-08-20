@@ -60,6 +60,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -703,8 +704,80 @@
                   (when category (str " [" (name category) "]"))
                   (when action (str " (" action ")")))))
 
-(defn -main []
+(defn control-plane-state
+  "BL-958: classify the control plane through the shared control_plane_lib
+   before any per-role repair, and decide recovery through the same lib.
+   The loss shape (socket file + role metadata present, server gone) is what
+   the live 2026-08-19 incident looked like; the per-role repair loop below
+   IS the :relaunch-roles recovery — recreating the first session restarts
+   the tmux server itself — but the decision to run it, and what to report,
+   comes from the lib, never from blundering into per-role repairs."
+  []
   (let [socket (tmux-socket)
+        {:keys [classification]} (control-plane-lib/observe! state-dir socket)
+        ;; One reading of the two facts every downstream answer depends on -
+        ;; the decision AND the escalation's next action come from the SAME
+        ;; observation, never from a second derivation at report time.
+        facts {:classification classification
+               :launch-scripts-present? (control-plane-lib/launch-scripts-present? state-dir)}]
+    {:socket socket
+     :classification classification
+     :decision (control-plane-lib/recovery-decision facts)
+     :policy (control-plane-lib/response-policy
+              (assoc facts :incident {:socket-path socket}))}))
+
+(defn- halt-decision?
+  "BL-958 D1: recreation is impossible and ensure must report loudly instead
+   of churning. One definition, read by both the repair-loop gate in -main
+   and the control-plane row below, so the two can never disagree about
+   which case they are in."
+  [decision]
+  (= :halt (:action decision)))
+
+(defn control-plane-report!
+  "Re-probe after the repair loop ran and report honestly: FIXED only when
+   the server actually answers again (open incidents are then resolved),
+   FAILED with the decision's reason when it does not.
+
+   BL-958 D1: under :halt no recovery ran at all - recreation is impossible
+   (no persisted launch scripts), so report FAILED carrying the escalation
+   policy's own next action and leave the open incident UNTOUCHED. Resolving
+   an incident requires a recovery that actually restored roles, never
+   merely a tmux server that answers a probe."
+  [{:keys [socket decision policy]}]
+  (if (halt-decision? decision)
+    {:component "control-plane" :status :failed
+     :action (str "control-plane-missing: " (:reason decision)
+                  "; " (:next-action policy))}
+    (let [after (control-plane-lib/probe-server! socket)]
+      (if (:responds? after)
+        (do (control-plane-lib/resolve-open-incidents!
+             (control-plane-lib/incidents-file state-dir)
+             (str (java.time.Instant/now)))
+            {:component "control-plane" :status :fixed
+             :action (str "control-plane-missing: " (:reason decision)
+                          "; tmux server restored")})
+        {:component "control-plane" :status :failed
+         :action (str "control-plane-missing: " (:reason decision)
+                      "; tmux server still not responding")}))))
+
+(defn- roles-all-failed
+  "Every role FAILED with the same detail, rc rows passed through healthy -
+   the shape BOTH no-recovery-possible paths produce (no tmux socket for
+   this root at all; control plane missing with no launch scripts to respawn
+   from). Neither path probed any individual role, so none may report a
+   per-role verdict of its own. extra carries whatever that path adds to the
+   agent row (e.g. a classified error category); nil adds nothing."
+  [rows detail extra]
+  (vec (mapcat (fn [{:keys [role]}]
+                 [(merge {:component (str "agent:" role) :status :failed :action detail}
+                         extra)
+                  {:component (str "rc:" role) :status :healthy}])
+               rows)))
+
+(defn -main []
+  (let [cp-state (control-plane-state)
+        socket (tmux-socket)
         extension-result (if (fs/exists? headless-marker-file)
                            {:component "extension" :status :healthy
                             :action "skipped bounce (headless swarm owns tmux)"}
@@ -732,25 +805,55 @@
         resident-session (some #(when (= :resident (mono-router-lib/classify-role ordered (:role %)))
                                    (:session %))
                                 rows)
-        role-results (if socket
+        ;; BL-958 D1: the recovery decision GATES the repair loop - under
+        ;; :halt (control plane missing, no persisted launch scripts) the
+        ;; per-role loop must not run at all: ensure-standing-role!'s
+        ;; create-session! would restart the bare tmux server, the re-probe
+        ;; would answer, and the report would claim FIXED while every role
+        ;; is dead - exactly invariant 2's forbidden half-alive state.
+        halt? (halt-decision? (:decision cp-state))
+        role-results (cond
+                       halt?
+                       (roles-all-failed
+                        rows
+                        "control plane missing and no persisted launch scripts exist; recreation skipped, see the control-plane row"
+                        nil)
+
+                       socket
                        (vec (mapcat (fn [{:keys [role session] :as row}]
                                       (let [agent-result
                                             (if router?
                                               (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
+                                              ;; BL-958: ensure-standing-role!, not bare respawn-role!
+                                              ;; — after control-plane loss the SESSION is gone too,
+                                              ;; and respawn-pane against a missing session can never
+                                              ;; recover it; create-if-missing also restarts the tmux
+                                              ;; server itself on the first recreated session.
                                               (ensure-role! (str "agent:" role)
                                                             #(pane-alive? socket session)
-                                                            #(respawn-role! socket role session)
+                                                            #(ensure-standing-role! socket role session)
                                                             contract-broken?))
                                             rc-result (ensure-rc-role! socket ordered role session)]
                                         [agent-result rc-result]))
                                     rows))
-                       (vec (mapcat (fn [{:keys [role]}]
-                                      (let [detail "no tmux socket found for this project root"]
-                                        [{:component (str "agent:" role) :status :failed
-                                          :action detail
-                                          :category (:category (agent-runtime-lib/classify-provider-error detail))}
-                                         {:component (str "rc:" role) :status :healthy}]))
-                                    rows)))
+
+                       :else
+                       (let [detail "no tmux socket found for this project root"]
+                         (roles-all-failed
+                          rows detail
+                          {:category (:category (agent-runtime-lib/classify-provider-error detail))})))
+        control-plane-result
+        (cond
+          (= :control-plane-missing (:classification cp-state))
+          (control-plane-report! cp-state)
+
+          (= :up (:classification cp-state))
+          (do (control-plane-lib/resolve-open-incidents!
+               (control-plane-lib/incidents-file state-dir)
+               (str (java.time.Instant/now)))
+              nil)
+
+          :else nil)
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
         operator-result (when (operator-enabled?)
@@ -765,7 +868,9 @@
         cursor-bridge-result (when (cursor-bridge-enabled?)
                                 (ensure-component! "cursor-bridge" cursor-bridge-healthy? ensure-cursor-bridge!
                                                     "restarted the Cursor Remote bridge"))
-        results (concat [extension-result] role-results [daemon-result launch-contract-check]
+        results (concat [extension-result] role-results
+                        (remove nil? [control-plane-result])
+                        [daemon-result launch-contract-check]
                         (remove nil? [operator-result front-desk-result babysitterd-result cursor-bridge-result]))]
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
