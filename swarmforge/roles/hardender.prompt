@@ -1089,3 +1089,28 @@ You are the hardender.
   acceptance lane ran 270s vs 59s once fixed. Human hotfix landed as
   596098dc3; the repo-wide grep gate for that one retired prefix is BL-964 -
   this rule is the general discipline the gate cannot cover.
+
+## An acceptance that parses only stdout covers none of the CLI's file writes — delete the write and run every gate before trusting (rule_proposal 2026-08-20, accepted)
+- Proposer's rule, verbatim: "A CLI whose acceptance parses only stdout has
+  its FILE writes covered by nothing - a unit-tested pure path-builder is
+  not coverage of the write. Delete the write and run every gate before
+  trusting."
+- The failure shape: the pure pieces around the write ARE covered — the
+  path-builder is unit-tested, the renderer is unit-tested, the stdout it
+  also prints is acceptance-parsed — so every lane is green while the one
+  line doing the I/O (the `spit`/`writeFile` itself) is observed by no gate.
+  Coverage of a write's inputs is not coverage of the write.
+- Mechanics: when a parcel's CLI claims a file side effect, run the manual
+  mutant — delete or comment the write, run the acceptance, unit, and
+  property lanes. If everything stays rc=0, the write is uncovered: add a
+  gate that reads the file back (an acceptance Then asserting existence and
+  content, or a thin integration test), confirm THAT fails on the mutant,
+  then restore the write. This is the Engineering Rules' degraded-fallback
+  discipline for Babashka/no-Stryker surfaces applied by hand to
+  side-effect lines — record it in the hardening notes like any other
+  manual mutant.
+- Evidence (proposed by the hardender, 2026-08-20, BL-959): deleting
+  `aps_equivalence_cli.bb`'s matrix.txt/.md `spit` left the acceptance, lib
+  unit, and property runners all rc=0. `matrix-file-path` was unit-tested,
+  which hid the gap on a reading — the writes looked covered because their
+  path computation was.
