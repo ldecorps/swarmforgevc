@@ -186,3 +186,5 @@ notes_coordinator_hold: >
   them follows ordinary priority, not a blast-radius argument. Evidence 9ad242541.
   NOTE: this ticket's defect is LIVE IN PRODUCTION RIGHT NOW while it sits blocked on
   capacity (active 7 = cap 7).
+
+assigned_to: coder
