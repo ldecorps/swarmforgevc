@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { makeEvidenceReader } = require('./lib/evidenceReport');
 const { resolveMainCheckout } = require('./lib/mainCheckout');
+const { lazy } = require('./lib/lazy');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKTREE_ROOT = REPO_ROOT; // this coder worktree
@@ -24,13 +25,7 @@ const WORKTREE_ROOT = REPO_ROOT; // this coder worktree
 // the BL-761 gate's materialized non-repo temp tree, silently skipping the
 // acceptance-contract check for EVERY send whose cited commit contains it
 // (the BL-863 caller-binding-time lesson; the helper itself is fine).
-let lazyMainCheckout = null;
-function mainCheckout() {
-  if (!lazyMainCheckout) {
-    lazyMainCheckout = resolveMainCheckout(__dirname);
-  }
-  return lazyMainCheckout;
-}
+const mainCheckout = lazy(() => resolveMainCheckout(__dirname));
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'backlog', 'evidence');
 
 const readEvidence = makeEvidenceReader(EVIDENCE_DIR, 'BL-336-headless-dark-emitter-audit-', 'BL-336');
