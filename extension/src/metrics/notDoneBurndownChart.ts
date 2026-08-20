@@ -29,11 +29,17 @@ function niceMax(value: number): number {
 
 /** Pure: SVG line chart matching the hand-built briefing burndown style. */
 export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
+  // BL-910 required wiring: computed-but-not-drawn is the failure this
+  // guard exists to prevent - a series missing its projection (a stale
+  // hand-built literal) fails loud instead of silently rendering no answer.
+  if (!data.projection) {
+    throw new Error('NotDoneBurndownSeries lacks its projection - compute it via computeNotDoneBurndownSeries/projectNotDoneEta');
+  }
   const width = 960;
   const height = 420;
   const padL = 64;
   const padR = 24;
-  const padT = 58;
+  const padT = 72;
   const padB = 48;
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
@@ -89,12 +95,21 @@ export function buildNotDoneBurndownSvg(data: NotDoneBurndownSeries): string {
 
   const netSign = data.net >= 0 ? '+' : '';
   const subtitle = `Open ${data.open0} → ${data.openN} (net ${netSign}${data.net} / ${data.windowDays}d) · Close ${data.closePerDay.toFixed(1)}/d · Mint ${data.mintPerDay.toFixed(1)}/d`;
+  // BL-910: the projection line, derived from the numbers on the subtitle
+  // above it. Scope named on the chart ("all open tickets") so it can never
+  // read as BL-228's milestone p50/p85 forecast; a not-shrinking backlog
+  // states the reason - never a date, an infinity, or a placeholder.
+  const projectionLine =
+    data.projection.kind === 'eta'
+      ? `Projected clear (all open tickets): ${data.projection.etaDateLabel} · ~${data.projection.etaDays}d at net burn ${data.projection.netBurnPerDay.toFixed(1)}/d`
+      : `${data.projection.reason} (net burn ${data.projection.netBurnPerDay.toFixed(1)}/d, all open tickets)`;
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<rect width="100%" height="100%" fill="#f7f5f0"/>`,
     `<text x="${padL}" y="26" font-size="18" font-weight="700" fill="#1a3a4a" font-family="system-ui,sans-serif">Backlog burndown — open tickets remaining, last ${data.windowDays} days</text>`,
     `<text x="${padL}" y="44" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXml(subtitle)}</text>`,
+    `<text x="${padL}" y="58" font-size="12" fill="#555" font-family="system-ui,sans-serif">${escapeXml(projectionLine)}</text>`,
     ...gridLines,
     `<polyline fill="none" stroke="#1a3a4a" stroke-width="2.6" points="${poly}"/>`,
     dots,

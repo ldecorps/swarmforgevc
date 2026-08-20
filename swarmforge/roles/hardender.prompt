@@ -1067,3 +1067,25 @@ You are the hardender.
   `tmpDirMigrationGuard.test.js`: "the real extension/test/ tree has zero raw
   mkdtemp call sites outside the shared helper", failing against its own two
   new test files.
+
+## Set-compare a fixture's stub env-var names against the names the code under test actually reads (rule_proposal 2026-08-20, accepted)
+- Proposer's rule, verbatim: "Set-compare a fixture's stub env-var names
+  against the names the code under test actually reads. A misspelled stub is
+  INERT - the real command runs, the suite still passes, and daemons leak."
+- A wrong-named stub fails SOFT: nothing errors, the suite stays green, and
+  the un-stubbed real path runs as a side effect. Green + side-effect-escape
+  is invisible to every downstream gate, so this check sits here, in your
+  pass.
+- Mechanics: when a parcel's fixture exports env vars to inject fakes, grep
+  the code under test for its actual `getenv`/`System/getenv`/`process.env`
+  names and set-compare - every stub name must appear in the code's read
+  set. A stub name the code never reads is a defect in the parcel, even
+  while the suite passes. Prefer asserting the fake RAN (a marker file the
+  fake writes) over trusting the export.
+- Evidence (proposed by the hardender, 2026-08-20, BL-571): 8 fixture blocks
+  set SWARMFORGE_ENSURE_* while swarm_ensure.bb reads SWARM_ENSURE_*_CMD.
+  The real extension bounce and daemon start ran on fixtures - two VS Code
+  windows opened unprompted, 3 PPID-1 babysitterd daemons leaked, and the
+  acceptance lane ran 270s vs 59s once fixed. Human hotfix landed as
+  596098dc3; the repo-wide grep gate for that one retired prefix is BL-964 -
+  this rule is the general discipline the gate cannot cover.
