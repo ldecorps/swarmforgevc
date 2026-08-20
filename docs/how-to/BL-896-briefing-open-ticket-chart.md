@@ -42,6 +42,58 @@ computation (`notDoneBurndown.ts`) — the split exists purely to keep each
 file under the mutation-site-count threshold, not for any behavioral
 reason.
 
+## The projected ETA (BL-910)
+
+The chart carries a projection caption beside the counts it is derived from.
+It answers one of two ways, and never a third:
+
+**When the backlog is genuinely shrinking:**
+
+```
+Projected clear (all open tickets): 2026-09-14 · ~25d at net burn 0.8/d
+```
+
+**When it is not** — net burn zero or negative:
+
+```
+no ETA — backlog still growing (net burn -0.3/d, all open tickets)
+```
+
+Never a date, never "never", never a fabricated infinity or a placeholder.
+That is the human's one hard condition on this feature and it is enforced as
+an invariant, not as a branch in one renderer.
+
+### How to check it by hand
+
+Net burn is the close rate minus the mint rate, and both are already printed
+in the subtitle. Divide the open count by net burn and you get the days:
+
+    etaDays = openN / (closePerDay - mintPerDay)
+
+The projection is computed from exactly those printed numbers, rounded to the
+one decimal the subtitle shows *before* the division — so a reader dividing
+what they see on the chart gets the same answer the chart gives. That is
+deliberate: the division is kept in integer tenths rather than dividing by a
+reconstructed float, because the float form reintroduces rounding dust that
+`Math.ceil` turns into a whole extra day (at 21 open and 0.7/d net burn,
+`21 / 0.7` evaluates to `30.000000000000004` and ceils to 31, while the
+printed numbers give 30). Fractional days always round up.
+
+### Scope — this is not the milestone forecast
+
+The caption names "all open tickets" on the chart itself. This projection is
+repo-wide open count; it is **not** BL-228's milestone p50/p85 delivery
+forecast, which stays where it is and is not reused here. The human's
+instruction was "do not silently introduce a second disagreeing ETA" — that
+is met by naming the scope on the chart, not by hiding either number.
+
+### Why a caption and not a dashed line
+
+A projection drawn on the same axes as the real series can be misread as
+measured data. One number in the subtitle, beside the counts it comes from,
+is what "read at a glance" asked for. A dashed projection line remains a
+later, separate call.
+
 ## Fail-open independence from the architecture diagrams
 
 The two diagram sources — architecture diagrams and this chart — are each
@@ -64,7 +116,10 @@ itself:
 
 1. Trigger a briefing send and open the email. Read the chart's heading and
    subtitle — confirm they describe open tickets over a window, never a
-   target, a remaining-to-zero, or a completion date.
+   target or a remaining-to-zero. The chart *does* carry a projected
+   completion date since BL-910, but only as the scoped projection caption
+   described above: confirm it names "all open tickets" and that no
+   milestone p50/p85 figure appears beside it.
 2. On the day the email was sent, count `backlog/active/*.yaml` +
    `backlog/paused/*.yaml` + `backlog/hold/*.yaml` by hand and confirm it
    equals the chart's last point.
