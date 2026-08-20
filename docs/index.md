@@ -87,6 +87,7 @@ expects them, and are not migrated or rewritten here.
 - [Keeping the operator_runtime.bb JS fixture list honest](how-to/BL-944-operator-runtime-fixture-closure-guard.md) — the source-derived load-file closure guard that replaced a six-times-drifted hand-maintained list, how to add a new dependency without repeating the drift, and how this differs from BL-671's separate shell-fixture sandbox.
 - [The Constitution Doc-Citation Guard](how-to/BL-945-constitution-doc-citation-guard.md) — why a constitution article citing a `docs/...` path now fails the standing extension suite if that path doesn't resolve on `main`, what it deliberately does and doesn't scan, and how it differs from BL-640's worktree-freshness guard.
 - [The Hardening-Debt Ledger](how-to/BL-942-hardening-debt-ledger.md) — why the office-hours mutation/CRAP bypass's "runs later against a quiet host" promise can no longer be kept under continuous 3x8 shifts, how to record a deferral and read outstanding debt, and its dedup/no-row-on-success rules.
+- [Running the APS candidate-toolchain equivalence harness](how-to/BL-959-aps-candidate-toolchain-equivalence-run.md) — how to measure a candidate APS toolchain against the pinned one before a human pin bump: the clone-at-SHA-and-verify run, the three gate lanes and their EQUIVALENT/DIVERGENT/INCOMPLETE matrix, the fail-closed exit, the `--do-not-infer` shim seam, and the pinned surfaces it never writes.
 
 ## Reference
 
