@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 15
 direction: swarm-surfaced
 depends_on: []
@@ -188,3 +188,5 @@ approval_context: >
   breakage: the job vanishes with no error, and the natural reading is a
   flaky suite. That is turns burned on a phantom. Push back to `medium` if
   you read a documented-but-broken workaround as contained.
+
+assigned_to: coder
