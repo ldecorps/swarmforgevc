@@ -12,7 +12,16 @@
 ;; Every finding is {:key :severity ("CRIT"|"WARN") :message}.
 
 (ns babysitterd-sweep-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
+
+;; BL-996: classify-pane-busy? (below) now delegates to chase_sweep_lib.bb's
+;; actively-processing? - the BL-970 chokepoint every wake predicate already
+;; funnels through - instead of its own private whole-pane substring match.
+;; Loading a sibling lib is a build-time module load, not the kind of live
+;; fs/tmux/clock read this file's own header disclaims for its business
+;; logic (chase_sweep_lib.bb is itself a pure classifier, same posture).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 
 ;; ── check 1: live-session-per-role ──────────────────────────────────────────
 
@@ -196,21 +205,16 @@
                                new-streak " consecutive sweeps — likely a lost instruction or stale assignment; check the newest completed notes and ticket assigned_to fields")})
      :new-streak new-streak}))
 
-;; ── 6d-09: busy detection survives 80-column truncation ─────────────────────
-;; A truncated pane capture can lose the "esc to interrupt" hint text before
-;; the spinner glyph/elapsed-time pattern that precedes it in the footer, so
-;; busy detection must not depend on that literal substring alone.
-
-(def ^:private spinner-glyph-re #"[✻✽✶✳]")
-(def ^:private elapsed-time-re #"\(?\d+s\b|\bfor\s+\d+m?\d*s\b")
-
+;; BL-996: was a private whole-pane substring match (`(str/includes? text
+;; "esc to interrupt")` or'd with a spinner-glyph+elapsed-time co-occurrence)
+;; - exactly the false-busy shape BL-970 fixed at the chokepoint (a pane
+;; quoting the marker in old scrollback, not actually mid-turn, read as
+;; busy). Delegates to the SAME classifier every wake predicate already
+;; reaches instead of a second, private copy - see chase_sweep_lib.bb's own
+;; actively-processing? for the structural/tail-window contract.
 (defn classify-pane-busy?
   [pane-text]
-  (let [text (str pane-text)]
-    (boolean
-     (or (str/includes? text "esc to interrupt")
-         (and (re-find spinner-glyph-re text)
-              (re-find elapsed-time-re text))))))
+  (chase-sweep-lib/actively-processing? pane-text))
 
 ;; ── check 12 / 17: resume-overdue (planned pause failed to auto-resume) ─────
 
