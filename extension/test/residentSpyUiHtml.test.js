@@ -63,9 +63,21 @@ test('BL-929: the top ticket strip is not shown under a standing full pack, even
   await flush();
   const { document } = dom.window;
   assert.equal(document.getElementById('ticket-strip').hidden, true);
-  // The ticket must still surface on the documenter tile itself.
+  // BL-994 locked human decision 2 supersedes the tile-level half of this
+  // assertion: grid tiles carry role name + Expand ONLY, so the ticket no
+  // longer surfaces in the tile head - it surfaces in the tile's fullscreen
+  // Expand instead (buildFullscreenHeadHtml renders the ticket block). The
+  // BL-929 concern this test protects - a standing pack shows no top strip
+  // yet the operator can still find the ticket - is preserved through that
+  // Expand path, asserted here. (BL-929's acceptance scenario 03 pins the
+  // old tile-level wording; flagged to the specifier as a spec amendment
+  // when BL-994 landed this change.)
   const documenterHead = document.querySelector('.pane-col[data-pane-id="documenter"] .pane-head');
-  assert.match(documenterHead.innerHTML, /BL-640/);
+  assert.doesNotMatch(documenterHead.innerHTML, /BL-640/);
+  document.querySelector('.pane-col[data-pane-id="documenter"]').dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true })
+  );
+  assert.match(document.getElementById('fs-head').textContent, /BL-640/);
 });
 
 test('BL-929: no tile is labelled Resident under a standing full pack', async () => {
