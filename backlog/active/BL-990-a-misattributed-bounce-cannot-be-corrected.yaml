@@ -113,6 +113,18 @@ notes: >
   review judgements - but that is about recording a decision at all, this is
   about correcting one already recorded.
 
+  PROMPT HALF LANDED OUT OF BAND (BL-798), 2026-08-21, commit 91b1fb0a46 on main:
+  swarmforge/roles/QA.prompt gains a "Correcting A Misattributed Bounce"
+  section and swarmforge/roles/specifier.prompt gains the same duty at its
+  cause. The documenter filed this as a spec gap by note - correctly, since
+  role prompts are the specifier's exclusive domain and no gate would have
+  caught the mechanism landing wired into zero call sites. BOOKKEEPING ONLY:
+  nothing in the parcel changes, no rebuild, no new scenario, no step
+  handler. The prose was written against the CLI interface at the
+  documenter's tip 411ffb2f1 (--ticket/--commit/--reason/--by required,
+  --evidence optional); if QA bounces and those flags change, the prompts
+  need a follow-up commit.
+
 qa_e2e_procedure: >
   1. Record a bounce with a deliberately wrong producingRole, then record a
      correction for the same ticket+commit. Assert the original line is still
