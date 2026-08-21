@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c2456dc6667ffa0157636035aecce50ea407f0c774b75ff6c215d7c565e61be2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-21T07:10:38.968590Z","feature_name":"The busy marker agrees across the language boundary","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-997-the-busy-marker-agrees-across-the-language-boundary.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Both sides reach the same verdict on the same pane","scenario_hash":"e8a15e30707ffb716f2e26f0e0fed7e37b9765765610b57c262b92d1970dfd13","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-21T07:10:38.968590Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The busy marker agrees across the language boundary
 
   The swarm classifies a mid-turn pane in Babashka; the extension host
