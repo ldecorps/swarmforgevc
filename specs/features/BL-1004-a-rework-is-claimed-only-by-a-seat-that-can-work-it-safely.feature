@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c8d6ee3e553ad47ccd22da557019540d1abf8d411381ed4c47df0c02bf764c15
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-21T05:48:08.882991Z","feature_name":"A stage queue hands a rework only to a seat that can work it safely","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-1004-a-rework-is-claimed-only-by-a-seat-that-can-work-it-safely.feature","background_hash":"736470cdde530da57a73c72e9b3a85af42d7bc08355615d9ae2e1f8272ff0e0d","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the stage queue hands a parcel only to a seat that can safely work it","scenario_hash":"fc7f991ea8199f2b61c5d134a6b1506e309cd80bf332f081f13d02b1753f9f60","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-21T05:48:08.882991Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A stage queue hands a rework only to a seat that can work it safely
 
   BL-983 gave a multi-seat stage one addressable queue and let any idle seat

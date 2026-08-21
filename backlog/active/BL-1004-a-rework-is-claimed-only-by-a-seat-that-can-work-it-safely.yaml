@@ -196,3 +196,6 @@ notes: >
   scenario that proves invariant 3.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-21, by: architect, blamed: coder, class: behavior, commit: 31c0981b88, evidence: backlog/evidence/BL-1004-architect-bounce-20260821.md }

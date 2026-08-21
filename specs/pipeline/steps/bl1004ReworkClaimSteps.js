@@ -151,24 +151,44 @@ function registerSteps(registry) {
   });
 
   scoped(/^the stage queue holds a git_handoff for a task$/, (ctx) => {
-    send(ctx, TASK);
-    assert.equal(stageQueue(ctx).length, 1, `the parcel must reach the stage queue: ${stageQueue(ctx)}`);
+    try {
+      send(ctx, TASK);
+      assert.equal(stageQueue(ctx).length, 1, `the parcel must reach the stage queue: ${stageQueue(ctx)}`);
+    } catch (e) {
+      cleanup(ctx);
+      throw e;
+    }
   });
 
   scoped(/^the prior worker of that task is (\S+)$/, (ctx, prior) => {
-    assert.ok(KNOWN_PRIORS.has(prior), `unknown prior worker "${prior}" - the handlers know ${[...KNOWN_PRIORS]}`);
-    if (prior !== 'none') seedPriorWork(ctx, prior, TASK);
+    try {
+      assert.ok(KNOWN_PRIORS.has(prior), `unknown prior worker "${prior}" - the handlers know ${[...KNOWN_PRIORS]}`);
+      if (prior !== 'none') seedPriorWork(ctx, prior, TASK);
+    } catch (e) {
+      cleanup(ctx);
+      throw e;
+    }
   });
 
   scoped(/^that parcel has waited past the cross-seat claim deadline$/, (ctx) => {
-    ctx.pastDeadline = true;
-    backdateQueuedParcel(ctx);
+    try {
+      ctx.pastDeadline = true;
+      backdateQueuedParcel(ctx);
+    } catch (e) {
+      cleanup(ctx);
+      throw e;
+    }
   });
 
   scoped(/^seat (\S+) asks for its next task$/, (ctx, asking) => {
-    assert.ok(KNOWN_ASKERS.has(asking), `unknown asking seat "${asking}" - the handlers know ${[...KNOWN_ASKERS]}`);
-    ctx.asking = asking;
-    ctx.poll = poll(ctx, asking);
+    try {
+      assert.ok(KNOWN_ASKERS.has(asking), `unknown asking seat "${asking}" - the handlers know ${[...KNOWN_ASKERS]}`);
+      ctx.asking = asking;
+      ctx.poll = poll(ctx, asking);
+    } catch (e) {
+      cleanup(ctx);
+      throw e;
+    }
   });
 
   scoped(/^the parcel (stays in the stage queue|is claimed by that seat)$/, (ctx, outcome) => {
