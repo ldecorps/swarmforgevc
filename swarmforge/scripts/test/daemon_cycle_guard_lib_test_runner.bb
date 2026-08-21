@@ -104,6 +104,85 @@
       (reset! daemon-cycle-guard-lib/current-context "outside-sweep")
       (fs/delete-tree d))))
 
+;; ── the bound covers the STREAM DRAIN, not just the exit code (BL-1021) ───
+;; The live deadlock: handoffd's dispatch-gap-sweep shelled out to
+;; swarm_handoff.bb, which left a process holding the inherited stdout/err
+;; write ends. The direct child exited PROMPTLY, so the exit-code wait never
+;; hit its bound and the timeout branch was never taken - and babashka.process
+;; then resolved the :out/:err pump futures with NO bound, blocking in read()
+;; forever because the pipe never reached EOF. Sampled live 2026-08-21: two
+;; pump threads in read(), one wait4 on an already-exited pid, and no
+;; on-timeout! line at all.
+;;
+;; So the two cases below are genuinely different children and BOTH are
+;; asserted. The bound is over the CALL, at any process depth - not over the
+;; exit code (invariant 1: "a bound that cannot be observed firing is not a
+;; bound").
+;;
+;; The sh! call is itself run under a suite-level deref guard: a regression
+;; here does not fail an assertion, it HANGS, and a hung runner reports
+;; nothing at all. The guard converts that back into a readable red.
+
+(defn- bounded-call
+  "Runs (sh! ...) under a wall-clock guard well past the bound, so a
+   regression that blocks forever surfaces as a failed assertion instead of
+   an unkillable runner. Returns [result elapsed-ms] or [::hung guard-ms]."
+  [guard-ms bound-ms & args]
+  (let [t0 (System/currentTimeMillis)
+        call (future (with-redefs [daemon-cycle-guard-lib/subprocess-wait-bound-ms (fn [] bound-ms)]
+                       (apply daemon-cycle-guard-lib/sh! args)))
+        r (deref call guard-ms ::hung)]
+    (when (= ::hung r) (future-cancel call))
+    [r (- (System/currentTimeMillis) t0)]))
+
+;; Case A - the DEFECT shape: the child exits immediately, but the process it
+;; backgrounded still holds the inherited stdout/stderr, so the pipe never
+;; sees EOF. `sleep 5` outlives the 200ms bound by a wide margin, and reaps
+;; itself long before the suite ends (destroy-tree cannot reach it: it was
+;; reparented the instant its parent exited).
+(let [fired (atom nil)]
+  (reset! daemon-cycle-guard-lib/on-timeout! (fn [info] (reset! fired info)))
+  (reset! daemon-cycle-guard-lib/current-context "dispatch-gap-sweep")
+  (let [[r elapsed] (bounded-call 15000 200
+                                  "bash" "-c" "echo child-output; sleep 5 & exit 0")]
+    (assert-true "a child whose grandchild holds the pipe open still RETURNS - the bound covers the stream drain, not only the exit code"
+                 (not= ::hung r))
+    (when (not= ::hung r)
+      (assert= "the undrainable call is reported as a bounded-wait timeout" 124 (:exit r))
+      (assert-true "the undrainable call returns at the bound, not at the pipe-holder's own lifetime"
+                   (< elapsed 5000))
+      (assert-true "the timeout error names the bound and the command"
+                   (and (str/includes? (:err r) "200ms") (str/includes? (:err r) "bash")))
+      (assert= "the timeout is ANNOUNCED, attributed to the sweep that owns the call - never silent"
+               "dispatch-gap-sweep" (:context @fired))
+      (assert= "the announcement carries the command" ["bash" "-c" "echo child-output; sleep 5 & exit 0"]
+               (:cmd @fired))))
+  (reset! daemon-cycle-guard-lib/on-timeout! (fn [_] nil))
+  (reset! daemon-cycle-guard-lib/current-context "outside-sweep"))
+
+;; Case B - the CONTROL, which passed BEFORE this fix and must keep passing:
+;; a direct child that never exits. Bounding the stream drain must not cost
+;; the exit-code bound that already worked (qa_e2e_procedure step 2).
+(let [fired (atom nil)]
+  (reset! daemon-cycle-guard-lib/on-timeout! (fn [info] (reset! fired info)))
+  (reset! daemon-cycle-guard-lib/current-context "control-sweep")
+  (let [[r elapsed] (bounded-call 15000 200 "sleep" "10")]
+    (assert-true "CONTROL: a direct child that never exits still returns" (not= ::hung r))
+    (when (not= ::hung r)
+      (assert= "CONTROL: the exit-wait bound still reports 124" 124 (:exit r))
+      (assert-true "CONTROL: still returns at the bound" (< elapsed 5000))
+      (assert= "CONTROL: still announced against its sweep" "control-sweep" (:context @fired))))
+  (reset! daemon-cycle-guard-lib/on-timeout! (fn [_] nil))
+  (reset! daemon-cycle-guard-lib/current-context "outside-sweep"))
+
+;; A child that exits promptly AND closes its streams is untouched by any of
+;; this - the fast path must not acquire a bound-length delay.
+(let [[r elapsed] (bounded-call 15000 3000 "bash" "-c" "echo fast; exit 7")]
+  (assert= "a prompt, drainable child still passes its own exit code through" 7 (:exit r))
+  (assert= "a prompt, drainable child still passes its stdout through" "fast" (str/trim (:out r)))
+  (assert-true "a prompt, drainable child returns immediately, never waiting out the bound"
+               (< elapsed 3000)))
+
 ;; ── run-sweep! boundary observability (the invariant-2 core) ──────────────
 
 (let [logged (atom [])

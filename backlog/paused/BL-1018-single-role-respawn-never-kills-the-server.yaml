@@ -88,6 +88,27 @@ notes: |
   instead: if both are in flight, land this one FIRST, because BL-1017 automates
   the action this ticket makes safe. Coordinator's call, with that stated.
 
+  2026-08-21 coordinator: NOT promoted at this open-slot opportunity despite
+  ranking top of the queue (open-slot nudge saw it). Honored this ticket's own
+  orthogonality note instead: BL-1017 is already active with the coder, and
+  this ticket explicitly says "prefer not to hold them active concurrently."
+  Promoted BL-1012 into the slot instead (different file, no real overlap).
+  Top of queue again the moment BL-1017 closes - promote it then, ahead of
+  BL-1017 landing if still in flight, per this ticket's own stated preference.
+
   Orthogonality note for promotion: BL-1017 and BL-1018 both sit near the
   single-role launch path and are NOT orthogonal in the Article 3.2.3 sense.
   Prefer not to hold them active concurrently.
+
+  2026-08-21 coordinator: NOT promoted at this open-slot nudge either. Between
+  the nudge firing and this turn, a whole-swarm crash/restart (tmux socket
+  died ~16:18, full ./start-swarm.sh at 18:15) interrupted a prior coordinator
+  session mid-turn; it had staged (uncommitted) BL-1012/BL-1017/BL-586 out of
+  active/ into hold/ with no recorded reason and no commit. Restored all three
+  to active/ this turn rather than compound an undocumented action - that
+  refill closed the slot the nudge was reporting (active count is back at the
+  cap, 3-of-3). No promotion decision was actually available. Also still
+  blocked independently: no human_approval field is set on this ticket (fails
+  closed, same as an explicit pending), and its own orthogonality note above
+  still holds against active BL-1017. Awaiting both a human_approval decision
+  and BL-1017 clearing active/ before this is eligible again.
