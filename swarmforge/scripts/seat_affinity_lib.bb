@@ -84,6 +84,35 @@
         {:action :defer :task task}
         {:action :claim-cross-seat :task task}))))
 
+(defn deferral-hold?
+  "Pure: is this scanned stage-queue parcel inside its DESIGNED cross-seat
+   deferral wait window - i.e. would at least one seat of its stage defer it
+   right now? The stall sweeps (flow_watchdog_lib.bb, chase_sweep_lib.bb)
+   consult this the same way they consult the ambulance hold, so a parcel
+   waiting for its affine seat never trips a false stuck-parcel alarm
+   (architect bounce 2026-08-21: the 30-minute deferral window is twice the
+   watchdog's 15-minute default warn).
+
+   seat-worked-task-sets is one worked-task set PER SEAT of the parcel's
+   stage - per-seat, not their union, because a deferral needs BOTH a seat
+   that worked the task and a seat that did not: when every seat worked it
+   (whichever polls self-claims) or none did (fresh work), no deferral can
+   occur and a sitting parcel is a real stall. Single-seat stages and an
+   empty roles.tsv therefore never hold (invariant 3, structurally). Age
+   follows rework-claim-decision exactly - enqueued_at then created_at,
+   never mtime - and every release is fail-OPEN: unreadable age and at/past
+   deadline both un-hold, mirroring the claim path's own :claim-cross-seat
+   polarity (invariant 1: nothing waits, and nothing is muted, forever).
+   Returns a bare boolean - no seat identity escapes (invariant 2)."
+  [{:keys [type task seat-worked-task-sets enqueued-at created-at now-ms deadline-ms]}]
+  (boolean
+   (and (= type "git_handoff")
+        (not (str/blank? (str task)))
+        (some #(contains? % task) seat-worked-task-sets)
+        (some #(not (contains? % task)) seat-worked-task-sets)
+        (let [age-source (or (parse-instant-ms enqueued-at) (parse-instant-ms created-at))]
+          (and age-source (< (- now-ms age-source) deadline-ms))))))
+
 ;; ── diagnostic lines ──────────────────────────────────────────────────────
 ;; Both render fns RECEIVE the sibling seat ids (the wiring has them in
 ;; scope, and naming "the seat that worked it" is the obvious temptation)
