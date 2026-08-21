@@ -198,6 +198,20 @@ out_of_scope: |
     investigation shows it shares the broken code path.
 
 notes: |
+  2026-08-21 coordinator: QUEUE-JUMP per human directive ("qjump 582"),
+  live incident: BL-1026's Telegram Approve tap did not register (repeated
+  taps, confirmed no yaml write and no inbound reply recorded) during today's
+  front-desk poll-degraded/restart-storm episode - same symptom class this
+  ticket already root-caused. Reorders promotion only (Article 3.2.4/BL-715)
+  - top of the promotion queue regardless of numeric priority (146), next
+  promoted the moment an active/ slot opens (active_backlog_max_depth was at
+  cap, 3/3, at the time this was recorded - no slot existed to promote into
+  immediately). Does not bypass the depth cap, ambulance freeze, onboarding
+  gate, or orthogonality - ordinary queue-jump semantics, never an extra
+  slot. The human_approval:approved for BL-1026 itself was recorded manually
+  this same incident, via the direct writer path, since the broken tap left
+  no other channel.
+
   2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
   pilot-process batch can clear the high tier; observability of approve
   failures, not a standing outage.

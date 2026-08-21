@@ -95,6 +95,8 @@ import {
   ReplyRelayLoopState,
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
+  sustainedOutageThresholdMs,
+  SUSTAINED_OUTAGE_CONF_KEY,
   decideEnsureOperatorTopicAction,
   decideStandingTopicTitleSync,
   decideEnsureRoleTopicAction,
@@ -195,6 +197,7 @@ import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
 import { commitApprovalWrites } from '../util/commitIntegrityRunner';
+import { readConfigValue } from '../util/swarmforgeConfig';
 
 const execFileAsync = promisify(execFile);
 
@@ -2261,19 +2264,32 @@ function buildPollAdapters(
 // BL-369: stuckRetryLimit is measured in CYCLES, not attempts-with-backoff -
 // each poll cycle is itself a full retry of the still-undelivered update
 // (its offset never advanced), paced by the long-poll's own cadence.
+// BL-621: sustainedOutageThresholdMs is filled in per loop from the conf
+// key (loopBackoffConfig below) - it is the one tunable here a human is
+// expected to change, so it is not frozen into this literal.
 const POLL_BACKOFF_CONFIG = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
 
-// BL-369 (scenario 05): "the failure is escalated to the human" - sent
-// DIRECTLY via Telegram (never through the bridge, which is presumptively
-// the broken half when this fires) straight to the main chat, since the
-// stuck update's own topic/subject may not even be resolvable yet (that
-// resolution is exactly what keeps failing).
-async function escalateStuckDelivery(botToken: string, chatId: string): Promise<void> {
-  await sendTelegramMessage(
-    botToken,
-    chatId,
-    "front-desk bot: a message could not be delivered after repeated attempts (the bridge may be unreachable). It has NOT been dropped - delivery will resume automatically once the underlying issue clears."
-  );
+// BL-621: reads the sustained-outage threshold from the target's own
+// swarmforge.conf once, at loop start - both forever-loops go through this
+// one function so they can never end up on different thresholds.
+function loopBackoffConfig(base: Omit<PollBackoffConfig, 'sustainedOutageThresholdMs'>, targetPath: string): PollBackoffConfig {
+  return { ...base, sustainedOutageThresholdMs: sustainedOutageThresholdMs(readConfigValue(targetPath, SUSTAINED_OUTAGE_CONF_KEY)) };
+}
+
+// BL-369 (scenario 05) / BL-621: "the failure is escalated to the human" -
+// sent DIRECTLY via Telegram (never through the bridge, which is
+// presumptively the broken half when this fires) straight to the main chat,
+// since the stuck update's own topic/subject may not even be resolvable yet
+// (that resolution is exactly what keeps failing). BL-621 reuses the same
+// channel for a sustained poll/relay outage: sending does not poll, so this
+// still gets through while getUpdates itself is 409-ing. A non-ok response
+// is thrown (like ackReply's own failed-ack posture) so the caller's
+// tolerant wrapper logs it - the loop itself never dies for it.
+async function sendDirectEscalation(botToken: string, chatId: string, message: string): Promise<void> {
+  const result = await sendTelegramMessage(botToken, chatId, message);
+  if (!result.success) {
+    throw new Error(result.error ?? 'sendMessage failed');
+  }
 }
 
 // Polls forever, one batch at a time - every decision (post/open/route,
@@ -2293,16 +2309,17 @@ async function pollLoop(
   scheduleConciergeTick: () => void
 ): Promise<void> {
   const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey, scheduleConciergeTick);
-  let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  const config = loopBackoffConfig(POLL_BACKOFF_CONFIG, targetPath);
+  let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: { escalated: false } };
   writeFrontDeskPollHeartbeat(targetPath);
   for (;;) {
-    const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, principalUserId, adapters, config, Date.now());
     state = cycle.state;
     await applyPollCycleResult(
       cycle,
       (message) => process.stderr.write(message),
       sleep,
-      () => escalateStuckDelivery(botToken, chatId),
+      (message) => sendDirectEscalation(botToken, chatId, message),
       () => writeFrontDeskPollHeartbeat(targetPath)
     );
   }
@@ -2465,7 +2482,9 @@ async function connectAndRelayReplies(
 // tracking reads it) - present only because PollBackoffConfig is shared
 // between the two loop shapes; this loop has no analogous "stuck on one
 // message" concept.
-const REPLY_RECONNECT_BACKOFF_CONFIG: PollBackoffConfig = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
+// BL-621: sustainedOutageThresholdMs comes from the conf key at loop start
+// (loopBackoffConfig), same as the poll loop's own config above.
+const REPLY_RECONNECT_BACKOFF_CONFIG = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
 
 // Split out of subscribeReplies below so its own for(;;) stays a bare
 // two-statement loop (cleaner review: the inline try/catch here previously
@@ -2509,12 +2528,15 @@ async function subscribeReplies(
   openaiApiKey: string | undefined
 ): Promise<void> {
   const seenIds = new Set<string>();
-  let state: ReplyRelayLoopState = { consecutiveFailures: 0 };
+  const config = loopBackoffConfig(REPLY_RECONNECT_BACKOFF_CONFIG, targetPath);
+  let state: ReplyRelayLoopState = { consecutiveFailures: 0, sustainedOutage: { escalated: false } };
   for (;;) {
     const errorMessage = await attemptReplyRelayConnection(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds, openaiApiKey);
-    const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, REPLY_RECONNECT_BACKOFF_CONFIG);
+    const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, config, Date.now());
     state = cycle.state;
-    await applyReplyRelayCycleResult(cycle, errorMessage, (message) => process.stderr.write(message), sleep);
+    await applyReplyRelayCycleResult(cycle, errorMessage, (message) => process.stderr.write(message), sleep, (message) =>
+      sendDirectEscalation(botToken, chatId, message)
+    );
   }
 }
 
