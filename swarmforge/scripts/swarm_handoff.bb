@@ -3,7 +3,6 @@
 (ns swarm-handoff
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
-            [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
@@ -56,10 +55,22 @@
       (println message)))
   (System/exit status))
 
+;; BL-1021: every subprocess here goes through daemon-cycle-guard-lib/sh!,
+;; the same bounded chokepoint BL-061/BL-967 put in front of handoffd.bb.
+;; This script is NOT merely a CLI: handoffd's dispatch-gap, unassigned-active
+;; and open-slot sweeps SPAWN it, so it sits on the daemon's critical path -
+;; reached by a process-spawn edge that the guard lib's load-file closure gate
+;; cannot walk (BL-1022 widens the gate; this closes the hole). It previously
+;; used clojure.java.shell/sh, which has no timeout at all, so a wedged git or
+;; tmux here wedged the daemon. The chokepoint is already in scope with no new
+;; wiring: handoff_lib.bb load-files daemon_cycle_guard_lib.bb above.
+;;
+;; sh! keeps clojure.java.shell/sh's result shape ({:exit :out :err}), so
+;; every caller below is unchanged; the vector+opts call form is required
+;; because the varargs form silently drops :dir.
 (defn command
   ([dir & args]
-   (let [result (apply sh (concat args [:dir (str dir)]))]
-     result)))
+   (daemon-cycle-guard-lib/sh! (vec args) {:dir (str dir)})))
 
 (defn git-root []
   (let [result (command "." "git" "rev-parse" "--show-toplevel")]
@@ -312,8 +323,9 @@
         coherence-block
         (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
           (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
-                {:keys [exit out]} (sh "git" "-C" (str (project-root))
-                                        "log" "-1" "--format=%s" canonical)]
+                {:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                                    ["git" "-C" (str (project-root))
+                                     "log" "-1" "--format=%s" canonical])]
             (if-not (zero? exit)
               (do (binding [*out* *err*]
                     (println (str "TASK_COMMIT_COHERENCE WARNING: "
