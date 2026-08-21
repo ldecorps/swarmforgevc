@@ -261,4 +261,76 @@ pass "I: memory floor check reports UNAVAILABLE (never a crash, CRIT, or silent 
 rm -f "$FAKE_BIN/vm_stat"
 rm -rf "$ROOT"
 
+# ── J: BL-1017 wiring — a standing role's vanished session is recreated,
+# not merely alerted about. This is the required_wiring check itself: the
+# lib's :repair decision must be CONSUMED by the live sweep caller (a repair
+# nobody executes is the BL-419 shape this ticket names), so this asserts on
+# the actual tmux calls babysitter_check.bb issues, not merely on the pure
+# decision function's return value (already covered by
+# babysitterd_sweep_lib_test_runner.bb/the acceptance feature).
+ROOT="$(make_root)"
+SOCK="$ROOT/fake.sock"; touch "$SOCK"
+echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
+mkdir -p "$ROOT/.worktrees/coder" "$ROOT/.swarmforge/launch"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+printf '#!/usr/bin/env zsh\necho fake-launch\n' > "$ROOT/.swarmforge/launch/coder.sh"
+
+CALL_LOG="$ROOT/tmux-calls.log"
+export CALL_LOG
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+echo "$*" >> "$CALL_LOG"
+for arg in "$@"; do
+  if [[ "$arg" == "has-session" ]]; then exit 1; fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+
+J_OUT="$(run_check "$ROOT")"
+grep -q "CRIT \[pane-coder\]" <<< "$J_OUT" || fail "J: expected the missing-session CRIT to still be emitted; got: $J_OUT"
+grep -q "REPAIR \[repaired\] swarmforge-coder" <<< "$J_OUT" || fail "J: expected a REPAIR line for coder; got: $J_OUT"
+grep -q -- 'new-session -d -s swarmforge-coder' <<< "$(cat "$CALL_LOG")" || fail "J: expected a tmux new-session call for the vanished session; log: $(cat "$CALL_LOG")"
+grep -q -- 'respawn-pane -k' <<< "$(cat "$CALL_LOG")" || fail "J: expected a tmux respawn-pane call relaunching the role; log: $(cat "$CALL_LOG")"
+[[ -f "$ROOT/.swarmforge/babysitterd/session-repairs.json" ]] || fail "J: expected the repair budget to be persisted to session-repairs.json"
+grep -q '"attempts":1' <<< "$(cat "$ROOT/.swarmforge/babysitterd/session-repairs.json")" || fail "J: expected the persisted repair state to record 1 attempt; got: $(cat "$ROOT/.swarmforge/babysitterd/session-repairs.json")"
+pass "J: a vanished standing role's session is recreated by the live sweep (repair decision consumed, not merely returned)"
+rm -rf "$ROOT"
+
+# ── K: BL-1017 bound — a role already repaired inside the cooldown window
+# gets no second tmux new-session/respawn-pane call, only the CRIT. This is
+# the live-wiring half of invariant 2 (session-repair-allowed? is unit-
+# tested in isolation by babysitterd_sweep_lib_test_runner.bb; this proves
+# the gatherer actually threads last-repair-ms/repair-attempts through to it
+# rather than always passing a fresh/empty state).
+ROOT="$(make_root)"
+SOCK="$ROOT/fake.sock"; touch "$SOCK"
+echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
+mkdir -p "$ROOT/.worktrees/coder" "$ROOT/.swarmforge/launch" "$ROOT/.swarmforge/babysitterd"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+printf '#!/usr/bin/env zsh\necho fake-launch\n' > "$ROOT/.swarmforge/launch/coder.sh"
+NOW_MS="$(($(date +%s) * 1000))"
+printf '{"coder":{"attempts":1,"last-ms":%s}}' "$NOW_MS" > "$ROOT/.swarmforge/babysitterd/session-repairs.json"
+
+CALL_LOG="$ROOT/tmux-calls.log"
+export CALL_LOG
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+echo "$*" >> "$CALL_LOG"
+for arg in "$@"; do
+  if [[ "$arg" == "has-session" ]]; then exit 1; fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+
+K_OUT="$(run_check "$ROOT")"
+grep -q "CRIT \[pane-coder\]" <<< "$K_OUT" || fail "K: expected the missing-session CRIT even inside the cooldown; got: $K_OUT"
+grep -q "REPAIR" <<< "$K_OUT" && fail "K: expected NO repair line inside the cooldown window; got: $K_OUT"
+grep -q -- 'new-session' <<< "$(cat "$CALL_LOG")" && fail "K: expected no tmux new-session call inside the cooldown window; log: $(cat "$CALL_LOG")"
+pass "K: a role already repaired inside the cooldown window is not repaired again by the live sweep"
+rm -rf "$ROOT"
+
 echo "ALL PASS"
