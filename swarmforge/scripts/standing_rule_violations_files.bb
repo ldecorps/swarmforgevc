@@ -20,11 +20,24 @@
 ;; FILE (a role prompt this project doesn't have yet) would, and that is
 ;; an explicit, reviewed addition to the swarm's own role roster, not a
 ;; silent gap.
+;; BL-986: articles/reference/ is scanned on the SAME terms as articles/
+;; itself. The boot prefix has a hard character budget (engineering.prompt
+;; sits at exactly its limit), so rule prose - and the violation citations
+;; travelling with it - is routinely RELOCATED out of an inlined article
+;; into its reference/ elaboration. A scanned set that stopped at the boot
+;; boundary reported a false ZERO for every citation that had moved, which
+;; reads as "this standing rule is being obeyed" when the evidence was
+;; merely moved somewhere nobody was looking. The scanned set follows the
+;; PROSE, not the boot boundary; scan-violations deduplicates a rule that
+;; appears in both places.
 (defn rule-source-files [project-root]
   (let [articles-dir (fs/path project-root "swarmforge" "constitution" "articles")
+        reference-dir (fs/path articles-dir "reference")
         roles-dir (fs/path project-root "swarmforge" "roles")
         matching-files (fn [dir exts] (if (fs/exists? dir)
                                          (filter #(some (fn [ext] (str/ends-with? (fs/file-name %) ext)) exts)
                                                  (fs/list-dir dir))
                                          []))]
-    (concat (matching-files articles-dir [".md" ".prompt"]) (matching-files roles-dir [".prompt"]))))
+    (concat (matching-files articles-dir [".md" ".prompt"])
+            (matching-files reference-dir [".md" ".prompt"])
+            (matching-files roles-dir [".prompt"]))))

@@ -96,6 +96,27 @@
             {:file path :rule (rule-summary block) :citations violations :count (count violations)}))
         (parse-rule-blocks content)))
 
+;; BL-986: the same rule can legitimately sit in TWO scanned files at once -
+;; a boot-inlined article and its reference/ elaboration - because the boot
+;; prefix has a hard budget and prose is relocated between them routinely.
+;; That duplication is a publishing detail, not two rules and not two
+;; violation records, so identical records collapse to one. Identity is the
+;; rule's own summary plus its violation citations: same rule, same recorded
+;; violations. Keeping the FIRST occurrence in the sort order below means
+;; the surviving record names the inlined article rather than the
+;; elaboration (paths under articles/ sort before articles/reference/),
+;; which is the more useful pointer in a briefing line.
+;;
+;; Widening the scanned set without this would have traded the false ZERO
+;; this ticket fixes for a false DOUBLE, which is no better a signal.
+(defn- distinct-by [key-fn coll]
+  (->> coll
+       (reduce (fn [[seen acc] x]
+                 (let [k (key-fn x)]
+                   (if (contains? seen k) [seen acc] [(conj seen k) (conj acc x)])))
+               [#{} []])
+       second))
+
 ;; Given every scanned constitution/role-prompt file's {:path :content},
 ;; the full rule list across the whole project, most-violated first (a
 ;; stable secondary sort by file+rule keeps the order deterministic for
@@ -105,6 +126,7 @@
   (->> files
        (mapcat (fn [{:keys [path content]}] (scan-file-violations path content)))
        (sort-by (juxt (comp - :count) :file :rule))
+       (distinct-by (juxt :rule :citations))
        vec))
 
 ;; How many DISTINCT standing rules record this ticket as a violation
