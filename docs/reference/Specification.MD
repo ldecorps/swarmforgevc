@@ -1,6 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 20, 2026 (BL-994: the Live Screen's role tiles
+**Last Updated:** August 21, 2026 (BL-993: `operator_runtime.bb` had no
+supervisor — a crash left a stale pidfile and the runtime stayed down
+indefinitely, until a human ran `./swarm ensure`, silently removing the
+layer that is supposed to notice when *other* daemons die (it hosts BL-906's
+babysitterd freshness watchdog). `operator_runtime_supervisor.bb` is now a
+separate, always-on watch — launched by `launch_operator_runtime_supervisor.sh`,
+stopped first in `stop_ancillary_services.sh`'s `stop_operator_runtime()` so
+it can never see the runtime "die" mid-deliberate-stop and undo it — that
+polls the one shared liveness check (`operator_runtime_watch_lib.bb`'s
+`healthy?`, now also used by `swarm_ensure.bb`'s `operator-healthy?` and
+`swarm_status.bb`'s `operator-runtime` row, so none of the three can
+disagree, including on pid reuse, which a bare `kill -0` cannot tell apart
+from a genuinely live runtime) and restarts through
+`start_operator_runtime.sh` on a bounded backoff
+(`OPERATOR_WATCH_MAX_ATTEMPTS`, default 5), announcing every restart and
+escalation on the human channel. `SWARMFORGE_SKIP_OPERATOR=1` and a new
+`.swarmforge/operator/operator-runtime-PARKED.md` park flag both leave a
+down runtime down, reported as deliberately stopped rather than silently
+honored. The watch is a genuinely separate process — killing
+operator-runtime never takes it down too. See
+[the operator-runtime watch how-to](../how-to/BL-993-operator-runtime-watch.md).);
+Previously
+August 20, 2026 (BL-994: the Live Screen's role tiles
 (`/resident-spy`, `residentSpyUiHtml.ts`, shared by the Mini App and Bubble
 Live) laid four worker panes out as a `display: flex` row with a
 percentage `flex-basis` and no floor, so on a phone the panes shrank into
