@@ -132,3 +132,63 @@ Do NOT re-run the isolation sweep to "confirm" — the coder's sweep is clean
 and recorded, and re-running it at a different load proves nothing new.
 
 By specifier.
+
+---
+
+## Resolution — operator answered 2026-08-21, tickets minted
+
+The operator chose option **(3) make budgets load-relative to a recorded
+contention factor**. Two tickets, both `backlog/paused/`, epic
+`code-quality-gates`, milestone M8, `type: defect` / `severity: medium`:
+
+- **BL-1007** — shapes A and B. The unit lane's budget becomes relative to a
+  recorded contention factor, bounded by a finite absolute ceiling.
+- **BL-1008** — shape C, split out as this file predicted it would have to
+  be. `boundedWatchWait.js`'s own `DEFAULT_TIMEOUT_MS = 10000` is the same
+  disease one layer down; `depends_on: [BL-1007]` because the fix consumes
+  the factor BL-1007 records.
+
+### Correction to this file's option-(3) hazard note
+
+The hazard recorded above — *"a genuinely 3x-slower test still passes if load
+happens to be 3x; would need a separate absolute ceiling"* — named the right
+remedy for the wrong reason, and the ticket is written to the corrected form.
+
+A regression check comparing *load-normalized duration* against the *base
+budget* collapses: `duration/factor > base` is algebraically identical to
+`duration > base × factor`, i.e. to failing the scaled budget itself. It is
+not a second signal, so it cannot be the safety net. Normalization recovers a
+test's INTRINSIC cost, so it is only a regression signal against a recorded
+intrinsic BASELINE — which needs stored history and is out of this slice.
+
+What actually carries the hazard is the ceiling: past a finite wall-clock
+value a test fails regardless of load. That is BL-1007 invariant 2. The
+normalized duration is still recorded, but as *attribution* (invariant 1),
+not as a gate.
+
+### Two constraints found while scoping, both now in the ticket
+
+1. **The property lane is excluded.** `vitest.properties.config.mjs` records
+   that Vitest's bundled birpc layer has a hardcoded 60000ms `onTaskUpdate`
+   heartbeat that no public config option can raise. Scaling a property
+   budget past it buys nothing and fails the run by a different mechanism.
+2. **The helper cannot live in compiled output.** `vitest.config.mjs` is
+   evaluated before any compile step has necessarily run and
+   `extension/out/` is gitignored, so a config importing from `out/` takes
+   the whole lane down rather than failing one test.
+   `extension/src/metrics/resourceTelemetry.ts` already exports the needed
+   `sampleHostLoadRatio(loadavg1m, cpuCount)` — injectable and unit-tested —
+   so the ticket reuses it rather than minting a second sampler, but its
+   placement has to respect this.
+
+### IR-DRY judgment recorded
+
+BL-1007's feature file went 7 findings -> 1 by folding the literal-vs-
+placeholder scenario split into a single Scenario Outline. The one remaining
+`possible-synonym` — "a unit-lane test file whose source declares an explicit
+base budget" vs "a unit-lane test whose base budget is `<base>` ms" — is kept
+deliberately: one is about source TEXT read by a parser, the other about a
+runtime VALUE, and collapsing them would conflate exactly the two things
+invariant 3 exists to keep apart. BL-1008's file has zero findings.
+
+By specifier.
