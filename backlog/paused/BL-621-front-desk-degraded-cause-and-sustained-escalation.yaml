@@ -83,6 +83,16 @@ qa_e2e_procedure: |
      arrives for the new episode.
 
 notes: |
+  2026-08-21 coordinator: QUEUE-JUMP per human directive (operator, live
+  front-desk poll-degraded/stall symptom observed and root-caused to this
+  ticket's fix 1+2). Reorders promotion only (Article 3.2.4/BL-715) - this
+  is now top of the promotion queue regardless of its numeric priority: 117,
+  and must be the next item promoted the moment an active/ slot opens
+  (active_backlog_max_depth was at cap, 3/3, at the time this was recorded -
+  no slot existed to promote into immediately). Does not bypass the depth
+  cap, ambulance freeze, onboarding gate, or orthogonality - ordinary
+  queue-jump semantics, never an extra slot.
+
   BL-922 bookkeeping only: acceptance: made a single-line pointer (was a
   block scalar hiding the pointer from the pre-QA gates until the
   documenter->QA hop). Nothing anyone builds changes; the text below and in

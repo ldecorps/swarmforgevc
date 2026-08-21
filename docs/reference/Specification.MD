@@ -1,6 +1,55 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-979: pivots the Pipeline Board's live
+**Last Updated:** August 21, 2026 (BL-1021: closes a critical live
+handoffd deadlock — the dispatch-gap sweep froze in an uninterruptible wait,
+eight log rotations on 2026-08-21, five in the ninety minutes before the
+report, restart resetting only the clock. Root cause was the BL-057/BL-061
+`clojure.java.shell` deadlock family recurring one process hop past the
+BL-967 gate: `dispatch-gap-sweep!` doesn't *load* its collaborator
+`swarm_handoff.bb`, it *spawns* it, an edge type the BL-967 closure-gate walk
+never follows, so `swarm_handoff.bb` still shelled out via
+`clojure.java.shell/sh` — no timeout at all — on all nine of its own
+subprocess sites. Two independent halves, both required. (1) The bound
+itself had a hole even for code already routed through it:
+`daemon_cycle_guard_lib.bb`'s `sh!` bounded only the exit-code wait,
+`(deref proc bound ::timed-out)`; when the direct child exited promptly but
+something it spawned kept the inherited stdout/stderr write ends open,
+`babashka.process` then resolved the `:out`/`:err` stream-pump futures with
+NO bound, blocking in `read()` forever because the pipe never reached EOF —
+`destroy-tree` and the timeout log line were both downstream of the timeout
+branch and so never fired, which is why the log showed no timeout at all. A
+deterministic control/defect pair settled this rather than leaving it
+conjectured: a direct child that never exits still timed out correctly at
+the bound; a child that exits immediately but leaves a backgrounded
+grandchild holding the pipe did not return even 20s past a 3s bound. `sh!`
+now derefs the exit wait and the stream drain together, inside one future
+under the same deadline, so the bound holds at any process depth; the
+exception contract is unchanged (a throw from the drain still propagates to
+the caller as itself, not wrapped as the future's `ExecutionException`).
+(2) `swarm_handoff.bb` moved off `clojure.java.shell` entirely — its
+`command` wrapper (8 call sites) plus one direct call now route through the
+existing `daemon-cycle-guard-lib/sh!` chokepoint, already in scope via
+`handoff_lib.bb`'s load-file chain, so no new wiring was needed. Behavior
+change worth knowing: this applies to all nine sites, not only the ones the
+daemon reaches — `swarm_handoff.bb` is also the CLI every pipeline role's
+`swarm_handoff.sh` invokes directly to send a handoff, so any git/tmux call
+there that legitimately runs long now returns `exit 124` after the 60s
+default (`SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS`) instead of blocking
+indefinitely. Deliberately NOT done: widening the BL-967 closure gate to
+follow process-spawn edges generically, so this class of hole cannot recur
+elsewhere — filed separately as BL-1022, so this critical-severity fix could
+move at the speed it needed; and the freshness watchdog's restart behavior
+(BL-1012), unchanged. Verified with a new four-scenario acceptance feature
+(`specs/features/BL-1021-daemon-subprocess-cannot-outlive-its-wait-bound.feature`)
+plus unit and property additions to `daemon_cycle_guard_lib`'s test runners,
+independently re-verified at every downstream stage including two
+independent break-and-restore repros against the pre-fix code. No extension
+command, setting, or UI change — this is an internal swarm-daemon
+reliability fix in the `swarmforge/` fork, the same category as BL-967, whose
+runbook is updated in the same parcel:
+[`docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`](../how-to/BL-967-handoffd-cycle-stall-diagnosis.md).);
+Previously
+August 21, 2026 (BL-979: pivots the Pipeline Board's live
 grid axes back — active tickets are now ROWS down the Y axis and the eight
 pipeline stages (`NS SP CO CL AR HD DC QA`) are shared COLUMNS across the X
 axis, so an extra ticket adds a row instead of widening the board (BL-585,
