@@ -555,6 +555,7 @@ const DOMAINS = [
   require('./bl586PipelineBoardTopicIdentitySteps'),
   require('./bl1017BabysitterdRecreatesVanishedStandingSessionSteps'),
   require('./bl1012FreshnessSelfInflictedIncidentsSteps'),
+  require('./bl621FrontDeskDegradedCauseEscalationSteps'),
   require('./bl1021SubprocessOutlivesWaitBoundSteps'),
   require('./bl984SweepStaleFixturesSteps'),
   require('./bl979PipelineBoardTicketRowsSteps'),
