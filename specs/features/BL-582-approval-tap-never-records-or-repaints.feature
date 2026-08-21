@@ -1,15 +1,27 @@
 Feature: every approval tap produces an observable, durable outcome
 
-  # BL-582: root cause narrowed to a stale out/ build serving the callback
-  # handler for ~2h24m (12:23:53Z start to the 14:46:52Z stale-build
-  # recompile) — the second-poller theory is retracted, see
-  # FINDINGS-telegram-409-no-second-poller.md. No defect exists in the
-  # current callback code, but three hardening gaps let a stale-build
-  # failure be silent and non-durable: (a) a silent changed:false return with
-  # no toast or log, (b) an uncommitted yaml write vulnerable to git churn on
-  # the master checkout, (c) a healthy-but-stale build can serve
-  # indefinitely because the supervisor only checks staleness on crash
-  # respawn.
+  # BL-582. The 2026-07-23 14:05-14:12Z taps were served by a stale out/
+  # build, and the 14:46:52Z supervisor recompile ended that window - the
+  # second-poller theory is separately retracted
+  # (FINDINGS-telegram-409-no-second-poller.md). But the stale build is NOT
+  # a complete explanation and this file must not be read as saying it is.
+  # Two taps have failed since that recompile: BL-588 the same evening
+  # (~17:08Z, still pending with no uncommitted write), and BL-1026's tap on
+  # 2026-08-21, tapped repeatedly during a front-desk poll-degraded/restart
+  # storm with no yaml write and no inbound reply recorded. The verdict for
+  # BL-1026 exists only because it was written by hand.
+  #
+  # What these scenarios gate is deliberately independent of that open
+  # question: three hardening gaps that let ANY such failure be silent and
+  # non-durable, whatever caused it. (a) a changed:false record returns with
+  # no toast and no log, (b) the yaml write is uncommitted on a master
+  # checkout that has demonstrably lost uncommitted work to other roles'
+  # git churn, (c) a healthy bot on a stale build serves indefinitely
+  # because the supervisor checks freshness only on crash respawn. Had (a)
+  # existed on 2026-08-21, the BL-1026 tap would have said why it failed
+  # instead of leaving the human tapping a dead button - which is the whole
+  # point, and why closing the root-cause question is not a prerequisite
+  # for any scenario below.
 
   # BL-582 approve-tap-records-and-repaints-01
   Scenario: an Approve tap on a tracked ask records the verdict and repaints
