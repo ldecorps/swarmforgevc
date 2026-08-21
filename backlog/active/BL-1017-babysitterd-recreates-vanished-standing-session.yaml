@@ -94,6 +94,41 @@ source: |
   (Article 5.3 - a consolidation never drops a human sentence). Siblings:
   BL-1018 (goal 2), BL-1019 (goal 3's status half), BL-1020 (goal 4).
 
+hardener_notes_2026_08_21: |
+  Merged architect commit 9f671c9d20 (17f4ba93d / amended 92ae778cd).
+  - babysitterd_sweep_lib_test_runner.bb: ok. babysitterd_sweep_lib_property_runner.bb: ok.
+  - test_babysitter_check.sh (existing fake-tmux shell integration suite):
+    9/9 pre-existing scenarios still green.
+  - Acceptance (specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature):
+    6/6 scenarios pass (Outline's 3 rows + 3 singles).
+  - qa_e2e_procedure step 3 (wiring, not unit): confirmed by reading
+    babysitter_check.bb's -main — `repairs` from assemble-findings is
+    consumed by a `(when (seq repairs) ...)` block calling
+    ensure-role-session! and persisting session-repairs.json. This is a
+    real gap the ticket's own required_wiring flags (BL-419 shape: "a lib
+    that returns a repair nobody consumes"), and the existing test suite
+    had NO test exercising it end-to-end — only the pure decision function
+    was covered. Closed it: added scenarios J and K to
+    test_babysitter_check.sh, using its existing fake-tmux/call-log
+    harness (no real tmux, stays inside the testability boundary) —
+    J asserts the actual tmux new-session/respawn-pane calls fire and the
+    repair budget is persisted; K asserts the cooldown bound holds through
+    the live gatherer (not just the pure predicate in isolation). Verified
+    non-vacuous by hand-mutating the consuming when-block to a no-op:
+    scenario J failed as expected (no REPAIR line), confirming the test
+    actually watches the wiring rather than passing regardless.
+  - No mutation tool is wired for this Babashka surface (Engineering Rules:
+    Babashka/Clojure has no Stryker/CRAP/DRY, gated by its own unit-test
+    suite only). The hand-authored non-vacuity check above is the degraded
+    fallback for the one execution path that mattered (the required_wiring
+    consumption point) rather than a repo-wide surgical sweep, since the
+    rest of this diff (session-repair-allowed?/note-repair-attempt) is
+    pure and already exercised by both the property runner and the
+    acceptance Outline's example rows.
+  - qa_e2e_procedure step 4 (live-pack kill-one-session confirmation) is
+    explicitly out of the unit boundary per the ticket itself - left for QA
+    as a manual procedure, not attempted here.
+
 notes: |
   2026-08-21 specifier. attach itself was working as designed and is NOT in
   scope: swarm_attach.sh resolved specifier -> swarmforge-specifier from
