@@ -144,3 +144,6 @@ approval_context: >
   has presumably existed since the store was introduced.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-21, by: QA, blamed: architect, class: behavior, commit: 0c89ef0f2, evidence: backlog/evidence/BL-990-bounce-20260821.md }
