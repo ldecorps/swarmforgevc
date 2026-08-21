@@ -1,6 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-1017: `babysitterd` no longer just
+**Last Updated:** August 21, 2026 (BL-1012: the daemon-log-freshness
+watchdog stops restart-storming a merely-slow `handoffd` and stops alarming
+on evidence its own restart destroyed. Measured live 2026-08-21 11:00-11:12
+BST: load average 80 on a four-core Mac (contention factor 20), a single
+handoffd chase sweep taking 17.2s, and the fixed 120s threshold recording
+ages of 132-350s against it — nine restarts, 694 rotated
+`handoffd.log.*` archives by 11:11, killing a daemon that was late, not
+hung. `daemon_log_freshness_check.sh` now scales each daemon's base
+threshold by the host's contention factor (`load average / core count`,
+floored at 1) capped at a 600s ceiling — the bound `babysitterd` already
+carried in the same conf — so a quiet host (factor 1) sees byte-for-byte
+today's behavior while a loaded one earns a proportionally longer window
+that a genuinely dead daemon still cannot outlast. Separately, because
+`start_handoff_daemon.sh` rotates `handoffd.log` aside on every start and
+the checker restarts through that same script, an absent/heartbeat-less log
+within a new `FRESHNESS_RESTART_GRACE` window (default 300s) after a
+restart the checker itself performed is no longer treated as a violation —
+scoped to the file-absent sentinel only, so a daemon that comes back up and
+then genuinely goes stale inside the window still fires. Every incident
+record (`action=restart`/`escalate`/new `action=grace`) now names
+`effective_threshold=` and `contention_factor=` alongside the unchanged
+base `threshold=`, so a past decision is interpretable from the record
+alone. Both signals are injectable (`FRESHNESS_LOAD`, `FRESHNESS_CORES`,
+`FRESHNESS_MAX_THRESHOLD_SECS`, `FRESHNESS_RESTART_GRACE`), matching the
+script's existing `FRESHNESS_*` seam convention. No extension command,
+setting, or UI change — internal `swarmforge/`-fork daemon behavior,
+documented in the same parcel in
+[the freshness-watchdog how-to](../how-to/BL-675-daemon-log-freshness-watchdog.md).
+Verified with a four-scenario acceptance feature
+(`specs/features/BL-1012-the-freshness-watchdog-stops-manufacturing-its-own-incidents.feature`,
+9/9 executions including outline rows) plus shell-suite and property-test
+additions; no mutation/CRAP tooling applies (shell script + shell/property
+tests only, nothing under `out/**/*.js` or `src/*.ts`).); Previously
+August 21, 2026 (BL-1017: `babysitterd` no longer just
 alerts on a vanished standing-role tmux session, it recreates it — bounded to
 one repair attempt per role per 10-minute cooldown, persisted across sweeps
 in the new `.swarmforge/babysitterd/session-repairs.json`, and never
