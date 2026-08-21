@@ -103,6 +103,9 @@ import {
   decideEnsureApprovalsTopicAction,
   APPROVALS_TOPIC_NAME,
   APPROVALS_SUBJECT_ID,
+  decideEnsurePipelineBoardTopicAction,
+  PIPELINE_BOARD_TOPIC_NAME,
+  PIPELINE_BOARD_SUBJECT_ID,
   decideEnsureRecertTopicAction,
   RECERT_TOPIC_NAME,
   RECERT_SUBJECT_ID,
@@ -1017,15 +1020,55 @@ export async function ensureResidentSpyTopic(targetPath: string, botToken: strin
 // inside buildConciergeTickAdapters (module-private, never exported) is
 // unreachable by any test (see the readPollMap/readApprovalAskMessages
 // comments above on this same pattern for on-disk reads; this is the HTTP-
-// call sibling). Never reuses the topicId across ticks itself - that
-// idempotency is TickState.pipelineBoard.topicId, already owned by
-// pipelineBoardSync.ts's resolveBoardTopicId, so this stays a bare
-// create-and-map-the-result call, mirroring the OTHER ensureXTopic
-// functions' own createForumTopic call but WITHOUT their reuse-or-create
-// branch (the board's own state already gates repeat calls).
-export async function ensureBoardTopicAdapter(botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<{ topicId?: number; error?: string }> {
-  const created = await createForumTopic(botToken, chatId, 'Pipeline Board', postFn);
-  return created.success ? { topicId: created.messageThreadId } : { error: created.error };
+// call sibling).
+//
+// BL-586: this WAS a bare create-and-map-the-result call, on the premise
+// that "the board's own state already gates repeat calls". That premise is
+// exactly what failed - the board's own state is a single mutable JSON
+// field, and BL-497's topic-gone self-heal deliberately clears it, so every
+// such failure minted another untracked "Pipeline Board" zombie the Bot API
+// cannot even enumerate. It is now reuse-or-create over the PIPELINE_BOARD
+// standing key, the same shape ensureApprovalsTopic uses, and it records a
+// freshly minted id durably BEFORE returning - so a crash between create and
+// the board's first post cannot orphan the topic. That ordering is invariant
+// 2, and it is why this takes targetPath (its call site already has one in
+// scope, two lines from where ensureOperatorTopic is wired).
+export async function ensureBoardTopicAdapter(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  postFn?: TelegramPostFn
+): Promise<{ topicId?: number; error?: string }> {
+  const decision = decideEnsurePipelineBoardTopicAction(readTopicMap(targetPath), readStandingTopicIds(targetPath)[PIPELINE_BOARD_SUBJECT_ID]);
+  if (decision.kind !== 'create') {
+    if (decision.kind === 'rebind') {
+      bindTopicMapSubject(targetPath, decision.topicId, PIPELINE_BOARD_SUBJECT_ID);
+    }
+    rememberStandingTopicId(targetPath, PIPELINE_BOARD_SUBJECT_ID, decision.topicId);
+    return { topicId: decision.topicId };
+  }
+  const created = await createForumTopic(botToken, chatId, PIPELINE_BOARD_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    return { error: created.error ?? 'no messageThreadId returned' };
+  }
+  bindTopicMapSubject(targetPath, created.messageThreadId, PIPELINE_BOARD_SUBJECT_ID);
+  rememberStandingTopicId(targetPath, PIPELINE_BOARD_SUBJECT_ID, created.messageThreadId);
+  return { topicId: created.messageThreadId };
+}
+
+// Records `topicId -> subjectId` in the topic map, re-reading it first so a
+// concurrent writer's other bindings survive. Only the binding for THIS
+// subject is displaced - another subject's entry is never disturbed, which
+// is what keeps a board rebind from evicting SUP-5 from the map.
+function bindTopicMapSubject(targetPath: string, topicId: number, subjectId: string): void {
+  const fresh = readTopicMap(targetPath);
+  for (const [key, subject] of Object.entries(fresh)) {
+    if (subject === subjectId) {
+      delete fresh[key];
+    }
+  }
+  fresh[topicMapKey(topicId)] = subjectId;
+  writeTopicMap(targetPath, fresh);
 }
 
 // BL-497 hardening: same extraction as ensureBoardTopicAdapter above, for
@@ -2847,12 +2890,13 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // BL-464's original cache-backed wiring was, since `report` computes
     // the identical stage-map `sync` does.
     readRoleHeldTickets: () => readLiveRoleHeldTickets(targetPath),
-    // BL-452: the standing "Pipeline Board" topic is created ONCE - the
-    // ticket's own durable TickState.pipelineBoard.topicId marker is what
-    // makes this idempotent across ticks/restarts (syncPipelineBoard only
-    // ever calls ensureBoardTopic while that marker is unset), so no
-    // separate topic-map file/reuse-lookup is needed the way
-    // ensureOperatorTopic's own reuse-or-create needs one.
+    // BL-452/BL-586: the standing "Pipeline Board" topic is created ONCE and
+    // then RESOLVED, never re-minted. The original wiring leaned on
+    // TickState.pipelineBoard.topicId alone for that idempotency; BL-586
+    // showed a single mutable JSON field is not a durable identity (BL-497's
+    // self-heal clears it, and a stale value silently crossed into SUP-5 and
+    // SUP-7), so the board now has the same topic-map/standing-record
+    // reuse-lookup every other ensureXTopic function has.
     boardAdapters: {
       // BL-497: the error string is now surfaced (never discarded) so
       // syncPipelineBoard can log/classify/self-heal instead of retrying a
@@ -2860,7 +2904,14 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       // lives in the exported ensureBoardTopicAdapter above (testable
       // in-process); this stays a thin wrapper binding the tick's own
       // botToken/chatId.
-      ensureBoardTopic: () => ensureBoardTopicAdapter(botToken, chatId),
+      ensureBoardTopic: () => ensureBoardTopicAdapter(targetPath, botToken, chatId),
+      // BL-586: the record of which subject owns which topic - the file that
+      // already knew 1634 was SUP-7 and 14647 was SUP-5 while the board was
+      // posting into both. resolveBoardTopicId consults it on every resolve.
+      readTopicMap: async () => readTopicMap(targetPath),
+      // BL-586: a refused crossed identity alarms into the same Operator
+      // topic every other operator-facing alert in this file uses.
+      emitCrossedTopicAlert: (message) => emitPipelineBoardFailureAlert(targetPath, botToken, chatId, message),
       postMessage: (topicId, text, boardHtml) =>
         sendTelegramMessage(
           botToken,
