@@ -49,8 +49,12 @@ description: |
   location, per "New backlog items are proposals, not active work" - hits this
   on every run unless a human promoted it first.
 
-  BL-1021 hit exactly this. It was moved to `active/` by hand mid-run so the
-  bookkeeping would land.
+  BL-1021's own expedited run stood exactly here: the ticket was in
+  `backlog/paused/` for the whole run, so had it reached teardown passing, the
+  bookkeeping would have silently done nothing. It never got that far - the run
+  failed at the coder stage - so the no-op was reasoned out from the source and
+  from the run's starting state, not observed firing. That is why scenario 01
+  exists: it makes the no-op observable instead of inferred.
 
   ## How (direction, not mandate)
 
@@ -103,8 +107,8 @@ notes: |
   MORE handlers, which is the opposite of what IR-DRY is for.
 
   Sibling of BL-1021 only by discovery, not by mechanism - no dependency
-  either way. BL-1021 worked around it by hand; this ticket removes the need
-  for the workaround.
+  either way. BL-1021 carries the manual promote-first workaround in its own
+  notes; this ticket removes the need for anyone to remember it.
 
   Watch the dry-run path when fixing: `park-others!` already guards its writes
   with `dry-run?`, and any adopt-at-initiation step must do the same or a

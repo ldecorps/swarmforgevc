@@ -188,24 +188,31 @@ qa_e2e_procedure: >
      registered handlers (no runtime THROW on a missing handler).
 
 notes: |
-  OPERATOR ACTION, one command, before this run's teardown. This ticket is in
-  `backlog/paused/`. The expeditor closes a passing run with
-  `move-ticket! root <ticket> "active" "done"`, whose `when-let` silently
-  no-ops when the ticket is not in `backlog/active/` - so this ticket would
-  finish built, gated and landed while still filed as un-started work, with
-  the run reporting success. It is not promoted here because promotion is a
-  coordinator duty (Article 3.3) that the specifier explicitly does not hold,
-  and because the expeditor does its backlog moves in the MASTER checkout
-  while stage work happens in the run worktree - moving it from inside the
-  worktree would not be seen by the teardown, and moving it in both places
-  would duplicate the file across two folders at merge. In the master
-  checkout, staged and uncommitted, matching the expeditor's own park
-  convention:
+  RUN HISTORY. An expedited run of this ticket was attempted 2026-08-21 and
+  did NOT complete: the specifier stage passed, the coder stage failed with
+  `stage-timeout`, and the run tore down with `FAILED HALF: ticket`. Nothing
+  was built. What survives is this spec - the specifier stage's output, which
+  is what mechanism 2 and the sizing notes below are. The ticket therefore
+  still needs a full pass; it is not partially done.
+
+  IF THIS TICKET IS EXPEDITED AGAIN, promote it first. The expeditor closes a
+  passing run with `move-ticket! root <ticket> "active" "done"`, whose
+  `when-let` silently no-ops when the ticket is not in `backlog/active/` - so
+  the ticket would finish built, gated and landed while still filed as
+  un-started work, with the run reporting success. Promotion is a coordinator
+  duty (Article 3.3) the specifier does not hold, and the expeditor does its
+  backlog moves in the MASTER checkout while stage work happens in the run
+  worktree - so moving it from inside the worktree is invisible to teardown,
+  and moving it in both places duplicates the file across two folders at
+  merge. The one correct move is in the master checkout, before the run
+  starts:
 
       git mv backlog/paused/BL-1021-handoffd-deadlocks-on-a-subprocess-whose-grandchild-holds-the-pipe.yaml \
              backlog/active/
 
-  The gap itself is filed as BL-1023, so this workaround stops being needed.
+  None of this applies to a normal live-swarm run, where the coordinator
+  promotes as usual. The gap itself is filed as BL-1023, after which the
+  workaround stops being needed either way.
 
   Specifier stage of the expedited run, 2026-08-21, verified the defect from a
   deterministic repro rather than from the report - the control/defect pair is
