@@ -118,7 +118,9 @@ function registerSteps(registry) {
   scoped(/^the extension host runs its respawn precheck$/, (ctx) => {
     const { installInProcessTmux } = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'fakeTmux'));
     const { respawnAgent } = require(path.join(REPO_ROOT, 'extension', 'out', 'swarm', 'tmuxClient'));
-    const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'bl997-respawn-'));
+    // BL-1002/BL-948 gate: socket-referencing step files root fixtures via
+    // the shared short-base helper, never os.tmpdir().
+    const root = require('./lib/socketFixtureRoot').mkSocketFixtureRoot('bl997-respawn-');
     writeRespawnFixtureRoot(root, 'coder');
     const fake = installInProcessTmux([
       { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
