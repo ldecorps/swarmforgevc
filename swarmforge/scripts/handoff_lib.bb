@@ -400,6 +400,51 @@
       (filterv #(and (= stage (seat-stage (:role %))) (not= me (:role %)))
                (load-all-roles)))))
 
+(defn worked-task-names-in
+  "Task names of every git_handoff directly in dir or inside its batch_*
+   subdirectories - one mailbox state's contribution to a seat's durable
+   record of the tasks it has worked (BL-1004). A missing dir is the empty
+   set, via handoff-files."
+  [dir]
+  (set (keep (fn [f]
+               (when (= "git_handoff" (header-field f "type"))
+                 (header-field f "task")))
+             (concat (handoff-files dir)
+                     (mapcat handoff-files (batch-dirs dir))))))
+
+(defn sibling-worked-task-names
+  "Task names every SIBLING seat of the current role's stage has worked -
+   its completed/ plus in_process/ (the durable record BL-1004 reads; a
+   salvage-parked abandoned/ parcel is deliberately NOT 'worked'). Empty
+   for bare single-seat stages, so the BL-1004 sibling-rework deferral is
+   structurally unreachable there (its invariant 3)."
+  []
+  (set (mapcat (fn [ri]
+                 (mapcat #(worked-task-names-in (mailbox-dir ri %))
+                         [:completed :in_process]))
+               (stage-sibling-seats))))
+
+(defn stage-seat-worked-task-sets
+  "One worked-task set PER SEAT of role-name's stage (the stage row itself
+   included) - completed/ plus in_process/, the same durable record
+   sibling-worked-task-names reads, but role-PARAMETERIZED with an explicit
+   root: the stall sweeps (flow_watchdog_lib.bb / chase_sweep_lib.bb)
+   iterate every role from one daemon process and have no current-role
+   point of view (BL-1004 stall-alarm exemption, architect bounce
+   2026-08-21). Per-seat rather than a union because a deferral needs both
+   a seat that worked the task and one that did not - see
+   seat-affinity-lib/deferral-hold?. A single-seat stage yields one set and
+   a root with no roles.tsv yields none, so that consumer is structurally
+   false in both cases (BL-1004 invariant 3). Order follows roles.tsv."
+  ([role-name] (stage-seat-worked-task-sets role-name (target-root)))
+  ([role-name root]
+   (let [stage (seat-stage role-name)]
+     (mapv (fn [ri]
+             (into (worked-task-names-in (mailbox-dir ri :completed))
+                   (worked-task-names-in (mailbox-dir ri :in_process))))
+           (filterv #(= stage (seat-stage (:role %)))
+                    (load-all-roles root))))))
+
 ;; ── BL-218: mailbox intake idempotency ──────────────────────────────────
 ;; ready_for_next_task.bb/ready_for_next_batch.bb historically only checked
 ;; whether a target in_process file already existed (AMBIGUOUS_TASK_STATE);

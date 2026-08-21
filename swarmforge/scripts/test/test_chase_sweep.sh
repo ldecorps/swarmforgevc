@@ -276,4 +276,59 @@ grep -qE "^(wake-up|telemetry chase)" "$ROOT/calls.log" 2>/dev/null && fail "14:
 [[ -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] && fail "14: skipped wake must not write chase sidecar"
 pass "14: a deferred/skipped chase wake does not increment chaseCount or emit telemetry"
 
+# ── BL-1004 deferral-hold (architect bounce 2026-08-21): a stage-queue
+#    rework a SIBLING seat worked, still inside cross_seat_claim_deadline_ms
+#    (age via its enqueued_at header, never mtime), is deliberately waiting
+#    for that seat - the chase sweep must treat it like an ambulance hold,
+#    not a stale item ──────────────────────────────────────────────────────
+
+setup_two_seats() {
+  # roles.tsv at the fixture target-root (the harness pins target-root to
+  # $ROOT): the stage row `coder` plus sibling seat `coder@b`, each with its
+  # own worktree dir inside the fixture.
+  mkdir -p "$ROOT/.swarmforge" "$ROOT/wt-b/.swarmforge/handoffs/inbox/completed"
+  printf 'coder\tcoder\t%s\tswarm\tCoder\tclaude\ttask\ncoder@b\tcoder-b\t%s\tswarm\tCoderB\tclaude\ttask\n' \
+    "$ROOT/wt-coder" "$ROOT/wt-b" > "$ROOT/.swarmforge/roles.tsv"
+}
+
+write_rework_handoff() {
+  # $1 = path, $2 = task, $3 = enqueued_at (ISO instant)
+  printf 'id: rework\nfrom: hardender\nto: coder\npriority: 00\ntype: git_handoff\ntask: %s\ncommit: 0123456789\nenqueued_at: %s\n\n' \
+    "$2" "$3" > "$1"
+}
+
+write_sibling_worked_record() {
+  # $1 = task: seat coder@b's durable record of having worked it
+  printf 'id: done\nfrom: hardender\nto: coder\ntype: git_handoff\ntask: %s\n\n' \
+    "$1" > "$ROOT/wt-b/.swarmforge/handoffs/inbox/completed/done.handoff"
+}
+
+# 16 minutes of header age - past every chase threshold, inside the default
+# 30-minute cross-seat deadline (the bounce's own false-alert window).
+ENQUEUED_ISO="$(python3 -c "import datetime,sys;print(datetime.datetime.utcfromtimestamp(int(sys.argv[1])).strftime('%Y-%m-%dT%H:%M:%SZ'))" $(( NOW_MS / 1000 - 960 )))"
+
+# ── 15: the deferred rework is HELD - no chase, no sidecar ───────────────
+make_fixture
+setup_two_seats
+write_sibling_worked_record "BL-777"
+write_rework_handoff "$ROOT/inbox/new/00_rework.handoff" "BL-777" "$ENQUEUED_ISO"
+set_mtime "$ROOT/inbox/new/00_rework.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^wake-up coder$" "$ROOT/calls.log" 2>/dev/null && fail "15: a rework inside its designed cross-seat deferral window must not be chased; got: $(cat "$ROOT/calls.log")"
+[[ -f "$ROOT/inbox/new/00_rework.handoff.chase.json" ]] && fail "15: a held rework must not accrue a chase sidecar"
+[[ -f "$ROOT/inbox/new/00_rework.handoff" ]] || fail "15: the held rework must stay untouched in new/"
+pass "15 (BL-1004): a sibling-worked rework inside the deferral window is held, not chased"
+
+# ── 16: same parcel, but NO seat worked the task - a real stall, chased ──
+make_fixture
+setup_two_seats
+write_sibling_worked_record "BL-888"
+write_rework_handoff "$ROOT/inbox/new/00_rework.handoff" "BL-777" "$ENQUEUED_ISO"
+set_mtime "$ROOT/inbox/new/00_rework.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "16: a task no seat worked is a real stall and must still be chased"
+pass "16 (BL-1004): the hold is not a blanket mute - an unworked task's parcel is still chased"
+
 echo "ALL PASS"

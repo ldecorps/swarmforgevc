@@ -23,6 +23,14 @@
 ;; second copy) for orphan reaping below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 
+;; BL-1004 (architect bounce 2026-08-21): the cross-seat deferral hold the
+;; claim path decides with - the sweep consults the SAME library, never a
+;; second notion of deferred. backlog_depth_lib supplies the effective conf
+;; path (already loaded transitively via promotion_gates_lib below; the
+;; explicit load keeps this file honest about the dependency).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "seat_affinity_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+
 ;; BL-528: claim-without-progress detection.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "claim_progress_lib.bb")))
 
@@ -497,6 +505,38 @@
     (handoff-lib/default-ambulance-held? (slurp file-path))
     (catch Exception _ false)))
 
+;; BL-1004 stall-alarm exemption (architect bounce 2026-08-21): a rework a
+;; SIBLING seat worked, still inside cross_seat_claim_deadline_ms (age via
+;; its enqueued_at/created_at header, never mtime), is DESIGNED to sit in
+;; the stage queue for that seat - the claim path is deliberately deferring
+;; it. Chasing it mid-window is the same false alarm the ambulance hold
+;; already prevents, so it composes into the identical held? slot. Same
+;; target-root convention as default-ambulance-held? above; same fail-open
+;; try/catch posture - an unreadable state must never mute a real stall.
+(defn stage-deferral-context
+  "The swept role's per-seat worked-task sets plus the effective cross-seat
+   deadline, read once per role sweep (never per item). A root with no
+   roles.tsv, an unreadable conf, or any read error degrades to no seats /
+   the default deadline, under which deferral-hold? is structurally false."
+  [role]
+  {:seat-worked-task-sets (try (handoff-lib/stage-seat-worked-task-sets role)
+                               (catch Exception _ []))
+   :deadline-ms (seat-affinity-lib/parse-cross-seat-claim-deadline-ms
+                 (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
+                      (catch Exception _ nil)))})
+
+(defn item-deferral-held? [deferral-ctx file-path now-ms]
+  (try
+    (seat-affinity-lib/deferral-hold?
+     {:type (handoff-lib/header-field file-path "type")
+      :task (handoff-lib/header-field file-path "task")
+      :seat-worked-task-sets (:seat-worked-task-sets deferral-ctx)
+      :enqueued-at (handoff-lib/header-field file-path "enqueued_at")
+      :created-at (handoff-lib/header-field file-path "created_at")
+      :now-ms now-ms
+      :deadline-ms (:deadline-ms deferral-ctx)})
+    (catch Exception _ false)))
+
 (defn sweep-role-inbox! [role inbox-new-dir completed-dir abandoned-dir now-ms config adapters]
   (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
@@ -511,14 +551,19 @@
         abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
         liveness ((:get-liveness adapters) role)
         last-activity-ms ((:get-last-activity-ms adapters) role)
-        respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)]
+        respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)
+        ;; BL-1004: forced only if some non-terminal item actually needs the
+        ;; hold check - an empty inbox costs no roles.tsv/conf/mailbox reads.
+        deferral-ctx (delay (stage-deferral-context role))]
     (doseq [item items]
       (let [already-terminal? (handoff-lib/already-terminal?
                                 (fs/file-name (:filePath item)) completed-basenames abandoned-basenames)
             ;; Only worth reading the file (and consulting the marker) when
             ;; it isn't already reaped outright - already-terminal? outranks
             ;; the hold, so there's nothing to protect either way.
-            held? (and (not already-terminal?) (item-ambulance-held? (:filePath item)))
+            held? (and (not already-terminal?)
+                       (or (item-ambulance-held? (:filePath item))
+                           (item-deferral-held? @deferral-ctx (:filePath item) now-ms)))
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
                                          liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?)
             action (if (and (= decided "respawned") (is-cooling-down? respawn-cooldown-until-ms now-ms))
