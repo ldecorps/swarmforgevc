@@ -38,6 +38,12 @@ function runChecker(root, { now, env = {} }) {
       FRESHNESS_ROOT: root,
       FRESHNESS_CONF: CONF,
       FRESHNESS_NOW_EPOCH: String(now),
+      // BL-1012: the effective threshold is now load-relative. Pin the
+      // contention seams at factor 1 so this file keeps asserting the PATH
+      // resolution it is about, rather than becoming a function of how busy
+      // the host happens to be when it runs.
+      FRESHNESS_LOAD: '1',
+      FRESHNESS_CORES: '1',
       FRESHNESS_INCIDENT_FILE: path.join(root, '.swarmforge', 'daemon', 'freshness-incidents.log'),
       FRESHNESS_ANNOUNCE_CMD: `printf '%s\\n' "$1" >> "${path.join(root, 'announces.log')}"`,
       FRESHNESS_KILL_CMD: `printf '%s\\n' "$1" >> "${path.join(root, 'kills.log')}"`,
@@ -148,6 +154,9 @@ test('property (invariant 2): the checker resolves its interpreter from its OWN 
           FRESHNESS_ROOT: root,
           FRESHNESS_CONF: CONF,
           FRESHNESS_NOW_EPOCH: String(now),
+          // BL-1012: see the note on the sibling invocation above.
+          FRESHNESS_LOAD: '1',
+          FRESHNESS_CORES: '1',
           FRESHNESS_INCIDENT_FILE: path.join(root, '.swarmforge', 'daemon', 'freshness-incidents.log'),
           FRESHNESS_ANNOUNCE_CMD: 'true',
           FRESHNESS_KILL_CMD: 'true',
