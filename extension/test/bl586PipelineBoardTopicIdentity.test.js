@@ -203,6 +203,19 @@ test('BL-586: a board with no readTopicMap adapter wired still resolves - the gu
   assert.equal(result.state.topicId, 6795);
 });
 
+test('BL-586: a readTopicMap adapter that THROWS still resolves - the guard degrades open on a bad read exactly as it does on a missing adapter', async () => {
+  const { adapters, calls } = recordingAdapters({ ensureTopicId: 6795, topicMap: {} });
+  adapters.readTopicMap = async () => {
+    throw new Error('simulated unreadable topic map');
+  };
+  const result = await syncPipelineBoard(boardData(), { topicId: 6795 }, adapters, 1000);
+
+  assert.deepEqual(calls.posted, [6795], 'a throwing map read must never freeze or refuse the board');
+  assert.equal(calls.ensured, 0, 'degrading open trusts the stored id rather than re-ensuring');
+  assert.equal(calls.alerts.length, 0);
+  assert.equal(result.state.topicId, 6795);
+});
+
 test('BL-586: a refusal with no alert adapter wired still refuses - the alert is observability, not the guard', async () => {
   const { adapters, calls } = recordingAdapters({ ensureTopicId: 6795, topicMap: { '14647': 'SUP-5' } });
   delete adapters.emitCrossedTopicAlert;

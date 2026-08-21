@@ -256,6 +256,17 @@ async function resolveBoardTopicId(
   return { ...reEnsured, rebound: true };
 }
 
+// BL-586 (cleaner, CRAP budget): extracted out of syncPipelineBoard purely to
+// keep that function's own cyclomatic complexity from absorbing this
+// decision - same reasoning as classifyBoardFailure's own extraction above.
+// A rebound identity starts clean in its new topic. prevState's
+// messageId/orphanMessageIds name messages in the topic just refused, and
+// postBoardMessage would otherwise aim its best-effort delete at the NEW
+// topic using an id from the old one.
+function boardStateForPost(prevState: PipelineBoardState | undefined, rebound: boolean | undefined): PipelineBoardState | undefined {
+  return rebound ? { ...prevState, messageId: undefined, orphanMessageIds: undefined } : prevState;
+}
+
 // A board wired without the map adapter (every fixture predating this
 // ticket) still resolves - see validateBoardTopic's own comment on degrading
 // open. A map read that THROWS is treated the same way, never as a reason to
@@ -478,13 +489,7 @@ export async function syncPipelineBoard(
     return maybeEmitFailureAlert(result, adapters);
   }
 
-  // BL-586: a rebound identity starts clean in its new topic. prevState's
-  // messageId/orphanMessageIds name messages in the topic just refused, and
-  // postBoardMessage would otherwise aim its best-effort delete at the NEW
-  // topic using an id from the old one.
-  const postFromState = topicResult.rebound
-    ? { ...prevState, messageId: undefined, orphanMessageIds: undefined }
-    : prevState;
+  const postFromState = boardStateForPost(prevState, topicResult.rebound);
 
   const lastChangeMs = nowMs;
   const text = renderPipelineBoard(data, lastChangeMs);
