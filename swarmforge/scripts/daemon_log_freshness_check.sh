@@ -14,6 +14,18 @@
 #   FRESHNESS_NOW_EPOCH      injected clock, unix seconds (default: date +%s)
 #   FRESHNESS_INCIDENT_FILE  durable record path
 #   FRESHNESS_COOL_OFF_SECS  restart cool-off window (default: 300)
+#   FRESHNESS_LOAD           BL-1012 injected load average (default: read from
+#                            the host). With FRESHNESS_CORES below this pins
+#                            the contention factor deterministically.
+#   FRESHNESS_CORES          BL-1012 injected core count (default: read from
+#                            the host)
+#   FRESHNESS_MAX_THRESHOLD_SECS  BL-1012 ceiling on the effective threshold
+#                            (default: 600 - the bound babysitterd already
+#                            carries in this very conf)
+#   FRESHNESS_RESTART_GRACE  BL-1012 post-restart grace window in which an
+#                            absent/heartbeat-less log is not a violation,
+#                            because our own restart rotated it away
+#                            (default: 300)
 #   FRESHNESS_ANNOUNCE_CMD   override announce; receives message as $1
 #   FRESHNESS_KILL_CMD       override kill; receives pid as $1
 #   FRESHNESS_START_CMD      override restart; receives start-script + root as $1 $2
@@ -52,6 +64,8 @@ ROOT=${FRESHNESS_ROOT:?FRESHNESS_ROOT is required}
 CONF=${FRESHNESS_CONF:-"$SCRIPT_DIR/daemon_log_freshness.conf"}
 NOW=${FRESHNESS_NOW_EPOCH:-$(date +%s)}
 COOL_OFF=${FRESHNESS_COOL_OFF_SECS:-300}
+MAX_THRESHOLD=${FRESHNESS_MAX_THRESHOLD_SECS:-600}
+RESTART_GRACE=${FRESHNESS_RESTART_GRACE:-300}
 INCIDENT_FILE=${FRESHNESS_INCIDENT_FILE:-"$ROOT/.swarmforge/daemon/freshness-incidents.log"}
 
 mkdir -p "$(dirname -- "$INCIDENT_FILE")"
@@ -71,6 +85,71 @@ iso_to_epoch() {
     return
   fi
   printf '%s\n' "0"
+}
+
+# BL-1012: host contention as an integer factor, load average / core count,
+# floored at 1. The fixed 120s threshold encoded an assumption about
+# contention that nothing recorded and nothing rechecked: on 2026-08-21 the
+# Mac sat at load 80 on four cores with a single chase sweep taking 17s, and
+# the watchdog killed handoffd nine times for ages of 132-350s - late, not
+# hung, and restarted mid-cycle for it.
+#
+# Anything unreadable or unparseable falls back to 1, which reproduces
+# today's behaviour EXACTLY on a quiet box: this never raises the threshold
+# at factor 1, so a genuinely hung daemon still reds in two minutes there.
+# Integer division truncates, which rounds the window DOWN - the conservative
+# direction, and the reason a sub-1 result is floored rather than rejected.
+read_load_average() {
+  if [ -n "${FRESHNESS_LOAD:-}" ]; then
+    printf '%s\n' "$FRESHNESS_LOAD"
+    return
+  fi
+  if [ -r /proc/loadavg ]; then
+    awk '{print $1}' /proc/loadavg 2>/dev/null && return
+  fi
+  # BSD/macOS: "{ 80.53 42.11 30.00 }"
+  sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}' && return
+  printf '%s\n' ""
+}
+
+read_core_count() {
+  if [ -n "${FRESHNESS_CORES:-}" ]; then
+    printf '%s\n' "$FRESHNESS_CORES"
+    return
+  fi
+  nproc 2>/dev/null && return
+  sysctl -n hw.ncpu 2>/dev/null && return
+  printf '%s\n' ""
+}
+
+contention_factor() {
+  load=$(read_load_average 2>/dev/null || true)
+  cores=$(read_core_count 2>/dev/null || true)
+  # Integer part only - POSIX sh has no floating point.
+  load_int=$(printf '%s' "$load" | sed -n 's/^\([0-9][0-9]*\).*$/\1/p')
+  cores_int=$(printf '%s' "$cores" | sed -n 's/^\([0-9][0-9]*\).*$/\1/p')
+  if [ -z "$load_int" ] || [ -z "$cores_int" ] || [ "$cores_int" -le 0 ]; then
+    printf '%s\n' "1"
+    return
+  fi
+  factor=$((load_int / cores_int))
+  if [ "$factor" -lt 1 ]; then
+    factor=1
+  fi
+  printf '%s\n' "$factor"
+}
+
+# BL-1012 invariant 1 - BOUNDED. An arbitrarily loaded host never earns an
+# arbitrarily long window: past the ceiling a genuinely dead daemon is always
+# caught, however contended the box.
+effective_threshold() {
+  base=$1
+  factor=$2
+  eff=$((base * factor))
+  if [ "$eff" -gt "$MAX_THRESHOLD" ]; then
+    eff=$MAX_THRESHOLD
+  fi
+  printf '%s\n' "$eff"
 }
 
 # Newest heartbeat line age in seconds, or a huge number if none/unparseable.
@@ -213,24 +292,54 @@ process_daemon() {
   start_script="$SCRIPT_DIR/$start_name"
 
   age=$(heartbeat_age_secs "$log_path")
-  if [ "$age" -le "$threshold" ]; then
+
+  # BL-1012: the threshold is now relative to host contention, within a hard
+  # ceiling. At factor 1 this is byte-for-byte today's behaviour.
+  factor=$(contention_factor)
+  effective=$(effective_threshold "$threshold" "$factor")
+
+  if [ "$age" -le "$effective" ]; then
     return 0
   fi
 
   last=$(last_restart_epoch "$name")
   since=$((NOW - last))
-  if [ "$last" -gt 0 ] && [ "$since" -lt "$COOL_OFF" ]; then
-    record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} action=escalate cool_off_remaining=$((COOL_OFF - since))"
+
+  # BL-1012 invariant 2 - NEVER ACT ON EVIDENCE WE DESTROYED.
+  # start_handoff_daemon.sh moves handoffd.log aside on every start, and the
+  # checker restarts through that same script. So right after a restart WE
+  # performed, the log the next check reads is one our own restart rotated
+  # away and heartbeat_age_secs returns its file-absent sentinel. Alarming on
+  # that is alarming on our own footprint - and if the restart failed to
+  # bring the daemon up, it would repeat every two minutes forever with
+  # nothing left to diagnose from.
+  #
+  # Scoped deliberately to the SENTINEL only (absent log / no heartbeat line),
+  # never to a real measured age: a daemon that came back up and then went
+  # stale inside the grace window is a genuine violation and must still fire.
+  if [ "$age" -eq 999999999 ] && [ "$last" -gt 0 ] && [ "$since" -lt "$RESTART_GRACE" ]; then
+    record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=grace grace_remaining=$((RESTART_GRACE - since))"
     append_incident "$record"
-    do_announce "FRESHNESS_VIOLATION escalate daemon=${name} age_secs=${age} threshold=${threshold} (cool-off; no second restart)"
+    return 0
+  fi
+
+  if [ "$last" -gt 0 ] && [ "$since" -lt "$COOL_OFF" ]; then
+    record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=escalate cool_off_remaining=$((COOL_OFF - since))"
+    append_incident "$record"
+    do_announce "FRESHNESS_VIOLATION escalate daemon=${name} age_secs=${age} threshold=${effective} (cool-off; no second restart)"
     return 0
   fi
 
   kill_daemon "$pid_path" || true
   restart_daemon "$start_script"
-  record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} action=restart"
+  # BL-1012 invariant 3 - ATTRIBUTABLE. The record names the effective
+  # threshold AND the contention factor that produced it, so a past decision
+  # is interpretable from the record alone and never needs re-running at the
+  # same load to classify. `threshold=` stays the BASE, unchanged, so every
+  # existing reader of these records keeps working.
+  record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=restart"
   append_incident "$record"
-  do_announce "FRESHNESS_VIOLATION restart daemon=${name} age_secs=${age} threshold=${threshold}"
+  do_announce "FRESHNESS_VIOLATION restart daemon=${name} age_secs=${age} threshold=${effective}"
 }
 
 # Load project + telegram env files when present (production cron path).
