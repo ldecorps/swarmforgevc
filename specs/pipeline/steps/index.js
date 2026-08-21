@@ -552,7 +552,8 @@ const DOMAINS = [
   require('./bl993OperatorRuntimeWatchSteps'),
   require('./bl1002SocketRootSteps'),
   require('./bl1004ReworkClaimSteps'),
-  require('./bl984SweepStaleFixturesSteps')
+  require('./bl984SweepStaleFixturesSteps'),
+  require('./bl979PipelineBoardTicketRowsSteps')
 ];
 
 function registerSteps(registry) {
