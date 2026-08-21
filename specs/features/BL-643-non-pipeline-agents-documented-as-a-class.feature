@@ -82,10 +82,15 @@ Feature: The non-pipeline agents are documented as a class, with every path veri
       | an agent that is a driver rather than a launched process         |
 
   # BL-643 agent-class-doc-06
-  Scenario: the Onboarder document covers only what shipped
+  Scenario Outline: the Onboarder document's build-state claims match the backlog
     When the Onboarder document is read
     Then every behaviour it describes is present on the main branch
-    And each unshipped phase is named with the ticket that owns it
+    And every phase it names as <claim> cites a ticket that is <backlog state>
+
+    Examples:
+      | claim   | backlog state |
+      | shipped | closed        |
+      | unbuilt | open          |
 
   # BL-643 agent-class-doc-07
   Scenario: the Expeditor is linked rather than restated

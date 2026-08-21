@@ -215,6 +215,121 @@ function checkLogGrounding(row) {
   }
 }
 
+// ── build-state claims vs the backlog (agent-class-doc-06, BL-1005) ─────
+// The original step froze a SNAPSHOT of build state (literal BL-624/BL-625
+// + "not built yet"), so the gate went red the day aa1949aec landed BL-625
+// and the document honestly stopped calling those slices unbuilt. Every
+// claim is now DERIVED from the document under test and checked against
+// the backlog, symmetrically: shipped -> the cited ticket is closed,
+// unbuilt -> the cited ticket is still open. Extraction works on prose
+// blocks (blank-line separated), so a claim wrapped across source lines
+// stays one claim: a block with an explicit marker phrase claims every
+// ticket id it names, a "Slice N (BL-x)" heading claims its own id as
+// shipped unless the same block explicitly says it is not built. A block
+// mixing both markers around ids, or a section claiming one id both ways,
+// fails loudly rather than attributing by guesswork.
+const SHIPPED_MARKER_RE = /\bon\s+(?:the\s+)?`?main`?(?:\s+branch)?\b|\bshipped\b|\blanded\b/i;
+const UNBUILT_MARKER_RE = /\bunbuilt\b|\bunshipped\b|\bnot\s+(?:yet\s+)?built(?:\s+yet)?\b|\bnot\s+yet\s+(?:shipped|landed)\b/i;
+const TICKET_ID_RE = /\bBL-\d+\b/g;
+const SLICE_HEADING_RE = /\bSlice\s+\d+\s*\(\s*(BL-\d+)\s*\)/g;
+
+const CLAIM_TO_BACKLOG_STATE = {
+  shipped: 'closed',
+  unbuilt: 'open',
+};
+
+function extractBuildStateClaims(sectionText) {
+  const byTicket = new Map();
+  const record = (ticketId, claim) => {
+    const existing = byTicket.get(ticketId);
+    if (existing && existing !== claim) {
+      throw new Error(`bl1005: conflicting build-state claims for ${ticketId} - the section calls it both shipped and unbuilt`);
+    }
+    byTicket.set(ticketId, claim);
+  };
+  for (const block of sectionText.split(/\n\s*\n/)) {
+    const ids = [...new Set(block.match(TICKET_ID_RE) ?? [])];
+    const hasUnbuilt = UNBUILT_MARKER_RE.test(block);
+    // Test the shipped marker with unbuilt phrases stripped: "not yet
+    // shipped" contains the word "shipped" and must read as unbuilt, not
+    // as an ambiguous shipped/unbuilt mix.
+    const hasShipped = SHIPPED_MARKER_RE.test(block.replace(new RegExp(UNBUILT_MARKER_RE.source, 'gi'), ' '));
+    if (hasShipped && hasUnbuilt && ids.length > 0) {
+      throw new Error(`bl1005: ambiguous block - both shipped and unbuilt markers around ticket id(s) ${JSON.stringify(ids)}; split the prose so each claim is unambiguous`);
+    }
+    if (ids.length > 0 && (hasShipped || hasUnbuilt)) {
+      const claim = hasUnbuilt ? 'unbuilt' : 'shipped';
+      for (const id of ids) {
+        record(id, claim);
+      }
+      continue;
+    }
+    // No block-level marker: a "Slice N (BL-x)" heading in this
+    // what-shipped section still claims its own id as shipped.
+    let m;
+    SLICE_HEADING_RE.lastIndex = 0;
+    while ((m = SLICE_HEADING_RE.exec(block))) {
+      if (!hasUnbuilt) {
+        record(m[1], 'shipped');
+      }
+    }
+  }
+  return [...byTicket.entries()].map(([ticketId, claim]) => ({ ticketId, claim }));
+}
+
+const BACKLOG_ROOT = path.join(REPO_ROOT, 'backlog');
+const OPEN_BACKLOG_DIRS = ['active', 'paused', 'hold'];
+
+function backlogDirHasTicket(dir, ticketId) {
+  if (!fs.existsSync(dir)) {
+    return false;
+  }
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      // Closed tickets do NOT all sit flat: BL-590 is at done/BL-590-...
+      // while BL-624/625 are under done/M8/ - always recurse.
+      if (backlogDirHasTicket(path.join(dir, entry.name), ticketId)) {
+        return true;
+      }
+    } else if (new RegExp(`^${ticketId}[.-]`).test(entry.name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function resolveTicketBacklogState(ticketId, backlogRoot = BACKLOG_ROOT) {
+  // done/ wins over a stale duplicate lingering in active/: closure is
+  // recorded by the done/ move, the leftover is repo-hygiene noise.
+  if (backlogDirHasTicket(path.join(backlogRoot, 'done'), ticketId)) {
+    return 'closed';
+  }
+  for (const dir of OPEN_BACKLOG_DIRS) {
+    if (backlogDirHasTicket(path.join(backlogRoot, dir), ticketId)) {
+      return 'open';
+    }
+  }
+  return 'missing';
+}
+
+function checkBuildStateClaims(sectionText, claimKind, resolveState) {
+  const claims = extractBuildStateClaims(sectionText);
+  // The ticket's declared invariant: the handler either extracts at least
+  // one build-state claim and checks every one, or it FAILS - zero claims
+  // found is a failure, never a vacuous pass.
+  if (claims.length === 0) {
+    throw new Error('bl1005: zero build-state claims extracted from the Onboarder section - refusing to pass vacuously; a what-shipped section that names no owning ticket is a documentation defect');
+  }
+  const expected = CLAIM_TO_BACKLOG_STATE[claimKind];
+  const wrong = claims
+    .filter((c) => c.claim === claimKind)
+    .map((c) => ({ ...c, actual: resolveState(c.ticketId) }))
+    .filter((c) => c.actual !== expected);
+  if (wrong.length > 0) {
+    throw new Error(`bl1005: phase(s) the document calls ${claimKind} do not cite a ${expected} ticket: ${JSON.stringify(wrong)}`);
+  }
+}
+
 function registerSteps(registry) {
   // ── Background ─────────────────────────────────────────────────────
   registry.define(/^the non-pipeline agent documentation has been written$/, (ctx) => {
@@ -422,13 +537,13 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^each unshipped phase is named with the ticket that owns it$/, (ctx) => {
-    if (!/BL-624/.test(ctx.onboarderSection) || !/BL-625/.test(ctx.onboarderSection)) {
-      throw new Error('bl643: expected the Onboarder section to name BL-624 and BL-625 as owning the unshipped phases');
+  registry.define(/^every phase it names as (.+) cites a ticket that is (.+)$/, (ctx, claim, backlogState) => {
+    // Scenario Outline handler: validate against the explicit known
+    // pairs - no passthrough (engineering.prompt KNOWN_VALUES rule).
+    if (!Object.prototype.hasOwnProperty.call(CLAIM_TO_BACKLOG_STATE, claim) || CLAIM_TO_BACKLOG_STATE[claim] !== backlogState) {
+      throw new Error(`bl1005 agent-class-doc-06: unrecognized <claim>/<backlog state> pairing "${claim}"/"${backlogState}"`);
     }
-    if (!/not built yet/i.test(ctx.onboarderSection)) {
-      throw new Error('bl643: expected the Onboarder section to explicitly state which phases are not built yet');
-    }
+    checkBuildStateClaims(ctx.onboarderSection, claim, resolveTicketBacklogState);
   });
 
   // ── agent-class-doc-07 ──────────────────────────────────────────────
@@ -512,6 +627,10 @@ module.exports = {
   logVerificationSources,
   checkPathColumn,
   checkLogGrounding,
+  extractBuildStateClaims,
+  resolveTicketBacklogState,
+  checkBuildStateClaims,
+  CLAIM_TO_BACKLOG_STATE,
   REF_TABLE_PATH,
   CLASS_DOC_PATH,
 };
