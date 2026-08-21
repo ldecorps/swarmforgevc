@@ -10,6 +10,7 @@
 (load-file (str (fs/path (fs/parent *file*) "swarm_identity_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "seat_affinity_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -212,8 +213,45 @@
                 ;; already scans and alerts a human on) so it can never be
                 ;; promoted into in_process/ as a task; falls through to the
                 ;; next genuinely-dequeueable file.
-                dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
-            (if (empty? dequeueable)
+                dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)
+                ;; BL-1004: a rework whose task a SIBLING seat has worked
+                ;; is deferred to that seat until the cross-seat deadline -
+                ;; decided here in the claim path, inside the mailbox
+                ;; layer, so seat identity never escapes it (BL-983's own
+                ;; invariant). A deferred parcel stays untouched in the
+                ;; stage queue, exactly like an ambulance hold, and is
+                ;; re-considered on the very next poll. With no siblings
+                ;; the sibling task set is empty and every decision is
+                ;; :claim, so the deferral path is structurally
+                ;; unreachable on a single-seat stage (invariant 3), and
+                ;; the seat's own mailboxes are then never even read.
+                sibling-tasks        (handoff-lib/sibling-worked-task-names)
+                my-tasks             (when (seq sibling-tasks)
+                                       (into (handoff-lib/worked-task-names-in completed-dir)
+                                             (handoff-lib/worked-task-names-in in-process-dir)))
+                deadline-ms          (seat-affinity-lib/parse-cross-seat-claim-deadline-ms
+                                      (mono-router-conf-text))
+                now-ms               (System/currentTimeMillis)
+                decided              (mapv (fn [f]
+                                             [f (seat-affinity-lib/rework-claim-decision
+                                                 {:type (handoff-lib/header-field f "type")
+                                                  :task (handoff-lib/header-field f "task")
+                                                  :sibling-tasks sibling-tasks
+                                                  :my-tasks my-tasks
+                                                  :enqueued-at (handoff-lib/header-field f "enqueued_at")
+                                                  :created-at (handoff-lib/header-field f "created_at")
+                                                  :now-ms now-ms
+                                                  :deadline-ms deadline-ms})])
+                                           dequeueable)
+                sibling-seat-ids     (mapv :role (handoff-lib/stage-sibling-seats))
+                deferred             (filterv #(= :defer (:action (second %))) decided)
+                claimable            (vec (remove #(= :defer (:action (second %))) decided))]
+            (doseq [[f decision] deferred]
+              (println (seat-affinity-lib/deferral-line
+                        {:basename (fs/file-name f)
+                         :task (:task decision)
+                         :sibling-seats sibling-seat-ids})))
+            (if (empty? claimable)
               (report-no-task-or-rotate!)
               ;; BL-983: two idle seats can race for the same stage-queue
               ;; file; fs/move's rename is the atomic arbiter. The loser's
@@ -221,10 +259,10 @@
               ;; candidate rather than failing the turn, so a parcel is
               ;; claimed by exactly one seat and a racing peer simply keeps
               ;; looking.
-              (loop [candidates dequeueable]
+              (loop [candidates claimable]
                 (if (empty? candidates)
                   (report-no-task-or-rotate!)
-                  (let [source-file (first candidates)
+                  (let [[source-file decision] (first candidates)
                         target-file (fs/path in-process-dir (fs/file-name source-file))]
                     (when (fs/exists? target-file)
                       (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target in-process file already exists: " target-file)))
@@ -237,6 +275,15 @@
                         ;; waiting in new/, and must not outlive it there.
                         (handoff-lib/remove-sidecars-of! source-file)
                         (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
+                        ;; BL-1004 invariant 1's out-loud half: a cross-seat
+                        ;; claim past the deadline says the seat did not
+                        ;; build this parcel, so it merges the parcel
+                        ;; commit FIRST, then works.
+                        (when (= :claim-cross-seat (:action decision))
+                          (println (seat-affinity-lib/cross-seat-claim-line
+                                    {:basename (fs/file-name source-file)
+                                     :task (:task decision)
+                                     :sibling-seats sibling-seat-ids})))
                         (enforce-branch-claim-guard! target-file in-process-dir new-dir)
                         (handoff-lib/print-task target-file))
                       (recur (rest candidates)))))))))))))
