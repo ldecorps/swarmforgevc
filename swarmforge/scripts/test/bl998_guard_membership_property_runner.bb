@@ -21,11 +21,14 @@
 ;; files (deterministic, never rand - a flaky property is worse than none),
 ;; and the same Babashka-property-tooling-gap note (BL-472).
 ;;
-;; Non-vacuity proven at authoring time: replacing the guard's derived
-;; self-rooting scan with a hardcoded list of today's five offender
-;; FILENAMES fails this immediately - every generated file carries a fresh
-;; random name, so a roster matches none of them and every offending case
-;; goes unflagged.
+;; Non-vacuity proven at authoring time, two ways:
+;;   - replacing the guard's derived self-rooting scan with a hardcoded list
+;;     of today's offender FILENAMES fails this immediately - every generated
+;;     file carries a fresh random name, so a roster matches none of them and
+;;     every offending case goes unflagged;
+;;   - removing the guard's closure over sibling process invocations (step
+;;     1b) fails every :transitive case, which is the shape that bounced this
+;;     ticket back to the coder in the first place.
 
 (ns bl998-guard-membership-property-runner
   (:require [babashka.fs :as fs]
@@ -43,11 +46,33 @@
 (defn- gen-int [s n] [(mod (quot s 65536) n) (step s)])
 (defn- gen-pick [s coll] (let [[i s'] (gen-int s (count coll))] [(nth (vec coll) i) s']))
 
-;; SELF-ROOTING helpers resolve their own root (dispatcher or .sh wrapper);
-;; LEAF helpers do not. Both lists are read from the real tree so this stays
-;; honest if the helpers change.
-(def self-rooting ["ready_for_next.bb" "done_with_current.bb" "ready_for_next_task.sh"])
-(def leaf ["ready_for_next_task.bb" "done_with_current_task.bb"])
+;; SELF-ROOTING helpers resolve their own root; LEAF helpers take the root
+;; they are given. All three lists name real files, copied out of the real
+;; tree below, so this stays honest if the helpers change.
+;;
+;; The self-rooting set has TWO shapes and the property must reach both:
+;;
+;;   :direct     - the script itself runs the dispatch table, asks git for
+;;                 the root, or cd's to $0's own directory.
+;;   :transitive - nothing in the script resolves a root, and it escapes the
+;;                 fixture anyway because it STARTS a sibling resolved from
+;;                 its own on-disk directory that is itself self-rooting.
+;;                 done_with_current_task.bb is the case that bounced this
+;;                 ticket: an inspector that stops after one hop calls it a
+;;                 leaf - the ticket's own constraints did - and it still
+;;                 lands in the real checkout via
+;;                 (process/exec (fs/path script-dir "ready_for_next_task.sh")).
+;;                 done_with_current_batch.bb is the same shape one file over.
+;;
+;; The transitive cases only derive as self-rooting if their hop TARGET is
+;; in the sandbox too, so ready_for_next_task.sh / ready_for_next_batch.sh
+;; are in the direct list and must stay there.
+(def self-rooting-direct
+  ["ready_for_next.bb" "done_with_current.bb"
+   "ready_for_next_task.sh" "ready_for_next_batch.sh"])
+(def self-rooting-transitive ["done_with_current_task.bb" "done_with_current_batch.bb"])
+(def leaf ["ready_for_next_task.bb"])
+(def self-rooting (concat self-rooting-direct self-rooting-transitive))
 
 ;; ONE synthetic tree, reused, holding ONLY the helpers these cases name.
 ;; The guard re-derives the self-rooting set from the scripts dir on every
@@ -62,8 +87,11 @@
 (fs/copy (fs/path here guard-name) (fs/path sb-scripts "test" guard-name) {:replace-existing true})
 
 (defn- gen-case [s i]
-  (let [[helper-kind s1] (gen-pick s [:self-rooting :leaf])
-        [helper s2] (gen-pick s1 (if (= helper-kind :self-rooting) self-rooting leaf))
+  (let [[helper-kind s1] (gen-pick s [:direct :transitive :leaf])
+        [helper s2] (gen-pick s1 (case helper-kind
+                                   :direct     self-rooting-direct
+                                   :transitive self-rooting-transitive
+                                   :leaf       leaf))
         [anchor s3] (gen-pick s2 [:real-dir :fixture-copy])
         [executed? s4] (gen-pick s3 [true false])
         [name-idx s5] (gen-int s4 100000)
@@ -72,8 +100,10 @@
     [{:helper helper :helper-kind helper-kind :anchor anchor :executed? executed?
       :var var :file-name file-name
       ;; The claim: only an EXECUTED, SELF-ROOTING helper reached through the
-      ;; REAL scripts dir is an offence. Anything else must be left alone.
-      :expect-flagged (and executed? (= helper-kind :self-rooting) (= anchor :real-dir))}
+      ;; REAL scripts dir is an offence - and self-rooting is transitive, so
+      ;; the one-hop-away shape is an offence on exactly the same terms.
+      ;; Anything else must be left alone.
+      :expect-flagged (and executed? (not= helper-kind :leaf) (= anchor :real-dir))}
      s5]))
 
 (defn- test-source [{:keys [helper anchor executed? var]}]
@@ -117,7 +147,7 @@
 ;; Generator reach, asserted rather than hoped for: every combination of
 ;; (helper kind x anchor x executed?) must have been generated, or the
 ;; property silently tested less than it claims.
-(doseq [hk [:self-rooting :leaf] a [:real-dir :fixture-copy] e [true false]]
+(doseq [hk [:direct :transitive :leaf] a [:real-dir :fixture-copy] e [true false]]
   (when-not (get @seen [hk a e])
     (swap! failures conj (str "FAIL generator-reach: never generated " (pr-str [hk a e])))))
 

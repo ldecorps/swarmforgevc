@@ -12,17 +12,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
-# BL-998: bound below, to the fixture's own copy. The LEAF helpers below
-# (ready_for_next_task.bb / done_with_current_task.bb / *_batch.bb) take an
-# explicit root and are NOT self-rooting - invoking those from the real
-# scripts dir is the safe shape and is deliberately left as it is.
-READY_TASK="$SCRIPT_DIR/../ready_for_next_task.bb"
-DONE_TASK="$SCRIPT_DIR/../done_with_current_task.bb"
-# BL-998 (coder finding, beyond the ticket's list): the ticket classifies
-# these two as the SAFE leaf shape and says to leave them. Observed
-# otherwise - run from the real scripts dir this batch call read the REAL
-# repo's in_process and named a LIVE parcel of the running coder. Bound to
-# the fixture's own copy below, like every other call site here.
+# BL-998: every SELF-ROOTING helper this file runs dispatches through the
+# fixture's own copy, bound below; the ones that take the root they are
+# given stay anchored at the real scripts dir, which is legal and cheaper.
+# The ticket originally classified ready_for_next_task.bb,
+# done_with_current_task.bb and the *_batch pair alike as a safe "leaf"
+# shape. That is wrong for the COMPLETION helpers, and was reproduced twice:
+# run from the real scripts dir, done_with_current_batch.bb read the REAL
+# repo's in_process and named a LIVE parcel of the running coder, and
+# done_with_current_task.bb escapes the same way one hop later - its
+# run-ready! tail call process/exec's ready_for_next_task.sh out of its own
+# on-disk directory, and that wrapper cd's to its own dirname. The RECEIVE
+# helpers have no such tail call and stay where they are.
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -56,6 +57,17 @@ install_scripts "$CODER_WT"
 READY_DISPATCH="$CODER_WT/swarmforge/scripts/ready_for_next.bb"
 READY_BATCH="$CODER_WT/swarmforge/scripts/ready_for_next_batch.bb"
 DONE_BATCH="$CODER_WT/swarmforge/scripts/done_with_current_batch.bb"
+DONE_TASK="$CODER_WT/swarmforge/scripts/done_with_current_task.bb"
+
+# NOT converted, deliberately: ready_for_next_task.bb is a TRUE leaf. It
+# starts no sibling process at all (0 process/exec; its (fs/parent *file*)
+# uses are load-file, which runs in-process and changes no cwd), so it takes
+# the root it is given - here, cwd $ROOT/subdir. Calling it from the real
+# scripts dir is the safe shape, and the isolation guard DERIVES that rather
+# than being told it: if a tail call is ever added to this helper, the guard
+# closes over it on the next run and flags this line. Converting it too
+# would be churn buying protection the guard already provides.
+READY_TASK="$SCRIPT_DIR/../ready_for_next_task.bb"
 
 mkdir -p "$ROOT/.swarmforge" "$CODER_WT/.swarmforge" "$CODER_WT/extension" "$ROOT/subdir"
 ROLES="coordinator\tmaster\t$ROOT\tswarmforge-coordinator\tCoordinator\tclaude\ttask
