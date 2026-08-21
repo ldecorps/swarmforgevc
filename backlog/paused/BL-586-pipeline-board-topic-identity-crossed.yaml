@@ -10,7 +10,7 @@ approval_context: >
   into APS Gherkin, unchanged in substance. Status stays needs_design — the
   reuse-or-create/collision-guard mechanics are firmed up by the coder per
   the description's "Design directions", not settled here.
-severity: medium
+severity: high  # raised from medium 2026-08-21: dormant when dropped, live now (see Recurrence)
 priority: 114
 direction: human-requested
 depends_on: []
@@ -99,3 +99,53 @@ notes: |
   2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
   pilot-process batch can clear the high tier; board identity, not a live
   outage.
+
+  2026-08-21 coordinator: NOT promoted despite specifier's promote instruction
+  and expedited high severity - active count is 5, cap is 3 (operator lowered
+  it for stability this session; existing actives are grandfathered, not
+  demoted). No open slot exists. Top-ranked among expedited candidates; will
+  promote automatically as soon as the active count drops below the cap.
+
+recurrence_2026_08_21: |
+  RAISED medium -> high, and why the field changed rather than a favour being
+  asked. Severity was dropped to medium on 2026-08-01 when this was dormant. It
+  is not dormant: the human reported it live ("in telegram, I am getting a lot
+  of updates, in particular what seems a duplicated update in a separate topic
+  for the pipeline board", via Cursor 2026-08-21 ~09:24 BST), and the specifier
+  re-verified the live state at 12:26Z the same day rather than quoting the
+  report:
+    - concierge-tick-state.json pipelineBoard.topicId = 14647
+    - telegram-topic-map.json maps 14647 -> SUP-5, the human's SUPPORT topic
+    - the board is actively rewriting there (lastChangeMs 2026-08-21 12:21:25Z,
+      messageId advanced 31978 -> 32608 within the observation window)
+    - orphanMessageIds = 16 against a cap of 20 - the delete+repost trail is
+      close to overflowing
+    - standing-topic-ids.json still has NO PIPELINE_BOARD key (only APPROVALS
+      1785, OPERATOR 3864), so there is no durable identity to resolve back to
+  Front-desk supervisor log shows the follow-on storm: repeated
+  `syncBoardIfWired: failed-post (transient)` 429 Too Many Requests, then
+  `failed-post (topic-gone)` after which BL-497 self-heal MINTS A NEW "Pipeline
+  Board" topic - the zombie half of this same defect.
+
+  This is the identical shape as 2026-07-23 (topicId 1634 = SUP-7), which is the
+  point: the defect recurred unchanged because nothing durable was fixed. Per
+  the severity rubric ("high for a live fault degrading behaviour or a broken
+  safety/health signal") this is high, not medium. Under Article 3.2.4 that
+  places it in the expedite lane ahead of non-expedited work, which is the
+  constitutional route to the operator's "promote it ahead of the paused queue"
+  - no special-case favour required.
+
+  Intake source: .swarmforge/operator/INTAKE-pipeline-board-duplicate-topic.md
+  (archived on drain, per BL-311). The intake states explicitly: do NOT mint a
+  sibling ticket - jump THIS one. No new ticket was minted.
+
+  Two mechanisms are named in that intake and are worth keeping distinct when
+  this is worked: (a) the identity crossing above, which is this ticket; and
+  (b) the volume itself - every content change DELETES AND REPOSTS the board
+  (BL-462) and then re-pins at chat level (BL-467), so pins are group-wide
+  noise. (b) is a separate concern; do not silently fold it in here without the
+  specifier splitting it, per the slice-size envelope.
+
+  NOTE for the coordinator: `assigned_to: specifier` above is stale routing from
+  the 2026-07-28 hydrate batch, not a claim - reset it on promotion.
+
