@@ -240,7 +240,7 @@ const CLAIM_TO_BACKLOG_STATE = {
 
 function extractBuildStateClaims(sectionText) {
   const byTicket = new Map();
-  const record = (ticketId, claim, block) => {
+  const record = (ticketId, claim) => {
     const existing = byTicket.get(ticketId);
     if (existing && existing !== claim) {
       throw new Error(`bl1005: conflicting build-state claims for ${ticketId} - the section calls it both shipped and unbuilt`);
@@ -260,7 +260,7 @@ function extractBuildStateClaims(sectionText) {
     if (ids.length > 0 && (hasShipped || hasUnbuilt)) {
       const claim = hasUnbuilt ? 'unbuilt' : 'shipped';
       for (const id of ids) {
-        record(id, claim, block);
+        record(id, claim);
       }
       continue;
     }
@@ -270,7 +270,7 @@ function extractBuildStateClaims(sectionText) {
     SLICE_HEADING_RE.lastIndex = 0;
     while ((m = SLICE_HEADING_RE.exec(block))) {
       if (!hasUnbuilt) {
-        record(m[1], 'shipped', block);
+        record(m[1], 'shipped');
       }
     }
   }
