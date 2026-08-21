@@ -1,6 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-1004: BL-983 gave a multi-seat stage
+**Last Updated:** August 21, 2026 (BL-997: the busy-footer definition was
+mirrored by hand across a boundary no import can bridge — the swarm's own
+Babashka classifier (`chase_sweep_lib.bb`'s `actively-processing?`, BL-970's
+structural rewrite) and the extension host's TypeScript classifier
+(`agentPaneState.ts`'s `isPaneActivelyProcessing`, ported to match by
+BL-1003) — held in sync by nothing but a comment on each side, the exact
+shape the engineering rules already require a test for (BL-897). One shared
+`checkAgreement(babashkaVerdict, typescriptVerdict)`
+(`specs/pipeline/steps/lib/bl997AgreementCheck.js`) is now the single
+comparison every caller uses — the acceptance step handler, the Vitest
+suite, and its property-test sweep — so the failure-message contract (names
+BOTH verdicts, e.g. `babashka=true typescript=false`) cannot drift between
+them. The comparison is BEHAVIORAL, not a literal-string diff: since BL-970
+replaced Babashka's single marker literal with structural recognition,
+there is no longer one literal to parse out of either side, so the test
+runs both real classifiers over the same shared pane fixtures
+(`specs/features/fixtures/BL-997/`) and compares verdicts — a form that
+survives either side reshaping its own matching strategy later. Confirmed
+non-vacuous live, not just by a comment claiming so: at the time this test
+was written, "an idle prompt quoting the marker" was exactly where the two
+sides already disagreed (the drift BL-1003 then fixed). The acceptance
+feature's third scenario proves the consequence directly against
+`tmuxClient.ts`'s real respawn precheck — a pane rendering a live turn-status
+frame is never respawned. No new user-facing command or setting; this is a
+regression gate on the existing tile-respawn safety path, guarding against
+the TypeScript and Babashka busy definitions silently drifting apart again
+the way BL-1003 found them already had. See
+`backlog/evidence/BL-997-hardener-pass-20260821.md` for the full
+verification record.); Previously
+August 21, 2026 (BL-1004: BL-983 gave a multi-seat stage
 one addressable claim queue, a pure race any idle seat could win — right for
 fresh work, wrong for a REWORK, since seats of the same stage hold separate
 worktrees on separate branches. Measured live on BL-994: a bounce addressed
