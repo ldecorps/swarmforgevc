@@ -162,7 +162,22 @@ stop_onboarder() {
 }
 
 # Operator runtime (disposable Operator + supervision loop).
+#
+# BL-993: the always-on watch must be stopped FIRST - it holds no reference
+# to operator_runtime.bb's own stop-file (`$OP_DIR/stop` below is transient,
+# removed within this same function), so a watch left running would see the
+# runtime disappear moments later and restart it, undoing this deliberate
+# stop (finish-shift/stop-swarm are named explicitly among the deliberate
+# stops the watch must honor - Article 4 constraints, BL-993). Same
+# stop-file + signal-pid-file shape stop_front_desk already uses for ITS
+# supervisor.
 stop_operator_runtime() {
+  log "stopping operator runtime watch"
+  touch "$OP_DIR/operator-runtime-supervisor.stop" 2>/dev/null || true
+  sleep 1
+  signal_pid_file "$OP_DIR/operator-runtime-supervisor.pid"
+  rm -f "$OP_DIR/operator-runtime-supervisor.status.json" "$OP_DIR/operator-runtime-supervisor.stop"
+
   log "stopping operator runtime"
   touch "$OP_DIR/stop" 2>/dev/null || true
   sleep 1

@@ -61,6 +61,11 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
+;; BL-993 architect bounce (backlog/evidence/BL-993-bounce-20260820.md):
+;; operator-healthy? below now delegates here instead of a bare pid-alive?,
+;; so this and the always-on watch (operator_runtime_supervisor.bb) can
+;; never disagree - see operator_runtime_watch_lib.bb's own header.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_runtime_watch_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -258,8 +263,10 @@
   (sh! supervisor-cmd))
 
 ;; ── operator runtime + front-desk (Telegram bridge) ──────────────────────────
-
-(defn operator-pid-file [] (fs/path state-dir "operator" "runtime.pid"))
+;; operator-pid-file/operator-pid used to live here; removed when
+;; operator-healthy? (below) started delegating to
+;; operator_runtime_watch_lib.bb's own pid-file/read-pid instead (BL-993
+;; architect bounce) - the last callers of the local copies.
 
 (defn front-desk-pid-file [] (fs/path state-dir "operator" "front-desk-supervisor.pid"))
 
@@ -271,16 +278,18 @@
 ;; own gave-up detection, not general liveness).
 (defn cursor-bridge-pid-file [] (fs/path state-dir "operator" "cursor-bridge-supervisor.pid"))
 
-(defn operator-pid []
-  (when (fs/exists? (operator-pid-file))
-    (parse-long (str/trim (slurp (str (operator-pid-file)))))))
-
 (defn front-desk-pid []
   (when (fs/exists? (front-desk-pid-file))
     (parse-long (str/trim (slurp (str (front-desk-pid-file)))))))
 
-(defn operator-healthy? []
-  (pid-alive? (operator-pid)))
+(defn operator-healthy?
+  "BL-993: delegates to operator_runtime_watch_lib.bb's healthy? (checks the
+   pid AND its command line - a bare pid-alive? cannot tell a live
+   operator_runtime.bb apart from an unrelated process that reused its
+   pid), so this and the always-on watch never disagree. Was a bare
+   (pid-alive? (operator-pid)) before the BL-993 architect bounce."
+  []
+  (operator-runtime-watch-lib/healthy? project-root))
 
 (defn front-desk-healthy? []
   (pid-alive? (front-desk-pid)))
@@ -398,6 +407,34 @@
 
 ;; ── orchestration (never aborts on one failed repair) ───────────────────────
 
+;; BL-993 cleaner-bounce D1: the post-repair recheck used to run exactly
+;; once, immediately after repair!-fn returned - but a freshly forked
+;; process's command line is not instantly queryable (ProcessHandle.info()
+;; .commandLine() / sysctl KERN_PROCARGS2 lag on Darwin), so a cmdline-based
+;; healthy? (operator-runtime-cmdline?) could read a genuinely successful
+;; restart as still-dead and classify :failed. Bounded retry at THIS shared
+;; chokepoint so every component's repair recheck tolerates the visibility
+;; window: first healthy read returns immediately (an already-visible repair
+;; pays zero wait); only a still-unhealthy read waits, up to
+;; attempts x interval (~1s by default) before conceding :failed. Env seams
+;; exist for tests that want a tighter budget, never for skipping the
+;; recheck.
+(def post-repair-recheck-attempts
+  (or (some-> (System/getenv "SWARM_ENSURE_RECHECK_ATTEMPTS") parse-long) 10))
+(def post-repair-recheck-interval-ms
+  (or (some-> (System/getenv "SWARM_ENSURE_RECHECK_INTERVAL_MS") parse-long) 100))
+
+(defn healthy-after-repair?
+  "healthy?-fn polled with a bounded retry budget - true on the first
+   healthy read, false only once every attempt has read unhealthy."
+  [healthy?-fn]
+  (loop [attempt 1]
+    (cond
+      (boolean (healthy?-fn)) true
+      (>= attempt post-repair-recheck-attempts) false
+      :else (do (Thread/sleep post-repair-recheck-interval-ms)
+                (recur (inc attempt))))))
+
 (defn ensure-component!
   "Runs one component's check/repair/reclassify cycle. Exceptions during the
    probe or repair are caught so one component's failure can never prevent
@@ -409,7 +446,7 @@
         {:component name :status :healthy}
         (do
           (try (repair!-fn) (catch Exception _ nil))
-          (let [after (boolean (healthy?-fn))]
+          (let [after (healthy-after-repair? healthy?-fn)]
             {:component name
              :status (classify before after)
              :action repair-description}))))

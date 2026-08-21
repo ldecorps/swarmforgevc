@@ -59,6 +59,14 @@ else
   if ! bash "$SCRIPT_DIR/start_operator_runtime.sh" "$ROOT"; then
     echo "WARN: operator runtime failed to start; run './swarm ensure' after fixing." >&2
   fi
+  # BL-993: the always-on watch - nothing else notices a crashed operator
+  # runtime until a human runs `./swarm ensure`. Same SKIP gate as the
+  # runtime itself; a swarm run with the runtime disabled has nothing here
+  # to watch.
+  echo "Starting operator runtime watch..."
+  if ! bash "$SCRIPT_DIR/launch_operator_runtime_supervisor.sh" "$ROOT"; then
+    echo "WARN: operator runtime watch failed to start; re-run launch_operator_runtime_supervisor.sh after fixing." >&2
+  fi
 fi
 
 if [[ "${SWARMFORGE_SKIP_FRONT_DESK:-}" == "1" ]]; then
