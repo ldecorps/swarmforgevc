@@ -141,6 +141,20 @@ notes: |
   gate defines the adoption set by inspection, never a roster. The gate did
   its job; the failure is downstream of it.
 
+  **Amended 2026-08-21 (specifier): BL-982 scenario 06 is PARKED, not yours.**
+  The coder reported this ticket blocked because BL-982's acceptance file is
+  red. It is - but on a different defect, in a different layer, with a
+  different owner. Scenario 06 asserts "the second seat is inert until the
+  mailbox slice lands"; BL-983 landed that mailbox slice on 2026-08-20 and
+  deliberately made the second seat a claimant, so the scenario now asserts a
+  falsehood. That is BL-1006, minted the same day this amendment was written,
+  and it is sequenced AFTER this ticket (`depends_on: [BL-1002]`) because it
+  edits the same `bl982SecondSeatSteps.js`. Do not retire the scenario here,
+  do not touch the claim path, and do not treat the red as evidence that this
+  parcel's fixture change broke something. `qa_e2e_procedure` step 3 now
+  carries the expected numbers and the one thing that WOULD be this parcel's
+  defect: a change in why scenario 06 fails.
+
 qa_e2e_procedure: >
   From the repo root.
 
@@ -158,6 +172,24 @@ qa_e2e_procedure: >
      socket refusal is the point; a scenario that changed what it asserts is
      a defect in this parcel.
 
+     PARKED, amended 2026-08-21 - BL-982 scenario 06 ("the second seat is
+     inert until the mailbox slice lands") is expected to FAIL, on this
+     parcel and on its parent alike, and that failure is NOT this parcel's
+     to fix or to absorb. It is a pre-existing defect in BL-982's acceptance
+     contract, owned by BL-1006: the scenario asserts a slice boundary that
+     BL-983 deliberately removed when it landed on 2026-08-20, so it is red
+     because the system works. Expect BL-982 at 6 passed / 1 failed with the
+     failure at step "And the second seat claims nothing", and BL-983 at 5
+     of 5 passed. Both figures were measured on `main` by the specifier on
+     2026-08-21 before this amendment was written.
+
+     What this parcel still owes on that scenario is narrow and real: it
+     must not change WHY it fails. If scenario 06 stops dying on
+     "the second seat must claim nothing (NO_TASK)" and starts dying on a
+     socket-path refusal, a missing fixture root, or anything else, that IS
+     this parcel's defect. Capture the failure text and compare it against
+     the parent commit's.
+
   4. Confirm the fix is the shared helper, not a local shortening: grep both
      files for `mkSocketFixtureRoot` and confirm no `os.tmpdir()` remains in
      either. A hand-rolled short base would pass the gate today and rot on
@@ -166,6 +198,8 @@ qa_e2e_procedure: >
   5. Confirm each fixture root is removed in a `finally` (BL-948 invariant 2),
      and that the full unit lane from `extension/` is green - this ticket's
      purpose is a green lane, so a lane still red for any other reason must
-     be reported, not absorbed.
+     be reported, not absorbed. The one already-reported exception is the
+     acceptance-lane failure parked in step 3 (BL-982 scenario 06, owned by
+     BL-1006); it is reported, not absorbed, and needs no second report.
 
 assigned_to: coder

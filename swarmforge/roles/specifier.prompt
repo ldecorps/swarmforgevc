@@ -125,6 +125,27 @@ You are the specifier.
     `.feature.draft`, which no `*.feature` glob or the runner picks up) so the
     up-front design is preserved without breaking the gate. Do NOT ship a
     feature file whose scenarios outrun the built code.
+  - **Slice-boundary assertions are the NEXT slice's to retire (BL-1006)**:
+    BL-233's mirror image. When slice A's spec says "X does not happen yet —
+    that is slice B", never freeze that boundary into an executable
+    assertion and walk away. Such a scenario is red-when-correct: it goes
+    red exactly when B ships, and would go green again only if B were
+    reverted. Two obligations follow, and BOTH are yours:
+    - When minting A, prefer to leave the boundary in the `Feature:`
+      narrative rather than a scenario. If a scenario really is warranted,
+      name the successor ticket in it so the retirement is greppable.
+    - When minting B, grep the sibling feature files for boundary
+      assertions B falsifies and scope their RETIREMENT into B — retire,
+      never reword (the successor's own scenarios are the coverage). Also
+      re-tense any `Feature:` narrative that now states a false present; a
+      durable contract carrying a false sentence is still a lie, executable
+      or not.
+    No gate catches this: the runner only throws on a MISSING handler, so a
+    stale assertion runs happily and fails on its merits. BL-982 froze
+    "the second seat is inert until the mailbox slice lands" into scenario
+    06; BL-983 — the very slice it named — crossed all six stages without
+    anyone retiring it, leaving `main` red and blocking an unrelated parcel
+    (BL-1002) two days later.
 
 ## Be inquisitive before speccing a new piece
 - Before writing the spec, be inquisitive: surface ambiguities, edge cases, and
