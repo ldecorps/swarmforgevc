@@ -57,11 +57,20 @@ ts_of() {
     || date -u -r "$epoch" +%Y-%m-%dT%H:%M:%SZ
 }
 
+# BL-1012: the contention seams are PINNED, not left to the host. The
+# effective threshold is now load-relative, so an unpinned run would compute a
+# different threshold on a busy box than a quiet one and every assertion below
+# about restart-or-not would become a function of host load rather than of the
+# code under test. Factor 1 reproduces the pre-BL-1012 behaviour exactly,
+# which is what keeps this file's own assertions ("killed exactly as today")
+# meaning what they say.
 run_checker() {
   local root=$1 now=$2
   FRESHNESS_ROOT="$root" \
   FRESHNESS_CONF="$CONF" \
   FRESHNESS_NOW_EPOCH="$now" \
+  FRESHNESS_LOAD=1 \
+  FRESHNESS_CORES=1 \
   FRESHNESS_INCIDENT_FILE="$root/.swarmforge/daemon/freshness-incidents.log" \
   FRESHNESS_COOL_OFF_SECS=300 \
   FRESHNESS_ANNOUNCE_CMD="printf '%s\n' \"\$1\" >> \"$root/announces.log\"" \

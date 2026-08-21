@@ -537,6 +537,11 @@ function registerSteps(registry) {
         env: {
           FRESHNESS_ROOT: ctx.hdRoot,
           FRESHNESS_CONF: path.join(SWARMFORGE_SCRIPTS, 'daemon_log_freshness.conf'),
+          // BL-1012: the effective threshold is now load-relative. Pin the
+          // contention seams at factor 1 so this scenario keeps asserting the
+          // mid-cycle behaviour it is about, not the host's current load.
+          FRESHNESS_LOAD: '1',
+          FRESHNESS_CORES: '1',
           FRESHNESS_INCIDENT_FILE: path.join(ctx.hdRoot, '.swarmforge', 'daemon', 'freshness-incidents.log'),
           FRESHNESS_ANNOUNCE_CMD: 'true',
           FRESHNESS_KILL_CMD: `printf '%s\\n' "$1" >> "${path.join(ctx.hdRoot, 'kills.log')}"`,
