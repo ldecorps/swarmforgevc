@@ -16,10 +16,17 @@
 ;;     ticket's actual wiring (:started/:crashed/:healthy-reset/:gave-up/
 ;;     :re-armed/nil - :stalled is provably unreachable here: the watch
 ;;     calls check-one! with the heartbeat-stale? arg always defaulted
-;;     false, since operator_runtime.bb has no poll-heartbeat file), always
-;;     agrees with announced-event? against a hand-written oracle - a
-;;     restart-or-escalation event is always in the announced set, anything
-;;     else never is.
+;;     false, since operator_runtime.bb has no poll-heartbeat file), is fed
+;;     to the REAL announce composition
+;;     (operator-runtime-watch-lib/announcement-for-event - the exact
+;;     function the supervisor's own announce-for-event! calls) and checked
+;;     against the SPEC's classification: a restart-or-escalation event
+;;     always yields a non-blank announcement, anything else yields nil.
+;;     The oracle is deliberately NOT derived from announced-event? - the
+;;     2026-08-21 architect bounce
+;;     (backlog/evidence/BL-993-bounce-20260821-architect.md) was exactly
+;;     that shape: two inline copies of the announced set compared against
+;;     each other while the real dispatch went unexercised.
 ;;
 ;; Invariant 3 (the watcher is never the watched) is a process-architecture
 ;; fact, not a pure decision - no generator over "is this OS process
@@ -35,7 +42,8 @@
 ;; each of the 6 invariant-2 event categories >= 5; each of the 3
 ;; invariant-1 "would-otherwise-restart" categories >= 5.
 
-(require '[babashka.fs :as fs])
+(require '[babashka.fs :as fs]
+         '[clojure.string :as str])
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir ".." "front_desk_supervisor_lib.bb")))
@@ -163,11 +171,19 @@
     (when (not= expect event)
       (fail! (str "draw " i ": directed at " expect " but check-one! produced " event
                   " for entry=" (pr-str entry) " now-ms=" now-ms)))
-    (let [expected-announced (boolean (#{:started :re-armed :gave-up} event))
-          actual-announced (operator-runtime-watch-lib/announced-event? event)]
-      (when (not= expected-announced actual-announced)
-        (fail! (str "draw " i ": event " event " - oracle says announced=" expected-announced
-                    " but announced-event? said " actual-announced))))))
+    ;; The behavior side is the REAL production composition (the supervisor's
+    ;; announce-for-event! is a thin announce!-I/O wrapper around exactly this
+    ;; call); the expectation side is invariant 2's own classification, kept
+    ;; as an independent spec literal on purpose - deriving it from
+    ;; announced-event? would re-create the copy-vs-copy vacuity the
+    ;; 2026-08-21 bounce named.
+    (let [restart-or-escalation? (contains? #{:started :re-armed :gave-up} event)
+          text (operator-runtime-watch-lib/announcement-for-event event (:entry result))]
+      (when (not= restart-or-escalation? (some? text))
+        (fail! (str "draw " i ": event " event " - invariant 2 says announced=" restart-or-escalation?
+                    " but announcement-for-event returned " (pr-str text))))
+      (when (and restart-or-escalation? (str/blank? text))
+        (fail! (str "draw " i ": event " event " - announced with blank text"))))))
 
 ;; ── coverage floors ────────────────────────────────────────────────────────
 (doseq [[k floor] {:not-started 5 :waiting-due 5 :gave-up-cooldown-elapsed 5}]
