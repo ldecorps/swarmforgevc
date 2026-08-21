@@ -9,8 +9,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1009-one-unified-pipeline-grid-across-swarms.feature
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   ONE display decision needs your call before this is built; everything else
   in the ticket is settled.
