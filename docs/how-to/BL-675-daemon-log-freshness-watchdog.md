@@ -17,7 +17,10 @@ restarts wedged sweep daemons from outside bb/node/the swarm.
 [the babysitterd runbook](BL-611-babysitterd-runbook.md).)
 
 Thresholds and paths live in one place:
-`swarmforge/scripts/daemon_log_freshness.conf`.
+`swarmforge/scripts/daemon_log_freshness.conf`. These are **base**
+thresholds — see "Contention-relative threshold" below for how the
+*effective* threshold the checker actually applies can exceed them on a
+loaded host.
 
 Both daemons emit a timestamped, content-free `heartbeat` line on every loop
 tick, so a healthy quiet period (cooldown pause, no work) never looks dead.
@@ -25,6 +28,53 @@ tick, so a healthy quiet period (cooldown pause, no work) never looks dead.
 observed Mac cycles run 140-232s, close to/past the 120s threshold, so a
 start-of-cycle pulse is what keeps a merely-slow cycle from looking
 identical to a wedged one until the whole cycle finishes.
+
+## Contention-relative threshold (BL-1012)
+
+A fixed threshold encodes an assumption about host contention that nothing
+recorded and nothing rechecked. On 2026-08-21 the Mac sat at load average 80
+on four cores (contention factor 20) — a single handoffd chase sweep took
+17.2s, and the watchdog killed and restarted a daemon that was late, not
+hung, nine times in a day (694 rotated `handoffd.log.*` archives by 11:11).
+
+The checker now scales each daemon's base threshold by the host's
+**contention factor** — `load average / core count`, integer division,
+floored at 1 — before comparing it to the heartbeat age:
+
+```
+effective_threshold = min(base_threshold * contention_factor, 600)
+```
+
+- **At factor 1** (idle/nominal host) the effective threshold equals the
+  base threshold exactly — a genuinely hung daemon still reds in two
+  minutes on a quiet box. This does not raise the threshold; it stops a busy
+  host from being held to a number that was only ever true at 1x.
+- **The ceiling is 600 seconds** — the bound `babysitterd` already carries
+  in this same conf — so a dead daemon is always caught within 10 minutes,
+  however loaded the box gets.
+- Load average and core count are read from the host (`/proc/loadavg` /
+  `sysctl -n vm.loadavg` on macOS; `nproc` / `sysctl -n hw.ncpu`) and can be
+  pinned deterministically via `FRESHNESS_LOAD` / `FRESHNESS_CORES` (see
+  "Manual / test seams" below). Unreadable or unparseable input falls back
+  to factor 1.
+
+## Grace window after a self-performed restart (BL-1012)
+
+`start_handoff_daemon.sh` moves `handoffd.log` aside (`mv ... .log.<stamp>`)
+on every start, and the checker restarts through that same script. So
+immediately after a restart the checker itself performed, the log the next
+check reads is one that restart just rotated away, and `heartbeat_age_secs`
+returns its file-absent sentinel — alarming on that is alarming on the
+watchdog's own footprint, and if the restart failed to bring the daemon back
+up, it would repeat every two minutes forever with nothing left to diagnose
+from.
+
+For `FRESHNESS_RESTART_GRACE` seconds (default 300) after a restart the
+checker performed, an absent or heartbeat-less log is **not** a violation —
+it is recorded as `action=grace` and nothing is killed, restarted, or
+announced. This is scoped to the file-absent sentinel only: a daemon that
+came back up and then went stale again inside the grace window is a genuine
+violation and still fires normally.
 
 ## Install
 
@@ -93,10 +143,19 @@ fixed 2026-08-02 (adopted/reviewed under BL-789; see
 0. **Check for a deliberate stop** (BL-785, below). If this daemon was stopped
    on purpose, the checker returns without touching it — a stale heartbeat is
    the expected state, not a violation.
+0.5. **Check the post-restart grace window** (BL-1012, above). An absent or
+   heartbeat-less log within `FRESHNESS_RESTART_GRACE` seconds of a restart
+   the checker itself performed is recorded as `action=grace` and nothing
+   else happens.
 1. **Kill** the pid named in that daemon's pid file (never pid 1 / the checker).
 2. **Restart** via that daemon's own start script (never a reimplemented launch).
 3. **Append** a durable incident line to
    `.swarmforge/daemon/freshness-incidents.log` **before** any network call.
+   Since BL-1012 every record — `action=restart`, `action=escalate`, and
+   `action=grace` — names `effective_threshold=` and `contention_factor=`
+   alongside the unchanged `threshold=` (the base value, so existing readers
+   keep working), so a past decision is interpretable from the record alone
+   without re-running it at the same load.
 4. **Announce** on Telegram via curl. The message is grep-able as
    `FRESHNESS_VIOLATION` (for composition with BL-653 escalation).
 
@@ -153,6 +212,10 @@ FRESHNESS_NOW_EPOCH=$(date +%s) \
 | `FRESHNESS_NOW_EPOCH` | Injected clock (unix seconds) |
 | `FRESHNESS_INCIDENT_FILE` | Durable record path |
 | `FRESHNESS_COOL_OFF_SECS` | Cool-off window |
+| `FRESHNESS_LOAD` | Injected load average (BL-1012; default: read from the host) — pins the contention factor deterministically alongside `FRESHNESS_CORES` |
+| `FRESHNESS_CORES` | Injected core count (BL-1012; default: read from the host) |
+| `FRESHNESS_MAX_THRESHOLD_SECS` | Ceiling on the effective threshold (BL-1012; default 600) |
+| `FRESHNESS_RESTART_GRACE` | Post-restart grace window in seconds (BL-1012; default 300) — see "Grace window" above |
 | `FRESHNESS_ANNOUNCE_CMD` | Override announce (`$1` = message) |
 | `FRESHNESS_KILL_CMD` | Override kill (`$1` = pid) |
 | `FRESHNESS_START_CMD` | Override restart (`$1` = script, `$2` = root) |
@@ -178,7 +241,9 @@ the scenarios in "Deliberate stop does not get resurrected" above.
 
 Acceptance feature: `specs/features/BL-675-daemon-log-freshness.feature`. The
 deliberate-stop behaviour above has its own feature file,
-`specs/features/BL-785-freshness-deliberate-stop.feature`.
+`specs/features/BL-785-freshness-deliberate-stop.feature`. The
+contention-relative threshold and grace window above have their own,
+`specs/features/BL-1012-the-freshness-watchdog-stops-manufacturing-its-own-incidents.feature`.
 
 ## Consumer: cost-health sidecar's `daemonRestarts` (BL-904)
 
@@ -198,9 +263,15 @@ change here: this section only documents the new reader.
 ## Live e2e (operator)
 
 1. Note handoffd's pid. `kill -STOP <pid>` (process alive, log frozen).
-2. Wait past 120s + one cron tick.
-3. Confirm: new pid, incident line names `handoffd` + age, Telegram
+2. Wait past the *effective* threshold (120s at contention factor 1 — see
+   "Contention-relative threshold" above; longer on a busy host, never past
+   600s) plus one cron tick.
+3. Confirm: new pid, incident line names `handoffd` + age +
+   `effective_threshold=` + `contention_factor=`, Telegram
    `FRESHNESS_VIOLATION` arrived.
 4. `kill -CONT` is unnecessary — the checker already replaced it.
 5. Hold the swarm quiet past all thresholds; heartbeats keep writing and
    nothing restarts.
+6. Immediately after that restart, confirm the next cron tick(s) inside
+   `FRESHNESS_RESTART_GRACE` (default 300s) record `action=grace` and touch
+   nothing, even though the rotated-away log still reads as absent.
