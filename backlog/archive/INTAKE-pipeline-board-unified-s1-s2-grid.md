@@ -52,3 +52,27 @@ s2’s `fleet-status-sweep` currently errors: missing `extension/out/tools/emit-
 - `pipelineBoard.ts` data model: optional `swarm` on row/entry; render badge in cell (display map primary→s1, second→s2 if desired).
 - Concierge tick / board data gather: union tickets from shared backlog folders; resolve stage via existing s1 path + s2 checkout or fleet status when `swarm:` ≠ local.
 - Docs: short note in pipeline-board / BL-091 how-to that the board is fleet-aware (unified grid); human shorthand s1/s2.
+
+---
+
+## DISPOSITION — specifier, 2026-08-21 (backlog-root drain)
+
+Split 1:N under Consolidation Authority. Nothing in this intake was dropped.
+
+| Part of this intake | Went to |
+|---|---|
+| Ask; desired behaviors 1, 2, 3, 5; the folder/YAML-derived half of desired behavior 4; every non-goal; the acceptance hints; the naming and implementation sketch | **BL-1009** — `backlog/paused/BL-1009-one-unified-pipeline-grid-across-swarms.yaml`, acceptance `specs/features/BL-1009-one-unified-pipeline-grid-across-swarms.feature` |
+| Desired behavior 4's LIVE "held by role X" merge for s2 rows — not estimable until a cross-host stage signal exists | **Deferred**, recorded on epic `pipeline-board` (BL-540) `remaining_slices`, blocked on the cross-host roster slice under epic `fleet-topology` (BL-543) |
+| The "Ops note (related, optional follow-up)" — s2's failing `fleet-status-sweep` and the missing `emit-fleet-status.js` compile | **BL-1010**, via the sibling intake this note itself points at |
+
+Operator sentence preserved verbatim in BL-1009's description: "Prefer this
+over 'two grids on one topic.'" All three non-goals are quoted verbatim there
+as well.
+
+Spec-time correction to this intake's "Current gap": the board's rows are
+ALREADY fleet-wide, because membership is exactly `backlog/active/`, which is
+shared git. What is missing is per-row ownership display and remote stage —
+not cross-swarm membership. Also verified: zero live tickets carry a `swarm:`
+field today, so BL-1009 is invisible on the board until the coordinator starts
+assigning; the coordinator-side prose that makes it a live writer was landed
+on `main` in `swarmforge/roles/coordinator.prompt` in the same pass.
