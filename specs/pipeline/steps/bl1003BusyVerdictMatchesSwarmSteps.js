@@ -15,6 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXTENSION_OUT = path.join(REPO_ROOT, 'extension', 'out');
@@ -76,7 +77,9 @@ function registerSteps(registry) {
   scoped(/^a forced respawn precheck runs against that snapshot$/, (ctx) => {
     const { installInProcessTmux } = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'fakeTmux'));
     const { respawnAgent } = require(path.join(EXTENSION_OUT, 'swarm', 'tmuxClient'));
-    const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'bl1003-respawn-'));
+    // BL-948 gate: this file references a control socket, so its fixture
+    // root must come from the shared short-base helper, never os.tmpdir().
+    const root = mkSocketFixtureRoot('bl1003-respawn-');
     writeRespawnFixtureRoot(root, 'coder');
     const fake = installInProcessTmux([
       { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
