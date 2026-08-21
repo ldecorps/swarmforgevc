@@ -31,11 +31,7 @@ pass() { echo "PASS: $*"; }
 # swarm state instead of the fixture (same trap test_ready_for_next_rotate_
 # home.sh already documents and works around). Give each worktree its own
 # copy so `cd "$(dirname "$0")"` stays inside it.
-install_scripts() {
-  local wt="$1"
-  mkdir -p "$wt/swarmforge/scripts"
-  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
-}
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 # ── symbol removed ────────────────────────────────────────────────────────
 grep -q "promote-next-paused-item-if-needed" "$READY_DISPATCH" \

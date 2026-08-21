@@ -23,11 +23,7 @@ pass() { echo "PASS: $*"; }
 # fixture is never consulted, the test proves nothing about it, and the
 # helper does what it always does: it claims, out of a real role's real
 # mailbox. Give each fixture root its own copy and dispatch through that.
-install_scripts() {
-  local root="$1"
-  mkdir -p "$root/swarmforge/scripts"
-  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$root/swarmforge/scripts/"
-}
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 done_task()  { echo "$1/swarmforge/scripts/done_with_current_task.bb"; }
 done_batch() { echo "$1/swarmforge/scripts/done_with_current_batch.bb"; }
