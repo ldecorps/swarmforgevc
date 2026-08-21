@@ -9,7 +9,27 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const READY_FOR_NEXT = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts', 'ready_for_next.bb');
+const REAL_SCRIPTS_DIR = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
+
+// BL-998: ready_for_next.bb resolves its OWN root - it hands off to the .sh
+// wrappers by name and those cd to their own dirname. Dispatching the REAL
+// repo's copy with cwd set to a fixture therefore resolves THIS checkout,
+// not the fixture: the scenario proved nothing about the parcel it queued,
+// and the helper CLAIMS, so an acceptance run could dequeue a live parcel
+// out of a real role's inbox. Caught because this feature returned NO_TASK
+// while its own fixture held 50_item1.handoff - it was never reading it.
+// Same fix as the shell tests: give the fixture its own scripts copy and
+// dispatch through that.
+function installScripts(worktree) {
+  const dest = path.join(worktree, 'swarmforge', 'scripts');
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(REAL_SCRIPTS_DIR)) {
+    if (entry.endsWith('.bb') || entry.endsWith('.sh')) {
+      fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, entry), path.join(dest, entry));
+    }
+  }
+  return path.join(dest, 'ready_for_next.bb');
+}
 
 const HELPER_MARKER = {
   'ready_for_next_task.sh': /^TASK:/m,
@@ -42,11 +62,13 @@ function mkFixtureWithRole(mode) {
     `id: item1\nfrom: specifier\nto: fixturerole\nrecipient: fixturerole\npriority: 50\ntype: git_handoff\ntask: BL-226-dispatch-test\ncommit: ${commit}\n\npayload\n`
   );
 
+  installScripts(worktree);
   return worktree;
 }
 
 function runReadyForNext(worktree) {
-  return execFileSync('bb', [READY_FOR_NEXT], {
+  // BL-998: the FIXTURE's own copy, never the real scripts dir.
+  return execFileSync('bb', [path.join(worktree, 'swarmforge', 'scripts', 'ready_for_next.bb')], {
     cwd: worktree,
     encoding: 'utf8',
     env: { ...process.env, SWARMFORGE_ROLE: 'fixturerole' },

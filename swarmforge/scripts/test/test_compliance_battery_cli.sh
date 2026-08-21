@@ -10,14 +10,29 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 BATTERY="$SCRIPT_DIR/../compliance_battery.bb"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
-READY_FOR_NEXT="$SCRIPT_DIR/../ready_for_next.bb"
-DONE_WITH_CURRENT="$SCRIPT_DIR/../done_with_current.bb"
+
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-998: the receive/completion helpers resolve their OWN root - the .sh
+# wrappers cd to their own dirname and the .bb dispatchers hand off to those
+# wrappers by name. Correct in production, where every worktree carries its
+# own hot-synced swarmforge/scripts/ copy; fatal here, because dispatching
+# the REAL repo's copy would cd out of the fixture and resolve THIS checkout
+# - testing live swarm state instead of the fixture, and claiming real
+# parcels out of real mailboxes while doing it. Give the fixture its own
+# copy and dispatch through that. Ported verbatim from
+# test_ready_for_next_no_promotion.sh.
+install_scripts() {
+  local wt="$1"
+  mkdir -p "$wt/swarmforge/scripts"
+  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
+}
 
 ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
@@ -35,6 +50,10 @@ echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 MASTER_WT="$ROOT"
 CODER_WT="$ROOT/.worktrees/coder"
 mkdir -p "$MASTER_WT/.swarmforge/handoffs/specifier/"{outbox/tmp,sent} "$CODER_WT/.swarmforge/handoffs/inbox/new"
+install_scripts "$CODER_WT"
+# BL-998: dispatch through the FIXTURE's copy, never the real scripts dir.
+READY_FOR_NEXT="$CODER_WT/swarmforge/scripts/ready_for_next.bb"
+DONE_WITH_CURRENT="$CODER_WT/swarmforge/scripts/done_with_current.bb"
 printf 'specifier\tmaster\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\toff\n' "$MASTER_WT" > "$ROOT/.swarmforge/roles.tsv"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\toff\n' "$CODER_WT" >> "$ROOT/.swarmforge/roles.tsv"
 

@@ -477,6 +477,21 @@ You are the specifier.
   --commit <10-hex bounce commit> --by specifier --evidence <path>`.
   Best-effort only — never let a missing/uncompiled CLI block the send-back
   itself.
+- **When your own amendment timing caused someone else's bounce, correct the
+  record — you are the only one who knows (BL-990).** Amending an in-flight
+  ticket can produce a bounce against a parcel built correctly against the
+  PRE-amendment contract. The producing role did nothing wrong, but the store
+  charges it anyway, and that number is read by the daily briefing and a live
+  per-role bounce-rate experiment. Run `node
+  extension/out/tools/record-bounce-correction.js --ticket <id> --commit
+  <10-hex bounce commit> --reason "<why>" --by specifier [--evidence <path>]`.
+  `--reason` is required and must be non-blank. The store is append-only: the
+  original line survives, a superseding one follows it, and the parcel's
+  disposition is untouched. Best-effort — a missing CLI never blocks the
+  amendment. This is the remedy that exists BECAUSE the two earlier
+  mitigations do not reach far enough: sweeping mailboxes only helps before
+  the amendment lands, and a priority-`00` note does not reach a reviewer
+  already working, since `ready_for_next.sh` checks `in_process/` first.
 
 ## Handoff
 ### Sending specs to the coordinator
