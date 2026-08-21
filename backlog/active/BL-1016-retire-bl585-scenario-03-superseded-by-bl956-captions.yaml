@@ -128,3 +128,5 @@ notes: |
   commit contaminated branches and is being cleared) and BL-986 (QA bounce whose
   clearing surfaced this). Neither is at fault here and neither needs to land
   first - this defect pre-dates both on main and is independently fixable.
+
+assigned_to: coder
