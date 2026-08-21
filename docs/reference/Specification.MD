@@ -1,6 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-997: the busy-footer definition was
+**Last Updated:** August 21, 2026 (BL-984: the property lane's fixture
+helper (`extension/test/helpers/propertyLaneFixtureRunner.js`) now sweeps
+stale fixtures BEFORE writing its own, not only after. The helper generates
+real `*.property.test.js` files inside `extension/test/` — the only place
+`vitest.properties.config.mjs`'s `include` glob collects them — runs them
+through the real property lane, then deletes them; cleanup-after was already
+thorough for every exit the process can observe (`finally`, `exit`,
+SIGINT/SIGTERM), but nothing traps SIGKILL, so a `kill -9` or OOM kill
+stranded a fixture inside the lane's own discovery glob, where every later
+run executed it as a false red surviving reboots (observed live: five
+`bl868-fixture-*` files orphaned by a killed PID, architect's BL-971
+review). The new `sweepStaleFixtures` entry point, called by both
+`runAsPropertyLaneFixture` and `runManyAsPropertyLaneFixtures` before they
+write, removes only files carrying the helper's own basename prefix in its
+own fixture directory, and only those whose originating run is gone — a live
+peer's in-flight fixture (different, still-alive pid) and a human's real
+`*.property.test.js` lacking the prefix are both left untouched. The
+liveness check itself has a documented gotcha: `kill(pid, 0)` alone reports
+a SIGKILLed-but-unreaped zombie as still alive, so `isPidAlive` additionally
+reads `ps -o state=` and treats a `Z` state as gone. Three independent
+hand-mutations of the discriminator (two by hardener, one by architect) were
+each killed; BL-113 Gherkin mutation is deferred to the next quiet host pass
+(recorded owed, not skipped) per the extreme load (up to ~31x cores) during
+hardening. No new user-facing command or setting — this is a test-lane
+integrity fix. See
+`backlog/evidence/BL-984-hardener-pass-20260821.md` for the full
+verification record.); Previously
+August 21, 2026 (BL-997: the busy-footer definition was
 mirrored by hand across a boundary no import can bridge — the swarm's own
 Babashka classifier (`chase_sweep_lib.bb`'s `actively-processing?`, BL-970's
 structural rewrite) and the extension host's TypeScript classifier
