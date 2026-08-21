@@ -1,6 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-586: the Telegram Pipeline Board
+**Last Updated:** August 21, 2026 (BL-1017: `babysitterd` no longer just
+alerts on a vanished standing-role tmux session, it recreates it — bounded to
+one repair attempt per role per 10-minute cooldown, persisted across sweeps
+in the new `.swarmforge/babysitterd/session-repairs.json`, and never
+silencing the CRIT that reports the vanished session. Before this, the only
+recovery was a human running the full `./start-swarm.sh`, which recreates all
+eight sessions to fix one and was the very thing that made a 2026-08-21
+incident worse (the specifier's session kept vanishing, silently stalling
+backlog intake). `check-live-session`'s missing-session branch
+(`swarmforge/scripts/babysitterd_sweep_lib.bb`) now carries a `:repair`
+intent alongside the CRIT, gated by the same `should-stand?` topology
+suppression BL-804 already added — a mono-router non-resident's absent
+session still produces no finding, and therefore no repair — and
+`babysitter_check.bb`'s live sweep is the one that consumes it:
+`ensure-role-session!` recreates the tmux session if missing and
+`respawn-pane`s the role's canonical launch script into it (through the same
+provider-auth-env passthrough `swarm_ensure.bb`/`handoffd.bb`'s own respawns
+use), never the broader `start-swarm.sh` sweep. This is the daemon's one
+carve-out from "read-only, nudge only" — documented in the same parcel in
+[`docs/how-to/BL-611-babysitterd-runbook.md`](../how-to/BL-611-babysitterd-runbook.md#bounded-session-repair-for-a-vanished-standing-role-bl-1017).
+No extension command, setting, or UI change — this is an internal
+`swarmforge/`-fork daemon behavior change. Verified with a four-scenario
+acceptance feature (an Outline's three example rows plus three singles, six
+executions total,
+`specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature`)
+plus new wiring-consumption scenarios in
+`swarmforge/scripts/test/test_babysitter_check.sh`; live kill-one-session
+confirmation is left as a manual QA procedure, outside the unit testability
+boundary.); Previously
+August 21, 2026 (BL-586: the Telegram Pipeline Board
 topic's identity is now validated before every post, not only when the
 tick-state field is empty. Twice in production — 2026-07-23 into SUP-7,
 2026-08-21 into SUP-5 — the board trusted a stored topic id with no
