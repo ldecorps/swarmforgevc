@@ -1,6 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-990: a bounce recorded against the
+**Last Updated:** August 21, 2026 (BL-979: pivots the Pipeline Board's live
+grid axes back — active tickets are now ROWS down the Y axis and the eight
+pipeline stages (`NS SP CO CL AR HD DC QA`) are shared COLUMNS across the X
+axis, so an extra ticket adds a row instead of widening the board (BL-585,
+which this supersedes, grew sideways with every promotion; width is the
+scarce axis on a phone, vertical growth is cheap). `renderGridMatrixLines`
+(`pipelineBoard.ts`) now builds a header line of the eight stage glyphs over
+an empty id gutter, then one row per ticket — its display id in the gutter,
+`X`/`.` marks under each stage column. Because the axes flipped, the
+DROPPING axis is height, not width: `PIPELINE_BOARD_GRID_MAX_ROWS` (12)
+drops the tail of the same epic-grouped stable order and prints a visible
+`+N more active` line, never a silent truncation; `PIPELINE_BOARD_GRID_MAX_WIDTH`
+(30) survives only as an assertion now, since the grid's width is a fixed
+property of the eight-stage set plus the id gutter — no ticket is ever
+dropped for width, even at 4- or 5-digit display ids. Below the matrix,
+`renderGridCaptionLines` groups BL-956's unchanged captions (display id +
+truncated title, ellipsis truncation, `(no backlog entry)` fallback) under
+`-- <epic-slug> --` separator lines — the kebab slug exactly as the human's
+approved mockup, not a prettier epic title — with a blank line before every
+summary; a wholly epic-less board emits no separators at all rather than one
+lone meaningless header. Both the Telegram pin and the BL-526 phone-miniapp
+grid-only view render from the same `renderGridOnlySections`, so there is
+exactly one layout path for the new matrix. Everything else — PARKED/
+AWAITING APPROVAL/ROOT INTAKE/RECENTLY CLOSED, the LINKS list, and which
+tickets appear on the board — is unchanged. Bounced once at architect for
+two `conciergeTick` asserts still written against BL-585's pre-pivot column
+shape; the refix re-expressed them against the row-per-ticket shape without
+weakening what they check (a mark sits at the correct stage INDEX, not
+merely "some mark exists"). See
+`backlog/evidence/BL-979-hardener-pass-20260821.md` for the full
+verification record. New human-facing surface: the Pipeline Board now shows
+one ticket-rows × stage-columns matrix with `-- <epic-slug> --` group
+separators below it, instead of BL-585's ticket-columns × role-rows matrix
+with a per-column epic caption.); Previously
+August 21, 2026 (BL-990: a bounce recorded against the
 wrong pipeline role could never be corrected — `record-bounce.js` only
 appends, and the store (`extension/src/metrics/bounceStore.ts`) exposed
 read/append with no amend path, so a bounce caused by a mid-flight spec
