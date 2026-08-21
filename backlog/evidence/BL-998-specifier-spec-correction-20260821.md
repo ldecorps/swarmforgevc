@@ -71,3 +71,25 @@ The rebuild is already routed: the cleaner bounced D1 to the coder
 and a `note` goes to the coder — who holds the parcel — to merge `main` and
 re-read before rebuilding. No scenarios were added, so no new step handlers are
 required (BL-233 does not apply).
+
+## Bounce-ledger attribution (left deliberately uncorrected, and why)
+
+The cleaner already recorded this bounce — `.swarmforge/bounces/2026-08.jsonl`,
+one BL-998 entry, `by cleaner`, **`class: behavior`**, commit `90aee07f87`. That
+entry is NOT duplicated here: re-recording the same event would inflate the
+ledger, and the bounce was the cleaner's to record.
+
+But the class is arguably wrong. The proximate failure was behavioral (the test
+escaped into the real tree); the *cause* was `spec-gap` — this ticket mandated
+the unsafe call site, and the coder complied. Recorded here in prose because
+`extension/out/tools/record-bounce-correction.js` does not exist yet: BL-990,
+the ticket that builds exactly this correction verb, is still in flight. Per
+BL-635 the ledger step is best-effort and must never block the correction
+itself, so it did not.
+
+**Actionable follow-up**: once BL-990 lands, this entry is a real, already-known
+instance to correct — `BL-998` / commit `90aee07f87` / `behavior` → `spec-gap`.
+Also note the producing-role vocabulary: `record-bounce.js --role` accepts only
+`coder|cleaner|architect|hardender|documenter`, so a spec-caused defect has no
+way to name the specifier as the producing role at all. That is a gap in the
+telemetry model worth a ticket of its own if it recurs.
