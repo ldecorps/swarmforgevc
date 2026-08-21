@@ -5220,7 +5220,13 @@ test('relaySseReplies adds a newly-sent record\'s id to the shared seenIds set s
 
 // ── BL-302: poll-loop resilience (backoff, escalation, isolation) ────────
 
-const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3 };
+// BL-621: sustainedOutageThresholdMs is part of the config shape now. These
+// pre-BL-621 cycle fixtures all run on the pinned FIXTURE_NOW clock below, so
+// no episode here ever ages past this window - the escalation path is
+// specified separately, in bl621FrontDeskSustainedOutage.test.js.
+const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3, sustainedOutageThresholdMs: 30 * 60_000 };
+const FIXTURE_NOW = 0;
+const NO_OUTAGE = { escalated: false };
 
 // ── computePollBackoffMs / shouldRaiseDegradedWarning (pure) ─────────────
 
@@ -5262,33 +5268,33 @@ function fakeCycleAdapters(getUpdatesResult) {
 }
 
 test('poll-resilience-01: a failed cycle increments consecutiveFailures and returns a positive delay', async () => {
-  const state = { offset: 5, consecutiveFailures: 0 };
-  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), BACKOFF_CONFIG);
+  const state = { offset: 5, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 1);
   assert.equal(cycle.delayMs, 1000);
   assert.equal(cycle.degradedWarning, false);
 });
 
 test('poll-resilience-01: a run of failures backs off with growing delay, then a success resets to the floor', async () => {
-  let state = { offset: 0, consecutiveFailures: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const delays = [];
   for (let i = 0; i < 4; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
     delays.push(cycle.delayMs);
     state = cycle.state;
   }
   assert.deepEqual(delays, [1000, 2000, 4000, 8000]);
 
-  const recovered = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG);
+  const recovered = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(recovered.state.consecutiveFailures, 0);
   assert.equal(recovered.delayMs, 0);
 });
 
 test('poll-resilience-02: the degraded warning fires on the exact cycle the threshold is crossed', async () => {
-  let state = { offset: 0, consecutiveFailures: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const warnings = [];
   for (let i = 0; i < 5; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
     warnings.push(cycle.degradedWarning);
     state = cycle.state;
   }
@@ -5296,19 +5302,19 @@ test('poll-resilience-02: the degraded warning fires on the exact cycle the thre
 });
 
 test('poll-resilience-02: retries continue past the degraded threshold (never gives up)', async () => {
-  let state = { offset: 0, consecutiveFailures: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   for (let i = 0; i < 10; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
     state = cycle.state;
   }
   assert.equal(state.consecutiveFailures, 10);
-  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG);
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 0, 'the loop must still be able to recover after a sustained outage');
 });
 
 test('a successful cycle with real updates still advances the offset via runPollCycle', async () => {
   const update = { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'hi' } };
-  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2, stuckAttempts: 0 }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG);
+  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG, FIXTURE_NOW);
   // BL-369: the offset is the delivered update's own update_id + 1 (real
   // Telegram semantics, offsetAfterDelivery), never an injected adapter's
   // arbitrary arithmetic - update_id:1 delivered means offset advances to 2.
@@ -5326,7 +5332,7 @@ test('applyPollCycleResult writes the warning and waits when both are present', 
   const warnings = [];
   const waits = [];
   await applyPollCycleResult(
-    { state: { offset: 0, consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    { state: { offset: 0, consecutiveFailures: 3, sustainedOutage: NO_OUTAGE }, delayMs: 4000, degradedWarning: true },
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
   );
@@ -5339,7 +5345,7 @@ test('applyPollCycleResult writes nothing and waits nothing on a successful cycl
   const warnings = [];
   const waits = [];
   await applyPollCycleResult(
-    { state: { offset: 5, consecutiveFailures: 0 }, delayMs: 0, degradedWarning: false },
+    { state: { offset: 5, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false },
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
   );
@@ -5351,7 +5357,7 @@ test('applyPollCycleResult still waits on a failed cycle below the degraded thre
   const warnings = [];
   const waits = [];
   await applyPollCycleResult(
-    { state: { offset: 0, consecutiveFailures: 1 }, delayMs: 1000, degradedWarning: false },
+    { state: { offset: 0, consecutiveFailures: 1, sustainedOutage: NO_OUTAGE }, delayMs: 1000, degradedWarning: false },
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
   );
@@ -5367,17 +5373,17 @@ test('applyPollCycleResult still waits on a failed cycle below the degraded thre
 // pollLoop/runPollCycle/applyPollCycleResult), mirroring that exact split.
 
 test('computeReplyRelayCycleResult on success resets consecutiveFailures and waits the base backoff, not zero', () => {
-  const cycle = computeReplyRelayCycleResult({ consecutiveFailures: 3 }, true, BACKOFF_CONFIG);
+  const cycle = computeReplyRelayCycleResult({ consecutiveFailures: 3, sustainedOutage: NO_OUTAGE }, true, BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 0);
   assert.equal(cycle.delayMs, BACKOFF_CONFIG.backoffBaseMs);
   assert.equal(cycle.degradedWarning, false);
 });
 
 test('computeReplyRelayCycleResult on failure increments consecutiveFailures and backs off like the poll cycle', () => {
-  let state = { consecutiveFailures: 0 };
+  let state = { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const delays = [];
   for (let i = 0; i < 4; i++) {
-    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG, FIXTURE_NOW);
     delays.push(cycle.delayMs);
     state = cycle.state;
   }
@@ -5385,10 +5391,10 @@ test('computeReplyRelayCycleResult on failure increments consecutiveFailures and
 });
 
 test('computeReplyRelayCycleResult raises the degraded warning on the exact cycle the threshold is crossed', () => {
-  let state = { consecutiveFailures: 0 };
+  let state = { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const warnings = [];
   for (let i = 0; i < 5; i++) {
-    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG, FIXTURE_NOW);
     warnings.push(cycle.degradedWarning);
     state = cycle.state;
   }
@@ -5396,12 +5402,12 @@ test('computeReplyRelayCycleResult raises the degraded warning on the exact cycl
 });
 
 test('computeReplyRelayCycleResult keeps retrying past the degraded threshold and still recovers on success', () => {
-  let state = { consecutiveFailures: 0 };
+  let state = { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   for (let i = 0; i < 10; i++) {
-    state = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG).state;
+    state = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG, FIXTURE_NOW).state;
   }
   assert.equal(state.consecutiveFailures, 10);
-  const cycle = computeReplyRelayCycleResult(state, true, BACKOFF_CONFIG);
+  const cycle = computeReplyRelayCycleResult(state, true, BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 0, 'reconnects must still be able to recover after a sustained outage');
 });
 
@@ -5409,7 +5415,7 @@ test('applyReplyRelayCycleResult writes the warning (with the error message) and
   const warnings = [];
   const waits = [];
   await applyReplyRelayCycleResult(
-    { state: { consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    { state: { consecutiveFailures: 3, sustainedOutage: NO_OUTAGE }, delayMs: 4000, degradedWarning: true },
     'socket terminated',
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
@@ -5424,7 +5430,7 @@ test('applyReplyRelayCycleResult writes no warning but still waits the base back
   const warnings = [];
   const waits = [];
   await applyReplyRelayCycleResult(
-    { state: { consecutiveFailures: 0 }, delayMs: BACKOFF_CONFIG.backoffBaseMs, degradedWarning: false },
+    { state: { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: BACKOFF_CONFIG.backoffBaseMs, degradedWarning: false },
     undefined,
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
@@ -5564,7 +5570,7 @@ test('BL-389 scenario 03 (converse): a dropped message AFTER a failure is never 
 
 // ── shouldEscalateStuckDelivery (pure) — BL-369 scenario 05 ─────────────
 
-const STUCK_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3, stuckRetryLimit: 3 };
+const STUCK_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3, stuckRetryLimit: 3, sustainedOutageThresholdMs: 30 * 60_000 };
 
 test('shouldEscalateStuckDelivery fires exactly on the threshold crossing, not before or after', () => {
   assert.equal(shouldEscalateStuckDelivery(2, STUCK_CONFIG), false);
@@ -5588,9 +5594,9 @@ function fakeStuckCycleAdapters({ deliver }) {
 }
 
 test('BL-369 no-inbound-message-is-ever-lost-05: a cycle whose only update keeps failing increments stuckAttempts each time', async () => {
-  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE };
   for (let i = 1; i <= 3; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG, FIXTURE_NOW);
     state = cycle.state;
     assert.equal(state.stuckAttempts, i);
     assert.equal(state.offset, 0, 'the offset must never advance past the still-undelivered update');
@@ -5598,10 +5604,10 @@ test('BL-369 no-inbound-message-is-ever-lost-05: a cycle whose only update keeps
 });
 
 test('BL-369 no-inbound-message-is-ever-lost-05: escalateStuckDelivery fires exactly on the cycle stuckAttempts crosses the limit, never before or again after', async () => {
-  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE };
   const escalations = [];
   for (let i = 1; i <= 5; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG, FIXTURE_NOW);
     state = cycle.state;
     escalations.push(cycle.escalateStuckDelivery);
   }
@@ -5609,16 +5615,16 @@ test('BL-369 no-inbound-message-is-ever-lost-05: escalateStuckDelivery fires exa
 });
 
 test('a delivery success resets stuckAttempts to 0 and lets the offset advance again', async () => {
-  const failing = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2 }, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+  const failing = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2, sustainedOutage: NO_OUTAGE }, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG, FIXTURE_NOW);
   assert.equal(failing.state.stuckAttempts, 3);
-  const recovered = await runPollCycle(failing.state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: true }), STUCK_CONFIG);
+  const recovered = await runPollCycle(failing.state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: true }), STUCK_CONFIG, FIXTURE_NOW);
   assert.equal(recovered.state.stuckAttempts, 0);
   assert.equal(recovered.state.offset, 2, 'expected the previously-stuck update to finally be delivered and acked');
 });
 
 test('a whole-cycle getUpdates failure never touches stuckAttempts (a distinct failure mode from a per-message delivery failure)', async () => {
   const adapters = { getUpdates: async () => ({ success: false, updates: [], error: 'down' }) };
-  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2 }, PRINCIPAL_ID, adapters, STUCK_CONFIG);
+  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2, sustainedOutage: NO_OUTAGE }, PRINCIPAL_ID, adapters, STUCK_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.stuckAttempts, 2, 'expected stuckAttempts left untouched by a getUpdates-level failure');
   assert.equal(cycle.escalateStuckDelivery, false);
 });
@@ -5627,7 +5633,7 @@ test('a whole-cycle getUpdates failure never touches stuckAttempts (a distinct f
 
 test('applyPollCycleResult calls escalate when escalateStuckDelivery is true, and waits/warns independently as usual', async () => {
   const escalateCalls = [];
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
   await applyPollCycleResult(
     cycle,
     () => {
@@ -5643,7 +5649,7 @@ test('applyPollCycleResult calls escalate when escalateStuckDelivery is true, an
 
 test('applyPollCycleResult never calls escalate when escalateStuckDelivery is false', async () => {
   const escalateCalls = [];
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await applyPollCycleResult(
     cycle,
     () => {},
@@ -5654,7 +5660,7 @@ test('applyPollCycleResult never calls escalate when escalateStuckDelivery is fa
 });
 
 test('applyPollCycleResult defaults escalate to a no-op when the caller does not supply one (back-compat)', async () => {
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
   await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
 });
 
@@ -5684,15 +5690,15 @@ test('a bot that has never completed a single poll cycle (no heartbeat at all) i
 
 test('applyPollCycleResult calls recordHeartbeat on every completed cycle, success or failure alike', async () => {
   const beats = [];
-  const okCycle = { state: { offset: 2, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  const okCycle = { state: { offset: 2, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await applyPollCycleResult(okCycle, () => {}, async () => {}, async () => {}, () => beats.push('ok'));
-  const failedCycle = { state: { offset: 0, consecutiveFailures: 1, stuckAttempts: 0 }, delayMs: 2000, degradedWarning: false, escalateStuckDelivery: false };
+  const failedCycle = { state: { offset: 0, consecutiveFailures: 1, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 2000, degradedWarning: false, escalateStuckDelivery: false };
   await applyPollCycleResult(failedCycle, () => {}, async () => {}, async () => {}, () => beats.push('failed'));
   assert.deepEqual(beats, ['ok', 'failed']);
 });
 
 test('applyPollCycleResult defaults recordHeartbeat to a no-op when the caller does not supply one (back-compat)', async () => {
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
 });
 

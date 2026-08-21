@@ -8,6 +8,10 @@
 // map) into pollAndForward below.
 import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult, InlineKeyboardButton, EditMessageTextResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
+// BL-621: the project's one hours+minutes duration renderer, reused for the
+// sustained-outage escalation's "how long has it been down" rather than a
+// second copy of the same arithmetic.
+import { formatDurationMs } from '../metrics/swarmMetrics';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
 import { unsafeDispatchToastText } from '../concierge/expediteSafety';
@@ -2451,6 +2455,14 @@ export interface PollResult {
   // caller (pollLoop) needs to tell these apart to back off only on a
   // real failure.
   ok: boolean;
+  // BL-621: the failed cycle's OWN formatted transport error, straight from
+  // GetUpdatesResult.error (telegramClient's formatApiFailureError - e.g.
+  // "Telegram API responded with status 409: Conflict: terminated by other
+  // getUpdates request"). It used to be discarded here, which is why the
+  // 2026-07-24 rival-poller incident produced 9 hours of anonymous "poll
+  // degraded" lines: the one sentence naming the rival was already in hand
+  // and thrown away. undefined on a successful cycle, where nothing failed.
+  error?: string;
 }
 
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
@@ -2460,7 +2472,7 @@ export interface PollResult {
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
   const result = await adapters.getUpdates(offset);
   if (!result.success) {
-    return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false };
+    return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false, error: result.error };
   }
   let posted = 0;
   let dropped = 0;
@@ -2500,6 +2512,103 @@ export interface PollBackoffConfig {
   // poll cycle (the long-poll's own pacing is the backoff here, never a
   // real wait inside this file - see runPollCycle's own docstring).
   stuckRetryLimit: number;
+  // BL-621: how long EITHER loop may keep failing continuously before the
+  // outage is escalated to the human (once per episode). Measured in
+  // milliseconds of wall-clock outage, deliberately NOT in failure counts
+  // like degradedThreshold above - a 60s-capped backoff makes "5 failures"
+  // mean anything from seconds to many minutes depending where in the
+  // streak it lands, while "it has been down for half an hour" is the fact
+  // a human actually needs. Read from the conf key by
+  // sustainedOutageThresholdMs below.
+  sustainedOutageThresholdMs: number;
+}
+
+// ── BL-621: sustained-degraded episodes ──────────────────────────────────
+// An EPISODE is one continuous run of failures in one loop. It opens on the
+// first failure, escalates ONCE once it has lasted past the threshold, and
+// closes on the first success - so a later outage is a NEW episode with its
+// own single escalation. The whole decision is a pure function of (episode
+// state, this cycle's ok, the clock, the threshold); the clock arrives as a
+// plain number from the live loop, so nothing here ever reads wall time.
+
+export type SustainedOutageLoop = 'poll' | 'reply-relay';
+
+export interface SustainedOutageState {
+  // When the current episode's first failure happened. undefined means no
+  // episode is open (the loop is healthy).
+  failingSinceMs?: number;
+  // The once-per-episode latch: true after this episode has escalated, so a
+  // still-failing loop never re-alerts every cycle for hours.
+  escalated: boolean;
+}
+
+export interface SustainedOutageDecision {
+  state: SustainedOutageState;
+  escalate: boolean;
+  // How long the episode has been running as of nowMs; 0 when none is open.
+  outageMs: number;
+}
+
+export function decideSustainedOutage(
+  state: SustainedOutageState,
+  ok: boolean,
+  nowMs: number,
+  thresholdMs: number
+): SustainedOutageDecision {
+  if (ok) {
+    return { state: { escalated: false }, escalate: false, outageMs: 0 };
+  }
+  const failingSinceMs = state.failingSinceMs ?? nowMs;
+  const outageMs = nowMs - failingSinceMs;
+  const escalate = !state.escalated && outageMs >= thresholdMs;
+  return { state: { failingSinceMs, escalated: state.escalated || escalate }, escalate, outageMs };
+}
+
+// The human-facing escalation text: WHICH loop, HOW LONG it has been down,
+// and WHAT the last error was - the three facts the 2026-07-24 incident had
+// to be reconstructed by hand from. The duration reuses swarmMetrics'
+// formatDurationMs (the project's one hours+minutes renderer) rather than a
+// second copy of the same arithmetic.
+export function formatSustainedOutageEscalation(
+  loop: SustainedOutageLoop,
+  outageMs: number,
+  errorMessage: string | undefined
+): string {
+  return (
+    `front-desk bot: the ${loop} loop has been failing continuously for ${formatDurationMs(outageMs)}. ` +
+    `Last error: ${describeOutageCause(errorMessage)}. ` +
+    'It keeps retrying on a capped backoff - this is the only alert for this outage.'
+  );
+}
+
+// The one place the "no error was recorded" wording lives, shared by both
+// degraded warnings and the escalation. A cause is always printed: a line
+// reading "still retrying: undefined" is the same uninformative dead end
+// this ticket exists to close.
+export function describeOutageCause(errorMessage: string | undefined): string {
+  return errorMessage ?? 'cause unknown';
+}
+
+// BL-369's stuck-delivery escalation text, moved here from the live wrapper
+// so BOTH escalations are formatted by the tested core and sent through one
+// direct-send adapter, rather than one of each in two different places.
+export const STUCK_DELIVERY_ESCALATION_TEXT =
+  'front-desk bot: a message could not be delivered after repeated attempts (the bridge may be unreachable). It has NOT been dropped - delivery will resume automatically once the underlying issue clears.';
+
+// The swarmforge.conf key the live loops read the threshold from.
+export const SUSTAINED_OUTAGE_CONF_KEY = 'front_desk_sustained_outage_minutes';
+
+export const DEFAULT_SUSTAINED_OUTAGE_THRESHOLD_MS = 30 * 60 * 1000;
+
+// Same unset/invalid/non-positive-all-fall-back-to-the-default shape as the
+// bot's other tunables (conciergeTickIntervalMs, controlDrainTimeoutMs),
+// pure and exported so every branch is unit-tested rather than hidden
+// behind the live conf read. MINUTES, because that is the unit a human
+// editing swarmforge.conf thinks in; a fraction is honoured too, so a live
+// end-to-end check can use a 30-second window without a code change.
+export function sustainedOutageThresholdMs(rawValue: string | undefined): number {
+  const parsed = rawValue ? Number(rawValue) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed * 60_000 : DEFAULT_SUSTAINED_OUTAGE_THRESHOLD_MS;
 }
 
 // Reuses telegramRetry.ts's own exponential-capped math directly (the
@@ -2559,6 +2668,8 @@ export interface PollLoopState {
   // drop already let the offset past it (offsetAfterDelivery), so a
   // dropped-only cycle is never "stuck" in the first place.
   stuckAttempts: number;
+  // BL-621: the sustained-outage episode this loop is (or is not) in.
+  sustainedOutage: SustainedOutageState;
 }
 
 export interface PollCycleResult {
@@ -2574,6 +2685,19 @@ export interface PollCycleResult {
   // update) - never fires again for the SAME stuck episode, mirroring
   // degradedWarning's own once-per-streak posture.
   escalateStuckDelivery: boolean;
+  // BL-621: true on the one cycle this outage episode crosses
+  // config.sustainedOutageThresholdMs - a THIRD, independent signal from
+  // the two above (degradedWarning counts failed cycles and only writes to
+  // stderr; escalateStuckDelivery is about one undelivered message inside
+  // otherwise-healthy cycles).
+  escalateSustainedOutage: boolean;
+  // How long the current outage episode has lasted, for the escalation
+  // text; 0 whenever no episode is open.
+  sustainedOutageMs: number;
+  // BL-621: the failed cycle's transport error, carried from PollResult so
+  // the degraded warning and the escalation can both name the cause.
+  // undefined on a successful cycle.
+  errorMessage?: string;
 }
 
 // Adapter-injected, ONE cycle: calls pollAndForward, then applies the pure
@@ -2586,25 +2710,32 @@ export async function runPollCycle(
   state: PollLoopState,
   principalUserId: string,
   adapters: PollAdapters,
-  config: PollBackoffConfig
+  config: PollBackoffConfig,
+  nowMs: number
 ): Promise<PollCycleResult> {
   const result = await pollAndForward(state.offset, principalUserId, adapters);
+  const outage = decideSustainedOutage(state.sustainedOutage, result.ok, nowMs, config.sustainedOutageThresholdMs);
   if (result.ok) {
     const offsetAdvanced = result.nextOffset !== state.offset;
     const stuckAttempts = offsetAdvanced || result.failed === 0 ? 0 : state.stuckAttempts + 1;
     return {
-      state: { offset: result.nextOffset, consecutiveFailures: 0, stuckAttempts },
+      state: { offset: result.nextOffset, consecutiveFailures: 0, stuckAttempts, sustainedOutage: outage.state },
       delayMs: 0,
       degradedWarning: false,
       escalateStuckDelivery: shouldEscalateStuckDelivery(stuckAttempts, config),
+      escalateSustainedOutage: false,
+      sustainedOutageMs: outage.outageMs,
     };
   }
   const consecutiveFailures = state.consecutiveFailures + 1;
   return {
-    state: { offset: result.nextOffset, consecutiveFailures, stuckAttempts: state.stuckAttempts },
+    state: { offset: result.nextOffset, consecutiveFailures, stuckAttempts: state.stuckAttempts, sustainedOutage: outage.state },
     delayMs: computePollBackoffMs(consecutiveFailures, config),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
     escalateStuckDelivery: false,
+    escalateSustainedOutage: outage.escalate,
+    sustainedOutageMs: outage.outageMs,
+    errorMessage: result.error,
   };
 }
 
@@ -2627,29 +2758,59 @@ export async function applyPollCycleResult(
   cycle: PollCycleResult,
   writeWarning: (message: string) => void,
   wait: (ms: number) => Promise<void>,
-  escalate: () => Promise<void> = async () => {},
+  escalate: (message: string) => Promise<void> = async () => {},
   recordHeartbeat: () => void = () => {}
 ): Promise<void> {
   recordHeartbeat();
   if (cycle.degradedWarning) {
-    writeWarning(`front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying\n`);
+    writeWarning(
+      `front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying: ${describeOutageCause(cycle.errorMessage)}\n`
+    );
   }
   if (cycle.escalateStuckDelivery) {
-    await escalate();
+    await sendEscalation(escalate, STUCK_DELIVERY_ESCALATION_TEXT, writeWarning);
+  }
+  if (cycle.escalateSustainedOutage) {
+    await sendEscalation(escalate, formatSustainedOutageEscalation('poll', cycle.sustainedOutageMs, cycle.errorMessage), writeWarning);
   }
   if (cycle.delayMs > 0) {
     await wait(cycle.delayMs);
   }
 }
 
+// BL-621 degrade posture: an escalation reports on a loop that is ALREADY
+// degraded, so a send that fails itself is logged and swallowed - never
+// allowed to fault (and restart) the very loop it was reporting on. Shared
+// by both apply functions so the poll and relay halves cannot drift.
+async function sendEscalation(
+  escalate: (message: string) => Promise<void>,
+  message: string,
+  writeWarning: (message: string) => void
+): Promise<void> {
+  try {
+    await escalate(message);
+  } catch (error) {
+    writeWarning(`front-desk bot: escalation send failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
 export interface ReplyRelayLoopState {
   consecutiveFailures: number;
+  // BL-621: this loop's own sustained-outage episode - the exact mirror of
+  // PollLoopState.sustainedOutage, decided by the same pure function.
+  sustainedOutage: SustainedOutageState;
 }
 
 export interface ReplyRelayCycleResult {
   state: ReplyRelayLoopState;
   delayMs: number;
   degradedWarning: boolean;
+  // BL-621: BL-320 promised "retry forever, capped backoff, escalate -
+  // never silently" and shipped everything but the escalation. This is it:
+  // true on the one cycle the reconnect outage crosses the threshold. The
+  // retry-forever posture is unchanged - only the silence goes.
+  escalateSustainedOutage: boolean;
+  sustainedOutageMs: number;
 }
 
 // BL-320: same pure decision/adapter-sequencing split as runPollCycle/
@@ -2659,15 +2820,29 @@ export interface ReplyRelayCycleResult {
 // a brief pause (backoffBaseMs) before resubscribing is still worth it
 // over a hot reconnect loop, mirrored below by returning that same delay
 // on success rather than 0.
-export function computeReplyRelayCycleResult(state: ReplyRelayLoopState, ok: boolean, config: PollBackoffConfig): ReplyRelayCycleResult {
+export function computeReplyRelayCycleResult(
+  state: ReplyRelayLoopState,
+  ok: boolean,
+  config: PollBackoffConfig,
+  nowMs: number
+): ReplyRelayCycleResult {
+  const outage = decideSustainedOutage(state.sustainedOutage, ok, nowMs, config.sustainedOutageThresholdMs);
   if (ok) {
-    return { state: { consecutiveFailures: 0 }, delayMs: config.backoffBaseMs, degradedWarning: false };
+    return {
+      state: { consecutiveFailures: 0, sustainedOutage: outage.state },
+      delayMs: config.backoffBaseMs,
+      degradedWarning: false,
+      escalateSustainedOutage: false,
+      sustainedOutageMs: outage.outageMs,
+    };
   }
   const consecutiveFailures = state.consecutiveFailures + 1;
   return {
-    state: { consecutiveFailures },
+    state: { consecutiveFailures, sustainedOutage: outage.state },
     delayMs: computePollBackoffMs(consecutiveFailures, config),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
+    escalateSustainedOutage: outage.escalate,
+    sustainedOutageMs: outage.outageMs,
   };
 }
 
@@ -2677,12 +2852,16 @@ export async function applyReplyRelayCycleResult(
   cycle: ReplyRelayCycleResult,
   errorMessage: string | undefined,
   writeWarning: (message: string) => void,
-  wait: (ms: number) => Promise<void>
+  wait: (ms: number) => Promise<void>,
+  escalate: (message: string) => Promise<void> = async () => {}
 ): Promise<void> {
   if (cycle.degradedWarning) {
     writeWarning(
-      `front-desk bot: reply-relay degraded - ${cycle.state.consecutiveFailures} consecutive reconnect failures, still retrying: ${errorMessage}\n`
+      `front-desk bot: reply-relay degraded - ${cycle.state.consecutiveFailures} consecutive reconnect failures, still retrying: ${describeOutageCause(errorMessage)}\n`
     );
+  }
+  if (cycle.escalateSustainedOutage) {
+    await sendEscalation(escalate, formatSustainedOutageEscalation('reply-relay', cycle.sustainedOutageMs, errorMessage), writeWarning);
   }
   if (cycle.delayMs > 0) {
     await wait(cycle.delayMs);

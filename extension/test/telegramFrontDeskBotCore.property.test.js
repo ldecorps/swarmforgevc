@@ -4,6 +4,7 @@ const {
   composeAskButtons,
   decideCallbackQueryAction,
   decideCursorBridgeExclusion,
+  decideSustainedOutage,
   pollAndForward,
   recordApprovalDecisionAndClose,
   relaySseReplies,
@@ -437,5 +438,56 @@ test('property: an undeliverable roleQuestion always rewrites the awaiting marke
       }
     }),
     { numRuns: 200 }
+  );
+});
+
+// BL-621: decideSustainedOutage's own episode invariant, generalized across
+// ARBITRARY failure/recovery sequences and ARBITRARY clocks/thresholds - the
+// hand-picked unit tests in bl621FrontDeskSustainedOutage.test.js each pin
+// one fixed 10-minute-cadence sequence; this property runs irregular ones,
+// including step gaps that land exactly ON a threshold boundary. The
+// invariant holds at every step of ANY sequence:
+//   (a) a successful step always fully resets the episode to {escalated:
+//       false} - no leftover start time, no leftover latch - no matter what
+//       state came before it.
+//   (b) a failing step escalates iff its OWN run has not already escalated
+//       AND this step's outageMs has reached the threshold - so across one
+//       whole continuous run of failures, escalate is true on at most ONE
+//       step, and never before the threshold is reached.
+// Runs ONLY via `npm run test:properties`.
+const sustainedOutageStepArb = fc.record({ ok: fc.boolean(), dt: fc.integer({ min: 0, max: 20_000 }) });
+const sustainedOutageSequenceArb = fc.array(sustainedOutageStepArb, { minLength: 1, maxLength: 40 });
+const sustainedOutageThresholdArb = fc.integer({ min: 1, max: 200_000 });
+
+test('property: decideSustainedOutage escalates at most once per continuous failure run, never before its own outage reaches the threshold, and any success fully resets it', () => {
+  fc.assert(
+    fc.property(sustainedOutageSequenceArb, sustainedOutageThresholdArb, (steps, thresholdMs) => {
+      let state = { escalated: false };
+      let nowMs = 0;
+      for (const step of steps) {
+        nowMs += step.dt;
+        const prevEscalated = state.escalated;
+        const decision = decideSustainedOutage(state, step.ok, nowMs, thresholdMs);
+        if (step.ok) {
+          assert.deepEqual(decision.state, { escalated: false }, 'a success must fully reset the episode regardless of prior state');
+          assert.equal(decision.escalate, false);
+          assert.equal(decision.outageMs, 0);
+        } else {
+          const expectedEscalate = !prevEscalated && decision.outageMs >= thresholdMs;
+          assert.equal(
+            decision.escalate,
+            expectedEscalate,
+            `escalate must fire iff this run has not already escalated and outageMs (${decision.outageMs}) has reached the threshold (${thresholdMs})`
+          );
+          assert.equal(
+            decision.state.escalated,
+            prevEscalated || decision.escalate,
+            "the escalated latch must only ever be set by this run's own escalation, and must never clear except on success"
+          );
+        }
+        state = decision.state;
+      }
+    }),
+    { numRuns: 300 }
   );
 });
