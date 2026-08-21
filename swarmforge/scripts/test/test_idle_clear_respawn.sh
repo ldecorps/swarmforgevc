@@ -8,8 +8,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-DONE_TASK="$SCRIPT_DIR/../done_with_current_task.bb"
-# BL-998: bound below, to the fixture's own copy of the wrapper.
+# BL-998: every dispatch path used here is bound below, to the fixture
+# worktree's own copy. Nothing in this file may reach the real scripts dir.
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -41,7 +41,10 @@ OFFROLE_WT="$ROOT/.worktrees/offrole"
 git -C "$ROOT" worktree add -q -b onrole "$ONROLE_WT"
 install_scripts "$ONROLE_WT"
 READY_TASK="$ONROLE_WT/swarmforge/scripts/ready_for_next_task.sh"
+ONROLE_DONE_TASK="$ONROLE_WT/swarmforge/scripts/done_with_current_task.bb"
 git -C "$ROOT" worktree add -q -b offrole "$OFFROLE_WT"
+install_scripts "$OFFROLE_WT"
+OFFROLE_DONE_TASK="$OFFROLE_WT/swarmforge/scripts/done_with_current_task.bb"
 
 SOCK="$ROOT/fake.sock"
 touch "$SOCK"
@@ -88,7 +91,7 @@ INBOX="$ONROLE_WT/.swarmforge/handoffs/inbox"
 mkdir -p "$INBOX/new" "$INBOX/in_process" "$INBOX/completed"
 queue_task "$INBOX/in_process" "item1"
 
-OUT="$(cd "$ONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=onrole bb "$DONE_TASK")"
+OUT="$(cd "$ONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=onrole bb "$ONROLE_DONE_TASK")"
 echo "$OUT" | grep -q '^NO_TASK$' || fail "01: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" || fail "01: expected a respawn-pane call for the enabled role, log: $(cat "$TMUX_LOG")"
 grep -q "onrole.sh" "$TMUX_LOG" || fail "01: expected the respawn to reference onrole's own launch script"
@@ -99,7 +102,7 @@ pass "01: enabled role clears (respawns) at the idle boundary once queue is empt
 queue_task "$INBOX/in_process" "item2"
 queue_task "$INBOX/new" "item3"
 
-OUT="$(cd "$ONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=onrole bb "$DONE_TASK")"
+OUT="$(cd "$ONROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=onrole bb "$ONROLE_DONE_TASK")"
 echo "$OUT" | grep -q '^TASK:' || fail "02: expected the next TASK to be handed out, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "02: must not clear while queued work remains, log: $(cat "$TMUX_LOG")"
 pass "02: no clear while queued work remains; done helper hands out the next item instead"
@@ -121,7 +124,7 @@ mkdir -p "$OFF_INBOX/new" "$OFF_INBOX/in_process" "$OFF_INBOX/completed"
 queue_task "$OFF_INBOX/in_process" "item4"
 
 : > "$TMUX_LOG"
-OUT="$(cd "$OFFROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=offrole bb "$DONE_TASK")"
+OUT="$(cd "$OFFROLE_WT" && PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE=offrole bb "$OFFROLE_DONE_TASK")"
 echo "$OUT" | grep -q '^NO_TASK$' || fail "04: expected NO_TASK, got: $OUT"
 grep -q "respawn-pane" "$TMUX_LOG" && fail "04: disabled role must never clear, log: $(cat "$TMUX_LOG")"
 pass "04: role without the idle-clear token is untouched at the idle boundary"

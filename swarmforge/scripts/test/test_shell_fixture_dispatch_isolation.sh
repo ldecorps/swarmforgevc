@@ -20,6 +20,10 @@
 #      itself - a script that runs the dispatch table, asks git for the root,
 #      or cd's to its own dirname. Add a new dispatcher tomorrow and it is
 #      covered with no edit here.
+#   1b. That set is then CLOSED over sibling process invocations, because
+#      self-rooting is transitive and reading it one hop deep is what let
+#      done_with_current_task.bb pass for a leaf - in this ticket's own
+#      constraints as well as in this guard. See step 1b below.
 #   2. Which tests offend is read out of what each test EXECUTES - a
 #      self-rooting script invoked through a path anchored at the REAL
 #      scripts dir. A test dispatching through its own fixture's copy is
@@ -65,6 +69,70 @@ self_rooting_scripts() {
 SELF_ROOTING="$(self_rooting_scripts)"
 [ -n "$SELF_ROOTING" ] || fail "derivation broke: no self-rooting script found in $REAL_SCRIPTS_DIR"
 
+is_self_rooting() {
+  printf '%s\n' "$SELF_ROOTING" | grep -qxF "$1"
+}
+
+# ── step 1b: close that set over sibling process invocations ─────────────
+# Self-rooting is TRANSITIVE, and this ticket's own bounce is the proof.
+# Nothing in done_with_current_task.bb resolves a root, so step 1 called it
+# a leaf and the ticket's constraints said the same - but its completion
+# path ends in
+#     (process/exec (str (fs/path script-dir "ready_for_next_task.sh")))
+# where script-dir is the directory of the FILE ON DISK, not cwd.
+# process/exec replaces the process image with a wrapper that cd's to its
+# own dirname, so invoking that "leaf" from the real scripts dir escapes the
+# fixture exactly as a dispatcher would. A script that STARTS a sibling
+# resolved from its own location inherits that sibling's rooting, however
+# many hops away it is.
+#
+# Only a real process invocation is an edge. `load-file` of a sibling lib
+# uses the identical (fs/path script-dir ...) shape but runs IN-PROCESS,
+# where the root still comes from cwd - counting it would make nearly every
+# helper self-rooting and flag tests that are entirely correct.
+SIBLING_START_RE='process/exec|process/shell|process/sh|sh/sh|exec bb|bash '
+SIBLING_PATH_RE='(fs/path (script-dir|\(fs/parent \*file\*\)) "[A-Za-z0-9_.-]+"|\$\{?SCRIPT_DIR\}?/[A-Za-z0-9_.-]+)'
+
+sibling_invocations() {
+  code_only "$1" \
+    | grep -E "$SIBLING_START_RE" \
+    | grep -oE "$SIBLING_PATH_RE" \
+    | grep -oE '[A-Za-z0-9_.-]+\.(sh|bb)' \
+    | sort -u
+}
+
+# One pass over the scripts dir builds the edge list; the fixpoint below
+# then reads only that (a couple of dozen lines) instead of re-grepping ~300
+# files per round. A single grep -l narrows ~300 files to the few dozen that
+# start a process at all before the per-file pipeline runs - it may include a
+# file whose only match is in a comment, which code_only then drops, so the
+# edge list is identical either way.
+EDGES_FILE="$(mktemp)"
+trap 'rm -f "$EDGES_FILE"' EXIT
+for f in $(grep -lE "$SIBLING_START_RE" "$REAL_SCRIPTS_DIR"/*.sh "$REAL_SCRIPTS_DIR"/*.bb 2>/dev/null || true); do
+  [ -f "$f" ] || continue
+  sibs="$(sibling_invocations "$f" 2>/dev/null || true)"
+  [ -n "$sibs" ] || continue
+  printf '%s\t%s\n' "$(basename "$f")" "$(printf '%s' "$sibs" | tr '\n' ' ')"
+done > "$EDGES_FILE"
+
+GREW=1
+while [ "$GREW" = "1" ]; do
+  GREW=0
+  while IFS="$(printf '\t')" read -r name sibs; do
+    [ -n "$name" ] || continue
+    if is_self_rooting "$name"; then continue; fi
+    for sib in $sibs; do
+      if is_self_rooting "$sib"; then
+        SELF_ROOTING="$SELF_ROOTING
+$name"
+        GREW=1
+        break
+      fi
+    done
+  done < "$EDGES_FILE"
+done
+
 # ── step 2: derive the offenders from what each test executes ────────────
 # An offence is a two-part shape in one file: a variable bound to a
 # self-rooting script through a REAL-scripts-dir path, and an execution of
@@ -74,9 +142,6 @@ SELF_ROOTING="$(self_rooting_scripts)"
 # variable bound to a REAL-scripts-dir path in a single grep, keep the ones
 # whose target is self-rooting, then look for executions of just those. The
 # naive nested form is 30 x 235 grep processes and does not finish.
-is_self_rooting() {
-  printf '%s\n' "$SELF_ROOTING" | grep -qxF "$1"
-}
 
 # "$VAR" in COMMAND position: opening a command (line start, or after ( && ||
 # ; | ), then any run of env assignments (FOO=bar, PATH="...") and an
