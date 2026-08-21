@@ -33,6 +33,12 @@
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
+;; BL-1017: the SAME provider env-passthrough swarm_ensure.bb/respawn-role!
+;; and handoffd.bb's auth-observe respawn use, via BL-536's extraction — so a
+;; session repair never strips alternate-runtime auth from the relaunched
+;; pane. Deliberately this lib and NOT swarm_ensure.bb itself, which runs a
+;; full ensure sweep + System/exit as a side effect of being load-file'd.
+(load-file (str (fs/path script-dir "provider_respawn_env_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -48,6 +54,11 @@
 (def babysitterd-dir (fs/path state-dir "babysitterd"))
 (def streak-file (fs/path babysitterd-dir "streak"))
 (def dedup-file (fs/path babysitterd-dir "nudge-dedup.json"))
+;; BL-1017: {role -> {"attempts" n "last-ms" ms}} — what bounds session
+;; repair across sweeps. Without persistence the cooldown would reset on
+;; every sweep and invariant 2 ("no respawn storm") would be unenforceable,
+;; since each sweep is its own process.
+(def repair-file (fs/path babysitterd-dir "session-repairs.json"))
 
 (def stuck-min 30)
 (def heartbeat-max-secs 300)
@@ -656,6 +667,53 @@
   (fs/create-dirs babysitterd-dir)
   (spit (str dedup-file) (json/generate-string m)))
 
+;; ── BL-1017: bounded session-repair state + execution ─────────────────────
+
+;; BL-631's warning applies here verbatim: NEVER keywordize on the way back
+;; in. This map is keyed by roles.tsv role NAMES (plain strings), and the
+;; sweep looks them up with (get state role) using that same string. Parsing
+;; with keywordize-keys would turn "specifier" into :specifier, every lookup
+;; would miss, every role would read as never-repaired, and the cooldown that
+;; invariant 2 rests on would silently never engage.
+(defn read-repair-state []
+  (if (fs/exists? repair-file)
+    (try (json/parse-string (slurp (str repair-file))) (catch Exception _ {}))
+    {}))
+
+(defn write-repair-state! [m]
+  (fs/create-dirs babysitterd-dir)
+  (spit (str repair-file) (json/generate-string m)))
+
+
+;; The daemon's existing single-role launch path, mirroring
+;; swarm_ensure.bb/ensure-standing-role!: create the session if it is missing,
+;; then respawn the role's canonical launch script into it. Always the
+;; project-root .swarmforge/launch/<role>.sh - never a worktree-local copy,
+;; which can drift and which once left one session running another role's
+;; script after a bad repair (handoffd.bb/do-respawn! carries the same note).
+;;
+;; Scope: this recreates ONE session. It is deliberately not start-swarm.sh,
+;; whose eight-session sweep is the disproportionate action this ticket exists
+;; to avoid.
+(defn ensure-role-session! [socket role session]
+  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))]
+    (cond
+      (nil? socket) {:status :no-socket}
+      (str/blank? (str session)) {:status :no-session-name}
+      (not (fs/exists? launch-script)) {:status :no-launch-script :detail (str launch-script)}
+      :else
+      (do
+        (when-not (pane-exists? socket session)
+          (sh! "tmux" "-S" socket "new-session" "-d" "-s" session "-n" "swarm")
+          (Thread/sleep 250))
+        (let [env-args (provider-respawn-env-lib/provider-respawn-env-args (str state-dir) role)
+              r (apply sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                                   env-args
+                                   ["-t" session (str "zsh '" launch-script "'")]))]
+          (if (zero? (:exit r))
+            {:status :repaired}
+            {:status :failed :detail (str/trim (str (:err r)))}))))))
+
 (defn read-streak []
   (if (fs/exists? streak-file)
     (or (parse-long (str/trim (slurp (str streak-file)))) 0)
@@ -691,9 +749,21 @@
         ordered-roles (mapv :role role-rows)
         resident-home (resident-home-role ordered-roles)
         resident-active-role (active-role-marker)
-        roles (mapv #(assoc % :should-stand?
-                             (should-stand-role? rotation-router? ordered-roles (:role %)))
+        ;; BL-1017: the same per-role stamping pass carries the persisted
+        ;; repair budget in, so check-live-session decides the bound purely
+        ;; (no clock read, no fs, inside the testability boundary) while this
+        ;; gatherer owns reading it. now-ms is resolved ONCE for the sweep so
+        ;; every role is bounded against the same instant.
+        repair-state (read-repair-state)
+        sweep-now-ms (now-ms)
+        roles (mapv #(let [prior (get repair-state (:role %))]
+                       (assoc % :should-stand?
+                                (should-stand-role? rotation-router? ordered-roles (:role %))
+                                :now-ms sweep-now-ms
+                                :last-repair-ms (get prior "last-ms")
+                                :repair-attempts (get prior "attempts" 0)))
                     roles)
+        session-by-role (into {} (map (juxt :role :session) role-rows))
         snapshot
         {:now-ms (now-ms)
          :roles (mapv #(dissoc % :pane-text) roles)
@@ -730,9 +800,28 @@
          :resident-pane-busy? (boolean (get busy-by-role resident-home))
          :resident-mailbox-empty? (resident-mailbox-empty? resident-active-role)
          :dispatch-note-pending? (dispatch-note-pending? resident-active-role)}
-        {:keys [findings new-streak]} (babysitterd-sweep-lib/assemble-findings snapshot)
+        {:keys [findings new-streak repairs]} (babysitterd-sweep-lib/assemble-findings snapshot)
         ts (now-iso)]
     (write-streak! new-streak)
+    ;; BL-1017 required_wiring: the repair decision is ACTED ON here, in the
+    ;; live sweep, not merely returned by the lib. A decision nobody consumes
+    ;; is the BL-419 shape this ticket's own required_wiring names.
+    ;;
+    ;; The CRIT for each repaired role is still printed below, unconditionally
+    ;; - a repair never swallows its alert, because a session that keeps
+    ;; vanishing is the signal worth keeping (qa_e2e_procedure step 2).
+    (when (seq repairs)
+      (let [new-repair-state
+            (reduce (fn [st {:keys [role]}]
+                      (let [session (get session-by-role role)
+                            result (ensure-role-session! socket role session)]
+                        (println (str ts " REPAIR [" (name (:status result)) "] swarmforge-" role
+                                      (when-let [d (:detail result)] (str " — " d))))
+                        (babysitterd-sweep-lib/note-repair-attempt st role sweep-now-ms
+                                             babysitterd-sweep-lib/default-repair-cooldown-ms)))
+                    repair-state
+                    repairs)]
+        (write-repair-state! new-repair-state)))
     (if (empty? findings)
       (println (str ts " OK all checks green"))
       (doseq [f findings]

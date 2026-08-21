@@ -68,6 +68,104 @@
             (sw/check-live-session {:role "specifier" :pane-exists? true
                                      :has-claude-process? true :should-stand? false}))
 
+;; ── BL-1017: bounded session REPAIR alongside the CRIT ──────────────────────
+;; check-live-session emitted a CRIT for a missing session and stopped there,
+;; so a vanished standing role stayed gone until a human ran a full
+;; ./start-swarm.sh - recreating all eight sessions for a one-session fault.
+;; It now also emits a bounded repair intent. The CRIT is NEVER swallowed by
+;; the repair: a session that keeps vanishing is a signal worth keeping.
+
+;; Scenario 01: a standing role with no pane asks for its session back.
+(assert-true "BL-1017: a missing standing session emits the CRIT *and* a repair intent"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true})]
+               (and f (= "CRIT" (:severity f)) (= "pane-specifier" (:key f))
+                    (= {:action :ensure-session :role "specifier"} (:repair f)))))
+
+;; Scenario 02: topology suppression covers the repair branch too (invariant 1).
+;; A mono-router non-resident must never be resurrected as if it were standing.
+(assert-nil "BL-1017: a should-not-stand role yields neither CRIT nor repair"
+            (sw/check-live-session {:role "cleaner" :pane-exists? false
+                                     :has-claude-process? false :should-stand? false}))
+
+;; Scenario 03: a present pane is never a missing session, in any process state.
+(doseq [[label extra] [["a live claude process" {:has-claude-process? true}]
+                       ["no claude process under it" {:has-claude-process? false}]
+                       ["a failed process gather" {:has-claude-process? false
+                                                   :process-gather-failed? true}]]]
+  (assert-nil (str "BL-1017: a present pane emits no session repair (" label ")")
+              (:repair (sw/check-live-session (merge {:role "coder" :pane-exists? true
+                                                      :should-stand? true}
+                                                     extra)))))
+
+;; Scenario 04: bounded (invariant 2). Inside the cooldown window an
+;; already-attempted role gets the CRIT but no second repair, so a session
+;; that cannot be recreated degrades to plain alerting, never a respawn storm.
+(assert-true "BL-1017: a role repaired inside the cooldown window still CRITs but is not repaired again"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true
+                                              :now-ms 1000000
+                                              :last-repair-ms 999000
+                                              :repair-attempts 1
+                                              :repair-cooldown-ms 60000
+                                              :max-repair-attempts 1})]
+               (and f (= "CRIT" (:severity f)) (nil? (:repair f)))))
+
+(assert-true "BL-1017: once the cooldown window has elapsed the attempt budget resets"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true
+                                              :now-ms 1000000
+                                              :last-repair-ms 900000
+                                              :repair-attempts 9
+                                              :repair-cooldown-ms 60000
+                                              :max-repair-attempts 1})]
+               (and f (= "CRIT" (:severity f))
+                    (= {:action :ensure-session :role "specifier"} (:repair f)))))
+
+(assert-true "BL-1017: inside the window a role under its attempt budget is still repaired"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true
+                                              :now-ms 1000000
+                                              :last-repair-ms 999000
+                                              :repair-attempts 1
+                                              :repair-cooldown-ms 60000
+                                              :max-repair-attempts 2})]
+               (and f (= "CRIT" (:severity f)) (some? (:repair f)))))
+
+;; Omitting every repair key entirely reproduces pre-BL-1017 behavior for the
+;; CRIT itself, exactly as BL-804's should-stand? default does - every
+;; assertion above this block never mentions a repair key.
+(assert-true "BL-1017: with no repair state supplied a missing session is repaired once"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? false
+                                              :has-claude-process? false})]
+               (and f (= "CRIT" (:severity f)) (some? (:repair f)))))
+
+;; assemble-findings must SURFACE the repairs, not bury them inside findings -
+;; the caller cannot act on a decision it has to re-derive.
+(assert= "BL-1017: assemble-findings surfaces one repair per missing standing session"
+         [{:action :ensure-session :role "specifier"}]
+         (:repairs (sw/assemble-findings
+                    {:roles [{:role "specifier" :pane-exists? false :has-claude-process? false
+                              :should-stand? true}
+                             {:role "coder" :pane-exists? true :has-claude-process? true
+                              :should-stand? true}]
+                     :handoffd-alive? true :handoffd-supervisor-alive? true
+                     :handoffd-log-age-secs 1 :handoffd-max-age-secs 300
+                     :failed-count 0 :stuck-parcels [] :available-mb 8000 :mem-floor-mb 500
+                     :claim-risks [] :active-ticket-count 1 :any-pane-busy? true
+                     :prev-streak 0 :pending-claims [] :in-process-claims []})))
+
+(assert= "BL-1017: a sweep with nothing to repair surfaces an empty repair list, never nil"
+         []
+         (:repairs (sw/assemble-findings
+                    {:roles [{:role "coder" :pane-exists? true :has-claude-process? true
+                              :should-stand? true}]
+                     :handoffd-alive? true :handoffd-supervisor-alive? true
+                     :handoffd-log-age-secs 1 :handoffd-max-age-secs 300
+                     :failed-count 0 :stuck-parcels [] :available-mb 8000 :mem-floor-mb 500
+                     :claim-risks [] :active-ticket-count 1 :any-pane-busy? true
+                     :prev-streak 0 :pending-claims [] :in-process-claims []})))
+
 ;; ── check 2: remote-control-flag ─────────────────────────────────────────────
 (assert-nil "green role (rc flag present) produces no rc finding"
             (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true :has-remote-control? true}))

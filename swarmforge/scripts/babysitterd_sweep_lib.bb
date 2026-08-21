@@ -25,6 +25,50 @@
 
 ;; ── check 1: live-session-per-role ──────────────────────────────────────────
 
+;; BL-1017: how often a single role may be handed a session-recreate before
+;; the sweep gives up and just keeps alerting. Deliberately small — a session
+;; that will not come back is a human's problem, and a daemon that keeps
+;; retrying it forever is a respawn storm, not a repair.
+(def default-repair-cooldown-ms (* 10 60 1000))
+(def default-max-repair-attempts 1)
+
+(defn session-repair-allowed?
+  "BL-1017 invariant 2 — repair is BOUNDED. Within `cooldown-ms` of the last
+   attempt a role gets at most `max-attempts` repairs; once that window has
+   elapsed the budget resets, so a role that vanishes again hours later is
+   still repaired. With no prior attempt recorded (the common case, and every
+   pre-BL-1017 caller) repair is allowed."
+  [{:keys [now-ms last-repair-ms repair-attempts repair-cooldown-ms max-repair-attempts]
+    :or {repair-attempts 0
+         repair-cooldown-ms default-repair-cooldown-ms
+         max-repair-attempts default-max-repair-attempts}}]
+  (let [in-window? (boolean (and now-ms last-repair-ms
+                                 (< (- now-ms last-repair-ms) repair-cooldown-ms)))]
+    (or (not in-window?)
+        (< repair-attempts max-repair-attempts))))
+
+;; BL-1017: the other half of the bound — how an issued repair is RECORDED.
+;; Pure (state in, state out) and kept here beside session-repair-allowed?
+;; deliberately: the two must agree on what "inside the window" means, and a
+;; bound whose accounting lived in the I/O gatherer could drift from the
+;; predicate that reads it while both still looked correct in isolation. The
+;; gatherer only persists what this returns.
+;;
+;; The attempt is recorded whether or not tmux succeeded. A repair that FAILED
+;; is exactly the case the bound exists for — counting only successes would
+;; let an unrecreatable session be retried every sweep forever, which is the
+;; respawn storm invariant 2 forbids.
+;;
+;; Keys are plain strings, matching what the gatherer round-trips through JSON
+;; (see its read-repair-state comment on never keywordizing).
+(defn note-repair-attempt
+  [state role now-ms cooldown-ms]
+  (let [prior (get state role)
+        last-ms (get prior "last-ms")
+        in-window? (boolean (and last-ms (< (- now-ms last-ms) cooldown-ms)))]
+    (assoc state role {"attempts" (if in-window? (inc (get prior "attempts" 0)) 1)
+                       "last-ms" now-ms})))
+
 (defn check-live-session
   ;; BL-804: should-stand? is topology-derived (mono_router_lib, via the
   ;; babysitter_check.bb gatherer) and defaults to true so every pre-BL-804
@@ -34,15 +78,32 @@
   ;; process/menu/frozen/remote-control checks below (and their sibling
   ;; check-* fns) run unconditionally, so topology suppression can never
   ;; skip a check on a session that is actually present.
+  ;;
+  ;; BL-1017: the missing-session branch now also carries a bounded :repair
+  ;; intent. Three things about its placement are load-bearing:
+  ;;   - it hangs off the SAME branch the should-stand? suppression already
+  ;;     guards, so invariant 1 (never resurrect a role the topology says
+  ;;     should not stand) holds by construction rather than by a second,
+  ;;     drift-prone predicate;
+  ;;   - it is emitted ALONGSIDE the CRIT, never instead of it. A repair that
+  ;;     silenced the alert would hide a role that keeps vanishing, which is
+  ;;     the opposite of what this ticket is for;
+  ;;   - no other branch can produce it. A pane that EXISTS is never a missing
+  ;;     session, whatever state its process is in, so the half-launch CRIT and
+  ;;     the UNAVAILABLE gather report below stay repair-free — recreating a
+  ;;     session that is already there would kill a live pane.
   [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?]
+    :as opts
     :or {should-stand? true}}]
   (cond
     (and (not pane-exists?) (not should-stand?))
     nil
 
     (not pane-exists?)
-    {:key (str "pane-" role) :severity "CRIT"
-     :message (str "swarmforge-" role ": tmux session missing")}
+    (cond-> {:key (str "pane-" role) :severity "CRIT"
+             :message (str "swarmforge-" role ": tmux session missing")}
+      (session-repair-allowed? opts)
+      (assoc :repair {:action :ensure-session :role role}))
 
     ;; BL-802: the process gather itself failed (e.g. ps errored on an
     ;; unsupported dialect) — report the check unavailable, never the
@@ -426,5 +487,12 @@
                                       claim-findings
                                       [rotate-finding starved-finding resume-overdue-finding
                                        resident-stranded-finding]
-                                      pipeline-code-on-main-findings)))]
-    {:findings findings :new-streak new-streak}))
+                                      pipeline-code-on-main-findings)))
+        ;; BL-1017: repairs are SURFACED as their own key rather than left
+        ;; buried inside the findings list. The live caller acts on this
+        ;; directly - a decision it had to re-derive by re-inspecting findings
+        ;; is the BL-419 shape (mechanism built, wired nowhere) this ticket's
+        ;; required_wiring exists to prevent. Always a vector, never nil, so
+        ;; the caller's `doseq` needs no nil guard.
+        repairs (vec (keep :repair findings))]
+    {:findings findings :new-streak new-streak :repairs repairs}))
