@@ -48,3 +48,26 @@ acceptance: |
 out_of_scope: |
   - Fixing tap/steer failures (BL-582/BL-566 own those). This only MEASURES.
   - A dedicated UI; the series joins the existing trend surface.
+
+notes: |
+  2026-08-21 coordinator: candidate 4th series, live evidence from today's
+  BL-1026-tap-not-registering incident (same investigation that queue-jumped
+  BL-582). telegram-front-desk-bot.js's readTickState/writeTickState
+  (concierge-tick-state.json) do a synchronous fs.readFileSync +
+  JSON.parse/stringify of the WHOLE state blob on every concierge tick, in
+  the same process/event loop as the getUpdates poll loop. Measured today at
+  465KB (snapshot field alone ~328KB, emittedKeys array at 1505 entries,
+  never pruned) - plus telegram-approval-ask-messages.json (198KB, 209
+  entries) and ticket-message-map.json (164KB), both also read/written
+  synchronously elsewhere in the same file. Under host contention (load
+  10.42/12.57/21.26 on 4 cores, measured same session) this sync work is a
+  plausible contributor to the "stalled bot no poll heartbeat within 90000ms"
+  pattern in front-desk-supervisor.log - not confirmed as dominant over raw
+  CPU contention (no tick-duration timing taken), but real and worth trending
+  rather than asserting.
+
+  Direction, not mandate: emit tick wall-clock duration (or split
+  read/parse/write) as a 4th series here, same append-only
+  human-loop-<YYYY-MM>.jsonl posture as the other three. Whether it also
+  motivates capping/pruning emittedKeys or splitting the state file is a
+  separate, out-of-scope question for whoever reads the resulting trend.
