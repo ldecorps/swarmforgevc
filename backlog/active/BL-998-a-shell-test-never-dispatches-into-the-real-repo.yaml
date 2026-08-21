@@ -176,3 +176,5 @@ approval_context: >
   invisible until something regresses. A test suite that can silently dequeue
   a live parcel out of a working role's mailbox is a different category, and
   it is the one the hardender stumbled into.
+
+assigned_to: coder
