@@ -1324,3 +1324,44 @@ You are the hardender.
   acceptance-step trap rule above describes, one file class over. This
   section is the verification half: assume the authoring half will be missed
   again, and check.
+
+## Never hand-mutate a source file a detached suite is still reading — `bb` and `bash` take no snapshot (rule_proposal 2026-08-21, accepted)
+- **The shape.** You launch a heavy suite through `detach_job.sh` (section
+  above), then — while it is still running — hand-edit one of the `.bb` or
+  `.sh` files it exercises, to probe whether a test is vacuous or to try a
+  candidate fix. A subprocess the suite spawns AFTER your edit reads the file
+  from disk in whatever state it is in at that instant and fails to parse. The
+  failure surfaces in the detached log as an ordinary suite failure, with
+  nothing in it to say that you caused it.
+- **There is no snapshot anywhere in the path.** `bb <file>` and `(load-file
+  …)` both read and evaluate the file at CALL time, not at suite start; `bash`
+  reads a script incrementally as it executes, so even an already-running shell
+  can pick up bytes you wrote a moment ago. A suite like
+  `swarmforge/scripts/test/test_swarm_ensure.sh`, which shells out `bb
+  "$ENSURE" "$ROOT"` from a dozen separate cases, has a dozen separate read
+  points — every one of them later than the launch you are counting on to have
+  "already loaded" the code.
+- **The rule: one writer at a time.** While a detached job is outstanding,
+  treat every file it reads as READ-ONLY. If you must probe a mutation before
+  the job ends, mutate a COPY under your worktree's `./tmp/` and point the
+  probe at that, or run the probe in the FOREGROUND over the single file — never
+  in place, under a suite that is still reading it.
+- **Wait on the marker, not on a guess.** "It has surely loaded by now" is the
+  belief that causes this. The job is outstanding until its log carries
+  `[detach_job] EXIT=<code>` or `[detach_job] KILLED …`; until one of those two
+  lines exists, every file it reads is still live (see the detach section
+  above, and collect by the same markers).
+- **Telling a spurious failure from a real one.** A parse or syntax error
+  naming a file you edited inside that window is suspect BY DEFAULT: do not
+  record it as a regression, and do not "fix" the code it points at. Restore the
+  file, re-run that slice cleanly, and only then believe the result — the cost
+  of assuming it real is a chased phantom plus a disarmed-or-patched guard, the
+  cost of re-running is one slice.
+- **Not limited to the ticket you are on.** The hazard is the file the running
+  job READS, whoever it belongs to — a shared lib you touch for an unrelated
+  reason is the same collision. Scope the read-only window by what the job
+  exercises, not by which ticket you think you are editing.
+- (Incident: BL-993 hardening, 2026-08-21. A file was hand-mutated to verify a
+  test would catch the mutation while `test_swarm_ensure.sh` ran detached for
+  the same ticket. A subprocess parsed the mid-edit state, the spurious parse
+  failure read as a real regression, and the pass paid for a full re-run.)
