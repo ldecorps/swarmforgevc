@@ -3,6 +3,7 @@
  * Input paths / file contents are injected by callers — never reads
  * repo-root .swarmforge/ itself (Stryker sandbox / live-tree rule).
  */
+import { BounceCorrection, bounceCorrectionTargetKey, isBounceCorrection } from '../quality/qaBounce';
 
 export type EvidenceSource = 'rule_proposal' | 'qa_bounce' | 'commit_subject' | 'chaser';
 
@@ -97,29 +98,48 @@ export function recordsFromRuleProposalJsonl(content: string, sourceLabel = 'rul
   return records;
 }
 
+// BL-990: this reader parses the bounce JSONL ITSELF rather than going
+// through bounceStore.ts's readBounceRecords, so resolving supersession
+// there does not reach it - it has to resolve corrections here too, or the
+// same store yields two different bounce attributions depending on which
+// consumer you ask, which is worse than the single wrong number the ticket
+// set out to fix.
+//
+// Two passes over the same content: collect the corrections first (they can
+// appear anywhere in the file, including before the bounce they correct if
+// months are concatenated), then emit a signature for every bounce record no
+// correction names.
 export function recordsFromQaBounceJsonl(content: string, sourceLabel = 'qa_bounces'): EvidenceRecord[] {
-  const records: EvidenceRecord[] = [];
-  let lineNo = 0;
-  for (const line of content.split(/\r?\n/)) {
-    lineNo += 1;
+  const parsed = content.split(/\r?\n/).map((line) => {
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed) return null;
     try {
-      const obj = JSON.parse(trimmed) as Record<string, unknown>;
-      const failureClass = typeof obj.failureClass === 'string' ? obj.failureClass : '';
-      const producingRole = typeof obj.producingRole === 'string' ? obj.producingRole : '';
-      const ticket = typeof obj.ticket === 'string' ? obj.ticket : '';
-      const commit = typeof obj.commit === 'string' ? obj.commit : '';
-      if (!failureClass || !producingRole) continue;
-      records.push({
-        source: 'qa_bounce',
-        signature: `qa_bounce:${failureClass}:${producingRole}`,
-        citation: `${sourceLabel}:L${lineNo}:${ticket}@${commit}`,
-      });
+      return JSON.parse(trimmed) as Record<string, unknown>;
     } catch {
-      // skip
+      return null;
     }
-  }
+  });
+  const correctedKeys = new Set(
+    parsed
+      .filter((obj): obj is Record<string, unknown> => obj !== null && isBounceCorrection(obj))
+      .map((obj) => bounceCorrectionTargetKey(obj as unknown as BounceCorrection))
+  );
+
+  const records: EvidenceRecord[] = [];
+  parsed.forEach((obj, index) => {
+    if (!obj) return;
+    const failureClass = typeof obj.failureClass === 'string' ? obj.failureClass : '';
+    const producingRole = typeof obj.producingRole === 'string' ? obj.producingRole : '';
+    const ticket = typeof obj.ticket === 'string' ? obj.ticket : '';
+    const commit = typeof obj.commit === 'string' ? obj.commit : '';
+    if (!failureClass || !producingRole) return;
+    if (correctedKeys.has(bounceCorrectionTargetKey({ ticket, commit }))) return;
+    records.push({
+      source: 'qa_bounce',
+      signature: `qa_bounce:${failureClass}:${producingRole}`,
+      citation: `${sourceLabel}:L${index + 1}:${ticket}@${commit}`,
+    });
+  });
   return records;
 }
 
