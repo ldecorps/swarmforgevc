@@ -15,9 +15,11 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+// BL-1002/BL-948 gate: this file references a control socket, so fixture
+// roots come from the shared short-base helper, never os.tmpdir().
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-982 a pipeline stage can host a second seat, booting with its own identity and its own model';
 
@@ -51,7 +53,7 @@ const SINGLE_SEAT_CONF = [
 ];
 
 function mkRoot(ctx, lines) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl982-acc-'));
+  const root = mkSocketFixtureRoot('bl982-acc-');
   ctx.roots = ctx.roots || [];
   ctx.roots.push(root);
   for (const d of ['swarmforge/roles', '.swarmforge/launch', '.swarmforge/prompts']) {
@@ -100,7 +102,7 @@ function rolesRows(root) {
 }
 
 function preChangeScriptDir(ctx) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl982-pre-sh-'));
+  const dir = mkSocketFixtureRoot('bl982-pre-sh-');
   ctx.roots.push(dir);
   for (const entry of fs.readdirSync(SCRIPTS_DIR)) {
     if (entry !== 'swarmforge.sh') {

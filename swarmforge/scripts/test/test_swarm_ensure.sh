@@ -98,15 +98,24 @@ printf '%s SUCCESS handoffd+supervisor running\n' "\$(date -u +%Y-%m-%dT%H:%M:%S
 EOF
   chmod +x "$FAKE_BIN/fake_daemon_start.sh"
 
-  # Operator healthy by default (this test script's pid as a live stand-in).
+  # Operator healthy by default. BL-993: operator-healthy? now checks the
+  # pid's own command line, not just kill-0 (a bare pid-alive? cannot tell a
+  # live operator_runtime.bb apart from an unrelated process that reused its
+  # pid) - this script's own pid ($$) is never operator_runtime.bb, so the
+  # stand-in must be a real background process with that name in its argv,
+  # same shape bl993_watch_survives_runtime_death.sh's own fixture uses.
   # Front desk is omitted unless a fixture sets TELEGRAM_* or a pid file.
-  echo "$$" > "$ROOT/.swarmforge/operator/runtime.pid"
+  bb -e '(Thread/sleep 100000)' operator_runtime.bb >/dev/null 2>&1 &
+  echo $! > "$ROOT/.swarmforge/operator/runtime.pid"
 
-  # Use a real background sleep so the repair leaves a live pid - same
-  # survival rule as the fake daemon supervisor above.
+  # Use a real background process so the repair leaves a live pid - same
+  # survival rule as the fake daemon supervisor above. BL-993: the pid this
+  # leaves behind must pass operator-healthy?'s own command-line check, not
+  # just kill-0 - a bare `sleep` no longer does (confirmed live: this fake
+  # left scenario 05a reporting FAILED instead of FIXED before this fix).
   cat > "$FAKE_BIN/fake_operator_start.sh" <<EOF
 #!/usr/bin/env bash
-sleep 100 >"$ROOT/fake-operator.log" 2>&1 &
+bb -e '(Thread/sleep 100000)' operator_runtime.bb >"$ROOT/fake-operator.log" 2>&1 &
 echo \$! > "$ROOT/.swarmforge/operator/runtime.pid"
 EOF
   chmod +x "$FAKE_BIN/fake_operator_start.sh"
@@ -271,6 +280,32 @@ NEW_OP_PID="$(cat "$ROOT/.swarmforge/operator/runtime.pid")"
 kill -0 "$NEW_OP_PID" 2>/dev/null || fail "05a: operator repair did not leave a live process behind"
 cleanup_daemon
 pass "05a: operator runtime not running is repaired and reported FIXED"
+
+# ── 05a-race: a repair whose process becomes visible only after a beat is ──
+# still FIXED (BL-993 cleaner bounce D1). The real race: ensure-component!'s
+# post-repair recheck can land before the freshly-forked process's command
+# line is queryable (ProcessHandle/sysctl visibility lag), reading a
+# genuinely successful restart as FAILED. Reproduced DETERMINISTICALLY here:
+# the start script returns immediately but backgrounds its work behind a
+# 0.3s delay, so the old immediate single recheck always misses it, while
+# the bounded post-repair retry (default ~1s budget) always catches it -
+# this scenario is a hard red on the pre-fix code, not a sometimes-red.
+make_fixture
+# kill the fixture's initial operator stand-in BEFORE orphaning its pidfile:
+# cleanup_daemon kills by pidfile only, so overwriting first would leak it.
+kill -9 "$(cat "$ROOT/.swarmforge/operator/runtime.pid")" 2>/dev/null || true
+echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"
+cat > "$FAKE_BIN/fake_operator_start.sh" <<EOF
+#!/usr/bin/env bash
+# return at once; the new process (and its pid file) appear only later
+( sleep 0.3; bb -e '(Thread/sleep 100000)' operator_runtime.bb >"$ROOT/fake-operator.log" 2>&1 & echo \$! > "$ROOT/.swarmforge/operator/runtime.pid" ) >/dev/null 2>&1 &
+EOF
+chmod +x "$FAKE_BIN/fake_operator_start.sh"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^operator: FIXED (restarted the operator runtime)$" \
+  || fail "05a-race: delayed-visibility repair must still be FIXED; got: $OUT"
+cleanup_daemon
+pass "05a-race: a repair visible only after a beat is still reported FIXED"
 
 # ── 05b: front desk is repaired when Telegram is configured ────────────────
 make_fixture
