@@ -47,7 +47,6 @@ const LAUNCH_SCRIPT_AGENT_NAMES = {
   'launch_negotiation_relay.sh': 'Negotiation Relay',
   'launch_onboarder.sh': 'Onboarder',
   'launch_operator.sh': 'Operator',
-  'launch_operator_runtime_supervisor.sh': 'Operator Runtime Watch',
   'launch_resident_spy_tunnel.sh': 'Resident Spy Tunnel',
   'launch_support.sh': 'Support',
 };
