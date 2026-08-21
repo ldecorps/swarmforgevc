@@ -1,55 +1,66 @@
-Feature: pipeline board topic identity is durable, validated, and reuse-or-create
+Feature: pipeline board topic identity is validated on every resolve and reuse-or-create
 
-  # BL-586: the board's ensureBoardTopicAdapter was a bare createForumTopic
-  # call with no reuse-or-create and no collision guard. A TickState reset
-  # minted a new topic while the previous one became an untracked zombie
-  # (observed twice), and nothing cross-validated the stored topicId against
-  # telegram-topic-map.json — which already knew id 1634 was a support
-  # thread (SUP-7). The live board posted there anyway, including its
-  # only-pin enforcement, until a human noticed via screenshot. Repair
-  # required the stack to be stopped, because in-memory tick state
-  # overwrites a file-only repair within one tick.
+  # BL-586. Board identity lives in exactly one place -
+  # TickState.pipelineBoard.topicId - and resolveBoardTopicId
+  # (extension/src/concierge/pipelineBoardSync.ts) trusts it unconditionally:
+  # if a topicId is present it is returned with no validation, and if it is
+  # absent ensureBoardTopicAdapter mints a brand new topic with no
+  # reuse-lookup and no durable record. Both halves have fired in production.
+  # On 2026-07-23 the stored id was 1634, which telegram-topic-map.json
+  # already knew was SUP-7, a support thread; on 2026-08-21 it was 14647 =
+  # SUP-5. In both cases the board - including its only-pin enforcement -
+  # posted into the human's support topic, and the map held the answer that
+  # would have refused the post. Meanwhile BL-497's topic-gone self-heal
+  # clears topicId, so every such failure mints another untracked "Pipeline
+  # Board" zombie.
+  #
+  # These scenarios pin the two invariants the ticket declares: validate
+  # before EVERY post (not only at mint time), and re-establish identity by
+  # reuse-or-create against a durable standing-topic record. Scenario 04 is
+  # how this ticket discharges the operator-repair requirement - a crossed
+  # identity self-corrects on the next tick, so no stack-down file repair is
+  # needed. The deferred multi-writer and posting-noise scenarios are parked
+  # in BL-586-pipeline-board-noise-and-multi-writer.feature.draft.
+
+  Background:
+    Given the front-desk pipeline board is wired to a forum-enabled chat
 
   # BL-586 crossed-topic-refused-01
-  Scenario: a topicId the topic map attributes to another purpose is refused
-    Given the stored pipeline-board topicId is mapped in telegram-topic-map to a support thread
-    When the board attempts to post
-    Then the post is refused
-    And an alert is sent to the Operator topic
-    And the board topic is re-ensured
-    And the support thread receives nothing
+  Scenario Outline: a stored board topic id the topic map attributes to another purpose is refused before any post
+    Given the topic map attributes topic id <topicId> to <subject>
+    And the stored pipeline-board topic id is <topicId>
+    When the board resolves its topic for a post
+    Then the board refuses to post into <topicId>
+    And an operator alert naming <topicId> and <subject> is emitted
+    And the board re-ensures its topic from the durable standing record
+
+    Examples:
+      | topicId | subject   |
+      | 14647   | SUP-5     |
+      | 1785    | APPROVALS |
+      | 3864    | OPERATOR  |
 
   # BL-586 reuse-or-create-on-state-reset-02
-  Scenario: a state reset reuses the recorded standing board topic instead of minting a new one
-    Given a PIPELINE_BOARD standing topic id is already recorded
-    When TickState resets
-    Then the board resolves to the same recorded topic id
+  Scenario: a tick-state reset reuses the recorded standing board topic instead of minting a new one
+    Given the standing topic record holds PIPELINE_BOARD as topic id 6795
+    And the pipeline-board tick state holds no topic id
+    When the board resolves its topic for a post
+    Then the board resolves to topic id 6795
     And no new topic is minted
 
   # BL-586 minted-id-recorded-before-first-post-03
-  Scenario: a freshly minted topic id is durably recorded before the first post
-    Given no PIPELINE_BOARD standing topic id is recorded
+  Scenario: a newly minted board topic is recorded durably before the board's first post into it
+    Given the standing topic record holds no PIPELINE_BOARD entry
+    And the pipeline-board tick state holds no topic id
     When the board mints a new topic
-    And a crash occurs immediately after minting but before the first post
-    Then the minted id is already durably recorded
-    And no second topic is minted on the next attempt
+    Then the minted id is written to the standing topic record before any post is attempted
+    And the topic map binds the minted id to PIPELINE_BOARD
 
-  # BL-586 operator-file-repair-takes-effect-within-one-tick-04
-  Scenario: an operator's file-level repair of the board identity takes effect within one tick
-    Given the stack is running with a crossed pipelineBoard topic id in memory
-    When an operator repairs the identity in the durable state file
-    Then the next tick reads the repaired identity
-    And the in-memory state does not overwrite the repair
-
-  # BL-586 concurrent-writers-log-loudly-05
-  Scenario: two concurrent writers of board identity produce a loud log naming both
-    Given two front-desk stacks are running concurrently and both write pipelineBoard identity
-    When their writes conflict
-    Then a loud log line names both identities
-    And the board does not post into a topic the surviving state cannot validate
-
-  # BL-586 link-previews-disabled-06
-  Scenario: board messages send with link previews disabled
-    Given a board message body contains a GitHub link
-    When the board sends that message
-    Then the message is sent with link previews disabled
+  # BL-586 crossed-identity-self-corrects-without-stack-down-04
+  Scenario: a crossed in-memory identity self-corrects on the next tick with no operator intervention
+    Given the pipeline-board tick state holds topic id 14647 in memory
+    And the topic map attributes topic id 14647 to SUP-5
+    And the standing topic record holds PIPELINE_BOARD as topic id 6795
+    When the board resolves its topic for a post
+    Then the board resolves to topic id 6795
+    And topic id 14647 receives no board post
