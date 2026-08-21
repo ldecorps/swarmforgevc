@@ -135,3 +135,10 @@ notes: |
   case became a row of outline 01, and the two grace-window scenarios became one
   outline), leaving 4 scenarios and 5 findings. All 5 remaining are the known
   quoted/numeric-literal limitation or deliberate contrast pairs.
+
+  2026-08-21 coordinator: open-slot nudge seen at the promotion recheck after
+  BL-1006 closed. NOT promoted: human_approval is still pending (the operator
+  has not yet answered the two-number approval_context above). The freed slot
+  went to BL-990 instead (also priority 20, expedited, already approved). This
+  ticket remains top-ranked among expedited candidates and will promote as
+  soon as human_approval flips to approved - awaiting human, not dropped.
