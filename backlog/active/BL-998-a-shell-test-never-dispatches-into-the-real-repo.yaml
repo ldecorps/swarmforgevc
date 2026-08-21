@@ -245,3 +245,6 @@ amendment_2026_08_21: |
   silently ship the smaller thing.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-21, by: cleaner, blamed: coder, class: behavior, commit: 90aee07f87, evidence: backlog/evidence/BL-998-cleaner-bounce-20260821.md }
