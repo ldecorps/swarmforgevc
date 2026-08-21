@@ -13,9 +13,11 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+// BL-1002/BL-948 gate: this file references a control socket, so fixture
+// roots come from the shared short-base helper, never os.tmpdir().
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-983 a parcel addressed to a stage is worked by exactly one of its seats';
 
@@ -31,7 +33,7 @@ function seatDir(root, role) {
 }
 
 function mkFixture(ctx) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl983-acc-'));
+  const root = mkSocketFixtureRoot('bl983-acc-');
   ctx.root = root;
   const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
   git(['init', '-q', '.']);
