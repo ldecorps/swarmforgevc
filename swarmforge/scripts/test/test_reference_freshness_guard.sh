@@ -14,18 +14,34 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # bb directly, never the ready_for_next.sh wrapper: the wrapper cd's into
 # its OWN script directory before invoking bb (to fix babashka's relative
 # path resolution), which would make the guard's git-root call resolve
 # against the real repo instead of this fixture. Same reason
 # test_branch_claim_guard.sh drives ready_for_next_task.bb directly.
-READY="$SCRIPT_DIR/../ready_for_next.bb"
+# BL-998: bound per fixture, below, to that fixture's own copy.
 
 # shellcheck source=lib/tmp_cleanup.sh
 source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-998: the receive/completion helpers resolve their OWN root - the .sh
+# wrappers cd to their own dirname and the .bb dispatchers hand off to those
+# wrappers by name. Correct in production, where every worktree carries its
+# own hot-synced swarmforge/scripts/ copy; fatal here, because dispatching
+# the REAL repo's copy would cd out of the fixture and resolve THIS checkout
+# - testing live swarm state instead of the fixture, and claiming real
+# parcels out of real mailboxes while doing it. Give the fixture its own
+# copy and dispatch through that. Ported verbatim from
+# test_ready_for_next_no_promotion.sh.
+install_scripts() {
+  local wt="$1"
+  mkdir -p "$wt/swarmforge/scripts"
+  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
+}
 
 REF_REL="swarmforge/constitution/articles/reference/workflow-detailed.prompt"
 
@@ -52,6 +68,8 @@ COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 CODER_WT="$ROOT/.worktrees/coder"
 git -C "$ROOT" worktree add -q "$CODER_WT" swarmforge-coder
+install_scripts "$CODER_WT"
+READY="$CODER_WT/swarmforge/scripts/ready_for_next.bb"
 
 mkdir -p "$ROOT/.swarmforge" \
          "$CODER_WT/.swarmforge/handoffs/inbox/new" \
@@ -179,6 +197,8 @@ git -C "$ROOT2" fetch -q origin
 
 CODER_WT2="$ROOT2/.worktrees/coder"
 git -C "$ROOT2" worktree add -q "$CODER_WT2" swarmforge-coder
+install_scripts "$CODER_WT2"
+READY2="$CODER_WT2/swarmforge/scripts/ready_for_next.bb"
 # The worktree's own copy matches local main (OLD) byte-for-byte - the
 # defect this covers is exactly that a naive local-main-only comparison
 # would call this "fresh".
@@ -199,7 +219,7 @@ printf 'id: resume3\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 00\
   "$COMMIT2" > "$INBOX2/in_process/00_resume3.handoff"
 
 set +e
-OUT2="$(cd "$CODER_WT2" && SWARMFORGE_ROLE=coder bb "$READY" 2>"$ROOT2/stderr.txt")"
+OUT2="$(cd "$CODER_WT2" && SWARMFORGE_ROLE=coder bb "$READY2" 2>"$ROOT2/stderr.txt")"
 RC2=$?
 set -e
 ERR2="$(cat "$ROOT2/stderr.txt")"
