@@ -5,11 +5,12 @@ type: feature
 status: todo
 epic: pipeline-board
 human_approval: approved
-priority: 60
-direction: human-requested
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: coder
 acceptance: specs/features/BL-979-pipeline-board-ticket-rows-and-epic-separators.feature
 
 invariants:
