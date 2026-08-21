@@ -54,13 +54,76 @@ function trackFixturePath(filePath) {
   trackedFixturePaths.add(filePath);
 }
 
-function runAsPropertyLaneFixture(source, { basenamePrefix = 'bl868-fixture-', timeout = 30000, env } = {}) {
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// A pid still in the process table is not necessarily a running peer.
+// SIGKILL a process whose parent has not reaped it yet and it becomes a
+// ZOMBIE: the process is dead, but its entry lingers so `kill(pid, 0)`
+// still succeeds. That is exactly the case BL-984 exists for - the run is
+// over and can never write another fixture, so the pid counts as gone.
+// The window is wide in this helper's own idiom: everything here is
+// synchronous (spawnSync), so a killed child stays unreaped for as long as
+// the event loop is blocked, which is the whole run.
+// macOS and Linux both report 'Z' here (the only two target platforms);
+// anything else, including a failed `ps`, is read as alive so the sweep
+// errs toward keeping a file it is unsure about.
+function isZombiePid(pid) {
+  const probe = spawnSync('ps', ['-o', 'state=', '-p', String(pid)], { encoding: 'utf8' });
+  return probe.status === 0 && /^\s*Z/.test(probe.stdout || '');
+}
+
+function defaultIsPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (err) {
+    // EPERM: the pid exists but belongs to another user - alive.
+    return err.code === 'EPERM';
+  }
+  return !isZombiePid(pid);
+}
+
+// BL-984: the exit/signal cleanup above is thorough for every exit the
+// process can observe, but nothing traps SIGKILL - a kill -9 or OOM kill
+// strands the generated fixture inside extension/test/, where the lane's
+// include glob collects it on every later run as a false red. The hole
+// cannot be closed on the way out, so the guarantee is built on the way
+// in: each entry point sweeps stale fixtures BEFORE writing its own.
+//
+// The sweep is deliberately narrow: only files carrying the given basename
+// prefix, only in the helper's own fixture directory, and only those whose
+// originating run is gone. A live peer run in the same worktree owns its
+// in-flight fixtures, and a human's real *.property.test.js is untouchable.
+// Our OWN pid counts as gone: both entry points are synchronous (spawnSync),
+// so no other invocation in this process can be mid-run, and this one has
+// not written yet - such a file is pid reuse from a run that died.
+function sweepStaleFixtures({ basenamePrefix, dir = TEST_DIR, isPidAlive = defaultIsPidAlive } = {}) {
+  const generatedName = new RegExp(`^${escapeRegExp(basenamePrefix)}(\\d+)-[0-9a-z]*(?:-\\d+)?\\.property\\.test\\.js$`);
+  const removed = [];
+  for (const name of fs.readdirSync(dir)) {
+    const match = generatedName.exec(name);
+    if (!match) {
+      continue;
+    }
+    const originPid = Number(match[1]);
+    if (originPid === process.pid || !isPidAlive(originPid)) {
+      const filePath = path.join(dir, name);
+      fs.rmSync(filePath, { force: true });
+      removed.push(filePath);
+    }
+  }
+  return removed;
+}
+
+function runAsPropertyLaneFixture(source, { basenamePrefix = 'bl868-fixture-', timeout = 30000, env, spawnFn = spawnSync } = {}) {
+  sweepStaleFixtures({ basenamePrefix });
   const filename = `${basenamePrefix}${process.pid}-${Math.random().toString(36).slice(2)}.property.test.js`;
   const filePath = path.join(TEST_DIR, filename);
   trackFixturePath(filePath);
   fs.writeFileSync(filePath, source);
   try {
-    const result = spawnSync('npx', ['vitest', 'run', '--config', 'vitest.properties.config.mjs', `test/${filename}`], {
+    const result = spawnFn('npx', ['vitest', 'run', '--config', 'vitest.properties.config.mjs', `test/${filename}`], {
       cwd: EXTENSION_DIR,
       encoding: 'utf8',
       timeout,
@@ -78,7 +141,8 @@ function runAsPropertyLaneFixture(source, { basenamePrefix = 'bl868-fixture-', t
 // real fixture files through the REAL vitest.properties.config.mjs in a
 // SINGLE `vitest run` invocation - runAsPropertyLaneFixture above only ever
 // targets one file, which cannot exercise pool sizing across files at all.
-function runManyAsPropertyLaneFixtures(sources, { basenamePrefix = 'bl871-fixture-', timeout = 60000, env } = {}) {
+function runManyAsPropertyLaneFixtures(sources, { basenamePrefix = 'bl871-fixture-', timeout = 60000, env, spawnFn = spawnSync } = {}) {
+  sweepStaleFixtures({ basenamePrefix });
   const files = sources.map((source, index) => {
     const filename = `${basenamePrefix}${process.pid}-${Math.random().toString(36).slice(2)}-${index}.property.test.js`;
     const filePath = path.join(TEST_DIR, filename);
@@ -87,7 +151,7 @@ function runManyAsPropertyLaneFixtures(sources, { basenamePrefix = 'bl871-fixtur
     return { filePath, relPath: `test/${filename}` };
   });
   try {
-    const result = spawnSync('npx', ['vitest', 'run', '--config', 'vitest.properties.config.mjs', ...files.map((f) => f.relPath)], {
+    const result = spawnFn('npx', ['vitest', 'run', '--config', 'vitest.properties.config.mjs', ...files.map((f) => f.relPath)], {
       cwd: EXTENSION_DIR,
       encoding: 'utf8',
       timeout,
@@ -99,4 +163,4 @@ function runManyAsPropertyLaneFixtures(sources, { basenamePrefix = 'bl871-fixtur
   }
 }
 
-module.exports = { runAsPropertyLaneFixture, runManyAsPropertyLaneFixtures };
+module.exports = { runAsPropertyLaneFixture, runManyAsPropertyLaneFixtures, sweepStaleFixtures };
