@@ -194,3 +194,5 @@ approval_context: >
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-21, by: architect, blamed: coder, class: behavior, commit: f9377ad27a, evidence: backlog/evidence/BL-979-architect-bounce-20260821.md }
+abandoned_commits:
+  - "69a20aaef5"
