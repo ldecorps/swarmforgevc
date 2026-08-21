@@ -306,9 +306,10 @@ test('lastChangedMs undefined (never observed) is not working from recency alone
   assert.equal(decision.working, false);
 });
 
-// BL-1003 QA bounce D1: the fixture this test used before
-// ('Thinking… (esc to interrupt)') was a synthetic lexical-marker string,
-// not a captured pane frame - unrepresentative, because rawText here is the
+// BL-1003 QA bounce D1: the fixture this test used before was a synthetic
+// string built from the bare pre-BL-1003 marker substring (see the
+// pre-existing 'Thinking…' fixtures below for its exact shape), not a
+// captured pane frame - unrepresentative, because rawText here is the
 // same tmux pane-capture text the respawn precheck reads, and real mid-turn
 // captures carry a spinner-glyph-led live status frame line (see
 // specs/features/fixtures/BL-970/). Read the shared captures both sides are
@@ -336,9 +337,10 @@ test('an active-work command/pane text makes a role working regardless of recenc
 });
 
 test('a stale pane merely quoting the busy marker in scrollback is not working', () => {
-  // idle-quoted-busy-marker.txt: transcript text quoting "esc to
-  // interrupt" with no live status frame - the false-busy direction the
-  // old lexical contract got wrong at this caller (it reported working).
+  // idle-quoted-busy-marker.txt: transcript text quoting the bare
+  // pre-BL-1003 marker substring in scrollback, with no live status frame -
+  // the false-busy direction the old lexical contract got wrong at this
+  // caller (it reported working).
   const status = roleActivityStatus({
     command: 'node',
     rawText: bl970Capture('idle-quoted-busy-marker.txt'),
