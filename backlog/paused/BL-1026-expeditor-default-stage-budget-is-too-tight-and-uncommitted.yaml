@@ -19,7 +19,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1026-the-expeditor-states-its-stage-budget-once.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One number needs a ruling: 90 minutes. What is FIRM is that 45 was too
   tight - run 1 of the BL-1021 expedite killed a coder stage at the budget
