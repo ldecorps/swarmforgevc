@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: fleet-topology
-priority: 35
+priority: 6
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -115,6 +115,11 @@ source:
   - "backlog/INTAKE-s2-advertise-fleet-and-s1-coordinator.md (operator, 2026-08-21) - archived to backlog/archive/ on drain. This ticket is that intake's own suggested slice 1 (emit name source + s2 compile/docs) plus its desired behaviors 1, 2 and 3; desired behavior 4's prose half was landed on main by the specifier and its machinery half split out to epic fleet-topology remaining_slices."
 
 notes: |
+  2026-08-21 coordinator: priority raised 35 -> 6 on direct operator
+  instruction to prioritize tickets enabling starting s2 on wsl2. This
+  ticket is the direct blocker: without it a launched s2 publishes fleet
+  status under s1's name.
+
   2026-08-21 specifier: drained from the backlog root under Consolidation
   Authority as a 1:N split of INTAKE-s2-advertise-fleet-and-s1-coordinator.md,
   following the intake's own suggested slice boundary. Sibling result of the
