@@ -108,16 +108,6 @@ function registerSteps(registry) {
   );
 
   registry.defineScoped(
-    /^active tickets "([^"]+)" and "([^"]+)" hold epic "([^"]+)" and active ticket "([^"]+)" holds epic "([^"]+)"$/,
-    (ctx, idA, idB, epicAB, idC, epicC) => {
-      addActive(ctx, idA, { epic: epicAB, title: `work on ${idA}` });
-      addActive(ctx, idB, { epic: epicAB, title: `work on ${idB}` });
-      addActive(ctx, idC, { epic: epicC, title: `work on ${idC}` });
-    },
-    FEATURE
-  );
-
-  registry.defineScoped(
     /^"(\d+)" parked tickets of kind "([^"]+)" awaiting the board$/,
     (ctx, countToken, kind) => {
       const apply = PARKED_KINDS[kind];
@@ -189,26 +179,14 @@ function registerSteps(registry) {
     FEATURE
   );
 
-  registry.defineScoped(
-    /^the caption lines for "([^"]+)" and "([^"]+)" are adjacent$/,
-    (ctx, idA, idB) => {
-      const iA = ctx.lines.indexOf(captionLineFor(ctx, idA));
-      const iB = ctx.lines.indexOf(captionLineFor(ctx, idB));
-      assert.equal(iB, iA + 1, `expected adjacent captions, got lines ${iA} and ${iB}:\n${ctx.body}`);
-    },
-    FEATURE
-  );
-
-  registry.defineScoped(
-    /^a blank line separates the caption lines for "([^"]+)" and "([^"]+)"$/,
-    (ctx, idA, idB) => {
-      const iA = ctx.lines.indexOf(captionLineFor(ctx, idA));
-      const iB = ctx.lines.indexOf(captionLineFor(ctx, idB));
-      assert.equal(iB, iA + 2, `expected exactly one line between captions:\n${ctx.body}`);
-      assert.equal(ctx.lines[iA + 1], '', 'the separating line must be blank');
-    },
-    FEATURE
-  );
+  // BL-979 retired the scenario these two served. BL-956 marked an epic
+  // change with a bare blank line and left membership to be inferred from
+  // adjacency; BL-979 names each group outright with a "-- <slug> --"
+  // separator and puts a blank line before EVERY summary, so "adjacent" is
+  // no longer true and "one blank line at the change" no longer
+  // distinguishes anything. The successor contract - grouping, ordering,
+  // and the epic-less bucket - is BL-979 scenarios 02 and 03, both green.
+  // Retired rather than reworded: restating it here would duplicate that.
 
   registry.defineScoped(
     /^"(\d+)" entries of kind "([^"]+)" are listed$/,
