@@ -1324,6 +1324,28 @@ You are the hardender.
   acceptance-step trap rule above describes, one file class over. This
   section is the verification half: assume the authoring half will be missed
   again, and check.
+- **`git cat-file -e` proves the FILE exists, never that the DEFECT does
+  (BL-1012, 2026-08-21).** Before charging a whole-tree guard hit against
+  already-merged code, re-read the violating CONTENT from a fresh `main` ref
+  and confirm the offending line is still there. A stale worktree is the
+  normal case, not the exception: your checkout is as old as your last merge,
+  and a guard sweep reads YOUR files, so a violation someone fixed on `main`
+  an hour ago still fails in your tree exactly like a live one.
+  - The probe that misleads is an existence test. `git cat-file -e
+    origin/main:<path>` succeeding proves only that the file is on `main` —
+    which it will be for any already-merged code, defect fixed or not. Use
+    `git show origin/main:<path> | grep -n '<the offending literal>'` and
+    require a HIT before you write the evidence file.
+  - Read BOTH refs (`git rev-list --left-right --count main...origin/main`
+    first) — the local one is not reliably the fresher, and the fix may sit
+    on either (workflow.prompt's BL-891 rule, same probe, applied here).
+  - (Incident: a hardening pass flagged a raw `fs.mkdtempSync` call in
+    `bl1012FreshnessSelfInflictedIncidents.property.test.js`, confirmed the
+    file was on `origin/main` with `cat-file -e`, and wrote a full evidence
+    file + priority-`00` note asking the specifier to mint a defect. The
+    cleaner had already migrated that exact line to `mkTmpDir` in
+    `283045133`, landed on `main` twelve minutes earlier. One `git show |
+    grep` would have shown `mkTmpDir` on line 44 and cost nothing.)
 
 ## Never hand-mutate a source file a detached suite is still reading — `bb` and `bash` take no snapshot (rule_proposal 2026-08-21, accepted)
 - **The shape.** You launch a heavy suite through `detach_job.sh` (section
