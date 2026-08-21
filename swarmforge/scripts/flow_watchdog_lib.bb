@@ -39,6 +39,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "seat_affinity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
 ;; BL-650: the ledger's own sole reader (BL-823) - this lib subtracts what
@@ -654,6 +655,7 @@
    :type (handoff-lib/header-field file-path "type")
    :from (handoff-lib/header-field file-path "from")
    :to (handoff-lib/header-field file-path "to")
+   :task (handoff-lib/header-field file-path "task")
    :enqueued-at (handoff-lib/header-field file-path "enqueued_at")
    :created-at (handoff-lib/header-field file-path "created_at")})
 
@@ -783,6 +785,35 @@
     (ambulance-lib/parcel-held? ambulance-state (handoff-lib/parse-envelope (slurp (str file-path))))
     (catch Exception _ false)))
 
+(defn parcel-deferral-held?
+  "BL-1004 stall-alarm exemption (architect bounce 2026-08-21): true when
+   the scanned stage-queue parcel sits inside its DESIGNED cross-seat
+   deferral window - a sibling seat worked its task, so the claim path is
+   deliberately leaving it for that seat until
+   cross_seat_claim_deadline_ms. Without this the watchdog fires a false
+   stuck-parcel alarm mid-window (30-minute window vs 15-minute default
+   warn). Composes into evaluate-parcel-tier's held? arg exactly like the
+   ambulance hold above - decide-tier itself gains no branch, the
+   acceptance-05 structural guarantee stays intact. worked-sets-for-stage
+   is resolved by the caller (once per sweep per stage, never per parcel);
+   the decision itself is seat-affinity-lib/deferral-hold?, the SAME
+   library the claim path decides with - never a second, drifting notion
+   of deferred. Fail-open on any read error, mirroring
+   parcel-ambulance-held? - an unreadable state must never mute a real
+   stall. The :new-mailbox-only gate lives at the run-sweep! call site: an
+   in_process parcel is already claimed, past deferral by definition."
+  [worked-sets deadline-ms now-ms parcel]
+  (try
+    (seat-affinity-lib/deferral-hold?
+     {:type (:type parcel)
+      :task (:task parcel)
+      :seat-worked-task-sets worked-sets
+      :enqueued-at (:enqueued-at parcel)
+      :created-at (:created-at parcel)
+      :now-ms now-ms
+      :deadline-ms deadline-ms})
+    (catch Exception _ false)))
+
 ;; ── impure sweep application ─────────────────────────────────────────────────
 ;; adapters keys: :live-session? (fn [role] bool), :emit-alarm! (fn [text] ->
 ;; truthy on a CONFIRMED write, falsy or throw on a failed/uncertain one - see
@@ -842,6 +873,18 @@
         ;; BL-679: read once per sweep, never per-parcel - the SAME marker
         ;; snapshot applies to every parcel this sweep evaluates.
         ambulance-state (ambulance-lib/read-ambulance-state project-root)
+        ;; BL-1004 stall-alarm exemption: the cross-seat deadline comes from
+        ;; the SAME effective conf as the thresholds above (and as the claim
+        ;; path itself - backlog-depth-lib/conf-file-path both times), and
+        ;; each stage's per-seat worked sets are resolved at most once per
+        ;; sweep via memoize, mirroring the read-once ambulance snapshot.
+        deferral-deadline-ms (seat-affinity-lib/parse-cross-seat-claim-deadline-ms
+                              (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+                                   (catch Exception _ nil)))
+        worked-sets-for-stage (memoize
+                               (fn [role]
+                                 (try (handoff-lib/stage-seat-worked-task-sets role project-root)
+                                      (catch Exception _ []))))
         parcels (vec (mapcat
                       (fn [{:keys [role new-dir in-process-dir]}]
                         (concat
@@ -863,7 +906,13 @@
                          :provider-evidence (provider-evidence-for (:role parcel))})
                    age-ms (:effective-age-ms eff)
                    {:keys [warn-ms escalate-ms resolved-via]} (resolve-thresholds parcel specs global)
-                   held? (parcel-ambulance-held? ambulance-state (:file-path parcel))
+                   held? (or (parcel-ambulance-held? ambulance-state (:file-path parcel))
+                             ;; :new only - a claimed in_process parcel is
+                             ;; past deferral; a stall there is real.
+                             (and (= :new (:mailbox parcel))
+                                  (parcel-deferral-held?
+                                   (worked-sets-for-stage (:role parcel))
+                                   deferral-deadline-ms now-ms parcel)))
                    tier (evaluate-parcel-tier age-ms warn-ms escalate-ms acc-state (:id parcel) held?)]
                (if (= tier :none)
                  acc-state

@@ -30,6 +30,28 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const STEPS_DIR = __dirname;
 const RUN_ACCEPTANCE = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'run_acceptance.sh');
 
+// BL-982 scenario 06 is PARKED (BL-1002 amendment e7244b52a, 2026-08-21): it
+// asserts a slice boundary BL-983 deliberately removed, so it is red because
+// the system works. BL-1006 owns retiring it. The park is derived from the
+// backlog at run time, never pinned: the tolerance below holds only while
+// BL-1006's ticket still sits in an open lifecycle location (Article 3.1's
+// root intake, paused/, active/, or hold/), so the moment BL-1006 closes
+// into done/ this step demands a fully green nested run again instead of
+// rotting into a stale allowance.
+const PARKED_SCENARIO_RE = /^\s*not ok \d+ - the second seat is inert until the mailbox slice lands/m;
+const PARKED_FAILURE_REASON = 'the second seat must claim nothing (NO_TASK)';
+const OPEN_BACKLOG_DIRS = ['', 'paused', 'active', 'hold'];
+
+function scenario06ParkStillOwned() {
+  return OPEN_BACKLOG_DIRS.some((dir) => {
+    const at = path.join(REPO_ROOT, 'backlog', dir);
+    if (!fs.existsSync(at)) return false;
+    return fs
+      .readdirSync(at, { withFileTypes: true })
+      .some((entry) => entry.isFile() && /^BL-1006-.*\.yaml$/.test(entry.name));
+  });
+}
+
 const FEATURE = 'Every socket-building acceptance fixture roots short enough for the socket guard';
 
 // Explicit known values per the Scenario Outline handler rule: each named
@@ -147,16 +169,39 @@ function registerSteps(registry) {
 
   scoped(/^they pass for the reason they were written, not on a socket refusal$/, (ctx) => {
     const out = `${ctx.nested.stdout}\n${ctx.nested.stderr}`;
-    assert.equal(ctx.nested.status, 0, `nested acceptance run failed:\n${out}`);
-    const passCount = out.match(/^# pass (\d+)$/m);
-    assert.ok(passCount && Number(passCount[1]) > 0, `no scenario passed in the nested run:\n${out}`);
-    const failCount = out.match(/^# fail (\d+)$/m);
-    assert.ok(failCount && Number(failCount[1]) === 0, `nested run reported failures:\n${out}`);
     // swarm_socket_lib.bb's refusal names the unix-socket path limit; a pass
-    // that only worked around a refusal would surface it here.
+    // that only worked around a refusal would surface it here. A refusal is
+    // this parcel's defect in every case, parked red included.
     assert.ok(
       !/unix-socket path limit/.test(out),
       `nested run hit the socket guard's refusal:\n${out}`
+    );
+    const passCount = out.match(/^# pass (\d+)$/m);
+    assert.ok(passCount && Number(passCount[1]) > 0, `no scenario passed in the nested run:\n${out}`);
+    const failMatch = out.match(/^# fail (\d+)$/m);
+    assert.ok(failMatch, `nested run reported no fail count:\n${out}`);
+    const failCount = Number(failMatch[1]);
+    if (ctx.nested.status === 0 && failCount === 0) return;
+    // Not fully green: the ONLY tolerated shape is BL-982 scenario 06's
+    // parked red, failing for its recorded reason, while BL-1006 still owns
+    // it (see scenario06ParkStillOwned above). What this parcel owes that
+    // scenario is narrow: it must not change WHY it fails.
+    assert.equal(
+      failCount,
+      1,
+      `nested run reported ${failCount} failures; only BL-982 scenario 06's parked red (BL-1006) is tolerated:\n${out}`
+    );
+    assert.ok(
+      PARKED_SCENARIO_RE.test(out),
+      `the one nested failure is not the parked BL-982 scenario 06:\n${out}`
+    );
+    assert.ok(
+      out.includes(PARKED_FAILURE_REASON),
+      `scenario 06 no longer fails on "${PARKED_FAILURE_REASON}" - a changed failure reason IS this parcel's defect:\n${out}`
+    );
+    assert.ok(
+      scenario06ParkStillOwned(),
+      `BL-1006 is no longer open in the backlog, so its parked red is not tolerated any more:\n${out}`
     );
   });
 }
