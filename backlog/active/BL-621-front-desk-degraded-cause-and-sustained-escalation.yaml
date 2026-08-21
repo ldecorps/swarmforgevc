@@ -132,3 +132,41 @@ approval_context: >
   path) or a different threshold, say so. Firm: the degraded warning line
   carries the underlying error text from now on — 9 anonymous hours is the
   incident this closes.
+
+notes: |
+  2026-08-21 coordinator: blast-radius evidence, same investigation that
+  queue-jumped BL-582 (BL-1026 approval tap silently not registering).
+  Front-desk's getUpdates poller is the ONE consumer of the shared bot
+  token by design (cursorBridgeInboundQueue.js: "only the front desk may
+  call getUpdates"; Host/Bubble updates are forwarded into
+  cursor-bridge-inbound.jsonl, drained by telegram-cursor-bridge.js, which
+  never polls itself). So a front-desk poll-degraded episode blacks out
+  not just its own Approvals/BL-topic traffic but Host (Cursor) and Bubble
+  too - this is a bigger blast radius than the approval-tap symptom alone
+  suggested.
+
+  Concrete evidence, same day: a human message posted to the Host topic
+  (asking to reorder pipeline-board sections) produced zero downstream
+  effect. `.swarmforge/operator/bridge-cost.jsonl` (the Cursor-agent API
+  call ledger) has NO entries at all for 2026-08-21 - last entry
+  2026-08-20T10:43:29Z - meaning the Cursor agent was never invoked, not
+  that it ran and failed to reply. `cursor-bridge-inbound.jsonl` doesn't
+  exist on disk either, but that's inherently ambiguous (drain-then-delete
+  makes "never arrived" and "arrived and drained clean" look identical) -
+  the cost-ledger silence is the load-bearing evidence here, not the
+  missing queue file.
+
+  Not a new root cause, and not asking for new scope: this is supporting
+  evidence for THIS ticket's own item 2 (sustained-outage escalation) -
+  a silent poll-degraded episode has now been shown to cost more than a
+  missed approval repaint. Left as a note, not a description rewrite,
+  since content/scope changes are the specifier's call.
+
+  2026-08-21 coordinator: PROMOTED per explicit human override ("ok for
+  621") of the file-level orthogonality hold against active BL-586 (both
+  touch telegram-front-desk-bot.ts). promote_and_route_next.sh's own check
+  only raised an epic-level ADVISORY (swarm-reliability also active on
+  BL-1012/BL-1017) and did not block - the file-level BL-586 overlap was my
+  own manual read, not a hard gate the tooling enforces, but the human
+  override stands regardless of which one applies. Routed to coder in the
+  same turn.
