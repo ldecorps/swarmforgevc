@@ -96,6 +96,30 @@ notes: |
   a prose "how the front desk works" section into the front-desk docs that
   states the restricted-operator constraint explicitly.
 
+  ## The acceptance contract was written 2026-08-21, and one minimum was reshaped
+
+  `acceptance:` pointed at a feature file that did not exist - the ticket
+  would have bounced within a minute of promotion (BL-314) and hard-failed
+  the acceptance runner. Written and linted 2026-08-21; lint clean, IR-DRY
+  0 findings on 8 unique steps.
+
+  Minimum 1 above says "returns FOUR entries once both this and BL-579 have
+  landed". The feature file deliberately asserts NO count, and names no
+  landing condition. A literal 4 is the BL-643/BL-1005 trap - correct only
+  in the window between this slice landing and a fifth diagram being added.
+  Worse, "once both have landed" is a slice-boundary condition, and freezing
+  one of those into an executable assertion is the BL-1006 failure: it is
+  red-when-correct and goes green only if the sibling is reverted. The
+  allowlist-derived count is BL-579's contract and is asserted there once;
+  this file asserts only that the front-desk diagram is one of the names.
+  Build to that; do not reintroduce the literal in a step handler.
+
+  This file is deliberately thinner than BL-579's - two scenarios, not
+  three - because BL-579 owns the per-allowlist-name mechanics. What is
+  genuinely new here is that THIS source renders and THIS reference is
+  matched by an attachment, plus the loud-failure contract for this source,
+  which minimum 2 asks for by name.
+
 out_of_scope: |
   - Changing any front-desk behaviour. This is documentation of the CURRENT
     path; if the draft and the code disagree, the diagram is corrected, never

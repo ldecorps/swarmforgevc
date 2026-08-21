@@ -119,6 +119,30 @@ notes: |
   docs referencing the new diagram, so the diagram is not the only copy of
   this knowledge.
 
+  ## The acceptance contract was written 2026-08-21, and one minimum was reshaped
+
+  `acceptance:` pointed at a feature file that did not exist - the ticket
+  would have bounced within a minute of promotion (BL-314) and hard-failed
+  the acceptance runner. Written and linted 2026-08-21; lint clean, IR-DRY
+  0 findings on 12 unique steps.
+
+  Minimum 1 above says "returns THREE entries". The feature file
+  deliberately does NOT assert three. It asserts one rendered diagram per
+  name in the allowlist and that the handoff-mechanism diagram is among
+  them - the count is DERIVED. A literal 3 would be correct today and red
+  the day BL-580 lands a fourth diagram, which is the "acceptance step that
+  pins build state goes red when the system improves" failure
+  (BL-643/BL-1005). Build to the derived form; do not reintroduce the
+  literal in a step handler.
+
+  Minimums 1, 2 and 4 collapse into scenario 01 for the same reason: it
+  renders the COMMITTED sources, not fixtures, so proving the new .mmd
+  parses is the same assertion as proving the allowlist entry works
+  (BL-454's lesson, which qa_e2e_procedure already names). Minimum 3 is
+  scenario 03. BL-260's degradation contract and BL-286's cid contract are
+  NOT restated here - they keep their own feature files, and duplicating
+  them would mean two files going red for one defect.
+
 out_of_scope: |
   - Changing swarm-flow.mmd or architecture.mmd. This ADDS a third diagram;
     the existing two keep their current content and position.
