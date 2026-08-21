@@ -139,6 +139,34 @@ function writeDispatchGapTicket(ctx) {
 // defect shape and exits 0; every other invocation is the real bb. The
 // holder writes its own pid down so afterEach can reap it - destroy-tree
 // provably cannot reach it, which is the entire point of the ticket.
+// THE DRAIN RACE, and why the shim's child lingers before exiting.
+//
+// "Child exits immediately + grandchild holds the pipe" does NOT reproduce
+// the hang on its own - it races. When the direct child exits, the JVM's
+// process reaper calls ProcessPipeInputStream.processExited(), which drains
+// whatever is already available and CLOSES the parent's read end. If that
+// lands before babashka's pump thread is blocked in read(), the reader sees
+// EOF, sh! returns cleanly, and nothing hangs at any depth.
+//
+// Measured 2026-08-21 while verifying this parcel: a standalone `bb` calling
+// sh! on exactly this shape (echo, background a `sleep 300`, exit 0) returned
+// in ~5ms with exit 0 on BOTH the pre-fix and post-fix lib, 9 runs out of 9 -
+// i.e. the defect did not reproduce at all. The same fixture with a 0.5s
+// delay before `exit 0` hung 3/3 pre-fix and timed out at the bound 3/3
+// post-fix. The child's LIFETIME is the discriminator, not what it writes.
+//
+// This matters twice over. It is why the shim sleeps below: the daemon
+// environment happened to reproduce 4 runs out of 4 without it, but by
+// scheduling luck, and a lost race here is a FALSE RED (sh! returns 0 fast,
+// so scenarios 01-02 find no timeout to assert on). And it is the trap in
+// qa_e2e_procedure step 1 - "spawns a grandchild ... and exits immediately"
+// run as a bare bb probe comes back clean, which reads as "the defect does
+// not reproduce" and trips the ticket's stop-and-report rule for entirely
+// the wrong reason. Give the direct child a lifetime first.
+//
+// The delay costs nothing semantically: 1s is a fifth of WAIT_BOUND_MS, so
+// the direct child still exits long before the bound and the exit-code
+// branch is still never taken. That is the defect shape, unchanged.
 function writeHangingBbShim(ctx) {
   const shim = `#!/bin/bash
 for arg in "$@"; do
@@ -149,6 +177,8 @@ for arg in "$@"; do
         echo "auto-route child starting"
         sleep 3600 &
         echo "$!" >> "${ctx.holderPids}"
+        # Outlive the reaper's drain-and-close - see the DRAIN RACE note.
+        sleep 1
         exit 0
       fi
       ;;
