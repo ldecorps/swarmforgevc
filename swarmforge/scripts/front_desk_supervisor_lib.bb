@@ -58,15 +58,35 @@
 (defn cooldown-elapsed? [gave-up-at-ms now-ms {:keys [giveup-cooldown-ms]}]
   (boolean (and gave-up-at-ms (>= (- now-ms gave-up-at-ms) giveup-cooldown-ms))))
 
+;; BL-582: a running child's build identity vs main's. Never FABRICATES
+;; staleness when either sha is unresolvable (git unavailable, no BUILD_SHA
+;; stamped yet) - the same "never invent a finding from missing data"
+;; posture node-build-stale? in the supervisor itself already has, and the
+;; reason a fresh checkout does not restart-loop. Pure, so the supervisor's
+;; own git reads stay outside check-one! like every other fact it consumes.
+(defn build-stale? [running-sha main-sha]
+  (boolean (and (seq running-sha) (seq main-sha) (not= running-sha main-sha))))
+
+;; BL-582: the grace between noticing a stale build and acting on it. A
+;; merge landing mid-conversation must not yank the front desk out from
+;; under the human the same second; a build stale for longer than this has
+;; stopped being a race and started being the 2026-07-23 outage.
+(defn build-stale-long-enough? [build-stale-since-ms now-ms {:keys [build-grace-ms]}]
+  (boolean (and build-stale-since-ms build-grace-ms (>= (- now-ms build-stale-since-ms) build-grace-ms))))
+
 (defn default-entry []
-  {:pid nil :attempts 0 :status "not-started" :crashed-at-ms nil :started-at-ms nil :gave-up-at-ms nil})
+  {:pid nil :attempts 0 :status "not-started" :crashed-at-ms nil :started-at-ms nil :gave-up-at-ms nil :build-stale-since-ms nil})
 
 ;; A freshly (re)started entry - used for the very first start, a bounded
 ;; restart after a crash, AND a give-up cooldown re-arm (which additionally
 ;; resets :attempts to 0 before calling this, so the re-armed child gets a
 ;; full fresh attempt budget rather than instantly re-tripping the cap).
 (defn- started-entry [entry now-ms pid]
-  {:pid pid :attempts (inc (:attempts entry)) :status "running" :crashed-at-ms nil :started-at-ms now-ms :gave-up-at-ms nil})
+  ;; BL-582: :build-stale-since-ms resets with the rest - the replacement
+  ;; process reads extension/out/BUILD_SHA at ITS OWN boot, so whatever the
+  ;; predecessor was running is not a fact about it.
+  {:pid pid :attempts (inc (:attempts entry)) :status "running" :crashed-at-ms nil :started-at-ms now-ms
+   :gave-up-at-ms nil :build-stale-since-ms nil})
 
 ;; BL-370: mirrors telegramFrontDeskBotCore.ts's own isPollCycleStale
 ;; independently (same "small deliberate duplication over cross-language
@@ -85,6 +105,28 @@
      false
      (boolean (or (nil? last-heartbeat-ms)
                   (>= (- now-ms last-heartbeat-ms) stall-ms))))))
+
+;; BL-582: the healthy-tick build-freshness clause, split out so the
+;; "running" cond above stays readable and this decision carries its own
+;; name. Three ordered states, not two: a build that has JUST gone stale
+;; starts a grace (reported, never acted on), one stale past the grace is
+;; restarted, and one that went fresh again inside the grace forgets it -
+;; the last case is what keeps a mid-merge race from ever reaching a
+;; restart at all.
+(defn- build-freshness-transition [entry now-ms restart-config build-stale?]
+  (cond
+    (not build-stale?)
+    (when (:build-stale-since-ms entry)
+      {:entry (assoc entry :build-stale-since-ms nil) :event nil})
+
+    (nil? (:build-stale-since-ms entry))
+    {:entry (assoc entry :build-stale-since-ms now-ms) :event :build-stale-detected}
+
+    (build-stale-long-enough? (:build-stale-since-ms entry) now-ms restart-config)
+    {:entry (assoc entry :status "stale-build" :crashed-at-ms now-ms) :event :build-stale}
+
+    :else
+    {:entry entry :event nil}))
 
 ;; One process's whole check-and-react, pure/adapter-injected: now-ms,
 ;; pid-alive?, spawn!, and kill-pid! (returns a fresh pid) are ALL
@@ -117,29 +159,43 @@
 ;; reported differently.
 (defn check-one!
   ([entry now-ms pid-alive? spawn! restart-config giveup-config]
-   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config false (fn [_] nil)))
+   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config false (fn [_] nil) false))
   ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale?]
-   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? (fn [_] nil)))
+   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? (fn [_] nil) false))
   ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid!]
+   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid! false))
+  ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid! build-stale?]
    (case (:status entry)
      "not-started"
      {:entry (started-entry entry now-ms (spawn!)) :event :started}
 
      "running"
-     (cond
-       (not (pid-alive? (:pid entry)))
-       {:entry (assoc entry :status "waiting" :crashed-at-ms now-ms) :event :crashed}
+     ;; BL-582: computed once up front (pure, no I/O) so the cond below can
+     ;; test and return the same value without calling twice.
+     (let [freshness (build-freshness-transition entry now-ms restart-config build-stale?)]
+       (cond
+         (not (pid-alive? (:pid entry)))
+         {:entry (assoc entry :status "waiting" :crashed-at-ms now-ms) :event :crashed}
 
-       heartbeat-stale?
-       {:entry (assoc entry :status "stalled" :crashed-at-ms now-ms) :event :stalled}
+         heartbeat-stale?
+         {:entry (assoc entry :status "stalled" :crashed-at-ms now-ms) :event :stalled}
 
-       (and (pos? (:attempts entry)) (healthy-long-enough? (:started-at-ms entry) now-ms restart-config))
-       {:entry (assoc entry :attempts 0) :event :healthy-reset}
+         (and (pos? (:attempts entry)) (healthy-long-enough? (:started-at-ms entry) now-ms restart-config))
+         {:entry (assoc entry :attempts 0) :event :healthy-reset}
 
-       :else
-       {:entry entry :event nil})
+         ;; Checked LAST: a crash and a stall are outages happening now, and
+         ;; a healthy-reset is bookkeeping that fires at most once per
+         ;; process (attempts drops to 0 and the clause stops matching), so
+         ;; deferring the stale-build report by a single tick costs nothing
+         ;; against a grace measured in minutes - while letting it preempt
+         ;; the reset would have starved that clause on every branch build.
+         freshness
+         freshness
 
-     ("waiting" "stalled")
+         :else
+         {:entry entry :event nil}))
+
+     ("waiting" "stalled" "stale-build")
      (let [due-ms (+ (:crashed-at-ms entry) (compute-backoff-ms (:attempts entry) restart-config))]
        (if (< now-ms due-ms)
          {:entry entry :event nil}
