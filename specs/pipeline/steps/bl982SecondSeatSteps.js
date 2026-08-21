@@ -4,14 +4,21 @@
 // booting with its own identity and its own model". Every scenario drives
 // the REAL swarmforge.sh (sourced per the BL-089 ZSH_EVAL_CONTEXT guard -
 // parse_config / write_roles_file / generate_dormant_role_launch_artifacts)
-// over fixture confs, and scenario 06 drives the REAL swarm_handoff.bb
-// delivery path plus the REAL ready_for_next.sh claim path. Scenario 04's
-// oracle is the PRE-CHANGE swarmforge.sh pinned by blob sha (the exact
-// script this parcel's merge-base carried), run from a symlink-farmed
-// scripts dir so its SCRIPT_DIR-relative helpers resolve.
+// over fixture confs. Scenario 04's oracle is the PRE-CHANGE swarmforge.sh
+// pinned by blob sha (the exact script this parcel's merge-base carried),
+// run from a symlink-farmed scripts dir so its SCRIPT_DIR-relative helpers
+// resolve.
 //
 // Invariant 1 (BL-968) applies here: module load is requires and pure
 // constants only - everything environmental binds at step-execution time.
+//
+// BL-1006: this file used to carry a third group of handlers driving the
+// REAL swarm_handoff.bb delivery path and the REAL ready_for_next.sh claim
+// path, for a scenario 06 asserting the second seat was inert. That was a
+// slice boundary, not a behaviour - BL-983 made the seat a real claimant on
+// 2026-08-20, and the scenario has been retired rather than reworded. The
+// delivery and exclusivity contracts are asserted by BL-983's own feature
+// file and step handlers; do not restore these from history.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -224,86 +231,6 @@ function registerSteps(registry) {
       assert.notEqual(ctx.parse.status, 0, `expected the parse to fail: ${ctx.parse.stdout}`);
       const out = `${ctx.parse.stdout}${ctx.parse.stderr}`;
       assert.ok(out.includes(ctx.expectedCollision), `expected the failure to name ${ctx.expectedCollision}:\n${out}`);
-    } finally {
-      cleanupRoots(ctx);
-    }
-  });
-
-  // ── scenario 06: the second seat is inert ─────────────────────────────
-  scoped(/^a parcel addressed to that stage is delivered$/, (ctx) => {
-    const root = ctx.root;
-    // Turn the parsed fixture into a deliverable one: git repo, mailbox
-    // roots per seat, a fake tmux so swarm_handoff's sync inject delivers.
-    const git = (args, cwd = root) => execFileSync('git', args, { cwd, encoding: 'utf8' });
-    git(['init', '-q', '.']);
-    fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'backlog', 'active', 'FIXTURE.yaml'), 'id: FIXTURE\n');
-    for (const d of ['specifier', 'coder', 'coder-fable', 'bin']) {
-      fs.mkdirSync(path.join(root, d), { recursive: true });
-    }
-    const row = (role, wt) =>
-      `${role}\t${wt}-wt\t${path.join(root, wt)}\tswarmforge-${role}\t${role}\tclaude\ttask`;
-    fs.writeFileSync(
-      path.join(root, '.swarmforge', 'roles.tsv'),
-      [row('specifier', 'specifier'), row('coder', 'coder'), row('coder@fable', 'coder-fable'), `coordinator\tmaster\t${root}\tswarmforge-coordinator\tCoordinator\tclaude\ttask`].join('\n') + '\n'
-    );
-    fs.writeFileSync(path.join(root, 'fake.sock'), '');
-    fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), path.join(root, 'fake.sock'));
-    fs.writeFileSync(path.join(root, 'bin', 'tmux'), '#!/usr/bin/env bash\nexit 0\n');
-    fs.chmodSync(path.join(root, 'bin', 'tmux'), 0o755);
-    git(['add', '-A']);
-    git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed']);
-    const commit = git(['rev-parse', '--short=10', 'HEAD']).trim();
-    const draft = path.join(root, 'specifier', 'draft.txt');
-    fs.writeFileSync(draft, `type: git_handoff\nto: coder\npriority: 50\ntask: BL-42\ncommit: ${commit}\n`);
-    const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
-      cwd: path.join(root, 'specifier'),
-      encoding: 'utf8',
-      timeout: 60000,
-      env: { PATH: `${path.join(root, 'bin')}:${process.env.PATH}`, HOME: process.env.HOME, SWARMFORGE_ROLE: 'specifier' },
-    });
-    assert.equal(res.status, 0, `stage-addressed send failed: ${res.stdout}${res.stderr}`);
-    const bareInbox = path.join(root, 'coder', '.swarmforge', 'handoffs', 'inbox', 'new');
-    assert.ok(
-      fs.existsSync(bareInbox) && fs.readdirSync(bareInbox).some((f) => f.endsWith('.handoff')),
-      'the stage-addressed parcel must land in the bare seat inbox'
-    );
-  });
-  scoped(/^the second seat is not delivered the parcel$/, (ctx) => {
-    const tree = path.join(ctx.root, 'coder-fable', '.swarmforge', 'handoffs');
-    const files = fs.existsSync(tree)
-      ? fs.readdirSync(tree, { recursive: true }).filter((f) => String(f).endsWith('.handoff'))
-      : [];
-    assert.deepEqual(files, [], `the second seat's mailbox tree must stay empty: ${files}`);
-  });
-  scoped(/^the second seat claims nothing$/, (ctx) => {
-    try {
-      // The REAL claim path, run AS the second seat. ready_for_next.sh
-      // cd's to its OWN scripts dir and resolves the project root from
-      // there, so the fixture carries its own swarmforge/scripts (symlinked
-      // files - the same shape sync_worktree_scripts gives a real seat
-      // worktree) and the fixture copy is what runs.
-      const fixtureScripts = path.join(ctx.root, 'swarmforge', 'scripts');
-      fs.mkdirSync(fixtureScripts, { recursive: true });
-      for (const entry of fs.readdirSync(SCRIPTS_DIR)) {
-        const target = path.join(fixtureScripts, entry);
-        if (!fs.existsSync(target)) {
-          fs.symlinkSync(path.join(SCRIPTS_DIR, entry), target);
-        }
-      }
-      const res = spawnSync('bash', [path.join(fixtureScripts, 'ready_for_next.sh')], {
-        cwd: path.join(ctx.root, 'coder-fable'),
-        encoding: 'utf8',
-        timeout: 60000,
-        env: { PATH: `${path.join(ctx.root, 'bin')}:${process.env.PATH}`, HOME: process.env.HOME, SWARMFORGE_ROLE: 'coder@fable' },
-      });
-      const out = `${res.stdout}${res.stderr}`;
-      assert.ok(out.includes('NO_TASK'), `the second seat must claim nothing (NO_TASK), got:\n${out}`);
-      const bareInbox = path.join(ctx.root, 'coder', '.swarmforge', 'handoffs', 'inbox', 'new');
-      assert.ok(
-        fs.readdirSync(bareInbox).some((f) => f.endsWith('.handoff')),
-        "the bare seat's parcel must still be in ITS inbox - the second seat must not have claimed it"
-      );
     } finally {
       cleanupRoots(ctx);
     }
