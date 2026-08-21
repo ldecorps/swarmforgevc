@@ -112,3 +112,14 @@ notes: |
   closed, same as an explicit pending), and its own orthogonality note above
   still holds against active BL-1017. Awaiting both a human_approval decision
   and BL-1017 clearing active/ before this is eligible again.
+
+  2026-08-21 coordinator: NOT promoted at this open-slot nudge either.
+  active_backlog_max_depth raised 3 -> 4 this session (373acf8d/9309c269), so
+  a slot IS genuinely open (3-of-4) this time - unlike the prior entry above.
+  Still blocked on the same two independent conditions: no human_approval
+  field (fails closed) and orthogonality against active BL-1017 (unchanged).
+  The slot is being left open rather than filled with this candidate;
+  separately, BL-582 and BL-621 (both queue-jumped) are also not filling it,
+  held by their own orthogonality conflict against active BL-586 (same file,
+  telegram-front-desk-bot.ts) - see their own notes. Awaiting a human
+  decision on which of these three blockers to clear first.
