@@ -105,6 +105,18 @@
 (assert= "announcement-for-event: nil event is NOT announced" nil
          (operator-runtime-watch-lib/announcement-for-event nil {:pid 4242 :attempts 0}))
 
+;; announcement-for-event's default `case` arm is unreachable through any
+;; event announced-event? recognizes TODAY (every member has its own arm
+;; above) - it exists purely as the fail-safe direction invariant 2 demands
+;; for an event added to announced-event? tomorrow with no bespoke text yet.
+;; Nothing above can exercise it without forcing announced-event? to admit a
+;; novel keyword, so with-redefs does exactly that - proving the fail-safe
+;; actually announces rather than trusting the comment that says it does.
+(with-redefs [operator-runtime-watch-lib/announced-event? (fn [event] (= event :a-future-event))]
+  (assert= "announcement-for-event: an unrecognized-but-announced event still announces (fail-safe default arm)"
+           "operator runtime watch event a-future-event"
+           (operator-runtime-watch-lib/announcement-for-event :a-future-event {:pid nil :attempts 0})))
+
 ;; ── I/O: read-pid / pid-alive-os? / parked? / healthy? against a real
 ;;    fixture project root ────────────────────────────────────────────────
 (let [root (mk-tmp)]
