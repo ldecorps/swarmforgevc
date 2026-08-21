@@ -21,7 +21,7 @@ captures, an available-memory reading) against these checks, in
 
 | # | Check | Fires when |
 |---|---|---|
-| 1 | live-session-per-role | a role pane has no live `claude` process (via a single `ps -eo pid=,ppid=,args=` snapshot filtered in-process by ppid — portable across GNU and BSD/macOS `ps`, never `pane_current_command`, which lies with a live child); if the `ps` gather itself fails outright, this reports `UNAVAILABLE` for that role rather than a false "no process" CRIT. Missing-session CRITs are mono-router topology aware (BL-804, below) — a dormant role's absent session under router mode is not a finding at all |
+| 1 | live-session-per-role | a role pane has no live `claude` process (via a single `ps -eo pid=,ppid=,args=` snapshot filtered in-process by ppid — portable across GNU and BSD/macOS `ps`, never `pane_current_command`, which lies with a live child); if the `ps` gather itself fails outright, this reports `UNAVAILABLE` for that role rather than a false "no process" CRIT. Missing-session CRITs are mono-router topology aware (BL-804, below) — a dormant role's absent session under router mode is not a finding at all. A **vanished tmux session** for a role that should stand also carries a bounded repair intent (BL-1017, below) — the one exception to "the daemon never fixes anything" |
 | 2 | remote-control-flag | a live process is missing `--remote-control` |
 | 3 | handoffd-supervisor-fresh | handoffd/its supervisor is down, or `handoffd.log` is older than 5 minutes |
 | 4 | dead-letter-nonempty | `.swarmforge/handoffs/failed/` is non-empty |
@@ -40,9 +40,12 @@ Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
 the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
 and `..._property_runner.bb` drive it with fixtures.
 
-**The daemon never fixes anything.** No respawns, no menu picks, no parcel
-moves — apart from typing the nudge line into the coordinator's pane, it is
-read-only. Judgment stays with the coordinator/human.
+**The daemon does not fix anything — with one bounded exception.** No menu
+picks, no parcel moves; apart from typing the nudge line into the
+coordinator's pane it is read-only, *except* that a vanished standing role's
+tmux session can be recreated (BL-1017, below), bounded and never silencing
+the CRIT that reports it. Everything else stays judgment for the
+coordinator/human.
 
 ## What a nudge looks like
 
@@ -120,6 +123,7 @@ original process is left running. A second start while the pidfile is
 .swarmforge/babysitterd/streak                swarm-starved idle-sweep streak
 .swarmforge/babysitterd/nudge-dedup.json      {finding-key -> last-nudged-ms}
 .swarmforge/babysitterd/pane-hash-<role>      last 3 stable content hashes (check 7)
+.swarmforge/babysitterd/session-repairs.json  {role -> {"attempts" n "last-ms" ms}} — the repair cooldown budget (BL-1017)
 ```
 
 This is deliberately **not** `.swarmforge/babysitter/` (no `d`) — that
@@ -199,6 +203,59 @@ unchanged — every role is expected to stand, exactly as before BL-804.
 The daemon never grows a second topology parser: this is a call site for the
 same `mono_router_lib` resolution `handoffd` already uses, not a
 reimplementation.
+
+## Bounded session repair for a vanished standing role (BL-1017)
+
+Before this fix, a standing role's tmux session vanishing (the pane killed,
+the host restarted, whatever the cause) stayed gone until a human ran a full
+`./start-swarm.sh` — recreating all eight sessions to fix one, and itself
+made a 2026-08-21 incident worse. Check 1's missing-session branch now
+carries a bounded `:repair` intent next to the CRIT, and `babysitter_check.bb`
+**acts on it directly** rather than merely returning it — a decision nobody
+consumes is exactly the BL-419 shape (mechanism built, wired nowhere) this
+ticket's own `required_wiring` names, and it was a real gap: the pre-existing
+suite covered only the pure decision function, never the live consumption
+point, until this pass added scenarios exercising both.
+
+**What it does.** `ensure-role-session!` mirrors `swarm_ensure.bb`'s own
+single-role launch path: create the tmux session if truly missing, then
+`respawn-pane -k` the role's canonical launch script
+(`.swarmforge/launch/<role>.sh` — always the project-root copy, never a
+worktree-local one, which can drift), through `provider_respawn_env_lib.bb`
+so the relaunched pane keeps whatever alternate-runtime auth env
+`swarm_ensure.bb`/`handoffd.bb`'s own respawn path would have passed it. This
+recreates **one** session — deliberately not `start-swarm.sh`'s eight-session
+sweep, which is the disproportionate action this ticket exists to avoid.
+
+**Bounds (invariant 2 — no respawn storm).** At most 1 repair attempt per
+role per 10-minute cooldown window (`default-max-repair-attempts` /
+`default-repair-cooldown-ms` in `babysitterd_sweep_lib.bb`), persisted across
+sweeps in `session-repairs.json` since each sweep is its own process. An
+attempt is recorded whether tmux succeeded or not — a session that keeps
+failing to come back is retried at most once per window, then left as a
+standing CRIT, not retried forever.
+
+**The CRIT is never swallowed.** A repaired role still logs its
+`swarmforge-<role>: tmux session missing` CRIT on the sweep that repaired it
+— a session that keeps vanishing is a signal worth keeping, not something a
+successful repair should hide. The repair outcome itself logs alongside it as
+`REPAIR [repaired|failed|no-socket|no-session-name|no-launch-script] swarmforge-<role>`.
+
+**Topology-respecting by construction.** The repair intent hangs off the same
+missing-session branch the BL-804 `should-stand?` suppression already guards
+(above) — a mono-router non-resident role's absent session is never a
+finding at all, so it can never be repaired either. No second predicate to
+drift out of sync with the first.
+
+**Not covered by the unit suite:** actually killing a live tmux session and
+watching the sweep bring it back is outside the testability boundary (real
+tmux). Confirm by hand after a change here: kill one standing role's session,
+wait for the next sweep, and check (a) that role's session returns, (b) no
+other session was touched, (c) `handoffd` is still alive, and (d)
+`./attach-swarm.sh <role>` succeeds afterwards.
+
+Acceptance feature:
+[`specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature`](../../specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature).
 
 ## Claim-risk stall detection restored (BL-809)
 
