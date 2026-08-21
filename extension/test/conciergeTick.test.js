@@ -2191,32 +2191,54 @@ test('BL-455: role-held tickets are joined to their backlog item epic/title - th
   // never expected literally).
   const norm = (l) => l.replace(/\u00a0/g, ' ').trim().replace(/ {2,}/g, ' ');
   const lines = posted[0].split('\n').map(norm);
-  // folders.active -> board join: both active ids appear as matrix columns.
-  const headerIds = lines[0].split(' ');
+  // BL-979: re-expressed for the axis pivot. The stage glyphs are the shared
+  // HEADER now and each active ticket is a ROW labelled with its own id, so
+  // "the id reaches the board" is read from the row gutter rather than the
+  // header. What this wiring test proves is unchanged: folders.active's
+  // ids, its epic/title, and the roles' held tickets all reach the posted
+  // board. Layout itself stays pipelineBoard's own contract.
   assert.deepEqual(
-    [...headerIds].sort(),
+    lines[0].split(' '),
+    ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA'],
+    `expected the shared stage header, got:\n${posted[0]}`
+  );
+  // folders.active -> board join: both active ids appear as matrix ROWS.
+  const ticketRows = lines.filter((l) => /^\d+( [.X]){8}$/.test(l));
+  assert.deepEqual(
+    ticketRows.map((l) => l.split(' ')[0]).sort(),
     [displayId('BL-1'), displayId('BL-2')].sort(),
-    `expected the matrix header to carry both active ids, got:\n${posted[0]}`
+    `expected one matrix row per active id, got:\n${posted[0]}`
   );
   // The epic/title join: ticket 1's caption line carries backlog-derived
   // context from the fixture (whichever field the caption contract picks).
-  const caption1 = lines.find((l, i) => i > 0 && l.startsWith(`${displayId('BL-1')} `) && !/^[A-Z]{2} /.test(l));
+  // A caption is excluded from the grid by shape - a row is an id followed
+  // by exactly eight marks, a caption is an id followed by prose.
+  const caption1 = lines.find((l) => l.startsWith(`${displayId('BL-1')} `) && !/^\d+( [.X]){8}$/.test(l));
   assert.ok(caption1, `expected a caption line for ticket ${displayId('BL-1')}, got:\n${posted[0]}`);
   assert.ok(
     caption1.includes('Concerto') || caption1.includes('fix the pipeline board'),
     `expected ticket 1's caption to carry its backlog epic/title, got: ${caption1}`
   );
-  // The role-held join: exactly the two held tickets are marked, one mark
-  // each, on the rows for the roles that hold them - and nowhere else.
-  // Which COLUMN each mark sits in is ordering, pipelineBoard's contract.
-  const stageRows = lines.filter((l) => /^[A-Z]{2}( [.X])+$/.test(l));
+  // The role-held join: each held ticket carries exactly one mark, in its
+  // own row, under the stage column of the role holding it - and nowhere
+  // else. Which INDEX that column sits at is ordering, pipelineBoard's
+  // contract; that it is the holder's is this wiring test's business.
   const marksIn = (row) => (row.match(/X/g) || []).length;
-  const coRow = stageRows.find((l) => l.startsWith('CO '));
-  const qaRow = stageRows.find((l) => l.startsWith('QA '));
-  assert.ok(coRow && marksIn(coRow) === 1, `expected exactly one mark on the coder row, got:\n${posted[0]}`);
-  assert.ok(qaRow && marksIn(qaRow) === 1, `expected exactly one mark on the QA row, got:\n${posted[0]}`);
-  const strayMarks = stageRows.filter((l) => l !== coRow && l !== qaRow).reduce((n, l) => n + marksIn(l), 0);
-  assert.equal(strayMarks, 0, `expected no mark outside the two holding roles' rows, got:\n${posted[0]}`);
+  const stageIndexOf = (glyph) => lines[0].split(' ').indexOf(glyph);
+  const rowFor = (id) => ticketRows.find((l) => l.startsWith(`${id} `));
+  for (const [id, glyph] of [
+    [displayId('BL-1'), 'CO'],
+    [displayId('BL-2'), 'QA'],
+  ]) {
+    const row = rowFor(id);
+    assert.ok(row, `expected a matrix row for ${id}, got:\n${posted[0]}`);
+    assert.equal(marksIn(row), 1, `expected exactly one mark on ${id}'s row, got: ${row}`);
+    assert.equal(
+      row.split(' ').slice(1).indexOf('X'),
+      stageIndexOf(glyph),
+      `expected ${id} marked under ${glyph}, got: ${row}`
+    );
+  }
 });
 
 test('BL-455: a paused ticket awaiting human approval and a plain paused ticket both render in the below-grid parked list, not as grid rows', async () => {
@@ -2431,18 +2453,20 @@ test('BL-473: a ticket physically in backlog/active/ that no role holds still re
   // re-asserted here.
   const norm473 = (l) => l.replace(/\u00a0/g, ' ').trim().replace(/ {2,}/g, ' ');
   const normLines = lines.map(norm473);
-  assert.ok(
-    normLines[0].split(' ').includes(displayId('BL-1')),
-    `expected the matrix header to carry the unheld active ticket's id, got:\n${posted[0]}`
+  // BL-979: re-expressed for the axis pivot - the ticket is a ROW now, so
+  // its id is read from the row gutter, and "not-started" is the NS COLUMN
+  // rather than the NS row. The fact this test proves is unchanged: an
+  // active ticket no role holds still renders, marked not-started only.
+  const stageGlyphs = normLines[0].split(' ');
+  const row473 = normLines.find((l) => l.startsWith(`${displayId('BL-1')} `) && /^\d+( [.X]){8}$/.test(l));
+  assert.ok(row473, `expected the unheld active ticket to have its own matrix row, got:\n${posted[0]}`);
+  const marks473 = row473.split(' ').slice(1);
+  assert.equal(marks473.filter((m) => m === 'X').length, 1, `expected exactly one mark, got: ${row473}`);
+  assert.equal(
+    marks473.indexOf('X'),
+    stageGlyphs.indexOf('NS'),
+    `expected BL-1 marked in the not-started column, got: ${row473}`
   );
-  const stageRows473 = normLines.filter((l) => /^[A-Z]{2}( [.X])+$/.test(l));
-  const nsRow = stageRows473.find((l) => l.startsWith('NS '));
-  assert.ok(nsRow && nsRow.includes('X'), `expected BL-1 marked on the not-started row, got:\n${posted[0]}`);
-  for (const row of stageRows473) {
-    if (row !== nsRow) {
-      assert.ok(!row.includes('X'), `expected no stage mark for an unheld ticket, got: ${row}`);
-    }
-  }
 });
 
 test('BL-473 bounce: a role-held ticket absent from folders.active gets no row at all - membership is folders.active only, never unioned with role-held ids', async () => {
