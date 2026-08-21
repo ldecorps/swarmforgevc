@@ -11,7 +11,12 @@ const path = require('node:path');
 const { runPollCycle, runContainedLoop } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'tools', 'telegramFrontDeskBotCore'));
 
 const PRINCIPAL_ID = 111;
-const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 30000, degradedThreshold: 5 };
+// BL-621: sustainedOutageThresholdMs is part of the config shape now. These
+// BL-302 scenarios run on the pinned FIXTURE_NOW clock below, so no episode
+// here ever ages past this window - the escalation path is specified by
+// BL-621's own feature file, not smuggled into this one.
+const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 30000, degradedThreshold: 5, sustainedOutageThresholdMs: 30 * 60_000 };
+const FIXTURE_NOW = 0;
 
 function fakeAdapters(getUpdatesResult) {
   return {
@@ -30,7 +35,7 @@ async function runCycles(ctx, count, success) {
   const results = [];
   for (let i = 0; i < count; i++) {
     const adapters = fakeAdapters(success ? { success: true, updates: [] } : { success: false, updates: [], error: 'network error' });
-    const cycle = await runPollCycle(ctx.state, PRINCIPAL_ID, adapters, BACKOFF_CONFIG);
+    const cycle = await runPollCycle(ctx.state, PRINCIPAL_ID, adapters, BACKOFF_CONFIG, FIXTURE_NOW);
     ctx.state = cycle.state;
     results.push(cycle);
   }
@@ -40,7 +45,7 @@ async function runCycles(ctx, count, success) {
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^the front-desk bot is polling Telegram for inbound updates$/, (ctx) => {
-    ctx.state = { offset: 0, consecutiveFailures: 0 };
+    ctx.state = { offset: 0, consecutiveFailures: 0, sustainedOutage: { escalated: false } };
   });
 
   // ── poll-resilience-01 ───────────────────────────────────────────────
