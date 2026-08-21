@@ -1,13 +1,15 @@
 'use strict';
 
 // BL-993: step handlers for "A dead operator runtime is restarted without a
-// human". Scenarios 01-04 drive the REAL check-one!/operator_runtime_watch_lib.bb
-// decision logic via bl993_operator_watch_acceptance_runner.bb (real
-// Babashka, fixture entry + injected clock, no real process spawn, no real
-// timer - mirrors frontDeskSupervisorRecoverySteps.js's own runner-exec
-// pattern). Scenario 05 ("the watch keeps running after the runtime it
-// watches has died") is a process-architecture property, not a pure
-// decision, so it drives a REAL supervisor process + a REAL fixture
+// human". Decision assertions drive the REAL
+// check-one!/operator_runtime_watch_lib.bb logic via
+// bl993_operator_watch_acceptance_runner.bb (real Babashka, fixture entry +
+// injected clock - mirrors frontDeskSupervisorRecoverySteps.js's own
+// runner-exec pattern). Announce assertions (invariant 2) drive the REAL
+// operator_runtime_supervisor.bb with a notify capture via
+// bl993_announce_matches_predicate.sh. Scenario 05 ("the watch keeps
+// running after the runtime it watches has died") is a
+// process-architecture property, so it drives a REAL supervisor + fixture
 // "operator" process via bl993_watch_survives_runtime_death.sh (mirrors
 // bl671OperatorRuntimeFixtureSandboxSteps.js's own spawnSync-a-real-script
 // pattern).
@@ -18,20 +20,41 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const TEST_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test');
 const RUNNER = path.join(TEST_DIR, 'bl993_operator_watch_acceptance_runner.bb');
 const SURVIVES_SCRIPT = path.join(TEST_DIR, 'bl993_watch_survives_runtime_death.sh');
+const ANNOUNCE_SCRIPT = path.join(TEST_DIR, 'bl993_announce_matches_predicate.sh');
 
 const RESTART_CONFIG = { maxAttempts: 5, backoffBaseMs: 1000, backoffMaxMs: 60000, healthyResetMs: 600000 };
 const GIVEUP_CONFIG = { giveupCooldownMs: 900000 };
-
-// The ANNOUNCED events, mirroring operator_runtime_supervisor.bb's own
-// announce-for-event! case dispatch verbatim - kept here (not re-derived)
-// so a drift between the two is a visible acceptance failure, not a silent
-// behavior change.
-const ANNOUNCED_EVENTS = new Set(['started', 're-armed', 'gave-up']);
 
 function run(mode, scenario) {
   const out = execFileSync('bb', [RUNNER, mode, JSON.stringify(scenario)], { encoding: 'utf8' });
   return JSON.parse(out);
 }
+
+// Announce assertions drive the REAL operator_runtime_supervisor.bb
+// (--check-once, OPERATOR_WATCH_NOTIFY_CMD pointed at a capture script) via
+// bl993_announce_matches_predicate.sh's per-event modes, and assert on what
+// the capture actually received. The previous version consulted a local
+// ANNOUNCED_EVENTS set - a hand copy of the supervisor's own dispatch that
+// stayed green when the real announce path was deliberately broken
+// (backlog/evidence/BL-993-bounce-20260821-architect.md, D1).
+function runAnnounceCapture(mode) {
+  const res = spawnSync('bash', [ANNOUNCE_SCRIPT, mode], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 30000 });
+  if (res.status !== 0) {
+    throw new Error(`announce capture drive '${mode}' failed:\n${res.stdout}\n${res.stderr}`);
+  }
+  const count = Number((res.stdout.match(/^ANNOUNCE_COUNT=(\d+)$/m) || [])[1]);
+  return {
+    announced: /^ANNOUNCED=true$/m.test(res.stdout),
+    count: Number.isNaN(count) ? 0 : count,
+    text: (res.stdout.match(/^TEXT=(.*)$/m) || [])[1] || '',
+  };
+}
+
+const DOWN_STATE_ANNOUNCE_MODES = {
+  'a pidfile naming a dead process': 'started-dead-pidfile',
+  'no pidfile at all': 'started-no-pidfile',
+  'a pidfile naming an unrelated pid': 'started-unrelated-pid',
+};
 
 // pidAliveOs/cmdlineMatches per down-state - the same three rows
 // operator_runtime_watch_lib_test_runner.bb already pins at the pure-lib
@@ -59,6 +82,7 @@ function registerSteps(registry) {
   // ── dead-runtime-is-restarted-01 ─────────────────────────────────────
   registry.define(/^the operator runtime is down with (a pidfile naming a dead process|no pidfile at all|a pidfile naming an unrelated pid)$/, (ctx, downState) => {
     Object.assign(ctx, downStateFixture(downState));
+    ctx.downState = downState;
     ctx.entry = null;
     ctx.nowMs = 1000;
   });
@@ -87,8 +111,16 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the restart is announced on the human channel$/, (ctx) => {
-    if (!ANNOUNCED_EVENTS.has(ctx.result.event)) {
-      throw new Error(`expected event "${ctx.result.event}" to be announced on the human channel`);
+    const mode = DOWN_STATE_ANNOUNCE_MODES[ctx.downState];
+    if (!mode) {
+      throw new Error(`no announce-capture mode for down-state "${ctx.downState}"`);
+    }
+    const capture = runAnnounceCapture(mode);
+    if (!capture.announced || capture.count !== 1) {
+      throw new Error(`expected exactly one real announcement for the restart, got count=${capture.count} (text='${capture.text}')`);
+    }
+    if (!/operator runtime restart/.test(capture.text)) {
+      throw new Error(`expected the announcement to name the restart, got '${capture.text}'`);
     }
   });
 
@@ -108,9 +140,9 @@ function registerSteps(registry) {
   });
 
   registry.define(/^nothing is announced on the human channel$/, (ctx) => {
-    const event = ctx.result ? ctx.result.event : null;
-    if (ANNOUNCED_EVENTS.has(event)) {
-      throw new Error(`expected nothing announced, but event "${event}" is an announced event`);
+    const capture = runAnnounceCapture('healthy');
+    if (capture.announced || capture.count !== 0) {
+      throw new Error(`expected the real supervisor to announce nothing for a healthy runtime, got count=${capture.count} (text='${capture.text}')`);
     }
   });
 
@@ -185,8 +217,12 @@ function registerSteps(registry) {
     if (!ctx.events.includes('gave-up')) {
       throw new Error(`expected a gave-up event among ${ctx.events.join(',')}`);
     }
-    if (!ANNOUNCED_EVENTS.has('gave-up')) {
-      throw new Error('gave-up must be an announced event');
+    const capture = runAnnounceCapture('gave-up');
+    if (!capture.announced || capture.count !== 1) {
+      throw new Error(`expected exactly one real escalation announcement for gave-up, got count=${capture.count} (text='${capture.text}')`);
+    }
+    if (!/exhausted/.test(capture.text)) {
+      throw new Error(`expected the escalation to say the attempts were exhausted, got '${capture.text}'`);
     }
   });
 

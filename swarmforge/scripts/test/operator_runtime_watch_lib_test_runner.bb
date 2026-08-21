@@ -75,6 +75,36 @@
   (assert= "initial-entry: down defers to default-entry-fn" "not-started" (:status entry))
   (assert= "initial-entry: down calls default-entry-fn exactly once" 1 @default-entry-calls))
 
+;; ── announced-event? / announcement-for-event: invariant 2's own decision
+;;    (2026-08-21 architect bounce: the supervisor's announce dispatch was a
+;;    hand-copy of the announced set that no test tied back to this
+;;    predicate; announcement-for-event is now the ONE composition the real
+;;    dispatch calls, so these rows pin the real production decision, not a
+;;    mirror of it) ─────────────────────────────────────────────────────────
+(doseq [[event expected] {:started true :re-armed true :gave-up true
+                          :crashed false :healthy-reset false nil false}]
+  (assert= (str "announced-event?: " (pr-str event)) expected
+           (operator-runtime-watch-lib/announced-event? event)))
+
+(assert= "announcement-for-event: started with a claimed pid names it"
+         "operator runtime restarted (pid 4242, attempt 3)"
+         (operator-runtime-watch-lib/announcement-for-event :started {:pid 4242 :attempts 3}))
+(assert= "announcement-for-event: started with NO claimed pid says so"
+         "operator runtime restart attempt 3 failed to claim a pid"
+         (operator-runtime-watch-lib/announcement-for-event :started {:pid nil :attempts 3}))
+(assert= "announcement-for-event: re-armed names the cooldown restart"
+         "operator runtime restarted after cooldown (pid 4242)"
+         (operator-runtime-watch-lib/announcement-for-event :re-armed {:pid 4242 :attempts 0}))
+(assert= "announcement-for-event: gave-up is the escalation"
+         "operator runtime restart attempts exhausted after 5 tries; will retry after cooldown"
+         (operator-runtime-watch-lib/announcement-for-event :gave-up {:pid nil :attempts 5}))
+(assert= "announcement-for-event: crashed is NOT announced" nil
+         (operator-runtime-watch-lib/announcement-for-event :crashed {:pid 4242 :attempts 1}))
+(assert= "announcement-for-event: healthy-reset is NOT announced" nil
+         (operator-runtime-watch-lib/announcement-for-event :healthy-reset {:pid 4242 :attempts 2}))
+(assert= "announcement-for-event: nil event is NOT announced" nil
+         (operator-runtime-watch-lib/announcement-for-event nil {:pid 4242 :attempts 0}))
+
 ;; ── I/O: read-pid / pid-alive-os? / parked? / healthy? against a real
 ;;    fixture project root ────────────────────────────────────────────────
 (let [root (mk-tmp)]

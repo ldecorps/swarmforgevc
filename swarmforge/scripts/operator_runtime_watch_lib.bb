@@ -130,11 +130,34 @@
 (defn announced-event?
   "Pure: which check-one! events reach the human channel (BL-993 invariant
    2). :started and :re-armed are both 'a restart happened'; :gave-up is
-   the escalation. Shared by the real supervisor's own announce dispatch
-   and this ticket's property test, so a drift between 'what fires' and
-   'what gets announced' is a visible test failure, never a silent gap."
+   the escalation. THE single source of truth for 'is this event
+   announced' - announcement-for-event below (and through it the real
+   supervisor dispatch) gates on this predicate rather than keeping its
+   own copy of the set (2026-08-21 architect bounce: the supervisor's
+   case dispatch was an independent hand-written copy, and nothing kept
+   the two in sync)."
   [event]
   (boolean (#{:started :re-armed :gave-up} event)))
+
+(defn announcement-for-event
+  "Pure: the human-channel text for an event, or nil when the event is not
+   announced. The ONE composition of 'is it announced' (announced-event?
+   above) with 'what does it say', called by the real supervisor's
+   announce-for-event! and this ticket's own test/property runners alike -
+   so the dispatch can never silently disagree with the predicate. The
+   default arm keeps the fail-safe direction invariant 2 demands: an event
+   newly added to announced-event? with no bespoke text here still
+   produces a real announcement rather than silence."
+  [event entry]
+  (when (announced-event? event)
+    (case event
+      :started (if (:pid entry)
+                 (str "operator runtime restarted (pid " (:pid entry) ", attempt " (:attempts entry) ")")
+                 (str "operator runtime restart attempt " (:attempts entry) " failed to claim a pid"))
+      :re-armed (str "operator runtime restarted after cooldown (pid " (:pid entry) ")")
+      :gave-up (str "operator runtime restart attempts exhausted after " (:attempts entry)
+                    " tries; will retry after cooldown")
+      (str "operator runtime watch event " (name event)))))
 
 (defn decide
   "The FULL per-tick decision (BL-993 invariant 1): the deliberate-stop gate

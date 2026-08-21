@@ -172,15 +172,15 @@
     :re-armed (log! "re-armed" "pid=" (str (:pid entry)))
     nil))
 
+;; The whole is-it-announced/what-does-it-say decision lives in
+;; operator-runtime-watch-lib/announcement-for-event (gated on
+;; announced-event?, the single source of truth) - this wrapper only owns
+;; the announce! I/O. Never grow a second case dispatch here: the
+;; 2026-08-21 architect bounce was exactly that - an independent
+;; hand-written copy of the announced set that no test tied back to the
+;; predicate (backlog/evidence/BL-993-bounce-20260821-architect.md).
 (defn announce-for-event! [event entry]
-  (case event
-    :started (announce! (if (:pid entry)
-                          (str "operator runtime restarted (pid " (:pid entry) ", attempt " (:attempts entry) ")")
-                          (str "operator runtime restart attempt " (:attempts entry) " failed to claim a pid")))
-    :re-armed (announce! (str "operator runtime restarted after cooldown (pid " (:pid entry) ")"))
-    :gave-up (announce! (str "operator runtime restart attempts exhausted after " (:attempts entry)
-                             " tries; will retry after cooldown"))
-    nil))
+  (some-> (operator-runtime-watch-lib/announcement-for-event event entry) announce!))
 
 ;; ── one check cycle ──────────────────────────────────────────────────────
 
