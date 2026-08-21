@@ -45,19 +45,27 @@ function isNonBlank(value: string | undefined): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+// Split from parseArgs purely to keep each piece's own cyclomatic complexity
+// under the CRAP budget - a genuine type predicate (not a plain boolean), so
+// the caller's destructured fields narrow to non-optional strings the same
+// way they would have from the inline checks it replaces.
+function hasRequiredFields(
+  flags: Partial<Record<FlagName, string>>
+): flags is Partial<Record<FlagName, string>> & Record<'--ticket' | '--commit' | '--reason' | '--by', string> {
+  return isNonBlank(flags['--ticket']) && isNonBlank(flags['--commit']) && isNonBlank(flags['--reason']) && isNonBlank(flags['--by']);
+}
+
+function isValidEvidence(evidence: string | undefined): boolean {
+  return evidence === undefined || isNonBlank(evidence);
+}
+
 export function parseArgs(argv: string[]): RecordBounceCorrectionArgs | null {
   const flags = parseFlagPairs(argv);
-  if (!flags) {
+  if (!flags || !hasRequiredFields(flags)) {
     return null;
   }
   const { '--ticket': ticket, '--commit': commit, '--reason': reason, '--by': by, '--evidence': evidence } = flags;
-  if (!isNonBlank(ticket) || !isNonBlank(commit) || !isNonBlank(reason) || !isNonBlank(by)) {
-    return null;
-  }
-  if (!isKnownBounceRole(by)) {
-    return null;
-  }
-  if (evidence !== undefined && !isNonBlank(evidence)) {
+  if (!isKnownBounceRole(by) || !isValidEvidence(evidence)) {
     return null;
   }
   return {

@@ -1,6 +1,74 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-984: the property lane's fixture
+**Last Updated:** August 21, 2026 (BL-990: a bounce recorded against the
+wrong pipeline role could never be corrected — `record-bounce.js` only
+appends, and the store (`extension/src/metrics/bounceStore.ts`) exposed
+read/append with no amend path, so a bounce caused by a mid-flight spec
+amendment (demonstrated live on 2026-08-20: the specifier amended an active
+ticket's acceptance contract while a pre-amendment parcel was already
+sitting at QA, who correctly bounced it and attributed the bounce to the
+coder, who had done nothing wrong) stayed charged to that role forever,
+silently biasing the live coder-bounce-rate experiment reading it. A new
+CLI, `record-bounce-correction`
+(`extension/src/tools/record-bounce-correction.ts`), appends a superseding
+record rather than editing or deleting the original — the store stays
+append-only, the misattribution itself stays visible as evidence. Design
+call: correction marks a bounce EXCLUDED-FROM-ATTRIBUTION rather than
+re-pointing it at a new role, so the closed `KNOWN_PRODUCING_ROLES` enum
+every consumer groups on needed no new member (`--by` already accepts
+`specifier`, so the correction still records who issued it). All three
+independent reader paths onto the same underlying data — not one, as the
+ticket's own description assumed — now resolve supersession:
+`bounceStore.readBounceRecords`, `failureModeInventory`'s own separate
+JSONL parse, and `leanLedgerComposeBounce`'s read of the ticket YAML's
+`bounce_history` (resolved from the JSONL rather than mirrored into the
+YAML by a second writer). A dedup trap the ticket didn't anticipate: the
+append path's own existing dedup read through the corrected view, which
+would have made a corrected bounce invisible to it and silently
+resurrected on any re-run — fixed by dedupping against a new
+`readRawBounceRecords` instead. A correction with no reason is refused. No
+new user-facing command or setting in the extension itself — this is an
+internal telemetry-integrity CLI for pipeline roles. **Not yet wired to any
+role's usage instructions** (flagged by the coder as a deliberate,
+documented gap rather than an oversight — see the same day's Specification
+entry below); a `note` was sent to specifier and coordinator recommending
+QA's role prompt reference `record-bounce-correction` alongside the
+existing `record-bounce.js`, since QA is the natural caller (QA issued the
+real 2026-08-20 correction as a note, which is exactly what this tool now
+makes durable). See `backlog/evidence/BL-990-hardener-pass-20260821.md`
+for the full verification record.); Previously
+August 21, 2026 (BL-986: the standing-rule-violations
+scanner (`swarmforge/scripts/standing_rule_violations_lib.bb` /
+`standing_rule_violations_files.bb`) was blind to any rule citation moved
+out of the three boot-inlined articles into its `reference/` elaboration —
+exactly what the `engineering.prompt` boot-budget split (44000/44000 today,
+BL-859's gate) forces routinely. A relocated citation silently fell out of
+the scanned set and its violation count read a FALSE ZERO — "this standing
+rule is being obeyed" when the evidence had merely moved, not disappeared
+(BL-337's own KNOWN VIOLATION check for BL-252 had read 0 instead of 1 since
+the `engineering.prompt` split, unnoticed). The file-discovery layer now
+reads each of the three boot-inlined articles together with its own
+`reference/` elaboration — five files, not three — so a relocation is
+verdict-neutral, the ticket's own stated invariant, now enforced generatively
+by a seeded property runner
+(`swarmforge/scripts/test/bl986_relocation_neutral_property_runner.bb`) across
+every placement (inlined / relocated / both). Widening the scanned set on
+its own would have traded the false zero for a false double: 15 rule blocks
+already exist in both an inlined article and its elaboration, so
+`scan-violations` now deduplicates records identical in rule summary AND
+citations, keeping the first in the existing deterministic sort (the
+inlined-article copy, since `articles/…` sorts before `articles/reference/…`).
+Widening was NOT done blindly against the full production file set: a
+neighbouring rule in `documenter.prompt` legitimately records BL-250 as a
+violation of a *different* standing rule, so the scan stays scoped
+per-article to its own reference elaboration rather than the whole role
+roster, keeping BL-337's own origin-vs-violation assertions (BL-250 and
+BL-255 both 0) intact. No new user-facing command or setting — this is an
+internal safety-signal integrity fix for the constitution's own
+self-enforcement tooling. See
+`backlog/evidence/BL-986-hardener-pass-20260821.md` for the full
+verification record.); Previously
+August 21, 2026 (BL-984: the property lane's fixture
 helper (`extension/test/helpers/propertyLaneFixtureRunner.js`) now sweeps
 stale fixtures BEFORE writing its own, not only after. The helper generates
 real `*.property.test.js` files inside `extension/test/` — the only place

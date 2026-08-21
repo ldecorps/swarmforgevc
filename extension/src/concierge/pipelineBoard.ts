@@ -1,26 +1,13 @@
-// BL-452/BL-455/BL-465/BL-585/BL-979: a live pipeline-board grid - ONE
-// matrix with a single shared header. BL-979 pivoted the axes: active BL
-// tickets are ROWS down the Y axis and the eight pipeline stages are shared
-// COLUMNS across the X axis, so an extra ticket adds a row rather than
-// widening the board. Width is the scarce axis on a phone and vertical
-// growth is cheap, which is the whole argument for the pivot; BL-585's
-// ticket-columns layout grew sideways with every promotion.
-//
-// Because of that pivot the DROPPING axis is height, not width. The row
-// budget (PIPELINE_BOARD_GRID_MAX_ROWS) drops the tail of the epic-grouped
-// order and announces it with "+N more active", never a silent cap. The
-// character-width budget (PIPELINE_BOARD_GRID_MAX_WIDTH) survives as an
-// ASSERTION rather than a dropper: the grid's width is now a property of
-// the fixed stage set plus the id gutter, so no ticket can ever be dropped
-// for width (BL-979 invariant 2). Telegram's <pre> does not wrap, so an
-// over-wide grid would need horizontal scrolling on a phone - hence the
-// budget stays, as a guard.
-//
-// Below the matrix each visible row gets a caption line (display id +
-// truncated title, BL-956), grouped under "-- <epic-slug> --" separators
-// with a blank line before every summary. This is NOT a return to BL-455's
-// per-ticket pivoted blocks: there is still exactly one matrix and one
-// header.
+// BL-452/BL-455/BL-465/BL-585: a live pipeline-board grid - ONE matrix,
+// pipeline stages as shared rows down the Y axis, active BL tickets as
+// columns across the X axis (an extra ticket adds a column, not another
+// 8-line block). The epic is a short caption line per visible column below
+// the matrix, not a section heading - BL-585 retired the old per-ticket
+// pivoted block + "-- epic --" heading shape entirely. The matrix carries
+// its own character-width budget (PIPELINE_BOARD_GRID_MAX_WIDTH) and drops
+// the tail of the epic-grouped row order past it, announcing the drop
+// rather than truncating silently or wrapping (Telegram's <pre> does not
+// wrap, so an unbudgeted grid needs horizontal scrolling on a phone).
 // Parked/awaiting-approval/root-intake/recently-closed items are listed
 // separately below the grid. Telegram cannot nest <a> inside the grid's
 // <pre>, so ticket numbers in the below-grid lists (and grid-only tickets)
@@ -220,32 +207,15 @@ const PAUSED_PRIORITY_FALLBACK = Number.MAX_SAFE_INTEGER;
 // of its own.
 export const PIPELINE_BOARD_MESSAGE_MAX_LENGTH = 4000;
 
-// BL-585/BL-979: the matrix's own character-width budget. Under BL-585 this
-// was the DROPPER (it decided how many ticket columns fitted); after the
-// BL-979 pivot the stage set is fixed, so width is a constant of the layout
-// and this is an assertion instead - nothing is ever dropped for width.
-//
-// The arithmetic, so a future id-width change is checked rather than
-// assumed: the id gutter (at least 3, else the widest display id) plus one
-// NBSP separator and one 2-wide cell for each of the 8 stages. That is 27
-// at today's 3-digit ids, 28 at 4 digits and 29 at 5 - all inside 30.
-// BL-979 scenario 05 and invariant 2 pin exactly this.
+// BL-585: the matrix's own character-width budget - mirrors, for the grid,
+// what PIPELINE_BOARD_MESSAGE_MAX_LENGTH already does for the link list: an
+// explicit budget with derived truncation and a visible "+N more" line,
+// never a silent cap. 30 fits 7 ticket columns at today's 3-digit ids (2
+// for the label gutter + 4 per column: 1 NBSP separator + 3-wide cell);
+// automatically fewer once ids get wider (maxVisibleGridColumns below
+// derives the count from the real per-render cell width, never a hardcoded
+// column count of its own).
 export const PIPELINE_BOARD_GRID_MAX_WIDTH = 30;
-
-// BL-979: the dropping axis after the pivot. Height is cheap on a phone in
-// a way width is not, so this is deliberately far more generous than the 7
-// ticket columns BL-585's width budget allowed - but it is still a budget,
-// keeping the same never-a-silent-cap posture: rows past it are the tail of
-// the same epic-grouped order and are announced by "+N more active".
-// 12 covers the live active set (the depth cap plus expedited defects) with
-// headroom, and keeps the whole <pre> - header, 12 rows, and two caption
-// lines apiece - inside one comfortable phone scroll.
-export const PIPELINE_BOARD_GRID_MAX_ROWS = 12;
-
-// Every stage glyph is exactly 2 characters (COLUMN_LABEL above), and a
-// mark is 1 right-aligned into the same width, so the cell width is a
-// constant of the stage set rather than something derived per render.
-const STAGE_CELL_WIDTH = 2;
 
 // BL-465: the grid's own short kebab slug - 2-3 significant words, lower-
 // cased and hyphenated, mirroring the ticket's own backlog-filename slug
@@ -670,26 +640,13 @@ function padStartNbsp(text: string, width: number): string {
   return text.length >= width ? text : NBSP.repeat(width - text.length) + text;
 }
 
-// BL-979: the dropping axis is height now. There is no arithmetic left to
-// do - the stage set is fixed, so every row is the same width and only the
-// row budget can drop one.
-function maxVisibleGridRows(totalRows: number, maxRows: number): number {
-  return Math.max(0, Math.min(totalRows, maxRows));
-}
-
-// The id gutter: wide enough for the widest display id on the board, and
-// never narrower than 3 (today's ids). Computed over EVERY candidate row,
-// not just the visible ones, so the gutter never depends circularly on
-// which rows end up fitting the budget.
-function gridIdGutterWidth(displayIds: string[]): number {
-  return Math.max(3, ...displayIds.map((id) => id.length));
-}
-
-// BL-979 invariant 2: the width of every grid line, as a pure function of
-// the stage set and the gutter. Nothing is dropped for width - this exists
-// so the budget can be asserted rather than silently exceeded.
-function gridLineWidth(idGutterWidth: number): number {
-  return idGutterWidth + PIPELINE_BOARD_COLUMN_ORDER.length * (1 + STAGE_CELL_WIDTH);
+// The largest N (0..rows.length) with `2 + N * (1 + cellWidth) <= maxWidth`
+// - the 2-char label gutter, plus one NBSP separator and one cellWidth-wide
+// cell per visible column. Never negative; never more than rows.length.
+function maxVisibleGridColumns(totalColumns: number, cellWidth: number, maxWidth: number): number {
+  const perColumn = 1 + cellWidth;
+  const n = Math.floor((maxWidth - 2) / perColumn);
+  return Math.max(0, Math.min(totalColumns, n));
 }
 
 function gridOverflowLine(droppedCount: number): string {
@@ -723,89 +680,60 @@ function gridCaptionLine(row: PipelineBoardRow): string {
 }
 
 // Split out of renderGridLines below for the same CRAP-budget reason as
-// buildGridRows/buildParkedEntries above - the shared stage header and the
-// per-ticket mark rows are one cohesive block (they share the id gutter and
-// iterate PIPELINE_BOARD_COLUMN_ORDER together) but pushed renderGridLines
-// itself over the CRAP budget. Pure formatting, no behavior of its own.
-//
-// BL-979: transposed. The header is the eight stage glyphs over an empty id
-// gutter, and each subsequent line is one ticket - its display id in the
-// gutter, then its mark under each stage.
-function renderGridMatrixLines(visibleRows: PipelineBoardRow[], visibleIds: string[], idGutterWidth: number): string[] {
-  const stageCells = (cell: (column: string) => string): string =>
-    PIPELINE_BOARD_COLUMN_ORDER.map((column) => NBSP + padStartNbsp(cell(column), STAGE_CELL_WIDTH)).join('');
-  const lines: string[] = [NBSP.repeat(idGutterWidth) + stageCells((column) => COLUMN_LABEL[column])];
-  visibleRows.forEach((row, index) => {
-    lines.push(padStartNbsp(visibleIds[index], idGutterWidth) + stageCells((column) => (column === row.column ? 'X' : '.')));
-  });
-  return lines;
-}
-
-// BL-979: the caption block below the matrix. BL-956 grouped same-epic
-// captions adjacently and marked each epic CHANGE with one blank line,
-// which left membership to be inferred from adjacency; the group is named
-// outright now. The separator carries the kebab SLUG exactly as the
-// human's approved mockup shows ("-- code-quality-gates --"), not a
-// prettier epic title.
-//
-// Rows arrive epic-sorted from buildGridRows, with the epic-less bucket
-// already last (epicSortKey), so grouping is a single pass over the visible
-// rows - no second ordering rule anywhere.
-//
-// The one conditional shape: a board where NO ticket carries an epic emits
-// no separators at all, rather than one lone "-- (no epic) --" header that
-// says nothing. Every summary is still preceded by a blank line either way,
-// which is also what separates the block from the matrix above it.
-function epicSeparatorLine(epic: string | undefined): string {
-  return `-- ${epic ?? NO_EPIC_LABEL} --`;
-}
-
-function renderGridCaptionLines(visibleRows: PipelineBoardRow[]): string[] {
-  const withSeparators = visibleRows.some((row) => row.epic !== undefined);
+// buildGridRows/buildParkedEntries above - the header row and the per-role
+// mark rows are one cohesive block (they share cellWidth and iterate
+// PIPELINE_BOARD_COLUMN_ORDER together) but pushed renderGridLines itself
+// over the CRAP budget. Pure formatting, no behavior of its own.
+function renderGridMatrixLines(visibleRows: PipelineBoardRow[], visibleIds: string[], cellWidth: number): string[] {
   const lines: string[] = [];
-  let prevEpic: string | undefined;
-  let started = false;
-  for (const row of visibleRows) {
-    if (withSeparators && (!started || row.epic !== prevEpic)) {
-      if (started) {
-        lines.push('');
-      }
-      lines.push(epicSeparatorLine(row.epic));
+  let header = NBSP.repeat(2);
+  for (const id of visibleIds) {
+    header += NBSP + padStartNbsp(id, cellWidth);
+  }
+  lines.push(header);
+  for (const column of PIPELINE_BOARD_COLUMN_ORDER) {
+    let line = COLUMN_LABEL[column];
+    for (const row of visibleRows) {
+      const mark = column === row.column ? 'X' : '.';
+      line += NBSP + padStartNbsp(mark, cellWidth);
     }
-    lines.push('');
-    lines.push(gridCaptionLine(row));
-    prevEpic = row.epic;
-    started = true;
+    lines.push(line);
   }
   return lines;
 }
 
-// ONE matrix: active tickets as rows, pipeline stages as shared columns
-// (BL-979). Rows already arrive epic-grouped via computePipelineBoard's own
-// stable sort (buildGridRows) - rows dropped by the budget are simply the
-// tail of that same order, no second ordering rule. The id gutter is
-// computed over EVERY candidate row's display id, not just the visible
-// ones, so it never depends circularly on how many rows end up fitting.
+// ONE matrix: pipeline stages as shared rows, active tickets as columns.
+// Rows already arrive epic-grouped via computePipelineBoard's own stable
+// sort (buildGridRows) - dropped-by-width columns are simply the tail of
+// that same order, no second ordering rule. Cell width is computed over
+// EVERY candidate row's display id, not just the visible ones, so it never
+// depends circularly on how many columns end up fitting.
 function renderGridLines(rows: PipelineBoardRow[]): string[] {
   if (rows.length === 0) {
     return [NO_ACTIVE_TICKETS_LABEL];
   }
   const displayIds = rows.map((row) => deriveDisplayTicketId(row.id));
-  const idGutterWidth = gridIdGutterWidth(displayIds);
-  const visibleCount = maxVisibleGridRows(rows.length, PIPELINE_BOARD_GRID_MAX_ROWS);
+  const cellWidth = Math.max(3, ...displayIds.map((id) => id.length));
+  const visibleCount = maxVisibleGridColumns(rows.length, cellWidth, PIPELINE_BOARD_GRID_MAX_WIDTH);
   const visibleRows = rows.slice(0, visibleCount);
+  const visibleIds = displayIds.slice(0, visibleCount);
   const droppedCount = rows.length - visibleCount;
 
-  const lines = renderGridMatrixLines(visibleRows, displayIds.slice(0, visibleCount), idGutterWidth);
-  // The caption block always opens with a blank line (every summary is
-  // preceded by one); when separators are in play that blank has to come
-  // before the first separator instead, so the matrix is never flush
-  // against it.
-  const captions = renderGridCaptionLines(visibleRows);
-  if (captions[0] !== '') {
-    lines.push('');
+  const lines = renderGridMatrixLines(visibleRows, visibleIds, cellWidth);
+  lines.push('');
+  // BL-956: captions are grouped by epic - same-epic captions sit adjacent,
+  // and ONE blank line marks where the epic changes (scenario 03 pins this
+  // shape; rows already arrive epic-sorted via buildGridRows).
+  let prevEpic: string | undefined;
+  let prevEpicSet = false;
+  for (const row of visibleRows) {
+    if (prevEpicSet && row.epic !== prevEpic) {
+      lines.push('');
+    }
+    lines.push(gridCaptionLine(row));
+    prevEpic = row.epic;
+    prevEpicSet = true;
   }
-  lines.push(...captions);
   if (droppedCount > 0) {
     lines.push(gridOverflowLine(droppedCount));
   }

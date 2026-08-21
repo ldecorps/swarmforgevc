@@ -22,6 +22,13 @@ Feature: Pipeline board caption and cap hotfix
     When the board is rendered
     Then the caption line for "BL-2" carries text after the ticket id
 
+  # BL-956 pipeline-board-caption-and-cap-03
+  Scenario: Caption lines are separated into groups where the epic changes
+    Given active tickets "BL-1" and "BL-2" hold epic "concerto" and active ticket "BL-3" holds epic "fugue"
+    When the board is rendered
+    Then the caption lines for "BL-1" and "BL-2" are adjacent
+    And a blank line separates the caption lines for "BL-2" and "BL-3"
+
   # BL-956 pipeline-board-caption-and-cap-04
   Scenario Outline: A below-grid list shows at most three entries and names the rest
     Given "<count>" parked tickets of kind "<kind>" awaiting the board

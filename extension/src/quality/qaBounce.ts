@@ -209,6 +209,33 @@ export interface BounceCorrection {
 
 export const BOUNCE_CORRECTION_KIND = 'bounce-correction';
 
+// Split from isBounceCorrection purely to keep each piece's own cyclomatic
+// complexity under the CRAP budget (mirrors bounceStore.ts's
+// hasBounceRecordShape/hasKnownBounceValues split for the same reason):
+// identity fields, reason+evidence, and `by`'s type+enum membership. Same
+// behavior, same fields, same order of evaluation - a pure decomposition.
+function hasBounceCorrectionIdentity(candidate: Partial<BounceCorrection>): boolean {
+  return (
+    candidate.kind === BOUNCE_CORRECTION_KIND &&
+    isNonEmptyString(candidate.ticket) &&
+    isNonEmptyString(candidate.commit) &&
+    isNonEmptyString(candidate.at)
+  );
+}
+
+function hasBounceCorrectionReasonAndEvidence(candidate: Partial<BounceCorrection>): boolean {
+  return (
+    // Non-BLANK, not merely non-empty: a reason of "   " explains exactly as
+    // much as no reason at all, and this is the field standing between a
+    // correction and a silent retraction.
+    isNonBlankString(candidate.reason) && (candidate.evidence === undefined || isNonEmptyString(candidate.evidence))
+  );
+}
+
+function hasKnownBounceCorrectionAttribution(candidate: Partial<BounceCorrection>): boolean {
+  return typeof candidate.by === 'string' && isKnownBounceRole(candidate.by);
+}
+
 // The reason is REQUIRED and must be non-blank. An unexplained retraction is
 // indistinguishable from metric-gaming, and this store feeds a live
 // experiment - so a reasonless correction is not a degraded correction, it
@@ -219,19 +246,7 @@ export function isBounceCorrection(value: unknown): value is BounceCorrection {
     return false;
   }
   const c = value as Partial<BounceCorrection>;
-  return (
-    c.kind === BOUNCE_CORRECTION_KIND &&
-    isNonEmptyString(c.ticket) &&
-    isNonEmptyString(c.commit) &&
-    isNonEmptyString(c.at) &&
-    // Non-BLANK, not merely non-empty: a reason of "   " explains exactly as
-    // much as no reason at all, and this is the field standing between a
-    // correction and a silent retraction.
-    isNonBlankString(c.reason) &&
-    typeof c.by === 'string' &&
-    isKnownBounceRole(c.by) &&
-    (c.evidence === undefined || isNonEmptyString(c.evidence))
-  );
+  return hasBounceCorrectionIdentity(c) && hasBounceCorrectionReasonAndEvidence(c) && hasKnownBounceCorrectionAttribution(c);
 }
 
 // Ticket + commit, deliberately NOT the full bounce natural key: the same

@@ -6,7 +6,7 @@ const {
   composePipelineBoardHtml,
   deriveDisplayTicketId,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
-  PIPELINE_BOARD_GRID_MAX_ROWS,
+  PIPELINE_BOARD_GRID_MAX_WIDTH,
   PIPELINE_BOARD_PAUSED_MAX,
   PIPELINE_BOARD_COLLAPSED_EPICS_MAX,
 } = require('../out/concierge/pipelineBoard');
@@ -108,14 +108,13 @@ test('BL-956 invariant 2: every caption line carries non-empty context after its
 
 // ── Invariant 3: every cap announces what it dropped ──────────────────────
 
-// Independent restatement of the grid's own drop rule. BL-979 pivoted the
-// axes, so the dropping axis is HEIGHT now: the width budget bounds a line
-// but can never drop a ticket (BL-979 invariant 2), and only the row budget
-// can. Deliberately still a restatement rather than a call into the
-// renderer - the point of invariant 3 is that the cap and its announcement
-// are computed independently and still agree.
+// Independent restatement of the grid's own documented width budget
+// (PIPELINE_BOARD_GRID_MAX_WIDTH's comment): 2-char gutter + per column one
+// separator + one cell of the widest display id (min 3).
 function expectedGridDropped(activeIds) {
-  return Math.max(0, activeIds.length - PIPELINE_BOARD_GRID_MAX_ROWS);
+  const cellWidth = Math.max(3, ...activeIds.map((id) => deriveDisplayTicketId(id).length));
+  const visible = Math.max(0, Math.min(activeIds.length, Math.floor((PIPELINE_BOARD_GRID_MAX_WIDTH - 2) / (1 + cellWidth))));
+  return activeIds.length - visible;
 }
 
 test('BL-956 invariant 3: grid, parked and collapsed-epic caps each name exactly how many entries they dropped', () => {

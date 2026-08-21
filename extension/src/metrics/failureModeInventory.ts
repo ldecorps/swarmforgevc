@@ -98,6 +98,39 @@ export function recordsFromRuleProposalJsonl(content: string, sourceLabel = 'rul
   return records;
 }
 
+function stringField(obj: Record<string, unknown>, key: string): string {
+  const value = obj[key];
+  return typeof value === 'string' ? value : '';
+}
+
+// One parsed JSONL line -> an EvidenceRecord, or null if the line is not a
+// countable bounce (missing required fields, or its ticket+commit is named
+// by a correction). Split out of recordsFromQaBounceJsonl's forEach purely
+// to keep each piece's own cyclomatic complexity under the CRAP budget -
+// same behavior, same field-by-field validation.
+function evidenceRecordFromBounceLine(
+  obj: Record<string, unknown>,
+  index: number,
+  sourceLabel: string,
+  correctedKeys: Set<string>
+): EvidenceRecord | null {
+  const failureClass = stringField(obj, 'failureClass');
+  const producingRole = stringField(obj, 'producingRole');
+  const ticket = stringField(obj, 'ticket');
+  const commit = stringField(obj, 'commit');
+  if (!failureClass || !producingRole) {
+    return null;
+  }
+  if (correctedKeys.has(bounceCorrectionTargetKey({ ticket, commit }))) {
+    return null;
+  }
+  return {
+    source: 'qa_bounce',
+    signature: `qa_bounce:${failureClass}:${producingRole}`,
+    citation: `${sourceLabel}:L${index + 1}:${ticket}@${commit}`,
+  };
+}
+
 // BL-990: this reader parses the bounce JSONL ITSELF rather than going
 // through bounceStore.ts's readBounceRecords, so resolving supersession
 // there does not reach it - it has to resolve corrections here too, or the
@@ -128,17 +161,10 @@ export function recordsFromQaBounceJsonl(content: string, sourceLabel = 'qa_boun
   const records: EvidenceRecord[] = [];
   parsed.forEach((obj, index) => {
     if (!obj) return;
-    const failureClass = typeof obj.failureClass === 'string' ? obj.failureClass : '';
-    const producingRole = typeof obj.producingRole === 'string' ? obj.producingRole : '';
-    const ticket = typeof obj.ticket === 'string' ? obj.ticket : '';
-    const commit = typeof obj.commit === 'string' ? obj.commit : '';
-    if (!failureClass || !producingRole) return;
-    if (correctedKeys.has(bounceCorrectionTargetKey({ ticket, commit }))) return;
-    records.push({
-      source: 'qa_bounce',
-      signature: `qa_bounce:${failureClass}:${producingRole}`,
-      citation: `${sourceLabel}:L${index + 1}:${ticket}@${commit}`,
-    });
+    const record = evidenceRecordFromBounceLine(obj, index, sourceLabel, correctedKeys);
+    if (record) {
+      records.push(record);
+    }
   });
   return records;
 }
