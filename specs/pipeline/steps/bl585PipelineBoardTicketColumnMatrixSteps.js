@@ -16,6 +16,7 @@ const {
   renderPipelineBoardGridOnly,
   composePipelineBoardHtml,
   deriveDisplayTicketId,
+  PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_GRID_MAX_WIDTH,
 } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'concierge', 'pipelineBoard'));
 
@@ -40,26 +41,15 @@ function parseHolder(token) {
   return HOLDER_ROLE_HELD_TICKETS[token];
 }
 
+function parseEpicToken(token) {
+  if (token === 'absent') {
+    return undefined;
+  }
+  return token;
+}
+
 function matrixLine(gutter, cells, cellWidth) {
   return gutter + cells.map((c) => NBSP + c.padStart(cellWidth, NBSP)).join('');
-}
-
-// BL-979: one ticket line - the display id right-aligned in the gutter,
-// then an X under the held stage and "." under the other seven.
-const STAGE_CELL_WIDTH = 2;
-function ticketRow(displayId, gutterWidth, heldStage) {
-  return matrixLine(
-    displayId.padStart(gutterWidth, NBSP),
-    ROLE_LABELS.map((r) => (r === heldStage ? 'X' : '.')),
-    STAGE_CELL_WIDTH
-  );
-}
-
-// The matrix runs from the header to the first blank line; the caption
-// block below it is prose.
-function matrixLinesOf(gridLines) {
-  const firstBlank = gridLines.indexOf('');
-  return firstBlank === -1 ? gridLines : gridLines.slice(0, firstBlank);
 }
 
 function registerSteps(registry) {
@@ -90,6 +80,32 @@ function registerSteps(registry) {
     FEATURE
   );
 
+  registry.defineScoped(
+    /^the matrix opens with one header row carrying "(\d+)" and "(\d+)"$/,
+    (ctx, idA, idB) => {
+      assert.ok(ctx.gridLines[0].includes(idA), `expected header to carry ${idA}, got: ${ctx.gridLines[0]}`);
+      assert.ok(ctx.gridLines[0].includes(idB), `expected header to carry ${idB}, got: ${ctx.gridLines[0]}`);
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^the matrix has exactly 8 role rows labelled NS, SP, CO, CL, AR, HD, DC and QA$/,
+    (ctx) => {
+      const labels = ctx.gridLines.slice(1, 9).map((l) => l.slice(0, 2));
+      assert.deepEqual(labels, ROLE_LABELS);
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^no epic section heading appears anywhere in the grid$/,
+    (ctx) => {
+      assert.ok(!ctx.gridLines.some((l) => l.startsWith('--')), `expected no "-- epic --" heading, got:\n${ctx.gridText}`);
+    },
+    FEATURE
+  );
+
   // ── Scenario 02 (Outline) ────────────────────────────────────────────
   registry.defineScoped(
     /^active ticket BL-537 is held by (.+)$/,
@@ -100,43 +116,102 @@ function registerSteps(registry) {
     FEATURE
   );
 
-  // BL-979: transposed. BL-537 is a ROW now and the stages are the shared
-  // COLUMNS, so "the mark for this holder" is read from the ticket's own
-  // line at the held stage's column offset. The holder->stage mapping this
-  // Outline covers - notably a coordinator-held ticket rendering at QA, and
-  // an unheld one at NS - is the part BL-979's own feature file does not
-  // re-assert, which is why this scenario was transposed rather than
-  // retired with the others.
   registry.defineScoped(
-    /^stage column "([A-Z]{2})" carries the mark "X" in the BL-537 row$/,
-    (ctx, stage) => {
-      assert.equal(ctx.gridLines[1], ticketRow('537', 3, stage), `expected BL-537 marked at ${stage}, got:\n${ctx.gridText}`);
-      ctx.markedStage = stage;
+    /^role row "([A-Z]{2})" carries the mark "X" in the BL-537 column$/,
+    (ctx, row) => {
+      const line = ctx.gridLines.find((l) => l.startsWith(row));
+      assert.equal(line, matrixLine(row, ['X'], 3), `expected row ${row} to carry X, got:\n${ctx.gridText}`);
+      ctx.markedRow = row;
     },
     FEATURE
   );
 
   registry.defineScoped(
-    /^every other stage column carries "\." in the BL-537 row$/,
+    /^every other role row carries "\." in the BL-537 column$/,
     (ctx) => {
-      // Already pinned byte-for-byte by the step above (ticketRow builds the
-      // whole line, X in one column and "." in the other seven); this
-      // re-states it per stage so a failure names the offending column.
-      const cells = ctx.gridLines[1].slice(3).split(NBSP).filter(Boolean);
-      ROLE_LABELS.forEach((role, i) => {
-        assert.equal(cells[i], role === ctx.markedStage ? 'X' : '.', `stage ${role}`);
-      });
+      for (const role of ROLE_LABELS) {
+        if (role === ctx.markedRow) {
+          continue;
+        }
+        const line = ctx.gridLines.find((l) => l.startsWith(role));
+        assert.equal(line, matrixLine(role, ['.'], 3), `expected row ${role} to carry ".", got:\n${ctx.gridText}`);
+      }
+    },
+    FEATURE
+  );
+
+  // ── Scenario 03 (Outline) ────────────────────────────────────────────
+  registry.defineScoped(
+    /^active ticket BL-537 whose epic is (.+)$/,
+    (ctx, token) => {
+      const epic = parseEpicToken(token);
+      const rows = [{ id: 'BL-537', column: 'coder', epic, slug: '' }];
+      ctx.data = { rows, parked: [] };
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^the caption line "(.+)" appears below the matrix$/,
+    (ctx, caption) => {
+      assert.ok(ctx.gridLines.includes(caption), `expected caption "${caption}" in:\n${ctx.gridText}`);
+    },
+    FEATURE
+  );
+
+  // ── Scenario 04 (Outline) ────────────────────────────────────────────
+  registry.defineScoped(
+    /^(\d+) active tickets whose display ids are 3 characters wide$/,
+    (ctx, countToken) => {
+      const count = Number(countToken);
+      const rows = [];
+      for (let i = 0; i < count; i++) {
+        rows.push({ id: `BL-${100 + i}`, column: 'coder', slug: '' });
+      }
+      ctx.data = { rows, parked: [] };
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^no grid line is wider than 30 characters$/,
+    (ctx) => {
+      for (const line of ctx.gridLines) {
+        assert.ok(line.length <= 30, `expected every grid line <= 30 chars, got ${line.length}: ${JSON.stringify(line)}`);
+      }
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^the matrix shows (\d+) ticket columns$/,
+    (ctx, shownToken) => {
+      const header = ctx.gridLines[0];
+      const idCount = (header.match(/\d+/g) || []).length;
+      assert.equal(idCount, Number(shownToken), `expected ${shownToken} visible columns in header: ${JSON.stringify(header)}`);
+    },
+    FEATURE
+  );
+
+  registry.defineScoped(
+    /^the grid overflow line is "(.+)"$/,
+    (ctx, overflow) => {
+      if (overflow === '(none)') {
+        assert.ok(!ctx.gridLines.some((l) => /^\+\d+ more active$/.test(l)), `expected no overflow line, got:\n${ctx.gridText}`);
+      } else {
+        assert.ok(ctx.gridLines.includes(overflow), `expected overflow line "${overflow}" in:\n${ctx.gridText}`);
+      }
     },
     FEATURE
   );
 
   // ── Scenario 05 ──────────────────────────────────────────────────────
   registry.defineScoped(
-    /^15 active tickets and a resolvable repo base url$/,
+    /^10 active tickets and a resolvable repo base url$/,
     (ctx) => {
       const roleHeldTickets = { coder: [] };
       const ticketMeta = {};
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 10; i++) {
         const id = `BL-${200 + i}`;
         roleHeldTickets.coder.push(id);
         ticketMeta[id] = { filename: `${id}-x.yaml`, location: 'active' };
@@ -159,7 +234,7 @@ function registerSteps(registry) {
   );
 
   registry.defineScoped(
-    /^all 15 ticket ids appear in the link list$/,
+    /^all 10 ticket ids appear in the link list$/,
     (ctx) => {
       for (const id of ctx.ids) {
         const displayId = deriveDisplayTicketId(id);
@@ -190,11 +265,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^every column gap in the matrix is a non-breaking space$/,
     (ctx) => {
-      // BL-979: the matrix is the header plus one line per visible TICKET,
-      // so its height is no longer the fixed 9. Everything up to the first
-      // blank line is the matrix; the caption block below it is prose and
-      // legitimately contains ASCII spaces.
-      const matrixLines = matrixLinesOf(ctx.gridLines);
+      const matrixLines = ctx.gridLines.slice(0, 9); // header + 8 role rows
       for (const line of matrixLines) {
         assert.ok(line.includes(NBSP), `expected at least one NBSP gap in matrix line: ${JSON.stringify(line)}`);
         assert.ok(!line.includes(' '), `expected no plain ASCII space in matrix line: ${JSON.stringify(line)}`);
@@ -206,7 +277,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^no matrix line contains a plain ASCII space$/,
     (ctx) => {
-      const matrixLines = matrixLinesOf(ctx.gridLines);
+      const matrixLines = ctx.gridLines.slice(0, 9);
       for (const line of matrixLines) {
         assert.ok(!line.includes(' '), `expected no plain ASCII space in matrix line: ${JSON.stringify(line)}`);
       }
