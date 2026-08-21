@@ -188,39 +188,111 @@ qa_e2e_procedure: >
      registered handlers (no runtime THROW on a missing handler).
 
 notes: |
-  RUN HISTORY. An expedited run of this ticket was attempted 2026-08-21 and
-  did NOT complete: the specifier stage passed, the coder stage failed with
-  `stage-timeout`, and the run tore down with `FAILED HALF: ticket`. Nothing
-  was built. What survives is this spec - the specifier stage's output, which
-  is what mechanism 2 and the sizing notes below are. The ticket therefore
-  still needs a full pass; it is not partially done.
+  RUN HISTORY, two runs. Run 1 (2026-08-21, expedited) did NOT complete: the
+  specifier stage passed, the coder stage was killed at `stage-timeout` after
+  the full 45-minute budget, and the run tore down with `FAILED HALF: ticket`.
+  Its specifier output was stranded on the dead run branch and recovered onto
+  main at 4595f90fa. Run 2 is the current one, on the same branch, and it runs
+  with a larger per-stage budget: the expeditor's `--stage-timeout-ms` default
+  was raised from 45 to 90 minutes before it started. That is the operator's own
+  remedy for the run-1 timeout, and it is worth recording as history because it
+  is the second reason - alongside the checkpoint - that run 2 is not simply
+  run 1 repeated. Observed as an uncommitted change in the master checkout at
+  run-2 specifier time, so treat the number as run configuration rather than as
+  a settled default.
 
-  IF THIS TICKET IS EXPEDITED AGAIN, promote it first. The expeditor closes a
-  passing run with `move-ticket! root <ticket> "active" "done"`, whose
-  `when-let` silently no-ops when the ticket is not in `backlog/active/` - so
-  the ticket would finish built, gated and landed while still filed as
-  un-started work, with the run reporting success. Promotion is a coordinator
-  duty (Article 3.3) the specifier does not hold, and the expeditor does its
-  backlog moves in the MASTER checkout while stage work happens in the run
-  worktree - so moving it from inside the worktree is invisible to teardown,
-  and moving it in both places duplicates the file across two folders at
-  merge. The one correct move is in the master checkout, before the run
-  starts:
+  RUN 2 STARTS FROM A CHECKPOINT - DO NOT REBUILD. Run 1's coder work was NOT
+  lost. It was checkpointed to the run branch at `ed8a915f7` ("BL-1021:
+  checkpoint coder WIP before re-expedite") before this run started, and that
+  commit is already an ancestor of the current branch head. It carries both
+  halves of the fix plus their tests: the stream-drain bound in
+  `daemon_cycle_guard_lib.bb`, `swarm_handoff.bb` moved off
+  `clojure.java.shell`, `bl1021SubprocessOutlivesWaitBoundSteps.js` (387 lines,
+  registered in `specs/pipeline/steps/index.js`), and additions to both the
+  unit and property runners - 803 insertions over 6 files. An earlier version
+  of this paragraph said "nothing was built"; that was written before the
+  checkpoint existed and is simply false now. Rebuilding from scratch is how
+  run 1 ran out of clock; doing it again would repeat the only failure this
+  ticket has actually had.
+
+  What the specifier stage of run 2 verified about that checkpoint, so nobody
+  re-derives it: `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb`
+  reports ALL PASS (its closure gate included), the property runner reports ALL
+  PROPERTIES HOLD (P1=50 real-child runs at pipe-holder depths 1-3, P3=50,
+  P2=450), and `swarm_handoff.bb` still loads and prints its usage after losing
+  `clojure.java.shell`. The unit runner already carries all three cases
+  qa_e2e_procedure step 2 asks for - the defect shape, the `sleep`-forever
+  CONTROL, and a fast-path child that must not acquire a bound-length delay.
+
+  That is evidence of promise, NOT a pass. It is unreviewed work-in-progress
+  from a killed stage: nobody has run the acceptance feature end to end, and no
+  cleaner, architect, hardener, documenter or QA has ever seen it. Treat it as
+  a starting position to verify and finish, not as a green implementation -
+  "it is built" would be as wrong as "nothing was built".
+
+  One thing worth a reviewer's eye specifically, because it is the change with
+  reach beyond this ticket: routing `swarm_handoff.bb`'s `command` wrapper
+  through `sh!` puts a wait bound (60s default) and stream capture on all nine
+  of its subprocess sites, not only the ones on the daemon's path. Any git call
+  there that legitimately runs longer now returns exit 124 instead of blocking.
+  That is the intended direction - it is what "no unbounded API on the critical
+  path" means - but it is a behaviour change to the CLI as well as to the
+  daemon's child, and it deserves to be looked at rather than assumed benign.
+
+  SIZING, and why this ticket is not being split. The run-1 timeout is real
+  evidence against INVEST's Small letter: two independent halves plus a
+  four-scenario acceptance surface plus a property lane is more than one
+  sitting from cold. The honest reading is that it was minted one notch too
+  large. It is NOT being split now, for two reasons that both point the same
+  way. First, the split is forbidden: BL-1021 is in the active backlog, and
+  consolidation - merge or split - happens at spec time only; rewriting an
+  active ticket's YAML into siblings is exactly the worktree-staleness failure
+  BL-317/BL-325 exist for. Second, the split would be self-defeating even if
+  it were allowed: the work is already done as one piece on this branch, so
+  splitting would strand `ed8a915f7` across two tickets and cost a second
+  seven-stage pass on a `critical` live defect whose whole point is speed. The
+  size problem was real and the checkpoint has already absorbed it.
+
+  IF THIS TICKET IS EXPEDITED A THIRD TIME, promote it first - and for run 2
+  this was DONE, so do not redo it. The expeditor closes a passing run with
+  `move-ticket! root <ticket> "active" "done"`, whose `when-let` silently
+  no-ops when the ticket is not in `backlog/active/` - so the ticket would
+  finish built, gated and landed while still filed as un-started work, with the
+  run reporting success. Promotion is a coordinator duty (Article 3.3) the
+  specifier does not hold, and the expeditor does its backlog moves in the
+  MASTER checkout while stage work happens in the run worktree - so moving it
+  from inside the worktree is invisible to teardown, and moving it in both
+  places duplicates the file across two folders at merge. The one correct move
+  is in the master checkout, before the run starts:
 
       git mv backlog/paused/BL-1021-handoffd-deadlocks-on-a-subprocess-whose-grandchild-holds-the-pipe.yaml \
              backlog/active/
+
+  For run 2 that rename is already staged-and-uncommitted in the master
+  checkout, matching the expeditor's own park convention, so teardown will find
+  the file where it looks for it. This YAML deliberately stays in
+  `backlog/paused/` on the run branch, tracking main's committed tree - moving
+  it here too is the both-places case above, and would duplicate the file at
+  merge.
 
   None of this applies to a normal live-swarm run, where the coordinator
   promotes as usual. The gap itself is filed as BL-1023, after which the
   workaround stops being needed either way.
 
-  Specifier stage of the expedited run, 2026-08-21, verified the defect from a
-  deterministic repro rather than from the report - the control/defect pair is
-  recorded in the description's mechanism 2. Consequence for whoever picks this
-  up: qa_e2e_procedure step 1 is EXPECTED to reproduce, and its expected
-  pre-fix result is already known (hang past the bound, no timeout event). If
-  step 1 does NOT reproduce, that is itself the finding - stop and report
-  rather than proceeding to a fix for a mechanism you have not seen fire.
+  Run 1's specifier stage, 2026-08-21, verified the defect from a deterministic
+  repro rather than from the report - the control/defect pair is recorded in
+  the description's mechanism 2. Consequence for whoever picks this up:
+  qa_e2e_procedure step 1 is EXPECTED to reproduce, and its expected pre-fix
+  result is already known (hang past the bound, no timeout event). If step 1
+  does NOT reproduce, that is itself the finding - stop and report rather than
+  proceeding to a fix for a mechanism you have not seen fire.
+
+  Where "the parent commit" is, for step 1. Because run 1's coder work is
+  already committed on this branch, the last commit on it WITHOUT the fix is
+  `3ced734d1`, not whatever the parcel's first parent turns out to be after the
+  merges this run adds. Reproduce there. Reproducing at a commit that already
+  carries the fix would make step 1 come back clean and trip the stop-and-report
+  rule above for the wrong reason.
 
   Sizing note for the second half: `swarm_handoff.bb` reaches
   `clojure.java.shell/sh` through a single `command` wrapper (~L60, 8 call
