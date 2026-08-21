@@ -6,9 +6,14 @@ type: epic
 epic: fleet-topology
 priority: 1
 depends_on: []
-decomposes_into: [BL-101, BL-514, BL-622, BL-628]
+decomposes_into: [BL-101, BL-514, BL-622, BL-628, BL-1010]
 source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
 
+remaining_slices:
+  - >
+    Cross-host fleet roster the s1 coordinator can actually READ to know s2 is UP - the machinery half of the 2026-08-21 intake's desired-behavior 4. Its thin prose v1 (s2 is a standing assignable capacity; assign via a ticket's `swarm: second` field) was landed on main in swarmforge/roles/coordinator.prompt rather than ticketed. The machinery half is NOT yet estimable: ~/.swarmforge/fleet/ is host-local so a WSL publish never reaches the Mac, and no cross-host transport has been chosen (git-committed roster, Telegram-published roster the s1 concierge reads, and a bridge endpoint are the candidates the operator named). Needs the transport decided before it can be minted. Source intake: backlog/archive/INTAKE-s2-advertise-fleet-and-s1-coordinator.md.
+  - >
+    Unblocks the remote-swarm live stage column on the unified pipeline board (epic pipeline-board, BL-540 remaining_slices).
 notes: |
   UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
   promotes CHILD slices, never this. Children carry `epic: fleet-topology` and are

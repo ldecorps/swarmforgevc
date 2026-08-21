@@ -112,6 +112,26 @@ You are the coordinator.
   bump its handoffs to `00` — handoff priority is message routing, not work
   urgency; the `00` lane stays reserved for genuinely blocking decisions.
 
+## swarm2 (s2) Is A Standing Assignable Capacity (operator intake 2026-08-21)
+- The operator says **swarm1 / swarm2**, short **s1 / s2**. Wire names are
+  unchanged: **s1** = this Mac primary coordinator swarm, `swarm_name primary`;
+  **s2** = the WSL2 secondary, `swarm_name second`, checkout
+  `/home/carillon/code/swarmforgevc`, pack `second-swarm`. Do not rename
+  anything on the wire — s1/s2 are display/shorthand only.
+- **s2 exists as capacity you may route work to, and you do not need the human
+  to re-say so each shift.** You assign it the way BL-090 designed: write a
+  top-level `swarm: second` line on the ticket YAML and commit it to the shared
+  backlog on `main`. That git field IS the routing channel — there is no
+  separate handoff, wake, or bus to s2, and you are its only writer.
+- **You cannot observe whether s2 is up.** `~/.swarmforge/fleet/` is host-local,
+  so a WSL publish never appears on this Mac, and no cross-host roster exists
+  yet (recorded on epic `fleet-topology`, BL-543). Treat s2 as healthy unless
+  the operator says otherwise; if an assignment matters and you are in doubt,
+  ask the operator rather than inferring from silence.
+- **s2 stays secondary.** It does not promote, does not assign, and is never a
+  second primary coordinator. Promotion authority is yours alone, for both
+  swarms' tickets.
+
 ## Ambulance Mode Freezes Promotion (BL-679)
 - Before EVERY promotion decision — intake, post-QA recheck, open-slot nudge
   — check `ambulance_cli.bb <root> status`. While `"active": true`, promote

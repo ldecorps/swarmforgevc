@@ -71,3 +71,25 @@ Make a live s2 reliably advertise its `swarm_name` (and basic health) so:
 
 1. Fix emit name source + s2 checkout compile/docs (unblocks same-host fleet).
 2. Separate ticket if needed: cross-host roster / s1 coordinator prompt read path for live s2 capacity.
+
+---
+
+## DISPOSITION — specifier, 2026-08-21 (backlog-root drain)
+
+Split 1:N under Consolidation Authority, following this intake's OWN suggested
+slice boundary. Nothing in this intake was dropped.
+
+| Part of this intake | Went to |
+|---|---|
+| Suggested slice 1 — "Fix emit name source + s2 checkout compile/docs (unblocks same-host fleet)"; desired behaviors 1, 2, 3; every non-goal; the ops evidence and acceptance hints | **BL-1010** — `backlog/paused/BL-1010-a-secondary-swarm-publishes-under-its-own-name.yaml`, acceptance `specs/features/BL-1010-a-secondary-swarm-publishes-under-its-own-name.feature` |
+| Desired behavior 4, thin v1 — the standing durable statement that s2 is an assignable capacity, the s1/s2 naming, and how to assign (`swarm: second` on the ticket YAML) | **Landed directly on `main`**, new section "swarm2 (s2) Is A Standing Assignable Capacity" in `swarmforge/roles/coordinator.prompt`. A role prompt is the specifier's own deliverable to land (BL-798); no ticket minted |
+| Suggested slice 2 — the cross-host roster / live presence path the s1 coordinator could READ | **Deferred**, recorded on epic `fleet-topology` (BL-543) `remaining_slices`. Not minted: no cross-host transport has been chosen, so it fails INVEST's Estimable letter today. The three candidates this intake named are recorded with it |
+
+Operator sentence preserved verbatim in BL-1010's description: "Do not invent a
+second primary coordinator. s2 remains secondary (`swarm_mode secondary`)." The
+other non-goals and the suggested-slice-1 wording are quoted verbatim there too.
+
+Every leg of this intake's diagnosis was re-verified against live code before
+speccing and all three hold: `swarm_identity_lib.bb` reads the identity file,
+`holisticProjections.ts` `readSwarmName` reads `swarmforge.conf` only, and
+`emit-fleet-status.ts` names its output path from that reader.
