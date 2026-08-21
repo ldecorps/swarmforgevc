@@ -553,6 +553,7 @@ const DOMAINS = [
   require('./bl1002SocketRootSteps'),
   require('./bl1004ReworkClaimSteps'),
   require('./bl586PipelineBoardTopicIdentitySteps'),
+  require('./bl1021SubprocessOutlivesWaitBoundSteps'),
   require('./bl984SweepStaleFixturesSteps'),
   require('./bl979PipelineBoardTicketRowsSteps'),
   require('./bl990BounceAttributionCorrectableSteps'),
