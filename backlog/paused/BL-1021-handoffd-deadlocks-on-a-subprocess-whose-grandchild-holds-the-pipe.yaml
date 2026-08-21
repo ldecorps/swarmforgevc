@@ -80,21 +80,43 @@ description: |
 
   1. **The child re-introduces an unbounded API.** `clojure.java.shell/sh`
      cannot time out, so once its pump threads block, that process is gone.
-  2. **The parent's bound did not fire either.** `sh!` wraps the call in
-     `(deref proc bound ::timed-out)` with a 60s default, and on a hit it
-     destroys the tree and fires `on-timeout!`. The daemon sat 4+ minutes past
-     that bound with NO timeout line logged. So either the bounded deref does
-     not return while its own `:out :string` pump threads are stuck, or it did
-     return and `destroy-tree` could not reach a grandchild already reparented
-     away from the tree. Determining which is the first task, because the
-     invariant "the bound always fires" is what makes the daemon survivable
-     regardless of what any child does.
+  2. **The parent's bound did not fire either - and this half is now
+     DETERMINED, not conjectured.** The ticket originally left open which of
+     two candidates fired. A deterministic repro run by the specifier
+     2026-08-21 settles it, and both halves of the discriminating pair are
+     recorded here so nobody re-derives them under pressure:
+
+     - **Control.** `sh!` on a direct child that never exits (`sleep 300`),
+       bound 3000ms: returns at **3024ms** with `exit 124` and an
+       `on-timeout!` event. The bound works for the case it was built for.
+     - **Defect.** `sh!` on a child that prints, exits immediately, and
+       leaves a backgrounded grandchild holding the inherited stdout/stderr,
+       same 3000ms bound: **still blocked past 20s, no timeout event, no
+       return.** Killed by the harness, not by the bound.
+
+     The cause is in `sh!` itself (`daemon_cycle_guard_lib.bb:105-117`), not
+     in `destroy-tree`. `(deref proc bound ::timed-out)` bounds only the
+     **exit-code wait**. When the direct child exits promptly the timeout
+     branch is never taken, and babashka.process then resolves the
+     `:out :string` / `:err :string` pump futures **unbounded** - and those
+     block in `read()` forever because the reparented grandchild still holds
+     the write ends, so the pipe never reaches EOF. `destroy-tree` and
+     `on-timeout!` are never reached at all; that is why the log shows no
+     timeout line. The bound is not failing to kill the right process - it
+     has already returned control to code that then waits with no bound.
+
+     This is why the invariant is phrased "at any process depth": a bound
+     over the exit code alone is not a bound over the call.
 
   ## How (direction, not mandate)
 
-  - Establish which of the two mechanisms above actually fired, with a
-    deterministic repro: a script that exits immediately while leaving a
-    grandchild holding its stdout/stderr. That repro is also scenario 01.
+  - The repro is settled (see mechanism 2 above); reuse its shape rather than
+    rebuilding it. A fixture script that backgrounds a long sleep and exits
+    immediately, invoked through `sh!` with a short
+    `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS`, reproduces the hang in seconds.
+    That is scenario 01, and the `sleep 300` control above is worth keeping
+    as a companion assertion - it is what proves a fix bounded the drain
+    without breaking the exit-wait bound that already worked.
   - Make the bound genuinely unconditional. A fire-and-forget subprocess
     should not capture `:out :string`/`:err :string` at all - redirect to a
     file or /dev/null so no pump thread exists to block. Where output IS
@@ -141,7 +163,11 @@ qa_e2e_procedure: >
 
   2. At the parcel commit, repeat step 1 and confirm the call returns within
      the bound, reports a bounded-wait timeout, and emits a timeout event
-     naming the sweep and command.
+     naming the sweep and command. Then run the CONTROL in the same session -
+     `sh!` on a direct child that never exits - and confirm it STILL returns
+     at the bound with exit 124 and a timeout event. The control passed before
+     the fix; a fix that bounds the stream drain must not cost the exit-wait
+     bound that already worked.
 
   3. Confirm the sweep chain survives. With the same fixture wired into the
      dispatch-gap sweep, confirm every sweep scheduled after it still emits
@@ -162,6 +188,55 @@ qa_e2e_procedure: >
      registered handlers (no runtime THROW on a missing handler).
 
 notes: |
+  RUN HISTORY. An expedited run of this ticket was attempted 2026-08-21 and
+  did NOT complete: the specifier stage passed, the coder stage failed with
+  `stage-timeout`, and the run tore down with `FAILED HALF: ticket`. Nothing
+  was built. What survives is this spec - the specifier stage's output, which
+  is what mechanism 2 and the sizing notes below are. The ticket therefore
+  still needs a full pass; it is not partially done.
+
+  IF THIS TICKET IS EXPEDITED AGAIN, promote it first. The expeditor closes a
+  passing run with `move-ticket! root <ticket> "active" "done"`, whose
+  `when-let` silently no-ops when the ticket is not in `backlog/active/` - so
+  the ticket would finish built, gated and landed while still filed as
+  un-started work, with the run reporting success. Promotion is a coordinator
+  duty (Article 3.3) the specifier does not hold, and the expeditor does its
+  backlog moves in the MASTER checkout while stage work happens in the run
+  worktree - so moving it from inside the worktree is invisible to teardown,
+  and moving it in both places duplicates the file across two folders at
+  merge. The one correct move is in the master checkout, before the run
+  starts:
+
+      git mv backlog/paused/BL-1021-handoffd-deadlocks-on-a-subprocess-whose-grandchild-holds-the-pipe.yaml \
+             backlog/active/
+
+  None of this applies to a normal live-swarm run, where the coordinator
+  promotes as usual. The gap itself is filed as BL-1023, after which the
+  workaround stops being needed either way.
+
+  Specifier stage of the expedited run, 2026-08-21, verified the defect from a
+  deterministic repro rather than from the report - the control/defect pair is
+  recorded in the description's mechanism 2. Consequence for whoever picks this
+  up: qa_e2e_procedure step 1 is EXPECTED to reproduce, and its expected
+  pre-fix result is already known (hang past the bound, no timeout event). If
+  step 1 does NOT reproduce, that is itself the finding - stop and report
+  rather than proceeding to a fix for a mechanism you have not seen fire.
+
+  Sizing note for the second half: `swarm_handoff.bb` reaches
+  `clojure.java.shell/sh` through a single `command` wrapper (~L60, 8 call
+  sites) plus one direct call at L315 - nine sites, one file. The bounded
+  chokepoint is ALREADY in scope there: `swarm_handoff.bb` load-files
+  `handoff_lib.bb`, which load-files `daemon_cycle_guard_lib.bb`. So no new
+  wiring is needed to reach `sh!`, only the decision to route through it.
+
+  Deliberately NO `required_wiring:` on this ticket. The obvious entry would
+  pin `swarm_handoff.bb` to the literal `daemon-cycle-guard-lib/sh!`, but that
+  mandates one design for the child's fix when the ticket offers it as
+  direction only - a bounded `babashka.process` call would satisfy the
+  invariant equally. Scenario 04 already gates the design-neutral half of it
+  (the banned API must be absent), which is the property that actually
+  matters.
+
   The 165s `dispatch-gap-sweep` boundary in the intake's log tail is itself
   evidence the bound is not being honoured: 165s is well past the 60s default,
   and that line was the LAST thing written before the freeze.
