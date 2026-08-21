@@ -23,7 +23,7 @@ anchors are dropped first (numbers stay visible as plain text).
 The board is capped section by section, and each cap says what it dropped
 rather than hiding it:
 
-- the grid drops its tail columns past the width budget and prints
+- the grid drops its tail rows past the row budget and prints
   `+N more active` (those tickets are still linked below the grid);
 - PARKED lists at most 3 plain parked tickets, then `+N more parked`;
 - PARKED lists at most 3 collapsed epic trackers, then `+N more epics`;
