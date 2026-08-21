@@ -55,9 +55,11 @@ description: >
   - `test_dispatch_lib_receive_mode.sh:48,53,60` - `bb "$READY_DISPATCH"` /
     `bb "$DONE_DISPATCH"`.
   - `test_handoff_state_dir_worktree_root.sh:79` - `bb "$READY_DISPATCH"`.
-    MIXED CASE: its lines 86 and 94 call the leaf `.bb` files directly, which
-    is the SAFE shape. Only line 79 needs changing; converting the whole file
-    would be churn.
+    MIXED CASE - but see the CORRECTED constraint below: this file's direct
+    `bb "$DONE_TASK"` call is NOT safe, because `done_with_current_task.bb`
+    execs a sibling wrapper by real file path. Its direct `bb "$READY_TASK"`
+    calls ARE safe. Convert the `DONE_TASK` call site (and `READY_TASK` too, for
+    symmetry, if that is cheaper than reasoning about it at each future edit).
   - `test_reference_freshness_guard.sh:82,202` - `bb "$READY"`.
   - `test_idle_clear_respawn.sh:95` - `"$READY_TASK"` where that is
     `ready_for_next_task.sh`, the wrapper itself. The most direct form.
@@ -80,11 +82,26 @@ constraints: >
     of spellings and caught 1 of 6; BL-964 gated 3 of 11 seams. A guard that
     names these five files reproduces the bug it is fixing. Decide membership
     by inspecting what a test executes.
-  - Do NOT convert the safe shape. Calling a leaf helper
-    (`ready_for_next_task.bb`, `done_with_current_task.bb`) directly with an
-    explicit root is correct and is how BL-983's own property runner avoided
-    this trap. The guard must not flag it, and
-    `test_handoff_state_dir_worktree_root.sh` must keep its lines 86 and 94.
+  - Do NOT convert a TRUE leaf. Calling `ready_for_next_task.bb` directly with
+    an explicit root is correct and is how BL-983's own property runner avoided
+    this trap; the guard must not flag it. **CORRECTED 2026-08-21 (cleaner
+    bounce, D1): `done_with_current_task.bb` is NOT a leaf and this constraint
+    was wrong to name it as one.** It is transitively self-rooting: line 83
+    calls `run-ready!`, which is
+    `(process/exec (str (fs/path script-dir "ready_for_next_task.sh")) "--idle-boundary")`
+    where `script-dir` is `(fs/parent *file*)` - the REAL file's directory, not
+    cwd. That wrapper then does `cd "$(dirname "$0")"`, leaving the fixture
+    entirely and landing in the real scripts dir of whichever worktree the
+    binding points at. `ready_for_next_task.bb` has NO such tail call (0
+    occurrences of `process/exec`; its `(fs/parent *file*)` uses are `load-file`
+    only, which is in-process and changes no cwd). Verified both by direct
+    inspection at amendment time. So: `done_with_current_task.bb` MUST be called
+    through the fixture's own installed copy, exactly like the batch pair.
+  - Do NOT pin line numbers in this ticket. The earlier "lines 86 and 94"
+    mandate was both wrong (line 86 is the unsafe `bb "$DONE_TASK"` call) and
+    fragile - the numbers shift as the file is converted. Identify call sites by
+    SHAPE: a call is safe only if the executed file lives inside the fixture, or
+    if the helper provably performs no `process/exec` of a sibling.
   - Do NOT "fix" a test by pointing it at a different real path or by
     exporting a root env var over the top. The wrapper computes its root from
     `$0`; only relocating the executed copy changes the answer.
@@ -122,8 +139,18 @@ qa_e2e_procedure: >
      fails and NAMES it, then delete it. Then confirm the guard passes for a
      test that installs scripts, and for one that calls a leaf helper with an
      explicit root - the two safe shapes.
-  6. Confirm `test_handoff_state_dir_worktree_root.sh` lines 86 and 94 still
-     call the leaf helpers directly and were not converted.
+  6. CORRECTED 2026-08-21: confirm every `done_with_current_task.bb` call site
+     in the shell suite runs the FIXTURE's installed copy, not the real scripts
+     tree - `test_handoff_state_dir_worktree_root.sh` and
+     `test_idle_clear_respawn.sh` both had unconverted ones. Do not verify this
+     by line number, and do not verify it by the test passing: the existing
+     assertion greps only the FIRST line of captured stdout, so post-escape
+     output from the exec'd real helper lands in the same capture unchecked and
+     the test passes either way. Assert the real tree is untouched instead -
+     invariant 1's byte-identical check is the one that actually discriminates.
+  7. Confirm direct `ready_for_next_task.bb` calls were NOT converted
+     unnecessarily - it is a true leaf and churn there is what the original
+     constraint was right to forbid.
   7. Run the acceptance feature, all scenarios green, handler registered in
      `specs/pipeline/steps/index.js`.
   8. Prove non-vacuity: revert one file's `install_scripts` call and confirm
@@ -176,6 +203,46 @@ approval_context: >
   invisible until something regresses. A test suite that can silently dequeue
   a live parcel out of a working role's mailbox is a different category, and
   it is the one the hardender stumbled into.
+
+amendment_2026_08_21: |
+  SPEC DEFECT, CORRECTED BY THE SPECIFIER. The cleaner's D1 bounce is upheld in
+  full and the fault is this ticket's, not the coder's: the `constraints:` block
+  asserted that BOTH `ready_for_next_task.bb` AND `done_with_current_task.bb`
+  are safe-to-call-directly leaves, and then MANDATED preserving the call sites
+  ("must keep its lines 86 and 94"). The coder followed that mandate correctly.
+  It was wrong for `done_with_current_task.bb`, and the mandate is what kept the
+  unsafe call site in place. Evidence:
+  backlog/evidence/BL-998-cleaner-bounce-20260821.md (read it at 90aee07f8).
+
+  Re-verified independently at amendment time rather than taken from the report:
+    - done_with_current_task.bb:8  `(def script-dir (fs/parent *file*))`
+    - done_with_current_task.bb:13-14 `run-ready!` = `process/exec` of
+      `ready_for_next_task.sh` resolved against script-dir, called at :83
+    - `grep -c process/exec` => done_with_current_task.bb: 1,
+      ready_for_next_task.bb: 0
+    - test_handoff_state_dir_worktree_root.sh:16 binds DONE_TASK to
+      `$SCRIPT_DIR/../done_with_current_task.bb` (the REAL tree), and line 86 -
+      the very line this ticket said to preserve - is that unsafe call.
+  The asymmetry is exact and the corrected constraint now states it.
+
+  OPEN QUESTION FROM THE CLEANER, ANSWERED HERE rather than left for the
+  architect: should the derived guard widen to follow `process/exec` of
+  siblings, so a "leaf" that is not really a leaf is caught by the guard instead
+  of by hand-inspection? YES, and this follows directly from this ticket's own
+  firm line rather than being new scope. "The guard must be DERIVED, not a list"
+  and "decide membership by inspecting what a test executes" are already the
+  contract; what went wrong is that "what a test executes" was read one hop
+  deep. A guard that instead carries a hand-declared set of leaf helpers would
+  reproduce precisely the failure this ticket exists to fix - it would have
+  classified done_with_current_task.bb as safe, exactly as this spec did.
+  So: the guard must not treat leaf-ness as a declared property. At minimum it
+  must detect a `process/exec` of a sibling script inside any helper it is about
+  to classify as a leaf.
+  SIZE ESCAPE HATCH, and it is a real one: if following that hop transitively
+  turns out to exceed one sitting, implement the one-hop detection here and
+  raise a sibling ticket for deeper transitivity rather than letting this slice
+  outgrow its envelope. Say so in the handoff if you take that route - do not
+  silently ship the smaller thing.
 
 assigned_to: coder
 bounce_count: 1

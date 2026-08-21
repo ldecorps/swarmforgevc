@@ -3,7 +3,8 @@ title: "main is RED: BL-585 scenario 03 still asserts the epic-in-caption behavi
 milestone: M8
 type: defect
 severity: high
-status: todo
+status: superseded
+superseded_by: BL-979
 epic: pipeline-board
 priority: 10
 depends_on: []
@@ -102,6 +103,53 @@ source:
   - "architect note to specifier + coordinator, 2026-08-21 12:00Z, priority 00: 'BL-956 broke BL-585 sc03 caption on main - evidence filed, needs ticket'. Evidence: backlog/evidence/BL-956-vs-BL-585-caption-mismatch-discovered-20260821.md, authored by the architect while actioning QA's BL-986 bounce. Not yet on main at ticket-writing time - read it with `git show 37c34cfa5:backlog/evidence/BL-956-vs-BL-585-caption-mismatch-discovered-20260821.md`."
 
 notes: |
+  2026-08-21 specifier - SUPERSEDED BY BL-979, disposition recorded here so the
+  closure is auditable. The coder reported by note that this ticket's work was
+  already contained in BL-979's in-flight parcel and asked that it be closed as a
+  duplicate. Re-verified independently before agreeing, per "a peer's claim must
+  be re-run" - every one of the following was checked, not taken from the report:
+    - `main` really is RED: `node specs/pipeline/cli.js` on BL-585's feature
+      gives 12 pass / 2 fail on a clean master checkout. The defect was live.
+    - Scenario 03 is PRESENT on `main` and ABSENT on all six role branches
+      (coder, cleaner, architect, hardender, documenter, QA) - BL-979's pivot
+      was restored at 50c1c279d after its bounce-revert, and is propagating.
+    - BL-979 is moving, not stalled: architect review PASS at 00e4de90b
+      (12:18Z), forwarded to hardender.
+    - All THREE of this ticket's invariants are genuinely satisfied by BL-979's
+      parcel, checked one at a time on swarm/coder:
+        1. successor coverage survives (BL-979's own feature file, and the
+           retired scenarios are named as retired-not-reworded in the narrative);
+        2. NO orphaned handler - both step handlers and parseEpicToken, their
+           only remaining caller, are gone;
+        3. the `Feature:` narrative is fully re-tensed and states plainly which
+           scenarios were retired and why.
+  So a separate parcel here would produce an EMPTY diff, which Article 1.9
+  forbids forwarding. The coder handled this correctly: it verified rather than
+  assumed, refused to forward a no-op, and reported by note instead.
+
+  ONE RESIDUAL GAP FOUND, AND CLOSED - this is why the closure is not a bare
+  "dup". BL-979's qa_e2e_procedure covered only its OWN scenarios 01-06 plus a
+  live confirmation and the empty-board regression. NOTHING in it obliged anyone
+  to confirm BL-585's feature goes green. Closing this ticket as a plain
+  duplicate would therefore have transferred the defect's verification to a
+  parcel whose contract never asks for it - and the retirement rides inside
+  BL-979 only as an incidental side effect of a wholesale feature-file rewrite,
+  gated by nothing. That is exactly the BL-1006 failure mode this ticket was
+  filed as the THIRD recorded instance of; letting it close ungated would have
+  set up a fourth. All six of this ticket's qa_e2e_procedure checks were
+  therefore folded into BL-979 as its new step 9 (a-e) before this ticket was
+  dispositioned. The obligation transferred; it did not evaporate.
+
+  Correction accepted from the coder's note: this ticket's description said
+  BL-979's pivot was "reverted". Only the BOUNCED COMMIT was reverted out of the
+  architect's branch under the standing bounce-revert rule; the work itself was
+  never withdrawn, and has since been restored. The description's reasoning is
+  unaffected - the defect it identifies pre-dates BL-979 on `main` and was real -
+  but the word was wrong and is corrected here rather than left to mislead.
+
+  Closure is the COORDINATOR's to perform (active/ -> done/); the specifier does
+  not close tickets. Notified by note.
+
   2026-08-21 specifier: filed from the architect's note. The architect handled
   this exactly right - saw a correctness defect outside both parcels in front of
   them, did not hand-patch it inline, filed durable evidence, and routed it for
