@@ -195,8 +195,8 @@ if [ -n "$FOUND" ]; then
   printf '%s' "$FOUND" | sed 's/^/        /' >&2
   echo "" >&2
   echo "      Fix: copy the real scripts tree into the fixture worktree and dispatch" >&2
-  echo "      through the fixture's own copy (see install_scripts in" >&2
-  echo "      test_ready_for_next_no_promotion.sh), so cd \"\$(dirname \"\$0\")\" stays inside it." >&2
+  echo "      through the fixture's own copy (source lib/install_scripts.sh and call" >&2
+  echo "      install_scripts), so cd \"\$(dirname \"\$0\")\" stays inside it." >&2
   exit 1
 fi
 

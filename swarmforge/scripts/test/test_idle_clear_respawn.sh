@@ -21,13 +21,8 @@ pass() { echo "PASS: $*"; }
 # the REAL repo's copy would cd out of the fixture and resolve THIS checkout
 # - testing live swarm state instead of the fixture, and claiming real
 # parcels out of real mailboxes while doing it. Give the fixture its own
-# copy and dispatch through that. Ported verbatim from
-# test_ready_for_next_no_promotion.sh.
-install_scripts() {
-  local wt="$1"
-  mkdir -p "$wt/swarmforge/scripts"
-  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
-}
+# copy and dispatch through that.
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
