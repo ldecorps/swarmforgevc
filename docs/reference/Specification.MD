@@ -1,6 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-1021: closes a critical live
+**Last Updated:** August 21, 2026 (BL-586: the Telegram Pipeline Board
+topic's identity is now validated before every post, not only when the
+tick-state field is empty. Twice in production — 2026-07-23 into SUP-7,
+2026-08-21 into SUP-5 — the board trusted a stored topic id with no
+cross-check, and `telegram-topic-map.json` already knew that id belonged to
+someone else's support thread; the board (including its only-pin
+enforcement) posted and pinned there. `resolveBoardTopicId`
+(`extension/src/concierge/pipelineBoardSync.ts`) now calls a new
+`validateBoardTopic` guard on the trust branch itself, refusing any stored id
+the topic map attributes to another subject, alarming the Operator topic with
+both the topic id and the subject it actually belongs to, and re-ensuring
+through the same reuse-or-create path a cleared id takes — so a crossed
+identity now self-corrects on the very next tick with no operator file edit
+or restart (the file-repair-with-the-stack-down procedure this replaces is
+documented, marked legacy, in
+[`docs/how-to/BL-586-pipeline-board-topic-identity-runbook.md`](../how-to/BL-586-pipeline-board-topic-identity-runbook.md)).
+Separately, `ensureBoardTopicAdapter`
+(`extension/src/tools/telegram-front-desk-bot.ts`) is no longer a bare
+`createForumTopic` call with no reuse-lookup: it is reuse-or-create over a new
+`PIPELINE_BOARD` standing-topic key (mirroring `ensureApprovalsTopic`'s own
+shape), and it records a freshly minted id durably in both
+`telegram-standing-topic-ids.json` and `telegram-topic-map.json` *before* the
+board's first post into it, so a crash between create and post cannot orphan
+the topic. Before this fix, every crash or BL-497 topic-gone self-heal in that
+window minted another untracked "Pipeline Board" zombie topic the Bot API has
+no call to enumerate or delete — cleanup for those pre-existing zombies stays
+manual, and is covered in the same runbook above. No new extension command or
+setting; this changes only which Telegram topic the board resolves to and how
+that identity is recorded. Verified with a four-scenario acceptance feature
+(`specs/features/BL-586-pipeline-board-topic-identity-crossed.feature`).);
+Previously
+August 21, 2026 (BL-1021: closes a critical live
 handoffd deadlock — the dispatch-gap sweep froze in an uninterruptible wait,
 eight log rotations on 2026-08-21, five in the ninety minutes before the
 report, restart resetting only the clock. Root cause was the BL-057/BL-061
