@@ -10,8 +10,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1012-the-freshness-watchdog-stops-manufacturing-its-own-incidents.feature
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   You constrained BL-815 with "do not make these green by raising the 20s
   budget" - so you should see this before it is built, because the shape looks

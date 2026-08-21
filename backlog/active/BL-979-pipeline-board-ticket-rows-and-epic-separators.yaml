@@ -114,6 +114,30 @@ qa_e2e_procedure: >
      the screenshot to the parcel.
   8. Regression: the empty-active board still renders
      "(no active tickets)".
+  9. INHERITED FROM BL-1016 (superseded by this parcel, 2026-08-21) - this
+     parcel is what turns `main` green, so these are gating here or nowhere:
+     a. Run `node specs/pipeline/cli.js
+        specs/features/BL-585-pipeline-board-ticket-column-matrix.feature`
+        on the parcel tip and confirm ZERO failures. On `main` before the
+        merge the same command gives 12 pass / 2 fail - both failures are
+        BL-585 scenario 03's Examples rows, stale since BL-956 moved the
+        grid caption from the epic to the title. Confirm that red on `main`
+        too, so the fix is shown to be real and not a fixture artifact.
+     b. Grep every `.feature` file for "appears below the matrix" and for
+        "active ticket BL-537 whose epic is" - zero hits must remain.
+        (BL-854's feature also contains "whose epic is"; its handler is
+        anchored on the literal "active ticket BL-537" and must be left
+        alone.)
+     c. Confirm no orphaned step handler survives in
+        specs/pipeline/steps/bl585PipelineBoardTicketColumnMatrixSteps.js
+        for the retired scenario, and run the FULL acceptance suite -
+        specs/pipeline/runtime.js throws on a scenario lacking a handler,
+        so an over-deletion fails loudly rather than silently.
+     d. Run BL-956's own feature and confirm it is untouched and green:
+        its scenarios 01/02 are the named successor coverage for everything
+        the retired scenario asserted, and that coverage must survive.
+     e. Read the BL-585 `Feature:` narrative and confirm no sentence still
+        promises the epic appears in a caption line.
 
 notes: >
   Source: raw root intake
