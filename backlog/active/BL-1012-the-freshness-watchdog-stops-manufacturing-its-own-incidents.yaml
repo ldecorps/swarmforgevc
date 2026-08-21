@@ -141,3 +141,5 @@ notes: |
   went to BL-990 instead (also priority 20, expedited, already approved). This
   ticket remains top-ranked among expedited candidates and will promote as
   soon as human_approval flips to approved - awaiting human, not dropped.
+
+assigned_to: coder

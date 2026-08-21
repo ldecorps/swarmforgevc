@@ -88,6 +88,14 @@ notes: |
   instead: if both are in flight, land this one FIRST, because BL-1017 automates
   the action this ticket makes safe. Coordinator's call, with that stated.
 
+  2026-08-21 coordinator: NOT promoted at this open-slot opportunity despite
+  ranking top of the queue (open-slot nudge saw it). Honored this ticket's own
+  orthogonality note instead: BL-1017 is already active with the coder, and
+  this ticket explicitly says "prefer not to hold them active concurrently."
+  Promoted BL-1012 into the slot instead (different file, no real overlap).
+  Top of queue again the moment BL-1017 closes - promote it then, ahead of
+  BL-1017 landing if still in flight, per this ticket's own stated preference.
+
   Orthogonality note for promotion: BL-1017 and BL-1018 both sit near the
   single-role launch path and are NOT orthogonal in the Article 3.2.3 sense.
   Prefer not to hold them active concurrently.
