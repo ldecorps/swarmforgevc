@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-993: `operator_runtime.bb` had no
+**Last Updated:** August 21, 2026 (BL-1004: BL-983 gave a multi-seat stage
+one addressable claim queue, a pure race any idle seat could win — right for
+fresh work, wrong for a REWORK, since seats of the same stage hold separate
+worktrees on separate branches. Measured live on BL-994: a bounce addressed
+to the `coder` stage was claimed by seat `coder`, which wrote its fix on a
+tree that did not contain seat `coder@sonnet2`'s build; the forward's own
+lineage was sound and the delivered work was correct, but nothing had
+guaranteed that. `seat_affinity_lib.bb`'s `rework-claim-decision` — called
+from `ready_for_next_task.bb`'s claim path, inside the mailbox layer, so
+seat identity never escapes it (BL-983's own invariant, preserved) — now
+defers a `git_handoff` whose task a SIBLING seat has already worked
+(`completed/` plus `in_process/`) back into the stage queue for that seat,
+bounded by `cross_seat_claim_deadline_ms` (`swarmforge.conf`, default 30
+minutes): past the deadline, or when the parcel's age can't be read at all,
+any seat may claim it, told out loud (`CROSS_SEAT_CLAIM`) that it did not
+build the parcel, so it merges first. A single-seat stage has no sibling, so
+the deferral path is structurally unreachable there — the seven single-seat
+stages are unchanged. The flow watchdog and chase sweep both consult the
+same `deferral-hold?` decision (never a second copy) so a parcel mid-wait
+inside its own deferral window never trips a false stuck-parcel alarm,
+gated to freshly-queued parcels only — a parcel already claimed is past
+deferral, and a stall there is real. See
+[the cross-seat rework claim deferral how-to](../how-to/BL-1004-cross-seat-rework-claim-deferral.md).);
+Previously
+August 21, 2026 (BL-993: `operator_runtime.bb` had no
 supervisor — a crash left a stale pidfile and the runtime stayed down
 indefinitely, until a human ran `./swarm ensure`, silently removing the
 layer that is supposed to notice when *other* daemons die (it hosts BL-906's
