@@ -100,6 +100,12 @@ notes: |
   pilot-process batch can clear the high tier; board identity, not a live
   outage.
 
+  2026-08-21 coordinator: NOT promoted despite specifier's promote instruction
+  and expedited high severity - active count is 5, cap is 3 (operator lowered
+  it for stability this session; existing actives are grandfathered, not
+  demoted). No open slot exists. Top-ranked among expedited candidates; will
+  promote automatically as soon as the active count drops below the cap.
+
 recurrence_2026_08_21: |
   RAISED medium -> high, and why the field changed rather than a favour being
   asked. Severity was dropped to medium on 2026-08-01 when this was dormant. It
