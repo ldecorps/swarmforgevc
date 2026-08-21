@@ -331,6 +331,11 @@ function isAllowedBabysitterMatch(relPath) {
       'extension/src/tools/telegramFrontDeskBotCore.ts',
       'extension/src/tools/telegramTopicDecisions.ts',
       'extension/test/telegramFrontDeskBotCore.test.js',
+      // BL-586: BABYSITTER is one entry in this file's example standing-
+      // subject-id list, exercising the same reuse-or-create shape the
+      // pipeline board's own identity fix mirrors - not a babysitter-daemon
+      // reference at all.
+      'extension/test/bl586PipelineBoardTopicIdentity.property.test.js',
     ].includes(p)
   ) {
     return true;
