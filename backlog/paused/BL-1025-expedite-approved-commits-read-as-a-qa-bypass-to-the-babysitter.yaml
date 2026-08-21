@@ -114,6 +114,44 @@ description: |
   reaches its verdict - this ticket only makes that verdict visible to the
   existing Article 4.2 detector.
 
+qa_e2e_procedure: >
+  1. Confirm the fault at the parent commit BEFORE confirming the fix.
+     Take one of BL-1021's expedite-run commits (44ef693d9, 40e35d929 or
+     ed8a915f7 - all touch a QA-exclusive path) and run
+     `swarmforge/scripts/is_qa_ancestor.sh <sha>` at the parent commit: it
+     must answer a clean "no", and the Article 4.2 sweep must name that sha
+     as landed outside QA. An unreproducible fault is not a fixed one.
+
+  2. At the parcel commit, re-run the same sweep against the same repo and
+     confirm those commits are no longer reported - and that the reason is
+     a verdict on file, not a slackened predicate: delete or rename the
+     expedite verdict record for that sha and confirm the sweep reports it
+     again. If it stays silent with no record, the check has been weakened
+     rather than taught.
+
+  3. Drive the shared predicate directly for each row of scenario 01,
+     reading its EXIT CODE, not only its stderr: approving -> 0, bouncing
+     -> a clean 1, absent -> a clean 1, unreadable store -> neither 0 nor 1
+     (undeterminable, fail closed). Row 4 is the one that matters most - a
+     store that exists and cannot be read must never collapse into "no
+     bounce found, therefore fine".
+
+  4. Prove a self-report buys nothing (BL-972 guard). Write a commit whose
+     subject says it came from an expedite run, touching a QA-exclusive
+     path, with NO verdict record for its sha, and confirm the sweep
+     reports it. This is the row that fails if the implementation reached
+     for commit-subject matching.
+
+  5. Confirm the live pipeline is unchanged: a commit a live QA agent
+     merged (an ancestor of swarmforge-QA, no bounce on file) is still not
+     reported, and a commit reachable from swarmforge-QA that QA BOUNCED is
+     still reported - BL-952's veto must survive the new alternate path.
+
+  6. Confirm the record is written by the run, not by hand: run
+     `swarmforge/scripts/expedite.sh <repo> <a ticket> --dry-run` and
+     confirm no verdict record appears, then confirm a real passing run
+     writes exactly one record naming the sha its QA hat advanced.
+
 notes: |
   Filed by the coordinator directly to backlog/paused (swarm-reported
   direction), same pattern as BL-1024 - a process-machinery gap discovered
@@ -122,3 +160,25 @@ notes: |
   2 aftermath) but independent by mechanism: BL-1024 is about the run's own
   closing summary naming what it left behind; this one is about an external
   detector's approval predicate not recognizing the run's QA hat at all.
+
+  ## Acceptance contract written 2026-08-21
+
+  The feature file this ticket's `acceptance:` names was missing when the
+  ticket was filed - the YAML pointed at a path that did not exist, which
+  would have bounced on promotion (BL-314) and hard-failed the acceptance
+  runner. Written and linted 2026-08-21;
+  `qa_e2e_procedure` was absent for the same reason and is now present.
+
+  ## IR-DRY reviewed, not merely run
+
+  The first draft scored 3 near-duplicate findings on 10 unique steps, and
+  all three were the same real drift: an outline's parameterized step and
+  its concrete-valued twin in two separate scenarios, spelled differently
+  by accident. That revealed the deeper shape - the self-report case and
+  the unreadable-store case are not separate behaviors, they are two more
+  values of the one question the check asks ("what approval is actually on
+  file?"). Collapsing all three scenarios into a single Scenario Outline
+  with `expedite verdict` and `commit message` columns dropped every
+  finding at once: 6 occurrences, 6 unique steps, 0 findings. The
+  `commit message` column survives the prune rule deliberately - five rows
+  share a value and the sixth is the whole BL-972 guard.
