@@ -112,6 +112,25 @@ qa_e2e_procedure: |
   5. Run the backfill audit against the real `paused/` and `active/` trees
      read-only; every unresolvable pointer is listed with its path.
 
+  ## The predicted failure was measured 2026-08-21, and it arrived by a path this gate does not cover
+
+  Three tickets were found carrying an `acceptance:` pointer to a feature
+  file that did not exist: BL-1025, and BL-579/BL-580 - the latter two
+  human-requested and human-approved on 2026-07-23, dangling for close to a
+  month. All three were materialized (918145798, f2322bfbf).
+
+  Worth recording precisely because THIS gate would have caught none of
+  them: not one had ever been promoted. A promotion-time check is silent
+  for exactly as long as a ticket sits in paused/, which is unbounded. That
+  is not an argument against this gate - a pointer can also go stale after
+  mint, by a rename or an unmaterialized draft, and only a promotion-time
+  check sees that. It is an argument that this gate needs a mint-time
+  sibling, which is now BL-1027 (epic code-quality-gates, same as this).
+
+  Nothing in this ticket's scope changes. It stays the promotion gate the
+  operator asked for on 2026-07-25, and its human approval stands
+  unaltered.
+
 out_of_scope: |
   - Materialising the 13 existing drafts. This ticket ADDS THE GATE and
     enumerates the exposure (acceptance item 5); converting each draft is
