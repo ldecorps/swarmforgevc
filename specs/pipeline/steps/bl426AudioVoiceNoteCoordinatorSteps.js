@@ -222,11 +222,14 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the transcription is retried within a bounded budget$/, async (ctx) => {
-    const config = { backoffBaseMs: 0, backoffMaxMs: 0, degradedThreshold: 99, stuckRetryLimit: 3 };
-    let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+    // BL-621: sustainedOutageThresholdMs completes the config shape; FIXTURE_NOW
+    // pins the clock so no sustained-outage episode can open here.
+    const config = { backoffBaseMs: 0, backoffMaxMs: 0, degradedThreshold: 99, stuckRetryLimit: 3, sustainedOutageThresholdMs: 30 * 60_000 };
+    const FIXTURE_NOW = 0;
+    let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: { escalated: false } };
     let escalated = false;
     for (let i = 0; i < config.stuckRetryLimit; i++) {
-      const cycle = await runPollCycle(state, String(PRINCIPAL_ID), { ...buildPollAdapters(ctx), getUpdates: async () => ({ success: true, updates: [ctx.pendingUpdate] }) }, config);
+      const cycle = await runPollCycle(state, String(PRINCIPAL_ID), { ...buildPollAdapters(ctx), getUpdates: async () => ({ success: true, updates: [ctx.pendingUpdate] }) }, config, FIXTURE_NOW);
       state = cycle.state;
       if (state.offset !== 0) {
         throw new Error('expected the offset to stay parked at the voice note across every retry cycle');
