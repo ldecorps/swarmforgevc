@@ -1279,3 +1279,48 @@ You are the hardender.
   boot prefix budget (BL-859), so any addition there must be paid for by a
   relocation in the same commit. If that budget is ever freed, this belongs
   in the shared article.
+
+## A constraint-satisfaction check is evidence about ONE commit — a later refix re-arms it (rule_proposal 2026-08-21, accepted)
+- **The shape.** A ticket carries a firm constraint that is verified by a
+  grep rather than by a gate — a quarantined literal that must not appear, a
+  forbidden import, a banned call. The producing role runs the grep, finds it
+  clean, and records that in the commit message. Then a LATER session — a
+  QA-bounce refix, a review send-back, any second pass — edits the same file
+  and reintroduces exactly what the grep was looking for. Nothing re-runs it:
+  the check lives in a commit message, not in the suite, so it has no way to
+  fire twice.
+- **Re-run the grep yourself, on the parcel's current tip.** When you receive
+  a parcel whose ticket has a grep-verified constraint AND whose history shows
+  more than one producing commit, the earlier session's clean check is
+  evidence about that commit only. Re-run the literal check over the files the
+  later commits touched before you accept the constraint as held. This is
+  cheap — one grep — and it is the only thing standing between the constraint
+  and a silent breach, because by construction no gate is watching it.
+- **Honour the constraint's own scoping when you re-run it.** These
+  constraints usually exempt something deliberately (pre-existing fixture
+  string VALUES, vendored files, the quarantine directory itself). A re-run
+  that flags the exempted set is a false red — read the constraint's wording
+  before charging a hit, and leave the exempted occurrences untouched.
+- **This is a verification duty, not a rewrite licence.** If the later commit
+  did breach it, the fix is to reword or relocate the offending text so the
+  constraint holds while the meaning survives — not to weaken the constraint,
+  and not to bounce the parcel upstream when a comment reword clears it in
+  place (same posture as the acceptance-step trap rule above). Say in your
+  commit message which commit introduced it and that you re-ran the check.
+- (Incident: BL-1003, 2026-08-21. The ticket's firm constraint quarantined the
+  busy-marker literal out of every source comment a pane might display —
+  because a pane rendering that comment is classified busy by the very code
+  under test. The original coder commit `b395d3a85` verified it explicitly
+  ("every new source comment in this diff contain zero occurrences of the
+  literal (grepped explicitly)"). The QA-bounce D1 refix `6bb01f289`, a
+  different session, then added two new comments quoting the literal verbatim
+  to explain the old-vs-new fixture shape, and no one re-ran the grep. It was
+  caught here only because the hardening pass re-ran it by hand, and fixed in
+  `a13b17ff7a` by rewording both comments to describe the fixture shape
+  without quoting it. Pre-existing fixture string values in the same file were
+  correctly exempt and left alone.)
+- **The authoring half belongs to whoever writes the text** — quoting a
+  quarantined trigger phrase while EXPLAINING it is the same hazard the
+  acceptance-step trap rule above describes, one file class over. This
+  section is the verification half: assume the authoring half will be missed
+  again, and check.
