@@ -1338,16 +1338,20 @@ test('ensureResidentSpyTopic: an already-correct title never fires a redundant r
 //    closures, which no test reaches - see the readPollMap/readApprovalAskMessages
 //    comments above on the on-disk-read sibling of this same gap) ──────────
 
+// BL-586 took a targetPath (the adapter became reuse-or-create over the
+// durable PIPELINE_BOARD standing record). Both BL-497 assertions below are
+// unchanged in substance - an empty fixture root has nothing to reuse, so
+// each still exercises the create path these tests were written for.
 test('BL-497: ensureBoardTopicAdapter surfaces the created topicId on a successful create', async () => {
   const { postFn, calls } = fakeCreateOk(2000);
-  const result = await ensureBoardTopicAdapter('fake-token', 'fake-chat', postFn);
+  const result = await ensureBoardTopicAdapter(mkTmpRoot(), 'fake-token', 'fake-chat', postFn);
   assert.deepEqual(result, { topicId: 2000 });
   assert.match(calls[0].body, /"name":"Pipeline Board"/);
 });
 
 test('BL-497: ensureBoardTopicAdapter surfaces the underlying Telegram error on a failed create - never discards it', async () => {
   const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Bad Request: message thread not found' } });
-  const result = await ensureBoardTopicAdapter('fake-token', 'fake-chat', postFn);
+  const result = await ensureBoardTopicAdapter(mkTmpRoot(), 'fake-token', 'fake-chat', postFn);
   assert.equal(result.topicId, undefined);
   assert.match(result.error, /message thread not found/);
 });
