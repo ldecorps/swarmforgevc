@@ -1,6 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-984: the property lane's fixture
+**Last Updated:** August 21, 2026 (BL-986: the standing-rule-violations
+scanner (`swarmforge/scripts/standing_rule_violations_lib.bb` /
+`standing_rule_violations_files.bb`) was blind to any rule citation moved
+out of the three boot-inlined articles into its `reference/` elaboration —
+exactly what the `engineering.prompt` boot-budget split (44000/44000 today,
+BL-859's gate) forces routinely. A relocated citation silently fell out of
+the scanned set and its violation count read a FALSE ZERO — "this standing
+rule is being obeyed" when the evidence had merely moved, not disappeared
+(BL-337's own KNOWN VIOLATION check for BL-252 had read 0 instead of 1 since
+the `engineering.prompt` split, unnoticed). The file-discovery layer now
+reads each of the three boot-inlined articles together with its own
+`reference/` elaboration — five files, not three — so a relocation is
+verdict-neutral, the ticket's own stated invariant, now enforced generatively
+by a seeded property runner
+(`swarmforge/scripts/test/bl986_relocation_neutral_property_runner.bb`) across
+every placement (inlined / relocated / both). Widening the scanned set on
+its own would have traded the false zero for a false double: 15 rule blocks
+already exist in both an inlined article and its elaboration, so
+`scan-violations` now deduplicates records identical in rule summary AND
+citations, keeping the first in the existing deterministic sort (the
+inlined-article copy, since `articles/…` sorts before `articles/reference/…`).
+Widening was NOT done blindly against the full production file set: a
+neighbouring rule in `documenter.prompt` legitimately records BL-250 as a
+violation of a *different* standing rule, so the scan stays scoped
+per-article to its own reference elaboration rather than the whole role
+roster, keeping BL-337's own origin-vs-violation assertions (BL-250 and
+BL-255 both 0) intact. No new user-facing command or setting — this is an
+internal safety-signal integrity fix for the constitution's own
+self-enforcement tooling. See
+`backlog/evidence/BL-986-hardener-pass-20260821.md` for the full
+verification record.); Previously
+August 21, 2026 (BL-984: the property lane's fixture
 helper (`extension/test/helpers/propertyLaneFixtureRunner.js`) now sweeps
 stale fixtures BEFORE writing its own, not only after. The helper generates
 real `*.property.test.js` files inside `extension/test/` — the only place
