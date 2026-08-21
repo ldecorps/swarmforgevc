@@ -95,3 +95,26 @@ ticket of its own.
 - Acceptance — BL-984 **5/5**; sibling BL-868 **5/5**; sibling BL-886 as above.
 - Live SIGKILL procedure (`qa_e2e_procedure` step 5) — strand created, zombie
   state confirmed, strand swept.
+- Registry-consuming tests (the only other route this parcel could reach, via
+  `specs/pipeline/steps/index.js`) — `bl968StepRegistryMaterializedTreeGuard`,
+  `bl1005OnboarderBuildStateGate`, `bl800StepRegistryScopingConsistency`,
+  `acceptanceContractGate`, `bl968MaterializedGuardSensitivity`: all pass.
+
+### NOT run to completion: the full 452-file unit suite
+
+Stated plainly rather than implied clean. Under live swarm load (1-min average
+16-26) the suite was moving at roughly 5 files/minute — about 80 minutes — and
+handoff mail was already queuing behind this parcel in `inbox/new/`, the same
+busy-skip that left BL-1003's QA bounce unclaimed for ~2h. It was started twice
+and stopped at 27 of 452 files with **0 failures**.
+
+The reasoning for forwarding anyway, so the next stage can weigh it rather than
+inherit a bare assertion: this parcel changes **no production code**. Nothing
+under `extension/src/` is touched. The complete set of routes by which it can
+reach any other test is (a) `propertyLaneFixtureRunner.js`, whose every consumer
+in the repo is enumerated above and re-run green, and (b) the one added line in
+`specs/pipeline/steps/index.js`, whose consumers are likewise enumerated and
+re-run green. The remaining ~425 files import neither.
+
+The cleaner and hardener both re-verify as batch roles; if the full suite is
+wanted as a gate on this parcel, it should be run there, on a quieter host.
