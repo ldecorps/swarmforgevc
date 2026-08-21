@@ -325,6 +325,45 @@ notes: |
   changes no rendering and no conf rows; it changes only which topic the
   board resolves to and how that identity is recorded.
 
+hardener_notes_2026_08_21: |
+  Merged architect commit 2b58275ed4 (f4c7a7bd2). Verification this pass:
+  - Targeted unit suite (bl586PipelineBoardTopicIdentity, pipelineBoardSync,
+    pipelineBoard, pipelineBoardPinSync, telegramFrontDeskBotCore,
+    telegramFrontDeskBotCli, notifyResidentSpyTunnelCli): 878/878 pass.
+  - Property lane (bl586PipelineBoardTopicIdentity.property.test.js): 2/2 pass.
+  - Acceptance (specs/features/BL-586-pipeline-board-topic-identity-crossed.feature
+    via run_acceptance.sh): 6/6 scenarios pass (Outline's 3 example rows +
+    3 singles), all handlers registered - satisfies qa_e2e_procedure step 6.
+  - CRAP (differential, src/*.ts): every new/touched function is well under
+    threshold with 100% coverage - ensureBoardTopicAdapter CRAP=6.00 (new
+    branching, at the ceiling not over), decideEnsurePipelineBoardTopicAction
+    CRAP=5.00, validateBoardTopic/resolveBoardTopicId/readBoardTopicMap
+    CRAP=3.00, boardStateForPost CRAP=2.00, buildCrossedTopicAlertText
+    CRAP=1.00, bindTopicMapSubject CRAP=3.00. syncPipelineBoard's own touch
+    was a variable rename only (prevState -> postFromState), no branch added,
+    so no complexity regression there either. The 12 functions this pass's
+    CRAP run flags >6 are all PRE-EXISTING debt this ticket's diff never
+    touches (verified per-function against `git diff main...HEAD`).
+  - DRY (jscpd, the 4 changed files): 1 clone, entirely inside
+    telegramFrontDeskBotCore.ts's own import-list/re-export-list pair (the
+    BL-607 barrel-compatibility shape, comment in file explains it). BL-586
+    grew both halves by the same 4 lines (PIPELINE_BOARD_*), matching the
+    existing convention for every other standing topic - not a new
+    duplication pattern, out of scope to collapse here (would touch the 10
+    consumer modules BL-607 itself declined to touch).
+  - Mutation DEFERRED this pass, host load 16.6-19.7 on 4 cores (>>2x
+    threshold) at time of hardening:
+    - Stryker: mutation_cooldown_gate.bb on all 4 changed src files ->
+      telegram-front-desk-bot.ts / telegramFrontDeskBotCore.ts /
+      telegramTopicDecisions.ts = skip-cooldown (2.2-2.3 days old, <3-day
+      window - still churning); pipelineBoardSync.ts = skip-busy (host
+      load). No Stryker run this pass on any of the 4 files.
+    - Gherkin/BL-113 (Scenario Outline, 3 example rows): deferred per the
+      same load rule (binds every mutation runner, not Stryker alone).
+    Per the office-hours mutation bypass, forwarding now rather than
+    stalling the pipeline; the full pass lands on the next quiet-host pass
+    touching these files.
+
 recurrence_2026_08_21: |
   RAISED medium -> high, and why the field changed rather than a favour being
   asked. Severity was dropped to medium on 2026-08-01 when this was dormant. It

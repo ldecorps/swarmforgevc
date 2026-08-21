@@ -10,6 +10,7 @@
 // a complete no-op: no delete, no post, no state change - the existing
 // message (and its footer timestamp) stays exactly where it is.
 import { PipelineBoardData, PIPELINE_BOARD_MESSAGE_MAX_LENGTH, composePipelineBoardHtml, renderPipelineBoard, renderPipelineBoardBody } from './pipelineBoard';
+import { PIPELINE_BOARD_SUBJECT_ID } from '../tools/telegramTopicDecisions';
 
 // BL-497: the board's retry cap - the number of CONSECUTIVE failed ticks
 // (any mix of failed-no-topic/failed-post) tolerated before exactly one
@@ -28,6 +29,12 @@ export type PipelineBoardFailureClass = 'topic-gone' | 'too-long' | 'transient' 
 export interface PipelineBoardTopicResult {
   topicId?: number;
   error?: string;
+  // BL-586: set when the resolve REPLACED a stored identity (a crossed id
+  // refused and re-ensured) rather than confirming it. The messageId and
+  // orphanMessageIds tracked in state name messages inside the OLD topic, so
+  // carrying them forward would aim deletes at a thread the board does not
+  // own - see syncPipelineBoard's own use below.
+  rebound?: boolean;
 }
 
 export interface PipelineBoardPostResult {
@@ -65,6 +72,17 @@ export interface PipelineBoardAdapters {
   // fixture that never drives the board into its failure path (almost every
   // fixture that predates this ticket) needs no implementation at all.
   emitFailureAlert?: (message: string) => Promise<boolean>;
+  // BL-586: reads telegram-topic-map.json, the record of which subject owns
+  // which topic. Optional so every fixture predating this ticket still
+  // compiles and behaves as before; a board without it simply cannot detect
+  // a crossing (see readBoardTopicMap's degrade-open comment below). The
+  // live wiring always provides it.
+  readTopicMap?: () => Promise<Record<string, string>>;
+  // BL-586: one operator alert naming a REFUSED crossed identity. Distinct
+  // from emitFailureAlert above, which is BL-497's bounded-retry "board
+  // frozen" alarm for a different condition entirely - folding the two
+  // together would make each one's cap and arming logic mean two things.
+  emitCrossedTopicAlert?: (message: string) => Promise<boolean>;
 }
 
 export interface PipelineBoardState {
@@ -180,14 +198,88 @@ export function classifyBoardFailure(error: string | undefined): PipelineBoardFa
   return matched?.failureClass ?? 'unknown';
 }
 
-// The topic id is created ONCE then reused - split out purely to keep
-// syncPipelineBoard's own CRAP under threshold (mirrors
-// editInPlaceMessageSync.ts's own resolveTopicId split).
-function resolveBoardTopicId(prevState: PipelineBoardState | undefined, adapters: PipelineBoardAdapters): Promise<PipelineBoardTopicResult> {
-  if (prevState?.topicId !== undefined) {
-    return Promise.resolve({ topicId: prevState.topicId });
+// BL-586: the collision verdict. A stored board topic id is CROSSED when
+// telegram-topic-map.json attributes it to any subject that is not the
+// board's own - SUP-*, a standing topic, a role topic, anything. That file
+// held the answer during both incidents (1634 = SUP-7 on 2026-07-23, 14647 =
+// SUP-5 on 2026-08-21) and was never consulted, so the board wrote into the
+// human's support thread and pinned there.
+//
+// An id the map says NOTHING about is deliberately NOT a crossing: the map
+// is a binding record, not an allowlist, and treating an absent binding as
+// corrupt would refuse every legitimately-minted board topic in the window
+// before its binding is recorded. Same reason a missing/unreadable map
+// degrades open - the guard refuses what it can PROVE is someone else's,
+// never what it merely cannot confirm.
+export type BoardTopicValidation = { kind: 'ok' } | { kind: 'crossed'; topicId: number; subject: string };
+
+export function validateBoardTopic(topicMap: Record<string, string> | undefined, topicId: number): BoardTopicValidation {
+  const subject = topicMap?.[String(topicId)];
+  if (subject === undefined || subject === PIPELINE_BOARD_SUBJECT_ID) {
+    return { kind: 'ok' };
   }
-  return adapters.ensureBoardTopic();
+  return { kind: 'crossed', topicId, subject };
+}
+
+// Names both halves of the crossing, because a human reading this in the
+// Operator topic needs to know WHICH topic was about to be written into and
+// WHOSE it actually is - "the board topic looks wrong" would have been
+// useless during either incident.
+export function buildCrossedTopicAlertText(topicId: number, subject: string): string {
+  return `Pipeline Board identity refused: stored topic id ${topicId} is mapped to ${subject}, not ${PIPELINE_BOARD_SUBJECT_ID}. Re-ensuring the board topic from the durable standing record; no post was made into ${topicId}.`;
+}
+
+// BL-586: the trust branch is no longer unconditional - it VALIDATES first,
+// on every resolve, which is invariant 1 and the line that would have
+// prevented both incidents. A crossed id is refused, alarmed, and re-ensured
+// through the same reuse-or-create path a cleared id takes, so the board
+// self-corrects on the very next tick with no operator file repair (which is
+// how this ticket discharges the old scenario 04).
+//
+// `rebound` tells syncPipelineBoard that the identity CHANGED under it, so
+// the message/orphan ids tracked against the old topic must not be carried
+// into the new one - they name messages that live in someone else's thread.
+async function resolveBoardTopicId(
+  prevState: PipelineBoardState | undefined,
+  adapters: PipelineBoardAdapters
+): Promise<PipelineBoardTopicResult> {
+  const storedTopicId = prevState?.topicId;
+  if (storedTopicId === undefined) {
+    return adapters.ensureBoardTopic();
+  }
+  const verdict = validateBoardTopic(await readBoardTopicMap(adapters), storedTopicId);
+  if (verdict.kind === 'ok') {
+    return { topicId: storedTopicId };
+  }
+  await adapters.emitCrossedTopicAlert?.(buildCrossedTopicAlertText(verdict.topicId, verdict.subject));
+  const reEnsured = await adapters.ensureBoardTopic();
+  return { ...reEnsured, rebound: true };
+}
+
+// BL-586 (cleaner, CRAP budget): extracted out of syncPipelineBoard purely to
+// keep that function's own cyclomatic complexity from absorbing this
+// decision - same reasoning as classifyBoardFailure's own extraction above.
+// A rebound identity starts clean in its new topic. prevState's
+// messageId/orphanMessageIds name messages in the topic just refused, and
+// postBoardMessage would otherwise aim its best-effort delete at the NEW
+// topic using an id from the old one.
+function boardStateForPost(prevState: PipelineBoardState | undefined, rebound: boolean | undefined): PipelineBoardState | undefined {
+  return rebound ? { ...prevState, messageId: undefined, orphanMessageIds: undefined } : prevState;
+}
+
+// A board wired without the map adapter (every fixture predating this
+// ticket) still resolves - see validateBoardTopic's own comment on degrading
+// open. A map read that THROWS is treated the same way, never as a reason to
+// freeze the board.
+async function readBoardTopicMap(adapters: PipelineBoardAdapters): Promise<Record<string, string> | undefined> {
+  if (!adapters.readTopicMap) {
+    return undefined;
+  }
+  try {
+    return await adapters.readTopicMap();
+  } catch {
+    return undefined;
+  }
 }
 
 function renderPipelineBoardContentSignature(data: PipelineBoardData): string {
@@ -397,11 +489,13 @@ export async function syncPipelineBoard(
     return maybeEmitFailureAlert(result, adapters);
   }
 
+  const postFromState = boardStateForPost(prevState, topicResult.rebound);
+
   const lastChangeMs = nowMs;
   const text = renderPipelineBoard(data, lastChangeMs);
   // In-board ticket anchors (no LINKS: footer). composePipelineBoardHtml
   // itself budgets by dropping the oldest anchors when over the send limit.
   const { html: boardHtml } = composePipelineBoardHtml(data, lastChangeMs, repoBaseUrl, PIPELINE_BOARD_MESSAGE_MAX_LENGTH);
-  const result = await postBoardMessage(topicResult.topicId, text, boardHtml, contentSignature, lastChangeMs, prevState, adapters);
+  const result = await postBoardMessage(topicResult.topicId, text, boardHtml, contentSignature, lastChangeMs, postFromState, adapters);
   return result.outcome === 'failed-post' ? maybeEmitFailureAlert(result, adapters) : result;
 }
