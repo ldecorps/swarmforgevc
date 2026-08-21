@@ -111,6 +111,36 @@ qa_e2e_procedure: >
 source:
   - "Operator, 2026-08-21 ~11:06 BST, via screenshot of repeating FRESHNESS_VIOLATION lines in the Operator topic; asked 'what can be done for that?'. The restart storm was found by the specifier while probing that report - it is not what the operator saw, which was BL-1011's symptom."
 
+hardener_notes_2026_08_21: |
+  Merged architect commit 95c84fd8dd. No JS/TS production files touched
+  (shell script + shell tests + one property test file), so Stryker
+  (mutate: out/**/*.js) and CRAP (scoped to src/*.ts) do not apply here at
+  all - not deferred, genuinely out of scope for this diff.
+  - test_daemon_log_freshness.sh: full suite green, including all six
+    BL-1012 qa_e2e_procedure scenarios plus the discriminating "a REAL
+    stale age inside the grace window is still a violation" check (proves
+    the grace window isn't a blanket mute).
+  - test_bl785_freshness_deliberate_stop.sh: green; correctly pins
+    FRESHNESS_LOAD/FRESHNESS_CORES=1 so this pre-existing suite's
+    assertions stay load-independent under the new contention-relative
+    threshold.
+  - Property lane (bl1012FreshnessSelfInflictedIncidents.property.test.js,
+    bl789MacHostSwitchFreshnessBridgeAdoptInvariants.property.test.js):
+    6/6 pass, generatively exercising all three invariants (ceiling bound,
+    grace-window suppression, attributable records).
+  - Acceptance (specs/features/BL-1012-...feature): 9/9 scenarios pass.
+  - required_wiring: FRESHNESS_LOAD (3 occurrences) and
+    FRESHNESS_RESTART_GRACE (2 occurrences) are real injectable seams in
+    daemon_log_freshness_check.sh; bl1012 step handler is registered in
+    specs/pipeline/steps/index.js.
+  - Non-vacuity spot-check (hand mutation, no mutation tool wired for
+    shell): widened the ceiling cap comparison
+    (`-gt "$MAX_THRESHOLD"` -> `-gt "999999"`) and confirmed both
+    invariant-1 assertions in test_daemon_log_freshness.sh fail as
+    expected; restored and re-confirmed all green. No hardening gap found
+    - the coder's own test suite already discriminates every invariant
+    the ticket names, so no changes made this pass.
+
 notes: |
   2026-08-21 specifier: filed from a live operator report. Sibling filed in the
   same pass: BL-1011 (the alarm names neither its swarm nor its reason), epic

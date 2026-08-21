@@ -58,6 +58,20 @@ make_root() {
   printf '%s' "$d"
 }
 
+# BL-1012: the contention seams are PINNED here, not left to the host. The
+# effective threshold is now load-relative, so an unpinned run would compute
+# a different threshold on a busy box than on a quiet one and every assertion
+# below about restart-or-not would become a function of host load rather than
+# of the code under test. Measured on this host mid-development: load 9.12 on
+# 4 cores = factor 2, which alone would have turned 02a's 200s age from a
+# restart into a no-op with no failure signal.
+#
+# Factor 1 reproduces the pre-BL-1012 behaviour EXACTLY, which is what keeps
+# every assertion written before this ticket meaningful and unchanged.
+# Scenarios that mean to exercise contention override these per-invocation.
+FRESHNESS_TEST_LOAD=${FRESHNESS_TEST_LOAD:-1}
+FRESHNESS_TEST_CORES=${FRESHNESS_TEST_CORES:-1}
+
 run_checker() {
   local root=$1
   local now=${2:?run_checker needs epoch}
@@ -66,6 +80,8 @@ run_checker() {
   FRESHNESS_NOW_EPOCH="$now" \
   FRESHNESS_INCIDENT_FILE="$root/.swarmforge/daemon/freshness-incidents.log" \
   FRESHNESS_COOL_OFF_SECS=300 \
+  FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" \
+  FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
   FRESHNESS_ANNOUNCE_CMD="printf '%s\n' \"\$1\" >> \"$root/announces.log\"" \
   FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$root/kills.log\"" \
   FRESHNESS_START_CMD="printf '%s %s\n' \"\$1\" \"\$2\" >> \"$root/starts.log\"" \
@@ -160,6 +176,7 @@ echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
 FRESHNESS_ROOT="$ROOT" \
 FRESHNESS_CONF="$CONF" \
 FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
 FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
 FRESHNESS_ANNOUNCE_CMD="exit 1" \
 FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
@@ -280,6 +297,7 @@ FRESHNESS_EXTRA_PATH_DIRS="$STUB_DIR" \
 FRESHNESS_ROOT="$ROOT" \
 FRESHNESS_CONF="$CONF" \
 FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
 FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
 FRESHNESS_ANNOUNCE_CMD="true" \
 FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
@@ -454,6 +472,7 @@ echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
 FRESHNESS_ROOT="$ROOT" \
 FRESHNESS_CONF="$CONF" \
 FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
 FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
 FRESHNESS_ANNOUNCE_CMD="test -s \"$ROOT/.swarmforge/daemon/freshness-incidents.log\" && printf order-ok\\\\n >> \"$ROOT/announces.log\"" \
 FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
@@ -477,6 +496,7 @@ echo "1" > "$ROOT/.swarmforge/daemon/handoffd.pid"
 FRESHNESS_ROOT="$ROOT" \
 FRESHNESS_CONF="$CONF" \
 FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
 FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
 FRESHNESS_ANNOUNCE_CMD="true" \
 FRESHNESS_START_CMD="printf started\\\\n >> \"$ROOT/starts.log\"" \
@@ -509,6 +529,7 @@ HOME="$FAKE_HOME" \
 FRESHNESS_ROOT="$ROOT" \
 FRESHNESS_CONF="$CONF" \
 FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
 FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
 FRESHNESS_ANNOUNCE_CMD="true" \
 FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
@@ -689,6 +710,7 @@ ERRF="$ROOT/checker.err"
 PATH="$ROOT/bin:$PATH" \
 HOME="$FLEET_HOME" SWARMFORGE_FLEET_HOME="$FLEET_HOME" \
 FRESHNESS_ROOT="$ROOT" FRESHNESS_CONF="$CONF" FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
 FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
 FRESHNESS_COOL_OFF_SECS=300 \
 FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
@@ -710,6 +732,7 @@ ERRF="$ROOT/checker.err"
 PATH="$ROOT/bin:$PATH" \
 HOME="$EMPTY_HOME" SWARMFORGE_FLEET_HOME="$EMPTY_HOME" \
 FRESHNESS_ROOT="$ROOT" FRESHNESS_CONF="$CONF" FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
 FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
 FRESHNESS_COOL_OFF_SECS=300 \
 FRESHNESS_KILL_CMD="true" FRESHNESS_START_CMD="true" \
@@ -717,6 +740,118 @@ FRESHNESS_KILL_CMD="true" FRESHNESS_START_CMD="true" \
 check "fleet-telegram-empty: announce skipped when neither env files nor fleet json exist" \
   'grep -Fq "announce skipped (TELEGRAM_* unset)" "$ERRF"'
 pass "missing fleet json still skips announce (never hits the real API)"
+
+# ── BL-1012: contention-relative threshold, bounded, with a post-restart grace ─
+# The watchdog restart-stormed a merely-slow handoffd: a fixed 120s against
+# load 80 on four cores, ages of 132-350s recorded as violations, 694 rotated
+# logs in a day - and each restart rotates away the log the next check reads.
+
+# ts_at <epoch> — an ISO heartbeat stamp, portable across GNU/BSD date.
+ts_at() {
+  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# One handoffd run at a chosen contention, with babysitterd kept fresh so only
+# handoffd can trip. age_secs<0 means "no log at all" (the rotated-away case).
+run_at_contention() {
+  local age=$1 load=$2 cores=$3
+  ROOT="$(make_root)"
+  NOW=1700000000
+  if [[ "$age" -ge 0 ]]; then
+    printf '%s heartbeat\n' "$(ts_at $((NOW - age)))" > "$ROOT/.swarmforge/daemon/handoffd.log"
+  fi
+  printf '%s heartbeat\n' "$(ts_at "$NOW")" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+  FRESHNESS_TEST_LOAD="$load" FRESHNESS_TEST_CORES="$cores" run_checker "$ROOT" "$NOW"
+}
+
+# qa step 1 - factor 1 preserves today's behaviour EXACTLY. This is the check
+# that keeps the operator's "do not make these green by raising the budget"
+# constraint honest: on a quiet box nothing was relaxed.
+run_at_contention 300 1 1
+check "BL-1012: at factor 1 a 300s age still restarts (120s threshold unchanged on a quiet host)" \
+  'grep -q "action=restart" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+check "BL-1012: the factor-1 record names an effective threshold equal to the base" \
+  'grep -q "effective_threshold=120 contention_factor=1" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+
+# qa step 2 - the same fixture on a 4x-contended host is late, not hung.
+run_at_contention 300 4 1
+check "BL-1012: at factor 4 the same 300s age does NOT restart (effective 480)" \
+  '[[ ! -s "$ROOT/starts.log" ]] || ! grep -q "start_handoff_daemon.sh" "$ROOT/starts.log"'
+check "BL-1012: at factor 4 nothing is announced for handoffd" \
+  '[[ ! -f "$ROOT/announces.log" ]] || ! grep -q "daemon=handoffd" "$ROOT/announces.log"'
+
+# qa step 3 - invariant 1: the ceiling still catches a genuinely dead daemon
+# on the busiest host. 120 x 20 would be 2400s; the cap holds it at 600.
+run_at_contention 900 20 1
+check "BL-1012 invariant 1: at factor 20 a 900s age still restarts - the ceiling bounds the window" \
+  'grep -q "action=restart" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+check "BL-1012 invariant 1: the effective threshold is capped at 600, never base x factor" \
+  'grep -q "effective_threshold=600 contention_factor=20" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+
+# A 599s age at factor 20 is UNDER the ceiling and must be left alone - the
+# cap is a ceiling on the window, not a floor on the age.
+run_at_contention 599 20 1
+check "BL-1012: at factor 20 an age just under the ceiling does not restart" \
+  '[[ ! -s "$ROOT/starts.log" ]] || ! grep -q "start_handoff_daemon.sh" "$ROOT/starts.log"'
+
+# An unreadable contention signal falls back to factor 1 - never to a longer
+# window. A signal we cannot read must not buy leniency.
+#
+# "unreadable" is injected as a NON-NUMERIC value, not as an empty string:
+# empty means "seam not set" and correctly falls through to reading the real
+# host, which would make this check a function of this machine's load rather
+# than of the code. That is not hypothetical - it flipped this very check
+# between runs during development.
+run_at_contention 300 "unreadable" "unreadable"
+check "BL-1012: an unreadable contention signal falls back to factor 1, not to a longer window" \
+  'grep -q "contention_factor=1" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "action=restart" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+
+# qa step 4 - invariant 2: within the grace window an absent log is OUR OWN
+# restart's footprint, not evidence of a hung daemon.
+grace_run() {
+  local since=$1
+  ROOT="$(make_root)"
+  NOW=1700000000
+  printf '%s heartbeat\n' "$(ts_at "$NOW")" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+  # No handoffd.log at all - exactly what start_handoff_daemon.sh's rotation leaves.
+  printf 'epoch=%s daemon=handoffd age_secs=999999999 threshold=120 action=restart\n' \
+    "$((NOW - since))" > "$ROOT/.swarmforge/daemon/freshness-incidents.log"
+  FRESHNESS_TEST_LOAD=1 FRESHNESS_TEST_CORES=1 run_checker "$ROOT" "$NOW"
+}
+
+grace_run 10
+check "BL-1012 invariant 2: an absent log 10s after our own restart is not a violation" \
+  '[[ ! -f "$ROOT/announces.log" ]] || ! grep -q "daemon=handoffd" "$ROOT/announces.log"'
+check "BL-1012 invariant 2: and no second restart is issued from the evidence we destroyed" \
+  '[[ ! -s "$ROOT/starts.log" ]] || ! grep -q "start_handoff_daemon.sh" "$ROOT/starts.log"'
+check "BL-1012 invariant 2: the suppression is still recorded, never silent" \
+  'grep -q "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+
+# qa step 5 - past the grace window the same absent log IS a violation again.
+grace_run 600
+check "BL-1012: an absent log 600s after the last restart announces again" \
+  'grep -q "daemon=handoffd" "$ROOT/announces.log"'
+
+# The grace window is scoped to the file-absent SENTINEL only. A daemon that
+# came back up and then went stale inside the window is a REAL violation and
+# must still fire - otherwise the grace becomes a blanket mute.
+ROOT="$(make_root)"
+NOW=1700000000
+printf '%s heartbeat\n' "$(ts_at $((NOW - 300)))" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$(ts_at "$NOW")" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+printf 'epoch=%s daemon=handoffd age_secs=999999999 threshold=120 action=restart\n' \
+  "$((NOW - 10))" > "$ROOT/.swarmforge/daemon/freshness-incidents.log"
+FRESHNESS_TEST_LOAD=1 FRESHNESS_TEST_CORES=1 run_checker "$ROOT" "$NOW"
+check "BL-1012: a REAL stale age inside the grace window is still a violation (grace is not a blanket mute)" \
+  'grep -q "daemon=handoffd" "$ROOT/announces.log"'
+
+# qa step 6 - invariant 3: attributable. Both numbers on every record.
+run_at_contention 600 4 1
+check "BL-1012 invariant 3: the record names both the effective threshold and the contention factor that produced it" \
+  'grep -q "effective_threshold=480" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "contention_factor=4" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+check "BL-1012 invariant 3: the base threshold is still recorded too, so existing readers keep working" \
+  'grep -q "threshold=120 " "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+pass "BL-1012: contention-relative threshold, bounded, with a post-restart grace"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-675 daemon-log-freshness: ALL CHECKS PASSED"
