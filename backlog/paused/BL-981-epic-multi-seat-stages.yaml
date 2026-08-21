@@ -6,7 +6,7 @@ type: epic
 epic: multi-seat-stages
 priority: 25
 depends_on: []
-decomposes_into: [BL-982, BL-983, BL-1001]
+decomposes_into: [BL-982, BL-983, BL-1001, BL-1004]
 
 remaining_slices:
   - "Difficulty-aware routing among seats of a stage: map a ticket difficulty
@@ -20,6 +20,12 @@ remaining_slices:
   - "Supervisor / chase / ensure / board / stage-dwell treat seats as instances of a
      stage: dwell still names the STAGE as the bottleneck, while ops surfaces may
      show seat-level detail including each seat's model."
+  - "Who may CLAIM a rework, as distinct from who gets fresh work. BL-983's one
+     stage queue is a pure race, and seats hold separate worktrees, so a bounce
+     can be claimed by a seat with none of the parcel's history - measured live
+     on BL-994 (build 782b343a4 on coder@sonnet2; fix 080b30253 on coder does
+     NOT have it as an ancestor). MINTED 2026-08-20 as BL-1004, severity high.
+     Orthogonal to BL-1001 and does not wait for it."
   - "Operator docs + Swarm Optimizer wording: make the existing 'add/remove a role
      instance' recommendation map to a documented operator step, and let it name
      WHICH model tier to add when the constraint is capacity at a difficulty band."
