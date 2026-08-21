@@ -7,11 +7,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DONE_TASK="$SCRIPT_DIR/../done_with_current_task.bb"
-READY_TASK="$SCRIPT_DIR/../ready_for_next_task.sh"
+# BL-998: bound below, to the fixture's own copy of the wrapper.
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-998: the receive/completion helpers resolve their OWN root - the .sh
+# wrappers cd to their own dirname and the .bb dispatchers hand off to those
+# wrappers by name. Correct in production, where every worktree carries its
+# own hot-synced swarmforge/scripts/ copy; fatal here, because dispatching
+# the REAL repo's copy would cd out of the fixture and resolve THIS checkout
+# - testing live swarm state instead of the fixture, and claiming real
+# parcels out of real mailboxes while doing it. Give the fixture its own
+# copy and dispatch through that. Ported verbatim from
+# test_ready_for_next_no_promotion.sh.
+install_scripts() {
+  local wt="$1"
+  mkdir -p "$wt/swarmforge/scripts"
+  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
+}
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
@@ -23,6 +39,8 @@ COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 ONROLE_WT="$ROOT/.worktrees/onrole"
 OFFROLE_WT="$ROOT/.worktrees/offrole"
 git -C "$ROOT" worktree add -q -b onrole "$ONROLE_WT"
+install_scripts "$ONROLE_WT"
+READY_TASK="$ONROLE_WT/swarmforge/scripts/ready_for_next_task.sh"
 git -C "$ROOT" worktree add -q -b offrole "$OFFROLE_WT"
 
 SOCK="$ROOT/fake.sock"
