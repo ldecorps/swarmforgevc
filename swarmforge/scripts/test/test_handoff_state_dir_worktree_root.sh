@@ -10,15 +10,37 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
-READY_DISPATCH="$SCRIPT_DIR/../ready_for_next.bb"
+# BL-998: bound below, to the fixture's own copy. The LEAF helpers below
+# (ready_for_next_task.bb / done_with_current_task.bb / *_batch.bb) take an
+# explicit root and are NOT self-rooting - invoking those from the real
+# scripts dir is the safe shape and is deliberately left as it is.
 READY_TASK="$SCRIPT_DIR/../ready_for_next_task.bb"
 DONE_TASK="$SCRIPT_DIR/../done_with_current_task.bb"
-READY_BATCH="$SCRIPT_DIR/../ready_for_next_batch.bb"
-DONE_BATCH="$SCRIPT_DIR/../done_with_current_batch.bb"
+# BL-998 (coder finding, beyond the ticket's list): the ticket classifies
+# these two as the SAFE leaf shape and says to leave them. Observed
+# otherwise - run from the real scripts dir this batch call read the REAL
+# repo's in_process and named a LIVE parcel of the running coder. Bound to
+# the fixture's own copy below, like every other call site here.
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-998: the receive/completion helpers resolve their OWN root - the .sh
+# wrappers cd to their own dirname and the .bb dispatchers hand off to those
+# wrappers by name. Correct in production, where every worktree carries its
+# own hot-synced swarmforge/scripts/ copy; fatal here, because dispatching
+# the REAL repo's copy would cd out of the fixture and resolve THIS checkout
+# - testing live swarm state instead of the fixture, and claiming real
+# parcels out of real mailboxes while doing it. Give the fixture its own
+# copy and dispatch through that. Ported verbatim from
+# test_ready_for_next_no_promotion.sh.
+install_scripts() {
+  local wt="$1"
+  mkdir -p "$wt/swarmforge/scripts"
+  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
+}
 
 # ── fixture: a project root with a coder git worktree ────────────────────────
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
@@ -30,6 +52,10 @@ COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 CODER_WT="$ROOT/.worktrees/coder"
 git -C "$ROOT" worktree add -q -b coder "$CODER_WT"
+install_scripts "$CODER_WT"
+READY_DISPATCH="$CODER_WT/swarmforge/scripts/ready_for_next.bb"
+READY_BATCH="$CODER_WT/swarmforge/scripts/ready_for_next_batch.bb"
+DONE_BATCH="$CODER_WT/swarmforge/scripts/done_with_current_batch.bb"
 
 mkdir -p "$ROOT/.swarmforge" "$CODER_WT/.swarmforge" "$CODER_WT/extension" "$ROOT/subdir"
 ROLES="coordinator\tmaster\t$ROOT\tswarmforge-coordinator\tCoordinator\tclaude\ttask
