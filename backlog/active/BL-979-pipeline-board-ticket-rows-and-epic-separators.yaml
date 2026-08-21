@@ -167,3 +167,6 @@ approval_context: >
   (elapsed time on RECENTLY CLOSED) is split out as BL-980 so this
   reshape can land on its own; say if you would rather have them
   together.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-21, by: architect, blamed: coder, class: behavior, commit: f9377ad27a, evidence: backlog/evidence/BL-979-architect-bounce-20260821.md }
