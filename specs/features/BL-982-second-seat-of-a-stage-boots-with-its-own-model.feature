@@ -13,8 +13,10 @@ Feature: BL-982 a pipeline stage can host a second seat, booting with its own id
   identity from STAGE identity is the whole of this slice, and "a Sonnet coder and
   a Fable coder in one swarm" follows from it.
 
-  This slice stops at identity. The second seat boots and is inert - nothing is
-  delivered to it and it claims nothing - until the mailbox slice lands.
+  This slice stopped at identity: it gave the second seat a name, a worktree and
+  a model, and nothing else. Making that seat a real claimant was BL-983's work,
+  which landed on 2026-08-20 - so the seat described here is no longer inert, and
+  the parcel-claiming contract lives in BL-983's feature file, not this one.
 
   Background:
     Given a pack config declaring the pipeline stages
@@ -56,10 +58,3 @@ Feature: BL-982 a pipeline stage can host a second seat, booting with its own id
       | collision                                    |
       | two seats of one stage sharing a seat id     |
       | two seats of one stage sharing a worktree    |
-
-  # BL-982 second-seat-boots-with-its-own-model-06
-  Scenario: the second seat is inert until the mailbox slice lands
-    Given the pack declares two seats for one stage, each with its own worktree
-    When a parcel addressed to that stage is delivered
-    Then the second seat is not delivered the parcel
-    And the second seat claims nothing
