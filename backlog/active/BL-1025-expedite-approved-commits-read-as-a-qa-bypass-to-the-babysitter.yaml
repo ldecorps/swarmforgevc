@@ -182,3 +182,5 @@ notes: |
   finding at once: 6 occurrences, 6 unique steps, 0 findings. The
   `commit message` column survives the prune rule deliberately - five rows
   share a value and the sixth is the whole BL-972 guard.
+
+assigned_to: coder
