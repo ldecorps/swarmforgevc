@@ -60,6 +60,18 @@ wait — never the heartbeat, never a restart.
 The line names the sweep it happened in, so a timeout is self-attributing: you
 get the sweep *and* the command in one line.
 
+**Update, BL-1021 (2026-08-21):** the bound above used to cover only the
+*exit-code* wait — `(deref proc bound ::timed-out)`. If the direct child
+exited promptly but something it spawned kept the inherited stdout/stderr
+write ends open, `babashka.process`'s stream-pump futures then resolved with
+no bound at all and blocked in `read()` forever — invisible to the diagnosis
+above, because `destroy-tree` and the `subprocess-timeout` log line were both
+downstream of the timeout branch and never reached. The bound now covers the
+whole call, exit wait and stream drain together, at any process depth, so a
+missing `subprocess-timeout` line is no longer possible for this failure
+shape — see the BL-1021 entry in
+[`Specification.MD`](../reference/Specification.MD) for the mechanism.
+
 ## The bound, and when to change it
 
 The default is **60 seconds**, comfortably under the freshness threshold
@@ -108,6 +120,18 @@ last logged chase action and the next sweep that logs anything.
 All seven sites now route through the bounded chokepoint, as do the in-cycle
 subprocess calls in `briefing_email_lib.bb`, `control_plane_lib.bb`, and
 `handoffd.bb` itself.
+
+**BL-1021 (2026-08-21) found an eighth, reached a different way.** The seven
+sites above were found by walking `handoffd.bb`'s *load-file* closure — the
+gate `daemon_cycle_guard_lib_test_runner.bb` locks in. `dispatch-gap-sweep!`
+does not load its collaborator, `swarm_handoff.bb` — it *spawns* it as a
+subprocess, an edge type the closure walk cannot see. `swarm_handoff.bb`
+still used `clojure.java.shell/sh` on all nine of its own subprocess sites, so
+the banned API was back on the daemon's critical path via a hop the gate
+never checked. It now routes through the same `sh!` chokepoint (already in
+scope via `handoff_lib.bb`'s load-file chain, so no new wiring was needed).
+Widening the closure gate itself to follow process-spawn edges, so this class
+of hole cannot recur, is filed separately as BL-1022.
 
 One caveat worth keeping in mind: the stall never reproduced under a fixture —
 it needs a genuinely wedged tmux server under real load — so that
