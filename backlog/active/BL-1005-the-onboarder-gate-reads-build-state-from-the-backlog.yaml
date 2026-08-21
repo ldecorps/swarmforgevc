@@ -149,3 +149,5 @@ notes: >
   arrival rather than red-on-arrival. BL-993's step 10 was amended in the same
   turn to name this pre-existing red so the coder parks it instead of owning
   it. No `required_wiring:` is declared deliberately - see the description.
+
+assigned_to: coder
