@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 // BL-1012, declared invariants (coder-authored per the Invariants section of
 // coder.prompt / BL-654). Runs ONLY via `npm run test:properties`.
@@ -41,7 +41,7 @@ function isoAt(epoch) {
 // A fixture root with its OWN conf pinned at handoffd|120, so these
 // properties are independent of any ops change to the live conf.
 function mkRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1012-prop-'));
+  const root = mkTmpDir('sfvc-bl1012-prop-');
   fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
   fs.writeFileSync(
     path.join(root, 'freshness.conf'),
