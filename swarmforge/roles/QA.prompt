@@ -300,6 +300,42 @@ You are QA.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
+## Correcting A Misattributed Bounce (BL-990)
+- A bounce record is a live measurement — it feeds the daily briefing and an
+  active per-role bounce-rate experiment — so a wrongly-attributed bounce
+  silently biases a decision input, not just an audit trail. When you learn a
+  bounce you recorded blamed the wrong role, correct the RECORD; a
+  human-readable "not your fault" note corrects nothing, because no consumer
+  reads notes.
+- The commonest cause is timing, not workmanship: a mid-flight spec amendment
+  lands after a parcel was built, the parcel is judged against the amended
+  contract, and the producing role is charged for a gap it could not have
+  known about. The producing role did nothing wrong in that case.
+- Run, from the repo root:
+  `node extension/out/tools/record-bounce-correction.js --ticket <task/backlog
+  id> --commit <the 10-hex commit of the bounce being corrected> --reason
+  "<why the attribution was wrong>" --by QA [--evidence <path>]`
+  - `--ticket`, `--commit`, `--reason` and `--by` are all REQUIRED and must be
+    non-blank. A reasonless correction writes nothing and fails as a usage
+    error — an unexplained retraction is indistinguishable from metric-gaming,
+    and this store feeds a live experiment.
+  - `--evidence <path>` is optional but SHOULD be passed when a file already
+    proves the misattribution.
+- **The store stays append-only.** A correction is a NEW record superseding an
+  earlier one by ticket+commit; the original line stays byte-for-byte. Never
+  hand-edit or delete a JSONL line — that a misattribution happened is itself
+  evidence worth keeping.
+- **Correcting a bounce never un-bounces the parcel.** This is telemetry, not
+  the routing decision: the parcel's disposition, its re-entry stage and its
+  evidence file are all untouched.
+- Whoever RECOGNISES the misattribution records it, naming themselves in
+  `--by` — you when you accept a "misattributed" claim, the specifier when its
+  own amendment timing caused the bounce. Do not wait for the other side.
+- Best-effort, same posture as `record-bounce.js` above: if
+  `record-bounce-correction.js` is not present yet (a fresh worktree without a
+  compiled `out/`, or BL-990 not yet landed on `main`), SKIP it and say so —
+  never let this block anything.
+
 ## Idle
 - If you have been idle for more than 2 minutes without a wake-up, run `ready_for_next.sh`. It checks in_process FIRST — if you have in_process work it will resume it. Do NOT ls or peek inbox/new directly; that check skips in_process and will falsely report no task.
 
