@@ -216,6 +216,83 @@ notes: |
   pilot-process batch can clear the high tier; observability of approve
   failures, not a standing outage.
 
+
+  2026-08-21 specifier, on activation. Three amendments, all bookkeeping and
+  evidence — NOTHING anyone builds changes, and no scenario was added,
+  removed or reworded. The parcel is the seven scenarios already in the
+  feature file.
+
+  ## The root cause is NOT settled, and this ticket no longer implies it is
+
+  The feature file's narrative asserted "no defect exists in the current
+  callback code". Two observations contradict it, and a durable contract
+  carrying a false sentence is still a lie even when it is a comment
+  (BL-1006), so the narrative was re-tensed:
+
+    - BL-588, 2026-07-23 ~17:08Z — a tap that did not record, ~2h20m AFTER
+      the 14:46:52Z stale-build recompile that the explanation says fixed
+      this. Already recorded above as the open counter-observation; never
+      resolved.
+    - BL-1026, 2026-08-21 — a SECOND instance, and the first with an
+      independent signal attached: it failed during a front-desk
+      poll-degraded/restart-storm episode, and the human tapped repeatedly
+      with no yaml write and no inbound reply recorded. Its
+      human_approval:approved exists only because the operator wrote it by
+      hand through the direct writer path.
+
+  One counter-observation is an anomaly; two, thirteen days apart, with the
+  second correlating to a degraded-poll episode rather than to a build age,
+  is a pattern the stale-build story does not cover.
+
+  ## Owner and trigger for the residual question, so it does not decay
+
+  The ticket says "do not close this ticket without addressing it". It is
+  addressed here, deliberately, by SCOPING IT OUT rather than by resolving
+  it — the three hardening gaps are worth doing whatever the cause is, and
+  blocking them on a diagnosis would leave the human tapping a silent button
+  for another thirteen days. Both branches, named so neither decays into
+  "someone should look at it":
+
+    - Owner: the specifier.
+    - Trigger: the next approval tap that fails to record on a build the
+      supervisor considers fresh. That falsifies the stale-build story
+      outright and earns its own ticket, whose first evidence should be the
+      diagnostic gap (a) will by then be emitting.
+    - If no such tap occurs once (a) and (c) have landed, the stale-build
+      story stands and no further ticket is owed. Say so and close it.
+
+  The cheap discriminator this ticket already names — whether the button's
+  spinner clears instantly (recognized, failure downstream) or hangs ~30s
+  (dropped by the guards) — has still never been collected. It is being
+  asked of the human directly rather than guessed at. The answer narrows the
+  residual question only; it changes nothing the coder builds here, so this
+  parcel does not wait on it.
+
+  ## INVEST, recorded not acted on
+
+  Gap (c) — the supervisor's build-freshness check — is separable from (a)
+  and (b) on every axis that matters: a different subsystem, a different
+  file set, and no shared code with the callback record path. On a fresh
+  mint it would be its own slice, and **S** would be the failing letter.
+  It is NOT split now: the ticket is active, and rewriting an in-flight
+  ticket's YAML is precisely the worktree-staleness failure BL-317/BL-325
+  exist for. Recorded so the size is visible to whoever estimates it, and
+  so the coder is not surprised: this is three deliverables, not one.
+
+  ## Orthogonality — BL-621 must not run concurrently with this
+
+  BL-582 and BL-621 are both in `backlog/active/` and both centre on
+  `extension/src/tools/telegramFrontDeskBotCore.ts` and
+  `extension/src/tools/telegram-front-desk-bot.ts`. Every function this
+  ticket names — decideCallbackQueryAction, dispatchRecognizedCallbackDecision,
+  dispatchApproveOrFollowup, recordApprovalDecisionAndClose,
+  recordApprovalReply, commitExpediteWrites — lives in one or both of them,
+  and BL-621's own Scope note already says that file must be sequenced,
+  never concurrent (it names BL-620 for the same reason). Nothing was in
+  flight for BL-621 when this was written, so this parcel goes forward; the
+  coordinator has been told not to route BL-621 until it clears. Sequencing
+  is the coordinator's call, not this ticket's.
+
   QA: reproduce by hand against the live bot - post an ask, tap Approve, and
   confirm both the yaml write and the repaint. A fixture-only pass is not
   sufficient here: every unit-level guard already passes today while the live

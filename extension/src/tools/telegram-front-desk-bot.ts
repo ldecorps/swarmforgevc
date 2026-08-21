@@ -138,7 +138,14 @@ import {
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
 import { backlogForTopic } from '../concierge/topicRouter';
-import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict, readApprovalCloseVerdict } from '../concierge/pendingApprovalReply';
+import {
+  recordApprovalReply,
+  recordRejectionReply,
+  recordAmendReply,
+  readRecordedVerdict,
+  readApprovalCloseVerdict,
+  explainApprovalRecordNoOp,
+} from '../concierge/pendingApprovalReply';
 import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
 import { ConciergeTickScheduler, DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS } from '../concierge/conciergeTickScheduler';
 import { consumeConciergeTickRequest } from '../concierge/conciergeTickRequest';
@@ -222,6 +229,46 @@ function frontDeskPollHeartbeatPath(targetPath: string): string {
 
 function writeFrontDeskPollHeartbeat(targetPath: string): void {
   atomicWrite(frontDeskPollHeartbeatPath(targetPath), JSON.stringify({ lastHeartbeatMs: Date.now() }));
+}
+
+// BL-582: the durable diagnostic log. The bot's stderr is :inherit-ed by
+// front_desk_supervisor.bb, so a drop line landed in whatever stream the
+// supervisor happened to be attached to and was gone by the time anyone
+// looked - which is why the 2026-07-23 failure window has no bot output
+// anywhere. Append-only, machine-local (gitignored under .swarmforge/),
+// same posture as every other operator sidecar in this file. Named here
+// and in the ticket so an investigator knows where to grep.
+export function frontDeskDiagnosticsLogPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'front-desk-diagnostics.log');
+}
+
+// An append-only log on a long-lived process is an unbounded resource
+// unless something bounds it, and logDropAudit below fires on every
+// dropped inbound update - frequent in a busy group. One rotation
+// generation at this size keeps the current window plus the one before it
+// (comfortably more than the 2h23m the incident spanned) and no more.
+export const FRONT_DESK_DIAGNOSTICS_MAX_BYTES = 5 * 1024 * 1024;
+
+function rotateDiagnosticsIfLarge(logPath: string): void {
+  if (!fs.existsSync(logPath) || fs.statSync(logPath).size < FRONT_DESK_DIAGNOSTICS_MAX_BYTES) {
+    return;
+  }
+  fs.renameSync(logPath, `${logPath}.1`);
+}
+
+// Never throws: a diagnostic sink that can crash the poll loop is a worse
+// failure than the silence it exists to end. A failed append still reaches
+// stderr, which is the pre-BL-582 behavior and no worse than it.
+export function appendFrontDeskDiagnostic(targetPath: string, line: string): void {
+  process.stderr.write(`${line}\n`);
+  try {
+    const logPath = frontDeskDiagnosticsLogPath(targetPath);
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    rotateDiagnosticsIfLarge(logPath);
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // Already on stderr above - nothing further to do, and never a throw.
+  }
 }
 
 // {topicId: subjectId} - bot-owned, machine-local (gitignored under
@@ -2076,7 +2123,11 @@ function buildPollAdapters(
     // the supervisor log (the same stderr stream this file's other
     // operational notices use) - the incident class this closes took a
     // live replay session to diagnose because a drop produced zero output.
-    logDropAudit: (line) => process.stderr.write(`${line}\n`),
+    // BL-582: routed to the DURABLE sink rather than bare stderr - a drop
+    // line that dies with the process explains nothing afterwards.
+    logDropAudit: (line) => appendFrontDeskDiagnostic(targetPath, line),
+    logDiagnostic: (line) => appendFrontDeskDiagnostic(targetPath, line),
+    explainApprovalRecordNoOp: (backlogId) => Promise.resolve(explainApprovalRecordNoOp(targetPath, backlogId)),
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),

@@ -14,6 +14,9 @@ const {
   routeBacklogToCoderScriptPath,
   runExpediteDispatch,
   commitExpediteWrites,
+  frontDeskDiagnosticsLogPath,
+  appendFrontDeskDiagnostic,
+  FRONT_DESK_DIAGNOSTICS_MAX_BYTES,
   toFoldersSnapshot,
   ensureOperatorTopic,
   ensureApprovalsTopic,
@@ -3132,4 +3135,67 @@ test('readRepoBaseUrl degrades to undefined (never throws) when there is no git 
 test('readRepoBaseUrl degrades to undefined (never throws) when the directory is not even a git repo', () => {
   const root = mkTmpRoot();
   assert.equal(readRepoBaseUrl(root), undefined);
+});
+
+
+// ── BL-582 scenario 07: the diagnostic outlives the process ──────────────
+//    Every callback diagnostic used to go to bare stderr, inherited by
+//    front_desk_supervisor.bb - so the 2026-07-23 failure window has no bot
+//    output preserved anywhere at all. An append-only file under
+//    .swarmforge/operator/ is what makes the next such window readable.
+
+test('BL-582: appendFrontDeskDiagnostic writes to a file that survives the process, not only to stderr', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+
+  appendFrontDeskDiagnostic(targetPath, 'front-desk callback callback_query_id=cbq-1 reason=record-no-op detail=BL-582:no-ticket-file');
+
+  const written = fs.readFileSync(frontDeskDiagnosticsLogPath(targetPath), 'utf8');
+  assert.match(written, /reason=record-no-op detail=BL-582:no-ticket-file/);
+  assert.match(written, /^\d{4}-\d{2}-\d{2}T/, 'each line is timestamped so a failure window can be located');
+});
+
+test('BL-582: appendFrontDeskDiagnostic APPENDS - an earlier diagnostic is never overwritten by a later one', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+
+  appendFrontDeskDiagnostic(targetPath, 'first reason=not-principal');
+  appendFrontDeskDiagnostic(targetPath, 'second reason=unrecognized-data');
+
+  const lines = fs.readFileSync(frontDeskDiagnosticsLogPath(targetPath), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /not-principal/);
+  assert.match(lines[1], /unrecognized-data/);
+});
+
+test('BL-582: an unwritable diagnostic path never throws - a broken sink must not take the poll loop down with it', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+  // A FILE where the operator directory must be: mkdirSync and appendFileSync
+  // both fail, the same way a permissions or full-disk failure would.
+  fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'operator'), 'not a directory');
+
+  assert.doesNotThrow(() => appendFrontDeskDiagnostic(targetPath, 'reason=not-my-chat'));
+});
+
+test('BL-582: the diagnostic log is bounded - one rotation generation, never unbounded growth on a long-lived bot', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+  const logPath = frontDeskDiagnosticsLogPath(targetPath);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, 'x'.repeat(FRONT_DESK_DIAGNOSTICS_MAX_BYTES));
+
+  appendFrontDeskDiagnostic(targetPath, 'after rotation reason=not-my-chat');
+
+  assert.match(fs.readFileSync(logPath, 'utf8'), /after rotation/, 'the fresh log holds the new line');
+  assert.equal(fs.statSync(logPath).size < FRONT_DESK_DIAGNOSTICS_MAX_BYTES, true, 'the live log restarted rather than growing past the cap');
+  assert.ok(fs.existsSync(`${logPath}.1`), 'the previous window is kept as exactly one rotation generation');
+});
+
+test('BL-582: a log under the cap is appended to, never rotated - rotation is not a per-write reset', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+
+  appendFrontDeskDiagnostic(targetPath, 'first reason=not-principal');
+  appendFrontDeskDiagnostic(targetPath, 'second reason=record-no-op');
+
+  const logPath = frontDeskDiagnosticsLogPath(targetPath);
+  assert.equal(fs.existsSync(`${logPath}.1`), false, 'nothing is rotated below the cap');
+  assert.equal(fs.readFileSync(logPath, 'utf8').trim().split('\n').length, 2);
 });
