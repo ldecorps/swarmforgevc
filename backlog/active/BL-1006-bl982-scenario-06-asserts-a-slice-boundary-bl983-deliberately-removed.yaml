@@ -220,3 +220,5 @@ qa_e2e_procedure: >
      first; regressing it here would re-red BL-948's standing guard). Run
      `npx vitest run test/socketFixtureShortRootGuard.test.js` from
      `extension/` and confirm 16 of 16 pass.
+
+assigned_to: coder
