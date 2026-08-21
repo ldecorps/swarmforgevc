@@ -1,6 +1,43 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 21, 2026 (BL-986: the standing-rule-violations
+**Last Updated:** August 21, 2026 (BL-990: a bounce recorded against the
+wrong pipeline role could never be corrected — `record-bounce.js` only
+appends, and the store (`extension/src/metrics/bounceStore.ts`) exposed
+read/append with no amend path, so a bounce caused by a mid-flight spec
+amendment (demonstrated live on 2026-08-20: the specifier amended an active
+ticket's acceptance contract while a pre-amendment parcel was already
+sitting at QA, who correctly bounced it and attributed the bounce to the
+coder, who had done nothing wrong) stayed charged to that role forever,
+silently biasing the live coder-bounce-rate experiment reading it. A new
+CLI, `record-bounce-correction`
+(`extension/src/tools/record-bounce-correction.ts`), appends a superseding
+record rather than editing or deleting the original — the store stays
+append-only, the misattribution itself stays visible as evidence. Design
+call: correction marks a bounce EXCLUDED-FROM-ATTRIBUTION rather than
+re-pointing it at a new role, so the closed `KNOWN_PRODUCING_ROLES` enum
+every consumer groups on needed no new member (`--by` already accepts
+`specifier`, so the correction still records who issued it). All three
+independent reader paths onto the same underlying data — not one, as the
+ticket's own description assumed — now resolve supersession:
+`bounceStore.readBounceRecords`, `failureModeInventory`'s own separate
+JSONL parse, and `leanLedgerComposeBounce`'s read of the ticket YAML's
+`bounce_history` (resolved from the JSONL rather than mirrored into the
+YAML by a second writer). A dedup trap the ticket didn't anticipate: the
+append path's own existing dedup read through the corrected view, which
+would have made a corrected bounce invisible to it and silently
+resurrected on any re-run — fixed by dedupping against a new
+`readRawBounceRecords` instead. A correction with no reason is refused. No
+new user-facing command or setting in the extension itself — this is an
+internal telemetry-integrity CLI for pipeline roles. **Not yet wired to any
+role's usage instructions** (flagged by the coder as a deliberate,
+documented gap rather than an oversight — see the same day's Specification
+entry below); a `note` was sent to specifier and coordinator recommending
+QA's role prompt reference `record-bounce-correction` alongside the
+existing `record-bounce.js`, since QA is the natural caller (QA issued the
+real 2026-08-20 correction as a note, which is exactly what this tool now
+makes durable). See `backlog/evidence/BL-990-hardener-pass-20260821.md`
+for the full verification record.); Previously
+August 21, 2026 (BL-986: the standing-rule-violations
 scanner (`swarmforge/scripts/standing_rule_violations_lib.bb` /
 `standing_rule_violations_files.bb`) was blind to any rule citation moved
 out of the three boot-inlined articles into its `reference/` elaboration —

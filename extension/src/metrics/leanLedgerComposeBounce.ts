@@ -10,6 +10,8 @@ import * as fs from 'fs';
 import { LeanLedgerEvent } from '../quality/leanLedger';
 import { parseBounceHistoryEntries } from '../quality/bounceHistory';
 import { definedData, findTicketYamlPath } from './leanLedgerComposeShared';
+import { readBounceCorrections } from './bounceStore';
+import { bounceCorrectionTargetKey } from '../quality/qaBounce';
 
 export function composeBounceEvents(targetPath: string, ticket: string): LeanLedgerEvent[] {
   const yamlPath = findTicketYamlPath(targetPath, ticket);
@@ -22,14 +24,24 @@ export function composeBounceEvents(targetPath: string, ticket: string): LeanLed
   } catch {
     return [];
   }
-  return parseBounceHistoryEntries(yamlText).map((entry) => ({
-    ticket,
-    type: 'bounce',
-    source: 'bounce-store',
-    // The ticket record stores a date only (yyyy-mm-dd), never a full
-    // timestamp - the day boundary IS the instrument's own recorded
-    // precision, not a fabricated finer one.
-    at: `${entry.at}T00:00:00.000Z`,
-    data: definedData({ by: entry.by, blamedRole: entry.blamed, failureClass: entry.failureClass, commit: entry.commit, evidence: entry.evidence }),
-  }));
+  // BL-990: this composer reads the ticket YAML's bounce_history, a THIRD
+  // read path over the same events - neither bounceStore's readBounceRecords
+  // nor failureModeInventory's own JSONL parse reaches it. Corrections are
+  // resolved from the one store that holds them rather than mirrored into
+  // the YAML by a second writer, so there is no second copy to drift: a
+  // bounce whose ticket+commit a correction names stops being reported as an
+  // event about the role it blamed.
+  const correctedKeys = new Set(readBounceCorrections(targetPath).map(bounceCorrectionTargetKey));
+  return parseBounceHistoryEntries(yamlText)
+    .filter((entry) => !correctedKeys.has(bounceCorrectionTargetKey({ ticket, commit: entry.commit ?? '' })))
+    .map((entry) => ({
+      ticket,
+      type: 'bounce',
+      source: 'bounce-store',
+      // The ticket record stores a date only (yyyy-mm-dd), never a full
+      // timestamp - the day boundary IS the instrument's own recorded
+      // precision, not a fabricated finer one.
+      at: `${entry.at}T00:00:00.000Z`,
+      data: definedData({ by: entry.by, blamedRole: entry.blamed, failureClass: entry.failureClass, commit: entry.commit, evidence: entry.evidence }),
+    }));
 }
