@@ -328,6 +328,104 @@
              (and (contains? @p5-branches-hit :owner-busy)
                   (contains? @p5-branches-hit :owner-idle)))
 
+;; ── P6 (BL-1017): session repair is topology-gated and bounded ──────────────
+;; The two invariants BL-1017 declares (coder-authored first, per BL-654):
+;;
+;;   (a) invariant 1 — a repair is only ever PROPOSED for a role the topology
+;;       says should stand. Encoded the same role-name-blind way P4 encodes
+;;       its sibling: across RANDOM role names crossed with random pane
+;;       presence, process state and repair budget, a :repair appears if and
+;;       only if the pane is absent AND should-stand? is true. A mono-router
+;;       non-resident can therefore never be resurrected as if it were
+;;       standing, whatever it is called.
+;;
+;;   (b) invariant 2 — repair is BOUNDED. Simulated over a run of sweeps at
+;;       randomly spaced instants, threading the SAME two shipped functions
+;;       the live gatherer uses (session-repair-allowed? to decide,
+;;       note-repair-attempt to record), so the property covers the shipped
+;;       accounting rather than a restatement of it. The assertion is the
+;;       invariant's own words: within any single cooldown window a role is
+;;       issued no more than max-repair-attempts repairs.
+(def p6-branches-hit (atom #{}))
+
+(defn- gen-repair-case []
+  (let [pane-exists? (rbool)
+        should-stand? (rbool)
+        role (rand-role-name)]
+    (swap! p6-branches-hit conj
+           (cond (and (not pane-exists?) should-stand?) :absent-standing
+                 (not pane-exists?) :absent-dormant
+                 :else :present))
+    {:pane-exists? pane-exists?
+     :should-stand? should-stand?
+     :result (sw/check-live-session {:role role
+                                     :pane-exists? pane-exists?
+                                     :has-claude-process? (rbool)
+                                     :process-gather-failed? (rbool)
+                                     :should-stand? should-stand?
+                                     ;; a randomized budget that is always
+                                     ;; permissive, so this half isolates the
+                                     ;; TOPOLOGY gate from the bound in (b)
+                                     :repair-attempts 0
+                                     :max-repair-attempts (inc (rint 3))})}))
+
+(dotimes [_ 400]
+  (let [{:keys [pane-exists? should-stand? result]} (gen-repair-case)
+        repaired? (some? (:repair result))]
+    (assert-true "a repair is proposed if and only if the pane is absent AND the role should stand, for ANY role name"
+                 (= repaired? (and (not pane-exists?) should-stand?)))))
+
+(assert-true "P6(a) generator reached an absent standing role, an absent dormant role, and a present pane"
+             (and (contains? @p6-branches-hit :absent-standing)
+                  (contains? @p6-branches-hit :absent-dormant)
+                  (contains? @p6-branches-hit :present)))
+
+;; (b) the bound. Each trial replays a run of sweeps for one role whose pane
+;; is missing throughout - the worst case, and the exact shape of the incident
+;; this ticket comes from (a session that stays gone sweep after sweep).
+(def p6-bound-branches (atom #{}))
+
+(dotimes [_ 200]
+  (let [role (rand-role-name)
+        cooldown-ms (* 1000 (+ 60 (rint 600)))
+        max-attempts (inc (rint 3))
+        sweeps (+ 4 (rint 12))
+        ;; Steps deliberately straddle the window: some sweeps land inside the
+        ;; cooldown, some past it, so both the bounded and the reset branch are
+        ;; exercised rather than one of them silently dominating.
+        step-ms (fn [] (if (zero? (rint 2))
+                         (inc (rint (max 1 (quot cooldown-ms 3))))
+                         (+ cooldown-ms 1 (rint 1000))))
+        issued (loop [i 0, now 1000000, state {}, issued []]
+                 (if (= i sweeps)
+                   issued
+                   (let [prior (get state role)
+                         allowed? (sw/session-repair-allowed?
+                                   {:now-ms now
+                                    :last-repair-ms (get prior "last-ms")
+                                    :repair-attempts (get prior "attempts" 0)
+                                    :repair-cooldown-ms cooldown-ms
+                                    :max-repair-attempts max-attempts})]
+                     (swap! p6-bound-branches conj (if allowed? :issued :withheld))
+                     (recur (inc i)
+                            (+ now (step-ms))
+                            (if allowed?
+                              (sw/note-repair-attempt state role now cooldown-ms)
+                              state)
+                            (if allowed? (conj issued now) issued)))))]
+    ;; The invariant's own words: inside ANY cooldown window, no more than
+    ;; max-attempts repairs. Checked over every issued repair as a window
+    ;; origin, so a burst anywhere in the run is caught, not just at the start.
+    (doseq [origin issued]
+      (let [in-window (filter #(and (>= % origin) (< (- % origin) cooldown-ms)) issued)]
+        (assert-true (str "no more than " max-attempts " repair(s) inside one cooldown window for " role
+                          " (saw " (count in-window) ")")
+                     (<= (count in-window) max-attempts))))))
+
+(assert-true "P6(b) generator reached both an issued and a withheld sweep"
+             (and (contains? @p6-bound-branches :issued)
+                  (contains? @p6-bound-branches :withheld)))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
