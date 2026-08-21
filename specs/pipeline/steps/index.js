@@ -550,8 +550,7 @@ const DOMAINS = [
   require('./bl996OneMidTurnDefinitionSteps'),
   require('./bl1003BusyVerdictMatchesSwarmSteps'),
   require('./bl993OperatorRuntimeWatchSteps'),
-  require('./bl1002SocketRootSteps'),
-  require('./bl1004ReworkClaimSteps')
+  require('./bl1002SocketRootSteps')
 ];
 
 function registerSteps(registry) {

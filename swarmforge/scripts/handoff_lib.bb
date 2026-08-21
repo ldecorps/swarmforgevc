@@ -400,30 +400,6 @@
       (filterv #(and (= stage (seat-stage (:role %))) (not= me (:role %)))
                (load-all-roles)))))
 
-(defn worked-task-names-in
-  "Task names of every git_handoff directly in dir or inside its batch_*
-   subdirectories - one mailbox state's contribution to a seat's durable
-   record of the tasks it has worked (BL-1004). A missing dir is the empty
-   set, via handoff-files."
-  [dir]
-  (set (keep (fn [f]
-               (when (= "git_handoff" (header-field f "type"))
-                 (header-field f "task")))
-             (concat (handoff-files dir)
-                     (mapcat handoff-files (batch-dirs dir))))))
-
-(defn sibling-worked-task-names
-  "Task names every SIBLING seat of the current role's stage has worked -
-   its completed/ plus in_process/ (the durable record BL-1004 reads; a
-   salvage-parked abandoned/ parcel is deliberately NOT 'worked'). Empty
-   for bare single-seat stages, so the BL-1004 sibling-rework deferral is
-   structurally unreachable there (its invariant 3)."
-  []
-  (set (mapcat (fn [ri]
-                 (mapcat #(worked-task-names-in (mailbox-dir ri %))
-                         [:completed :in_process]))
-               (stage-sibling-seats))))
-
 ;; ── BL-218: mailbox intake idempotency ──────────────────────────────────
 ;; ready_for_next_task.bb/ready_for_next_batch.bb historically only checked
 ;; whether a target in_process file already existed (AMBIGUOUS_TASK_STATE);
