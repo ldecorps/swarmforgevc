@@ -507,6 +507,143 @@
            "escalate"
            (:tier (get (flow-watchdog-lib/read-state daemon-dir) :own654))))
 
+;; ── BL-1004 deferral-perimeter (architect bounce 2026-08-21): a stage-queue
+;;    parcel inside its designed cross-seat deferral window never alarms;
+;;    every release condition (no worker, past deadline, all seats worked,
+;;    already claimed into in_process) alarms exactly as today ─────────────
+
+(defn mk-two-seat-fixture!
+  "mk-sweep-fixture! plus a two-seat coder stage: roles.tsv rows for the
+   stage row `coder` and sibling seat `coder@b`, each with its own worktree
+   dir inside the fixture (non-master rows, so each mailbox base is
+   <worktree>/.swarmforge/handoffs). Returns the root."
+  []
+  (let [root (mk-sweep-fixture!)]
+    (fs/create-dirs (fs/path root ".swarmforge"))
+    (spit (str (fs/path root ".swarmforge" "roles.tsv"))
+          (str "coder\tcoder\t" (fs/path root "wt-coder") "\tswarm\tCoder\tclaude\ttask\n"
+               "coder@b\tcoder-b\t" (fs/path root "wt-b") "\tswarm\tCoder B\tclaude\ttask\n"))
+    root))
+
+(defn seat-mailbox [root wt state]
+  (fs/path root wt ".swarmforge" "handoffs" "inbox" state))
+
+(defn write-worked-record!
+  "A git_handoff for task in the given seat mailbox dir - the durable
+   record stage-seat-worked-task-sets reads."
+  [dir task]
+  (write-handoff! (str (fs/path dir (str "done-" task ".handoff")))
+                  [["id" (str "done-" task)] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" task]]))
+
+;; deferral-perimeter-01: seat b worked the task, the rework sits in the
+;; stage queue at 16 minutes - past warn (60s) and even escalate (240s),
+;; inside the 30-minute deferral window - and must NOT alarm.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-777")
+  (write-handoff! (str (fs/path stage-new "rework.handoff"))
+                  [["id" "rework777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}
+    {:role "coder@b" :new-dir (seat-mailbox root "wt-b" "new") :in-process-dir (seat-mailbox root "wt-b" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-01: a parcel inside its designed deferral window never alarms"
+           []
+           @alarms)
+  (assert= "deferral-perimeter-01: the held parcel's durable state records no tier"
+           nil
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :rework777))))
+
+;; deferral-perimeter-02: NO seat worked the task - a fresh parcel sitting
+;; that long is a real stall and still alarms.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-888")
+  (write-handoff! (str (fs/path stage-new "fresh.handoff"))
+                  [["id" "fresh777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-02: a task no seat worked still alarms (the hold is not a blanket mute)"
+           1
+           (count @alarms)))
+
+;; deferral-perimeter-03: past the cross-seat deadline the hold releases -
+;; the affine seat never came, any seat may claim, and the alarm fires.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-777")
+  (write-handoff! (str (fs/path stage-new "aged.handoff"))
+                  [["id" "aged777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 1900))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-03: past the deadline the hold releases and the parcel alarms"
+           1
+           (count @alarms)))
+
+;; deferral-perimeter-04: EVERY seat worked the task - whichever seat polls
+;; self-claims, no deferral can occur, so a sitting parcel still alarms.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-777")
+  (write-worked-record! (seat-mailbox root "wt-coder" "completed") "BL-777")
+  (write-handoff! (str (fs/path stage-new "both.handoff"))
+                  [["id" "both777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-04: a task every seat worked never holds - the parcel alarms"
+           1
+           (count @alarms)))
+
+;; deferral-perimeter-05: the hold applies to the stage QUEUE (:new) only.
+;; A parcel already CLAIMED into a seat's in_process is past deferral - a
+;; stall there is real even though the claiming seat's own in_process makes
+;; it a "worker" of the task while the other seat is not.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      b-in-process (seat-mailbox root "wt-b" "in_process")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-handoff! (str (fs/path b-in-process "claimed.handoff"))
+                  [["id" "claimed777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir (seat-mailbox root "wt-coder" "new") :in-process-dir (seat-mailbox root "wt-coder" "in_process")}
+    {:role "coder@b" :new-dir (seat-mailbox root "wt-b" "new") :in-process-dir b-in-process}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-05: a claimed in_process parcel is never deferral-held - it alarms"
+           1
+           (count @alarms)))
+
 ;; acceptance-06: an old-header, fresh-mtime parcel still alarms (mtime never
 ;; consulted - the fixture file's own mtime is "now", far fresher than its
 ;; enqueued_at header).

@@ -155,6 +155,71 @@
                         (str/includes? line "coder@extra")
                         (str/includes? line "@")))))
 
+;; ── deferral-hold? - the stall-alarm exemption (architect bounce
+;;    2026-08-21): would at least one seat of the stage defer this scanned
+;;    stage-queue parcel right now? Consumed by flow_watchdog_lib.bb and
+;;    chase_sweep_lib.bb so a legitimately-deferred rework never trips a
+;;    false stuck-parcel alert inside its own designed wait window. Same
+;;    fail-open polarity as the claim decision: unreadable age, at/past
+;;    deadline, no worker, and every-seat-worked all release the hold. ─────
+(def hold-base
+  {:type "git_handoff"
+   :task "BL-777"
+   ;; one set per seat of the stage: seat A worked BL-777, seat B did not -
+   ;; the exact two-live-coder-seats shape from the bounce evidence.
+   :seat-worked-task-sets [#{"BL-777"} #{}]
+   :enqueued-at "2026-08-21T00:00:00Z"
+   :created-at nil
+   ;; sixteen minutes of age - the bounce's own live :warn probe - inside
+   ;; the thirty-minute deferral window.
+   :now-ms (+ enqueue-ms 960000)
+   :deadline-ms 1800000})
+
+(assert= "a sibling-worked rework inside the window is held (the 16-minute false-warn case)"
+         true
+         (seat-affinity-lib/deferral-hold? hold-base))
+
+(assert= "at the deadline the hold releases (any seat may claim - fail open)"
+         false
+         (seat-affinity-lib/deferral-hold? (assoc hold-base :now-ms (+ enqueue-ms 1800000))))
+
+(assert= "an unreadable age never holds (the claim path claims such a parcel immediately)"
+         false
+         (seat-affinity-lib/deferral-hold?
+          (assoc hold-base :enqueued-at "not-a-time" :created-at nil)))
+
+(assert= "no seat worked the task: not held (a fresh parcel sitting there is a real stall)"
+         false
+         (seat-affinity-lib/deferral-hold? (assoc hold-base :seat-worked-task-sets [#{} #{}])))
+
+(assert= "EVERY seat worked the task: not held (whichever seat polls self-claims, no deferral can occur)"
+         false
+         (seat-affinity-lib/deferral-hold?
+          (assoc hold-base :seat-worked-task-sets [#{"BL-777"} #{"BL-777"}])))
+
+(assert= "invariant 3: a single-seat stage never holds, even when its one seat worked the task"
+         false
+         (seat-affinity-lib/deferral-hold? (assoc hold-base :seat-worked-task-sets [#{"BL-777"}])))
+
+(assert= "no seats resolved at all (no roles.tsv - fixtures, legacy packs): not held"
+         false
+         (seat-affinity-lib/deferral-hold? (assoc hold-base :seat-worked-task-sets [])))
+
+(assert= "a note is never held (only a git_handoff is a rework)"
+         false
+         (seat-affinity-lib/deferral-hold? (assoc hold-base :type "note")))
+
+(assert= "a blank task is never held"
+         false
+         (seat-affinity-lib/deferral-hold? (assoc hold-base :task "")))
+
+(assert= "enqueued_at leads created_at, same age ordering as the claim decision"
+         true
+         (seat-affinity-lib/deferral-hold?
+          ;; created_at is far past the deadline; enqueued_at is 16 minutes
+          ;; ago - the parcel is fresh in THIS mailbox, so it is held.
+          (assoc hold-base :created-at "2026-08-01T00:00:00Z")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do (doseq [f @failures] (println f))

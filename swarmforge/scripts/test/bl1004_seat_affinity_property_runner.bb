@@ -151,7 +151,92 @@
     (fail! (str "generator coverage: " (name k) " reached only " (get @coverage k)
                 " of " runs " (floor " floor ")"))))
 
-(println (str "  seed " seed " runs " runs " coverage " (pr-str @coverage)))
+;; ── deferral-hold? (architect bounce 2026-08-21: stall-alarm exemption) ────
+;; The hold the sweeps consult must be EXACTLY the deferral the claim path
+;; performs - two independent encodings of "deferred" would drift silently
+;; (the BL-897 class). Property: over a constructed multi-seat world,
+;;   deferral-hold?  ⟺  ∃ seat whose rework-claim-decision is :defer,
+;; where each seat's decision is replayed from that seat's own point of view
+;; (its set as :my-tasks, the union of the others as :sibling-tasks). All
+;; three declared invariants ride along: boundedness (release at/past
+;; deadline and on unreadable age) and single-seat unreachability are
+;; corollaries of the equivalence, and the hold's value is a bare boolean -
+;; no seat identity escapes into the sweeps.
+(def hold-coverage (atom {:held 0 :released-aged 0 :released-unreadable 0
+                          :no-worker 0 :all-workers 0 :single-seat 0 :non-handoff 0}))
+
+(dotimes [i runs]
+  (let [task (rand-nth* task-pool)
+        deadline-ms (+ 60000 (rand-int* 3600000))
+        now-ms (+ 1700000000000 (rand-int* 100000000))
+        shape (rand-nth* [:held :released-aged :released-unreadable
+                          :no-worker :all-workers :single-seat :non-handoff])
+        seat-count (if (= shape :single-seat) 1 (+ 2 (rand-int* 3)))
+        ;; worker membership BY CONSTRUCTION: the shapes that need a
+        ;; genuine split draw ≥1 worker and ≥1 non-worker, never hope.
+        worker-count (case shape
+                       (:held :released-aged :released-unreadable) (inc (rand-int* (dec seat-count)))
+                       :no-worker 0
+                       :all-workers seat-count
+                       :single-seat (rand-int* 2)
+                       :non-handoff (rand-int* (inc seat-count)))
+        noise #(set (take (rand-int* 3) (remove #{task} task-pool)))
+        sets (vec (for [j (range seat-count)]
+                    (cond-> (noise) (< j worker-count) (conj task))))
+        age-below (rand-int* deadline-ms)
+        age-at-or-past (+ deadline-ms (rand-int* deadline-ms))
+        enqueued-at (case shape
+                      :released-unreadable (rand-nth* [nil "" "not-a-time"])
+                      :released-aged (iso (- now-ms age-at-or-past))
+                      (iso (- now-ms age-below)))
+        input {:type (if (= shape :non-handoff)
+                       (rand-nth* ["note" "awake" "rule_proposal"])
+                       "git_handoff")
+               :task task
+               :seat-worked-task-sets sets
+               :enqueued-at enqueued-at
+               :created-at nil
+               :now-ms now-ms
+               :deadline-ms deadline-ms}
+        hold (seat-affinity-lib/deferral-hold? input)
+        ;; oracle: replay the CLAIM decision from every seat's own POV
+        any-defer? (boolean
+                    (some (fn [j]
+                            (= :defer
+                               (:action (seat-affinity-lib/rework-claim-decision
+                                         {:type (:type input)
+                                          :task task
+                                          :my-tasks (nth sets j)
+                                          :sibling-tasks (reduce into #{}
+                                                                 (keep-indexed #(when (not= %1 j) %2) sets))
+                                          :enqueued-at enqueued-at
+                                          :created-at nil
+                                          :now-ms now-ms
+                                          :deadline-ms deadline-ms}))))
+                          (range seat-count)))]
+    (when (not= hold any-defer?)
+      (fail! (str "hold draw " i ": deferral-hold? " hold " but ∃seat-:defer " any-defer?
+                  " for " (pr-str input))))
+    (when-not (boolean? hold)
+      (fail! (str "hold draw " i ": hold is not a bare boolean: " (pr-str hold))))
+    ;; coverage keyed by the OBSERVED outcome, same discipline as above
+    (cond
+      hold (swap! hold-coverage update :held inc)
+      (not= "git_handoff" (:type input)) (swap! hold-coverage update :non-handoff inc)
+      (= 1 seat-count) (swap! hold-coverage update :single-seat inc)
+      (not-any? #(contains? % task) sets) (swap! hold-coverage update :no-worker inc)
+      (every? #(contains? % task) sets) (swap! hold-coverage update :all-workers inc)
+      (nil? (seat-affinity-lib/parse-instant-ms enqueued-at)) (swap! hold-coverage update :released-unreadable inc)
+      :else (swap! hold-coverage update :released-aged inc))))
+
+(doseq [[k floor] {:held 20 :released-aged 20 :released-unreadable 20
+                   :no-worker 20 :all-workers 20 :single-seat 20 :non-handoff 20}]
+  (when (< (get @hold-coverage k) floor)
+    (fail! (str "hold generator coverage: " (name k) " reached only " (get @hold-coverage k)
+                " of " runs " (floor " floor ")"))))
+
+(println (str "  seed " seed " runs " runs " coverage " (pr-str @coverage)
+              " hold-coverage " (pr-str @hold-coverage)))
 (if (empty? @failures)
   (do (println (str "bl1004 seat-affinity properties: " runs " draws over the pure claim decision"))
       (println "ALL PROPERTIES HOLD"))
