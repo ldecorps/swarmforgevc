@@ -26,6 +26,7 @@ const ROLE_LIFECYCLE_SH = path.join(SWARMFORGE_SCRIPTS, 'role_lifecycle.sh');
 const ROLE_LIFECYCLE_CLI = path.join(SWARMFORGE_SCRIPTS, 'role_lifecycle_cli.bb');
 const SWARMFORGE_SH = path.join(SWARMFORGE_SCRIPTS, 'swarmforge.sh');
 const { measureParkCycleCost } = require(path.join(REPO_ROOT, 'extension', 'out', 'metrics', 'burnRate'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const STANDARD_CHAIN = ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 const REAL_LAUNCH_ROLES = ['coder', 'cleaner', 'architect', 'QA'];
@@ -58,7 +59,7 @@ onAbnormalExit(() => {
 });
 
 function mkFakeBin() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-role-lifecycle-fakebin-'));
+  const dir = mkSocketFixtureRoot('aps-role-lifecycle-fakebin-');
   fs.writeFileSync(path.join(dir, 'claude'), '#!/usr/bin/env bash\nexit 0\n');
   fs.chmodSync(path.join(dir, 'claude'), 0o755);
   return dir;
@@ -118,7 +119,7 @@ function sessionAlive(root, session) {
 // specifier/hardender/documenter get plain roster rows (no scenario here
 // parks/unparks them specifically).
 function mkFixtureRoot(fakeBin) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-role-lifecycle-'));
+  const root = mkSocketFixtureRoot('aps-role-lifecycle-');
   fs.mkdirSync(path.join(root, 'swarmforge', 'roles'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'launch'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'prompts'), { recursive: true });

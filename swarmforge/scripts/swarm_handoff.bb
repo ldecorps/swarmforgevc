@@ -3,7 +3,6 @@
 (ns swarm-handoff
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
-            [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
@@ -16,6 +15,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "required_stages_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "review_forward_evidence_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -54,10 +55,22 @@
       (println message)))
   (System/exit status))
 
+;; BL-1021: every subprocess here goes through daemon-cycle-guard-lib/sh!,
+;; the same bounded chokepoint BL-061/BL-967 put in front of handoffd.bb.
+;; This script is NOT merely a CLI: handoffd's dispatch-gap, unassigned-active
+;; and open-slot sweeps SPAWN it, so it sits on the daemon's critical path -
+;; reached by a process-spawn edge that the guard lib's load-file closure gate
+;; cannot walk (BL-1022 widens the gate; this closes the hole). It previously
+;; used clojure.java.shell/sh, which has no timeout at all, so a wedged git or
+;; tmux here wedged the daemon. The chokepoint is already in scope with no new
+;; wiring: handoff_lib.bb load-files daemon_cycle_guard_lib.bb above.
+;;
+;; sh! keeps clojure.java.shell/sh's result shape ({:exit :out :err}), so
+;; every caller below is unchanged; the vector+opts call form is required
+;; because the varargs form silently drops :dir.
 (defn command
   ([dir & args]
-   (let [result (apply sh (concat args [:dir (str dir)]))]
-     result)))
+   (daemon-cycle-guard-lib/sh! (vec args) {:dir (str dir)})))
 
 (defn git-root []
   (let [result (command "." "git" "rev-parse" "--show-toplevel")]
@@ -93,8 +106,15 @@
         (str/split-lines (slurp (str (roles-file))))))
 
 (defn sender-role []
+  ;; BL-983 (invariant 3): a SEAT's outward identity is its STAGE - the
+  ;; from:/role: headers, the filename, routing and every guard see the
+  ;; stage, so no downstream role, board or metric ever learns which seat
+  ;; did the work. A bare role IS its stage - byte-identical pre-seat
+  ;; behavior. Mailbox PATHS (outbox/sent) still resolve via the full
+  ;; SWARMFORGE_ROLE through handoff-lib/my-mailbox-base-dir, which is
+  ;; seat-local disk state, not parcel content.
   (if-let [role (not-empty (System/getenv "SWARMFORGE_ROLE"))]
-    role
+    (handoff-lib/seat-stage role)
     (exit! 1 "Set SWARMFORGE_ROLE.")))
 
 (defn state-dir []
@@ -184,14 +204,15 @@
    (fn [object] (str/trim (:out (command "." "git" "rev-parse" "--short=10" object))))))
 
 (defn- check-backlog-depth []
+  ;; BL-808: count tickets via the shared counter, never raw list-dir
+  ;; (which counted the tracked .gitkeep as an active ticket).
   (let [project-root (project-root)
         active-dir (fs/path project-root "backlog" "active")
-        max-depth (backlog-depth-lib/read-max-depth project-root)]
-    (when (fs/exists? active-dir)
-      (let [active-count (count (fs/list-dir active-dir))]
-        (when (backlog-depth-lib/depth-exceeded? active-count max-depth)
-          (binding [*out* *err*]
-            (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))))
+        max-depth (backlog-depth-lib/read-max-depth project-root)
+        active-count (backlog-depth-lib/count-active-tickets active-dir)]
+    (when (backlog-depth-lib/depth-exceeded? active-count max-depth)
+      (binding [*out* *err*]
+        (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))
 
 (def pre-qa-gate-remedy
   "Merge the named commit / land the named wiring and re-forward, or record a deliberately dropped commit under abandoned_commits:.")
@@ -214,6 +235,31 @@
         (binding [*out* *err*] (println (str "PRE_QA_GATE WARNING: " w))))
       (if (seq findings)
         (conj (mapv pre-qa-gate-lib/format-finding-line findings) pre-qa-gate-remedy)
+        []))))
+
+(def pointer-gate-remedy
+  "Flip the ticket's acceptance: pointer to the correct path (or promote the parked .feature.draft in the same commit) and re-send.")
+
+(defn- pointer-gate-errors
+  "BL-880: the early, existence-only acceptance-pointer check. Arms for
+   every git_handoff whose task name resolves to a ticket id, EXCEPT one
+   addressed to QA - that edge keeps calling pre-qa-gate-errors above
+   unchanged, whose fuller BL-761 acceptance-contract evaluation already
+   subsumes this exact check. Infrastructure failures (the cited commit's
+   tree could not be read) print a warning and never block the send - only
+   a positive existence finding does."
+  [type to task-name canonical]
+  (if-not (and (= "git_handoff" type)
+               (not (str/blank? task-name))
+               canonical)
+    []
+    (let [{:keys [findings warnings]}
+          (pre-qa-gate-gather-lib/pointer-findings-for-git-handoff
+           (project-root) {:to to :task-name task-name :cited-commit canonical})]
+      (doseq [w warnings]
+        (binding [*out* *err*] (println (str "ACCEPTANCE_POINTER_GATE WARNING: " w))))
+      (if (seq findings)
+        (conj (mapv pre-qa-gate-lib/format-finding-line findings) pointer-gate-remedy)
         []))))
 
 (defn validate [headers ordered sender]
@@ -270,6 +316,41 @@
         dup-chain-block
         (when (and (= "git_handoff" type) (not (str/blank? task-name)))
           (duplicate-chain-guard-lib/blocking-parcel (project-root) task-name sender))
+        ;; BL-953 task/commit coherence gate: refuses a git_handoff whose
+        ;; commit POSITIVELY contradicts its task's ticket (see
+        ;; task_commit_coherence_gate_lib.bb - fail-open is absolute; an
+        ;; unreadable subject warns and passes).
+        coherence-block
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
+                {:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                                    ["git" "-C" (str (project-root))
+                                     "log" "-1" "--format=%s" canonical])]
+            (if-not (zero? exit)
+              (do (binding [*out* *err*]
+                    (println (str "TASK_COMMIT_COHERENCE WARNING: "
+                                  (task-commit-coherence-gate-lib/warning-line task-ticket-id canonical))))
+                  nil)
+              (let [ids (task-commit-coherence-gate-lib/commit-ticket-ids (str/trim out))]
+                (when (task-commit-coherence-gate-lib/blocked?
+                       {:task-ticket-id task-ticket-id :commit-ticket-ids ids})
+                  {:task-name task-name :task-ticket-id task-ticket-id
+                   :commit canonical :commit-ticket-ids ids})))))
+        ;; BL-806 review-forward-evidence gate: refuses a review role's
+        ;; forward-direction git_handoff naming exactly the commit it
+        ;; received for this task (Article 4.4 backstop; see
+        ;; review_forward_evidence_gate_lib.bb).
+        review-forward-evidence-block?
+        (and (= "git_handoff" type) canonical (not (str/blank? task-name))
+             (review-forward-evidence-gate-lib/blocked?
+              {:type type
+               :sender sender
+               :recipients recipients
+               :task-name task-name
+               :commit canonical
+               :reroute-reason (get headers "reroute_reason")
+               :received-commit (review-forward-evidence-gate-lib/received-commit-for-task
+                                  (project-root) sender task-name)}))
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -287,8 +368,14 @@
                              ;; (see duplicate_chain_guard_lib.bb).
                              dup-chain-block
                              (conj (duplicate-chain-guard-lib/refusal-message dup-chain-block))
+                             coherence-block
+                             (conj (task-commit-coherence-gate-lib/refusal-message coherence-block))
                              (and (not (str/blank? task-name)) canonical)
-                             (into (pre-qa-gate-errors type to task-name canonical))))
+                             (-> (into (pre-qa-gate-errors type to task-name canonical))
+                                 (into (pointer-gate-errors type to task-name canonical)))
+                             review-forward-evidence-block?
+                             (conj (review-forward-evidence-gate-lib/refusal-message
+                                    {:sender sender :task-name task-name :commit canonical}))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
@@ -380,19 +467,86 @@
   (some (fn [line] (when (str/starts-with? line "id: ") (str/trim (subs line 4))))
         (str/split-lines (or content ""))))
 
+;; ── BL-992: the declaration is read from the freshest REF first ─────────
+;; A pipeline role merges main only at handoff boundaries, so between the
+;; coordinator promoting a ticket on main and the sender merging, the
+;; ticket does not exist in the sender's WORKING TREE at all - measured
+;; 2026-08-20, 2 of 7 active tickets were invisible to all six pipeline
+;; worktrees, and every required_stages decision silently took the
+;; no-declaration path. The sender's local main REF is usually fresh (the
+;; data is already on the machine); the lookup was simply reading the
+;; wrong place. Either of main/origin-main can be the stale one (BL-891),
+;; so they are compared, never trusted; a root where neither resolves (the
+;; acceptance fixtures, unusual roots) falls back to the working-tree glob
+;; unchanged, and NOTHING here ever fails a send - every git hiccup
+;; degrades to the next candidate (BL-992 invariant 2).
+
+(defn- ref-resolves? [root ref]
+  (try
+    (zero? (:exit (command root "git" "rev-parse" "--verify" "--quiet" (str ref "^{commit}"))))
+    (catch Exception _ false)))
+
+(defn- declaration-refs
+  "The refs to read a declaration from, freshest first. When both main and
+   origin/main resolve, `git rev-list --left-right --count` decides which
+   is ahead; diverged or undecidable keeps local main first (the field
+   measurement's fresh side) with the other as second candidate."
+  [root]
+  (let [m? (ref-resolves? root "main")
+        o? (ref-resolves? root "origin/main")]
+    (cond
+      (and m? o?)
+      (let [r (try (command root "git" "rev-list" "--left-right" "--count" "main...origin/main")
+                   (catch Exception _ nil))
+            [l rgt] (when (and r (zero? (:exit r)))
+                      (map parse-long (str/split (str/trim (:out r)) #"\s+")))]
+        (if (and l rgt (zero? l) (pos? rgt))
+          ["origin/main" "main"]
+          ["main" "origin/main"]))
+      m? ["main"]
+      o? ["origin/main"]
+      :else [])))
+
+(defn- ticket-yaml-at-ref
+  "The ticket's yaml CONTENT at ref, matched by its OWN id: field exactly -
+   the anchored git-grep is only a cheap candidate filter; correctness
+   comes from re-checking yaml-id-field on the shown content, so a ref
+   carrying only BL-9005 can never resolve a BL-900 lookup (BL-992
+   invariant 3, same guard as the working-tree path). nil on any git
+   error, a non-matching ref, or no candidate - never throws."
+  [root ref ticket-id]
+  (try
+    (let [g (command root "git" "grep" "-l" "-E"
+                     (str "^id:[[:space:]]*" ticket-id "[[:space:]]*$")
+                     ref "--" "backlog/active")]
+      (when (zero? (:exit g))
+        (some (fn [line]
+                (let [path (second (str/split line #":" 2))
+                      s (when path (command root "git" "show" (str ref ":" path)))]
+                  (when (and s (zero? (:exit s)))
+                    (let [content (:out s)]
+                      (when (= ticket-id (yaml-id-field content)) content)))))
+              (remove str/blank? (str/split-lines (:out g))))))
+    (catch Exception _ nil)))
+
 (defn- active-ticket-yaml-content
   "Reads the active ticket whose OWN `id:` field equals ticket-id exactly -
    never a filename-prefix glob, which would wrongly match e.g. BL-9005's
    file when looking up BL-900 (the same false-collision failure mode
-   ticket_status_lib.bb's own contains-ticket? already guards against)."
+   ticket_status_lib.bb's own contains-ticket? already guards against).
+   BL-992: the freshest resolvable ref is consulted FIRST (a declaration
+   present on it is never invisible, whatever the sender's working tree
+   contains); the working-tree glob remains the fallback for roots with no
+   resolvable ref and for tickets not yet committed anywhere."
   [root ticket-id]
   (when ticket-id
-    (let [active-dir (fs/path root "backlog" "active")]
-      (when (fs/exists? active-dir)
-        (some (fn [f]
-                (let [content (try (slurp (str f)) (catch Exception _ nil))]
-                  (when (= ticket-id (yaml-id-field content)) content)))
-              (fs/glob active-dir "**.yaml"))))))
+    (or (some #(ticket-yaml-at-ref root % ticket-id) (declaration-refs root))
+        (let [active-dir (fs/path root "backlog" "active")]
+          (when (fs/exists? active-dir)
+            (some (fn [f]
+                    (let [content (try (slurp (str f)) (catch Exception _ nil))]
+                      (when (= ticket-id (yaml-id-field content)) content)))
+                  (fs/glob active-dir "**.yaml")))))))
 
 (defn route-required-stages
   "{:recipients [...] :routing-skipped nil-or-map}. recipients is the
@@ -432,28 +586,54 @@
           identity-result
           (let [ticket-id (pipeline-stage-lib/extract-ticket-id task)
                 content (active-ticket-yaml-content root ticket-id)]
-            (if (nil? content)
+            (if (nil? ticket-id)
               identity-result
-              (let [decision (required-stages-lib/resolve-effective
-                               (required-stages-lib/read-required-stages content))]
-                (if (= :default-full (:source decision))
-                  identity-result
-                  (let [literal-to (first recipients)
-                        effective (:effective decision)
-                        reasons (required-stages-lib/read-stage-skip-reasons content)
-                        ;; BL-623: record derives from what the hop actually skipped
-                        ;; (sender → delivered), not only from whether the router rewrote.
-                        emit-skip (fn [delivered rewritten-away]
-                                    (let [between (required-stages-lib/hop-skipped-stages sender delivered)
-                                          skipped (vec (distinct
-                                                         (concat (when rewritten-away [rewritten-away])
-                                                                 between)))]
-                                      (when (seq skipped)
-                                        {:ticket-id ticket-id
-                                         :from sender
-                                         :to delivered
-                                         :skipped skipped
-                                         :reasons reasons})))]
+              ;; BL-951: content may be nil (no active ticket copy in the
+              ;; SENDER'S worktree - the BL-317/BL-325 staleness window, the
+              ;; ticket's own third data point) - the skip RECORD no longer
+              ;; needs it: it derives from the hop itself
+              ;; (hop-skipped-stages sender delivered), so recording runs
+              ;; for every forward hop whatever the declaration state.
+              ;; Only the REWRITE decision still needs a usable declaration.
+              (let [decision (when content
+                               (required-stages-lib/resolve-effective
+                                 (required-stages-lib/read-required-stages content)))
+                    reasons (when content
+                              (required-stages-lib/read-stage-skip-reasons content))
+                    ;; BL-951: resolve-effective's own docstring requires a
+                    ;; present-but-invalid declaration to be surfaced loudly
+                    ;; by the caller, never folded into "no declaration at
+                    ;; all" - carried onto the record, previously never read.
+                    rejection-reason (when (:rejected? decision) (:rejection-reason decision))
+                    ;; BL-623: record derives from what the hop actually skipped
+                    ;; (sender → delivered), not only from whether the router rewrote.
+                    emit-skip (fn [delivered rewritten-away]
+                                (let [between (required-stages-lib/hop-skipped-stages sender delivered)
+                                      skipped (vec (distinct
+                                                     (concat (when rewritten-away [rewritten-away])
+                                                             between)))]
+                                  (when (seq skipped)
+                                    (cond-> {:ticket-id ticket-id
+                                             :from sender
+                                             :to delivered
+                                             :skipped skipped
+                                             :reasons reasons}
+                                      rejection-reason (assoc :rejection-reason rejection-reason)))))
+                    literal-to (first recipients)]
+                ;; BL-951: :default-full (absent, unparseable, or invalid
+                ;; declaration - and nil content) previously RETURNED here,
+                ;; before any recording, so the conservative default was the
+                ;; one case with no audit trail - a coder->QA hop that
+                ;; jumped four stages left no envelope header and no log
+                ;; line (BL-631's own bounce-fix hop, measured). Recording
+                ;; now runs for every forward hop; only the rewrite is
+                ;; gated on a usable declaration.
+                (if (or (nil? decision) (= :default-full (:source decision)))
+                  (let [skip (emit-skip literal-to nil)]
+                    (if skip
+                      {:recipients recipients :routing-skipped skip}
+                      identity-result))
+                  (let [effective (:effective decision)]
                     (if (contains? effective literal-to)
                       (let [skip (emit-skip literal-to nil)]
                         (if skip
@@ -471,11 +651,15 @@
                                                  :to next-stage
                                                  :skipped [literal-to]
                                                  :reasons reasons})})))))))))))))
-(defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons]}]
+(defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons rejection-reason]}]
   (str ticket-id " " from "->" to
        " skipped=" (str/join "," skipped)
        (when (seq reasons)
-         (str " reasons=" (str/join ";" (map (fn [[k v]] (str k ":" v)) reasons))))))
+         (str " reasons=" (str/join ";" (map (fn [[k v]] (str k ":" v)) reasons))))
+       ;; BL-951: a present-but-invalid declaration's rejection travels on
+       ;; the record (required_stages_lib's own loud-surfacing contract).
+       (when rejection-reason
+         (str " rejected=\"" rejection-reason "\""))))
 
 (defn- log-routing-skip! [root entry]
   (let [path (fs/path root ".swarmforge" "routing-skips.jsonl")]

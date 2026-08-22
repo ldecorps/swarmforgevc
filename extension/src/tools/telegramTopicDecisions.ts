@@ -25,7 +25,12 @@ export function topicIdOf(update: TelegramUpdate): number | undefined {
 }
 
 export function messageTextOf(update: TelegramUpdate): string | undefined {
-  return update.message?.text;
+  // BL-620: Telegram carries a media message's words in `caption`, not
+  // `text` - reading only text silently dropped every principal
+  // photo+caption directive as "no-text" (incident 2026-07-24). One seam:
+  // every consumer (main routing, steering, agent-questions, control
+  // delivery, negotiation relay) inherits caption support from here.
+  return update.message?.text ?? update.message?.caption;
 }
 
 // BL-294: reserved key for private DM subjects (no message_thread_id).
@@ -200,6 +205,48 @@ export type EnsureOnboardingTopicAction = { kind: 'reuse'; topicId: number } | {
 export function decideEnsureOnboardingTopicAction(topicMap: Record<string, string>): EnsureOnboardingTopicAction {
   const existingTopicId = topicForSubject(topicMap, ONBOARDING_SUBJECT_ID);
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
+// BL-586: the pipeline board's own standing-topic subject key. The board is
+// the last standing surface that had none - its identity lived solely in the
+// mutable TickState.pipelineBoard.topicId field, so BL-497's topic-gone
+// self-heal (which deliberately clears that field) minted a brand new
+// "Pipeline Board" topic every time, untracked and unremovable via the Bot
+// API. With a durable key there is something to resolve BACK to, which is
+// what makes invariant 2 (reuse-or-create, never blind create) expressible
+// at all.
+export const PIPELINE_BOARD_SUBJECT_ID = 'PIPELINE_BOARD';
+export const PIPELINE_BOARD_TOPIC_NAME = 'Pipeline Board';
+
+export type EnsurePipelineBoardTopicAction =
+  | { kind: 'reuse'; topicId: number }
+  | { kind: 'rebind'; topicId: number }
+  | { kind: 'create' };
+
+// Mirrors decideEnsureApprovalsTopicAction's reuse/rebind/create shape (the
+// symmetric fix this ticket was told to mirror rather than invent), minus its
+// live-topic probe - the board's duplicate-mint harden is the standing record
+// itself, not a name search, since "Pipeline Board" zombies are exactly what
+// this prevents rather than something to go adopt.
+//
+// The rebind branch REFUSES a remembered id the map attributes to another
+// subject. A standing record can itself be stale (the 2026-07-23 repair
+// cleared state while a running bridge held the crossed id in memory), and
+// rebinding onto SUP-5 would re-introduce the very crossing invariant 1
+// exists to refuse - so an unusable memory falls through to create.
+export function decideEnsurePipelineBoardTopicAction(
+  topicMap: Record<string, string>,
+  lastKnownTopicId?: number
+): EnsurePipelineBoardTopicAction {
+  const existingTopicId = topicForSubject(topicMap, PIPELINE_BOARD_SUBJECT_ID);
+  if (existingTopicId !== undefined) {
+    return { kind: 'reuse', topicId: existingTopicId };
+  }
+  const remembered = lastKnownTopicId !== undefined ? topicMap[String(lastKnownTopicId)] : undefined;
+  if (lastKnownTopicId !== undefined && remembered === undefined) {
+    return { kind: 'rebind', topicId: lastKnownTopicId };
+  }
+  return { kind: 'create' };
 }
 
 export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };

@@ -4,8 +4,8 @@ milestone: M8
 status: todo
 type: epic
 epic: workflow-canary
-human_approval: pending
-priority: 2
+human_approval: approved
+priority: 3
 depends_on: []
 decomposes_into: []
 mutation_cost: medium

@@ -28,7 +28,12 @@ const CATEGORY_PATTERNS: Array<{ category: ForgeErrorCategory; pattern: RegExp }
     category: 'auth',
     pattern: /\b(unauthorized|forbidden|invalid api[\s-]?key|invalid[\s\S]*credential|authentication failed|401|403)\b/i,
   },
-  { category: 'unavailable', pattern: /\b(rate[\s-]?limit|too many requests|overloaded|service unavailable|429|503)\b/i },
+  // BL-840: "overloaded" alone left the shared trailing \b unable to match
+  // "overloaded_error" (`_` is a word character, so "d"->"_" is not a
+  // boundary) - overloaded\w* consumes the whole token first, so the \b
+  // check lands on the real boundary after it. 529 added (Anthropic's own
+  // overloaded-server code) - the exact text that prompted this fix.
+  { category: 'unavailable', pattern: /\b(rate[\s-]?limit|too many requests|overloaded\w*|service unavailable|429|503|529)\b/i },
   {
     category: 'launch-failed',
     pattern: /\b(enoent|command not found|no such file|cannot spawn|no launch script|no tmux socket|no .*wrapper found|failed to start)\b/i,

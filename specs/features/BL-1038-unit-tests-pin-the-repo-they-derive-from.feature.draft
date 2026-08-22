@@ -1,0 +1,31 @@
+# NOT EXECUTABLE, and about to be short-lived. No *.feature glob and no
+# acceptance runner picks this file up.
+#
+# WHERE THE TWO HALVES ARE. The step handlers for this scenario EXIST, in the
+# BL-1038 parcel, at 81f79d5f03 ("scenario 07 - a file doing BOTH is flagged
+# only for its live read") - the coder merged main, saw the scenario the
+# amendment had added, and wrote them. They are in the cleaner's tip
+# 1f0736223 too. What is NOT on main is either half: main has no scenario 07
+# and does not even have bl1038UnitTestsPinTheRepoSteps.js, which arrives with
+# the parcel.
+#
+# WHY IT IS PARKED HERE ANYWAY. It was parked at a538e0a2d against the
+# FORWARDED commit 6c62a65495, which predates the handlers by four minutes -
+# the check was run against the parcel as forwarded and never re-run against
+# what the coder had committed since. Parking it on main is still right, for a
+# different reason than the one recorded then: main has no handlers either, so
+# a scenario 07 on main breaks main's own acceptance run.
+#
+# WHO RESTORES IT: the BL-1038 parcel, not BL-1039. Add the scenario below
+# back to the live feature file in the parcel that already carries its
+# handlers, and DELETE this file in the same commit. Scenario and handlers
+# then land on main together at QA, which is what BL-233 asks for.
+
+  # BL-1038 unit-tests-pin-the-repo-they-derive-from-07
+  Scenario: a test that both reads live sources and builds its own repository is flagged only for the live read
+    Given a unit-lane test file that resolves the live repository root
+    And that same file creates a git repository of its own
+    When the guard runs
+    Then the guard fails
+    And the guard names the live-repository read as the violation
+    And the guard does not name the created git repository as a violation

@@ -6,7 +6,10 @@ const {
   deriveDisplayTicketId,
   compareLinksMostRecentFirst,
   computePipelineBoard,
+  renderPipelineBoardGridOnly,
   PIPELINE_BOARD_COLUMN_ORDER,
+  PIPELINE_BOARD_GRID_MAX_WIDTH,
+  PIPELINE_BOARD_GRID_MAX_ROWS,
 } = require('../out/concierge/pipelineBoard');
 const { ALL_SWARM_ROLES } = require('../out/concierge/roleTopicMapStore');
 
@@ -192,4 +195,137 @@ test('property: a ticket held by any ALL_SWARM_ROLES role always renders on a re
       );
     })
   );
+});
+
+// BL-979 (coder, declared invariants): the axis pivot moved the dropping
+// axis from width to height, so the two invariants the ticket declares are
+// exactly the two this property encodes.
+//
+//   1. "The board never drops a ticket silently: every active ticket either
+//      occupies a visible row with its own caption, or is counted in a
+//      visible overflow line - and the caption list covers exactly the
+//      visible rows, never more and never fewer."
+//   2. "The grid's width is a property of the stage set, not of the ticket
+//      count: with eight fixed stage columns plus the id gutter, no ticket
+//      is ever dropped for width - only the row budget can drop one."
+//
+// This supersedes the BL-585 property that lived here, which asserted the
+// pre-pivot layout (a fixed matrix of header + one row per STAGE, and a
+// one-line-per-ticket caption tail). Same intent - width budget plus
+// conservation - re-expressed for the layout that now exists.
+//
+// Generator reach is CONSTRUCTED, not hoped for. Ticket count is drawn
+// relative to the real row budget so both the under-budget and over-budget
+// sides are reached by construction rather than by luck of a uniform draw,
+// and id width and epic membership are drawn as explicit categories. Each
+// category's hit count is asserted as a floor at the end - a property that
+// never generated an over-budget board would pass against a renderer with
+// no budget at all.
+const ID_WIDTHS = [3, 4, 5, 6];
+const EPIC_MIXES = ['all', 'mixed', 'none'];
+
+const gridCaseArb = fc.record({
+  // Relative to the budget: negative is under, zero is exactly at it,
+  // positive is over. Both sides guaranteed reachable.
+  countOffset: fc.integer({ min: -PIPELINE_BOARD_GRID_MAX_ROWS + 1, max: 8 }),
+  idWidth: fc.constantFrom(...ID_WIDTHS),
+  epicMix: fc.constantFrom(...EPIC_MIXES),
+});
+
+function epicFor(mix, index) {
+  if (mix === 'all') {
+    return `epic-${index % 3}`;
+  }
+  if (mix === 'none') {
+    return undefined;
+  }
+  return index % 2 === 0 ? `epic-${index % 3}` : undefined;
+}
+
+function buildCase({ countOffset, idWidth, epicMix }) {
+  const count = Math.max(1, PIPELINE_BOARD_GRID_MAX_ROWS + countOffset);
+  const base = 10 ** (idWidth - 1);
+  const ids = Array.from({ length: count }, (_, i) => `BL-${base + i}`);
+  const roleHeldTickets = {};
+  const ticketMeta = {};
+  ids.forEach((id, i) => {
+    const role = ALL_SWARM_ROLES[i % ALL_SWARM_ROLES.length];
+    (roleHeldTickets[role] ??= []).push(id);
+    const epic = epicFor(epicMix, i);
+    ticketMeta[id] = { title: `title ${i}`, ...(epic === undefined ? {} : { epic }) };
+  });
+  return { ids, roleHeldTickets, ticketMeta, count };
+}
+
+// Splits a rendered board into its parts. The caption block always opens
+// with a blank line and no grid line is ever empty, so the first empty line
+// is an unambiguous boundary.
+function dissect(text) {
+  const lines = text.split('\n');
+  const firstBlank = lines.indexOf('');
+  const grid = firstBlank === -1 ? lines : lines.slice(0, firstBlank);
+  const tail = firstBlank === -1 ? [] : lines.slice(firstBlank + 1);
+  const overflow = /^\+(\d+) more active$/.exec(tail[tail.length - 1] ?? '');
+  return {
+    header: grid[0],
+    rows: grid.slice(1),
+    separators: tail.filter((l) => l.startsWith('-- ')),
+    summaries: tail.filter((l) => l !== '' && !l.startsWith('-- ') && !/^\+\d+ more active$/.test(l)),
+    dropped: overflow ? Number(overflow[1]) : 0,
+    hasOverflowLine: Boolean(overflow),
+  };
+}
+
+test('property (BL-979 invariants 1 and 2): every active ticket is a captioned row or a counted drop, and width is fixed by the stage set', () => {
+  const reached = { under: 0, over: 0, exact: 0 };
+  const reachedWidth = Object.fromEntries(ID_WIDTHS.map((w) => [w, 0]));
+  const reachedMix = Object.fromEntries(EPIC_MIXES.map((m) => [m, 0]));
+
+  fc.assert(
+    fc.property(gridCaseArb, (spec) => {
+      const { ids, roleHeldTickets, ticketMeta, count } = buildCase(spec);
+      reachedWidth[spec.idWidth] += 1;
+      reachedMix[spec.epicMix] += 1;
+      reached[count > PIPELINE_BOARD_GRID_MAX_ROWS ? 'over' : count === PIPELINE_BOARD_GRID_MAX_ROWS ? 'exact' : 'under'] += 1;
+
+      const data = computePipelineBoard(roleHeldTickets, [], ticketMeta, { activeIds: ids });
+      const board = dissect(renderPipelineBoardGridOnly(data));
+
+      // ── Invariant 2: width is a property of the stage set ──────────────
+      const gutter = Math.max(3, spec.idWidth);
+      const expectedWidth = gutter + PIPELINE_BOARD_COLUMN_ORDER.length * 3;
+      for (const line of [board.header, ...board.rows]) {
+        assert.equal(line.length, expectedWidth, `grid line "${line}" is not the stage-set width`);
+        assert.ok(line.length <= PIPELINE_BOARD_GRID_MAX_WIDTH, `"${line}" exceeds the ${PIPELINE_BOARD_GRID_MAX_WIDTH}-char budget`);
+      }
+      // No ticket is EVER dropped for width: whatever was dropped is
+      // explained entirely by the row budget.
+      const expectedVisible = Math.min(count, PIPELINE_BOARD_GRID_MAX_ROWS);
+      assert.equal(board.rows.length, expectedVisible, 'only the row budget may drop a row');
+
+      // ── Invariant 1: nothing vanishes, captions match the visible rows ──
+      assert.equal(board.rows.length + board.dropped, count, 'visible + dropped accounts for every active ticket');
+      assert.equal(board.hasOverflowLine, count > PIPELINE_BOARD_GRID_MAX_ROWS, 'the overflow line appears exactly when rows were dropped');
+      assert.equal(board.summaries.length, board.rows.length, 'the caption list covers exactly the visible rows - never more, never fewer');
+
+      // Same tickets, same order, in both halves.
+      const rowIds = board.rows.map((l) => l.trimStart().split('\u00a0')[0]);
+      const captionIds = board.summaries.map((l) => l.split(' ')[0]);
+      assert.deepEqual(captionIds, rowIds, 'each visible row has its OWN caption, in the same order');
+
+      // A separator is emitted iff some visible ticket carries an epic.
+      const anyEpic = board.summaries.some((_, i) => ticketMeta[ids[i]].epic !== undefined);
+      assert.equal(board.separators.length > 0, anyEpic, 'separators appear exactly when the board has an epic');
+    }),
+    { numRuns: 300 }
+  );
+
+  assert.ok(reached.over >= 30, `reachability floor: over-budget boards generated only ${reached.over} times`);
+  assert.ok(reached.under >= 30, `reachability floor: under-budget boards generated only ${reached.under} times`);
+  for (const [w, n] of Object.entries(reachedWidth)) {
+    assert.ok(n >= 30, `reachability floor: ${w}-digit ids generated only ${n} times`);
+  }
+  for (const [m, n] of Object.entries(reachedMix)) {
+    assert.ok(n >= 30, `reachability floor: epic mix "${m}" generated only ${n} times`);
+  }
 });

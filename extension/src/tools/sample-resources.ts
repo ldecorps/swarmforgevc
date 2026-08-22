@@ -15,6 +15,13 @@
  * local timer: whichever caller (this CLI's periodic sweep, or the host's
  * setInterval) last recorded a sample covers the current interval, so an
  * editor being attached at the same time never produces a duplicate sample.
+ *
+ * BL-822: this is also the only caller that ever records host load on a
+ * headless box - sampleRolesOnce (unchanged call site below) now samples
+ * host load on the same tick as the per-role RSS/CPU it already recorded,
+ * independently of whether any role pid resolved. A host-load sampler this
+ * CLI never invoked would record nothing on a swarm with no editor
+ * attached, the exact same gap BL-350 fixed for per-role sampling.
  */
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { readSwarmRoles } from '../swarm/tmuxClient';

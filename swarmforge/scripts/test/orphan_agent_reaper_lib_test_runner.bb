@@ -48,6 +48,28 @@
          false
          (orphan-agent-reaper-lib/reapable? (assoc (all-clear) :stale? false)))
 
+;; ── BL-849: an unresolved cwd fails closed, never treated as "confirmed
+;;    outside the repo root" (review goal 3 - Darwin `lsof` cwd resolution
+;;    can fail open when lsof is missing/slow/denied; the decision must
+;;    not silently treat that as proof of safety) ──────────────────────────
+(assert= "unresolved cwd -> never reaped, even though every other gate says reap"
+         false
+         (orphan-agent-reaper-lib/reapable? (assoc (all-clear) :cwd-resolved? false)))
+
+(assert= "cwd-resolved? defaults to true when omitted (BL-486 callers unaffected)"
+         true
+         (orphan-agent-reaper-lib/reapable? (all-clear)))
+
+(assert= "unresolved cwd wins over every other signal saying reap, same as the live-window-set guard"
+         false
+         (orphan-agent-reaper-lib/reapable?
+          {:in-live-window-set? false
+           :cwd-inside-root? false
+           :cwd-resolved? false
+           :remote-control-agent? true
+           :has-children? false
+           :stale? true}))
+
 ;; ── ordering: the live-window-set exclusion wins FIRST, even when every
 ;;    other signal says "reap" (engineering.prompt's newly-adjacent-branch
 ;;    rule - proving priority order, not just each gate alone) ────────────

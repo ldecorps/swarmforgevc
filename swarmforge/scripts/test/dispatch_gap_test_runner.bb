@@ -291,6 +291,16 @@
          true
          (chase-sweep-lib/decide-open-slot-nudge? 1 3 5 {}))
 
+;; ── BL-679 ambulance-perimeter-04: the promotion freeze suppresses the nudge ──
+
+(assert= "ambulance-perimeter-04: an otherwise-eligible open slot fires no nudge while ambulance is engaged"
+         false
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 3 {:ambulance-active? true}))
+
+(assert= "ambulance-active? false (or omitted) leaves the decision unaffected - default is backward-compatible"
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 3 {})
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 3 {:ambulance-active? false}))
+
 (assert= "open-slot message stays within 80-char handoff limit"
          true
          (<= (count (chase-sweep-lib/open-slot-nudge-message))
@@ -354,6 +364,253 @@
   (assert= "open-slot-nudge-pending? ignores unrelated coordinator notes"
            false
            (chase-sweep-lib/open-slot-nudge-pending? [coord-new])))
+
+;; ── BL-798: candidate ranking + promotion-inaction escalation ──────────────
+;; Invariant 1 (nudge names the top candidate) is covered below by
+;; top-open-slot-candidate + open-slot-nudge-message/draft-lines assertions.
+;; Invariant 2 (repeated unacted nudges escalate, never repeat silently) is
+;; covered by the decide-open-slot-escalation state-machine assertions.
+;; Invariant 3 ("the coordinator never clears an open-slot nudge without
+;; either promoting a candidate or durably recording the specific blocking
+;; reason") is a behavioral duty of the COORDINATOR role itself (an LLM
+;; agent's own review/clear discipline, landing as a swarmforge/roles/
+;; coordinator.prompt amendment per this ticket's own notes) - it quantifies
+;; over prose/process, not an input/output relationship of a pure, testable
+;; module this file's chase_sweep_lib.bb functions could encode. Recorded
+;; here as a stated reason rather than forced into a test, per the coder
+;; role's own carve-out for a declared invariant that "quantifies over prose
+;; or process rather than a pure, testable module" (mirrors promotion_gates_
+;; lib_property_runner.bb's P5/P6 BL-853 precedent for the same carve-out).
+
+(defn write-paused-ticket! [paused-dir id type severity priority human-approval]
+  (fs/create-dirs paused-dir)
+  (spit (str (fs/path paused-dir (str id "-demo.yaml")))
+        (str "id: " id "\ntitle: \"demo\"\n"
+             (when type (str "type: " type "\n"))
+             (when severity (str "severity: " severity "\n"))
+             "priority: " priority "\n"
+             (when human-approval (str "human_approval: " human-approval "\n")))))
+
+;; BL-798 open-slot-nudge-names-candidate-01: expedited defect beats a
+;; higher-priority-number feature regardless of the priority field.
+(assert= "open-slot-candidate-01: expedited defect outranks better-priority feature"
+         {:id "BL-10" :approved? true}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-10\ntype: defect\nseverity: high\npriority: 50\nhuman_approval: approved\n"}
+           {:content "id: BL-11\ntype: feature\npriority: 5\nhuman_approval: approved\n"}]))
+
+;; BL-798 open-slot-nudge-names-candidate-02: no expedited defects — best
+;; ticket priority (lower number) wins among approved candidates.
+(assert= "open-slot-candidate-02: best-priority candidate wins with no expedited defects"
+         {:id "BL-21" :approved? true}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-20\ntype: feature\npriority: 30\nhuman_approval: approved\n"}
+           {:content "id: BL-21\ntype: feature\npriority: 5\nhuman_approval: approved\n"}]))
+
+;; BL-798 open-slot-nudge-names-candidate-03: the sole paused candidate is
+;; still named as top candidate even though human_approval is pending —
+;; approval state is reported, never used to filter it out.
+(assert= "open-slot-candidate-03: sole pending-approval candidate is still named, flagged"
+         {:id "BL-30" :approved? false}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-30\ntype: feature\npriority: 10\nhuman_approval: pending\n"}]))
+
+(assert= "open-slot-candidate: empty candidates yields nil (no ticketless silent poke)"
+         nil
+         (chase-sweep-lib/top-open-slot-candidate []))
+
+;; BL-900 hardener bounce: top-open-slot-candidate must thread an
+;; epic-priority-index through to rank-candidates, mirroring
+;; promotion_gates_lib_test_runner.bb's own rank-candidates epic-priority
+;; assertions - a candidate that only wins once its epic's priority is
+;; considered.
+(assert= "open-slot-candidate-04 (BL-900): a more urgent epic wins even against a numerically better own priority"
+         {:id "BL-A" :approved? true}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-A\nepic: e1\npriority: 90\nhuman_approval: approved\n"}
+           {:content "id: BL-B\nepic: e2\npriority: 1\nhuman_approval: approved\n"}]
+          {"e1" 5 "e2" 40}))
+
+(assert= "open-slot-candidate-05 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged"
+         {:id "BL-B" :approved? true}
+         (chase-sweep-lib/top-open-slot-candidate
+          [{:content "id: BL-A\nepic: e1\npriority: 90\nhuman_approval: approved\n"}
+           {:content "id: BL-B\nepic: e2\npriority: 1\nhuman_approval: approved\n"}]))
+
+;; Reading real paused/*.yaml files end to end (fs-backed, mirrors
+;; unassigned-active-items's own fixture style above).
+(let [tmp (mk-tmp)
+      paused-dir (str (fs/path tmp "paused"))]
+  (write-paused-ticket! paused-dir "BL-40" "defect" "critical" "80" "approved")
+  (write-paused-ticket! paused-dir "BL-41" "feature" nil "1" "approved")
+  (assert= "read-paused-candidates + top-open-slot-candidate: expedited wins from real files"
+           {:id "BL-40" :approved? true}
+           (chase-sweep-lib/top-open-slot-candidate
+            (chase-sweep-lib/read-paused-candidates paused-dir))))
+
+;; ── BL-679 ambulance-perimeter-05: top-expedited-paused-candidate ────────────
+
+(assert= "top-expedited-paused-candidate: names the expedited defect, ignoring a better-priority non-expedited feature"
+         "BL-10"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-10\ntype: defect\nseverity: high\npriority: 50\n"}
+           {:content "id: BL-11\ntype: feature\npriority: 5\n"}]))
+
+(assert= "top-expedited-paused-candidate: nil when none are expedited"
+         nil
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-11\ntype: feature\npriority: 5\n"}]))
+
+(assert= "top-expedited-paused-candidate: nil for an empty candidate seq"
+         nil
+         (chase-sweep-lib/top-expedited-paused-candidate []))
+
+;; BL-900 hardener bounce: top-expedited-paused-candidate must thread an
+;; epic-priority-index through to rank-candidates too - the expedite bucket
+;; still wins first (invariant 2 below), but WITHIN the expedited bucket,
+;; epic priority breaks ties before own-priority.
+(assert= "top-expedited-paused-candidate-06 (BL-900): within the expedited bucket, a more urgent epic wins over a numerically better own priority"
+         "BL-D"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-D\ntype: defect\nseverity: high\nepic: e1\npriority: 90\n"}
+           {:content "id: BL-E\ntype: defect\nseverity: high\nepic: e2\npriority: 1\n"}]
+          {"e1" 5 "e2" 40}))
+
+(assert= "top-expedited-paused-candidate-07 (BL-900): an expedited defect still outranks a candidate from a more urgent epic (invariant 2)"
+         "BL-D"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-D\ntype: defect\nseverity: high\nepic: e900\npriority: 50\n"}
+           {:content "id: BL-E\ntype: feature\nepic: e1\npriority: 1\n"}]
+          {"e900" 900 "e1" 1}))
+
+(assert= "top-expedited-paused-candidate-08 (BL-900): called with no epic-index (1-arity) still ranks by own priority, unchanged"
+         "BL-14"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
+           {:content "id: BL-14\ntype: bug\nseverity: critical\npriority: 5\n"}]))
+
+(assert= "top-expedited-paused-candidate: a defect with missing severity: fails CLOSED, not named"
+         nil
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-12\ntype: defect\npriority: 1\n"}]))
+
+(assert= "top-expedited-paused-candidate: priority breaks ties among multiple expedited candidates"
+         "BL-14"
+         (chase-sweep-lib/top-expedited-paused-candidate
+          [{:content "id: BL-13\ntype: defect\nseverity: critical\npriority: 90\n"}
+           {:content "id: BL-14\ntype: bug\nseverity: critical\npriority: 5\n"}]))
+
+(let [tmp (mk-tmp)
+      paused-dir (str (fs/path tmp "paused"))]
+  (write-paused-ticket! paused-dir "BL-661" "defect" "critical" "80" "approved")
+  (write-paused-ticket! paused-dir "BL-41" "feature" nil "1" "approved")
+  (assert= "read-paused-candidates + top-expedited-paused-candidate: expedited defect named from real paused/ files, queued not promoted"
+           "BL-661"
+           (chase-sweep-lib/top-expedited-paused-candidate
+            (chase-sweep-lib/read-paused-candidates paused-dir))))
+
+;; ── open-slot-nudge-message / draft-lines name the candidate ──────────────
+
+(assert= "open-slot-nudge-message names an approved candidate"
+         "open slot + paused work - promote+route: BL-1"
+         (chase-sweep-lib/open-slot-nudge-message {:id "BL-1" :approved? true}))
+
+(assert= "open-slot-nudge-message flags a pending-approval candidate"
+         "open slot + paused work - promote+route: BL-5 awaiting approval"
+         (chase-sweep-lib/open-slot-nudge-message {:id "BL-5" :approved? false}))
+
+(assert= "open-slot-nudge-message falls back to the ticketless phrase for a nil candidate"
+         "open slot + paused work - promote+route"
+         (chase-sweep-lib/open-slot-nudge-message nil))
+
+(assert= "open-slot-nudge-message(candidate) stays within the 80-char handoff limit"
+         true
+         (<= (count (chase-sweep-lib/open-slot-nudge-message {:id "BL-99999" :approved? false}))
+             chase-sweep-lib/dispatch-gap-note-max-length))
+
+(assert= "open-slot-nudge-draft-lines(candidate) names the candidate in the message"
+         ["type: note" "to: coordinator" "priority: 00"
+          "message: open slot + paused work - promote+route: BL-7 awaiting approval"]
+         (chase-sweep-lib/open-slot-nudge-draft-lines {:id "BL-7" :approved? false}))
+
+(assert= "open-slot-nudge-draft-lines() with no arg is unchanged (backward compatible)"
+         ["type: note" "to: coordinator" "priority: 00"
+          "message: open slot + paused work - promote+route"]
+         (chase-sweep-lib/open-slot-nudge-draft-lines))
+
+;; ── promotion-inaction escalation state machine ────────────────────────────
+
+(assert= "open-slot-escalation-01: first nudge for a fresh candidate — count 1, :nudge"
+         {:state {:candidate-id "BL-1" :count 1 :escalated false} :action :nudge}
+         (chase-sweep-lib/decide-open-slot-escalation nil "BL-1" 3))
+
+(assert= "open-slot-escalation-02: second nudge for the same candidate — still :nudge"
+         {:state {:candidate-id "BL-1" :count 2 :escalated false} :action :nudge}
+         (chase-sweep-lib/decide-open-slot-escalation
+          {:candidate-id "BL-1" :count 1 :escalated false} "BL-1" 3))
+
+;; BL-798 open-slot-nudge-names-candidate-04: past the threshold, escalate
+;; once and go quiet — no further identical nudge sent silently.
+(assert= "open-slot-escalation-03: past threshold — :escalate, marked escalated"
+         {:state {:candidate-id "BL-1" :count 3 :escalated true} :action :escalate}
+         (chase-sweep-lib/decide-open-slot-escalation
+          {:candidate-id "BL-1" :count 2 :escalated false} "BL-1" 3))
+
+(assert= "open-slot-escalation-04: already escalated — quiet, no repeat escalation or nudge"
+         {:state {:candidate-id "BL-1" :count 4 :escalated true} :action :none}
+         (chase-sweep-lib/decide-open-slot-escalation
+          {:candidate-id "BL-1" :count 3 :escalated true} "BL-1" 3))
+
+(assert= "open-slot-escalation-05: a different top candidate resets the count and un-escalates"
+         {:state {:candidate-id "BL-2" :count 1 :escalated false} :action :nudge}
+         (chase-sweep-lib/decide-open-slot-escalation
+          {:candidate-id "BL-1" :count 3 :escalated true} "BL-2" 3))
+
+(assert= "open-slot-escalation-06: no candidate (paused/ empty) — :none, nil state"
+         {:state nil :action :none}
+         (chase-sweep-lib/decide-open-slot-escalation
+          {:candidate-id "BL-1" :count 3 :escalated true} nil 3))
+
+(assert= "open-slot-escalation: default 2-arg arity uses the default threshold (3)"
+         :escalate
+         (:action (chase-sweep-lib/decide-open-slot-escalation
+                   {:candidate-id "BL-1" :count 2 :escalated false} "BL-1")))
+
+;; ── escalation config parsing ────────────────────────────────────────────
+
+(assert= "parse-open-slot-escalation-threshold: explicit value wins"
+         5
+         (chase-sweep-lib/parse-open-slot-escalation-threshold
+          "config open_slot_escalation_threshold 5\n"))
+
+(assert= "parse-open-slot-escalation-threshold: absent config degrades to default"
+         chase-sweep-lib/open-slot-escalation-default-threshold
+         (chase-sweep-lib/parse-open-slot-escalation-threshold ""))
+
+(assert= "parse-open-slot-escalation-threshold: zero degrades to default (never a real cap)"
+         chase-sweep-lib/open-slot-escalation-default-threshold
+         (chase-sweep-lib/parse-open-slot-escalation-threshold
+          "config open_slot_escalation_threshold 0\n"))
+
+(assert= "parse-open-slot-escalation-threshold: negative degrades to default"
+         chase-sweep-lib/open-slot-escalation-default-threshold
+         (chase-sweep-lib/parse-open-slot-escalation-threshold
+          "config open_slot_escalation_threshold -2\n"))
+
+;; ── escalation alert text (pure formatting) ────────────────────────────────
+
+(assert= "open-slot-escalation-reason names the candidate and the count"
+         true
+         (let [txt (chase-sweep-lib/open-slot-escalation-reason "BL-1" 3)]
+           (and (str/includes? txt "BL-1") (str/includes? txt "3"))))
+
+(assert= "open-slot-escalation-telegram-text names the candidate"
+         true
+         (str/includes? (chase-sweep-lib/open-slot-escalation-telegram-text "BL-1" 3) "BL-1"))
+
+(assert= "open-slot-escalation-email-subject names the candidate"
+         true
+         (str/includes? (chase-sweep-lib/open-slot-escalation-email-subject "BL-1") "BL-1"))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

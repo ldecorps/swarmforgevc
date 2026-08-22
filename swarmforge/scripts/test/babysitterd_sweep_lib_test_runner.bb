@@ -32,6 +32,140 @@
              (let [f (sw/check-live-session {:role "coder" :pane-exists? true :has-claude-process? false})]
                (and f (= "CRIT" (:severity f)) (= "proc-coder" (:key f)))))
 
+;; BL-802: a failed process gather (e.g. ps errored on an unsupported dialect)
+;; must never be reported as the real half-launch CRIT above — that would be
+;; a cry-wolf false positive from a tooling failure, not a swarm defect.
+(assert-true "failed process gather is UNAVAILABLE proc-gather-<role>, never CRIT"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? true
+                                              :has-claude-process? false
+                                              :process-gather-failed? true})]
+               (and f (= "UNAVAILABLE" (:severity f)) (= "proc-gather-coder" (:key f)))))
+(assert-true "a missing pane still wins over a gather-failed flag (pane check runs first)"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? false
+                                              :has-claude-process? false
+                                              :process-gather-failed? true})]
+               (and f (= "CRIT" (:severity f)) (= "pane-coder" (:key f)))))
+(assert-nil "gather-failed? false with a live process still produces no finding"
+            (sw/check-live-session {:role "coder" :pane-exists? true :has-claude-process? true
+                                     :process-gather-failed? false}))
+
+;; BL-804: mono-router topology awareness — should-stand? suppresses ONLY
+;; the absence branch; every other branch is unaffected regardless of its
+;; value (invariant 3), and omitting the key entirely reproduces pre-BL-804
+;; behavior byte-for-byte (every existing assertion above never sets it).
+(assert-nil "a dormant role's missing session is suppressed (should-stand? false)"
+            (sw/check-live-session {:role "specifier" :pane-exists? false
+                                     :has-claude-process? false :should-stand? false}))
+(assert-true "a required (should-stand? true) role's missing session is still CRIT"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true})]
+               (and f (= "CRIT" (:severity f)) (= "pane-coder" (:key f)))))
+(assert-true "should-stand? false never suppresses a check on a PRESENT pane (invariant 3)"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? true
+                                              :has-claude-process? false :should-stand? false})]
+               (and f (= "CRIT" (:severity f)) (= "proc-specifier" (:key f)))))
+(assert-nil "should-stand? false with a present, healthy pane still produces no finding"
+            (sw/check-live-session {:role "specifier" :pane-exists? true
+                                     :has-claude-process? true :should-stand? false}))
+
+;; ── BL-1017: bounded session REPAIR alongside the CRIT ──────────────────────
+;; check-live-session emitted a CRIT for a missing session and stopped there,
+;; so a vanished standing role stayed gone until a human ran a full
+;; ./start-swarm.sh - recreating all eight sessions for a one-session fault.
+;; It now also emits a bounded repair intent. The CRIT is NEVER swallowed by
+;; the repair: a session that keeps vanishing is a signal worth keeping.
+
+;; Scenario 01: a standing role with no pane asks for its session back.
+(assert-true "BL-1017: a missing standing session emits the CRIT *and* a repair intent"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true})]
+               (and f (= "CRIT" (:severity f)) (= "pane-specifier" (:key f))
+                    (= {:action :ensure-session :role "specifier"} (:repair f)))))
+
+;; Scenario 02: topology suppression covers the repair branch too (invariant 1).
+;; A mono-router non-resident must never be resurrected as if it were standing.
+(assert-nil "BL-1017: a should-not-stand role yields neither CRIT nor repair"
+            (sw/check-live-session {:role "cleaner" :pane-exists? false
+                                     :has-claude-process? false :should-stand? false}))
+
+;; Scenario 03: a present pane is never a missing session, in any process state.
+(doseq [[label extra] [["a live claude process" {:has-claude-process? true}]
+                       ["no claude process under it" {:has-claude-process? false}]
+                       ["a failed process gather" {:has-claude-process? false
+                                                   :process-gather-failed? true}]]]
+  (assert-nil (str "BL-1017: a present pane emits no session repair (" label ")")
+              (:repair (sw/check-live-session (merge {:role "coder" :pane-exists? true
+                                                      :should-stand? true}
+                                                     extra)))))
+
+;; Scenario 04: bounded (invariant 2). Inside the cooldown window an
+;; already-attempted role gets the CRIT but no second repair, so a session
+;; that cannot be recreated degrades to plain alerting, never a respawn storm.
+(assert-true "BL-1017: a role repaired inside the cooldown window still CRITs but is not repaired again"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true
+                                              :now-ms 1000000
+                                              :last-repair-ms 999000
+                                              :repair-attempts 1
+                                              :repair-cooldown-ms 60000
+                                              :max-repair-attempts 1})]
+               (and f (= "CRIT" (:severity f)) (nil? (:repair f)))))
+
+(assert-true "BL-1017: once the cooldown window has elapsed the attempt budget resets"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true
+                                              :now-ms 1000000
+                                              :last-repair-ms 900000
+                                              :repair-attempts 9
+                                              :repair-cooldown-ms 60000
+                                              :max-repair-attempts 1})]
+               (and f (= "CRIT" (:severity f))
+                    (= {:action :ensure-session :role "specifier"} (:repair f)))))
+
+(assert-true "BL-1017: inside the window a role under its attempt budget is still repaired"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true
+                                              :now-ms 1000000
+                                              :last-repair-ms 999000
+                                              :repair-attempts 1
+                                              :repair-cooldown-ms 60000
+                                              :max-repair-attempts 2})]
+               (and f (= "CRIT" (:severity f)) (some? (:repair f)))))
+
+;; Omitting every repair key entirely reproduces pre-BL-1017 behavior for the
+;; CRIT itself, exactly as BL-804's should-stand? default does - every
+;; assertion above this block never mentions a repair key.
+(assert-true "BL-1017: with no repair state supplied a missing session is repaired once"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? false
+                                              :has-claude-process? false})]
+               (and f (= "CRIT" (:severity f)) (some? (:repair f)))))
+
+;; assemble-findings must SURFACE the repairs, not bury them inside findings -
+;; the caller cannot act on a decision it has to re-derive.
+(assert= "BL-1017: assemble-findings surfaces one repair per missing standing session"
+         [{:action :ensure-session :role "specifier"}]
+         (:repairs (sw/assemble-findings
+                    {:roles [{:role "specifier" :pane-exists? false :has-claude-process? false
+                              :should-stand? true}
+                             {:role "coder" :pane-exists? true :has-claude-process? true
+                              :should-stand? true}]
+                     :handoffd-alive? true :handoffd-supervisor-alive? true
+                     :handoffd-log-age-secs 1 :handoffd-max-age-secs 300
+                     :failed-count 0 :stuck-parcels [] :available-mb 8000 :mem-floor-mb 500
+                     :claim-risks [] :active-ticket-count 1 :any-pane-busy? true
+                     :prev-streak 0 :pending-claims [] :in-process-claims []})))
+
+(assert= "BL-1017: a sweep with nothing to repair surfaces an empty repair list, never nil"
+         []
+         (:repairs (sw/assemble-findings
+                    {:roles [{:role "coder" :pane-exists? true :has-claude-process? true
+                              :should-stand? true}]
+                     :handoffd-alive? true :handoffd-supervisor-alive? true
+                     :handoffd-log-age-secs 1 :handoffd-max-age-secs 300
+                     :failed-count 0 :stuck-parcels [] :available-mb 8000 :mem-floor-mb 500
+                     :claim-risks [] :active-ticket-count 1 :any-pane-busy? true
+                     :prev-streak 0 :pending-claims [] :in-process-claims []})))
+
 ;; ── check 2: remote-control-flag ─────────────────────────────────────────────
 (assert-nil "green role (rc flag present) produces no rc finding"
             (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true :has-remote-control? true}))
@@ -71,6 +205,23 @@
                     (= "WARN" (:severity (first fs)))
                     (str/starts-with? (:key (first fs)) "stuck-"))))
 
+;; BL-807: the sweep already classifies the owning role's pane busy/idle
+;; (check 10 threads the same signal in as owner-busy?) — check 5 must
+;; consult it too, so a long-but-honestly-worked parcel never nudges a live
+;; agent mid-parcel.
+(assert= "a stuck parcel with a busy owner raises no stuck warning at all (BL-807 scenario 01)"
+         []
+         (sw/check-stuck-in-process [{:name "000123_from_coder" :age-min 45 :owner-busy? true}]))
+(assert-true "a stuck parcel with an idle owner still raises the warning, unchanged (BL-807 scenario 02)"
+             (let [fs (sw/check-stuck-in-process [{:name "000123_from_coder" :age-min 45 :owner-busy? false}])]
+               (and (= 1 (count fs))
+                    (= "WARN" (:severity (first fs)))
+                    (= "stuck-000123_from_coder" (:key (first fs))))))
+(assert-true "a mix of busy and idle owners suppresses only the busy one's warning"
+             (let [fs (sw/check-stuck-in-process [{:name "busy-owner" :age-min 60 :owner-busy? true}
+                                                   {:name "idle-owner" :age-min 60 :owner-busy? false}])]
+               (= ["stuck-idle-owner"] (mapv :key fs))))
+
 ;; ── check 6: menu-blocked-pane ───────────────────────────────────────────────
 (assert-nil "no menu block produces no finding"
             (sw/check-menu-blocked {:role "coder" :menu-blocked? false}))
@@ -93,6 +244,13 @@
 (assert-true "memory below floor is CRIT memory"
              (let [f (sw/check-memory-floor {:available-mb 800 :floor-mb 1500})]
                (and f (= "CRIT" (:severity f)) (= "memory" (:key f)))))
+
+;; BL-802: no readable memory facility (available-mb nil, e.g. /proc/meminfo
+;; absent on macOS and no other facility resolved) must report UNAVAILABLE,
+;; never a fabricated CRIT/OK from a substituted default value.
+(assert-true "nil available-mb (no facility) is UNAVAILABLE memory, never CRIT or OK"
+             (let [f (sw/check-memory-floor {:available-mb nil :floor-mb 1500})]
+               (and f (= "UNAVAILABLE" (:severity f)) (= "memory" (:key f)))))
 
 ;; ── check 11: claim-progress risk scan (BL-528 salvage) ─────────────────────
 (assert-true "critical claim-risk assessment maps to CRIT"
@@ -186,8 +344,14 @@
                (and finding (= 2 new-streak))))
 
 ;; ── 6d-09: busy detection survives 80-column truncation ─────────────────────
-(assert-true "literal 'esc to interrupt' reads busy"
-             (sw/classify-pane-busy? "some output\n  esc to interrupt\n"))
+;; BL-996: classify-pane-busy? now delegates to chase_sweep_lib.bb's own
+;; structural classifier (the BL-970 chokepoint) instead of a private
+;; whole-pane substring match. A bare literal with no live status frame
+;; around it is exactly BL-970's own false-busy shape (a pane merely
+;; quoting the marker in old scrollback) - was asserted busy here before
+;; this fix; now correctly not.
+(assert-true "not busy: a bare literal 'esc to interrupt' with no live status frame around it"
+             (not (sw/classify-pane-busy? "some output\n  esc to interrupt\n")))
 (assert-true "truncated footer (spinner + elapsed pattern survive, hint text clipped) still reads busy"
              (sw/classify-pane-busy? "some output\n✻ Combobulating… (12s · e…\n"))
 (assert-true "not busy: idle prompt with no spinner or elapsed pattern"
@@ -239,6 +403,57 @@
                     (str/includes? msg "low mem")
                     (str/includes? msg "dead letters"))))
 
+;; ── check-pipeline-code-on-main (BL-631) ────────────────────────────────────
+
+(assert= "no offending commits, ancestry resolvable, produces zero findings"
+         []
+         (sw/check-pipeline-code-on-main {:offending-commits [] :ancestry-unavailable? false}))
+
+(assert-true "one offending commit produces one CRIT finding, keyed by its sha"
+             (let [fs (sw/check-pipeline-code-on-main
+                       {:offending-commits [{:sha "4851901ed" :subject "coder: merge BL-590 fix" :paths ["extension/src/foo.ts"]}]
+                        :ancestry-unavailable? false})]
+               (and (= 1 (count fs))
+                    (= "CRIT" (:severity (first fs)))
+                    (= "pipeline-code-on-main-4851901ed" (:key (first fs)))
+                    (str/includes? (:message (first fs)) "4851901ed")
+                    (str/includes? (:message (first fs)) "coder: merge BL-590 fix")
+                    (str/includes? (:message (first fs)) "extension/src/foo.ts"))))
+
+(assert-true "each offending commit gets its OWN key - no role, path, or timing is exempt (invariant 1), and dedup can distinguish them (scenario 04)"
+             (let [fs (sw/check-pipeline-code-on-main
+                       {:offending-commits [{:sha "aaa1111111" :subject "s1" :paths ["extension/src/a.ts"]}
+                                             {:sha "bbb2222222" :subject "s2" :paths ["specs/pipeline/steps/b.js"]}]
+                        :ancestry-unavailable? false})
+                   keys-found (set (map :key fs))]
+               (and (= 2 (count fs))
+                    (contains? keys-found "pipeline-code-on-main-aaa1111111")
+                    (contains? keys-found "pipeline-code-on-main-bbb2222222"))))
+
+;; invariant 3: an unresolvable swarmforge-QA ref reports UNAVAILABLE, never
+;; a silent all-clear - even when offending-commits happens to be empty
+;; (the gatherer could not have populated it correctly anyway).
+(assert-true "ancestry-unavailable? true reports UNAVAILABLE, never a clean sweep"
+             (let [fs (sw/check-pipeline-code-on-main {:offending-commits [] :ancestry-unavailable? true})]
+               (and (= 1 (count fs))
+                    (= "UNAVAILABLE" (:severity (first fs)))
+                    (= "pipeline-code-on-main" (:key (first fs))))))
+
+(assert-true "ancestry-unavailable? wins over any offending-commits data - never both an UNAVAILABLE and stale CRIT findings"
+             (let [fs (sw/check-pipeline-code-on-main
+                       {:offending-commits [{:sha "cccc333333" :subject "s" :paths ["extension/src/x.ts"]}]
+                        :ancestry-unavailable? true})]
+               (and (= 1 (count fs)) (= "UNAVAILABLE" (:severity (first fs))))))
+
+;; nudge-eligible?: a CRIT pipeline-code-on-main finding rides the SAME rule
+;; as every other CRIT finding (scenario 03) - no special-casing needed, but
+;; pinned directly so a future change to nudge-eligible? cannot silently
+;; exempt this check without failing here too.
+(assert-true "a pipeline-code-on-main CRIT finding is nudge-eligible on the standard CRIT rule"
+             (sw/nudge-eligible? {:key "pipeline-code-on-main-4851901ed" :severity "CRIT"}))
+(assert-true "a pipeline-code-on-main UNAVAILABLE finding is NOT nudge-eligible (matches every other UNAVAILABLE check)"
+             (not (sw/nudge-eligible? {:key "pipeline-code-on-main" :severity "UNAVAILABLE"})))
+
 ;; ── assemble-findings: end-to-end composition + streak threading ───────────
 (let [green-snapshot
       {:now-ms 1000000
@@ -277,6 +492,110 @@
                  (every? keys-found ["proc-coder" "handoffd" "failed-box" "stuck-p1" "claim-risk-hardener"]))
     (assert-true "second consecutive idle sweep also raises swarm-starved among the rest"
                  (contains? keys-found "swarm-starved"))))
+
+;; BL-631 required_wiring: proves the pure check actually reaches
+;; assemble-findings's own vector - a gather fn and a pure check that are
+;; both unit-tested but never wired into THIS function leave the detection
+;; at zero on the real 5-minute tick (the BL-419 shape this entry guards
+;; against). An otherwise-green snapshot carrying :offending-commits alone
+;; must surface the CRIT finding.
+(let [snapshot-with-offender
+      (merge {:now-ms 1000000 :roles [] :handoffd-alive? true :handoffd-supervisor-alive? true
+              :handoffd-log-age-secs 5 :handoffd-max-age-secs 300 :failed-count 0 :stuck-parcels []
+              :available-mb 4000 :mem-floor-mb 1500 :claim-risks [] :rotate-note nil
+              :pause {:active? false :until-ms nil} :active-ticket-count 0 :any-pane-busy? false
+              :prev-streak 0 :pending-claims [] :in-process-claims []}
+             {:offending-commits [{:sha "4851901ed" :subject "coder: merge BL-590 fix" :paths ["extension/src/foo.ts"]}]
+              :ancestry-unavailable? false})]
+  (let [{:keys [findings]} (sw/assemble-findings snapshot-with-offender)]
+    (assert-true "an offending commit reaches assemble-findings's own output as a CRIT finding"
+                 (some #(= "pipeline-code-on-main-4851901ed" (:key %)) findings))))
+
+(let [snapshot-ancestry-unavailable
+      (merge {:now-ms 1000000 :roles [] :handoffd-alive? true :handoffd-supervisor-alive? true
+              :handoffd-log-age-secs 5 :handoffd-max-age-secs 300 :failed-count 0 :stuck-parcels []
+              :available-mb 4000 :mem-floor-mb 1500 :claim-risks [] :rotate-note nil
+              :pause {:active? false :until-ms nil} :active-ticket-count 0 :any-pane-busy? false
+              :prev-streak 0 :pending-claims [] :in-process-claims []}
+             {:offending-commits [] :ancestry-unavailable? true})]
+  (let [{:keys [findings]} (sw/assemble-findings snapshot-ancestry-unavailable)]
+    (assert-true "an unresolvable swarmforge-QA ref reaches assemble-findings's own output as UNAVAILABLE, never a silent all-clear"
+                 (some #(and (= "pipeline-code-on-main" (:key %)) (= "UNAVAILABLE" (:severity %))) findings))))
+
+;; ── BL-685: check-resident-stranded (Class B - no rotate note exists) ──────
+
+(def stranded-base
+  {:rotation-router? true
+   :rotation-home "coder"
+   :resident-active-role "specifier"
+   :resident-active-role-mtime-ms 0
+   :resident-pane-busy? false
+   :resident-mailbox-empty? true
+   :dispatch-note-pending? false
+   :paused? false
+   :now-ms (* 20 60 1000)})
+
+(assert-true "stranded shape (non-home, idle, empty box, no dispatch note, past grace) fires CRIT"
+             (let [f (sw/check-resident-stranded stranded-base)]
+               (and f (= "CRIT" (:severity f)) (= "resident-stranded-specifier" (:key f)))))
+
+(assert-true "the finding names the role the resident is stuck in"
+             (str/includes? (:message (sw/check-resident-stranded stranded-base)) "specifier"))
+
+(assert-nil "suppressor: at home (active role IS the home role) -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-active-role "coder")))
+
+(assert-nil "suppressor: home comparison is case-insensitive (QA vs qa never reads as stranded-away)"
+            (sw/check-resident-stranded (assoc stranded-base :rotation-home "QA" :resident-active-role "qa")))
+
+(assert-nil "suppressor: resident pane busy -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-pane-busy? true)))
+
+(assert-nil "suppressor: mailbox holds work (new or in_process) -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-mailbox-empty? false)))
+
+(assert-nil "suppressor: a dispatch note to the coordinator is pending -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :dispatch-note-pending? true)))
+
+(assert-nil "suppressor: within the grace period -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :now-ms (* 5 60 1000))))
+
+(assert-nil "suppressor: not a rotation-router pack -> no finding (topology out of scope)"
+            (sw/check-resident-stranded (assoc stranded-base :rotation-router? false)))
+
+(assert-nil "suppressor: swarm paused -> no finding (consistent with rotate-not-honored)"
+            (sw/check-resident-stranded (assoc stranded-base :paused? true)))
+
+(assert-nil "fail open: no active-role marker at all -> no finding"
+            (sw/check-resident-stranded (assoc stranded-base :resident-active-role nil)))
+
+(assert-nil "fail open: marker mtime unavailable -> no finding (grace cannot be proven)"
+            (sw/check-resident-stranded (assoc stranded-base :resident-active-role-mtime-ms nil)))
+
+(assert-true "a stranded finding is nudge-eligible (CRIT rides the standard dedup/cooldown)"
+             (sw/nudge-eligible? (sw/check-resident-stranded stranded-base)))
+
+;; BL-685 required_wiring: the check must be reached from assemble-findings's
+;; own vector (the BL-419 shape guard), and it must fire with NO rotate note
+;; in the snapshot at all - Class B is DEFINED by no rotate note existing, so
+;; a wiring that reads the role off :rotate-note reads nil in every real
+;; occurrence (the ticket's own Wiring finding 1).
+(let [snapshot-stranded
+      (merge {:now-ms (* 20 60 1000) :roles [] :handoffd-alive? true :handoffd-supervisor-alive? true
+              :handoffd-log-age-secs 5 :handoffd-max-age-secs 300 :failed-count 0 :stuck-parcels []
+              :available-mb 4000 :mem-floor-mb 1500 :claim-risks [] :rotate-note nil
+              :pause {:active? false :until-ms nil} :active-ticket-count 0 :any-pane-busy? false
+              :prev-streak 0 :pending-claims [] :in-process-claims []}
+             {:rotation-router? true :rotation-home "coder"
+              :resident-active-role "specifier" :resident-active-role-mtime-ms 0
+              :resident-pane-busy? false :resident-mailbox-empty? true
+              :dispatch-note-pending? false})]
+  (let [{:keys [findings]} (sw/assemble-findings snapshot-stranded)
+        keys-found (set (map :key findings))]
+    (assert-true "a stranded resident reaches assemble-findings's own output, with :rotate-note nil"
+                 (contains? keys-found "resident-stranded-specifier"))
+    (assert-true "no rotate-unhonored finding accompanies it (the two checks are additive, scenario 03)"
+                 (not-any? #(str/starts-with? (str %) "rotate-unhonored") keys-found))))
 
 (when (seq @failures)
   (binding [*out* *err*]

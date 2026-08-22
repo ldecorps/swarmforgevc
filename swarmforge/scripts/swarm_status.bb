@@ -16,6 +16,16 @@
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "swarm_status_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
+(load-file (str (fs/path script-dir "process_table_lib.bb")))
+(load-file (str (fs/path script-dir "babysitterd_freshness_lib.bb")))
+(load-file (str (fs/path script-dir "control_plane_lib.bb")))
+;; BL-993 architect bounce (backlog/evidence/BL-993-bounce-20260820.md): the
+;; operator-runtime row below now checks the SAME thing swarm_ensure.bb's
+;; operator-healthy? and the always-on watch check (pid liveness AND its
+;; command line), not the bare pid-alive? every other daemon row here uses -
+;; a pidfile naming a live but unrelated process (pid reuse) must read as
+;; DOWN, and a bare kill-0 cannot tell that apart from the real thing.
+(load-file (str (fs/path script-dir "operator_runtime_watch_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -178,14 +188,58 @@
                                  detail
                                  (when (and pid (not alive)) "stale-pid")]))})))
 
+(defn gather-operator-runtime
+  "Same daemon-status-row shape as daemon-from-pid, but aliveness is
+   operator_runtime_watch_lib.bb's own healthy? (pid AND its command line)
+   rather than the generic bare pid-alive? every other row here uses -
+   BL-993's own fix, so this row can never disagree with swarm_ensure.bb's
+   operator-healthy? or the always-on watch on the pid-reuse case."
+  []
+  (let [path (fs/path state-dir "operator" "runtime.pid")
+        pid (read-pid path)
+        alive (and pid (operator-runtime-watch-lib/healthy? project-root))
+        et (pid-etime pid)]
+    (swarm-status-lib/daemon-status-row
+     {:name "operator-runtime"
+      :alive? (boolean alive)
+      :uptime et
+      :detail (str/join " "
+                        (remove str/blank?
+                                [(when pid (str "pid=" pid))
+                                 (when (and pid (not alive)) "stale-pid")]))})))
+
+(defn gather-babysitterd
+  "Pidfile is not the source of truth: a live babysitterd.sh for this root
+   with a missing/stale pidfile still reports UP (the incident ./swarm status
+   called DOWN). Status is read-only — it never rewrites the pidfile;
+   start_babysitterd.sh / ./swarm ensure adopt."
+  []
+  (let [path (fs/path state-dir "babysitterd" "babysitterd.pid")
+        pidfile-pid (read-pid path)
+        pidfile-alive? (boolean (pid-alive? pidfile-pid))
+        orphan (babysitterd-freshness-lib/find-live-pid
+                (str project-root)
+                (or (process-table-lib/list-processes!) []))
+        live (babysitterd-freshness-lib/resolve-live-pid pidfile-pid pidfile-alive? orphan)
+        alive? (boolean (and live (pid-alive? live)))
+        et (pid-etime live)]
+    (swarm-status-lib/daemon-status-row
+     {:name "babysitterd"
+      :alive? alive?
+      :uptime et
+      :detail (str/join " "
+                        (remove str/blank?
+                                [(when live (str "pid=" live))
+                                 (when (and live (not pidfile-alive?)) "adopted-live")
+                                 (when (and pidfile-pid (not pidfile-alive?)) "stale-pid")]))})))
+
 (defn gather-daemons []
   (let [op (fs/path state-dir "operator")
-        daemon (fs/path state-dir "daemon")
-        bb (fs/path state-dir "babysitterd")]
+        daemon (fs/path state-dir "daemon")]
     [(daemon-from-pid "handoffd" (fs/path daemon "handoffd.pid"))
      (daemon-from-pid "handoffd-supervisor" (fs/path daemon "handoffd-supervisor.pid"))
-     (daemon-from-pid "operator-runtime" (fs/path op "runtime.pid"))
-     (daemon-from-pid "babysitterd" (fs/path bb "babysitterd.pid"))
+     (gather-operator-runtime)
+     (gather-babysitterd)
      (daemon-from-pid "cloudflare-tunnel" (fs/path op "tunnel.pid"))]))
 
 (defn read-json [path]
@@ -262,12 +316,28 @@
                                                  :now-ms now})))
         (list-sent-handoffs)))
 
+(defn control-plane-classification
+  "BL-958: classify the control plane through the shared control_plane_lib
+   before rendering any per-role row. A normal stop clears BOTH the
+   tmux-socket file and sessions.tsv, so socket file + role metadata present
+   with no server answering is the loss shape, never a routine stop."
+  []
+  (let [sock (resolve-swarm-socket)
+        {:keys [classification]} (control-plane-lib/observe! state-dir sock)]
+    {:socket sock
+     :classification classification}))
+
 (defn -main []
   (let [now (now-ms)
+        {:keys [socket classification]} (control-plane-classification)
+        agents (control-plane-lib/status-agents-view
+                {:classification classification
+                 :agent-rows (gather-agents now)
+                 :socket-path socket})
         report (swarm-status-lib/render-status-report
                 {:project-root project-root
                  :generated-at (now-iso)
-                 :agents (gather-agents now)
+                 :agents agents
                  :daemons (gather-daemons)
                  :telegram (gather-telegram now)
                  :handoffs (gather-handoffs now)})]

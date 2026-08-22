@@ -34,12 +34,18 @@
 (defn sidecar-handoff-path [sidecar-path]
   (str/replace (str sidecar-path) #"\.claim-progress\.json$" ""))
 
-(defn worktree-head-commit-10 [worktree-dir]
+(defn worktree-head-commit-10
+  "10-char HEAD of a worktree, or \"\" on error. Uses process/sh (captures
+   stdout by default) rather than process/shell, which without :out :string
+   inherits stdout — leaking the raw hash to the console — and leaves :out a
+   NullInputStream, so (str/trim out) threw into the catch and this always
+   returned nil, even on a successful read (BL-809)."
+  [worktree-dir]
   (try
-    (let [{:keys [out exit]} (process/shell {:dir worktree-dir :err :string}
-                                            "git" "rev-parse" "--short=10" "HEAD")]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+    (let [{:keys [out exit]} (process/sh ["git" "rev-parse" "--short=10" "HEAD"]
+                                         {:dir worktree-dir})]
+      (if (zero? exit) (str/trim out) ""))
+    (catch Exception _ "")))
 
 ;; BL-646: daemon-death/alarm test fixtures that leaked into worktree roots.
 (def known-fixture-file-names
@@ -53,10 +59,16 @@
        (map (fn [line] (str/trim (subs line 3))))
        vec))
 
-(defn list-untracked-files [worktree-dir]
+(defn list-untracked-files
+  "Untracked paths in a worktree, or [] on error. Same BL-809 fix as
+   worktree-head-commit-10: process/shell without :out :string inherits
+   stdout (leaking the porcelain listing) and leaves :out a NullInputStream,
+   so parse-untracked-paths threw into the catch and untracked was always 0
+   — the exact call this ticket's own untracked-list path depends on."
+  [worktree-dir]
   (try
-    (let [{:keys [out exit]} (process/shell {:dir worktree-dir :err :string}
-                                            "git" "status" "--porcelain")]
+    (let [{:keys [out exit]} (process/sh ["git" "status" "--porcelain"]
+                                         {:dir worktree-dir})]
       (if (zero? exit)
         (parse-untracked-paths out)
         []))

@@ -1,15 +1,20 @@
 #!/usr/bin/env bb
 
-;; Subprocess calls use babashka.process, NOT clojure.java.shell: bb's
+;; Every subprocess call goes through daemon-cycle-guard-lib/sh! (BL-967's
+;; bounded chokepoint over babashka.process), NEVER clojure.java.shell: bb's
 ;; clojure.java.shell shim can deadlock reading subprocess streams (observed
 ;; hanging notify! mid-delivery and silently stalling the whole swarm, BL-061).
+;; This ns deliberately does not require babashka.process itself - the
+;; guard-lib closure gate in daemon_cycle_guard_lib_test_runner.bb fails on
+;; any direct subprocess path outside the chokepoint.
 (ns handoffd
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
@@ -25,11 +30,19 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "llm_cost_ledger_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_outage_evidence_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_attribution_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -70,6 +83,20 @@
 (def loop-detect-states (atom {}))
 (def loop-halt-triggered? (atom false))
 
+;; BL-536: per-role auth-class failure episode state (provider_auth_observe_
+;; lib.bb's {:attempts :alerted} shape). Same in-memory-atom rationale as
+;; loop-detect-states above - a daemon restart losing an in-flight episode's
+;; attempt count is safe; the next auth-class observation just starts a
+;; fresh episode.
+(def auth-observe-states (atom {}))
+
+;; BL-798: open-slot promotion-inaction escalation state (chase_sweep_lib's
+;; own {:candidate-id :count :escalated} shape). Same in-memory-atom
+;; rationale as loop-detect-states/auth-observe-states above — a daemon
+;; restart losing the unacted-nudge count is safe, the next sweep tick just
+;; resumes counting from 0 for whichever candidate is still top.
+(def open-slot-escalation-state (atom nil))
+
 (defn usage []
   (binding [*out* *err*]
     (println "Usage: handoffd.bb <project-root>"))
@@ -77,6 +104,27 @@
 
 (def project-root
   (or (first *command-line-args*) (usage)))
+
+;; BL-812: handoffd's process cwd is not guaranteed to be project-root (seen
+;; live: launcher home dir) - without this, every handoff-lib target-root
+;; read (roles.tsv, tmux-socket, launch scripts, mono-router-active-role)
+;; silently resolved against the WRONG root via git-common-dir-from-cwd, so
+;; wake remap and resident rotation missed the real .swarmforge/ and chase
+;; degraded to injecting into sessions mono-router never creates. Set once,
+;; before any handoff-lib call below reads target-root.
+(handoff-lib/set-project-root! project-root)
+
+;; BL-897: the deterministic, machine-local (never committed - already
+;; covered by the bare .swarmforge/ .gitignore entry) path every briefing-
+;; section CLI is handed via --snapshot, so all three read the SAME
+;; already-derived lifecycle records instead of each re-walking the
+;; backlog's full git history (extension/src/metrics/lifecycleSnapshot.ts's
+;; lifecycleSnapshotPath, same join, kept in sync by hand since Babashka
+;; cannot import the compiled TS module). Defined here, right after
+;; project-root, so every shell-out below (regardless of its own position
+;; in the file) can reference it.
+(def lifecycle-snapshot-path
+  (str (fs/path project-root ".swarmforge" "briefing" "lifecycle-snapshot.json")))
 
 ;; BL-406: refuse to run at all against a throwaway test/temp project root
 ;; unless the caller explicitly opts in - checked here, before this daemon
@@ -161,6 +209,29 @@
         (str (now) " " (str/join " " parts) "\n")
         :append true))
 
+;; BL-967 invariant 1: a bounded-wait hit anywhere in the cycle is logged
+;; and survived, attributed to the sweep that was running. Wired once here;
+;; daemon-cycle-guard-lib/sh! is the chokepoint every subprocess call in
+;; this file (and handoff_lib.bb's own calls) now runs through.
+(reset! daemon-cycle-guard-lib/on-timeout!
+        (fn [{:keys [context cmd bound-ms]}]
+          (log! "subprocess-timeout"
+                (str "sweep=" context " bound-ms=" bound-ms
+                     " cmd=" (str/join " " (take 4 cmd))))))
+
+;; BL-977: publish the in-flight sweep marker so the supervisor can tell a
+;; heavy-but-progressing cycle (dropped-parcel-sweep measured 143269 ms on
+;; 2026-08-20) from true silence. Written by run-sweep!'s own transitions -
+;; the marker advances only with real poll-loop progress.
+(daemon-cycle-guard-lib/install-sweep-marker-writer!
+ (str (fs/path daemon-dir "handoffd.sweep-marker")))
+
+;; BL-967 invariant 2: one boundary line per heavy-bundle sweep, action or
+;; no action, so the log alone localizes any stall to one sweep.
+(defn run-sweep! [sweep-name thunk]
+  (daemon-cycle-guard-lib/run-sweep!
+   log! (fn [] (System/currentTimeMillis)) sweep-name thunk))
+
 (defn read-lines [path]
   (when (fs/exists? path)
     (str/split-lines (slurp (str path)))))
@@ -241,7 +312,9 @@
            (delivered-filename filename recipient)))
 
 (defn tmux! [& args]
-  (apply process/sh "tmux" args))
+  ;; BL-967: bounded at the chokepoint - a wedged tmux server costs one
+  ;; bounded wait, never the heartbeat.
+  (apply daemon-cycle-guard-lib/sh! "tmux" args))
 
 ;; BL-093: send-keys was fire-and-forget - a lost Enter left the wake message
 ;; typed-but-unsubmitted, and repeated notify! calls (chaser respawns, retried
@@ -264,6 +337,12 @@
 
 (defn capture-pane-text [socket session]
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session)))
+
+;; BL-927: resident-live-role relocated to handoff-lib (handoffd.bb already
+;; load-files handoff_lib.bb, so the reverse would be circular) - it is the
+;; single definition, reused by both the chase call sites below and
+;; departing-role-blocking-handoff's resident-invoked rotation gate. Do not
+;; redefine it here.
 
 (defn last-non-blank-line [pane-text]
   (last (remove str/blank? (str/split-lines (or pane-text "")))))
@@ -328,7 +407,9 @@
 
 (defn chase-poke-action
   "Decide how to poke `role` under mono-router (pure wrapper around
-   mono-router-lib/dormant-mailbox-chase-action with live tmux probes)."
+   mono-router-lib/dormant-mailbox-chase-action with live tmux probes).
+   BL-921: also probes the resident pane's own live identity so a diverged
+   active-role marker can no longer produce a false :wake-resident."
   [roles socket role]
   (let [session (:session (get roles role))
         resident (handoff-lib/mono-router-resident-session)]
@@ -336,7 +417,8 @@
      {:target-session-exists? (boolean (and session (handoff-lib/session-exists? socket session)))
       :resident-session-exists? (boolean (and resident (handoff-lib/session-exists? socket resident)))
       :active-role (handoff-lib/read-mono-router-active-role)
-      :target-role role})))
+      :target-role role
+      :live-role (handoff-lib/resident-live-role socket resident)})))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
@@ -622,6 +704,28 @@
 (def print-preferred-rotate-target-only?
   (some #{"--print-preferred-rotate-target"} *command-line-args*))
 
+;; BL-679: same one-shot-and-exit posture as --poll-once above, for one full
+;; deterministic daemon cycle - delivery (poll-once!, so a bounce note
+;; naming the ambulance ticket is observably delivered in the same pass) plus
+;; the three sweeps this ticket added/modified (open-slot-nudge-sweep!'s
+;; ambulance suppression, flow-watchdog-sweep!'s ambulance mute, and the new
+;; ambulance-auto-exit-sweep!) - no real 10s chase-cadence wait, for the
+;; acceptance suite's "the handoff daemon runs one sweep" / "the flow
+;; watchdog sweep runs" steps.
+(def sweep-once-only?
+  (some #{"--sweep-once"} *command-line-args*))
+
+;; BL-921: same one-shot-and-exit posture as --sweep-once above, but for the
+;; chase sweep specifically - --sweep-once deliberately does NOT include
+;; chase-sweep! (it runs delivery plus the ambulance/watchdog/nudge sweeps
+;; only), and the full daemon loop only reaches chase-sweep! on its real
+;; ~10s cadence. An acceptance scenario proving "N chase sweeps never
+;; inject wake text for a diverged live identity" needs to run exactly N
+;; sweeps deterministically, without a background process or a wall-clock
+;; wait for the real cadence.
+(def chase-sweep-once-only?
+  (some #{"--chase-sweep-once"} *command-line-args*))
+
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
 (defn pid-alive? [pid]
@@ -629,7 +733,7 @@
     (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.isAlive))))
 
 (defn process-command-line [pid]
-  (let [{:keys [out exit]} (process/sh "ps" "-o" "command=" "-p" (str pid))]
+  (let [{:keys [out exit]} (daemon-cycle-guard-lib/sh! "ps" "-o" "command=" "-p" (str pid))]
     (when (zero? exit) (str/trim out))))
 
 (defn handoffd-for-this-root?
@@ -666,13 +770,21 @@
    both proceed (BL-081: the observed same-minute duplicate-start race)."
   [f]
   (fs/create-dirs daemon-dir)
-  (loop []
+  ;; BL-967: the spin carries a deadline (engineering rules: max-wait
+  ;; deadlines on lock loops). A stale lock dir - e.g. left by a
+  ;; freshness-kill landing inside the tiny lock window - previously spun
+  ;; here silently forever; now it fails loudly instead.
+  (loop [waited-ms 0]
     (when-not (try
                 (fs/create-dir pid-lock-dir)
                 true
                 (catch java.nio.file.FileAlreadyExistsException _ false))
+      (when (>= waited-ms 30000)
+        (throw (ex-info (str "pid lock " pid-lock-dir " not released within 30s"
+                             " - a stale lock dir from a killed process; remove it and retry")
+                        {:lock-dir (str pid-lock-dir)})))
       (Thread/sleep 50)
-      (recur)))
+      (recur (+ waited-ms 50))))
   (try
     (f)
     (finally
@@ -833,6 +945,45 @@
     (fs/create-dirs (fs/parent file))
     (spit (str file) (str line "\n") :append true)))
 
+;; BL-870: durable per-wake attribution - one JSON line for every wake the
+;; daemon's own wake path (notify!/notify-in-process-resume! via
+;; chase-poke-and-notify!, and the claim-idle probe injector) injects OR
+;; withholds, naming the role, the deciding sweep, and the handoff that
+;; motivated it (or an explicit absent marker). Same monthly-file/JSONL
+;; shape as chaser-telemetry-file above, kept as its own file rather than
+;; folded into that log because chaser telemetry today only ever records
+;; the cases that DID something (chase/nudge/respawn/...); this must also
+;; cover the skipped half, which chaser telemetry never has.
+(defn wake-attribution-file [at-ms]
+  (fs/path state-dir "telemetry"
+           (str "wake-attribution-"
+                (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM")
+                         (.atZone (java.time.Instant/ofEpochMilli at-ms) java.time.ZoneOffset/UTC))
+                ".jsonl")))
+
+(defn record-wake-attribution!
+  "Never throws - a failure to record must never block the wake it is
+   describing (invariant 2: attribution is observation only). role-info is
+   the full roles.tsv row (record-wake-attribution! reads its own mailbox
+   fresh via wake-attribution-lib/motivating-handoff), not just the role
+   name."
+  [role-info sweep dir-key outcome & {:keys [skip-reason]}]
+  (try
+    (let [at-ms (System/currentTimeMillis)
+          handoff-id (wake-attribution-lib/motivating-handoff role-info dir-key)
+          record (wake-attribution-lib/build-attribution
+                  {:role (:role role-info) :sweep sweep :handoff-id handoff-id
+                   :outcome outcome :at-ms at-ms :skip-reason skip-reason})
+          line (json/generate-string
+                (assoc record :at
+                       (.format (java.time.format.DateTimeFormatter/ISO_INSTANT)
+                                (java.time.Instant/ofEpochMilli at-ms))))
+          file (wake-attribution-file at-ms)]
+      (fs/create-dirs (fs/parent file))
+      (spit (str file) (str line "\n") :append true))
+    (catch Exception e
+      (log! "wake-attribution-error" (:role role-info) (.getMessage e)))))
+
 ;; ── BL-349: stuck-escalation email - the daemon's missing leg ───────────
 ;; write-escalation! (chase_sweep_lib.bb) only ever wrote a file; the only
 ;; code that EMAILED it lived in the VS Code extension host
@@ -908,7 +1059,7 @@
         (spit (str stop-file) "")
         (catch Exception e (log! "endless-loop-stop-file-error" (.getMessage e))))
       (try
-        (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
+        (daemon-cycle-guard-lib/sh! ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
         (catch Exception e (log! "endless-loop-kill-error" (.getMessage e)))))))
 
 ;; BL-528: claim-without-progress halt (separate atom so a claim-idle halt
@@ -943,7 +1094,7 @@
         (spit (str stop-file) "")
         (catch Exception e (log! "claim-progress-stop-file-error" (.getMessage e))))
       (try
-        (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
+        (daemon-cycle-guard-lib/sh! ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
         (catch Exception e (log! "claim-progress-kill-error" (.getMessage e)))))))
 
 (defn observe-pane-loop!
@@ -979,6 +1130,125 @@
         ;; false-positive a healthy idle prompt after relaunch.
         (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
           (observe-pane-loop! role pane))))))
+
+;; ── BL-536: auth-class pane observe/respawn - SRE 2026-07-19 ───────────────
+;; classify-provider-error already maps "Invalid API key" to :auth and
+;; provider-compat-lib/provider-auth-error-text? already recognizes the same
+;; text, but nothing observed pane scrollback for it and healed a standing
+;; role wedged behind a credential error. Wired into the SAME chase-sweep!
+;; cadence as observe-standing-role-loops! above (not the TS inboxChaser,
+;; dead-in-production for chase decisions per BL-146). Respawn reuses
+;; swarm_ensure.bb's own provider-respawn-env-args machinery, extracted into
+;; provider_respawn_env_lib.bb so this daemon process can call it without
+;; load-file'ing swarm_ensure.bb itself (which runs a full ensure sweep and
+;; System/exit as a side effect of being loaded).
+
+(defn- auth-respawn-max-attempts
+  "BL-536: the effective config's auth_respawn_max_attempts — resolved via
+   backlog-depth-lib/conf-file-path (whatever pack swarm-identity recorded
+   at launch), never the tracked default file directly (same resolution as
+   note-actionable-after-ms/rotation-starve-after-ms below)."
+  []
+  (provider-auth-observe-lib/parse-max-attempts
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
+(defn do-auth-respawn!
+  "BL-536: force-relaunch a role's persisted launch script with provider-
+   compat env args after an auth-class failure was observed in its pane.
+   Mirrors do-respawn!'s busy precheck exactly — never types/respawns into a
+   pane showing Claude Code's busy footer."
+  [role-info socket]
+  (let [session (:session role-info)
+        role (:role role-info)
+        pane (try (capture-pane-text socket session) (catch Exception _ ""))]
+    (if (chase-sweep-lib/actively-processing? pane)
+      (log! "auth-respawn-skip-busy" role)
+      (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+            env-args (provider-respawn-env-lib/provider-respawn-env-args state-dir role)]
+        (log! "auth-respawn" role (str launch-script))
+        (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
+                             env-args
+                             ["-t" session (str "zsh '" launch-script "'")]))))))
+
+(defn send-auth-persist-alert!
+  "BL-536: reuses the same operator alert channel the endless-loop breaker
+   uses (Telegram OPERATOR topic + email) — but never halts the swarm or
+   kills sessions; this is a notify-only alert."
+  [role max-attempts]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+        subject (provider-auth-observe-lib/format-email-subject role)
+        tg-text (provider-auth-observe-lib/format-telegram-alert role max-attempts)
+        reason (provider-auth-observe-lib/format-alert-reason role max-attempts)]
+    (log! "auth-persist-alert" role reason)
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+            :append true)
+      (log! "auth-persist-telegram" role)
+      (catch Exception e (log! "auth-persist-telegram-error" (.getMessage e))))
+    (try
+      (daemon-alarm-lib/send-configured-email!
+       project-root conf-file subject reason
+       {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+      (log! "auth-persist-email" role)
+      (catch Exception e (log! "auth-persist-email-error" (.getMessage e))))))
+
+(defn observe-pane-auth!
+  "Feed one pane snapshot into provider-auth-observe-lib; act on the result."
+  [role-info socket pane]
+  (let [role (:role role-info)
+        prev (get @auth-observe-states role)
+        max-attempts (auth-respawn-max-attempts)
+        decision (provider-auth-observe-lib/decide-auth-observation
+                  prev pane {:max-attempts max-attempts})]
+    (swap! auth-observe-states assoc role (:state decision))
+    (case (:action decision)
+      :respawn (do-auth-respawn! role-info socket)
+      :alert (send-auth-persist-alert! role max-attempts)
+      :none nil)))
+
+(defn- provider-outage-observe-min-interval-ms []
+  (provider-outage-evidence-lib/parse-observe-min-interval-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
+(defn observe-pane-provider-outage!
+  "BL-840: feed one pane snapshot (the SAME one observe-pane-auth! above
+   already captured - no second tmux capture) into the provider-outage
+   evidence store when its text classifies :unavailable
+   (agent_runtime_lib.bb's classify-provider-error). Attributed to role-info's
+   own configured provider (:agent - the BL-208 lookup), never guessed;
+   a role with no configured provider records nothing, since there is
+   nothing to attribute it to. Throttled by
+   provider_outage_observe_min_interval_ms inside record-provider-outage!
+   itself; never throws out to the caller."
+  [role role-info pane]
+  (when (and (not (str/blank? pane))
+             (= :unavailable (:category (agent-runtime-lib/classify-provider-error pane))))
+    (when-let [provider (:agent role-info)]
+      (try
+        (provider-outage-evidence-lib/record-provider-outage!
+         (str state-dir) role provider pane (System/currentTimeMillis)
+         (provider-outage-observe-min-interval-ms))
+        (catch Exception e (log! "provider-outage-observe-error" role (.getMessage e)))))))
+
+(defn observe-standing-role-auth!
+  "Walk every role that still has a live tmux session and feed its pane into
+   the auth-class observer AND (BL-840) the provider-outage evidence
+   observer - the same 20-line scrollback capture serves both, never a
+   second tmux capture. Same live-session gate and window as
+   observe-standing-role-loops! above."
+  [roles socket]
+  (doseq [[role role-info] roles]
+    (let [session (:session role-info)]
+      (when (and session (handoff-lib/session-exists? socket session))
+        (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
+          (observe-pane-auth! role-info socket pane)
+          (observe-pane-provider-outage! role role-info pane))))))
 
 (def last-chase-rotate-at-ms (atom 0))
 
@@ -1025,13 +1295,16 @@
    ambulance never retracts a mid-turn claim, so it stays actionable exactly
    as before regardless of which ticket it names.
    BL-636: :best-priority is the lowest parseable priority among the same
-   actionable set (held + git_handoff + aged notes) — a role ranks by its
-   best parcel, not by whichever parcel happens to be newest.
+   actionable set (held + git_handoff + rule_proposal + aged notes) — a role
+   ranks by its best parcel, not by whichever parcel happens to be newest.
    BL-651: :oldest-actionable-waited-ms is how long, in ms, the OLDEST
    actionable parcel has waited — age source is the parcel's own
    enqueued_at/created_at header, never file mtime (mono-router-lib/
    oldest-actionable-waited-ms), so the pure starve rule in
-   preferred-rotate-target can fire in production."
+   preferred-rotate-target can fire in production.
+   rule_proposal joins git_handoff as immediately actionable (2026-08-03):
+   directed Article 5.1 mail must rotate the resident, not sit forever
+   behind chase-rotate-skip-broadcast."
   [role role-info]
   (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
         ip-dir (str (handoff-lib/mailbox-dir role-info :in_process))
@@ -1040,6 +1313,7 @@
         news (remove #(ambulance-lib/parcel-held? ambulance (handoff-envelope (:filePath %)))
                      (chase-sweep-lib/scan-inbox-new new-dir))
         git-hfs (filterv #(= "git_handoff" (handoff-header-field (:filePath %) "type")) news)
+        rule-props (filterv #(= "rule_proposal" (handoff-header-field (:filePath %) "type")) news)
         note-fs (filterv #(= "note" (handoff-header-field (:filePath %) "type")) news)
         now-ms (System/currentTimeMillis)
         threshold-ms (note-actionable-after-ms)
@@ -1049,7 +1323,7 @@
                                :now-ms now-ms
                                :threshold-ms threshold-ms})
                             note-fs)
-        actionable-parcels (concat held git-hfs aged-notes)
+        actionable-parcels (concat held git-hfs rule-props aged-notes)
         newest (or (->> actionable-parcels
                         (keep #(handoff-header-field (:filePath %) "created_at"))
                         sort
@@ -1070,6 +1344,7 @@
      :actionable? (mono-router-lib/actionable-mail?
                    {:in-process-count (count held)
                     :git-handoff-count (count git-hfs)
+                    :rule-proposal-count (count rule-props)
                     :aged-note-count (count aged-notes)})}))
 
 (defn preferred-mono-rotate-role
@@ -1102,36 +1377,76 @@
           (chase-sweep-lib/pane-recently-active?
            activity-role now-ms chase-resident-recent-activity-ms)))))
 
-(defn chase-rotate-to! [socket roles role]
+(defn- attempt-resident-rotate!
+  "Shared gate+rotate for chase. Returns the rotate-resident-to! result map,
+   or {:ok false :reason ...} when the busy/cooldown/already-active gate
+   refuses. Logs the same chase-rotate-* lines the single-target path used."
+  [socket target-role]
+  (let [gate (mono-router-lib/should-rotate-resident?
+              {:active-role (handoff-lib/read-mono-router-active-role)
+               :target-role target-role
+               ;; BL-921: a stale marker claiming the resident is already
+               ;; target-role must not refuse the very rotate that would fix it.
+               :live-role (handoff-lib/resident-live-role socket (handoff-lib/mono-router-resident-session))
+               :resident-busy? (resident-pane-busy? socket)
+               :last-rotate-at-ms @last-chase-rotate-at-ms
+               :now-ms (System/currentTimeMillis)
+               :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
+    (if (not= gate :rotate)
+      (do (log! (str "chase-rotate-" (name gate)) target-role)
+          {:ok false :reason (name gate)})
+      (let [result (handoff-lib/rotate-resident-to! target-role)]
+        (when (:ok result)
+          (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
+          (log! "chase-rotate" target-role))
+        (when-not (:ok result)
+          (log! "chase-rotate-error" target-role (str (:reason result))))
+        result))))
+
+;; BL-795/BL-654: invariant 2 ("a chase poke at a non-preferred role
+;; redirects the resident onto the preferred actionable role rather than
+;; returning not-preferred and dropping the rotate") has no executable
+;; property-test encoding. The decision itself (preferred truthy and
+;; different from the polled role -> redirect) is two lines of pure boolean
+;; logic, but it is inlined in chase-rotate-to! below, which is otherwise
+;; entirely IO: preferred-mono-rotate-role/role-mail-row scan the real
+;; mailbox filesystem and ambulance state, and attempt-resident-rotate!
+;; captures the live resident tmux pane over a real socket and performs the
+;; actual rotation. Extracting the decision into a standalone pure function
+;; to make it property-testable would be a structural change to this
+;; adopted-as-is hand fix (BL-795's scope is explicitly "adopt the files
+;; above as-is for the three invariants", not redesign them), and the
+;; Babashka toolchain has no property-test framework wired for this
+;; daemon-control-flow layer regardless (Engineering Rules: Babashka
+;; mutation/CRAP/DRY tooling not wired; the .bb unit-test suite is the real
+;; gate). The invariant is instead encoded as a real-fixture integration
+;; test: test_handoffd_rule_proposal_rotate_wiring.sh scenario C drives the
+;; actual handoffd.bb --print-preferred-rotate-target path and proves the
+;; PRECONDITION this redirect depends on (an in_process priority-00 claim
+;; outranks a rule_proposal priority-50) resolves correctly through the real
+;; system, matching this project's established pattern for daemon-level
+;; behavior (see this ticket's own e2e QA procedure).
+(defn chase-rotate-to!
+  "Rotate the mono-router resident onto `role` when that role's mail is the
+   preferred actionable target. When another role is preferred, REDIRECT to
+   that preferred role instead of returning not-preferred and dropping the
+   poke (2026-08-03: hardender held in_process while chase burned cycles on
+   specifier's skip-not-preferred / skip-broadcast — preferred was never
+   acted on because only the poked role could land a rotate)."
+  [socket roles role]
   (let [preferred (preferred-mono-rotate-role roles)
         row (role-mail-row role (get roles role))]
     (cond
+      (and preferred (not= preferred role))
+      (do (log! "chase-rotate-redirect" role preferred)
+          (attempt-resident-rotate! socket preferred))
+
       (not (:actionable? row))
       (do (log! "chase-rotate-skip-broadcast" role)
           {:ok false :reason "broadcast"})
 
-      (and preferred (not= preferred role))
-      (do (log! "chase-rotate-skip-not-preferred" role preferred)
-          {:ok false :reason "not-preferred"})
-
       :else
-      (let [gate (mono-router-lib/should-rotate-resident?
-                  {:active-role (handoff-lib/read-mono-router-active-role)
-                   :target-role role
-                   :resident-busy? (resident-pane-busy? socket)
-                   :last-rotate-at-ms @last-chase-rotate-at-ms
-                   :now-ms (System/currentTimeMillis)
-                   :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
-        (if (not= gate :rotate)
-          (do (log! (str "chase-rotate-" (name gate)) role)
-              {:ok false :reason (name gate)})
-          (let [result (handoff-lib/rotate-resident-to! role)]
-            (when (:ok result)
-              (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
-              (log! "chase-rotate" role))
-            (when-not (:ok result)
-              (log! "chase-rotate-error" role (str (:reason result))))
-            result))))))
+      (attempt-resident-rotate! socket role))))
 
 (defn chase-poke-and-notify!
   "Shared chase wake/resume path. Gating is scoped to the pane the poke
@@ -1140,10 +1455,21 @@
    per sweep; pokes at a role's own standing pane (classic packs) are
    gated only by that pane's own busy state. The per-sweep resident budget
    is consumed ONLY when a wake or rotate actually lands — a refused
-   rotate (broadcast/not-preferred/cooldown) leaves the budget for the
-   next role in the same sweep (architect starvation, 2026-07-23).
-   Returns true only when a wake or successful rotate was performed."
-  [socket roles role resident-wake-suppressed? notify-fn!]
+   rotate (broadcast/cooldown) leaves the budget for the
+   next role in the same sweep (architect starvation, 2026-07-23). A
+   not-preferred poke now REDIRECTS to the preferred role (chase-rotate-to!)
+   rather than consuming nothing and dropping the opportunity.
+   Returns true only when a wake or successful rotate was performed.
+
+   BL-870: `sweep` (wake-attribution-lib/sweep-inbox-item or
+   sweep-stuck-in-process) and `mailbox-dir-key` (:new or :in_process) are
+   supplied by the two callers below purely so a wake or skip can be
+   attributed - neither is consulted by chase-poke-plan above, so they
+   cannot change :mode (invariant 2). :rotate is not attributed here: it
+   respawns the pane rather than injecting wake text into an existing one,
+   so it is not a case this ticket's 'no wake text reaches a pane without
+   attribution' invariant covers."
+  [socket roles role resident-wake-suppressed? notify-fn! sweep mailbox-dir-key]
   (let [action (chase-poke-action roles socket role)
         ri (get roles role)
         wake-sess (handoff-lib/wake-session socket (:session ri))
@@ -1166,6 +1492,9 @@
                :resident-woken-this-sweep? @resident-wake-suppressed?})]
     (case (:mode plan)
       :skip (do (log! (str "chase-wake-skip-" (name (:skip-reason plan))) role)
+                (record-wake-attribution! ri sweep mailbox-dir-key
+                                           wake-attribution-lib/outcome-skipped
+                                           :skip-reason (name (:skip-reason plan)))
                 false)
       :rotate (let [performed (boolean (:ok (chase-rotate-to! socket roles role)))]
                 (when performed (reset! resident-wake-suppressed? true))
@@ -1173,12 +1502,14 @@
       :wake (do (when (:resident-budget? plan)
                   (reset! resident-wake-suppressed? true))
                 (notify-fn! socket (:session ri) (:agent ri))
+                (record-wake-attribution! ri sweep mailbox-dir-key
+                                           wake-attribution-lib/outcome-landed)
                 true))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
   []
-  (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir (str project-root)})]
+  (let [result (daemon-cycle-guard-lib/sh! ["git" "rev-parse" "--short=10" "HEAD"] {:dir (str project-root)})]
     (when (zero? (:exit result))
       (str/trim (:out result)))))
 
@@ -1190,7 +1521,7 @@
   (let [ri  (get roles role)
         dir (or (:worktree-path ri) (str project-root))]
     (try
-      (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir dir})]
+      (let [result (daemon-cycle-guard-lib/sh! ["git" "rev-parse" "--short=10" "HEAD"] {:dir dir})]
         (if (zero? (:exit result)) (str/trim (:out result)) ""))
       (catch Exception _ ""))))
 
@@ -1200,7 +1531,7 @@
   (let [ri  (get roles role)
         dir (or (:worktree-path ri) (str project-root))]
     (try
-      (let [result (process/sh ["git" "status" "--porcelain"] {:dir dir})]
+      (let [result (daemon-cycle-guard-lib/sh! ["git" "status" "--porcelain"] {:dir dir})]
         (when (zero? (:exit result))
           (claim-progress-lib/worktree-dirty? (:out result))))
       (catch Exception _ false))))
@@ -1230,6 +1561,27 @@
      :active-role active
      :rotation-router? (rotation-router-mode?)}))
 
+(defn- note-chase-control-plane-failure!
+  "BL-958: a failed chase tmux send is the daemon's view of the crash class
+   where the tmux server disappears while the daemons stay up. Probe and
+   classify through the shared control_plane_lib and persist exactly one
+   open structured incident for the loss (socket, probe output, expected
+   sessions, response decision) — the artifact the live 2026-08-19 incident
+   never produced. Recording must never take the sweep down with it."
+  [socket roles]
+  (try
+    (let [result (control-plane-lib/record-chase-failure-incident!
+                  {:state-dir (str state-dir)
+                   :socket socket
+                   :expected-sessions (vec (sort (keep :session (vals roles))))
+                   :observed-at (str (java.time.Instant/now))
+                   :source "handoffd-chase"})]
+      (when (:recorded? result)
+        (log! "control-plane-incident-recorded"
+              (str (control-plane-lib/incidents-file state-dir)))))
+    (catch Exception e
+      (log! "control-plane-incident-error" (.getMessage e)))))
+
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         resident-wake-suppressed? (atom false)
@@ -1240,9 +1592,11 @@
                                       (try
                                         (chase-poke-and-notify!
                                          socket roles role resident-wake-suppressed?
-                                         (fn [s sess agent] (notify! s sess agent)))
+                                         (fn [s sess agent] (notify! s sess agent))
+                                         wake-attribution-lib/sweep-inbox-item :new)
                                         (catch Exception e
                                           (log! "chase-wake-error" role (.getMessage e))
+                                          (note-chase-control-plane-failure! socket roles)
                                           false))))
                   :send-in-process-resume! (fn [role]
                                               (if (tmux-inject-disabled?)
@@ -1251,9 +1605,11 @@
                                                   (chase-poke-and-notify!
                                                    socket roles role resident-wake-suppressed?
                                                    (fn [s sess agent]
-                                                     (notify-in-process-resume! s sess agent)))
+                                                     (notify-in-process-resume! s sess agent))
+                                                   wake-attribution-lib/sweep-stuck-in-process :in_process)
                                                   (catch Exception e
                                                     (log! "chase-in-process-resume-error" role (.getMessage e))
+                                                    (note-chase-control-plane-failure! socket roles)
                                                     false))))
                   :trigger-respawn! (fn [role]
                                        (try
@@ -1327,14 +1683,22 @@
                   (fn [role message]
                     (when-not (tmux-inject-disabled?)
                       (try
-                        (if (resident-pane-busy? socket)
-                          (log! "claim-idle-probe-skip-busy" role)
-                          (when-let [ri (get roles role)]
-                            (let [session (handoff-lib/wake-session socket (:session ri))]
-                              (agent-runtime-inject/notify-agent!
-                               socket session (or (:agent ri) "claude")
-                               :log-fn (fn [tag sess detail] (log! tag sess detail))
-                               :text message))))
+                        (let [ri (get roles role)]
+                          (if (resident-pane-busy? socket)
+                            (do (log! "claim-idle-probe-skip-busy" role)
+                                (when ri
+                                  (record-wake-attribution!
+                                   ri wake-attribution-lib/sweep-claim-idle-probe :in_process
+                                   wake-attribution-lib/outcome-skipped :skip-reason "busy")))
+                            (when ri
+                              (let [session (handoff-lib/wake-session socket (:session ri))]
+                                (agent-runtime-inject/notify-agent!
+                                 socket session (or (:agent ri) "claude")
+                                 :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                 :text message)
+                                (record-wake-attribution!
+                                 ri wake-attribution-lib/sweep-claim-idle-probe :in_process
+                                 wake-attribution-lib/outcome-landed)))))
                         (catch Exception e (log! "claim-idle-probe-error" role (.getMessage e))))))
                   :on-claim-idle-bounce!
                   (fn [role _fp progress]
@@ -1345,6 +1709,9 @@
                     (halt-for-claim-progress! role progress))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
     (observe-standing-role-loops! roles socket)
+    (try
+      (observe-standing-role-auth! roles socket)
+      (catch Exception e (log! "auth-observe-error" (.getMessage e))))
     (write-chase-status! now-ms)))
 
 ;; ── BL-222: dispatch-gap sweep - the daemon's third duty ────────────────────
@@ -1387,7 +1754,7 @@
         ;; them (confirmed empirically). Must use the vector form here:
         ;; auto-route! only works at all if SWARMFORGE_ROLE actually
         ;; resolves to "coordinator" inside the subprocess.
-        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
     (if (zero? (:exit result))
       (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item)
             (if (str/blank? commit) "note-fallback" "git_handoff"))
@@ -1408,7 +1775,7 @@
 (defn nudge-coordinator-unassigned! [item]
   (let [draft (write-scratch-draft! (chase-sweep-lib/unassigned-active-draft-lines item))
         env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
-        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
     (if (zero? (:exit result))
       (log! "unassigned-active-nudge" (:id item))
       (log! "unassigned-active-nudge-error" (:id item) (str (:err result))))))
@@ -1445,33 +1812,231 @@
     [(str (handoff-lib/mailbox-dir coord :new))
      (str (handoff-lib/mailbox-dir coord :in_process))]))
 
-(defn nudge-coordinator-open-slot! []
-  (let [draft (write-scratch-draft! (chase-sweep-lib/open-slot-nudge-draft-lines))
+(defn nudge-coordinator-open-slot! [candidate]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/open-slot-nudge-draft-lines candidate))
         env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
-        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
     (if (zero? (:exit result))
       (do
         (write-open-slot-last-sent! (System/currentTimeMillis))
-        (log! "open-slot-nudge"))
+        (log! "open-slot-nudge" (:id candidate)))
       (log! "open-slot-nudge-error" (str (:err result))))))
+
+;; BL-798: promotion-inaction escalation — reuses the SAME operator alert
+;; channel send-auth-persist-alert! (BL-536) already established (Telegram
+;; OPERATOR topic outbox + email via daemon-alarm-lib), notify-only, never
+;; halts the swarm.
+(defn send-open-slot-escalation-alert! [candidate-id nudge-count]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+        subject (chase-sweep-lib/open-slot-escalation-email-subject candidate-id)
+        tg-text (chase-sweep-lib/open-slot-escalation-telegram-text candidate-id nudge-count)
+        reason (chase-sweep-lib/open-slot-escalation-reason candidate-id nudge-count)]
+    (log! "open-slot-escalation" candidate-id reason)
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+            :append true)
+      (log! "open-slot-escalation-telegram" candidate-id)
+      (catch Exception e (log! "open-slot-escalation-telegram-error" (.getMessage e))))
+    (try
+      (daemon-alarm-lib/send-configured-email!
+       project-root conf-file subject reason
+       {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+      (log! "open-slot-escalation-email" candidate-id)
+      (catch Exception e (log! "open-slot-escalation-email-error" (.getMessage e))))))
+
+(defn- open-slot-escalation-threshold []
+  (chase-sweep-lib/parse-open-slot-escalation-threshold
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
 
 (defn open-slot-nudge-sweep! [roles]
   (try
     (let [active-count (chase-sweep-lib/count-backlog-yaml backlog-active-dir)
-          paused-count (chase-sweep-lib/count-backlog-yaml backlog-paused-dir)
           cap (backlog-depth-lib/read-max-depth project-root)
+          ;; BL-963: candidate naming, the fire decision's eligible count,
+          ;; and escalation tracking all consult the ONE promotion_gates
+          ;; evaluate chain (BL-663) - a candidate the chain refuses for
+          ;; anything but human_approval as its SOLE refusal is invisible to
+          ;; every one of them (bounce D1: a pending+dep-blocked candidate
+          ;; reports human_approval first yet is still excluded - the filter
+          ;; re-asks the chain with approval satisfied).
+          ;; Read/evaluate only when a slot is actually open: done-ids scans
+          ;; backlog/done/ recursively, and with capacity closed the decide
+          ;; below is false regardless.
+          eligible (when (and (number? active-count) (number? cap) (< active-count cap))
+                     (chase-sweep-lib/nudge-eligible-candidates
+                      (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
+                      {:active-count active-count
+                       :max-depth cap
+                       ;; advisory-only in evaluate (never a refusal), so the
+                       ;; active-epics scan is skipped here.
+                       :active-epics nil
+                       :done-ids (promotion-gates-lib/done-ids project-root)}))
           pending-dirs (or (coordinator-pending-dirs roles) [])
           pending? (chase-sweep-lib/open-slot-nudge-pending? pending-dirs)
           now-ms (System/currentTimeMillis)
           cool? (chase-sweep-lib/within-open-slot-cooldown?
                  (read-open-slot-last-sent-ms) now-ms
-                 chase-sweep-lib/open-slot-nudge-cooldown-ms)]
+                 chase-sweep-lib/open-slot-nudge-cooldown-ms)
+          ;; BL-679: the promotion freeze - no new item is promoted from
+          ;; paused/ while the mode is engaged, so the nudge that would ask
+          ;; the coordinator to do exactly that must not fire either.
+          ambulance-active? (boolean (:active (ambulance-lib/read-ambulance-state (str project-root))))]
       (when (chase-sweep-lib/decide-open-slot-nudge?
-             active-count cap paused-count
-             {:pending-nudge? pending? :within-cooldown? cool?})
-        (nudge-coordinator-open-slot!)))
+             active-count cap (count eligible)
+             {:pending-nudge? pending? :within-cooldown? cool? :ambulance-active? ambulance-active?})
+        ;; BL-798: name the top Article-3.2.4 candidate (invariant 1) and
+        ;; escalate repeated unacted nudges for the SAME candidate rather
+        ;; than repeating a ticketless poke forever (invariant 2). BL-963:
+        ;; ranked over the gate-eligible set only.
+        (let [candidate (chase-sweep-lib/top-open-slot-candidate
+                         eligible (promotion-gates-lib/epic-priority-index project-root))
+              decision (chase-sweep-lib/decide-open-slot-escalation
+                        @open-slot-escalation-state (:id candidate)
+                        (open-slot-escalation-threshold))]
+          (reset! open-slot-escalation-state (:state decision))
+          (case (:action decision)
+            :nudge (nudge-coordinator-open-slot! candidate)
+            :escalate (send-open-slot-escalation-alert! (:id candidate) (:count (:state decision)))
+            :none nil))))
     (catch Exception e
       (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
+
+
+;; ── Dropped-parcel coordinator nudge (sibling of BL-222/dispatch-gap) ───────
+;; A ticket dispatched once, then dropped mid-pipeline, is invisible to
+;; dispatch-gap-sweep! above (which only ever asks "was this EVER
+;; dispatched"). Reports to the coordinator only; never routes, assigns, or
+;; promotes. Shares dispatch-gap-scan-dirs's exact trail-dir set (BL-222)
+;; for has-trail?/newest-trail-ms; live-mail? scopes to :new/:in_process
+;; only, across every role (not just the assignee - the parcel may have
+;; progressed to, then dropped from, a later stage).
+
+(defn dropped-parcel-live-mail-dirs [roles]
+  (vec (for [[_ role-info] roles
+             state [:new :in_process]]
+         (str (handoff-lib/mailbox-dir role-info state)))))
+
+(defn dropped-parcel-cooldown-path []
+  (fs/path daemon-dir "dropped-parcel-nudge-cooldown.json"))
+
+(defn read-dropped-parcel-cooldowns []
+  (or (try (json/parse-string (slurp (str (dropped-parcel-cooldown-path))) true)
+           (catch Exception _ nil))
+      {}))
+
+(defn read-dropped-parcel-last-sent-ms [item-id]
+  (get (read-dropped-parcel-cooldowns) (keyword item-id)))
+
+(defn write-dropped-parcel-last-sent! [item-id now-ms]
+  (fs/create-dirs daemon-dir)
+  (spit (str (dropped-parcel-cooldown-path))
+        (json/generate-string (assoc (read-dropped-parcel-cooldowns) (keyword item-id) now-ms))))
+
+(defn nudge-coordinator-dropped-parcel! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/dropped-parcel-draft-lines item))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do
+        (write-dropped-parcel-last-sent! (:id item) (System/currentTimeMillis))
+        (log! "dropped-parcel-nudge" (:id item)))
+      (log! "dropped-parcel-nudge-error" (:id item) (str (:err result))))))
+
+(defn- dropped-parcel-stall-threshold-ms []
+  (chase-sweep-lib/parse-dropped-parcel-stall-threshold-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn- dropped-parcel-cooldown-ms []
+  (chase-sweep-lib/parse-dropped-parcel-cooldown-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn dropped-parcel-sweep! [roles]
+  (try
+    (let [now-ms (System/currentTimeMillis)
+          all-dirs (dispatch-gap-scan-dirs roles)
+          live-dirs (dropped-parcel-live-mail-dirs roles)
+          candidates (chase-sweep-lib/dropped-parcel-items
+                      (active-backlog-dir) all-dirs live-dirs now-ms (dropped-parcel-stall-threshold-ms))
+          cooldown-ms (dropped-parcel-cooldown-ms)]
+      (doseq [item candidates]
+        (try
+          (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
+                     (read-dropped-parcel-last-sent-ms (:id item)) now-ms cooldown-ms)
+            (nudge-coordinator-dropped-parcel! item))
+          (catch Exception e
+            (log! "dropped-parcel-nudge-error" (:id item) (.getMessage e))))))
+    (catch Exception e
+      (log! "dropped-parcel-sweep-error" (.getMessage e)))))
+
+
+;; ── BL-678: batch-claim-progress suspect nudge (live-owner half of ─────────
+;; BL-648's source near-miss) ─────────────────────────────────────────────────
+;; Scoped to :receive-mode "batch" roles only (cleaner/hardender today) -
+;; task-mode claims are BL-528's territory (.claim-progress.json above),
+;; untouched. Never re-forwards or re-delivers a parcel; the only action is
+;; a coordinator-facing suspect note, same posture as dropped-parcel-sweep!.
+
+(defn batch-claim-progress-cooldown-path []
+  (fs/path daemon-dir "batch-claim-progress-suspect-cooldown.json"))
+
+(defn read-batch-claim-progress-cooldowns []
+  (or (try (json/parse-string (slurp (str (batch-claim-progress-cooldown-path))) true)
+           (catch Exception _ nil))
+      {}))
+
+(defn read-batch-claim-progress-last-sent-ms [file-path]
+  (get (read-batch-claim-progress-cooldowns) (keyword (fs/file-name file-path))))
+
+(defn write-batch-claim-progress-last-sent! [file-path now-ms]
+  (fs/create-dirs daemon-dir)
+  (spit (str (batch-claim-progress-cooldown-path))
+        (json/generate-string (assoc (read-batch-claim-progress-cooldowns) (keyword (fs/file-name file-path)) now-ms))))
+
+(defn nudge-coordinator-batch-claim-suspect! [suspect]
+  (let [draft (write-scratch-draft!
+               (chase-sweep-lib/batch-claim-progress-suspect-draft-lines (:item-id suspect) (:age-ms suspect)))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do
+        (write-batch-claim-progress-last-sent! (:file-path suspect) (System/currentTimeMillis))
+        (log! "batch-claim-progress-suspect" (:item-id suspect)))
+      (log! "batch-claim-progress-suspect-error" (:item-id suspect) (str (:err result))))))
+
+(defn- batch-claim-progress-stale-threshold-ms []
+  (chase-sweep-lib/parse-batch-claim-progress-stale-threshold-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn- batch-claim-progress-cooldown-ms []
+  (chase-sweep-lib/parse-batch-claim-progress-cooldown-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
+(defn batch-claim-progress-sweep! [roles]
+  (try
+    (let [now-ms (System/currentTimeMillis)
+          stale-ms (batch-claim-progress-stale-threshold-ms)
+          cooldown-ms (batch-claim-progress-cooldown-ms)]
+      (doseq [[role role-info] roles
+              :when (= "batch" (:receive-mode role-info))]
+        (try
+          (let [in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))
+                items (chase-sweep-lib/scan-in-process in-process-dir)
+                current-commit (worktree-head-commit-10 roles role)
+                suspects (chase-sweep-lib/apply-batch-claim-progress-check!
+                          items now-ms stale-ms current-commit)]
+            (doseq [suspect suspects]
+              (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
+                         (read-batch-claim-progress-last-sent-ms (:file-path suspect)) now-ms cooldown-ms)
+                (nudge-coordinator-batch-claim-suspect! suspect))))
+          (catch Exception e
+            (log! "batch-claim-progress-sweep-role-error" role (.getMessage e))))))
+    (catch Exception e
+      (log! "batch-claim-progress-sweep-error" (.getMessage e)))))
 
 
 ;; ── BL-577: flow watchdog sweep - every mailbox, any parcel type ────────────
@@ -1490,7 +2055,9 @@
   (vec (for [[role role-info] roles]
          {:role role
           :new-dir (handoff-lib/mailbox-dir role-info :new)
-          :in-process-dir (handoff-lib/mailbox-dir role-info :in_process)})))
+          :in-process-dir (handoff-lib/mailbox-dir role-info :in_process)
+          :completed-dir (handoff-lib/mailbox-dir role-info :completed)
+          :abandoned-dir (handoff-lib/mailbox-dir role-info :abandoned)})))
 
 (defn flow-watchdog-live-session? [roles socket role]
   (boolean
@@ -1517,6 +2084,18 @@
         (log! "flow-watchdog-telegram-error" (.getMessage e))
         false))))
 
+(defn flow-watchdog-provider-outage-evidence-for
+  "BL-840: resolves role -> its configured provider (:agent - the same
+   BL-208 lookup :log-telemetry! above uses) and reads that provider's
+   recorded evidence lines. A role with no configured provider gets no
+   evidence, never a guess. Read failures already degrade to [] inside
+   provider-outage-evidence-lib itself (invariant 1) - no try/catch needed
+   here."
+  [roles role]
+  (if-let [provider (:agent (get roles role))]
+    (provider-outage-evidence-lib/evidence-for-provider (str state-dir) provider)
+    []))
+
 (defn flow-watchdog-sweep! [roles socket]
   (flow-watchdog-lib/run-sweep!
    (role-inboxes-for-flow-watchdog roles)
@@ -1524,6 +2103,49 @@
    (str project-root)
    daemon-dir
    {:live-session? (fn [role] (flow-watchdog-live-session? roles socket role))
+    :emit-alarm! flow-watchdog-emit-alarm!
+    :provider-outage-evidence-for (fn [role] (flow-watchdog-provider-outage-evidence-for roles role))}))
+
+
+;; ── BL-679 piece 3: ambulance auto-exit sweep - shares the chase-sweep
+;;    cadence, runs UNCONDITIONALLY (same rationale as flow-watchdog-sweep!/
+;;    master-checkout-drift-sweep! above): invariant 2 ("no marker state can
+;;    leave the swarm holding everything with nothing able to move") must
+;;    hold even while an unrelated pause suppresses outbound wakes - an
+;;    already-delivered-or-abandoned ambulance ticket must still release,
+;;    never wait out a pause it has nothing to do with. Thin wrapper only:
+;;    ambulance-lib/auto-exit! owns the real read/classify/release decision
+;;    (fs-only, no daemon dependency, directly unit/property-testable); this
+;;    adds the two genuinely impure duties a real sweep needs - the daemon
+;;    log line, and the release announcement over the SAME durable Telegram
+;;    OPERATOR-topic outbox every other unsuppressable alarm in this cadence
+;;    writes to (flow-watchdog-emit-alarm!) - and never touches engage!.
+(defn ambulance-auto-exit-sweep! []
+  (try
+    (when-let [{:keys [ticket case]} (ambulance-lib/auto-exit! (str project-root))]
+      (let [queued (chase-sweep-lib/top-expedited-paused-candidate
+                    (chase-sweep-lib/read-paused-candidates backlog-paused-dir)
+                    (promotion-gates-lib/epic-priority-index project-root))
+            text (ambulance-lib/auto-exit-announcement-text
+                  {:ticket ticket :case case :queued-expedited-defect-id queued})]
+        (log! "ambulance-auto-exit" ticket (name case))
+        (flow-watchdog-emit-alarm! text)))
+    (catch Exception e
+      (log! "ambulance-auto-exit-sweep-error" (.getMessage e)))))
+
+
+;; ── BL-839: master-checkout-vs-main drift sweep - report only ──────────────
+;; The daemon executes THIS checkout's working tree, not a committed ref
+;; (see master_checkout_drift_lib.bb's own header for the incident this
+;; guards against). Reuses flow-watchdog-emit-alarm! - the same durable
+;; Telegram OPERATOR-topic outbox every other unsuppressable alarm in this
+;; sweep block writes to - so this needs no new alerting channel. Report
+;; only: never repairs the drift (see the ticket's approval_context for why
+;; auto-restore would itself be a "surfaced, not swept" violation).
+
+(defn master-checkout-drift-sweep! []
+  (master-checkout-drift-lib/check-master-checkout-drift!
+   {:project-root (str project-root)
     :emit-alarm! flow-watchdog-emit-alarm!}))
 
 
@@ -1562,22 +2184,94 @@
      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
      :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))})))
 
+;; BL-902: the SAME to/api-key resolution send-configured-briefing-email!
+;; above performs, but decides sendability alone - no compose, no send -
+;; so briefing-email-sweep! can skip the entire expensive gather+render
+;; when the email cannot go out anyway (the ~96s-per-cycle stall this
+;; ticket exists to fix). Fires the SAME one-shot warn-missing-key-if-
+;; needed! atom/log line as the real send path when the reason is
+;; :missing-api-key, so a caller consulting this instead of actually
+;; sending still gets the loud, deduped warning exactly as before.
+(defn briefing-send-reason! []
+  (let [reason (daemon-alarm-lib/configured-email-send-reason conf-file)]
+    (when (= reason :missing-api-key)
+      (daemon-alarm-lib/warn-missing-key-if-needed!
+       {:reason reason}
+       {:already-warned?! (fn [] @briefing-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))}))
+    reason))
+
+;; BL-976: one-shot per GENERATION Telegram alert when notify_email_to is
+;; configured but this generation's environment has no RESEND_API_KEY. The
+;; email-misconfigured log line above is invisible to an operator who is
+;; not reading the log - the defect was a silent keyless generation whose
+;; only symptom was a briefing that never arrived. Swept on the shared
+;; cadence UNCONDITIONALLY (not only when a briefing is mailable) so the
+;; alert lands within the generation's FIRST sweep cycle regardless of
+;; pending briefings. The atom is per-process = per daemon generation,
+;; same rationale as briefing-missing-key-warned? above - and marked only
+;; after a successful outbox write (alert-keyless-if-needed!'s contract),
+;; so a transport hiccup retries next cycle instead of silently counting
+;; as delivered. daemon_alarm_lib.bb owns the pure decision + text; this
+;; is the environment-specific transport wiring only (the same
+;; OPERATOR-topic outbox every other operator alert in this file uses -
+;; the bridge polls telegram-reply-outbox.jsonl).
+(def email-keyless-alerted? (atom false))
+
+(def operator-daemon-env-file
+  (str (fs/path project-root ".swarmforge" "operator" "daemon.env")))
+
+(defn email-keyless-alert-sweep! []
+  (daemon-alarm-lib/alert-keyless-if-needed!
+   (daemon-alarm-lib/configured-email-send-reason conf-file)
+   {:already-alerted?! (fn [] @email-keyless-alerted?)
+    :send-alert!
+    (fn []
+      (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+            tg-text (daemon-alarm-lib/format-keyless-alert operator-daemon-env-file)]
+        (fs/create-dirs (fs/parent reply-outbox))
+        (spit (str reply-outbox)
+              (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+              :append true)
+        (log! "email-keyless-alert" operator-daemon-env-file)))
+    :mark-alerted! (fn [] (reset! email-keyless-alerted? true))}))
+
+;; BL-967 cleaner pass: "shell out to a compiled node tool under
+;; extension/out/tools and take its trimmed stdout" was hand-copied across
+;; nine briefing fns, each carrying a comment saying "same shell-out pattern
+;; as <sibling> above" - the duplication was being DOCUMENTED rather than
+;; removed, and the tools directory itself was spelled out at twenty call
+;; sites. Two definitions instead: WHERE the compiled tools live, and the
+;; degrade-never-crash contract every caller depends on (nil on a non-zero
+;; exit or any failure - CLI not yet compiled on this checkout, etc. - so
+;; the line is omitted, never fabricated, and the sweep never crashes).
+(defn node-tool-path [script-name]
+  (str (fs/path project-root "extension" "out" "tools" script-name)))
+
+;; The [cmd & args] + opts-map form of the shared sh! helper is mandatory
+;; here, not flat varargs - the latter silently drops :dir (see auto-route!'s
+;; own comment above). The hazard lives at THIS single call site now: every
+;; briefing line below shells through this fn and nowhere else.
+(defn node-tool-line
+  "Trimmed stdout of a compiled node tool, or nil on any failure."
+  [script-name & args]
+  (try
+    (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                              (into ["node" (node-tool-path script-name)] args)
+                              {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 ;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
 ;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
 ;; computeSuiteDuration unchanged, the SAME functions already feeding the
 ;; bridge's /metrics route the holistic UI reads, so the briefing can never
-;; disagree with the live UI about what "regressing" means. Must use the
-;; [cmd & args] + opts-map form of process/sh, not flat varargs - the
-;; latter silently drops :dir (see auto-route!'s own comment above). Any
-;; failure (CLI not yet compiled on this checkout, etc.) degrades to
-;; omitting the line entirely - never crashes the sweep, never a fabricated
-;; value.
+;; disagree with the live UI about what "regressing" means. Any failure
+;; (CLI not yet compiled on this checkout, etc.) degrades to omitting the
+;; line entirely - never crashes the sweep, never a fabricated value.
 (defn suite-duration-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suite-duration-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "suite-duration-line.js"))
 
 ;; BL-251: same shell-out pattern as suite-duration-briefing-line above -
 ;; reuses computeBacklogDashboard's own needsApproval field unchanged, the
@@ -1585,11 +2279,7 @@
 ;; disagree with the PWA about what's pending. Any failure degrades to
 ;; omitting the section entirely - never crashes the sweep.
 (defn needs-approval-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "needs-approval-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "needs-approval-line.js"))
 
 ;; BL-256: same shell-out pattern as suite-duration-briefing-line/
 ;; needs-approval-briefing-section above - each CLI reuses existing
@@ -1599,27 +2289,15 @@
 ;; with the live UI/CLI about what these numbers are. Any failure degrades
 ;; to omitting the section entirely - never crashes the sweep.
 (defn merged-blocked-digest-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "briefing-digest-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "briefing-digest-line.js" "--snapshot" lifecycle-snapshot-path))
 
 ;; Reuses BL-102's own stage-dwell-report.js CLI directly (no new wrapper
 ;; needed - its default text output is already briefing-ready).
 (defn stage-dwell-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "stage-dwell-report.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "stage-dwell-report.js"))
 
 (defn chase-trend-briefing-section []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "chase-trend-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "chase-trend-line.js"))
 
 ;; BL-263: same shell-out pattern as needs-approval-briefing-section above -
 ;; reuses computeBacklogDashboard's own notDoneCount field unchanged, the
@@ -1627,11 +2305,7 @@
 ;; disagree with the PWA about the not-done total. Any failure degrades to
 ;; omitting the line entirely - never crashes the sweep.
 (defn not-done-count-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "not-done-count-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "not-done-count-line.js"))
 
 ;; BL-337: pure Babashka text-parsing, no compiled TS needed - unlike the
 ;; *-briefing-line fns above, this reads standing_rule_violations_lib.bb's
@@ -1650,11 +2324,7 @@
 ;; case, same as every sibling section here; any other failure (CLI not
 ;; yet compiled, etc.) degrades identically - never crashes the sweep.
 (defn suboptimality-verdict-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suboptimality-verdict-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "suboptimality-verdict-line.js"))
 
 ;; BL-454: shells to the compiled qa-bounce-line.js CLI, same shell-out
 ;; pattern as the *-briefing-line fns above, fed by the durable bounce log
@@ -1667,11 +2337,7 @@
 ;; failure (CLI not yet compiled, etc.) degrades identically - never crashes
 ;; the sweep.
 (defn qa-bounce-briefing-line []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "qa-bounce-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
-    (catch Exception _ nil)))
+  (node-tool-line "qa-bounce-line.js"))
 
 ;; BL-511: shells to the compiled telegram-bridge-cost-line.js CLI, same
 ;; shell-out pattern as the *-briefing-line fns above - reuses
@@ -1685,10 +2351,29 @@
 ;; crashes the sweep. No day-key arg is passed - the CLI defaults to real
 ;; UTC-today in production (a test fixes it via an explicit arg instead).
 (defn telegram-bridge-cost-briefing-line []
+  (node-tool-line "telegram-bridge-cost-line.js"))
+
+;; BL-619: shells to the compiled token-burn-section.js CLI, same shell-out
+;; pattern as the *-briefing-line fns above, but the CLI's stdout is JSON
+;; (kind/leadingText/appendedText/subjectMarker/warning) rather than a
+;; single text line - it composes both the leading warning AND the appended
+;; ok/no-anchor/malformed one-liner, only one of which is ever populated per
+;; call, so this needs the full shape rather than a trimmed string. Any
+;; failure (CLI not yet compiled, non-zero exit) degrades to nil, same as
+;; every sibling CLI here - never crashes the sweep, never fabricates a
+;; percentage. A malformed reset config (malformed-reset-config-08) carries
+;; a non-nil :warning, logged loudly here in addition to the CLI's own
+;; stderr write - the daemon's own persisted log is the actually-monitored
+;; surface, not an interactive terminal.
+(defn token-burn-briefing-section []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "telegram-bridge-cost-line.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit) (str/trim out)))
+    (let [cli-path (node-tool-path "token-burn-section.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (let [{:keys [leadingText appendedText subjectMarker warning]} (json/parse-string out true)]
+          (when warning
+            (log! "token-burn-section-malformed-config" warning))
+          {:leading-text leadingText :appended-text appendedText :subject-marker? subjectMarker})))
     (catch Exception _ nil)))
 
 (defn standing-rule-violations-briefing-line []
@@ -1713,22 +2398,40 @@
 ;; CLI here - never crashes the sweep.
 (defn briefing-diagrams-json []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "render-briefing-diagrams.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+    (let [cli-path (node-tool-path "render-briefing-diagrams.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (when (zero? exit) (json/parse-string out true)))
     (catch Exception _ nil)))
 
-;; Wraps briefing-diagrams-json with briefing_email_lib.bb's pure
-;; build-diagram-section - the ONLY :diagram-section adapter shape
-;; send-unsent-briefings! expects (BL-260 render-unavailable-degradation-04:
-;; nil diagrams still produce a clear no-diagram note, never a crash).
+;; Not-done ticket burndown chart - same JSON [{name base64}] contract as
+;; briefing-diagrams-json, independent shell-out so a burndown failure
+;; never suppresses architecture diagrams (and vice versa).
+(defn briefing-burndown-json []
+  (try
+    (let [cli-path (node-tool-path "render-briefing-burndown.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
+      (when (zero? exit) (json/parse-string out true)))
+    (catch Exception _ nil)))
+
+;; Wraps architecture + not-done burndown renders with briefing_email_lib.bb's
+;; pure diagram-section-from-sources (BL-896 F4: previously build-diagram-
+;; section directly - this combining step, which is what actually makes the
+;; "each source fails open independently" claim below true, had nothing a
+;; unit test could exercise in isolation until it moved into the lib file
+;; alongside build-diagram-section, testable the same way). BL-260
+;; render-unavailable-degradation-04: nil/empty still produce a clear
+;; no-diagram note, never a crash. Each source fails open independently;
+;; whichever succeeds still ships.
 (defn briefing-diagram-section []
-  (briefing-email-lib/build-diagram-section (briefing-diagrams-json)))
+  (briefing-email-lib/diagram-section-from-sources briefing-diagrams-json briefing-burndown-json))
 
 (defn briefing-email-sweep! []
   (briefing-email-lib/send-unsent-briefings!
    (str briefings-dir)
-   {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
+   {:send-reason! briefing-send-reason!
+    :today-str (str (java.time.LocalDate/now java.time.ZoneOffset/UTC))
+    :commit-marker! briefing-email-lib/commit-sent-marker!
+    :read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
     :send-email! send-configured-briefing-email!
     :diagram-section briefing-diagram-section
     :suite-duration-line suite-duration-briefing-line
@@ -1741,6 +2444,7 @@
     :suboptimality-verdict-line suboptimality-verdict-briefing-line
     :qa-bounce-line qa-bounce-briefing-line
     :telegram-bridge-cost-line telegram-bridge-cost-briefing-line
+    :token-burn-section token-burn-briefing-section
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-353: shells to the compiled notify-dead-letters.js CLI, same posture
@@ -1752,8 +2456,8 @@
 ;; arming; this adapter only owns invoking it.
 (defn dead-letter-notify-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "notify-dead-letters.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+    (let [cli-path (node-tool-path "notify-dead-letters.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (when (zero? exit)
         (log! "dead-letter-notify" (str/trim out))))
     (catch Exception e
@@ -1773,8 +2477,8 @@
 ;; gate, not two independently-tuned timers).
 (defn resource-sample-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "sample-resources.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+    (let [cli-path (node-tool-path "sample-resources.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (when (zero? exit)
         (log! "resource-sample" (str/trim out))))
     (catch Exception e
@@ -1815,7 +2519,7 @@
 
 (defn- git-fetch-origin-main! []
   (try
-    (process/sh ["git" "fetch" "origin" "main"] {:dir (str project-root)})
+    (daemon-cycle-guard-lib/sh! ["git" "fetch" "origin" "main"] {:dir (str project-root)})
     (catch Exception e
       (log! "push-sweep-fetch-error" (.getMessage e)))))
 
@@ -1829,7 +2533,7 @@
 ;; failure - it is never force-pushed.
 (defn push-sweep-rev-counts! []
   (git-fetch-origin-main!)
-  (let [{:keys [exit out]} (process/sh ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
                                         {:dir (str project-root)})]
     (if (zero? exit)
       (let [[behind ahead] (map parse-long (str/split (str/trim out) #"\s+"))]
@@ -1843,7 +2547,7 @@
 ;; like any other transient failure - true divergence is caught BEFORE a
 ;; push is ever attempted, by push-sweep-rev-counts! above.
 (defn push-sweep-push! []
-  (let [{:keys [exit err]} (process/sh ["git" "push" "origin" "main"] {:dir (str project-root)})]
+  (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "push" "origin" "main"] {:dir (str project-root)})]
     (if (zero? exit)
       {:success true}
       {:success false :error (str/trim (or err ""))})))
@@ -1855,31 +2559,47 @@
 ;; branch, so origin/main is already freshly fetched this tick (by
 ;; push-sweep-rev-counts! above, which always runs first).
 (defn- git-ref-exists? [ref]
-  (zero? (:exit (process/sh ["git" "rev-parse" "--verify" "-q" ref] {:dir (str project-root)}))))
+  (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "rev-parse" "--verify" "-q" ref] {:dir (str project-root)}))))
 
 (defn- git-rev-parse [ref]
-  (let [{:keys [exit out]} (process/sh ["git" "rev-parse" ref] {:dir (str project-root)})]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "rev-parse" ref] {:dir (str project-root)})]
     (when (zero? exit) (str/trim out))))
 
-;; git merge-base --is-ancestor's own exit codes: 0 = is an ancestor, 1 =
-;; is NOT (a clean, known "no" - never a failure), anything else = a real
-;; git failure (e.g. an unresolvable sha) - :ok? false distinguishes that
-;; from a clean :ancestor? false, so a real failure can fail closed instead
-;; of silently reading as "not approved" for the wrong reason.
-(defn- git-is-ancestor? [sha ref]
-  (let [{:keys [exit]} (process/sh ["git" "merge-base" "--is-ancestor" sha ref] {:dir (str project-root)})]
+;; BL-925 invariant 2: the ONE definition of "is <sha> a QA-approved tip" -
+;; shells out to is_qa_ancestor.sh, the same script
+;; check_pipeline_code_on_main.sh (bash) calls, so a future rename of the
+;; swarmforge-QA ref or a change to the ancestry predicate has exactly one
+;; call site to update rather than two divergently-maintained git
+;; invocations. Exit codes are that script's own (git merge-base
+;; --is-ancestor's, passed straight through): 0 = is an ancestor, 1 = is NOT
+;; (a clean, known "no" - never a failure), anything else = a real git
+;; failure (e.g. an unresolvable sha) - :ok? false distinguishes that from a
+;; clean :ancestor? false, so a real failure can fail closed instead of
+;; silently reading as "not approved" for the wrong reason.
+(defn- qa-ancestor? [sha]
+  ;; BL-952: the shared script's exit 1 now covers two clean "no" shapes -
+  ;; not-an-ancestor, and QA-BOUNCED (ancestry alone was the defect: a
+  ;; bounced parcel stays reachable from swarmforge-QA because QA merged it
+  ;; to review it). The script marks the bounce case with a "bounced:"
+  ;; stderr line; surfaced here as :bounced? so qa-gate-decision can refuse
+  ;; it regardless of the bookkeeping allowlist or trivial-merge exemption.
+  ;; Exit >=2 stays the undeterminable fail-closed case (:ok? false),
+  ;; which now also covers an unreadable/corrupt verdict store.
+  (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["bash" (str (fs/path script-dir "is_qa_ancestor.sh")) sha]
+                                        {:dir (str project-root)})]
     (cond
-      (zero? exit) {:ok? true :ancestor? true}
-      (= 1 exit) {:ok? true :ancestor? false}
-      :else {:ok? false :ancestor? false})))
+      (zero? exit) {:ok? true :ancestor? true :bounced? false}
+      (= 1 exit) {:ok? true :ancestor? false
+                  :bounced? (str/includes? (str err) "bounced:")}
+      :else {:ok? false :ancestor? false :bounced? false})))
 
 (defn- git-ahead-shas []
-  (let [{:keys [exit out]} (process/sh ["git" "rev-list" "origin/main..main"] {:dir (str project-root)})]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "rev-list" "origin/main..main"] {:dir (str project-root)})]
     (when (zero? exit)
       (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
 
 (defn- git-changed-paths [sha]
-  (let [{:keys [exit out]} (process/sh ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" sha] {:dir (str project-root)})]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" sha] {:dir (str project-root)})]
     (when (zero? exit)
       (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
 
@@ -1892,7 +2612,7 @@
 ;; backlog/evidence/BL-630-push-sweep-refuses-non-qa-approved-main-bounce-
 ;; 20260730-2.md for the empirical proof this relies on.
 (defn- git-changed-paths-combined [sha]
-  (let [{:keys [exit out]} (process/sh ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" "-c" sha] {:dir (str project-root)})]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" "-c" sha] {:dir (str project-root)})]
     (when (zero? exit)
       (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
 
@@ -1918,28 +2638,42 @@
 ;; combined-diff paths are carried through and checked by qa-gate-decision
 ;; exactly like a non-merge commit's :changed-paths.
 (defn- ahead-commit-facts [sha]
-  (if (git-merge-commit? sha)
-    (let [paths (git-changed-paths-combined sha)]
-      {:sha sha :ok? (some? paths) :merge? true :qa-ancestor? false :changed-paths (or paths [])})
-    (let [ancestry (git-is-ancestor? sha "swarmforge-QA")]
-      (if-not (:ok? ancestry)
-        {:sha sha :ok? false}
+  ;; BL-952: BOTH branches consult the shared verdict predicate now. The
+  ;; merge branch previously never called it at all (its ancestry answer
+  ;; was unused), which would have left a bounced MERGE commit invisible to
+  ;; the veto - QA reviews merges, so a bounced sha can be one.
+  (let [verdict (qa-ancestor? sha)]
+    (if-not (:ok? verdict)
+      {:sha sha :ok? false}
+      (if (git-merge-commit? sha)
+        (let [paths (git-changed-paths-combined sha)]
+          {:sha sha :ok? (some? paths) :merge? true :qa-ancestor? false
+           :bounced? (:bounced? verdict) :changed-paths (or paths [])})
         (let [paths (git-changed-paths sha)]
-          {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? ancestry) :changed-paths (or paths [])})))))
+          {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? verdict)
+           :bounced? (:bounced? verdict) :changed-paths (or paths [])})))))
 
 (defn push-sweep-qa-gate-facts! []
   (try
     (if-not (git-ref-exists? "swarmforge-QA")
       {:qa-ref-exists? false :facts-complete? true}
       (let [main-tip (git-rev-parse "main")
-            tip-check (when main-tip (git-is-ancestor? main-tip "swarmforge-QA"))]
+            tip-check (when main-tip (qa-ancestor? main-tip))]
         (cond
           (or (nil? main-tip) (nil? tip-check) (not (:ok? tip-check)))
           {:qa-ref-exists? true :facts-complete? false}
 
-          (:ancestor? tip-check)
-          {:qa-ref-exists? true :tip-is-qa-ancestor? true :facts-complete? true}
-
+          ;; BL-952: the tip-is-ancestor fast path is GONE from this
+          ;; gatherer - it skipped ahead-commit enumeration entirely, so a
+          ;; BOUNCED commit riding under an approved tip published with
+          ;; zero scrutiny (BL-945's own landing shape: QA lands BL-943,
+          ;; the tip reads approved, the bounced parcel rides along). The
+          ;; same authorization-is-not-effect reasoning BL-855's sibling
+          ;; gate already documents for never having a fast path.
+          ;; qa-gate-decision's own :tip-is-qa-ancestor? contract is
+          ;; unchanged (pure lib, other tests) - this gatherer just never
+          ;; asserts it, so every range is enumerated per commit through
+          ;; the ONE shared verdict predicate.
           :else
           (let [shas (git-ahead-shas)]
             (if (nil? shas)
@@ -1948,9 +2682,61 @@
                 (if (some (complement :ok?) commit-facts)
                   {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
                   {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? true
-                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :changed-paths :merge?]) commit-facts)})))))))
+                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :bounced? :changed-paths :merge?]) commit-facts)})))))))
     (catch Exception e
       (log! "push-sweep-qa-gate-error" (.getMessage e))
+      {:facts-complete? false})))
+
+;; BL-855: the real git/CLI-specific wiring for push_sweep_lib.bb's own
+;; noop-merge-decision - pure decision logic stays there, this is only the
+;; git-shelling adapter (mirrors push-sweep-qa-gate-facts! above). Unlike
+;; that gate, this one has NO tip-is-ancestor fast path and always
+;; enumerates the ahead range: a no-op landing merge can itself be a
+;; swarmforge-QA ancestor (its second parent IS genuinely approved) while
+;; having taken none of that parent's content, so skipping ahead-commit
+;; enumeration whenever the tip already reads as approved would leave
+;; f28a84ad's exact path open again.
+(defn- git-diff-name-only [rev-a rev-b]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "diff" "--name-only" rev-a rev-b] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+;; Both revs are explicit git refs (never omitted), so this is a tree-to-
+;; tree diff purely against git objects - the shared, chronically-dirty,
+;; hot-synced master checkout's working tree is never consulted (BL-855
+;; invariant 3).
+(defn- noop-merge-commit-facts [sha]
+  (if (git-merge-commit? sha)
+    (let [parent1 (str sha "^1")
+          parent2 (str sha "^2")
+          offered (git-diff-name-only parent1 parent2)
+          tree-diff (git-diff-name-only parent1 sha)
+          second-parent (git-rev-parse parent2)]
+      {:sha sha :ok? (and (some? offered) (some? tree-diff) (some? second-parent))
+       :merge? true
+       :second-parent-sha second-parent
+       :offered-paths (or offered [])
+       ;; = [], not (empty? tree-diff): a git failure (tree-diff nil) must
+       ;; read as "not known equal", never as an empty-seq false positive -
+       ;; :ok? above already fails the whole gather closed in that case,
+       ;; this is belt-and-suspenders against a future consumer that reads
+       ;; this field without checking :ok? first.
+       :tree-equals-parent1? (= tree-diff [])})
+    {:sha sha :ok? true :merge? false}))
+
+(defn push-sweep-noop-merge-gate-facts! []
+  (try
+    (let [shas (git-ahead-shas)]
+      (if (nil? shas)
+        {:facts-complete? false}
+        (let [commit-facts (mapv noop-merge-commit-facts shas)]
+          (if (some (complement :ok?) commit-facts)
+            {:facts-complete? false}
+            {:facts-complete? true
+             :ahead-commits (mapv #(select-keys % [:sha :merge? :second-parent-sha :offered-paths :tree-equals-parent1?])
+                                   commit-facts)}))))
+    (catch Exception e
+      (log! "push-sweep-noop-merge-gate-error" (.getMessage e))
       {:facts-complete? false})))
 
 (defn push-sweep! []
@@ -1960,13 +2746,16 @@
      {:rev-counts! push-sweep-rev-counts!
       :push! push-sweep-push!
       :qa-gate-facts! push-sweep-qa-gate-facts!
+      :noop-merge-gate-facts! push-sweep-noop-merge-gate-facts!
       :send-push-alarm!
-      (fn [attempts]
+      (fn [attempts reason]
         (send-push-alarm-email!
          "SwarmForge: main is not reaching origin"
          (str "Local `main` has failed to push to origin " attempts " times in a row. "
               "The swarm's committed work is not reaching origin - check network/auth "
-              "and push by hand if needed.\n")))
+              "and push by hand if needed."
+              (when reason (str " Last error: " reason))
+              "\n")))
       :send-divergence-alarm!
       (fn [ahead behind]
         (send-push-alarm-email!
@@ -1978,6 +2767,120 @@
       :log! (fn [& parts] (apply log! parts))})
     (catch Exception e
       (log! "push-sweep-error" (.getMessage e)))))
+
+;; BL-891: mirror-image sweep of BL-356's push-sweep! above - origin's
+;; LANDED commits never reach the master checkout's own `main` ref (QA can
+;; only ever `git push origin HEAD:main`, which advances origin/main and
+;; leaves local `main` exactly where it was; git refuses to update a branch
+;; checked out in another worktree, so QA/coordinator have no way to do it
+;; themselves - see this ticket's own notes for the incident). This is the
+;; thin git/CLI-specific wiring; master_main_reconcile_lib.bb owns the pure
+;; decision/state logic (BL-919: gating on dirty/merge-changed path overlap
+;; rather than a blanket clean-tree check, self-healing surfaced-once
+;; state). Reuses push-sweep-rev-counts! verbatim - "origin/main...main"
+;; already yields exactly the {:ahead :behind} this sweep needs too, and it
+;; already fetches as a side effect, so no second fetch is needed per tick.
+(defn- master-main-reconcile-dirty-paths! []
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "status" "--porcelain"] {:dir (str project-root)})]
+    (if (zero? exit)
+      (master-main-reconcile-lib/porcelain-lines->paths out)
+      #{master-main-reconcile-lib/unknown-dirty-marker})))
+
+;; BL-919: which paths would the incoming merge itself write to? Diffed
+;; against the merge-base (not HEAD..origin/main, which would also include
+;; paths only local commits touched) so this names exactly the paths a real
+;; `git merge` would need to write - the same set reconcile-decision checks
+;; dirty paths against for overlap. Only called when behind>0 (sweep!'s own
+;; contract), so `origin/main` and a real merge-base always exist.
+(defn- master-main-reconcile-merge-changed-paths! []
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "merge-base" "HEAD" "origin/main"] {:dir (str project-root)})]
+    (if (not (zero? exit))
+      #{master-main-reconcile-lib/unknown-dirty-marker}
+      (let [base (str/trim out)
+            {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "diff" "--name-only" base "origin/main"] {:dir (str project-root)})]
+        (if (zero? exit)
+          (into #{} (remove str/blank?) (str/split-lines out))
+          #{master-main-reconcile-lib/unknown-dirty-marker})))))
+
+;; Never --force, --reset, --rebase, or --stash (BL-891 invariant 1): a
+;; plain `git merge` either fast-forwards (no local-only commits) or
+;; creates a real merge commit (local-only bookkeeping commits preserved
+;; as first-parent history) - both leave every prior commit reachable. A
+;; conflicted merge is aborted immediately so the checkout is left exactly
+;; as it was found (invariant 2's "never partially updated") rather than
+;; sitting mid-conflict for a human to stumble into.
+(defn- master-main-reconcile-merge! []
+  (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "merge" "--no-edit" "origin/main"] {:dir (str project-root)})]
+    (if (zero? exit)
+      {:success true}
+      (do
+        (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)})
+        {:success false :error (str/trim (or err ""))}))))
+
+;; Same outbound path as auto-route!/nudge-coordinator-unassigned! above:
+;; a `note` shelled through swarm_handoff.bb (SWARMFORGE_ROLE=coordinator)
+;; rather than a hand-written inbox file, reusing its full existing
+;; validation, sequencing, and atomic outbox write.
+(defn- master-main-reconcile-surface! [msg]
+  (let [draft (write-scratch-draft! (master-main-reconcile-lib/surface-draft-lines msg))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "master-main-reconcile-surfaced" msg)
+      (log! "master-main-reconcile-surface-error" (str (:err result))))))
+
+;; BL-920: the effective config's master_main_reconcile_escalation_threshold
+;; - resolved via backlog-depth-lib/conf-file-path (whatever pack swarm-
+;; identity recorded at launch), same resolution as open-slot-escalation-
+;; threshold above.
+(defn- master-main-reconcile-escalation-threshold []
+  (master-main-reconcile-lib/parse-escalation-threshold
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
+;; BL-920: a persistent block escalates to the operator - reuses the SAME
+;; operator alert channel send-open-slot-escalation-alert! above already
+;; established (Telegram OPERATOR topic outbox + email via daemon-alarm-
+;; lib, sharing its ONE escalation-email-missing-key-warned? atom), notify
+;; only, never halts the swarm - reconciling local `main` blocked is not the
+;; daemon-death/endless-loop class of failure halt-for-endless-loop!/
+;; halt-for-claim-progress! exist for.
+(defn- master-main-reconcile-escalate! [{:keys [reason behind ticks]}]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+        subject (master-main-reconcile-lib/escalation-email-subject reason)
+        tg-text (master-main-reconcile-lib/escalation-telegram-text reason behind ticks)
+        body (master-main-reconcile-lib/escalation-reason reason behind ticks)]
+    (log! "master-main-reconcile-escalation" (name reason) body)
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+            :append true)
+      (log! "master-main-reconcile-escalation-telegram" (name reason))
+      (catch Exception e (log! "master-main-reconcile-escalation-telegram-error" (.getMessage e))))
+    (try
+      (daemon-alarm-lib/send-configured-email!
+       project-root conf-file subject body
+       {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+      (log! "master-main-reconcile-escalation-email" (name reason))
+      (catch Exception e (log! "master-main-reconcile-escalation-email-error" (.getMessage e))))))
+
+(defn master-main-reconcile-sweep! []
+  (try
+    (master-main-reconcile-lib/sweep!
+     (str daemon-dir)
+     (master-main-reconcile-escalation-threshold)
+     {:rev-counts! push-sweep-rev-counts!
+      :dirty-paths! master-main-reconcile-dirty-paths!
+      :merge-changed-paths! master-main-reconcile-merge-changed-paths!
+      :merge! master-main-reconcile-merge!
+      :surface! master-main-reconcile-surface!
+      :escalate! master-main-reconcile-escalate!
+      :log! (fn [& parts] (apply log! parts))})
+    (catch Exception e
+      (log! "master-main-reconcile-sweep-error" (.getMessage e)))))
 
 ;; BL-437: shells to the compiled emit-fleet-status.js CLI (Babashka has no
 ;; way to import compiled TS) - reuses createSwarmNode/rollupStatus
@@ -1995,10 +2898,18 @@
 ;; (coordinator lost)".
 (defn fleet-status-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-fleet-status.js"))
-          {:keys [exit err]} (process/sh ["node" cli-path (str project-root)] {:dir (str project-root)})]
-      (when-not (zero? exit)
-        (log! "fleet-status-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (let [cli-path (node-tool-path "emit-fleet-status.js")]
+      ;; BL-1010: a checkout that has never been built fails here every cycle
+      ;; with node's module-not-found, which names the BUILD ARTIFACT rather
+      ;; than the bring-up step that is missing - loud, repeated and
+      ;; unactionable, as the WSL2 secondary reported. Check first and say what
+      ;; to run instead of letting node describe a path.
+      (if-not (fs/exists? cli-path)
+        (log! "fleet-status-sweep-error"
+              (node-tool-bringup-lib/missing-tool-message "emit-fleet-status.js" (str cli-path)))
+        (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["node" cli-path (str project-root)] {:dir (str project-root)})]
+          (when-not (zero? exit)
+            (log! "fleet-status-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))))
     (catch Exception e
       (log! "fleet-status-sweep-error" (.getMessage e)))))
 
@@ -2019,8 +2930,8 @@
 ;; yet compiled, etc.) degrades to a logged error - never crashes the sweep.
 (defn answer-file-drain-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "drain-answer-files.js"))
-          {:keys [exit out err]} (process/sh ["node" cli-path (str project-root)] {:dir (str project-root)})]
+    (let [cli-path (node-tool-path "drain-answer-files.js")
+          {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path (str project-root)] {:dir (str project-root)})]
       (if (zero? exit)
         (log! "answer-file-drain" (str/trim out))
         (log! "answer-file-drain-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
@@ -2036,8 +2947,8 @@
 ;; adapter only owns invoking it.
 (defn pause-auto-resume-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "resume-expired-pauses.js"))
-          {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+    (let [cli-path (node-tool-path "resume-expired-pauses.js")
+          {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (if (zero? exit)
         (log! "pause-auto-resume" (str/trim out))
         (log! "pause-auto-resume-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
@@ -2056,8 +2967,8 @@
 ;; suppression below (which only ever gates delivery/nudge/chase wakes).
 (defn cooldown-sweep! []
   (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "apply-cooldown-pause.js"))
-          {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+    (let [cli-path (node-tool-path "apply-cooldown-pause.js")
+          {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
       (if (zero? exit)
         (log! "cooldown-sweep" (str/trim out))
         (log! "cooldown-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
@@ -2074,6 +2985,25 @@
   (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))]
     (briefing-generation-schedule-lib/parse-morning-time (get conf "briefing_morning_time_utc"))))
 
+;; BL-897: ensures that shared snapshot (lifecycle-snapshot-path, defined
+;; near project-root above) is fresh (today's) before any
+;; section below reads it (extension/src/tools/emit-lifecycle-snapshot.ts,
+;; compiled to out/tools/emit-lifecycle-snapshot.js) - idempotent within a
+;; day, so calling this unconditionally on every daemon tick is safe; the
+;; real walk happens on at most one tick per UTC day. Best-effort like the
+;; sections below: any failure here just means every consumer falls back to
+;; its own walk exactly as it did before this ticket, never a lost
+;; briefing - never propagated as an exception.
+(defn ensure-lifecycle-snapshot! []
+  (try
+    (let [cli-path (node-tool-path "emit-lifecycle-snapshot.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
+      (if (zero? exit)
+        (log! "lifecycle-snapshot-ensured" (str/trim out))
+        (log! "lifecycle-snapshot-ensure-nonzero-exit" (str exit))))
+    (catch Exception e
+      (log! "ensure-lifecycle-snapshot-error" (.getMessage e)))))
+
 ;; BL-272: headless entrypoint for BL-213's deterministic cost & health
 ;; sidecar emitter (extension/src/tools/emit-cost-health-sidecar.ts,
 ;; compiled to out/tools/emit-cost-health-sidecar.js) - the same
@@ -2083,8 +3013,8 @@
 ;; :emit-sidecar! stays the single place that makes this best-effort;
 ;; this adapter does not need its own try/catch.
 (defn emit-cost-health-sidecar! []
-  (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-cost-health-sidecar.js"))
-        {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+  (let [cli-path (node-tool-path "emit-cost-health-sidecar.js")
+        {:keys [exit out err]} (daemon-cycle-guard-lib/sh! ["node" cli-path "--snapshot" lifecycle-snapshot-path] {:dir (str project-root)})]
     (if (zero? exit)
       (log! "cost-health-sidecar-emitted" (str/trim out))
       (throw (ex-info "emit-cost-health-sidecar.js failed" {:exit exit :err err})))))
@@ -2118,7 +3048,7 @@
 (defn recent-git-activity-lines [day-key]
   (try
     (let [since (str (banked-briefing-lib/prior-day-key day-key) "T00:00:00Z")
-          {:keys [exit out]} (process/sh ["git" "log" "--oneline" (str "--since=" since)]
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "log" "--oneline" (str "--since=" since)]
                                           {:dir (str project-root)})]
       (if (zero? exit)
         (vec (remove str/blank? (str/split-lines out)))
@@ -2335,6 +3265,22 @@
         (println (or target "none"))
         (log! "print-preferred-rotate-target done" (or target "none")))
 
+      sweep-once-only?
+      (do
+        ;; Each call isolated exactly like the real main-loop cadence block
+        ;; below - one sweep's failure must never mask another's, in a test
+        ;; harness no less than in the live daemon.
+        (try (poll-once!) (catch Exception e (log! "poll-once-error" (.getMessage e))))
+        (try (open-slot-nudge-sweep! roles) (catch Exception e (log! "open-slot-nudge-sweep-error" (.getMessage e))))
+        (try (flow-watchdog-sweep! roles socket) (catch Exception e (log! "flow-watchdog-sweep-error" (.getMessage e))))
+        (try (ambulance-auto-exit-sweep!) (catch Exception e (log! "ambulance-auto-exit-sweep-error" (.getMessage e))))
+        (log! "sweep-once done"))
+
+      chase-sweep-once-only?
+      (do
+        (try (chase-sweep! roles socket) (catch Exception e (log! "chase-sweep-once-error" (.getMessage e))))
+        (log! "chase-sweep-once done"))
+
       :else
       (let [claim (claim-pid-file!)]
         (if-let [conflicting (and (vector? claim) (second claim))]
@@ -2356,11 +3302,27 @@
               ;; (BL-061).
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
+                  ;; BL-789 (2026-08-02 Mac host-switch hotfix): a heartbeat
+                  ;; ALSO lands here, before any of this cycle's work runs -
+                  ;; not only at the end below. Mac cycles have been observed
+                  ;; at 140-232s; without a start-of-cycle pulse a merely-slow
+                  ;; cycle and a genuinely wedged one both look identical to
+                  ;; the freshness checker (silence past threshold) until the
+                  ;; whole cycle finishes.
+                  (spit (str heartbeat-file) (str (now) "\n"))
+                  (when (zero? (mod cycle heartbeat-log-every-cycles))
+                    (log! "heartbeat" (str "cycle=" cycle "-start")))
+                  ;; BL-967: the per-tick phases carry timeout ATTRIBUTION
+                  ;; only - no boundary lines (invariant 2's bounded volume:
+                  ;; boundaries are heavy-cycle only, never the 1s ticks).
+                  (reset! daemon-cycle-guard-lib/current-context "delivery")
                   (poll-once!)
+                  (reset! daemon-cycle-guard-lib/current-context "canary-sweep")
                   (try
                     (canary-sweep!)
                     (catch Exception e
                       (log! "canary-sweep-error" (.getMessage e))))
+                  (reset! daemon-cycle-guard-lib/current-context "outside-sweep")
                   ;; BL-146: chase/nudge sweep runs on its own cadence,
                   ;; sharing this single process/thread with delivery -
                   ;; exactly one process now owns both duties.
@@ -2376,83 +3338,108 @@
                     ;; - verified gap" names only delivery/chase/dispatch/
                     ;; open-slot) and keep running unconditionally.
                     (when-not (outbound-wakes-suppressed?)
-                      (try
-                        (chase-sweep! (load-roles) socket)
-                        (catch Exception e
-                          (log! "chase-sweep-error" (.getMessage e))))
+                      (run-sweep! "chase-sweep"
+                          #(chase-sweep! (load-roles) socket))
                       ;; BL-222: dispatch-gap sweep shares the same cadence -
                       ;; no separate timeout, reusing the existing chase
                       ;; interval per the ticket.
-                      (try
-                        (dispatch-gap-sweep! (load-roles))
-                        (catch Exception e
-                          (log! "dispatch-gap-sweep-error" (.getMessage e))))
-                      (try
-                        (unassigned-active-nudge-sweep! (load-roles))
-                        (catch Exception e
-                          (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
-                      (try
-                        (open-slot-nudge-sweep! (load-roles))
-                        (catch Exception e
-                          (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
+                      (run-sweep! "dispatch-gap-sweep"
+                          #(dispatch-gap-sweep! (load-roles)))
+                      (run-sweep! "unassigned-active-nudge-sweep"
+                          #(unassigned-active-nudge-sweep! (load-roles)))
+                      (run-sweep! "open-slot-nudge-sweep"
+                          #(open-slot-nudge-sweep! (load-roles)))
+                      ;; BL-719: dropped-parcel sweep shares the same
+                      ;; cadence as its dispatch-gap/open-slot siblings.
+                      (run-sweep! "dropped-parcel-sweep"
+                          #(dropped-parcel-sweep! (load-roles)))
+                      ;; BL-678: batch-claim-progress suspect nudge shares
+                      ;; the same cadence as its dropped-parcel sibling.
+                      (run-sweep! "batch-claim-progress-sweep"
+                          #(batch-claim-progress-sweep! (load-roles))))
                     ;; BL-577: flow watchdog sweep shares the same cadence,
                     ;; but runs UNCONDITIONALLY (outside the
                     ;; outbound-wakes-suppressed? gate above) - it emits no
                     ;; tmux wake, only a durable Telegram alarm, and must
                     ;; alarm precisely when the swarm is stalled/paused, not
                     ;; go quiet alongside the wake suppression.
-                    (try
-                      (flow-watchdog-sweep! (load-roles) socket)
-                      (catch Exception e
-                        (log! "flow-watchdog-sweep-error" (.getMessage e))))
+                    (run-sweep! "flow-watchdog-sweep"
+                        #(flow-watchdog-sweep! (load-roles) socket))
+                    ;; BL-839: master-checkout-drift sweep shares the same
+                    ;; cadence, runs UNCONDITIONALLY for the same reason
+                    ;; flow-watchdog-sweep! above does - a read-only alarm
+                    ;; must fire regardless of any pause/wake-suppression
+                    ;; state, not go quiet alongside it.
+                    (run-sweep! "master-checkout-drift-sweep"
+                        #(master-checkout-drift-sweep!))
+                    ;; BL-679: ambulance auto-exit sweep shares the same
+                    ;; cadence, runs UNCONDITIONALLY for the same reason
+                    ;; flow-watchdog-sweep!/master-checkout-drift-sweep!
+                    ;; above do - invariant 2 (a starved ambulance must
+                    ;; release, never wait out an unrelated pause) must hold
+                    ;; regardless of any pause/wake-suppression state.
+                    (run-sweep! "ambulance-auto-exit-sweep"
+                        #(ambulance-auto-exit-sweep!))
+                    ;; BL-897: ensures the shared lifecycle snapshot both
+                    ;; briefing sweeps below read is fresh, sharing the same
+                    ;; cadence - unconditional and cheap after the first
+                    ;; tick of a new UTC day (see ensure-lifecycle-snapshot!).
+                    (run-sweep! "ensure-lifecycle-snapshot"
+                        #(ensure-lifecycle-snapshot!))
+                    ;; BL-976: keyless-email alert sweep shares the same
+                    ;; cadence and runs UNCONDITIONALLY (same posture as
+                    ;; flow-watchdog-sweep! above) - the alert must land
+                    ;; within the generation's FIRST sweep cycle even when
+                    ;; no briefing is mailable, and its own one-shot atom
+                    ;; keeps every later cycle a cheap conf-slurp no-op.
+                    (run-sweep! "email-keyless-alert-sweep"
+                        #(email-keyless-alert-sweep!))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
-                    (try
-                      (briefing-email-sweep!)
-                      (catch Exception e
-                        (log! "briefing-email-sweep-error" (.getMessage e))))
+                    (run-sweep! "briefing-email-sweep"
+                        #(briefing-email-sweep!))
                     ;; BL-258: briefing-generation sweep shares the same
                     ;; cadence - no separate timeout, same rationale as
                     ;; BL-222/BL-214 above.
-                    (try
-                      (briefing-generation-sweep! (load-roles) socket)
-                      (catch Exception e
-                        (log! "briefing-generation-sweep-error" (.getMessage e))))
+                    (run-sweep! "briefing-generation-sweep"
+                        #(briefing-generation-sweep! (load-roles) socket))
                     ;; BL-309: closing-context-clear sweep shares the same
                     ;; cadence - no separate timeout, same rationale as
                     ;; BL-222/BL-214/BL-258 above.
-                    (try
-                      (closing-context-clear-sweep! (load-roles) socket)
-                      (catch Exception e
-                        (log! "closing-context-clear-sweep-error" (.getMessage e))))
+                    (run-sweep! "closing-context-clear-sweep"
+                        #(closing-context-clear-sweep! (load-roles) socket))
                     ;; BL-316: generalized per-role context-clear sweep
                     ;; shares the same cadence - no separate timeout, same
                     ;; rationale as BL-222/BL-214/BL-258/BL-309 above.
-                    (try
-                      (role-context-clear-sweep! (load-roles) socket)
-                      (catch Exception e
-                        (log! "role-context-clear-sweep-error" (.getMessage e))))
+                    (run-sweep! "role-context-clear-sweep"
+                        #(role-context-clear-sweep! (load-roles) socket))
                     ;; BL-353: dead-letter-notify sweep shares the same
                     ;; cadence - no separate timeout, same rationale as
                     ;; BL-222/BL-214/BL-258/BL-309/BL-316 above.
-                    (try
-                      (dead-letter-notify-sweep!)
-                      (catch Exception e
-                        (log! "dead-letter-notify-sweep-error" (.getMessage e))))
+                    (run-sweep! "dead-letter-notify-sweep"
+                        #(dead-letter-notify-sweep!))
                     ;; BL-350: resource-sample sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353 above.
-                    (try
-                      (resource-sample-sweep!)
-                      (catch Exception e
-                        (log! "resource-sample-sweep-error" (.getMessage e))))
+                    (run-sweep! "resource-sample-sweep"
+                        #(resource-sample-sweep!))
                     ;; BL-356: push sweep shares the same cadence - no
                     ;; separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350 above.
-                    (try
-                      (push-sweep!)
-                      (catch Exception e
-                        (log! "push-sweep-error" (.getMessage e))))
+                    (run-sweep! "push-sweep"
+                        #(push-sweep!))
+                    ;; BL-891: master-main-reconcile sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
+                    ;; BL-350/BL-356 above. Mirror-image direction of
+                    ;; BL-356's push-sweep! immediately above (origin ->
+                    ;; local instead of local -> origin); already carries
+                    ;; its own try/catch inside master-main-reconcile-
+                    ;; sweep! itself but wrapped again here for the same
+                    ;; belt-and-suspenders reason every sibling sweep in
+                    ;; this cadence block is.
+                    (run-sweep! "master-main-reconcile-sweep"
+                        #(master-main-reconcile-sweep!))
                     ;; BL-437: fleet-status sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356
@@ -2461,34 +3448,26 @@
                     ;; degrade-never-crash posture), but wrapped again here
                     ;; for the same belt-and-suspenders reason every sibling
                     ;; sweep in this cadence block is.
-                    (try
-                      (fleet-status-sweep!)
-                      (catch Exception e
-                        (log! "fleet-status-sweep-error" (.getMessage e))))
+                    (run-sweep! "fleet-status-sweep"
+                        #(fleet-status-sweep!))
                     ;; BL-440: answer-file-drain sweep shares the same
                     ;; cadence - no separate timeout, same rationale as
                     ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
                     ;; BL-350/BL-356/BL-437 above.
-                    (try
-                      (answer-file-drain-sweep!)
-                      (catch Exception e
-                        (log! "answer-file-drain-sweep-error" (.getMessage e))))
+                    (run-sweep! "answer-file-drain-sweep"
+                        #(answer-file-drain-sweep!))
                     ;; BL-423: pause-auto-resume sweep shares the same
                     ;; cadence - no separate timeout, same rationale as
                     ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
                     ;; BL-350/BL-356/BL-437/BL-440 above.
-                    (try
-                      (pause-auto-resume-sweep!)
-                      (catch Exception e
-                        (log! "pause-auto-resume-sweep-error" (.getMessage e))))
+                    (run-sweep! "pause-auto-resume-sweep"
+                        #(pause-auto-resume-sweep!))
                     ;; BL-617: cooldown sweep shares the same cadence - no
                     ;; separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356/
                     ;; BL-437/BL-440/BL-423 above.
-                    (try
-                      (cooldown-sweep!)
-                      (catch Exception e
-                        (log! "cooldown-sweep-error" (.getMessage e)))))
+                    (run-sweep! "cooldown-sweep"
+                        #(cooldown-sweep!)))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))

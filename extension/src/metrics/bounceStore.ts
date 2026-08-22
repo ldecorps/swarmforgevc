@@ -14,7 +14,15 @@
 // blocks and JSONL-directory traversal rather than duplicating them.
 import * as path from 'path';
 import { atomicAppend } from '../util/atomicWrite';
-import { BounceRecord, hasBounceRecord, isKnownBounceRole } from '../quality/qaBounce';
+import {
+  BounceCorrection,
+  BounceRecord,
+  applyBounceCorrections,
+  hasBounceCorrection,
+  hasBounceRecord,
+  isBounceCorrection,
+  isKnownBounceRole,
+} from '../quality/qaBounce';
 import { hasKnownQaBounceValues, hasQaBounceRecordShape, monthOf, qaBouncesDir, readJsonlRecordsFromDir } from './qaBounceStore';
 
 // BL-635: the generalised, go-forward log path - written by record-bounce.js
@@ -52,8 +60,33 @@ function isBounceRecord(value: unknown): value is BounceRecord {
 // `by` entirely and read back as unattributed (bounceAttribution), never
 // silently folded into QA or dropped. Legacy-dir records are read
 // read-only forever; nothing ever writes there again.
-export function readBounceRecords(targetPath: string): BounceRecord[] {
+// BL-990: the RAW merged history, corrections NOT applied. Two callers need
+// this rather than the attributed view: the append dedup below (a corrected
+// bounce is still IN the store, so deduping against the corrected view would
+// let a re-run append it a second time), and any reader proving the store is
+// append-only.
+export function readRawBounceRecords(targetPath: string): BounceRecord[] {
   return [...readJsonlRecordsFromDir(qaBouncesDir(targetPath), isBounceRecord), ...readJsonlRecordsFromDir(bouncesDir(targetPath), isBounceRecord)];
+}
+
+// BL-990: correction records share the JSONL files with bounce records and
+// are told apart by their `kind` discriminator - bounce records have no such
+// field, and isBounceRecord rejects a correction line, so neither reader
+// ever sees the other's lines. Legacy qa_bounces/ is read here too purely
+// for symmetry; nothing has ever written a correction there.
+export function readBounceCorrections(targetPath: string): BounceCorrection[] {
+  return [
+    ...readJsonlRecordsFromDir(qaBouncesDir(targetPath), isBounceCorrection),
+    ...readJsonlRecordsFromDir(bouncesDir(targetPath), isBounceCorrection),
+  ];
+}
+
+// BL-990: the ATTRIBUTED view - the merged history with superseded records
+// resolved out. This is the chokepoint every attribution consumer reads
+// through, so a correction reaches all of them at once rather than one at a
+// time (the ticket's own "two different bounce rates from one store" line).
+export function readBounceRecords(targetPath: string): BounceRecord[] {
+  return applyBounceCorrections(readRawBounceRecords(targetPath), readBounceCorrections(targetPath));
 }
 
 // BL-635 (record-bounce-by-role-07): writes ONLY to the new generalised
@@ -62,10 +95,29 @@ export function readBounceRecords(targetPath: string): BounceRecord[] {
 // (ticket+date+class+commit+by, bounceNaturalKey), so a re-run can never
 // double-count against either log.
 export function appendBounceRecordIfNew(targetPath: string, record: BounceRecord): boolean {
-  const existing = readBounceRecords(targetPath);
+  // BL-990: dedups against the RAW history deliberately. A corrected bounce
+  // is still a recorded bounce; deduping against the attributed view would
+  // make it invisible here and let a re-run append it again, quietly
+  // resurrecting the attribution a correction was issued to remove.
+  const existing = readRawBounceRecords(targetPath);
   if (hasBounceRecord(existing, record)) {
     return false;
   }
   atomicAppend(bounceFilePath(targetPath, record.at), JSON.stringify(record) + '\n');
+  return true;
+}
+
+// BL-990: append-only, exactly like the recorder above - a correction is a
+// NEW line that supersedes an earlier one, never an edit or a deletion of
+// it. Idempotent on the correction's own target key, so recording the same
+// correction twice leaves the store byte-identical (scenario 05).
+export function appendBounceCorrectionIfNew(targetPath: string, correction: BounceCorrection): boolean {
+  if (!isBounceCorrection(correction)) {
+    return false;
+  }
+  if (hasBounceCorrection(readBounceCorrections(targetPath), correction)) {
+    return false;
+  }
+  atomicAppend(bounceFilePath(targetPath, correction.at), JSON.stringify(correction) + '\n');
   return true;
 }

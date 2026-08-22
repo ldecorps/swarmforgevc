@@ -7,17 +7,36 @@
 ;;     on disk only; no tmux session)
 ;;
 ;; No filesystem / tmux I/O here — callers inject conf text and role rows.
+;; BL-931's resolve-rotation-router-mode? below is the one sanctioned
+;; exception (see its own docstring for why); every other function in this
+;; file stays pure.
 
 (ns mono-router-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
+
+;; The rotation predicates below are TWO pairs over ONE mechanism: a conf
+;; line `[config ]rotation <value>`, or a swarm-identity `rotation` key,
+;; whose value falls in an accepted set. The pairs differ ONLY in that set,
+;; and that difference is load-bearing (see the BL-571 note further down) -
+;; so the mechanism is written once here and each pair names its own set.
+
+(defn- rotation-declared-in-conf?
+  "Does conf text carry a `[config ]rotation <value>` directive whose value
+   is one of accepted-values? Line-anchored and word-bounded, so a commented
+   mention or a longer word (`sequentially`) never matches."
+  [accepted-values conf-text]
+  (boolean
+   (when conf-text
+     (re-find (re-pattern (str "(?m)^(?:config\\s+)?rotation\\s+(?:"
+                              (str/join "|" accepted-values)
+                              ")\\b"))
+              (str conf-text)))))
 
 (defn conf-rotation-router?
   "True when pack/conf text declares `config rotation router`."
   [conf-text]
-  (boolean
-   (when conf-text
-     (re-find #"(?m)^(?:config\s+)?rotation\s+router\b"
-              (str conf-text)))))
+  (rotation-declared-in-conf? ["router"] conf-text))
 
 (defn parse-identity-map
   "Parse swarm-identity TSV (key\\tvalue lines) into a string map."
@@ -29,10 +48,66 @@
                  (when (and k v) [k v]))))
        (into {})))
 
+(defn- rotation-recorded-in-identity?
+  "Does swarm-identity record a `rotation` value in accepted-values?"
+  [accepted-values identity-text]
+  (contains? (set accepted-values)
+             (get (parse-identity-map identity-text) "rotation")))
+
 (defn rotation-router-from-identity?
   "True when identity already records rotation=router."
   [identity-text]
-  (= "router" (get (parse-identity-map identity-text) "rotation")))
+  (rotation-recorded-in-identity? ["router"] identity-text))
+
+;; BL-571: the launcher (swarmforge.sh's is_sequential_dormant) treats
+;; `rotation sequential` and `rotation router` as the SAME single-resident
+;; topology - only the resident and the coordinator get real sessions, the
+;; middle pipeline roles stay deliberately dormant. These two predicates
+;; recognise that topology by every value the launcher accepts, so ensure
+;; stops respawning roles the launcher left dormant on a mono-rotate pack.
+;; conf-rotation-router?/rotation-router-from-identity? above deliberately
+;; stay router-only: ready_for_next's ROTATE_HOME backstop consumes them,
+;; and widening THAT is a behavior change with its own spec (the ticket's
+;; own fence).
+
+(def ^:private single-resident-rotation-values
+  "Every rotation value swarmforge.sh's is_sequential_dormant treats as the
+   single-resident topology. Widen this ONLY alongside the launcher."
+  ["router" "sequential"])
+
+(defn single-resident-rotation?
+  "True when pack/conf text declares a single-resident rotation topology -
+   `config rotation router` OR `config rotation sequential` (mono-rotate)."
+  [conf-text]
+  (rotation-declared-in-conf? single-resident-rotation-values conf-text))
+
+(defn single-resident-rotation-from-identity?
+  "True when identity records a single-resident rotation value."
+  [identity-text]
+  (rotation-recorded-in-identity? single-resident-rotation-values identity-text))
+
+(defn resolve-rotation-router-mode?
+  "BL-931 invariant 1: the ONE resolution of whether a pack is a rotation
+   router - swarm-identity's rotation key, else the persisted active pack
+   conf path (recorded in swarm-identity), else the given default conf
+   path. handoffd.bb/swarm_ensure.bb/babysitter_check.bb/swarm_status.bb
+   each hand-copy this exact identity-else-conf resolution today (four
+   independent implementations of the same question, same shape, same
+   underlying primitives below). This is the lift: handoff_lib.bb's
+   rotate-resident-to! calls this so a fifth caller never becomes a fifth
+   independent copy. The one sanctioned exception to this file's own 'no
+   filesystem I/O' rule - every other function here stays pure and takes
+   already-read text."
+  [state-dir default-conf-path]
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      default-conf-path)
+        conf-text (when (and conf-path (fs/exists? conf-path)) (slurp conf-path))]
+    (boolean
+     (or (rotation-router-from-identity? identity-text)
+         (conf-rotation-router? conf-text)))))
 
 (defn classify-role
   "Given ordered role names (roles.tsv order) and one role, return
@@ -79,6 +154,38 @@
     :else
     {:viable? true}))
 
+(defn rotate-gate-decision
+  "BL-805/BL-926: pure decide for the RESIDENT-INVOKED rotation entry only
+   (rotate_to_role.bb -> handoff-lib/respawn-as!). The daemon's own
+   rotate-resident-to! call (handoffd.bb chase) never routes through this -
+   gating it would risk deadlocking chase-driven drain on the very parcel
+   it is trying to clear (invariant: daemon rotation always fails open).
+   blocking-file = the departing role's inbox/in_process/*.handoff path, or
+   nil when that box holds no real parcel (missing, empty, or holding only
+   claim-progress/nudge/chase sidecars - callers pass handoff-lib's already
+   *.handoff-filtered result, so a sidecar alone never reaches here).
+
+   BL-926: active-role (the departing/marker role) and target-role (the
+   rotation destination) are optional - when BOTH are given and name the
+   same role, rotating into that role is not abandonment (it is the only
+   way the blocking parcel gets picked up) and the gate proceeds even over
+   a real blocking-file. Checked AFTER force? so the force override still
+   behaves exactly as BL-805 specified (a real block + force always reads
+   :proceed-forced, loud warning and all - ownership never silently
+   swallows that signal). Omitting either key (nil) leaves BL-805's
+   original two-input behavior byte-for-byte unchanged - this change can
+   only ever turn a :refuse into a :proceed, never the reverse, and never
+   turns a :proceed-forced into anything else.
+
+   Returns :proceed, :proceed-forced (blocked, but the force override is
+   set), or :refuse (blocked, no override)."
+  [{:keys [blocking-file force? active-role target-role]}]
+  (cond
+    (nil? blocking-file) :proceed
+    force? :proceed-forced
+    (and active-role target-role (= (str active-role) (str target-role))) :proceed
+    :else :refuse))
+
 (defn summarize-topology
   "For reporting: count actions across roles with {:role :alive?}."
   [ordered-roles role-alive-rows]
@@ -91,6 +198,15 @@
      :illicit (filterv #(= :teardown-illicit (:action %)) actions)
      :missing-standing (filterv #(= :ensure-standing (:action %)) actions)}))
 
+(defn live-role-agrees?
+  "True only when live-role, trimmed, names target-role exactly. BL-921: an
+   identity that cannot be read - nil, blank, or whitespace-only - is
+   divergence, never agreement. The marker alone can never buy trust a live
+   probe did not independently confirm."
+  [live-role target-role]
+  (let [live (some-> live-role str str/trim not-empty)]
+    (boolean (and live (= live (str target-role))))))
+
 (defn dormant-mailbox-chase-action
   "How chase should poke a role that may be a mono-router dormant target.
 
@@ -100,17 +216,29 @@
    cleaner/inbox/new held the real parcels. Coordinator could not promote the
    next ticket because BL-508 stayed active waiting on cleaner.
 
+   BL-921: the active-role marker alone diverged from the pane's live
+   identity for hours on 2026-08-18, producing 535 identical false wakes in
+   one day - the marker said cleaner while the pane ran coder. :wake-resident
+   now additionally requires live-role (the caller's own tmux probe of the
+   resident pane, independent of the marker file) to agree with target-role;
+   see live-role-agrees? for the unreadable-is-divergence rule. This can only
+   ever move a case from :wake-resident to :rotate, never the reverse - the
+   marker-only equality is still the first gate, live-role narrows it further.
+
    Returns:
      :wake-own-session — role has its own standing pane; wake that session
-     :wake-resident    — no own pane, but resident already IS this role
-     :rotate           — no own pane, and resident is a different identity;
-                         must respawn-as! before any wake
+     :wake-resident    — no own pane, and resident's marker AND live identity
+                         both already ARE this role
+     :rotate           — no own pane, and either the marker or the live
+                         identity disagrees (or the identity could not be
+                         read); must respawn-as! before any wake
      :wake-own-session — also the degrade path when no resident pane exists"
-  [{:keys [target-session-exists? resident-session-exists? active-role target-role]}]
+  [{:keys [target-session-exists? resident-session-exists? active-role target-role live-role]}]
   (cond
     target-session-exists? :wake-own-session
     (not resident-session-exists?) :wake-own-session
-    (= (str active-role) (str target-role)) :wake-resident
+    (and (= (str active-role) (str target-role))
+         (live-role-agrees? live-role target-role)) :wake-resident
     :else :rotate))
 
 (defn resident-poke-target?
@@ -217,12 +345,16 @@
 (def default-rotate-cooldown-ms 30000)
 
 (defn actionable-mail?
-  "True when a role holds in_process work, new git_handoff mail, or a note
-   that has aged past the BL-576 threshold. Fresh notes never qualify —
-   that broadcast-thrash protection is unchanged."
-  [{:keys [in-process-count git-handoff-count aged-note-count]}]
+  "True when a role holds in_process work, new git_handoff mail, a directed
+   rule_proposal, or a note that has aged past the BL-576 threshold. Fresh
+   notes never qualify — that broadcast-thrash protection is unchanged.
+   rule_proposal is immediately actionable (like git_handoff): it is a
+   directed Article 5.1 parcel, never a multi-role broadcast; excluding it
+   left specifier mailboxes permanently non-rotatable (2026-08-03 starve)."
+  [{:keys [in-process-count git-handoff-count rule-proposal-count aged-note-count]}]
   (or (pos? (or in-process-count 0))
       (pos? (or git-handoff-count 0))
+      (pos? (or rule-proposal-count 0))
       (pos? (or aged-note-count 0))))
 
 ;; BL-636: handoff-protocol.md priority scale is two digits 00-99, lower
@@ -323,12 +455,19 @@
         (not= (str role) (str home-role)))))
 
 (defn should-rotate-resident?
-  "Gate resident rotation during chase — avoid mid-turn thrash and burst rotates."
-  [{:keys [active-role target-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]
+  "Gate resident rotation during chase — avoid mid-turn thrash and burst
+   rotates. BL-921: :already-active additionally requires live-role (a live
+   tmux probe of the resident pane, independent of the active-role marker)
+   to agree with target-role - a stale marker claiming the resident is
+   already the target must not refuse the very rotate that would fix it.
+   See live-role-agrees? for the unreadable-is-divergence rule; omitting
+   live-role treats it as unreadable, never as agreement."
+  [{:keys [active-role target-role live-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]
   (let [cooldown (or cooldown-ms default-rotate-cooldown-ms)]
     (cond
       resident-busy? :busy
-      (and active-role target-role (= (str active-role) (str target-role))) :already-active
+      (and active-role target-role (= (str active-role) (str target-role))
+           (live-role-agrees? live-role target-role)) :already-active
       (and last-rotate-at-ms (pos? last-rotate-at-ms)
            (< (- now-ms last-rotate-at-ms) cooldown)) :cooldown
       :else :rotate)))

@@ -8,6 +8,17 @@ Feature: bedtime stops the pack but leaves the phone path reachable
   # the host path had been torn down. Bedtime and lights-out are two different
   # intentions and the stack only implements one of them. This adds the bedtime
   # verb; stop-swarm.sh stays the lights-out verb, unchanged.
+  #
+  # Scope note (specifier, 2026-08-08): bedtime is an OPERATOR-INVOKED verb
+  # here, never a scheduled one. The originally-specced scenario 06 — "the
+  # scheduled end of day picks its verb from configuration" — is parked in
+  # BL-762-scheduled-end-of-day-verb.feature.draft, because building it means
+  # building the scheduled day-shift-end that the standing continuous-shifts
+  # directive vetoes (.swarmforge/operator/continuous-shifts.json,
+  # scheduledStop: false, armed 2026-07-31 and reaffirmed 2026-08-03 /
+  # 2026-08-04: "Do not restore night-stop / day-shift-end ... until the human
+  # revokes"). There is in fact no scheduled day-shift-end path in the repo or
+  # the live crontab to hang a verb off. The bedtime verb itself is unaffected.
 
   Background:
     Given a running swarm with its ancillary services up
@@ -59,14 +70,3 @@ Feature: bedtime stops the pack but leaves the phone path reachable
       | starting state                          |
       | the swarm is already stopped            |
       | bedtime has already been run once       |
-
-  # BL-762 scheduled-end-of-day-picks-its-verb-06
-  Scenario Outline: the scheduled end of day picks its verb from configuration
-    Given the scheduled day-shift-end is configured <configuration>
-    When the scheduled end of day runs
-    Then <expected> is the verb invoked
-
-    Examples:
-      | configuration               | expected           |
-      | with no lights-out override | the bedtime verb   |
-      | for lights-out              | the full stop verb |

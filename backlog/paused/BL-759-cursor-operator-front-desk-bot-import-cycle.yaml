@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: code-quality-gates
 assigned_to: specifier
-priority: 5
+priority: 40
 direction: normal
 depends_on: []
 mutation_cost: low
@@ -48,6 +48,84 @@ notes: |
   architect's hard gate on an edge it did not introduce unless this lands
   first. Landing this one first is the cheaper order; they are not
   orthogonal, so do not run them concurrently.
+
+  2026-08-17 specifier — SECOND independent re-observation, still live.
+  The architect tripped over these same three edges again during the BL-911
+  repass and raised a `note` asking for them to be ticketed, stating "No
+  ticket currently tracks this cycle (`grep -rl telegramCursorOperator
+  backlog/` -> none)". That grep result was wrong — THIS ticket has tracked
+  it since 2026-07-31 — so no new ticket was minted. Evidence:
+  `backlog/evidence/BL-911-architect-repass-20260817.md`.
+
+  Re-verified from `main` rather than trusting either report: the gate still
+  fails with exactly the three edges quoted above, and the back-edges are
+  `telegramCursorOperatorLiveness.ts:7` importing `isPipelineEmpty` and
+  `controlDrainTimeoutMs`, plus `telegramCursorOperatorExec.ts:43` importing
+  `isPipelineEmpty`, both from `telegram-front-desk-bot.ts` (defined there at
+  :1595 and :1659). The bot's own edges remain lazy `await import(...)` at
+  :2167 and :2172, so the no-runtime-hazard reasoning above still holds
+  unchanged.
+
+  `priority:` tightened 84 -> 60 on that recurrence. Severity stays `medium`
+  — nothing misbehaves at runtime and this still does not buy the Article
+  3.2.4 expedite lane. What changed is cost of delay, not impact: the cycle
+  has now derailed attention in two separate architect passes, and each
+  future reviewer who touches these files pays the same toll of re-deriving
+  that a repo-wide gate failure is not theirs. That is recurring friction
+  with a known, contained fix, which is what the priority number is for.
+
+  2026-08-19 specifier — THIRD independent re-observation, still live. The
+  architect sent a priority-00 `note` ("acyclic violation:
+  telegram-front-desk<->operatorExec/Liveness cycle, unticketed"). As on
+  2026-08-17, the "unticketed" claim is wrong — and this time it was checked
+  rather than assumed: `grep -rl telegramCursorOperator backlog/` from the
+  master checkout returns THIS file, and the ticket is also present in the
+  architect's own worktree at
+  `.worktrees/architect/backlog/paused/BL-759-...yaml`. So the ticket was
+  readable from where the report was made; the grep was simply not run. No
+  new ticket minted.
+
+  Re-verified from `main` (local `main` measured 24 ahead / 0 behind
+  `origin/main`, so it is the fresher ref): the gate still fails with exactly
+  the same three edges quoted above, unchanged.
+
+  Line numbers refreshed — the ones quoted earlier in these notes and in the
+  `description:` have drifted as the bot file grew, which costs each reviewer
+  a re-search. As of this observation:
+  `telegram-front-desk-bot.ts` defines `controlDrainTimeoutMs` at :1615 and
+  `isPipelineEmpty` at :1679, and its two lazy `await import(...)` edges are
+  at :2187 and :2192. The back-edges remain
+  `telegramCursorOperatorExec.ts:43` and
+  `telegramCursorOperatorLiveness.ts:7`. The no-runtime-hazard reasoning is
+  unchanged: the bot's own edges are still lazy.
+
+  RULED OUT, deliberately — do not propose it a fourth time: adding a
+  known-failure baseline / allowlist to the dependency gate so the three
+  edges stop showing as red. It is the obvious reflex after a third
+  re-derivation, there is no such mechanism in
+  `extension/src/tools/dependency-gate.ts` today, and no ticket asks for one.
+  It is the wrong fix here. An allowlist converts a contained, cheap,
+  `mutation_cost: low` structural move into permanent suppression, and
+  suppression is precisely how a normalized red survives — the failure mode
+  the boot-budget gate rule (BL-859) already calls out after it happened
+  twice there. The cycle is fixable in one sitting; make the red go away by
+  removing the cycle, not by teaching the gate to ignore it.
+
+  `priority:` tightened 60 -> 40 on this recurrence. Severity still stays
+  `medium`: nothing misbehaves at runtime, so this does not buy the Article
+  3.2.4 expedite lane. Only cost of delay moved, and it has now moved three
+  times — three architect passes have each spent attention re-deriving that a
+  repo-wide gate failure is not theirs.
+
+  Feature-file status, so the next holder is not surprised:
+  `specs/features/BL-759-cursor-operator-front-desk-cycle.feature` is a live
+  `.feature` (not a `.draft`) whose four scenarios have no step handlers yet,
+  and whose scenario 01 asserts the gate passes — which is false today, by
+  design. This is NOT a BL-233 breakage: acceptance generation here is
+  on-demand, not a repo-wide glob (4 files in `specs/pipeline/generated/`
+  against 595 feature files), so nothing generates or throws on it while the
+  ticket is unbuilt. The handlers land with the implementation, and scenario
+  01 goes green exactly when the cycle is broken.
 
 description: |
   ## What

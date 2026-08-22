@@ -1,0 +1,55 @@
+Feature: a role's answer reaches the pane that role is actually running in
+
+  # BL-846 (defect, slice of BL-772). Answer delivery resolves role R's live
+  # pane from the roles.tsv `session` column (swarmforge-QA for QA). Under
+  # mono-router only the resident pane (swarmforge-coder) and the coordinator
+  # pane exist, so for every rotating role the live-pane leg can never deliver
+  # — even when that role IS the resident currently running in the resident
+  # pane. Delivery always falls through to the queued-note leg, which a role
+  # holding in-process work is forbidden to read ("Do NOT run
+  # ready_for_next.sh again until you finish it"). The fix is resolution only:
+  # consult the durable resident-identity marker that rotation already writes,
+  # and resolve the resident pane for the role it names.
+  #
+  # PARKED AS .feature.draft per BL-233: this slice is not built, so a live
+  # *.feature here would have no step handlers and would hard-fail the
+  # acceptance runner for every other ticket. The coder renames this to
+  # .feature and lands its step handlers in the same parcel.
+
+  Background:
+    Given a mono-router swarm whose only live panes are the resident pane and the coordinator pane
+    And the roster names a distinct session for every pipeline role
+
+  # BL-846 role-pane-resolution-follows-recorded-identity-01
+  Scenario Outline: the live pane resolved for a role follows the recorded resident identity
+    Given the resident identity marker is <marker>
+    When delivery resolves the live pane for role "<requested role>"
+    Then it resolves <resolution>
+
+    Examples:
+      | marker  | requested role | resolution                    |
+      | "QA"    | QA             | the resident pane             |
+      | "QA"    | cleaner        | cleaner's own session pane    |
+      | "QA"    | coordinator    | coordinator's own session pane|
+      | "coder" | coder          | the resident pane             |
+      | "coder" | QA             | QA's own session pane         |
+      | missing | QA             | QA's own session pane         |
+      | blank   | QA             | QA's own session pane         |
+
+  # BL-846 answer-interrupts-a-blocked-resident-02
+  Scenario: an answer reaches a resident role that is blocked holding in-process work
+    Given the resident identity marker is "QA"
+    And QA has a clarifying question pending
+    And QA holds in-process work
+    When the human answers that question
+    Then the answer is delivered into the resident pane as an interrupting nudge
+    And no answer note is queued into QA's inbox
+    And QA's pending question marker is cleared
+
+  # BL-846 dormant-role-answer-still-queues-03
+  Scenario: an answer for a role the resident is not running as still queues as a note
+    Given the resident identity marker is "coder"
+    And QA has a clarifying question pending
+    When the human answers that question
+    Then the answer is queued as a note into QA's inbox
+    And QA's pending question marker is cleared

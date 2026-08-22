@@ -20,6 +20,8 @@ Nothing is killed. An agent mid-turn simply finishes its current bit and is not 
 
 Because both write the *same* pause state file, every other part of the swarm that already understands a pause (promotion freeze, delivery freeze, chase suppression below) treats a cooldown pause exactly like a human one - there is only one pause concept, just two ways to trigger it.
 
+Since BL-823, `writeControlPauseState` also appends a `pause-start`/`pause-end` record to the append-only swarm availability ledger (`.swarmforge/telemetry/availability-<YYYY-MM>.jsonl`) on every call - the durable history `control-pause.json` itself doesn't keep, since a resume simply overwrites it. See "Swarm Availability Ledger (BL-823)" in the [Specification](../reference/Specification.MD) for the record shape and what reads it.
+
 ## Configuration
 
 Set in `swarmforge/swarmforge.conf` (read fresh on every sweep tick - no restart needed to pick up a change):

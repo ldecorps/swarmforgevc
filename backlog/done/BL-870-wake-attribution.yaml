@@ -1,0 +1,136 @@
+id: BL-870
+title: "DEFECT — the daemon wakes a role without recording what for, so a false 'new handoff mail' wake has now recurred twice and been undiagnosable both times"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 3
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+description: >
+  The coordinator was told "You have new handoff mail" three times in two
+  minutes while its mailbox was genuinely empty. The same thing happened on
+  2026-08-07. Neither occurrence could be root-caused, and the reason is
+  structural: nothing records WHY a wake was injected.
+
+  What the daemon records today is only the negative case. `handoffd.bb`
+  logs `chase-wake-skip-<reason>` when a wake is withheld — 63 such lines in
+  the current log. When a wake actually LANDS, `notify!` injects the text
+  and logs nothing about what motivated it. So the log can show that dozens
+  of wakes were suppressed and cannot show what the three that got through
+  were for.
+
+  The second half is a false trail this defect keeps laying. Both intakes
+  cite an empty `inject-traffic.log` as corroboration that no real mail
+  existed. That inference is unsound: `record-inject-traffic!` lives in
+  `handoff_inject_lib.bb` and is called on the DELIVERY path only. The chase
+  wake path (`handoffd.bb` `notify!` -> `agent-runtime-inject/notify-agent!`)
+  never calls it. An empty inject-traffic.log is therefore consistent with
+  both a false wake and a real one, and cannot distinguish them. Every
+  future investigation will re-walk this same dead end until a wake carries
+  its own motivation.
+
+  This slice makes the wake attributable. It does NOT claim to fix the false
+  wake, because the cause is not yet known and cannot honestly be specced
+  from the evidence available — see approval_context.
+
+invariants:
+  - "No wake text reaches an agent pane without a corresponding attribution record naming the role, the deciding sweep, and the motivating handoff or an explicit marker that there was none."
+  - "Attribution is observation only: for identical inputs the sweep reaches the same wake, skip or rotate outcome whether or not attribution is recorded."
+
+acceptance: specs/features/BL-870-wake-attribution.feature
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::wake-attribution::the daemon's own wake path must record it; a library nobody calls leaves the next recurrence just as undiagnosable"
+
+qa_e2e_procedure: |
+  Against the live swarm:
+
+  1. Send an ordinary handoff to a dormant role and let the daemon wake it.
+     Confirm an attribution record exists naming that role, the sweep that
+     decided it, and that handoff's filename.
+  2. Confirm the record is written for a wake that LANDS, not only for the
+     skipped ones — grep the daemon log for the landed wake and check the
+     attribution sits alongside it.
+  3. Reproduce the withheld case: wake a role whose pane is busy. The
+     attribution must still name the motivating handoff and record the
+     outcome as skipped, so a skip and a land are comparable in the record.
+  4. Reproduce the defect's own fingerprint by hand: with a role's `new/`
+     and `in_process/` empty of `.handoff` files, drive a wake for that
+     role. The attribution must record the motivating handoff as absent.
+     That record is what the next recurrence is meant to leave behind.
+  5. Confirm no behaviour change: over a normal working period the swarm
+     wakes, skips and rotates exactly as before.
+
+approval_context: >
+  One judgement call, and it is the whole ticket: this slice does not fix
+  the false wake. It makes the next one diagnosable.
+
+  I could not root-cause it from the available evidence, and I would rather
+  say so than ship a guess. Two candidate causes were probed and ELIMINATED.
+  The coordinator's `in_process/` holds 15 orphaned `.claim-progress.json`
+  sidecars going back to 2026-08-03 with no surviving `.handoff` files, and
+  both intakes noticed them — but `salvage-lib/handoff-files` filters
+  strictly to `*.handoff`, and claim-progress is read from a derived path
+  rather than enumerated, so those sidecars are never mistaken for mail.
+  The inject-traffic.log emptiness is likewise not evidence of anything, for
+  the reason in the description. Beyond those, the log simply does not
+  contain the answer.
+
+  So the options were: guess at a cause and spec a fix that might address
+  nothing, or spec the instrumentation that makes the third occurrence
+  self-explaining. I chose the second. If you would rather I open a
+  timeboxed investigation ticket first and spec the fix from its findings,
+  say so and I will rewrite it that way — but the investigation would need
+  this instrumentation to have anything to read.
+
+  The follow-up fix ticket should be minted from whatever the next
+  occurrence's attribution record names, not written speculatively now.
+
+  IR-DRY reports three findings, all judged not-real and recorded here.
+  "the role's inbox holds a handoff" against "holds no handoff" are
+  deliberate opposites matched on shared vocabulary — the same false
+  positive shape already recorded on BL-867. The other two pair a sweep's
+  input decision with an assertion about its outcome; they share the words
+  "sweep" and "role" and nothing else.
+
+source: |
+  Raw intake from the coordinator, `backlog/BL-870-repeated-false-new-handoff-
+  mail-wake-empty-coordinator-mailbox.md`, drained 2026-08-10. Three
+  consecutive false wakes between 00:32Z and 00:34Z on 2026-08-10, each
+  followed by `ready_for_next.sh` returning NO_TASK and a manual mailbox
+  check confirming both `new/` and `in_process/` held no `.handoff` file.
+
+  Recurrence of the 2026-08-07 "variant A" incident recorded in the operator
+  incident notes for that date, which was never ticketed and remains
+  unresolved. Whether the two share a cause is exactly what cannot be
+  answered today.
+
+  Specifier probe 2026-08-10 established the missing-attribution gap and
+  eliminated the two hypotheses named in approval_context.
+
+notes: |
+  Severity high on the "broken safety or health signal" limb rather than on
+  impact: no data is lost, but a wake that fires falsely and cannot be
+  explained trains both agents and the operator to discount the signal, and
+  discounting it is how a genuine wake gets missed. It has now fired falsely
+  twice in four days.
+
+  Scope is the daemon's wake path — `swarmforge/scripts/handoffd.bb`
+  (`notify!`, `notify-in-process-resume!`, `chase-poke-and-notify!`, the
+  claim-idle probe injector) plus whatever small library the attribution
+  record lands in. Do NOT change any wake DECISION here; invariant 2 is the
+  guard on that.
+
+  Observed while probing and deliberately left out of scope: the 15 orphaned
+  `.claim-progress.json` sidecars above are litter, not a cause —
+  `clear-claim-progress!` exists but runs only on the halt path, never when
+  a handoff completes normally. Harmless today beyond costing a human one
+  step of diagnosis. Recorded here so it is not lost; if it earns a ticket
+  it is a separate one, per BL-634 envelope discipline.

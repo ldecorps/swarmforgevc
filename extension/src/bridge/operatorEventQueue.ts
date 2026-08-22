@@ -97,6 +97,17 @@ export function appendOperatorEvent(targetPath: string, event: Record<string, un
   withEventsLock(targetPath, () => atomicAppend(file, JSON.stringify(event) + '\n'));
 }
 
+// BL-708: {label, description?}[] - operator_ask.bb/role_ask.bb's own
+// --options normalizer (operator-lib/ask-options) emits this exact shape.
+// Duplicated here (rather than imported from telegramFrontDeskBotCore.ts's
+// own AskOption) to keep the bridge layer decoupled from the front-desk
+// bot tool - the two communicate only through this file's own JSON wire
+// shape, never a compile-time dependency.
+export interface AskOption {
+  label: string;
+  description?: string;
+}
+
 export interface ReplyOutboxEntry {
   // BL-320: the idempotency key a redelivery (a replayed-on-reconnect or
   // replayed-after-restart entry) is deduped against, both bridge-side
@@ -118,6 +129,62 @@ export interface ReplyOutboxEntry {
   // answers, the idle-nudge/awaiting-answer escalation operator_runtime.bb
   // writes directly) - absent is the safe default, never a retraction.
   retractsPendingQuestion?: boolean;
+  // BL-708: role_ask.bb marks a role's own clarifying question with this
+  // field (the asking role's name) so telegramFrontDeskBotCore.ts's
+  // relayOneRecord retargets delivery to that role's OWN Telegram topic
+  // instead of the ordinary reply path. Before this field existed here,
+  // the read below silently narrowed every entry away from it, so a role
+  // question always fell through to the ordinary-reply branch for a
+  // synthetic threadId that resolves to no topic - see the ticket's own
+  // forensics. Absent for every ordinary reply.
+  roleQuestion?: string;
+  // BL-708: operator_ask.bb's own agent-question marker - same
+  // passthrough hole, targeting the shared Agent Questions topic instead
+  // of a per-role one. Mutually exclusive with roleQuestion.
+  agentQuestion?: boolean;
+  // BL-708: BL-483's options normalizer output, riding alongside
+  // roleQuestion/agentQuestion - without this the buttons are lost even
+  // once the routing fields above are fixed.
+  options?: AskOption[];
+}
+
+// BL-708 hardening: split out of the forEach body below so the delivery-
+// routing fields (BL-320/BL-440/BL-708) each stay a single small branch
+// instead of stacking five in one function - a behavior-preserving split,
+// same fields, same conditions, CRAP computed per function.
+function applyOptionalOutboxFields(entry: ReplyOutboxEntry, parsed: Record<string, unknown>): void {
+  if (parsed.retractsPendingQuestion === true) {
+    entry.retractsPendingQuestion = true;
+  }
+  if (typeof parsed.roleQuestion === 'string') {
+    entry.roleQuestion = parsed.roleQuestion;
+  }
+  if (parsed.agentQuestion === true) {
+    entry.agentQuestion = true;
+  }
+  if (Array.isArray(parsed.options)) {
+    entry.options = parsed.options as AskOption[];
+  }
+}
+
+// Parses one outbox line into an entry, or undefined for a malformed line
+// or one missing the required threadId/text fields - the two "skip this
+// line" cases readNewReplyOutboxEntries' loop below no longer needs to
+// know apart from each other.
+function parseReplyOutboxLine(line: string, fallbackId: string): ReplyOutboxEntry | undefined {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed.threadId !== 'string' || typeof parsed.text !== 'string') {
+    return undefined;
+  }
+  const id = typeof parsed.id === 'string' ? parsed.id : fallbackId;
+  const entry: ReplyOutboxEntry = { id, threadId: parsed.threadId, text: parsed.text };
+  applyOptionalOutboxFields(entry, parsed);
+  return entry;
 }
 
 // Reads reply-outbox lines strictly AFTER sinceIndex (the count of lines
@@ -136,18 +203,9 @@ export function readNewReplyOutboxEntries(targetPath: string, sinceIndex: number
   const lines = content.split('\n').filter((l) => l.trim().length > 0);
   const entries: ReplyOutboxEntry[] = [];
   lines.slice(sinceIndex).forEach((line, offset) => {
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (typeof parsed.threadId === 'string' && typeof parsed.text === 'string') {
-        const id = typeof parsed.id === 'string' ? parsed.id : `legacy-${sinceIndex + offset}`;
-        const entry: ReplyOutboxEntry = { id, threadId: parsed.threadId, text: parsed.text };
-        if (parsed.retractsPendingQuestion === true) {
-          entry.retractsPendingQuestion = true;
-        }
-        entries.push(entry);
-      }
-    } catch {
-      // skip a malformed line rather than crash the whole poll
+    const entry = parseReplyOutboxLine(line, `legacy-${sinceIndex + offset}`);
+    if (entry) {
+      entries.push(entry);
     }
   });
   return { entries, totalLines: lines.length };

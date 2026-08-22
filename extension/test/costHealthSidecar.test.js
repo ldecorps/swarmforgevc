@@ -8,6 +8,7 @@ const {
   COST_HEALTH_SIDECAR_SCHEMA_VERSION,
   bucketDailyFlowBalance,
   bucketDailyReliabilityEvents,
+  bucketDailyDaemonRestarts,
   buildCostHealthSidecar,
   renderCostHealthSection,
   renderCostTrendChartLines,
@@ -17,6 +18,9 @@ const {
   computeCostHealthSidecar,
 } = require('../out/notify/costHealthSidecar');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
+const { freshnessIncidentLogPath } = require('../out/metrics/swarmMetrics');
+const { appendHostLoadSample } = require('../out/metrics/resourceTelemetry');
+const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -315,17 +319,141 @@ test('flowBalance.rework.bouncesPerDay renders unavailable (null) before the epo
   assert.equal(onEpoch.value, 1);
 });
 
-test('reliability counts carry a trend per field, and daemonRestarts is always zero (no telemetry source exists yet)', () => {
+test('reliability counts carry a trend per field, and daemonRestarts is derived from the freshness incident series like its siblings, not a hardcoded literal', () => {
   const reliability = {
     chases: [{ periodStart: '2026-07-08T00:00:00Z', value: 1 }, { periodStart: '2026-07-09T00:00:00Z', value: 4 }],
     nudges: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
     respawns: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
     failedDeliveries: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    daemonRestarts: [{ periodStart: '2026-07-08T00:00:00Z', value: 2 }, { periodStart: '2026-07-09T00:00:00Z', value: 5 }],
   };
   const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, reliability, [], []);
   assert.equal(sidecar.reliability.chases.value, 4);
   assert.equal(sidecar.reliability.chases.trend.direction, 'up');
+  assert.equal(sidecar.reliability.daemonRestarts.value, 5);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.direction, 'up');
+});
+
+// BL-904 invariant 2: a missing/unreadable incident log (daemonRestarts:
+// null/undefined on the input series) must report "no data" - an empty
+// trend series with currentValue null - never fall back to a measured
+// zero. Distinguished from BL-904's OWN "genuine zero" case below, which
+// has a real (non-empty) series.
+test('BL-904: daemonRestarts reports no data (empty trend series) when the input series is null, distinguishable from a measured zero', () => {
+  const reliability = {
+    chases: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    nudges: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    respawns: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    failedDeliveries: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    daemonRestarts: null,
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, reliability, [], []);
   assert.equal(sidecar.reliability.daemonRestarts.value, 0);
+  assert.deepEqual(sidecar.reliability.daemonRestarts.trend.series, []);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.currentValue, null);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.direction, 'unknown');
+});
+
+// BL-904 invariant 2: a MEASURED zero (log readable, real day(s) of
+// history, zero restarts) must be distinguishable from the null case
+// above via a non-null currentValue, even though direction is 'unknown'
+// in both cases for a single-point series.
+test('BL-904: daemonRestarts reports a measured zero (non-null currentValue) distinctly from the no-data case', () => {
+  const reliability = {
+    chases: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    nudges: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    respawns: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    failedDeliveries: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+    daemonRestarts: [{ periodStart: '2026-07-09T00:00:00Z', value: 0 }],
+  };
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, reliability, [], []);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 0);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.series.length, 1);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.currentValue, 0);
+});
+
+// ── bucketDailyDaemonRestarts (pure) ─────────────────────────────────────
+
+test('bucketDailyDaemonRestarts returns null when events is null (no data source)', () => {
+  assert.equal(bucketDailyDaemonRestarts(null, Date.now()), null);
+});
+
+test('bucketDailyDaemonRestarts counts only action=restart, excluding action=escalate', () => {
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const events = [
+    { epoch: Math.floor(Date.parse('2026-07-09T01:00:00Z') / 1000), daemon: 'handoffd', action: 'restart' },
+    { epoch: Math.floor(Date.parse('2026-07-09T02:00:00Z') / 1000), daemon: 'handoffd', action: 'restart' },
+    { epoch: Math.floor(Date.parse('2026-07-09T03:00:00Z') / 1000), daemon: 'babysitterd', action: 'escalate' },
+  ];
+  const series = bucketDailyDaemonRestarts(events, nowMs);
+  const today = series.find((p) => p.periodStart.startsWith('2026-07-09'));
+  assert.equal(today.value, 2);
+});
+
+test('bucketDailyDaemonRestarts gap-fills every day between the earliest event and now, same as the sibling reliability fields', () => {
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const events = [{ epoch: Math.floor(Date.parse('2026-07-07T01:00:00Z') / 1000), daemon: 'handoffd', action: 'restart' }];
+  const series = bucketDailyDaemonRestarts(events, nowMs);
+  assert.deepEqual(
+    series.map((p) => p.periodStart.slice(0, 10)),
+    ['2026-07-07', '2026-07-08', '2026-07-09']
+  );
+});
+
+// ── computeCostHealthSidecar end-to-end wiring (BL-904) ──────────────────
+
+function writeFreshnessIncidentLog(targetPath, lines) {
+  const logPath = freshnessIncidentLogPath(targetPath);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, lines.join('\n') + (lines.length > 0 ? '\n' : ''));
+}
+
+function freshnessLine(epochSeconds, daemon, action) {
+  return `epoch=${epochSeconds} daemon=${daemon} age_secs=999 threshold=600 action=${action}`;
+}
+
+// BL-904 acceptance scenario 01/02: the real end-to-end wiring, not just
+// the pure functions - a real fixture log read through computeCostHealthSidecar.
+test('computeCostHealthSidecar counts real restart records from the freshness incident log and excludes escalates', () => {
+  const target = mkTmpDir('sfvc-costhealth-daemonrestarts-');
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const todayEpoch = Math.floor(Date.parse('2026-07-09T01:00:00Z') / 1000);
+  const lines = [];
+  for (let i = 0; i < 155; i++) {
+    lines.push(freshnessLine(todayEpoch + i, 'handoffd', 'restart'));
+  }
+  for (let i = 0; i < 100; i++) {
+    lines.push(freshnessLine(todayEpoch + i, 'handoffd', 'escalate'));
+  }
+  writeFreshnessIncidentLog(target, lines);
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], nowMs);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 155);
+});
+
+// BL-904 invariant 2 / acceptance scenario 04: no log file at all reports
+// no data, not a measured zero.
+test('computeCostHealthSidecar reports daemonRestarts as no-data when the freshness incident log does not exist', () => {
+  const target = mkTmpDir('sfvc-costhealth-daemonrestarts-');
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 0);
+  assert.deepEqual(sidecar.reliability.daemonRestarts.trend.series, []);
+  assert.equal(sidecar.reliability.daemonRestarts.trend.currentValue, null);
+});
+
+// BL-904 acceptance scenario 05: a malformed line does not discard the
+// good records, driven through the real reader end to end.
+test('computeCostHealthSidecar still counts good restart records when the log also has a truncated line', () => {
+  const target = mkTmpDir('sfvc-costhealth-daemonrestarts-');
+  const nowMs = Date.parse('2026-07-09T12:00:00Z');
+  const todayEpoch = Math.floor(Date.parse('2026-07-09T01:00:00Z') / 1000);
+  writeFreshnessIncidentLog(target, [
+    freshnessLine(todayEpoch, 'handoffd', 'restart'),
+    freshnessLine(todayEpoch + 1, 'handoffd', 'restart'),
+    'epoch=' + (todayEpoch + 2) + ' daemon=handoffd age_secs=999 thresho',
+    freshnessLine(todayEpoch + 3, 'handoffd', 'restart'),
+  ]);
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], nowMs);
+  assert.equal(sidecar.reliability.daemonRestarts.value, 3);
 });
 
 test('resource anomalies include only roles whose rss or cpu moved meaningfully', () => {
@@ -371,6 +499,58 @@ test('resourceSamplesObserved is true once any role has a recorded sample, even 
 test('resourceSamplesObserved is false when no role has any recorded sample (the broken-sampler case)', () => {
   const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
   assert.equal(sidecar.resourceSamplesObserved, false);
+});
+
+// ── BL-822: hostLoad (additive, optional, never inside resourceAnomalies) ──
+
+function buildWithHostLoad(hostLoadVerdict, resourceTrendsByRole = {}) {
+  return buildCostHealthSidecar(
+    '2026-08-06',
+    {},
+    resourceTrendsByRole,
+    emptyReliabilitySeries('2026-08-06T00:00:00Z'),
+    [],
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    hostLoadVerdict
+  );
+}
+
+test('buildCostHealthSidecar carries the given hostLoad verdict verbatim', () => {
+  const verdict = { severe: true, ratio: 20, sustainedMinutes: 240 };
+  const sidecar = buildWithHostLoad(verdict);
+  assert.deepEqual(sidecar.hostLoad, verdict);
+});
+
+test('hostLoad is omitted entirely (not null/undefined-keyed) when none is given, matching the sidecar\'s own additive-optional convention', () => {
+  const sidecar = buildCostHealthSidecar('2026-08-06', {}, {}, emptyReliabilitySeries('2026-08-06T00:00:00Z'), [], []);
+  assert.equal(Object.prototype.hasOwnProperty.call(sidecar, 'hostLoad'), false);
+});
+
+test('hostLoad never changes resourceAnomalies - per-role detection is unaffected (invariant 2)', () => {
+  const resourceTrendsByRole = {
+    coder: {
+      currentRssBytes: 220_000_000, currentCpuPercent: 5,
+      rssTrend: { direction: 'up', delta: 20_000_000, priorValue: 200_000_000, currentValue: 220_000_000, series: [] },
+      cpuTrend: { direction: 'flat', delta: 0, priorValue: 5, currentValue: 5, series: [] },
+    },
+  };
+  const withoutHostLoad = buildWithHostLoad(undefined, resourceTrendsByRole);
+  const withSevereHostLoad = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, resourceTrendsByRole);
+  assert.deepEqual(withSevereHostLoad.resourceAnomalies, withoutHostLoad.resourceAnomalies);
+  assert.deepEqual(withSevereHostLoad.resourceAnomalies.map((a) => a.role), ['coder']);
+});
+
+test('hostLoad never sets resourceSamplesObserved - a host-load sample never stands in for per-role sampling (invariant 3)', () => {
+  const withoutHostLoad = buildWithHostLoad(undefined, {});
+  const withSevereHostLoad = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, {});
+  assert.equal(withoutHostLoad.resourceSamplesObserved, false);
+  assert.equal(withSevereHostLoad.resourceSamplesObserved, false);
 });
 
 // ── renderCostHealthSection (pure markdown renderer, cost-05b/05c) ──────
@@ -552,6 +732,109 @@ test('an actual anomaly renders its role, rss in MB, and cpu percent with trend 
   assert.match(text, /\*\*Resource anomalies:\*\*/);
   assert.match(text, /- coder: 210MB ↑, 7\.5% cpu ↓/);
   assert.doesNotMatch(text, /none found/);
+});
+
+// ── BL-822: host load must be consulted by the "none found" verdict, both
+//    the JSON field and the rendered prose (invariant 1 - the load-bearing
+//    half of the ticket) ──────────────────────────────────────────────────
+
+const QUIET_TREND = { direction: 'flat', delta: 0, priorValue: 5, currentValue: 5, series: [] };
+function quietRoleTrends() {
+  return { coder: { currentRssBytes: 100_000_000, currentCpuPercent: 5, rssTrend: { ...QUIET_TREND, priorValue: 100_000_000, currentValue: 100_000_000 }, cpuTrend: QUIET_TREND } };
+}
+function anomalousRoleTrends() {
+  return {
+    coder: {
+      currentRssBytes: 220_000_000, currentCpuPercent: 5,
+      rssTrend: { direction: 'up', delta: 20_000_000, priorValue: 200_000_000, currentValue: 220_000_000, series: [] },
+      cpuTrend: QUIET_TREND,
+    },
+  };
+}
+
+// BL-822 severe-host-load-is-reported-01
+test('a sustained severe host load is reported even when every role trend is quiet', () => {
+  const sidecar = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, quietRoleTrends());
+  assert.equal(sidecar.hostLoad.severe, true);
+  const text = renderCostHealthSection(sidecar);
+  assert.doesNotMatch(text, /none found/);
+  assert.match(text, /\*\*Resource anomalies:\*\*/);
+  assert.match(text, /host load/);
+});
+
+// BL-822 role-anomaly-does-not-mask-host-load-02: the anti-vacuity check -
+// a role anomaly is ALSO present, so an assertion that only checks "none
+// found is absent" would pass for the wrong reason; this also asserts the
+// host-load line and the anomaly line both appear.
+test('a per-role anomaly present at the same time as severe host load does not mask either signal', () => {
+  const sidecar = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, anomalousRoleTrends());
+  assert.equal(sidecar.hostLoad.severe, true);
+  assert.deepEqual(sidecar.resourceAnomalies.map((a) => a.role), ['coder']);
+  const text = renderCostHealthSection(sidecar);
+  assert.doesNotMatch(text, /none found/);
+  assert.match(text, /host load/);
+  assert.match(text, /- coder:/);
+});
+
+// BL-822 quiet-host-still-reports-none-found-03
+test('a genuinely quiet host still reports none found', () => {
+  const sidecar = buildWithHostLoad({ severe: false, ratio: 1.5, sustainedMinutes: 240 }, quietRoleTrends());
+  assert.equal(sidecar.hostLoad.severe, false);
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /Resource anomalies:.*none found/);
+});
+
+// BL-822 role-anomalies-remain-additive-04
+test('a per-role anomaly still surfaces on its own when the host was quiet', () => {
+  const sidecar = buildWithHostLoad({ severe: false, ratio: 1.5, sustainedMinutes: 240 }, anomalousRoleTrends());
+  assert.deepEqual(sidecar.resourceAnomalies.map((a) => a.role), ['coder']);
+  assert.equal(sidecar.hostLoad.severe, false);
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /- coder:/);
+  assert.doesNotMatch(text, /host load/);
+});
+
+// BL-822 host-load-does-not-imply-role-sampling-06
+test('a recorded severe host load never stands in for per-role sampling having run', () => {
+  const sidecar = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, {});
+  assert.equal(sidecar.resourceSamplesObserved, false);
+  assert.equal(sidecar.hostLoad.severe, true);
+});
+
+test('computeCostHealthSidecar folds in a real host-load verdict without throwing on an empty target, and reflects an injected severe sample', () => {
+  const targetPath = mkTmpDir('sfvc-costhealth-hostload-');
+  appendHostLoadSample(targetPath, 20, Date.now());
+  const sidecar = computeCostHealthSidecar(targetPath, [{ role: 'coder', worktreePath: targetPath }]);
+  assert.ok(sidecar.hostLoad);
+  assert.equal(typeof sidecar.hostLoad.severe, 'boolean');
+});
+
+// BL-897: with a usable shared snapshotPath given, the flow-balance and
+// flowBalance.speccedPerDay reflects the SNAPSHOT's records, not a fresh
+// runGitLog walk against an empty target (which would derive zero
+// lifecycles) - a nonzero today's-specced-count on an otherwise-empty
+// fixture proves the snapshot won. speccedPerDay.value is trendedFromSeries'
+// LATEST (today's) bucket, so the fixture ticket is specced today.
+test('computeCostHealthSidecar uses a shared snapshotPath for lifecycles when one is given and usable', () => {
+  const targetPath = mkTmpDir('sfvc-costhealth-snapshot-');
+  const nowMs = Date.now();
+  const snapshotPath = path.join(targetPath, 'snapshot.json');
+  fs.writeFileSync(
+    snapshotPath,
+    JSON.stringify(serializeLifecycleSnapshot([lifecycle('ZZ-90004', new Date(nowMs).toISOString(), null)], nowMs), null, 2),
+    'utf8'
+  );
+
+  const sidecar = computeCostHealthSidecar(targetPath, [{ role: 'coder', worktreePath: targetPath }], nowMs, undefined, snapshotPath);
+
+  assert.equal(sidecar.flowBalance.speccedPerDay.value, 1);
+});
+
+test('computeCostHealthSidecar falls back to deriving its own history when snapshotPath is missing/unreadable', () => {
+  const targetPath = mkTmpDir('sfvc-costhealth-snapshot-');
+  assert.doesNotThrow(() =>
+    computeCostHealthSidecar(targetPath, [{ role: 'coder', worktreePath: targetPath }], Date.now(), undefined, '/no/such/snapshot.json')
+  );
 });
 
 // ── writeCostHealthSidecar / commitCostHealthSidecar / sidecarPath ──────

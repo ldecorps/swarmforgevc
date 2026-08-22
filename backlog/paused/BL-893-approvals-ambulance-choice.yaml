@@ -1,0 +1,85 @@
+id: BL-893
+title: "Approvals: add Ambulance as a fifth choice (engage hold for that ticket)"
+milestone: M8
+type: feature
+severity: medium
+status: todo
+epic: swarmforge-console
+priority: 44
+direction: human-requested
+depends_on: []
+mutation_cost: low
+human_approval: approved
+required_stages: [coder, cleaner, hardender, documenter, qa]
+stage_skip_reasons: { architect: "wires the existing engageOperatorAmbulance / Control engage-ambulance adapter into the Approvals button+verb namespace already proven by Q jump (BL-721); no new hold mechanism or data-flow design" }
+acceptance: specs/features/BL-893-approvals-ambulance-choice.feature.draft
+
+approval_context: >
+  Human-requested 2026-08-14 (Host /queue, typed): "Est-ce qu'ambulance
+  fait partie des choix d'approvals ? Sinon fill in a ticket." It does
+  not today. The judgement call: this slice ENGAGES ambulance only — it
+  does NOT also Approve / Q-jump. Ambulance is a hold of the live stack
+  for one ticket (BL-655); Q jump is promote-sooner (BL-490/BL-721). Mixing
+  them on one tap would collapse two rungs of the escalation ladder.
+  Confirm hold-only. If you want Approve+Ambulance as a single tap, say so
+  and that becomes a second ticket.
+
+invariants:
+  - "Tapping Ambulance on an Approvals ask, or sending /ambulance BL-xxx in the Approvals topic, engages the same ambulance marker Control already writes — only that ticket's parcels move; human_approval is not flipped by this verb."
+  - "Ambulance on Approvals is not Q jump and is not the offline expeditor: it never force-promotes, never dispatches a build, never starts expedite.sh."
+
+source: |
+  Human, Host topic, 2026-08-14 ~08:17 CEST, queued question:
+  "Est ce qu'embulence fait partie des choix d approvals ? Sinon, fill in a tick..."
+
+  Probe same morning: `approvalRequestedButtons` in
+  `extension/src/concierge/topicRouter.ts` is Approve / Amend / Reject /
+  Q jump + More. No Ambulance. Ambulance already exists as Control
+  `ambulance BL-xxx` / Host `/ambulance` via `engageOperatorAmbulance`
+  (`extension/src/tools/telegramOperatorAmbulance.ts`, BL-655/BL-698).
+
+description: |
+  ## What
+
+  Add Ambulance to the Approvals ask as a fifth choice, so a pending ticket
+  can be put on the live-stack hold without leaving Approvals for Control.
+
+  ## How (direction, not mandate)
+
+  Reuse the existing engage path; do not invent a second marker:
+
+  1. Button on the Approvals ask — second row next to More (leave the four
+     verdicts on the first row). `callback_data: ambulance:<id>`.
+  2. Typed twin in the Approvals topic, parallel to `/qjump`:
+     `/ambulance BL-xxx` (and keep rejecting a fabricated/missing id).
+  3. Both routes call the SAME `engageAmbulance` adapter Control already
+     uses (`engageOperatorAmbulance`). Confirm back in Approvals naming
+     the ticket, same receipt copy Control posts today.
+  4. Do not flip `human_approval`. Do not promote. Do not dispatch.
+     Do not start the expeditor. Release stays where it is
+     (`ambulance off` on Control / `/ambulance off` on Host).
+
+qa_e2e_procedure: |
+  1. On a live Approvals ask, confirm the second row shows Ambulance next
+     to More. Tap it for that ticket. Confirm Control-style receipt in
+     Approvals and `.swarmforge/operator/control-ambulance.json` is
+     `{active:true, ticket:<id>, ...}`. Confirm the ask's
+     `human_approval` line is still pending.
+  2. Release via Control `ambulance off`. Marker inactive.
+  3. In Approvals, type `/ambulance BL-xxx` for a real paused ticket;
+     same engage. Type `/ambulance BL-99999` (no YAML); refuse, no marker.
+  4. Tap Q jump on a different ticket: still approve+promote+dispatch;
+     ambulance marker unchanged.
+
+out_of_scope: |
+  - Changing ambulance hold semantics (BL-655) or the marker file shape.
+  - A Release button on Approvals (Control/Host already release).
+  - Combining Ambulance with Approve or Q jump on one tap.
+  - Host `/ambulance` / Control `ambulance BL-xxx` — already shipped.
+  - Renaming Q jump or Expedite.
+
+notes: |
+  Constitution (workflow-detailed): queue-jump is not ambulance; ambulance
+  is not the expeditor. This ticket is the Approvals-surface hole for
+  rung 2. Related: BL-655 (ambulance), BL-490 (Expedite/Q-jump effect),
+  BL-721 (Q jump label + /qjump).

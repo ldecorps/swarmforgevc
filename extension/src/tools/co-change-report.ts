@@ -30,6 +30,7 @@ import { execFileSync } from 'child_process';
 import { runGitLog } from '../metrics/gitHistoryAdapter';
 import { computeCoChangeReport, CoChangeOptions, CoChangeReport, DEFAULT_CO_CHANGE_OPTIONS } from '../quality/coChange';
 import { makeArgsGuardedMain, runCliMain } from './swarm-metrics';
+import { tryRealpath } from '../util/pathContainment';
 
 export interface CoChangeCliArgs {
   changedFiles: string[];
@@ -91,7 +92,17 @@ function resolveRepoRoot(cwd: string): string {
 }
 
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
-  const cwd = process.cwd();
+  // BL-792: `git rev-parse --show-toplevel` returns its result through the
+  // OS's canonical (symlink-resolved) path, but process.cwd() does not -
+  // on macOS os.tmpdir()'s /var/folders/... is itself a symlink to
+  // /private/var/folders/.... Combining the two unresolved gave
+  // toRepoRelativePath a repoRoot and an absolute path built from cwd that
+  // disagreed on that prefix, so path.relative climbed all the way to '/'
+  // instead of producing a short repo-relative path - every changed file
+  // silently matched nothing in history. Canonicalizing cwd the same way
+  // repoRoot already is keeps both sides of that comparison on the same
+  // path form.
+  const cwd = tryRealpath(process.cwd());
   const repoRoot = resolveRepoRoot(cwd);
   const history = runGitLog(repoRoot, '.');
   const changedFiles = args.changedFiles.map((file) => toRepoRelativePath(cwd, repoRoot, file));

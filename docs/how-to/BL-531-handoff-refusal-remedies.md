@@ -1,6 +1,6 @@
-# BL-531: Handling Pre-QA Gate Handoff Refusals
+# BL-531/BL-761/BL-880: Handling Pre-QA Gate Handoff Refusals
 
-When you attempt a `git_handoff` to QA and `swarm_handoff.sh` prints `PRE_QA_GATE_FAIL`, your parcel has been refused. This is by design: the gate catches work defects before the expensive QA review. This runbook explains each class of refusal and how to fix it.
+When you attempt a `git_handoff` and `swarm_handoff.sh` prints `PRE_QA_GATE_FAIL`, your parcel has been refused. This is by design: the gate catches work defects before they travel further down the pipeline. Most of these classes (`ancestry`, `wiring`, `manifest`, `acceptance-contract`) are armed only on a handoff addressed to QA; `acceptance-pointer` is armed on every pre-QA hop instead — see its own section below for why. This runbook explains each class of refusal and how to fix it.
 
 ## Refusal Classes
 
@@ -9,7 +9,8 @@ Every refusal line is machine-greppable:
 PRE_QA_GATE_FAIL <class> <ticket-id> <detail>
 ```
 
-where `<class>` is one of: `ancestry`, `wiring`, or `manifest`.
+where `<class>` is one of: `ancestry`, `wiring`, `manifest`,
+`acceptance-contract`, or `acceptance-pointer`.
 
 ## Ancestry Refusals
 
@@ -180,6 +181,117 @@ git add backlog/active/BL-531-....yaml
 git commit -m "BL-531: fix malformed required_wiring entry"
 swarm_handoff.sh ./tmp/handoff.txt
 ```
+
+## Acceptance-Contract Refusals
+
+**What it means:** Your ticket's declared `acceptance:` feature file cannot
+actually run — either it can't be read at the commit you're sending, or the
+step registry at that commit has no handler for one or more of its steps
+(BL-761: shipped tickets have landed with feature files never actually
+executed, only read and mapped by eye).
+
+**Example output — unresolved step:**
+```
+PRE_QA_GATE_FAIL acceptance-contract BL-761 scenario "Bridge is unreachable": no step handler matched "Given the Bubble companion is paired to a bridge base URL"
+  remedy: Merge the named commit / land the named wiring and re-forward, or record a deliberately dropped commit under abandoned_commits:.
+```
+
+**Example output — unreadable declaration:**
+```
+PRE_QA_GATE_FAIL acceptance-contract BL-761 acceptance: declaration is unreadable at the cited commit (absent, inline Gherkin, or naming a feature file that does not exist there)
+  remedy: Merge the named commit / land the named wiring and re-forward, or record a deliberately dropped commit under abandoned_commits:.
+```
+
+**How to fix:**
+
+### Option 1: Register the Missing Step Handler
+
+The finding names the exact scenario (and, for a Scenario Outline, the
+example row) and the step text that matched nothing. Add a handler for it in
+`specs/pipeline/steps/`, scoped to this feature with `defineScoped` if the
+step text is generic enough to collide with another ticket's handlers:
+
+```bash
+# Add/extend a step file under specs/pipeline/steps/ for the missing step
+vim specs/pipeline/steps/<yourTicket>Steps.js
+
+git add specs/pipeline/steps/<yourTicket>Steps.js
+git commit -m "BL-761: register missing step handler"
+
+# Confirm the contract now runs end to end
+bash specs/pipeline/scripts/run_acceptance.sh specs/features/<your-feature>.feature
+
+swarm_handoff.sh ./tmp/handoff.txt
+```
+
+### Option 2: Fix the `acceptance:` Declaration
+
+If the field is absent, blank, inline Gherkin, or points at a path that
+doesn't exist at the commit you're citing, point it at the real feature file
+and commit both the ticket edit and the correct commit together:
+
+```yaml
+# In backlog/active/BL-761-....yaml
+acceptance: specs/features/BL-761-acceptance-contract-must-be-runnable.feature
+```
+
+```bash
+git add backlog/active/BL-761-....yaml
+git commit -m "BL-761: fix acceptance: declaration path"
+swarm_handoff.sh ./tmp/handoff.txt
+```
+
+**Never** treat this class the way an ancestry or wiring finding can
+sometimes be dismissed via `abandoned_commits:` — a contract that cannot run
+is not deliberately-dropped work, it is unverified behavior. There is no
+"remove the requirement" option: every ticket must declare a runnable
+contract.
+
+**Note on infrastructure warnings for this check:** if the step registry
+itself cannot be loaded at the cited commit (most commonly `extension/out/`
+was never compiled, so `pilotAcceptanceGate` and friends fail to `require()`),
+the gate fails **open** — a `PRE_QA_GATE WARNING`, not a finding, and the send
+goes through. Run `npm run compile` and re-check locally if you want to be
+sure your contract actually resolves before sending.
+
+## Acceptance-Pointer Refusals (BL-880)
+
+**What it means:** Your ticket's single-line `acceptance:` declaration names
+a path that does not exist at the commit you're sending. Unlike the
+Acceptance-Contract check above, this is **not** QA-only — it fires at the
+very first `git_handoff` (coder onward), so a stale pointer is caught before
+it rides five pipeline stages to the QA edge. It checks existence only: it
+never parses the feature file or resolves steps, so a legitimately parked
+`.feature.draft` (BL-233) sails through as long as it exists at the cited
+commit.
+
+**Example output:**
+```
+PRE_QA_GATE_FAIL acceptance-pointer BL-880 declared acceptance: path "specs/features/BL-880-....feature" does not exist at cited commit a1b2c3d9e8
+  remedy: Flip the ticket's acceptance: pointer to the correct path (or promote the parked .feature.draft in the same commit) and re-send.
+```
+
+**How to fix:**
+
+The usual cause is promoting a parked `.feature.draft` to a live `.feature`
+without flipping the ticket YAML's `acceptance:` pointer in the same commit
+(BL-877/BL-879 both hit this). Fix both together:
+
+```bash
+git mv specs/features/BL-880-....feature.draft specs/features/BL-880-....feature
+# edit backlog/active/BL-880-....yaml: acceptance: specs/features/BL-880-....feature
+git add specs/features/BL-880-....feature backlog/active/BL-880-....yaml
+git commit -m "BL-880: promote acceptance draft and flip pointer"
+swarm_handoff.sh ./tmp/handoff.txt
+```
+
+**What does NOT trigger this check:** a blank/absent `acceptance:` field, an
+inline (multi-line) Gherkin declaration, or a recipient of QA — those stay
+the Acceptance-Contract check's concern, judged there with full context
+(step resolution included). If the cited commit's tree can't be read at all
+(infrastructure trouble), this check fails **open** with an
+`ACCEPTANCE_POINTER_GATE WARNING` instead of a finding, and the send
+proceeds.
 
 ## Infrastructure Warnings
 

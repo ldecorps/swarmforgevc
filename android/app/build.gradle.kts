@@ -8,11 +8,14 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.swarmforge.floatcompanion"
+        // Fresh id: sideload cannot update over an older install signed with a
+        // different debug key (generic "App not installed"). Distinct from both
+        // legacy ids: com.swarmforge.floatcompanion and com.swarmforge.bubble.
+        applicationId = "com.swarmforge.float"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "0.3.8-home-handsfree"
+        versionCode = 33
+        versionName = "0.3.17-open-talk"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -34,6 +37,15 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        // BL-825: BuildConfig.VERSION_CODE is how resolveUiBundle learns
+        // this shell's own version — the standard Android idiom for exactly
+        // this ordered-comparison purpose, so no android.* call is needed.
+        buildConfig = true
+    }
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
     }
 }
 
@@ -43,4 +55,14 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // BL-829: the pager beside the native Talk page — a plain
+    // RecyclerView.Adapter (not FragmentStateAdapter), so TalkPanelActivity
+    // keeps its existing view-binding-driven Talk UI as page 0 unchanged.
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
+
+    // BL-769: JVM unit suite for Bubble's pure logic — no emulator, no device.
+    testImplementation("junit:junit:4.13.2")
+    // android.jar's org.json is a stub that throws at runtime; a real jar is
+    // needed on the unit test classpath for BridgeClient to load and run.
+    testImplementation("org.json:json:20240303")
 }

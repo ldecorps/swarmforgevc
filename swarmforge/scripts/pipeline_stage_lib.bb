@@ -82,6 +82,29 @@
 (defn ticket-id-from-headers [{:keys [task message]}]
   (or (extract-ticket-id task) (extract-ticket-id message)))
 
+;; BL-869: a SIBLING to extract-ticket-id's single-match contract, not a
+;; replacement - extract-ticket-id's first-token-wins behavior has seven
+;; live callers outside this file that read a task header naming exactly
+;; one ticket by contract, and stays untouched. This is for the opposite
+;; case: a QA note or commit that names SEVERAL tickets (Article 2.6 batch
+;; forwards, a multi-ticket close) where every id it names must be found,
+;; not just the first. All id-shaped tokens anywhere in text, canonicalized
+;; upper-case, de-duplicated, in order of first appearance; nil (not an
+;; empty vector) when text names none, mirroring extract-ticket-id's own
+;; nil-for-no-match contract.
+(defn extract-ticket-ids [text]
+  (when text
+    (seq (into [] (comp (map (fn [[_ prefix digits]] (str/upper-case (str prefix "-" digits))))
+                         (distinct))
+               (re-seq ticket-id-pattern text)))))
+
+;; ticket-ids-from-headers is to ticket-id-from-headers what
+;; extract-ticket-ids is to extract-ticket-id: every id named across both
+;; headers, task ids first then message ids, de-duplicated, nil when
+;; neither header names any.
+(defn ticket-ids-from-headers [{:keys [task message]}]
+  (seq (distinct (concat (extract-ticket-ids task) (extract-ticket-ids message)))))
+
 ;; BL-464 board-authoritative-stage-02/03: reconciles possibly-conflicting
 ;; {:role :ticket-id} observations (the same ticket id momentarily held at
 ;; two roles during a transition) down to EXACTLY ONE role per ticket id -

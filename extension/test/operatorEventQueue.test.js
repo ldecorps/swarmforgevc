@@ -179,3 +179,65 @@ test('readNewReplyOutboxEntries omits the retractsPendingQuestion key for an ord
   assert.deepEqual(result.entries, [{ id: 'reply-2', threadId: 'SUP-1', text: 'ordinary reply' }]);
   assert.ok(!('retractsPendingQuestion' in result.entries[0]));
 });
+
+// BL-708: role_ask.bb marks its outbox line roleQuestion: <role> (plus
+// options) so telegramFrontDeskBotCore.ts's relayOneRecord retargets
+// delivery to that role's own Telegram topic instead of the ordinary reply
+// path. Before this fix, readNewReplyOutboxEntries narrowed every entry to
+// {id, threadId, text, retractsPendingQuestion} - roleQuestion/agentQuestion/
+// options never survived the read, so relayOneRecord always took the
+// ordinary-reply branch for a role-ask record and the question vanished.
+test('readNewReplyOutboxEntries passes through a roleQuestion field verbatim', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [{ id: 'r1', threadId: 'role-ask-specifier', text: 'which environment?', roleQuestion: 'specifier' }]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [{ id: 'r1', threadId: 'role-ask-specifier', text: 'which environment?', roleQuestion: 'specifier' }]);
+});
+
+test('readNewReplyOutboxEntries passes through an agentQuestion field verbatim', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [{ id: 'a1', threadId: 'SUP-1', text: 'proceed?', agentQuestion: true }]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [{ id: 'a1', threadId: 'SUP-1', text: 'proceed?', agentQuestion: true }]);
+});
+
+test('readNewReplyOutboxEntries passes through a roleQuestion\'s options array verbatim, in order', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [
+    {
+      id: 'r2',
+      threadId: 'role-ask-specifier',
+      text: 'which environment?',
+      roleQuestion: 'specifier',
+      options: [{ label: 'staging' }, { label: 'prod', description: 'production' }],
+    },
+  ]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [
+    {
+      id: 'r2',
+      threadId: 'role-ask-specifier',
+      text: 'which environment?',
+      roleQuestion: 'specifier',
+      options: [{ label: 'staging' }, { label: 'prod', description: 'production' }],
+    },
+  ]);
+});
+
+test('readNewReplyOutboxEntries omits roleQuestion/agentQuestion/options keys for an ordinary reply, never defaulting them', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [{ id: 'reply-3', threadId: 'SUP-1', text: 'ordinary reply' }]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [{ id: 'reply-3', threadId: 'SUP-1', text: 'ordinary reply' }]);
+  assert.ok(!('roleQuestion' in result.entries[0]));
+  assert.ok(!('agentQuestion' in result.entries[0]));
+  assert.ok(!('options' in result.entries[0]));
+});
+
+test('readNewReplyOutboxEntries carries a roleQuestion with no options key at all (never synthesizing an empty array)', () => {
+  const targetPath = mkTmp();
+  writeOutbox(targetPath, [{ id: 'r3', threadId: 'role-ask-specifier', text: 'anything else?', roleQuestion: 'specifier' }]);
+  const result = readNewReplyOutboxEntries(targetPath, 0);
+  assert.deepEqual(result.entries, [{ id: 'r3', threadId: 'role-ask-specifier', text: 'anything else?', roleQuestion: 'specifier' }]);
+  assert.ok(!('options' in result.entries[0]));
+});

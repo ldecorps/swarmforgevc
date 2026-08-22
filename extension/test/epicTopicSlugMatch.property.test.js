@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { computeEpicTopics, resolveTopicMembership } = require('../out/bridge/epicTopicSlugMatch');
+const { computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } = require('../out/bridge/epicTopicSlugMatch');
 
 // BL-686/BL-654: coder-authored property tests for this ticket's three
 // declared invariants. Runs ONLY via `npm run test:properties`.
@@ -165,4 +165,33 @@ test('BL-686 invariant 2 (read/write agreement): resolveTopicMembership finds ex
   assert.ok(sawMultiPeerEpic, 'reachability floor: generator never produced an epic with 2+ live topic peers');
   assert.ok(sawEpicIdWithNoMembers, 'reachability floor: generator never produced an epic id with zero live topics');
   assert.ok(sawPeersExcludingAnEpicRow, 'reachability floor: generator never had an epic row to exclude from a real peer set');
+});
+
+test('filterEpicsWithTopics is exactly the stable subset of epics that computeEpicTopics tagged onto at least one topic', () => {
+  let sawDrop = false;
+  let sawKeep = false;
+
+  fc.assert(
+    fc.property(epicsArb, topicsArb, (epics, topics) => {
+      const liveItems = toLiveItems(epics, topics);
+      const tagged = computeEpicTopics(liveItems, epics);
+      const kept = filterEpicsWithTopics(epics, tagged);
+      const populated = new Set(tagged.flatMap((t) => t.epicIds));
+
+      assert.deepEqual(
+        kept.map((e) => e.id),
+        epics.filter((e) => populated.has(e.id)).map((e) => e.id)
+      );
+      if (kept.length < epics.length) {
+        sawDrop = true;
+      }
+      if (kept.length > 0) {
+        sawKeep = true;
+      }
+    }),
+    { numRuns: 300 }
+  );
+
+  assert.ok(sawDrop, 'reachability floor: generator never produced a childless epic to drop');
+  assert.ok(sawKeep, 'reachability floor: generator never produced an epic with a live child to keep');
 });

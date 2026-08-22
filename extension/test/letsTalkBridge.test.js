@@ -5,9 +5,29 @@ const path = require('node:path');
 const { startBridge, effectiveBubbleMirrorTopicId, formatBubbleMirrorText, mirrorLetsTalkTurnToBubble } = require('../out/bridge/bridgeServer');
 const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
 const { processLetsTalkTurn } = require('../out/bridge/letsTalkRoutes');
+const { LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT } = require('../out/bridge/letsTalkCore');
+const { writeLetsTalkAudioEnginePreference, letsTalkAudioEnginePreferencePath, readLetsTalkAudioEnginePreference } = require('../out/bridge/letsTalkAudioPreference');
 const { splitTelegramChunks } = require('../out/tools/telegramCursorBridgeCore');
 const TOKEN = 'lets-talk-bridge-token';
 const SAMPLE_AUDIO = Buffer.from('audio-chunk').toString('base64');
+const LETS_TALK_AUDIO_ENGINE_ENV_KEYS = ['OPENAI_API_KEY', 'WHISPER_MODEL_PATH', 'LETS_TALK_AUDIO_ENGINE'];
+
+// BL-863: runs `fn` with the named env vars cleared, restoring their prior
+// values (present or absent) afterward — isolates the real (non-override)
+// per-turn audio resolution path from whatever the host process happens to
+// have set.
+async function withClearedEnv(keys, fn) {
+  const prev = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  keys.forEach((key) => delete process.env[key]);
+  try {
+    return await fn();
+  } finally {
+    for (const key of keys) {
+      if (prev[key] === undefined) delete process.env[key];
+      else process.env[key] = prev[key];
+    }
+  }
+}
 
 function mkTmp() {
   const target = mkTmpDir('sfvc-lets-talk-bridge-');
@@ -200,6 +220,85 @@ test('lets-talk turn route accepts bearer query param without auth headers', asy
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.success, true);
+  });
+});
+
+// BL-863: with no transcribeAudio/synthesizeSpeech overrides passed to
+// startBridge, the write routes are wired to resolveAudioForTurn (bridgeServer.ts)
+// instead of a static adapter set. This exercises that real wiring end to
+// end over HTTP — every other test in this file supplies overrides and so
+// never touches it.
+test('lets-talk turn resolves audio per turn (no static overrides) and fails loudly when unconfigured', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    await withBridge(target, { agentSession: createMockCursorBridgeAgentSession(target) }, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'hello' }),
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.match(body.reason, /openai/i);
+      assert.match(body.reason, /missing/i);
+    });
+  });
+});
+
+test('lets-talk turn: a stored preference change applies to the next turn without a bridge restart', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    await withBridge(target, { agentSession: createMockCursorBridgeAgentSession(target) }, async (handle) => {
+      const turnBody = async () => {
+        const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: 'hello' }),
+        });
+        return res.json();
+      };
+
+      const openaiWrite = writeLetsTalkAudioEnginePreference(target, { engine: 'openai' });
+      assert.equal(openaiWrite.ok, true);
+      const openaiTurn = await turnBody();
+      assert.equal(openaiTurn.success, false);
+      assert.match(openaiTurn.reason, /openai/i);
+
+      const localWrite = writeLetsTalkAudioEnginePreference(target, { engine: 'local' });
+      assert.equal(localWrite.ok, true);
+      const localTurn = await turnBody();
+      assert.equal(localTurn.success, false);
+      assert.match(localTurn.reason, /local/i);
+    });
+  });
+});
+
+test('lets-talk turn: an unreadable preference falls back to the bootstrap engine and reports itself', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    process.env.LETS_TALK_AUDIO_ENGINE = 'local';
+    const prefPath = letsTalkAudioEnginePreferencePath(target);
+    fs.mkdirSync(path.dirname(prefPath), { recursive: true });
+    fs.writeFileSync(prefPath, '{not json', 'utf8');
+    await withBridge(target, { agentSession: createMockCursorBridgeAgentSession(target) }, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'hello' }),
+      });
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.match(body.reason, /local/i);
+    });
+    const eventsPath = path.join(target, '.swarmforge', 'operator', 'events.jsonl');
+    assert.ok(fs.existsSync(eventsPath));
+    const events = fs
+      .readFileSync(eventsPath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.ok(events.some((event) => event.type === 'lets-talk-audio-preference-unreadable'));
   });
 });
 
@@ -423,6 +522,83 @@ test('processLetsTalkTurn: onTurnSuccess failure is ignored', async () => {
   assert.equal(result.success, true);
 });
 
+// BL-717 hold-music-speech-03: the bridge never reports success with
+// nothing to say — an empty agent reply must surface as fallback speakable
+// text, not a `success: true` turn the phone has nothing to play.
+test('processLetsTalkTurn: empty agent reply in client-TTS mode returns fallback speakable text, not blank success', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: '', agentId: 'agent-1' });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+  assert.ok(result.replySpeechText && result.replySpeechText.trim().length > 0);
+});
+
+test('processLetsTalkTurn: whitespace-only agent reply is treated as empty', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: '   \n  ', agentId: 'agent-1' });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+});
+
+test('processLetsTalkTurn: empty agent reply in server-TTS mode synthesizes fallback text, not blank success', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: '', agentId: 'agent-1' });
+  const synthesized = [];
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      synthesizeSpeech: async (text) => {
+        synthesized.push(text);
+        return { kind: 'ok', audio: Buffer.from(`audio:${text}`) };
+      },
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+  assert.ok(result.replyAudioBase64 && result.replyAudioBase64.length > 0);
+  assert.equal(synthesized.length, 1);
+  assert.match(synthesized[0], /anything to say/i);
+});
+
+// BL-717 hold-music-speech-04: the fallback never replaces a real reply.
+test('processLetsTalkTurn: a non-empty agent reply is never replaced by the fallback', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: 'the real answer', agentId: 'agent-1' });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, 'the real answer');
+  assert.notEqual(result.replyText, LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT);
+});
+
 test('effectiveBubbleMirrorTopicId keeps dedicated Bubble topic', () => {
   assert.equal(effectiveBubbleMirrorTopicId({ cursorTopicId: 9, bubbleTopicId: 91 }), 91);
 });
@@ -573,4 +749,117 @@ test('BL-718 mirror: choice poll still mirrored with text transcript', async () 
     fs.readFileSync(path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'), 'utf8')
   );
   assert.equal(state.pendingChoicePolls[0].pollId, 'poll-1');
+  // BL-767: the poll's own topic must be recorded so a later answer to it
+  // can be routed back here instead of guessing Bubble-first.
+  assert.equal(state.pendingChoicePolls[0].originTopicId, 91);
+});
+
+// BL-864: GET/POST /lets-talk/audio-engine — the HTTP surface Bubble
+// Settings uses to read and write BL-863's voice-engine preference. See
+// specs/features/BL-864-bubble-settings-voice-engine-selector.feature.
+
+test('lets-talk audio-engine status route requires control auth (401 without token)', async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('lets-talk audio-engine status reports the engine in use, enabled flag, and per-engine serviceability', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    writeLetsTalkAudioEnginePreference(target, { engine: 'local' });
+    await withBridge(target, buildMocks(target), async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`);
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.success, true);
+      assert.equal(body.enabled, true);
+      assert.equal(body.engine, 'local');
+      assert.equal(body.engines.openai.serviceable, false);
+      assert.match(body.engines.openai.reason, /missing/i);
+    });
+  });
+});
+
+test('lets-talk audio-engine status reflects the voiceEngineSwitch capability flag off', async () => {
+  const target = mkTmp();
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'operator', 'lets-talk-bubble-config.json'),
+    JSON.stringify({ schemaVersion: 1, revision: 'r1', features: { voiceEngineSwitch: false } })
+  );
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`);
+    const body = await res.json();
+    assert.equal(body.enabled, false);
+  });
+});
+
+test('lets-talk audio-engine write route requires control auth (401 without token)', async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ engine: 'local' }),
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(readLetsTalkAudioEnginePreference(target), { kind: 'none' });
+  });
+});
+
+test('lets-talk audio-engine write accepts a serviceable engine and it applies to the next status read', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    process.env.OPENAI_API_KEY = 'sk-live';
+    await withBridge(target, buildMocks(target), async (handle) => {
+      const writeRes = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ engine: 'openai' }),
+      });
+      assert.equal(writeRes.status, 200);
+      const writeBody = await writeRes.json();
+      assert.deepEqual(writeBody, { success: true, engine: 'openai' });
+
+      const statusRes = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`);
+      const statusBody = await statusRes.json();
+      assert.equal(statusBody.engine, 'openai');
+    });
+  });
+});
+
+// BL-864 refusal-shows-a-reason-and-does-not-stick-03
+test('lets-talk audio-engine write refuses an unserviceable engine with a reason, preference unchanged', async () => {
+  const target = mkTmp();
+  await withClearedEnv(LETS_TALK_AUDIO_ENGINE_ENV_KEYS, async () => {
+    writeLetsTalkAudioEnginePreference(target, { engine: 'local' });
+    await withBridge(target, buildMocks(target), async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ engine: 'openai' }),
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.match(body.reason, /openai/i);
+      assert.match(body.reason, /missing/i);
+      assert.deepEqual(readLetsTalkAudioEnginePreference(target), { kind: 'stored', engine: 'local' });
+    });
+  });
+});
+
+test('lets-talk audio-engine write rejects a body carrying anything beyond engine (400, wholesale refusal)', async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/audio-engine?bearer=${TOKEN}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ engine: 'openai', openaiApiKey: 'sk-smuggled' }),
+    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(readLetsTalkAudioEnginePreference(target), { kind: 'none' });
+  });
 });

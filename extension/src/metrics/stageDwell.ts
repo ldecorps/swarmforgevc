@@ -36,8 +36,11 @@ export interface StageDwellReport {
 
 export interface BottleneckSummary {
   role: string;
+  /** Queue wait + processing median for the named stage - unchanged meaning from before BL-909; kept for existing readers, but no longer what decides the ranking below. */
   totalDwellMs: number;
-  /** null when this is the only stage with data - nothing to compare against. */
+  /** BL-909: the processing-only median that actually decided which stage is named - a dormant stage's queue wait (mailbox time while the resident plays another role) never contributes here. */
+  processingDwellMs: number;
+  /** null when this is the only stage with data - nothing to compare against. BL-909: derived from processing medians only, never queue-wait-inclusive totals. */
   multipleOverNext: number | null;
 }
 
@@ -205,20 +208,27 @@ export function buildStageDwellReport(
 
 // ── pure: bottleneck naming (dwell-02) ──────────────────────────────────
 
+// BL-909: ranks on median PROCESSING time alone - queue wait is real
+// dormancy (mailbox time while a mono-router's single resident plays
+// another role), not capacity, and the human's ruling was to fix the
+// formula for every dormant role rather than exclude any one of them. The
+// per-stage lines still report queue wait alongside processing (unchanged);
+// only which stage gets named, and its multiple, ranks on processing.
 export function nameBottleneck(stages: StageDwellReport[]): BottleneckSummary | null {
-  const withTotals = stages
-    .map((s) => ({ role: s.role, totalMs: stageTotalDwellMs(s.queueWait, s.processing) }))
-    .filter((s): s is { role: string; totalMs: number } => s.totalMs !== null && s.totalMs > 0)
-    .sort((a, b) => b.totalMs - a.totalMs);
+  const withProcessing = stages
+    .map((s) => ({ role: s.role, processingMs: s.processing.medianMs, totalMs: stageTotalDwellMs(s.queueWait, s.processing) }))
+    .filter((s): s is { role: string; processingMs: number; totalMs: number } => s.processingMs !== null && s.processingMs > 0)
+    .sort((a, b) => b.processingMs - a.processingMs);
 
-  if (withTotals.length === 0) {
+  if (withProcessing.length === 0) {
     return null;
   }
-  const [top, next] = withTotals;
+  const [top, next] = withProcessing;
   return {
     role: top.role,
     totalDwellMs: top.totalMs,
-    multipleOverNext: next ? top.totalMs / next.totalMs : null,
+    processingDwellMs: top.processingMs,
+    multipleOverNext: next ? top.processingMs / next.processingMs : null,
   };
 }
 

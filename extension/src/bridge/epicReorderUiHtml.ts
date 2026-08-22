@@ -1,11 +1,13 @@
 /// BL-572: Telegram Mini App shell for the console EPIC PRIORITY REORDER
-/// screen. Lists paused `type: epic` tickets (priority ascending) with
-/// Move up / Move down per row - each tap POSTs /epic-reorder/move
-/// {id, direction} and refreshes. A move is never silently refused: a
-/// boundary no-op (already first/last) answers changed:false with a reason,
-/// which this screen displays rather than a status line indistinguishable
-/// from success (architect bounce #2). Empty state ("No epics to reorder")
-/// when there are none. Polls GET /epic-reorder-state?token=... for the list.
+/// screen. Lists paused `type: epic` tickets that have at least one live
+/// child (priority ascending) with Move up / Move down per row - each tap
+/// POSTs /epic-reorder/move {id, direction} and refreshes. Childless
+/// trackers are omitted so they cannot swallow a tap. A move is never
+/// silently refused: a boundary no-op (already first/last) answers
+/// changed:false with a reason, which this screen displays rather than a
+/// status line indistinguishable from success (architect bounce #2). Empty
+/// state ("No epics to reorder") when there are none. Polls GET
+/// /epic-reorder-state?token=... for the list.
 
 export function getEpicReorderUiHtml(): string {
   return `<!DOCTYPE html>
@@ -62,6 +64,7 @@ export function getEpicReorderUiHtml(): string {
   }
   .row-title { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
   .row-priority { font-size: 11px; color: var(--tg-theme-hint-color, #8b949e); }
+  .row-eta { font-size: 11px; color: var(--tg-theme-hint-color, #8b949e); margin-top: 2px; }
   .row-actions { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
   button {
     padding: 6px 10px;
@@ -76,6 +79,16 @@ export function getEpicReorderUiHtml(): string {
   button[disabled] { opacity: 0.35; cursor: default; }
   .empty { font-size: 15px; color: var(--tg-theme-hint-color, #8b949e); }
   .dep-marker { font-size: 11px; }
+  .in-flight-badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 1px 6px;
+    border-radius: 6px;
+    color: var(--tg-theme-hint-color, #8b949e);
+    border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 45%, transparent);
+  }
   button.back-to-tiles { margin-bottom: 10px; }
 </style>
 </head>
@@ -142,6 +155,33 @@ export function getEpicReorderUiHtml(): string {
     contentEl.innerHTML = '<p class="empty">No epics to reorder.</p>';
   }
 
+  // BL-591: the per-epic velocity ETA readout - display-and-estimate only.
+  // Renders exactly what the estimator's typed state says: a RANGE with its
+  // pace assumption, blocked count and confidence, or the honest
+  // complete / blocked / no-recent-pace word - never a point date and never
+  // a duration for work that cannot start.
+  function formatEtaDays(days) {
+    if (days >= 10) { return '~' + Math.round(days / 7) + 'w'; }
+    return '~' + days + 'd';
+  }
+  function renderEpicEta(eta) {
+    if (!eta || !eta.kind) { return ''; }
+    if (eta.kind === 'complete') {
+      return '<div class="row-eta">complete</div>';
+    }
+    if (eta.kind === 'blocked') {
+      return '<div class="row-eta">' + eta.reason + ' (' + eta.blockedCount + ' blocked)</div>';
+    }
+    if (eta.kind === 'no-recent-pace') {
+      return '<div class="row-eta">no recent pace' + (eta.blockedCount ? ' · ' + eta.blockedCount + ' blocked' : '') + '</div>';
+    }
+    var text = formatEtaDays(eta.lowDays) + '–' + formatEtaDays(eta.highDays)
+      + ' · ' + eta.confidence + ' confidence (' + eta.confidenceReason + ')'
+      + (eta.blockedCount ? ' · ' + eta.blockedCount + ' blocked' : '')
+      + '<br>' + eta.paceAssumption;
+    return '<div class="row-eta">' + text + '</div>';
+  }
+
   function renderTiles(data) {
     if (!data || !data.items || data.items.length === 0) {
       renderEmpty();
@@ -158,6 +198,7 @@ export function getEpicReorderUiHtml(): string {
       html += '<div class="row-id">' + item.id + '</div>';
       html += '<div class="row-title">' + (item.title || '(untitled)') + '</div>';
       html += '<div class="row-priority">priority ' + item.priority + '</div>';
+      html += renderEpicEta(item.epicEta);
       html += '</div>';
       html += '<div class="row-actions">';
       html += '<button class="move-up" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Move up</button>';
@@ -203,13 +244,17 @@ export function getEpicReorderUiHtml(): string {
     var topics = ((lastData && lastData.topics) || []).filter(function (t) { return (t.epicIds || []).indexOf(epicId) !== -1; });
     var html = '<button class="back-to-tiles" id="back-to-tiles">&larr; Back</button>';
     if (topics.length === 0) {
-      html += '<p class="empty">No live topics in this epic.</p>';
+      html += '<p class="empty">No reorderable topics under this epic.</p>';
     } else {
       topics.forEach(function (t) {
         var marker = t.hasLiveDependency ? ' <span class="dep-marker" title="Has a live dependency">&#9939;</span>' : '';
+        // BL-687: in-flight children are full members, not read-only guests
+        // (approval_context #1) - badged so the screen never implies an
+        // active/ row is merely displayed.
+        var inFlightBadge = t.inFlight ? ' <span class="in-flight-badge">in flight</span>' : '';
         html += '<div class="row" data-id="' + t.id + '">';
         html += '<div class="row-text">';
-        html += '<div class="row-id">' + t.id + marker + '</div>';
+        html += '<div class="row-id">' + t.id + marker + inFlightBadge + '</div>';
         html += '<div class="row-title">' + (t.title || '(untitled)') + '</div>';
         html += '<div class="row-priority">priority ' + t.priority + '</div>';
         html += '</div>';

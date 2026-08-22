@@ -74,14 +74,84 @@ export function isKnownBounceRole(value: string): value is BounceRole {
   return isKnownValue(KNOWN_BOUNCE_ROLES, value);
 }
 
+// BL-689: one item in a bounce's defect inventory - Article 4.4's D1..Dn
+// shape. `class` reuses the same widened closed set as the record's own
+// failureClass (KNOWN_FAILURE_CLASSES); `blamed` reuses the producing-role
+// vocabulary (KNOWN_PRODUCING_ROLES) - the role a REVIEW PASS blames for an
+// item, same vocabulary as who is blamed for the bounce as a whole.
+export interface BounceInventoryItem {
+  id: string;
+  class: QaBounceFailureClass;
+  blamed: QaBounceProducingRole;
+  pointer: string;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isKnownFailureClassValue(value: unknown): value is QaBounceFailureClass {
+  return typeof value === 'string' && isKnownFailureClass(value);
+}
+
+function isKnownProducingRoleValue(value: unknown): value is QaBounceProducingRole {
+  return typeof value === 'string' && isKnownProducingRole(value);
+}
+
+export function isValidBounceInventoryItem(value: unknown): value is BounceInventoryItem {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    isNonEmptyString(candidate.id) &&
+    isKnownFailureClassValue(candidate.class) &&
+    isKnownProducingRoleValue(candidate.blamed) &&
+    isNonEmptyString(candidate.pointer)
+  );
+}
+
 // BL-635: identical to QaBounceRecord plus `by` - optional on the TYPE
 // (the 53 legacy qa_bounces records predate --by reaching the JSONL line
 // at all) even though the generalised CLI makes the flag REQUIRED going
 // forward. A record with `by` absent reads as unattributed
 // (bounceAttribution below), never silently folded into QA or any other
 // role (record-bounce-by-role-06).
+//
+// BL-689: `items`/`blocked` are optional on the TYPE forever (invariant 1) -
+// every record written before this ticket, and every call that omits
+// --items going forward, carries neither field. `blocked` is metadata ABOUT
+// the inventory (how many checks that review pass could not run), so it is
+// only ever written alongside a present `items` array, never alone.
 export interface BounceRecord extends QaBounceRecord {
   by?: BounceRole;
+  items?: BounceInventoryItem[];
+  blocked?: number;
+}
+
+// BL-689 invariant 2: one call is one bounce EVENT, so a record with no
+// inventory (a call made before this ticket, or one that omitted --items)
+// must still count as ONE defect in the mean - never zero, and never
+// excluded from the figure entirely (Article 4.4's own defects-per-bounce
+// motivation: every bounce, old and new, stays comparable).
+export function defectCountForRecord(record: Pick<BounceRecord, 'items'>): number {
+  return record.items && record.items.length > 0 ? record.items.length : 1;
+}
+
+// Pure aggregator - total inventory items across every recorded bounce,
+// divided by the number of bounce events. Reads the SAME merged log
+// computeQaBounceTally does; qa-bounce-line.ts is this function's one live
+// caller (required_wiring - see BL-689's ticket).
+export function computeDefectsPerBounce(records: BounceRecord[]): number {
+  if (records.length === 0) {
+    return 0;
+  }
+  const totalDefects = records.reduce((sum, r) => sum + defectCountForRecord(r), 0);
+  return totalDefects / records.length;
 }
 
 export function bounceAttribution(record: Pick<BounceRecord, 'by'>): string {
@@ -104,6 +174,105 @@ export function bounceNaturalKey(record: Pick<BounceRecord, 'ticket' | 'failureC
 export function hasBounceRecord(existing: BounceRecord[], candidate: BounceRecord): boolean {
   const key = bounceNaturalKey(candidate);
   return existing.some((r) => bounceNaturalKey(r) === key);
+}
+
+// ── BL-990: correcting a misattributed bounce ───────────────────────────
+//
+// A bounce charged to the wrong role used to be permanent: the recorder only
+// appends, and the only correction available was a human-readable note that
+// no consumer reads. Demonstrated live - the specifier amended an active
+// ticket mid-flight, QA correctly bounced the parcel built against the older
+// contract, and the store charged it to the coder, whose bounce rate was at
+// that moment feeding an experiment.
+//
+// A correction is therefore a RECORD, not prose, and it SUPERSEDES rather
+// than edits: the store is an audit trail, and the fact that a
+// misattribution happened is itself the evidence that this class of defect
+// exists. Nothing is ever rewritten or deleted.
+//
+// What a correction does is mark its target EXCLUDED FROM ATTRIBUTION -
+// deliberately not "re-point it at the specifier". The ticket left that
+// choice open and this is the smaller half: KNOWN_PRODUCING_ROLES is the
+// closed set every consumer GROUPS on, so adding a member to it would ripple
+// through every tally, the legacy store and the ticket-YAML shape, to say
+// something the exclusion already says - this bounce is not evidence about
+// the role it names.
+export interface BounceCorrection {
+  kind: 'bounce-correction';
+  ticket: string;
+  commit: string;
+  at: string; // ISO 8601 timestamp
+  by: BounceRole; // who issued the correction
+  reason: string; // required - see isBounceCorrection
+  evidence?: string;
+}
+
+export const BOUNCE_CORRECTION_KIND = 'bounce-correction';
+
+// Split from isBounceCorrection purely to keep each piece's own cyclomatic
+// complexity under the CRAP budget (mirrors bounceStore.ts's
+// hasBounceRecordShape/hasKnownBounceValues split for the same reason):
+// identity fields, reason+evidence, and `by`'s type+enum membership. Same
+// behavior, same fields, same order of evaluation - a pure decomposition.
+function hasBounceCorrectionIdentity(candidate: Partial<BounceCorrection>): boolean {
+  return (
+    candidate.kind === BOUNCE_CORRECTION_KIND &&
+    isNonEmptyString(candidate.ticket) &&
+    isNonEmptyString(candidate.commit) &&
+    isNonEmptyString(candidate.at)
+  );
+}
+
+function hasBounceCorrectionReasonAndEvidence(candidate: Partial<BounceCorrection>): boolean {
+  return (
+    // Non-BLANK, not merely non-empty: a reason of "   " explains exactly as
+    // much as no reason at all, and this is the field standing between a
+    // correction and a silent retraction.
+    isNonBlankString(candidate.reason) && (candidate.evidence === undefined || isNonEmptyString(candidate.evidence))
+  );
+}
+
+function hasKnownBounceCorrectionAttribution(candidate: Partial<BounceCorrection>): boolean {
+  return typeof candidate.by === 'string' && isKnownBounceRole(candidate.by);
+}
+
+// The reason is REQUIRED and must be non-blank. An unexplained retraction is
+// indistinguishable from metric-gaming, and this store feeds a live
+// experiment - so a reasonless correction is not a degraded correction, it
+// is not a correction at all, and is refused at the shape check that every
+// reader and the writer both go through.
+export function isBounceCorrection(value: unknown): value is BounceCorrection {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const c = value as Partial<BounceCorrection>;
+  return hasBounceCorrectionIdentity(c) && hasBounceCorrectionReasonAndEvidence(c) && hasKnownBounceCorrectionAttribution(c);
+}
+
+// Ticket + commit, deliberately NOT the full bounce natural key: the same
+// ticket can legitimately bounce more than once in a day (BL-590: four
+// architect send-backs), each citing its own commit, and a correction must
+// reach exactly the one it names without touching its siblings.
+export function bounceCorrectionTargetKey(record: Pick<BounceCorrection, 'ticket' | 'commit'>): string {
+  return `${record.ticket}|${record.commit}`;
+}
+
+// Resolves supersession: a record whose ticket+commit a correction names is
+// dropped from the attributed view. Idempotent by construction (a Set of
+// keys), so re-recording the same correction can never remove more than the
+// one record it targets, and a correction naming a bounce that is not in the
+// store is simply inert.
+export function applyBounceCorrections(records: BounceRecord[], corrections: BounceCorrection[]): BounceRecord[] {
+  if (corrections.length === 0) {
+    return records;
+  }
+  const corrected = new Set(corrections.map(bounceCorrectionTargetKey));
+  return records.filter((r) => !corrected.has(bounceCorrectionTargetKey(r)));
+}
+
+export function hasBounceCorrection(existing: BounceCorrection[], candidate: BounceCorrection): boolean {
+  const key = bounceCorrectionTargetKey(candidate);
+  return existing.some((c) => bounceCorrectionTargetKey(c) === key);
 }
 
 // Idempotency key: ticket + the DATE portion of `at` (not the exact

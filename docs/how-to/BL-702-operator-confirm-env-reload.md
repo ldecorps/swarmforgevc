@@ -6,7 +6,7 @@ ask for Confirm before they mutate anything. Swarm relaunches re-read
 
 ## Confirm tiers
 
-- **Read** (`/status`, `/update`, `/log`, `/doctor`, `/tunnel`, `/help`,
+- **Read** (`/status`, `/update`, `/log`, `/doctor`, `/tunnel`, `/conf`, `/help`,
   `/confirm-off`): run immediately.
 - **Soft** (`/compile`, `/pull`, `/syncenv`, `/redeploy`, …): one Confirm tap.
 - **Hard** (`/restart`, `/bounce …`, `/ensure`, `/stop`, …): Confirm with an

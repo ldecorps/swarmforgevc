@@ -54,6 +54,14 @@
 ;;   FRONT_DESK_HEALTHY_RESET_MS   continuous-uptime attempt reset (default 600000)
 ;;   FRONT_DESK_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
 ;;   FRONT_DESK_STALL_MS           bot poll-heartbeat staleness window (default 90000)
+;;   FRONT_DESK_BUILD_GRACE_MS     BL-582: how long a HEALTHY child may keep
+;;                                 serving a build that no longer matches
+;;                                 main before it is restarted onto a fresh
+;;                                 one (default 300000). Freshness used to
+;;                                 be checked only on a crash respawn, so a
+;;                                 healthy bot served a stale build for
+;;                                 2h23m on 2026-07-23 and every approval
+;;                                 tap in that window silently did nothing.
 ;;   FRONT_DESK_ESCALATION_MAX_ATTEMPTS bounded retry cap on the give-up
 ;;                                 escalation email (default 5)
 ;;   FRONT_DESK_ESCALATION_BACKOFF_BASE_MS / FRONT_DESK_ESCALATION_BACKOFF_MAX_MS
@@ -67,11 +75,14 @@
 ;;   BRIDGE_TOKEN                  shared bridge token - provisioned by
 ;;                                 launch_front_desk.sh, never generated here
 ;;   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
-;;                                 fallback ONLY for the primary swarm, when no
-;;                                 fleet creds file exists for its swarm_name
-;;                                 (BL-436: ~/.swarmforge/fleet/<swarm_name>/
-;;                                 telegram.json wins wholesale when present -
-;;                                 see fleet_telegram_creds_lib.bb)
+;;                                 fallback ONLY for the recorded primary root,
+;;                                 when no fleet creds file exists for its
+;;                                 swarm_name (BL-436: ~/.swarmforge/fleet/
+;;                                 <swarm_name>/telegram.json wins wholesale
+;;                                 when present - see fleet_telegram_creds_lib.bb.
+;;                                 BL-622: every OTHER swarm gets a loud refusal
+;;                                 instead of silently inheriting this env -
+;;                                 see resolve-telegram-creds/env-fallback-allowed?)
 ;;   TELEGRAM_PRINCIPAL_USER_ID    required for the bot (validated by the
 ;;                                 bot's own CLI, not re-validated here)
 ;;   SWARMFORGE_FLEET_HOME         overrides the fleet creds root (default the
@@ -84,6 +95,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
@@ -125,7 +137,15 @@
    ;; proven it is not in a crash loop, so its attempt count resets to 0 -
    ;; the cap counts CONSECUTIVE rapid crashes, not lifetime-accumulated
    ;; ones. Default 10 minutes.
-   :healthy-reset-ms (env-long "FRONT_DESK_HEALTHY_RESET_MS" 600000)})
+   :healthy-reset-ms (env-long "FRONT_DESK_HEALTHY_RESET_MS" 600000)
+   ;; BL-582: how long a running child may serve a build that no longer
+   ;; matches main before it is restarted onto a fresh one. The 2026-07-23
+   ;; window ran 2h23m stale because freshness was only ever checked on a
+   ;; CRASH respawn and a healthy process never crashed. Five minutes is
+   ;; long enough that a merge landing mid-conversation does not yank the
+   ;; front desk away, short enough that the next tap is served by current
+   ;; code. Default 5 minutes.
+   :build-grace-ms (env-long "FRONT_DESK_BUILD_GRACE_MS" 300000)})
 ;; BL-303: "gave-up" is a TIMED state, not terminal - once this (longer)
 ;; cooldown elapses the child re-arms with a fresh attempt budget. Default
 ;; 15 minutes - long enough to stay a bounded-RATE retry (never a tight
@@ -148,13 +168,31 @@
 ;; fleet-console purposes).
 (def swarm-name (swarm-identity-lib/own-swarm-name project-root))
 (def fleet-home-dir (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getProperty "user.home")))
+;; BL-622: bootstraps the durable primary-root record on this swarm's first
+;; primary launch (a no-op once a record exists, or for a non-primary
+;; swarm-name) - must run BEFORE resolve-telegram-creds below so the very
+;; first primary launch ever still resolves via env fallback in the same
+;; tick it records itself as primary.
+(fleet-telegram-creds-lib/ensure-primary-root-recorded! fleet-home-dir project-root swarm-name)
 (def resolved-telegram-creds
   (fleet-telegram-creds-lib/resolve-telegram-creds
-   fleet-home-dir swarm-name
+   fleet-home-dir project-root swarm-name
    {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
     "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
    (env-long "BRIDGE_PORT" 8765)))
 (def bridge-port (:bridge-port resolved-telegram-creds))
+;; BL-622 scenario 05: a second, independent hazard - THIS swarm's resolved
+;; token (however it got resolved) already belongs to another fleet swarm's
+;; own creds file. Computed only when resolution itself did not already
+;; refuse (a nil token never conflicts with anything).
+(def conflicting-fleet-swarm
+  (when-not (:refused? resolved-telegram-creds)
+    (fleet-telegram-creds-lib/conflicting-swarm fleet-home-dir swarm-name (:bot-token resolved-telegram-creds))))
+(def launch-refusal-reason
+  (cond
+    (:refused? resolved-telegram-creds) (:reason resolved-telegram-creds)
+    conflicting-fleet-swarm (fleet-telegram-creds-lib/duplicate-token-message swarm-name conflicting-fleet-swarm)
+    :else nil))
 
 ;; BL-370: how long the bot's poll heartbeat can go quiet before it is
 ;; treated as stalled. Default 90s - a healthy long-poll (25s timeout,
@@ -297,6 +335,67 @@
                      :extra-env {"BRIDGE_TOKEN" (System/getenv "BRIDGE_TOKEN")}}
                     "node" (str bridge-entrypoint) project-root (str bridge-port)))
 
+;; ── BL-789: bridge port adopt-or-free (real I/O; decide-bridge-port-action
+;; in front_desk_supervisor_lib.bb is the pure decision this drives) ────────
+;; Only ever consulted when check-one! has ALREADY decided a (re)spawn is
+;; needed (our own tracked pid is dead/never-started) - a healthy "running"
+;; entry never reaches this at all, so this never fights a bridge we already
+;; know is ours and alive.
+(defn- bridge-port-holder-pid! []
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true} "lsof" "-ti" (str "tcp:" bridge-port) "-sTCP:LISTEN")]
+      (when (zero? exit)
+        (some-> (first (str/split-lines (str/trim out))) not-empty parse-long)))
+    (catch Exception _ nil)))
+
+;; Same /lets-talk health route + curl convention start_bridge_headless.sh
+;; already uses to tell "listening" from "actually serving".
+(defn- bridge-port-healthy?! []
+  (try
+    (let [{:keys [exit]} (process/sh {:continue true} "curl" "-sf" "--max-time" "2"
+                                      (str "http://127.0.0.1:" bridge-port "/lets-talk"))]
+      (zero? exit))
+    (catch Exception _ false)))
+
+;; BL-789: kill-pid! (front-desk-supervisor-lib/make-kill-pid!, used for our
+;; OWN spawned bridge/bot children elsewhere in this file) is built on
+;; java.lang.ProcessHandle - which on this JVM only reliably signals a
+;; process that IS this bb process's own child. The port-holder freed here
+;; is by definition NOT our child (an orphan or an unrelated process) -
+;; ProcessHandle.destroy() on such a pid is a silent no-op (confirmed: the
+;; target stays alive). Shell to the real `kill` binary instead, the same
+;; TERM-then-verify convention daemon_log_freshness_check.sh's own
+;; kill_daemon() and start_bridge_headless.sh's own orphan-reap already use.
+(defn- free-foreign-pid! [pid]
+  (process/sh {:continue true} "kill" "-TERM" (str pid))
+  (Thread/sleep 300)
+  (let [{:keys [exit]} (process/sh {:continue true} "kill" "-0" (str pid))]
+    (when (zero? exit)
+      (process/sh {:continue true} "kill" "-KILL" (str pid))
+      (Thread/sleep 100))))
+
+(defn maybe-adopt-or-spawn-bridge! []
+  (let [holder-pid (bridge-port-holder-pid!)
+        holder (when holder-pid
+                 {:pid holder-pid :cmdline (process-table-lib/cmdline! holder-pid)})
+        healthy? (boolean (and holder-pid (bridge-port-healthy?!)))
+        action (front-desk-supervisor-lib/decide-bridge-port-action holder healthy? project-root)]
+    (case action
+      :adopt
+      (do (log! "adopt" "bridge" "pid=" (str holder-pid) "already healthy on port" (str bridge-port))
+          holder-pid)
+
+      :free
+      (do
+        (when holder-pid
+          (log! "free-port" "bridge" "pid=" (str holder-pid)
+                "cmdline=" (or (:cmdline holder) "") "port" (str bridge-port))
+          (free-foreign-pid! holder-pid))
+        (.pid (:proc (spawn-bridge!))))
+
+      :spawn
+      (.pid (:proc (spawn-bridge!))))))
+
 (defn spawn-bot! []
   (when-let [err (ensure-current-build!)]
     (log! "degraded-respawn" "bot" "stale build re-armed -" err))
@@ -313,13 +412,39 @@
                                  "BRIDGE_CONTROL_TOKEN" (System/getenv "BRIDGE_TOKEN")}}
                     "node" (str bot-entrypoint) (str "http://127.0.0.1:" bridge-port) project-root))
 
+;; BL-582: the RUNNING child's own build identity - :build_sha, stamped at
+;; the moment it was spawned (stamp-build-sha below) - compared against
+;; main. Never extension/out/BUILD_SHA, which reports whatever is on disk
+;; NOW: after someone else recompiles, that reads fresh while the child
+;; still holds the old code in memory, which is exactly the state that
+;; served the failed taps for 2h23m on 2026-07-23. A child with no stamp
+;; yet (pre-BL-328 status file) reads as not-stale, never as a restart.
+(defn- child-build-stale? [entry]
+  (front-desk-supervisor-lib/build-stale? (:build_sha entry) (main-sha!)))
+
+;; BL-1037: "has this child completed a poll cycle on the build it was
+;; restarted ONTO". Same fact BL-1035 uses to judge staleness - a heartbeat at
+;; or after this child's own spawn - read here to bound how often a HEALTHY
+;; child may be restarted for build staleness.
+;;
+;; The bridge has no poll heartbeat to read, so it reports TRUE: it keeps
+;; BL-582's behaviour exactly rather than being silently exempted from the
+;; watchdog by a fact it cannot observe. Saying so here is the point - a child
+;; that cannot prove it served must not thereby become unrestartable.
+(defn- child-build-served? [entry]
+  (front-desk-supervisor-lib/build-served-fact? (read-poll-heartbeat-ms) (:started-at-ms entry)))
+
 (def process-specs
-  [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!)))) :heartbeat-stale? (fn [_ _] false)}
+  [{:key :bridge :spawn-pid! (fn [] (maybe-adopt-or-spawn-bridge!)) :heartbeat-stale? (fn [_ _] false)
+    :build-stale? child-build-stale?
+    :build-served? (fn [_] true)}
    {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))
     :heartbeat-stale? (fn [now entry]
                         (front-desk-supervisor-lib/poll-heartbeat-stale?
                           (read-poll-heartbeat-ms) now stall-ms
-                          (:started-at-ms entry) heartbeat-startup-grace-ms))}])
+                          (:started-at-ms entry) heartbeat-startup-grace-ms))
+    :build-stale? child-build-stale?
+    :build-served? child-build-served?}])
 
 ;; ── persisted state (JSON: {"bridge": {...}, "bot": {...}}) ───────────────
 
@@ -345,6 +470,25 @@
     ;; apart even though they recover through the identical mechanism.
     :stalled (log! "stalled" (name spec-key) "no poll heartbeat within" (str stall-ms) "ms")
     :healthy-reset (log! "healthy-reset" (name spec-key))
+    ;; BL-582: the grace has STARTED, nothing has been restarted yet -
+    ;; logged so a human reading the log can see the countdown begin, and
+    ;; so a restart that follows is never a surprise.
+    :build-stale-detected (log! "build-stale-detected" (name spec-key) "build_sha=" (str (:build_sha entry))
+                                "grace-ms=" (str (:build-grace-ms restart-config)))
+    ;; Distinct from :crashed and :stalled - the pid never died and the
+    ;; heartbeat was fine; the code it was running was out of date. Same
+    ;; recovery mechanism, deliberately different report.
+    :build-stale (log! "build-stale" (name spec-key) "restarting a HEALTHY process onto a fresh build")
+    ;; BL-1037: past the grace, but this child has not completed a poll cycle
+    ;; on the build it was restarted onto, so restarting it again would spend a
+    ;; recompile, a respawn and a Telegram conflict window to replace a build
+    ;; that never served. The staleness is CARRIED, not dropped - logged so the
+    ;; deferral is visible and a human never has to infer it from a restart
+    ;; that did not happen. That silence is what made the 2026-08-22 restart
+    ;; storm need a hand-built timeline to read.
+    :build-stale-deferred (log! "build-stale-deferred" (name spec-key)
+                                "build_sha=" (str (:build_sha entry))
+                                "still owed a restart; this child has not served yet")
     :gave-up (log! "gave-up" (name spec-key) "after" (str (:attempts entry)) "attempt(s)")
     :re-armed (log! "re-armed" (name spec-key) "pid=" (str (:pid entry)))
     nil))
@@ -455,7 +599,9 @@
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
                                        heartbeat-stale? ((:heartbeat-stale? spec) now entry)
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
-                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!)
+                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!
+                                                               ((:build-stale? spec) entry)
+                                                               ((:build-served? spec) entry))
                                        entry (stamp-build-sha entry event)]
                                    (log-event! (:key spec) event entry)
                                    [(:key spec) entry])))
@@ -475,18 +621,29 @@
 
 (defn -main []
   (fs/create-dirs op-dir)
-  (if check-once?
-    (println (json/generate-string (tick!)))
+  ;; BL-622: the launch gate - a refused resolution (no per-swarm creds and
+  ;; not the recorded primary root) or a duplicate-token conflict means the
+  ;; front desk never starts at all: no pid file claimed (so
+  ;; launch_front_desk.sh's own wait loop reports the failed launch), no
+  ;; bridge/bot spawned, one loud line in both the log and stderr (captured
+  ;; by launch_front_desk.sh's nohup redirect into front-desk-supervisor.log).
+  (if launch-refusal-reason
     (do
-      (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
-      (log! "front-desk-supervisor started" (str "interval-ms=" interval-ms))
-      (try
-        (while (not (fs/exists? stop-file))
-          (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
-          (Thread/sleep interval-ms))
-        (finally
-          (stop-all!)
-          (fs/delete-if-exists pid-file)
-          (log! "front-desk-supervisor stopped"))))))
+      (log! "refused" launch-refusal-reason)
+      (binding [*out* *err*] (println launch-refusal-reason))
+      (System/exit 1))
+    (if check-once?
+      (println (json/generate-string (tick!)))
+      (do
+        (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
+        (log! "front-desk-supervisor started" (str "interval-ms=" interval-ms))
+        (try
+          (while (not (fs/exists? stop-file))
+            (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
+            (Thread/sleep interval-ms))
+          (finally
+            (stop-all!)
+            (fs/delete-if-exists pid-file)
+            (log! "front-desk-supervisor stopped")))))))
 
 (-main)

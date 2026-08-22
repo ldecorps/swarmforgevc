@@ -21,7 +21,8 @@ make_fixture() {
   register_tmp_dir "$d"
   mkdir -p "$d/swarm/extension/out/tools" "$d/swarm/.swarmforge/operator" "$d/fleet-home"
   cp "$SRC/onboarder_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" \
-     "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" "$d/swarm/"
+     "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" \
+     "$SRC/process_table_lib.bb" "$d/swarm/"
   # A real supervised child that stays alive but writes NO heartbeat of its
   # own - isolates the assertion to "did the supervisor consult the old
   # file", never "did the real reconcile loop's own heartbeat save it".

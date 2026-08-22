@@ -1,0 +1,85 @@
+# backlog/hotfix-ledger.yaml — BL-848 hotfix certification ledger.
+# One entry per commit that DECLARES itself a hotfix (Hotfix-Certification:
+# trailer) or that a human has recorded a certification decision for.
+# `state` is a derived snapshot, refreshed by operator_runtime's recurrent
+# check; `stamp_ticket`/`human_decision`/`decided_at` are durable facts set
+# only by a human/operator (see hotfix_ledger_update.bb, never by the sweep).
+# docs/how-to/BL-848-certify-an-operator-hotfix.md documents the workflow.
+
+- commit: f9cf29c29b
+  subject: "Land Darwin orphan-janitor fix and file swarm stamp-off intake."
+  detected_at: 2026-08-07
+  state: awaiting-human
+  stamp_ticket: BL-849
+  human_decision: null
+  decided_at: null
+- commit: f175bc56d1
+  subject: "Park local WIP for host switch: drain router depth, Bubble chiptunes, pilot-safe defects, answer archive."
+  detected_at: 2026-08-07
+  state: awaiting-human
+  stamp_ticket: BL-860
+  human_decision: null
+  decided_at: null
+- commit: 36ea0109e9
+  subject: "Land parent-orphaned front-desk janitor fix and file swarm stamp-off intake."
+  detected_at: 2026-08-11
+  state: awaiting-human
+  stamp_ticket: BL-879
+  human_decision: null
+  decided_at: null
+- commit: 602c7d014c
+  subject: "Land Cursor-agent hotfix: handoffd_supervisor's orphan reaper now catches property-lane vitest orphans too"
+  detected_at: 2026-08-12
+  state: awaiting-human
+  stamp_ticket: BL-886
+  human_decision: null
+  decided_at: null
+- commit: 1ecbe049fe
+  subject: "Land Cursor-agent hotfix: orphan janitor reaps hung property-lane vitest trees; fixture runner cleans up on abnormal exit"
+  detected_at: 2026-08-12
+  state: awaiting-human
+  stamp_ticket: BL-886
+  human_decision: null
+  decided_at: null
+- commit: e49a71b532
+  subject: "Host /queue posts the selection poll instead of a numbered text list"
+  detected_at: 2026-08-14
+  state: awaiting-human
+  stamp_ticket: BL-894
+  human_decision: null
+  decided_at: null
+- commit: 2bfce302f5
+  subject: "Make INVEST a specifier mint-time gate (human directive 2026-08-14)"
+  detected_at: 2026-08-14
+  state: waived
+  stamp_ticket: null
+  human_decision: waived
+  decided_at: 2026-08-14
+- commit: 14724edae7
+  subject: "Land morning-briefing not-done burndown chart (stranded WIP; clears master-checkout drift)."
+  detected_at: 2026-08-15
+  state: awaiting-human
+  stamp_ticket: BL-896
+  human_decision: null
+  decided_at: null
+- commit: 0f5394a2d0
+  subject: "Land hide-childless-epics reorder screen fix (BL-905 stamp-off; human-approved hotfix landing)."
+  detected_at: 2026-08-16
+  state: awaiting-human
+  stamp_ticket: BL-905
+  human_decision: null
+  decided_at: null
+- commit: 8da0f52e59
+  subject: "Land Cursor-agent hotfix: Bubble expand after cold start (v0.3.17-open-talk)."
+  detected_at: 2026-08-17
+  state: awaiting-human
+  stamp_ticket: BL-916
+  human_decision: null
+  decided_at: null
+- commit: ece61cbe63
+  subject: "Land Cursor-bridge gone-agent session reset."
+  detected_at: 2026-08-17
+  state: awaiting-human
+  stamp_ticket: BL-915
+  human_decision: null
+  decided_at: null

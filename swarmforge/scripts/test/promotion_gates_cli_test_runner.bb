@@ -95,6 +95,24 @@
   (assert= "evaluate on a held ticket refuses naming hold marker, before human_approval is even read"
            "REFUSE|hold marker|ticket is parked in backlog/hold/, never auto-promoted" out))
 
+;; ── evaluate: BL-854 orthogonality advisory on stderr, stdout unchanged ──
+
+(let [root (mk-root)
+      _ (write! root "active" "BL-900" "id: BL-900\nepic: swarm-reliability\n")
+      f (write! root "paused" "BL-14" "id: BL-14\nepic: swarm-reliability\nhuman_approval: approved\n")
+      {:keys [out err exit]} (run "evaluate" root f "false" "5")]
+  (assert= "an epic-colliding candidate still prints ALLOW on stdout (stdout contract unchanged)" "ALLOW" out)
+  (assert= "an epic-colliding candidate still exits 0" 0 exit)
+  (assert= "the advisory is on stderr, naming the colliding ticket"
+           "ADVISORY|orthogonality|epic swarm-reliability is also active on BL-900\n" err))
+
+(let [root (mk-root)
+      _ (write! root "active" "BL-900" "id: BL-900\nepic: swarm-reliability\n")
+      f (write! root "paused" "BL-15" "id: BL-15\nepic: bubble-control\nhuman_approval: approved\n")
+      {:keys [out err]} (run "evaluate" root f "false" "5")]
+  (assert= "a non-colliding candidate still prints ALLOW" "ALLOW" out)
+  (assert= "a non-colliding candidate prints no advisory at all" "" err))
+
 ;; ── select ───────────────────────────────────────────────────────────────
 
 (let [root (mk-root)
@@ -115,6 +133,25 @@
       {:keys [out exit]} (run "select" root "5" refused)]
   (assert= "select with no eligible candidate prints NONE" "NONE" out)
   (assert= "select NONE exits 1" 1 exit))
+
+;; ── select: BL-854 prints the WINNER's advisory once, never the loser's ──
+
+(let [root (mk-root)
+      _ (write! root "active" "BL-900" "id: BL-900\nepic: swarm-reliability\n")
+      colliding (write! root "paused" "BL-24" "id: BL-24\nepic: swarm-reliability\npriority: 5\nhuman_approval: approved\n")
+      clean (write! root "paused" "BL-25" "id: BL-25\nepic: bubble-control\npriority: 50\nhuman_approval: approved\n")
+      {:keys [out err]} (run "select" root "5" clean colliding)]
+  (assert= "select still picks the epic-colliding-but-better-priority candidate" colliding out)
+  (assert= "select prints that winner's advisory once, on stderr"
+           "ADVISORY|orthogonality|epic swarm-reliability is also active on BL-900\n" err))
+
+(let [root (mk-root)
+      _ (write! root "active" "BL-900" "id: BL-900\nepic: swarm-reliability\n")
+      clean (write! root "paused" "BL-26" "id: BL-26\nepic: bubble-control\npriority: 5\nhuman_approval: approved\n")
+      colliding (write! root "paused" "BL-27" "id: BL-27\nepic: swarm-reliability\npriority: 50\nhuman_approval: approved\n")
+      {:keys [out err]} (run "select" root "5" clean colliding)]
+  (assert= "select picks the non-colliding, better-priority candidate" clean out)
+  (assert= "the rejected colliding candidate's advisory is never printed - only the winner's" "" err))
 
 ;; ── route-target ─────────────────────────────────────────────────────────
 

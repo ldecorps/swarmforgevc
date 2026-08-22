@@ -18,6 +18,13 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
+;; BL-853: depth-refusal below needs the documented no-limit sentinel
+;; (any negative max-depth means unlimited) - reuse backlog-depth-lib's own
+;; predicate rather than re-deriving "negative means unlimited" a second
+;; time here, which is exactly the kind of divergent copy this file's own
+;; header comment (above) warns against.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+
 ;; ── ticket field reading ──────────────────────────────────────────────────
 ;; Same "small live-glue duplicated across independent pure libs" idiom as
 ;; ambulance_lib.bb / ticket_status_lib.bb / chase_sweep_lib.bb's own private
@@ -79,6 +86,75 @@
       {:gate "human_approval"
        :reason (format "human_approval is %s, not approved" v)})))
 
+;; ── gate: depends_on (BL-957) ─────────────────────────────────────────────
+;; read-field is unusable here by its own documented design: it returns nil
+;; for a blank value (`field: >`/`field: |` must read as absent), so a
+;; block-style dependency list would read as NO dependencies at all -
+;; failing OPEN on exactly the tickets this gate exists to catch (two live
+;; paused tickets use that form today). This gate has its own reader.
+
+(def ^:private ticket-id-pattern #"(?:BL|GH)-\d+")
+
+(defn read-depends-on
+  "{:ids [..] :unparseable? bool} - every BL-<n>/GH-<n> token in the
+   depends_on field's own value and its indented continuation lines (block
+   lists AND folded blocks alike), deduplicated in first-occurrence order,
+   inline ` # ...` comments stripped per line so an annotation never
+   contributes an id. All four live forms (measured 2026-08-19) are read:
+   `[]`, a flow list, a block list, and a bare scalar with trailing prose
+   (prose around the ids is ignored without being parsed). :unparseable?
+   is true when the field is PRESENT with a non-empty value that yields no
+   id token at all - the caller fails closed on it (invariant 2), never
+   treats it as dependency-free."
+  [content]
+  (let [lines (str/split-lines (or content ""))
+        [field-line & after] (drop-while #(not (str/starts-with? (str/trim %) "depends_on:"))
+                                         lines)]
+    (if (nil? field-line)
+      {:ids [] :unparseable? false}
+      (let [value (strip-comment (str/trim (subs (str/trim field-line) (count "depends_on:"))))
+            continuation (->> after
+                              (take-while #(and (not (str/blank? %))
+                                                (re-find #"^\s" %)))
+                              (map (comp strip-comment str/trim)))
+            texts (cons value continuation)
+            ids (vec (distinct (mapcat #(re-seq ticket-id-pattern %) texts)))
+            explicitly-empty? (and (= "[]" value) (empty? continuation))
+            value-present? (boolean (some #(and (not (str/blank? %))
+                                                (not (#{">" "|"} %)))
+                                          texts))]
+        ;; explicitly-empty? guards :unparseable? only - `[]` is a
+        ;; present, non-blank value that yields no id, and is the one such
+        ;; value that means "no dependencies" rather than "unreadable".
+        ;; It never has to clear :ids: a value of `[]` with no continuation
+        ;; carries no id token to begin with.
+        {:ids ids
+         :unparseable? (boolean (and value-present?
+                                     (not explicitly-empty?)
+                                     (empty? ids)))}))))
+
+;; The set of landed ids the refusal below resolves against is read by
+;; done-ids, which lives with the other directory-scanning readers in this
+;; file's impure half rather than here among the pure decisions.
+
+(defn depends-on-refusal
+  "nil when every declared dependency is positively resolved in done-id-set;
+   otherwise {:gate :reason} naming EVERY unsatisfied id (and no satisfied
+   one), so the coordinator's next action is obvious without re-deriving
+   them. Fails CLOSED both ways (invariant 2): an id resolving to no ticket
+   anywhere refuses (a typo refuses rather than promotes - approval ruling
+   2), and a present-but-unparseable field refuses rather than reading as
+   dependency-free. A dependency counts as satisfied ONLY in backlog/done/ -
+   an ACTIVE dependency still refuses (approval ruling 1)."
+  [content done-id-set]
+  (let [{:keys [ids unparseable?]} (read-depends-on content)]
+    (if unparseable?
+      {:gate "depends_on"
+       :reason "depends_on is present but names no parseable BL-/GH- ticket id - failing closed"}
+      (when-let [unsatisfied (seq (remove (or done-id-set #{}) ids))]
+        {:gate "depends_on"
+         :reason (str "depends_on not yet landed in backlog/done/: " (str/join ", " unsatisfied))}))))
+
 ;; ── gate: Article 3.2.4 expedite lane ──────────────────────────────────────
 
 (def ^:private expedited-types
@@ -97,20 +173,46 @@
    (and (contains? expedited-types (read-type content))
         (contains? expedited-severities (read-severity content)))))
 
-(defn- rank-key [content]
-  [(if (expedited? content) 0 1) (read-priority content) (or (read-id content) "")])
+;; BL-900: an epic's own priority is compared before the child ticket's own
+;; priority - splicing the term AFTER the expedite bucket (invariant "the
+;; expedite bucket stays strictly first" holds by construction, not by a
+;; guard) and BEFORE own-priority (own-priority remains the within-epic
+;; tie-break it already was).
+
+(defn epic-priority
+  "The candidate's resolved epic-priority: the minimum `type: epic` tracker
+   priority sharing its `epic:` (via epic-index, see epic-priority-index
+   below), or its OWN priority when it has no `epic:` field or that epic has
+   no tracker anywhere in the backlog (BL-900 decisions 2 and 3 - the
+   fallback that keeps such a candidate ranked exactly as it is today). An
+   epic tracker that is itself a ranking candidate needs no special case: its
+   own priority already participates in epic-index's min for its own epic."
+  [content epic-index]
+  (let [epic (read-epic content)]
+    (or (and epic (get epic-index epic))
+        (read-priority content))))
+
+(defn- rank-key [content epic-index]
+  [(if (expedited? content) 0 1)
+   (epic-priority content epic-index)
+   (read-priority content)
+   (or (read-id content) "")])
 
 (defn rank-candidates
   "candidates: a seq of {:file :content}. Returns the winning candidate map
-   (nil for an empty seq) under Article 3.2.4: every expedited candidate
-   sorts ahead of every non-expedited one regardless of priority number;
-   priority then id breaks ties within each bucket - the same tie-break
-   promote_and_route_next.sh's pre-existing candidate_sort_line already used,
-   preserved so a fully-compliant, non-expedited pick is unchanged."
-  [candidates]
-  (some->> (seq candidates)
-           (sort-by (comp rank-key :content))
-           first))
+   (nil for an empty seq) under Article 3.2.4 plus BL-900: every expedited
+   candidate sorts ahead of every non-expedited one regardless of priority
+   number; within a bucket, epic-priority (epic-index, defaulted to {} when
+   omitted - every candidate then falls back to its own priority, preserving
+   pre-BL-900 ordering exactly) breaks ties before own-priority; own-priority
+   then id breaks the rest - the same tie-break promote_and_route_next.sh's
+   pre-existing candidate_sort_line already used, preserved so a fully-
+   compliant, non-expedited, epic-tracker-less pick is unchanged."
+  ([candidates] (rank-candidates candidates {}))
+  ([candidates epic-index]
+   (some->> (seq candidates)
+            (sort-by (comp #(rank-key % epic-index) :content))
+            first)))
 
 ;; ── gate: assignee / spec-stage routing ─────────────────────────────────
 ;; Recurrence #3 (de5b5d323): promote_and_route_next.sh's own sed flipped
@@ -137,24 +239,60 @@
 ;; produces the named reason the acceptance scenarios assert on, and so a
 ;; future caller of `evaluate` below cannot skip it by construction.
 
-(defn depth-refusal [active-count max-depth]
-  (when (>= active-count max-depth)
+(defn depth-refusal
+  "BL-853: a negative max-depth is the documented no-limit sentinel
+   (backlog-depth-lib/no-limit?), never a real ceiling to compare
+   active-count against - this gate must allow at every active-count under
+   it, exactly like backlog-depth-lib's own depth-exceeded?/under-depth-cap?
+   already do for their call sites."
+  [active-count max-depth]
+  (when (and (not (backlog-depth-lib/no-limit? max-depth))
+             (>= active-count max-depth))
     {:gate "active_backlog_max_depth"
      :reason (format "active count %d >= cap %d - no open slot" active-count max-depth)}))
 
-;; ── gate: orthogonality ──────────────────────────────────────────────────
+;; ── advisory: orthogonality ──────────────────────────────────────────────
 ;; No ticket field declares file/module scope, so this uses `epic:` - already
 ;; mandatory on every non-epic-tracker ticket (backlog-schema.md hygiene rule
 ;; 1) - as the scope proxy: two tickets sharing an epic are the concrete
 ;; "tightly coupled area" the Concurrent Work Orthogonality workflow rule
-;; means. Naturally a no-op whenever backlog/active/ is empty (the common
-;; active_backlog_max_depth=1 regime), matching that rule's own "applies when
-;; the cap is above 1" carve-out without a separate special case.
+;; means. BL-854: measured against the live backlog, the epic proxy is far
+;; too coarse to REFUSE on (112 of 204 paused tickets blocked behind a single
+;; active defect, and the coordinator was already overriding it by hand every
+;; time by comparing the tickets' real declared file paths - the judgement
+;; the constitution's Concurrent Work Orthogonality rule assigns to the
+;; coordinator, not to this automated layer, which has no scope data to rule
+;; on). This is now an ADVISORY, never a refusal (invariant 1): it names
+;; every active ticket sharing the epic (invariant 2) so the coordinator can
+;; check real file overlap without re-deriving which tickets collided.
+;; Naturally produces no advisory whenever backlog/active/ is empty (the
+;; common active_backlog_max_depth=1 regime), matching the constitution
+;; rule's own "applies when the cap is above 1" carve-out without a separate
+;; special case.
 
-(defn orthogonality-refusal [candidate-epic active-epics]
-  (when (and candidate-epic (contains? (set active-epics) candidate-epic))
-    {:gate "orthogonality"
-     :reason (format "epic %s already has an active ticket in flight" candidate-epic)}))
+(defn orthogonality-advisory
+  "{:gate \"orthogonality\" :epic .. :ids [..]} naming every active ticket
+   sharing candidate-epic (active-epics: epic -> ids map, see the
+   active-epics reader below), or nil when candidate-epic is nil or shares
+   no active ticket. Never a refusal - the caller (evaluate, below) merges
+   this into an :ok true result, it never gates it. Sorts ids itself rather
+   than trusting the caller to have pre-sorted them (the real active-epics
+   reader below does, but this function's own output must be deterministic
+   on its own terms - an operator-visible advisory line whose id order
+   depended on map-building order would be needlessly flaky to read and to
+   test)."
+  [candidate-epic active-epics]
+  (when candidate-epic
+    (when-let [ids (seq (get active-epics candidate-epic))]
+      {:gate "orthogonality" :epic candidate-epic :ids (vec (sort ids))})))
+
+(defn advisory-line
+  "The one-line ADVISORY|orthogonality|... text written to stderr - the
+   human signal half of the evaluate/select stdout|stderr split (BL-854):
+   stdout keeps its pre-existing ALLOW/REFUSE contract untouched, this line
+   is additional and never parsed by any existing caller."
+  [{:keys [epic ids]}]
+  (format "ADVISORY|orthogonality|epic %s is also active on %s" epic (str/join ", " ids)))
 
 ;; ── gate: hold marker ────────────────────────────────────────────────────
 ;; backlog/hold/ is a sibling of backlog/paused/, never scanned by auto-pick -
@@ -172,21 +310,53 @@
 ;; ── the chokepoint ────────────────────────────────────────────────────────
 
 (defn evaluate
-  "{:ok true} or {:ok false :gate .. :reason ..} for ONE candidate against
-   every blocking gate (human_approval, active_backlog_max_depth,
-   orthogonality, hold marker - assignee/spec-stage is not a promotion
-   blocker; see route-target above). First failing gate wins, in a fixed
-   order, so the refusal is deterministic even when more than one gate would
-   fire. held? is checked first: a held ticket's other fields are irrelevant,
-   it is not a promotion candidate at all."
-  [{:keys [content held? active-count max-depth active-epics]}]
+  "{:ok true} (optionally carrying :advisory) or {:ok false :gate .. :reason
+   ..} for ONE candidate against every BLOCKING gate (human_approval,
+   depends_on (BL-957), active_backlog_max_depth, hold marker -
+   assignee/spec-stage is not a promotion blocker; see route-target above). First failing gate wins, in a
+   fixed order, so the refusal is deterministic even when more than one gate
+   would fire. held? is checked first: a held ticket's other fields are
+   irrelevant, it is not a promotion candidate at all. BL-854 invariant 1:
+   orthogonality is never in this refusal chain - once every blocking gate
+   passes, the result is always :ok true, optionally carrying an
+   orthogonality :advisory (never instead of :ok true)."
+  [{:keys [content held? active-count max-depth active-epics done-ids]}]
+  ;; BL-957: depends_on sits after human_approval and before depth - a
+  ;; ticket-property refusal beats a transient global one, so the
+  ;; coordinator gets the actionable reason. The fixed first-failing-gate-
+  ;; wins order is unchanged for every pre-existing gate.
   (or (some->> (hold-refusal held?) (merge {:ok false}))
       (some->> (human-approval-refusal content) (merge {:ok false}))
+      (some->> (depends-on-refusal content done-ids) (merge {:ok false}))
       (some->> (depth-refusal active-count max-depth) (merge {:ok false}))
-      (some->> (orthogonality-refusal (read-epic content) active-epics) (merge {:ok false}))
-      {:ok true}))
+      (merge {:ok true}
+             (when-let [advisory (orthogonality-advisory (read-epic content) active-epics)]
+               {:advisory advisory}))))
 
-;; ── active/-scanning readers (the small impure half) ─────────────────────
+;; ── backlog-scanning readers (the small impure half) ───────────────────
+
+(defn- status-yaml-files
+  "Every ticket YAML under backlog/<status>/, recursing into milestone
+   subfolders (the close-into-done/<Mx>/ convention); empty when the
+   directory does not exist. active-yaml-files below deliberately does NOT
+   go through this - active/ is flat by contract and its non-recursive glob
+   is part of what the depth cap counts."
+  [root status]
+  (let [dir (fs/path root "backlog" status)]
+    (if (fs/exists? dir) (fs/glob dir "**.yaml") [])))
+
+(defn done-ids
+  "The set of ticket ids landed under backlog/done/ - flat files AND <Mx>/
+   subfolders alike (see status-yaml-files). A file's id comes from its
+   filename's leading BL-/GH- token (the naming convention every
+   locate/glob path already relies on), falling back to its id: field when
+   the name carries none."
+  [root]
+  (->> (status-yaml-files root "done")
+       (keep (fn [f]
+               (or (re-find ticket-id-pattern (fs/file-name f))
+                   (read-id (slurp (str f))))))
+       set))
 
 (defn active-yaml-files [root]
   (let [dir (fs/path root "backlog" "active")]
@@ -195,7 +365,52 @@
 (defn active-count [root]
   (count (active-yaml-files root)))
 
-(defn active-epics [root]
+(defn active-epics
+  "Map of epic string -> sorted vector of active ticket ids sharing that
+   epic, read from every backlog/active/*.yaml under root. BL-854: the
+   orthogonality advisory must NAME the overlapping tickets (invariant 2),
+   so this reads id alongside epic rather than a bare epic set - a file
+   whose own id: cannot be read falls back to its filename so a malformed
+   ticket still contributes a locatable name to the advisory instead of
+   silently vanishing from it."
+  [root]
   (->> (active-yaml-files root)
-       (keep (fn [f] (read-epic (slurp (str f)))))
-       set))
+       (keep (fn [f]
+               (let [content (slurp (str f))]
+                 (when-let [epic (read-epic content)]
+                   [epic (or (read-id content) (fs/file-name f))]))))
+       (reduce (fn [m [epic id]] (update m epic (fnil conj []) id)) {})
+       (reduce-kv (fn [m epic ids] (assoc m epic (vec (sort ids)))) {})))
+
+;; ── epic-priority index (BL-900) ────────────────────────────────────────
+;; A `type: epic` tracker's own priority can live anywhere in the backlog
+;; tree (active/paused/done, done/ nested one level under a milestone
+;; subdir) - same "status-dirs" scan ticket_status_lib.bb's own
+;; contains-ticket? already established for "is this ticket anywhere in the
+;; backlog", reused here rather than a second, divergent directory list.
+;; hold/ is deliberately excluded, mirroring that same precedent: a held
+;; item is parked, not a live signal.
+
+(def ^:private epic-tracker-status-dirs ["active" "paused" "done"])
+
+(defn- epic-tracker-yaml-files [root]
+  (mapcat (partial status-yaml-files root) epic-tracker-status-dirs))
+
+(defn epic-priority-index
+  "Map of epic-name -> the minimum read-priority among every `type: epic`
+   tracker ticket anywhere under root's backlog tree whose own `epic:` field
+   equals that name (BL-900 decision 1: more than one tracker for the same
+   epic ranks by its most urgent - lowest - tracker). Built once per ranking
+   call (epic-priority above just does a map lookup), never a per-candidate
+   directory scan. A tracker with no `epic:` field of its own contributes
+   nothing - `keep` drops it, exactly like active-epics does above."
+  [root]
+  (->> (epic-tracker-yaml-files root)
+       (keep (fn [f]
+               (let [content (slurp (str f))]
+                 (when (= "epic" (read-type content))
+                   (when-let [epic (read-epic content)]
+                     [epic (read-priority content)])))))
+       (reduce (fn [m [epic priority]]
+                 (update m epic (fn [cur] (if cur (min cur priority) priority))))
+               {})))

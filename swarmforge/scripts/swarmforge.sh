@@ -10,6 +10,18 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+# BL-947: every launcher diagnostic leaves by stderr. stdout carries VALUES
+# - several call sites capture a command substitution for its value (the
+# control socket path is the live example), so an error echoed to stdout
+# does not merely go unseen by a caller watching stderr, it corrupts the
+# captured value. All error reporting goes through this one helper so the
+# next error line cannot be added on the wrong channel (a standing guard in
+# extension/test/ enforces exactly that). Text, colour and exit statuses
+# are untouched - only the channel.
+error_msg() {
+  echo -e "${RED}Error:${RESET} $*" >&2
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # BL-657: harness scrub helpers available to create_role_session / launch path.
@@ -122,7 +134,7 @@ PROJECT_SOCKET_ID="$(project_socket_id "$WORKING_DIR")"
 # primary path overruns the unix-socket path limit, never a blind bind past
 # that limit) - see swarm_socket_lib.bb.
 if ! TMUX_SOCKET="$(bb "$SCRIPT_DIR/resolve_swarm_socket.bb" "$WORKING_DIR" "$PROJECT_SOCKET_ID" 2>&1)"; then
-  echo -e "${RED}Error:${RESET} $TMUX_SOCKET"
+  error_msg "$TMUX_SOCKET"
   exit 1
 fi
 TMUX_SOCKET_DIR="$(dirname "$TMUX_SOCKET")"
@@ -145,6 +157,21 @@ typeset -a WORKTREE_NAMES=()
 typeset -a WORKTREE_PATHS=()
 typeset -a RECEIVE_MODES=()
 typeset -a IDLE_CLEAR_FLAGS=()
+# BL-982: SEAT vs STAGE identity. ROLES holds SEAT ids (today usually equal
+# to the stage name; a second seat of a stage is declared as
+# <stage>@<seat>, e.g. coder@sonnet). STAGES holds each slot's STAGE - the
+# ONLY things keyed on it are the role-prompt lookup and PromptEngine
+# composition; every other identity (session, worktree, branch-via-
+# worktree, launch script, remote-control, roles.tsv row key) stays
+# seat-keyed. '@' is the separator because it survives a tmux session name
+# (tmux forbids only '.' and ':'), a directory name, and a git branch name
+# (branches derive from the WORKTREE name anyway), and it cannot collide
+# with a plain role name (validated single-'@', both halves non-empty).
+# A pack with no '@' seats takes none of the new paths - byte-identical
+# provisioning (BL-982 invariant 2).
+typeset -a STAGES=()
+typeset -A STAGE_BARE_SEAT=()
+typeset -A STAGE_EXTRA_SEAT=()
 # BL-090: multi-swarm identity. SWARM_NAME defaults to "primary" so an
 # existing single-swarm swarmforge.conf (no swarm_name/swarm_mode lines) is
 # untouched - it is, by definition, THE primary swarm. SWARM_MODE_PRIMARY is
@@ -176,7 +203,7 @@ typeset -i i=0
 
 check_dependency() {
   if ! command -v "$1" &>/dev/null; then
-    echo -e "${RED}Error:${RESET} '$1' is required but not installed."
+    error_msg "'$1' is required but not installed."
     exit 1
   fi
 }
@@ -348,7 +375,7 @@ validate_agent() {
   case "$agent" in
     claude|codex|copilot|grok|aider|vibe|gemini) ;;
     *)
-      echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
+      error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
       ;;
   esac
@@ -377,6 +404,9 @@ role_uses_openrouter() {
 # in sync by hand.
 register_role() {
   local role="$1" agent="$2" worktree="$3" receive_mode="$4" idle_clear="$5" extra_cli="$6" worktree_path="$7"
+  # BL-982: $8 is the slot's STAGE; defaulted to the seat id so every
+  # pre-seat caller (and every single-seat pack) is byte-identical.
+  local stage="${8:-$role}"
   ROLE_INDEX[$role]=${#ROLES[@]}
   ROLES+=("$role")
   AGENTS+=("$agent")
@@ -387,16 +417,17 @@ register_role() {
   IDLE_CLEAR_FLAGS+=("$idle_clear")
   EXTRA_CLI_ARGS+=("$extra_cli")
   WORKTREE_PATHS+=("$worktree_path")
+  STAGES+=("$stage")
 }
 
 parse_config() {
   if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo -e "${RED}Error:${RESET} Config not found at $CONFIG_FILE"
+    error_msg "Config not found at $CONFIG_FILE"
     exit 1
   fi
 
   if [[ ! -f "$CONSTITUTION_FILE" ]]; then
-    echo -e "${RED}Error:${RESET} Constitution prompt not found at $CONSTITUTION_FILE"
+    error_msg "Constitution prompt not found at $CONSTITUTION_FILE"
     exit 1
   fi
 
@@ -410,7 +441,7 @@ parse_config() {
     local -a fields extra_args
     fields=(${=line})
     if (( ${#fields[@]} < 2 )); then
-      echo -e "${RED}Error:${RESET} Invalid config line $line_no: $line"
+      error_msg "Invalid config line $line_no: $line"
       exit 1
     fi
 
@@ -418,13 +449,13 @@ parse_config() {
 
     if [[ "$keyword" == "config" ]]; then
       if (( ${#fields[@]} < 3 )); then
-        echo -e "${RED}Error:${RESET} Invalid config line $line_no: $line"
+        error_msg "Invalid config line $line_no: $line"
         exit 1
       fi
       case "${fields[2]}" in
         swarm_name)
           if [[ -z "${fields[3]:-}" ]]; then
-            echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_name requires a name"
+            error_msg "Invalid config line $line_no: swarm_name requires a name"
             exit 1
           fi
           SWARM_NAME="${fields[3]}"
@@ -437,14 +468,14 @@ parse_config() {
               ;;
             secondary)
               if [[ -z "${fields[4]:-}" ]]; then
-                echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_mode secondary requires a primary swarm name"
+                error_msg "Invalid config line $line_no: swarm_mode secondary requires a primary swarm name"
                 exit 1
               fi
               SWARM_MODE="secondary"
               SWARM_MODE_PRIMARY="${fields[4]}"
               ;;
             *)
-              echo -e "${RED}Error:${RESET} Invalid config line $line_no: swarm_mode must be 'autonomous' or 'secondary <primary-name>'"
+              error_msg "Invalid config line $line_no: swarm_mode must be 'autonomous' or 'secondary <primary-name>'"
               exit 1
               ;;
           esac
@@ -458,7 +489,7 @@ parse_config() {
               REMOTE_CONTROL_DEFAULT=0
               ;;
             *)
-              echo -e "${RED}Error:${RESET} Invalid config line $line_no: remote_control must be 'on' or 'off'"
+              error_msg "Invalid config line $line_no: remote_control must be 'on' or 'off'"
               exit 1
               ;;
           esac
@@ -478,7 +509,7 @@ parse_config() {
               ROTATION_MODE="router"
               ;;
             *)
-              echo -e "${RED}Error:${RESET} Invalid config line $line_no: rotation must be 'sequential' or 'router'"
+              error_msg "Invalid config line $line_no: rotation must be 'sequential' or 'router'"
               exit 1
               ;;
           esac
@@ -488,7 +519,7 @@ parse_config() {
     fi
 
     if (( ${#fields[@]} < 4 )); then
-      echo -e "${RED}Error:${RESET} Invalid config line $line_no: $line"
+      error_msg "Invalid config line $line_no: $line"
       exit 1
     fi
 
@@ -515,13 +546,29 @@ parse_config() {
     fi
 
     if [[ "$keyword" != "window" ]]; then
-      echo -e "${RED}Error:${RESET} Unknown config directive on line $line_no: $keyword"
+      error_msg "Unknown config directive on line $line_no: $keyword"
       exit 1
     fi
 
     if [[ "$role" == *"_"* ]]; then
-      echo -e "${RED}Error:${RESET} Invalid role '$role' on line $line_no: role names may not contain underscores"
+      error_msg "Invalid role '$role' on line $line_no: role names may not contain underscores"
       exit 1
+    fi
+
+    # BL-982: a window line's role field is a SEAT id; its STAGE is the part
+    # before the optional '@'. Prompt lookup and composition key on the
+    # stage; everything else keys on the seat id.
+    local seat_stage="$role"
+    if [[ "$role" == *"@"* ]]; then
+      seat_stage="${role%%@*}"
+      local seat_suffix="${role#*@}"
+      if [[ -z "$seat_stage" || -z "$seat_suffix" || "$seat_suffix" == *"@"* ]]; then
+        error_msg "Invalid seat id '$role' on line $line_no: expected <stage>@<seat> with a single '@' and both halves non-empty"
+        exit 1
+      fi
+      STAGE_EXTRA_SEAT[$seat_stage]="$role"
+    else
+      STAGE_BARE_SEAT[$seat_stage]=1
     fi
 
     # BL-243: coordinator is provisioned infrastructure, never a
@@ -530,23 +577,23 @@ parse_config() {
     # exactly one, so a conf naming it here would either collide or let an
     # operator accidentally reconfigure guaranteed-present infrastructure
     # as if it were a regular pack-configurable role.
-    if [[ "$role" == "coordinator" ]]; then
-      echo -e "${RED}Error:${RESET} coordinator is reserved infrastructure and may not be declared as a window in $CONFIG_FILE (line $line_no) - it is always provisioned automatically."
+    if [[ "$seat_stage" == "coordinator" ]]; then
+      error_msg "coordinator is reserved infrastructure and may not be declared as a window in $CONFIG_FILE (line $line_no) - it is always provisioned automatically."
       exit 1
     fi
 
     if [[ -n "${ROLE_INDEX[$role]:-}" ]]; then
-      echo -e "${RED}Error:${RESET} Duplicate role '$role' in $CONFIG_FILE"
+      error_msg "Duplicate role '$role' in $CONFIG_FILE"
       exit 1
     fi
 
     if [[ "$worktree" != "none" && "$worktree" != "master" && -n "${WORKTREE_INDEX[$worktree]:-}" ]]; then
-      echo -e "${RED}Error:${RESET} Duplicate worktree '$worktree' in $CONFIG_FILE"
+      error_msg "Duplicate worktree '$worktree' in $CONFIG_FILE"
       exit 1
     fi
 
     if [[ "$worktree" == *"/"* || "$worktree" == "." || "$worktree" == ".." ]]; then
-      echo -e "${RED}Error:${RESET} Invalid worktree '$worktree' for role '$role'"
+      error_msg "Invalid worktree '$worktree' for role '$role'"
       exit 1
     fi
 
@@ -555,13 +602,15 @@ parse_config() {
     case "$receive_mode" in
       task|batch) ;;
       *)
-        echo -e "${RED}Error:${RESET} Invalid receive mode '$receive_mode' for role '$role' on line $line_no: expected task or batch"
+        error_msg "Invalid receive mode '$receive_mode' for role '$role' on line $line_no: expected task or batch"
         exit 1
         ;;
     esac
 
-    if [[ "$agent" != "none" && ! -f "$ROLES_DIR/$role.prompt" ]]; then
-      echo -e "${RED}Error:${RESET} Missing role prompt $ROLES_DIR/$role.prompt"
+    # BL-982: the prompt is the STAGE's - every seat of a stage resolves the
+    # same role prompt file.
+    if [[ "$agent" != "none" && ! -f "$ROLES_DIR/$seat_stage.prompt" ]]; then
+      error_msg "Missing role prompt $ROLES_DIR/$seat_stage.prompt"
       exit 1
     fi
 
@@ -579,13 +628,25 @@ parse_config() {
     else
       worktree_path="$(worktree_path_for_name "$worktree")"
     fi
-    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path"
+    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path" "$seat_stage"
   done < "$CONFIG_FILE"
 
   if (( ${#ROLES[@]} == 0 )); then
-    echo -e "${RED}Error:${RESET} No windows defined in $CONFIG_FILE"
+    error_msg "No windows defined in $CONFIG_FILE"
     exit 1
   fi
+
+  # BL-982: parcels address the STAGE, and stage-addressed lookups resolve
+  # the seat whose id IS the stage name - so a stage declaring any @-seat
+  # must also declare its bare seat, or parcels to that stage would resolve
+  # no row at all.
+  local extra_seat_stage
+  for extra_seat_stage in ${(k)STAGE_EXTRA_SEAT}; do
+    if [[ -z "${STAGE_BARE_SEAT[$extra_seat_stage]:-}" ]]; then
+      error_msg "Stage '$extra_seat_stage' declares additional seat '${STAGE_EXTRA_SEAT[$extra_seat_stage]}' but no bare '$extra_seat_stage' seat in $CONFIG_FILE - the stage-named seat must exist because parcels address the stage"
+      exit 1
+    fi
+  done
 
   # BL-243: a coordinator window line is rejected inline above (role ==
   # "coordinator" can never reach this point), so the old swarm_mode
@@ -731,7 +792,7 @@ check_primacy() {
   current_primary="${current_primary%% }"
 
   if [[ -n "$current_primary" && "$current_primary" != "$SWARM_NAME" ]]; then
-    echo -e "${RED}Error:${RESET} swarm '$SWARM_NAME' cannot launch autonomous: the committed primacy marker names '$current_primary' as the current primary. Launch as 'config swarm_mode secondary $current_primary', or have the operator deliberately transfer primacy by committing a new $marker_file."
+    error_msg "swarm '$SWARM_NAME' cannot launch autonomous: the committed primacy marker names '$current_primary' as the current primary. Launch as 'config swarm_mode secondary $current_primary', or have the operator deliberately transfer primacy by committing a new $marker_file."
     exit 1
   fi
 }
@@ -811,14 +872,14 @@ check_helper_scripts() {
   local helper
   for helper in handoff-lib.sh swarm_handoff.sh swarm_handoff.bb ready_for_next.sh ready_for_next.bb done_with_current.sh done_with_current.bb ready_for_next_task.sh ready_for_next_task.bb done_with_current_task.sh done_with_current_task.bb ready_for_next_batch.sh ready_for_next_batch.bb done_with_current_batch.sh done_with_current_batch.bb handoffd.bb handoffd_supervisor.bb swarm-cleanup.sh swarm-window-watchdog.sh swarm-terminal-adapter.sh; do
     if [[ ! -x "$SCRIPT_DIR/$helper" ]]; then
-      echo -e "${RED}Error:${RESET} Required helper script not found or not executable: $SCRIPT_DIR/$helper"
+      error_msg "Required helper script not found or not executable: $SCRIPT_DIR/$helper"
       exit 1
     fi
   done
 
   for helper in terminal-app.sh ghostty.sh windows-terminal.sh none.sh; do
     if [[ ! -x "$SCRIPT_DIR/terminal-adapters/$helper" ]]; then
-      echo -e "${RED}Error:${RESET} Required terminal adapter not found or not executable: $SCRIPT_DIR/terminal-adapters/$helper"
+      error_msg "Required terminal adapter not found or not executable: $SCRIPT_DIR/terminal-adapters/$helper"
       exit 1
     fi
   done
@@ -1024,6 +1085,10 @@ write_agent_instruction_file() {
   local prompt_file="$2"
   local agent="${3:-claude}"
   local model="${4:-}"
+  # BL-982: composition keys on the STAGE (every seat of a stage runs the
+  # stage's role prompt); the artifact FILE stays seat-keyed via
+  # prompt_file. Defaulted to $role so single-seat callers are unchanged.
+  local stage="${5:-$role}"
   local two_pack_flag=0
   local overlay=""
   local -a model_flag=()
@@ -1034,13 +1099,13 @@ write_agent_instruction_file() {
   # BL-546: PromptEngine is the single authority for prompt composition -
   # this CLI call is the ONLY way a launch path produces a system-prompt
   # artifact; no prompt text is assembled in this script.
-  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$role" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file"
+  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$stage" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file"
   # BL-563 Slice 2: a sidecar recording compose's :metadata (:model in
   # particular) alongside the primary .md artifact - the resolved launch
   # model is otherwise invisible outside this process, since compose's
   # system-prompt TEXT is deliberately unchanged by :model (adapter
   # consumption of it is BL-574's scope, not this one's).
-  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose-metadata "$agent" "$role" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file.metadata.json" 2>/dev/null || true
+  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose-metadata "$agent" "$stage" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file.metadata.json" 2>/dev/null || true
 }
 
 agent-runtime-needs-bootstrap() {
@@ -1165,7 +1230,7 @@ generate_dormant_role_launch_artifacts() {
   local index="$1"
   local dormant_resolved_model
   dormant_resolved_model="$(resolve_claude_model_for_index "$index")"
-  write_agent_instruction_file "${ROLES[$index]}" "$PROMPTS_DIR/${ROLES[$index]}.md" "${AGENTS[$index]}" "$dormant_resolved_model"
+  write_agent_instruction_file "${ROLES[$index]}" "$PROMPTS_DIR/${ROLES[$index]}.md" "${AGENTS[$index]}" "$dormant_resolved_model" "${STAGES[$index]}"
   write_role_launch_script "$index" >/dev/null
 }
 
@@ -1245,11 +1310,41 @@ resolve_and_sweep_relaunch_resume() {
 
 write_claude_settings_file() {
   local role="$1"
+  local role_script_dir="$2"
   local settings_file="$STATE_DIR/launch/${role}.claude-settings.json"
   local resolved_model
   resolved_model="$(resolve_role_model "$role" "$CLAUDE_SETTINGS_MODEL")"
 
   mkdir -p "$STATE_DIR/launch"
+
+  # BL-913: pin a role's shell + heal one classified retry. Scoped to the
+  # Bash tool only (matcher). tool_miss_heal_hook.bb itself fails open (an
+  # unknown pin or a non-Bash call is an untouched no-op) - a bug here must
+  # never block a role from running commands at all.
+  #
+  # RE-ENABLED by BL-960 (disabled 2026-08-19, 3bac496ec, after the wrapper
+  # spliced heredocs/literal parens into unparseable bash with silent-PARTIAL
+  # execution). The disable comment's re-enable condition is met exactly and
+  # the restoration is operator-confirmed on the ticket: the hook now
+  # parse-checks every composed wrapper (bash -n, safe-wrapper-command in
+  # tool_miss_heal_lib.bb) and fail-opens to the byte-untouched original,
+  # silently, when the composition does not parse; capture is by temp file +
+  # cat replay, so a wrapped command's exit code and combined output are
+  # byte-identical to the unwrapped command's.
+  local hooks_block
+  hooks_block="$(cat <<HOOKS
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bb '$role_script_dir/tool_miss_heal_hook.bb'" }
+        ]
+      }
+    ]
+  }
+HOOKS
+)"
 
   if [[ -n "$CLAUDE_SETTINGS_PERMISSION_MODE" ]]; then
     cat > "$settings_file" <<EOF
@@ -1259,20 +1354,23 @@ write_claude_settings_file() {
   "skipDangerousModePermissionPrompt": true,
   "permissions": {
     "defaultMode": "$CLAUDE_SETTINGS_PERMISSION_MODE"
-  }
+  },
+$hooks_block
 }
 EOF
   elif [[ -n "$resolved_model" ]]; then
     cat > "$settings_file" <<EOF
 {
   "model": "$resolved_model",
-  "effortLevel": "$CLAUDE_SETTINGS_EFFORT"
+  "effortLevel": "$CLAUDE_SETTINGS_EFFORT",
+$hooks_block
 }
 EOF
   else
     cat > "$settings_file" <<EOF
 {
-  "effortLevel": "$CLAUDE_SETTINGS_EFFORT"
+  "effortLevel": "$CLAUDE_SETTINGS_EFFORT",
+$hooks_block
 }
 EOF
   fi
@@ -1332,7 +1430,7 @@ RESUMECHECK
   case "$agent" in
     claude)
       claude_settings_and_flags_from_extra_cli "$extra_cli"
-      settings_file="$(write_claude_settings_file "$role")"
+      settings_file="$(write_claude_settings_file "$role" "$role_script_dir")"
       claude_flags="$CLAUDE_REMAINING_FLAGS"
       local claude_permission_flags=""
       if [[ "$CLAUDE_SKIP_PERMISSIONS" == 1 ]]; then
@@ -1408,7 +1506,7 @@ RESUMECHECK
       launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     *)
-      echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
+      error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
       ;;
   esac
@@ -1463,10 +1561,29 @@ RESUMECHECK
   # passed at respawn-pane time via `-e`, ephemeral to that tmux command, in
   # launch_role below - never persisted to disk.
 
+  # BL-961: bake the resolved pack into the file itself. Derived from the
+  # CONFIG_FILE this launcher actually loaded - the same basename-sans-.conf
+  # derivation ancillary_provider_lib.sh uses for its swarm-identity
+  # fallback, so the env var and the --pack selector can never name
+  # different packs for one launch (invariant 1). Written into the
+  # generated script (not tmux set-environment alone) because single-role
+  # respawns re-run this file directly (invariant 2).
+  local launch_pack_name
+  launch_pack_name="$(basename "$CONFIG_FILE" .conf)"
+
   cat > "$launch_script" <<LAUNCH
 #!/usr/bin/env zsh
 set -euo pipefail
 export SWARMFORGE_ROLE='$role'
+export SWARMFORGE_PACK='$launch_pack_name'
+# BL-913/BL-985: the swarm's own record of where this role lives, exported
+# from the SAME WORKTREE_PATHS this script's own `cd` line below uses. The
+# tool_miss_heal_hook.bb PreToolUse wrapper re-anchors a command whose
+# shell has drifted into a DIFFERENT worktree or outside any repository -
+# decided from the shell's own git toplevel BEFORE the command runs
+# (BL-985), plus the original on-failure heal. A shell anywhere inside
+# this role's own worktree is left exactly where it is.
+export SWARMFORGE_ROLE_WORKTREE='$role_worktree'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}
@@ -1545,7 +1662,7 @@ wait_for_session_pane() {
     sleep 0.1
   done
 
-  echo -e "${RED}Error:${RESET} Timed out waiting for tmux pane in session '$session'"
+  error_msg "Timed out waiting for tmux pane in session '$session'"
   exit 1
 }
 
@@ -1565,7 +1682,7 @@ launch_role() {
   # via the same pure resolve_role_model call is cheap and side-effect-free,
   # not fragile cross-subshell state-passing.
   resolved_model="$(resolve_claude_model_for_index "$index")"
-  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model"
+  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model" "${STAGES[$index]}"
   launch_script="$(write_role_launch_script "$index")"
   launch_script="$(resolve_launch_script_for_role "$index" "$role" "$launch_script")"
 

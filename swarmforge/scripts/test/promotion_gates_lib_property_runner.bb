@@ -57,9 +57,78 @@
 ;; every candidate reads as non-expedited and rank-candidates falls through
 ;; to pure priority order) and failed as expected before this file was
 ;; finalized; restored before commit.
+;;
+;; BL-854 (declared invariants; see the coder role's Invariants section - a
+;; declared invariant's property test is coder-authored first):
+;;   1. "Orthogonality never refuses a promotion" - P1 below was widened so
+;;      `expected` no longer includes an orthogonality branch (evaluate must
+;;      never refuse on it), and P7 directly asserts no result ever carries
+;;      :gate "orthogonality". Non-vacuity: P1 was run against evaluate with
+;;      orthogonality-advisory reinstated into the refusal `or` chain (the
+;;      pre-BL-854 shape) and failed on every colliding-epic-under-cap case,
+;;      as expected; P7 likewise failed against that same reinstated build.
+;;      Restored before commit.
+;;   2. "An advisory is evidence-bearing... names each active ticket it
+;;      fired on" - P8 quantifies evaluate's :advisory over the SAME
+;;      active-epics map gen-context draws, independently recomputing the
+;;      expected ids (never calling orthogonality-advisory back) and
+;;      asserting the advisory is present iff there is real overlap, and
+;;      when present names EXACTLY that epic's ids, no more, no fewer.
+;;      Non-vacuity: run against orthogonality-advisory with `(first ids)`
+;;      substituted for the full ids vector (advisory drops every id but the
+;;      first) and failed on every multi-id overlap, as expected. Restored
+;;      before commit.
+;;   3. "No other verdict changes: human_approval, depth, hold, and Article
+;;      3.2.4 ranking stay byte-identical to today" - human-approval-refusal,
+;;      depth-refusal, hold-refusal, expedited?, and rank-candidates are not
+;;      touched by this ticket's diff at all, so P1 (hold/approval/depth
+;;      precedence), P4 (expedite ranking), P5, and P6 continue to exercise
+;;      the exact same, unmodified code paths as before BL-854 - this is a
+;;      structural fact about which functions BL-854's diff touches, not a
+;;      new input/output relationship a property could quantify over any
+;;      more directly than "these functions' source is unchanged", per the
+;;      coder role's own carve-out for a declared invariant that "quantifies
+;;      over prose or process rather than a pure, testable module".
+;;
+;; BL-900 (declared invariants):
+;;   1. "Ordering only: never grants an extra active slot, never overrides
+;;      orthogonality, the mutation-heavy window or the circuit breaker" -
+;;      rank-candidates/epic-priority/epic-priority-index are net-new
+;;      additions never called from evaluate/depth-refusal/hold-refusal/
+;;      orthogonality-advisory, and cmd-select's own gate order (evaluate
+;;      every candidate, THEN rank only the survivors) is unchanged by this
+;;      diff - a structural fact about which functions this ticket's diff
+;;      touches, not an input/output relationship a property could quantify
+;;      over any more directly than "these functions' source is unchanged",
+;;      per the coder role's own carve-out (same one BL-854 invariant 3 and
+;;      BL-853 invariant 2 above already use).
+;;   2. "The expedite bucket stays strictly first ... regardless of either
+;;      candidate's epic priority" - P9 below deliberately gives the
+;;      NON-expedited candidate the more urgent (lower) epic-priority, the
+;;      adversarial case the invariant exists to name, and asserts the
+;;      expedited candidate still wins.
+;;   3. "Ranking is a deterministic total order ... regardless of
+;;      enumeration order" - P10 ranks the SAME candidate set twice, the
+;;      second time reversed, and asserts the FULL resulting order (not
+;;      just the winner) is byte-identical both times. A forced-tie shape
+;;      (same expedited?/epic-priority/own-priority, different id) is
+;;      drawn into a third of sets - stable-sort code that dropped the id
+;;      tie-break would let a tied pair's relative order flip between the
+;;      two enumerations, which only a forced-tie draw reliably exercises
+;;      (same "independently-drawn fields make the interesting conjunction
+;;      rare" lesson as gen-context's own shape draws above).
+;;
+;; Non-vacuity proven by hand at authoring time: P9 was run with
+;; epic-priority spliced BEFORE the expedited term instead of after
+;; (rank-key reordered to [epic-priority expedited? ...]) and failed on
+;; every case where the non-expedited candidate's epic-priority beat the
+;; expedited one's, as expected. P10 was run with the trailing id tie-break
+;; dropped from rank-key and failed on forced-tie draws once enumeration
+;; order flipped, as expected. Both restored before commit.
 
 (ns promotion-gates-lib-property-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "promotion_gates_lib.bb")))
 
@@ -102,12 +171,19 @@
           (when epic? (str "epic: " epic "\n")))
      s3]))
 
+;; BL-854: active-epics is now epic -> ids (see promotion_gates_lib.bb's own
+;; reader), not a bare epic set - the generator draws a small id alphabet per
+;; epic so P8 (advisory evidence-bearing) below has more than one id to prove
+;; it names ALL of them, not just the first.
+(def active-id-alphabet ["BL-900" "BL-901" "BL-902"])
+
 (defn gen-active-epics [s]
   (let [[n s1] (gen-int s 3)]
     (reduce (fn [[acc sx] _]
-              (let [[e sy] (gen-pick sx epic-alphabet)]
-                [(conj acc e) sy]))
-            [#{} s1] (range n))))
+              (let [[e sy] (gen-pick sx epic-alphabet)
+                    [id sz] (gen-pick sy active-id-alphabet)]
+                [(update acc e (fnil conj []) id) sz]))
+            [{} s1] (range n))))
 
 ;; WEIGHTED, per the recorded "uniform draw passed hundreds of runs against a
 ;; live defect because it never reached the interesting state" trap
@@ -118,14 +194,33 @@
 ;; 10% floor - before this shape draw was added. A third of contexts are now
 ;; a GUARANTEED-compliant shape (mirrors gen-probe's own "fully stopped"
 ;; bucket), so the :ok branch is genuinely, not just theoretically, covered.
+;;
+;; BL-854 P8 needed a FOURTH, similarly guaranteed shape: a genuinely
+;; independent draw makes "epic overlaps AND that epic maps to 2+ distinct
+;; active ids" a rare conjunction on its own (measured: the naive draw's own
+;; multi-id branch was exercised on 0/500 runs - it hid a real gap, the
+;; :ids [(first ids)] mutation described in this file's header passed
+;; cleanly against the undertuned generator before this shape was added).
+;; shape 3 below forces exactly that case so P8's multi-id assertion is
+;; genuinely exercised, not just theoretically reachable.
 (defn gen-context [s]
-  (let [[shape s0] (gen-int s 3)]
-    (if (zero? shape)
+  (let [[shape s0] (gen-int s 4)]
+    (cond
+      (zero? shape)
       (let [[epic? s1] (gen-bool s0)
             [epic s2] (gen-pick s1 epic-alphabet)]
         [{:content (str "human_approval: approved\n" (when epic? (str "epic: " epic "-solo\n")))
-          :held? false :active-count 0 :max-depth 3 :active-epics #{}}
+          :held? false :active-count 0 :max-depth 3 :active-epics {}}
          s2])
+
+      (= 3 shape)
+      (let [[epic s1] (gen-pick s0 epic-alphabet)]
+        [{:content (str "human_approval: approved\nepic: " epic "\n")
+          :held? false :active-count 1 :max-depth 3
+          :active-epics {epic ["BL-900" "BL-901"]}}
+         s1])
+
+      :else
       (let [[content s1] (gen-content s0)
             [held? s2] (gen-bool s1)
             [active-count s3] (gen-int s2 4)
@@ -217,27 +312,70 @@
 
 (defn- candidate-tie-key [c] [(:priority c) (:id c)])
 
-;; ── P1: evaluate refuses iff at least one gate fails, naming the FIRST by
-;;        fixed precedence (held -> human_approval -> depth -> orthogonality) ─
+;; ── P1: evaluate refuses iff a BLOCKING gate fails, naming the FIRST by
+;;        fixed precedence (held -> human_approval -> depth). BL-854:
+;;        orthogonality is no longer in this chain at all - see P7 below for
+;;        its own invariant (it never refuses, whatever the epic overlap) ──
 
-(check-all "P1 evaluate composition: refuses iff a gate fails, names the first one"
+(check-all "P1 evaluate composition: refuses iff a blocking gate fails, names the first one"
   gen-context
-  (fn [{:keys [content held? active-count max-depth active-epics] :as ctx}]
+  (fn [{:keys [content held? active-count max-depth] :as ctx}]
     (let [result (promotion-gates-lib/evaluate ctx)
           hold (promotion-gates-lib/hold-refusal held?)
           approval (promotion-gates-lib/human-approval-refusal content)
           depth (promotion-gates-lib/depth-refusal active-count max-depth)
-          ortho (promotion-gates-lib/orthogonality-refusal (promotion-gates-lib/read-epic content) active-epics)
-          expected (:gate (or hold approval depth ortho))]
+          expected (:gate (or hold approval depth))]
       (cond
         (and (nil? expected) (not (:ok result)))
-        (str "no gate fails but evaluate refused: " (pr-str result))
+        (str "no blocking gate fails but evaluate refused: " (pr-str result))
 
         (and expected (:ok result))
         (str "gate " expected " fails but evaluate returned ok")
 
         (and expected (not= expected (:gate result)))
         (str "expected first-failing gate " expected " but evaluate named " (:gate result))
+
+        :else true))))
+
+;; ── P7 (BL-854 invariant 1): orthogonality never refuses a promotion - for
+;;        every candidate, whatever the epic overlap, evaluate's refusal (if
+;;        any) is never :gate "orthogonality" ───────────────────────────────
+
+(check-all "P7 orthogonality never refuses: evaluate's :gate is never \"orthogonality\""
+  gen-context
+  (fn [ctx]
+    (let [result (promotion-gates-lib/evaluate ctx)]
+      (if (= "orthogonality" (:gate result))
+        (str "evaluate refused on orthogonality: " (pr-str result) " - it must only ever advise")
+        true))))
+
+;; ── P8 (BL-854 invariant 2): the orthogonality advisory is evidence-bearing
+;;        - present iff the candidate's epic genuinely overlaps an active
+;;        ticket's, and when present names EXACTLY the ids active-epics maps
+;;        that epic to, no more, no fewer. Independent oracle: recomputes
+;;        expected overlap/ids directly from active-epics, never by calling
+;;        orthogonality-advisory back (same non-circularity discipline as
+;;        P4's expected-expedited?) ────────────────────────────────────────
+
+(check-all "P8 orthogonality advisory: present iff real overlap, names exactly the overlapping ids"
+  gen-context
+  (fn [{:keys [content active-epics] :as ctx}]
+    (let [result (promotion-gates-lib/evaluate ctx)
+          epic (promotion-gates-lib/read-epic content)
+          expected-ids (vec (sort (get active-epics epic)))
+          advisory (:advisory result)]
+      (cond
+        (not (:ok result))
+        true ; a blocking-gate refusal never reaches the advisory branch (P1)
+
+        (and (empty? expected-ids) advisory)
+        (str "no real overlap for epic " (pr-str epic) " but an advisory fired: " (pr-str advisory))
+
+        (and (seq expected-ids) (nil? advisory))
+        (str "epic " epic " overlaps active ids " expected-ids " but no advisory fired")
+
+        (and (seq expected-ids) (not= expected-ids (:ids advisory)))
+        (str "advisory ids " (pr-str (:ids advisory)) " do not exactly match the overlapping ids " (pr-str expected-ids))
 
         :else true))))
 
@@ -298,6 +436,178 @@
                  " priority/id within its own bucket - " (:file loser) " (key " (pr-str (candidate-tie-key loser)) ") ranks ahead of it")
             true))))))
 
+;; ── P5/P6 (BL-853 coder pass, declared invariants) ──────────────────────
+;; BL-853: depth-refusal used to be a bare (>= active-count max-depth) with
+;; no no-limit branch, so even a correctly-resolved -1 (backlog-depth-lib's
+;; documented no-limit sentinel) refused at any active count. P5 quantifies
+;; invariant 1 ("with a negative configured or effective cap, the depth
+;; gate allows at every active count") over a wide active-count range. P6
+;; quantifies invariant 3 ("with a finite cap, every promotion decision is
+;; byte-identical to today's") by restating the PRE-FIX formula as an
+;; independent oracle here - never by calling depth-refusal back into
+;; itself - so a regression that reintroduces a divergent finite-cap
+;; formula (not just a missing no-limit branch) would also be caught.
+;; Invariant 2 ("every cap comes from the shared depth library - the
+;; promotion path parses no config and declares no depth default of its
+;; own") is a structural fact about promote_and_route_next.sh's shell
+;; script (which literal, if any, it hardcodes), not an input/output
+;; relationship of a pure function this generator can quantify over; it is
+;; recorded as a stated reason in this ticket's commit rather than forced
+;; into a property here, per the coder role's own carve-out for a
+;; declared invariant that "quantifies over prose or process rather than a
+;; pure, testable module."
+;;
+;; Non-vacuity proven by hand at authoring time: P5 was run against the
+;; PRE-FIX depth-refusal (bare (>= active-count max-depth), no no-limit
+;; branch) and failed on every negative-max-depth case, as expected -
+;; restored before commit.
+
+(defn gen-depth-case [s]
+  (let [[negative? s0] (gen-bool s)
+        [magnitude s1] (gen-int s0 6)
+        [active-count s2] (gen-int s1 6)]
+    (if negative?
+      [{:active-count active-count :max-depth (- (inc magnitude))} s2]
+      [{:active-count active-count :max-depth magnitude} s2])))
+
+(check-all "P5 depth-refusal: a negative max-depth (no-limit) never refuses, at any active count"
+  gen-depth-case
+  (fn [{:keys [active-count max-depth]}]
+    (if (neg? max-depth)
+      (let [result (promotion-gates-lib/depth-refusal active-count max-depth)]
+        (if (nil? result)
+          true
+          (str "no-limit max-depth " max-depth " with active-count " active-count " still refused: " (pr-str result))))
+      true)))
+
+(check-all "P6 depth-refusal: a non-negative max-depth is byte-identical to the pre-fix (>= active-count max-depth) formula"
+  gen-depth-case
+  (fn [{:keys [active-count max-depth]}]
+    (if (neg? max-depth)
+      true
+      (let [result (promotion-gates-lib/depth-refusal active-count max-depth)
+            expected-refuse? (>= active-count max-depth)
+            expected-reason (format "active count %d >= cap %d - no open slot" active-count max-depth)]
+        (cond
+          (and expected-refuse? (nil? result))
+          (str "expected a refusal for active-count " active-count " >= max-depth " max-depth " but got nil")
+
+          (and (not expected-refuse?) (some? result))
+          (str "expected no refusal for active-count " active-count " < max-depth " max-depth " but got " (pr-str result))
+
+          (and expected-refuse? (not= "active_backlog_max_depth" (:gate result)))
+          (str "wrong gate name: " (:gate result))
+
+          (and expected-refuse? (not= expected-reason (:reason result)))
+          (str "reason string diverged from the pre-fix formula: got " (pr-str (:reason result)) ", expected " (pr-str expected-reason))
+
+          :else true)))))
+
+;; ── P9/P10 (BL-900, declared invariants) - see this file's own header ────
+
+;; Deliberate repeat, biasing draws toward the "urgent" value - same
+;; weighting posture as candidate-priority-alphabet's own repeated 5.
+(def epic-priority-alphabet [1 1 50 900])
+
+;; BUG FOUND AUTHORING P10: an earlier draft drew each candidate's id
+;; independently, so two DIFFERENT candidates could land on the SAME id -
+;; then their rank-key (which ends in id) is genuinely, fully tied, and a
+;; stable sort legitimately lets enumeration order decide between them
+;; (correct sort behavior, not a defect). Real backlog ids are unique per
+;; ticket file, so this generator draws WITHOUT replacement - every id in
+;; one generated set is distinct, matching that real invariant, and the
+;; property only ever asks whether DISTINCT tickets rank deterministically.
+(defn- draw-distinct-ids [s n]
+  (loop [avail candidate-id-alphabet picked [] sx s cnt n]
+    (if (zero? cnt)
+      [picked sx]
+      (let [[i sy] (gen-int sx (count avail))
+            v (nth avail i)]
+        (recur (vec (remove #{v} avail)) (conj picked v) sy (dec cnt))))))
+
+(defn- mk-epic-candidate [id type severity priority epic-name epic-p]
+  {:file (str id "|" type "|" (or severity "none") "|" priority "|" (or epic-name "noepic"))
+   :content (str "id: " id "\n" "type: " type "\n"
+                  (when severity (str "severity: " severity "\n"))
+                  "priority: " priority "\n"
+                  (when epic-name (str "epic: " epic-name "\n")))
+   :epic-entry (when epic-name [epic-name epic-p])
+   :expected-expedited? (expected-expedited? type severity)
+   :priority priority
+   :id id
+   :tied? (boolean (and epic-name (str/starts-with? epic-name "tied-epic-")))})
+
+(defn gen-epic-candidate-set
+  "1-3 base candidates (distinct id, each with its own independent
+   type/severity/priority/epic); a third of draws ALSO force a tied pair
+   (same type/severity/priority/epic-priority, distinct id from each other
+   and from the base candidates) into the set - the case P10's non-vacuity
+   depends on (see header). n-base maxes at 3 and a tied pair adds 2, so the
+   5-entry id alphabet always covers the total without repeats."
+  [s]
+  (let [[tie? s0] (gen-bool s)
+        [extra s1] (gen-int s0 3)
+        n-base (inc extra)
+        n-total (+ n-base (if tie? 2 0))
+        [ids s2] (draw-distinct-ids s1 n-total)
+        base-ids (take n-base ids)
+        tied-ids (drop n-base ids)
+        [base-cands s3] (reduce (fn [[acc sx] id]
+                                   (let [[type sy] (gen-pick sx candidate-type-alphabet)
+                                         [severity sz] (gen-pick sy candidate-severity-alphabet)
+                                         [priority sw] (gen-pick sz candidate-priority-alphabet)
+                                         [epic? sv] (gen-bool sw)
+                                         [epic-p su] (gen-pick sv epic-priority-alphabet)
+                                         epic-name (when epic? (str "epic-" su))]
+                                     [(conj acc (mk-epic-candidate id type severity priority epic-name epic-p)) su]))
+                                 [[] s2] base-ids)]
+    (if (= 2 (count tied-ids))
+      (let [[type s4] (gen-pick s3 candidate-type-alphabet)
+            [severity s5] (gen-pick s4 candidate-severity-alphabet)
+            [priority s6] (gen-pick s5 candidate-priority-alphabet)
+            [epic-p s7] (gen-pick s6 epic-priority-alphabet)
+            epic-name (str "tied-epic-" s7)
+            tied-cands (map #(mk-epic-candidate % type severity priority epic-name epic-p) tied-ids)]
+        [(into base-cands tied-cands) s7])
+      [base-cands s3])))
+
+(defn- merged-epic-index [candidates]
+  (reduce (fn [m c] (if-let [[k v] (:epic-entry c)] (assoc m k v) m)) {} candidates))
+
+(check-all "P9 rank-candidates (BL-900): the expedited bucket stays strictly first regardless of epic priority"
+  gen-epic-candidate-set
+  (fn [candidates]
+    (let [epic-index (merged-epic-index candidates)
+          winner (promotion-gates-lib/rank-candidates candidates epic-index)
+          expected-present? (boolean (some :expected-expedited? candidates))
+          winner-expected? (boolean (:expected-expedited? winner))]
+      (if (and expected-present? (not winner-expected?))
+        (str "an expedited candidate exists but rank-candidates picked " (:file winner)
+             ", which is not expedited - epic-priority must never outrank the expedite bucket")
+        true))))
+
+(defn- ranked-order
+  "The FULL ranked :file sequence for candidates against epic-index, by
+   repeatedly asking rank-candidates for the winner and removing it - O(n^2),
+   fine at these small n, and exercises the real production function rather
+   than re-deriving a sort independently."
+  [candidates epic-index]
+  (loop [remaining candidates order []]
+    (if (empty? remaining)
+      order
+      (let [winner (promotion-gates-lib/rank-candidates remaining epic-index)]
+        (recur (remove #(= (:file winner) (:file %)) remaining) (conj order (:file winner)))))))
+
+(check-all "P10 rank-candidates (BL-900): the total order is deterministic regardless of enumeration order"
+  gen-epic-candidate-set
+  (fn [candidates]
+    (let [epic-index (merged-epic-index candidates)
+          forward (ranked-order candidates epic-index)
+          reversed (ranked-order (vec (reverse candidates)) epic-index)]
+      (if (= forward reversed)
+        true
+        (str "ranking order depends on enumeration order: forward=" (pr-str forward) " reversed=" (pr-str reversed))))))
+
 ;; ── generator coverage, asserted rather than assumed ─────────────────────
 
 (let [[refused ok] (loop [i 0 s 7 r 0 o 0]
@@ -342,6 +652,193 @@
     (report! "COVERAGE P4 expedited-present branch" 7 {:with-expedited with-expedited :floor floor} "the expedited-present branch is barely exercised"))
   (when (< without floor)
     (report! "COVERAGE P4 none-expedited branch" 7 {:without without :floor floor} "the none-expedited branch is barely exercised")))
+
+(let [multi-id (loop [i 0 s 7 m 0]
+                 (if (= i runs)
+                   m
+                   (let [[{:keys [content active-epics]} s'] (gen-context s)
+                         epic (promotion-gates-lib/read-epic content)
+                         ids (get active-epics epic)]
+                     (recur (inc i) s' (if (> (count ids) 1) (inc m) m)))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: multi-id-advisory=" multi-id))
+  (when (< multi-id floor)
+    (report! "COVERAGE P8 multi-id advisory branch" 7 {:multi-id multi-id :floor floor} "the multi-id advisory branch is barely exercised")))
+
+(let [[with-expedited without] (loop [i 0 s 7 w 0 wo 0]
+                                  (if (= i runs)
+                                    [w wo]
+                                    (let [[candidates s'] (gen-epic-candidate-set s)]
+                                      (if (some :expected-expedited? candidates)
+                                        (recur (inc i) s' (inc w) wo)
+                                        (recur (inc i) s' w (inc wo))))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: P9 expedited-present=" with-expedited " none-expedited=" without))
+  (when (< with-expedited floor)
+    (report! "COVERAGE P9 expedited-present branch" 7 {:with-expedited with-expedited :floor floor} "the expedited-present branch is barely exercised")))
+
+(let [tied (loop [i 0 s 7 t 0]
+             (if (= i runs)
+               t
+               (let [[candidates s'] (gen-epic-candidate-set s)
+                     tied? (>= (count (filter :tied? candidates)) 2)]
+                 (recur (inc i) s' (if tied? (inc t) t)))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: P10 forced-tie-pair=" tied))
+  (when (< tied floor)
+    (report! "COVERAGE P10 forced-tie-pair branch" 7 {:tied tied :floor floor} "the forced-tie-pair branch is barely exercised")))
+
+;; ── P11/P12 (BL-957, declared invariants; coder-authored per BL-654) ──────
+;;
+;;   Invariant 2: "The gate fails closed: any depends_on id it cannot
+;;   positively resolve to a ticket in backlog/done/ refuses promotion,
+;;   including ids it failed to parse." P11 draws each dependency's landed?
+;;   status BY CONSTRUCTION (the id is in the done set iff the draw says
+;;   landed), over every live field form (flow list, block list, bare scalar
+;;   with prose - the block form is the read-field fail-open trap), plus an
+;;   unparseable-value sibling. Refuse iff any id is unlanded or the value
+;;   is unparseable; the reason names exactly the unlanded ids, never a
+;;   landed one; and evaluate surfaces :gate "depends_on" for the same draw
+;;   (approval approved, depth clear), so the chain placement is quantified
+;;   too, not just the bare gate function.
+;;
+;;   Invariant 1: "Every promotion route - by-name and auto-pick alike,
+;;   including any route added later - decides through the one
+;;   promotion_gates evaluate chain." The executable half: cmd-select's own
+;;   composition is (keep (:ok evaluate)) -> rank-candidates, so P12
+;;   replicates that composition at the lib level over generated candidate
+;;   sets and asserts a dependency-blocked candidate is NEVER the winner -
+;;   auto-pick and by-name agree because both are the same evaluate. The
+;;   "any route added later" quantifier is process prose, not a testable
+;;   surface (the coder role's own carve-out): no test can run a route that
+;;   does not exist yet. What holds it structurally is BL-663's own design -
+;;   both live shell routes call promotion_gates_cli.bb (its required_wiring
+;;   greps them for the literal), and the CLI has exactly one evaluate call
+;;   site per mode - recorded here as the stated reason rather than encoded.
+;;
+;; Non-vacuity proven at authoring time (2026-08-19), each break restored:
+;;   - depends-on-refusal dropped from evaluate's `or` chain -> P11's
+;;     evaluate half and P12 both failed on every unlanded draw;
+;;   - read-depends-on swapped for the read-field-based reading (nil for a
+;;     block value) -> P11 failed on every block-form draw - the exact
+;;     fail-open trap the ticket documents.
+
+(def ^:private dep-forms [:flow :block :scalar-prose])
+
+(defn- gen-dep [s i]
+  (let [[landed? s1] (gen-bool s)]
+    [{:id (str "BL-" (+ 100 i)) :landed? landed?} s1]))
+
+(defn- gen-deps-scenario [s]
+  (let [[shape s1] (gen-int s 5)]
+    (if (= 4 shape)
+      [{:form :unparseable :deps [] :content "depends_on: someday maybe\nhuman_approval: approved\n"} s1]
+      (let [[form s2] (gen-pick s1 dep-forms)
+            [n s3] (gen-int s2 4)
+            [deps s4] (reduce (fn [[acc sx] i]
+                                (let [[d sy] (gen-dep sx i)]
+                                  [(conj acc d) sy]))
+                              [[] s3] (range n))
+            ids (map :id deps)
+            field (case form
+                    :flow (str "depends_on: [" (str/join ", " ids) "]\n")
+                    :block (if (seq ids)
+                             (str "depends_on:\n" (apply str (map #(str "  - " % "\n") ids)))
+                             "depends_on: []\n")
+                    :scalar-prose (if (seq ids)
+                                    (str "depends_on: " (str/join ", " ids) " (must land first)\n")
+                                    "depends_on: []\n"))]
+        [{:form form :deps deps :content (str field "human_approval: approved\n")} s4]))))
+
+(check-all "P11 depends_on fails closed: refuse iff any id is unlanded or the value unparseable, naming exactly the unlanded ids; evaluate surfaces the gate"
+  gen-deps-scenario
+  (fn [{:keys [form deps content]}]
+    (let [done-set (set (map :id (filter :landed? deps)))
+          unlanded (map :id (remove :landed? deps))
+          refusal (promotion-gates-lib/depends-on-refusal content done-set)
+          result (promotion-gates-lib/evaluate {:content content :held? false
+                                                 :active-count 0 :max-depth 5
+                                                 :active-epics {} :done-ids done-set})
+          should-refuse? (or (= form :unparseable) (seq unlanded))]
+      (cond
+        (and should-refuse? (nil? refusal))
+        "an unlanded/unparseable depends_on was ALLOWED (fail-open)"
+
+        (and (not should-refuse?) refusal)
+        (str "fully-landed dependencies refused: " (pr-str refusal))
+
+        (and should-refuse? (not= "depends_on" (:gate refusal)))
+        (str "wrong gate: " (pr-str refusal))
+
+        (and should-refuse? (not-every? #(str/includes? (:reason refusal) %) unlanded))
+        (str "refusal fails to name every unlanded id: " (pr-str refusal))
+
+        (and should-refuse? (some #(str/includes? (:reason refusal) %)
+                                  (map :id (filter :landed? deps))))
+        (str "refusal names a LANDED id: " (pr-str refusal))
+
+        (and should-refuse? (not= "depends_on" (:gate result)))
+        (str "evaluate did not surface the depends_on gate: " (pr-str result))
+
+        (and (not should-refuse?) (not (:ok result)))
+        (str "evaluate refused a clean candidate: " (pr-str result))
+
+        :else true))))
+
+(defn- gen-select-set [s]
+  (let [[n s1] (gen-int s 3)
+        [cands s2] (reduce (fn [[acc sx] i]
+                             (let [[scenario sy] (gen-deps-scenario sx)]
+                               [(conj acc (assoc scenario :file (str "cand-" i ".yaml")
+                                                 :content (str "id: BL-" i "\npriority: " i "\n"
+                                                               (:content scenario))))
+                                sy]))
+                           [[] s1] (range (inc n)))]
+    [cands s2]))
+
+(check-all "P12 auto-pick composition: a dependency-blocked candidate is never the winner (select's own keep-eligible -> rank composition, same evaluate)"
+  gen-select-set
+  (fn [cands]
+    (let [eligible (keep (fn [{:keys [content file deps form]}]
+                           (let [done-set (set (map :id (filter :landed? deps)))
+                                 result (promotion-gates-lib/evaluate
+                                         {:content content :held? false
+                                          :active-count 0 :max-depth 5
+                                          :active-epics {} :done-ids done-set})]
+                             (when (:ok result)
+                               {:file file :content content
+                                :blocked? (or (= form :unparseable)
+                                              (boolean (seq (remove :landed? deps))))})))
+                         cands)
+          winner (promotion-gates-lib/rank-candidates eligible)]
+      (if (and winner (:blocked? winner))
+        (str "a dependency-blocked candidate won the selection: " (pr-str winner))
+        true))))
+
+;; generator coverage floors for P11 (reach asserted, never hoped): the
+;; refuse and allow branches, the block form specifically (the fail-open
+;; trap), and the unparseable sibling must each actually occur.
+(let [[refuse allow block unparseable]
+      (loop [i 0 s 7 r 0 a 0 b 0 u 0]
+        (if (= i runs)
+          [r a b u]
+          (let [[{:keys [form deps]} s'] (gen-deps-scenario s)
+                unlanded? (or (= form :unparseable) (boolean (seq (remove :landed? deps))))]
+            (recur (inc i) s'
+                   (if unlanded? (inc r) r)
+                   (if unlanded? a (inc a))
+                   (if (= form :block) (inc b) b)
+                   (if (= form :unparseable) (inc u) u)))))
+      floor (quot runs 10)]
+  (println (str "  generator coverage: P11 refuse=" refuse " allow=" allow " block-form=" block " unparseable=" unparseable))
+  (when (< refuse floor)
+    (report! "COVERAGE P11 refuse branch" 7 {:refuse refuse :floor floor} "the refuse branch is barely exercised"))
+  (when (< allow floor)
+    (report! "COVERAGE P11 allow branch" 7 {:allow allow :floor floor} "the allow branch is barely exercised"))
+  (when (< block floor)
+    (report! "COVERAGE P11 block form" 7 {:block block :floor floor} "the block form (the fail-open trap) is barely exercised"))
+  (when (< unparseable (quot runs 20))
+    (report! "COVERAGE P11 unparseable form" 7 {:unparseable unparseable :floor (quot runs 20)} "the unparseable sibling is barely exercised")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "promotion_gates_lib properties: " runs " runs each"))

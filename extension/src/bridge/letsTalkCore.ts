@@ -5,6 +5,11 @@ import type { SttResult } from '../tools/telegramFrontDeskBotCore';
 
 export const LETS_TALK_STT_RETRY_BUDGET = 3;
 
+// BL-717: the bridge must never answer a successful turn with nothing to
+// say. When the agent's reply text is blank, this is spoken/shown instead —
+// the phone always gets either the real reply or this explicit fallback.
+export const LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT = "I don't have anything to say about that.";
+
 export type LetsTalkSttOutcome = 'prompt' | 'retry' | 'unprocessable';
 
 export type LetsTalkTurnPhase = 'ready' | 'thinking' | 'speaking' | 'error';
@@ -288,6 +293,40 @@ export function replyTextForSpeechSynthesis(text: string): string {
   speech = sanitizeSlashesForSpeech(speech);
   speech = speech.replace(/[ \t]{2,}/g, ' ');
   return speech.trim();
+}
+
+export interface LetsTalkSpeakableReply {
+  replyText: string;
+  speechText: string;
+}
+
+// BL-717: a non-blank agent reply can still reduce to nothing pronounceable
+// once replyTextForSpeechSynthesis strips markdown/formatting characters —
+// e.g. a reply that is literally "|" or "###". That is the same silent-turn
+// failure this ticket exists to close, one layer downstream of the blank-
+// replyText check: "no real speakable reply is available" (the ticket's own
+// invariant 2 wording) covers this case too, not just an empty agentReplyText.
+// This is the one place both the client-TTS and server-TTS paths decide
+// whether a reply is genuinely speakable, so neither can drift out of sync
+// with the other the way clientTtsTurnSuccess's own separate substitution
+// used to.
+export function resolveSpeakableReply(agentReplyText: string): LetsTalkSpeakableReply {
+  const fallback = {
+    replyText: LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT,
+    speechText: replyTextForSpeechSynthesis(LETS_TALK_EMPTY_REPLY_FALLBACK_TEXT),
+  };
+  if (agentReplyText.trim().length === 0) {
+    return fallback;
+  }
+  const speechText = replyTextForSpeechSynthesis(agentReplyText);
+  if (speechText.trim().length === 0) {
+    // The reply itself is non-blank; only its speech form collapsed to
+    // nothing pronounceable. Substitute the fallback into speechText only —
+    // replyText, the displayed text, is a real reply and must survive
+    // (invariant 2: never mask/replace a reply that could have played).
+    return { replyText: agentReplyText, speechText: fallback.speechText };
+  }
+  return { replyText: agentReplyText, speechText };
 }
 
 /** Slashes in paths, URLs, and "and/or" are read aloud as "slash" by speechSynthesis. */

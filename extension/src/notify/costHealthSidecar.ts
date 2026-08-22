@@ -3,9 +3,25 @@ import { atomicWrite } from '../util/atomicWrite';
 import { commitScopedFile } from '../util/gitCommitScopedFile';
 import { computeTrend, TrendResult, TrendSeriesPoint } from '../metrics/trend';
 import { computeCostTelemetry, RoleCostTelemetry } from '../metrics/costTelemetry';
-import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } from '../metrics/resourceTelemetry';
-import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '../metrics/swarmMetrics';
+import {
+  readResourceSampleEvents,
+  computeResourceTrends,
+  RoleResourceTrend,
+  readHostLoadSampleEvents,
+  computeHostLoadVerdict,
+  hostLoadSevereRatioThreshold,
+  hostLoadSustainedMs,
+  HostLoadVerdict,
+} from '../metrics/resourceTelemetry';
+import {
+  RoleWorktree,
+  readChaserTelemetryEvents,
+  ChaserTelemetryEvent,
+  readFreshnessIncidentEvents,
+  FreshnessIncidentEvent,
+} from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
+import { readLifecycleSnapshot } from '../metrics/lifecycleSnapshot';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
 import { computeCostPerTicketSeries, CostPerTicketSeriesResult, COST_PER_TICKET_BASIS } from '../metrics/costPerTicket';
 import {
@@ -83,10 +99,10 @@ export interface ReliabilityCounts {
   nudges: TrendedNumber;
   respawns: TrendedNumber;
   failedDeliveries: TrendedNumber;
-  // BL-213: always zero - no daemon-restart telemetry event type exists in
-  // the current chaser-*.jsonl schema (chase|nudge|dead-letter|respawn
-  // only). A real, deterministic zero (nothing recorded), not a fabricated
-  // figure - filled in once that event type exists.
+  // BL-904: derived from BL-675's freshness-incident-log restart records
+  // (readFreshnessIncidentEvents/bucketDailyDaemonRestarts below), not the
+  // chaser-*.jsonl schema the other four fields read - a distinct source,
+  // never a hardcoded placeholder.
   daemonRestarts: TrendedNumber;
 }
 
@@ -132,6 +148,13 @@ export interface CostHealthSidecar {
   // ticket (schemaVersion unchanged, purely additive) reads as absent/falsy
   // - same "no anomaly section rendered" behavior it always had.
   resourceSamplesObserved?: boolean;
+  // BL-822: additive, optional - host load average is a distinct signal
+  // from per-role RSS/CPU, never folded into resourceAnomalies (a
+  // ResourceAnomaly always carries {role, rssBytes}; a host-wide
+  // measurement has neither, and pwa/app.js iterates that array reading
+  // both fields unconditionally). See renderAnomalyLines: a severe day
+  // must not render "none found" even when resourceAnomalies is empty.
+  hostLoad?: HostLoadVerdict;
   // BL-290: additive, optional - suite-test duration is machine-local/
   // gitignored (deliveryMetrics.ts's own computeSuiteDurationTrend reads
   // it live), so this committed snapshot is the ONLY way it can ever reach
@@ -205,9 +228,17 @@ export interface DailyReliabilitySeries {
   nudges: TrendSeriesPoint[];
   respawns: TrendSeriesPoint[];
   failedDeliveries: TrendSeriesPoint[];
+  // BL-904: null/undefined means "no data source" (the freshness incident
+  // log is missing or unreadable) - optional so existing callers/fixtures
+  // that predate this field keep type-checking unchanged. Never conflate
+  // this with an empty array, which means "log readable, zero restarts".
+  daemonRestarts?: TrendSeriesPoint[] | null;
 }
 
-type ReliabilityField = keyof DailyReliabilitySeries;
+// daemonRestarts is excluded - it comes from a different source
+// (the freshness incident log, bucketDailyDaemonRestarts below), never
+// from a ChaserTelemetryEvent.
+type ReliabilityField = Exclude<keyof DailyReliabilitySeries, 'daemonRestarts'>;
 
 const RELIABILITY_EVENT_TYPE_TO_FIELD: Record<string, ReliabilityField> = {
   chase: 'chases',
@@ -246,10 +277,44 @@ export function bucketDailyReliabilityEvents(events: ChaserTelemetryEvent[], now
   };
 }
 
+// BL-904: pure, restart-only daily counts from the freshness incident log.
+// `events === null` (log missing/unreadable) propagates straight through
+// as null - the "no data" signal invariant 2 requires - never silently
+// treated as zero restarts. `action=escalate` records are read but not
+// counted here (a different event: the watchdog declining a second
+// restart during cool-off - folding it in would overstate restarts by
+// roughly two thirds on real data).
+export function bucketDailyDaemonRestarts(events: FreshnessIncidentEvent[] | null, nowMs: number): TrendSeriesPoint[] | null {
+  if (events === null) {
+    return null;
+  }
+  const counts = new Map<number, number>();
+  for (const event of events) {
+    if (event.action !== 'restart') {
+      continue;
+    }
+    const bucket = bucketStartMs(event.epoch * 1000, DAY_MS);
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+  }
+  return fillDailyBuckets(counts, nowMs);
+}
+
 // ── pure sidecar assembly ────────────────────────────────────────────────
 
 function trendedFromSeries(series: TrendSeriesPoint[]): TrendedNumber {
   return { value: series.length > 0 ? series[series.length - 1].value : 0, trend: computeTrend(series) };
+}
+
+// BL-904 invariant 2: series === null/undefined (no data source) reports
+// value:0 with an EMPTY trend series (currentValue: null, direction:
+// 'unknown') - never the single always-present point trendedFromSeries
+// synthesizes for an empty Map, which is exactly what would make "no
+// data" indistinguishable from "measured, zero restarts today".
+function trendedDaemonRestarts(series: TrendSeriesPoint[] | null | undefined): TrendedNumber {
+  if (series == null) {
+    return { value: 0, trend: computeTrend([]) };
+  }
+  return trendedFromSeries(series);
 }
 
 function latestAgentDailyCost(role: string, roleCostTelemetry: RoleCostTelemetry | undefined): AgentDailyCost {
@@ -344,7 +409,8 @@ export function buildCostHealthSidecar(
   costPerTicketSeries?: CostPerTicketSeriesResult,
   topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>,
   originCostTrendSeries?: OriginCostTrendSeries[],
-  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number }
+  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number },
+  hostLoadVerdict?: HostLoadVerdict
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -360,7 +426,7 @@ export function buildCostHealthSidecar(
       nudges: trendedFromSeries(reliabilityDailySeries.nudges),
       respawns: trendedFromSeries(reliabilityDailySeries.respawns),
       failedDeliveries: trendedFromSeries(reliabilityDailySeries.failedDeliveries),
-      daemonRestarts: { value: 0, trend: computeTrend([]) },
+      daemonRestarts: trendedDaemonRestarts(reliabilityDailySeries.daemonRestarts),
     },
     resourceAnomalies: computeResourceAnomalies(resourceTrendsByRole),
     resourceSamplesObserved: computeResourceSamplesObserved(resourceTrendsByRole),
@@ -368,23 +434,34 @@ export function buildCostHealthSidecar(
   if (suiteDurationTrend) {
     sidecar.suiteDurationTrend = suiteDurationTrend;
   }
-  if (costPerTicketSeries) {
-    sidecar.costPerTicket = {
-      average: costPerTicketSeries.series.length > 0 ? trendedFromSeries(costPerTicketSeries.series) : null,
-      sampleCount: costPerTicketSeries.sampleCount,
-      excludedCount: costPerTicketSeries.excludedCount,
-      series: costPerTicketSeries.series,
-      basis: COST_PER_TICKET_BASIS,
-    };
-  }
+  attachCostPerTicket(sidecar, costPerTicketSeries);
   if (topExpensiveOriginsByHorizon) {
     sidecar.topExpensiveOriginsByHorizon = topExpensiveOriginsByHorizon;
   }
   if (originCostTrendSeries) {
     sidecar.originCostTrendSeries = originCostTrendSeries;
   }
+  if (hostLoadVerdict) {
+    sidecar.hostLoad = hostLoadVerdict;
+  }
   attachFlowBalanceRework(sidecar.flowBalance, reworkInputs);
   return sidecar;
+}
+
+// BL-635-style split: kept buildCostHealthSidecar's optional-field attach a
+// single non-branching call, same reason attachFlowBalanceRework already
+// exists as its own function (mirrors that pattern for this section).
+function attachCostPerTicket(sidecar: CostHealthSidecar, costPerTicketSeries?: CostPerTicketSeriesResult): void {
+  if (!costPerTicketSeries) {
+    return;
+  }
+  sidecar.costPerTicket = {
+    average: costPerTicketSeries.series.length > 0 ? trendedFromSeries(costPerTicketSeries.series) : null,
+    sampleCount: costPerTicketSeries.sampleCount,
+    excludedCount: costPerTicketSeries.excludedCount,
+    series: costPerTicketSeries.series,
+    basis: COST_PER_TICKET_BASIS,
+  };
 }
 
 // ── markdown renderer (pure, cost-05b/05c) ──────────────────────────────
@@ -449,22 +526,26 @@ function renderCostPerTicketLines(costPerTicket: CostPerTicketSummary | undefine
 // listing its rolled-up groups (already summed-cost descending from
 // rollupLlmInvocationsByOrigin) with unknown-cost origins noted rather than
 // silently folded into the total.
+function renderOriginGroupLine(group: LlmCostRollupGroup): string {
+  const label = originLabel(group.key);
+  const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
+  return `  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`;
+}
+
+function renderHorizonOriginLines(horizon: LlmCostHorizon, groups: LlmCostRollupGroup[] | undefined): string[] {
+  if (!groups || groups.length === 0) {
+    return [];
+  }
+  return [`- ${horizon}:`, ...groups.map(renderOriginGroupLine)];
+}
+
 function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCostRollupGroup[]> | undefined): string[] {
   if (!byHorizon) {
     return [];
   }
   const lines: string[] = ['', '**Top expensive origins:**'];
   for (const horizon of Object.keys(LLM_COST_HORIZONS_MS) as LlmCostHorizon[]) {
-    const groups = byHorizon[horizon];
-    if (!groups || groups.length === 0) {
-      continue;
-    }
-    lines.push(`- ${horizon}:`);
-    for (const group of groups) {
-      const label = originLabel(group.key);
-      const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
-      lines.push(`  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`);
-    }
+    lines.push(...renderHorizonOriginLines(horizon, byHorizon[horizon]));
   }
   return lines.length > 2 ? lines : [];
 }
@@ -573,26 +654,41 @@ function renderReliabilityLine(rel: ReliabilityCounts): string {
   );
 }
 
+function renderHostLoadLine(hostLoad: HostLoadVerdict): string {
+  const ratioText = hostLoad.ratio !== null ? `${hostLoad.ratio.toFixed(1)}x` : 'severe';
+  return `- host load: ${ratioText} core count, sustained ${Math.round(hostLoad.sustainedMinutes)} min`;
+}
+
 // BL-350: a quiet day (samplesObserved true, no anomalies) now renders an
 // explicit "none found" line instead of the same silent omission a broken,
 // never-sampled sampler produces (samplesObserved false/absent) - that
 // distinction is the entire point of the ticket (see resourceSamplesObserved
 // above).
-function renderAnomalyLines(anomalies: ResourceAnomaly[], samplesObserved: boolean): string[] {
-  if (anomalies.length > 0) {
-    return [
-      '',
-      '**Resource anomalies:**',
-      ...anomalies.map((a) => {
-        const mb = Math.round(a.rssBytes / (1024 * 1024));
-        return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
-      }),
-    ];
+//
+// BL-822: this is the load-bearing half of that ticket. A severe host load
+// must never fall through to "none found", whether or not any per-role
+// anomaly is ALSO present (invariant 1) - and a per-role anomaly present at
+// the same time must not mask the host-load line either (BL-822 scenario
+// 02's anti-vacuity check).
+function renderAnomalyLines(anomalies: ResourceAnomaly[], samplesObserved: boolean, hostLoad?: HostLoadVerdict): string[] {
+  const severe = hostLoad?.severe === true;
+  if (anomalies.length === 0 && !severe) {
+    if (samplesObserved) {
+      return ['', '**Resource anomalies:** none found.'];
+    }
+    return [];
   }
-  if (samplesObserved) {
-    return ['', '**Resource anomalies:** none found.'];
+  const lines = ['', '**Resource anomalies:**'];
+  if (severe && hostLoad) {
+    lines.push(renderHostLoadLine(hostLoad));
   }
-  return [];
+  return [
+    ...lines,
+    ...anomalies.map((a) => {
+      const mb = Math.round(a.rssBytes / (1024 * 1024));
+      return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
+    }),
+  ];
 }
 
 // Pure: renders the briefing's "Cost & Health" section directly from the
@@ -616,7 +712,7 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
     renderFlowBalanceLine(sidecar.flowBalance),
     '',
     renderReliabilityLine(sidecar.reliability),
-    ...renderAnomalyLines(sidecar.resourceAnomalies, sidecar.resourceSamplesObserved === true),
+    ...renderAnomalyLines(sidecar.resourceAnomalies, sidecar.resourceSamplesObserved === true, sidecar.hostLoad),
   ];
   return lines.join('\n');
 }
@@ -657,13 +753,20 @@ export function computeCostHealthSidecar(
   targetPath: string,
   roles: RoleWorktree[],
   nowMs: number = Date.now(),
-  claudeProjectsDir?: string
+  claudeProjectsDir?: string,
+  snapshotPath?: string
 ): CostHealthSidecar {
   const dateIso = toIso(nowMs).slice(0, 10);
   const costTelemetryByRole = computeCostTelemetry(targetPath, roles, claudeProjectsDir);
   const resourceTrendsByRole = computeResourceTrends(readResourceSampleEvents(targetPath), roles.map((r) => r.role), nowMs);
-  const reliabilityDailySeries = bucketDailyReliabilityEvents(readChaserTelemetryEvents(targetPath), nowMs);
-  const lifecycles = [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
+  const reliabilityDailySeries: DailyReliabilitySeries = {
+    ...bucketDailyReliabilityEvents(readChaserTelemetryEvents(targetPath), nowMs),
+    daemonRestarts: bucketDailyDaemonRestarts(readFreshnessIncidentEvents(targetPath), nowMs),
+  };
+  // BL-897: the shared snapshot's records win over a fresh full-history
+  // walk when usable (present, readable, from today).
+  const sharedLifecycles = snapshotPath ? readLifecycleSnapshot(snapshotPath, nowMs) : null;
+  const lifecycles = sharedLifecycles ?? [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
   const { speccedSeries, closedSeries } = bucketDailyFlowBalance(lifecycles, nowMs);
   const suiteDurationTrend = computeSuiteDurationTrend(targetPath, roles, nowMs);
   const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
@@ -671,6 +774,11 @@ export function computeCostHealthSidecar(
   const originCostTrendSeries = computeOriginCostTrendSeries(targetPath, nowMs);
   const bounceRecords = readBounceRecords(targetPath);
   const closedDateIsos = lifecycles.map((l) => l.closeDateIso).filter((d): d is string => d !== null);
+  const hostLoadVerdict = computeHostLoadVerdict(
+    readHostLoadSampleEvents(targetPath),
+    hostLoadSevereRatioThreshold(targetPath),
+    hostLoadSustainedMs(targetPath)
+  );
 
   return buildCostHealthSidecar(
     dateIso,
@@ -684,7 +792,8 @@ export function computeCostHealthSidecar(
     costPerTicketSeries,
     topExpensiveOriginsByHorizon,
     originCostTrendSeries,
-    { bounceRecords, closedDateIsos, nowMs }
+    { bounceRecords, closedDateIsos, nowMs },
+    hostLoadVerdict
   );
 }
 

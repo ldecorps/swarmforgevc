@@ -27,6 +27,7 @@ make_fixture() {
   mkdir -p "$d/swarmforge/scripts" "$d/extension/out/tools" "$d/.swarmforge/operator"
   cp "$SRC/launch_onboarder.sh" "$SRC/onboarder_supervisor.bb" \
      "$SRC/front_desk_supervisor_lib.bb" "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" \
+     "$SRC/process_table_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '' > "$d/extension/out/tools/onboarder-reconcile.js"
   printf '%s' "$d"

@@ -1,0 +1,32 @@
+Feature: A test harness refuses a missing fixture root instead of falling back to the cwd
+
+  # BL-889 harness-refuses-missing-fixture-root-01
+  Scenario Outline: A harness invoked with no fixture root refuses instead of using the working directory
+    Given a scratch working directory that contains no ".swarmforge" state
+    When the harness "<harness>" is invoked from that scratch working directory with no arguments
+    Then it exits with a non-zero status
+    And its standard error names the missing fixture root
+    And no ".swarmforge" directory is created in the scratch working directory
+
+    Examples:
+      | harness                               |
+      | dispatch_gap_sweep_harness.bb         |
+      | dropped_parcel_sweep_harness.bb       |
+      | commit_integrity_856_scenarios_cli.bb |
+
+  # BL-889 harness-refuses-missing-fixture-root-02
+  Scenario: A harness invoked with a fixture root still sweeps that root and only that root
+    Given a fixture project root whose roles are registered and whose coordinator inbox is empty
+    And a dispatch gap in the fixture project root that the sweep is expected to nudge
+    When the harness "dispatch_gap_sweep_harness.bb" is invoked with the fixture project root
+    Then it exits with a zero status
+    And the nudge is delivered into the fixture project root's coordinator inbox
+    And the live repository's coordinator inbox is unchanged
+
+  # BL-889 harness-refuses-missing-fixture-root-03
+  Scenario: A newly added harness that accepts a missing fixture root fails the check
+    Given a harness under "swarmforge/scripts/test" that binds its fixture root from the command line
+    And that harness is not named in any hardcoded list inside the check
+    When the missing-fixture-root check runs
+    Then that harness is included in the check
+    And the check fails while that harness accepts a missing fixture root

@@ -2,6 +2,10 @@
 
 When a batch commit satisfies several tickets but a failure belongs to only some of them, the parcel with no failing check of its own is **deferred** instead of bounced. This runbook explains what that means, how to read and interpret deferral messages, and how to clear a deferral once the blocker is fixed.
 
+A deferral has no lifecycle tie to its blocker on its own — closing the
+blocker does not clear the deferral. See "Stranded Deferrals" below (BL-861)
+for what closes without a fix and how to find it.
+
 ## What is a Deferral?
 
 A **deferral** is a machine-readable marker that says: *"This ticket's work is fine. It is waiting on another ticket to be fixed."*
@@ -50,6 +54,7 @@ qa-sibling-check.js status --ticket BL-477
 **Possible responses:**
 - **Exit 0**: `VERIFY BL-477` → no deferral, proceed with normal verification
 - **Exit 3**: `DEFERRED BL-477 BLOCKED_BY BL-475 CHECK npm run test` → deferred; skip verification, send a note to the holding role
+- **Exit 4**: `RELEASABLE BL-477 BLOCKED_BY BL-475 CLOSED_AT backlog/done/BL-475-....yaml` → every open blocker has closed; do not re-run the recorded check (it may no longer be runnable — see "Recording a Deferral" below). Clear it (Step 3) and proceed with normal verification.
 
 ### Step 2: QA Notifies the Holding Role (Deferred Ticket)
 
@@ -63,7 +68,7 @@ The holding role acknowledges the deferral and waits. There is no automatic re-q
 
 ### Step 3: Blocker is Fixed
 
-When the blocking ticket (BL-475) is fixed and re-sent to QA, QA re-runs the check that was failing:
+When the blocking ticket (BL-475) is fixed and re-sent to QA, re-run `status` first — a closed blocker now reports **releasable** (exit 4) rather than replaying the recorded check, since closing the blocker can itself have moved the path that check reads (BL-861; see "Stranded Deferrals" below). Once `status` confirms the blocker closed, clear the deferral:
 
 ```bash
 qa-sibling-check.js clear --ticket BL-477 --blocked-by BL-475 --commit <hex>
@@ -95,6 +100,15 @@ qa-sibling-check.js defer \
 
 The deferral is recorded to `.swarmforge/qa_deferrals/<YYYY-MM>.jsonl` (not counted in bounce statistics).
 
+**`--check` must not read the blocker's own ticket path.** A check such as
+`test -f backlog/active/BL-475-....yaml` is refused (exit 4, reason on
+stderr): closing BL-475 moves that file to `backlog/done/`, so the one check
+recorded to prove the blocker is fixed stops being runnable at exactly the
+moment it should be releasing the sibling — and fails on a missing path, not
+on the condition it was meant to test (BL-861). Record a check that verifies
+the fix directly instead (a test command, a build, a real assertion) — never
+a path lookup into the blocker's own ticket file.
+
 ## Clearing a Deferral (QA only)
 
 When the blocking ticket is fixed and the blocker's check now passes:
@@ -122,6 +136,11 @@ If you clear only BL-475, the ticket is still deferred:
 ```
 DEFERRED BL-477 BLOCKED_BY BL-476 CHECK npm run compile
 ```
+
+If BL-475 has since closed but BL-476 has not, `status` reports the ticket
+overall as still deferred — only BL-476's line is shown, naming the blocker
+that is actually still open. The ticket is reported releasable only once
+every recorded blocker has closed (BL-861).
 
 All blockers must be cleared before the deferred ticket can proceed to verification.
 
@@ -172,6 +191,31 @@ Deferred tickets may sit in the pipeline longer than bounced tickets because:
 - There is no automatic re-queue or re-send
 
 If a deferred ticket sits for an unusual time, check whether the blocking ticket is actually progressing. If the blocker is stalled, the deferred ticket will remain stalled until the blocker moves.
+
+## Stranded Deferrals (BL-861)
+
+Nothing sweeps the deferral store on its own — no daemon, watchdog, or chase
+sweep notices when a blocker closes. A sibling whose blockers have all closed
+is released **in fact** but stays deferred **on paper** until someone runs
+`status` against a ticket they already suspect. To find every such ticket
+without naming one in advance:
+
+```bash
+qa-sibling-check.js list
+```
+
+**Exit codes:**
+- `0`: `NONE` — no deferral is stranded
+- `4`: one `RELEASABLE <ticket> BLOCKED_BY <blocker> CLOSED_AT <path>` line
+  per closed blocker, across every stranded ticket in the store
+
+Run this periodically (or whenever a ticket seems to be holding an active
+slot with no visible progress) to catch a ticket like BL-574: both its
+blockers closed, but nothing swept the store, so it kept holding an active
+slot with no QA verdict and no runnable path to earn one until a human
+happened to probe it by hand. `list` is read-only — finding a stranded
+deferral does not clear it; still run `clear` (Step 3/4 above) to resume
+normal verification.
 
 ## Troubleshooting
 

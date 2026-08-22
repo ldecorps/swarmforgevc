@@ -64,14 +64,24 @@ function isRepoSurveyFactsShape(value: Record<string, unknown>): boolean {
   );
 }
 
-export function readSurveyFacts(surveyFactsPath: string): RepoSurveyFacts {
-  const raw: unknown = JSON.parse(fs.readFileSync(surveyFactsPath, 'utf8'));
+const SURVEY_FACTS_SHAPE_DESCRIPTION =
+  'RepoSurveyFacts (languages: string[], layoutSummary/readmeSummary/seedVision/initialBacklogSummary: string, useCaseObservations: {name, summary, locations: string[]}[])';
+
+// Split out of readSurveyFacts so BL-624's own claude-cli survey adapter
+// (contractPhaseRealAdapters.ts) can validate the SAME shape from an
+// in-memory parsed value (the CLI's own JSON stdout) without going through
+// a temp file - one validator, two entry points, never a second copy of
+// isRepoSurveyFactsShape's own checks.
+export function parseRepoSurveyFacts(raw: unknown, sourceDescription: string): RepoSurveyFacts {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw) || !isRepoSurveyFactsShape(raw as Record<string, unknown>)) {
-    throw new Error(
-      `${surveyFactsPath} does not match RepoSurveyFacts (languages: string[], layoutSummary/readmeSummary/seedVision/initialBacklogSummary: string, useCaseObservations: {name, summary, locations: string[]}[])`
-    );
+    throw new Error(`${sourceDescription} does not match ${SURVEY_FACTS_SHAPE_DESCRIPTION}`);
   }
   return raw as RepoSurveyFacts;
+}
+
+export function readSurveyFacts(surveyFactsPath: string): RepoSurveyFacts {
+  const raw: unknown = JSON.parse(fs.readFileSync(surveyFactsPath, 'utf8'));
+  return parseRepoSurveyFacts(raw, surveyFactsPath);
 }
 
 export const main = makeArgsGuardedMain(

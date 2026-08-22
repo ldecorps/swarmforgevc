@@ -14,6 +14,9 @@ const {
   routeBacklogToCoderScriptPath,
   runExpediteDispatch,
   commitExpediteWrites,
+  frontDeskDiagnosticsLogPath,
+  appendFrontDeskDiagnostic,
+  FRONT_DESK_DIAGNOSTICS_MAX_BYTES,
   toFoldersSnapshot,
   ensureOperatorTopic,
   ensureApprovalsTopic,
@@ -29,8 +32,8 @@ const {
   controlDrainTimeoutMs,
   controlRestartAckTimeoutMs,
   controlPauseStatePath,
-  readControlPauseState,
   writeControlPauseState,
+  readControlPauseState,
   pendingControlConfirmPath,
   readPendingControlConfirm,
   writePendingControlConfirm,
@@ -83,6 +86,7 @@ const {
   roleAwaitingAnswerPath,
   readRoleAwaitingAnswer,
   clearRoleAwaitingAnswer,
+  markRoleQuestionUndeliverable,
   roleTopicIdFor,
   roleAnswerFilePointerPath,
   composeRoleAnswerNoteMessage,
@@ -100,6 +104,7 @@ const {
   findProcessedOnboardingUpdate,
 } = require('../out/onboarding/onboarderStateStore');
 const { createOnboardingState } = require('../out/onboarding/onboarderState');
+const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -1336,16 +1341,20 @@ test('ensureResidentSpyTopic: an already-correct title never fires a redundant r
 //    closures, which no test reaches - see the readPollMap/readApprovalAskMessages
 //    comments above on the on-disk-read sibling of this same gap) ──────────
 
+// BL-586 took a targetPath (the adapter became reuse-or-create over the
+// durable PIPELINE_BOARD standing record). Both BL-497 assertions below are
+// unchanged in substance - an empty fixture root has nothing to reuse, so
+// each still exercises the create path these tests were written for.
 test('BL-497: ensureBoardTopicAdapter surfaces the created topicId on a successful create', async () => {
   const { postFn, calls } = fakeCreateOk(2000);
-  const result = await ensureBoardTopicAdapter('fake-token', 'fake-chat', postFn);
+  const result = await ensureBoardTopicAdapter(mkTmpRoot(), 'fake-token', 'fake-chat', postFn);
   assert.deepEqual(result, { topicId: 2000 });
   assert.match(calls[0].body, /"name":"Pipeline Board"/);
 });
 
 test('BL-497: ensureBoardTopicAdapter surfaces the underlying Telegram error on a failed create - never discards it', async () => {
   const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Bad Request: message thread not found' } });
-  const result = await ensureBoardTopicAdapter('fake-token', 'fake-chat', postFn);
+  const result = await ensureBoardTopicAdapter(mkTmpRoot(), 'fake-token', 'fake-chat', postFn);
   assert.equal(result.topicId, undefined);
   assert.match(result.error, /message thread not found/);
 });
@@ -1438,6 +1447,64 @@ test('writeControlPauseState/readControlPauseState round-trips an explicit inact
   writeControlPauseState(root, { active: true, untilMs: 1000 });
   writeControlPauseState(root, { active: false });
   assert.deepEqual(readControlPauseState(root), { active: false });
+});
+
+// ── BL-823: writeControlPauseState also appends to the availability ledger ─
+
+function readLedgerLines(root) {
+  const month = new Date().toISOString().slice(0, 7);
+  const filePath = availabilityLedgerFileForMonth(root, month);
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l));
+}
+
+test('BL-823: writeControlPauseState({active:true}) appends a pause-start control-pause record naming its source', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1000 }, 'test-source');
+  const [record] = readLedgerLines(root);
+  assert.equal(record.event, 'pause-start');
+  assert.equal(record.class, 'control-pause');
+  assert.equal(record.source, 'test-source');
+});
+
+test('BL-823: writeControlPauseState({active:false}) appends a pause-end control-pause record naming its source', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1000 }, 'test-source-a');
+  writeControlPauseState(root, { active: false }, 'test-source-b');
+  const lines = readLedgerLines(root);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[1].event, 'pause-end');
+  assert.equal(lines[1].source, 'test-source-b');
+});
+
+// BL-823 scenario 05 (control pause): a ledger write failure never blocks
+// the pause state write it observes - real EISDIR, not mocked (see
+// availabilityLedgerStore.test.js's own EISDIR test for the same convention).
+test('BL-823: a ledger write failure never blocks writeControlPauseState from completing', () => {
+  const root = mkTmpRoot();
+  const month = new Date().toISOString().slice(0, 7);
+  fs.mkdirSync(availabilityLedgerFileForMonth(root, month), { recursive: true });
+  assert.doesNotThrow(() => {
+    writeControlPauseState(root, { active: true, untilMs: 1000 }, 'test-source');
+  });
+  assert.deepEqual(readControlPauseState(root), { active: true, untilMs: 1000 });
+});
+
+// BL-823: a caller that omits the source argument entirely (every
+// pre-BL-823 call site, until each was given its own distinguishing
+// source) still records a real, named source - never a blank or undefined
+// one - so the ledger never carries an unattributable record.
+test('BL-823: writeControlPauseState with no source argument records the function-name default', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1000 });
+  const [record] = readLedgerLines(root);
+  assert.equal(record.source, 'writeControlPauseState');
 });
 
 // ── readPendingControlConfirm / writePendingControlConfirm (BL-423) ───────
@@ -1773,6 +1840,9 @@ test('BL-423: applyPause writes a timed pause marker and announces it with a Res
   const body = JSON.parse(calls[0].body);
   assert.match(body.text, /Paused - new work will not be promoted for 15 min/);
   assert.deepEqual(body.reply_markup.inline_keyboard, [[{ text: 'Resume now', callback_data: 'control:resume-now' }]]);
+  // BL-823: applyPause names its own distinguishing source.
+  const [ledgerRecord] = readLedgerLines(root);
+  assert.equal(ledgerRecord.source, 'telegram-front-desk-bot:pause');
 });
 
 test('BL-423: applyPause with no duration writes an "until I resume" pause (no untilMs, no auto-expiry)', async () => {
@@ -1791,6 +1861,9 @@ test('BL-423: resumeNow clears the pause marker and announces it', async () => {
   await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn);
   assert.deepEqual(readControlPauseState(root), { active: false });
   assert.match(JSON.parse(calls[0].body).text, /Resumed/);
+  // BL-823: resumeNow names its own distinguishing source.
+  const ledgerLines = readLedgerLines(root);
+  assert.equal(ledgerLines[ledgerLines.length - 1].source, 'telegram-front-desk-bot:resume');
 });
 
 // ── BL-617: resumeNow consumes an open cooldown window's application ──────
@@ -2153,6 +2226,50 @@ test('BL-607: clearRoleAwaitingAnswer removes the pending marker so a later read
 test('BL-607: clearRoleAwaitingAnswer on an already-absent marker never throws', () => {
   const root = mkTmpRoot();
   assert.doesNotThrow(() => clearRoleAwaitingAnswer(root, 'specifier'));
+});
+
+// ── GH-26: markRoleQuestionUndeliverable - the real writer behind
+// ReplyRelayAdapters' own adapter of the same name (deliverRoleQuestion's
+// undeliverable-drop path, telegramFrontDeskBotCore.ts). Rewrites the
+// marker with state "undeliverable" instead of deleting it, preserving
+// whatever the file already held for forensics. ───────────────────────────
+
+test('GH-26: markRoleQuestionUndeliverable rewrites an existing marker to state undeliverable, preserving its original fields', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'which env?', asked_at_ms: 1000, options: [{ label: 'staging' }] }));
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', [{ label: 'staging' }]);
+  const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'specifier'), 'utf8'));
+  assert.deepEqual(raw, { question: 'which env?', asked_at_ms: 1000, options: [{ label: 'staging' }], state: 'undeliverable' });
+});
+
+test('GH-26: markRoleQuestionUndeliverable is scoped PER ROLE - a different role\'s marker is untouched', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'coder', JSON.stringify({ question: 'which branch?' }));
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', undefined);
+  const coderRaw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'coder'), 'utf8'));
+  assert.deepEqual(coderRaw, { question: 'which branch?' });
+});
+
+test('GH-26: role_ask.bb\'s already-pending guard treats the rewritten marker as NOT pending (readRoleAwaitingAnswer still resolves it - the guard lives in role_ask.bb/operator_lib.bb, not here)', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'which env?', asked_at_ms: 1000 }));
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', undefined);
+  assert.deepEqual(readRoleAwaitingAnswer(root, 'specifier'), { question: 'which env?', asked_at_ms: 1000, state: 'undeliverable' });
+});
+
+test('GH-26: markRoleQuestionUndeliverable with no existing marker file synthesizes one from its own question/options params', () => {
+  const root = mkTmpRoot();
+  markRoleQuestionUndeliverable(root, 'specifier', 'which env?', [{ label: 'staging' }]);
+  const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'specifier'), 'utf8'));
+  assert.deepEqual(raw, { question: 'which env?', options: [{ label: 'staging' }], state: 'undeliverable' });
+});
+
+test('GH-26: markRoleQuestionUndeliverable on a malformed existing marker still writes a valid undeliverable marker (readRoleAwaitingAnswer\'s own degrade-to-undefined posture, never a crash)', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', 'not json');
+  assert.doesNotThrow(() => markRoleQuestionUndeliverable(root, 'specifier', 'which env?', undefined));
+  const raw = JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(root, 'specifier'), 'utf8'));
+  assert.deepEqual(raw, { question: 'which env?', state: 'undeliverable' });
 });
 
 // ── BL-607: resolveAskOptions' role branch - a role-ask threadId resolves
@@ -3018,4 +3135,67 @@ test('readRepoBaseUrl degrades to undefined (never throws) when there is no git 
 test('readRepoBaseUrl degrades to undefined (never throws) when the directory is not even a git repo', () => {
   const root = mkTmpRoot();
   assert.equal(readRepoBaseUrl(root), undefined);
+});
+
+
+// ── BL-582 scenario 07: the diagnostic outlives the process ──────────────
+//    Every callback diagnostic used to go to bare stderr, inherited by
+//    front_desk_supervisor.bb - so the 2026-07-23 failure window has no bot
+//    output preserved anywhere at all. An append-only file under
+//    .swarmforge/operator/ is what makes the next such window readable.
+
+test('BL-582: appendFrontDeskDiagnostic writes to a file that survives the process, not only to stderr', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+
+  appendFrontDeskDiagnostic(targetPath, 'front-desk callback callback_query_id=cbq-1 reason=record-no-op detail=BL-582:no-ticket-file');
+
+  const written = fs.readFileSync(frontDeskDiagnosticsLogPath(targetPath), 'utf8');
+  assert.match(written, /reason=record-no-op detail=BL-582:no-ticket-file/);
+  assert.match(written, /^\d{4}-\d{2}-\d{2}T/, 'each line is timestamped so a failure window can be located');
+});
+
+test('BL-582: appendFrontDeskDiagnostic APPENDS - an earlier diagnostic is never overwritten by a later one', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+
+  appendFrontDeskDiagnostic(targetPath, 'first reason=not-principal');
+  appendFrontDeskDiagnostic(targetPath, 'second reason=unrecognized-data');
+
+  const lines = fs.readFileSync(frontDeskDiagnosticsLogPath(targetPath), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /not-principal/);
+  assert.match(lines[1], /unrecognized-data/);
+});
+
+test('BL-582: an unwritable diagnostic path never throws - a broken sink must not take the poll loop down with it', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+  // A FILE where the operator directory must be: mkdirSync and appendFileSync
+  // both fail, the same way a permissions or full-disk failure would.
+  fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(targetPath, '.swarmforge', 'operator'), 'not a directory');
+
+  assert.doesNotThrow(() => appendFrontDeskDiagnostic(targetPath, 'reason=not-my-chat'));
+});
+
+test('BL-582: the diagnostic log is bounded - one rotation generation, never unbounded growth on a long-lived bot', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+  const logPath = frontDeskDiagnosticsLogPath(targetPath);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, 'x'.repeat(FRONT_DESK_DIAGNOSTICS_MAX_BYTES));
+
+  appendFrontDeskDiagnostic(targetPath, 'after rotation reason=not-my-chat');
+
+  assert.match(fs.readFileSync(logPath, 'utf8'), /after rotation/, 'the fresh log holds the new line');
+  assert.equal(fs.statSync(logPath).size < FRONT_DESK_DIAGNOSTICS_MAX_BYTES, true, 'the live log restarted rather than growing past the cap');
+  assert.ok(fs.existsSync(`${logPath}.1`), 'the previous window is kept as exactly one rotation generation');
+});
+
+test('BL-582: a log under the cap is appended to, never rotated - rotation is not a per-write reset', () => {
+  const targetPath = mkTmpDir('sfvc-fd-diagnostics-');
+
+  appendFrontDeskDiagnostic(targetPath, 'first reason=not-principal');
+  appendFrontDeskDiagnostic(targetPath, 'second reason=record-no-op');
+
+  const logPath = frontDeskDiagnosticsLogPath(targetPath);
+  assert.equal(fs.existsSync(`${logPath}.1`), false, 'nothing is rotated below the cap');
+  assert.equal(fs.readFileSync(logPath, 'utf8').trim().split('\n').length, 2);
 });

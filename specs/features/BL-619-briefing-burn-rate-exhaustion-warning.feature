@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-08T10:51:47.233870Z","feature_name":"Morning briefing warns when projected token burn outruns the weekly reset","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-619-briefing-burn-rate-exhaustion-warning.feature","background_hash":"a7f6010d7ea98dcb1d2810a544fa3d05e6edc245aa6d92a4145c493fc6e85c1b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Morning briefing warns when projected token burn outruns the weekly reset
 
   # BL-619, human directive 2026-07-24 (re-filed by the operator after the
@@ -42,12 +46,23 @@ Feature: Morning briefing warns when projected token burn outruns the weekly res
     When the burn projection is computed
     Then the projection decision is "<decision>"
 
+    # Each row sits exactly on (ok rows) or one unit past (warn rows) its own
+    # warn/ok boundary - hardener tightening (BL-619 hardening pass
+    # 2026-08-08): the original illustrative rows sat far enough from the
+    # boundary that a Gherkin-mutation perturbation of any single input
+    # (anchor_pct/hours_to_reset/pct_per_day) rarely changed the outcome,
+    # leaving the wiring from these Given/When/Then steps into
+    # decideProjection effectively unverified by the example values
+    # themselves (decideProjection's own boundary correctness is separately
+    # exhaustively unit+property tested in burnProjection.test.js). Boundary
+    # placement at two different reset horizons (72h, 24h) keeps the
+    # multi-scale coverage the original rows intended.
     Examples:
       | hours_to_reset | anchor_pct | pct_per_day | decision |
-      | 72             | 23         | 30          | warn     |
-      | 72             | 23         | 20          | ok       |
-      | 24             | 90         | 15          | warn     |
-      | 24             | 50         | 20          | ok       |
+      | 72             | 28         | 24          | ok       |
+      | 72             | 29         | 24          | warn     |
+      | 24             | 76         | 24          | ok       |
+      | 24             | 77         | 24          | warn     |
 
   # BL-619 ok-path-one-line-status-03
   Scenario: projection after the reset appends a one-line status instead of a warning

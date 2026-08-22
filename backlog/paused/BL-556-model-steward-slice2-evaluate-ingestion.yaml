@@ -29,7 +29,7 @@ approval_context: |
   pending, per role rule — my own draft is not automatically authoritative).
 
 severity: medium
-priority: 12
+priority: 112
 direction: human-requested
 depends_on:
   - BL-547
@@ -137,15 +137,20 @@ description: |
        reports the regression and (with the decertify-on-regression flag) flips
        status and records the reason.
 
-acceptance: |
-  See specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature for
-  the executable acceptance scenarios. The coder wires the `evaluate` CLI
-  subcommand + pure ingest helpers with tests (scorecard ingest -> capability
-  entry, evidence-pointer role ranking, evidence-backed certification report
-  with populated gates, regression diff vs prior report, scripted
-  decertify-on-regression). Documenter extends the model-steward runbook with
-  the capture-then-evaluate workflow. QA runs the end-to-end above against real
-  recruiter-run output captured to a file.
+acceptance: specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a block
+  scalar hiding the pointer from the pre-QA gates until the documenter->QA
+  hop). Nothing anyone builds changes; the text below is the same text,
+  relocated verbatim.
+
+  The coder wires the `evaluate` CLI subcommand + pure ingest helpers with
+  tests (scorecard ingest -> capability entry, evidence-pointer role ranking,
+  evidence-backed certification report with populated gates, regression diff
+  vs prior report, scripted decertify-on-regression). Documenter extends the
+  model-steward runbook with the capture-then-evaluate workflow. QA runs the
+  end-to-end above against real recruiter-run output captured to a file.
 
 out_of_scope: |
   - An autonomous capture loop or a standing steward pane (that is Slice 3 /

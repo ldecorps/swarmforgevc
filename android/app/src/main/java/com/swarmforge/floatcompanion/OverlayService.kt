@@ -1,5 +1,6 @@
 package com.swarmforge.floatcompanion
 
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -60,6 +61,18 @@ class OverlayService : Service() {
             startAsForeground(micActive = false)
             talkEngine = TalkEngine(applicationContext)
             showBubble()
+            // BL-763: check for a bridge bounce (and auto-reset the session
+            // once if one happened) on every overlay start, before resuming
+            // hands-free - a stale session id from before a bounce should
+            // never be the one hands-free resumes into.
+            talkEngine?.syncBridgeInstanceAndSession()
+            // BL-765: hold-music catalog + full capability document, same
+            // "every overlay start" cadence as the bounce/session sync above.
+            talkEngine?.syncChiptunesCatalog()
+            // BL-825 slice A: which UI bundle to render, same cadence. No
+            // rendering yet (slice B) - resolving now settles cache/fetch/
+            // shell-compat before any screen depends on the answer.
+            talkEngine?.syncUiBundle()
             // Resume last mode: hands-free cold-start greets then opens the mic.
             talkEngine?.greetAndResumeHandsFreeIfNeeded()
         } catch (e: Exception) {
@@ -71,7 +84,10 @@ class OverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_SHOW_BUBBLE -> bubbleView?.visibility = View.VISIBLE
+            ACTION_SHOW_BUBBLE -> {
+                bubbleView?.visibility = View.VISIBLE
+                setBubbleFocusable(false)
+            }
             ACTION_HIDE_BUBBLE -> bubbleView?.visibility = View.GONE
             ACTION_STOP -> {
                 stopSelf()
@@ -114,7 +130,9 @@ class OverlayService : Service() {
         val open = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, MainActivity::class.java).apply {
+                putExtra(MainActivity.EXTRA_OPEN_TALK, true)
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, channelId)
@@ -205,7 +223,7 @@ class OverlayService : Service() {
             }
             bubbleParams = params
             attachDrag(binding.root, params) {
-                mainHandler.post { openTalkPanel() }
+                openTalkPanel()
             }
             windowManager.addView(binding.root, params)
             applyBubbleAppearance(TalkEngine.Phase.READY, paused = false)
@@ -216,17 +234,54 @@ class OverlayService : Service() {
         }
     }
 
+    /**
+     * Trampoline through [MainActivity] (a real, exported activity) rather than
+     * starting the dialog panel from this service. Samsung drops the latter
+     * after a cold start; a PendingIntent to the launcher activity still runs.
+     */
     private fun openTalkPanel() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            putExtra(MainActivity.EXTRA_OPEN_TALK, true)
+        }
         try {
-            val intent = Intent(this, TalkPanelActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            val pi = PendingIntent.getActivity(
+                this,
+                7073,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (Build.VERSION.SDK_INT >= 34) {
+                val opts = ActivityOptions.makeBasic()
+                opts.pendingIntentBackgroundActivityStartMode =
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                pi.send(this, 0, null, null, null, null, opts.toBundle())
+            } else {
+                pi.send()
             }
-            startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "openTalkPanel failed", e)
-            Toast.makeText(this, "open panel failed: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "openTalkPanel pending intent failed", e)
+            try {
+                startActivity(intent)
+            } catch (e2: Exception) {
+                Log.e(TAG, "openTalkPanel failed", e2)
+                Toast.makeText(this, "open panel failed: ${e2.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /** Let the tap count as user interaction so Android will allow the panel start. */
+    private fun setBubbleFocusable(focusable: Boolean) {
+        val view = bubbleView ?: return
+        val params = bubbleParams ?: return
+        val flag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        params.flags = if (focusable) params.flags and flag.inv() else params.flags or flag
+        try {
+            windowManager.updateViewLayout(view, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "focus flag failed", e)
         }
     }
 
@@ -375,6 +430,7 @@ class OverlayService : Service() {
                     downY = event.rawY.toInt()
                     startX = params.x
                     startY = params.y
+                    setBubbleFocusable(true)
                     mainHandler.removeCallbacks(longPressRunnable)
                     mainHandler.postDelayed(longPressRunnable, longPressTimeout)
                     true
@@ -406,12 +462,16 @@ class OverlayService : Service() {
                 MotionEvent.ACTION_UP -> {
                     mainHandler.removeCallbacks(longPressRunnable)
                     when {
-                        longPressFired -> hideRemoveZone()
+                        longPressFired -> {
+                            hideRemoveZone()
+                            setBubbleFocusable(false)
+                        }
                         !moved -> {
                             hideRemoveZone()
                             onTap()
                         }
                         isOverRemoveZone(params, v) -> {
+                            setBubbleFocusable(false)
                             hideRemoveZone()
                             Toast.makeText(this, R.string.bubble_closed, Toast.LENGTH_SHORT).show()
                             stopSelf()
@@ -419,6 +479,7 @@ class OverlayService : Service() {
                         else -> {
                             hideRemoveZone()
                             magnetEdge(params, v)
+                            setBubbleFocusable(false)
                         }
                     }
                     true
@@ -426,6 +487,7 @@ class OverlayService : Service() {
                 MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
                     hideRemoveZone()
+                    setBubbleFocusable(false)
                     true
                 }
                 else -> false

@@ -13,12 +13,14 @@ const os = require('node:os');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
 
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
+const { track } = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function mkRuntimeFixture() {
@@ -184,6 +186,9 @@ function registerSteps(registry) {
   registry.define(/^a role's agent process has really died$/, (ctx) => {
     ctx.roles = ['coder', 'QA'];
     ctx.runtimeTarget = mkRuntimeFixture();
+    // BL-817: registered BEFORE the tmux server below is spawned, so even a
+    // crash mid-launch is covered.
+    track(ctx.runtimeTarget);
     writeRolesTsv(ctx.runtimeTarget, ctx.roles);
     ctx.sockDir = mkTmp('sfvc-bl368-real-sock-');
     ctx.sock = path.join(ctx.sockDir, 'bl368.sock');

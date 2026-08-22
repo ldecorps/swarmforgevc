@@ -13,6 +13,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/operator_runtime_sandb
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
+# BL-872: registers every mktemp root below with the shared EXIT trap
+# (lib/tmp_cleanup.sh). make_project_fixture itself never registers - it
+# runs inside its caller's own $(...) subshell, and registration must
+# happen in the PARENT shell (BL-801's own precise concern), so every
+# PROJECT="$(make_project_fixture)" call below is immediately followed by
+# its own register_tmp_dir in the parent.
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 fail=0
 note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
@@ -25,8 +32,13 @@ make_project_fixture() {
 }
 
 PROJECT="$(make_project_fixture)"
+register_tmp_dir "$PROJECT"
 SANDBOX_ROOT="$(mktemp -d)"
-old_mtime() { touch -d "2 hours ago" "$1"; }
+register_tmp_dir "$SANDBOX_ROOT"
+# BL-874: BSD touch has no -d relative-time form; portable_time_lib.sh
+# hides the BSD/GNU split behind one shared helper.
+source "$SCRIPT_DIR/../portable_time_lib.sh"
+old_mtime() { portable_touch_relative 2 hours "$1"; }
 
 tick() {
   SWARMFORGE_SANDBOX_SWEEP_ROOT="$SANDBOX_ROOT" \
@@ -76,7 +88,9 @@ rm -rf "$PROJECT" "$SANDBOX_ROOT"
 
 # ── bounded-deletes-05: periodic (not per-tick) nothing-found logging ─────
 PROJECT2="$(make_project_fixture)"
+register_tmp_dir "$PROJECT2"
 SANDBOX_ROOT2="$(mktemp -d)"
+register_tmp_dir "$SANDBOX_ROOT2"
 mkdir -p "$SANDBOX_ROOT2/sfvc-only-fresh"
 RUNTIME_LOG2="$PROJECT2/.swarmforge/operator/runtime.log"
 

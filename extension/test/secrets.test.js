@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const os = require('node:os');
 const {
   resolveResendApiKey,
   RESEND_SECRET_KEY,
@@ -205,8 +206,21 @@ test('resolveMistralApiKey falls back to SecretStorage when no env var is set', 
 
 test('resolveMistralApiKey returns undefined when neither source has a value', async () => {
   delete process.env.MISTRAL_API_KEY;
-
-  assert.equal(await resolveMistralApiKey(undefined), undefined);
+  // BL-792: resolveMistralApiKey's last resort reads real shell-profile
+  // files (~/.zshrc etc.) via os.homedir() - on a real operator machine
+  // that has ever exported MISTRAL_API_KEY for its own use, this test was
+  // silently reading THAT real secret back instead of exercising "neither
+  // source has a value" at all. Point os.homedir() at a path with no
+  // profile files so the fallback genuinely has nothing to find, the same
+  // way recordRunCli.test.js isolates os.homedir() from this box's real
+  // home directory.
+  const originalHomedir = os.homedir;
+  os.homedir = () => '/nonexistent-home-for-secrets-test';
+  try {
+    assert.equal(await resolveMistralApiKey(undefined), undefined);
+  } finally {
+    os.homedir = originalHomedir;
+  }
 });
 
 // --- BL-239: the Telegram chat adapter's bot token and authorized chat id.

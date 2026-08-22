@@ -109,6 +109,46 @@
 (assert= "total-citation-count: sums every rule's own violation count"
          1 (standing-rule-violations-lib/total-citation-count violations))
 
+;; ── BL-986 declared invariant: relocation is verdict-neutral ─────────────
+;; "A rule citation counts as a violation record wherever the constitution
+;; keeps it - moving prose between a boot-inlined article and its reference/
+;; elaboration never changes the reported violation count."
+;;
+;; Encoded against FIXTURE text rather than the live files, so it tests the
+;; property (any relocation, any rule) instead of one committed instance -
+;; and so it keeps holding after the real citation moves again, which is the
+;; whole failure mode. Every placement of the SAME rule block must produce
+;; the same count: inlined only, relocated only, or - the trap the ticket
+;; names - present in BOTH, which must still be ONE record, never two.
+
+(def relocation-rule
+  (str "- A `Scenario Outline` step handler must validate every `Examples:` column\n"
+       "  against explicit KNOWN_VALUES. (Confirmed 5x across BL-250/BL-252/BL-253\n"
+       "  in one session.)\n"))
+
+(def unrelated-rule "- Something else entirely, citing nobody.\n")
+
+(defn- count-for [files ticket]
+  (count (standing-rule-violations-lib/citing-rules-for-ticket
+           (standing-rule-violations-lib/scan-violations files) ticket)))
+
+(let [inlined-only [{:path "engineering.prompt" :content (str unrelated-rule relocation-rule)}
+                    {:path "reference/engineering-detailed.prompt" :content unrelated-rule}]
+      relocated    [{:path "engineering.prompt" :content unrelated-rule}
+                    {:path "reference/engineering-detailed.prompt" :content (str unrelated-rule relocation-rule)}]
+      both         [{:path "engineering.prompt" :content (str unrelated-rule relocation-rule)}
+                    {:path "reference/engineering-detailed.prompt" :content (str unrelated-rule relocation-rule)}]]
+  (assert= "BL-986 invariant: a citation in the inlined article counts once"
+           1 (count-for inlined-only "BL-252"))
+  (assert= "BL-986 invariant: RELOCATING that prose to reference/ leaves the count unchanged"
+           (count-for inlined-only "BL-252") (count-for relocated "BL-252"))
+  (assert= "BL-986 invariant: the same rule in BOTH places is ONE violation record, not two"
+           1 (count-for both "BL-252"))
+  ;; Origin-vs-violation semantics survive the widening, in every placement.
+  (doseq [[label files] [["inlined" inlined-only] ["relocated" relocated] ["both" both]]]
+    (assert= (str "BL-986 invariant: the rule's own origin BL-250 is still never a violation (" label ")")
+             0 (count-for files "BL-250"))))
+
 ;; ── KNOWN VIOLATION against the REAL, live constitution files ────────────
 ;; The ticket's own "TRAP - zero violations" warning: prove the mechanism
 ;; detects a violation it is SHOWN, against real committed text, not a
@@ -124,13 +164,32 @@
 ;;   - architect.prompt's co-change-tool citation (BL-255) is a
 ;;     "(source: ..., BL-255)" provenance credit, not a violation record.
 
+;; BL-986: each inlined article is read WITH its reference/ elaboration. The
+;; Scenario-Outline rule's BL-250/BL-252/BL-253 citation was inlined in
+;; engineering.prompt when this check was written (40fdf6b3c) and was moved
+;; wholesale into engineering-detailed.prompt by the boot-budget split
+;; (0c152a3d3) - the citation never changed, only which file holds it, and
+;; scanning the boot boundary alone reported a false zero from then on.
+;;
+;; Deliberately NOT the full production rule-source-files set: this check's
+;; three assertions are calibrated to these articles, and documenter.prompt
+;; carries a DIFFERENT rule that legitimately records BL-250 as a violation,
+;; which would make the origin assertion below read as broken when it is
+;; not. The file-discovery layer is tested on its own, in
+;; standing_rule_violations_files_test_runner.bb.
+(defn- article [& segments] (slurp (str (apply fs/path swarmforge-dir segments))))
+
 (def real-files
   [{:path "engineering.prompt"
-    :content (slurp (str (fs/path swarmforge-dir "constitution" "articles" "engineering.prompt")))}
+    :content (article "constitution" "articles" "engineering.prompt")}
+   {:path "reference/engineering-detailed.prompt"
+    :content (article "constitution" "articles" "reference" "engineering-detailed.prompt")}
    {:path "local-engineering.prompt"
-    :content (slurp (str (fs/path swarmforge-dir "constitution" "articles" "local-engineering.prompt")))}
+    :content (article "constitution" "articles" "local-engineering.prompt")}
+   {:path "reference/local-engineering-detailed.prompt"
+    :content (article "constitution" "articles" "reference" "local-engineering-detailed.prompt")}
    {:path "architect.prompt"
-    :content (slurp (str (fs/path swarmforge-dir "roles" "architect.prompt")))}])
+    :content (article "roles" "architect.prompt")}])
 
 (def real-violations (standing-rule-violations-lib/scan-violations real-files))
 

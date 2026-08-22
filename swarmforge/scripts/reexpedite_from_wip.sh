@@ -25,12 +25,14 @@ usage() {
 [[ $# -ge 1 ]] || usage
 if [[ "$1" =~ ^BL-[0-9]+$ ]]; then
   ROOT="$DEFAULT_ROOT"
-  TICKET="${1^^}"
+  # BL-937: bash 3.2 (the stock macOS target) has no `${var^^}` case
+  # conversion (bash 4.0+ only) - portable equivalent via tr.
+  TICKET="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
   shift
 else
   [[ $# -ge 2 ]] || usage
   ROOT="$(cd "$1" && pwd)"
-  TICKET="${2^^}"
+  TICKET="$(printf '%s' "$2" | tr '[:lower:]' '[:upper:]')"
   shift 2
 fi
 [[ "$TICKET" =~ ^BL-[0-9]+$ ]] || usage
@@ -77,13 +79,24 @@ descendants_of() {
   done < <(pgrep -P "$parent" 2>/dev/null || true)
 }
 
-mapfile -t expedite_pids < <(
-  pgrep -f "expedite_cli\\.bb ${ROOT//\//\\/} ${TICKET}( |$)" 2>/dev/null || true
-)
+# BL-937: bash 3.2 has no `mapfile`/`readarray` builtin (bash 4.0+ only) -
+# portable read-loop equivalent. `|| [[ -n "$line" ]]` keeps a final line
+# with no trailing newline (read fails at EOF but still populates $line);
+# `line=""` immediately before each loop guards against a stale value from
+# an earlier loop iteration surviving into a genuinely empty read here.
+expedite_pids=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  expedite_pids+=("$line")
+done < <(pgrep -f "expedite_cli\\.bb ${ROOT//\//\\/} ${TICKET}( |$)" 2>/dev/null || true)
 if ((${#expedite_pids[@]} > 0)); then
   log "stopping active $TICKET expedite (pid ${expedite_pids[*]})"
   for pid in "${expedite_pids[@]}"; do
-    mapfile -t children < <(descendants_of "$pid")
+    children=()
+    line=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      children+=("$line")
+    done < <(descendants_of "$pid")
     ((${#children[@]} == 0)) || kill -TERM "${children[@]}" 2>/dev/null || true
     kill -TERM "$pid" 2>/dev/null || true
   done

@@ -23,8 +23,27 @@
 ;; second copy) for orphan reaping below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 
+;; BL-1004 (architect bounce 2026-08-21): the cross-seat deferral hold the
+;; claim path decides with - the sweep consults the SAME library, never a
+;; second notion of deferred. backlog_depth_lib supplies the effective conf
+;; path (already loaded transitively via promotion_gates_lib below; the
+;; explicit load keeps this file honest about the dependency).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "seat_affinity_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+
 ;; BL-528: claim-without-progress detection.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "claim_progress_lib.bb")))
+
+;; BL-678: batch-mode claim-progress sidecar (live-owner half of BL-648's
+;; source near-miss) - deliberately separate from BL-528 above, see
+;; batch_claim_progress_lib.bb's own header.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "batch_claim_progress_lib.bb")))
+
+;; BL-798: reuses promotion-gates-lib's own Article 3.2.4 ranking (expedited
+;; defects first, then priority) for the open-slot nudge's candidate — never
+;; a second, divergent ranking, exactly what promotion_gates_lib.bb's own
+;; header comment warns against.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "promotion_gates_lib.bb")))
 
 ;; ── sidecar files (exact JSON shapes/paths as inboxChaser.ts) ───────────────
 
@@ -142,10 +161,21 @@
 ;; active (chaseCount hit 12+ in one live session), or false-alarm
 ;; dead-lettered once the recipient goes idle - neither of which reflects
 ;; a real stall.
+;; BL-852: held? is checked AFTER already-terminal? (a provably-finished
+;; duplicate is reaped regardless - see the how-to's "Terminal-reap outranks
+;; the hold" note) but BEFORE every age/liveness branch below, so a held
+;; parcel never reaches "chased"/"respawned"/"dead-lettered" no matter how
+;; stale it looks. "held" is a distinct outcome from "skipped" (too-young-
+;; to-chase-yet) even though both currently no-op in
+;; apply-inbox-item-action! - the mtime/chaseCount/lastChasedAtMs inputs are
+;; never touched either way, so releasing the hold resumes the normal ladder
+;; from exactly the frozen values (see the ticket's freeze-the-counter note).
 (defn decide-item-action
-  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal?]
-  (if already-terminal?
-    "reaped"
+  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?]
+  (cond
+    already-terminal? "reaped"
+    held? "held"
+    :else
     (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
       (if (< age-seconds (:chaseTimeoutSeconds config))
         "skipped"
@@ -382,7 +412,13 @@
             action (decide-stuck-action ((:get-last-activity-ms adapters) role) nudge-count now-ms config)]
         (case action
           "nudge" (apply-stuck-nudge! role held adapters now-ms)
-          "alert" ((:on-stuck-escalation! adapters) role true)
+          ;; Alert arms escalation AND keeps attempting resume. Stopping wakes
+          ;; at maxChases left mono-router dormant holders permanently starved
+          ;; once chase-escalations.json flipped true (2026-08-03 hardender
+          ;; in_process) — standing-pane packs can absorb the continued wake;
+          ;; dormant rotate targets have no human-attachable session.
+          "alert" (do ((:on-stuck-escalation! adapters) role true)
+                      (apply-stuck-nudge! role held adapters now-ms))
           (do (clear-stale-nudge-counts! held)
               ((:on-stuck-escalation! adapters) role false)
               ;; BL-528: even when pane-activity looks healthy, check whether
@@ -456,6 +492,51 @@
       (doseq [orphan (orphaned-sidecar-filenames filenames)]
         (fs/delete (fs/path inbox-new-dir orphan))))))
 
+;; BL-852: reuses handoff-lib/default-ambulance-held? (already in scope via
+;; this file's own load-file of handoff_lib.bb, per the ticket's "no new
+;; adapter wiring" note) - the SAME predicate the delivery/dequeue/rotation
+;; sites already consult, never a second notion of held (invariant 3).
+;; try/catch mirrors ambulance-lib's own BL-813 fix: a parcel that vanishes
+;; or is mid-write between the scan and this read must not crash the sweep -
+;; it just isn't provably held, so it falls through to the normal ladder
+;; (fail OPEN, same posture as parcel-held?'s own empty-attribution case).
+(defn item-ambulance-held? [file-path]
+  (try
+    (handoff-lib/default-ambulance-held? (slurp file-path))
+    (catch Exception _ false)))
+
+;; BL-1004 stall-alarm exemption (architect bounce 2026-08-21): a rework a
+;; SIBLING seat worked, still inside cross_seat_claim_deadline_ms (age via
+;; its enqueued_at/created_at header, never mtime), is DESIGNED to sit in
+;; the stage queue for that seat - the claim path is deliberately deferring
+;; it. Chasing it mid-window is the same false alarm the ambulance hold
+;; already prevents, so it composes into the identical held? slot. Same
+;; target-root convention as default-ambulance-held? above; same fail-open
+;; try/catch posture - an unreadable state must never mute a real stall.
+(defn stage-deferral-context
+  "The swept role's per-seat worked-task sets plus the effective cross-seat
+   deadline, read once per role sweep (never per item). A root with no
+   roles.tsv, an unreadable conf, or any read error degrades to no seats /
+   the default deadline, under which deferral-hold? is structurally false."
+  [role]
+  {:seat-worked-task-sets (try (handoff-lib/stage-seat-worked-task-sets role)
+                               (catch Exception _ []))
+   :deadline-ms (seat-affinity-lib/parse-cross-seat-claim-deadline-ms
+                 (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
+                      (catch Exception _ nil)))})
+
+(defn item-deferral-held? [deferral-ctx file-path now-ms]
+  (try
+    (seat-affinity-lib/deferral-hold?
+     {:type (handoff-lib/header-field file-path "type")
+      :task (handoff-lib/header-field file-path "task")
+      :seat-worked-task-sets (:seat-worked-task-sets deferral-ctx)
+      :enqueued-at (handoff-lib/header-field file-path "enqueued_at")
+      :created-at (handoff-lib/header-field file-path "created_at")
+      :now-ms now-ms
+      :deadline-ms (:deadline-ms deferral-ctx)})
+    (catch Exception _ false)))
+
 (defn sweep-role-inbox! [role inbox-new-dir completed-dir abandoned-dir now-ms config adapters]
   (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
@@ -470,12 +551,21 @@
         abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
         liveness ((:get-liveness adapters) role)
         last-activity-ms ((:get-last-activity-ms adapters) role)
-        respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)]
+        respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)
+        ;; BL-1004: forced only if some non-terminal item actually needs the
+        ;; hold check - an empty inbox costs no roles.tsv/conf/mailbox reads.
+        deferral-ctx (delay (stage-deferral-context role))]
     (doseq [item items]
       (let [already-terminal? (handoff-lib/already-terminal?
                                 (fs/file-name (:filePath item)) completed-basenames abandoned-basenames)
+            ;; Only worth reading the file (and consulting the marker) when
+            ;; it isn't already reaped outright - already-terminal? outranks
+            ;; the hold, so there's nothing to protect either way.
+            held? (and (not already-terminal?)
+                       (or (item-ambulance-held? (:filePath item))
+                           (item-deferral-held? @deferral-ctx (:filePath item) now-ms)))
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
-                                         liveness last-activity-ms (:lastChasedAtMs item) already-terminal?)
+                                         liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?)
             action (if (and (= decided "respawned") (is-cooling-down? respawn-cooldown-until-ms now-ms))
                      "chased"
                      decided)]
@@ -561,32 +651,61 @@
           (apply-rate-limit-expiry-wake! role adapters cooldown-until-ms))
         (sweep-role! role inbox-new-dir in-process-dir completed-dir abandoned-dir now-ms config adapters)))))
 
-;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity) ──────────────────
+;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity, BL-970 rework) ───
 ;; The daemon's own respawn action must never regress the exact incident
 ;; that motivated BL-147: typing into a pane that is genuinely mid-turn.
-;; Primary signal: "esc to interrupt" (Claude Code's busy footer). Subagent
-;; explore turns and long Whirlpooling runs often omit that footer while still
-;; mid-turn — match those high-confidence activity markers too.
+;;
+;; BL-970: classification keys on the pane's RENDERED TURN STATE, never on
+;; marker words found anywhere in the snapshot. The old anywhere-in-pane
+;; word matching failed in both directions and was self-sustaining: (1)
+;; FALSE-BUSY - persistent scrollback chrome (a backgrounded shell's
+;; still-running task line, a busy-marker phrase quoted inside displayed
+;; text) matched forever at an idle prompt, so no wake path ever fired and
+;; nothing ever scrolled the marker away (QA sat unwakeable ~70 minutes,
+;; evidence ecc14dd14); (2) FALSE-IDLE - the spinner-verb list was
+;; hand-maintained and incomplete, so a live frame with an unlisted verb
+;; and no token counter read idle and would be typed into mid-turn (the
+;; compute-the-closure lesson applied to a verb list).
+;;
+;; The one reliable signal is the LIVE STATUS FRAME Claude Code renders
+;; while (and only while) a turn is in flight, and its shape is
+;; structural, not lexical:
+;;
+;;     <spinner glyph> <Verb words><ellipsis> (<digit-led elapsed ...>
+;;
+;; e.g. a one-word or multi-word verb, any verb at all - no verb list. The
+;; finished-turn footer ("Worked for Xs ...") has no ellipsis-paren; a
+;; transcript bullet (⏺/⎿ - excluded from the glyph class) quoting frame-
+;; like text does not start with a spinner glyph; a backgrounded shell's
+;; chrome line has no glyph+frame shape. Two independent layers:
+;;   - STRUCTURE: only a frame-shaped line classifies busy.
+;;   - ZONE: only the snapshot's tail window is consulted - the frame (and
+;;     the idle prompt) live in the footer zone, so even a byte-perfect
+;;     frame line quoted deep in scrollback cannot false-busy a pane whose
+;;     tail shows an idle prompt.
+;; Both BL-970 invariants fall out: an idle prompt with any scrollback
+;; content is never busy, and a live frame with any (unlisted) verb always
+;; is. An empty/unreadable capture classifies idle - an unreadable pane
+;; must never block a wake (the feature's empty-capture contract).
 
-(def busy-activity-patterns
-  [#"(?i)esc to interrupt"
-   ;; Claude Code status spinners (e.g. "· Whirlpooling… (6m · ↓ 14k tokens)")
-   #"(?i)(?:whirlpooling|vibing|perambulating|swirling|marinating|incubating|pondering|noodling|dilly-dallying|tinkering|generating)[…\.]"
-   ;; Token counter in the status line — high-confidence mid-turn signal
-   #"(?i)↓\s*[\d.]+\s*k?\s*tokens"
-   #"(?i)Generating[…\.]"
-   #"(?i)●\s*Running\s+\d+\s+shell command"
-   ;; Long context compaction (omits "esc to interrupt" but is still mid-turn)
-   #"(?i)compacting conversation"
-   ;; Active explore/bash subagent chrome in the footer or body
-   #"[◯●✽]\s+Explore"
-   #"(?i)Explore\("
-   ;; Subagent shell commands in flight (line ends with Running…)
-   #"(?m)^\s*Running…\s*$"])
+(def ^:private busy-tail-window
+  "How many trailing snapshot lines the classifier consults - generously
+   larger than the footer zone (frame + prompt + permission chrome span
+   ~8 lines) while still excluding the scrollback body."
+  20)
+
+(def live-status-frame-pattern
+  ;; <spinner glyph (not a transcript bullet ⏺/⎿, not a quote/bracket)>
+  ;; <verb word(s)> <… or ...> (<digit-led elapsed>
+  #"^\s*[^\sA-Za-z0-9(){}\[\]\"'⏺⎿]{1,2}\s+\p{L}[\p{L} -]{0,60}(?:…|\.{3})\s*\(\s*\d")
+
+(defn live-status-frame-line? [line]
+  (boolean (re-find live-status-frame-pattern (or line ""))))
 
 (defn actively-processing? [pane-text]
-  (let [t (or pane-text "")]
-    (boolean (some #(re-find % t) busy-activity-patterns))))
+  (let [lines (str/split-lines (or pane-text ""))
+        tail (take-last busy-tail-window lines)]
+    (boolean (some live-status-frame-line? tail))))
 
 ;; ── durable needs-human escalation state (crosses the daemon/extension-host
 ;; process boundary now that the daemon, not the extension host, decides it) ─
@@ -703,8 +822,17 @@
 (defn- list-handoff-files-with-batches [dir]
   (concat (list-handoff-files dir) (mapcat list-handoff-files (list-batch-dirs dir))))
 
+(def ^:dynamic *read-handoff-file*
+  "BL-978 instrumentation seam: the ONE function through which ANY sweep
+   code reads a handoff file's bytes - both the single-pass index and the
+   older per-field readers below. Tests bind a counting wrapper to assert
+   the read-each-file-once invariant over the whole sweep, so a regression
+   back to per-item scanning cannot hide from the counter; production is
+   plain slurp."
+  slurp)
+
 (defn- read-header-field [file-path field]
-  (let [header (first (str/split (slurp file-path) #"\n\n" 2))
+  (let [header (first (str/split (*read-handoff-file* file-path) #"\n\n" 2))
         prefix (str field ": ")]
     (some (fn [line] (when (str/starts-with? line prefix) (subs line (count prefix))))
           (str/split-lines header))))
@@ -852,23 +980,42 @@
   (* 5 60 1000))
 
 (defn open-slot-nudge-message
-  "Fixed message — kept under the 80-char handoff limit. No ticket id: the
-   trail/cooldown is phrase + optional cooldown file, not BL-222's id set."
-  []
-  open-slot-nudge-phrase)
+  "0-arg: the old fixed, ticketless phrase (kept for callers with no
+   candidate yet known — the trail/cooldown dedup keys off this phrase as a
+   prefix regardless of arity, see open-slot-nudge-pending? below).
+   1-arg (BL-798 invariant 1): names the top Article-3.2.4 candidate and its
+   approval state — never a ticketless generic poke once a candidate is
+   known. nil candidate falls back to the plain phrase (defensive only:
+   decide-open-slot-nudge? already requires a positive paused-eligible-count
+   before this is ever called with a real candidate in production).
+   Truncated to the 80-char handoff `message:` limit, same discipline as
+   unassigned-active-note-message."
+  ([] open-slot-nudge-phrase)
+  ([candidate]
+   (if (nil? candidate)
+     open-slot-nudge-phrase
+     (let [msg (str open-slot-nudge-phrase ": " (:id candidate)
+                    (when-not (:approved? candidate) " awaiting approval"))]
+       (if (<= (count msg) dispatch-gap-note-max-length)
+         msg
+         (subs msg 0 dispatch-gap-note-max-length))))))
 
 (defn decide-open-slot-nudge?
   "Pure decision: capacity under cap, at least one eligible paused ticket,
    no pending open-slot note still sitting in coordinator new/in_process,
-   and not within the post-send cooldown window."
-  [active-count cap paused-eligible-count {:keys [pending-nudge? within-cooldown?]
-                                           :or {pending-nudge? false within-cooldown? false}}]
+   not within the post-send cooldown window, and (BL-679) the mode is not
+   engaged - ambulance's promotion freeze holds paused/ in place for the
+   ride's duration, so the nudge that would otherwise ask the coordinator to
+   fill an open slot must not fire while it is."
+  [active-count cap paused-eligible-count {:keys [pending-nudge? within-cooldown? ambulance-active?]
+                                           :or {pending-nudge? false within-cooldown? false ambulance-active? false}}]
   (and (number? active-count)
        (number? cap)
        (< active-count cap)
        (pos? (long (or paused-eligible-count 0)))
        (not pending-nudge?)
-       (not within-cooldown?)))
+       (not within-cooldown?)
+       (not ambulance-active?)))
 
 (defn count-backlog-yaml
   "Count *.yaml tickets in a backlog folder (active/ or paused/). Ignores
@@ -899,9 +1046,513 @@
        (<= 0 (- now-ms last-sent-ms) cooldown-ms)))
 
 (defn open-slot-nudge-draft-lines
-  "Note to the coordinator only — never promotes or routes to coder."
-  []
+  "Note to the coordinator only — never promotes or routes to coder. 1-arg
+   names the top candidate (BL-798 invariant 1); 0-arg keeps the prior
+   ticketless phrase for callers with no candidate."
+  ([] (open-slot-nudge-draft-lines nil))
+  ([candidate]
+   ["type: note"
+    "to: coordinator"
+    "priority: 00"
+    (str "message: " (open-slot-nudge-message candidate))]))
+
+;; ── BL-798: candidate ranking + promotion-inaction escalation ──────────────
+;; SUP-1 (2026-08-03): a ticketless nudge was treated as noise and cleared
+;; without ever promoting. Two fixes: (1) name the top Article-3.2.4
+;; candidate so every nudge is concrete, never identical-looking; (2) track
+;; repeated unacted nudges for the SAME candidate and escalate past a
+;; bounded count rather than repeating forever. Mirrors
+;; provider_auth_observe_lib.bb's own episode-state shape exactly
+;; (bounded-count-then-alert-once, pure, restart-safe to keep in-memory).
+
+(defn read-paused-candidates
+  "Every backlog/paused/*.yaml as {:file :content} — the shape
+   promotion-gates-lib/rank-candidates expects."
+  [paused-dir]
+  (if-not (fs/exists? paused-dir)
+    []
+    (->> (fs/list-dir paused-dir)
+         (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")))
+         (map (fn [f] {:file f :content (slurp (str f))}))
+         vec)))
+
+(defn- sole-refusal-is-approval?
+  "BL-963 bounce D1: evaluate is first-failing-gate-wins with human_approval
+   BEFORE depends_on (BL-957's deliberate order), so a reported
+   human_approval refusal says NOTHING about the later gates - a candidate
+   both pending approval and dep-blocked reports human_approval, yet
+   approving it promotes nothing. The sole-refusal question is answered by
+   the SAME chain, never a rival gate re-statement (BL-663): re-evaluate the
+   candidate with its human_approval field satisfied - ok iff approval was
+   the only thing standing. The line rewrite is an input transformation only;
+   the DECISION still belongs to evaluate. The field is guaranteed present
+   here (the human_approval gate only fires on a present non-approved value),
+   so the anchored line replace always has a line to hit."
+  [evaluate-ctx content]
+  (:ok (promotion-gates-lib/evaluate
+        (merge evaluate-ctx
+               {:content (str/replace content #"(?m)^human_approval:[^\n]*" "human_approval: approved")
+                :held? false}))))
+
+(defn nudge-eligible-candidates
+  "BL-963: the paused candidates the open-slot nudge may NAME, COUNT toward
+   its fire decision, or ACCRUE escalation state on - decided by the SAME
+   promotion_gates evaluate chain promotion uses, never a second
+   implementation (BL-663; invariant 1). A candidate the chain refuses for
+   any reason OTHER than human_approval (depends_on once BL-957 landed,
+   depth, hold, and any gate added later - inherited for free through the
+   chain) is excluded entirely: promoting or approving it cannot succeed,
+   and repeated nudges naming it are exactly the eternal-nudge shape SUP-1
+   escalation was built to bound. A candidate whose SOLE refusal is
+   human_approval stays eligible and is named flagged awaiting approval -
+   approving is the human's own next action (BL-798 scenario 03's
+   surface-not-skip ruling; invariant 2). Sole means sole: a reported
+   human_approval refusal is only the FIRST failing gate, so eligibility
+   re-asks the chain with approval satisfied (bounce D1) - a candidate also
+   dep-blocked (or refused by any later gate) is excluded like any other
+   chain-refused candidate.
+
+   evaluate-ctx is the caller-supplied {:active-count :max-depth
+   :active-epics :done-ids} snapshot; :held? is always false here (paused/
+   candidates by construction, hold/ never enters this scan)."
+  [candidates evaluate-ctx]
+  (filterv (fn [{:keys [content]}]
+             (let [verdict (promotion-gates-lib/evaluate
+                            (merge evaluate-ctx {:content content :held? false}))]
+               (or (:ok verdict)
+                   (and (= "human_approval" (:gate verdict))
+                        (sole-refusal-is-approval? evaluate-ctx content)))))
+           candidates))
+
+(defn top-open-slot-candidate
+  "The single Article-3.2.4-best candidate among the given candidates —
+   {:id .. :approved? bool}, or nil when candidates is empty. Approval state
+   is reported, never used to filter: a sole pending-approval candidate is
+   still named as the top candidate, flagged awaiting approval rather than
+   silently skipped (BL-798 scenario 03). BL-900/BL-963: epic-index,
+   defaulted to {} when omitted (mirrors promotion-gates-lib/rank-candidates'
+   own default - a candidate with no epic: field, or whose epic has no
+   tracker, ranks by its own priority exactly as before BL-900), is threaded
+   through to rank-candidates, and the caller passes candidates already
+   filtered through nudge-eligible-candidates above - so this candidate
+   matches the one promotion actually picks, gate refusals included."
+  ([candidates] (top-open-slot-candidate candidates {}))
+  ([candidates epic-index]
+   (when-let [winner (promotion-gates-lib/rank-candidates candidates epic-index)]
+     (let [content (:content winner)]
+       {:id (or (promotion-gates-lib/read-id content) (fs/file-name (:file winner)))
+        :approved? (= "approved" (promotion-gates-lib/read-human-approval content))}))))
+
+(defn top-expedited-paused-candidate
+  "BL-679: the id of the single Article-3.2.4-best EXPEDITED (defect/bug,
+   severity critical|high) candidate among paused candidates, or nil when
+   none are expedited. The promotion freeze holds an expedited defect filed
+   mid-ambulance in paused/ like everything else (the one place the mode
+   outranks Article 3.2.4) - this is what the auto-exit sweep's release
+   announcement consults to name it FIRST, rather than let it go silently
+   unmentioned among everything else that queued. BL-900: epic-index,
+   defaulted to {} when omitted, is threaded through to rank-candidates so
+   that WITHIN the expedited bucket, epic priority breaks ties before own-
+   priority, same as top-open-slot-candidate above."
+  ([candidates] (top-expedited-paused-candidate candidates {}))
+  ([candidates epic-index]
+   (when-let [winner (promotion-gates-lib/rank-candidates
+                      (filter #(promotion-gates-lib/expedited? (:content %)) candidates)
+                      epic-index)]
+     (or (promotion-gates-lib/read-id (:content winner)) (fs/file-name (:file winner))))))
+
+(def open-slot-escalation-default-threshold
+  "BL-798 approval_context default: 3 unacted nudges for the same top
+   candidate escalates. Amendable via swarmforge.conf."
+  3)
+
+(defn parse-open-slot-escalation-threshold
+  "Pure: `config open_slot_escalation_threshold <n>` from conf text. Honors
+   a POSITIVE integer only — absent, malformed, zero, and negative all
+   degrade to the default (mirrors provider-auth-observe-lib/parse-max-
+   attempts's own degrade-to-default failure mode)."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config open_slot_escalation_threshold"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) n open-slot-escalation-default-threshold)))
+
+(defn next-open-slot-escalation-state
+  "Advance the per-candidate unacted-nudge count. A different (or newly nil)
+   top candidate resets the count — it tracks repeated nudges for the SAME
+   unpromoted candidate, not a lifetime total; promoting the prior top
+   candidate (or a higher-ranked one appearing) must not carry its
+   predecessor's count forward."
+  [prev candidate-id]
+  (cond
+    (nil? candidate-id) nil
+    (= candidate-id (:candidate-id prev)) (update prev :count inc)
+    :else {:candidate-id candidate-id :count 1 :escalated false}))
+
+(defn decide-open-slot-escalation
+  "Pure decision for one nudge-worthy sweep tick. Returns {:state ..
+   :action ..}, action one of :nudge | :escalate | :none.
+   - No candidate: :none.
+   - Below threshold: :nudge, counted.
+   - At/above threshold, not yet escalated for this candidate: :escalate
+     once (invariant 2/3 — reaches the operator).
+   - At/above threshold, already escalated: :none — no repeat escalation
+     and no further identical silent nudge (BL-798 scenario 04), quiet
+     until the candidate changes."
+  ([prev candidate-id] (decide-open-slot-escalation prev candidate-id open-slot-escalation-default-threshold))
+  ([prev candidate-id threshold]
+   (let [state (next-open-slot-escalation-state prev candidate-id)]
+     (cond
+       (nil? state) {:state state :action :none}
+       (< (:count state) threshold) {:state state :action :nudge}
+       (not (:escalated state)) {:state (assoc state :escalated true) :action :escalate}
+       :else {:state state :action :none}))))
+
+(defn open-slot-escalation-reason
+  "Standing evidence text — same role as loop_detect_lib's format-halt-
+   reason / provider-auth-observe-lib's format-alert-reason."
+  [candidate-id nudge-count]
+  (str "Open-slot promotion inaction: '" candidate-id "' has been the top "
+       "eligible paused candidate through " nudge-count " unacted open-slot "
+       "nudges with the slot still open (BL-798). Promote it or record why "
+       "it is blocked."))
+
+(defn open-slot-escalation-telegram-text
+  "Standing Operator-topic text (telegram-reply-outbox.jsonl threadId OPERATOR)."
+  [candidate-id nudge-count]
+  (str "⚠️ Open slot unfilled through " nudge-count " nudges — top candidate `"
+       candidate-id "` still not promoted."))
+
+(defn open-slot-escalation-email-subject
+  [candidate-id]
+  (str "SwarmForge: promotion inaction on " candidate-id " - open slot unfilled"))
+
+;; ── BL-719: dropped-parcel coordinator nudge (sibling of BL-222) ───────────
+;; BL-222's dispatch-gap sweep answers exactly one question: was this ticket
+;; EVER dispatched. Any trail at all - even a note whose message text merely
+;; contains the id - marks it dispatched forever, so a ticket dispatched
+;; once and then dropped mid-pipeline (BL-714) has no detector: it sits in
+;; backlog/active/ with nothing to wake it. This sweep asks the different
+;; question: does the item have a trail (dispatch-gap already silent on it)
+;; but NO parcel currently in flight anywhere, with that gap stale enough to
+;; be a drop rather than an ordinary pause between stages? Reports to the
+;; coordinator only - never routes, assigns, or promotes (constitution:
+;; routing judgement is the coordinator's exclusive duty).
+
+(def dropped-parcel-nudge-phrase "no parcel in flight - possible drop")
+
+(defn dropped-parcel-note-message
+  "Leads with the ticket id (swarm convention) so the note is unambiguous
+   and self-identifying in the trail."
+  [item-id]
+  (let [msg (str item-id " " dropped-parcel-nudge-phrase ".")]
+    (if (<= (count msg) dispatch-gap-note-max-length)
+      msg
+      (subs msg 0 dispatch-gap-note-max-length))))
+
+(defn dropped-parcel-draft-lines
+  "Note to the coordinator only - same posture as unassigned-active-draft-
+   lines/open-slot-nudge-draft-lines. Never names a routing target; which
+   stage owns the fix is the coordinator's own judgement."
+  [item]
   ["type: note"
    "to: coordinator"
    "priority: 00"
-   (str "message: " (open-slot-nudge-message))])
+   (str "message: " (dropped-parcel-note-message (:id item)))])
+
+(defn decide-dropped-parcel?
+  "Pure. has-trail?: some handoff anywhere has ever referenced this id (the
+   same dispatch-trail definition BL-222 uses). live-mail?: a parcel for
+   this id currently sits in ANY role's new or in_process. newest-trail-ms:
+   epoch ms of the freshest trail event EXCLUDING this sweep's own prior
+   nudges (nil when no qualifying event exists - see newest-trail-event-ms).
+   Returns true only when the item has a trail, no live mail anywhere, and
+   that trail has gone stale past stall-threshold-ms - never on missing
+   data (a nil newest-trail-ms fails closed, not open)."
+  [{:keys [has-trail? live-mail? newest-trail-ms]} now-ms stall-threshold-ms]
+  (boolean
+   (and has-trail?
+        (not live-mail?)
+        (number? newest-trail-ms)
+        (number? now-ms)
+        (number? stall-threshold-ms)
+        (>= (- now-ms newest-trail-ms) stall-threshold-ms))))
+
+(defn within-dropped-parcel-cooldown?
+  "True when last-sent-ms (the last dropped-parcel nudge sent for THIS
+   ticket, if any) is still within cooldown-ms of now-ms. Mirrors within-
+   open-slot-cooldown?'s shape, but keyed per ticket by the caller (each
+   dropped ticket runs its own independent cooldown clock, unlike open-
+   slot's single global timestamp)."
+  [last-sent-ms now-ms cooldown-ms]
+  (and (number? last-sent-ms)
+       (number? now-ms)
+       (number? cooldown-ms)
+       (<= 0 (- now-ms last-sent-ms) cooldown-ms)))
+
+(def dropped-parcel-stall-default-threshold-ms
+  "Well above normal inter-stage latency so an ordinary gap between
+   pipeline stages is never mistaken for a drop (the ticket's own
+   requirement). Amendable via swarmforge.conf."
+  (* 45 60 1000))
+
+(defn parse-dropped-parcel-stall-threshold-ms
+  "Pure: `config dropped_parcel_stall_threshold_minutes <n>` from conf
+   text, in minutes, converted to ms. A non-positive or unparseable value
+   degrades to the default (mirrors parse-open-slot-escalation-threshold's
+   own degrade-to-default posture)."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config dropped_parcel_stall_threshold_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) dropped-parcel-stall-default-threshold-ms)))
+
+(def dropped-parcel-cooldown-default-ms
+  "Default cooldown between repeated nudges for the SAME still-dropped
+   ticket (invariant 3): one nudge per window, not every tick."
+  (* 30 60 1000))
+
+(defn parse-dropped-parcel-cooldown-ms
+  "Pure: `config dropped_parcel_cooldown_minutes <n>` from conf text, in
+   minutes, converted to ms. Same degrade-to-default posture as the stall
+   threshold parser above."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config dropped_parcel_cooldown_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) dropped-parcel-cooldown-default-ms)))
+
+(defn- dropped-parcel-self-nudge?
+  "True when file-path's own message header is this sweep's own nudge
+   text - excluded from trail-freshness so a self-sent nudge never re-arms
+   the stale-trail check (BL-719 invariant 3)."
+  [file-path]
+  (let [msg (read-header-field file-path "message")]
+    (boolean (and msg (str/includes? msg dropped-parcel-nudge-phrase)))))
+
+(defn- parse-instant-ms
+  "Pure: an ISO-8601 instant string to epoch millis, or nil when absent,
+   blank, or unparseable - never throws. Mirrors mono_router_lib.bb's own
+   parse-instant-ms exactly (small pure helper, deliberately duplicated
+   across independent libs per this file's own established posture, see
+   the BL-488-VIOLATION comment above)."
+  [s]
+  (try
+    (some-> s str str/trim not-empty java.time.Instant/parse .toEpochMilli)
+    (catch Exception _ nil)))
+
+(defn- handoff-event-ms
+  "A handoff file's own age-source timestamp: enqueued_at if parseable,
+   else created_at - never file mtime (a worktree hot-sync or archive move
+   can touch mtime without a new event happening; mirrors mono_router_lib.
+   bb's note-aged? precedence exactly)."
+  [file-path]
+  (or (parse-instant-ms (read-header-field file-path "enqueued_at"))
+      (parse-instant-ms (read-header-field file-path "created_at"))))
+
+(defn newest-trail-event-ms
+  "The freshest trail-event timestamp (epoch ms) for item-id across
+   scan-dirs, from each matching handoff's own enqueued_at/created_at
+   header. Excludes this sweep's OWN prior nudges (BL-719 invariant 3) so a
+   still-dropped ticket stays detectably stale across repeated nudge
+   cycles, and skips any file with no parseable timestamp header at all
+   (never a false freshness signal from missing data). Returns nil when no
+   qualifying trail file exists."
+  [item-id scan-dirs]
+  (->> scan-dirs
+       (mapcat list-handoff-files-with-batches)
+       (filter #(= item-id (extract-ticket-id (dispatch-ticket-ref %))))
+       (remove dropped-parcel-self-nudge?)
+       (keep handoff-event-ms)
+       (reduce (fn [best ms] (if (or (nil? best) (> ms best)) ms best)) nil)))
+
+;; ── BL-978: single-pass trail index ────────────────────────────────────────
+;; dropped-parcel-items used to call newest-trail-event-ms once PER active
+;; item, and every call re-listed and re-slurped every handoff file in all
+;; 40 scan dirs (~5900 files x 8 items = ~47000 reads; sweep boundaries
+;; measured 30-143269 ms on 2026-08-20, blocking mail delivery for the
+;; whole window and opening BL-977's false-halt window). The sweep now
+;; walks the scan dirs ONCE, reading each handoff file exactly once and
+;; deriving every per-ticket fact (has-trail, live mail, newest qualifying
+;; trail event) from that single read. The decision definitions - trail,
+;; live mail, BL-719's self-nudge exclusion, the unparseable-timestamp
+;; skip, and decide-dropped-parcel? itself - are byte-identical (invariant
+;; 2); this is a data-access change only.
+
+(defn- handoff-headers
+  "One read, one parse: every `field: value` line of file-path's header
+   block (before the first blank line) as a map. Field/value splitting
+   matches read-header-field's own `<field>: ` convention exactly."
+  [file-path]
+  (let [header (first (str/split (*read-handoff-file* file-path) #"\n\n" 2))]
+    (into {}
+          (keep (fn [line]
+                  (when-let [idx (str/index-of line ": ")]
+                    [(subs line 0 idx) (subs line (+ idx 2))])))
+          (str/split-lines header))))
+
+(defn build-dropped-parcel-trail-index
+  "BL-978 invariant 1: ONE pass over the union of all-scan-dirs and
+   live-mail-dirs, reading each handoff file exactly once, producing
+   {:trail {ticket-id {:newest-trail-ms ms-or-nil}} :live-ids #{ticket-id}}.
+   Trail evidence comes from files under all-scan-dirs (has-trail
+   membership = any file referencing the id, self-nudges included, exactly
+   as collect-dispatched-ticket-ids counted them; newest-trail-ms = the
+   freshest enqueued_at/created_at EXCLUDING this sweep's own prior nudges
+   per BL-719 invariant 3, files with no parseable timestamp skipped, nil
+   when nothing qualifies - exactly newest-trail-event-ms's definition).
+   live-ids come from files under live-mail-dirs. A dir in both sets
+   contributes to both from the same single read; adding an active ticket
+   adds no filesystem work at all."
+  [all-scan-dirs live-mail-dirs]
+  (let [trail-set (set (map str all-scan-dirs))
+        live-set (set (map str live-mail-dirs))]
+    (reduce
+     (fn [acc dir]
+       (let [trail? (contains? trail-set dir)
+             live? (contains? live-set dir)]
+         (reduce
+          (fn [acc file]
+            (let [headers (handoff-headers file)
+                  ref (or (get headers "task") (get headers "message"))
+                  id (extract-ticket-id ref)]
+              (if-not id
+                acc
+                (let [acc (if live? (update acc :live-ids conj id) acc)]
+                  (if-not trail?
+                    acc
+                    (let [msg (get headers "message")
+                          self-nudge? (boolean (and msg (str/includes? msg dropped-parcel-nudge-phrase)))
+                          event-ms (or (parse-instant-ms (get headers "enqueued_at"))
+                                       (parse-instant-ms (get headers "created_at")))
+                          acc (update-in acc [:trail id] #(or % {:newest-trail-ms nil}))]
+                      (if (and (not self-nudge?) event-ms)
+                        (update-in acc [:trail id :newest-trail-ms]
+                                   (fn [best] (if (or (nil? best) (> event-ms best)) event-ms best)))
+                        acc)))))))
+          acc
+          (list-handoff-files-with-batches dir))))
+     {:trail {} :live-ids #{}}
+     (distinct (map str (concat all-scan-dirs live-mail-dirs))))))
+
+(defn dropped-parcel-items
+  "Full pipeline for one evaluation tick. active-dir: backlog/active/.
+   all-scan-dirs: every role's :new/:in_process/:completed/:sent/:outbox
+   (same set BL-222's dispatch-gap-scan-dirs builds - used for has-trail?
+   and newest-trail-ms). live-mail-dirs: every role's :new/:in_process
+   ONLY (used for live-mail?). Returns the active items with a trail, no
+   live mail anywhere, and a trail gone stale past stall-threshold-ms - the
+   dropped-parcel candidates for a coordinator nudge. BL-978: the evidence
+   comes from build-dropped-parcel-trail-index's single pass; the decision
+   (decide-dropped-parcel?) and every definition it consumes are unchanged
+   (invariant 2 - the candidate set is the contract)."
+  [active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
+  (let [items (read-active-items active-dir)
+        {:keys [trail live-ids]} (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)]
+    (filterv
+     (fn [item]
+       (decide-dropped-parcel?
+        {:has-trail? (contains? trail (:id item))
+         :live-mail? (contains? live-ids (:id item))
+         :newest-trail-ms (get-in trail [(:id item) :newest-trail-ms])}
+        now-ms stall-threshold-ms))
+     items)))
+
+;; ── BL-678: batch-claim-progress sidecar (live-owner half of BL-648's ──────
+;; source near-miss) ─────────────────────────────────────────────────────────
+;; Chase-side observer for batch-mode claims: reads/refreshes each batch
+;; item's .batch-claim-progress.json sidecar (written at claim time by
+;; ready_for_next_batch.bb) from the owning role's worktree HEAD, and
+;; surfaces - never re-forwards, never re-delivers, never bounces/halts - a
+;; named suspect note to the coordinator when progress has gone stale.
+;; Deliberately does not touch BL-528's .claim-progress.json escalation
+;; ladder above; scoped by the caller (handoffd.bb) to :receive-mode "batch"
+;; roles only.
+
+(defn read-batch-claim-progress [in-process-file-path]
+  (let [data (read-json (batch-claim-progress-lib/sidecar-path in-process-file-path))]
+    (when (and (map? data) (number? (:claimAtMs data)) (number? (:lastProgressAtMs data)))
+      data)))
+
+(defn write-batch-claim-progress! [in-process-file-path progress]
+  (spit (batch-claim-progress-lib/sidecar-path in-process-file-path)
+        (json/generate-string progress)))
+
+(def batch-claim-progress-stale-default-threshold-ms
+  batch-claim-progress-lib/default-stale-threshold-ms)
+
+(defn parse-batch-claim-progress-stale-threshold-ms
+  "Pure: `config batch_claim_progress_stale_threshold_minutes <n>` from conf
+   text, in minutes, converted to ms. Same degrade-to-default posture as the
+   dropped-parcel stall-threshold parser above."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config batch_claim_progress_stale_threshold_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) batch-claim-progress-stale-default-threshold-ms)))
+
+(def batch-claim-progress-cooldown-default-ms
+  "Default cooldown between repeated suspect nudges for the SAME still-stale
+   batch item: one nudge per window, not every sweep tick."
+  (* 30 60 1000))
+
+(defn parse-batch-claim-progress-cooldown-ms
+  "Pure: `config batch_claim_progress_cooldown_minutes <n>` from conf text,
+   in minutes, converted to ms."
+  [conf-text]
+  (let [n (some->> (str/split-lines (or conf-text ""))
+                    (filter #(str/starts-with? % "config batch_claim_progress_cooldown_minutes"))
+                    first
+                    (re-find #"-?\d+")
+                    parse-long)]
+    (if (and n (pos? n)) (* n 60 1000) batch-claim-progress-cooldown-default-ms)))
+
+(defn batch-claim-progress-suspect-note-message
+  [item-id age-ms]
+  (let [msg (str item-id " batch claim stale " (quot age-ms 60000) "m since progress, not re-delivered.")]
+    (if (<= (count msg) dispatch-gap-note-max-length)
+      msg
+      (subs msg 0 dispatch-gap-note-max-length))))
+
+(defn batch-claim-progress-suspect-draft-lines
+  "Note to the coordinator only - same posture as dropped-parcel-draft-lines
+   above. Never routes, assigns, or promotes; never re-forwards or re-
+   delivers the parcel itself (invariant 2)."
+  [item-id age-ms]
+  ["type: note"
+   "to: coordinator"
+   "priority: 00"
+   (str "message: " (batch-claim-progress-suspect-note-message item-id age-ms))])
+
+(defn apply-batch-claim-progress-check!
+  "Refreshes (impure) each held batch item's sidecar from current-commit,
+   then classifies it via the pure decide-batch-claim-observation. Returns
+   the seq of {:file-path :item-id :age-ms} suspects this tick - the caller
+   (handoffd.bb) is responsible for actually sending the note, respecting
+   its own per-item cooldown. Never moves, deletes, or otherwise touches the
+   handoff file itself - the only side effect here is the sidecar write."
+  [held now-ms staleness-threshold-ms current-commit]
+  (vec
+   (keep
+    (fn [item]
+      (let [fp (:filePath item)
+            progress (read-batch-claim-progress fp)]
+        (when progress
+          (let [progress' (if (batch-claim-progress-lib/advanced? progress current-commit)
+                             (batch-claim-progress-lib/mark-progress progress current-commit now-ms)
+                             progress)]
+            (write-batch-claim-progress! fp progress')
+            (when (= :stale-suspect
+                     (batch-claim-progress-lib/decide-batch-claim-observation progress' now-ms staleness-threshold-ms))
+              {:file-path fp
+               :item-id (or (extract-ticket-id (dispatch-ticket-ref fp)) (handoff-id fp))
+               :age-ms (batch-claim-progress-lib/progress-age-ms progress' now-ms)})))))
+    held)))

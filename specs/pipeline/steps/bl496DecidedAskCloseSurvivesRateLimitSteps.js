@@ -111,7 +111,12 @@ function registerSteps(registry) {
 
   registry.define(/^the approval decision is recorded and the ask is closed$/, async (ctx) => {
     ctx.errors = await withCapturedStderr(async () => {
-      ctx.changed = await recordApprovalDecisionAndClose(ctx.adapters, ctx.ticketId, { kind: 'approved' }, 0);
+      // BL-892: recordApprovalDecisionAndClose now returns {changed,
+      // committed} - this feature never wires commitApprovalWrites, so
+      // only `changed` is relevant here; extracted immediately so every
+      // downstream step's own `ctx.changed` check is unchanged.
+      const result = await recordApprovalDecisionAndClose(ctx.adapters, ctx.ticketId, { kind: 'approved' }, 0);
+      ctx.changed = result.changed;
     });
   });
 

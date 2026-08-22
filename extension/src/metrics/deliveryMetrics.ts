@@ -1,4 +1,11 @@
-import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent, GitLogEntry, GitLogChange } from './gitHistoryAdapter';
+import {
+  runGitLog,
+  deriveTicketLifecycles,
+  isTicketRemainingAtDayEnd,
+  TicketLifecycleEvent,
+  GitLogEntry,
+  GitLogChange,
+} from './gitHistoryAdapter';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
 import { readBacklogFolders, BacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { RoleWorktree, readAllTestDurationRecords, computeSuiteDuration } from './swarmMetrics';
@@ -81,18 +88,6 @@ export interface MilestoneBurndownResult {
   currentRemaining: number;
 }
 
-function isRemainingOnDay(member: TicketLifecycleEvent, dayEndMs: number): boolean {
-  const specMs = Date.parse(member.specDateIso);
-  if (Number.isNaN(specMs) || specMs >= dayEndMs) {
-    return false; // not yet specced by this day
-  }
-  if (member.closeDateIso === null) {
-    return true;
-  }
-  const closeMs = Date.parse(member.closeDateIso);
-  return Number.isNaN(closeMs) || closeMs >= dayEndMs;
-}
-
 function burndownForMilestone(milestone: string, members: TicketLifecycleEvent[], nowMs: number): MilestoneBurndownResult | null {
   const specTimes = members.map((m) => Date.parse(m.specDateIso)).filter((ms) => !Number.isNaN(ms));
   if (specTimes.length === 0) {
@@ -103,7 +98,7 @@ function burndownForMilestone(milestone: string, members: TicketLifecycleEvent[]
 
   const dailySeries: TrendSeriesPoint[] = [];
   for (let day = earliestDay; day <= nowDay; day += DAY_MS) {
-    const remaining = members.filter((m) => isRemainingOnDay(m, day + DAY_MS)).length;
+    const remaining = members.filter((m) => isTicketRemainingAtDayEnd(m, day + DAY_MS)).length;
     dailySeries.push({ periodStart: toIso(day), value: remaining });
   }
 

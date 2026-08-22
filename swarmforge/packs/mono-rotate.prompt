@@ -30,6 +30,14 @@ Concretely, once you've sent your `git_handoff` (or, for the terminal QA
 stage, once your parcel-ending action is done) and would otherwise wait for
 `ready_for_next.sh`:
 
+**Complete the inbound parcel BEFORE rotating: run `done_with_current.sh`.**
+The handoff you just sent forwards YOUR work; the parcel you RECEIVED is
+still in `inbox/in_process/` until completed. Left behind, it ages into the
+babysitter's stuck-in-process WARN, and `ready_for_next.sh` will falsely
+resume it (in_process is checked first) the next time you rotate back into
+this role. If completing it hands you ANOTHER parcel for your current role,
+work that parcel before rotating — rotate only with a drained inbox.
+
 1. Note which role you just handed the parcel to (the `to:` field of the
    handoff you just sent — you already know it, you wrote it).
 2. Look up that role's own worktree path in `.swarmforge/roles.tsv` (one row

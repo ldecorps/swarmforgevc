@@ -13,6 +13,8 @@ ROOT="${1:?usage: install_freshness_cron.sh <project-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKER="$SCRIPT_DIR/daemon_log_freshness_check.sh"
 MARKER="# swarmforge-BL-675-freshness-check root=[$ROOT]"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/operator_path_lib.sh"
 
 if [[ ! -f "$CHECKER" ]]; then
   echo "install_freshness_cron.sh: freshness_check missing at $CHECKER" >&2
@@ -25,10 +27,38 @@ if ! command -v crontab >/dev/null 2>&1; then
   exit 1
 fi
 
+# BL-789 (2026-08-02 Mac host-switch hotfix): cron's own PATH is
+# /usr/bin:/bin - missing bb/node - so the checker's restart of handoffd
+# failed with "bb: No such file or directory" and it was reported down
+# forever. Resolve the interpreter's OWN directory now, while we still have
+# the installer's normal (interactive-ish) PATH, and bake it into the
+# crontab line itself, alongside a curated fallback list - the checker also
+# self-establishes this same fallback list (defense in depth: correct even
+# if invoked outside cron), but baking it into the crontab line means a
+# freshly-cut cron environment never depends on that running in time.
+INTERPRETER_DIR=""
+if command -v bb >/dev/null 2>&1; then
+  INTERPRETER_DIR="$(cd "$(dirname "$(command -v bb)")" && pwd)"
+fi
+
+# BL-796: bake a node directory too - bb-only baking left a freshness
+# restart's `nohup bb ...` resolving bb but still failing every node-driven
+# sweep when node is nvm-only. swarmforge_nvm_node_bin_dir is the SAME
+# resolver swarmforge_prepend_operator_bins (the runtime prepend) falls
+# back to - one nvm resolver, not two independently-reimplemented ones.
+NODE_DIR=""
+if command -v node >/dev/null 2>&1; then
+  NODE_DIR="$(cd "$(dirname "$(command -v node)")" && pwd)"
+else
+  NODE_DIR="$(swarmforge_nvm_node_bin_dir || true)"
+fi
+
+CRON_PATH_DIRS="${INTERPRETER_DIR:+$INTERPRETER_DIR:}${NODE_DIR:+$NODE_DIR:}/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin:/usr/bin:/bin"
+
 # Cron line: every 2 minutes, POSIX sh, FRESHNESS_ROOT set, logs to daemon dir.
 LOG_DIR="$ROOT/.swarmforge/daemon"
 mkdir -p "$LOG_DIR"
-CRON_CMD="FRESHNESS_ROOT=$ROOT /bin/sh $CHECKER >>$LOG_DIR/freshness-check.cron.log 2>&1"
+CRON_CMD="PATH=$CRON_PATH_DIRS FRESHNESS_ROOT=$ROOT /bin/sh $CHECKER >>$LOG_DIR/freshness-check.cron.log 2>&1"
 CRON_LINE="*/2 * * * * $CRON_CMD $MARKER"
 
 existing="$(crontab -l 2>/dev/null || true)"

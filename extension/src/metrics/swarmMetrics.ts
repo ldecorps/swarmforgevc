@@ -705,6 +705,71 @@ export function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEv
   return files.flatMap((file) => readChaserTelemetryFile(dir, file));
 }
 
+// BL-904: daemon restart/escalate incidents from BL-675's freshness
+// watchdog (swarmforge/scripts/daemon_log_freshness_check.sh), one
+// space-separated key=value record per line, e.g.:
+// "epoch=1785625446 swarm=primary daemon=babysitterd age_secs=unknown
+//  reason=log-absent threshold=600 action=restart"
+// (an "action=escalate" record additionally carries cool_off_remaining=<n>,
+// ignored here - only the fields below are read).
+// BL-1011 added swarm= and reason=, and age_secs is now the word "unknown"
+// when no age could be measured rather than a 999999999 sentinel. The reader
+// below is field-addressed and forgiving, so it is unaffected - the example is
+// updated only so it still shows a record this watchdog actually writes.
+export interface FreshnessIncidentEvent {
+  epoch: number;
+  daemon: string;
+  action: string;
+}
+
+export function freshnessIncidentLogPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'daemon', 'freshness-incidents.log');
+}
+
+// A malformed/truncated line (missing epoch/daemon/action, or a
+// non-numeric epoch) is skipped, never thrown - same forgiving-reader
+// convention as parseChaserTelemetryLine above.
+function parseFreshnessIncidentLine(line: string): FreshnessIncidentEvent | null {
+  const fields: Record<string, string> = {};
+  for (const token of line.trim().split(/\s+/)) {
+    const eq = token.indexOf('=');
+    if (eq === -1) {
+      continue;
+    }
+    fields[token.slice(0, eq)] = token.slice(eq + 1);
+  }
+  const epoch = Number(fields.epoch);
+  if (!Number.isFinite(epoch) || !fields.daemon || !fields.action) {
+    return null;
+  }
+  return { epoch, daemon: fields.daemon, action: fields.action };
+}
+
+// BL-904 invariant 2: returns null (never []) when the log is missing or
+// unreadable - distinct from a readable, empty/zero-restart log - so a
+// caller can tell "no data" from "measured zero" instead of both
+// collapsing to the same empty-array shape readChaserTelemetryEvents above
+// deliberately does NOT need to distinguish for its own four fields.
+export function readFreshnessIncidentEvents(targetPath: string): FreshnessIncidentEvent[] | null {
+  let content: string;
+  try {
+    content = fs.readFileSync(freshnessIncidentLogPath(targetPath), 'utf8');
+  } catch {
+    return null;
+  }
+  const events: FreshnessIncidentEvent[] = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+    const event = parseFreshnessIncidentLine(line);
+    if (event) {
+      events.push(event);
+    }
+  }
+  return events;
+}
+
 function emptyRoleTelemetry(): RoleChaserTelemetry {
   return { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 };
 }

@@ -1,8 +1,27 @@
-// BL-452/BL-455/BL-465: a live pipeline-board grid - active BL tickets on
-// the X axis (one vertical block per ticket), pipeline stages on the Y axis
-// (each role/stage on its own line: "NS .", "CO X", …) — pivoted for phone
-// portrait so the grid fits without horizontal scroll; grouped by epic;
-// parked/awaiting-approval/root-intake/recently-closed items are listed
+// BL-452/BL-455/BL-465/BL-585/BL-979: a live pipeline-board grid - ONE
+// matrix with a single shared header. BL-979 pivoted the axes: active BL
+// tickets are ROWS down the Y axis and the eight pipeline stages are shared
+// COLUMNS across the X axis, so an extra ticket adds a row rather than
+// widening the board. Width is the scarce axis on a phone and vertical
+// growth is cheap, which is the whole argument for the pivot; BL-585's
+// ticket-columns layout grew sideways with every promotion.
+//
+// Because of that pivot the DROPPING axis is height, not width. The row
+// budget (PIPELINE_BOARD_GRID_MAX_ROWS) drops the tail of the epic-grouped
+// order and announces it with "+N more active", never a silent cap. The
+// character-width budget (PIPELINE_BOARD_GRID_MAX_WIDTH) survives as an
+// ASSERTION rather than a dropper: the grid's width is now a property of
+// the fixed stage set plus the id gutter, so no ticket can ever be dropped
+// for width (BL-979 invariant 2). Telegram's <pre> does not wrap, so an
+// over-wide grid would need horizontal scrolling on a phone - hence the
+// budget stays, as a guard.
+//
+// Below the matrix each visible row gets a caption line (display id +
+// truncated title, BL-956), grouped under "-- <epic-slug> --" separators
+// with a blank line before every summary. This is NOT a return to BL-455's
+// per-ticket pivoted blocks: there is still exactly one matrix and one
+// header.
+// Parked/awaiting-approval/root-intake/recently-closed items are listed
 // separately below the grid. Telegram cannot nest <a> inside the grid's
 // <pre>, so ticket numbers in the below-grid lists (and grid-only tickets)
 // are composed as HTML anchors after that <pre> by composePipelineBoardHtml
@@ -19,6 +38,7 @@ export interface PipelineBoardRow {
   // the 8 stage columns). Distinct from PipelineBoardParkedEntry/
   // PipelineBoardListEntry's own `slug` below, which carries MORE text.
   slug: string;
+  title?: string;
 }
 
 // BL-465: shared shape for every below-grid list line (parked, root-intake,
@@ -55,6 +75,10 @@ export interface PipelineBoardData {
   // approval tickets are never capped). Rendered as "+N more parked" under
   // the PARKED section — never a silent cap.
   parkedOmittedCount?: number;
+  // BL-956: epic trackers omitted by PIPELINE_BOARD_COLLAPSED_EPICS_MAX.
+  // Rendered as "+N more epics" under the PARKED section — same
+  // never-a-silent-cap posture as parkedOmittedCount above.
+  collapsedEpicsOmittedCount?: number;
 }
 
 export interface PipelineBoardCollapsedEpicEntry {
@@ -162,7 +186,7 @@ const COLUMN_LABEL: Record<string, string> = {
 };
 
 // BL-505: shortened from "TICKET" (6 chars) — kept for deriveDisplayTicketId
-// docs only; the pivoted grid shows ticket numbers on their own line.
+// docs only; BL-585 the matrix caption line uses it directly for an epic-less ticket.
 const NO_EPIC_LABEL = '(no epic)';
 // Steady state when backlog/active/ is empty — keeps the Telegram <pre>
 // grid from rendering as a blank block between pipeline clears.
@@ -183,7 +207,7 @@ export const PIPELINE_BOARD_RECENTLY_CLOSED_MAX = 5;
 // paused tickets by priority (lower number = higher urgency), same ordering
 // as the paused-pager bridge route. Awaiting-approval tickets are always
 // shown in full regardless of this cap.
-export const PIPELINE_BOARD_PAUSED_MAX = 10;
+export const PIPELINE_BOARD_PAUSED_MAX = 3;
 
 const PAUSED_PRIORITY_FALLBACK = Number.MAX_SAFE_INTEGER;
 
@@ -195,6 +219,33 @@ const PAUSED_PRIORITY_FALLBACK = Number.MAX_SAFE_INTEGER;
 // pipelineBoardSync.ts) reads this ONE constant, never a hardcoded number
 // of its own.
 export const PIPELINE_BOARD_MESSAGE_MAX_LENGTH = 4000;
+
+// BL-585/BL-979: the matrix's own character-width budget. Under BL-585 this
+// was the DROPPER (it decided how many ticket columns fitted); after the
+// BL-979 pivot the stage set is fixed, so width is a constant of the layout
+// and this is an assertion instead - nothing is ever dropped for width.
+//
+// The arithmetic, so a future id-width change is checked rather than
+// assumed: the id gutter (at least 3, else the widest display id) plus one
+// NBSP separator and one 2-wide cell for each of the 8 stages. That is 27
+// at today's 3-digit ids, 28 at 4 digits and 29 at 5 - all inside 30.
+// BL-979 scenario 05 and invariant 2 pin exactly this.
+export const PIPELINE_BOARD_GRID_MAX_WIDTH = 30;
+
+// BL-979: the dropping axis after the pivot. Height is cheap on a phone in
+// a way width is not, so this is deliberately far more generous than the 7
+// ticket columns BL-585's width budget allowed - but it is still a budget,
+// keeping the same never-a-silent-cap posture: rows past it are the tail of
+// the same epic-grouped order and are announced by "+N more active".
+// 12 covers the live active set (the depth cap plus expedited defects) with
+// headroom, and keeps the whole <pre> - header, 12 rows, and two caption
+// lines apiece - inside one comfortable phone scroll.
+export const PIPELINE_BOARD_GRID_MAX_ROWS = 12;
+
+// Every stage glyph is exactly 2 characters (COLUMN_LABEL above), and a
+// mark is 1 right-aligned into the same width, so the cell width is a
+// constant of the stage set rather than something derived per render.
+const STAGE_CELL_WIDTH = 2;
 
 // BL-465: the grid's own short kebab slug - 2-3 significant words, lower-
 // cased and hyphenated, mirroring the ticket's own backlog-filename slug
@@ -226,8 +277,13 @@ export function deriveKebabSlug(title: string | undefined, maxWords = 2): string
 // projection); that wide tail is dropped here to fit a phone screen. A
 // missing title still renders an empty slug rather than throwing
 // (deriveKebabSlug's own contract).
+// BL-956 invariant 1: bounded - a single-word title has no word cap to
+// catch it (deriveKebabSlug caps WORDS, not characters), so an arbitrarily
+// long title used to flow straight into a below-grid list line and from
+// there past the whole-message send limit (the body is never trimmed by
+// composePipelineBoardHtml; found by this ticket's own property test).
 export function deriveListEntryText(title: string | undefined): string {
-  return deriveKebabSlug(title);
+  return truncateCaptionDescription(deriveKebabSlug(title));
 }
 
 // BL-505: the SHORT display form of a ticket/list id, shared by the grid
@@ -359,7 +415,15 @@ function buildGridRows(
     // it renders at the end-of-line stage instead of matching no column at
     // all (an all-dots row) or falling through to not-started.
     const column = heldRole === 'coordinator' ? 'QA' : heldRole;
-    rowsById.set(id, { id, column, epic: meta?.epic, slug: deriveKebabSlug(meta?.title) });
+    rowsById.set(id, {
+      id,
+      column,
+      epic: meta?.epic,
+      slug: deriveKebabSlug(meta?.title),
+      // BL-956: only set when the backlog meta actually carries one - a
+      // meta-less row keeps its pre-BL-956 shape exactly.
+      ...(meta?.title !== undefined ? { title: meta.title } : {}),
+    });
   }
   return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
 }
@@ -411,23 +475,30 @@ function countEpicSliceChildren(
   return { paused, active };
 }
 
+export const PIPELINE_BOARD_COLLAPSED_EPICS_MAX = 3;
+
+// BL-956 invariant 3: the cap is never silent - alongside the sliced list
+// the omitted count comes back, rendered as "+N more epics" (the same
+// visible-overflow treatment PIPELINE_BOARD_PAUSED_MAX and the grid's
+// "+N more active" already have).
 function buildCollapsedEpicEntries(
   paused: PipelineBoardPausedItem[],
   ticketMeta: Record<string, PipelineBoardTicketMeta>
-): PipelineBoardCollapsedEpicEntry[] {
-  return paused
+): { collapsedEpics: PipelineBoardCollapsedEpicEntry[]; collapsedEpicsOmittedCount: number } {
+  const trackers = paused
     .filter((item) => isEpicTrackerPausedItem(item) && item.humanApproval !== 'pending')
-    .sort(comparePausedByPriority)
-    .map((item) => {
-      const epicSlug = item.epic ?? ticketMeta[item.id]?.epic ?? '';
-      const counts = countEpicSliceChildren(epicSlug, ticketMeta);
-      return {
-        epicSlug,
-        trackerId: item.id,
-        pausedChildCount: counts.paused,
-        activeChildCount: counts.active,
-      };
-    });
+    .sort(comparePausedByPriority);
+  const collapsedEpics = trackers.slice(0, PIPELINE_BOARD_COLLAPSED_EPICS_MAX).map((item) => {
+    const epicSlug = item.epic ?? ticketMeta[item.id]?.epic ?? '';
+    const counts = countEpicSliceChildren(epicSlug, ticketMeta);
+    return {
+      epicSlug,
+      trackerId: item.id,
+      pausedChildCount: counts.paused,
+      activeChildCount: counts.active,
+    };
+  });
+  return { collapsedEpics, collapsedEpicsOmittedCount: trackers.length - collapsedEpics.length };
 }
 
 export function formatCollapsedEpicLine(entry: PipelineBoardCollapsedEpicEntry): string {
@@ -451,6 +522,7 @@ function buildParkedEntries(
   parked: PipelineBoardParkedEntry[];
   collapsedEpics: PipelineBoardCollapsedEpicEntry[];
   parkedOmittedCount: number;
+  collapsedEpicsOmittedCount: number;
 } {
   const { selected, parkedOmittedCount } = selectPausedForBoard(paused);
   const parked = selected.map(
@@ -460,8 +532,8 @@ function buildParkedEntries(
       status: item.humanApproval === 'pending' ? 'awaiting-approval' : 'parked',
     })
   );
-  const collapsedEpics = buildCollapsedEpicEntries(paused, ticketMeta);
-  return { parked, collapsedEpics, parkedOmittedCount };
+  const { collapsedEpics, collapsedEpicsOmittedCount } = buildCollapsedEpicEntries(paused, ticketMeta);
+  return { parked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount };
 }
 
 // The four link SOURCES below each mirror one of the board's own sections
@@ -574,7 +646,7 @@ export function computePipelineBoard(
   extras: PipelineBoardExtras = {}
 ): PipelineBoardData {
   const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds);
-  const { parked, collapsedEpics, parkedOmittedCount } = buildParkedEntries(paused, ticketMeta);
+  const { parked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount } = buildParkedEntries(paused, ticketMeta);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
   // BL-465 bounce (architect review): unlike rootIntake/parked above,
   // recently-closed order IS the whole point of the section - re-sorting
@@ -587,46 +659,155 @@ export function computePipelineBoard(
   const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
   const links = extras.repoBaseUrl ? buildLinks(rows, parked, collapsedEpics, extras, ticketMeta) : [];
 
-  return { rows, parked, collapsedEpics, rootIntake, recentlyClosed, links, parkedOmittedCount };
+  return { rows, parked, collapsedEpics, rootIntake, recentlyClosed, links, parkedOmittedCount, collapsedEpicsOmittedCount };
 }
 
-// Every stage line is "<2-char label> <mark>". Pad the ticket id to the mark
-// column with NBSP — Telegram HTML collapses leading regular spaces inside
-// <pre>, which would left-flush the id against the label column.
-const PIVOTED_MARK_COLUMN_PADDING = '\u00a0'.repeat(3);
+// BL-585: caption/overflow lines sit outside the matrix proper and may use
+// plain spaces (they are ordinary text, not column-aligned).
+const NBSP = '\u00a0';
 
-function renderPivotedTicketBlock(row: PipelineBoardRow): string[] {
+function padStartNbsp(text: string, width: number): string {
+  return text.length >= width ? text : NBSP.repeat(width - text.length) + text;
+}
+
+// BL-979: the dropping axis is height now. There is no arithmetic left to
+// do - the stage set is fixed, so every row is the same width and only the
+// row budget can drop one.
+function maxVisibleGridRows(totalRows: number, maxRows: number): number {
+  return Math.max(0, Math.min(totalRows, maxRows));
+}
+
+// The id gutter: wide enough for the widest display id on the board, and
+// never narrower than 3 (today's ids). Computed over EVERY candidate row,
+// not just the visible ones, so the gutter never depends circularly on
+// which rows end up fitting the budget.
+function gridIdGutterWidth(displayIds: string[]): number {
+  return Math.max(3, ...displayIds.map((id) => id.length));
+}
+
+// BL-979 invariant 2: the width of every grid line, as a pure function of
+// the stage set and the gutter. Nothing is dropped for width - this exists
+// so the budget can be asserted rather than silently exceeded.
+function gridLineWidth(idGutterWidth: number): number {
+  return idGutterWidth + PIPELINE_BOARD_COLUMN_ORDER.length * (1 + STAGE_CELL_WIDTH);
+}
+
+function gridOverflowLine(droppedCount: number): string {
+  return `+${droppedCount} more active`;
+}
+
+// BL-956: the caption carries the full ticket TITLE (the human's hotfix -
+// the epic moved out of this line when captions became per-ticket), but
+// bounded: an unbounded title is a new path into the whole-message send
+// limit that composePipelineBoardHtml only budgets LINKS against (the
+// body is never trimmed there, and an oversized body is rejected whole -
+// live outage 2026-07-17). Truncation is visible (ellipsis), never silent.
+export const PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX = 64;
+
+// BL-956 invariant 2: a caption always identifies SOMETHING - a role-held
+// ticket with no backlog entry (no title, empty slug) gets this label
+// rather than rendering as a bare id followed by nothing.
+const NO_BACKLOG_ENTRY_LABEL = '(no backlog entry)';
+
+function truncateCaptionDescription(text: string): string {
+  if (text.length <= PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX) {
+    return text;
+  }
+  return `${text.slice(0, PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX - 1)}…`;
+}
+
+function gridCaptionLine(row: PipelineBoardRow): string {
   const displayId = deriveDisplayTicketId(row.id);
-  const lines: string[] = [`${PIVOTED_MARK_COLUMN_PADDING}${displayId}`];
-  for (const c of PIPELINE_BOARD_COLUMN_ORDER) {
-    const mark = c === row.column ? 'X' : '.';
-    lines.push(`${COLUMN_LABEL[c]} ${mark}`);
+  const description = (row.title ?? '').trim() || row.slug.trim() || NO_BACKLOG_ENTRY_LABEL;
+  return `${displayId} ${truncateCaptionDescription(description)}`;
+}
+
+// Split out of renderGridLines below for the same CRAP-budget reason as
+// buildGridRows/buildParkedEntries above - the shared stage header and the
+// per-ticket mark rows are one cohesive block (they share the id gutter and
+// iterate PIPELINE_BOARD_COLUMN_ORDER together) but pushed renderGridLines
+// itself over the CRAP budget. Pure formatting, no behavior of its own.
+//
+// BL-979: transposed. The header is the eight stage glyphs over an empty id
+// gutter, and each subsequent line is one ticket - its display id in the
+// gutter, then its mark under each stage.
+function renderGridMatrixLines(visibleRows: PipelineBoardRow[], visibleIds: string[], idGutterWidth: number): string[] {
+  const stageCells = (cell: (column: string) => string): string =>
+    PIPELINE_BOARD_COLUMN_ORDER.map((column) => NBSP + padStartNbsp(cell(column), STAGE_CELL_WIDTH)).join('');
+  const lines: string[] = [NBSP.repeat(idGutterWidth) + stageCells((column) => COLUMN_LABEL[column])];
+  visibleRows.forEach((row, index) => {
+    lines.push(padStartNbsp(visibleIds[index], idGutterWidth) + stageCells((column) => (column === row.column ? 'X' : '.')));
+  });
+  return lines;
+}
+
+// BL-979: the caption block below the matrix. BL-956 grouped same-epic
+// captions adjacently and marked each epic CHANGE with one blank line,
+// which left membership to be inferred from adjacency; the group is named
+// outright now. The separator carries the kebab SLUG exactly as the
+// human's approved mockup shows ("-- code-quality-gates --"), not a
+// prettier epic title.
+//
+// Rows arrive epic-sorted from buildGridRows, with the epic-less bucket
+// already last (epicSortKey), so grouping is a single pass over the visible
+// rows - no second ordering rule anywhere.
+//
+// The one conditional shape: a board where NO ticket carries an epic emits
+// no separators at all, rather than one lone "-- (no epic) --" header that
+// says nothing. Every summary is still preceded by a blank line either way,
+// which is also what separates the block from the matrix above it.
+function epicSeparatorLine(epic: string | undefined): string {
+  return `-- ${epic ?? NO_EPIC_LABEL} --`;
+}
+
+function renderGridCaptionLines(visibleRows: PipelineBoardRow[]): string[] {
+  const withSeparators = visibleRows.some((row) => row.epic !== undefined);
+  const lines: string[] = [];
+  let prevEpic: string | undefined;
+  let started = false;
+  for (const row of visibleRows) {
+    if (withSeparators && (!started || row.epic !== prevEpic)) {
+      if (started) {
+        lines.push('');
+      }
+      lines.push(epicSeparatorLine(row.epic));
+    }
+    lines.push('');
+    lines.push(gridCaptionLine(row));
+    prevEpic = row.epic;
+    started = true;
   }
   return lines;
 }
 
-function renderEpicHeading(epic: string | undefined): string {
-  return `-- ${epic ?? NO_EPIC_LABEL} --`;
-}
-
-// Interleaves an epic-group heading before the first row of each epic -
-// rows already arrive epic-grouped via computePipelineBoard's own stable
-// sort, so this is a pure formatting pass, never a re-sort. Each ticket
-// renders as a vertical block (ticket id, then one line per stage column).
+// ONE matrix: active tickets as rows, pipeline stages as shared columns
+// (BL-979). Rows already arrive epic-grouped via computePipelineBoard's own
+// stable sort (buildGridRows) - rows dropped by the budget are simply the
+// tail of that same order, no second ordering rule. The id gutter is
+// computed over EVERY candidate row's display id, not just the visible
+// ones, so it never depends circularly on how many rows end up fitting.
 function renderGridLines(rows: PipelineBoardRow[]): string[] {
   if (rows.length === 0) {
-    return [renderEpicHeading(NO_ACTIVE_TICKETS_LABEL)];
+    return [NO_ACTIVE_TICKETS_LABEL];
   }
-  const lines: string[] = [];
-  let started = false;
-  let currentEpic: string | undefined;
-  for (const row of rows) {
-    if (!started || row.epic !== currentEpic) {
-      lines.push(renderEpicHeading(row.epic));
-      currentEpic = row.epic;
-      started = true;
-    }
-    lines.push(...renderPivotedTicketBlock(row));
+  const displayIds = rows.map((row) => deriveDisplayTicketId(row.id));
+  const idGutterWidth = gridIdGutterWidth(displayIds);
+  const visibleCount = maxVisibleGridRows(rows.length, PIPELINE_BOARD_GRID_MAX_ROWS);
+  const visibleRows = rows.slice(0, visibleCount);
+  const droppedCount = rows.length - visibleCount;
+
+  const lines = renderGridMatrixLines(visibleRows, displayIds.slice(0, visibleCount), idGutterWidth);
+  // The caption block always opens with a blank line (every summary is
+  // preceded by one); when separators are in play that blank has to come
+  // before the first separator instead, so the matrix is never flush
+  // against it.
+  const captions = renderGridCaptionLines(visibleRows);
+  if (captions[0] !== '') {
+    lines.push('');
+  }
+  lines.push(...captions);
+  if (droppedCount > 0) {
+    lines.push(gridOverflowLine(droppedCount));
   }
   return lines;
 }
@@ -635,18 +816,55 @@ function pipelineBoardParkedOverflowLine(omittedCount: number): string {
   return `+${omittedCount} more parked`;
 }
 
+// BL-956 invariant 3: the collapsed-epic cap's own visible overflow line.
+function pipelineBoardEpicsOverflowLine(omittedCount: number): string {
+  return `+${omittedCount} more epics`;
+}
+
+// BL-956 hardener: the two overflow-line computations and the parked
+// section's emptiness guard are shared by BOTH render paths - the
+// plain-text one (change-detection content signature) and the HTML one
+// (the live Telegram message). They are near-duplicates BY DESIGN and must
+// stay in lockstep; the bounce D1 defect was precisely the moment they did
+// not. Extracting them here keeps that lockstep in one place, and keeps
+// each caller's own CRAP at or below its pre-parcel score (BL-866 pattern:
+// extract before measuring, so new code carries its own isolated number
+// rather than inheriting a shared renderer's pre-existing debt).
+function parkedOverflowLineFor(data: PipelineBoardData): string | undefined {
+  const omitted = data.parkedOmittedCount ?? 0;
+  return omitted > 0 ? pipelineBoardParkedOverflowLine(omitted) : undefined;
+}
+
+function epicsOverflowLineFor(data: PipelineBoardData): string | undefined {
+  const omitted = data.collapsedEpicsOmittedCount ?? 0;
+  return omitted > 0 ? pipelineBoardEpicsOverflowLine(omitted) : undefined;
+}
+
+function parkedSectionIsEmpty(
+  collapsedEpics: PipelineBoardCollapsedEpicEntry[],
+  plainParked: PipelineBoardParkedEntry[],
+  overflowLine: string | undefined,
+  epicsOverflowLine: string | undefined
+): boolean {
+  return collapsedEpics.length === 0 && plainParked.length === 0 && !overflowLine && !epicsOverflowLine;
+}
+
 function renderParkedSection(
   collapsedEpics: PipelineBoardCollapsedEpicEntry[],
   parked: PipelineBoardParkedEntry[],
-  overflowLine?: string
+  overflowLine?: string,
+  epicsOverflowLine?: string
 ): string[] {
   const plainParked = parked.filter((p) => p.status === 'parked');
-  if (collapsedEpics.length === 0 && plainParked.length === 0 && (overflowLine === undefined || overflowLine === '')) {
+  if (parkedSectionIsEmpty(collapsedEpics, plainParked, overflowLine, epicsOverflowLine)) {
     return [];
   }
   const lines: string[] = ['', PARKED_SECTION_HEADER];
   for (const epic of collapsedEpics) {
     lines.push(formatCollapsedEpicLine(epic));
+  }
+  if (epicsOverflowLine) {
+    lines.push(`  ${epicsOverflowLine}`);
   }
   for (const entry of plainParked) {
     lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd());
@@ -677,7 +895,7 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[], ov
   return lines;
 }
 
-// BL-526: STATUS GRID only (pivoted epic blocks + stage lines) — no
+// BL-526/BL-585: STATUS GRID only (ticket-column matrix + captions) - no
 // below-grid lists and never the LINKS fragment. Phone miniapp portrait
 // destination; Telegram pin continues to use renderBodySections below.
 function renderGridOnlySections(data: PipelineBoardData): string[] {
@@ -691,11 +909,11 @@ function renderGridOnlySections(data: PipelineBoardData): string[] {
 // rather than every one of those fixtures needing a mechanical update.
 function renderBodySections(data: PipelineBoardData): string[] {
   const parked = data.parked ?? [];
-  const parkedOverflow =
-    (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
+  const parkedOverflow = parkedOverflowLineFor(data);
+  const epicsOverflow = epicsOverflowLineFor(data);
   return [
     ...renderGridOnlySections(data),
-    ...renderParkedSection(data.collapsedEpics ?? [], parked, parkedOverflow),
+    ...renderParkedSection(data.collapsedEpics ?? [], parked, parkedOverflow, epicsOverflow),
     ...renderListSection(
       AWAITING_APPROVAL_SECTION_HEADER,
       parked.filter((p) => p.status === 'awaiting-approval')
@@ -834,10 +1052,16 @@ function renderParkedSectionHtml(
   pathById: Map<string, string>,
   repoBaseUrl: string | undefined,
   linkedIds: Set<string> | undefined,
-  overflowLine?: string
+  overflowLine?: string,
+  // BL-956 hardener bounce D1: the LIVE HTML surface silently dropped the
+  // collapsed-epics cap indicator - only the plain-text content-signature
+  // sibling (renderParkedSection) carried it, and every test layer asserted
+  // that sibling. Same parameter shape as the plain sibling, kept in
+  // lockstep.
+  epicsOverflowLine?: string
 ): string[] {
   const plainParked = parked.filter((p) => p.status === 'parked');
-  if (collapsedEpics.length === 0 && plainParked.length === 0 && (overflowLine === undefined || overflowLine === '')) {
+  if (parkedSectionIsEmpty(collapsedEpics, plainParked, overflowLine, epicsOverflowLine)) {
     return [];
   }
   const lines: string[] = ['', escapeHtml(PARKED_SECTION_HEADER)];
@@ -845,6 +1069,9 @@ function renderParkedSectionHtml(
     const path =
       linkedIds !== undefined && !linkedIds.has(epic.trackerId) ? undefined : pathById.get(epic.trackerId);
     lines.push(formatCollapsedEpicLineHtml(epic, path, repoBaseUrl));
+  }
+  if (epicsOverflowLine) {
+    lines.push(`  ${escapeHtml(epicsOverflowLine)}`);
   }
   for (const entry of plainParked) {
     const path =
@@ -917,8 +1144,11 @@ function buildPipelineBoardHtml(
   const gridText = renderGridOnlySections(data).join('\n');
   const pre = `<pre>${escapeHtml(gridText)}</pre>`;
   const parked = data.parked ?? [];
-  const parkedOverflow =
-    (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
+  const parkedOverflow = parkedOverflowLineFor(data);
+  // BL-956 hardener bounce D1: computed exactly like parkedOverflow above -
+  // the live message must announce the collapsed-epics cap too. Both now go
+  // through the shared helpers so the two render paths cannot drift again.
+  const epicsOverflow = epicsOverflowLineFor(data);
   const afterPre = [
     ...renderGridTapLinesHtml(data, pathById, repoBaseUrl, linkedIds),
     ...renderParkedSectionHtml(
@@ -927,7 +1157,8 @@ function buildPipelineBoardHtml(
       pathById,
       repoBaseUrl,
       linkedIds,
-      parkedOverflow
+      parkedOverflow,
+      epicsOverflow
     ),
     ...renderListSectionHtml(
       AWAITING_APPROVAL_SECTION_HEADER,

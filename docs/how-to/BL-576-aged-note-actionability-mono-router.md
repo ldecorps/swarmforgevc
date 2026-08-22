@@ -147,6 +147,17 @@ You cannot set the threshold to zero or negative — it will silently degrade to
 1. Manually rotate the resident when design notes arrive: `rotate_to_role.sh specifier`
 2. File a ticket describing why the default threshold does not fit your workflow
 
+## `rule_proposal` is not a note — it never ages
+
+A directed `rule_proposal` (Article 5.1) is actionable immediately, the same
+class as `git_handoff` — it does **not** wait out `note_actionable_after_ms`.
+Only `type: note` uses the aging rule this doc describes. If you were expecting
+a `rule_proposal` you sent to a dormant role to sit for twenty minutes like a
+note, it won't — see `swarmforge/handoff-protocol.md` ("Mono-router
+rule_proposal actionability and chase redirect (BL-795)") for that mechanism
+and the two related chase-sweep fixes (non-preferred-poke redirect, alert
+keeps waking) landed alongside it.
+
 ---
 
 **Related:** See `swarmforge/PIPELINE.md` ("Mono-router idle and open slots" + "Aged-note rotation") for the full rotation mechanics and the integration with the chase sweep.

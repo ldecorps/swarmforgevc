@@ -160,6 +160,142 @@
                (< stable-len 51200))
   (println (str "stable-prefix chars: " stable-len)))
 
+;; ── BL-859: constitution-text/pipeline-text/stable-prefix-text take an ─────
+;; optional tree-root argument, reading that same composed shape from a
+;; synthetic tree instead of the real repo. This is what lets the boot-prefix
+;; budget gate measure a synthetic tree THROUGH this exact composer (never a
+;; second implementation that can drift from it) without mutating the real
+;; constitution tree - the injected-root testability invariant BL-859 declares.
+(let [d (str (fs/create-temp-dir {:prefix "prompt-engine-root-arg-test-"}))]
+  (try
+    (fs/create-dirs (fs/path d "swarmforge" "constitution" "articles" "reference"))
+    (spit (str (fs/path d "swarmforge" "constitution.prompt")) "SYNTHETIC-ROOT-MARKER-CONST")
+    (spit (str (fs/path d "swarmforge" "constitution" "articles" "01_a.md")) "SYNTHETIC-ROOT-MARKER-ARTICLE")
+    (spit (str (fs/path d "swarmforge" "constitution" "articles" "reference" "deep.md")) "SYNTHETIC-ROOT-MARKER-REFERENCE")
+    (spit (str (fs/path d "swarmforge" "PIPELINE.md")) "SYNTHETIC-ROOT-MARKER-PIPELINE")
+
+    (assert-true "constitution-text with an explicit root reads that tree, not the real repo"
+                 (str/includes? (prompt-engine-lib/constitution-text d) "SYNTHETIC-ROOT-MARKER-ARTICLE"))
+    (assert-true "constitution-text with an explicit root does not see the real repo's constitution"
+                 (not (str/includes? (prompt-engine-lib/constitution-text d) "# SwarmForge Constitution")))
+    (assert-true "pipeline-text with an explicit root reads that tree's PIPELINE.md"
+                 (str/includes? (prompt-engine-lib/pipeline-text d) "SYNTHETIC-ROOT-MARKER-PIPELINE"))
+    (assert-true "stable-prefix-text with an explicit root composes constitution then pipeline from that tree"
+                 (let [t (prompt-engine-lib/stable-prefix-text d)]
+                   (and (str/includes? t "SYNTHETIC-ROOT-MARKER-CONST")
+                        (str/includes? t "SYNTHETIC-ROOT-MARKER-ARTICLE")
+                        (str/includes? t "SYNTHETIC-ROOT-MARKER-PIPELINE"))))
+    (assert-true "stable-prefix-text with an explicit root still excludes reference/ bodies"
+                 (not (str/includes? (prompt-engine-lib/stable-prefix-text d) "SYNTHETIC-ROOT-MARKER-REFERENCE")))
+    (assert-true "the real repo's own stable-prefix-text is unaffected by the synthetic tree existing on disk"
+                 (str/includes? (prompt-engine-lib/stable-prefix-text) "# SwarmForge Constitution"))
+    (finally
+      (fs/delete-tree d))))
+
+;; ── BL-858 invariant 2: headroom is bought by MOVING prose, never by ────────
+;; weakening the gate. The two assertions above already pin two SPECIFIC known
+;; reference/ files; this generalizes the claim to the property itself -
+;; ANY file placed under reference/, regardless of name or content, must never
+;; reach the stable prefix, because constitution-text's directory walk
+;; (fs/list-dir, non-recursive) structurally excludes every subdirectory, not
+;; just the two files above. A scratch file with distinctive marker content
+;; (never otherwise present in any article) makes this a real, non-vacuous
+;; check rather than a restatement of the two hardcoded assertions - it is
+;; planted and removed within this one test, never left behind.
+(let [marker "BL858-INVARIANT2-SCRATCH-MARKER-3f9a1c"
+      scratch-path (str (fs/path "swarmforge" "constitution" "articles" "reference" "__bl858_invariant2_scratch.md"))]
+  (spit scratch-path (str "# scratch\n" marker "\n"))
+  (try
+    (assert-true "an arbitrary reference/ file's content is never inlined into the stable prefix"
+                 (not (str/includes? (prompt-engine-lib/stable-prefix-text) marker)))
+    (finally
+      (fs/delete-if-exists scratch-path))))
+
+;; The cap value itself must be unchanged, not merely satisfied - a gate that
+;; silently raised its threshold to "buy" headroom would still pass the
+;; `< stable-len 51200` assertion above for any stable-len under the NEW,
+;; weaker number. Reading the literal out of this runner's own source (rather
+;; than re-asserting `< 51200` again, which proves nothing a raised constant
+;; wouldn't also satisfy) is what makes this a check ON the gate, not a repeat
+;; THROUGH it.
+(let [own-source (slurp *file*)]
+  (assert-true "the enforced cap literal is still 51200, not raised or removed"
+               (boolean (re-find #"<\s*stable-len\s+51200\)" own-source))))
+
+;; ── BL-574 Slice 2: named fragment registry ──────────────────────────────────
+(assert= "fragment-source-path resolves role to the role prompt file"
+         "swarmforge/roles/coder.prompt"
+         (prompt-engine-lib/fragment-source-path "role" {:role "coder"}))
+
+(assert= "fragment-source-path resolves pack-overlay to the given overlay path"
+         "swarmforge/packs/mono-router.prompt"
+         (prompt-engine-lib/fragment-source-path "pack-overlay" {:overlay-prompt "swarmforge/packs/mono-router.prompt"}))
+
+(assert= "fragment-source-path returns nil for pack-overlay with no overlay set"
+         nil
+         (prompt-engine-lib/fragment-source-path "pack-overlay" {:overlay-prompt ""}))
+
+(assert-true "fragment-content-uncached produces constitution content"
+             (str/includes? (prompt-engine-lib/fragment-content-uncached "constitution" {})
+                            "# SwarmForge Constitution"))
+
+(assert-true "fragment-content-uncached produces role content for the coder"
+             (str/includes? (prompt-engine-lib/fragment-content-uncached "role" {:role "coder"})
+                            "You are the coder."))
+
+;; ── BL-574 Slice 2: content-hash fragment cache — hit avoids re-read ────────
+(let [read-count (atom 0)
+      spy-content-fn (fn [_name _req] (swap! read-count inc) "FRAGMENT_CONTENT_V1")
+      cache (atom (prompt-engine-lib/empty-fragment-cache))
+      first-read (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)
+      second-read (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)]
+  (assert= "cache miss then hit: content-fn called exactly once across two reads" 1 @read-count)
+  (assert= "cache hit returns the same content as the original read" first-read second-read))
+
+;; ── BL-574 Slice 2: explicit invalidation forces a re-read with new content ──
+(let [read-count (atom 0)
+      versions (atom ["FRAGMENT_CONTENT_V1" "FRAGMENT_CONTENT_V2"])
+      spy-content-fn (fn [_name _req]
+                       (swap! read-count inc)
+                       (let [v (first @versions)]
+                         (swap! versions rest)
+                         v))
+      cache (atom (prompt-engine-lib/empty-fragment-cache))
+      warm (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)
+      _ (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn) ;; cache hit, no read
+      _ (reset! cache (prompt-engine-lib/invalidate-fragment @cache "role"))
+      invalidated (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)]
+  (assert= "warm read is V1" "FRAGMENT_CONTENT_V1" warm)
+  (assert= "post-invalidation read is re-read as V2, not the stale cached V1" "FRAGMENT_CONTENT_V2" invalidated)
+  (assert= "exactly 2 reads occurred: initial miss + post-invalidation miss (the intervening hit read nothing)" 2 @read-count))
+
+;; ── BL-574 Slice 2: cache-cold/warm/invalidated compose output is byte-identical
+;;    (the ticket's declared invariant, spot-checked here; full generated
+;;    coverage lives in prompt_engine_fragment_cache_property_runner.bb) ──────
+(let [cache (atom (prompt-engine-lib/empty-fragment-cache))
+      cold (:system-prompt (prompt-engine-lib/compose "coder" (assoc claude-ctx :fragment-cache cache)))
+      warm (:system-prompt (prompt-engine-lib/compose "coder" (assoc claude-ctx :fragment-cache cache)))
+      _ (swap! cache prompt-engine-lib/invalidate-fragment "role")
+      invalidated (:system-prompt (prompt-engine-lib/compose "coder" (assoc claude-ctx :fragment-cache cache)))]
+  (assert= "composed output is byte-identical cold vs warm" cold warm)
+  (assert= "composed output is byte-identical warm vs post-invalidation re-read" warm invalidated))
+
+;; ── BL-574 Slice 2: per-model/provider adapter registry ──────────────────────
+(assert= "claude has the default generic adapter" "generic" (prompt-engine-lib/select-adapter "claude"))
+(assert= "aider has the default aider-editor adapter" "aider-editor" (prompt-engine-lib/select-adapter "aider"))
+(assert= "an unregistered provider falls back to generic" "generic" (prompt-engine-lib/select-adapter "totally-unknown-provider"))
+
+(prompt-engine-lib/register-adapter! "bl574-test-provider" "bl574-test-adapter")
+(assert= "register-adapter! makes a new provider's adapter selectable" "bl574-test-adapter"
+         (prompt-engine-lib/select-adapter "bl574-test-provider"))
+
+(assert= "compose metadata carries the selected adapter id"
+         "generic"
+         (:adapter-id (:metadata (prompt-engine-lib/compose "coder" claude-ctx))))
+(assert= "compose metadata carries aider's adapter id for the aider provider"
+         "aider-editor"
+         (:adapter-id (:metadata (prompt-engine-lib/compose "coordinator" {:agent "aider" :two-pack? true}))))
+
 ;; ── report ──────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

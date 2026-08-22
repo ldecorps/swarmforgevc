@@ -1,4 +1,5 @@
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { awaitRealWatchEvent } = require('./helpers/boundedWatchWait');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -241,11 +242,12 @@ test('startBounceWatcher wires real fs.watch events into the debounce', async ()
   const watcher = startBounceWatcher(tmpDir, (type) => bounces.push(type), undefined, scheduleTick);
   assert.ok(watcher);
   try {
-    fs.writeFileSync(path.join(tmpDir, '.swarmforge', 'bounce'), 'swarm\n');
-    await captured;
+    const bounceFile = path.join(tmpDir, '.swarmforge', 'bounce');
+    fs.writeFileSync(bounceFile, 'swarm\n');
+    await awaitRealWatchEvent(captured, { eventLabel: 'real fs.watch bounce event', watchedPath: bounceFile });
     capturedTick(); // simulate the 50ms settle delay elapsing, synchronously
     assert.deepEqual(bounces, ['swarm']);
-    assert.equal(fs.existsSync(path.join(tmpDir, '.swarmforge', 'bounce')), false);
+    assert.equal(fs.existsSync(bounceFile), false);
   } finally {
     watcher.close();
   }

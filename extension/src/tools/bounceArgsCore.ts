@@ -16,18 +16,25 @@ const TICKET_PATTERN = /^BL-\d+$/i;
 const EVIDENCE_PATTERN = /^backlog\/evidence\/[^/]+\.md$/;
 
 // Pure - parses `--flag value` pairs (any order) into a lookup, or null on
-// any unrecognized flag / a flag with no following value.
-export function parseFlags(argv: string[]): Partial<Record<FlagName, string>> | null {
-  const flags: Partial<Record<FlagName, string>> = {};
+// any unrecognized flag / a flag with no following value. Generic over the
+// allowed flag set so any CLI with this same "any-order pair" grammar
+// (lean-ledger-record.js included) shares one implementation rather than
+// re-writing the loop.
+export function parseFlagPairs<T extends string>(argv: string[], flagNames: readonly T[]): Partial<Record<T, string>> | null {
+  const flags: Partial<Record<T, string>> = {};
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (!FLAG_NAMES.includes(flag as FlagName) || value === undefined) {
+    if (!flagNames.includes(flag as T) || value === undefined) {
       return null;
     }
-    flags[flag as FlagName] = value;
+    flags[flag as T] = value;
   }
   return flags;
+}
+
+export function parseFlags(argv: string[]): Partial<Record<FlagName, string>> | null {
+  return parseFlagPairs(argv, FLAG_NAMES);
 }
 
 export function isValid<T extends string>(value: string | undefined, predicate: (v: string) => v is T): value is T {

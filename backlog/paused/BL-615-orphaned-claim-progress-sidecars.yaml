@@ -4,8 +4,8 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-severity: low
-priority: 40
+severity: medium
+priority: 192
 direction: swarm-surfaced
 depends_on: []
 assigned_to:
@@ -46,8 +46,83 @@ description: |
     chase_sweep_lib.bb is the natural home) reaps any
     *.claim-progress.json in inbox/in_process whose matching .handoff file
     no longer exists, logging each reap.
-  - One-time cleanup of the current 4 strays in the coordinator's
+  - One-time cleanup of the existing orphans - 60 at last count, across
+    all six locations tabulated below, not just the coordinator's
     in_process/ (the reap backstop achieves this on first run).
+
+  ## Diagnosis - the dominant leak path is identified (specifier, 2026-08-21)
+
+  The primary exit path that leaks is `salvage-lib/abandon-stale!`
+  (`swarmforge/scripts/salvage_lib.bb`, the `abandon-stale!` fn). It does:
+
+      (fs/create-dirs abandoned-dir)
+      (fs/move file target {:replace-existing false})
+
+  and never calls `handoff-lib/remove-sidecars-of!`. It is the single
+  abandon path - `ticket_close_guard_lib/abandon-inflight-for-ticket!`
+  delegates straight to it - so every abandoned parcel strands every sidecar
+  it had. Measured on the live swarm 2026-08-21: of the coordinator's 47
+  orphans, **38 have their parent handoff in `abandoned/`**.
+
+  Both completion paths are already correct and are NOT the leak:
+  `done_with_current_task.bb:77` and `done_with_current_batch.bb:53` each
+  call `remove-sidecars-of!`, and the task path correctly passes the
+  pre-move `source-file` binding, so it looks in `in_process/` where the
+  sidecar actually is.
+
+  **Still to diagnose:** the remaining **9** coordinator orphans whose
+  parent IS in `completed/`. A second, rarer path leaks too - the "diagnose
+  which exit path(s)" instruction above still stands for those. Do not
+  assume fixing `abandon-stale!` closes the ticket; re-measure after.
+
+  ## Scale and impact - materially larger than the original report
+
+  The 2026-07-24 report found 4 strays in one mailbox. Re-measured
+  2026-08-21: **60 orphans across six locations**, accumulating
+  continuously (oldest 2026-07-08, newest 2026-08-20):
+
+  | Location | Orphans |
+  |---|---|
+  | `.swarmforge/handoffs/coordinator/inbox/in_process/` | 47 |
+  | `.worktrees/architect/.swarmforge/handoffs/inbox/in_process/` | 4 |
+  | `.worktrees/coder/` (same path) | 2 |
+  | `.worktrees/documenter/` (same path) | 3 |
+  | `.worktrees/QA/` (same path) | 3 |
+  | `.swarmforge/handoffs/specifier/inbox/in_process/` | 1 |
+
+  It is not only `.claim-progress.json`: a stray `.nudge` sidecar from
+  2026-07-08 sits in `.swarmforge/handoffs/inbox/in_process/`. Calling
+  `remove-sidecars-of!` covers all four registered suffixes at once.
+
+  **Why this is no longer merely cosmetic.** The per-worktree paths above
+  are exactly what `babysitter_assess_lib/find-claim-sidecars` globs
+  (`*.claim-progress.json` under `<worktree>/.swarmforge/handoffs/inbox/
+  in_process`). It applies no parent-handoff-exists guard, so the hawk feeds
+  **12 phantom claims** into `assess-one-claim` on every sweep, each with a
+  `claimAtMs` days old - up to 17 days. They read as benign today only by
+  accident: `head-unchanged?` compares the sidecar's `claimCommit` against
+  the worktree's current HEAD, and HEAD has long since moved, so the claim
+  scores as making progress. A quiet worktree sitting at the same HEAD as an
+  old orphan's `claimCommit` would instead read as a genuinely stuck claim
+  and start climbing the bounce/halt ladder. The component being fed phantom
+  input is the one that can halt the swarm.
+
+  A second, latent trap: `compliance_battery_lib/check-receive` lists
+  **every entry** in `in_process/` and `completed/` with no `.handoff`
+  filter, then fails unless all of them contain `dequeued_at:`. A JSON
+  sidecar never does, so one landing in a scanned dir yields the false
+  verdict "a dequeued handoff is missing dequeued_at - it did not go through
+  ready_for_next.sh", accusing a role that did exactly the right thing.
+  A parent-existence guard in the reap does not fix this reader; consider
+  filtering there too.
+
+  Severity raised low -> medium on this evidence. Note for the human: the
+  original approval was given on the "cosmetic today" framing in
+  `approval_context` below, which no longer holds. It is still not high -
+  nothing has misbehaved yet, and every live counter (`handoffd`,
+  `operator_runtime`, `role_lifecycle_cli`, `handoffd_supervisor`)
+  correctly filters `.handoff`. Re-rule if the changed framing changes the
+  answer.
 
   ## Acceptance materialization (BL-233 / BL-441)
 

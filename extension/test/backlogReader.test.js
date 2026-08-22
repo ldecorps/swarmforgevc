@@ -51,7 +51,9 @@ test('parseBacklogYaml parses a ticket with no status field, leaving status unde
 test('parseBacklogYaml parses a ticket with an unrecognized status value, normalizing status to undefined', () => {
   const yaml = 'id: BL-007\ntitle: Backlog panel\nstatus: in-progress\n';
   const item = parseBacklogYaml(yaml);
-  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel' });
+  // BL-591: the dropped raw value now survives as statusText (the epic-ETA
+  // blocked predicate's input); the normalized status stays omitted.
+  assert.deepEqual(item, { id: 'BL-007', title: 'Backlog panel', statusText: 'in-progress' });
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
@@ -644,7 +646,9 @@ test('BL-129: a strict-parseable object missing a required field (id) yields nul
 // still yields a ticket via the strict path, with status simply omitted.
 test('BL-129/BL-234: a strict-parseable object with an invalid status enum value still yields a ticket, status omitted', () => {
   const item = parseBacklogYaml('id: BL-999\ntitle: bad status\nstatus: cancelled\n');
-  assert.deepEqual(item, { id: 'BL-999', title: 'bad status' });
+  // BL-591: the dropped raw value now survives as statusText; the
+  // normalized status stays omitted, exactly as before.
+  assert.deepEqual(item, { id: 'BL-999', title: 'bad status', statusText: 'cancelled' });
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'status'), false);
 });
 
@@ -657,6 +661,75 @@ test('BL-129: an empty assigned_to/milestone string is omitted, not kept as ""',
   const item = parseBacklogYaml('id: BL-007\ntitle: empty optional fields\nstatus: todo\nassigned_to: ""\nmilestone: ""\n');
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'assignedTo'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'milestone'), false);
+});
+
+// BL-591: mutationCost/promotionBlockers/blockUntil - the epic-ETA
+// estimator's weighting and blocked-predicate inputs. Both parse paths
+// (strict js-yaml, lenient regex fallback) were touched, and the lenient
+// path grew a NEW flow-vs-block-style list reader
+// (parseYamlFlowOrBlockList) specifically because real tickets write
+// block_until/promotion_blockers in both styles - missing one would
+// silently mark a blocked child buildable. Until now, none of this had a
+// direct unit test: only end-to-end coverage via the BL-591 acceptance
+// feature, which never distinguishes strict from lenient path or exercises
+// the malformed-value case at all (BL-317 lesson: an optional field must be
+// proven for absent, well-formed, AND present-but-malformed).
+
+test('parseBacklogYaml parses mutation_cost via the strict path', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: t\nstatus: todo\nmutation_cost: high\n');
+  assert.equal(item.mutationCost, 'high');
+});
+
+test('parseBacklogYaml parses mutation_cost via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\nmutation_cost: low\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.mutationCost, 'low');
+});
+
+test('parseBacklogYaml parses a flow-style block_until list via the strict path', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: t\nstatus: todo\nblock_until: [GH-22, GH-23]\n');
+  assert.deepEqual(item.blockUntil, ['GH-22', 'GH-23']);
+});
+
+test('parseBacklogYaml parses a flow-style block_until list via the lenient fallback', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\nblock_until: [GH-22, GH-23]\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.blockUntil, ['GH-22', 'GH-23']);
+});
+
+test('parseBacklogYaml parses a block-style promotion_blockers list via the strict path', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: todo\npromotion_blockers:\n  - awaiting a ruling\n  - needs GH-30\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.promotionBlockers, ['awaiting a ruling', 'needs GH-30']);
+});
+
+test('parseBacklogYaml parses a block-style promotion_blockers list via the lenient fallback (the real-ticket convention this schema uses)', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\npromotion_blockers:\n  - awaiting a ruling\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.promotionBlockers, ['awaiting a ruling']);
+});
+
+test('parseBacklogYaml omits blockUntil/promotionBlockers when absent - a ticket with neither behaves exactly as it does today', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: t\nstatus: todo\n');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'blockUntil'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'promotionBlockers'), false);
+});
+
+// BL-317 lesson: absent and present-but-malformed must not collapse to the
+// same silent default without the behavior being asserted, not assumed. A
+// scalar block_until (not the documented list form) is not a value this
+// schema authors: pin the actual lenient-path behavior (silently absent,
+// same as no field at all) so a future change is a visible diff, not a
+// silent regression discovered by a leaked blocked child.
+test('parseBacklogYaml lenient fallback: a present-but-malformed (scalar, not list) block_until is treated as absent, not a crash and not a blocker', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nstatus: done\nblock_until: yes\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'blockUntil'), false);
+});
+
+test('parseBacklogYaml an empty flow-style block_until list ([]) is treated as absent, matching the empty block-style list', () => {
+  const item = parseBacklogYaml('id: BL-007\ntitle: t\nstatus: todo\nblock_until: []\n');
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'blockUntil'), false);
 });
 
 test('readBacklog handles read errors gracefully', () => {

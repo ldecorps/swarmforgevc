@@ -30,6 +30,14 @@ Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at
 terminal QA, once your parcel-ending action is done — do NOT run
 `ready_for_next.sh` as your current self:
 
+**Complete the inbound parcel BEFORE rotating: run `done_with_current.sh`.**
+The handoff you just sent forwards YOUR work; the parcel you RECEIVED is
+still in `inbox/in_process/` until completed. Left behind, it ages into the
+babysitter's stuck-in-process WARN, and `ready_for_next.sh` will falsely
+resume it (in_process is checked first) the next time you rotate back into
+this role. If completing it hands you ANOTHER parcel for your current role,
+work that parcel before rotating — rotate only with a drained inbox.
+
 1. Note the `to:` role of the handoff you just sent (forward or bounce).
 2. Run: **`rotate_to_role.sh <that-role>`**
 3. You come back up AS that role. Launch says `RESUME-ON-START`: run

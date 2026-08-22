@@ -74,10 +74,17 @@ export function classifyApprovalReplyAction(text: string): ApprovalReplyAction {
 // topic "approve" reply require an id it was never meant to carry.
 const APPROVALS_TOPIC_REJECT_PATTERN = /^reject\s+(\S+)(?:\s+([\s\S]+))?$/i;
 const APPROVALS_TOPIC_APPROVE_PATTERN = /^approve\s+(\S+)\s*$/i;
+// BL-721: a typed alternative to tapping the Approvals ask's Q jump button -
+// same queue-jump effect (approve + force-promote + dispatch now), same
+// verb+id grammar as approve/reject above. A slash prefix (unlike bare
+// "approve"/"reject") so it reads as a command, and so it can never collide
+// with a ticket's own reason/note text starting with the word "qjump".
+const APPROVALS_TOPIC_QJUMP_PATTERN = /^\/qjump\s+(\S+)\s*$/i;
 
 export type ApprovalsTopicReplyAction =
   | { kind: 'approve'; backlogId: string }
   | { kind: 'reject'; backlogId: string; reason: string }
+  | { kind: 'qjump'; backlogId: string }
   | { kind: 'none' };
 
 // Pure: reject checked before approve (mirrors classifyApprovalReplyAction's
@@ -95,6 +102,10 @@ export function classifyApprovalsTopicReply(text: string): ApprovalsTopicReplyAc
   const approveMatch = trimmed.match(APPROVALS_TOPIC_APPROVE_PATTERN);
   if (approveMatch) {
     return { kind: 'approve', backlogId: approveMatch[1] };
+  }
+  const qjumpMatch = trimmed.match(APPROVALS_TOPIC_QJUMP_PATTERN);
+  if (qjumpMatch) {
+    return { kind: 'qjump', backlogId: qjumpMatch[1] };
   }
   return { kind: 'none' };
 }
@@ -234,6 +245,51 @@ export function readApprovalCloseVerdict(targetPath: string, backlogId: string):
     return { kind: 'approved' };
   }
   return undefined;
+}
+
+// BL-582: WHY a record changed nothing. recordApprovalReply below returns a
+// bare boolean, so the tap that failed on 2026-07-23 could not have said
+// anything more useful than "false" even if anyone had been listening. Pure
+// over the ticket text, so the classification itself is testable without a
+// filesystem; explainApprovalRecordNoOp below is the one-line file-reading
+// driver, mirroring every other read/driver pair in this module.
+export type ApprovalRecordNoOpReason =
+  | 'no-ticket-file'
+  | 'already-approved'
+  | 'already-rejected'
+  | 'already-amending'
+  | 'no-human-approval-field'
+  | 'human-approval-not-pending';
+
+const HUMAN_APPROVAL_FIELD_PATTERN = /^human_approval:\s*(\S+)/m;
+
+export function classifyApprovalRecordNoOp(rawText: string): ApprovalRecordNoOpReason {
+  const match = rawText.match(HUMAN_APPROVAL_FIELD_PATTERN);
+  if (!match) {
+    return 'no-human-approval-field';
+  }
+  const value = match[1];
+  if (value === 'approved') {
+    return 'already-approved';
+  }
+  if (value === 'rejected') {
+    return 'already-rejected';
+  }
+  if (value === 'amending') {
+    return 'already-amending';
+  }
+  // A `pending` value reaching here means the write itself was refused for
+  // some other reason - reported as its own case rather than mislabelled as
+  // one of the resolved verdicts above.
+  return 'human-approval-not-pending';
+}
+
+export function explainApprovalRecordNoOp(targetPath: string, backlogId: string): ApprovalRecordNoOpReason {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return 'no-ticket-file';
+  }
+  return classifyApprovalRecordNoOp(fs.readFileSync(filePath, 'utf8'));
 }
 
 // Impure driver: flips the ticket's human_approval to approved if it is

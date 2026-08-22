@@ -95,6 +95,8 @@ import {
   ReplyRelayLoopState,
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
+  sustainedOutageThresholdMs,
+  SUSTAINED_OUTAGE_CONF_KEY,
   decideEnsureOperatorTopicAction,
   decideStandingTopicTitleSync,
   decideEnsureRoleTopicAction,
@@ -103,6 +105,9 @@ import {
   decideEnsureApprovalsTopicAction,
   APPROVALS_TOPIC_NAME,
   APPROVALS_SUBJECT_ID,
+  decideEnsurePipelineBoardTopicAction,
+  PIPELINE_BOARD_TOPIC_NAME,
+  PIPELINE_BOARD_SUBJECT_ID,
   decideEnsureRecertTopicAction,
   RECERT_TOPIC_NAME,
   RECERT_SUBJECT_ID,
@@ -133,7 +138,14 @@ import {
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
 import { backlogForTopic } from '../concierge/topicRouter';
-import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict, readApprovalCloseVerdict } from '../concierge/pendingApprovalReply';
+import {
+  recordApprovalReply,
+  recordRejectionReply,
+  recordAmendReply,
+  readRecordedVerdict,
+  readApprovalCloseVerdict,
+  explainApprovalRecordNoOp,
+} from '../concierge/pendingApprovalReply';
 import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
 import { ConciergeTickScheduler, DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS } from '../concierge/conciergeTickScheduler';
 import { consumeConciergeTickRequest } from '../concierge/conciergeTickRequest';
@@ -144,7 +156,7 @@ import {
   decideDrainOutcome,
 } from './telegramControlCore';
 import { extractScopePaths, findFileCollision, InFlightScope } from '../concierge/expediteSafety';
-import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
+import { promoteToActive } from '../panel/backlogWriter';
 import {
   computeRecertBatch,
   isScenarioUpForRecert,
@@ -167,6 +179,7 @@ import { IconStickerLookup, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicIconR
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
+import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
 import { parseRolesTsv, invertTicketStageToRoleHeldTickets } from '../swarm/swarmState';
 import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
@@ -174,12 +187,15 @@ import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
-import { handleOnboardingMessage } from '../onboarding/onboarderState';
+import { routeOnboardingMessage } from '../onboarding/onboarderContractPhaseRouter';
+import { ContractPhaseAdapters } from '../onboarding/contractPhaseRelay';
+import { createRealContractPhaseAdapters } from './contractPhaseRealAdapters';
 import {
   listOnboarderStates,
   findProcessedOnboardingUpdate,
   writeOnboardingStateAndMarkUpdateProcessed,
   markOnboardingUpdateDelivered,
+  ProcessedOnboardingUpdateLookup,
 } from '../onboarding/onboarderStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
@@ -187,7 +203,8 @@ import { buildRoleInboxes } from '../watchdog/chaserMonitor';
 import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
-import { runCommitIntegrity } from '../util/commitIntegrityRunner';
+import { commitApprovalWrites } from '../util/commitIntegrityRunner';
+import { readConfigValue } from '../util/swarmforgeConfig';
 
 const execFileAsync = promisify(execFile);
 
@@ -197,6 +214,43 @@ const execFileAsync = promisify(execFile);
 export { parseNextSseRecord };
 
 const POLL_TIMEOUT_SECONDS = 25;
+
+// BL-1036: the in-flight long poll, so shutdown can RELEASE Telegram's
+// getUpdates slot rather than abandon it.
+//
+// Before this the bot installed no signal handler at all and its poll used
+// fetch with no signal, so the supervisor's SIGTERM killed it mid-request with
+// the connection still open. Telegram held that slot until its own 25s
+// timeout, and the replacement polled straight into it: twelve respawns on
+// 2026-08-22, twelve 409 conflicts. FRONT_DESK_KILL_GRACE_MS (2s) was never
+// the lever - the child died instantly either way, so lengthening the grace
+// could not have helped, which is why this fixes the release rather than the
+// wait.
+let inFlightPoll: AbortController | undefined;
+
+export function abortInFlightPoll(): void {
+  inFlightPoll?.abort();
+  inFlightPoll = undefined;
+}
+
+// Exported for test: installs the handlers on an injected emitter, so a test
+// never has to signal its own process. `onShutdown` runs after the abort.
+// `abort` is injected alongside `onShutdown` so the ORDER between them is
+// observable to a test. That order is the invariant - exiting first abandons
+// the poll slot, which is exactly the behaviour being fixed - and asserting it
+// through any proxy that cannot see the abort proves nothing.
+export function installPollShutdownHandlers(
+  emitter: { on(event: string, listener: () => void): unknown } = process,
+  onShutdown: () => void = () => {},
+  abort: () => void = abortInFlightPoll
+): void {
+  for (const sig of ['SIGTERM', 'SIGINT']) {
+    emitter.on(sig, () => {
+      abort();
+      onShutdown();
+    });
+  }
+}
 
 function topicMapPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'telegram-topic-map.json');
@@ -212,6 +266,46 @@ function frontDeskPollHeartbeatPath(targetPath: string): string {
 
 function writeFrontDeskPollHeartbeat(targetPath: string): void {
   atomicWrite(frontDeskPollHeartbeatPath(targetPath), JSON.stringify({ lastHeartbeatMs: Date.now() }));
+}
+
+// BL-582: the durable diagnostic log. The bot's stderr is :inherit-ed by
+// front_desk_supervisor.bb, so a drop line landed in whatever stream the
+// supervisor happened to be attached to and was gone by the time anyone
+// looked - which is why the 2026-07-23 failure window has no bot output
+// anywhere. Append-only, machine-local (gitignored under .swarmforge/),
+// same posture as every other operator sidecar in this file. Named here
+// and in the ticket so an investigator knows where to grep.
+export function frontDeskDiagnosticsLogPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'front-desk-diagnostics.log');
+}
+
+// An append-only log on a long-lived process is an unbounded resource
+// unless something bounds it, and logDropAudit below fires on every
+// dropped inbound update - frequent in a busy group. One rotation
+// generation at this size keeps the current window plus the one before it
+// (comfortably more than the 2h23m the incident spanned) and no more.
+export const FRONT_DESK_DIAGNOSTICS_MAX_BYTES = 5 * 1024 * 1024;
+
+function rotateDiagnosticsIfLarge(logPath: string): void {
+  if (!fs.existsSync(logPath) || fs.statSync(logPath).size < FRONT_DESK_DIAGNOSTICS_MAX_BYTES) {
+    return;
+  }
+  fs.renameSync(logPath, `${logPath}.1`);
+}
+
+// Never throws: a diagnostic sink that can crash the poll loop is a worse
+// failure than the silence it exists to end. A failed append still reaches
+// stderr, which is the pre-BL-582 behavior and no worse than it.
+export function appendFrontDeskDiagnostic(targetPath: string, line: string): void {
+  process.stderr.write(`${line}\n`);
+  try {
+    const logPath = frontDeskDiagnosticsLogPath(targetPath);
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    rotateDiagnosticsIfLarge(logPath);
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // Already on stderr above - nothing further to do, and never a throw.
+  }
 }
 
 // {topicId: subjectId} - bot-owned, machine-local (gitignored under
@@ -865,6 +959,30 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
 // ONLY the send, with the message computed on the first attempt - never
 // re-runs handleOnboardingMessage, which would misapply that (possibly
 // stale) text against whatever step the state has since moved to.
+// Extracted from handleOnboarderMessage below (behavior-preserving;
+// hardener CRAP pass): the redelivery-guard branch only ever accounts for
+// the already-computed message's send/delivered bookkeeping, independent of
+// which target or phase the update concerns, so splitting it keeps each
+// function's own complexity a reflection of its own concern.
+async function respondToProcessedUpdate(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  topicId: number,
+  updateId: number,
+  already: ProcessedOnboardingUpdateLookup,
+  postFn?: TelegramPostFn
+): Promise<boolean> {
+  if (already.record.delivered) {
+    return true;
+  }
+  const retry = await sendTelegramMessage(botToken, chatId, already.record.message, undefined, postFn, topicId);
+  if (retry.success) {
+    markOnboardingUpdateDelivered(targetPath, already.targetRepoUrl, updateId);
+  }
+  return retry.success;
+}
+
 export async function handleOnboarderMessage(
   targetPath: string,
   botToken: string,
@@ -872,27 +990,29 @@ export async function handleOnboarderMessage(
   topicId: number,
   text: string,
   updateId: number,
-  postFn?: TelegramPostFn
+  postFn?: TelegramPostFn,
+  contractPhaseAdapters?: ContractPhaseAdapters
 ): Promise<boolean> {
   const already = findProcessedOnboardingUpdate(targetPath, updateId);
   if (already) {
-    if (already.record.delivered) {
-      return true;
-    }
-    const retry = await sendTelegramMessage(botToken, chatId, already.record.message, undefined, postFn, topicId);
-    if (retry.success) {
-      markOnboardingUpdateDelivered(targetPath, already.targetRepoUrl, updateId);
-    }
-    return retry.success;
+    return respondToProcessedUpdate(targetPath, botToken, chatId, topicId, updateId, already, postFn);
   }
 
   const states = listOnboarderStates(targetPath);
-  const outcome = handleOnboardingMessage(states, text, Date.now);
-  if (outcome.kind === 'no-active-onboarding') {
-    // No target, therefore nothing durable to guard - a redelivery here
-    // recomputes the exact same constant message with no state mutation,
-    // so at worst it is a harmless duplicate send, never a wrong-step
-    // misapplication.
+  // BL-624: contractPhaseAdapters is an optional trailing param (real
+  // default constructed here, never at call sites) so every EXISTING caller
+  // - live wiring and the whole prerequisite-phase test suite alike - keeps
+  // working unchanged; routeOnboardingMessage only ever reaches into it for
+  // a target already at or past prerequisites-ready, which no existing
+  // fixture does.
+  const outcome = await routeOnboardingMessage(states, text, Date.now, contractPhaseAdapters ?? createRealContractPhaseAdapters(targetPath));
+  if (outcome.kind === 'no-active-onboarding' || outcome.kind === 'ambiguous-target') {
+    // Neither carries a state to persist - 'no-active-onboarding' because
+    // there is no target at all, 'ambiguous-target' (BL-625 invariant 2)
+    // because the reply could not be attributed to exactly one in-flight
+    // target. Both recompute the exact same message from the same durable
+    // states on disk, so a redelivery here is a harmless duplicate send,
+    // never a wrong-step misapplication.
     const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
     return result.success;
   }
@@ -987,15 +1107,55 @@ export async function ensureResidentSpyTopic(targetPath: string, botToken: strin
 // inside buildConciergeTickAdapters (module-private, never exported) is
 // unreachable by any test (see the readPollMap/readApprovalAskMessages
 // comments above on this same pattern for on-disk reads; this is the HTTP-
-// call sibling). Never reuses the topicId across ticks itself - that
-// idempotency is TickState.pipelineBoard.topicId, already owned by
-// pipelineBoardSync.ts's resolveBoardTopicId, so this stays a bare
-// create-and-map-the-result call, mirroring the OTHER ensureXTopic
-// functions' own createForumTopic call but WITHOUT their reuse-or-create
-// branch (the board's own state already gates repeat calls).
-export async function ensureBoardTopicAdapter(botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<{ topicId?: number; error?: string }> {
-  const created = await createForumTopic(botToken, chatId, 'Pipeline Board', postFn);
-  return created.success ? { topicId: created.messageThreadId } : { error: created.error };
+// call sibling).
+//
+// BL-586: this WAS a bare create-and-map-the-result call, on the premise
+// that "the board's own state already gates repeat calls". That premise is
+// exactly what failed - the board's own state is a single mutable JSON
+// field, and BL-497's topic-gone self-heal deliberately clears it, so every
+// such failure minted another untracked "Pipeline Board" zombie the Bot API
+// cannot even enumerate. It is now reuse-or-create over the PIPELINE_BOARD
+// standing key, the same shape ensureApprovalsTopic uses, and it records a
+// freshly minted id durably BEFORE returning - so a crash between create and
+// the board's first post cannot orphan the topic. That ordering is invariant
+// 2, and it is why this takes targetPath (its call site already has one in
+// scope, two lines from where ensureOperatorTopic is wired).
+export async function ensureBoardTopicAdapter(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  postFn?: TelegramPostFn
+): Promise<{ topicId?: number; error?: string }> {
+  const decision = decideEnsurePipelineBoardTopicAction(readTopicMap(targetPath), readStandingTopicIds(targetPath)[PIPELINE_BOARD_SUBJECT_ID]);
+  if (decision.kind !== 'create') {
+    if (decision.kind === 'rebind') {
+      bindTopicMapSubject(targetPath, decision.topicId, PIPELINE_BOARD_SUBJECT_ID);
+    }
+    rememberStandingTopicId(targetPath, PIPELINE_BOARD_SUBJECT_ID, decision.topicId);
+    return { topicId: decision.topicId };
+  }
+  const created = await createForumTopic(botToken, chatId, PIPELINE_BOARD_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    return { error: created.error ?? 'no messageThreadId returned' };
+  }
+  bindTopicMapSubject(targetPath, created.messageThreadId, PIPELINE_BOARD_SUBJECT_ID);
+  rememberStandingTopicId(targetPath, PIPELINE_BOARD_SUBJECT_ID, created.messageThreadId);
+  return { topicId: created.messageThreadId };
+}
+
+// Records `topicId -> subjectId` in the topic map, re-reading it first so a
+// concurrent writer's other bindings survive. Only the binding for THIS
+// subject is displaced - another subject's entry is never disturbed, which
+// is what keeps a board rebind from evicting SUP-5 from the map.
+function bindTopicMapSubject(targetPath: string, topicId: number, subjectId: string): void {
+  const fresh = readTopicMap(targetPath);
+  for (const [key, subject] of Object.entries(fresh)) {
+    if (subject === subjectId) {
+      delete fresh[key];
+    }
+  }
+  fresh[topicMapKey(topicId)] = subjectId;
+  writeTopicMap(targetPath, fresh);
 }
 
 // BL-497 hardening: same extraction as ensureBoardTopicAdapter above, for
@@ -1110,6 +1270,25 @@ export function clearRoleAwaitingAnswer(targetPath: string, role: string): void 
   }
 }
 
+// GH-26: the real production writer behind ReplyRelayAdapters'
+// markRoleQuestionUndeliverable (telegramFrontDeskBotCore.ts's
+// deliverRoleQuestion, on the undefined-topicId drop). Rewrites the marker
+// in place rather than deleting it - preserving whatever the file already
+// held (asked_at_ms, the original question/options role_ask.bb wrote) for
+// forensics - and merges in state: "undeliverable", the fact
+// operator_lib.bb's role-ask-blocked? treats as NOT pending. question/
+// options are used only as a fallback for the (should not happen in
+// practice - role_ask.bb always writes the marker before this record can
+// even reach the relay) case where no marker file exists at all, so the
+// rewrite still records SOMETHING rather than silently doing nothing.
+export function markRoleQuestionUndeliverable(targetPath: string, role: string, question: string, options: AskOption[] | undefined): void {
+  const existing = readRoleAwaitingAnswer(targetPath, role);
+  const marker = { question, options, ...existing, state: 'undeliverable' };
+  const p = roleAwaitingAnswerPath(targetPath, role);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify(marker));
+}
+
 // BL-607: role -> Telegram topic id, the forward-direction sibling of
 // roleTopicMapStore.ts's own roleForTopic (topic id -> role) - a plain
 // object-key lookup, so an unknown role or a missing/unparseable map
@@ -1193,8 +1372,15 @@ export function readControlPauseState(targetPath: string): PauseState {
   }
 }
 
-export function writeControlPauseState(targetPath: string, state: PauseState): void {
+// BL-823: source names the emitting call site for audit - control pauses
+// and cooldown pauses share the "control-pause" ledger class and are told
+// apart by source, never a second class. Optional with a generic default so
+// every pre-existing caller (this bot's own two, plus apply-cooldown-pause.ts
+// and resume-expired-pauses.ts) keeps working; production call sites below
+// pass their own distinguishing source.
+export function writeControlPauseState(targetPath: string, state: PauseState, source: string = 'writeControlPauseState'): void {
   atomicWrite(controlPauseStatePath(targetPath), JSON.stringify(state.active ? { active: true, untilMs: state.untilMs } : { active: false }));
+  appendAvailabilityRecord(targetPath, state.active ? 'pause-start' : 'pause-end', 'control-pause', source);
 }
 
 // BL-423: the pending stop/restart confirm marker - armed by
@@ -1808,7 +1994,7 @@ export async function applyPause(
   durationMs: number | undefined,
   postFn?: TelegramPostFn
 ): Promise<void> {
-  writeControlPauseState(targetPath, { active: true, untilMs: durationMs !== undefined ? Date.now() + durationMs : undefined });
+  writeControlPauseState(targetPath, { active: true, untilMs: durationMs !== undefined ? Date.now() + durationMs : undefined }, 'telegram-front-desk-bot:pause');
   const label = durationMs !== undefined ? humanizePauseDurationMs(durationMs) : 'until you resume';
   await postControlMessage(
     botToken,
@@ -1837,7 +2023,7 @@ export async function resumeNow(
   postFn?: TelegramPostFn,
   nowMs: number = Date.now()
 ): Promise<void> {
-  writeControlPauseState(targetPath, { active: false });
+  writeControlPauseState(targetPath, { active: false }, 'telegram-front-desk-bot:resume');
   const { config } = readCooldownConfigFromDisk(targetPath);
   if (config?.enabled && isWithinWindow(localMinutesOfDay(nowMs), config.startLocal, config.endLocal)) {
     writeCooldownWindowMarker(targetPath, currentWindowStartMs(nowMs, config.startLocal));
@@ -1939,16 +2125,13 @@ export async function runExpediteDispatch(targetPath: string, backlogId: string)
 // ticket file, a missing bb/CLI, or a non-zero exit - mirrors
 // runExpediteDispatch's own try/catch -> boolean shape above, so a failed
 // commit never crashes the poll tick (the mutation still landed on disk;
-// only its durability guarantee is weaker until a later retry). The actual
-// exec + trailing-JSON-line parse is shared with BL-572's
-// commitEpicReorderWrites via runCommitIntegrity (util/commitIntegrityRunner.ts).
+// only its durability guarantee is weaker until a later retry). BL-892:
+// the locate-file + pathspec-commit body now lives in the shared
+// commitApprovalWrites (util/commitIntegrityRunner.ts), reused by every
+// other automated human_approval writer (paused-pager Approve, Telegram
+// Approve/Reject/Amend) so none of them re-derive this same locate step.
 export async function commitExpediteWrites(targetPath: string, backlogId: string): Promise<boolean> {
-  const filePath = findBacklogFilePath(targetPath, backlogId);
-  if (!filePath) {
-    return false;
-  }
-  const relPath = path.relative(targetPath, filePath);
-  return runCommitIntegrity(targetPath, [relPath], `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`);
+  return commitApprovalWrites(targetPath, backlogId, `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`);
 }
 
 function buildApprovalAskCloseAdapterFields(botToken: string, targetPath: string, chatId: string) {
@@ -1973,7 +2156,22 @@ function buildPollAdapters(
 ): PollAdapters {
   return {
     chatId,
-    getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
+    // BL-620: every dropped update leaves exactly one bounded audit line in
+    // the supervisor log (the same stderr stream this file's other
+    // operational notices use) - the incident class this closes took a
+    // live replay session to diagnose because a drop produced zero output.
+    // BL-582: routed to the DURABLE sink rather than bare stderr - a drop
+    // line that dies with the process explains nothing afterwards.
+    logDropAudit: (line) => appendFrontDeskDiagnostic(targetPath, line),
+    logDiagnostic: (line) => appendFrontDeskDiagnostic(targetPath, line),
+    explainApprovalRecordNoOp: (backlogId) => Promise.resolve(explainApprovalRecordNoOp(targetPath, backlogId)),
+    getUpdates: (offset) => {
+      // One controller per cycle: aborting a spent one would do nothing, and
+      // holding a single controller forever means the first abort disables
+      // every later poll.
+      inFlightPoll = new AbortController();
+      return getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS, undefined, inFlightPoll.signal);
+    },
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
     cursorBridgeTopicId: () => Promise.resolve(readCursorBridgeTopicId(targetPath)),
@@ -2000,6 +2198,10 @@ function buildPollAdapters(
     // route_backlog_to_coder.sh injector).
     promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId).moved),
     commitExpediteWrites: (backlogId) => commitExpediteWrites(targetPath, backlogId),
+    // BL-892: every other automated human_approval writer's own commit
+    // step - shares commitApprovalWrites (util/commitIntegrityRunner.ts)
+    // with commitExpediteWrites above, never a second locate-file path.
+    commitApprovalWrites: (backlogId, message) => commitApprovalWrites(targetPath, backlogId, message),
     checkExpediteFileCollision: (backlogId) => Promise.resolve(findExpediteFileCollision(targetPath, backlogId)),
     dispatchExpediteBuild: (backlogId) => runExpediteDispatch(targetPath, backlogId),
     // BL-484: the closing routine's own three adapters - a decided ask
@@ -2156,19 +2358,32 @@ function buildPollAdapters(
 // BL-369: stuckRetryLimit is measured in CYCLES, not attempts-with-backoff -
 // each poll cycle is itself a full retry of the still-undelivered update
 // (its offset never advanced), paced by the long-poll's own cadence.
+// BL-621: sustainedOutageThresholdMs is filled in per loop from the conf
+// key (loopBackoffConfig below) - it is the one tunable here a human is
+// expected to change, so it is not frozen into this literal.
 const POLL_BACKOFF_CONFIG = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
 
-// BL-369 (scenario 05): "the failure is escalated to the human" - sent
-// DIRECTLY via Telegram (never through the bridge, which is presumptively
-// the broken half when this fires) straight to the main chat, since the
-// stuck update's own topic/subject may not even be resolvable yet (that
-// resolution is exactly what keeps failing).
-async function escalateStuckDelivery(botToken: string, chatId: string): Promise<void> {
-  await sendTelegramMessage(
-    botToken,
-    chatId,
-    "front-desk bot: a message could not be delivered after repeated attempts (the bridge may be unreachable). It has NOT been dropped - delivery will resume automatically once the underlying issue clears."
-  );
+// BL-621: reads the sustained-outage threshold from the target's own
+// swarmforge.conf once, at loop start - both forever-loops go through this
+// one function so they can never end up on different thresholds.
+function loopBackoffConfig(base: Omit<PollBackoffConfig, 'sustainedOutageThresholdMs'>, targetPath: string): PollBackoffConfig {
+  return { ...base, sustainedOutageThresholdMs: sustainedOutageThresholdMs(readConfigValue(targetPath, SUSTAINED_OUTAGE_CONF_KEY)) };
+}
+
+// BL-369 (scenario 05) / BL-621: "the failure is escalated to the human" -
+// sent DIRECTLY via Telegram (never through the bridge, which is
+// presumptively the broken half when this fires) straight to the main chat,
+// since the stuck update's own topic/subject may not even be resolvable yet
+// (that resolution is exactly what keeps failing). BL-621 reuses the same
+// channel for a sustained poll/relay outage: sending does not poll, so this
+// still gets through while getUpdates itself is 409-ing. A non-ok response
+// is thrown (like ackReply's own failed-ack posture) so the caller's
+// tolerant wrapper logs it - the loop itself never dies for it.
+async function sendDirectEscalation(botToken: string, chatId: string, message: string): Promise<void> {
+  const result = await sendTelegramMessage(botToken, chatId, message);
+  if (!result.success) {
+    throw new Error(result.error ?? 'sendMessage failed');
+  }
 }
 
 // Polls forever, one batch at a time - every decision (post/open/route,
@@ -2188,16 +2403,17 @@ async function pollLoop(
   scheduleConciergeTick: () => void
 ): Promise<void> {
   const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey, scheduleConciergeTick);
-  let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  const config = loopBackoffConfig(POLL_BACKOFF_CONFIG, targetPath);
+  let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: { escalated: false } };
   writeFrontDeskPollHeartbeat(targetPath);
   for (;;) {
-    const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, principalUserId, adapters, config, Date.now());
     state = cycle.state;
     await applyPollCycleResult(
       cycle,
       (message) => process.stderr.write(message),
       sleep,
-      () => escalateStuckDelivery(botToken, chatId),
+      (message) => sendDirectEscalation(botToken, chatId, message),
       () => writeFrontDeskPollHeartbeat(targetPath)
     );
   }
@@ -2330,6 +2546,14 @@ async function connectAndRelayReplies(
       // telegramFrontDeskBotCore.ts) - the forward role->topic lookup,
       // entirely distinct from agentQuestionsTopicId above.
       roleTopicIdFor: (role) => Promise.resolve(roleTopicIdFor(targetPath, role)),
+      // GH-26: the undeliverable-drop counterpart to roleTopicIdFor above -
+      // see deliverRoleQuestion (telegramFrontDeskBotCore.ts) and
+      // markRoleQuestionUndeliverable's own comment for the marker-rewrite
+      // this performs.
+      markRoleQuestionUndeliverable: (role, question, options) => {
+        markRoleQuestionUndeliverable(targetPath, role, question, options);
+        return Promise.resolve();
+      },
       ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
     },
     seenIds
@@ -2352,7 +2576,9 @@ async function connectAndRelayReplies(
 // tracking reads it) - present only because PollBackoffConfig is shared
 // between the two loop shapes; this loop has no analogous "stuck on one
 // message" concept.
-const REPLY_RECONNECT_BACKOFF_CONFIG: PollBackoffConfig = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
+// BL-621: sustainedOutageThresholdMs comes from the conf key at loop start
+// (loopBackoffConfig), same as the poll loop's own config above.
+const REPLY_RECONNECT_BACKOFF_CONFIG = { backoffBaseMs: 2000, backoffMaxMs: 60_000, degradedThreshold: 5, stuckRetryLimit: 5 };
 
 // Split out of subscribeReplies below so its own for(;;) stays a bare
 // two-statement loop (cleaner review: the inline try/catch here previously
@@ -2396,12 +2622,15 @@ async function subscribeReplies(
   openaiApiKey: string | undefined
 ): Promise<void> {
   const seenIds = new Set<string>();
-  let state: ReplyRelayLoopState = { consecutiveFailures: 0 };
+  const config = loopBackoffConfig(REPLY_RECONNECT_BACKOFF_CONFIG, targetPath);
+  let state: ReplyRelayLoopState = { consecutiveFailures: 0, sustainedOutage: { escalated: false } };
   for (;;) {
     const errorMessage = await attemptReplyRelayConnection(botToken, chatId, targetPath, bridgeUrl, bridgeToken, controlToken, seenIds, openaiApiKey);
-    const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, REPLY_RECONNECT_BACKOFF_CONFIG);
+    const cycle = computeReplyRelayCycleResult(state, errorMessage === undefined, config, Date.now());
     state = cycle.state;
-    await applyReplyRelayCycleResult(cycle, errorMessage, (message) => process.stderr.write(message), sleep);
+    await applyReplyRelayCycleResult(cycle, errorMessage, (message) => process.stderr.write(message), sleep, (message) =>
+      sendDirectEscalation(botToken, chatId, message)
+    );
   }
 }
 
@@ -2655,19 +2884,39 @@ export function readRepoBaseUrl(targetPath: string): string | undefined {
 // + cross-role reconciliation + stale-id filtering (pipeline_stage_lib.bb)
 // instead of duplicating that logic in a second language - the exact
 // async-exec + JSON.parse(stdout) pattern openSubject above already
-// established for a sibling .bb script. Tolerant of any failure (bb
-// missing, a torn/non-JSON stdout, a script error) - degrades to "no
-// role-held ticket known this tick" exactly like readTicketStageMap's own
-// missing/corrupt-file tolerance, never throws into the tick loop.
-export async function readLiveRoleHeldTickets(targetPath: string): Promise<Record<string, string[]>> {
-  try {
-    const cli = path.join(targetPath, 'swarmforge', 'scripts', 'pipeline_stage_cli.bb');
-    const { stdout } = await execFileAsync('bb', [cli, targetPath, 'report']);
-    const stageMap = JSON.parse(stdout) as Record<string, string>;
-    return invertTicketStageToRoleHeldTickets(stageMap);
-  } catch {
-    return {};
+// established for a sibling .bb script.
+//
+// BL-814: a failed computation (bb missing, a torn/non-JSON stdout, a
+// script error - e.g. a missing load-file dependency, observed twice via
+// BL-655/BL-805) used to be swallowed and reported as `{}`, which is
+// exactly what "no role holds a ticket" looks like - the live board then
+// renders confidently blank instead of visibly broken. This now throws
+// RoleHeldTicketsComputationFailedError instead, so a failed run is never
+// indistinguishable from a genuinely empty one. The sole production caller
+// (syncBoardIfWired in conciergeTick.ts) catches this, logs it, and keeps
+// the prior tick's board state rather than blanking it.
+export class RoleHeldTicketsComputationFailedError extends Error {
+  constructor(cause: unknown) {
+    super(`readLiveRoleHeldTickets: pipeline_stage_cli.bb report did not produce a result: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = 'RoleHeldTicketsComputationFailedError';
   }
+}
+
+export async function readLiveRoleHeldTickets(targetPath: string): Promise<Record<string, string[]>> {
+  const cli = path.join(targetPath, 'swarmforge', 'scripts', 'pipeline_stage_cli.bb');
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync('bb', [cli, targetPath, 'report']));
+  } catch (err) {
+    throw new RoleHeldTicketsComputationFailedError(err);
+  }
+  let stageMap: Record<string, string>;
+  try {
+    stageMap = JSON.parse(stdout) as Record<string, string>;
+  } catch (err) {
+    throw new RoleHeldTicketsComputationFailedError(err);
+  }
+  return invertTicketStageToRoleHeldTickets(stageMap);
 }
 
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
@@ -2757,12 +3006,13 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // BL-464's original cache-backed wiring was, since `report` computes
     // the identical stage-map `sync` does.
     readRoleHeldTickets: () => readLiveRoleHeldTickets(targetPath),
-    // BL-452: the standing "Pipeline Board" topic is created ONCE - the
-    // ticket's own durable TickState.pipelineBoard.topicId marker is what
-    // makes this idempotent across ticks/restarts (syncPipelineBoard only
-    // ever calls ensureBoardTopic while that marker is unset), so no
-    // separate topic-map file/reuse-lookup is needed the way
-    // ensureOperatorTopic's own reuse-or-create needs one.
+    // BL-452/BL-586: the standing "Pipeline Board" topic is created ONCE and
+    // then RESOLVED, never re-minted. The original wiring leaned on
+    // TickState.pipelineBoard.topicId alone for that idempotency; BL-586
+    // showed a single mutable JSON field is not a durable identity (BL-497's
+    // self-heal clears it, and a stale value silently crossed into SUP-5 and
+    // SUP-7), so the board now has the same topic-map/standing-record
+    // reuse-lookup every other ensureXTopic function has.
     boardAdapters: {
       // BL-497: the error string is now surfaced (never discarded) so
       // syncPipelineBoard can log/classify/self-heal instead of retrying a
@@ -2770,7 +3020,14 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       // lives in the exported ensureBoardTopicAdapter above (testable
       // in-process); this stays a thin wrapper binding the tick's own
       // botToken/chatId.
-      ensureBoardTopic: () => ensureBoardTopicAdapter(botToken, chatId),
+      ensureBoardTopic: () => ensureBoardTopicAdapter(targetPath, botToken, chatId),
+      // BL-586: the record of which subject owns which topic - the file that
+      // already knew 1634 was SUP-7 and 14647 was SUP-5 while the board was
+      // posting into both. resolveBoardTopicId consults it on every resolve.
+      readTopicMap: async () => readTopicMap(targetPath),
+      // BL-586: a refused crossed identity alarms into the same Operator
+      // topic every other operator-facing alert in this file uses.
+      emitCrossedTopicAlert: (message) => emitPipelineBoardFailureAlert(targetPath, botToken, chatId, message),
       postMessage: (topicId, text, boardHtml) =>
         sendTelegramMessage(
           botToken,
@@ -3082,5 +3339,8 @@ export async function main(): Promise<void> {
 }
 
 if (require.main === module) {
+  // BL-1036: release the poll slot on the way out. Without this the
+  // replacement inherits a conflict window it did nothing to earn.
+  installPollShutdownHandlers(process, () => process.exit(0));
   runCliMain(main);
 }

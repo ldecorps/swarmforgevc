@@ -13,6 +13,8 @@ object CompanionPrefs {
     private const val KEY_MUTE = "mute"
     private const val KEY_VOLUME = "playback_volume_percent"
     private const val KEY_PREFERRED_SONG = "preferred_hold_song"
+    // BL-763: the bridge instanceId last observed by syncBridgeInstanceAndSession.
+    private const val KEY_LAST_BRIDGE_INSTANCE_ID = "last_bridge_instance_id"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
@@ -35,6 +37,10 @@ object CompanionPrefs {
     fun getPreferredSong(ctx: Context): String =
         prefs(ctx).getString(KEY_PREFERRED_SONG, "") ?: ""
 
+    /** Empty string means "never synced" (fresh install, or prefs wiped). */
+    fun getLastBridgeInstanceId(ctx: Context): String =
+        prefs(ctx).getString(KEY_LAST_BRIDGE_INSTANCE_ID, "") ?: ""
+
     fun setHandsFree(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_HANDS_FREE, on).apply()
     }
@@ -53,6 +59,10 @@ object CompanionPrefs {
 
     fun setPreferredSong(ctx: Context, name: String) {
         prefs(ctx).edit().putString(KEY_PREFERRED_SONG, name).apply()
+    }
+
+    fun setLastBridgeInstanceId(ctx: Context, instanceId: String) {
+        prefs(ctx).edit().putString(KEY_LAST_BRIDGE_INSTANCE_ID, instanceId).apply()
     }
 
     /**
@@ -75,20 +85,20 @@ object CompanionPrefs {
         }
     }
 
+    // BL-788 invariant 3: delegates the merge decision to PairingSave so a
+    // blank field here (e.g. onPause firing mid-edit, before the human
+    // finished retyping the other box) never overwrites a stored non-blank
+    // credential — only a non-blank input replaces what's stored.
     fun save(ctx: Context, baseUrl: String, token: String, sync: Boolean = false) {
-        var url = baseUrl.trim().trimEnd('/')
-        if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://$url"
-        }
-        val tok = token.trim()
+        val merged = PairingSave.merge(getBaseUrl(ctx), getToken(ctx), baseUrl, token)
         val ed = prefs(ctx).edit()
-            .putString(KEY_BASE_URL, url)
-            .putString(KEY_TOKEN, tok)
+            .putString(KEY_BASE_URL, merged.baseUrl)
+            .putString(KEY_TOKEN, merged.token)
         if (sync) ed.commit() else ed.apply()
         // Mirror outside private storage so values can survive reinstall.
-        if (url.isNotEmpty() || tok.isNotEmpty()) {
+        if (merged.baseUrl.isNotEmpty() || merged.token.isNotEmpty()) {
             try {
-                PairingBackup.write(ctx, url, tok)
+                PairingBackup.write(ctx, merged.baseUrl, merged.token)
             } catch (_: Exception) {
             }
         }

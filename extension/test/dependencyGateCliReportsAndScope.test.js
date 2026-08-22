@@ -12,16 +12,25 @@ const { REAL_CONFIG_PATH, mkFixtureRoot, writeFixtureTsconfig, writeFile } = req
 
 // ── deterministic-report-04 ────────────────────────────────────────────
 
-test('running the REAL checker twice over identical fixture code produces byte-identical reports', () => {
-  const root = mkFixtureRoot();
-  writeFixtureTsconfig(root);
-  writeFile(root, 'src/quality/bad.ts', "import * as fs from 'fs';\nexport function bad() { return fs.existsSync('.'); }\n");
+// BL-914: runs the real pinned dependency-cruiser TWICE by design, and
+// measures consistently within a few percent of the 20000ms suite default
+// even in isolation (BL-815 evidence: backlog/evidence/BL-815-unit-suite-
+// timeout-classification-20260817.md). A per-test override buys headroom
+// without touching the suite-wide default every other test still relies on.
+test(
+  'running the REAL checker twice over identical fixture code produces byte-identical reports',
+  () => {
+    const root = mkFixtureRoot();
+    writeFixtureTsconfig(root);
+    writeFile(root, 'src/quality/bad.ts', "import * as fs from 'fs';\nexport function bad() { return fs.existsSync('.'); }\n");
 
-  const first = parseDependencyCruiserOutput(runDependencyCruiser(['src'], root, REAL_CONFIG_PATH));
-  const second = parseDependencyCruiserOutput(runDependencyCruiser(['src'], root, REAL_CONFIG_PATH));
+    const first = parseDependencyCruiserOutput(runDependencyCruiser(['src'], root, REAL_CONFIG_PATH));
+    const second = parseDependencyCruiserOutput(runDependencyCruiser(['src'], root, REAL_CONFIG_PATH));
 
-  assert.equal(JSON.stringify(first), JSON.stringify(second));
-});
+    assert.equal(JSON.stringify(first), JSON.stringify(second));
+  },
+  45000
+);
 
 // ── scope-changed-vs-full-05 ──────────────────────────────────────────────
 

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=03a3e38027aaaf4646934d1d87d797c50f2d6171786c5969ed7ce7f37695ff77
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-04T15:13:51.887105Z","feature_name":"A role's clarifying question reaches its own Telegram topic","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-708-role-ask-relay-strips-question-fields.feature","background_hash":"83e34e1e20af59be6e7eb31e7db3c7d8f30399308832c583573608d4ecac8b7f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a question record keeps the fields that decide its delivery","scenario_hash":"9b6a93d3b08b176566884bd1edfc933e76a87a4c6e74579bf99dbe86bc43c53d","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-04T15:13:42.945986Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A role's clarifying question reaches its own Telegram topic
   role_ask writes a question into the reply outbox marked with the asking
   role and its options. The bridge relay must carry those fields to the front

@@ -559,7 +559,7 @@ test('BL-480: a paused ticket pending approval renders its title/notes in the as
 // baseline but no buttoned ask was ever recorded on the live Approvals
 // topic (failed post then baseline advanced, remint, wiped ask-messages
 // file), the roster can still sync while the human sees only a text index —
-// never Approve/Amend/Reject/Expedite. Reconcile synthesizes the missing
+// never Approve/Amend/Reject/Q jump. Reconcile synthesizes the missing
 // ApprovalRequested so routeApprovalRequestedEvent posts the buttoned ask.
 test('approval ask reconcile: pending already in baseline with no recorded ask posts a buttoned Approvals ask', async () => {
   const { adapters, setFolders, state } = fakeAdapters();
@@ -597,7 +597,7 @@ test('approval ask reconcile: pending already in baseline with no recorded ask p
       { text: 'Approve', callbackData: 'approve:BL-525' },
       { text: 'Amend', callbackData: 'amend:BL-525' },
       { text: 'Reject', callbackData: 'reject:BL-525' },
-      { text: 'Expedite', callbackData: 'expedite:BL-525' },
+      { text: 'Q jump', callbackData: 'expedite:BL-525' },
     ],
     [{ text: 'More', callbackData: 'more:BL-525' }],
   ]);
@@ -997,7 +997,11 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
   // Every pool icon needs its own sticker so resolveIconStickerId can match
   // it and setTopicIcon actually fires for all 11 epics below - EPIC_STICKERS
   // only covers 4 of the pool's 10 icons, not enough to exhaust it.
-  const FULL_POOL_STICKERS = ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚'].map((emoji, i) => ({
+  // BL-946: derived from the REAL pool, not a hand-copy of it - the pool
+  // grew from 10 to the whole permitted stock set, and this test's job is
+  // the exhaustion tail, whatever the pool's size is.
+  const { EPIC_ICON_POOL } = require('../out/concierge/epicIcon');
+  const FULL_POOL_STICKERS = EPIC_ICON_POOL.map((emoji, i) => ({
     emoji,
     customEmojiId: `id-${i}`,
   }));
@@ -1012,9 +1016,11 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
       recordSwarmIconId: () => {},
     },
   });
-  // EPIC_ICON_POOL has 10 icons; an 11th distinct epic in the same tick
-  // must fall back to reusing the pool's last icon rather than crashing.
-  const active = Array.from({ length: 11 }, (_, i) => ({
+  // One distinct epic per pool icon plus one more in the same tick - the
+  // overflow epic must fall back to reusing the pool's last icon rather
+  // than crashing, however large the pool is.
+  const epicCount = EPIC_ICON_POOL.length + 1;
+  const active = Array.from({ length: epicCount }, (_, i) => ({
     id: `BL-${i}`,
     title: `slice ${i}`,
     epic: `undocumented-epic-${i}`,
@@ -1032,7 +1038,7 @@ test('BL-449: exhausting the epic icon pool within one tick logs a reuse warning
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(iconsSet.length, 11, 'expected every one of the 11 epics to still get an icon assigned');
+  assert.equal(iconsSet.length, epicCount, `expected every one of the ${epicCount} epics to still get an icon assigned`);
   assert.ok(errors.some((e) => e.includes('epic icon pool exhausted')), `expected a pool-exhaustion warning, got: ${JSON.stringify(errors)}`);
 });
 
@@ -2154,7 +2160,7 @@ test('BL-467: the pin sync follows a board repost to the new message id with unp
   assert.deepEqual(pinCalls, ['unpinAll', 'pin:101'], 'expected unpin-all then pin on the new board when the old board is still top');
 });
 
-test('BL-455: role-held tickets are joined to their backlog item epic/title - grouped by epic, and shown with a derived slug', async () => {
+test('BL-455: role-held tickets are joined to their backlog item epic/title - the caption carries backlog context, the marks carry the holders', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
@@ -2174,22 +2180,65 @@ test('BL-455: role-held tickets are joined to their backlog item epic/title - gr
 
   await runConciergeTick(adapters);
 
-  const lines = posted[0].split('\n');
-  // Break-then-fix would show this line missing/empty if the join were
-  // dropped - the epic heading and slug only appear when folders.active's
-  // epic/title actually reach computePipelineBoard, proving the wiring load-
-  // bearing rather than the pure function's own (separately unit-tested)
-  // grouping logic.
-  const concertoIndex = lines.findIndex((l) => l.includes('Concerto'));
-  assert.ok(concertoIndex >= 0, `expected a Concerto epic heading, got:\n${posted[0]}`);
-  const bl1LineIdx = lines.findIndex(
-    (l, i) => i > concertoIndex && l.replace(/\u00a0/g, '').trim() === displayId('BL-1')
+  // BL-949: re-expressed against the BL-585 shared matrix (the old
+  // assertions encoded the superseded pivoted-block layout - a bare-id
+  // header line, dashed epic headings). This wiring test asserts only what
+  // the wiring proves: that folders.active's epic/title and the roles'
+  // held tickets actually REACH the posted board. Padding, caption field
+  // choice and column ordering are pipelineBoard's own contract, gated by
+  // pipelineBoard.test.js and BL-585's acceptance suite - deliberately not
+  // re-asserted here (NBSP is normalised away before every comparison,
+  // never expected literally).
+  const norm = (l) => l.replace(/\u00a0/g, ' ').trim().replace(/ {2,}/g, ' ');
+  const lines = posted[0].split('\n').map(norm);
+  // BL-979: re-expressed for the axis pivot. The stage glyphs are the shared
+  // HEADER now and each active ticket is a ROW labelled with its own id, so
+  // "the id reaches the board" is read from the row gutter rather than the
+  // header. What this wiring test proves is unchanged: folders.active's
+  // ids, its epic/title, and the roles' held tickets all reach the posted
+  // board. Layout itself stays pipelineBoard's own contract.
+  assert.deepEqual(
+    lines[0].split(' '),
+    ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA'],
+    `expected the shared stage header, got:\n${posted[0]}`
   );
-  assert.ok(bl1LineIdx > concertoIndex, 'expected BL-1 grouped under its Concerto epic heading in the pivoted grid');
-  // BL-526 pivoted grid: the status block shows ticket number + stage marks
-  // only — short kebab slugs moved to below-grid list sections, not inline.
-  const noEpicIndex = lines.findIndex((l) => l.trim() === '-- (no epic) --');
-  assert.ok(noEpicIndex > concertoIndex, 'expected the no-epic group to sort after the named epic group');
+  // folders.active -> board join: both active ids appear as matrix ROWS.
+  const ticketRows = lines.filter((l) => /^\d+( [.X]){8}$/.test(l));
+  assert.deepEqual(
+    ticketRows.map((l) => l.split(' ')[0]).sort(),
+    [displayId('BL-1'), displayId('BL-2')].sort(),
+    `expected one matrix row per active id, got:\n${posted[0]}`
+  );
+  // The epic/title join: ticket 1's caption line carries backlog-derived
+  // context from the fixture (whichever field the caption contract picks).
+  // A caption is excluded from the grid by shape - a row is an id followed
+  // by exactly eight marks, a caption is an id followed by prose.
+  const caption1 = lines.find((l) => l.startsWith(`${displayId('BL-1')} `) && !/^\d+( [.X]){8}$/.test(l));
+  assert.ok(caption1, `expected a caption line for ticket ${displayId('BL-1')}, got:\n${posted[0]}`);
+  assert.ok(
+    caption1.includes('Concerto') || caption1.includes('fix the pipeline board'),
+    `expected ticket 1's caption to carry its backlog epic/title, got: ${caption1}`
+  );
+  // The role-held join: each held ticket carries exactly one mark, in its
+  // own row, under the stage column of the role holding it - and nowhere
+  // else. Which INDEX that column sits at is ordering, pipelineBoard's
+  // contract; that it is the holder's is this wiring test's business.
+  const marksIn = (row) => (row.match(/X/g) || []).length;
+  const stageIndexOf = (glyph) => lines[0].split(' ').indexOf(glyph);
+  const rowFor = (id) => ticketRows.find((l) => l.startsWith(`${id} `));
+  for (const [id, glyph] of [
+    [displayId('BL-1'), 'CO'],
+    [displayId('BL-2'), 'QA'],
+  ]) {
+    const row = rowFor(id);
+    assert.ok(row, `expected a matrix row for ${id}, got:\n${posted[0]}`);
+    assert.equal(marksIn(row), 1, `expected exactly one mark on ${id}'s row, got: ${row}`);
+    assert.equal(
+      row.split(' ').slice(1).indexOf('X'),
+      stageIndexOf(glyph),
+      `expected ${id} marked under ${glyph}, got: ${row}`
+    );
+  }
 });
 
 test('BL-455: a paused ticket awaiting human approval and a plain paused ticket both render in the below-grid parked list, not as grid rows', async () => {
@@ -2396,13 +2445,28 @@ test('BL-473: a ticket physically in backlog/active/ that no role holds still re
   assert.equal(posted.length, 1, 'expected the not-started ticket to still post a board, never silently skipped');
   const lines = posted[0].split('\n');
   assert.ok(hasRowFor(posted[0], 'BL-1'), `expected BL-1 to be a board row, got:\n${posted[0]}`);
-  const ticketLineIdx = lines.findIndex((l) => l.replace(/\u00a0/g, '').trim() === displayId('BL-1'));
-  assert.ok(ticketLineIdx >= 0, `expected BL-1 ticket line in pivoted grid, got:\n${posted[0]}`);
-  const stageLines = lines.slice(ticketLineIdx + 1, ticketLineIdx + 8);
-  assert.equal(stageLines[0].trim(), 'NS X', `expected BL-1 marked not-started, got: ${stageLines[0]}`);
-  for (let i = 1; i < stageLines.length; i += 1) {
-    assert.match(stageLines[i].trim(), /^[A-Z]{2} \.$/, `expected pipeline stage unmarked for a not-started ticket, got: ${stageLines[i]}`);
-  }
+  // BL-949: re-expressed against the BL-585 shared matrix. What this
+  // wiring test proves: a folders.active ticket NO role holds still
+  // renders, carrying its mark on the not-started row and on no other
+  // stage row. Padding (NBSP normalised away, never expected literally)
+  // and the stage-row count are pipelineBoard's own contract - not
+  // re-asserted here.
+  const norm473 = (l) => l.replace(/\u00a0/g, ' ').trim().replace(/ {2,}/g, ' ');
+  const normLines = lines.map(norm473);
+  // BL-979: re-expressed for the axis pivot - the ticket is a ROW now, so
+  // its id is read from the row gutter, and "not-started" is the NS COLUMN
+  // rather than the NS row. The fact this test proves is unchanged: an
+  // active ticket no role holds still renders, marked not-started only.
+  const stageGlyphs = normLines[0].split(' ');
+  const row473 = normLines.find((l) => l.startsWith(`${displayId('BL-1')} `) && /^\d+( [.X]){8}$/.test(l));
+  assert.ok(row473, `expected the unheld active ticket to have its own matrix row, got:\n${posted[0]}`);
+  const marks473 = row473.split(' ').slice(1);
+  assert.equal(marks473.filter((m) => m === 'X').length, 1, `expected exactly one mark, got: ${row473}`);
+  assert.equal(
+    marks473.indexOf('X'),
+    stageGlyphs.indexOf('NS'),
+    `expected BL-1 marked in the not-started column, got: ${row473}`
+  );
 });
 
 test('BL-473 bounce: a role-held ticket absent from folders.active gets no row at all - membership is folders.active only, never unioned with role-held ids', async () => {
@@ -2448,6 +2512,36 @@ test('BL-487: an ASYNC readRoleHeldTickets (a Promise-returning adapter) is prop
   assert.equal(posted.length, 1);
   const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === displayId('BL-1'));
   assert.ok(row, `expected BL-1 to be a board row from the awaited async adapter, got:\n${posted[0]}`);
+});
+
+// BL-814: readLiveRoleHeldTickets now throws (RoleHeldTicketsComputationFailed
+// Error) instead of silently returning {} when the underlying bb subprocess
+// fails - a failed computation must never look like a genuinely empty one.
+// syncBoardIfWired is the sole production caller; it must catch that throw,
+// never let it escape into the tick loop, and never let the failure
+// overwrite a previously-good board with a blank one.
+test('BL-814: a rejecting readRoleHeldTickets does not crash the tick and leaves the prior board state untouched', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return { messageId: 1 };
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'held ticket' }] }));
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 1);
+  const boardAfterFirstTick = state.pipelineBoard;
+  assert.ok(hasRowFor(posted[0], 'BL-1'), `expected BL-1 on the board after the first tick, got:\n${posted[0]}`);
+
+  adapters.readRoleHeldTickets = () => Promise.reject(new Error('pipeline_stage_cli.bb report exited 1'));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1, 'expected no new board post on a failed computation - the prior post stands');
+  assert.deepEqual(state.pipelineBoard, boardAfterFirstTick, 'expected the prior tick\'s board state to be left untouched');
 });
 
 // ── BL-465: root-intake / recently-closed / GitHub link list wiring ──────

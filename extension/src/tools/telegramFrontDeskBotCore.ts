@@ -8,6 +8,10 @@
 // map) into pollAndForward below.
 import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult, InlineKeyboardButton, EditMessageTextResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
+// BL-621: the project's one hours+minutes duration renderer, reused for the
+// sustained-outage escalation's "how long has it been down" rather than a
+// second copy of the same arithmetic.
+import { formatDurationMs } from '../metrics/swarmMetrics';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
 import { unsafeDispatchToastText } from '../concierge/expediteSafety';
@@ -39,6 +43,10 @@ import {
   APPROVALS_TOPIC_NAME,
   EnsureApprovalsTopicAction,
   decideEnsureApprovalsTopicAction,
+  PIPELINE_BOARD_SUBJECT_ID,
+  PIPELINE_BOARD_TOPIC_NAME,
+  EnsurePipelineBoardTopicAction,
+  decideEnsurePipelineBoardTopicAction,
   RECERT_SUBJECT_ID,
   RECERT_TOPIC_NAME,
   EnsureRecertTopicAction,
@@ -98,6 +106,10 @@ export {
   APPROVALS_TOPIC_NAME,
   EnsureApprovalsTopicAction,
   decideEnsureApprovalsTopicAction,
+  PIPELINE_BOARD_SUBJECT_ID,
+  PIPELINE_BOARD_TOPIC_NAME,
+  EnsurePipelineBoardTopicAction,
+  decideEnsurePipelineBoardTopicAction,
   RECERT_SUBJECT_ID,
   RECERT_TOPIC_NAME,
   EnsureRecertTopicAction,
@@ -139,6 +151,11 @@ export type BotUpdateDecision =
   // which no longer identifies a single ticket once one topic carries many).
   | { action: 'approvals-topic-approve'; backlogId: string; text: string }
   | { action: 'approvals-topic-reject'; backlogId: string; reason: string; text: string }
+  // BL-721: a typed "/qjump <id>" reply in the Approvals topic - the same
+  // queue-jump (approve + force-promote + dispatch now) effect as tapping
+  // the ask's Q jump button, reached through the SAME
+  // recordExpediteDecisionAndClose routine, never a second effect path.
+  | { action: 'approvals-topic-qjump'; backlogId: string; text: string }
   // A reply in the Approvals topic that names no recognizable verb+id at
   // all - never silently dropped as a subject post (front-desk-operator-
   // fabricates-backlog-state memory); the orchestration layer surfaces it.
@@ -159,9 +176,9 @@ export type BotUpdateDecision =
   | { action: 'recert-unrecognized'; text: string }
   | { action: 'open-default'; text: string }
   | { action: 'open-for-topic'; topicId: number; text: string }
-  | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' };
+  | { action: 'drop'; reason: 'not-principal' | 'no-text' | 'not-my-chat' | 'media-no-caption' };
 
-type UpdateEligibility = { ok: true; text: string } | { ok: false; reason: 'not-my-chat' | 'not-principal' | 'no-text' };
+type UpdateEligibility = { ok: true; text: string } | { ok: false; reason: 'not-my-chat' | 'not-principal' | 'no-text' | 'media-no-caption' };
 
 // Pure: the guard ahead of decideUpdateAction's routing below - split out
 // so each function's own decision complexity stays under the project's
@@ -183,9 +200,62 @@ function checkUpdateEligibility(update: TelegramUpdate, principalUserId: string,
   }
   const text = messageTextOf(update);
   if (!text) {
-    return { ok: false, reason: 'no-text' };
+    // BL-620: a media message with no usable caption (absent or empty -
+    // `??` passes an empty string through, so both land here) gets its own
+    // DISTINCT reason: a visible refusal, never a vanish indistinguishable
+    // from ordinary textless chatter. Voice notes are pre-empted to their
+    // own path before this decision is ever reached (BL-426), and carry no
+    // `photo`, so they can never classify as media-no-caption.
+    return { ok: false, reason: update.message?.photo ? 'media-no-caption' : 'no-text' };
   }
   return { ok: true, text };
+}
+
+// BL-620: the front desk has NO vision - a routed caption rides alone, and
+// the routed content says so out loud, so nobody believes the picture was
+// seen. Pure; applied at the posting boundary (never inside
+// decideUpdateAction, whose decision for a caption must equal the decision
+// for the identical plain text).
+export function annotateRoutedMediaText(text: string, update: TelegramUpdate): string {
+  if (!update.message?.photo) {
+    return text;
+  }
+  return `${text}\n[image attached - not read by the front desk]`;
+}
+
+// BL-620: the one-line drop audit - bounded, names the update id and the
+// already-computed reason, never message content. The writer is injected
+// (PollAdapters.logDropAudit, postFn-style) - this stays pure.
+export function formatDropAuditLine(updateId: number, reason: string): string {
+  return `front-desk drop update_id=${updateId} reason=${reason}`;
+}
+
+// BL-582: the callback twin of formatDropAuditLine above - the SAME bounded
+// "one line, ids and an already-computed reason, never message content"
+// shape, keyed by the callback_query's own id rather than an update_id
+// (a callback_query drop has no update-level identity a human can match to
+// what they tapped). `detail` carries the one thing a bare reason cannot
+// say - WHICH ticket, and why its record changed nothing - and is omitted
+// entirely when the reason already explains itself.
+export type CallbackDiagnosticReason = 'not-my-chat' | 'not-principal' | 'unrecognized-data' | 'record-no-op' | 'repaint-failed';
+
+export function formatCallbackDiagnosticLine(callbackQueryId: string, reason: CallbackDiagnosticReason, detail?: string): string {
+  const suffix = detail === undefined ? '' : ` detail=${detail}`;
+  return `front-desk callback callback_query_id=${callbackQueryId} reason=${reason}${suffix}`;
+}
+
+// BL-620 (hardener CRAP isolation, matching the bridgeServer.ts
+// tryServeSideloadApk precedent): processMessageUpdate is a pre-existing
+// dispatcher already over the CRAP<=6 threshold before this ticket - the
+// branch itself, not just its body, is extracted so the audit emission
+// carries its own isolated CRAP score instead of compounding the
+// dispatcher's. Self-contained (checks decision.action itself) so it is
+// safe to call unconditionally at the one call site that only ever
+// reaches it once every other decision shape has already returned.
+function emitDropAuditIfDropped(decision: BotUpdateDecision, update: TelegramUpdate, adapters: PollAdapters): void {
+  if (decision.action === 'drop') {
+    adapters.logDropAudit?.(formatDropAuditLine(update.update_id, decision.reason));
+  }
 }
 
 // Pure: the bot's whole per-update decision - given the update, the
@@ -221,6 +291,9 @@ function decideApprovalsTopicReplyAction(text: string): BotUpdateDecision {
   }
   if (parsed.kind === 'reject') {
     return { action: 'approvals-topic-reject', backlogId: parsed.backlogId, reason: parsed.reason, text };
+  }
+  if (parsed.kind === 'qjump') {
+    return { action: 'approvals-topic-qjump', backlogId: parsed.backlogId, text };
   }
   return { action: 'approvals-topic-unrecognized', text };
 }
@@ -497,6 +570,24 @@ export interface PollAdapters {
   // processUpdate/pollAndForward/runPollCycle, so those signatures - and
   // their many existing callers - are unaffected.
   chatId: string;
+  // BL-620: the injected drop-audit writer - one bounded line per dropped
+  // update (formatDropAuditLine), never a bare console call inside the
+  // pure decision code. Optional: every pre-BL-620 fixture keeps working,
+  // and production wires it to the supervisor log.
+  logDropAudit?: (line: string) => void;
+  // BL-582: the DURABLE diagnostic sink. logDropAudit above went to stderr,
+  // which the supervisor inherits and nothing keeps - when the 2026-07-23
+  // taps failed there was no line anywhere to read afterwards. Production
+  // wires this (and logDropAudit) to an append-only file under
+  // .swarmforge/operator/ that outlives the bot process, which is the whole
+  // point: a diagnostic lost with the process explains nothing. Optional,
+  // like every other adapter here - absent means an unwired fixture.
+  logDiagnostic?: (line: string) => void;
+  // BL-582: why a record changed nothing, for the toast and the diagnostic
+  // (recordApprovalReply itself returns a bare boolean and cannot say).
+  // Absent, or returning undefined, degrades to the 'unexplained' marker -
+  // never back to silence.
+  explainApprovalRecordNoOp?: (backlogId: string) => Promise<string | undefined>;
   getUpdates: (offset: number) => Promise<GetUpdatesResult>;
   // BL-369: updateId (the Telegram update's own update_id) rides every call
   // so the bridge can dedupe a redelivered message by its natural
@@ -594,6 +685,15 @@ export interface PollAdapters {
   // behavior, the same "new capability defaults to a no-op" posture every
   // other optional adapter in this file already has - never a crash.
   commitExpediteWrites?: (backlogId: string) => Promise<boolean>;
+  // BL-892: durably commits a plain Approve/Reject/Amend's own
+  // human_approval write (recordApprovalDecisionAndClose/
+  // recordAmendDecisionAndClose below) through the same shared,
+  // pathspec-scoped, locked commit_integrity_cli.bb every other writer in
+  // this file uses - never a second commit path. Optional: absent
+  // degrades to the pre-fix uncommitted behavior, the same "new
+  // capability defaults to a no-op" posture every other optional adapter
+  // in this file already has - never a crash.
+  commitApprovalWrites?: (backlogId: string, message: string) => Promise<boolean>;
   // FILE-LEVEL SAFETY CHECK: reads whether an in-flight build touches the
   // same file(s) this ticket's own scope names (expediteSafety.ts's pure
   // findFileCollision, driven by real active-ticket/in-flight-handoff reads
@@ -980,6 +1080,22 @@ function logAskCloseFailure(backlogId: string, result: EditMessageTextResult): v
   }
 }
 
+// BL-582: the repaint half of the invariant. A record that landed and then
+// failed to repaint leaves the human staring at an unchanged ask with its
+// buttons still on - visually identical to a tap that did nothing at all.
+// The verdict is NOT rolled back (it is on disk, and committed); the
+// failure is reported instead, through the same durable sink every other
+// callback diagnostic uses. The three entry points that can repaint (a tap,
+// a typed reply, the reconcile sweep) do not all have a callback id, so the
+// line is keyed '-' and identified by the ticket in its detail instead.
+function emitRepaintFailureDiagnostic(adapters: PollAdapters, backlogId: string, result: EditMessageTextResult): void {
+  emitCallbackDiagnostic(adapters, '-', 'repaint-failed', `${backlogId}:${repaintFailureCause(result)}`);
+}
+
+function repaintFailureCause(result: EditMessageTextResult): string {
+  return result.retryAfterSeconds !== undefined ? 'rate-limited-retry-budget-exhausted' : (result.error ?? 'message-edit-failed-or-not-wired');
+}
+
 // BL-484: performs the actual Telegram edit that closes a decided ask -
 // split out of recordApprovalDecisionAndClose below for the same CRAP-
 // budget reason this file already applies throughout (e.g.
@@ -1011,6 +1127,7 @@ async function closeApprovalAskIfPossible(adapters: PollAdapters, backlogId: str
     await adapters.persistClosedApprovalAskText?.(backlogId, newText);
   } else {
     logAskCloseFailure(backlogId, result);
+    emitRepaintFailureDiagnostic(adapters, backlogId, result);
   }
 }
 
@@ -1031,6 +1148,31 @@ async function notifyHumanDecisionRecorded(adapters: PollAdapters): Promise<void
   adapters.scheduleConciergeTick?.();
 }
 
+// BL-892: shared commit step for every plain Approve/Reject/Amend writer -
+// mirrors recordExpediteDecisionAndClose's own commitExpediteWrites call
+// below, but LOUD on a GENUINE failure (never silent): Expedite defers its
+// own commit to a later poll tick with an external owner (BL-490/BL-538),
+// but a plain verdict has no such owner, so a failed commit here is
+// surfaced to the Approvals topic immediately - disk may hold the flip,
+// but the human is told it is not yet durable, per this ticket's own
+// invariant 2. The adapter being ABSENT (never wired - the same
+// "new capability defaults to a no-op" posture commitExpediteWrites'
+// own doc comment establishes) is a DIFFERENT case from wired-but-failed
+// and stays silent, exactly like every other optional adapter here -
+// notifying on every fixture/deployment that simply hasn't wired this
+// capability yet would be a false alarm, not a real durability failure.
+async function commitApprovalDecision(adapters: PollAdapters, backlogId: string, kind: 'approved' | 'rejected' | 'amending'): Promise<boolean> {
+  if (!adapters.commitApprovalWrites) {
+    return false;
+  }
+  const verb = kind === 'approved' ? 'Approve' : kind === 'rejected' ? 'Reject' : 'Amend';
+  const committed = await adapters.commitApprovalWrites(backlogId, `${verb} ${backlogId}: record human_approval\n\nBy coder.`);
+  if (!committed) {
+    await adapters.notifyApprovalsTopic?.(undefined, `${backlogId}: ${kind} recorded but FAILED TO COMMIT — a human must land the change manually.`);
+  }
+  return committed;
+}
+
 // BL-484: the ONE closing routine serving BOTH decision entry points - a
 // button tap (processCallbackQuery below) and a typed reply
 // (deliverOperatorContext/deliverApprovalsTopicReply below) - so the two
@@ -1042,19 +1184,32 @@ async function notifyHumanDecisionRecorded(adapters: PollAdapters): Promise<void
 // nowMs defaults to the real clock (mirrors runConciergeTick's own
 // injectable-nowMs convention) so every existing call site needs no clock
 // plumbing of its own, while a test can still pin an exact instant.
+// BL-582: onDecisionRecorded fires the INSTANT the record outcome is known,
+// before the commit and the ask repaint. The tap path uses it to answer its
+// callback query - which must happen promptly (a spinner that hangs is the
+// very symptom this ticket is about) and can only happen ONCE, so it cannot
+// wait for closeApprovalAskIfPossible below: that call can sleep on
+// Telegram's own retry_after during a rate-limited edit. Optional, so the
+// typed-reply and reconcile entry points - which have no spinner to clear -
+// pass nothing and are unaffected. Keeping it a hook is what preserves
+// BL-484's own constraint that there is exactly ONE closing routine.
 export async function recordApprovalDecisionAndClose(
   adapters: PollAdapters,
   backlogId: string,
   verdict: { kind: 'approved' } | { kind: 'rejected'; reason: string },
-  nowMs: number = Date.now()
-): Promise<boolean> {
+  nowMs: number = Date.now(),
+  onDecisionRecorded?: (changed: boolean) => Promise<void>
+): Promise<{ changed: boolean; committed: boolean }> {
   const changed =
     verdict.kind === 'approved' ? await adapters.recordApprovalReply(backlogId) : await adapters.recordRejectionReply(backlogId, verdict.reason);
-  if (changed) {
-    await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
-    await notifyHumanDecisionRecorded(adapters);
+  await onDecisionRecorded?.(changed);
+  if (!changed) {
+    return { changed: false, committed: false };
   }
-  return changed;
+  const committed = await commitApprovalDecision(adapters, backlogId, verdict.kind);
+  await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
+  await notifyHumanDecisionRecorded(adapters);
+  return { changed: true, committed };
 }
 
 // BL-509: the Amend verb's own decision-and-close routine - a sibling of
@@ -1069,15 +1224,22 @@ export async function recordApprovalDecisionAndClose(
 // and the directive queue both ride the same real transition guard as the
 // ask-close itself - an already-amending (or otherwise not-pending) ticket
 // gets none of the three effects, exactly like a no-op approve/reject.
-export async function recordAmendDecisionAndClose(adapters: PollAdapters, backlogId: string, note: string, nowMs: number = Date.now()): Promise<boolean> {
+export async function recordAmendDecisionAndClose(
+  adapters: PollAdapters,
+  backlogId: string,
+  note: string,
+  nowMs: number = Date.now()
+): Promise<{ changed: boolean; committed: boolean }> {
   const changed = await adapters.recordAmendReply(backlogId);
-  if (changed) {
-    await adapters.resetApprovalAskEmittedState?.(backlogId);
-    await adapters.queueAmendSteerDirective?.(backlogId, note);
-    await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'amending' }, nowMs);
-    await notifyHumanDecisionRecorded(adapters);
+  if (!changed) {
+    return { changed: false, committed: false };
   }
-  return changed;
+  await adapters.resetApprovalAskEmittedState?.(backlogId);
+  await adapters.queueAmendSteerDirective?.(backlogId, note);
+  const committed = await commitApprovalDecision(adapters, backlogId, 'amending');
+  await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'amending' }, nowMs);
+  await notifyHumanDecisionRecorded(adapters);
+  return { changed: true, committed };
 }
 
 // BL-490: the Expedite verb's own decision-and-close routine - a sibling of
@@ -1155,15 +1317,23 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
 // the two backlogId-carrying variants for the compiler - the FULL
 // BotUpdateDecision union (its other branches carry no backlogId at all)
 // cannot narrow that way.
-type ApprovalsTopicReplyDecision = Extract<BotUpdateDecision, { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-unrecognized' }>;
+type ApprovalsTopicReplyDecision = Extract<
+  BotUpdateDecision,
+  { action: 'approvals-topic-approve' | 'approvals-topic-reject' | 'approvals-topic-qjump' | 'approvals-topic-unrecognized' }
+>;
 
-// Narrows AND collapses the three-way OR below into one call - split out so
+// Narrows AND collapses the four-way OR below into one call - split out so
 // processMessageUpdate's own branch count (one decision point per `if`, plus
 // one per `||`) stays at or below this file's CRAP threshold, the same
 // "extract to keep CRAP down" convention this file already applies (e.g.
 // openTopicIdFor for the open-default/open-for-topic pair above).
 function isApprovalsTopicReplyDecision(decision: BotUpdateDecision): decision is ApprovalsTopicReplyDecision {
-  return decision.action === 'approvals-topic-approve' || decision.action === 'approvals-topic-reject' || decision.action === 'approvals-topic-unrecognized';
+  return (
+    decision.action === 'approvals-topic-approve' ||
+    decision.action === 'approvals-topic-reject' ||
+    decision.action === 'approvals-topic-qjump' ||
+    decision.action === 'approvals-topic-unrecognized'
+  );
 }
 
 // BL-434: the Approvals-topic reply's own delivery - reuses the EXISTING
@@ -1177,16 +1347,41 @@ function isApprovalsTopicReplyDecision(decision: BotUpdateDecision): decision is
 // DELIBERATE DROPS, never delivery FAILURES (the engineering article's own
 // "a deliberate drop is terminal, never a retryable failure" rule) - the
 // offset must advance past either, so neither one ever blocks re-polling.
-async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+// BL-721: a "/qjump <id>" reply's own delivery branch - reuses the EXACT
+// SAME recordExpediteDecisionAndClose routine the Approvals button's Q jump
+// tap already fires (never a second queue-jump path), including its own
+// file-collision safety. Split out from the approve/reject branch below
+// because it returns a richer { changed, collision } shape, not the bare
+// boolean recordApprovalDecisionAndClose returns.
+async function deliverApprovalsTopicQjump(backlogId: string, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const result = await recordExpediteDecisionAndClose(adapters, backlogId);
+  if (!result.changed) {
+    await adapters.notifyApprovalsTopic?.(topicId, `${backlogId} isn't awaiting approval.`);
+    return 'dropped';
+  }
+  if (result.collision) {
+    await adapters.notifyApprovalsTopic?.(topicId, unsafeDispatchToastText(result.collision));
+  }
+  return 'posted';
+}
+
+async function deliverApprovalsTopicReply(decision: ApprovalsTopicReplyDecision, topicId: number | undefined, update: TelegramUpdate, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (decision.action === 'approvals-topic-unrecognized') {
     return 'dropped';
   }
   const { backlogId } = decision;
-  const changed =
+  if (decision.action === 'approvals-topic-qjump') {
+    return deliverApprovalsTopicQjump(backlogId, topicId, adapters);
+  }
+  // BL-955: a caption-derived reason lands in a DURABLE ticket record -
+  // whoever reads that rejection a week later is exactly the reader who
+  // cannot otherwise tell an unread image was attached, so the note goes
+  // into the STORED value, at record time.
+  const result =
     decision.action === 'approvals-topic-approve'
       ? await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'approved' })
-      : await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: decision.reason });
-  if (!changed) {
+      : await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: annotateRoutedMediaText(decision.reason, update) });
+  if (!result.changed) {
     await adapters.notifyApprovalsTopic?.(topicId, `${backlogId} isn't awaiting approval.`);
     return 'dropped';
   }
@@ -1264,7 +1459,7 @@ async function deliverRecertDeleteRequest(scenarioId: string, topicId: number | 
 // a not-currently-up-for-recert id are both DELIBERATE DROPS, never
 // delivery FAILURES (the engineering article's own drop-vs-failure rule) -
 // the offset must advance past either.
-async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topicId: number | undefined, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topicId: number | undefined, update: TelegramUpdate, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (decision.action === 'recert-unrecognized') {
     return 'dropped';
   }
@@ -1275,10 +1470,11 @@ async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topic
     return deliverRecertDeleteRequest(decision.scenarioId, topicId, adapters);
   }
   const { scenarioId } = decision;
+  // BL-955: same durable-record annotation as the approvals reject reason.
   const changed =
     decision.action === 'recert-validate'
       ? await adapters.recordRecertValidate?.(scenarioId)
-      : await adapters.queueRecertAmendProposal?.(scenarioId, decision.newText);
+      : await adapters.queueRecertAmendProposal?.(scenarioId, annotateRoutedMediaText(decision.newText, update));
   if (!changed) {
     await adapters.notifyRecertTopic?.(topicId, `${scenarioId} isn't awaiting recertification.`);
     return 'dropped';
@@ -1295,13 +1491,14 @@ async function deliverRecertTopicReply(decision: RecertTopicReplyDecision, topic
 async function deliverReservedSubjectReply(
   decision: BotUpdateDecision,
   topicId: number | undefined,
+  update: TelegramUpdate,
   adapters: PollAdapters
 ): Promise<UpdateDeliveryOutcome | undefined> {
   if (isApprovalsTopicReplyDecision(decision)) {
-    return deliverApprovalsTopicReply(decision, topicId, adapters);
+    return deliverApprovalsTopicReply(decision, topicId, update, adapters);
   }
   if (isRecertTopicReplyDecision(decision)) {
-    return deliverRecertTopicReply(decision, topicId, adapters);
+    return deliverRecertTopicReply(decision, topicId, update, adapters);
   }
   return undefined;
 }
@@ -1412,8 +1609,37 @@ function decisionForApprovalCallbackKind(kind: string, backlogId: string): Callb
 // message path's own silent drop for the same two reasons). Split out of
 // processCallbackQuery below for the same CRAP-budget reason as
 // isNoopControlDecision above.
-function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
+// BL-582: "answered never" stays true - an unauthorized tap must not learn
+// this bot exists - but "logged never" does not. Both branches now leave a
+// diagnostic; only the toast is withheld. A type PREDICATE rather than a
+// plain boolean, so the caller's own diagnostic can read decision.reason
+// without an `as` re-assertion of what this function just proved.
+function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): decision is { action: 'drop'; reason: 'not-my-chat' | 'not-principal' } {
   return decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal');
+}
+
+// BL-582: the one emission point for every callback diagnostic - the
+// postFn-style injected-writer posture emitDropAuditIfDropped above already
+// establishes, so the decision code itself stays free of console calls.
+function emitCallbackDiagnostic(
+  adapters: PollAdapters,
+  callbackQueryId: string,
+  reason: CallbackDiagnosticReason,
+  detail?: string
+): void {
+  adapters.logDiagnostic?.(formatCallbackDiagnosticLine(callbackQueryId, reason, detail));
+}
+
+const UNRECOGNIZED_CALLBACK_TOAST_TEXT = 'This button was not recognized - nothing was recorded. It is probably from an older message.';
+
+// BL-582: the marker a no-op wears when nothing on disk explains it. Not a
+// fallback to silence - the human is still told the tap did nothing, and
+// the diagnostic still names the ticket, which is what makes the failure
+// investigable at all.
+const UNEXPLAINED_RECORD_NO_OP = 'unexplained';
+
+function recordNoOpToastText(backlogId: string, reason: string): string {
+  return `${backlogId}: nothing was recorded (${reason}). Your verdict is NOT saved - tell a human.`;
 }
 
 // BL-484: a tap on an ALREADY-DECIDED ask is stale - answered with an
@@ -1631,24 +1857,66 @@ function formatApprovalMoreFallback(backlogId: string): string {
   return `${backlogId}\n\n— Spec —\n(no spec on disk for this ticket)\n\n— Gherkin —\n(no Gherkin scenarios on disk for this ticket)`;
 }
 
+// BL-582: the Approve tap's own dispatch - split out of
+// dispatchApproveOrFollowup below because it answers its callback with a
+// CONDITIONAL toast (the "nothing was recorded, and here is why" text, or
+// the ordinary bare spinner-clear), exactly the shape - and exactly the
+// reason - dispatchExpediteCallback above is already split out for. The
+// answer moves from BEFORE the record to the moment the record outcome is
+// known, which is what makes naming the failure possible at all: a callback
+// query can be answered once, so a spinner cleared up front can no longer
+// carry the reason. The tap that started this ticket cleared its spinner
+// and did nothing.
+async function answerApproveTap(
+  callbackQuery: TelegramCallbackQuery,
+  backlogId: string,
+  changed: boolean,
+  adapters: PollAdapters
+): Promise<void> {
+  if (changed) {
+    await adapters.answerCallbackQuery(callbackQuery.id);
+    return;
+  }
+  const reason = (await adapters.explainApprovalRecordNoOp?.(backlogId)) ?? UNEXPLAINED_RECORD_NO_OP;
+  await adapters.answerCallbackQuery(callbackQuery.id, recordNoOpToastText(backlogId, reason));
+  emitCallbackDiagnostic(adapters, callbackQuery.id, 'record-no-op', `${backlogId}:${reason}`);
+}
+
+async function dispatchApproveCallback(
+  callbackQuery: TelegramCallbackQuery,
+  decision: { action: 'approve'; backlogId: string },
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  const result = await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' }, Date.now(), (changed) =>
+    answerApproveTap(callbackQuery, decision.backlogId, changed, adapters)
+  );
+  // A tap that recorded nothing is not a delivery - counting it 'posted'
+  // is how a silent no-op looked healthy in the poll telemetry.
+  return result.changed ? 'posted' : 'dropped';
+}
+
 async function dispatchApproveOrFollowup(
   callbackQuery: TelegramCallbackQuery,
   decision: RecognizedApprovalDecision,
   adapters: PollAdapters
 ): Promise<UpdateDeliveryOutcome> {
-  await adapters.answerCallbackQuery(callbackQuery.id);
+  // BL-582: the only drop reaching here is 'unrecognized-data' - a real tap
+  // by the principal, in our chat, on data we cannot act on (a stale button
+  // from an older deployment). It used to clear the spinner and say nothing.
   if (decision.action === 'drop') {
+    await adapters.answerCallbackQuery(callbackQuery.id, UNRECOGNIZED_CALLBACK_TOAST_TEXT);
+    emitCallbackDiagnostic(adapters, callbackQuery.id, decision.reason);
     return 'dropped';
   }
   if (decision.action === 'approve') {
-    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
-  } else {
-    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
-    // BL-509: only Amend prompts on tap - Reject stays the pre-existing
-    // silent-stash behavior (unchanged by this ticket).
-    if (decision.kind === 'amend') {
-      await adapters.notifyApprovalsTopic?.(callbackQuery.message?.message_thread_id, amendPromptText(decision.backlogId));
-    }
+    return dispatchApproveCallback(callbackQuery, decision, adapters);
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
+  // BL-509: only Amend prompts on tap - Reject stays the pre-existing
+  // silent-stash behavior (unchanged by this ticket).
+  if (decision.kind === 'amend') {
+    await adapters.notifyApprovalsTopic?.(callbackQuery.message?.message_thread_id, amendPromptText(decision.backlogId));
   }
   return 'posted';
 }
@@ -1695,6 +1963,10 @@ async function processCallbackQuery(
   }
   const decision = decideCallbackQueryAction(callbackQuery, principalUserId, adapters.chatId);
   if (isUnauthorizedCallbackDrop(decision)) {
+    // BL-582: still unanswered (see isUnauthorizedCallbackDrop), but no
+    // longer unrecorded - this is the branch that made "the human tapped
+    // and nothing happened" indistinguishable from "the bot never saw it".
+    emitCallbackDiagnostic(adapters, callbackQuery.id, decision.reason);
     return 'dropped';
   }
   return dispatchRecognizedCallbackDecision(callbackQuery, decision, updateId, adapters);
@@ -1792,7 +2064,12 @@ async function processSteeringUpdate(
   if (decision.kind === 'refuse') {
     return 'dropped';
   }
-  const result = await redirectToRole(decision.role, decision.text);
+  // BL-955: the annotation is applied HERE, at the forwarding boundary -
+  // decideSteeringAction above already classified the raw text, and both
+  // onward paths (the live pane and the queued answer note below) carry
+  // the same annotated text, so no reader believes the image was seen.
+  const forwardedText = annotateRoutedMediaText(decision.text, update);
+  const result = await redirectToRole(decision.role, forwardedText);
   // BL-607: when this role has a clarifying question pending, this reply
   // IS the answer (Leg 1 reuses redirectToRole exactly as above - the
   // ticket's own "reuse it verbatim" for the live-pane case). A dormant
@@ -1803,7 +2080,7 @@ async function processSteeringUpdate(
   // actually captured (delivered or queued) so the role is free to ask
   // its next question - see captureRoleAnswer above.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
-    await captureRoleAnswer(decision.role, result.kind === 'delivered', decision.text, enqueueRoleAnswerNote, clearRolePendingQuestion);
+    await captureRoleAnswer(decision.role, result.kind === 'delivered', forwardedText, enqueueRoleAnswerNote, clearRolePendingQuestion);
   }
   // Optional adapter: absent means no receipt, the exact pre-receipt
   // behavior - the same "a new capability degrades to prior behavior"
@@ -2108,7 +2385,9 @@ async function attemptAgentQuestionsTopicDelivery(
   if (!pendingThreadId) {
     return 'dropped';
   }
-  const ok = await adapters.postToBridge(pendingThreadId, decision.text, update.update_id);
+  // BL-955: forwarding boundary - the asking role must know an unread
+  // image rode along with its answer.
+  const ok = await adapters.postToBridge(pendingThreadId, annotateRoutedMediaText(decision.text, update), update.update_id);
   return deliveryOutcome(ok);
 }
 
@@ -2139,7 +2418,8 @@ async function attemptOnboardingTopicDelivery(
   if (!adapters.handleOnboarderMessage || topicId === undefined) {
     return 'dropped';
   }
-  const ok = await adapters.handleOnboarderMessage(topicId, decision.text, update.update_id);
+  // BL-955: forwarding boundary - same annotation as every other surface.
+  const ok = await adapters.handleOnboarderMessage(topicId, annotateRoutedMediaText(decision.text, update), update.update_id);
   return deliveryOutcome(ok);
 }
 
@@ -2239,23 +2519,30 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
   }
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
   if (decision.action === 'post-existing') {
-    const ok = await adapters.postToBridge(decision.subjectId, decision.text, update.update_id);
+    // BL-620: annotation happens HERE, at the posting boundary - the pure
+    // decision for a caption equals the decision for the identical text.
+    const ok = await adapters.postToBridge(decision.subjectId, annotateRoutedMediaText(decision.text, update), update.update_id);
     return deliveryOutcome(ok);
   }
   if (decision.action === 'operator-context') {
-    const ok = await deliverOperatorContext(decision.backlogId, decision.text, update.update_id, adapters);
+    const ok = await deliverOperatorContext(decision.backlogId, annotateRoutedMediaText(decision.text, update), update.update_id, adapters);
     return deliveryOutcome(ok);
   }
-  const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), adapters);
+  const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), update, adapters);
   if (reserved) {
     return reserved;
   }
   if (isOpenDecision(decision)) {
-    await adapters.openSubjectAndRecord(openTopicIdFor(decision), decision.text, update.update_id);
+    await adapters.openSubjectAndRecord(openTopicIdFor(decision), annotateRoutedMediaText(decision.text, update), update.update_id);
     return 'posted';
   }
   // decision.action === 'drop': a DECISION, never a delivery attempt at
   // all - the offset must advance past it (see offsetAfterDelivery below).
+  // BL-620: the computed reason was previously DISCARDED right here - a
+  // dropped update produced zero log output anywhere, and diagnosing the
+  // 2026-07-24 caption incident took a live replay session. Exactly one
+  // bounded line per drop, through the injected writer (emitDropAuditIfDropped).
+  emitDropAuditIfDropped(decision, update, adapters);
   return 'dropped';
 }
 
@@ -2298,6 +2585,14 @@ export interface PollResult {
   // caller (pollLoop) needs to tell these apart to back off only on a
   // real failure.
   ok: boolean;
+  // BL-621: the failed cycle's OWN formatted transport error, straight from
+  // GetUpdatesResult.error (telegramClient's formatApiFailureError - e.g.
+  // "Telegram API responded with status 409: Conflict: terminated by other
+  // getUpdates request"). It used to be discarded here, which is why the
+  // 2026-07-24 rival-poller incident produced 9 hours of anonymous "poll
+  // degraded" lines: the one sentence naming the rival was already in hand
+  // and thrown away. undefined on a successful cycle, where nothing failed.
+  error?: string;
 }
 
 // Adapter-injected: one poll-and-forward cycle. Every update decision goes
@@ -2307,7 +2602,7 @@ export interface PollResult {
 export async function pollAndForward(offset: number, principalUserId: string, adapters: PollAdapters): Promise<PollResult> {
   const result = await adapters.getUpdates(offset);
   if (!result.success) {
-    return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false };
+    return { nextOffset: offset, posted: 0, dropped: 0, failed: 0, ok: false, error: result.error };
   }
   let posted = 0;
   let dropped = 0;
@@ -2332,6 +2627,12 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
 export interface PollBackoffConfig {
   backoffBaseMs: number;
   backoffMaxMs: number;
+  // BL-1036: the long-poll timeout the bot asks Telegram for. It is the BOUND
+  // on a post-restart conflict window - the predecessor's slot is released
+  // when its long poll times out server-side - so the log can state how long
+  // the window can last. Optional so every existing caller is unaffected;
+  // 25 is what telegram-front-desk-bot.ts passes.
+  pollTimeoutSeconds?: number;
   // Consecutive FAILED cycles before raising a degraded warning. The
   // warning fires exactly once per outage streak (consecutiveFailures
   // strictly increases while failing and resets to 0 on success, so it
@@ -2347,6 +2648,103 @@ export interface PollBackoffConfig {
   // poll cycle (the long-poll's own pacing is the backoff here, never a
   // real wait inside this file - see runPollCycle's own docstring).
   stuckRetryLimit: number;
+  // BL-621: how long EITHER loop may keep failing continuously before the
+  // outage is escalated to the human (once per episode). Measured in
+  // milliseconds of wall-clock outage, deliberately NOT in failure counts
+  // like degradedThreshold above - a 60s-capped backoff makes "5 failures"
+  // mean anything from seconds to many minutes depending where in the
+  // streak it lands, while "it has been down for half an hour" is the fact
+  // a human actually needs. Read from the conf key by
+  // sustainedOutageThresholdMs below.
+  sustainedOutageThresholdMs: number;
+}
+
+// ── BL-621: sustained-degraded episodes ──────────────────────────────────
+// An EPISODE is one continuous run of failures in one loop. It opens on the
+// first failure, escalates ONCE once it has lasted past the threshold, and
+// closes on the first success - so a later outage is a NEW episode with its
+// own single escalation. The whole decision is a pure function of (episode
+// state, this cycle's ok, the clock, the threshold); the clock arrives as a
+// plain number from the live loop, so nothing here ever reads wall time.
+
+export type SustainedOutageLoop = 'poll' | 'reply-relay';
+
+export interface SustainedOutageState {
+  // When the current episode's first failure happened. undefined means no
+  // episode is open (the loop is healthy).
+  failingSinceMs?: number;
+  // The once-per-episode latch: true after this episode has escalated, so a
+  // still-failing loop never re-alerts every cycle for hours.
+  escalated: boolean;
+}
+
+export interface SustainedOutageDecision {
+  state: SustainedOutageState;
+  escalate: boolean;
+  // How long the episode has been running as of nowMs; 0 when none is open.
+  outageMs: number;
+}
+
+export function decideSustainedOutage(
+  state: SustainedOutageState,
+  ok: boolean,
+  nowMs: number,
+  thresholdMs: number
+): SustainedOutageDecision {
+  if (ok) {
+    return { state: { escalated: false }, escalate: false, outageMs: 0 };
+  }
+  const failingSinceMs = state.failingSinceMs ?? nowMs;
+  const outageMs = nowMs - failingSinceMs;
+  const escalate = !state.escalated && outageMs >= thresholdMs;
+  return { state: { failingSinceMs, escalated: state.escalated || escalate }, escalate, outageMs };
+}
+
+// The human-facing escalation text: WHICH loop, HOW LONG it has been down,
+// and WHAT the last error was - the three facts the 2026-07-24 incident had
+// to be reconstructed by hand from. The duration reuses swarmMetrics'
+// formatDurationMs (the project's one hours+minutes renderer) rather than a
+// second copy of the same arithmetic.
+export function formatSustainedOutageEscalation(
+  loop: SustainedOutageLoop,
+  outageMs: number,
+  errorMessage: string | undefined
+): string {
+  return (
+    `front-desk bot: the ${loop} loop has been failing continuously for ${formatDurationMs(outageMs)}. ` +
+    `Last error: ${describeOutageCause(errorMessage)}. ` +
+    'It keeps retrying on a capped backoff - this is the only alert for this outage.'
+  );
+}
+
+// The one place the "no error was recorded" wording lives, shared by both
+// degraded warnings and the escalation. A cause is always printed: a line
+// reading "still retrying: undefined" is the same uninformative dead end
+// this ticket exists to close.
+export function describeOutageCause(errorMessage: string | undefined): string {
+  return errorMessage ?? 'cause unknown';
+}
+
+// BL-369's stuck-delivery escalation text, moved here from the live wrapper
+// so BOTH escalations are formatted by the tested core and sent through one
+// direct-send adapter, rather than one of each in two different places.
+export const STUCK_DELIVERY_ESCALATION_TEXT =
+  'front-desk bot: a message could not be delivered after repeated attempts (the bridge may be unreachable). It has NOT been dropped - delivery will resume automatically once the underlying issue clears.';
+
+// The swarmforge.conf key the live loops read the threshold from.
+export const SUSTAINED_OUTAGE_CONF_KEY = 'front_desk_sustained_outage_minutes';
+
+export const DEFAULT_SUSTAINED_OUTAGE_THRESHOLD_MS = 30 * 60 * 1000;
+
+// Same unset/invalid/non-positive-all-fall-back-to-the-default shape as the
+// bot's other tunables (conciergeTickIntervalMs, controlDrainTimeoutMs),
+// pure and exported so every branch is unit-tested rather than hidden
+// behind the live conf read. MINUTES, because that is the unit a human
+// editing swarmforge.conf thinks in; a fraction is honoured too, so a live
+// end-to-end check can use a 30-second window without a code change.
+export function sustainedOutageThresholdMs(rawValue: string | undefined): number {
+  const parsed = rawValue ? Number(rawValue) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed * 60_000 : DEFAULT_SUSTAINED_OUTAGE_THRESHOLD_MS;
 }
 
 // Reuses telegramRetry.ts's own exponential-capped math directly (the
@@ -2369,6 +2767,58 @@ export function computePollBackoffMs(consecutiveFailures: number, config: PollBa
 // never "give up".
 export function shouldRaiseDegradedWarning(consecutiveFailures: number, config: PollBackoffConfig): boolean {
   return consecutiveFailures === config.degradedThreshold;
+}
+
+// BL-1036 (invariant 2): a degraded report is never left open. The supervisor
+// log carried 626860 lines and not one recovery line - only "poll degraded ...
+// still retrying", over and over - so a human could not tell a four-second
+// conflict from an outage that lasted until the next restart. That ambiguity
+// is why diagnosing the restart storm needed a hand-built timeline.
+//
+// A degradation ends exactly one of two ways, and both are now announced:
+// it recovers, or it is declared unresolved. Both fire ONCE - repeating either
+// every cycle would recreate the wall of unclosed reports in a new costume.
+
+// The streak crossed the threshold (so a degradation WAS announced) and this
+// cycle succeeded. Derived from the two consecutive-failure counts rather than
+// from a new flag: the state already carries everything this needs, and a
+// second source of truth is a second thing to keep in step.
+export function shouldRaisePollRecoveredNotice(
+  previousConsecutiveFailures: number,
+  nextConsecutiveFailures: number,
+  config: PollBackoffConfig
+): boolean {
+  return previousConsecutiveFailures >= config.degradedThreshold && nextConsecutiveFailures === 0;
+}
+
+// The other ending: the outage outlived its budget. Announced once, so the log
+// records "this never came back" rather than falling silent mid-retry.
+export function shouldRaisePollUnresolvedNotice({
+  sustainedOutageReached,
+  alreadyReported,
+}: {
+  sustainedOutageReached: boolean;
+  alreadyReported: boolean;
+}): boolean {
+  return Boolean(sustainedOutageReached) && !alreadyReported;
+}
+
+// BL-1036: Telegram's own 409 text accuses a second bot instance ("make sure
+// that only one bot instance is running"), which sent an operator hunting for
+// a rival poller that did not exist. On a supervisor restart the conflict is
+// with the token's OWN just-killed poll: the predecessor died mid-long-poll
+// without closing its request, and Telegram holds that getUpdates slot until
+// the poll times out server-side. The log should say so, and say how long the
+// window can last, rather than repeating an accusation that misdirects.
+export function describePollConflictWindow(
+  errorMessage: string | undefined,
+  pollTimeoutSeconds: number
+): string | undefined {
+  if (!errorMessage || !errorMessage.includes('409')) return undefined;
+  return (
+    `conflict window: our own predecessor poll still holds the getUpdates slot; ` +
+    `it is released when that long poll times out server-side, within ${pollTimeoutSeconds}s`
+  );
 }
 
 // BL-369 (scenario 05): same exactly-once-per-streak shape as
@@ -2406,6 +2856,8 @@ export interface PollLoopState {
   // drop already let the offset past it (offsetAfterDelivery), so a
   // dropped-only cycle is never "stuck" in the first place.
   stuckAttempts: number;
+  // BL-621: the sustained-outage episode this loop is (or is not) in.
+  sustainedOutage: SustainedOutageState;
 }
 
 export interface PollCycleResult {
@@ -2415,12 +2867,34 @@ export interface PollCycleResult {
   // ticket's own root-cause analysis).
   delayMs: number;
   degradedWarning: boolean;
+  // BL-1036 (invariant 2): the two ways a degradation CLOSES. Exactly one of
+  // them eventually fires for every degradedWarning, so the log never leaves a
+  // degradation open - which it always did before, across 626860 lines.
+  pollRecovered: boolean;
+  pollUnresolved: boolean;
+  // BL-1036: set on a 409 so the log explains the conflict is with our own
+  // just-killed predecessor rather than repeating Telegram's misdirecting
+  // "make sure that only one bot instance is running".
+  conflictWindow?: string;
   // BL-369 (scenario 05): true on the exact cycle stuckAttempts crosses
   // config.stuckRetryLimit - "it has retried up to its limit" (each poll
   // cycle IS a retry, the offset never having advanced past the stuck
   // update) - never fires again for the SAME stuck episode, mirroring
   // degradedWarning's own once-per-streak posture.
   escalateStuckDelivery: boolean;
+  // BL-621: true on the one cycle this outage episode crosses
+  // config.sustainedOutageThresholdMs - a THIRD, independent signal from
+  // the two above (degradedWarning counts failed cycles and only writes to
+  // stderr; escalateStuckDelivery is about one undelivered message inside
+  // otherwise-healthy cycles).
+  escalateSustainedOutage: boolean;
+  // How long the current outage episode has lasted, for the escalation
+  // text; 0 whenever no episode is open.
+  sustainedOutageMs: number;
+  // BL-621: the failed cycle's transport error, carried from PollResult so
+  // the degraded warning and the escalation can both name the cause.
+  // undefined on a successful cycle.
+  errorMessage?: string;
 }
 
 // Adapter-injected, ONE cycle: calls pollAndForward, then applies the pure
@@ -2433,25 +2907,42 @@ export async function runPollCycle(
   state: PollLoopState,
   principalUserId: string,
   adapters: PollAdapters,
-  config: PollBackoffConfig
+  config: PollBackoffConfig,
+  nowMs: number
 ): Promise<PollCycleResult> {
   const result = await pollAndForward(state.offset, principalUserId, adapters);
+  const outage = decideSustainedOutage(state.sustainedOutage, result.ok, nowMs, config.sustainedOutageThresholdMs);
   if (result.ok) {
     const offsetAdvanced = result.nextOffset !== state.offset;
     const stuckAttempts = offsetAdvanced || result.failed === 0 ? 0 : state.stuckAttempts + 1;
     return {
-      state: { offset: result.nextOffset, consecutiveFailures: 0, stuckAttempts },
+      state: { offset: result.nextOffset, consecutiveFailures: 0, stuckAttempts, sustainedOutage: outage.state },
       delayMs: 0,
       degradedWarning: false,
+      pollRecovered: shouldRaisePollRecoveredNotice(state.consecutiveFailures, 0, config),
+      pollUnresolved: false,
       escalateStuckDelivery: shouldEscalateStuckDelivery(stuckAttempts, config),
+      escalateSustainedOutage: false,
+      sustainedOutageMs: outage.outageMs,
     };
   }
   const consecutiveFailures = state.consecutiveFailures + 1;
   return {
-    state: { offset: result.nextOffset, consecutiveFailures, stuckAttempts: state.stuckAttempts },
+    state: { offset: result.nextOffset, consecutiveFailures, stuckAttempts: state.stuckAttempts, sustainedOutage: outage.state },
     delayMs: computePollBackoffMs(consecutiveFailures, config),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
+    // `outage.escalate` is already once-per-episode, so it doubles as the
+    // "not already reported" fact - no second flag to keep in step.
+    pollRecovered: false,
+    pollUnresolved: shouldRaisePollUnresolvedNotice({
+      sustainedOutageReached: outage.escalate,
+      alreadyReported: false,
+    }),
+    conflictWindow: describePollConflictWindow(result.error, config.pollTimeoutSeconds ?? 25),
     escalateStuckDelivery: false,
+    escalateSustainedOutage: outage.escalate,
+    sustainedOutageMs: outage.outageMs,
+    errorMessage: result.error,
   };
 }
 
@@ -2474,29 +2965,71 @@ export async function applyPollCycleResult(
   cycle: PollCycleResult,
   writeWarning: (message: string) => void,
   wait: (ms: number) => Promise<void>,
-  escalate: () => Promise<void> = async () => {},
+  escalate: (message: string) => Promise<void> = async () => {},
   recordHeartbeat: () => void = () => {}
 ): Promise<void> {
   recordHeartbeat();
   if (cycle.degradedWarning) {
-    writeWarning(`front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying\n`);
+    writeWarning(
+      `front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying: ${describeOutageCause(cycle.errorMessage)}` +
+        (cycle.conflictWindow ? ` (${cycle.conflictWindow})` : '') +
+        `\n`
+    );
+  }
+  // BL-1036 (invariant 2): close it. Before this the log only ever opened
+  // degradations, so an operator could not tell a blip from an outage.
+  if (cycle.pollRecovered) {
+    writeWarning('front-desk bot: poll recovered - polling normally again\n');
+  }
+  if (cycle.pollUnresolved) {
+    writeWarning(
+      `front-desk bot: poll UNRESOLVED - still failing after the retry budget: ${describeOutageCause(cycle.errorMessage)}\n`
+    );
   }
   if (cycle.escalateStuckDelivery) {
-    await escalate();
+    await sendEscalation(escalate, STUCK_DELIVERY_ESCALATION_TEXT, writeWarning);
+  }
+  if (cycle.escalateSustainedOutage) {
+    await sendEscalation(escalate, formatSustainedOutageEscalation('poll', cycle.sustainedOutageMs, cycle.errorMessage), writeWarning);
   }
   if (cycle.delayMs > 0) {
     await wait(cycle.delayMs);
   }
 }
 
+// BL-621 degrade posture: an escalation reports on a loop that is ALREADY
+// degraded, so a send that fails itself is logged and swallowed - never
+// allowed to fault (and restart) the very loop it was reporting on. Shared
+// by both apply functions so the poll and relay halves cannot drift.
+async function sendEscalation(
+  escalate: (message: string) => Promise<void>,
+  message: string,
+  writeWarning: (message: string) => void
+): Promise<void> {
+  try {
+    await escalate(message);
+  } catch (error) {
+    writeWarning(`front-desk bot: escalation send failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
 export interface ReplyRelayLoopState {
   consecutiveFailures: number;
+  // BL-621: this loop's own sustained-outage episode - the exact mirror of
+  // PollLoopState.sustainedOutage, decided by the same pure function.
+  sustainedOutage: SustainedOutageState;
 }
 
 export interface ReplyRelayCycleResult {
   state: ReplyRelayLoopState;
   delayMs: number;
   degradedWarning: boolean;
+  // BL-621: BL-320 promised "retry forever, capped backoff, escalate -
+  // never silently" and shipped everything but the escalation. This is it:
+  // true on the one cycle the reconnect outage crosses the threshold. The
+  // retry-forever posture is unchanged - only the silence goes.
+  escalateSustainedOutage: boolean;
+  sustainedOutageMs: number;
 }
 
 // BL-320: same pure decision/adapter-sequencing split as runPollCycle/
@@ -2506,15 +3039,29 @@ export interface ReplyRelayCycleResult {
 // a brief pause (backoffBaseMs) before resubscribing is still worth it
 // over a hot reconnect loop, mirrored below by returning that same delay
 // on success rather than 0.
-export function computeReplyRelayCycleResult(state: ReplyRelayLoopState, ok: boolean, config: PollBackoffConfig): ReplyRelayCycleResult {
+export function computeReplyRelayCycleResult(
+  state: ReplyRelayLoopState,
+  ok: boolean,
+  config: PollBackoffConfig,
+  nowMs: number
+): ReplyRelayCycleResult {
+  const outage = decideSustainedOutage(state.sustainedOutage, ok, nowMs, config.sustainedOutageThresholdMs);
   if (ok) {
-    return { state: { consecutiveFailures: 0 }, delayMs: config.backoffBaseMs, degradedWarning: false };
+    return {
+      state: { consecutiveFailures: 0, sustainedOutage: outage.state },
+      delayMs: config.backoffBaseMs,
+      degradedWarning: false,
+      escalateSustainedOutage: false,
+      sustainedOutageMs: outage.outageMs,
+    };
   }
   const consecutiveFailures = state.consecutiveFailures + 1;
   return {
-    state: { consecutiveFailures },
+    state: { consecutiveFailures, sustainedOutage: outage.state },
     delayMs: computePollBackoffMs(consecutiveFailures, config),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
+    escalateSustainedOutage: outage.escalate,
+    sustainedOutageMs: outage.outageMs,
   };
 }
 
@@ -2524,12 +3071,16 @@ export async function applyReplyRelayCycleResult(
   cycle: ReplyRelayCycleResult,
   errorMessage: string | undefined,
   writeWarning: (message: string) => void,
-  wait: (ms: number) => Promise<void>
+  wait: (ms: number) => Promise<void>,
+  escalate: (message: string) => Promise<void> = async () => {}
 ): Promise<void> {
   if (cycle.degradedWarning) {
     writeWarning(
-      `front-desk bot: reply-relay degraded - ${cycle.state.consecutiveFailures} consecutive reconnect failures, still retrying: ${errorMessage}\n`
+      `front-desk bot: reply-relay degraded - ${cycle.state.consecutiveFailures} consecutive reconnect failures, still retrying: ${describeOutageCause(errorMessage)}\n`
     );
+  }
+  if (cycle.escalateSustainedOutage) {
+    await sendEscalation(escalate, formatSustainedOutageEscalation('reply-relay', cycle.sustainedOutageMs, errorMessage), writeWarning);
   }
   if (cycle.delayMs > 0) {
     await wait(cycle.delayMs);
@@ -2665,6 +3216,17 @@ export interface ReplyRelayAdapters {
   // or the map itself missing/unparseable) degrades to dropping the
   // question rather than crashing the relay - see deliverRoleQuestion.
   roleTopicIdFor?: (role: string) => Promise<number | undefined>;
+  // GH-26: on that SAME undeliverable path, rewrites the role's awaiting
+  // marker to state "undeliverable" (keeping the original
+  // question/asked_at_ms/options fields for forensics, never deleting the
+  // marker outright) instead of leaving it in its original pending shape -
+  // role_ask.bb's already-pending guard treats that state as NOT pending,
+  // so the role is free to ask again immediately rather than wedging in
+  // "already-pending" forever on a silent drop. Optional so every
+  // ReplyRelayAdapters fixture written before GH-26 keeps working
+  // unchanged - an omitted adapter simply leaves the marker untouched (see
+  // deliverRoleQuestion's own undefined-topicId branch below).
+  markRoleQuestionUndeliverable?: (role: string, question: string, options: AskOption[] | undefined) => Promise<void>;
 }
 
 // BL-426 slice 1: when the delivery's threadId is marked voice-originated,
@@ -2820,9 +3382,21 @@ async function deliverAgentQuestion(threadId: string, text: string, options: Ask
 // from role-topic-map.json (roleTopicIdFor resolves undefined - unknown
 // role, or the map itself missing/unparseable) degrades to dropping the
 // question rather than posting to nowhere or crashing the relay.
+// BL-708: that drop must leave a surfaced trace naming the role BEFORE
+// relayOneRecord acks the record - an undeliverable question acked in
+// silence reads, to anyone watching counters, as delivered. This is what
+// turned BL-607's original relay-narrowing bug into six days of unnoticed
+// silence: the relay's cursor kept advancing while zero questions landed.
 async function deliverRoleQuestion(role: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
   const topicId = await adapters.roleTopicIdFor?.(role);
   if (topicId === undefined) {
+    console.error(`telegramFrontDeskBotCore: undeliverable roleQuestion for role "${role}" - no Telegram topic mapped; dropping without delivery`);
+    // GH-26: fires BEFORE this function returns (and so strictly before
+    // relayOneRecord's own ackReply below) - the awaiting marker must never
+    // survive an undeliverable drop unchanged, or the role wedges in
+    // "already-pending" forever behind a guard that thinks its question is
+    // still in flight.
+    await adapters.markRoleQuestionUndeliverable?.(role, text, options);
     return;
   }
   await deliverAskMessage(topicId, roleAskThreadId(role), text, options, adapters);

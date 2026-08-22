@@ -127,6 +127,114 @@
            :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false
                             :changed-paths ["backlog/active/BL-1.yaml"]}]}))
 
+;; ── BL-952: a commit QA BOUNCED never publishes, whatever else is true ─────
+;; QA merges a parcel into swarmforge-QA to REVIEW it, so a bounced parcel
+;; stays reachable from the ref and read as approved forever - BL-945's
+;; twice-bounced code rode onto origin/main exactly this way. :bounced? is
+;; the durable verdict (the bounce stores QA already writes), threaded per
+;; commit by the facts gatherer, and it vetoes EVERYTHING: qa-ancestor?
+;; true, the bookkeeping allowlist, and the trivial-merge exemption.
+
+(assert= "BL-952: a bounced commit refuses with reason :bounced-parcel, named, even though it reads as a qa-ancestor"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["bad12345a"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "bad12345a" :qa-ancestor? true :bounced? true :changed-paths ["extension/src/foo.ts"]}
+                           {:sha "good1234a" :qa-ancestor? true :changed-paths ["extension/src/bar.ts"]}]}))
+
+(assert= "BL-952: a bounced commit touching only bookkeeping paths still refuses - the allowlist never launders a bounce"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["bad12345a"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "bad12345a" :qa-ancestor? true :bounced? true :changed-paths ["backlog/active/BL-1.yaml"]}]}))
+
+(assert= "BL-952: a bounced TRIVIAL merge still refuses - the trivial-merge exemption never launders a bounce"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["merge1234"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false :bounced? true :changed-paths []}]}))
+
+(assert= "BL-952: two bounced commits are BOTH named"
+         {:refuse? true :reason :bounced-parcel :offending-shas ["bad12345a" "bad12345b"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "bad12345a" :qa-ancestor? true :bounced? true :changed-paths ["extension/src/foo.ts"]}
+                           {:sha "bad12345b" :qa-ancestor? true :bounced? true :changed-paths ["extension/src/bar.ts"]}]}))
+
+(assert= "BL-952: an approved, un-bounced range publishes exactly as before (no legitimate landing regressed)"
+         {:refuse? false :reason nil :offending-shas []}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "good1234a" :qa-ancestor? true :bounced? false :changed-paths ["extension/src/foo.ts"]}
+                           {:sha "good1234b" :qa-ancestor? true :changed-paths ["extension/src/bar.ts"]}]}))
+
+;; ── BL-855: noop-landing-merge? / noop-merge-decision ──────────────────────
+;; Gherkin BL-855 noop-landing-merge-drops-approved-work-01 (Scenario Outline)
+
+(assert-true "noop-landing-merge?: 108 offered, tree identical to parent1 -> refused shape"
+             (push-sweep-lib/noop-landing-merge?
+              {:merge? true :tree-equals-parent1? true :offered-paths (repeat 108 "x")}))
+(assert-false "noop-landing-merge?: 0 offered, tree identical to parent1 -> harmless (nothing to take)"
+              (push-sweep-lib/noop-landing-merge?
+               {:merge? true :tree-equals-parent1? true :offered-paths []}))
+(assert-false "noop-landing-merge?: 108 offered, tree differs from parent1 -> the merge took something"
+              (push-sweep-lib/noop-landing-merge?
+               {:merge? true :tree-equals-parent1? false :offered-paths (repeat 108 "x")}))
+(assert-false "noop-landing-merge?: a non-merge commit is never flagged, regardless of other facts"
+              (push-sweep-lib/noop-landing-merge?
+               {:merge? false :tree-equals-parent1? true :offered-paths (repeat 108 "x")}))
+
+;; Gherkin BL-855 -02: the refusal states its reason, not a bare status.
+
+(assert= "noop-merge-decision: names the offending sha, its second parent, and the dropped count"
+         {:refuse? true :reason :noop-landing-merge
+          :offending [{:sha "f28a84ad01" :second-parent-sha "11ae7ac301" :dropped-count 108}]}
+         (push-sweep-lib/noop-merge-decision
+          {:facts-complete? true
+           :ahead-commits [{:sha "f28a84ad01" :merge? true :second-parent-sha "11ae7ac301"
+                             :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]}))
+
+;; Gherkin BL-855 -03: being genuinely QA-approved does not excuse a merge
+;; that took nothing - noop-merge-decision never consults :qa-ancestor? at
+;; all, so this holds regardless of whether the ahead-commit fact even
+;; carries that key.
+
+(assert-true "noop-merge-decision: refuses a no-op merge even when its second parent is genuinely QA-approved"
+             (:refuse?
+              (push-sweep-lib/noop-merge-decision
+               {:facts-complete? true
+                :ahead-commits [{:sha "f28a84ad01" :merge? true :second-parent-sha "11ae7ac301"
+                                  :qa-ancestor? true
+                                  :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]})))
+
+;; Gherkin BL-855 -05: a non-merge commit is not subject to the check.
+
+(assert= "noop-merge-decision: a lone non-merge ahead-commit is never refused"
+         {:refuse? false :reason nil :offending []}
+         (push-sweep-lib/noop-merge-decision
+          {:facts-complete? true
+           :ahead-commits [{:sha "abc1234567" :merge? false}]}))
+
+;; facts-complete? false fails closed, mirroring qa-gate-decision's own posture.
+
+(assert= "noop-merge-decision: facts-complete? false fails closed regardless of ahead-commits"
+         {:refuse? true :reason :gather-failed :offending []}
+         (push-sweep-lib/noop-merge-decision {:facts-complete? false :ahead-commits []}))
+
+;; A merge whose second parent is ALREADY an ancestor of the first parent
+;; (nothing new offered) is never flagged - the harmless tree-equal shape
+;; measured twice in the real 400-merge sample (e126f28d, 229ae7c2).
+
+(assert= "noop-merge-decision: a merge with nothing to take (0 offered paths) never refuses, even alongside a genuine no-op merge"
+         {:refuse? true :reason :noop-landing-merge
+          :offending [{:sha "bad0000001" :second-parent-sha "p2bad00001" :dropped-count 28}]}
+         (push-sweep-lib/noop-merge-decision
+          {:facts-complete? true
+           :ahead-commits [{:sha "harmless001" :merge? true :second-parent-sha "p2harmless1"
+                             :tree-equals-parent1? true :offered-paths []}
+                            {:sha "bad0000001" :merge? true :second-parent-sha "p2bad00001"
+                             :tree-equals-parent1? true :offered-paths (vec (repeat 28 "y"))}]}))
+
 ;; ── due? ──────────────────────────────────────────────────────────────────
 
 (assert-true "due?: never attempted is always due"
@@ -142,11 +250,38 @@
          {:attempts 0 :last-attempt-at-ms nil :exhausted? false}
          (push-sweep-lib/next-push-state :pushed {:attempts 2} retry-cfg 200000))
 (assert= "next-push-state: a transient failure under the cap counts the attempt, not exhausted"
-         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false}
+         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false :last-error nil}
          (push-sweep-lib/next-push-state :transient-failure {:attempts 0} retry-cfg 200000))
 (assert= "next-push-state: a transient failure AT the cap is exhausted (bounded, not unlimited)"
-         {:attempts 3 :last-attempt-at-ms 200000 :exhausted? true}
+         {:attempts 3 :last-attempt-at-ms 200000 :exhausted? true :last-error nil}
          (push-sweep-lib/next-push-state :transient-failure {:attempts 2} retry-cfg 200000))
+
+;; BL-903: the underlying git error now travels into push-state as
+;; :last-error, sanitized to one line.
+(assert= "next-push-state: a transient failure carries the sanitized error alongside the attempt count"
+         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false :last-error "connection refused"}
+         (push-sweep-lib/next-push-state :transient-failure {:attempts 0} retry-cfg 200000 "connection refused"))
+(assert= "next-push-state: a blank error yields no :last-error text, not a blank string"
+         {:attempts 1 :last-attempt-at-ms 200000 :exhausted? false :last-error nil}
+         (push-sweep-lib/next-push-state :transient-failure {:attempts 0} retry-cfg 200000 "  "))
+
+;; ── sanitize-error-line ───────────────────────────────────────────────────
+
+(assert= "sanitize-error-line: nil error -> nil"
+         nil (push-sweep-lib/sanitize-error-line nil))
+(assert= "sanitize-error-line: blank error -> nil"
+         nil (push-sweep-lib/sanitize-error-line "   "))
+(assert= "sanitize-error-line: a single-line error is trimmed and returned as-is"
+         "fatal: could not read Username"
+         (push-sweep-lib/sanitize-error-line "  fatal: could not read Username  "))
+(assert= "sanitize-error-line: a multi-line error collapses to one line, nothing dropped"
+         "remote: Support for password authentication was removed. | fatal: Authentication failed for 'https://example.invalid/repo.git/'"
+         (push-sweep-lib/sanitize-error-line
+          "remote: Support for password authentication was removed.\nfatal: Authentication failed for 'https://example.invalid/repo.git/'"))
+(assert-false "sanitize-error-line: the collapsed result never contains a raw newline"
+              (clojure.string/includes?
+               (or (push-sweep-lib/sanitize-error-line "line one\nline two\nline three") "")
+               "\n"))
 
 ;; ── classify-send-result / next-alarm-state ─────────────────────────────
 
@@ -193,13 +328,25 @@
 ;; ITSELF pass their own :qa-gate-facts.
 (def approved-qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? true})
 
-(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results qa-gate-facts]}]
+;; BL-855: every pre-existing sweep! test below predates the no-op-merge
+;; gate too and expects an unconditional publish once :should-push is
+;; reached - default noop-merge-gate-facts here is "no ahead commits offer
+;; anything", the harmless case, so none of them have to know the gate
+;; exists. Tests of the gate ITSELF pass their own :noop-merge-gate-facts.
+(def harmless-noop-merge-gate-facts {:facts-complete? true :ahead-commits []})
+
+(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results qa-gate-facts noop-merge-gate-facts]}]
   (let [counts-atom (atom counts)
         push-calls (atom 0)
         alarm-calls (atom 0)
         divergence-calls (atom 0)
+        alarm-args (atom [])
         logs (atom [])]
-    {:calls {:push push-calls :alarm alarm-calls :divergence divergence-calls :logs logs}
+    {:calls {:push push-calls :alarm alarm-calls :divergence divergence-calls :logs logs
+             ;; BL-903: [attempts reason] as actually received by
+             ;; :send-push-alarm! on each call, so a test can confirm the
+             ;; reason travels through, not only the count.
+             :alarm-args alarm-args}
      ;; Lets a test simulate the real world changing between sweep! ticks
      ;; (e.g. a human merging directly to origin mid-episode) without
      ;; losing the running call counters a fresh fake-adapters would reset.
@@ -210,8 +357,9 @@
                (swap! push-calls inc)
                (let [r (nth push-results (dec @push-calls) (last push-results))]
                  r))
-      :send-push-alarm! (fn [_attempts]
+      :send-push-alarm! (fn [attempts reason]
                            (swap! alarm-calls inc)
+                           (swap! alarm-args conj [attempts reason])
                            (let [r (nth alarm-results (dec @alarm-calls) (last alarm-results))]
                              r))
       :send-divergence-alarm! (fn [_ahead _behind]
@@ -219,6 +367,7 @@
                                  (let [r (nth divergence-results (dec @divergence-calls) (last divergence-results))]
                                    r))
       :qa-gate-facts! (fn [] (or qa-gate-facts approved-qa-gate-facts))
+      :noop-merge-gate-facts! (fn [] (or noop-merge-gate-facts harmless-noop-merge-gate-facts))
       :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}}))
 
 ;; BL-356 swarm-pushes-main-to-origin-01: committed work reaches origin
@@ -237,14 +386,50 @@
                                                 :push-results [{:success false :error "connection refused"}]})]
   (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
   (assert= "02: a transient push failure is recorded, not treated as delivered"
-           {:attempts 1 :last-attempt-at-ms 100000 :exhausted? false}
+           {:attempts 1 :last-attempt-at-ms 100000 :exhausted? false :last-error "connection refused"}
            (:push (push-sweep-lib/read-state dir)))
+  (assert-true "02: the push-failed log record carries the error, on one line"
+               (some #(and (clojure.string/includes? % "push-failed")
+                            (clojure.string/includes? % "connection refused"))
+                     @(:logs calls)))
   ;; Before backoff elapses, no further attempt.
   (push-sweep-lib/sweep! 100200 dir retry-cfg adapters)
   (assert= "02: no retry attempted before backoff elapses" 1 @(:push calls))
   ;; Once backoff (1000ms for attempt 1) elapses, a retry is attempted.
   (push-sweep-lib/sweep! 101000 dir retry-cfg adapters)
   (assert= "02: a retry is attempted once backoff elapses" 2 @(:push calls)))
+
+;; BL-903 push-sweep-discards-failure-reason-02: two different failure
+;; causes on two different tick series produce two distinguishable records
+;; (a non-fast-forward reads differently from an unreachable remote).
+(let [ffwd-dir (mk-fixture-dir)
+      {:keys [adapters]}
+      (fake-adapters {:counts {:ahead 2 :behind 0}
+                      :push-results [{:success false :error "! [rejected] main -> main (non-fast-forward)"}]})
+      unreachable-dir (mk-fixture-dir)
+      {adapters2 :adapters}
+      (fake-adapters {:counts {:ahead 2 :behind 0}
+                      :push-results [{:success false :error "fatal: unable to access remote"}]})]
+  (push-sweep-lib/sweep! 100000 ffwd-dir retry-cfg adapters)
+  (push-sweep-lib/sweep! 100000 unreachable-dir retry-cfg adapters2)
+  (let [ffwd-error (get-in (push-sweep-lib/read-state ffwd-dir) [:push :last-error])
+        unreachable-error (get-in (push-sweep-lib/read-state unreachable-dir) [:push :last-error])]
+    (assert-true "BL-903-02: both records carry non-blank reasons"
+                 (and (some? ffwd-error) (some? unreachable-error)))
+    (assert-false "BL-903-02: the two causes produce distinguishable recorded reasons"
+                  (= ffwd-error unreachable-error))))
+
+;; BL-903 push-sweep-discards-failure-reason-03: a multi-line git error
+;; still occupies exactly one new log record.
+(let [dir (mk-fixture-dir)
+      multiline-error "remote: Support for password authentication was removed.\nfatal: Authentication failed"
+      {:keys [calls adapters]} (fake-adapters {:counts {:ahead 2 :behind 0}
+                                                :push-results [{:success false :error multiline-error}]})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-903-03: exactly one push-failed record is written"
+           1 (count (filter #(clojure.string/includes? % "push-failed") @(:logs calls))))
+  (assert-false "BL-903-03: the log record itself carries no raw newline"
+                (some #(clojure.string/includes? % "\n") @(:logs calls))))
 
 ;; BL-356 swarm-pushes-main-to-origin-03: pushes that keep failing raise a
 ;; loud alarm rather than silently accumulating, and the alarm is only
@@ -265,6 +450,9 @@
   (assert= "03: exactly one alarm attempt so far" 1 @(:alarm calls))
   (assert-false "03: a failed alarm delivery is NOT marked armed/delivered"
                 (get-in (push-sweep-lib/read-state dir) [:alarm :armed?]))
+  ;; BL-903: the alarm names the reason, not only the attempt count.
+  (assert= "03: the alarm receives the recorded failure reason alongside the attempt count"
+           [3 "e"] (first @(:alarm-args calls)))
   ;; The alarm itself is retried (bounded, with backoff) until it actually
   ;; delivers - it must not be silently abandoned either.
   (push-sweep-lib/sweep! 103500 dir retry-cfg adapters)   ; alarm backoff not yet elapsed -> no new alarm call
@@ -414,6 +602,61 @@
                (some #(clojure.string/includes? % "behind-only") @(:logs calls)))
   (assert-false "BL-630 05: the behind-only tick is never logged as plain up-to-date"
                 (some #(= % "push-sweep up-to-date") @(:logs calls))))
+
+;; ── BL-855: sweep! -level wiring - the noop-merge gate runs BEFORE
+;;    qa-gate-decision and refuses regardless of QA-approval facts ─────────
+
+;; Gherkin BL-855 -03 replayed at the sweep! level: a genuinely QA-approved
+;; tip (the qa-gate fast path) is still refused when it is itself a no-op
+;; landing merge.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? true}
+                      :noop-merge-gate-facts
+                      {:facts-complete? true
+                       :ahead-commits [{:sha "f28a84ad01" :merge? true :second-parent-sha "11ae7ac301"
+                                         :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-855 sweep!: a no-op landing merge is never pushed, even when its second parent is a QA-ancestor tip"
+           0 @(:push calls))
+  (assert-true "BL-855 sweep!: the refusal is logged naming the offending sha, its second parent, and the dropped count"
+               (some #(and (clojure.string/includes? % "f28a84ad01")
+                            (clojure.string/includes? % "11ae7ac301")
+                            (clojure.string/includes? % "108"))
+                     @(:logs calls))))
+
+;; Gherkin BL-855 -02 replayed at the sweep! level: the refusal is its own
+;; distinct outcome, tagged noop-merge-refused, and none of the QA-gate or
+;; push-retry/alarm machinery engages.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :noop-merge-gate-facts
+                      {:facts-complete? true
+                       :ahead-commits [{:sha "f28a84ad02" :merge? true :second-parent-sha "11ae7ac302"
+                                         :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert-true "BL-855 sweep!: the refusal entry is distinguishable (tagged noop-merge-refused)"
+               (some #(clojure.string/includes? % "noop-merge-refused") @(:logs calls)))
+  (assert= "BL-855 sweep!: no push-failure/push-backoff state is recorded"
+           nil (:push (push-sweep-lib/read-state dir)))
+  (assert= "BL-855 sweep!: the existing push-failure retry/backoff never engaged" 0 @(:push calls))
+  (assert= "BL-855 sweep!: the existing divergence alarm never fires" 0 @(:divergence calls))
+  (assert= "BL-855 sweep!: no push-failure alarm is sent" 0 @(:alarm calls)))
+
+;; A merge that genuinely had nothing to take still publishes (the harmless
+;; tree-equal shape) - this must not regress once the gate exists.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :push-results [{:success true}]
+                      :noop-merge-gate-facts
+                      {:facts-complete? true
+                       :ahead-commits [{:sha "harmless002" :merge? true :second-parent-sha "p2harmless2"
+                                         :tree-equals-parent1? true :offered-paths []}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-855 sweep!: a merge with nothing to take still publishes" 1 @(:push calls)))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

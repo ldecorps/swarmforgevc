@@ -17,6 +17,52 @@
 ;;      format-nudge-message's output is fully and only a function of the
 ;;      input findings' own :message text - no other action vocabulary
 ;;      (respawn/pick-menu/move-parcel) is ever introduced.
+;;   P3 (BL-802) gather-failure-reports-unavailable-never-crit-or-silent-ok -
+;;      the BL-802 declared invariant: on every host, a check that cannot
+;;      gather its inputs (ps errored on an unsupported dialect; no memory
+;;      facility resolved) reports its own unavailability - never a CRIT/WARN
+;;      about the swarm from that failed gather, and never a nil finding (the
+;;      silent-OK shape). Covers both checks BL-802 made fallible on macOS:
+;;      check-live-session's process gather and check-memory-floor's memory
+;;      gather. Also asserts the successful-gather branch is unchanged from
+;;      pre-BL-802 semantics, across randomized available-mb/floor-mb pairs.
+;;   P4 (BL-804) topology-suppression-role-name-blind-and-presence-always-
+;;      checked - the two BL-804 invariants this pure layer can encode
+;;      (invariant 2, the shared-resolution rule, is a code-structure
+;;      constraint on babysitter_check.bb's call site, not a runtime
+;;      property of this pure module — no executable encoding here; see the
+;;      ticket handoff notes for the stated reason):
+;;        (a) invariant 1, suppression is derived from topology, never
+;;            hardcoded per role: across RANDOM role-name strings (never a
+;;            fixed roster like "specifier"/"cleaner") crossed with random
+;;            should-stand?, a missing pane's finding presence tracks
+;;            should-stand? alone — the role name never enters the decision.
+;;        (b) invariant 3, a pane that exists is always checked: across
+;;            random should-stand? values, a PRESENT pane's finding (or lack
+;;            of one) is identical regardless of should-stand? — topology
+;;            suppression never reaches the process/menu/frozen/remote-
+;;            control checks once the pane is confirmed present.
+;;   P5 (BL-807) stuck-warning-never-fires-while-owner-busy - the ticket's
+;;      declared invariant: "a stuck-in-process warning is never raised for
+;;      a parcel whose owning role the same sweep classifies busy — for any
+;;      mailbox shape, role, or parcel age." check-stuck-in-process is
+;;      deliberately blind to mailbox shape and role name by design (R1: it
+;;      consumes only the already-resolved :owner-busy? boolean
+;;      babysitter_check.bb computes from busy-by-role + the widened
+;;      owning-role-for-path) — the shape/role RESOLUTION itself is I/O-
+;;      layer plumbing with no pure-function form to property-test here
+;;      (same carve-out shape as P4's invariant 2); it is covered instead by
+;;      the BL-807 acceptance feature's step handlers
+;;      (specs/pipeline/steps/bl807BabysitterStuckInProcessOwnerLivenessSteps.js),
+;;      which drive the real babysitter_check.sh CLI against both a
+;;      role-nested master mailbox and a flat worktree mailbox, each with an
+;;      idle and a busy owner (scenario 05). This
+;;      generator proves the part that IS a runtime property of this pure
+;;      module: across arbitrary parcel names (standing in for any role's
+;;      or shape's resulting filename) and arbitrary ages (all past the
+;;      stuck threshold, which is the gatherer's job, not this function's —
+;;      every age value here is a candidate the invariant must hold for),
+;;      the emitted WARN set is determined by :owner-busy? alone.
 ;;
 ;; NOTE on toolchain (per swarmforge's engineering article, "Babashka/Clojure
 ;; (swarm scripts)"): the BL-654 role contract's "*.property.test.js /
@@ -141,6 +187,244 @@
                    (not (re-find #"(?i)press|select option|respawn|kill -|restart the|answer the menu" msg)))
       (assert-true "nudge message is exactly the fixed envelope around the findings' own messages"
                    (= msg (sw/format-nudge-message to-nudge))))))
+
+;; ── P3 (BL-802): gather-failure-reports-unavailable-never-crit-or-silent-ok ─
+(def ^:private crit-or-warn #{"CRIT" "WARN"})
+(def p3-branches-hit (atom #{}))
+
+(defn- gen-live-session-case []
+  (let [gather-failed? (rbool)
+        has-claude? (rbool)]
+    (swap! p3-branches-hit conj (if gather-failed? :process-gather-failed :process-gather-ok))
+    {:gather-failed? gather-failed? :has-claude? has-claude?
+     :result (sw/check-live-session {:role "coder" :pane-exists? true
+                                      :has-claude-process? has-claude?
+                                      :process-gather-failed? gather-failed?})}))
+
+(dotimes [_ 300]
+  (let [{:keys [gather-failed? has-claude? result]} (gen-live-session-case)]
+    (if gather-failed?
+      (do
+        (assert-true "a failed process gather never produces a CRIT/WARN about the swarm (cry-wolf)"
+                     (not (contains? crit-or-warn (:severity result))))
+        (assert-true "a failed process gather is never silently folded into OK (a nil finding)"
+                     (some? result)))
+      ;; unchanged pre-BL-802 semantics once the gather actually succeeded
+      (if has-claude?
+        (assert-true "a successful gather finding a live claude process still produces no finding" (nil? result))
+        (assert-true "a successful gather finding NO claude process is still the real half-launch CRIT"
+                     (and result (= "CRIT" (:severity result)) (str/starts-with? (:key result) "proc-")))))))
+
+(defn- gen-memory-case []
+  (let [gather-failed? (rbool)
+        floor-mb (+ 500 (rint 2000))
+        available-mb (when-not gather-failed? (rint 6000))]
+    (swap! p3-branches-hit conj (if gather-failed? :memory-gather-failed :memory-gather-ok))
+    {:gather-failed? gather-failed? :available-mb available-mb :floor-mb floor-mb
+     :result (sw/check-memory-floor {:available-mb available-mb :floor-mb floor-mb})}))
+
+(dotimes [_ 300]
+  (let [{:keys [gather-failed? available-mb floor-mb result]} (gen-memory-case)]
+    (if gather-failed?
+      (do
+        (assert-true "a failed memory gather never produces a CRIT/WARN about the swarm (cry-wolf)"
+                     (not (contains? crit-or-warn (:severity result))))
+        (assert-true "a failed memory gather is never silently folded into OK (a nil finding)"
+                     (some? result)))
+      ;; unchanged pre-BL-802 semantics once a reading was actually gathered
+      (if (< (long available-mb) (long floor-mb))
+        (assert-true "a successful below-floor reading is still CRIT memory"
+                     (and result (= "CRIT" (:severity result))))
+        (assert-true "a successful at-or-above-floor reading still produces no finding" (nil? result))))))
+
+(assert-true "P3 generator reached both a failed and a successful process gather"
+             (and (contains? @p3-branches-hit :process-gather-failed)
+                  (contains? @p3-branches-hit :process-gather-ok)))
+(assert-true "P3 generator reached both a failed and a successful memory gather"
+             (and (contains? @p3-branches-hit :memory-gather-failed)
+                  (contains? @p3-branches-hit :memory-gather-ok)))
+
+;; ── P4 (BL-804): topology-suppression-role-name-blind-and-presence-always-checked ─
+(def p4-branches-hit (atom #{}))
+
+(defn- rand-role-name []
+  ;; Deliberately NOT drawn from any real roster (coder/specifier/cleaner/…)
+  ;; — a random alphabetic string proves suppression tracks should-stand?
+  ;; alone, never a hardcoded role-name list (invariant 1).
+  (apply str "role-" (repeatedly (+ 3 (rint 8)) #(char (+ 97 (rint 26))))))
+
+(defn- gen-absence-case []
+  (let [should-stand? (rbool)
+        role (rand-role-name)]
+    (swap! p4-branches-hit conj (if should-stand? :absence-required :absence-dormant))
+    {:should-stand? should-stand?
+     :result (sw/check-live-session {:role role :pane-exists? false
+                                      :has-claude-process? false
+                                      :should-stand? should-stand?})}))
+
+(dotimes [_ 300]
+  (let [{:keys [should-stand? result]} (gen-absence-case)]
+    (if should-stand?
+      (assert-true "a missing session with should-stand? true is still CRIT, for ANY role name"
+                   (and result (= "CRIT" (:severity result))))
+      (assert-true "a missing session with should-stand? false is suppressed, for ANY role name"
+                   (nil? result)))))
+
+(defn- gen-presence-case []
+  (let [role (rand-role-name)
+        has-claude? (rbool)]
+    (swap! p4-branches-hit conj (if has-claude? :presence-healthy :presence-half-launch))
+    {:result-stand (sw/check-live-session {:role role :pane-exists? true
+                                            :has-claude-process? has-claude?
+                                            :should-stand? true})
+     :result-no-stand (sw/check-live-session {:role role :pane-exists? true
+                                               :has-claude-process? has-claude?
+                                               :should-stand? false})}))
+
+(dotimes [_ 300]
+  (let [{:keys [result-stand result-no-stand]} (gen-presence-case)]
+    (assert-true "should-stand? never changes the outcome once the pane is confirmed present (invariant 3)"
+                 (= result-stand result-no-stand))))
+
+(assert-true "P4 generator reached both a required and a dormant missing-session case"
+             (and (contains? @p4-branches-hit :absence-required)
+                  (contains? @p4-branches-hit :absence-dormant)))
+(assert-true "P4 generator reached both a healthy and a half-launch present-pane case"
+             (and (contains? @p4-branches-hit :presence-healthy)
+                  (contains? @p4-branches-hit :presence-half-launch)))
+
+;; ── P5 (BL-807): stuck-warning-never-fires-while-owner-busy ─────────────────
+(def p5-branches-hit (atom #{}))
+
+(defn- rand-parcel-name [idx]
+  ;; index-prefixed so two random draws in the same batch can never collide,
+  ;; keeping the busy/idle -> warned/suppressed mapping unambiguous below.
+  (apply str "p" idx "-" (repeatedly (+ 5 (rint 20)) #(char (+ 97 (rint 26))))))
+
+(defn- gen-stuck-parcel [idx]
+  (let [owner-busy? (rbool)
+        ;; Arbitrary age, always past the 30m stuck-min a real gatherer
+        ;; would have already filtered on — proves age plays no further
+        ;; role in this function's own suppression decision.
+        age-min (+ 31 (rint 2000))]
+    (swap! p5-branches-hit conj (if owner-busy? :owner-busy :owner-idle))
+    {:name (rand-parcel-name idx) :age-min age-min :owner-busy? owner-busy?}))
+
+(dotimes [_ 300]
+  (let [n (inc (rint 8))
+        parcels (mapv gen-stuck-parcel (range n))
+        findings (sw/check-stuck-in-process parcels)
+        warned-keys (set (map :key findings))]
+    (doseq [{:keys [name owner-busy?]} parcels]
+      (if owner-busy?
+        (assert-true (str "busy owner suppresses the stuck warning for " name)
+                     (not (contains? warned-keys (str "stuck-" name))))
+        (assert-true (str "idle owner still warns for " name)
+                     (contains? warned-keys (str "stuck-" name)))))
+    (assert-true "check-stuck-in-process emits exactly one finding per non-busy parcel, never more"
+                 (= (count findings) (count (remove :owner-busy? parcels))))))
+
+(assert-true "P5 generator reached both a busy-owner and an idle-owner stuck parcel"
+             (and (contains? @p5-branches-hit :owner-busy)
+                  (contains? @p5-branches-hit :owner-idle)))
+
+;; ── P6 (BL-1017): session repair is topology-gated and bounded ──────────────
+;; The two invariants BL-1017 declares (coder-authored first, per BL-654):
+;;
+;;   (a) invariant 1 — a repair is only ever PROPOSED for a role the topology
+;;       says should stand. Encoded the same role-name-blind way P4 encodes
+;;       its sibling: across RANDOM role names crossed with random pane
+;;       presence, process state and repair budget, a :repair appears if and
+;;       only if the pane is absent AND should-stand? is true. A mono-router
+;;       non-resident can therefore never be resurrected as if it were
+;;       standing, whatever it is called.
+;;
+;;   (b) invariant 2 — repair is BOUNDED. Simulated over a run of sweeps at
+;;       randomly spaced instants, threading the SAME two shipped functions
+;;       the live gatherer uses (session-repair-allowed? to decide,
+;;       note-repair-attempt to record), so the property covers the shipped
+;;       accounting rather than a restatement of it. The assertion is the
+;;       invariant's own words: within any single cooldown window a role is
+;;       issued no more than max-repair-attempts repairs.
+(def p6-branches-hit (atom #{}))
+
+(defn- gen-repair-case []
+  (let [pane-exists? (rbool)
+        should-stand? (rbool)
+        role (rand-role-name)]
+    (swap! p6-branches-hit conj
+           (cond (and (not pane-exists?) should-stand?) :absent-standing
+                 (not pane-exists?) :absent-dormant
+                 :else :present))
+    {:pane-exists? pane-exists?
+     :should-stand? should-stand?
+     :result (sw/check-live-session {:role role
+                                     :pane-exists? pane-exists?
+                                     :has-claude-process? (rbool)
+                                     :process-gather-failed? (rbool)
+                                     :should-stand? should-stand?
+                                     ;; a randomized budget that is always
+                                     ;; permissive, so this half isolates the
+                                     ;; TOPOLOGY gate from the bound in (b)
+                                     :repair-attempts 0
+                                     :max-repair-attempts (inc (rint 3))})}))
+
+(dotimes [_ 400]
+  (let [{:keys [pane-exists? should-stand? result]} (gen-repair-case)
+        repaired? (some? (:repair result))]
+    (assert-true "a repair is proposed if and only if the pane is absent AND the role should stand, for ANY role name"
+                 (= repaired? (and (not pane-exists?) should-stand?)))))
+
+(assert-true "P6(a) generator reached an absent standing role, an absent dormant role, and a present pane"
+             (and (contains? @p6-branches-hit :absent-standing)
+                  (contains? @p6-branches-hit :absent-dormant)
+                  (contains? @p6-branches-hit :present)))
+
+;; (b) the bound. Each trial replays a run of sweeps for one role whose pane
+;; is missing throughout - the worst case, and the exact shape of the incident
+;; this ticket comes from (a session that stays gone sweep after sweep).
+(def p6-bound-branches (atom #{}))
+
+(dotimes [_ 200]
+  (let [role (rand-role-name)
+        cooldown-ms (* 1000 (+ 60 (rint 600)))
+        max-attempts (inc (rint 3))
+        sweeps (+ 4 (rint 12))
+        ;; Steps deliberately straddle the window: some sweeps land inside the
+        ;; cooldown, some past it, so both the bounded and the reset branch are
+        ;; exercised rather than one of them silently dominating.
+        step-ms (fn [] (if (zero? (rint 2))
+                         (inc (rint (max 1 (quot cooldown-ms 3))))
+                         (+ cooldown-ms 1 (rint 1000))))
+        issued (loop [i 0, now 1000000, state {}, issued []]
+                 (if (= i sweeps)
+                   issued
+                   (let [prior (get state role)
+                         allowed? (sw/session-repair-allowed?
+                                   {:now-ms now
+                                    :last-repair-ms (get prior "last-ms")
+                                    :repair-attempts (get prior "attempts" 0)
+                                    :repair-cooldown-ms cooldown-ms
+                                    :max-repair-attempts max-attempts})]
+                     (swap! p6-bound-branches conj (if allowed? :issued :withheld))
+                     (recur (inc i)
+                            (+ now (step-ms))
+                            (if allowed?
+                              (sw/note-repair-attempt state role now cooldown-ms)
+                              state)
+                            (if allowed? (conj issued now) issued)))))]
+    ;; The invariant's own words: inside ANY cooldown window, no more than
+    ;; max-attempts repairs. Checked over every issued repair as a window
+    ;; origin, so a burst anywhere in the run is caught, not just at the start.
+    (doseq [origin issued]
+      (let [in-window (filter #(and (>= % origin) (< (- % origin) cooldown-ms)) issued)]
+        (assert-true (str "no more than " max-attempts " repair(s) inside one cooldown window for " role
+                          " (saw " (count in-window) ")")
+                     (<= (count in-window) max-attempts))))))
+
+(assert-true "P6(b) generator reached both an issued and a withheld sweep"
+             (and (contains? @p6-bound-branches :issued)
+                  (contains? @p6-bound-branches :withheld)))
 
 (when (seq @failures)
   (binding [*out* *err*]

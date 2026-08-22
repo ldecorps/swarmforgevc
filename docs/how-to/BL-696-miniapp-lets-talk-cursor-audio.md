@@ -43,6 +43,8 @@ Telegram topic, including numbered choice polls when the reply lists options.
 - [Android floating overlay companion](BL-707-android-floating-overlay-companion.md)
   (2026-07-29) — native bubble over other apps; home hands-free with
   settings, volume, and playlist.
+- [Hands-free listening](../reference/specs/BL-697-lets-talk-hands-free-listening.md)
+  (2026-07-27) — auto-start the mic after playback, auto-submit on silence.
 
 ## Record a Turn
 
@@ -56,8 +58,34 @@ Telegram topic, including numbered choice polls when the reply lists options.
    `docs/how-to/BL-705-lets-talk-more-chiptunes.md`.
 4. The transcript appears under the playback bar; state returns to **ready**.
 
+A turn never ends in silence after hold music stops (BL-717): if the agent's
+reply has nothing pronounceable to say — blank, or reduced to nothing once
+punctuation-only text is stripped for speech — the bridge substitutes an
+explicit fallback line for playback instead of returning a silent success. A
+reply that does have real text is never replaced; only the case with truly
+nothing to speak falls back.
+
 The browser captures audio only. Speech-to-text runs on the bridge host so the
 Mini App CSP is never widened beyond `connect-src 'self'`.
+
+### Hands-free mode
+
+Turn on the **Hands-free** toggle for a more natural conversation flow:
+
+- After the agent's reply finishes playing, the mic reopens on its own
+  (~400 ms delay, so it doesn't capture the tail of the agent's own voice)
+  — no need to tap **Record**.
+- The turn submits automatically once you go silent for about 2.5 seconds
+  after speaking; no need to tap **Stop**.
+- If nothing is said within 30 seconds, listening cancels with a recoverable
+  error and re-arms automatically since hands-free stays on.
+- The **Record** button still works as a manual override at any time, and
+  turning hands-free off returns to tap-to-toggle (BL-696) behavior exactly.
+- The preference is remembered per-browser (`localStorage`), off by default.
+
+This only changes the WebView capture loop — the server still receives one
+discrete `POST /lets-talk/turn` per utterance; there is no duplex or
+streaming speech-to-text.
 
 ### Install on the home screen
 
@@ -149,6 +177,14 @@ npm run crap:lets-talk-cursor-bridge       # CRAP <= 6 (includes telegramCursorB
 npm run test:properties                    # BL-696 invariant property tests
 npm run mutation:lets-talk-cursor-bridge   # hardener: scoped Stryker (includes Pilot)
 ```
+
+Retire this surface as a whole or not at all (BL-766): dropping the `/lets-talk`
+route, the console entry, and a source file's `crap:lets-talk-cursor-bridge`
+scope entry are one change, never three independent ones. A source the bridge
+still serves must stay in the CRAP gate scope above; `extension/src/bridge/letsTalkGateScope.ts`
+(property-tested in `letsTalkGateScope.property.test.js`) and
+`specs/features/BL-766-mini-app-lets-talk-retired-without-its-server-half.feature`
+check this against the real bridge source and route table.
 
 ### Cursor Remote `/pilot` (operator)
 

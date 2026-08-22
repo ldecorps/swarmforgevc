@@ -652,13 +652,21 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
 //     showing it means the pane is not stuck, no matter what the caller's
 //     (possibly stale) liveness signal claimed. ---
 
+// BL-1003: the precheck now matches chase_sweep_lib.bb's own structural
+// definition (BL-970) - a real live status frame, not a bare marker
+// substring. A bare substring with no frame around it no longer refuses a
+// respawn (that was exactly the false-busy shape BL-970 fixed on the swarm
+// side); see bl1003BusyVerdictParity.property.test.js and
+// specs/pipeline/steps/bl1003BusyVerdictMatchesSwarmSteps.js for the
+// consequence this fixed - a REAL 10-minute-mid-turn capture with no
+// marker substring at all used to slip through this precheck.
 test('respawnAgent refuses to type into a pane that is actively processing a turn (BL-137 misfire guard)', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
   const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
-    { subcommand: 'capture-pane', exitCode: 0, stdout: '  auto mode on · esc to interrupt' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: '✻ Thinking… (5s · ⚒ tool)' },
   ]);
   try {
     const result = respawnAgent(tmp, 'coder');
@@ -676,6 +684,33 @@ test('respawnAgent refuses to type into a pane that is actively processing a tur
     assert.equal(sendCalls.length, 0, 'must never type into a pane that is actively processing a turn');
     const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
     assert.equal(respawnCalls.length, 0, 'must never force-kill a pane that is actively processing a turn');
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-997/BL-897 scenario 03: the same shared fixture bl997BusyMarkerAgreement
+// .test.js proves the swarm's own Babashka classifier calls busy - proving
+// this precheck (not just isPaneActivelyProcessing in isolation) refuses a
+// respawn against the REAL fixture, not a hand-typed inline copy of the
+// marker. This is the consequence the BL-137 test above exists for; this
+// test pins it to the one fixture file both classifiers are tested against.
+test('respawnAgent refuses to respawn the shared "live turn-status frame" fixture (BL-997 cross-boundary agreement)', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp);
+  const fixture = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'specs', 'features', 'fixtures', 'BL-997', 'live-turn-status-frame.txt'),
+    'utf8'
+  );
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: fixture },
+  ]);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, false);
+    assert.equal(result.skippedBusy, true);
   } finally {
     fake.restore();
   }

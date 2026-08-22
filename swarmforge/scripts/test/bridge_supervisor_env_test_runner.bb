@@ -13,9 +13,17 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
+(def created-temp-dirs (atom []))
+;; BL-872: shutdown hook mirrors handoff_lib_test_runner.bb (BL-459) - fires
+;; on both a clean run and an uncaught exception, never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (defn mk-fixture []
   (let [root (fs/create-temp-dir {:prefix "sfvc-bridge-env-"})
         env-file (fs/path root ".swarmforge" "swarm.env")]
+    (swap! created-temp-dirs conj root)
     (fs/create-dirs (fs/parent env-file))
     (spit (str env-file) "export CURSOR_BRIDGE_MODEL=\"auto\"\nexport FOO=\"bar\"\n")
     (let [rg-path (fs/path root "extension" "node_modules" "@cursor" "sdk-linux-x64" "bin" "rg")]

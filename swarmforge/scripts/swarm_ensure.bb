@@ -2,7 +2,8 @@
 
 ;; BL-145 / full-stack ensure: `./swarm ensure` brings a swarm to a
 ;; known-good state in one idempotent command. It checks and repairs, in
-;; order: the extension host, every configured agent pane, the handoff
+;; order: the extension host, every configured agent pane (with that role's
+;; remote-control health checked right after it - BL-514), the handoff
 ;; daemon, the operator runtime, babysitterd, and
 ;; (when Telegram is configured) the front-desk supervisor that owns the
 ;; Telegram bridge + Front Desk Bot.
@@ -30,6 +31,17 @@
 ;;     handoffd_supervisor.bb's --check-once probe, which can alarm-and-halt!)
 ;;   SWARM_ENSURE_OPERATOR_CMD / SWARM_ENSURE_FRONT_DESK_CMD
 ;;   SWARM_ENSURE_BABYSITTERD_CMD
+;;   SWARM_ENSURE_RC_CMDLINE_CMD (BL-514) - substitutes the remote-control
+;;     component's live-process probe; the real probe reads /proc/<pid>/cmdline,
+;;     unavailable on a macOS dev/test host
+;;   SWARM_ENSURE_RC_CAPTURE_CMD (BL-898) - substitutes the remote-control
+;;     component's pane-capture probe (footer-status detection + the
+;;     session-dead repair's idle-wait busy check)
+;;   SWARM_ENSURE_RC_SESSION_DEAD_WAIT_SECONDS (BL-898) - idle-wait budget
+;;     before a :session-dead repair gives up and skips a busy agent (180)
+;;   SWARM_ENSURE_RC_NOTIFY_CMD (BL-898) - substitutes the human-notify call
+;;     after a :session-dead repair; real default posts to Telegram when
+;;     configured, else no-ops (the report line still carries the outcome)
 ;;   SWARMFORGE_SKIP_OPERATOR=1 / SWARMFORGE_SKIP_FRONT_DESK=1
 ;;   SWARMFORGE_SKIP_BABYSITTERD=1
 
@@ -43,7 +55,20 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "launch_contract_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
+;; BL-1018: the ONE definition of what a single-role repair may resolve to,
+;; shared with babysitter_check.bb's own ensure-role-session!.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "single_role_repair_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
+;; BL-993 architect bounce (backlog/evidence/BL-993-bounce-20260820.md):
+;; operator-healthy? below now delegates here instead of a bare pid-alive?,
+;; so this and the always-on watch (operator_runtime_supervisor.bb) can
+;; never disagree - see operator_runtime_watch_lib.bb's own header.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_runtime_watch_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -97,6 +122,12 @@
   (or (System/getenv "SWARM_ENSURE_BABYSITTERD_CMD")
       (str "bash " (fs/path script-dir "start_babysitterd.sh") " " project-root)))
 
+;; BL-763: same idempotent-start contract as front-desk-start-cmd above -
+;; start_cursor_bridge.sh already no-ops when its supervisor pid is alive.
+(def cursor-bridge-start-cmd
+  (or (System/getenv "SWARM_ENSURE_CURSOR_BRIDGE_CMD")
+      (str "bash " (fs/path script-dir "start_cursor_bridge.sh") " " project-root)))
+
 ;; ── pure decision ────────────────────────────────────────────────────────────
 
 (defn classify
@@ -135,7 +166,15 @@
     []))
 
 (defn rotation-router-mode?
-  "True when this project is running (or last launched as) rotation router."
+  "True when this project is running (or last launched as) a SINGLE-RESIDENT
+   rotation topology - `rotation router` OR `rotation sequential` (BL-571).
+   The launcher's is_sequential_dormant leaves the middle roles dormant on
+   both values; matching router alone made ensure respawn five roles the
+   launcher deliberately left dormant on a mono-rotate pack, on precisely
+   the memory-constrained host that pack exists to serve. The name is kept
+   (every internal caller means 'single-resident'); the router-ONLY
+   predicates still exist in mono_router_lib for the ROTATE_HOME backstop,
+   which this ticket deliberately does not widen."
   []
   (let [identity-path (fs/path state-dir "swarm-identity")
         identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
@@ -145,8 +184,8 @@
         conf-text (when (and conf-path (fs/exists? conf-path))
                     (slurp conf-path))]
     (boolean
-     (or (mono-router-lib/rotation-router-from-identity? identity-text)
-         (mono-router-lib/conf-rotation-router? conf-text)))))
+     (or (mono-router-lib/single-resident-rotation-from-identity? identity-text)
+         (mono-router-lib/single-resident-rotation? conf-text)))))
 
 ;; ── extension component ──────────────────────────────────────────────────────
 
@@ -177,99 +216,48 @@
          (not (str/includes? (:out result) "1")))))
 
 (defn provider-respawn-env-args
-  "BL-130 pane -e passthrough for ensure repairs — same keys rotate/chase need
-   so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen
-   auth from a live alternate-runtime pane.
-
-   SRE 2026-07-19: when role's launch script CLI targets api.perplexity.ai,
-   Perplexity wins for OPENAI_* even if SWARMFORGE_USE_PERPLEXITY was unset
-   in the ensure process (provider_compat_lib/must-remap-to-perplexity?).
-   Gemini: GEMINI_API_KEY, or SWARMFORGE_GEMINI_API_KEY mapped to GEMINI_API_KEY.
-   Qwen: QWEN_API_KEY, or BAILIAN_CODING_PLAN_API_KEY mapped to QWEN_API_KEY."
+  "BL-536: delegates to provider_respawn_env_lib.bb (extracted so
+   handoffd.bb's auth-observe respawn path can reuse this SAME machinery
+   without load-file'ing this whole script and its unconditional (-main)).
+   Arity/behavior unchanged for every existing call site in this file."
   ([] (provider-respawn-env-args nil))
-  ([role]
-   (let [launch-cli (when role
-                      (let [p (fs/path state-dir "launch" (str role ".sh"))]
-                        (when (fs/exists? p) (slurp (str p)))))
-         use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
-         use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
-         use-qwen (= "1" (System/getenv "SWARMFORGE_USE_QWEN"))
-         cerebras (System/getenv "CEREBRAS_API_KEY")
-         perplexity (System/getenv "PERPLEXITY_API_KEY")
-         qwen (let [q (System/getenv "QWEN_API_KEY")]
-                (if (str/blank? q)
-                  (System/getenv "BAILIAN_CODING_PLAN_API_KEY")
-                  q))
-         gemini (let [g (System/getenv "GEMINI_API_KEY")]
-                  (if (str/blank? g)
-                    (System/getenv "SWARMFORGE_GEMINI_API_KEY")
-                    g))
-         resolved (provider-compat-lib/resolve-openai-compat
-                   {:use-cerebras use-cerebras
-                    :use-perplexity use-perplexity
-                    :use-qwen use-qwen
-                    :cerebras-api-key cerebras
-                    :perplexity-api-key perplexity
-                    :qwen-api-key qwen
-                    :openai-api-key (System/getenv "OPENAI_API_KEY")
-                    :launch-cli launch-cli})
-         openai (:openai-api-key resolved)
-         openai-base (:openai-api-base resolved)
-         openai-base-url (:openai-base-url resolved)
-         force-perplexity (= :perplexity (:provider resolved))
-         force-cerebras (= :cerebras (:provider resolved))
-         force-qwen (= :qwen (:provider resolved))]
-     (cond-> []
-       (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
-       (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
-       (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
-       (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
-       (not (str/blank? (System/getenv "MISTRAL_API_KEY")))
-       (concat ["-e" (str "MISTRAL_API_KEY=" (System/getenv "MISTRAL_API_KEY"))])
-       (not (str/blank? cerebras))
-       (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
-       (not (str/blank? perplexity))
-       (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
-       (not (str/blank? qwen))
-       (concat ["-e" (str "QWEN_API_KEY=" qwen)])
-       (not (str/blank? gemini))
-       (concat ["-e" (str "GEMINI_API_KEY=" gemini)])
-       (or use-cerebras force-cerebras)
-       (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
-       (or use-perplexity force-perplexity)
-       (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
-       (or use-qwen force-qwen)
-       (concat ["-e" "SWARMFORGE_USE_QWEN=1"])
-       (not (str/blank? openai))
-       (concat ["-e" (str "OPENAI_API_KEY=" openai)])
-       (not (str/blank? openai-base))
-       (concat ["-e" (str "OPENAI_API_BASE=" openai-base)])
-       (not (str/blank? openai-base-url))
-       (concat ["-e" (str "OPENAI_BASE_URL=" openai-base-url)])))))
+  ([role] (provider-respawn-env-lib/provider-respawn-env-args state-dir role)))
+
+;; BL-1018: WHAT to run comes from single-role-repair-lib (pure, one
+;; definition); this only RUNS it. `session-present?` is the observed state,
+;; read once by the caller - the resolver never looks at tmux itself.
+(defn- run-single-role-repair! [socket role session session-present?]
+  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+        {:keys [status commands]}
+        (single-role-repair-lib/resolve-single-role-repair
+         {:socket socket
+          :role role
+          :session session
+          ;; Passed unconditionally, as this path always did - whether the
+          ;; script exists on disk is not this ticket's question, and making
+          ;; it one would silently stop repairing panes whose launch script
+          ;; the fixture (or a mid-launch host) has not written yet.
+          :launch-script (str launch-script)
+          :env-args (provider-respawn-env-args role)
+          :session-present? session-present?})]
+    (if (not= :ok status)
+      {:exit 1 :err (str "single-role repair refused: " (name status))}
+      (reduce (fn [_ cmd] (apply process/sh {:continue true} cmd)) nil commands))))
 
 (defn respawn-role! [socket role session]
-  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
-        env-args (provider-respawn-env-args role)
-        cmd (concat ["tmux" "-S" socket "respawn-pane" "-k"]
-                    env-args
-                    ["-t" session (str "zsh '" launch-script "'")])]
-    (apply process/sh {:continue true} cmd)))
-
-(defn create-session! [socket session]
-  (process/sh {:continue true}
-              "tmux" "-S" socket "new-session" "-d" "-s" session "-n" "swarm"))
+  (run-single-role-repair! socket role session true))
 
 (defn kill-session! [socket session]
   (process/sh {:continue true}
               "tmux" "-S" socket "kill-session" "-t" session))
 
 (defn ensure-standing-role!
-  "Create the session if missing, then respawn the launch script into it."
+  "BL-1018: ONE resolved command either way - a missing session is created
+   WITH its launch command, a present one is respawned in place. Never the
+   create-then-respawn-into-it sequence that took the pack tmux server down on
+   2026-08-21 (BL-958's hazard class)."
   [socket role session]
-  (when-not (session-exists? socket session)
-    (create-session! socket session)
-    (Thread/sleep 250))
-  (respawn-role! socket role session))
+  (run-single-role-repair! socket role session (boolean (session-exists? socket session))))
 
 ;; ── daemon component ─────────────────────────────────────────────────────────
 
@@ -290,23 +278,33 @@
   (sh! supervisor-cmd))
 
 ;; ── operator runtime + front-desk (Telegram bridge) ──────────────────────────
-
-(defn operator-pid-file [] (fs/path state-dir "operator" "runtime.pid"))
+;; operator-pid-file/operator-pid used to live here; removed when
+;; operator-healthy? (below) started delegating to
+;; operator_runtime_watch_lib.bb's own pid-file/read-pid instead (BL-993
+;; architect bounce) - the last callers of the local copies.
 
 (defn front-desk-pid-file [] (fs/path state-dir "operator" "front-desk-supervisor.pid"))
 
 (defn babysitterd-pid-file [] (fs/path state-dir "babysitterd" "babysitterd.pid"))
 
-(defn operator-pid []
-  (when (fs/exists? (operator-pid-file))
-    (parse-long (str/trim (slurp (str (operator-pid-file)))))))
+;; BL-763: same pid-file-is-the-liveness-source-of-truth shape as front-desk
+;; above - cursor_bridge_supervisor.bb exposes no other externally-callable
+;; health predicate (its own --check-once is for start_cursor_bridge.sh's
+;; own gave-up detection, not general liveness).
+(defn cursor-bridge-pid-file [] (fs/path state-dir "operator" "cursor-bridge-supervisor.pid"))
 
 (defn front-desk-pid []
   (when (fs/exists? (front-desk-pid-file))
     (parse-long (str/trim (slurp (str (front-desk-pid-file)))))))
 
-(defn operator-healthy? []
-  (pid-alive? (operator-pid)))
+(defn operator-healthy?
+  "BL-993: delegates to operator_runtime_watch_lib.bb's healthy? (checks the
+   pid AND its command line - a bare pid-alive? cannot tell a live
+   operator_runtime.bb apart from an unrelated process that reused its
+   pid), so this and the always-on watch never disagree. Was a bare
+   (pid-alive? (operator-pid)) before the BL-993 architect bounce."
+  []
+  (operator-runtime-watch-lib/healthy? project-root))
 
 (defn front-desk-healthy? []
   (pid-alive? (front-desk-pid)))
@@ -318,6 +316,13 @@
 (defn babysitterd-healthy? []
   (pid-alive? (babysitterd-pid)))
 
+(defn cursor-bridge-pid []
+  (when (fs/exists? (cursor-bridge-pid-file))
+    (parse-long (str/trim (slurp (str (cursor-bridge-pid-file)))))))
+
+(defn cursor-bridge-healthy? []
+  (pid-alive? (cursor-bridge-pid)))
+
 (defn ensure-babysitterd! []
   (sh! babysitterd-start-cmd))
 
@@ -326,6 +331,9 @@
 
 (defn ensure-front-desk! []
   (sh! front-desk-start-cmd))
+
+(defn ensure-cursor-bridge! []
+  (sh! cursor-bridge-start-cmd))
 
 (defn env-set? [name]
   (let [v (System/getenv name)]
@@ -355,6 +363,27 @@
    that the sweep is a standard managed daemon, not opt-in behind a marker."
   []
   (not= "1" (System/getenv "SWARMFORGE_SKIP_BABYSITTERD")))
+
+;; BL-763: OR-token variant of telegram-configured? - start_cursor_bridge.sh
+;; itself accepts CURSOR_BRIDGE_BOT_TOKEN OR TELEGRAM_BOT_TOKEN (the shared-
+;; group-bot case), never requiring both.
+;; BL-763: OR-token variant of telegram-configured? - start_cursor_bridge.sh
+;; itself accepts CURSOR_BRIDGE_BOT_TOKEN OR TELEGRAM_BOT_TOKEN (the shared-
+;; group-bot case), never requiring both.
+(defn cursor-bridge-configured?
+  []
+  (and (or (env-set? "CURSOR_BRIDGE_BOT_TOKEN") (env-set? "TELEGRAM_BOT_TOKEN"))
+       (env-set? "TELEGRAM_CHAT_ID")
+       (env-set? "TELEGRAM_PRINCIPAL_USER_ID")))
+
+(defn cursor-bridge-enabled?
+  "Same shape as front-desk-enabled?: ensure when configured, or a prior
+   supervisor pid file exists (repair a previously launched bridge).
+   Explicit skip wins."
+  []
+  (and (not= "1" (System/getenv "SWARMFORGE_SKIP_CURSOR_BRIDGE"))
+       (or (cursor-bridge-configured?)
+           (fs/exists? (cursor-bridge-pid-file)))))
 
 ;; ── launch-contract component (BL-530) ──────────────────────────────────────
 ;; A pack that names a non-default coordinator_agent (aider, codex, ...) must
@@ -393,6 +422,34 @@
 
 ;; ── orchestration (never aborts on one failed repair) ───────────────────────
 
+;; BL-993 cleaner-bounce D1: the post-repair recheck used to run exactly
+;; once, immediately after repair!-fn returned - but a freshly forked
+;; process's command line is not instantly queryable (ProcessHandle.info()
+;; .commandLine() / sysctl KERN_PROCARGS2 lag on Darwin), so a cmdline-based
+;; healthy? (operator-runtime-cmdline?) could read a genuinely successful
+;; restart as still-dead and classify :failed. Bounded retry at THIS shared
+;; chokepoint so every component's repair recheck tolerates the visibility
+;; window: first healthy read returns immediately (an already-visible repair
+;; pays zero wait); only a still-unhealthy read waits, up to
+;; attempts x interval (~1s by default) before conceding :failed. Env seams
+;; exist for tests that want a tighter budget, never for skipping the
+;; recheck.
+(def post-repair-recheck-attempts
+  (or (some-> (System/getenv "SWARM_ENSURE_RECHECK_ATTEMPTS") parse-long) 10))
+(def post-repair-recheck-interval-ms
+  (or (some-> (System/getenv "SWARM_ENSURE_RECHECK_INTERVAL_MS") parse-long) 100))
+
+(defn healthy-after-repair?
+  "healthy?-fn polled with a bounded retry budget - true on the first
+   healthy read, false only once every attempt has read unhealthy."
+  [healthy?-fn]
+  (loop [attempt 1]
+    (cond
+      (boolean (healthy?-fn)) true
+      (>= attempt post-repair-recheck-attempts) false
+      :else (do (Thread/sleep post-repair-recheck-interval-ms)
+                (recur (inc attempt))))))
+
 (defn ensure-component!
   "Runs one component's check/repair/reclassify cycle. Exceptions during the
    probe or repair are caught so one component's failure can never prevent
@@ -404,7 +461,7 @@
         {:component name :status :healthy}
         (do
           (try (repair!-fn) (catch Exception _ nil))
-          (let [after (boolean (healthy?-fn))]
+          (let [after (healthy-after-repair? healthy?-fn)]
             {:component name
              :status (classify before after)
              :action repair-description}))))
@@ -522,6 +579,178 @@
                                 (when (not= launch-role role)
                                   (str " as " launch-role))))))))
 
+;; ── remote-control (RC) component (BL-514) ──────────────────────────────────
+;; Verifies each role's live claude process still carries the --remote-control
+;; flag its launch script expects, right after that role's own agent:<role>
+;; pane check. remote-control-health/classify separates four states; RC only
+;; ever acts on :degraded (a live agent that lost its flag) - :down is left
+;; entirely to the agent:<role> check (actionable? is true only for
+;; :degraded), so a crashed pane is never double-respawned here, and
+;; :off/:healthy need nothing.
+;;
+;; BL-898 adds a fifth state, :session-dead: the flag is fine but the pane
+;; footer has persistently reported the cloud session dead. Detection is
+;; folded into the SAME per-sweep check below; repair is idle-safe (unlike
+;; :degraded's immediate respawn) and routed through the SAME actionable?
+;; predicate, never a second parallel repair path.
+
+(def rc-cmdline-cmd (System/getenv "SWARM_ENSURE_RC_CMDLINE_CMD"))
+
+(defn rc-cmdline-fn
+  "cmdline-fn for remote-control-health/check-role's injectable 5-arg arity.
+   The real probe (remote-control-health/claude-cmdline-in-pane) reads
+   /proc/<pid>/cmdline, which macOS dev/test hosts do not provide - tests
+   substitute SWARM_ENSURE_RC_CMDLINE_CMD (a shell command run with socket
+   and session as $1/$2; its stdout stands in for the live claude argv,
+   blank output or non-zero exit standing in for no live process)."
+  [socket session]
+  (if rc-cmdline-cmd
+    (let [{:keys [exit out]} (process/sh {:continue true} "sh" "-c" rc-cmdline-cmd "sh" socket session)]
+      (when (and (zero? exit) (not (str/blank? (str/trim out))))
+        (str/trim out)))
+    (remote-control-health/claude-cmdline-in-pane socket session)))
+
+(def rc-capture-cmd (System/getenv "SWARM_ENSURE_RC_CAPTURE_CMD"))
+
+(defn rc-capture-pane
+  "Pane capture text for BOTH footer-status (BL-898 session-dead detection)
+   and busy-detection during a session-dead repair's idle wait.
+   SWARM_ENSURE_RC_CAPTURE_CMD stands in for a real tmux capture-pane on
+   hosts where the fixture tmux binary is faked. Run directly (not via
+   `sh -c`, which never actually forwards trailing argv to a script path) so
+   a substituted probe genuinely receives socket/session as $1/$2."
+  [socket session]
+  (if rc-capture-cmd
+    (:out (process/sh {:continue true} rc-capture-cmd socket session))
+    (:out (process/sh {:continue true} "tmux" "-S" socket "capture-pane" "-p" "-t" session "-S" "-50"))))
+
+(defn rc-busy? [socket session]
+  (chase-sweep-lib/actively-processing? (rc-capture-pane socket session)))
+
+(def rc-session-dead-wait-seconds
+  (or (some-> (System/getenv "SWARM_ENSURE_RC_SESSION_DEAD_WAIT_SECONDS") parse-long) 180))
+
+(def rc-notify-cmd (System/getenv "SWARM_ENSURE_RC_NOTIFY_CMD"))
+
+(defn notify-rc-repair!
+  "Human notify for a :session-dead repair (BL-898 invariant 2: the human is
+   always told the outcome). Reuses operator_telegram_lib's own
+   send-message-request (the SAME primitive the live Telegram bot posts
+   through) and the file's own telegram-configured? gate that front-desk
+   already uses - no new comms path. A no-op when Telegram isn't configured;
+   the outcome is still visible in this command's own FIXED/FAILED report
+   line either way. SWARM_ENSURE_RC_NOTIFY_CMD lets tests substitute a fake
+   and assert on exactly what would have been sent - run directly (not via
+   `sh -c`, which never actually forwards trailing argv to a script path) so
+   the substituted script genuinely receives role/url as $1/$2."
+  [role session-url]
+  (let [text (remote-control-health/repair-notice-text role session-url)]
+    (cond
+      rc-notify-cmd
+      (process/sh {:continue true} rc-notify-cmd role (or session-url "") text)
+
+      (telegram-configured?)
+      (let [{:keys [url form-params]}
+            (operator-telegram-lib/send-message-request
+             (System/getenv "TELEGRAM_BOT_TOKEN") (System/getenv "TELEGRAM_CHAT_ID") text)]
+        (process/sh {:continue true} "curl" "-fsS" "-X" "POST"
+                    "-d" (str "chat_id=" (:chat_id form-params))
+                    "-d" (str "text=" (:text form-params))
+                    "-d" "disable_web_page_preview=true"
+                    url))
+
+      :else nil)))
+
+(defn rc-launch-role
+  "The role whose launch script currently governs this pane's RC identity.
+   Under mono-router the resident keeps its home session name but may be
+   running a different role's launch script after rotate_to_role - mirrors
+   ensure-mono-router-role!'s own launch-role resolution. Checking RC against
+   the wrong script would misclassify a legitimately rotated resident as
+   :degraded and forcibly respawn it back to `role`. A blank/missing rotation
+   marker (every non-router pack) leaves role unchanged."
+  [ordered-roles role]
+  (if (= :resident (mono-router-lib/classify-role ordered-roles role))
+    (mono-router-lib/resident-launch-role role (read-mono-router-active-role-marker))
+    role))
+
+(defn rc-status [socket launch-role session]
+  (:status (remote-control-health/check-role state-dir socket launch-role session rc-cmdline-fn)))
+
+(defn respawn-rc-pane! [socket launch-role session]
+  (let [launch (remote-control-health/launch-script-path state-dir launch-role)]
+    (remote-control-health/respawn-role-pane! socket session (str launch))))
+
+(defn repair-session-dead!
+  "BL-898 invariant 1: never interrupts an agent mid-turn - waits up to
+   rc-session-dead-wait-seconds for the agent to reach an idle prompt (the
+   SAME busy signal remote_control_respawn.bb already polls), respawns ONLY
+   once idle, confirms the flag came back, then tells the human the outcome
+   (invariant 2 - scoped, like acceptance scenario 03, to a genuinely
+   restored session: the active notify names the new address or explicitly
+   says it wasn't readable, but is never sent claiming a repair that did NOT
+   happen). A still-busy agent past the wait budget, or a respawn whose flag
+   never comes back, is reported FAILED via this component's own report line
+   - the same channel :degraded's repair failure already relies on, with no
+   separate active notify for either."
+  [socket launch-role role session expected]
+  (let [component (str "rc:" role)
+        busy?-fn #(rc-busy? socket session)]
+    (if (remote-control-health/wait-until-idle! busy?-fn rc-session-dead-wait-seconds)
+      (do
+        (respawn-rc-pane! socket launch-role session)
+        (let [{:keys [ok url]} (remote-control-health/confirm-rc!
+                                 #(rc-cmdline-fn socket session)
+                                 #(rc-capture-pane socket session)
+                                 expected)]
+          (when ok (notify-rc-repair! role url))
+          {:component component
+           :status (if ok :fixed :failed)
+           :action (if ok
+                     (str "respawned pane to restore a dead remote-control session"
+                          (if url (str " - new session: " url) " (new session address not yet readable)"))
+                     "respawned pane but the --remote-control flag was not restored")}))
+      {:component component :status :failed
+       :action (str "agent still busy after " rc-session-dead-wait-seconds
+                    "s wait budget - respawn skipped, not killed (never mid-turn)")})))
+
+(defn ensure-rc-role!
+  "role is the roles.tsv identity (used only for the reported component
+   name); launch-role (rc-launch-role) is what is actually checked/repaired.
+   Never probes the live process when the launch script carries no
+   --remote-control flag at all - remote-control-health/classify checks
+   `expected` before `actual`/`alive?`, so the result is unconditionally
+   :off in that case regardless of what the probe would find. Skipping the
+   probe there isn't just an optimization: the real probe walks the pane's
+   full descendant process tree, and is worth avoiding whenever its result
+   cannot change the outcome."
+  [socket ordered role session]
+  (let [launch-role (rc-launch-role ordered role)
+        component (str "rc:" role)]
+    (if (nil? (remote-control-health/expected-rc-name state-dir launch-role))
+      {:component component :status :healthy}
+      (let [footer-streak (remote-control-health/advance-footer-streak!
+                            state-dir launch-role
+                            (remote-control-health/footer-status (rc-capture-pane socket session)))
+            check (remote-control-health/check-role
+                   state-dir socket launch-role session rc-cmdline-fn footer-streak)
+            status (:status check)]
+        (cond
+          ;; "worth repairing at all" is decided ONCE, through actionable? -
+          ;; :healthy/:off need nothing and :down is the agent:<role> check's
+          ;; job, so anything actionable? refuses is left alone here.
+          (not (remote-control-health/actionable? status))
+          {:component component :status :healthy}
+
+          (= status :session-dead)
+          (repair-session-dead! socket launch-role role session (:expected check))
+
+          :else ;; :degraded - the only other status actionable? accepts
+          (ensure-component! component
+                             #(contains? #{:healthy :off} (rc-status socket launch-role session))
+                             #(respawn-rc-pane! socket launch-role session)
+                             "respawned pane to restore --remote-control flag"))))))
+
 (defn report-line [{:keys [component status action category]}]
   (case status
     :healthy (str component ": HEALTHY")
@@ -535,8 +764,80 @@
                   (when category (str " [" (name category) "]"))
                   (when action (str " (" action ")")))))
 
-(defn -main []
+(defn control-plane-state
+  "BL-958: classify the control plane through the shared control_plane_lib
+   before any per-role repair, and decide recovery through the same lib.
+   The loss shape (socket file + role metadata present, server gone) is what
+   the live 2026-08-19 incident looked like; the per-role repair loop below
+   IS the :relaunch-roles recovery — recreating the first session restarts
+   the tmux server itself — but the decision to run it, and what to report,
+   comes from the lib, never from blundering into per-role repairs."
+  []
   (let [socket (tmux-socket)
+        {:keys [classification]} (control-plane-lib/observe! state-dir socket)
+        ;; One reading of the two facts every downstream answer depends on -
+        ;; the decision AND the escalation's next action come from the SAME
+        ;; observation, never from a second derivation at report time.
+        facts {:classification classification
+               :launch-scripts-present? (control-plane-lib/launch-scripts-present? state-dir)}]
+    {:socket socket
+     :classification classification
+     :decision (control-plane-lib/recovery-decision facts)
+     :policy (control-plane-lib/response-policy
+              (assoc facts :incident {:socket-path socket}))}))
+
+(defn- halt-decision?
+  "BL-958 D1: recreation is impossible and ensure must report loudly instead
+   of churning. One definition, read by both the repair-loop gate in -main
+   and the control-plane row below, so the two can never disagree about
+   which case they are in."
+  [decision]
+  (= :halt (:action decision)))
+
+(defn control-plane-report!
+  "Re-probe after the repair loop ran and report honestly: FIXED only when
+   the server actually answers again (open incidents are then resolved),
+   FAILED with the decision's reason when it does not.
+
+   BL-958 D1: under :halt no recovery ran at all - recreation is impossible
+   (no persisted launch scripts), so report FAILED carrying the escalation
+   policy's own next action and leave the open incident UNTOUCHED. Resolving
+   an incident requires a recovery that actually restored roles, never
+   merely a tmux server that answers a probe."
+  [{:keys [socket decision policy]}]
+  (if (halt-decision? decision)
+    {:component "control-plane" :status :failed
+     :action (str "control-plane-missing: " (:reason decision)
+                  "; " (:next-action policy))}
+    (let [after (control-plane-lib/probe-server! socket)]
+      (if (:responds? after)
+        (do (control-plane-lib/resolve-open-incidents!
+             (control-plane-lib/incidents-file state-dir)
+             (str (java.time.Instant/now)))
+            {:component "control-plane" :status :fixed
+             :action (str "control-plane-missing: " (:reason decision)
+                          "; tmux server restored")})
+        {:component "control-plane" :status :failed
+         :action (str "control-plane-missing: " (:reason decision)
+                      "; tmux server still not responding")}))))
+
+(defn- roles-all-failed
+  "Every role FAILED with the same detail, rc rows passed through healthy -
+   the shape BOTH no-recovery-possible paths produce (no tmux socket for
+   this root at all; control plane missing with no launch scripts to respawn
+   from). Neither path probed any individual role, so none may report a
+   per-role verdict of its own. extra carries whatever that path adds to the
+   agent row (e.g. a classified error category); nil adds nothing."
+  [rows detail extra]
+  (vec (mapcat (fn [{:keys [role]}]
+                 [(merge {:component (str "agent:" role) :status :failed :action detail}
+                         extra)
+                  {:component (str "rc:" role) :status :healthy}])
+               rows)))
+
+(defn -main []
+  (let [cp-state (control-plane-state)
+        socket (tmux-socket)
         extension-result (if (fs/exists? headless-marker-file)
                            {:component "extension" :status :healthy
                             :action "skipped bounce (headless swarm owns tmux)"}
@@ -564,21 +865,56 @@
         resident-session (some #(when (= :resident (mono-router-lib/classify-role ordered (:role %)))
                                    (:session %))
                                 rows)
-        role-results (if socket
-                       (mapv (fn [{:keys [role session] :as row}]
-                               (if router?
-                                 (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
-                                 (ensure-role! (str "agent:" role)
-                                               #(pane-alive? socket session)
-                                               #(respawn-role! socket role session)
-                                               contract-broken?)))
-                             rows)
-                       (mapv (fn [{:keys [role]}]
-                               (let [detail "no tmux socket found for this project root"]
-                                 {:component (str "agent:" role) :status :failed
-                                  :action detail
-                                  :category (:category (agent-runtime-lib/classify-provider-error detail))}))
-                             rows))
+        ;; BL-958 D1: the recovery decision GATES the repair loop - under
+        ;; :halt (control plane missing, no persisted launch scripts) the
+        ;; per-role loop must not run at all: ensure-standing-role!'s
+        ;; session create (BL-1018: now the resolver's new-session, formerly
+        ;; create-session!) would restart the bare tmux server, the re-probe
+        ;; would answer, and the report would claim FIXED while every role
+        ;; is dead - exactly invariant 2's forbidden half-alive state.
+        halt? (halt-decision? (:decision cp-state))
+        role-results (cond
+                       halt?
+                       (roles-all-failed
+                        rows
+                        "control plane missing and no persisted launch scripts exist; recreation skipped, see the control-plane row"
+                        nil)
+
+                       socket
+                       (vec (mapcat (fn [{:keys [role session] :as row}]
+                                      (let [agent-result
+                                            (if router?
+                                              (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
+                                              ;; BL-958: ensure-standing-role!, not bare respawn-role!
+                                              ;; — after control-plane loss the SESSION is gone too,
+                                              ;; and respawn-pane against a missing session can never
+                                              ;; recover it; create-if-missing also restarts the tmux
+                                              ;; server itself on the first recreated session.
+                                              (ensure-role! (str "agent:" role)
+                                                            #(pane-alive? socket session)
+                                                            #(ensure-standing-role! socket role session)
+                                                            contract-broken?))
+                                            rc-result (ensure-rc-role! socket ordered role session)]
+                                        [agent-result rc-result]))
+                                    rows))
+
+                       :else
+                       (let [detail "no tmux socket found for this project root"]
+                         (roles-all-failed
+                          rows detail
+                          {:category (:category (agent-runtime-lib/classify-provider-error detail))})))
+        control-plane-result
+        (cond
+          (= :control-plane-missing (:classification cp-state))
+          (control-plane-report! cp-state)
+
+          (= :up (:classification cp-state))
+          (do (control-plane-lib/resolve-open-incidents!
+               (control-plane-lib/incidents-file state-dir)
+               (str (java.time.Instant/now)))
+              nil)
+
+          :else nil)
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
         operator-result (when (operator-enabled?)
@@ -590,8 +926,13 @@
         babysitterd-result (when (babysitterd-enabled?)
                              (ensure-component! "babysitterd" babysitterd-healthy? ensure-babysitterd!
                                                  "restarted babysitterd"))
-        results (concat [extension-result] role-results [daemon-result launch-contract-check]
-                        (remove nil? [operator-result front-desk-result babysitterd-result]))]
+        cursor-bridge-result (when (cursor-bridge-enabled?)
+                                (ensure-component! "cursor-bridge" cursor-bridge-healthy? ensure-cursor-bridge!
+                                                    "restarted the Cursor Remote bridge"))
+        results (concat [extension-result] role-results
+                        (remove nil? [control-plane-result])
+                        [daemon-result launch-contract-check]
+                        (remove nil? [operator-result front-desk-result babysitterd-result cursor-bridge-result]))]
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
 

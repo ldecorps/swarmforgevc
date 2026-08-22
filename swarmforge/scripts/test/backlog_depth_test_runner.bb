@@ -92,6 +92,38 @@
     (swap! created-temp-dirs conj d)
     d))
 
+;; ── count-active-tickets (BL-808) ─────────────────────────────────────────
+
+(let [root (mk-tmp)
+      active (str (fs/path root "backlog" "active"))]
+  (assert= "count-active-tickets: a missing directory degrades to 0, never throws"
+           0
+           (backlog-depth-lib/count-active-tickets active)))
+
+(let [root (mk-tmp)
+      active (str (fs/path root "backlog" "active"))]
+  (fs/create-dirs active)
+  (assert= "count-active-tickets: an empty directory is 0"
+           0
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active ".gitkeep")) "")
+  (assert= "count-active-tickets: .gitkeep alone is not a ticket"
+           0
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active "BL-1-demo.yaml")) "id: BL-1\n")
+  (assert= "count-active-tickets: .gitkeep + one yaml counts 1"
+           1
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active "BL-2-demo.yaml")) "id: BL-2\n")
+  (assert= "count-active-tickets: .gitkeep + two yamls counts 2"
+           2
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active "notes.md")) "not a ticket\n")
+  (fs/create-dirs (fs/path active "subdir"))
+  (assert= "count-active-tickets: stray .md and nested dirs are never counted (filter by kind, not .gitkeep blocklist)"
+           2
+           (backlog-depth-lib/count-active-tickets active)))
+
 (let [root (mk-tmp)]
   (fs/create-dirs (fs/path root "swarmforge"))
   (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth -1\n")
@@ -368,6 +400,162 @@
   (assert= "pause-wiring-04: an EXPIRED timed pause no longer freezes the effective cap, even before the sweep clears the marker file"
            3
            (backlog-depth-lib/read-effective-max-depth root)))
+
+;; ── BL-966: identity resolves at the MASTER checkout from any worktree ────
+;; The cap must be the same from the master checkout and every linked
+;; worktree (invariant 1); a non-git root keeps resolving against itself
+;; (invariant 3); the no-identity fall-through is loud on *err*, never
+;; silent (invariant 2).
+(require '[babashka.process :as tproc]
+         '[clojure.string :as tstr])
+
+(defn- tgit! [dir & args]
+  (let [r (apply tproc/sh {:continue true :dir (str dir)}
+                 "git" "-c" "user.email=t@t" "-c" "user.name=t" args)]
+    (when-not (zero? (:exit r))
+      (throw (ex-info (str "fixture git failed: " (:err r)) {})))
+    (tstr/trim (:out r))))
+
+(defn- stderr-of [f]
+  (let [sw (java.io.StringWriter.)]
+    [(binding [*err* sw] (f)) (str sw)]))
+
+(let [master (mk-tmp)]
+  (assert= "bl966: a plain non-git root resolves to itself (invariant 3)"
+           (str master)
+           (backlog-depth-lib/resolve-identity-root master)))
+
+(let [master (mk-tmp)
+      wt (str master "-wt")]
+  (spit (str (fs/path master "README.md")) "init\n")
+  (tgit! master "init" "-q" "-b" "main")
+  (tgit! master "add" "-A")
+  (tgit! master "commit" "-q" "-m" "init")
+  (tgit! master "worktree" "add" "-q" wt "-b" "wt-branch")
+  ;; identity at the MASTER names a pack conf with a distinctive cap
+  (fs/create-dirs (fs/path master ".swarmforge"))
+  (fs/create-dirs (fs/path master "swarmforge" "packs"))
+  (spit (str (fs/path master "swarmforge" "packs" "big.conf"))
+        "config active_backlog_max_depth 7\n")
+  (spit (str (fs/path master ".swarmforge" "swarm-identity"))
+        (str "active_backlog_max_depth_conf_path\t" (fs/path master "swarmforge" "packs" "big.conf") "\n"))
+  ;; the tracked default conf (present in BOTH checkouts) says 3 - the old
+  ;; silent per-checkout split returned it from the worktree
+  (spit (str (fs/path master "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 3\n")
+  (fs/create-dirs (fs/path wt "swarmforge"))
+  (spit (str (fs/path wt "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 3\n")
+  (let [[from-master err-master] (stderr-of #(backlog-depth-lib/read-max-depth master))
+        [from-wt err-wt] (stderr-of #(backlog-depth-lib/read-max-depth wt))]
+    (assert= "bl966: the master checkout resolves its identity's pack cap" 7 from-master)
+    (assert= "bl966: a linked worktree resolves the SAME cap as master (invariant 1)" 7 from-wt)
+    (assert= "bl966: an identity-derived cap arrives with a clean stderr" "" (str err-master err-wt)))
+  ;; teardown the worktree registration before mk-tmp's own cleanup
+  (tgit! master "worktree" "remove" "--force" wt))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 3\n")
+  (let [[cap err] (stderr-of #(backlog-depth-lib/read-max-depth root))]
+    (assert= "bl966: a never-launched root still gets the default conf's cap (invariant 3)" 3 cap)
+    (assert= "bl966: the fall-through is loud - stderr names the default conf (invariant 2)"
+             true
+             (and (tstr/includes? err "no swarm-identity")
+                  (tstr/includes? err "swarmforge.conf")))))
+
+;; ── BL-966 hardening (hardender, 2026-08-20) ──────────────────────────────
+;; A hand-authored mutation sweep over this parcel's own changed behaviour
+;; (BL-638 fallback: the feature has no Scenario Outline, so the BL-113
+;; gherkin gate reports `inapplicable`, and .bb has no wired mutation tool)
+;; left FOUR survivors that the tests above cannot see. Each is killed here
+;; by one test in which that mechanism is the only thing standing between
+;; the mutant and a failure.
+
+;; Survivors 1 and 2 - `(fs/path identity-root persisted)` and the fallback's
+;; `identity-root` both swapped back to `project-root` and nothing failed.
+;; The fixtures above cannot discriminate: the persisted path there is
+;; ABSOLUTE, and java.nio resolves an absolute second argument verbatim, so
+;; the root argument is dead for that case; and both checkouts' default confs
+;; were written with the SAME cap, so caller-root and identity-root name
+;; indistinguishable files. Both shapes below make the two roots disagree on
+;; DISK CONTENT, which is the only thing an assertion can see.
+
+;; kills "build the PERSISTED conf path from the caller root": a RELATIVE
+;; persisted path (a supported case - see conf-file-path's docstring on the
+;; original launch cwd) whose per-checkout copies carry different caps.
+(let [master (mk-tmp)
+      wt (str master "-wt")]
+  (spit (str (fs/path master "README.md")) "init\n")
+  (tgit! master "init" "-q" "-b" "main")
+  (tgit! master "add" "-A")
+  (tgit! master "commit" "-q" "-m" "init")
+  (tgit! master "worktree" "add" "-q" wt "-b" "wt-rel")
+  (fs/create-dirs (fs/path master ".swarmforge"))
+  (fs/create-dirs (fs/path master "swarmforge" "packs"))
+  (fs/create-dirs (fs/path wt "swarmforge" "packs"))
+  ;; identity persists a RELATIVE path, so the root it is resolved against
+  ;; is load-bearing rather than discarded
+  (spit (str (fs/path master ".swarmforge" "swarm-identity"))
+        "active_backlog_max_depth_conf_path\tswarmforge/packs/rel.conf\n")
+  (spit (str (fs/path master "swarmforge" "packs" "rel.conf"))
+        "config active_backlog_max_depth 9\n")
+  ;; the worktree's own copy of the SAME relative path says something else -
+  ;; reading it instead of master's is the defect, and is now visible
+  (spit (str (fs/path wt "swarmforge" "packs" "rel.conf"))
+        "config active_backlog_max_depth 4\n")
+  (let [[from-wt _] (stderr-of #(backlog-depth-lib/read-max-depth wt))]
+    (assert= "bl966: a RELATIVE persisted conf path resolves at master, not at the calling worktree"
+             9 from-wt))
+  ;; compare CANONICAL paths: mk-tmp hands back /var/folders/... while
+  ;; resolve-identity-root canonicalizes through macOS's /var -> /private/var
+  ;; symlink, so a raw prefix test fails on spelling rather than on rooting.
+  (assert= "bl966: the resolved conf path itself is rooted at the master checkout, not the worktree"
+           true
+           (tstr/starts-with? (str (fs/canonicalize (backlog-depth-lib/conf-file-path wt)))
+                              (str (fs/canonicalize master))))
+  (tgit! master "worktree" "remove" "--force" wt))
+
+;; kills "build the FALLBACK conf path from the caller root": no identity at
+;; all, and the two checkouts' tracked default confs disagree.
+(let [master (mk-tmp)
+      wt (str master "-wt")]
+  (spit (str (fs/path master "README.md")) "init\n")
+  (tgit! master "init" "-q" "-b" "main")
+  (tgit! master "add" "-A")
+  (tgit! master "commit" "-q" "-m" "init")
+  (tgit! master "worktree" "add" "-q" wt "-b" "wt-fallback")
+  (fs/create-dirs (fs/path master "swarmforge"))
+  (fs/create-dirs (fs/path wt "swarmforge"))
+  (spit (str (fs/path master "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 8\n")
+  (spit (str (fs/path wt "swarmforge" "swarmforge.conf"))
+        "config active_backlog_max_depth 2\n")
+  (let [[from-wt err] (stderr-of #(backlog-depth-lib/read-max-depth wt))]
+    (assert= "bl966: the no-identity FALLBACK conf also resolves at master, so both checkouts still agree (invariant 1)"
+             8 from-wt)
+    (assert= "bl966: that fall-through is still loud" true (tstr/includes? err "no swarm-identity")))
+  (tgit! master "worktree" "remove" "--force" wt))
+
+;; Survivors 3 and 4 - resolve-identity-root guards its git result with TWO
+;; overlapping conditions, `(zero? (:exit r))` and `(not (str/blank? common))`.
+;; Every fixture above satisfies both at once (real git either succeeds with
+;; output or fails with none), so deleting EITHER guard survived. Each needs a
+;; case where it is the only guard that can reject the result; real git cannot
+;; produce those pairings, so the subprocess seam is stubbed - the guards are
+;; what is under test here, not git.
+(let [root (str (mk-tmp) "-exit0-blank")]
+  (with-redefs [daemon-cycle-guard-lib/sh! (fn [& _] {:exit 0 :out "   \n"})]
+    (assert= "bl966: a git call that SUCCEEDS but returns blank output must not be trusted - resolve to the caller's own root (isolates the blank-output guard)"
+             root
+             (backlog-depth-lib/resolve-identity-root root))))
+
+(let [root (str (mk-tmp) "-exit1-output")]
+  (with-redefs [daemon-cycle-guard-lib/sh! (fn [& _] {:exit 1 :out "/nowhere/.git\n"})]
+    (assert= "bl966: a git call that FAILS but still printed something must not be trusted - resolve to the caller's own root (isolates the exit-code guard)"
+             root
+             (backlog-depth-lib/resolve-identity-root root))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

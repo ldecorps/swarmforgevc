@@ -15,6 +15,10 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
+(defn assert-true [msg actual]
+  (when-not actual
+    (swap! failures conj (str "FAIL: " msg))))
+
 (def created-temp-dirs (atom []))
 ;; BL-459: every temp dir this runner creates is tracked here and removed by
 ;; a JVM shutdown hook, registered ONCE below - fires on both a clean run
@@ -137,6 +141,116 @@
 (assert= "a blank block leaves the content untouched"
          "Headline\n"
          (briefing-email-lib/append-content-block "Headline\n" "   "))
+
+;; ── prepend-content-block / maybe-mark-subject (pure, BL-619) ────────────
+
+(assert= "a non-blank block is prepended before the existing content"
+         "TOKEN BURN WARNING: run out Thursday\n\nHeadline\n"
+         (briefing-email-lib/prepend-content-block "Headline\n" "TOKEN BURN WARNING: run out Thursday"))
+
+(assert= "a nil block leaves the content untouched (prepend)"
+         "Headline\n"
+         (briefing-email-lib/prepend-content-block "Headline\n" nil))
+
+(assert= "a blank block leaves the content untouched (prepend)"
+         "Headline\n"
+         (briefing-email-lib/prepend-content-block "Headline\n" "   "))
+
+(assert= "maybe-mark-subject prefixes the fixed marker when true"
+         "[TOKEN BURN WARNING] SwarmForge briefing 2026-07-09 - Shipped BL-215"
+         (briefing-email-lib/maybe-mark-subject "SwarmForge briefing 2026-07-09 - Shipped BL-215" true))
+
+(assert= "maybe-mark-subject leaves the subject unchanged when false"
+         "SwarmForge briefing 2026-07-09 - Shipped BL-215"
+         (briefing-email-lib/maybe-mark-subject "SwarmForge briefing 2026-07-09 - Shipped BL-215" false))
+
+(assert= "maybe-mark-subject leaves the subject unchanged when nil"
+         "SwarmForge briefing 2026-07-09 - Shipped BL-215"
+         (briefing-email-lib/maybe-mark-subject "SwarmForge briefing 2026-07-09 - Shipped BL-215" nil))
+
+;; ── send-unsent-briefings! + :token-burn-section adapter (BL-619) ────────
+
+;; warning-leads-briefing-01: a leading warning is prepended ABOVE the
+;; coordinator body, the subject carries the fixed marker, and the subject's
+;; own headline still names the real body content, not the warning.
+(let [dir (mk-tmp)
+      sent-texts (atom [])
+      sent-subjects (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Shipped BL-215\n\nDetails...\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [subject text & _] (swap! sent-subjects conj subject) (swap! sent-texts conj text) {:success true})
+    :token-burn-section (fn [] {:leading-text "TOKEN BURN WARNING: run out Thursday" :subject-marker? true})
+    :log! (fn [& _] nil)})
+  (assert= "warning-leads-briefing-01: the leading warning is the very first thing in the sent content"
+           true
+           (str/starts-with? (first @sent-texts) "TOKEN BURN WARNING: run out Thursday"))
+  (assert= "warning-leads-briefing-01: the coordinator body still follows, unaltered"
+           true
+           (str/includes? (first @sent-texts) "Shipped BL-215"))
+  (assert= "warning-leads-briefing-01: the subject carries the fixed token-burn marker"
+           true
+           (str/starts-with? (first @sent-subjects) "[TOKEN BURN WARNING] "))
+  (assert= "warning-leads-briefing-01: the subject's own headline still names the real body, not the warning"
+           "[TOKEN BURN WARNING] SwarmForge briefing 2026-07-09 - Shipped BL-215"
+           (first @sent-subjects)))
+
+;; ok-path-one-line-status-03: the ok/no-anchor/malformed one-liner joins the
+;; appended sections instead - no leading text, no subject marker.
+(let [dir (mk-tmp)
+      sent-texts (atom [])
+      sent-subjects (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [subject text & _] (swap! sent-subjects conj subject) (swap! sent-texts conj text) {:success true})
+    :token-burn-section (fn [] {:appended-text "Token burn: on track (~4.8%/day)" :subject-marker? false})
+    :log! (fn [& _] nil)})
+  (assert= "ok-path-one-line-status-03: the status line is appended, not prepended"
+           true
+           (str/starts-with? (first @sent-texts) "Headline"))
+  (assert= "ok-path-one-line-status-03: the status line reaches the sent content"
+           true
+           (str/includes? (first @sent-texts) "Token burn: on track (~4.8%/day)"))
+  (assert= "ok-path-one-line-status-03: no subject marker is added"
+           "SwarmForge briefing 2026-07-09 - Headline"
+           (first @sent-subjects)))
+
+;; A nil-returning (or absent) :token-burn-section adapter degrades to the
+;; original content unchanged - same graceful-degrade contract as every
+;; other optional section.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :token-burn-section (fn [] nil)
+    :log! (fn [& _] nil)})
+  (assert= "BL-619: a nil-returning :token-burn-section adapter leaves content unchanged"
+           "Headline\n"
+           (first @sent-texts)))
+
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-619: no :token-burn-section adapter at all -> content is unchanged (backward compatible)"
+           "Headline\n"
+           (first @sent-texts)))
+
+;; section-failure-never-blocks-send-09: the adapter contract is the SAME
+;; try/catch-at-the-caller posture every *-briefing-section fn in
+;; handoffd.bb already uses (a throw there degrades to nil before it ever
+;; reaches this library) - proven here by the "absent adapter" case above,
+;; the exact shape a failed CLI shell-out degrades to.
 
 ;; ── load-sent-briefings / record-briefing-sent! / find-unsent-briefings ──
 
@@ -429,6 +543,123 @@
            #{}
            (briefing-email-lib/load-sent-briefings dir)))
 
+;; ── send-unsent-briefings! + :send-reason! adapter (BL-902) ──────────────
+;; BL-902: an optional :send-reason! adapter, consulted BEFORE any section
+;; is gathered, lets an undeliverable sweep skip the entire expensive
+;; compose - the fix for the ~96s-per-cycle stall this ticket describes.
+;; Mirrors the qa_e2e_procedure scenarios in BL-902's own ticket.
+
+;; scenario 1 (THE REGRESSION) / scenario 2 (NO GATHERING): with
+;; :send-reason! reporting :missing-api-key, every section adapter -
+;; including :read-briefing-content itself - is never invoked, and the
+;; expected briefing-skip-missing-key line is still logged.
+(let [dir (mk-tmp)
+      calls (atom [])
+      log-calls (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (let [sent (briefing-email-lib/send-unsent-briefings!
+              dir
+              {:send-reason! (fn [] :missing-api-key)
+               :read-briefing-content (fn [f] (swap! calls conj :read) (slurp (str (fs/path dir f))))
+               :suite-duration-line (fn [] (swap! calls conj :suite-duration) "line")
+               :diagram-section (fn [] (swap! calls conj :diagram) {:html "<img/>" :note-line "note"})
+               :token-burn-section (fn [] (swap! calls conj :token-burn) {:appended-text "x"})
+               :send-email! (fn [& _] (throw (ex-info "must never be called - send-reason! already said undeliverable" {})))
+               :log! (fake-log! log-calls)})]
+    (assert= "BL-902 no-gathering-02: nothing is sent when :send-reason! reports undeliverable" [] sent)
+    (assert= "BL-902 no-gathering-02: zero section/content adapters are invoked before the skip"
+             []
+             @calls)
+    (assert= "BL-902: the same briefing-skip-missing-key line is logged as the pre-BL-902 path"
+             [["briefing-skip-missing-key" "2026-07-09.md"]]
+             @log-calls)))
+
+;; :disabled reaches the same zero-gathering, correctly-keyed skip.
+(let [dir (mk-tmp)
+      calls (atom [])
+      log-calls (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:send-reason! (fn [] :disabled)
+    :read-briefing-content (fn [f] (swap! calls conj :read) (slurp (str (fs/path dir f))))
+    :send-email! (fn [& _] (throw (ex-info "must never be called" {})))
+    :log! (fake-log! log-calls)})
+  (assert= "BL-902: a :disabled :send-reason! also skips before any gathering" [] @calls)
+  (assert= "BL-902: the same briefing-skip-disabled line is logged as the pre-BL-902 path"
+           [["briefing-skip-disabled" "2026-07-09.md"]]
+           @log-calls))
+
+;; scenario 3 (INVARIANT 3, UNCHANGED OUTCOME): the briefing stays NOT
+;; marked sent after an early skip, and is picked up again on a second
+;; sweep - same retry contract as the pre-BL-902 skip path.
+(let [dir (mk-tmp)]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:send-reason! (fn [] :missing-api-key)
+    :send-email! (fn [& _] (throw (ex-info "must never be called" {})))
+    :log! (fn [& _] nil)})
+  (assert= "BL-902 unchanged-outcome-03: not marked sent after an early skip"
+           #{}
+           (briefing-email-lib/load-sent-briefings dir))
+  (assert= "BL-902 unchanged-outcome-03: still picked up as unsent on a second sweep"
+           ["2026-07-09.md"]
+           (briefing-email-lib/find-unsent-briefings dir)))
+
+;; scenario 4 (HAPPY PATH UNTOUCHED): a sendable :send-reason! (nil) does
+;; not short-circuit anything - the full compose still runs, every section
+;; still reaches the sent content, and the briefing is marked sent exactly
+;; once, unaffected by the adapter's mere presence.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (let [sent (briefing-email-lib/send-unsent-briefings!
+              dir
+              {:send-reason! (fn [] nil)
+               :read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+               :suite-duration-line (fn [] "Suite duration trend: 5s latest")
+               :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+               :log! (fn [& _] nil)})]
+    (assert= "BL-902 happy-path-04: the briefing is still composed and sent exactly once" ["2026-07-09.md"] sent)
+    (assert= "BL-902 happy-path-04: an optional section still reaches the sent content"
+             true
+             (str/includes? (first @sent-texts) "Suite duration trend: 5s latest"))))
+
+;; scenario 5 (WARNING NOT SPAMMED, library half): the one-shot dedup
+;; itself lives in the injected :send-reason! adapter (handoffd.bb's
+;; briefing-send-reason! owns the real warn-missing-key-if-needed! wiring -
+;; see test_handoffd_briefing_email_wiring.sh) - this proves only that
+;; send-unsent-briefings! calls :send-reason! exactly once per unsent
+;; briefing per sweep, never more, so a caller's own one-shot guard is
+;; never bypassed by a hidden extra invocation.
+(let [dir (mk-tmp)
+      reason-calls (atom 0)]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:send-reason! (fn [] (swap! reason-calls inc) :missing-api-key)
+    :send-email! (fn [& _] (throw (ex-info "must never be called" {})))
+    :log! (fn [& _] nil)})
+  (assert= "BL-902 warning-not-spammed-05: :send-reason! is consulted exactly once per unsent briefing"
+           1
+           @reason-calls))
+
+;; Backward compatibility: no :send-reason! adapter at all -> the original
+;; always-compose-then-send path runs unchanged (every pre-BL-902
+;; caller/test above already proves this; this makes the contract explicit).
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-902: no :send-reason! adapter -> the original compose-then-send path runs unaffected"
+           "Headline\n"
+           (first @sent-texts)))
+
 ;; ── build-diagram-section (pure, BL-260 / BL-286) ────────────────────────
 
 ;; BL-286 diagram-cid-01: available diagrams are referenced by a cid image
@@ -446,6 +677,28 @@
   (assert= "rendered-inline-01: the note-line points at the rendered-above html view"
            true
            (str/includes? (:note-line section) "rendered inline above")))
+
+;; Open-ticket chart shares the same cid-PNG path with a readable heading.
+;; BL-896 bounce 2026-08-17: the 2026-08-16 08:20 CEST human ruling
+;; explicitly overrides the F1 rename recommendation and keeps the word
+;; "burndown" in the heading and note-line
+;; (backlog/answers-archive/ANSWER-BL-896-land-burndown-chart.md).
+(let [section (briefing-email-lib/build-diagram-section
+               [{:name "architecture" :base64 "QUJD"}
+                {:name "not-done-burndown" :base64 "Wk9P"}])]
+  (assert= "burndown-diagram-01: not-done burndown is referenced by cid"
+           true
+           (str/includes? (:html section) "cid:not-done-burndown-diagram"))
+  (assert= "burndown-diagram-01: heading is human-readable and keeps \"burndown\" per the human ruling"
+           true
+           (and (str/includes? (:html section) "<h3>")
+                (str/includes? (str/lower-case (:html section)) "burndown")
+                (str/includes? (str/lower-case (:html section)) "open tickets remaining")))
+  (assert= "burndown-diagram-01: note mentions both architecture and the open-ticket burndown chart"
+           true
+           (and (str/includes? (:note-line section) "Architecture")
+                (str/includes? (:note-line section) "open-ticket")
+                (str/includes? (str/lower-case (:note-line section)) "burndown"))))
 
 ;; BL-286 diagram-cid-02/03: each referenced diagram carries a matching
 ;; inline attachment, with the image bytes and a filename.
@@ -644,6 +897,156 @@
   (assert= "BL-511: a nil-returning :telegram-bridge-cost-line adapter leaves content unchanged"
            "Headline\n"
            (first @sent-texts)))
+
+;; ── BL-821 Leg B: briefing-date-label / briefing-in-window? (pure, no clock) ─
+
+(assert= "BL-821: a plain YYYY-MM-DD.md name is its own date label"
+         "2026-08-17" (briefing-email-lib/briefing-date-label "2026-08-17.md"))
+(assert= "BL-821: a name with a suffix beyond the date has no date label (decided deliberately, not treated as dated)"
+         nil (briefing-email-lib/briefing-date-label "2026-07-30-evening.md"))
+(assert= "BL-821: a name with no date at all has no date label"
+         nil (briefing-email-lib/briefing-date-label "README.md"))
+
+(assert= "BL-821: today is in the window" true (briefing-email-lib/briefing-in-window? "2026-08-17.md" "2026-08-17"))
+(assert= "BL-821: yesterday is in the window" true (briefing-email-lib/briefing-in-window? "2026-08-16.md" "2026-08-17"))
+(assert= "BL-821: two days ago is outside the window" false (briefing-email-lib/briefing-in-window? "2026-08-15.md" "2026-08-17"))
+(assert= "BL-821: a month ago is outside the window" false (briefing-email-lib/briefing-in-window? "2026-07-17.md" "2026-08-17"))
+(assert= "BL-821: tomorrow (a clock-skew/malformed edge, not a real briefing) is outside the window, never negative-days-old admitted"
+         false (briefing-email-lib/briefing-in-window? "2026-08-18.md" "2026-08-17"))
+(assert= "BL-821: a suffixed name is never mailed by the window (out-of-scope note: decided deliberately, not crashed on)"
+         false (briefing-email-lib/briefing-in-window? "2026-07-30-evening.md" "2026-08-17"))
+(assert= "BL-821: a malformed today-str fails closed rather than throwing"
+         false (briefing-email-lib/briefing-in-window? "2026-08-17.md" "not-a-date"))
+
+(assert= "BL-821: partition-by-window splits mailable vs suppressed, preserving order"
+         {:mailable ["2026-08-16.md" "2026-08-17.md"] :suppressed ["2026-07-17.md" "2026-07-30-evening.md"]}
+         (briefing-email-lib/partition-by-window
+          ["2026-07-17.md" "2026-07-30-evening.md" "2026-08-16.md" "2026-08-17.md"]
+          "2026-08-17"))
+
+;; ── BL-821 Leg B wiring: send-unsent-briefings! ─────────────────────────────
+
+(let [dir (mk-tmp)
+      sent (atom [])
+      logs (atom [])]
+  (spit (str (fs/path dir "2026-07-01.md")) "old\n")
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                dir
+                {:today-str "2026-08-17"
+                 :read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+                 :send-email! (fn [_subject text & _] (swap! sent conj text) {:success true})
+                 :log! (fn [& parts] (swap! logs conj (vec parts)))})]
+    (assert= "BL-821: only the in-window briefing is sent when :today-str is supplied"
+             ["2026-08-17.md"] result)
+    (assert-true "BL-821: the suppressed briefing is reported, distinguishable from no briefing at all"
+                 (some #(= % ["briefing-suppressed-outside-window" "2026-07-01.md"]) @logs))))
+
+(let [dir (mk-tmp)
+      sent (atom [])]
+  (spit (str (fs/path dir "2026-07-01.md")) "old\n")
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                dir
+                {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+                 :send-email! (fn [_subject text & _] (swap! sent conj text) {:success true})
+                 :log! (fn [& _] nil)})]
+    (assert= "BL-821: omitting :today-str leaves every unsent file mailable (backward compatible with every pre-BL-821 caller)"
+             ["2026-07-01.md" "2026-08-17.md"] result)))
+
+;; ── BL-821 Leg A wiring: :commit-marker! ────────────────────────────────────
+
+(let [dir (mk-tmp)
+      commit-calls (atom [])]
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] {:success true})
+    :commit-marker! (fn [briefings-dir] (swap! commit-calls conj briefings-dir) {:ok true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-821: :commit-marker! is called once, with briefings-dir, after a successful send"
+           [dir] @commit-calls))
+
+(let [dir (mk-tmp)
+      commit-calls (atom [])]
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] {:success false :reason :missing-api-key :error "no key"})
+    :commit-marker! (fn [briefings-dir] (swap! commit-calls conj briefings-dir) {:ok true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-821: :commit-marker! is never called on a failed/skipped send"
+           [] @commit-calls))
+
+(let [dir (mk-tmp)
+      logs (atom [])]
+  (spit (str (fs/path dir "2026-08-17.md")) "today\n")
+  (let [result (briefing-email-lib/send-unsent-briefings!
+                dir
+                {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+                 :send-email! (fn [_subject text & _] {:success true})
+                 :commit-marker! (fn [_] {:ok false :reason "simulated git failure"})
+                 :log! (fn [& parts] (swap! logs conj (vec parts)))})]
+    (assert= "BL-821: a send is still recorded as sent even when the durable-store commit fails"
+             ["2026-08-17.md"] result)
+    (assert-true "BL-821: a commit failure is reported via :log!"
+                 (some #(= (first %) "briefing-marker-commit-failed") @logs))))
+
+;; ── BL-821 Leg A: commit-sent-marker! (injected sh-fn, no real git process) ─
+
+(let [dir (mk-tmp)
+      calls (atom [])
+      sh-fn (fn [repo-dir & args]
+              (swap! calls conj (vec (cons repo-dir args)))
+              {:exit 0 :out "" :err ""})]
+  (spit (str (fs/path dir ".sent.json")) "{}")
+  (let [result (briefing-email-lib/commit-sent-marker! dir sh-fn)
+        add-call (first @calls)
+        commit-call (second @calls)
+        marker-path (briefing-email-lib/sent-state-path dir)]
+    (assert= "BL-821: a clean add+commit reports ok" {:ok true} result)
+    (assert= "BL-821: git add is scoped to exactly the marker path, nothing else, run inside briefings-dir"
+             [dir "git" "add" "--" marker-path]
+             add-call)
+    (assert= "BL-821: git commit is scoped to exactly the marker path too, never a broad `git commit -a`"
+             ["--" marker-path]
+             (take-last 2 commit-call))))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "add")
+                {:exit 1 :out "" :err "fatal: add failed"}
+                {:exit 0 :out "" :err ""}))]
+  (assert-true "BL-821: a git add failure is reported, never thrown"
+               (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "commit")
+                {:exit 1 :out "" :err "nothing to commit, working tree clean"}
+                {:exit 0 :out "" :err ""}))]
+  (assert= "BL-821: \"nothing to commit\" (a racing second host already committed the same content) is ok, not a failure"
+           {:ok true :reason :nothing-to-commit}
+           (briefing-email-lib/commit-sent-marker! dir sh-fn)))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "commit")
+                {:exit 1 :out "On branch main\nUntracked files:\n\t(use \"git add\" to track)\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n" :err ""}
+                {:exit 0 :out "" :err ""}))]
+  (assert= "BL-821: git's OTHER \"nothing to commit\" phrasing - printed instead of \"working tree clean\" whenever ANY untracked file exists anywhere else in the repo, which real-fixture testing found is the common case for this chronically-not-pristine checkout - is ok too, not a failure"
+           {:ok true :reason :nothing-to-commit}
+           (briefing-email-lib/commit-sent-marker! dir sh-fn)))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (if (= (second args) "commit")
+                {:exit 1 :out "" :err "fatal: unable to lock ref"}
+                {:exit 0 :out "" :err ""}))]
+  (assert-true "BL-821: a real git commit failure is reported, never thrown"
+               (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

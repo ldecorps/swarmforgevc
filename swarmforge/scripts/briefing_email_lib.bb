@@ -12,7 +12,13 @@
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.time LocalDate]
+           [java.time.temporal ChronoUnit]))
+
+;; BL-967: subprocess waits are bounded at the shared chokepoint - this
+;; lib runs inside handoffd's poll cycle.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "markdown_to_html_lib.bb")))
 
@@ -44,6 +50,116 @@
            sort
            vec))
     []))
+
+;; ── BL-821 Leg B: bound the send window ─────────────────────────────────
+;; The specifier's picked window (approval_context): today and yesterday,
+;; UTC. A briefing older than that is never mailed by the ordinary sweep,
+;; no matter what the marker contains - unbounded historical catch-up
+;; remains possible only through an explicit one-shot operator action
+;; (out of this ticket's scope).
+(def briefing-window-days 2)
+
+;; The plain YYYY-MM-DD date label a briefing file name IS, or nil for any
+;; other shape - including a name that merely STARTS with a date, like
+;; "2026-07-30-evening.md" (BL-821's own out-of-scope note: such names do
+;; reach this path on `main` and must be decided deliberately, not crashed
+;; on or silently treated as if the trailing suffix were not there).
+(defn briefing-date-label [file-name]
+  (some-> (re-matches #"(\d{4}-\d{2}-\d{2})\.md" file-name) second))
+
+;; Pure, no clock: today-str is an explicit ISO yyyy-MM-dd UTC date string
+;; the caller supplies (send-unsent-briefings! below, from the daemon's own
+;; real clock) - this function never reads the clock itself, keeping it
+;; testable with fixed strings, no timers. A file name with no plain date
+;; label (briefing-date-label nil), or an unparseable/malformed date in
+;; either string, decides false (out of window) rather than throwing -
+;; the same fail-closed posture this project uses everywhere else for an
+;; absent/unrecognized fact, and exactly what scenario 09 requires: a
+;; DEFINITE decision, never a crash.
+(defn briefing-in-window? [file-name today-str]
+  (boolean
+   (when-let [date-str (briefing-date-label file-name)]
+     (try
+       (let [today (LocalDate/parse today-str)
+             d (LocalDate/parse date-str)
+             days-old (.between ChronoUnit/DAYS d today)]
+         (and (>= days-old 0) (< days-old briefing-window-days)))
+       (catch Exception _ false)))))
+
+;; Splits unsent-file-names (already marker-filtered, oldest first) into
+;; {:mailable [...] :suppressed [...]} against today-str, preserving the
+;; incoming order within each partition.
+(defn partition-by-window [unsent-file-names today-str]
+  {:mailable (vec (filter #(briefing-in-window? % today-str) unsent-file-names))
+   :suppressed (vec (remove #(briefing-in-window? % today-str) unsent-file-names))})
+
+;; ── BL-821 Leg A: make the sent-marker durable ──────────────────────────
+;; A successful send must persist .sent.json to the shared store the sweep
+;; reads (a fresh checkout/second host/pull otherwise never sees it - Leg
+;; A's own defect), not just this process's working tree. sh-fn is the
+;; injectable IO seam (default real-sh, a thin babashka.process/sh wrapper)
+;; so no test needs a real git process; the real-fixture proof lives in
+;; test_briefing_marker_commit.sh, same split as every other tmux/git-
+;; touching concern in this codebase. process/sh, not clojure.java.shell/sh:
+;; this adapter is called from inside the daemon's own sweep loop, once per
+;; successfully-sent briefing, and bb's clojure.java.shell shim is known to
+;; deadlock reading subprocess streams across repeated calls in one process
+;; (handoffd.bb's own header comment, BL-061) - the same failure shape this
+;; call site would reproduce under a multi-briefing sweep.
+(defn- real-sh [dir & args]
+  (let [{:keys [exit out err]} (apply daemon-cycle-guard-lib/sh! {:continue true :dir dir} args)]
+    {:exit exit :out out :err err}))
+
+(defn commit-sent-marker!
+  "Commits EXACTLY briefings-dir's .sent.json - a scoped `git add` + `git
+   commit` of that one path, never sweeping unrelated working-tree changes
+   into the commit (BL-506 applies to this machine-authored commit exactly
+   as it does to an agent's own). Returns {:ok true} on a clean commit,
+   {:ok true :reason :nothing-to-commit} when the marker's new content is
+   byte-identical to what the durable store already has (a second host
+   racing the same entry - scenario 07's \"mailed exactly once\" depends on
+   this not erroring), or {:ok false :reason ...} on a real add/commit
+   failure. The marker file itself is already written to disk by
+   record-briefing-sent! either way - a commit failure degrades to exactly
+   the pre-Leg-A working-tree-only behavior for THIS host, it never loses
+   the local send record."
+  ([briefings-dir] (commit-sent-marker! briefings-dir real-sh))
+  ([briefings-dir sh-fn]
+   (try
+     (let [path (sent-state-path briefings-dir)
+           ;; git resolves its own repo root by walking UP from :dir - so
+           ;; briefings-dir itself (any depth inside the working tree) is
+           ;; always a valid cwd for both calls, no matter how deep the
+           ;; briefings directory sits, without this function having to know
+           ;; or guess that depth itself.
+           add-result (sh-fn briefings-dir "git" "add" "--" path)]
+       (if-not (zero? (:exit add-result))
+         {:ok false :reason (str "git add failed: " (str/trim (str (:err add-result))))}
+         (let [commit-result (sh-fn briefings-dir "git" "commit"
+                                     "-m" "briefing: record sent marker\n\nAutomated by the briefing-email sweep (BL-821)."
+                                     "--" path)]
+           (cond
+             (zero? (:exit commit-result))
+             {:ok true}
+
+             ;; git reports a scoped no-op commit two different ways
+             ;; depending on whether ANY untracked file exists anywhere
+             ;; else in the repo (unrelated to briefings-dir entirely) -
+             ;; "nothing to commit, working tree clean" when none do, or
+             ;; "nothing added to commit but untracked files present" when
+             ;; one does. This checkout is chronically not pristine, so
+             ;; the second phrasing is the common case in practice, not an
+             ;; edge case - missing it here would misclassify the exact
+             ;; race this return value exists to make safe (a second host
+             ;; already committed byte-identical content) as a hard
+             ;; failure nearly every real time it happens.
+             (re-find #"nothing (?:to commit|added to commit)" (str (:out commit-result) (:err commit-result)))
+             {:ok true :reason :nothing-to-commit}
+
+             :else
+             {:ok false :reason (str "git commit failed: " (str/trim (str (:err commit-result))))}))))
+     (catch Exception e
+       {:ok false :reason (str "commit-sent-marker-exception: " (.getMessage e))}))))
 
 ;; BL-392: the headline's positional contract ("first non-empty line") is
 ;; unchanged, but a briefing's first line can be a whole markdown-laden lede
@@ -94,6 +210,18 @@
         headline (some-> raw-headline strip-markdown-emphasis str/trim bound-headline)]
     (str "SwarmForge briefing " date-label (when-not (str/blank? headline) (str " - " headline)))))
 
+;; BL-619: unlike build-briefing-subject above (whose headline is DERIVED
+;; from the content), a warning marker is a fixed, always-identical prefix -
+;; "leads with" per the directive means a human scanning an inbox list sees
+;; it before opening the email, so it goes first, ahead of the date-derived
+;; headline rather than folded into it.
+(def token-burn-warning-subject-marker "[TOKEN BURN WARNING] ")
+
+(defn maybe-mark-subject [subject subject-marker?]
+  (if subject-marker?
+    (str token-burn-warning-subject-marker subject)
+    subject))
+
 ;; BL-252 (generalized for BL-251): appends a computed content block - the
 ;; suite-duration trend + BL-078 regression flag (BL-252), the
 ;; needs-approval section (BL-251), or any future one - to the outgoing
@@ -107,6 +235,17 @@
   (if (str/blank? block)
     content
     (str (str/trim-newline (or content "")) "\n\n" block "\n")))
+
+;; BL-619 warning-leads-briefing-01: the mirror image of append-content-block
+;; above - puts `block` ABOVE the existing content instead of below it, for
+;; the one section (the token-burn warning) the directive says must LEAD the
+;; briefing rather than be appended among the others. A blank/nil block
+;; leaves content untouched, same degrade-gracefully contract as every
+;; append-content-block caller.
+(defn prepend-content-block [content block]
+  (if (str/blank? block)
+    content
+    (str block "\n\n" (str/trim-newline (or content "")) "\n")))
 
 ;; Threads content through every optional section adapter present in
 ;; `adapters`, in order - each key independently appends its own block (or
@@ -158,6 +297,35 @@
 (defn- diagram-content-id [name]
   (str name "-diagram"))
 
+;; Human-facing <h3> for each cid attachment. Architecture/swarm-flow keep
+;; the historic "<name> diagram" label; the open-ticket chart gets a
+;; readable title instead of "not-done-burndown diagram".
+;;
+;; BL-896 bounce 2026-08-17: F1 had renamed this away from "burndown"
+;; ("burndown" claims progress toward a fixed/committed scope, which BL-659
+;; banned). The 2026-08-16 08:20 CEST human ruling explicitly overrides that
+;; rename and keeps the word "burndown" on the heading for this email chart -
+;; BL-659's ban stays PWA/milestone-dashboard-specific and does not reach
+;; here (backlog/answers-archive/ANSWER-BL-896-land-burndown-chart.md).
+(defn- diagram-heading [name]
+  (case name
+    "not-done-burndown" "Backlog burndown — open tickets remaining"
+    (str name " diagram")))
+
+(defn- diagram-note-line [diagrams]
+  (let [names (set (map :name diagrams))
+        has-arch? (or (contains? names "architecture") (contains? names "swarm-flow"))
+        has-burn? (contains? names "not-done-burndown")]
+    (cond
+      (and has-arch? has-burn?)
+      "Architecture diagrams and the open-ticket burndown chart: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
+
+      has-burn?
+      "Open-ticket burndown chart: rendered inline above (HTML view)."
+
+      :else
+      "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source.")))
+
 ;; BL-260: given the render CLI's parsed [{:name :base64}...] payload (nil/
 ;; empty when rendering is unavailable this run - the CLI shell-out failed,
 ;; threw, or was never installed), returns {:html :note-line :attachments}
@@ -175,17 +343,22 @@
 ;; (nothing to attach). :note-line still gets appended to the plaintext
 ;; part, since a plaintext-only client can never show the html part at all
 ;; (BL-260 plaintext-degradation-03).
+;;
+;; Also accepts the not-done burndown chart (name "not-done-burndown") from
+;; render-briefing-burndown.js, merged by handoffd alongside architecture
+;; diagrams - same cid-PNG path, never a second attachment mechanism.
 (defn build-diagram-section [diagrams]
   (if (seq diagrams)
     {:html (str "<div>"
                 (str/join ""
                           (map (fn [{:keys [name]}]
-                                 (str "<h3>" name " diagram</h3>"
-                                      "<img src=\"cid:" (diagram-content-id name) "\" "
-                                      "alt=\"" name " diagram\" style=\"max-width:100%;height:auto\"/>"))
+                                 (let [heading (diagram-heading name)]
+                                   (str "<h3>" heading "</h3>"
+                                        "<img src=\"cid:" (diagram-content-id name) "\" "
+                                        "alt=\"" heading "\" style=\"max-width:100%;height:auto\"/>")))
                                diagrams))
                 "</div>")
-     :note-line "Architecture diagrams: rendered inline above (HTML view) - see docs/diagrams/ in the repo for the Mermaid source."
+     :note-line (diagram-note-line diagrams)
      :attachments (mapv (fn [{:keys [name base64]}]
                            {:filename (str name "-diagram.png")
                             :content-id (diagram-content-id name)
@@ -193,6 +366,26 @@
                          diagrams)}
     {:html nil
      :note-line "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo."}))
+
+;; BL-896 F4: handoffd's briefing-diagram-section calls two independent
+;; render-CLI shell-outs (architecture, open-ticket chart) and concatenates
+;; whichever succeeded before handing the result to build-diagram-section
+;; above - "each source fails open independently; whichever succeeded still
+;; ships" is the claim that combining step makes true, not build-diagram-
+;; section itself (which was already covered below). Extracted here, taking
+;; the two source thunks as parameters, so a test can inject any combination
+;; of success/nil/throw and assert the claim actually holds - handoffd.bb
+;; itself cannot be load-file'd by a test harness (it exits immediately when
+;; *command-line-args* is empty), so the testable half of this logic has to
+;; live in a plain lib file like this one. The try/catch here is a second,
+;; redundant safety net for that same reason: an injected fake thunk that
+;; throws for real must not prevent its sibling's result from shipping,
+;; exactly like a production source's own internal catch already does.
+(defn diagram-section-from-sources [architecture-source-fn burndown-source-fn]
+  (let [architecture (try (architecture-source-fn) (catch Exception _ nil))
+        burndown (try (burndown-source-fn) (catch Exception _ nil))
+        diagrams (vec (concat (or architecture []) (or burndown [])))]
+    (build-diagram-section (seq diagrams))))
 
 ;; BL-393: the diagram section's own html (a <div> of <h3>/<img> per
 ;; diagram) must coexist with the rendered body, never replace it -
@@ -203,6 +396,43 @@
     (str body-html diagram-html)
     body-html))
 
+;; BL-902: given a (possibly nil) result of an optional :send-reason!
+;; adapter (daemon_alarm_lib.bb's email-send-reason - :disabled or
+;; :missing-api-key), returns the exact same log key send-unsent-briefings!
+;; has always emitted for that reason once a real send attempt reports it -
+;; the early-skip path below must be indistinguishable from today's outcome
+;; to any downstream consumer keyed off these log lines.
+(defn- skip-log-key [reason]
+  (case reason
+    :disabled "briefing-skip-disabled"
+    :missing-api-key "briefing-skip-missing-key"))
+
+;; BL-902: the expensive half of what was inline in send-unsent-briefings!
+;; below - gathers every optional section, renders diagrams/markdown, and
+;; calls :send-email!. Extracted so the sendability check ahead of it can
+;; skip straight past this entire function when the email cannot be sent,
+;; without duplicating the gather/render/subject/html logic itself.
+(defn- compose-and-send-one! [file-name adapters]
+  (let [raw-content ((:read-briefing-content adapters) file-name)
+        content (apply-optional-sections raw-content adapters)
+        diagram-section (when-let [f (:diagram-section adapters)] (f))
+        content (if diagram-section
+                  (append-content-block content (:note-line diagram-section))
+                  content)
+        token-burn-section (when-let [f (:token-burn-section adapters)] (f))
+        content (if (:appended-text token-burn-section)
+                  (append-content-block content (:appended-text token-burn-section))
+                  content)
+        date-label (str/replace file-name #"\.md$" "")
+        subject (maybe-mark-subject (build-briefing-subject date-label content) (:subject-marker? token-burn-section))
+        content (if (:leading-text token-burn-section)
+                  (prepend-content-block content (:leading-text token-burn-section))
+                  content)
+        html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))]
+    (if (seq (:attachments diagram-section))
+      ((:send-email! adapters) subject content html (:attachments diagram-section))
+      ((:send-email! adapters) subject content html))))
+
 (defn send-unsent-briefings!
   "Sends each not-yet-sent committed briefing exactly once via the injected
    send-email! adapter (daemon_alarm_lib.bb's send-alarm-email!). A file is
@@ -210,6 +440,18 @@
    (:reason :disabled/:missing-api-key) or a real failure both log a skip
    and leave the file to retry on the next sweep, never crashing and never
    losing the briefing. Returns the file names actually sent this call.
+
+   BL-902: an optional :send-reason! adapter (zero-arg fn returning
+   daemon_alarm_lib.bb's email-send-reason verdict - nil when sendable, or
+   :disabled/:missing-api-key) is consulted FIRST, before any section is
+   gathered or anything is rendered - a defect this ticket fixes was the
+   entire expensive compose running every cycle only to discover the send
+   can't happen. A non-nil verdict skips straight to the same
+   briefing-skip-* log line a real send attempt would have produced, never
+   touching :read-briefing-content, any optional section adapter, or
+   :diagram-section. Omitting the adapter (every caller/test predating
+   BL-902) falls through to the original always-compose-then-send path
+   unchanged.
 
    Each optional section adapter (:suite-duration-line, BL-252;
    :needs-approval-section, BL-251 - zero-arg fns returning a content block
@@ -230,35 +472,71 @@
    rather than replacing it. A diagram section with :attachments (available
    diagrams, not the renderer-unavailable/no-diagrams branch) is passed as
    a 4th arg alongside :html; every other case - including no
-   :diagram-section adapter at all - keeps the 3-arg call, html and all."
+   :diagram-section adapter at all - keeps the 3-arg call, html and all.
+
+   BL-619: an optional :token-burn-section adapter (zero-arg fn returning
+   {:appended-text :leading-text :subject-marker?}, any key possibly nil/
+   false) is unlike every section above - it is the ONE section the
+   directive says must LEAD the briefing, not join the appended list. Its
+   :appended-text (the ok/no-anchor/malformed one-liner) joins the other
+   appended sections exactly like :suite-duration-line etc; its
+   :leading-text (the active warning) is PREPENDED above everything else -
+   applied last, after the subject is already derived, so the subject's own
+   headline still reflects the coordinator-authored body, never the warning
+   text. :subject-marker? true additionally prefixes the subject with a
+   fixed token-burn marker (maybe-mark-subject) - the ticket's own \"email
+   subject gains a token-burn warning marker\" contract.
+
+   BL-821 Leg B: an optional :today-str value (a plain ISO yyyy-MM-dd UTC
+   date string, not a function - one sweep call has one \"today\") bounds
+   the send window to briefings dated today or yesterday
+   (briefing-in-window?/partition-by-window above); a briefing outside the
+   window is never composed or sent, and is reported via :log! as
+   \"briefing-suppressed-outside-window\" - distinguishable from having
+   generated no briefing at all. Omitting :today-str (every caller/test
+   predating BL-821) leaves every unsent file mailable, unaffected by the
+   window - the same \"omitted adapter -> unchanged behavior\" contract
+   every other optional key here already has; the real daemon caller
+   always supplies it, since only the true IO edge (a real clock read) may
+   ever produce this value - never something derived inside this library.
+
+   BL-821 Leg A: an optional :commit-marker! adapter (1-arg fn, called
+   with briefings-dir, returning commit-sent-marker!'s {:ok ...} shape)
+   persists the sent-marker to the durable store right after a successful
+   send is recorded locally. A commit failure is reported via :log! as
+   \"briefing-marker-commit-failed\" but never undoes the local record or
+   fails the sweep - the file already sent stays sent for THIS host; the
+   marker's own diff just rides the next successful commit. Omitting the
+   adapter (every caller/test predating BL-821) skips Leg A entirely,
+   same contract as every other optional adapter here."
   [briefings-dir adapters]
-  (let [sent-now (atom [])]
-    (doseq [file-name (find-unsent-briefings briefings-dir)]
-      (let [raw-content ((:read-briefing-content adapters) file-name)
-            content (apply-optional-sections raw-content adapters)
-            diagram-section (when-let [f (:diagram-section adapters)] (f))
-            content (if diagram-section
-                      (append-content-block content (:note-line diagram-section))
-                      content)
-            date-label (str/replace file-name #"\.md$" "")
-            subject (build-briefing-subject date-label content)
-            html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))
-            result (if (seq (:attachments diagram-section))
-                     ((:send-email! adapters) subject content html (:attachments diagram-section))
-                     ((:send-email! adapters) subject content html))]
-        (cond
-          (:success result)
-          (do
-            (record-briefing-sent! briefings-dir file-name)
-            ((:log! adapters) "briefing-sent" file-name)
-            (swap! sent-now conj file-name))
+  (let [sent-now (atom [])
+        unsent (find-unsent-briefings briefings-dir)
+        today-str (:today-str adapters)
+        {:keys [mailable suppressed]} (if today-str
+                                         (partition-by-window unsent today-str)
+                                         {:mailable unsent :suppressed []})]
+    (doseq [file-name suppressed]
+      ((:log! adapters) "briefing-suppressed-outside-window" file-name))
+    (doseq [file-name mailable]
+      (let [early-reason (when-let [f (:send-reason! adapters)] (f))]
+        (if early-reason
+          ((:log! adapters) (skip-log-key early-reason) file-name)
+          (let [result (compose-and-send-one! file-name adapters)]
+            (cond
+              (:success result)
+              (do
+                (record-briefing-sent! briefings-dir file-name)
+                (when-let [commit! (:commit-marker! adapters)]
+                  (let [commit-result (commit! briefings-dir)]
+                    (when-not (:ok commit-result)
+                      ((:log! adapters) "briefing-marker-commit-failed" file-name (str (:reason commit-result))))))
+                ((:log! adapters) "briefing-sent" file-name)
+                (swap! sent-now conj file-name))
 
-          (= (:reason result) :disabled)
-          ((:log! adapters) "briefing-skip-disabled" file-name)
+              (contains? #{:disabled :missing-api-key} (:reason result))
+              ((:log! adapters) (skip-log-key (:reason result)) file-name)
 
-          (= (:reason result) :missing-api-key)
-          ((:log! adapters) "briefing-skip-missing-key" file-name)
-
-          :else
-          ((:log! adapters) "briefing-send-failed" file-name (str (:error result))))))
+              :else
+              ((:log! adapters) "briefing-send-failed" file-name (str (:error result))))))))
     @sent-now))

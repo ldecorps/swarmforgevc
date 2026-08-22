@@ -267,6 +267,79 @@ test('scenario 08: re-applying to a topic already in its best permitted slot is 
   });
 });
 
+// BL-687: an in-flight (active/) same-epic sibling is a full ordering peer -
+// a parked child made top must out-rank it, unlike the pre-BL-687 world
+// where readLiveBacklogItems never saw active/ at all.
+test('BL-687 scenario 03: making a parked child top ranks it above its in-flight same-epic sibling', async () => {
+  const target = mkGitTarget();
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 20);
+  writeTopic(target, 'active', 'A2', 'slug-ea', 30);
+  writeTopic(target, 'hold', 'A3', 'slug-ea', 40);
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: target });
+
+  await withBridge(target, {}, async (handle) => {
+    const { status, body } = await topicMakeTop(handle, 'EA', 'A3');
+    assert.equal(status, 200);
+    assert.equal(body.changed, true);
+  });
+
+  assert.ok(readPriority(target, 'hold', 'A3') < readPriority(target, 'paused', 'A1'));
+  assert.ok(readPriority(target, 'hold', 'A3') < readPriority(target, 'active', 'A2'));
+});
+
+// BL-687: an in-flight child is itself reorderable, not a read-only guest -
+// its own file (in backlog/active/) is rewritten, committed, and it stays
+// in backlog/active/ (the pipeline stage never moves as a side effect).
+test('BL-687 scenario 04: an in-flight child is itself a valid make-top target, and its own active/ file is rewritten and committed', async () => {
+  const target = mkGitTarget();
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 20);
+  writeTopic(target, 'active', 'A2', 'slug-ea', 30);
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: target });
+
+  await withBridge(target, {}, async (handle) => {
+    const { status, body } = await topicMakeTop(handle, 'EA', 'A2');
+    assert.equal(status, 200);
+    assert.equal(body.changed, true);
+  });
+
+  assert.ok(
+    fs.existsSync(path.join(target, 'backlog', 'active', 'A2.yaml')),
+    'expected A2 to still be a backlog/active/ file - make-top rewrites priority in place, never moves pipeline folder'
+  );
+  assert.ok(readPriority(target, 'active', 'A2') < readPriority(target, 'paused', 'A1'));
+  const status = execFileSync('git', ['status', '--porcelain', '--', 'backlog'], { cwd: target, encoding: 'utf8' });
+  assert.equal(status.trim(), '', 'expected the rewritten backlog/active/ file to be committed');
+});
+
+// BL-687: a depends_on pointing at an in-flight SAME-EPIC ticket (not just an
+// epic-less one, as scenario 06 above already covers) must stay just as
+// inert now that active/ is folded into the same read the peer set comes
+// from - approval_context #1/invariant 2.
+test('BL-687 scenario 05: a depends_on naming an in-flight same-epic sibling neither bounds nor refuses the move', async () => {
+  const target = mkGitTarget();
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 20);
+  writeTopic(target, 'active', 'A2', 'slug-ea', 30);
+  writeTopic(target, 'hold', 'A3', 'slug-ea', 40, ['A2']);
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: target });
+
+  await withBridge(target, {}, async (handle) => {
+    const { status, body } = await topicMakeTop(handle, 'EA', 'A3');
+    assert.equal(status, 200);
+    assert.equal(body.changed, true);
+  });
+
+  assert.ok(
+    readPriority(target, 'hold', 'A3') < readPriority(target, 'active', 'A2'),
+    'A2 being active must never bound A3 below it - an active dependency is inert, exactly like scenario 06'
+  );
+});
+
 test('topic make-top route returns 404 and mutates nothing for a topic id that does not exist at all', async () => {
   const target = mkTmp();
   writeEpic(target, 'EA', 'slug-ea', 0);

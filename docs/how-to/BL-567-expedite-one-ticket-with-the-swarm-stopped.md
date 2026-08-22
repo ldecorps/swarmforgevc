@@ -25,7 +25,7 @@ swarmforge/scripts/expedite.sh /path/to/repo BL-123
 | `--dry-run` | plan and print; touches nothing |
 | `--no-restart` | skip the final restart phase |
 | `--bounce-bound N` | change the per-stage bound (default **3**) |
-| `--stage-timeout-ms N` | per-stage budget (default 45 min) |
+| `--stage-timeout-ms N` | per-stage budget (default 90 min) |
 | `--override` | proceed even though a live swarm could not be stopped |
 
 Start with `--dry-run`. It prints the liveness verdict, what it would park, and
@@ -112,7 +112,38 @@ NN-<role>/verdict.json
 records, briefing hooks, board sync — so the next boot can see what was skipped
 instead of inferring it.
 
+### Read the OUTSTANDING block before you walk away
+
+The last thing every run prints is what it left for someone else, and who picks
+it up:
+
+```
+expedite OUTSTANDING - this run left work for someone else:
+expedite   the parked tickets:
+expedite     BL-586, BL-1012  held in backlog/hold/
+expedite     owner: a human - Article 3.1 makes backlog/hold/ human-held ...
+expedite   the uncommitted backlog moves:
+expedite     backlog/active/ -> backlog/hold/  (BL-586)
+expedite     owner: whoever next commits in the master checkout ...
+```
+
+**Two things there need you, not the swarm.** The parked tickets sit in
+`backlog/hold/`, which Article 3.1 forbids the coordinator promoting from — so
+if you do not move them back, `active/` can stay empty and the pipeline idles
+(this is what happened on 2026-08-21). And the backlog moves are **staged, not
+committed**, in the shared master checkout: commit them deliberately, or the
+next role to commit anything there sweeps them into an unrelated commit.
+
+It prints on every ending, including a failed restart and each of the
+pre-flight refusals below — which is exactly when it matters, since a
+refusal fires after tickets are already parked and never reaches the run's
+own tail. `nothing outstanding` means there is genuinely nothing, and a
+`--dry-run` always says that, because it changed nothing.
+
 ## Things it will not do
+
+Each of these is a **handover**, not a drop — the closing summary names the
+owner of the two that leave state behind.
 
 It does not push. Publishing local `main` is your call on the next boot.
 
@@ -121,13 +152,21 @@ It does not promote a next ticket. One ticket, one run.
 It does not write a BL topic record or touch the briefing. Those need the front-desk
 machinery it exists to work without.
 
+It does not commit the backlog moves it made, and it does not restore what it
+parked. Both are yours — see the OUTSTANDING block above.
+
 ## When it refuses
 
 | message | what to do |
 |---|---|
 | `REFUSE teardown did not reach a clean slate: <names>` | stop the named processes by hand, then re-run. `./stop-swarm.sh` misses `babysitterd` and the Operator agent — see BL-637 |
 | `REFUSE stop command carries a forbidden flag` | never pass `--sweep-inbox`, `--reset-worktrees` or `--full`: they archive the very parcels a parked ticket needs to resume |
+| `REFUSE could not create the run worktree` | remove the stale worktree, or delete the branch, then re-run |
 | `EXHAUSTED … probable-spec-defect` | route the ticket to the specifier with the named defect class; do not re-run the coder |
+
+Every `REFUSE` row above prints the OUTSTANDING block too — check it before you
+fix the refusal and re-run, since a sibling ticket may already be parked and
+staged from before the refusal fired.
 | `stage-timeout` | the stage was killed at its budget, along with everything it spawned. Read that stage's `transcript.jsonl` |
 
 ## Why a stage timeout is not optional
