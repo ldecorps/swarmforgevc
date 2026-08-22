@@ -41,6 +41,32 @@ export function parseHardeningLedger(rows: HardeningLedgerRow[]): Evidence[] {
 }
 
 /**
+ * Hardener split (CRAP): the per-line parse/validate/build was inlined into
+ * parseBounceRecords' loop, which alone pushed its cyclomatic complexity to 7
+ * (CRAP 7.00 at 100% coverage - coverage was never the problem, the branch
+ * count was). Extracted as its own pure, behavior-preserving helper so each
+ * function's CRAP is measured on its own branches, not the sum of both.
+ */
+function parseBounceLine(line: string): Evidence | null {
+  if (!line.trim()) return null;
+  let rec: { producingRole?: string; failureClass?: string; ticket?: string };
+  try {
+    rec = JSON.parse(line);
+  } catch {
+    // Forgiving reader, same convention as the other record readers here: a
+    // malformed or half-written line is skipped, never thrown.
+    return null;
+  }
+  if (!rec.failureClass || !rec.producingRole) return null;
+  return {
+    subject: `${rec.failureClass}/${rec.producingRole}`,
+    source: 'bounce-recurrence',
+    artifact: '.swarmforge/bounces/',
+    detail: `${rec.ticket ?? 'unknown ticket'} bounced for ${rec.failureClass} against ${rec.producingRole}`,
+  };
+}
+
+/**
  * HONEST LIMIT, stated rather than worked around: bounce records carry
  * ticket, producingRole, ticketType, failureClass, commit and at - but NOT the
  * files touched. So this slice ranks bounce recurrence by CLASS and ROLE only.
@@ -50,22 +76,8 @@ export function parseHardeningLedger(rows: HardeningLedgerRow[]): Evidence[] {
 export function parseBounceRecords(lines: string[]): Evidence[] {
   const out: Evidence[] = [];
   for (const line of lines) {
-    if (!line.trim()) continue;
-    let rec: { producingRole?: string; failureClass?: string; ticket?: string };
-    try {
-      rec = JSON.parse(line);
-    } catch {
-      // Forgiving reader, same convention as the other record readers here: a
-      // malformed or half-written line is skipped, never thrown.
-      continue;
-    }
-    if (!rec.failureClass || !rec.producingRole) continue;
-    out.push({
-      subject: `${rec.failureClass}/${rec.producingRole}`,
-      source: 'bounce-recurrence',
-      artifact: '.swarmforge/bounces/',
-      detail: `${rec.ticket ?? 'unknown ticket'} bounced for ${rec.failureClass} against ${rec.producingRole}`,
-    });
+    const ev = parseBounceLine(line);
+    if (ev) out.push(ev);
   }
   return out;
 }
