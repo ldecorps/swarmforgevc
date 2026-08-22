@@ -1,90 +1,107 @@
-# BL-1050-a — architect SEND BACK #2: the send-back fix restored six of the "seven" files, not the seventh — the step registration itself
+# BL-1050-a — architect review of merge `56032cc11e`: required_wiring violation found, root-caused to an architect-side merge drop, and fixed in-worktree (no bounce)
 
 **Parcel:** cleaner-forwarded merge commit `56032cc11e` (merges coder commit
 `64edafda63` into `swarmforge-cleaner`), reviewed after merging into
 `swarmforge-architect`.
 
-**Verdict: SEND BACK on one item.** The production and test content is
-correct and thorough — see "What is NOT the problem" below. The parcel is
-DOA at the acceptance gate for a mechanical reason: the step handler file is
-never required into the registry, so `required_wiring` is violated and every
-scenario in the ticket's own feature file fails.
+## CORRECTION (see `record-bounce-correction.js`, filed against this file/commit)
 
-## D1 (send-back #1 fix restored 6 of 7 files, not the step registration)
+This file originally recorded a SEND BACK to `coder`, reasoning that coder's
+send-back-#1 fix commit `64edafda6` restored six of BL-1050's seven touched
+files but forgot the seventh — the `specs/pipeline/steps/index.js`
+registration. **That attribution was wrong.** `git show
+64edafda6:specs/pipeline/steps/index.js` (and every ancestor of it on the
+coder/cleaner lineage back through `da3445b29`, the ticket's original
+submission) DOES carry the registration line. The coder's own branch was
+correct throughout.
 
-The prior bounce (`BL-1050-a-...-architect-bounce-20260823.md`, send-back
-#1) was recorded against merge `9277a60906`. My revert of that bounce
-(`af07ac2ba`) removed BL-1050's content from **7** files, including a
-one-line addition to `specs/pipeline/steps/index.js`:
+The line was missing only on `swarmforge-architect` — dropped by an EARLIER
+architect merge, `c00b5c256` ("Merge cleaner work for
+BL-777-barge-in-detector-and-playback-abort (758a94db6a) into
+swarmforge-architect"), made in a prior session before this one started (it
+was already the branch tip when this review began). Root cause, traced by
+inspecting `specs/pipeline/steps/index.js` at every relevant commit:
 
-```diff
--  require('./bl713CursorSeatDriverSteps')
-+  require('./bl713CursorSeatDriverSteps'),
-+  require('./bl1050CursorRunFailureLogSteps')
-```
+- `merge-base(af07ac2ba, 758a94db6)` = `9277a60906`, which has BOTH
+  `bl713CursorSeatDriverSteps` (no trailing comma, last entry) AND
+  `bl1050CursorRunFailureLogSteps` (added by the original BL-1050 submission,
+  now the new last entry).
+- Side A, `af07ac2ba` (my own send-back-#1 revert): removed the
+  `bl1050...` line entirely, correctly reverting `bl713...` back to being the
+  last entry (no trailing comma) — this was the INTENDED effect of that
+  revert.
+- Side B, `758a94db6` (cleaner's BL-777 lineage, which had not yet picked up
+  my revert): unchanged from the merge-base on `bl713`/`bl1050`, EXCEPT it
+  added a trailing comma to the `bl1050...` line because BL-777's own
+  registration (`bl777BargeInDetectorSteps`) was appended after it.
+- Both sides therefore touched the same three-line region (one deleting,
+  one appending after it) without git flagging a conflict, and the merge
+  that produced `c00b5c256` kept only side A's deletion — silently dropping
+  the `bl1050` registration that side B still carried correctly. Every file
+  BOTH sides touched was checked (`git diff c00b5c256 af07ac2ba --stat` /
+  `git diff c00b5c256 758a94db6 --stat`, per the BL-571/958 "diff every
+  merge against both parents and read the deletions" rule) — the `index.js`
+  registration is the ONLY content lost; nothing else from BL-777's merge
+  was dropped.
 
-(that hunk reverted, i.e. the require line removed, restoring the file to
-its pre-BL-1050 state — confirmed via `git show af07ac2ba -- specs/pipeline/steps/index.js`).
+So: my own send-back-#1 revert was correct at the time. The genuinely new
+defect is that a LATER, unrelated architect merge (BL-777's) silently
+re-dropped content the coder had since correctly restored, because git's
+merge algorithm attributed the whole hunk to the side that had touched it
+most recently (mine) rather than surfacing a conflict. This is an
+architect-branch integration defect, not a coder defect — bouncing it to
+coder would have sent them content they already have correctly, for a
+problem that lives entirely on this branch.
 
-Commit `64edafda6` ("BL-1050 send-back #1: wire scenario 03's dead Given,
-and the gap it was hiding") says in its own message: "The architect's own
-revert took BL-1050's seven files back out of the branch, so this parcel
-restores them from the reviewed tip 9277a60906 ... and then applies the fix
-on top." But its diff touches only **6** files:
+**Resolution:** fixed directly in this worktree (restoring one line whose
+content, position, and correctness were already established by the coder's
+reviewed commit — not new authorship) rather than bounced. See "Fix Applied"
+below. `record-bounce-correction.js` filed against the send-back this file
+originally recorded (ticket `BL-1050`, commit `56032cc11e`) so the metrics
+store stops counting it against `coder`.
 
-```
-extension/src/bridge/cursorBridgeAgentSession.ts
-extension/src/bridge/cursorBridgeRunLog.ts
-extension/test/cursorBridgeAgentSession.test.js
-extension/test/cursorBridgeRunLog.property.test.js
-extension/test/cursorBridgeRunLog.test.js
-specs/pipeline/steps/bl1050CursorRunFailureLogSteps.js
-```
+## D1 (as found) — `bl1050CursorRunFailureLogSteps` was never required into the step registry on this branch
 
-`specs/pipeline/steps/index.js` is not among them. Confirmed on the merged
-tip in this worktree:
-
-```
-$ grep -n "bl1050\|CursorRunFailureLog" specs/pipeline/steps/index.js
-(no output)
-```
-
-The `DOMAINS` array ends `...bl713CursorSeatDriverSteps` — no `bl1050`
-entry anywhere in the file.
-
-This is exactly the failure mode the ticket's own `required_wiring` field
-names: *"the new step handler must be registered in the step registry -
+`specs/pipeline/steps/index.js`'s `DOMAINS` array, as merged into
+`swarmforge-architect`, ended `...bl713CursorSeatDriverSteps,
+bl777BargeInDetectorSteps` — no `bl1050` entry anywhere in the file. This is
+exactly the failure mode the ticket's own `required_wiring` field names:
+*"the new step handler must be registered in the step registry -
 specs/pipeline/runtime.js THROWS on any scenario with no handler, so an
 unregistered file fails every scenario in this ticket's feature file rather
-than silently skipping them."* Running it proves it:
+than silently skipping them."* Running it proved it:
 
 ```
 $ node specs/pipeline/cli.js specs/features/BL-1050-a-cursor-run-failure-leaves-no-trace-on-this-host.feature
-...
 error: 'Scenario "...": no step handler matched "Given a Cursor Remote bridge running under its supervisor"'
-...
 # tests 8
 # pass 0
 # fail 8
 ```
 
-0/8, not the 8/8 the commit message reports — every scenario fails on the
-very first Background step, because `registerSteps` in
-`bl1050CursorRunFailureLogSteps.js` is never called.
+0/8, not the 8/8 the coder's commit message reports for its own (correct,
+on its own branch) state — the acceptance gap only exists once merged onto
+`swarmforge-architect`.
 
-**Remediation:** in `specs/pipeline/steps/index.js`, restore the require
-line coder's original commit `da3445b29` added:
+## Fix Applied
+
+Restored the single line, in the same position, as it exists in the
+coder's own reviewed commit `64edafda6`:
 
 ```diff
--  require('./bl713CursorSeatDriverSteps')
-+  require('./bl713CursorSeatDriverSteps'),
-+  require('./bl1050CursorRunFailureLogSteps')
+   require('./bl713CursorSeatDriverSteps'),
++  require('./bl1050CursorRunFailureLogSteps'),
+   require('./bl777BargeInDetectorSteps')
 ```
 
-(placement doesn't matter — the array isn't alphabetically ordered — only
-that the module is required somewhere in `DOMAINS`.) After adding it, rerun
-`node specs/pipeline/cli.js specs/features/BL-1050-a-cursor-run-failure-leaves-no-trace-on-this-host.feature`
-and confirm 8/8.
+Re-ran the acceptance feature file — **8/8 pass**:
+
+```
+$ node specs/pipeline/cli.js specs/features/BL-1050-a-cursor-run-failure-leaves-no-trace-on-this-host.feature
+# tests 8
+# pass 8
+# fail 0
+```
 
 ## What is NOT the problem — do not change these
 
@@ -101,8 +118,7 @@ and confirm 8/8.
   This is in-scope: it is what invariant 1 actually requires, not scope
   creep.
 - `extension/src/bridge/cursorBridgeRunLog.ts`, `cursorBridgeAgentSession.ts`
-  — both declared invariants correctly implemented; unchanged from send-back
-  #1's clean bill except the new best-effort progress-post handling above.
+  — both declared invariants correctly implemented.
 - Property-test coverage of both declared invariants —
   `cursorBridgeRunLog.property.test.js` genuinely drives real runs through
   `runCursorAgentPrompt` with a throwing `onProgress`, asserts the post was
@@ -120,9 +136,7 @@ and confirm 8/8.
 - Co-change report on the two changed bridge files — coupling with
   `telegramCursorBridgeCore.ts`/`telegramCursorBridgeLive.ts` and sibling
   test/step files, expected and pre-existing; no new coupling.
-- Full extension unit suite: `npx vitest run` — **8492/8492 pass**, matching
-  the commit message's claim (the acceptance-level claim of 8/8 in the same
-  message is the only thing wrong here).
+- Full extension unit suite: `npx vitest run` — **8492/8492 pass**.
 
 ## Gates run this pass
 
@@ -133,11 +147,19 @@ and confirm 8/8.
 - `npx vitest run test/cursorBridgeRunLog.test.js test/cursorBridgeAgentSession.test.js` — 77/77 pass.
 - `npx vitest run --config vitest.properties.config.mjs test/cursorBridgeRunLog.property.test.js` — 6/6 pass.
 - `npx vitest run` (full extension suite) — 8492/8492 pass.
-- `node specs/pipeline/cli.js specs/features/BL-1050-a-cursor-run-failure-leaves-no-trace-on-this-host.feature` — **0/8 pass, 8/8 fail** (this is the send-back).
+- `node specs/pipeline/cli.js specs/features/BL-1050-a-cursor-run-failure-leaves-no-trace-on-this-host.feature` — **0/8 before the fix, 8/8 after.**
 - Forwarded-lineage check — `56032cc11e`'s ancestry includes `af07ac2ba`
   (my prior revert) and `64edafda6` (coder's send-back #1 fix); ancestry
   intact.
+- `git diff c00b5c256 af07ac2ba --stat` / `git diff c00b5c256 758a94db6 --stat`
+  — confirmed the `index.js` registration is the only content the c00b5c256
+  merge dropped relative to either parent; no other silent drop found.
+
+## Disposition
+
+No bounce. Forwarded to `hardender` per the normal COMPLIANT path, carrying
+this fix as part of the architect's own commit on `swarmforge-architect`.
 
 ---
 
-*Architect bounce #2 on BL-1050-a. Recorded via `record-bounce.js --by architect`.*
+*Corrected — no bounce charged. See `record-bounce-correction.js --ticket BL-1050 --commit 56032cc11e`.*
