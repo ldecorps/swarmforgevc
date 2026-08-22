@@ -11,7 +11,7 @@ severity: high
 # number is chosen. Not critical: nothing ships wrong and the swarm moves.
 status: todo
 epic: unit-suite-speed
-assigned_to: none
+assigned_to: coder
 priority: 8
 direction: human-requested
 depends_on: []
