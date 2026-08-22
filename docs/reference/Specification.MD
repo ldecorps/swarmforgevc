@@ -1,6 +1,55 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1058: the entire shell test lane was
+**Last Updated:** August 22, 2026 (BL-1066: the panel's mean-ticket-time
+metric recomputed on the 2-second stage-poll tick, and one computation
+walked `git log --follow` once per closed ticket — 794 `.yaml` files under
+`backlog/done/` on this host (the lister recurses into milestone
+subdirectories, so the corpus is larger than what sits flat in the
+directory), at ~0.128s per walk, about 102 seconds of git per computation
+scheduled every 2 seconds. The measured host effect was sustained
+multi-core git saturation and `[git] <defunct>` zombies. The corrected
+diagnosis (recorded because it changes the fix): `gitFollowHistory` uses
+`execFileSync`, so one call's 794 walks always ran strictly sequentially —
+the concurrency was between overlapping/repeated invocations of a call that
+was simply far too slow for its own timer, not a fan-out within one call. A
+new pure, `vscode`-free module, `extension/src/metrics/metricsTickGate.ts`,
+is now owned by `swarmPanel.ts` as a persistent private field: a tick may
+never re-enter a computation for the same target path that is still
+running, and may not start a new one until the standing value has aged
+past a 5-minute refresh interval — every tick still republishes a complete
+metrics object, it is simply not recomputed on every one. Re-pointing the
+panel at a different target (`updateTarget`) takes effect immediately
+because the gate is keyed by subject, so a switch never serves the
+previous repo's stale mean for the rest of the interval.
+`computeMeanTicketTime` (`swarmMetrics.ts`) itself no longer shells one
+`git log --follow` per file: it runs a single
+`git log --full-history -M --name-status -- backlog`, indexes every
+arrival (rename or add) by the path arrived at, and reads each ticket's
+activation time out of that shared index by walking its rename chain —
+one git subprocess per computation regardless of corpus size
+(`MEAN_TICKET_TIME_GIT_SUBPROCESS_BOUND = 1`, exported and asserted).
+`--full-history` and `-M` are both load-bearing for correctness, not
+performance flags: default git history simplification silently prunes a
+side branch whose net effect on `backlog/` was nothing — exactly the shape
+of a reopen-then-reclose merged back in — and was measured to drop real
+commits on the live repo without them. Checked against a deterministic
+101-ticket sample of the live `backlog/done/` corpus: 98 identical
+durations between the old and new algorithm, 0 that differ, 0 lost, 3
+tickets the old per-file `--follow` could not measure that the new walk
+can. One pre-existing, deliberately-unchanged semantic: a ticket's
+measured duration ends at its file's LATEST arrival at its current path,
+so a ticket re-filed after close still reports a duration inflated by the
+time until the re-file — unchanged from pre-BL-1066 behavior and pinned by
+a named test; flagged for the specifier as a possible separate ticket, not
+addressed here. Measured on this host: git processes per computation 801 →
+1, wall clock ~89s → ~815ms, on a schedule of every 2s → every 300s. No
+new extension command or setting; the panel's mean-ticket-time tile still
+updates and refreshes, now on its slower cadence, with correctness
+unchanged and the per-tick git-subprocess storm gone. Architecture diagram
+(`docs/diagrams/architecture.mmd`) updated with the new `metricsTickGate.ts`
+node and its edge into `swarmMetrics.ts`.)
+Prior entry —
+BL-1058: the entire shell test lane was
 dark on a GNU/Linux host. `swarmforge/scripts/test/lib/tmp_cleanup.sh`
 created its registry with `mktemp -t swarmforge-tmp-cleanup-registry` —
 BSD/macOS syntax, where the operand is a prefix; GNU coreutils reads the
