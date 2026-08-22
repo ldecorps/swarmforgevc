@@ -31,6 +31,9 @@ approval_context: >
   second log file, or log prompt or reply CONTENT. Only the run id, the error
   reason, and whether the session was reset.
 
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1050::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
+
 invariants:
   - "A failure surfaced to a human is also written to disk. Every bridge run failure the operator can be told about through Telegram leaves a line in cursor-bridge.log, whether or not the Telegram post itself succeeds - the log path must not be reachable only through the code path that also posts."
   - "No secret and no conversation content is logged. Lines carry the run id, the error reason and the reset decision; never a prompt, a reply, an API key, or a bot token - the log is world-readable to anything on this host."
@@ -121,6 +124,16 @@ notes: |
   from `auto` unless connection errors correlate with model selection (fresh
   `auto` is healthy)" and "Do not conflate with swarm autopilot idle
   (separate surface)."
+
+  IR-DRY: one `near-duplicate` at 0.90 was real and normalized away - scenario
+  03's "still gains a line" now reads identically to scenario 01's "gains a
+  line", since its Given ("posting to Telegram fails") already carries the
+  contrast the word "still" was doing. Four `possible-synonym` findings remain
+  and are deliberately kept: three are the Examples placeholder "<reason>"
+  against literal reasons (same handler, one parameterized) and one is "gains
+  a line naming that run id" against "gains no failure line", which are the
+  two opposite assertions this feature exists to separate. No `duplicate`
+  findings.
 
   The sibling intake `INTAKE-cursor-remote-ready-after-bounce.md` is fully
   discharged by `BRIDGE_READY_MESSAGE` and archived without a ticket.
