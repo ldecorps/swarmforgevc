@@ -9,7 +9,7 @@ severity: high
 # and no work is lost.
 status: todo
 epic: swarm-reliability
-assigned_to: none
+assigned_to: coder
 priority: 14
 direction: swarm-reported
 depends_on: []
