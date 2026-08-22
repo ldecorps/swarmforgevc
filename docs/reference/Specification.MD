@@ -1,6 +1,45 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1029: the family sweep BL-1018 left
+**Last Updated:** August 22, 2026 (BL-1075: found during BL-1069's own
+review (goal 4) and minted as its narrow follow-up rather than folded in.
+The swarm's hardening step set `window-size largest` as a stability
+mitigation on the control-plane server — and named it as one in the ops
+runbook — but tmux(1) is explicit that `resize-window` "will automatically
+set window-size to manual **in the window options**", and a window option
+beats the server global. The extension's `paneTailer.ts` calls
+`resizeWindow` on every role window it tiles, so `largest` was unreachable
+on every window the panel manages, by construction — not a race, not an
+ordering bug, and not fixable by changing which writer runs last. Stopped
+applying and stopped claiming a mitigation that cannot hold, on both call
+paths that set it (`swarmforge/scripts/swarmforge.sh`'s
+`harden_tmux_server`, `swarmforge/scripts/control_plane_lib.bb`'s
+`harden-server!`) — nothing else changes: `focus-events off` is untouched
+and still applied on every path that applied it before, since it is not
+overridden by anything and remains the mitigation that actually holds.
+`docs/how-to/BL-tmux-wsl-segfault-upgrade.md` now names only
+`focus-events off` among the soft mitigations, states plainly that the
+tmux ≥ 3.7 version upgrade is what actually protects the host, and adds a
+sentence on why the window-size line was dropped rather than silently
+disappearing. Severity `medium`, deliberately: the knob was inert and the
+runbook overstated it, but nobody was actually less protected than they
+would be with the knob absent — the tmux ≥ 3.7 preference (BL-1069) is the
+defence that carries the load, landed and live. Explicitly deferred to a
+successor ticket: what the swarm should do when the panel is about to tile
+a control plane running tmux older than 3.7 — where `resize-window` arms
+the exact WINDOW_SIZE_MANUAL segfault trigger per window — needs the
+server-version fact BL-1069 was still building at mint time, so folding it
+in here would have made this slice depend on unlanded sibling work.
+`extension/src/panel/paneTailer.ts` was not modified by this parcel — the
+panel is the thing the swarm-side fix stopped fighting, not itself a party
+to the fix. Degraded gate on the swarm-side half only: shell + Babashka,
+no mutation/CRAP/DRY tooling wired, gated by
+`bl1075_window_size_ownership_property_runner.bb` (which re-measures the
+window-option-beats-global mechanism every run, so a future tmux changing
+that scope rule fails the test rather than silently enforcing a decision
+whose premise had gone) plus the acceptance scenarios. No new extension
+command or setting.)
+Prior entry —
+BL-1029: the family sweep BL-1018 left
 undone. tmux hands a `respawn-pane` command's trailing argument straight to
 `$SHELL -c`, so that argument must itself be valid POSIX shell; five
 remaining repair sites (`remote_control_health_lib.bb`, both
