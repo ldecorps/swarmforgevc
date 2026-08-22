@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1083-every-promotion-path-goes-through-the-gate.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted 2026-08-23 from the coordinator note "Expedite path skips
   depends_on/approval gate (BL-1078 incident)". Root cause found and confirmed
