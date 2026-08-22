@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6b288f9d391af26faa6d1ba3c4177f9a85db2df97e12e483665a03f6454cbdcc
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T16:42:40.952813523Z","feature_name":"The tmp-cleanup helper initializes under either mktemp dialect","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1058-the-shell-test-lane-is-dark-on-gnu-mktemp.feature","background_hash":"a620c9a9e90970657dc3170c78046912e09b0835419b7acc9f30a26a4e692777","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The helper initializes under either mktemp dialect","scenario_hash":"8a4b33aaae3e75c08244090feccb72b599184e3c4e216894107b9f30f80f69ec","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T16:42:40.952813523Z"},{"index":1,"name":"Registered fixture roots are swept whatever the exit path","scenario_hash":"04f3c8a5c041c8073a6244af1c61fbcd58115979e3bf4b99bc002cbc3156b042","mutation_count":18,"result":{"Total":18,"Killed":18,"Survived":0,"Errors":0},"tested_at":"2026-08-22T16:42:40.952813523Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The tmp-cleanup helper initializes under either mktemp dialect
 
   The shared shell-test cleanup helper creates its registry with BSD-only

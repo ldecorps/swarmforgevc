@@ -51,8 +51,38 @@
 # BOUNDARY: a trap cannot catch SIGKILL/OOM - that residue is BL-413's
 # periodic /tmp sweep's job, out of scope here.
 
+# BL-1058: an EXPLICIT template, and no -t.
+#
+# `mktemp -t <prefix>` is BSD/macOS syntax, where the operand is a prefix.
+# GNU coreutils treats the operand as a TEMPLATE and requires at least three
+# trailing X's, so on a GNU userland the call is a hard error:
+#
+#     mktemp: too few X's in template 'swarmforge-tmp-cleanup-registry'
+#
+# Every one of the shell test files that sources this helper does so at the
+# top under `set -euo pipefail`, so the failed command substitution killed the
+# script before a single test body ran - including this helper's own suite,
+# which is why nothing caught it until the host moved from macOS to Linux.
+#
+# `mktemp "<dir>/<prefix>.XXXXXX"` is accepted identically by both: an
+# explicit path template with six X's, and no dialect-specific flag. The
+# directory comes from TMPDIR when set (BSD's -t honoured it, so dropping the
+# flag must not silently relocate anyone's fixtures) and falls back to /tmp.
+#
+# BL-801's design is untouched: the registry is still a FILE keyed per
+# top-level process, so a registration made inside a `$(...)` subshell
+# survives, and the EXIT trap still sweeps it with a read loop that touches no
+# array index.
 if [[ -z "${__SWARMFORGE_TMP_CLEANUP_REGISTRY:-}" ]]; then
-  __SWARMFORGE_TMP_CLEANUP_REGISTRY="$(mktemp -t swarmforge-tmp-cleanup-registry)"
+  if ! __SWARMFORGE_TMP_CLEANUP_REGISTRY="$(mktemp "${TMPDIR:-/tmp}/swarmforge-tmp-cleanup-registry.XXXXXX")"; then
+    # Fail loud and BY NAME. Propagating mktemp's own message alone named
+    # neither this helper nor the registry, so the only clue a reader got was
+    # a bare tool error from a file they never opened - and `set -u` then made
+    # the next register_tmp_dir an unbound-variable error somewhere else
+    # entirely.
+    echo "tmp_cleanup: could not create the tmp-cleanup registry file under ${TMPDIR:-/tmp} - shell test cleanup cannot be initialized" >&2
+    exit 1
+  fi
   export __SWARMFORGE_TMP_CLEANUP_REGISTRY
 
   __swarmforge_cleanup_tmp_dirs() {
