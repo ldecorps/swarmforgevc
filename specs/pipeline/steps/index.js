@@ -571,7 +571,9 @@ const DOMAINS = [
   require('./bl1011FreshnessAlarmNamesSwarmAndReasonSteps'),
   require('./bl1014BoyScoutScanRanksDebtSteps'),
   require('./bl1035RespawnedBotGetsItsOwnGraceSteps'),
-  require('./bl1036RestartDoesNotCostAConflictWindowSteps')
+  require('./bl1036RestartDoesNotCostAConflictWindowSteps'),
+  require('./bl1041RescueNeverReducesDurabilitySteps'),
+  require('./bl1037WatchdogRestartsFewerThanMainMovesSteps')
 ];
 
 function registerSteps(registry) {
