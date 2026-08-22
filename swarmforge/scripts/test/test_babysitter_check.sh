@@ -292,7 +292,12 @@ J_OUT="$(run_check "$ROOT")"
 grep -q "CRIT \[pane-coder\]" <<< "$J_OUT" || fail "J: expected the missing-session CRIT to still be emitted; got: $J_OUT"
 grep -q "REPAIR \[repaired\] swarmforge-coder" <<< "$J_OUT" || fail "J: expected a REPAIR line for coder; got: $J_OUT"
 grep -q -- 'new-session -d -s swarmforge-coder' <<< "$(cat "$CALL_LOG")" || fail "J: expected a tmux new-session call for the vanished session; log: $(cat "$CALL_LOG")"
-grep -q -- 'respawn-pane -k' <<< "$(cat "$CALL_LOG")" || fail "J: expected a tmux respawn-pane call relaunching the role; log: $(cat "$CALL_LOG")"
+# BL-1018: a VANISHED session is created WITH its launch command and never
+# respawned into - the create-then-respawn-into-it sequence is the shape that
+# took the whole pack tmux server down on 2026-08-21. The launch script must
+# still get running, so assert it rides the create rather than a second call.
+grep -q -- "new-session -d -s swarmforge-coder .*coder.sh" <<< "$(cat "$CALL_LOG")" || fail "J: expected the create to carry the role's launch script; log: $(cat "$CALL_LOG")"
+grep -q -- 'respawn-pane' <<< "$(cat "$CALL_LOG")" && fail "J (BL-1018): a missing session must never be respawned into; log: $(cat "$CALL_LOG")"
 [[ -f "$ROOT/.swarmforge/babysitterd/session-repairs.json" ]] || fail "J: expected the repair budget to be persisted to session-repairs.json"
 grep -q '"attempts":1' <<< "$(cat "$ROOT/.swarmforge/babysitterd/session-repairs.json")" || fail "J: expected the persisted repair state to record 1 attempt; got: $(cat "$ROOT/.swarmforge/babysitterd/session-repairs.json")"
 pass "J: a vanished standing role's session is recreated by the live sweep (repair decision consumed, not merely returned)"
