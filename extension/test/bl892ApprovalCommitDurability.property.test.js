@@ -9,6 +9,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { recordApprovalDecisionAndClose, recordAmendDecisionAndClose } = require('../out/tools/telegramFrontDeskBotCore');
 const { commitApprovalWrites } = require('../out/util/commitIntegrityRunner');
 const { recordApprovalReply, recordRejectionReply, recordAmendReply } = require('../out/concierge/pendingApprovalReply');
+const { copyScriptClosure } = require('./helpers/pinnedRepoFixture');
 
 // BL-892 declared invariants (backlog/active/BL-892-approval-flip-must-commit.yaml):
 //   1. "A successful automated approval verdict leaves the ticket file's
@@ -46,12 +47,18 @@ function gitFixture() {
 function copyCommitIntegrityCli(root) {
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
-  for (const name of fs.readdirSync(repoScriptsDir)) {
-    if (name.endsWith('.bb')) {
-      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
-    }
-  }
+  // BL-1038: copy the load-file CLOSURE of the entry points this fixture
+  // actually invokes, not the whole live scripts directory. That directory
+  // holds 208 .bb files (2.16MB) and grows every day, so the old copy made
+  // every fixture build slower forever with no test added and no code
+  // changed - the growth term behind four budget raises in four days.
+  // commit_integrity_cli.bb's closure is 11 files, and it grows only with
+  // that CLI's own dependencies, never with the repository.
+  copyScriptClosure(
+    path.join(__dirname, '..', '..', 'swarmforge', 'scripts'),
+    scriptsDir,
+    ['commit_integrity_cli.bb']
+  );
 }
 
 function headShows(root, relPath) {
