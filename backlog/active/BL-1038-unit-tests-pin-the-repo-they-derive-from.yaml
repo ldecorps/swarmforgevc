@@ -78,6 +78,78 @@ description: |
   matches on. Exclude them explicitly, or the guard goes red precisely
   because the code is correct.
 
+  ## AMENDMENT 2026-08-22 - the family definition, after a coder spec-gap note
+
+  The coder reported that a static guard built to this spec "cannot separate
+  its family from BL-1039's". That is correct, and measuring it found the
+  cause is not needle tuning: **this ticket's own table conflates three
+  different cost causes**, and the two families genuinely overlap in the
+  same files.
+
+  ### The guard classifies OPERATIONS, not FILES
+
+  This is the rule the spec was missing. Each ticket owns a distinct
+  operation, and a single test file may perform both:
+
+  - **BL-1038 owns a read whose SUBJECT is the live repository** - its cost
+    rises as the repo grows.
+  - **BL-1039 owns the creation of a git repository** - its cost is fixed per
+    scenario and does not grow.
+
+  So the guards may BOTH name the same file, for different lines in it, and
+  that is correct rather than a scope breach. What must not happen is this
+  guard flagging a `git init` (BL-1039's) or BL-1039's guard flagging a
+  live-source read (this ticket's). Neither guard may be written to "own" a
+  file list.
+
+  ### Correction: three of the seven files above are not this family
+
+  Measured 2026-08-22 by inspection of each file. `gitHistoryAdapter`,
+  `blTopicStore` and `costHealthSidecar` resolve NO live root at all - they
+  spawn real `git` into `mkTmpDir` temp dirs (10, 14 and 4 real git spawns
+  respectively). They are BL-1039's family and are reassigned there. The
+  table's "live repo" attribution for them was wrong.
+
+  **This ticket's actual live-repository readers are four files, ~99.9s:**
+
+    | file | measured | live-root resolutions |
+    |---|---|---|
+    | `renderBriefingDiagramsCli.test.js` | 51.8s | 1 (`REAL_PROJECT_ROOT`) |
+    | `renderBriefingBurndownCli.test.js` | 34.0s | 4 (`repoRoot` passed as subject) |
+    | `briefingDigestLineCli.test.js` | 10.1s | 4 |
+    | `emitLifecycleSnapshotCli.test.js` | 4.0s | 1 |
+
+  ### Plus an operation this ticket did not know it owned
+
+  Six files that BL-1039's table lists each do this, and it is a
+  live-repository read by the rule above:
+
+      const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+      for (const name of fs.readdirSync(repoScriptsDir)) { ... }
+
+  They copy the live `swarmforge/scripts/` - **322 entries as measured, and
+  growing** - into a temp fixture, in several cases once per scenario. That
+  read is this ticket's family even though the file's `git init` cost is
+  BL-1039's. The files are `epicReorderBridge`, `telegramFrontDeskBotCli`,
+  `topicMakeTopBridge`, `epicMakeTopBridge`, `pausedPagerBridge` and
+  `commitIntegrityRunner`.
+
+  This is also why the naive needle failed in both directions, as the coder
+  found: `__dirname,'..','..'` hits 4 of the original 7 and 6 of BL-1039's
+  14, while a `git`-spawn needle hits 3 of the original 7 and all 14.
+
+  ### What this changes for the implementer
+
+  - Scope the guard to reads whose subject is the live repo, including the
+    `readdirSync` of a live source directory above. Do not scope it to a file
+    list, and do not make it flag repository CREATION.
+  - Converting the six shared files means replacing their live
+    `swarmforge/scripts/` copy with a pinned fixture. Their `git init` cost
+    stays for BL-1039 - leaving it is not an omission here.
+  - The measured claim of 121.6s / 22.8% in the header and title is
+    superseded by ~99.9s across four files plus the shared-copy operation;
+    re-measure rather than carrying the old figure into evidence.
+
   ## What this ticket does NOT do
 
   - It does not delete, skip, or exclude a test, and does not raise
@@ -86,7 +158,9 @@ description: |
     (BL-935), or anything else about how much of the host the lane may use.
     That is a live operator question and is deliberately not decided here.
   - It does not address the sibling cost family - unit tests that build a
-    real git repository per scenario - which is BL-1039.
+    real git repository per scenario - which is BL-1039. Per the amendment
+    above, that boundary is drawn per OPERATION: a file may appear in both
+    tickets, and this ticket never converts a `git init`.
   - It does not reprice any budget. BL-1007 owns load-relative budgets;
     BL-999 owns budget justification. This ticket is upstream of both:
     fewer numbers need to move if they stop drifting.
