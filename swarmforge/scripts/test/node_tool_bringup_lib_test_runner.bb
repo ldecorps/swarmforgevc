@@ -18,6 +18,8 @@
           "emit-fleet-status.js" "/repo/extension/out/tools/emit-fleet-status.js")]
   (assert-true "bl1010: the message names the tool that could not run"
                (str/includes? m "emit-fleet-status.js"))
+  (assert-true "bl1010: the message names the specific absent path, so an operator can see which artifact it is"
+               (str/includes? m "/repo/extension/out/tools/emit-fleet-status.js"))
   (assert-true "bl1010: the message names the COMMAND to run, which is the thing that was missing"
                (str/includes? m "npm run compile"))
   (assert-true "bl1010: and the directory to run it in - npm runs from extension/, never the repo root"
@@ -30,6 +32,17 @@
               (node-tool-bringup-lib/names-bring-up-step?
                 "Error: Cannot find module '/repo/extension/out/tools/emit-fleet-status.js'"))
 (assert-false "bl1010: a non-string is never a bring-up message" (node-tool-bringup-lib/names-bring-up-step? nil))
+
+;; names-bring-up-step? is an `and` of two substring checks (command, dir).
+;; The two tests above only exercise "has neither" and "has both" - a mutant
+;; dropping either single clause from the `and` would survive both of them.
+;; These discriminate each clause on its own: a message naming the command
+;; but not the directory, and one naming the directory but not the command,
+;; must both still be rejected.
+(assert-false "bl1010: naming the command without the directory does not count as naming the bring-up step"
+              (node-tool-bringup-lib/names-bring-up-step? "run `npm install && npm run compile` somewhere"))
+(assert-false "bl1010: naming the directory without the command does not count as naming the bring-up step"
+              (node-tool-bringup-lib/names-bring-up-step? "look in extension/ for the missing tool"))
 
 (if (empty? @failures)
   (println "ALL PASS: node_tool_bringup_lib.bb")
