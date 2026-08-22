@@ -89,6 +89,43 @@ test('BL-1010: an identity file with no swarm_name key falls through to the conf
   }
 });
 
+test('BL-1010: an identity file with an empty swarm_name value falls through, not to ""', () => {
+  // readSwarmIdentityValue's own comment: "An empty value is not a name -
+  // fall through rather than publish under \"\"". Uncovered until now - a
+  // mutant deleting that guard would publish under the literal empty string
+  // and nothing here would notice.
+  const root = mkTmpDir('bl1010-');
+  try {
+    fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.swarmforge', 'swarm-identity'), 'swarm_name\t\nswarm_mode\tautonomous\n');
+    fs.writeFileSync(path.join(root, 'swarmforge', 'swarmforge.conf'), 'config swarm_name third\n');
+    assert.equal(readSwarmName(root), 'third');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('BL-1010: an identity line with no tab separator is ignored, not treated as a key match', () => {
+  // The discriminating case, not just any tabless line: dropping the
+  // `tab < 0` guard makes `line.slice(0, -1)` (indexOf's -1 sentinel used as
+  // a slice bound) equal the bare key whenever the tabless line is exactly
+  // "swarm_name" plus one trailing character - here "swarm_nameZ" - which
+  // would then be misread as a match with value "swarm_nameZ" itself. A
+  // line like "swarm_name_with_no_tab" does NOT trigger that coincidence and
+  // would leave this mutant alive.
+  const root = mkTmpDir('bl1010-');
+  try {
+    fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.swarmforge', 'swarm-identity'), 'swarm_nameZ\nswarm_mode\tautonomous\n');
+    fs.writeFileSync(path.join(root, 'swarmforge', 'swarmforge.conf'), 'config swarm_name third\n');
+    assert.equal(readSwarmName(root), 'third');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('BL-1010: an unreadable identity file does not crash the resolver - it falls through', () => {
   // A directory where the file should be: readFileSync throws EISDIR. The
   // resolver must degrade to the next source rather than take the publisher
