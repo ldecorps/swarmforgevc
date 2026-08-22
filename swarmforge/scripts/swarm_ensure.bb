@@ -811,7 +811,8 @@
                   "; " (:next-action policy))}
     (let [after (control-plane-lib/probe-server! socket)]
       (if (:responds? after)
-        (do (control-plane-lib/resolve-open-incidents!
+        (do (control-plane-lib/harden-server! socket)
+            (control-plane-lib/resolve-open-incidents!
              (control-plane-lib/incidents-file state-dir)
              (str (java.time.Instant/now)))
             {:component "control-plane" :status :fixed
@@ -909,7 +910,8 @@
           (control-plane-report! cp-state)
 
           (= :up (:classification cp-state))
-          (do (control-plane-lib/resolve-open-incidents!
+          (do (control-plane-lib/harden-server! socket)
+              (control-plane-lib/resolve-open-incidents!
                (control-plane-lib/incidents-file state-dir)
                (str (java.time.Instant/now)))
               nil)

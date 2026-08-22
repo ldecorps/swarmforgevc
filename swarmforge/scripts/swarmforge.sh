@@ -24,6 +24,33 @@ error_msg() {
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# WSL: Ubuntu tmux 3.4 segfaults (resize.c NULL window / offset 0x208). Prefer
+# ~/.local/bin/tmux (>=3.7) before any ensure/launch client starts a server.
+# See docs/how-to/BL-tmux-wsl-segfault-upgrade.md.
+prefer_local_tmux_bin() {
+  local local_tmux="${HOME}/.local/bin/tmux"
+  if [[ -x "$local_tmux" ]]; then
+    case ":${PATH}:" in
+      *":${HOME}/.local/bin:"*) ;;
+      *) export PATH="${HOME}/.local/bin:${PATH}" ;;
+    esac
+  fi
+}
+
+warn_if_tmux_too_old() {
+  local ver major minor
+  ver="$(tmux -V 2>/dev/null || true)"
+  # "tmux 3.4" / "tmux 3.7b"
+  major="$(echo "$ver" | sed -n 's/^tmux \([0-9][0-9]*\)\..*/\1/p')"
+  minor="$(echo "$ver" | sed -n 's/^tmux [0-9][0-9]*\.\([0-9][0-9]*\).*/\1/p')"
+  if [[ -z "$major" || -z "$minor" ]]; then
+    return 0
+  fi
+  if (( major < 3 || (major == 3 && minor < 7) )); then
+    echo -e "${YELLOW}WARN: $ver is below 3.7 — WSL control-plane segfaults (resize.c NULL window) are unfixed. Install tmux >= 3.7 on PATH (docs/how-to/BL-tmux-wsl-segfault-upgrade.md).${RESET}" >&2
+  fi
+}
+
 # BL-657: harness scrub helpers available to create_role_session / launch path.
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/harness_env_scrub.sh"
@@ -78,6 +105,10 @@ if [[ "${1:-}" == "ensure" ]]; then
   if [[ -f "$ENSURE_WORKING_DIR/.swarmforge/swarm.env" ]]; then
     source "$ENSURE_WORKING_DIR/.swarmforge/swarm.env"
   fi
+  # Prefer a user-local tmux >= 3.7 on PATH before bb spawns any client
+  # (Ubuntu 3.4 segfaults on WSL; see docs/how-to/BL-tmux-wsl-segfault-upgrade.md).
+  prefer_local_tmux_bin
+  warn_if_tmux_too_old
   exec bb "$SCRIPT_DIR/swarm_ensure.bb" "$ENSURE_WORKING_DIR"
 fi
 
@@ -245,6 +276,18 @@ detect_tmux_base_indexes() {
   if [[ -n "$probe_session" ]]; then
     tmux -S "$TMUX_SOCKET" kill-session -t "$probe_session" >/dev/null 2>&1 || true
   fi
+
+  # Apply WSL/stability knobs every time we touch a live server (including
+  # the probe path above that just created one).
+  harden_tmux_server
+}
+
+harden_tmux_server() {
+  if ! tmux -S "$TMUX_SOCKET" list-sessions >/dev/null 2>&1; then
+    return 0
+  fi
+  tmux -S "$TMUX_SOCKET" set-option -g focus-events off >/dev/null 2>&1 || true
+  tmux -S "$TMUX_SOCKET" set-option -g window-size largest >/dev/null 2>&1 || true
 }
 
 tmux_agent_target() {
@@ -1855,9 +1898,11 @@ if [[ "$ZSH_EVAL_CONTEXT" == "toplevel" ]]; then
 source "$SCRIPT_DIR/harness_env_scrub.sh"
 scrub_harness_env
 
+prefer_local_tmux_bin
 check_dependency tmux
 check_dependency git
 check_dependency bb
+warn_if_tmux_too_old
 detect_tmux_base_indexes
 scrub_tmux_harness_env "$TMUX_SOCKET"
 initialize_git_repo
