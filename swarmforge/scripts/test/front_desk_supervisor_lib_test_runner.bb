@@ -576,6 +576,76 @@
   (assert= "bl582: an 8-arity caller never sees a stale-build transition" "running" (:status entry))
   (assert= "bl582: an 8-arity caller sees no build event" nil event))
 
+;; ── BL-1037: the watchdog restarts fewer times than main moves ───────────
+;; BL-582 gap (c) restarts a HEALTHY child once its build_sha has trailed main
+;; for the grace. Right in principle - before it, a build served 2h23m stale -
+;; but this swarm lands commits faster than one grace plus recompile-and-
+;; respawn, so staleness re-arms before the previous restart has paid for
+;; itself: 24 build-stale-detected events and 12 respawns in 105 minutes on
+;; 2026-08-22.
+;;
+;; The bound: a child restarted onto a fresh build must actually SERVE - one
+;; completed poll cycle - before the watchdog may restart it again. The debt is
+;; CARRIED while it waits, never cleared, or this reintroduces the 2h23m window.
+
+;; The un-served case: past the grace, but this child has not polled yet on the
+;; build it was restarted onto. No restart, and the debt survives.
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true false)]
+  (assert= "bl1037: a child that has not served yet is NOT restarted, even past the grace"
+           "running" (:status entry))
+  (assert= "bl1037: and the staleness it already saw is CARRIED, never cleared"
+           10000 (:build-stale-since-ms entry))
+  (assert= "bl1037: the deferral is reported, not silent - the log must still explain itself"
+           :build-stale-deferred event))
+
+;; The served case: unchanged from BL-582. A child that has served may be
+;; restarted, so this bound never becomes "never restart".
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true true)]
+  (assert= "bl1037: a child that HAS served is still restarted past the grace"
+           "stale-build" (:status entry))
+  (assert= "bl1037: and that restart is still reported" :build-stale event))
+
+;; Deferral must not swallow the first observation either.
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 10000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true false)]
+  (assert= "bl1037: the first stale observation is still stamped while un-served"
+           10000 (:build-stale-since-ms entry))
+  (assert= "bl1037: and still reported" :build-stale-detected event))
+
+;; A build that MATCHES main costs nothing, served or not (scenario 04).
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) false false)]
+  (assert= "bl1037: a fresh build is never restarted" "running" (:status entry))
+  (assert= "bl1037: and its carried staleness is cleared once the build matches"
+           nil (:build-stale-since-ms entry)))
+
+;; Every existing caller passes no served? at all. Their behaviour must be
+;; byte-for-byte what it was, or this bound silently disables the watchdog for
+;; the bridge and every other child.
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true)]
+  (assert= "bl1037: the 9-arity form is unchanged - a stale build past the grace still restarts"
+           "stale-build" (:status entry))
+  (assert= "bl1037: and still reports the same event" :build-stale event))
+
+
 ;; healthy-reset wins over an equally-eligible build-stale restart - same
 ;; "two conditions eligible at once, cond order must not swap" shape as the
 ;; BL-370 heartbeat-stale?/healthy-long-enough? test above, one clause over.
