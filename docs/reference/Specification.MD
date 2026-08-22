@@ -1,6 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1052: a role seat can now be staffed
+**Last Updated:** August 22, 2026 (BL-1053: slice (b) of the qwen-code
+onboarding, depending on BL-1052 (above) and inert without it — the
+ModelFactory `provider->agent` map (`swarmforge/scripts/model_factory_lib.bb`)
+knew exactly three providers (`anthropic`→`claude`, `openai`→`codex`,
+`cerebras`→`aider`), so a qwen model had no provider key that reached the
+right CLI. The trap was a plausible shortcut that would have made it
+worse, not better: qwen-code authenticates with `--auth-type openai`
+because the wire protocol is OpenAI-compatible, so registering qwen models
+under the existing `"openai"` provider key looks right — and would have
+resolved to `"codex"`, launching qwen models through the wrong CLI
+entirely, a confusing failure rather than a loud one. Fixed with a new,
+distinct `"qwen"` provider key (`"qwen" "qwen-code"`) rather than reusing
+`"openai"`. Four Token Plan models registered as ModelFactory candidates
+with an honest, deliberate cost class — `qwen3.7-plus`/`qwen3.6-flash` at
+`low`, `qwen3.7-max`/`qwen3.8-max-preview` at `medium`
+(`swarmforge/model-steward/seed/models.seed.json`) — since a cost class is
+the cost-reduction option this whole onboarding exists to create, not a
+default nobody chose. Declared invariant: every provider key in the
+registry resolves to exactly one launch agent, and no two provider keys
+resolve to an agent that cannot serve them — a provider added without its
+own `provider->agent` entry falls through to another provider's binary
+rather than failing, which is exactly the confusing failure this ticket
+closes. Registration alone changes no live seat — it makes a model
+SELECTABLE for ModelFactory's cheap/quality routing and cold-apply, it
+never mutates a running pane on its own. Model Steward's existing
+`register`/`certify`/`eligible` CLI workflow
+(`docs/how-to/BL-547-model-steward-overview.md`) is unchanged and already
+covers registering/certifying a `qwen/<model>` the same way as any other
+provider — no new command. Degraded gate: Babashka only, no
+mutation/CRAP/DRY tooling wired; gated by
+`bl1053_qwen_provider_routing_test_runner.bb` and
+`bl1053_provider_routing_property_runner.bb` (300 runs) plus 7 acceptance
+scenarios. No new extension command or setting.)
+Prior entry —
+BL-1052: a role seat can now be staffed
 by **qwen-code** (`@qwen-code/qwen-code`, binary `qwen`), Alibaba's own
 agentic CLI — the swarm's only prior Qwen path drove the same Token Plan
 models through `aider`, a file editor with no autonomous shell execution,
