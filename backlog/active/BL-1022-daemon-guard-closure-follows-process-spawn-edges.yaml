@@ -117,3 +117,5 @@ notes: |
   Same family as the repo's existing "derive the list, do not hand-maintain
   it" lessons: a gate that enumerates what it checks eventually checks less
   than it claims.
+
+assigned_to: coder
