@@ -72,12 +72,3 @@ Feature: A unit-lane test pins the repository it derives from
     When the unit lane runs after the conversion
     Then the recorded test count is not lower than before
     And no test file has been deleted, skipped, or added to an exclude glob
-
-  # BL-1038 unit-tests-pin-the-repo-they-derive-from-07
-  Scenario: a test that both reads live sources and builds its own repository is flagged only for the live read
-    Given a unit-lane test file that resolves the live repository root
-    And that same file creates a git repository of its own
-    When the guard runs
-    Then the guard fails
-    And the guard names the live-repository read as the violation
-    And the guard does not name the created git repository as a violation

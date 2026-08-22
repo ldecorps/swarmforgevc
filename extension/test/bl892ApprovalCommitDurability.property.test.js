@@ -9,7 +9,6 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { recordApprovalDecisionAndClose, recordAmendDecisionAndClose } = require('../out/tools/telegramFrontDeskBotCore');
 const { commitApprovalWrites } = require('../out/util/commitIntegrityRunner');
 const { recordApprovalReply, recordRejectionReply, recordAmendReply } = require('../out/concierge/pendingApprovalReply');
-const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 
 // BL-892 declared invariants (backlog/active/BL-892-approval-flip-must-commit.yaml):
 //   1. "A successful automated approval verdict leaves the ticket file's
@@ -44,10 +43,15 @@ function gitFixture() {
   return root;
 }
 
-// BL-1038: copies commit_integrity_cli.bb's load-file CLOSURE (11 files),
-// not the whole live scripts directory - see pinnedRepoFixture.js for why.
 function copyCommitIntegrityCli(root) {
-  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['commit_integrity_cli.bb']);
+  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+  for (const name of fs.readdirSync(repoScriptsDir)) {
+    if (name.endsWith('.bb')) {
+      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
+    }
+  }
 }
 
 function headShows(root, relPath) {

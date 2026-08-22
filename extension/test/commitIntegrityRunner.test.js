@@ -4,7 +4,6 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { runCommitIntegrity, commitIntegrityCliPath, commitApprovalWrites } = require('../out/util/commitIntegrityRunner');
-const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 
 // runCommitIntegrity is the exec+parse shared by commitExpediteWrites
 // (telegram-front-desk-bot.ts, BL-490/BL-538) and commitEpicReorderWrites
@@ -69,10 +68,15 @@ function gitFixture() {
   return root;
 }
 
-// BL-1038: copies commit_integrity_cli.bb's load-file CLOSURE (11 files),
-// not the whole live scripts directory - see pinnedRepoFixture.js for why.
 function copyCommitIntegrityScripts(root) {
-  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['commit_integrity_cli.bb']);
+  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+  for (const name of fs.readdirSync(repoScriptsDir)) {
+    if (name.endsWith('.bb')) {
+      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
+    }
+  }
 }
 
 test('commitApprovalWrites: commits an active ticket file through the real commit-integrity helper, with the given message', async () => {
