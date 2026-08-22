@@ -4,8 +4,13 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const {
+  fixtureTunnelName,
+  assertFixtureTunnelName,
+  leakedFixtureTunnelPids,
+} = require('./helpers/fixtureTunnelName');
 
 // BL-857 invariants (property authorship rests with the coder, first pass -
 // BL-654). Drives the REAL tunnel_ownership_lib.sh / stop_ancillary_services.sh
@@ -70,9 +75,40 @@ function spawnFakeCloudflared(name) {
   return Number(child.stdout.toString().trim());
 }
 
+// BL-1061: one shared source of fixture tunnel names, so "never the
+// production name" is enforced rather than remembered. The comment at the top
+// of this file already said it; a comment is not a gate, and the sibling
+// bl787 suite bound the production name for months while this one did not.
 function uniqueName(label) {
-  return `bl857-prop-${process.pid}-${label}-${Math.random().toString(36).slice(2, 8)}`;
+  return assertFixtureTunnelName(fixtureTunnelName(`bl857-${label}`));
 }
+
+// BL-1061 invariant 2: a fixture leaked by an EARLIER run is still alive when
+// this run starts, and every assertion below reads the host process table. A
+// suite that depends on a clean table it did not establish is measuring the
+// host's history, not its own behaviour - the process-table analogue of
+// sweeping generated fixtures by prefix BEFORE a run rather than after
+// (nothing traps SIGKILL, so a killed run always leaves its fixtures behind).
+//
+// The sweep selects by the throwaway TEMP PATH a fixture binary is launched
+// from, never by tunnel name: a name-matched sweep would select the
+// operator's real tunnel, which is the whole hazard. The real cloudflared is
+// an installed binary outside the temp directory and cannot be reached this
+// way however the names collide.
+function sweepLeakedFixtureTunnels() {
+  const swept = [];
+  for (const pid of leakedFixtureTunnelPids(execFileSync)) {
+    try {
+      process.kill(pid, 'SIGKILL');
+      swept.push(pid);
+    } catch {
+      /* already gone between listing and signalling - fine */
+    }
+  }
+  return swept;
+}
+
+sweepLeakedFixtureTunnels();
 
 // ── Invariant 1 ──────────────────────────────────────────────────────────
 // "Exactly one process may own the production tunnel name at a time; any
