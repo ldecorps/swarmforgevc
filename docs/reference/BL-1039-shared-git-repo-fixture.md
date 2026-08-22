@@ -106,7 +106,7 @@ branch, and isolation in both writer-first and writer-last orderings.
 
 ## Scope: creation, not files
 
-This guard and BL-1038's sibling classify **operations**, not files. Six
+This guard and [BL-1038's sibling guard](BL-1038-pinned-repo-fixture-and-live-derivation-guard.md) classify **operations**, not files. Six
 files copy live `swarmforge/scripts/` sources into a fixture (BL-1038's
 concern) *and* run `git init` (this guard's) —
 `epicReorderBridge.test.js`, `telegramFrontDeskBotCli.test.js`,

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { startBridge } = require('../out/bridge/bridgeServer');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const TOKEN = 'bl687-invariant3-token';
@@ -36,14 +37,9 @@ function mkFixtureRoot() {
   // process spawns before the behaviour under test was even reached,
   // repeated across every test in this file. Measured 190ms -> 33ms.
   copySeededRepoInto(root);
-  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
-  fs.mkdirSync(scriptsDir, { recursive: true });
-  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
-  for (const name of fs.readdirSync(repoScriptsDir)) {
-    if (name.endsWith('.bb')) {
-      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
-    }
-  }
+  // BL-1038: copies commit_integrity_cli.bb's load-file CLOSURE (11 files),
+  // not the whole live scripts directory - see pinnedRepoFixture.js for why.
+  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['commit_integrity_cli.bb']);
   return root;
 }
 

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=da607c8c473d6c1f69d0547f29167c45fec2eaa99845d6e468b2b46e43f3f98a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T13:48:37.401740928Z","feature_name":"A unit-lane test pins the repository it derives from","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1038-unit-tests-pin-the-repo-they-derive-from.feature","background_hash":"75dab4329bd5359eb81e440ffa92d7a75fbb50882d75e6ffa4779b6c32abb373","implementation_hash":"unknown","scenarios":[{"index":2,"name":"an exemption is honoured only when it records why","scenario_hash":"aea3c6702fbb2cefb5bbb6bb4768fe9d55eb7108a6c6e7333ee465a9834e542d","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-22T13:48:37.401740928Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A unit-lane test pins the repository it derives from
 
   Unit-lane test files take the live SwarmForge repository as their subject -
@@ -72,3 +77,12 @@ Feature: A unit-lane test pins the repository it derives from
     When the unit lane runs after the conversion
     Then the recorded test count is not lower than before
     And no test file has been deleted, skipped, or added to an exclude glob
+
+  # BL-1038 unit-tests-pin-the-repo-they-derive-from-07
+  Scenario: a test that both reads live sources and builds its own repository is flagged only for the live read
+    Given a unit-lane test file that resolves the live repository root
+    And that same file creates a git repository of its own
+    When the guard runs
+    Then the guard fails
+    And the guard names the live-repository read as the violation
+    And the guard does not name the created git repository as a violation
