@@ -11,7 +11,7 @@ Tetris and Mega Man — alongside the existing Zappa set.
 - Picker still avoids repeating the same song immediately.
 - Android float companion hold music catalog mirrors the Mini App list.
 - On the Android panel, **Playlist** can pin one tune or stay on shuffle;
-  volume for hold music and reply voice is under **Settings**.
+  hold-music volume is under **Settings** (reply voice follows phone volume).
 
 ## How to hear them
 

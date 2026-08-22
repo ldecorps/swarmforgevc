@@ -32,7 +32,10 @@ trap cleanup EXIT
 
 PROJECT="$(make_project_fixture)"
 REAP_ROOT="$(mktemp -d)"
-old_mtime() { touch -d "2 hours ago" "$1"; }
+# BL-874: BSD touch has no -d relative-time form; portable_time_lib.sh
+# hides the BSD/GNU split behind one shared helper.
+source "$SCRIPT_DIR/../portable_time_lib.sh"
+old_mtime() { portable_touch_relative 2 hours "$1"; }
 
 tick() {
   SWARMFORGE_FIXTURE_REAP_ROOT="$REAP_ROOT" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \

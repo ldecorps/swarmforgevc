@@ -26,6 +26,9 @@
 ;;   OPERATOR_SWARM_CHECK_MS     periodic swarm-check cadence (default 1800000 = 30m)
 ;;   OPERATOR_HEARTBEAT          set to 0 to skip heartbeat writes (tests)
 ;;   OPERATOR_SKIP_LAUNCH        set to 1 to never actually launch the LLM (dry-run)
+;;   OPERATOR_BABYSITTERD_WATCHDOG_ENABLED  set to 0 to skip the tell-don't-restart
+;;                               babysitterd poll (default on; SWARMFORGE_SKIP_BABYSITTERD=1
+;;                               also disables it)
 ;;
 ;; BL-481: -main's loop now wakes every OPERATOR_POLL_INTERVAL_MS (a few
 ;; seconds) instead of sleeping a full OPERATOR_INTERVAL_MS between ticks, so
@@ -107,6 +110,15 @@
 ;; /tmp operator_runtime.bb, hung generated acceptance tests, and
 ;; disposable-root babysitter/bridge/bot (name is tmp.*, not aps-/sfvc-).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_janitor_sweep_lib.bb")))
+;; BL-848: pure decision core for the hotfix certification ledger + its
+;; recurrent check, wired below by hotfix-certification-sweep!.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "hotfix_certification_lib.bb")))
+;; Operator tell-don't-restart poll of babysitterd (process+pidfile+telegram
+;; announce path). Cron BL-675 remains the restarter; this lib never returns
+;; :restart. process_table_lib is already load-file'd by the orphan reaper
+;; above; listed here so the watchdog's dependency is obvious.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "babysitterd_freshness_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -142,6 +154,20 @@
 (def inflight-file (fs/path op-dir "events.inflight.jsonl"))
 (def cooldown-file (fs/path op-dir "cooldown.json"))
 (def last-check-file (fs/path op-dir "last-swarm-check"))
+;; GH-26: role_ask.bb's own per-role pending-question markers - read-only
+;; from this side (role_ask.bb owns writing a fresh ask, deliverRoleQuestion/
+;; markRoleQuestionUndeliverable - telegram-front-desk-bot.ts - owns the
+;; undeliverable rewrite). Scanned every tick so an undeliverable drop is
+;; surfaced into status.json, mirroring tunnel/telegram-console below.
+(def role-awaiting-dir (fs/path op-dir "role-awaiting"))
+;; BL-848: last-hotfix-cert-file mirrors last-check-file's own tiny-epoch-ms
+;; file convention; hotfix-cert-state-file is the gitignored RUNTIME view
+;; (per-entry resurfacing cooldown) - losing it costs one recomputation,
+;; never a fact (R2). The committed ledger itself lives under backlog/, not
+;; .swarmforge/, since it must travel with the repo across hosts.
+(def last-hotfix-cert-file (fs/path op-dir "last-hotfix-cert"))
+(def hotfix-cert-state-file (fs/path op-dir "hotfix-certification-state.json"))
+(def hotfix-ledger-file (fs/path project-root "backlog" "hotfix-ledger.yaml"))
 (def pid-file (fs/path op-dir "runtime.pid"))
 (def operator-pid-file (fs/path op-dir "operator.pid"))
 (def stop-file (fs/path op-dir "stop"))
@@ -196,6 +222,18 @@
 (def telegram-console-status-file (fs/path op-dir "telegram-console.status.json"))
 (def miniapp-watchdog-state-file (fs/path op-dir "miniapp-watchdog.json"))
 (def bounce-bridge-headless-script (fs/path script-dir "bounce_bridge_headless.sh"))
+;; BL-763: Cursor Remote supervisor liveness + heartbeat-freshness watchdog.
+;; cursor_bridge_supervisor.bb already restarts its OWN child (the bridge
+;; process) on a stale heartbeat internally - this sweep is a defense-in-
+;; depth layer one level up, for the case the SUPERVISOR PROCESS ITSELF has
+;; died or hung (pid alive but its own tick loop frozen, same failure shape
+;; as the handoffd silent-stall incident): swarm_ensure.bb's
+;; ensure-cursor-bridge! covers the same repair on-demand (`./swarm
+;; ensure`), this sweep covers it continuously without a human running that.
+(def cursor-bridge-supervisor-pid-file (fs/path op-dir "cursor-bridge-supervisor.pid"))
+(def cursor-bridge-heartbeat-file (fs/path op-dir "cursor-bridge-heartbeat.json"))
+(def cursor-bridge-watchdog-state-file (fs/path op-dir "cursor-bridge-watchdog.json"))
+(def start-cursor-bridge-script (fs/path script-dir "start_cursor_bridge.sh"))
 
 ;; The Operator is NOT a swarm agent: it runs on its OWN tmux socket (see
 ;; launch_operator.sh) and its session/RC name deliberately drop the
@@ -264,6 +302,27 @@
 (def miniapp-watchdog-port (or (some-> (System/getenv "BRIDGE_HEADLESS_PORT") parse-long) 8765))
 (def miniapp-watchdog-threshold (env-ms "OPERATOR_MINIAPP_FAILURE_THRESHOLD" 3))
 (def miniapp-watchdog-cooldown-ms (env-ms "OPERATOR_MINIAPP_BOUNCE_COOLDOWN_MS" 120000))
+;; BL-763: Cursor Remote supervisor liveness/heartbeat watchdog. Stall window
+;; matches cursor_bridge_supervisor.bb's own CURSOR_BRIDGE_STALL_MS default
+;; (120000ms) deliberately - same "gone dark" threshold at both layers.
+(def cursor-bridge-watchdog-enabled? (not= "0" (System/getenv "OPERATOR_CURSOR_BRIDGE_WATCHDOG_ENABLED")))
+(def cursor-bridge-watchdog-stall-ms (env-ms "OPERATOR_CURSOR_BRIDGE_STALL_MS" 120000))
+(def cursor-bridge-watchdog-cooldown-ms (env-ms "OPERATOR_CURSOR_BRIDGE_RESTART_COOLDOWN_MS" 120000))
+;; Tell-don't-restart babysitterd poll. Cron (BL-675) restarts; Operator
+;; never calls start_babysitterd.sh. Cooldown matches babysitterd's own
+;; 30-minute nudge dedup so a persistent pidfile-lie does not flood
+;; coordinator mail.
+(def babysitterd-watchdog-flag? (not= "0" (System/getenv "OPERATOR_BABYSITTERD_WATCHDOG_ENABLED")))
+(def babysitterd-watchdog-cooldown-ms (env-ms "OPERATOR_BABYSITTERD_WATCHDOG_COOLDOWN_MS" 1800000))
+(def babysitterd-pid-file (fs/path state-dir "babysitterd" "babysitterd.pid"))
+(def babysitterd-watchdog-state-file (fs/path op-dir "babysitterd-watchdog.json"))
+(def ^:private babysitterd-watchdog-snap* (atom nil))
+;; BL-848: hotfix certification recurrent check - own cadence (R3), never the
+;; every-30s tick default, plus a per-entry resurfacing cooldown so an open
+;; entry keeps coming back without spamming every due tick (invariant 2).
+(def hotfix-cert-interval-ms (env-ms "HOTFIX_CERT_INTERVAL_MS" 3600000))
+(def hotfix-cert-resurface-ms (env-ms "HOTFIX_CERT_RESURFACE_MS" 21600000))
+(def hotfix-cert-scan-limit (env-ms "HOTFIX_CERT_SCAN_LIMIT" 200))
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -725,29 +784,34 @@
 ;; that cd'd there, and removing the root out from under an open fd is the
 ;; same class of danger this whole ticket exists to prevent. The set below
 ;; is every REAL absolute path any live process's cwd OR any of its open
-;; file descriptors currently resolves to, read via proc-fd-scan-lib (Linux/
-;; WSL - this whole ticket exists because of a WSL2/VHDX-on-C: host). Read
-;; ONCE per sweep pass, not once per candidate entry - iterating /proc is
-;; the only non-trivial cost here; membership testing afterward is a cheap
-;; set lookup per entry. A non-file fd (a socket/pipe - /proc's own
-;; "socket:[12345]"/"pipe:[12345]" pseudo-target) never matches a real
-;; directory prefix, so it is harmless noise, not a false positive. Returns
-;; an empty set (never throws) when /proc is unavailable (e.g. macOS) -
-;; paired with live-process-rooted-in?'s own "cannot determine -> not live"
-;; default, which is the SAFE direction only because the allowlist/
-;; staleness checks still gate removal independently; liveness alone is
-;; never the only guard.
+;; file descriptors currently resolves to, read via proc-fd-scan-lib's
+;; live-pid-paths! (BL-877: /proc on Linux/WSL, a single `lsof` call on
+;; Darwin - the platform split lives there, not here). Read ONCE per sweep
+;; pass, not once per candidate entry - the scan itself is the only
+;; non-trivial cost; membership testing afterward is a cheap set lookup per
+;; entry.
+;;
+;; BL-877 invariant 1: nil (never coerced to #{}) when NEITHER facility is
+;; reachable - "cannot determine" must never read as "confirmed nothing is
+;; live". sandbox-sweep!'s 0-arity default below treats nil as "assume
+;; every candidate is live" (the opposite of the old #{} default), because
+;; for THIS caller the dangerous direction is deleting a root a live
+;; process still needs - the allowlist/staleness checks alone are not
+;; enough to make "silently assume nothing is live" a safe default once a
+;; real "I cannot tell" state exists to distinguish from it.
 (defn- live-process-paths! []
-  (try
-    (->> (fs/list-dir "/proc")
-         (mapcat (fn [pid-dir] (cons (proc-fd-scan-lib/process-cwd-path pid-dir)
-                                     (proc-fd-scan-lib/process-open-paths pid-dir))))
-         (remove nil?)
-         set)
-    (catch Exception _ #{})))
+  (when-let [pid->paths (proc-fd-scan-lib/live-pid-paths!)]
+    (set (mapcat val pid->paths))))
 
+;; BL-877: entry-path is resolved to its REAL path before matching - on
+;; macOS $TMPDIR/mktemp roots live under /var/..., a symlink to
+;; /private/var/..., and lsof (like /proc's own fs/real-path reads in
+;; proc-fd-scan-lib) reports the RESOLVED path. Comparing the unresolved
+;; entry-path against resolved live-process paths would never match on
+;; this userland - invariant 2's "same verdict on macOS as on Linux" fails
+;; silently (everything looks unrooted) without this.
 (defn- live-process-rooted-in? [paths entry-path]
-  (let [entry-str (str entry-path)]
+  (let [entry-str (try (str (fs/real-path entry-path)) (catch Exception _ (str entry-path)))]
     (boolean (some #(or (= % entry-str) (str/starts-with? % (str entry-str "/"))) paths))))
 
 (defn- sandbox-sweep-remove-entry! [entry-path]
@@ -780,13 +844,22 @@
    tick, never a crash. BL-460: bounds DELETES per tick via
    bounded-delete-sweep-lib's persisted cursor, not the scan - a reapable
    entry ordered after sandbox-sweep-max-per-tick is still reaped within a
-   bounded number of ticks, never re-scanning the same dead window forever."
+   bounded number of ticks, never re-scanning the same dead window forever.
+
+   BL-877 invariant 1: when live-process-paths! returns nil (liveness could
+   not be determined at all on this host - neither /proc nor lsof reachable),
+   :live-process-rooted-in? answers true for EVERY candidate rather than
+   consulting an empty set - the sweep records why via log! and, this pass,
+   keeps everything a real answer might have removed rather than guessing."
   ([]
-   (let [paths (live-process-paths!)]
+   (let [paths (live-process-paths!)
+         determined? (some? paths)]
+     (when-not determined?
+       (log! "sandbox-sweep" "liveness could not be determined this pass (no /proc, no lsof) - treating every candidate as potentially live"))
      (sandbox-sweep!
       {:list-entries! sandbox-sweep-list-entries!
        :entry-age-ms! sandbox-sweep-entry-age-ms!
-       :live-process-rooted-in? (fn [entry-path] (live-process-rooted-in? paths entry-path))
+       :live-process-rooted-in? (fn [entry-path] (if determined? (live-process-rooted-in? paths entry-path) true))
        :remove-entry! sandbox-sweep-remove-entry!})))
   ([adapters]
    (let [root (sandbox-sweep-root)
@@ -908,6 +981,196 @@
               (>= consecutive-failures miniapp-watchdog-threshold) "down"
               (pos? consecutive-failures) "degraded"
               :else "healthy")}))
+
+;; ── BL-763: Cursor Remote supervisor liveness/heartbeat watchdog ───────────
+
+(defn cursor-bridge-supervisor-pid []
+  (when (fs/exists? cursor-bridge-supervisor-pid-file)
+    (try (parse-long (str/trim (slurp (str cursor-bridge-supervisor-pid-file))))
+         (catch Exception _ nil))))
+
+(defn cursor-bridge-supervisor-alive? []
+  (pid-alive? (cursor-bridge-supervisor-pid)))
+
+(defn read-cursor-bridge-heartbeat-ms []
+  (when (fs/exists? cursor-bridge-heartbeat-file)
+    (try (:lastHeartbeatMs (json/parse-string (slurp (str cursor-bridge-heartbeat-file)) true))
+         (catch Exception _ nil))))
+
+;; nil (never a heartbeat yet, e.g. mid-startup) never itself reads stale -
+;; same posture cursor_bridge_supervisor.bb's own poll-heartbeat-stale? takes
+;; with its startup grace window; this outer layer only needs to catch a
+;; heartbeat that WAS advancing and then stopped.
+(defn cursor-bridge-heartbeat-stale? [now]
+  (when-let [last-ms (read-cursor-bridge-heartbeat-ms)]
+    (>= (- now last-ms) cursor-bridge-watchdog-stall-ms)))
+
+(defn read-cursor-bridge-watchdog-state []
+  (if (fs/exists? cursor-bridge-watchdog-state-file)
+    (try
+      (let [raw (json/parse-string (slurp (str cursor-bridge-watchdog-state-file)) true)]
+        {:last-restart-at-ms (when (number? (:last_restart_at_ms raw)) (:last_restart_at_ms raw))})
+      (catch Exception _ {:last-restart-at-ms nil}))
+    {:last-restart-at-ms nil}))
+
+(defn write-cursor-bridge-watchdog-state! [{:keys [last-restart-at-ms]}]
+  (atomic-spit!
+   cursor-bridge-watchdog-state-file
+   (str (json/generate-string {:last_restart_at_ms last-restart-at-ms :updated_at (now-iso)}) "\n")))
+
+(defn restart-cursor-bridge! []
+  (process/sh {:continue true} "bash" (str start-cursor-bridge-script) project-root))
+
+;; Two independent failure modes, same repair: the supervisor pid is gone
+;; entirely, OR it is alive but its heartbeat has gone dark (the frozen-
+;; tick-loop shape the handoffd silent-stall incident taught this codebase
+;; to check for explicitly, rather than trust pid-alive alone). Cooldown
+;; guards against thrashing a restart every tick while the bridge is
+;; genuinely down for a longer reason (dead tunnel, bad creds).
+(defn cursor-bridge-watchdog-sweep! [now]
+  (when cursor-bridge-watchdog-enabled?
+    (let [{:keys [last-restart-at-ms]} (read-cursor-bridge-watchdog-state)
+          cooldown-active? (and last-restart-at-ms
+                                 (< (- now last-restart-at-ms) cursor-bridge-watchdog-cooldown-ms))
+          unhealthy? (or (not (cursor-bridge-supervisor-alive?))
+                          (cursor-bridge-heartbeat-stale? now))]
+      (when (and unhealthy? (not cooldown-active?))
+        (let [{:keys [exit err]} (restart-cursor-bridge!)]
+          (if (zero? exit)
+            (log! "cursor-bridge-watchdog" "restarted")
+            (log! "cursor-bridge-watchdog" "restart-failed" (str "exit=" exit) (str/trim (or err ""))))
+          (write-cursor-bridge-watchdog-state! {:last-restart-at-ms now}))))))
+
+(defn cursor-bridge-watchdog-status []
+  (let [{:keys [last-restart-at-ms]} (read-cursor-bridge-watchdog-state)
+        enabled cursor-bridge-watchdog-enabled?
+        alive? (cursor-bridge-supervisor-alive?)
+        stale? (cursor-bridge-heartbeat-stale? (now-ms))]
+    {:enabled enabled
+     :stall_ms cursor-bridge-watchdog-stall-ms
+     :last_restart_at_ms last-restart-at-ms
+     :state (cond
+              (not enabled) "disabled"
+              (not alive?) "down"
+              stale? "stalled"
+              :else "healthy")}))
+
+(defn- non-blank-env? [k]
+  (let [v (System/getenv k)]
+    (and (some? v) (not (str/blank? v)))))
+
+(defn babysitterd-telegram-creds?
+  "Same creds the freshness checker can see: live env, or fleet telegram.json
+   (BL-436; never in the tree). A present-but-empty swarm.env is NOT creds —
+   that was the live miss (TELEGRAM_* unset while swarm.env only held skip flags)."
+  []
+  (boolean
+   (or (and (non-blank-env? "TELEGRAM_BOT_TOKEN") (non-blank-env? "TELEGRAM_CHAT_ID"))
+       (let [home (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getenv "HOME"))
+             swarm (swarm-identity-lib/own-swarm-name project-root)]
+         (and home swarm (fs/exists? (fs/path home ".swarmforge" "fleet" swarm "telegram.json")))))))
+
+(defn babysitterd-watchdog-enabled? []
+  (and babysitterd-watchdog-flag?
+       (not= "1" (System/getenv "SWARMFORGE_SKIP_BABYSITTERD"))))
+
+(defn read-babysitterd-watchdog-state []
+  (if (fs/exists? babysitterd-watchdog-state-file)
+    (try
+      (let [raw (json/parse-string (slurp (str babysitterd-watchdog-state-file)) true)]
+        {:last-alert-at-ms (when (number? (:last_alert_at_ms raw)) (:last_alert_at_ms raw))
+         :last-state (:last_state raw)})
+      (catch Exception _ {:last-alert-at-ms nil :last-state nil}))
+    {:last-alert-at-ms nil :last-state nil}))
+
+(defn write-babysitterd-watchdog-state! [{:keys [last-alert-at-ms last-state]}]
+  (atomic-spit!
+   babysitterd-watchdog-state-file
+   (str (json/generate-string {:last_alert_at_ms last-alert-at-ms
+                               :last_state last-state
+                               :updated_at (now-iso)}) "\n")))
+
+(defn- send-babysitterd-watchdog-nudge! [finding]
+  (let [draft-dir (fs/path op-dir "babysitterd-watchdog-drafts")
+        _ (fs/create-dirs draft-dir)
+        draft (fs/path draft-dir (str "draft-" (System/nanoTime) ".txt"))
+        lines ["type: note" "to: coordinator" "priority: 00"
+               (str "message: babysitterd watchdog: " finding)]
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})]
+    (spit (str draft) (str (str/join "\n" lines) "\n"))
+    (let [result (process/sh ["bb" (str (fs/path script-dir "swarm_handoff.bb")) (str draft)]
+                              {:dir (str project-root) :env env})]
+      (if (zero? (:exit result))
+        (log! "babysitterd-watchdog-nudge" "sent")
+        (log! "babysitterd-watchdog-nudge-error" (str (:err result)))))))
+
+(defn- babysitterd-process-rows
+  "Host process table, or a test-injected JSON snapshot (vector of
+   {:pid :cmdline}) at SWARMFORGE_BABYSITTERD_PROCESS_SNAPSHOT — the same
+   'never scan the tester's real table' seam orphan-agent reaper uses.
+   When SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS is set (including empty),
+   operator-runtime tests have already opted out of a host process-table
+   scan; do not reintroduce one here."
+  []
+  (if-let [path (not-empty (System/getenv "SWARMFORGE_BABYSITTERD_PROCESS_SNAPSHOT"))]
+    (try (vec (json/parse-string (slurp path) true))
+         (catch Exception _ []))
+    (if (System/getenv "SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS")
+      []
+      (or (process-table-lib/list-processes!) []))))
+
+(defn babysitterd-watchdog-snapshot* []
+  (let [enabled? (babysitterd-watchdog-enabled?)
+        pidfile-pid (read-pid babysitterd-pid-file)
+        pidfile-alive? (boolean (pid-alive? pidfile-pid))
+        orphan (when enabled?
+                 (babysitterd-freshness-lib/find-live-pid
+                  (str project-root)
+                  (babysitterd-process-rows)))
+        live (babysitterd-freshness-lib/resolve-live-pid pidfile-pid pidfile-alive? orphan)
+        creds? (babysitterd-telegram-creds?)
+        classified (babysitterd-freshness-lib/classify
+                    {:enabled? enabled?
+                     :live-pid live
+                     :pidfile-alive? pidfile-alive?
+                     :telegram-creds? creds?})]
+    (assoc classified
+           :live-pid live
+           :pidfile-alive? pidfile-alive?
+           :telegram-creds? creds?
+           :enabled enabled?)))
+
+(defn refresh-babysitterd-watchdog-snapshot! []
+  (reset! babysitterd-watchdog-snap* (babysitterd-watchdog-snapshot*)))
+
+(defn babysitterd-watchdog-snapshot []
+  (or @babysitterd-watchdog-snap* (refresh-babysitterd-watchdog-snapshot!)))
+
+(defn babysitterd-watchdog-sweep! [now]
+  (when babysitterd-watchdog-flag?
+    (let [snap (refresh-babysitterd-watchdog-snapshot!)
+          {:keys [last-alert-at-ms]} (read-babysitterd-watchdog-state)
+          alert? (babysitterd-freshness-lib/should-alert?
+                  snap last-alert-at-ms now babysitterd-watchdog-cooldown-ms)]
+      (when alert?
+        (log! "babysitterd-watchdog-alert" (:state snap) (:finding snap))
+        (send-babysitterd-watchdog-nudge! (:finding snap))
+        (write-babysitterd-watchdog-state! {:last-alert-at-ms now :last-state (:state snap)}))
+      (when-not alert?
+        (write-babysitterd-watchdog-state!
+         (merge (read-babysitterd-watchdog-state)
+                {:last-state (:state snap)}))))))
+
+(defn babysitterd-watchdog-status []
+  (let [snap (babysitterd-watchdog-snapshot)
+        {:keys [last-alert-at-ms]} (read-babysitterd-watchdog-state)]
+    {:enabled (:enabled snap)
+     :state (:state snap)
+     :pid (:live-pid snap)
+     :pidfile_alive (:pidfile-alive? snap)
+     :telegram_creds (:telegram-creds? snap)
+     :last_alert_at_ms last-alert-at-ms
+     :action (name (:action snap))}))
 
 ;; ── BL-333: front-desk starvation state (runtime-owned, same posture as
 ;;    cooldown above) - {:backlog-started-at-ms :armed?} ────────────────────
@@ -1260,6 +1523,175 @@
   (read-pid last-check-file)) ; reuse: file just holds an epoch-ms integer
 
 (defn record-swarm-check! [ms] (atomic-spit! last-check-file (str ms)))
+
+(defn last-hotfix-cert-ms []
+  (read-pid last-hotfix-cert-file)) ; reuse: file just holds an epoch-ms integer
+
+(defn record-hotfix-cert! [ms] (atomic-spit! last-hotfix-cert-file (str ms)))
+
+;; ── BL-848: hotfix certification ledger + recurrent check ───────────────────
+;; Impure wiring only - every decision (state machine, resurfacing, the
+;; unaccounted-commit review queue) lives in hotfix_certification_lib.bb's
+;; pure assemble-report. This function: reads the committed ledger, scans
+;; `main` for declared-hotfix/unaccounted commits, resolves each entry's
+;; stamp ticket status/human_approval, persists the derived `state` snapshot
+;; + newly-detected entries back to the ledger (NEVER stamp_ticket/human_
+;; decision/decided_at - those are hotfix_ledger_update.bb's job, run by a
+;; human), logs every due entry, and nudges the coordinator for entries with
+;; no stamp ticket yet.
+
+(defn- read-hotfix-ledger-entries []
+  (if (fs/exists? hotfix-ledger-file)
+    (hotfix-certification-lib/parse-ledger (slurp (str hotfix-ledger-file)))
+    []))
+
+(defn- write-hotfix-ledger-entries! [entries]
+  (atomic-spit! hotfix-ledger-file (hotfix-certification-lib/render-ledger entries)))
+
+(defn- read-hotfix-cert-state []
+  (if (fs/exists? hotfix-cert-state-file)
+    (try (json/parse-string (slurp (str hotfix-cert-state-file)) true) (catch Exception _ {}))
+    {}))
+
+(defn- write-hotfix-cert-state! [state]
+  (atomic-spit! hotfix-cert-state-file (json/generate-string state)))
+
+;; Duplicated from ticket_status_lib.bb's own private ticket-id-of/glob scan
+;; (same small live-glue duplication rationale as read-yaml-field above) -
+;; ticket_status_lib exposes only a boolean current-status, and this sweep
+;; also needs the ticket's own human_approval field.
+(defn- find-ticket-file [ticket-id]
+  (some (fn [status]
+          (let [dir (fs/path project-root "backlog" status)]
+            (when (fs/exists? dir)
+              (some (fn [f] (when (= ticket-id (read-yaml-field (slurp (str f)) "id")) f))
+                    (fs/glob dir "**.yaml")))))
+        ["active" "paused" "done"]))
+
+(defn- resolve-stamp-ticket-facts [ticket-id]
+  (if (str/blank? (str ticket-id))
+    {:stamp-ticket-status nil :stamp-ticket-human-approval nil}
+    {:stamp-ticket-status (ticket-status-lib/current-status project-root ticket-id)
+     :stamp-ticket-human-approval (when-let [f (find-ticket-file ticket-id)]
+                                     (read-yaml-field (slurp (str f)) "human_approval"))}))
+
+(defn- git-log-main [limit]
+  (try
+    (let [fmt "%H%x1f%s%x1f%cd%x1f%b%x1e"
+          {:keys [exit out]} (process/sh {:continue true :dir (str project-root)}
+                                          "git" "log" "main" "-n" (str limit)
+                                          "--date=format:%Y-%m-%d" (str "--format=" fmt))]
+      (if (zero? exit)
+        (->> (str/split (str out) #"")
+             (map str/trim)
+             (remove str/blank?)
+             (keep (fn [rec]
+                     (let [parts (str/split rec #"" 4)
+                           sha (nth parts 0 nil)
+                           detected-at (str/trim (nth parts 2 ""))]
+                       (when-not (str/blank? sha)
+                         {:commit (subs sha 0 (min 10 (count sha)))
+                          :subject (str/trim (nth parts 1 ""))
+                          :detected-at (when-not (str/blank? detected-at) detected-at)
+                          :message (str (str/trim (nth parts 1 "")) "\n\n" (str/trim (nth parts 3 "")))})))))
+        []))
+    (catch Exception _ [])))
+
+(defn- git-changed-files [full-or-short-sha]
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true :dir (str project-root)}
+                                          "git" "diff-tree" "--no-commit-id" "--name-only" "-r" full-or-short-sha)]
+      (if (zero? exit) (remove str/blank? (str/split-lines out)) []))
+    (catch Exception _ [])))
+
+(defn- cited-ticket-reached-done? [message]
+  (boolean (some (fn [id] (= "done" (ticket-status-lib/current-status project-root id)))
+                 (hotfix-certification-lib/cited-ticket-ids message))))
+
+(defn- ms->ymd
+  "epoch-ms -> YYYY-MM-DD in the local zone, matching hotfix_ledger_update.bb's
+   own `today` convention (java.time.LocalDate/now, str-formatted)."
+  [ms]
+  (str (.toLocalDate (.atZone (java.time.Instant/ofEpochMilli (long ms))
+                               (java.time.ZoneId/systemDefault)))))
+
+(defn- resolve-main-commits
+  "Recent `main` commits, enriched for hotfix_certification_lib.bb's
+   assemble-report. Commits already in the ledger skip the expensive
+   per-commit git-changed-files/cited-ticket lookups entirely - assemble-
+   report's own known-commits check already excludes them from both the
+   new-entry and unaccounted outputs regardless of these flags' values.
+   :detected-at comes from git-log-main's own commit-date capture; `now` is
+   only a fallback for the (should-never-happen) case git's date field comes
+   back blank, so a ledger entry is never left with no detection date."
+  [known-commits now]
+  (vec (for [c0 (git-log-main hotfix-cert-scan-limit)]
+         (let [c (update c0 :detected-at #(or % (ms->ymd now)))]
+           (if (contains? known-commits (:commit c))
+             (assoc c :functional? false :hotfix-declared? false :cited-ticket-done? false)
+             (assoc c
+                    :functional? (hotfix-certification-lib/functional-commit? (git-changed-files (:commit c)))
+                    :hotfix-declared? (hotfix-certification-lib/hotfix-declared? (:message c))
+                    :cited-ticket-done? (cited-ticket-reached-done? (:message c))))))))
+
+(defn- send-hotfix-cert-mint-nudge! [entry]
+  (let [draft-dir (fs/path op-dir "hotfix-cert-drafts")
+        _ (fs/create-dirs draft-dir)
+        draft (fs/path draft-dir (str "draft-" (System/nanoTime) ".txt"))
+        lines ["type: note" "to: coordinator" "priority: 00"
+               (str "message: " (hotfix-certification-lib/mint-nudge-message entry))]
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})]
+    (spit (str draft) (str (str/join "\n" lines) "\n"))
+    (let [result (process/sh ["bb" (str (fs/path script-dir "swarm_handoff.bb")) (str draft)]
+                              {:dir (str project-root) :env env})]
+      (if (zero? (:exit result))
+        (log! "hotfix-certification-nudge" (:commit entry))
+        (log! "hotfix-certification-nudge-error" (:commit entry) (str (:err result)))))))
+
+(defn hotfix-certification-sweep!
+  "Best-effort side action, gated by its OWN cadence (hotfix-cert-interval-
+   ms, default 1h) via the SAME timer-due? gate SWARM_CHECK_TIMER uses - an
+   hourly git scan must not run on every 30s tick (required_wiring)."
+  [now]
+  (when (operator-lib/timer-due? (last-hotfix-cert-ms) now hotfix-cert-interval-ms)
+    (record-hotfix-cert! now)
+    (try
+      (let [raw-entries (read-hotfix-ledger-entries)
+            known-commits (set (map :commit raw-entries))
+            main-commits (resolve-main-commits known-commits now)
+            enriched-entries (mapv (fn [e] (merge e (resolve-stamp-ticket-facts (:stamp-ticket e)))) raw-entries)
+            cert-state (read-hotfix-cert-state)
+            report (hotfix-certification-lib/assemble-report
+                    {:entries enriched-entries :now-ms now
+                     :last-surfaced-ms-by-commit (or (:last-surfaced-ms-by-commit cert-state) {})
+                     :resurface-cooldown-ms hotfix-cert-resurface-ms
+                     :main-commits main-commits})
+            decided-state-by-commit (into {} (map (juxt :commit :state) (:decided report)))
+            ;; Refresh ONLY the derived :state snapshot on existing entries,
+            ;; append newly-detected ones - stamp-ticket/human-decision/
+            ;; decided-at are never touched here (scenario 06/hotfix_ledger_
+            ;; update.bb owns those).
+            refreshed (mapv (fn [e] (if-let [s (get decided-state-by-commit (:commit e))] (assoc e :state s) e))
+                             raw-entries)
+            final-entries (into refreshed (:new-ledger-entries report))]
+        (when (not= raw-entries final-entries)
+          (write-hotfix-ledger-entries! final-entries))
+        (write-hotfix-cert-state! {:last-surfaced-ms-by-commit (:new-dedup-state report)})
+        (doseq [e (:due-for-surfacing report)]
+          (log! "hotfix-certification" (hotfix-certification-lib/surfaced-log-line e)))
+        (doseq [e (:mint-requests report)] (send-hotfix-cert-mint-nudge! e))
+        (doseq [a (:anomalies report)]
+          (log! "hotfix-certification-anomaly" (hotfix-certification-lib/anomaly-log-line a)))
+        (when (seq (:unaccounted report))
+          (log! "hotfix-certification-unaccounted"
+                (str (count (:unaccounted report)) " commit(s): "
+                     (str/join "; " (map hotfix-certification-lib/unaccounted-report-line (:unaccounted report))))))
+        {:due (count (:due-for-surfacing report))
+         :new-entries (count (:new-ledger-entries report))
+         :unaccounted (count (:unaccounted report))})
+      (catch Exception e
+        (log! "hotfix-certification-error" (.getMessage e))
+        nil))))
 
 ;; ── filesystem signals ────────────────────────────────────────────────────────
 
@@ -1623,6 +2055,27 @@
     (try (json/parse-string (slurp (str telegram-console-status-file)) true)
          (catch Exception _ nil))))
 
+;; GH-26: scans role-awaiting-dir for every <role>.json marker, parses each
+;; (unreadable/corrupt content degrades to {} - operator-lib/
+;; render-role-questions-undeliverable's own filter drops a {}, since it has
+;; no :state "undeliverable"), then hands the whole {role -> marker} map to
+;; the pure shaping step. {} when the directory doesn't exist yet (no role
+;; has ever asked a question) or nothing in it is undeliverable - omitted
+;; from status.json entirely by tick!'s own cond-> below, the SAME "absent
+;; means nothing to report" convention read-tunnel-status/
+;; read-telegram-console-status above already use.
+(defn read-role-questions-undeliverable []
+  (if-not (fs/exists? role-awaiting-dir)
+    {}
+    (->> (fs/list-dir role-awaiting-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".json"))
+         (map (fn [f]
+                [(str/replace (fs/file-name f) #"\.json$" "")
+                 (try (json/parse-string (slurp (str f)) true)
+                      (catch Exception _ {}))]))
+         (into {})
+         operator-lib/render-role-questions-undeliverable)))
+
 ;; ── out-of-cycle poll (BL-481) ──────────────────────────────────────────────
 
 (defn poll!
@@ -1814,6 +2267,12 @@
     ;; itself/the front-desk bot).
     (closing-pass-sweep! now)
 
+    ;; BL-848: hotfix certification recurrent check - gated by its OWN
+    ;; hourly-default cadence internally (timer-due?), never the every-30s
+    ;; tick default; never gates the LLM launch decision below, same
+    ;; best-effort posture as the sweeps above.
+    (hotfix-certification-sweep! now)
+
     (reap-finished-operator!)
     (reap-finished-front-desk-operator!)
 
@@ -1824,13 +2283,22 @@
     ;; Mini app bridge watchdog: if /lets-talk stays down for N checks,
     ;; auto-bounce headless bridge with cooldown (never thrash).
     (miniapp-watchdog-sweep! now)
+    ;; BL-763: Cursor Remote supervisor liveness/heartbeat watchdog - same
+    ;; best-effort, cooldown-guarded, never-gates-launch posture.
+    (cursor-bridge-watchdog-sweep! now)
+    ;; Babysitterd tell-don't-restart poll: process truth, pidfile lie,
+    ;; telegram announce path. Never start_babysitterd.sh — cron restarter.
+    (babysitterd-watchdog-sweep! now)
 
     (let [llm-running? (operator-running?)
           pending (read-events events-file)
           pending-count (count pending)
           tunnel (read-tunnel-status)
           telegram-console (read-telegram-console-status)
+          role-questions-undeliverable (read-role-questions-undeliverable)
           miniapp-watchdog (miniapp-watchdog-status)
+          cursor-bridge-watchdog (cursor-bridge-watchdog-status)
+          babysitterd-watchdog (babysitterd-watchdog-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
                      :provider-state provider-state
@@ -1884,7 +2352,10 @@
                                :oldest-pending-age-ms oldest-pending-age-ms})
                        tunnel (assoc :tunnel tunnel)
                        telegram-console (assoc :telegram_console telegram-console)
+                       (seq role-questions-undeliverable) (assoc :role_questions_undeliverable role-questions-undeliverable)
                        true (assoc :miniapp_watchdog miniapp-watchdog)
+                       true (assoc :cursor_bridge_watchdog cursor-bridge-watchdog)
+                       true (assoc :babysitterd_watchdog babysitterd-watchdog)
                        true (assoc :build_sha own-build-sha)
                        true (assoc :front_desk
                                    (operator-lib/render-front-desk-status

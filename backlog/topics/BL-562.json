@@ -1,0 +1,1 @@
+{"id":"BL-562","messages":[{"seq":0,"ts":1785996019475,"author":"swarm","type":"outbound","text":"BL-562 ✅ done — Backlog-depth WARNING counts .gitkeep as an active ticket, so it fires permanently under any cap of 1"}]}

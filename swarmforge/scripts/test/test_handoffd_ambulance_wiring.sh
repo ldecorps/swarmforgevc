@@ -37,8 +37,16 @@ ROOT_A="$(cd "$(mktemp -d)" && pwd -P)"
 export SWARMFORGE_ALLOW_TMP_DAEMON=1
 PID_A=""
 cleanup_a() {
+  # BL-943: capture the code we were entered with BEFORE running anything
+  # fallible, and return it explicitly at the end - never the trailing rm's
+  # own status. A cleanup failure must never change the script's verdict,
+  # only report on stderr which fixture root it could not remove.
+  local exit_code=$?
   [[ -n "$PID_A" ]] && kill "$PID_A" 2>/dev/null || true
-  rm -rf "$ROOT_A"
+  if ! rm -rf "$ROOT_A" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_A" >&2
+  fi
+  return "$exit_code"
 }
 trap cleanup_a EXIT
 
@@ -137,8 +145,13 @@ ROOT_B="$(cd "$(mktemp -d)" && pwd -P)"
 export SWARMFORGE_ALLOW_TMP_DAEMON=1
 PID_B=""
 cleanup_b() {
+  # BL-943: see cleanup_a's comment - same discipline, per-scenario root.
+  local exit_code=$?
   [[ -n "$PID_B" ]] && kill "$PID_B" 2>/dev/null || true
-  rm -rf "$ROOT_B"
+  if ! rm -rf "$ROOT_B" 2>/dev/null; then
+    echo "WARN: cleanup could not remove fixture root: $ROOT_B" >&2
+  fi
+  return "$exit_code"
 }
 trap cleanup_b EXIT
 
@@ -170,6 +183,12 @@ chmod +x "$FAKE_BIN_B/tmux"
 git -C "$ROOT_B" init -q
 git -C "$ROOT_B" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 mkdir -p "$ROOT_B/.swarmforge" "$ROOT_B/.swarmforge/launch" "$ROOT_B/backlog/active"
+# BL-931: this fixture's own concern is ambulance-hold delivery wiring, not
+# the pack-router gate test_rotate_pack_router_gate.sh covers - declare a
+# rotation-router pack so ambulance-hold-05's chase-driven rotate-resident-to!
+# call still respawns as it always did.
+mkdir -p "$ROOT_B/swarmforge"
+printf 'config rotation router\n' > "$ROOT_B/swarmforge/swarmforge.conf"
 printf 'id: BL-654\ntitle: "demo"\nstatus: active\n' > "$ROOT_B/backlog/active/BL-654-demo.yaml"
 printf 'id: BL-660\ntitle: "demo"\nstatus: active\n' > "$ROOT_B/backlog/active/BL-660-demo.yaml"
 write_marker "$ROOT_B" "BL-654"

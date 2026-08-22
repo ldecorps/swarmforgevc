@@ -18,7 +18,7 @@
 ;;   expedite_cli.bb <project-root> <BL-id> [options]
 ;;     --override            proceed even though the swarm is live (logged)
 ;;     --bounce-bound N      raise/lower the per-stage bound (default 3)
-;;     --stage-timeout-ms N  per-stage budget (default 45 min)
+;;     --stage-timeout-ms N  per-stage budget (default 90 min)
 ;;     --no-restart          skip the final restart phase
 ;;     --dry-run             plan and print; touch nothing
 ;;
@@ -49,11 +49,6 @@
 ;; value-taking flags was duplicated between the positional strip and the reads -
 ;; a latent defect where a forgotten entry makes a flag's value parse as the
 ;; project root.
-
-(defn usage! []
-  (binding [*out* *err*]
-    (println "Usage: expedite_cli.bb <project-root> <BL-id> [--override] [--bounce-bound N] [--stage-timeout-ms N] [--no-restart] [--dry-run]"))
-  (System/exit 2))
 
 ;; ── plumbing ──────────────────────────────────────────────────────────────
 
@@ -117,6 +112,108 @@
 (defn- write-json! [path data]
   (fs/create-dirs (fs/parent path))
   (spit (str path) (str (json/generate-string data {:pretty true}) "\n")))
+
+;; ── BL-1024: the leavings register, and the one way out ────────────────
+;; The closing summary used to be computed at the TAIL of -main's let chain,
+;; which every happy-ish ending falls through. Three PRE-FLIGHT refusals do
+;; not: a forbidden stop flag, a teardown that never reached a clean slate,
+;; and a run worktree that could not be created each terminated the process
+;; from inside a helper, several frames below the code that reports. All three
+;; sit strictly AFTER park-others! has staged real `git mv` moves - so each one
+;; ended with sibling tickets genuinely parked in the shared master checkout
+;; and nothing saying so. That is the 2026-08-21 incident this ticket exists to
+;; fix, reached by a different trigger and on the COMMON path: a host running a
+;; live swarm refuses teardown unless --override, and that is every host this
+;; pipeline actually runs on.
+;;
+;; So the leavings are REGISTERED the instant they come into existence, refined
+;; when more becomes known, and reported by the single exit every path goes
+;; through. One exit point is the point: it makes "every ending reports its
+;; leavings" structural rather than a convention the next early return forgets.
+;; test_expedite_cli.sh asserts, from the source, that this file still holds
+;; exactly one.
+
+(def ^:private leavings
+  "What this run has left for someone else, as far as it has got. nil until
+   something is actually left, so a run that exits before parking reports
+   nothing rather than an empty handover."
+  (atom nil))
+
+(defn- register-leavings! [facts] (reset! leavings facts))
+
+(defn- note-ticket-moved! [moved?]
+  (swap! leavings #(some-> % (assoc :ticket-moved? moved?))))
+
+(defn- outstanding-now
+  "The leavings as of right now. One derivation, read by both the terminal
+   summary and the run record, so the two can never disagree."
+  []
+  (when-let [{:keys [ticket parked ticket-moved? dry-run?]} @leavings]
+    (expedite-lib/outstanding-work {:ticket ticket :parked parked
+                                    :ticket-moved? ticket-moved? :dry-run? dry-run?})))
+
+(defn- report-leavings! [exit-code]
+  (when-let [{:keys [run-dir ticket parked park]} @leavings]
+    (let [items (outstanding-now)
+          run-json (fs/path run-dir "run.json")]
+      ;; A refused run never reaches -main's tail, so nothing has written
+      ;; run.json for it. The run's only two channels to the next actor are
+      ;; what it prints and what it writes; terminal text scrolls away, so the
+      ;; leavings ride both. -main's own record is richer, so never overwrite
+      ;; one that is already there.
+      (when-not (fs/exists? run-json)
+        (write-json! run-json {:outcome "refused"
+                               :exit-code exit-code
+                               :ticket-id ticket
+                               :park park
+                               :outstanding items
+                               :finished-at-ms (now-ms)}))
+      (println (expedite-lib/format-outstanding-summary {:items items :parked parked})))))
+
+(defn- exit!
+  "The ONLY way this process ends. Reports the leavings first - a run that
+   ended badly is exactly when they matter most."
+  [code]
+  (report-leavings! code)
+  (System/exit code))
+
+(defn usage! []
+  (binding [*out* *err*]
+    (println "Usage: expedite_cli.bb <project-root> <BL-id> [--override] [--bounce-bound N] [--stage-timeout-ms N] [--no-restart] [--dry-run]"))
+  (exit! 2))
+
+(defn- now-iso []
+  (.format (java.time.format.DateTimeFormatter/ISO_INSTANT) (java.time.Instant/now)))
+
+;; BL-1025: the impure half of expedite-lib/qa-hat-verdict-record - append the
+;; QA hat's verdict where is_qa_ancestor.sh can read it. Written into the
+;; PROJECT root, not the run worktree: the store is a fact about this repo's
+;; approvals, and the worktree is torn down. Appended (never rewritten) so a
+;; second run never erases the first run's verdicts.
+;;
+;; The sha recorded is the run worktree's HEAD at the instant the QA hat gave
+;; its verdict - the commit that hat actually looked at. A worktree whose HEAD
+;; cannot be read records nothing, rather than a record naming the wrong
+;; commit: a verdict store that can be wrong is worse than one with a gap,
+;; because the gap only costs a false CRIT while a wrong record waves real
+;; work through.
+(defn- worktree-head [dir]
+  (let [{:keys [exit out]} (sh {:dir (str dir)} "git" "rev-parse" "HEAD")]
+    (when (zero? exit) (str/trim out))))
+
+(defn- record-qa-hat-verdict! [{:keys [project-root ticket dry-run?]} {:keys [dir]} stage res]
+  (when-not dry-run?
+    (when-let [record (expedite-lib/qa-hat-verdict-record
+                       {:stage stage
+                        :verdict (:verdict res)
+                        :ticket ticket
+                        :commit (worktree-head dir)
+                        :at (now-iso)})]
+      (let [f (fs/path project-root (expedite-lib/expedite-approval-store-file (:at record)))]
+        (fs/create-dirs (fs/parent f))
+        (spit (str f) (str (json/generate-string record) "\n") :append true)
+        (log! "recorded QA-hat verdict" (:verdict record) "for" (:commit record) "->" (str f))
+        record))))
 
 (defn- write-progress! [run-dir ticket stage status & [detail]]
   (write-json! (fs/path run-dir "progress.json")
@@ -227,13 +324,23 @@
           (log! "park" t "->" (str "backlog/" (:destination plan) "/"))
           (when-not dry-run? (move-ticket! project-root t "active" (:destination plan))))
         (when-not dry-run? (write-json! (fs/path run-dir "park-record.json") record))))
+    ;; BL-1024: registered AFTER the moves, so the register records what was
+    ;; actually done rather than what was planned. Everything downstream of
+    ;; this line may refuse and exit, and every one of those exits now reports
+    ;; what is already parked and staged.
+    (register-leavings! {:run-dir run-dir
+                         :ticket ticket
+                         :parked (vec (:park plan))
+                         :ticket-moved? false
+                         :dry-run? (boolean dry-run?)
+                         :park plan})
     plan))
 
 (defn stop-stack! [{:keys [project-root dry-run?]}]
   (let [cmd (or (System/getenv "EXPEDITE_STOP_CMD") "./stop-swarm.sh")]
     (when-not (expedite-lib/stop-invocation-ok? [cmd])
       (log! "REFUSE stop command carries a forbidden flag:" cmd)
-      (System/exit 1))
+      (exit! 1))
     (if dry-run?
       {:exit-code 0 :dry-run true}
       (let [{:keys [exit out err]} (sh {:dir (str project-root)} "bash" "-lc" cmd)]
@@ -279,7 +386,7 @@
       (when-not (or dry-run? override? (:clean? verdict))
         (log! "REFUSE teardown did not reach a clean slate:" (str/join "," (:alive verdict)))
         (log! "remedy: stop the named processes by hand, or pass --override")
-        (System/exit 1))
+        (exit! 1))
       (when (and override? (not (:clean? verdict)))
         (log! "WARNING override in force; proceeding with these alive:"
               (str/join "," (:alive verdict))))
@@ -298,7 +405,7 @@
       (let [{:keys [exit err]} (sh {:dir (str project-root)} "git" "worktree" "add" "-b" branch (str dir) "main")]
         (when-not (zero? exit)
           (log! "REFUSE could not create the run worktree:" (str/trim (str err)))
-          (System/exit 1))))
+          (exit! 1))))
     (log! "worktree" (str dir) "on" branch)
     {:branch branch :dir (str dir)}))
 
@@ -405,6 +512,9 @@
                                 (when-let [r (:reason res)] (str " reason=" (name r)))))
           (swap! history conj (select-keys res [:stage :verdict :reason :class]))
           (write-json! (fs/path stage-dir "verdict.json") res)
+          ;; BL-1025: a no-op for every stage but QA, and for a QA stage that
+          ;; failed rather than ruled - see qa-hat-verdict-record.
+          (record-qa-hat-verdict! opts worktree stage res)
           (case (expedite-lib/classify-verdict (:verdict res))
             :advance (recur (expedite-lib/next-stage stages stage) (inc n))
 
@@ -473,8 +583,10 @@
           worktree (ensure-worktree! opts)
           stages (expedite-lib/stages-for {})
           staged (drive-stages! opts worktree run-dir stages)
-          _ (when (and (= :done (:ticket staged)) (not (:dry-run? opts)))
+          ticket-moved? (boolean (and (= :done (:ticket staged)) (not (:dry-run? opts))))
+          _ (when ticket-moved?
               (move-ticket! root ticket "active" "done"))
+          _ (note-ticket-moved! ticket-moved?)
           restart (restart-stack! opts)
           _ (when (not (:dry-run? opts))
               (write-progress! run-dir ticket :done
@@ -482,6 +594,11 @@
                                (str "ticket=" (name (:ticket staged)) " restart=" (name (:outcome restart)))))
           result (expedite-lib/run-result {:ticket (:ticket staged)
                                            :restart (:outcome restart)})
+          ;; BL-1024: derived from facts the run already holds - the park plan
+          ;; and whether the run ticket's own move happened - never tracked a
+          ;; second time. Read from the register rather than recomputed, so the
+          ;; record and the printed summary cannot drift apart.
+          outstanding (outstanding-now)
           run-record (merge result
                             {:ticket-id ticket
                              :branch (:branch worktree)
@@ -495,6 +612,10 @@
                              :override-used? (get-in init [:gate :override-used?])
                              :restart restart
                              :deferred ["bl-topic-record" "briefing-hooks" "pipeline-stage-sync"]
+                             ;; BL-1024: the leavings ride run.json too, so a
+                             ;; later reader gets them structured rather than
+                             ;; only as terminal text that has scrolled away.
+                             :outstanding outstanding
                              :finished-at-ms (now-ms)})]
       (write-json! (fs/path run-dir "run.json") run-record)
       (log! "ticket" (name (:ticket result)) "| restart" (name (:restart result))
@@ -504,6 +625,10 @@
       (when-let [e (:exhaustion staged)]
         (log! "probable-spec-defect:" (pr-str e)))
       (println (json/generate-string run-record {:pretty true}))
-      (System/exit (:exit-code result)))))
+      ;; BL-1024: exit! prints the summary, so it is the last thing on the
+      ;; terminal and - far more importantly - so this ending is not special.
+      ;; The three pre-flight refusals never reach this line and used to report
+      ;; nothing at all.
+      (exit! (:exit-code result)))))
 
 (apply -main *command-line-args*)

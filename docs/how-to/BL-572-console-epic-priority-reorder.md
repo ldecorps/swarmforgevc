@@ -12,11 +12,14 @@ epics**. The console links to `/epic-reorder` on the bridge server. The HTML
 shell is publicly reachable like the other Mini App shells, but the list
 feed and the move route require the console token.
 
-The screen lists every `backlog/paused/` ticket of `type: epic`, ordered by
-`priority:` ascending, one row per epic with its id, title, and current
-priority. Each row has **Move up**, **Move down**, **Make top**, and
-**Topics** controls. When there are no paused epics, the screen shows an
-empty state and no rows.
+The screen lists every `backlog/paused/` ticket of `type: epic` that has at
+least one live child ticket (`paused/`, `hold/`, or `active/` — never
+`done/`), ordered by `priority:` ascending, one row per epic with its id,
+title, and current priority. Childless trackers stay in `backlog/paused/`
+but are omitted from the list and from **Move up** / **Move down**
+neighbours, so an empty shell cannot swallow a tap. Each row has **Move
+up**, **Move down**, **Make top**, and **Topics** controls. When there are
+no such epics, the screen shows an empty state and no rows.
 
 ## Move an Epic
 
@@ -79,13 +82,17 @@ or no-op always shows its reason rather than a bare status code.
 ## Open an Epic's Topics
 
 Tap **Topics** on an epic row to drill into that epic's own live topics —
-every `backlog/paused/` and `backlog/hold/` item carrying that epic, listed
-in the same priority-ascending, id-ascending order as everywhere else on
-this screen. The pane header stays put across the drill-down, same as the
-tile view. A topic that depends on another live topic shows a small
-dependency marker next to its id, so a bound or refused move is never a
-surprise before you tap anything. An epic with no live topics shows its own
-empty state instead of a blank list.
+every `backlog/paused/`, `backlog/hold/`, **and `backlog/active/`** item
+carrying that epic (a `done/` child never appears), listed in the same
+priority-ascending, id-ascending order as everywhere else on this screen. The
+pane header stays put across the drill-down, same as the tile view. A topic
+that depends on another live topic shows a small dependency marker next to
+its id, so a bound or refused move is never a surprise before you tap
+anything. A topic sourced from `backlog/active/` carries an **in flight**
+badge next to its id — it is still an ordinary row you can reorder and tap
+**Make top** on, the badge is informational only. An epic with no
+reorderable topics is omitted from the tiles, so that empty state is only
+reachable if the last child vanished after the screen last refreshed.
 
 Tap **&larr; Back** to return to the epic tiles.
 
@@ -99,18 +106,24 @@ not invent a tie-break. An epic tracker never appears as a topic or a
 
 ## Make a Topic Top Priority Within Its Epic
 
-From an epic's drill-down, each topic row has its own **Make top** control.
-Tapping it is the same primitive as the epic-level **Make top**, one level
-down: the topic is made the strict top of *that epic's own live topics* —
-never the whole backlog, and never another epic's topics.
+From an epic's drill-down, each topic row has its own **Make top** control —
+including a row badged **in flight**. Tapping it is the same primitive as
+the epic-level **Make top**, one level down: the topic is made the strict
+top of *that epic's own live topics* — never the whole backlog, and never
+another epic's topics.
 
 The same rules apply, narrowed to that one epic's topic list:
 
 - Other epics' topics, and the target topic's own epic siblings it doesn't
-  depend on, keep their relative order.
+  depend on, keep their relative order. An in-flight sibling is an ordering
+  peer like any other: making a parked topic top moves it ahead of an
+  in-flight sibling ranked worse than it, the same as it would a parked one.
 - A live dependency is resolved globally, not just within the epic — a
   topic in a different epic entirely can still bound or refuse the move, the
-  same way an in-epic dependency would.
+  same way an in-epic dependency would. "Live" for this purpose stays
+  `backlog/paused/` and `backlog/hold/` only — a dependency that is itself
+  `active` or `done` never bounds or blocks the move, even though the topic
+  it names is shown, in-flight-badged, in this same drill-down.
 - A broken dependency graph (a cycle, or a `depends_on` id that resolves to
   nothing) refuses the move outright, naming the offending id(s); nothing is
   written or committed.
@@ -120,10 +133,61 @@ The same rules apply, narrowed to that one epic's topic list:
   viewing is refused as not-found, without writing anything — this can only
   happen if the screen's own data is stale, since the drill-down only ever
   shows a topic under its own epic.
+- Tapping **Make top** on an in-flight topic is accepted like any other row:
+  its `priority:` is rewritten (in its `backlog/active/` file) the same way
+  a parked topic's is, but only its recorded queue order changes — the swarm
+  pipeline never re-reads a promoted ticket's `priority:`, so the tap does
+  not promote, demote, or otherwise touch the in-flight work itself. Making
+  a parked topic top can likewise rewrite an in-flight sibling's file by
+  displacement, for the same reason.
 
 Like the epic-level move and **Make top**, a successful topic **Make top**
 commits through the shared commit-integrity helper, and every refusal or
 no-op shows its stated reason.
+
+## Reading an Epic's ETA
+
+Each epic tile also shows a best-estimate ETA, based on the swarm's recent
+completion velocity, so a reorder decision is made against "how long is each
+of these" and not just the epic's name. The ETA is **display-and-estimate
+only** — it changes no scheduling, promotes nothing, and gates no build; it
+never appears on a topic row in an epic's drill-down, only on the epic
+tiles themselves.
+
+What a tile shows depends on the state of that epic's own open children
+(`active/` + `paused/` + `hold/`, the same slug-resolved set the **Topics**
+drill-down uses — never a second membership notion):
+
+- **`complete`** — every child is done. No range, no pace assumption.
+- **`~2w–~4w · high confidence (steady)` plus a pace line** — the normal
+  case: a low–high range (never a single point date), a confidence word
+  with the dominant reason in parentheses, a blocked-child count when any
+  children are blocked, and a pace assumption line naming the swarm pack
+  and the trailing window the velocity was measured over (e.g. "at current
+  full-forge pace over the trailing 28d window"). Pack matters more than
+  anything else here — measured throughput has swung roughly 5x between the
+  full pack and a mono-router pack, so a range that didn't name its pack
+  would be close to meaningless.
+- **`blocked (N blocked)`** — every open child is currently unable to
+  start (held in `backlog/hold/`, `status: blocked`/`needs_design`, or
+  carrying a non-empty `promotion_blockers`/`block_until`). No range is
+  shown, because no velocity number describes work that cannot start.
+- **`no recent pace`** — there were zero completions in the trailing
+  window, or no usable window at all. The tile says so honestly rather
+  than dividing by zero into a fabricated range.
+
+A blocked child is always counted and shown next to the range, never folded
+into it — the range only ever reflects buildable (not-blocked) children's
+weight, weighted by `mutation_cost` (`low` < `medium` < `high`; a child with
+no `mutation_cost` counts as `medium`). Removing a blocked child from an
+epic's children never changes the range computed from the remaining
+buildable children.
+
+The velocity window is a trailing 28 days of `backlog/done/` ticket
+additions, cached in the bridge process for 5 minutes so the screen never
+spawns `git log` on every poll. If the swarm's own pack can't be determined
+from `.swarmforge/swarm-identity` (or the `SWARMFORGE_PACK` env var), the
+pace assumption names it `unknown-pack` rather than guessing.
 
 ## If a Move Fails
 
@@ -138,3 +202,16 @@ its own.
 The epic tiles only reorder `type: epic` tickets. Reordering one epic's own
 topics is a narrower, separate action — scoped to a single epic's drill-down
 (**Make top** within an epic), not a general topic reorder screen.
+
+## Why This Screen Is Now Enough On Its Own
+
+A move or **Make top** on this screen only ever rewrites `priority:` on the
+epic tracker(s) and topics involved — it never bulk-rewrites every child
+ticket under an epic. Since BL-900, that's sufficient: promotion ranking
+reads a candidate's containing epic's own priority ahead of the candidate's
+own `priority:`, so reordering the epic here changes real promotion order
+without touching a single child ticket. See [Why Promotion Ranks by Epic
+Priority Before Ticket
+Priority](../explanation/BL-900-epic-priority-promotion-ranking.md) for the
+ranking mechanics and its exceptions (expedited defects, queue-jump,
+ambulance mode).

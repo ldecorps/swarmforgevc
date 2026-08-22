@@ -95,6 +95,17 @@ On a successful launch:
   never conf-declared, in every mode — not only under secondary mode as
   before). Fix the conf and relaunch; nothing partially starts.
 
+**Fleet status publishes under this swarm's own name (BL-1010).** Every
+running swarm — this one included — publishes a heartbeat doc to
+`~/.swarmforge/fleet/<swarm_name>/status.json` on each `handoffd` cycle,
+resolved from `.swarmforge/swarm-identity` (the file the launcher just
+wrote from this pack's `swarm_name second`), never from `swarmforge.conf`
+alone. That heartbeat requires a compiled `extension/out` in this checkout —
+if you haven't run `npm install && npm run compile` in `extension/` yet (see
+`docs/tutorials/GettingStarted.md`), `handoffd`'s fleet-status log line now
+names that exact command instead of a bare node module-not-found, so a
+never-built checkout is diagnosable from the log alone.
+
 BL-215: this headless daemon reads `RESEND_API_KEY` from its own process
 environment (never VS Code SecretStorage, which a headless launch has no
 access to) — export it in the same shell/session before running `./swarm`,
@@ -102,7 +113,21 @@ or in whatever launcher/systemd unit starts it, if you want the BL-144
 daemon-death alarm or BL-214 briefing email to actually send. A
 `notify_email_to` configured in `swarmforge.conf` with no `RESEND_API_KEY`
 in the daemon's env no longer fails silently: it logs a loud warning naming
-`RESEND_API_KEY` to `.swarmforge/daemon/handoffd-supervisor.log`.
+`RESEND_API_KEY` to `.swarmforge/daemon/handoffd-supervisor.log`, and
+(BL-976) the daemon's Telegram operator outbox gets the same alert once per
+keyless generation, since the supervisor/watchdog relaunch chain spawns each
+new generation from whatever environment happens to run it — a log line
+alone is easy to miss between relaunches.
+
+A hand-exported key covers only the CURRENT process, though — the next
+supervisor- or watchdog-driven relaunch spawns a fresh, keyless generation
+unless the key is durable. For that, write it once to
+`.swarmforge/operator/daemon.env` (gitignored runtime state, never
+committed — the BL-215 posture is unchanged): every daemon launch
+(`start_handoff_daemon.sh`) re-sources that file, when present, before
+either daemon starts, so `RESEND_API_KEY` survives every relaunch without
+being hand-re-exported each time. No file present → ambient environment
+only, exactly as before BL-976.
 
 ## 5. Working the shared backlog
 

@@ -1,0 +1,53 @@
+Feature: A failed push records why it failed
+
+  push-sweep's failure record carries only an attempt count today, so a long
+  failure streak cannot be diagnosed. The underlying git error must travel
+  with it, on one line, and reach the operator alarm too.
+
+  Background:
+    Given a repository whose push sweep is configured against a remote
+
+  # BL-903 push-sweep-discards-failure-reason-01
+  Scenario Outline: A push failure records the underlying reason
+    Given the remote will reject a push because <cause>
+    When the push sweep attempts a push
+    Then the failure record carries the attempt count
+    And the failure record carries a recognisable fragment of the git error
+
+    Examples:
+      | cause                        |
+      | the push is not a fast-forward |
+      | the remote URL is unreachable  |
+
+  # BL-903 push-sweep-discards-failure-reason-02
+  Scenario: Two different causes produce two distinguishable records
+    Given the remote will reject a push because the push is not a fast-forward
+    When the push sweep attempts a push
+    And the remote will reject a push because the remote URL is unreachable
+    And the push sweep attempts a push
+    Then the two failure records differ in their recorded reason
+
+  # BL-903 push-sweep-discards-failure-reason-03
+  Scenario: A multi-line git error still occupies one record
+    Given the remote will reject a push with a multi-line error
+    When the push sweep attempts a push
+    Then exactly one new record is written
+
+  # BL-903 push-sweep-discards-failure-reason-04
+  Scenario: The operator alarm names the reason, not only the count
+    Given the remote will reject a push because the remote URL is unreachable
+    When the push sweep has failed enough times to arm the alarm
+    Then the alarm body carries the recorded reason
+
+  # BL-903 push-sweep-discards-failure-reason-05
+  Scenario: A successful push writes no failure record
+    Given the remote will accept a push
+    When the push sweep attempts a push
+    Then no failure record is written
+    And the recorded attempt count is reset to zero
+
+  # BL-903 push-sweep-discards-failure-reason-06
+  Scenario: Retry timing is unchanged
+    Given the remote will reject a push because the remote URL is unreachable
+    When the push sweep attempts a push
+    Then the next attempt becomes due after the same backoff as before this change

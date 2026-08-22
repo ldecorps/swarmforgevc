@@ -160,6 +160,66 @@
                                           :highest-tier-alarmed nil :snoozed? false
                                           :role "cleaner" :type "note" :dormant? true}))
 
+;; ── BL-679 ambulance-perimeter-01/02/03: evaluate-parcel-tier composes the
+;;    mute at the CALLER, decide-tier itself stays untouched ─────────────────
+
+(assert= "evaluate-parcel-tier with no ambulance-held? arg behaves exactly as before (arity-4 unchanged)"
+         (flow-watchdog-lib/evaluate-parcel-tier 100 60 600 {} "p")
+         (flow-watchdog-lib/evaluate-parcel-tier 100 60 600 {} "p" false))
+
+(assert= "ambulance-perimeter-01: a held parcel past escalate mutes to :none"
+         :none
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {} "p660" true))
+
+(assert= "ambulance-held? true is honest snooze territory - decide-tier itself never sees a fourth key"
+         (flow-watchdog-lib/decide-tier {:age-ms 99999 :warn-ms 60 :escalate-ms 600
+                                          :highest-tier-alarmed nil :snoozed? true})
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {} "p660" true))
+
+(assert= "ambulance-perimeter-02: ambulance-held? false alarms exactly as before (the ambulance ticket's own parcel)"
+         :escalate
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {} "p654" false))
+
+(assert= "a pre-existing human-ack snooze and ambulance-held? both mute independently (OR, not AND)"
+         :none
+         (flow-watchdog-lib/evaluate-parcel-tier 99999 60 600 {:p {:snoozed true}} "p" false))
+
+;; ambulance-perimeter-03 (tier-decision-input-keys unchanged by this ticket)
+;; is already covered by the acceptance-05 assertions above - decide-tier
+;; itself is never touched by this file's BL-679 changes, so no new
+;; assertion is needed; re-asserting the same five-key set here would only
+;; duplicate acceptance-05, not add coverage.
+
+;; ── BL-679: parcel-ambulance-held? - the impure wrapper run-sweep! consults ──
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "backlog" "active"))
+  (spit (str (fs/path root "backlog" "active" "BL-654-fixture.yaml"))
+        "id: BL-654\ntitle: \"fixture\"\nstatus: active\n")
+  (fs/create-dirs (fs/path root ".swarmforge" "operator"))
+  (spit (str (fs/path root ".swarmforge" "operator" "control-ambulance.json"))
+        (json/generate-string {:active true :ticket "BL-654"}))
+  (let [ambulance-state (ambulance-lib/read-ambulance-state (str root))
+        held-file (str (fs/path root "held.handoff"))
+        own-file (str (fs/path root "own.handoff"))
+        unattributed-file (str (fs/path root "unattributed.handoff"))
+        missing-file (str (fs/path root "missing.handoff"))]
+    (spit held-file "from: specifier\nto: coder\npriority: 50\ntype: git_handoff\ntask: BL-660\ncommit: 0000000000\ncreated_at: 2026-08-12T00:00:00Z\n\npayload\n")
+    (spit own-file "from: specifier\nto: coder\npriority: 50\ntype: git_handoff\ntask: BL-654\ncommit: 0000000000\ncreated_at: 2026-08-12T00:00:00Z\n\npayload\n")
+    (spit unattributed-file "from: specifier\nto: coder\npriority: 50\ntype: note\nmessage: no ticket id here\n\npayload\n")
+    (assert= "parcel-ambulance-held? true for a parcel attributed to a DIFFERENT ticket while engaged"
+             true
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state held-file))
+    (assert= "parcel-ambulance-held? false for the ambulance ticket's own parcel (never muted)"
+             false
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state own-file))
+    (assert= "parcel-ambulance-held? false for an unattributed parcel (fails open, same as ambulance-lib/parcel-held?)"
+             false
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state unattributed-file))
+    (assert= "parcel-ambulance-held? false (fail-open) for a vanished/unreadable file - never a crash"
+             false
+             (flow-watchdog-lib/parcel-ambulance-held? ambulance-state missing-file))))
+
 ;; ── decide-verb (pure) ───────────────────────────────────────────────────────
 
 (assert= "no live session -> rotate, regardless of mailbox"
@@ -409,6 +469,181 @@
            nil
            (get (flow-watchdog-lib/read-state daemon-dir) :p4)))
 
+;; ── BL-679 ambulance-perimeter-01/02: run-sweep! end-to-end through a REAL
+;;    engaged marker - held parcels stop alarming, the ambulance ticket's
+;;    own parcel alarms exactly as it does today ─────────────────────────────
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "cleaner" "inbox" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])
+      inboxes [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
+      adapters {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))}]
+  (fs/create-dirs (fs/path root "backlog" "active"))
+  (spit (str (fs/path root "backlog" "active" "BL-654-fixture.yaml"))
+        "id: BL-654\ntitle: \"fixture\"\nstatus: active\n")
+  (fs/create-dirs (fs/path root ".swarmforge" "operator"))
+  (spit (str (fs/path root ".swarmforge" "operator" "control-ambulance.json"))
+        (json/generate-string {:active true :ticket "BL-654"}))
+  (write-handoff! (str (fs/path new-dir "held.handoff"))
+                   [["id" "held660"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
+                    ["task" "BL-660"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+  (write-handoff! (str (fs/path new-dir "own.handoff"))
+                   [["id" "own654"] ["from" "specifier"] ["to" "cleaner"] ["type" "git_handoff"]
+                    ["task" "BL-654"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 300))]])
+  (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir adapters)
+  (assert= "ambulance-perimeter-01: exactly one alarm - the held BL-660 parcel never alarms"
+           1
+           (count @alarms))
+  (assert= "ambulance-perimeter-02: the one alarm names the ambulance ticket's own escalating parcel"
+           true
+           (clojure.string/includes? (first @alarms) "own654"))
+  (assert= "ambulance-perimeter-01: the held parcel's durable state records no tier (never alarmed)"
+           nil
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :held660)))
+  (assert= "ambulance-perimeter-02: the ambulance ticket's own parcel records an escalate tier, same as any non-held parcel"
+           "escalate"
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :own654))))
+
+;; ── BL-1004 deferral-perimeter (architect bounce 2026-08-21): a stage-queue
+;;    parcel inside its designed cross-seat deferral window never alarms;
+;;    every release condition (no worker, past deadline, all seats worked,
+;;    already claimed into in_process) alarms exactly as today ─────────────
+
+(defn mk-two-seat-fixture!
+  "mk-sweep-fixture! plus a two-seat coder stage: roles.tsv rows for the
+   stage row `coder` and sibling seat `coder@b`, each with its own worktree
+   dir inside the fixture (non-master rows, so each mailbox base is
+   <worktree>/.swarmforge/handoffs). Returns the root."
+  []
+  (let [root (mk-sweep-fixture!)]
+    (fs/create-dirs (fs/path root ".swarmforge"))
+    (spit (str (fs/path root ".swarmforge" "roles.tsv"))
+          (str "coder\tcoder\t" (fs/path root "wt-coder") "\tswarm\tCoder\tclaude\ttask\n"
+               "coder@b\tcoder-b\t" (fs/path root "wt-b") "\tswarm\tCoder B\tclaude\ttask\n"))
+    root))
+
+(defn seat-mailbox [root wt state]
+  (fs/path root wt ".swarmforge" "handoffs" "inbox" state))
+
+(defn write-worked-record!
+  "A git_handoff for task in the given seat mailbox dir - the durable
+   record stage-seat-worked-task-sets reads."
+  [dir task]
+  (write-handoff! (str (fs/path dir (str "done-" task ".handoff")))
+                  [["id" (str "done-" task)] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" task]]))
+
+;; deferral-perimeter-01: seat b worked the task, the rework sits in the
+;; stage queue at 16 minutes - past warn (60s) and even escalate (240s),
+;; inside the 30-minute deferral window - and must NOT alarm.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-777")
+  (write-handoff! (str (fs/path stage-new "rework.handoff"))
+                  [["id" "rework777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}
+    {:role "coder@b" :new-dir (seat-mailbox root "wt-b" "new") :in-process-dir (seat-mailbox root "wt-b" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-01: a parcel inside its designed deferral window never alarms"
+           []
+           @alarms)
+  (assert= "deferral-perimeter-01: the held parcel's durable state records no tier"
+           nil
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :rework777))))
+
+;; deferral-perimeter-02: NO seat worked the task - a fresh parcel sitting
+;; that long is a real stall and still alarms.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-888")
+  (write-handoff! (str (fs/path stage-new "fresh.handoff"))
+                  [["id" "fresh777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-02: a task no seat worked still alarms (the hold is not a blanket mute)"
+           1
+           (count @alarms)))
+
+;; deferral-perimeter-03: past the cross-seat deadline the hold releases -
+;; the affine seat never came, any seat may claim, and the alarm fires.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-777")
+  (write-handoff! (str (fs/path stage-new "aged.handoff"))
+                  [["id" "aged777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 1900))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-03: past the deadline the hold releases and the parcel alarms"
+           1
+           (count @alarms)))
+
+;; deferral-perimeter-04: EVERY seat worked the task - whichever seat polls
+;; self-claims, no deferral can occur, so a sitting parcel still alarms.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      stage-new (seat-mailbox root "wt-coder" "new")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-worked-record! (seat-mailbox root "wt-b" "completed") "BL-777")
+  (write-worked-record! (seat-mailbox root "wt-coder" "completed") "BL-777")
+  (write-handoff! (str (fs/path stage-new "both.handoff"))
+                  [["id" "both777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir stage-new :in-process-dir (seat-mailbox root "wt-coder" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-04: a task every seat worked never holds - the parcel alarms"
+           1
+           (count @alarms)))
+
+;; deferral-perimeter-05: the hold applies to the stage QUEUE (:new) only.
+;; A parcel already CLAIMED into a seat's in_process is past deferral - a
+;; stall there is real even though the claiming seat's own in_process makes
+;; it a "worker" of the task while the other seat is not.
+(let [root (mk-two-seat-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      b-in-process (seat-mailbox root "wt-b" "in_process")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])]
+  (write-handoff! (str (fs/path b-in-process "claimed.handoff"))
+                  [["id" "claimed777"] ["from" "hardender"] ["to" "coder"]
+                   ["type" "git_handoff"] ["task" "BL-777"]
+                   ["enqueued_at" (iso (- (quot now-ms 1000) 960))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "coder" :new-dir (seat-mailbox root "wt-coder" "new") :in-process-dir (seat-mailbox root "wt-coder" "in_process")}
+    {:role "coder@b" :new-dir (seat-mailbox root "wt-b" "new") :in-process-dir b-in-process}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "deferral-perimeter-05: a claimed in_process parcel is never deferral-held - it alarms"
+           1
+           (count @alarms)))
+
 ;; acceptance-06: an old-header, fresh-mtime parcel still alarms (mtime never
 ;; consulted - the fixture file's own mtime is "now", far fresher than its
 ;; enqueued_at header).
@@ -574,6 +809,708 @@
   (assert= "acceptance-13c: no further re-attempt once confirmed and tier unchanged"
            2
            (count @alarms)))
+
+;; ── spec-dependent percentile thresholds (warn≈p67 / escalate≈p97) ─────────
+
+(assert= "spec-key encodes from->to|type"
+         "cleaner->architect|git_handoff"
+         (flow-watchdog-lib/spec-key {:from "cleaner" :to "architect" :type "git_handoff"}))
+
+(assert= "to-type-key wildcards the sender"
+         "*->architect|git_handoff"
+         (flow-watchdog-lib/to-type-key {:to "architect" :type "git_handoff"}))
+
+;; BL-827 gap 2: the *->*|type row (and its type-key builder) are GONE -
+;; written "for observability", consulted by nothing, and its own docstring
+;; said consulting it would mis-calibrate dormant roles. The calibrated
+;; table must never emit one (asserted on calibrate-threshold-table below).
+
+;; 10 samples [10..100]: ceil-rank p67 → index 6 → 70; p97 → index 9 → 100.
+(assert= "percentile-ms p67 over 10 evenly spaced samples"
+         70
+         (flow-watchdog-lib/percentile-ms (range 10 110 10) 67))
+
+(assert= "percentile-ms p97 over 10 evenly spaced samples"
+         100
+         (flow-watchdog-lib/percentile-ms (range 10 110 10) 97))
+
+(assert= "thresholds-from-samples returns nil under the min-sample gate"
+         nil
+         (flow-watchdog-lib/thresholds-from-samples (range 7)))
+
+(let [t (flow-watchdog-lib/thresholds-from-samples
+         ;; Eight 1-minute samples and two long ones → raw p67 lands exactly
+         ;; on the gate (1m), so it still clears (>=) and calibrates.
+         (concat (repeat 8 (* 60 1000)) [(* 30 60 1000) (* 60 60 1000)]))]
+  (assert= "thresholds-from-samples warn is at least the min-warn-ms gate"
+           true
+           (>= (:warn-ms t) flow-watchdog-lib/min-warn-ms))
+  (assert= "thresholds-from-samples escalate is strictly above warn"
+           true
+           (> (:escalate-ms t) (:warn-ms t)))
+  (assert= "thresholds-from-samples records sample count"
+           10
+           (:n t)))
+
+;; BL-835: min-warn-ms is a REJECT GATE, not a floor. A raw p67 below the
+;; gate must not invent a calibrated warn - no entry at all, ever (invariant:
+;; "A calibrated specs entry is emitted only when the raw warn percentile is
+;; >= min-warn-ms; the floor never invents a warn threshold.").
+(assert= "BL-835: thresholds-from-samples rejects (nil) when raw p67 sits below min-warn-ms"
+         nil
+         (flow-watchdog-lib/thresholds-from-samples (repeat 10 5000)))
+
+(let [t (flow-watchdog-lib/thresholds-from-samples
+         ;; p67 well above the gate (5 min) and below the 15m global warn -
+         ;; the good path (BL-835 acceptance floored-percentile-reject-03).
+         (repeat 10 (* 5 60 1000)))]
+  (assert= "BL-835: thresholds-from-samples calibrates at the raw p67 once it clears the gate"
+           (* 5 60 1000)
+           (:warn-ms t))
+  (assert= "BL-835: escalate still strictly above warn once the gate clears"
+           true
+           (> (:escalate-ms t) (:warn-ms t))))
+
+(let [global {:warn-ms 900000 :escalate-ms 3600000}
+      specs {"cleaner->architect|git_handoff" {:warn-ms 1200000 :escalate-ms 7200000 :n 20 :source "exact"}
+             "*->architect|git_handoff" {:warn-ms 1000000 :escalate-ms 6000000 :n 40 :source "to-type"}
+             "*->*|git_handoff" {:warn-ms 800000 :escalate-ms 5000000 :n 80 :source "type"}}]
+  (assert= "resolve-thresholds prefers the exact from->to|type key"
+           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
+           (flow-watchdog-lib/resolve-thresholds
+            {:from "cleaner" :to "architect" :type "git_handoff"} specs global))
+  (assert= "resolve-thresholds falls back to *->to|type when exact is missing"
+           {:warn-ms 1000000 :escalate-ms 6000000 :resolved-via "*->architect|git_handoff"}
+           (flow-watchdog-lib/resolve-thresholds
+            {:from "coder" :to "architect" :type "git_handoff"} specs global))
+  (assert= "resolve-thresholds skips *->*|type and uses global when exact/to-type miss"
+           {:warn-ms 900000 :escalate-ms 3600000 :resolved-via "global"}
+           (flow-watchdog-lib/resolve-thresholds
+            {:from "coder" :to "hardender" :type "git_handoff"}
+            (dissoc specs "*->architect|git_handoff") global))
+  (assert= "resolve-thresholds falls back to the global conf pair when no spec matches"
+           {:warn-ms 900000 :escalate-ms 3600000 :resolved-via "global"}
+           (flow-watchdog-lib/resolve-thresholds
+            {:from "a" :to "b" :type "note"} {} global)))
+
+(let [headers (map (fn [i]
+                     {:from "cleaner" :to "architect" :type "git_handoff"
+                      :enqueued_at "2026-08-01T00:00:00Z"
+                      :completed_at (str "2026-08-01T00:" (format "%02d" (+ 10 i)) ":00Z")})
+                   (range 10))
+      table (flow-watchdog-lib/calibrate-threshold-table headers 12345)
+      exact (get-in table [:specs "cleaner->architect|git_handoff"])]
+  (assert= "calibrate-threshold-table stamps calibratedAt"
+           12345
+           (:calibratedAt table))
+  (assert= "calibrate-threshold-table emits an exact-spec entry once sample gate clears"
+           true
+           (boolean exact))
+  (assert= "calibrate-threshold-table also emits the to-type fallback"
+           true
+           (boolean (get-in table [:specs "*->architect|git_handoff"])))
+  (assert= "BL-827 gap 2: calibrate-threshold-table emits NO *->*|type row"
+           nil
+           (get-in table [:specs "*->*|git_handoff"])))
+
+;; BL-835 acceptance floored-percentile-reject-01/02: a route whose full
+;; history sits below min-warn-ms calibrates to NO entry at all (exact,
+;; to-type, or type), and resolution for a parcel on that route falls
+;; through to the global pair - not a floor-clamped fake warn.
+(let [headers (map (fn [i]
+                     {:from "coder" :to "cleaner" :type "note"
+                      :enqueued_at "2026-08-01T00:00:00Z"
+                      :completed_at (str "2026-08-01T00:00:" (format "%02d" (+ 1 i)) "Z")})
+                   (range 8))
+      table (flow-watchdog-lib/calibrate-threshold-table headers 12345)
+      global {:warn-ms flow-watchdog-lib/default-warn-ms
+              :escalate-ms flow-watchdog-lib/default-escalate-ms}]
+  (assert= "BL-835: a sub-floor route's calibration emits no exact-spec entry"
+           nil
+           (get-in table [:specs "coder->cleaner|note"]))
+  (assert= "BL-835: a sub-floor route's calibration emits no to-type entry either"
+           nil
+           (get-in table [:specs "*->cleaner|note"]))
+  (assert= "BL-835: resolution for a sub-floor route falls through to the global pair"
+           {:warn-ms flow-watchdog-lib/default-warn-ms
+            :escalate-ms flow-watchdog-lib/default-escalate-ms
+            :resolved-via "global"}
+           (flow-watchdog-lib/resolve-thresholds
+            {:from "coder" :to "cleaner" :type "note"} (:specs table) global))
+  (assert= "BL-835: sub-floor samples do not WARN a 90s parcel under global 15m"
+           :none
+           (flow-watchdog-lib/decide-tier
+            {:age-ms 90000
+             :warn-ms flow-watchdog-lib/default-warn-ms
+             :escalate-ms flow-watchdog-lib/default-escalate-ms
+             :highest-tier-alarmed nil
+             :snoozed? false})))
+
+;; threshold-table-stale? (pure): must be true for missing/malformed
+;; :calibratedAt, false just under the recalibration window, and true again
+;; once that window has elapsed. Nothing above exercises this directly - the
+;; single run-sweep! calls below only ever see the nil-calibratedAt (always
+;; stale) branch, which would stay green even if the elapsed-time clause were
+;; deleted outright and the table never recalibrated again.
+(assert= "threshold-table-stale? is true when calibratedAt is absent"
+         true
+         (flow-watchdog-lib/threshold-table-stale? {} 1000000))
+
+(assert= "threshold-table-stale? is true when calibratedAt is not a number"
+         true
+         (flow-watchdog-lib/threshold-table-stale? {:calibratedAt "oops"} 1000000))
+
+(assert= "threshold-table-stale? is false just under the recalibration window"
+         false
+         (flow-watchdog-lib/threshold-table-stale?
+          {:calibratedAt 1000000}
+          (+ 1000000 (dec flow-watchdog-lib/threshold-recalibration-ms))))
+
+(assert= "threshold-table-stale? is true exactly at the recalibration window (boundary)"
+         true
+         (flow-watchdog-lib/threshold-table-stale?
+          {:calibratedAt 1000000}
+          (+ 1000000 flow-watchdog-lib/threshold-recalibration-ms)))
+
+;; read-threshold-table / write-threshold-table! round trip (fs I/O): nothing
+;; above ever reads back a table this suite itself wrote - run-sweep!'s single
+;; calls only ever see the freshly-computed in-memory table, never the
+;; JSON-persisted-then-reread one, so cheshire's keywordized JSON object keys
+;; being normalised back to string spec keys (and nested :warn-ms/:escalate-ms
+;; staying numbers, not strings) is untested. A broken normalisation would not
+;; crash (resolve-thresholds' (number? ...) guard just falls through to
+;; global, per the never-disable invariant) - it would silently defeat
+;; calibration while looking healthy, exactly the failure mode this ticket
+;; exists to catch.
+(let [daemon-dir (mk-tmp)
+      written {:calibratedAt 555 :warnPercentile 67 :escalatePercentile 97
+               :minSamples 8 :sampleCount 10
+               :specs {"cleaner->architect|git_handoff"
+                       {:warn-ms 1200000 :escalate-ms 7200000 :n 10 :source "exact"}}}
+      _ (flow-watchdog-lib/write-threshold-table! daemon-dir written)
+      read-back (flow-watchdog-lib/read-threshold-table daemon-dir)
+      entry (get-in read-back [:specs "cleaner->architect|git_handoff"])]
+  (assert= "read-threshold-table round-trips calibratedAt"
+           555
+           (:calibratedAt read-back))
+  (assert= "read-threshold-table normalises spec keys back to strings"
+           true
+           (contains? (:specs read-back) "cleaner->architect|git_handoff"))
+  (assert= "read-threshold-table keeps per-spec warn-ms/escalate-ms as numbers, not strings"
+           {:warn-ms 1200000 :escalate-ms 7200000 :n 10 :source "exact"}
+           entry)
+  (assert= "resolve-thresholds accepts the round-tripped entry (numeric guard passes)"
+           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
+           (flow-watchdog-lib/resolve-thresholds
+            {:from "cleaner" :to "architect" :type "git_handoff"}
+            (:specs read-back)
+            {:warn-ms 900000 :escalate-ms 3600000})))
+
+(assert= "read-threshold-table degrades to {} for a missing file, never a crash"
+         {}
+         (:specs (flow-watchdog-lib/read-threshold-table (mk-tmp))))
+
+;; End-to-end: a calibrated warn ABOVE the parcel's age suppresses the alarm
+;; that the flat global 60s warn would have fired — proving resolution is
+;; per-spec, not a mute inside decide-tier.
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "architect" "inbox" "new")
+      completed-dir (fs/path root "architect" "inbox" "completed")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])
+      ;; Seed 10 completed hops whose residence is ~3 minutes → calibrated
+      ;; warn above the 90s live parcel age, and still inside the BL-827
+      ;; adaptation ceiling (global 60s × factor 4 = 240s; a ~30m history
+      ;; would now be REJECTED by that ceiling and fall back to global —
+      ;; covered by its own test below).
+      _ (doseq [i (range 10)]
+          (write-handoff! (str (fs/path completed-dir (str "hist" i ".handoff")))
+                           [["id" (str "hist" i)] ["from" "cleaner"] ["to" "architect"]
+                            ["type" "git_handoff"]
+                            ["enqueued_at" "2026-08-01T00:00:00Z"]
+                            ["completed_at" (str "2026-08-01T00:03:" (format "%02d" i) "Z")]]))]
+  (write-handoff! (str (fs/path new-dir "live.handoff"))
+                   [["id" "live"] ["from" "cleaner"] ["to" "architect"] ["type" "git_handoff"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "architect" :new-dir new-dir
+     :in-process-dir (fs/path root "architect" "inbox" "in_process")
+     :completed-dir completed-dir}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "spec-dependent warn (≈p67 of ~30m history) does not fire on a 90s parcel that global 60s would catch"
+           0
+           (count @alarms))
+  (assert= "decide-tier still has no from/to/type keys after the spec-dependent change"
+           #{:age-ms :warn-ms :escalate-ms :highest-tier-alarmed :snoozed?}
+           flow-watchdog-lib/tier-decision-input-keys))
+
+;; ── BL-650: active-time clock (evaluate-effective-age) ──────────────────────
+
+(assert= "evaluate-effective-age: nil age source (neither header parses) fails closed"
+         {:effective-age-ms nil :wall-age-ms nil :outage-intervals [] :unreconstructable? false}
+         (flow-watchdog-lib/evaluate-effective-age
+          {:enqueued-at "not-a-date" :created-at nil :now-ms 999
+           :ledger-intervals [] :provider-evidence []}))
+
+;; BL-650 stop-interval-not-counted-01: 1m before stop, 6m stopped, 8m active
+;; => wall 15m, effective 9m.
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 15 60 1000))
+      stop-start-ms (+ enqueued-ms (* 1 60 1000))
+      stop-end-ms (+ stop-start-ms (* 6 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms stop-start-ms :end-ms stop-end-ms
+                                 :class "swarm-stop" :provenance "proven"}]
+            :provider-evidence []})]
+  (assert= "acceptance-01 (BL-650): a swarm-stop interval is subtracted from effective age"
+           (* 9 60 1000)
+           (:effective-age-ms eff))
+  (assert= "acceptance-01 (BL-650): wall age is untouched at 15m"
+           (* 15 60 1000)
+           (:wall-age-ms eff))
+  (assert= "acceptance-01 (BL-650): no warn at the wall-clock 15m mark once effective age is used"
+           :none
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms (* 15 60 1000) :escalate-ms (* 60 60 1000)
+             :highest-tier-alarmed nil :snoozed? false})))
+
+;; BL-650 overnight-cooldown-resume-no-storm-02: parcel enqueued at pause
+;; start, swarm paused all night, sweep immediately at resume => effective
+;; age ~ 0.
+(let [now-ms (* 1784900000 1000)
+      pause-start-ms (- now-ms (* 12 60 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot pause-start-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms pause-start-ms :end-ms now-ms
+                                 :class "control-pause" :provenance "proven"}]
+            :provider-evidence []})]
+  (assert= "acceptance-02 (BL-650): a full-night control-pause zeroes effective age"
+           0
+           (:effective-age-ms eff))
+  (assert= "acceptance-02 (BL-650): wall age still shows the full 12h"
+           (* 12 60 60 1000)
+           (:wall-age-ms eff))
+  (assert= "acceptance-02 (BL-650): nothing fires at resume - effective age is 0"
+           :none
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms (* 15 60 1000) :escalate-ms (* 60 60 1000)
+             :highest-tier-alarmed nil :snoozed? false})))
+
+;; BL-650: an OPEN control-pause (no resume yet) subtracts up to now - a
+;; currently-true fact, not a guess - and is NOT flagged unreconstructable.
+(let [now-ms (* 1784900000 1000)
+      pause-start-ms (- now-ms (* 5 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot pause-start-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms pause-start-ms :end-ms nil
+                                 :class "control-pause" :provenance "open"}]
+            :provider-evidence []})]
+  (assert= "BL-650: an open control-pause subtracts from its start to now"
+           0
+           (:effective-age-ms eff))
+  (assert= "BL-650: an open control-pause is NOT flagged unreconstructable"
+           false
+           (:unreconstructable? eff)))
+
+;; BL-650 unreconstructable-interval-degrades-to-wall-clock-05: an OPEN
+;; swarm-stop subtracts nothing and is flagged.
+(let [now-ms (* 1784900000 1000)
+      stop-start-ms (- now-ms (* 20 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot stop-start-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms stop-start-ms :end-ms nil
+                                 :class "swarm-stop" :provenance "open"}]
+            :provider-evidence []})]
+  (assert= "acceptance-05 (BL-650): an open swarm-stop subtracts nothing - falls back to wall clock"
+           (:wall-age-ms eff)
+           (:effective-age-ms eff))
+  (assert= "acceptance-05 (BL-650): an open swarm-stop is flagged unreconstructable"
+           true
+           (:unreconstructable? eff))
+  (let [text (flow-watchdog-lib/format-alarm-text
+              {:id "p" :from "a" :to "b" :type "note" :age-ms (:effective-age-ms eff)
+               :wall-age-ms (:wall-age-ms eff) :role "coder" :mailbox :new :verb :rotate
+               :tier :warn :unreconstructable? (:unreconstructable? eff)})]
+    (assert= "acceptance-05 (BL-650): alarm text flags the unreconstructable interval"
+             true
+             (clojure.string/includes? text "could not be reconstructed"))))
+
+;; ── BL-650: format-alarm-text stays byte-identical for pre-existing callers ─
+
+(assert= "BL-650: format-alarm-text with no new keys is unchanged from before"
+         "⚠️ WARN flow-stall: parcel x (a->b, note) aged 1m in cleaner in_process - investigate."
+         (flow-watchdog-lib/format-alarm-text
+          {:id "x" :from "a" :to "b" :type "note" :age-ms 60000 :role "cleaner"
+           :mailbox :in_process :verb :investigate :tier :warn}))
+
+;; ── BL-650 alarm-text-states-clock-and-outage-07 ────────────────────────────
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 15 60 1000))
+      outage-start-ms (+ enqueued-ms (* 3 60 1000))
+      outage-end-ms (+ outage-start-ms (* 6 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals []
+            :provider-evidence [{:ts-ms outage-start-ms :provider "anthropic" :text "529 Overloaded attempt 1/5"}
+                                 {:ts-ms outage-end-ms :provider "anthropic" :text "529 Overloaded attempt 5/5"}]})]
+  (assert= "acceptance-07 (BL-650): a 6m provider outage inside a 15m wall span leaves 9m effective"
+           (* 9 60 1000)
+           (:effective-age-ms eff))
+  (let [text (flow-watchdog-lib/format-alarm-text
+              {:id "p7" :from "cleaner" :to "architect" :type "note"
+               :age-ms (:effective-age-ms eff) :wall-age-ms (:wall-age-ms eff)
+               :role "architect" :mailbox :new :verb :investigate :tier :warn
+               :outage-intervals (:outage-intervals eff)})]
+    (assert= "acceptance-07: alarm text reads both active and wall age"
+             true
+             (and (clojure.string/includes? text "9m") (clojure.string/includes? text "15m")))
+    (assert= "acceptance-07: alarm text names the subtracted provider-outage interval"
+             true
+             (clojure.string/includes? text "anthropic"))))
+
+;; ── BL-650 provider-outage-interval-tracked-per-provider-08 ─────────────────
+
+(assert= "provider-outage-intervals groups per provider, never merging distinct providers"
+         2
+         (count (flow-watchdog-lib/provider-outage-intervals
+                 [{:ts-ms 1000 :provider "anthropic" :text "529"}
+                  {:ts-ms 1500 :provider "anthropic" :text "529"}
+                  {:ts-ms 1200 :provider "openai" :text "503"}])))
+
+(assert= "provider-outage-intervals starts a new interval once the gap exceeds max-gap-ms"
+         2
+         (count (flow-watchdog-lib/provider-outage-intervals
+                 [{:ts-ms 0 :provider "anthropic" :text "529"}
+                  {:ts-ms 1000000 :provider "anthropic" :text "529"}]
+                 600000)))
+
+(assert= "acceptance-08 (BL-650): no evidence for a provider subtracts nothing - falls back to wall clock"
+         true
+         (let [now-ms (* 1784900000 1000)
+               enqueued-ms (- now-ms (* 10 60 1000))
+               eff (flow-watchdog-lib/evaluate-effective-age
+                    {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+                     :ledger-intervals [] :provider-evidence []})]
+           (= (:wall-age-ms eff) (:effective-age-ms eff))))
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 15 60 1000))
+      swarm-stop-start (+ enqueued-ms (* 1 60 1000))
+      swarm-stop-end (+ swarm-stop-start (* 2 60 1000))
+      outage-start (+ enqueued-ms (* 5 60 1000))
+      outage-end (+ outage-start (* 2 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms swarm-stop-start :end-ms swarm-stop-end
+                                 :class "swarm-stop" :provenance "proven"}]
+            :provider-evidence [{:ts-ms outage-start :provider "anthropic" :text "529"}
+                                 {:ts-ms outage-end :provider "anthropic" :text "529"}]})]
+  (assert= "acceptance-08 (BL-650): a non-overlapping provider-outage and swarm-stop subtract independently"
+           (* 11 60 1000) ;; 15m wall - 2m stop - 2m outage
+           (:effective-age-ms eff)))
+
+;; ── BL-650: merge-and-sum-ms (no double subtraction, invariant 1) ───────────
+
+(assert= "merge-and-sum-ms sums disjoint intervals"
+         2000
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 0 :end-ms 1000} {:start-ms 2000 :end-ms 3000}] 0 10000))
+
+(assert= "merge-and-sum-ms merges overlapping intervals instead of double-counting"
+         800
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 100 :end-ms 600} {:start-ms 400 :end-ms 900}] 0 1000))
+
+(assert= "merge-and-sum-ms merges a nested interval into its container"
+         500
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 0 :end-ms 500} {:start-ms 100 :end-ms 300}] 0 1000))
+
+(assert= "merge-and-sum-ms tolerates out-of-order input (sorts internally)"
+         800
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 400 :end-ms 900} {:start-ms 100 :end-ms 600}] 0 1000))
+
+(assert= "merge-and-sum-ms ignores a zero-length interval"
+         0
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms 500 :end-ms 500}] 0 1000))
+
+(assert= "merge-and-sum-ms clips an interval extending past the span"
+         200
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms 800 :end-ms 1500}] 0 1000))
+
+(assert= "merge-and-sum-ms clips an interval starting before the span"
+         200
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms -500 :end-ms 200}] 0 1000))
+
+(assert= "merge-and-sum-ms ignores an interval entirely outside the span"
+         0
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms 2000 :end-ms 3000}] 0 1000))
+
+;; ── BL-650 rotation-pack-threshold-vs-parallel-pack-06 ──────────────────────
+
+(assert= "parse-router-warn-ms parses a positive value"
+         1200000
+         (flow-watchdog-lib/parse-router-warn-ms "config flow_watchdog_router_warn_ms 1200000"))
+
+(assert= "parse-router-warn-ms falls back to the router default when absent"
+         flow-watchdog-lib/default-router-warn-ms
+         (flow-watchdog-lib/parse-router-warn-ms "config mutation_cooldown_days 3"))
+
+(assert= "parse-router-escalate-ms falls back to the router default when absent"
+         flow-watchdog-lib/default-router-escalate-ms
+         (flow-watchdog-lib/parse-router-escalate-ms nil))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config rotation router\nconfig flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
+  (assert= "read-pack-aware-global-thresholds uses the router pair under `config rotation router`"
+           {:warn-ms flow-watchdog-lib/default-router-warn-ms :escalate-ms flow-watchdog-lib/default-router-escalate-ms
+            :calibration-ceiling-warn-ms (* flow-watchdog-lib/default-router-warn-ms flow-watchdog-lib/default-calibration-ceiling-factor)}
+           (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
+  (assert= "read-pack-aware-global-thresholds keeps the plain pair with no rotation directive (parallel/all-resident)"
+           {:warn-ms 60000 :escalate-ms 240000 :calibration-ceiling-warn-ms 240000}
+           (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config rotation sequential\nconfig flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
+  (assert= "read-pack-aware-global-thresholds keeps the plain pair under `config rotation sequential` (mono-rotate, not router)"
+           {:warn-ms 60000 :escalate-ms 240000 :calibration-ceiling-warn-ms 240000}
+           (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
+
+;; End-to-end acceptance-06: the SAME nominal-rotation-wait parcel (wall age
+;; just past the plain 15m default-warn-ms) does not warn under a
+;; rotation-router pack, but still warns under a parallel/all-resident pack.
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms flow-watchdog-lib/default-warn-ms 1000)
+      router-root (mk-tmp)
+      parallel-root (mk-tmp)
+      new-dir-for (fn [root] (fs/path root "cleaner" "inbox" "new"))
+      daemon-dir-for (fn [root] (fs/path root ".swarmforge" "daemon"))]
+  (fs/create-dirs (fs/path router-root "swarmforge"))
+  (spit (str (fs/path router-root "swarmforge" "swarmforge.conf")) "config rotation router\n")
+  (fs/create-dirs (fs/path parallel-root "swarmforge"))
+  (spit (str (fs/path parallel-root "swarmforge" "swarmforge.conf")) "")
+  (doseq [root [router-root parallel-root]]
+    (write-handoff! (str (fs/path (new-dir-for root) "p06.handoff"))
+                     [["id" "p06"] ["from" "QA"] ["to" "cleaner"] ["type" "note"]
+                      ["enqueued_at" (iso (quot enqueued-ms 1000))]]))
+  (let [router-alarms (atom [])
+        parallel-alarms (atom [])]
+    (flow-watchdog-lib/run-sweep!
+     [{:role "cleaner" :new-dir (new-dir-for router-root)
+       :in-process-dir (fs/path router-root "cleaner" "inbox" "in_process")}]
+     now-ms (str router-root) (daemon-dir-for router-root)
+     {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! router-alarms conj text))})
+    (flow-watchdog-lib/run-sweep!
+     [{:role "cleaner" :new-dir (new-dir-for parallel-root)
+       :in-process-dir (fs/path parallel-root "cleaner" "inbox" "in_process")}]
+     now-ms (str parallel-root) (daemon-dir-for parallel-root)
+     {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! parallel-alarms conj text))})
+    (assert= "acceptance-06: a nominal rotation wait does NOT warn under a rotation-router pack"
+             0
+             (count @router-alarms))
+    (assert= "acceptance-06: the identical wall age still warns under a parallel/all-resident pack"
+             1
+             (count @parallel-alarms))))
+
+;; ── BL-650 scenarios 09/10: mono-router detour vs orphaned claim ────────────
+;; Neither needs new mechanism - both prove the active-time clock still
+;; carries decide-tier's unsuppressable-by-design guarantee: a short active
+;; detour never alarms, and active time crossing warn always does, regardless
+;; of in_process/live-session status.
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 2 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [] :provider-evidence []})]
+  (assert= "acceptance-09 (BL-650): a short legitimate detour does not alarm"
+           :none
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms flow-watchdog-lib/default-warn-ms
+             :escalate-ms flow-watchdog-lib/default-escalate-ms
+             :highest-tier-alarmed nil :snoozed? false})))
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (+ flow-watchdog-lib/default-warn-ms 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [] :provider-evidence []})]
+  (assert= "acceptance-10 (BL-650): an orphaned in_process claim still alarms once active time crosses warn"
+           :warn
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms flow-watchdog-lib/default-warn-ms
+             :escalate-ms flow-watchdog-lib/default-escalate-ms
+             :highest-tier-alarmed nil :snoozed? false})))
+
+;; ── BL-650 run-sweep! wiring: ledger fold from real fs state ────────────────
+
+(defn write-ledger-record! [root month line]
+  ;; run-sweep! reads via state-dir = (fs/parent daemon-dir) = root/.swarmforge
+  ;; (daemon-dir itself is root/.swarmforge/daemon) - write to that same
+  ;; root/.swarmforge/telemetry, not root/telemetry.
+  (let [dir (availability-ledger-lib/telemetry-dir (fs/path root ".swarmforge"))]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir (str "availability-" month ".jsonl"))) (str line "\n") :append true)))
+
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "cleaner" "inbox" "new")
+      now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 20 60 1000))
+      stop-start-ms (+ enqueued-ms (* 1 60 1000))
+      stop-end-ms (+ stop-start-ms (* 18 60 1000)) ;; 18m real stop
+      alarms (atom [])]
+  (write-ledger-record! root "2026-07"
+                         (json/generate-string {:ts (iso (quot stop-start-ms 1000)) :event "stop"
+                                                 :class "swarm-stop" :source "kill_pipeline_swarm.sh"}))
+  (write-ledger-record! root "2026-07"
+                         (json/generate-string {:ts (iso (quot stop-end-ms 1000)) :event "start"
+                                                 :class "swarm-stop" :source "start-swarm.sh"}))
+  (write-handoff! (str (fs/path new-dir "pledger.handoff"))
+                   [["id" "pledger"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
+                    ["enqueued_at" (iso (quot enqueued-ms 1000))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  ;; wall 20m minus an 18m real stop leaves 2m effective: crosses
+  ;; mk-sweep-fixture!'s 1m warn but stays under its 4m escalate. Wall clock
+  ;; alone (20m) would have crossed escalate outright - proof the REAL
+  ;; on-disk ledger, not just a hand-built fixture map, is what downgraded it.
+  (assert= "run-sweep! reads the REAL on-disk availability ledger and subtracts a real swarm-stop"
+           1
+           (count @alarms))
+  (assert= "the fired alarm is WARN, not the ESCALATE wall-clock-alone would have fired"
+           true
+           (clojure.string/includes? (first @alarms) "⚠️ WARN")))
+
+;; ── BL-827: adaptation ceiling (option b), alarm threshold provenance, ──────
+;; injectable recalibration interval
+
+(assert= "parse-calibration-ceiling-factor falls back to the default when absent"
+         flow-watchdog-lib/default-calibration-ceiling-factor
+         (flow-watchdog-lib/parse-calibration-ceiling-factor nil))
+
+(assert= "parse-calibration-ceiling-factor reads the conf value"
+         2
+         (flow-watchdog-lib/parse-calibration-ceiling-factor
+          "config flow_watchdog_calibration_ceiling_factor 2"))
+
+;; 10 samples at ~30m: raw p67 well above a 240s ceiling → REJECTED, nil -
+;; never clamped down to the ceiling (same posture as min-warn-ms, BL-835).
+(assert= "BL-827 ceiling: thresholds-from-samples rejects a warn above ceiling-warn-ms"
+         nil
+         (flow-watchdog-lib/thresholds-from-samples (repeat 10 1800000) 240000))
+
+(assert= "BL-827 ceiling: a warn exactly AT the ceiling still calibrates"
+         1800000
+         (:warn-ms (flow-watchdog-lib/thresholds-from-samples (repeat 10 1800000) 1800000)))
+
+(assert= "BL-827 ceiling: the nil-ceiling arity applies no ceiling (pre-existing callers)"
+         1800000
+         (:warn-ms (flow-watchdog-lib/thresholds-from-samples (repeat 10 1800000))))
+
+(let [records (map (fn [_] {:from "cleaner" :to "architect" :type "git_handoff" :duration-ms 1800000}) (range 10))]
+  (assert= "BL-827 ceiling: build-threshold-table emits no key for an over-ceiling route"
+           {}
+           (flow-watchdog-lib/build-threshold-table records {:ceiling-warn-ms 240000}))
+  (assert= "BL-827 ceiling: the same route calibrates when the ceiling allows it"
+           true
+           (boolean (get (flow-watchdog-lib/build-threshold-table records {:ceiling-warn-ms 3600000})
+                         "cleaner->architect|git_handoff"))))
+
+(let [headers (map (fn [i]
+                     {:from "cleaner" :to "architect" :type "git_handoff"
+                      :enqueued_at "2026-08-01T00:00:00Z"
+                      :completed_at (str "2026-08-01T00:30:" (format "%02d" i) "Z")})
+                   (range 10))
+      table (flow-watchdog-lib/calibrate-threshold-table headers 12345 {:ceiling-warn-ms 240000})]
+  (assert= "BL-827 ceiling: calibrate-threshold-table records the applied ceiling in metadata"
+           240000
+           (:ceilingWarnMs table))
+  (assert= "BL-827 ceiling: an over-ceiling route's history yields an empty specs map"
+           {}
+           (:specs table)))
+
+;; Gap 1: the alarm names the threshold it fired against and its source.
+(assert= "BL-827 gap 1: alarm text names the calibrated threshold and its spec key"
+         true
+         (clojure.string/includes?
+          (flow-watchdog-lib/format-alarm-text
+           {:id "p1" :from "cleaner" :to "architect" :type "git_handoff"
+            :age-ms 200000 :role "architect" :mailbox :new :verb :nudge :tier :warn
+            :threshold-ms 180000 :resolved-via "cleaner->architect|git_handoff"})
+          "Threshold 3m via cleaner->architect|git_handoff."))
+
+(assert= "BL-827 gap 1: a global fallback alarm says via global"
+         true
+         (clojure.string/includes?
+          (flow-watchdog-lib/format-alarm-text
+           {:id "p2" :from "a" :to "b" :type "note"
+            :age-ms 1000000 :role "b" :mailbox :new :verb :nudge :tier :warn
+            :threshold-ms 900000 :resolved-via "global"})
+          "Threshold 15m via global."))
+
+(assert= "BL-827 gap 1: an alarm without the new keys is byte-identical to the pre-BL-827 text"
+         (flow-watchdog-lib/format-alarm-text
+          {:id "p3" :from "a" :to "b" :type "note"
+           :age-ms 1000000 :role "b" :mailbox :new :verb :nudge :tier :warn})
+         "⚠️ WARN flow-stall: parcel p3 (a->b, note) aged 16m in b new - nudge.")
+
+;; The recalibration interval is injectable (never slept out by a suite).
+(assert= "BL-827: threshold-table-stale? honors an injected interval"
+         true
+         (flow-watchdog-lib/threshold-table-stale? {:calibratedAt 1000} 3001 2000))
+
+(assert= "BL-827: the same table is fresh under the injected interval"
+         false
+         (flow-watchdog-lib/threshold-table-stale? {:calibratedAt 1000} 2999 2000))
+
+;; End-to-end: the adaptation hazard closed. A route 30x slower than the
+;; global pair does NOT teach the watchdog to tolerate it - calibration is
+;; rejected by the ceiling, the route resolves global, and the stalled
+;; parcel still alarms (naming the global source).
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "architect" "inbox" "new")
+      completed-dir (fs/path root "architect" "inbox" "completed")
+      now-ms (* 1784900000 1000)
+      alarms (atom [])
+      _ (doseq [i (range 10)]
+          (write-handoff! (str (fs/path completed-dir (str "slow" i ".handoff")))
+                           [["id" (str "slow" i)] ["from" "cleaner"] ["to" "architect"]
+                            ["type" "git_handoff"]
+                            ["enqueued_at" "2026-08-01T00:00:00Z"]
+                            ["completed_at" (str "2026-08-01T00:30:" (format "%02d" i) "Z")]]))]
+  (write-handoff! (str (fs/path new-dir "stuck.handoff"))
+                   [["id" "stuck"] ["from" "cleaner"] ["to" "architect"] ["type" "git_handoff"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "architect" :new-dir new-dir
+     :in-process-dir (fs/path root "architect" "inbox" "in_process")
+     :completed-dir completed-dir}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  (assert= "BL-827 ceiling end-to-end: a 30x-slower route is rejected and the 90s parcel alarms under global"
+           1
+           (count @alarms))
+  (assert= "BL-827 ceiling end-to-end: that alarm names the global source"
+           true
+           (clojure.string/includes? (first @alarms) "via global")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

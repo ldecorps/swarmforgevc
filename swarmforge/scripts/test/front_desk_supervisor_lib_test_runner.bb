@@ -185,6 +185,114 @@
          false
          (front-desk-supervisor-lib/poll-heartbeat-stale? nil 50000 90000 1000 90000))
 
+
+;; ── BL-1035: a respawned bot is judged on ITS OWN heartbeat ──────────────
+;; The grace was nil-guarded, but the heartbeat is a FILE that outlives the
+;; process that wrote it and nothing resets it at spawn. So a replacement was
+;; judged against the DEAD instance's timestamp - non-nil and already stale -
+;; and declared stalled on the first tick. Live 2026-08-22: started 06:13:56,
+;; "stalled" 06:13:58, respawned 06:14:02, against a 90000ms grace.
+;;
+;; The rule: a heartbeat written BEFORE this child spawned was written by a
+;; different process and carries no information about this one.
+
+(assert= "bl1035-01: a predecessor's stale heartbeat does NOT condemn the replacement inside its grace"
+         false
+         ;; heartbeat at 1000 (the dead instance), this child spawned at 500000,
+         ;; now 502000 - two seconds in, exactly the live shape.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 502000 90000 500000 90000))
+
+(assert= "bl1035-02: the grace still EXPIRES - a replacement that never polls is caught"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 590001 90000 500000 90000))
+
+(assert= "bl1035-02: exactly AT the end of the grace it is stale (boundary is inclusive, like the stall window)"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 590000 90000 500000 90000))
+
+(assert= "bl1035-03: a heartbeat the replacement itself wrote clears the grace"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500100 502000 90000 500000 90000))
+
+(assert= "bl1035-03: a heartbeat written exactly AT spawn counts as the child's own"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500000 502000 90000 500000 90000))
+
+(assert= "bl1035-03: but the child's OWN heartbeat going stale is still stale after the grace"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500100 590200 90000 500000 90000))
+
+(assert= "bl1035-04: the case that already worked keeps working - no heartbeat ever recorded"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 502000 90000 500000 90000))
+
+;; The six supervisors sharing this predicate include callers that pass no
+;; spawn time at all. Their behaviour must be byte-for-byte unchanged: with no
+;; started-at-ms there is no "before this child" to speak of.
+(assert= "bl1035: the 3-arity form is unchanged - a stale heartbeat is still stale with no spawn time"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000))
+
+(assert= "bl1035: the 3-arity form is unchanged - a fresh heartbeat is still fresh"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000))
+
+(assert= "bl1035: a pre-spawn heartbeat AFTER the grace is stale, not silently waived forever"
+         true
+         ;; The waiver is scoped to the grace. Once it ends, an absent own
+         ;; heartbeat is stale exactly as a nil one always was - otherwise the
+         ;; fix would reintroduce BL-370's original fault.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 999999 90000 500000 90000))
+
+;; bl1035-03's "exactly AT spawn" case above (500000/502000/90000/500000/90000)
+;; cannot actually discriminate `>=` from a strict `>` in
+;; `(>= last-heartbeat-ms started-at-ms)`: with grace-ms == stall-ms in every
+;; existing fixture (unit AND property runner alike), a mutant that treats an
+;; at-spawn heartbeat as "not the child's own" (own-heartbeat-ms => nil) still
+;; answers "not stale" there via the STILL-IN-GRACE branch, coincidentally
+;; matching the correct answer. Hand-verified: with `>` in place of `>=`, this
+;; whole test runner and the property runner BOTH still report all-green.
+;; Discriminating case: grace SHORTER than stall, so the grace ends while the
+;; at-spawn heartbeat is still well within the stall window - only there does
+;; treating it as "not the child's own" (falling to the nil branch, stale
+;; unconditionally past grace) diverge from treating it as the child's own
+;; fresh heartbeat (not stale).
+(assert= "bl1035-03: at-spawn heartbeat is the child's own even once the (shorter) grace has ended"
+         false
+         ;; last-heartbeat=started-at=500000 (exactly at spawn); grace is only
+         ;; 1000ms (already over by now=501500) but stall is 90000ms (heartbeat
+         ;; is only 1500ms old) - if `>=` were `>`, this would wrongly be stale.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500000 501500 90000 500000 1000))
+
+;; ── BL-1037 (hardener): build-served-fact? directly, not only through
+;; check-one!'s already-resolved boolean ────────────────────────────────
+;; The same >= boundary as bl1035-03 above, extracted to its own function so
+;; it is exercised directly rather than only reachable as an already-computed
+;; true/false handed to build-freshness-transition/check-one!. Unlike
+;; poll-heartbeat-stale?, there is no grace/stall dual-window here to hide the
+;; boundary behind a coincidentally-matching branch - a direct >= vs >
+;; mutation is immediately observable.
+
+(assert= "bl1037: a heartbeat written exactly AT spawn counts as this child having served"
+         true
+         (front-desk-supervisor-lib/build-served-fact? 500000 500000))
+
+(assert= "bl1037: a heartbeat one tick BEFORE spawn is the predecessor's, not this child's"
+         false
+         (front-desk-supervisor-lib/build-served-fact? 499999 500000))
+
+(assert= "bl1037: a heartbeat after spawn is unambiguously this child's own"
+         true
+         (front-desk-supervisor-lib/build-served-fact? 500100 500000))
+
+(assert= "bl1037: no heartbeat at all is never read as served"
+         false
+         (front-desk-supervisor-lib/build-served-fact? nil 500000))
+
+(assert= "bl1037: no spawn time at all is never read as served"
+         false
+         (front-desk-supervisor-lib/build-served-fact? 500000 nil))
+
 ;; ── BL-370: check-one! extended with heartbeat-stale? ────────────────────
 
 ;; front-desk-liveness-01: running + pid alive + heartbeat stale -> "stalled",
@@ -322,6 +430,288 @@
   (assert= "supervisor-kills-superseded-child-04: a fresh pid is recorded" 4242 (:pid entry))
   (assert= "supervisor-kills-superseded-child-04: the still-alive gave-up pid is killed before re-arm spawns its replacement"
            [1881442] @kill-calls))
+
+;; ── decide-bridge-port-action (pure) — BL-789 mac-host-switch-freshness-bridge-adopt-04/05 ─
+;; Orphan EADDRINUSE crash loop: something already holds the bridge port
+;; when the supervisor decides it needs to (re)spawn. Adoption must verify
+;; HEALTH, never just a listening socket (BL-789 approval_context scope
+;; note 2) - healthy? is a precomputed boolean, same "no I/O inside the pure
+;; decision" convention as check-one!'s own heartbeat-stale?.
+
+(def repo-root "/repo")
+
+(assert= "bl789-04: nothing on the port -> spawn as normal"
+         :spawn
+         (front-desk-supervisor-lib/decide-bridge-port-action nil false repo-root))
+
+(assert= "bl789-04: our own healthy bridge already on the port -> adopt, no second spawn"
+         :adopt
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 4242 :cmdline "node /repo/extension/out/tools/start-bridge-headless.js /repo 8765"} true repo-root))
+
+(assert= "bl789-05: an unrelated process on the port -> free it, then spawn"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 9999 :cmdline "python3 -m http.server 8765"} false repo-root))
+
+(assert= "bl789: our own entrypoint holds the port but fails the health probe (hung/dead) -> free, never adopt on cmdline match alone"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 4242 :cmdline "node /repo/extension/out/tools/start-bridge-headless.js /repo 8765"} false repo-root))
+
+(assert= "bl789: an unrelated process that happens to answer health probes is never adopted (cmdline match required too)"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 9999 :cmdline "python3 -m http.server 8765"} true repo-root))
+
+(assert= "bl789: a DIFFERENT swarm's own healthy bridge on a port collision is never adopted (project-root must match too)"
+         :free
+         (front-desk-supervisor-lib/decide-bridge-port-action
+          {:pid 5555 :cmdline "node /other-repo/extension/out/tools/start-bridge-headless.js /other-repo 8765"} true repo-root))
+
+;; ── onboarder-reconcile-poll-loop-holder? / decide-onboarder-orphan-reap
+;;    (pure) — BL-928 supervisor-startup orphan sweep ────────────────────────
+
+(def onb-root "/repo")
+
+(assert= "bl928: our own poll-loop cmdline for this root -> holder"
+         true
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop" onb-root))
+
+(assert= "bl928: same entrypoint, DIFFERENT root -> not a holder (invariant 2)"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "node /other-repo/extension/out/tools/onboarder-reconcile.js /other-repo poll-loop" onb-root))
+
+(assert= "bl928: our root, but not the poll-loop subcommand -> not a holder"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "node /repo/extension/out/tools/onboarder-reconcile.js /repo once" onb-root))
+
+(assert= "bl928: an unrelated process that happens to mention our root -> not a holder"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder?
+          "cat /repo/README.md poll-loop" onb-root))
+
+(assert= "bl928: nil cmdline -> not a holder"
+         false
+         (front-desk-supervisor-lib/onboarder-reconcile-poll-loop-holder? nil onb-root))
+
+;; decide-onboarder-orphan-reap: processes / project-root / parent-orphaned?
+(defn- onb-parent-orphaned-set [orphan-pids]
+  (fn [pid] (boolean (contains? (set orphan-pids) pid))))
+
+(assert= "bl928: unreadable process table (nil) -> reaps nothing, flagged unreadable (invariant 3)"
+         {:reapable [] :unreadable? true}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap nil onb-root (onb-parent-orphaned-set [])))
+
+(assert= "bl928: empty process table -> reaps nothing, NOT flagged unreadable (distinguishable from nil)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap [] onb-root (onb-parent-orphaned-set [])))
+
+(assert= "bl928: a real orphaned poll-loop for our root is reapable"
+         {:reapable [111] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 111 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}]
+          onb-root (onb-parent-orphaned-set [111])))
+
+(assert= "bl928: a poll-loop whose parent is alive is NEVER reaped (invariant 1 - decapitation guard)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 222 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}]
+          onb-root (onb-parent-orphaned-set [])))
+
+(assert= "bl928: an orphaned poll-loop for a DIFFERENT root is never reaped (invariant 2)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 333 :cmdline "node /other-repo/extension/out/tools/onboarder-reconcile.js /other-repo poll-loop"}]
+          onb-root (onb-parent-orphaned-set [333])))
+
+(assert= "bl928: an orphaned, unrelated process is never reaped (cmdline match required too)"
+         {:reapable [] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 444 :cmdline "python3 -m http.server 8765"}]
+          onb-root (onb-parent-orphaned-set [444])))
+
+(assert= "bl928: mixed table - only the orphaned, ours, poll-loop candidate is reaped"
+         {:reapable [111] :unreadable? false}
+         (front-desk-supervisor-lib/decide-onboarder-orphan-reap
+          [{:pid 111 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}
+           {:pid 222 :cmdline "node /repo/extension/out/tools/onboarder-reconcile.js /repo poll-loop"}
+           {:pid 333 :cmdline "node /other-repo/extension/out/tools/onboarder-reconcile.js /other-repo poll-loop"}
+           {:pid 444 :cmdline "python3 -m http.server 8765"}]
+          onb-root (onb-parent-orphaned-set [111 333 444])))
+
+;; ── BL-582 scenario 06: a healthy bot on a stale build ──────────────────
+;; The 2026-07-23 window ran 12:23 -> 14:46 on an outdated build because the
+;; supervisor only ever checked freshness on a CRASH respawn. A healthy
+;; process never crashed, so it never got checked, so it served the stale
+;; build for two hours and twenty minutes. Freshness is now checked on the
+;; healthy tick too - after a grace period, so a merge landing mid-poll does
+;; not restart the front desk out from under a human mid-conversation.
+
+(def build-cfg (assoc healthy-cfg :build-grace-ms 300000))
+
+(assert= "bl582: a build sha matching main is not stale"
+         false
+         (front-desk-supervisor-lib/build-stale? "abc123" "abc123"))
+
+(assert= "bl582: a build sha differing from main is stale"
+         true
+         (front-desk-supervisor-lib/build-stale? "abc123" "def456"))
+
+(assert= "bl582: an unresolvable running sha never FABRICATES staleness"
+         false
+         (front-desk-supervisor-lib/build-stale? nil "def456"))
+
+(assert= "bl582: an unresolvable main sha never fabricates staleness either"
+         false
+         (front-desk-supervisor-lib/build-stale? "abc123" nil))
+
+;; running + build stale + first observation -> grace starts, NO restart
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 10000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: the first stale observation stays running" "running" (:status entry))
+  (assert= "bl582: the first stale observation stamps when the grace started" 10000 (:build-stale-since-ms entry))
+  (assert= "bl582: the first stale observation is reported, not silent" :build-stale-detected event))
+
+;; running + build stale + WITHIN grace -> unchanged, no restart
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 100000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: still inside the grace window, still running" "running" (:status entry))
+  (assert= "bl582: the grace start is not re-stamped on every tick" 10000 (:build-stale-since-ms entry))
+  (assert= "bl582: no event while the grace has not elapsed" nil event))
+
+;; running + build stale + grace ELAPSED -> restarted, no crash required
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: past the grace, the healthy process is moved to restart" "stale-build" (:status entry))
+  (assert= "bl582: the restart is reported under its own event, distinct from a crash" :build-stale event)
+  (assert= "bl582: the restart clock starts now, feeding the shared backoff clause" 311000 (:crashed-at-ms entry)))
+
+;; the stale-build status restarts through the SAME bounded-backoff clause
+(let [stale-entry {:pid 4242 :attempts 1 :status "stale-build" :crashed-at-ms 311000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              stale-entry 999999 alive? fixed-pid! build-cfg giveup-cfg)]
+  (assert= "bl582: a stale-build entry respawns exactly like a crashed one" "running" (:status entry))
+  (assert= "bl582: the respawn emits :started" :started event)
+  (assert= "bl582: the respawned entry's stale-grace stamp is cleared" nil (:build-stale-since-ms entry)))
+
+;; a build that goes fresh again before the grace elapses forgets the grace
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 100000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) false)]
+  (assert= "bl582: a build that became fresh again clears the grace stamp" nil (:build-stale-since-ms entry))
+  (assert= "bl582: clearing the grace is not itself an event" nil event))
+
+;; a crash still wins over build staleness - never a stale-build report for a dead pid
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 999999 dead? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: a dead pid is still reported as crashed, never as a stale build" :crashed event))
+
+;; every pre-BL-582 caller keeps its exact behaviour (build-stale? defaults false)
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 999999 alive? fixed-pid! build-cfg giveup-cfg)]
+  (assert= "bl582: an 8-arity caller never sees a stale-build transition" "running" (:status entry))
+  (assert= "bl582: an 8-arity caller sees no build event" nil event))
+
+;; ── BL-1037: the watchdog restarts fewer times than main moves ───────────
+;; BL-582 gap (c) restarts a HEALTHY child once its build_sha has trailed main
+;; for the grace. Right in principle - before it, a build served 2h23m stale -
+;; but this swarm lands commits faster than one grace plus recompile-and-
+;; respawn, so staleness re-arms before the previous restart has paid for
+;; itself: 24 build-stale-detected events and 12 respawns in 105 minutes on
+;; 2026-08-22.
+;;
+;; The bound: a child restarted onto a fresh build must actually SERVE - one
+;; completed poll cycle - before the watchdog may restart it again. The debt is
+;; CARRIED while it waits, never cleared, or this reintroduces the 2h23m window.
+
+;; The un-served case: past the grace, but this child has not polled yet on the
+;; build it was restarted onto. No restart, and the debt survives.
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true false)]
+  (assert= "bl1037: a child that has not served yet is NOT restarted, even past the grace"
+           "running" (:status entry))
+  (assert= "bl1037: and the staleness it already saw is CARRIED, never cleared"
+           10000 (:build-stale-since-ms entry))
+  (assert= "bl1037: the deferral is reported, not silent - the log must still explain itself"
+           :build-stale-deferred event))
+
+;; The served case: unchanged from BL-582. A child that has served may be
+;; restarted, so this bound never becomes "never restart".
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true true)]
+  (assert= "bl1037: a child that HAS served is still restarted past the grace"
+           "stale-build" (:status entry))
+  (assert= "bl1037: and that restart is still reported" :build-stale event))
+
+;; Deferral must not swallow the first observation either.
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 10000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true false)]
+  (assert= "bl1037: the first stale observation is still stamped while un-served"
+           10000 (:build-stale-since-ms entry))
+  (assert= "bl1037: and still reported" :build-stale-detected event))
+
+;; A build that MATCHES main costs nothing, served or not (scenario 04).
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) false false)]
+  (assert= "bl1037: a fresh build is never restarted" "running" (:status entry))
+  (assert= "bl1037: and its carried staleness is cleared once the build matches"
+           nil (:build-stale-since-ms entry)))
+
+;; Every existing caller passes no served? at all. Their behaviour must be
+;; byte-for-byte what it was, or this bound silently disables the watchdog for
+;; the bridge and every other child.
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg
+                              false (fn [_] nil) true)]
+  (assert= "bl1037: the 9-arity form is unchanged - a stale build past the grace still restarts"
+           "stale-build" (:status entry))
+  (assert= "bl1037: and still reports the same event" :build-stale event))
+
+
+;; healthy-reset wins over an equally-eligible build-stale restart - same
+;; "two conditions eligible at once, cond order must not swap" shape as the
+;; BL-370 heartbeat-stale?/healthy-long-enough? test above, one clause over.
+;; check-one! tests build-freshness LAST specifically so a healthy-reset
+;; (bookkeeping, fires at most once per process) is never starved by a
+;; stale-build report on the same tick; the deferred report catches up next
+;; tick since the grace is measured in minutes. Without this test, a cond-
+;; order swap promoting the freshness clause ahead of healthy-reset would
+;; pass every other bl582/BL-370 assertion above undetected.
+(let [running-entry {:pid 4242 :attempts 1 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 100000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 650000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "healthy-reset-vs-build-stale: healthy-reset wins, status stays running" "running" (:status entry))
+  (assert= "healthy-reset-vs-build-stale: attempts is reset to 0, not left untouched by a stale-build branch" 0 (:attempts entry))
+  (assert= "healthy-reset-vs-build-stale: the grace stamp is untouched - the freshness clause never ran this tick" 100000 (:build-stale-since-ms entry))
+  (assert= "healthy-reset-vs-build-stale emits :healthy-reset, never :build-stale" :healthy-reset event))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

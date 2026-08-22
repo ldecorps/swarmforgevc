@@ -18,6 +18,14 @@ fi
 
 WORKING_DIR="${1:?usage: start_handoff_daemon.sh <project-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
+# BL-796: prepend resolved bb/node (including nvm-only node) onto PATH
+# before anything below launches handoffd - a cron/minimal-PATH invocation
+# that finds bb but not node fails every node-driven sweep silently (BL-789
+# found bb missing; node was the still-missing half).
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/operator_path_lib.sh"
+swarmforge_prepend_operator_bins
 DAEMON_DIR="$WORKING_DIR/.swarmforge/daemon"
 HANDOFFD_LOG="$DAEMON_DIR/handoffd.log"
 HANDOFFD_BB="${HANDOFFD_BB:-$SCRIPT_DIR/handoffd.bb}"
@@ -30,6 +38,10 @@ if [[ "${SWARMFORGE_SKIP_DAEMON:-}" == "1" ]]; then
 fi
 
 mkdir -p "$DAEMON_DIR"
+# BL-785: starting re-arms watching — a deliberate stop must not outlive the
+# next start, or the crontab line would be present while the daemon it
+# watches is silently unwatched.
+freshness_clear_stopped "$WORKING_DIR" "handoffd"
 AUDIT_LOG="$DAEMON_DIR/daemon-start-audit.log"
 
 audit() {
@@ -37,6 +49,25 @@ audit() {
 }
 
 audit "start_handoff_daemon invoked root=$WORKING_DIR pid=$$ SKIP_DAEMON=${SWARMFORGE_SKIP_DAEMON:-} caller=${SWARMFORGE_DAEMON_START_CALLER:-unknown}"
+
+# BL-976: a relaunch from a keyless shell (the supervisor/watchdog chain
+# spawns generations from whatever environment happens to run it) must not
+# silently lose email capability - re-source the operator's env file into
+# THIS launch environment so both daemons below inherit it. The file is
+# operator-created, lives under gitignored .swarmforge/ runtime state, and
+# is never committed (BL-215 posture unchanged); only its PATH is audited,
+# never any value it defines. No file -> ambient env only, behavior
+# unchanged.
+OPERATOR_ENV_FILE="$WORKING_DIR/.swarmforge/operator/daemon.env"
+if [[ -f "$OPERATOR_ENV_FILE" ]]; then
+  audit "sourcing operator env file $OPERATOR_ENV_FILE"
+  set -a
+  # shellcheck disable=SC1090
+  source "$OPERATOR_ENV_FILE"
+  set +a
+else
+  audit "no operator env file at $OPERATOR_ENV_FILE (ambient env only)"
+fi
 
 stop_pid_file() {
   local pid_file="$1"

@@ -83,6 +83,34 @@
       (catch Exception e
         {:success false :error (.getMessage e)}))))
 
+(defn email-send-reason
+  "Pure predicate: given `to` and `api-key` (already resolved from conf +
+   env - no I/O in this function), returns :disabled when no recipient is
+   configured, :missing-api-key when a recipient is configured but the key
+   is absent, or nil when the email would actually attempt to send.
+   Factored out of send-alarm-email!'s own cond below so a caller (BL-902:
+   briefing_email_lib.bb's per-section gather+render is expensive) can
+   decide sendability BEFORE doing any of that work, using the identical
+   distinction the real send path already computed."
+  [to api-key]
+  (cond
+    (str/blank? to) :disabled
+    (str/blank? api-key) :missing-api-key
+    :else nil))
+
+(defn configured-email-send-reason
+  "Reads notify_email_to from conf-file and RESEND_API_KEY from the process
+   env - the exact same to/api-key resolution send-configured-email! below
+   performs - and returns email-send-reason's verdict without composing or
+   sending anything. BL-902: the only I/O here is a small conf-file slurp,
+   never the expensive work a caller might otherwise build before finding
+   out the send can't happen."
+  [conf-file]
+  (let [conf (parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
+        to (get conf "notify_email_to")
+        api-key (System/getenv "RESEND_API_KEY")]
+    (email-send-reason to api-key)))
+
 (defn send-alarm-email!
   "Sends the alarm email, or reports why it could not. BL-215: the two off
    states are distinguished so a caller can tell them apart - no recipient
@@ -104,14 +132,14 @@
   ([api-key to from subject text post-fn!] (send-alarm-email! api-key to from subject text nil post-fn!))
   ([api-key to from subject text html post-fn!] (send-alarm-email! api-key to from subject text html nil post-fn!))
   ([api-key to from subject text html attachments post-fn!]
-   (cond
-     (str/blank? to)
+   (case (email-send-reason to api-key)
+     :disabled
      {:success false :reason :disabled :error "email not configured (notify_email_to unset)"}
 
-     (str/blank? api-key)
+     :missing-api-key
      {:success false :reason :missing-api-key :error "email not configured (missing RESEND_API_KEY)"}
 
-     :else
+     nil
      (post-fn! api-key (cond-> {:to to :from from :subject subject :text text}
                           html (assoc :html html)
                           (seq attachments) (assoc :attachments attachments))))))
@@ -138,6 +166,45 @@
           "environment - alarm/briefing email cannot send. Export RESEND_API_KEY in the "
           "daemon's launch environment."))
     (mark-warned!)))
+
+;; BL-976: a configured-but-keyless daemon generation must ALSO reach the
+;; operator through a transport that does not itself need the email key
+;; (the daemon's Telegram operator outbox) - warn-missing-key-if-needed!
+;; above is loud only to someone already reading the log, and the defect
+;; BL-976 fixes was exactly a silent keyless generation (the operator's
+;; first signal was a briefing that never arrived). Same injected-adapter
+;; shape as warn-missing-key-if-needed! so the decision stays pure and
+;; fixture-tested; the caller owns the one-per-generation atom and the
+;; transport.
+
+(defn format-keyless-alert
+  "Operator-facing alert text for a configured-but-keyless daemon
+   generation. Names RESEND_API_KEY and the operator env file path the
+   launch path re-sources (BL-976 leg 1) so the alert carries its own
+   remediation - never any key value (there is none: the whole point is
+   that it's absent)."
+  [env-file-path]
+  (str "Daemon email is DOWN this generation: notify_email_to is configured "
+       "but RESEND_API_KEY is missing from the daemon's environment - "
+       "briefing and death-alarm email cannot send. Fix: define "
+       "RESEND_API_KEY in " env-file-path " (re-sourced by "
+       "start_handoff_daemon.sh at every launch), or export it in the "
+       "launch environment, then bounce the daemon."))
+
+(defn alert-keyless-if-needed!
+  "Given email-send-reason's verdict, delivers the one-per-generation
+   keyless alert through the injected transport when the reason is
+   :missing-api-key and no alert has been delivered yet
+   (already-alerted?! false). mark-alerted! runs only AFTER send-alert!
+   returns without throwing, so a transport failure leaves the alert
+   un-marked and the next sweep cycle retries - \"exactly once per
+   generation\" means one successful delivery, never one attempt. A no-op
+   for :disabled (email intentionally off - BL-215's quiet state), a
+   sendable verdict (nil), or a repeat call once alerted."
+  [reason {:keys [already-alerted?! send-alert! mark-alerted!]}]
+  (when (and (= reason :missing-api-key) (not (already-alerted?!)))
+    (send-alert!)
+    (mark-alerted!)))
 
 ;; BL-214: the one shared "read conf, send, warn if misconfigured" wrapper -
 ;; every caller (BL-144's alarm, BL-214's briefing sweep) was independently
@@ -241,12 +308,32 @@
      (warn-missing-key-if-needed! result warn-adapters)
      result)))
 
+;; BL-813: the death alarm named an on-disk path an off-box operator cannot
+;; open. This turns the failure-log content this process JUST WROTE into the
+;; one {:filename :content-id :base64} descriptor send-alarm-email!'s
+;; :attachments already knows how to carry (BL-286) - encoding the exact
+;; in-memory `content` string, never re-slurping the file (the whole point
+;; of this ticket is that a file on disk can vanish out from under a
+;; reader - see ambulance_lib.bb's ticket-has-file? fix above).
+(defn build-failure-attachment
+  [{:keys [failure-log-path content]}]
+  {:filename (str (fs/file-name failure-log-path))
+   :content-id "handoffd-failure-log"
+   :base64 (.encodeToString (java.util.Base64/getEncoder) (.getBytes ^String content "UTF-8"))})
+
 (defn alarm-and-halt!
   "Orchestrates the whole daemon-death response through injected adapters -
    testable with fakes for every side effect (BL-144 non-behavioral gate: no
    real timers, no real process kills, no real network in unit tests). Robust
    to a messy death (nil/partial status, empty log tail, no role counts):
-   every adapter call is given already-defaulted inputs."
+   every adapter call is given already-defaulted inputs.
+
+   BL-813: send-email! is now a 3-arg adapter (subject text attachments) -
+   attachments is a seq carrying the just-written failure log, built by
+   build-failure-attachment above. Building it is wrapped in try/catch: a
+   failure there (e.g. huge log content, encoding error) degrades to no
+   attachment rather than ever preventing halt-swarm! below - BL-144's
+   alarm-and-halt posture must survive an attachment-building bug."
   [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log! send-email! halt-swarm! write-status!]}]
   (let [died-at (now-iso!)
         log-tail (or (log-tail!) [])
@@ -258,9 +345,12 @@
                                       :last-incident (:last_incident status)
                                       :role-counts role-counts})
         failure-log-path (write-failure-log! content)
+        attachments (try
+                      [(build-failure-attachment {:failure-log-path failure-log-path :content content})]
+                      (catch Exception _ nil))
         {:keys [subject text]} (build-alarm-email {:failure-log-path failure-log-path
                                                      :ensure-command "./swarm ensure"})
-        email-result (send-email! subject text)]
+        email-result (send-email! subject text attachments)]
     (halt-swarm!)
     (write-status! (assoc status
                           :state "halted"

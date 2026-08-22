@@ -3,8 +3,11 @@
 Native system overlay bubble for SwarmForge. Distinct from Mini App
 minimize (BL-706): this bubble can stay visible while you leave Telegram.
 
-Current debug line: **BL-707 v0.3.8-home-handsfree** (`versionCode` 24). Confirm
-that string on the pairing screen status line after you install.
+Current debug line: **v0.3.17-open-talk** (`versionCode` 33, applicationId
+`com.swarmforge.float`). Confirm that string under the Let's Talk title on the
+talk panel (and on the pairing screen status line if you still see it). The
+`com.swarmforge.float` application id is unchanged from BL-707's original
+0.3.13 release — it does not need to be new again for this update.
 
 ## What you get
 
@@ -12,7 +15,7 @@ that string on the pairing screen status line after you install.
 - Tap to expand a Let's Talk panel; long-press the bubble to pause / resume all
 - Voice and typed turns to the existing Let's Talk bridge (same console bearer)
 - Hands-free listening that continues while collapsed to the bubble
-- Settings: hold music, mute, playback volume (default 55%)
+- Settings: hold music, mute, hold-music volume (default 55%; reply voice follows phone volume)
 - Playlist: shuffle or pin a preferred hold-music tune
 - Day-to-day: open the app → bubble auto-starts and the pairing UI finishes away
 - Collapse hides the panel only; **Stop** or drag-to-X tears the overlay down
@@ -38,20 +41,27 @@ After each build, publish into the sideload folder the phone downloads from:
 android/scripts/publish-apk.sh
 ```
 
-That copies into `.swarmforge/operator/public/` (Cloudflare tunnel). Prefer the
+That copies into `.swarmforge/operator/public/` and the bridge serves them
+at `https://bubble.musicalsifu.com/<filename>` (no bearer). Prefer the
 **versioned** filename (e.g.
-`swarmforge-float-companion-0.3.8-home-handsfree.apk`) so browsers/CDNs cannot
+`swarmforge-float-companion-0.3.17-open-talk.apk`) so browsers/CDNs cannot
 keep serving a cached older APK via HTTP 304.
 
-On the phone: **install the new APK over the existing app** (do not
-uninstall). Pairing (bridge URL + token) and talk prefs (volume, mute, hold
-music, preferred song) stay in app storage across updates. Confirm the status
-line shows the matching version (e.g. `BL-707 v0.3.8-home-handsfree`) before
-you rely on new controls.
+On the phone: install
+`https://bubble.musicalsifu.com/swarmforge-float-companion-0.3.17-open-talk.apk`.
+This build uses applicationId `com.swarmforge.float`, so it updates in place
+over any earlier build on that same id (0.3.13 and later). Confirm the talk
+panel shows `v0.3.17-open-talk`, then re-pair if fields are empty (or rely on
+`Download/swarmforge-float-pairing.json`).
 
-If you do uninstall: choose **Keep app data** when Android asks, or rely
-on the `Download/swarmforge-float-pairing.json` mirror the app writes —
-open the new install and the fields should refill.
+You can uninstall leftover **SwarmForge Float** / **SwarmForge Bubble** icons
+from older package ids when convenient — they are separate apps now.
+
+### "App not installed" on an older APK
+
+If an older build still fails that way: uninstall every SwarmForge Float/Bubble
+entry (all users if offered), or switch to the current `0.3.13-fresh-id` APK
+above.
 
 ## Pair (first run or re-pair)
 
@@ -79,8 +89,8 @@ Tap the bubble. You get a **Let's Talk**-style panel:
 - **Playlist** — shuffle, or pin one tune for the next hold loop; stop music
   from the same dialog
 - **Mute** — skip speaking the reply (Settings)
-- **Volume** — shared loudness for hold music and reply voice, 0–100,
-  default 55 (Settings; live while playing)
+- **Hold music volume** — loudness for hold music only, 0–100, default 55
+  (Settings; live while playing). Reply voice follows the phone’s volume.
 - **Pause all** — stops mic, playback, and hold music (panel control, or
   long-press the bubble)
 - **New session** — clears the shared Cursor agent id (same idea as Mini App `/new`)
@@ -90,6 +100,37 @@ Tap the bubble. You get a **Let's Talk**-style panel:
 - **Stop** — tears down bubble + voice session
 
 Grant **microphone** when Android asks (first Record).
+
+## The reply always plays something after hold music stops (BL-717)
+
+Hold music stopping with nothing spoken afterward used to be indistinguishable
+from a turn that was still running. It no longer happens: whenever a turn has
+no speakable content to play — no audio and no TTS text — or the playback/TTS
+attempt itself fails, or the recovery watchdog expires, the app makes one
+bounded recovery attempt instead of silently completing the turn. Combined
+with the bridge-side fallback line for a reply with nothing pronounceable to
+say (same ticket — see the "Record a Turn" note in the
+[main Let's Talk how-to](BL-696-miniapp-lets-talk-cursor-audio.md)), a turn
+now always ends in either the real reply or an audible failure — never
+open-ended silence.
+
+## Cold-start expand no longer fails silently (BL-916)
+
+A short tap on the bubble right after a cold start (no foreground activity
+— e.g. right after force-stopping the app) used to draw the disc but do
+nothing: Android's background-activity-launch block (Samsung especially)
+silently dropped the panel start, no crash and no log. Expand now
+trampolines through the app's own exported launcher activity instead of
+starting the Talk panel directly from the background overlay service, so
+the platform allows it. Two related freezes fixed in the same pass, since
+all three looked identical to the user — "the bubble is frozen":
+
+- The pairing screen no longer gets stuck behind the Android 12+ launcher
+  splash icon when Talk is opened from the bubble.
+- The Talk panel no longer closes itself the instant it opens (the
+  overlay's own finger-up was being read as an outside tap).
+
+This does not change the gesture model — expand is still a single tap.
 
 ## When the bridge host is unreachable (BL-716)
 

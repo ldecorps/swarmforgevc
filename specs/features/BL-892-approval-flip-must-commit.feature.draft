@@ -1,0 +1,31 @@
+Feature: An automated approval verdict is durable on HEAD, not only on disk
+
+  # BL-892 approval-flip-commits-01
+  Scenario: Approve leaves human_approval: approved on HEAD
+    Given a live ticket whose human_approval is pending
+    When an automated Approve action records the verdict successfully
+    Then git show HEAD for that ticket file contains "human_approval: approved"
+    And the action reports success only after that commit lands
+
+  # BL-892 approval-flip-commits-02
+  Scenario: Reject and Amend are equally durable
+    Given a live ticket whose human_approval is pending
+    When an automated Reject action records a reason successfully
+    Then git show HEAD for that ticket file contains "human_approval: rejected"
+    When a different live pending ticket receives an automated Amend with a note
+    Then git show HEAD for that ticket file contains "human_approval: amending"
+
+  # BL-892 approval-flip-commits-03
+  Scenario: Commit failure is never reported as an unqualified success
+    Given a live ticket whose human_approval is pending
+    And the commit-integrity helper will fail for this write
+    When an automated Approve action runs
+    Then the action does not report unqualified success
+    And the durability failure is observable to the human
+
+  # BL-892 approval-flip-commits-04
+  Scenario: Expedite still commits through the same integrity helper
+    Given a live paused ticket whose human_approval is pending
+    When an automated Expedite action records approval and promotion successfully
+    Then git show HEAD for that ticket file contains "human_approval: approved"
+    And the commit went through commit_integrity_cli (pathspec-scoped)

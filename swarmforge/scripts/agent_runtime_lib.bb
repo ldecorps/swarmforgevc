@@ -176,7 +176,14 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
   (prompt-engine-lib/aider-bootstrap-text role draft coord-note))
 
 (defn generic-bootstrap-text [role draft two-pack? overlay? overlay-prompt]
-  (prompt-engine-lib/generic-bootstrap-text role draft two-pack? overlay? overlay-prompt))
+  ;; BL-574: PromptEngine's generic-bootstrap-text now takes a fragment-cache
+  ;; atom + content-fn (Slice 2's content-hash cache). This pre-BL-546 thin
+  ;; delegate keeps its own 5-arg signature for any caller still on it,
+  ;; supplying a fresh cache and the real (uncached) reader each call - the
+  ;; exact behavior this wrapper always had.
+  (prompt-engine-lib/generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
+                                             (atom (prompt-engine-lib/empty-fragment-cache))
+                                             prompt-engine-lib/fragment-content-uncached))
 
 (defn bootstrap-text
   "Pre-BL-546 entry point, now a thin delegate: PromptEngine compose owns
@@ -239,7 +246,12 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
 (def error-category-patterns
   [[:timeout #"(?i)\btimed?[\s-]?out\b|ETIMEDOUT"]
    [:auth #"(?i)\b(unauthorized|forbidden|invalid api[\s-]?key|invalid[\s\S]*credential|authentication failed|401|403)\b"]
-   [:unavailable #"(?i)\b(rate[\s-]?limit|too many requests|overloaded|service unavailable|429|503)\b"]
+   ;; BL-840: "overloaded" alone left the shared trailing \b unable to match
+   ;; "overloaded_error" (`_` is a word character, so "d"->"_" is not a
+   ;; boundary) - overloaded\w* consumes the whole token first, so the \b
+   ;; check lands on the real boundary after it. 529 added (Anthropic's own
+   ;; overloaded-server code) - the exact text that prompted this fix.
+   [:unavailable #"(?i)\b(rate[\s-]?limit|too many requests|overloaded\w*|service unavailable|429|503|529)\b"]
    [:launch-failed #"(?i)\b(enoent|command not found|no such file|cannot spawn|no launch script|no tmux socket|no .*wrapper found|failed to start)\b"]
    [:protocol #"(?i)\b(unexpected token|json[\s\S]*pars|parse error|malformed|invalid response)\b"]])
 

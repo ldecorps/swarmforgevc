@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ddf74006b409dd54adf28e0f722535f16f6d6d4f9675d42687cb354548643f19
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-12T00:17:38.820736Z","feature_name":"Workflow articles orient agents on queue-jump, ambulance, and expeditor","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-715-workflow-prompt-modes-orientation.feature","background_hash":"a11502237b622dc7153af101a6e0d013f419ef3ea81e89931ac65fad5edcaf85","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each required special is named with its one-line job","scenario_hash":"f8dc20b1a72ce76fd4cc6c04798dce272e088f5ebdeb8d33305146ff674d77a4","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-12T00:17:38.820736Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Workflow articles orient agents on queue-jump, ambulance, and expeditor
   Seats re-reading workflow rules must learn that the normal live swarm is
   default, and that queue-jump, ambulance, and the expeditor are three distinct

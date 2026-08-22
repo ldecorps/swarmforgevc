@@ -25,7 +25,7 @@ make_fixture() {
   # BL-436: also load-files swarm_identity_lib.bb (own-swarm-name) and
   # fleet_telegram_creds_lib.bb (per-swarm creds resolution) - same
   # requirement.
-  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
+  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/process_table_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
      "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" "$d/"
   # A fake entrypoint that stays alive forever (mirrors the real bridge/bot
   # processes, which never exit on their own while healthy).

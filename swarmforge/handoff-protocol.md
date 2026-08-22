@@ -320,6 +320,11 @@ Every delivered `rule_proposal` is appended as one JSON line to
 proposer, and delivery timestamp) for durable audit, regardless of the
 specifier's eventual accept/reject decision.
 
+Under a mono-router pack, a `rule_proposal` sitting in a dormant role's
+mailbox is immediately actionable for chase-sweep rotation — it never waits
+out the `note` aging threshold. See "Mono-router rule_proposal actionability
+and chase redirect (BL-795)" below.
+
 ## `swarm_handoff.sh`
 
 `swarm_handoff.sh` should be the strict outbound protocol gate.
@@ -535,14 +540,201 @@ changed nothing. Because blocking can wedge a ticket if a stale parcel is
 left behind, the refusal always names the `redo_from.sh` command that clears
 it.
 
-## QA-Edge Durability Gate (BL-531)
+## Task/Commit Coherence Gate (BL-953)
+
+`swarm_handoff.sh` refuses a `git_handoff` send when the `commit:` header
+POSITIVELY contradicts the ticket named by the `task:` header. This is the
+send-time backstop for the 2026-08-19 incident where the coder sent commit
+`896e1d5cb2` (subject "BL-949: concierge board-wiring tests...") under task
+`BL-935-...`, 39 seconds after correctly sending the same commit under
+BL-949. The cleaner faithfully preserved the task name — PIPELINE.md step 3
+is correct as written — and a parcel carrying zero BL-935 content rode two
+hops before the architect caught the mislabel by eye. BL-760's
+duplicate-chain guard keys on the task's OWN ticket id, so one commit sent
+under two different task names reads as two unrelated tickets and both
+pass; this gate covers the complementary axis.
+
+Mechanics (`task_commit_coherence_gate_lib.bb`):
+
+- **Fail-open is absolute.** `blocked?` returns true ONLY for a positive,
+  resolved contradiction: the cited commit's own tip **subject** names at
+  least one ticket id (`pipeline-stage-lib/extract-ticket-ids`, the same
+  BL-869 multi-id extractor the close guard uses) AND the task's ticket id
+  is not among them. Every other shape accepts: no ticket id in the
+  subject, a task name resolving to no ticket, or an unreadable commit
+  subject (the caller logs a `TASK_COMMIT_COHERENCE WARNING` to stderr and
+  passes, unverified).
+- **Ticket identity is exact-id equality**, via `pipeline-stage-lib`'s own
+  extractors — never a prefix/substring match, so `BL-93` can never
+  collide with `BL-935`.
+- **Range is the commit's own subject, not its introduced history.** A
+  merge's second-parent-side subjects were probed and rejected — they
+  would refuse the lawful Article 2.6 multi-ticket batch forward (§2.6)
+  that legitimately sends one non-ticket-named merge commit under several
+  different task names in turn. Subject-only accepts that batch forward
+  and still catches the incident at both hops (the cleaner's own merge
+  subject already named BL-949).
+- If the send is refused, it rides `validate`'s shared error path —
+  nothing is delivered to any mailbox, no wake is injected.
+
+Refusal message names the task, the commit, the ticket(s) the commit's
+subject actually resolves to, and the usual cause:
+
+```text
+Cannot send git_handoff for BL-935-...: commit 896e1d5cb2 belongs to
+BL-949, not to the task's ticket BL-935 - one of the two headers is wrong
+(a stale field in a reused draft is the usual cause; BL-953). Fix the
+task: or the commit: line and re-send.
+```
+
+## Bounce Revert Verification (BL-954)
+
+A bounce requires the bouncing role to remove the bounced commit's content
+from its own `swarmforge-<role>` review branch in the same step ("A Bounce
+Must Be Reverted Out Of The Bouncing Branch", BL-490/BL-495). That step was
+pure discipline — nothing checked it happened — and twice in one day
+(2026-08-19) it was skipped and only caught by hand, hours later: QA/BL-945
+and, the case that founded this ticket, the architect's two BL-935 bounces,
+where 5 of the 7 bounced files stayed byte-identical at `swarmforge-architect`'s
+tip with no revert commit anywhere, and both landed on `main` and
+`origin/main` before BL-935 itself was ever approved.
+
+`record-bounce.js`/`record-bounce.ts` now runs a **bounce revert check**
+immediately after it durably writes the bounce record (never before —
+invariant 3: recording is never contingent on the check, and a check that
+cannot complete reports its cause rather than reading as clean). The check
+is **report-only**: it never blocks the bounce recording and never reverts
+anything itself — an agent silently rewriting its own branch on a heuristic
+is a worse failure than the one being fixed.
+
+Mechanics (`src/quality/bounceRevertVerdict.ts` decides, pure;
+`src/metrics/bounceRevertGitAdapter.ts` gathers the git facts — split across
+the dependency-gate's no-io-from-policy boundary, same as `coChange.ts` /
+`gitHistoryAdapter.ts`):
+
+- **Content decides, never ancestry (invariant 1).** A touched path counts
+  as still-live only when the bouncing branch's tip holds byte-identical
+  content to the bounced commit's version AND the bounced commit actually
+  changed that path (differs from its parent) — a path the commit never
+  touched proves nothing. A commit that stays a permanent ancestor of the
+  bouncing branch (a properly reverted bounce always does) reads clean
+  regardless.
+- **Touched files use `diff-tree -m --first-parent`, not a bare
+  invocation** — the bare form is blind to merge commits (empty output),
+  which would read a bounced *merge* commit as clean no matter what the
+  branch held.
+- **Already-published is a breach report, never a revert instruction
+  (invariant 2).** When the bounced commit is already an ancestor of
+  EITHER local `main` or `origin/main` (either ref can be the stale one,
+  BL-891), the constitution's own exception applies — reverting published
+  history is out of bounds — and the verdict is `breach-report` with no
+  `remedy` field at all.
+- **Four verdicts:** `clean`, `violation` (unreverted; `remedy` names the
+  exact command — `git revert --no-edit <commit>` on the bouncing branch —
+  and `liveFiles` lists the still-live paths), `breach-report` (already
+  published, no remedy), `undeterminable` (the bounced commit or the
+  bouncing branch can't be resolved, or the check itself throws — `cause`
+  names why; never silently read as clean).
+- The bouncing branch is derived from the recorded `--by` role as
+  `swarmforge-<by>` — the same field BL-635 already made mandatory on
+  every `record-bounce` call.
+
+This is the entrance-side companion to the **push sweep's** `is_qa_ancestor.sh`
+check ("QA ancestor is bounce-aware", BL-952, below): BL-952 blocks an
+unreverted bounce from reading as approved at publish time, scoped to the
+`swarmforge-QA` ref; this check fires at bounce time, on whichever branch
+the bouncing role actually owns — architect, cleaner, hardener, or any other
+reviewing role, not only QA. The BL-935 case this ticket is built from
+(bouncing role: architect) is exactly the shape a QA-ref-only check cannot
+see. Neither replaces the other — BL-954 catches the branch never getting
+cleaned; BL-952 catches the leak if it does reach a downstream approval
+read anyway.
+
+Recording is unaffected by the verdict — `revertCheck` rides alongside the
+existing fields in the CLI's JSON stdout:
+
+```json
+{
+  "recorded": true,
+  "ticketRecordUpdated": true,
+  "revertCheck": {
+    "verdict": "violation",
+    "branch": "swarmforge-architect",
+    "commit": "e4b327e031",
+    "remedy": "on swarmforge-architect: git revert --no-edit e4b327e031",
+    "cause": null,
+    "liveFiles": ["extension/test/example.property.test.js"]
+  }
+}
+```
+
+Going forward only — this does not retro-check the existing month's bounce
+records; a sweep over history is a separate ticket if wanted.
+
+## Multi-Ticket Close Guard (BL-869)
+
+`ticket_close_guard_lib.bb`'s closed-ticket check (referenced above as the
+Duplicate-Chain Guard's sibling) validates a close commit — an active/ →
+done/ move in `backlog/` — against a QA approval before
+`commit_integrity_cli.bb` is allowed to commit it. Article 2.6 requires a
+QA note closing several tickets in one commit to name every satisfied id;
+until this ticket, the guard read only the first.
+
+**Fault A (reported).** `qa-approved-ticket?` matched a QA note's ticket ids
+with a first-match regex. A real note reading `QA approved
+BL-857,BL-849,BL-840 @ 0bae185f9b, landed on main. Bookkeep all 3.` credited
+BL-857 alone; closing BL-849 or BL-840 in the same commit was refused with
+"no QA git_handoff or note to coordinator referencing this ticket" — against
+a note that plainly named them.
+
+**Fault B (found while probing, not reported).** `parse-close-move` paired
+`(first (filter active))` with `(first (filter done))`, collapsing a
+multi-ticket close to a single `{:ticket-id ...}`. A commit moving three
+tickets active → done validated only the first; the other two committed
+with **no approval check at all** — the guard's entire purpose, silently
+bypassed. Worse, when the first active/done path in the commit happened to
+name two *different* tickets, the id match failed, `parse-close-move`
+returned `nil`, and `validate-close-allowed` reported `{:allowed true}` as
+if the commit were ordinary — every ticket in it unvalidated. Fault B also
+truncated two downstream per-ticket side effects in `commit_integrity_cli.bb`
+to that one resolved id: `abandon-inflight-for-ticket!` (tickets 2..N kept
+live in-flight handoffs in other roles' mailboxes after being closed) and
+`record-lean-ledger!` (the BL-819 lifecycle ledger silently dropped every
+ticket after the first).
+
+**Fix.** `parse-close-move` now pairs each `active/` path with the
+`done/` path that shares its own ticket id — regardless of either path's
+position in the commit — and returns one entry per ticket. `qa-approved-
+ticket?` reads a QA note or `git_handoff`'s **every** named id (via a new
+sibling all-ids extractor, `pipeline_stage_lib.bb::extract-ticket-ids` /
+`ticket-ids-from-headers`) instead of the first-match single-id
+`extract-ticket-id` — which is left untouched, since seven other live
+callers (`duplicate_chain_guard_lib`, `done_with_current_task`,
+`swarm_handoff` twice, `pre_qa_gate_gather_lib`, and this guard's own
+path-based helper) depend on its single-id, first-token contract.
+`validate-close-allowed` now checks every ticket the commit closes
+independently and reports `:ticket-ids` (every ticket closed) alongside
+`:blocked-ticket-ids` (only the ones still missing QA sign-off), so a
+partially-approved multi-ticket close names precisely what is still
+blocking it — the message no longer reads as if an already-approved ticket
+in the same commit were also rejected. `commit_integrity_cli.bb` now runs
+`abandon-inflight-for-ticket!` and `record-lean-ledger!` once per closed
+ticket instead of once per commit, and its blocked-close message lists
+every failing ticket, not just the first one the old code happened to look
+at.
+
+`chase_sweep_lib.bb` keeps its own, separate `extract-ticket-id` (unrelated
+to this guard, not in scope here) — the two are siblings by name only.
+
+## QA-Edge Durability Gate (BL-531, BL-761)
 
 When `swarm_handoff.sh` sends a `git_handoff` to QA, it runs a durability gate
-to ensure the parcel satisfies two machine-checkable criteria before allowing
+to ensure the parcel satisfies three machine-checkable criteria before allowing
 the send. This gate sits at the final quality chokepoint where parcels are most
 expensive to bounce and where the work is complete by contract. A refusal
 prevents the parcel from reaching QA, so the author can remedy the issue
-immediately (merge a dropped commit or land a required wiring) and re-send.
+immediately (merge a dropped commit, land a required wiring, or make the
+declared acceptance contract actually run) and re-send.
 
 ### Gate Scope
 
@@ -641,6 +833,53 @@ PRE_QA_GATE_FAIL manifest <ticket-id> malformed required_wiring entry: ...
   remedy: fix the entry in the ticket and re-send
 ```
 
+### Check D — Acceptance Contract Cannot Run (BL-761)
+
+A ticket may declare an `acceptance:` feature file that reads as covered by
+eye but has never actually been run: no step handler resolves one or more of
+its steps, so `specs/pipeline/runtime.js` would throw "no step handler
+matched" the moment anyone ran it. This is the same substitution BL-727 names
+for the offline pilot's `verdict.json` — an *assertion* of coverage
+standing in for a *run* — closed here at the ordinary pipeline's QA edge.
+
+The gate resolves the ticket's declared `acceptance:` value **at the commit
+cited in the handoff** (never the sender's working tree — a later commit may
+have deleted the handler that made the contract runnable when it was cited),
+parses it with the same vendored APS parser `runnerAdapter.js` uses, and
+resolves every step of every scenario — substituting each Scenario Outline
+example row first — against the step registry as it existed at that same
+commit. It never reimplements Gherkin parsing or step matching: a second
+parser or matcher would let the gate's verdict diverge from the runner's,
+which is exactly what it exists to prevent.
+
+Three outcomes:
+- **Declaration unreadable** — the `acceptance:` field is absent, blank,
+  inline Gherkin instead of a path, or names a file that does not exist at
+  the cited commit. This fails **CLOSED**: one finding, and the unresolved
+  steps are never consulted (there is nothing to resolve them against).
+- **Registry cannot be loaded** — infrastructure trouble at the cited commit
+  (the vendored parser is missing, `specs/pipeline` cannot be listed there, or
+  the materialized registry fails to `require()` — most commonly because
+  `extension/out/` was never compiled). This fails **OPEN**: a
+  `PRE_QA_GATE WARNING`, never a finding, and the send is not blocked.
+- **Both readable and loadable** — one finding per unresolved step, in the
+  order gathered, naming the scenario (and Scenario Outline example row when
+  applicable) and the step text that matched no handler. Zero unresolved
+  steps is a clean pass: no findings, no warnings.
+
+The gate stops the send and prints each finding as:
+```
+PRE_QA_GATE_FAIL acceptance-contract <ticket-id> scenario "<name>": no step handler matched "<step text>"
+PRE_QA_GATE_FAIL acceptance-contract <ticket-id> scenario "<name>" [example row <n>]: no step handler matched "<step text>"
+PRE_QA_GATE_FAIL acceptance-contract <ticket-id> acceptance: declaration is unreadable at the cited commit (absent, inline Gherkin, or naming a feature file that does not exist there)
+```
+
+Example: A ticket's feature file has one scenario whose second step
+("`Given the Bubble companion is paired to a bridge base URL`") has no
+registered handler at the cited commit. The gate reports that scenario and
+step text as an `acceptance-contract` finding and refuses the send; the
+author registers the handler (or fixes the `acceptance:` path) and re-sends.
+
 ### Refusal Contract
 
 Every refusal is machine-greppable and stable:
@@ -648,9 +887,10 @@ Every refusal is machine-greppable and stable:
 PRE_QA_GATE_FAIL <class> <ticket-id> <detail>
 ```
 
-where `<class>` is one of `ancestry`, `wiring`, or `manifest`. A gate failure
-prints one line per finding, with details and remedies. The parcel is NOT
-written to QA's inbox, so it must be re-sent after fixing.
+where `<class>` is one of `ancestry`, `wiring`, `manifest`, or
+`acceptance-contract`. A gate failure prints one line per finding, with
+details and remedies. The parcel is NOT written to QA's inbox, so it must be
+re-sent after fixing.
 
 The two remedies for ancestry findings are:
 1. Merge the stranded commit into your branch and re-send.
@@ -680,6 +920,227 @@ The one deliberate exception to "fail open" is a malformed `required_wiring`
 entry: the author is present and the fix is a one-line edit, so that fails
 closed (manifest class).
 
+## First-Hop Acceptance-Pointer Gate (BL-880)
+
+Check D above (the acceptance-contract gate) is armed only at the
+documenter→QA edge, so a stale `acceptance:` pointer minted at the coder —
+naming a `.feature`/`.feature.draft` path that no longer exists at the
+cited commit — rode through cleaner, architect, hardender, and documenter
+before anything mechanical objected. BL-877 and BL-879 hit exactly this: a
+parked draft was promoted to a live feature file, but the ticket YAML's
+`acceptance:` pointer was left citing the removed draft, and each time a
+downstream role hand-fixed spec-owned YAML mid-parcel.
+
+This gate closes that gap by running a much narrower, **existence-only**
+probe at **every** pre-QA `git_handoff` hop (coder onward), independent of
+Check D:
+
+- **Arms** for any `git_handoff` whose task name resolves to a ticket ID,
+  **except** one addressed to QA — that edge keeps calling Check D
+  unchanged, whose fuller evaluation already subsumes this exact
+  condition; arming both would just double-report the same defect under
+  two finding classes.
+- **Checks existence only** — one `git show <cited-commit>:<path>` class
+  probe against the ticket's single-line `acceptance:` declaration. No
+  Gherkin parsing, no step resolution, no draft-ness policing: a
+  legitimately parked `.feature.draft` (BL-233) passes every pre-QA hop as
+  long as it exists at the cited commit.
+- **Skips silently** (no findings, no warnings, no git/fs work at all) when
+  the declaration is blank/absent, multi-line (inline Gherkin), or the bare
+  YAML block-scalar indicator a multi-line declaration's first line
+  collapses to (`|`, `>`, with optional chomping suffix) — those shapes
+  stay a QA-edge-only concern, judged there with full context.
+- **Fails open** with a warning when the cited commit's tree cannot be
+  read at all (infrastructure trouble) — the send proceeds.
+- **Fails closed** with a finding when the tree is readable but the
+  declared path is absent there — the send is refused.
+
+The gate prints each finding as:
+```
+PRE_QA_GATE_FAIL acceptance-pointer <ticket-id> declared acceptance: path "<path>" does not exist at cited commit <commit>
+```
+naming the ticket id, the declared path, and the probed commit so the
+sender can fix and re-send without archaeology. Remedy: flip the ticket's
+`acceptance:` pointer to the correct path (or promote the parked
+`.feature.draft` in the same commit) and re-send.
+
+Implementation: `swarm_handoff.bb`'s `pointer-gate-errors` calls
+`pre_qa_gate_gather_lib.bb::pointer-findings-for-git-handoff`, which gathers
+facts (`gather-acceptance-pointer-facts`) and hands them to the pure
+decision function `acceptance_pointer_gate_lib.bb::evaluate`. The gate
+reuses the existing gather/evaluate seams rather than a parallel
+implementation, and the QA-edge path keeps calling Check D's full
+evaluation exactly as before.
+
+## Mint-Time Unreadable-Acceptance Gate (BL-922)
+
+Check D (QA-edge) and the BL-880 pointer gate (every earlier hop) both
+read a ticket's `acceptance:` field through the same narrow lens:
+`pre_qa_gate_gather_lib.bb`'s `read-yaml-field` captures only the
+`acceptance:` line's own tail, never an indented body beneath it. Write
+the field as a block scalar —
+
+```yaml
+acceptance: |
+  specs/features/BL-042-example.feature
+  (some prose about the contract)
+```
+
+— and that tail collapses to the bare indicator `"|"`. The two gates then
+behave individually correctly but jointly wrong: BL-880 deliberately
+**excludes** exactly this shape (block-scalar residue) as a QA-edge-only
+concern and skips silently at every hop from coder onward, while Check D
+tries to `git show <commit>:|` at the documenter→QA edge, fails, and
+refuses the send **fails closed** — after coder, cleaner, architect,
+hardender, and documenter have already worked the ticket. A ticket that
+names a perfectly real feature file is judged unreadable only at the last
+and most expensive edge in the pipeline, when the information needed to
+refuse it was present the moment it was minted. Measured against the live
+backlog on 2026-08-18: 53 tickets carried a block-scalar `acceptance:`, of
+which 12 named a real `specs/features/*.feature` path inside the block
+body and were armed to repeat this five-stage waste (BL-514, BL-624, and
+BL-625 were the first three live occurrences; BL-625 was repaired in
+flight rather than blocked, on the operator's explicit real-time
+instruction).
+
+**The fix reports at mint/hygiene-gate time instead**, reusing the
+existing backlog-hygiene machinery both the specifier's per-file gate and
+the repo-wide audit already run:
+
+- `acceptance_pointer_gate_lib.bb` exports `block-scalar-residue?`, the
+  single point of truth for "is this line's tail nothing but a bare `|`/`>`
+  indicator" — `backlog_hygiene_lib.bb`'s new check consults this exported
+  predicate rather than restating the regex, so the two can never drift
+  apart (the BL-897 hazard this repo has already been bitten by once).
+- `backlog_hygiene_lib.bb`'s new `unreadable-acceptance-violation` fires
+  only when BOTH halves hold: the `acceptance:` line's own tail is
+  block-scalar residue, AND the indented body beneath it contains a
+  `specs/features/....feature` path (path-charset excludes `*`, so a glob
+  mention or a not-yet-written preview filename is never misreported as
+  an already-armed pointer). A block scalar naming no feature file at all
+  — an honest not-yet-drafted placeholder — is never reported; that shape
+  is BL-626's business, a different gate for a different failure mode
+  (INVEST letter-T at mint, not an unreadable declaration).
+- Surfaced at both existing call sites: `specifier_backlog_hygiene_gate.sh`
+  (per-ticket, at mint) and `backlog_epic_milestone_audit.bb` (repo-wide).
+  The audit does not print every violation kind it collects — it filters
+  into hardcoded buckets and prints only those, while `all-clean?` still
+  counts every kind — so a violation kind added to the lib alone would
+  make the audit exit 1 having printed nothing about why. The audit now
+  names `unreadable-acceptance` explicitly, alongside the pre-existing
+  `missing-epic`/`missing-milestone` buckets.
+- The gate is read-only with respect to ticket YAML: it reports and exits
+  non-zero, and never repairs a ticket in place — the role that owns a
+  ticket is the only writer of it.
+
+Violation line shape:
+```
+UNREADABLE-ACCEPTANCE <id>  <path>  (acceptance: is a block scalar hiding <feature-path> - rewrite as a single-line pointer)
+```
+
+**The eleven armed tickets found live were repaired in the same pass**,
+per the precedent `qa_e2e:`/`qa_e2e_procedure:` already sets on 36 other
+tickets: `acceptance:` becomes the bare single-line pointer, and any prose
+that rode inside the block moves to a sibling field. Two of the eleven
+(BL-579, BL-580) name a feature file that was never written — repairing
+their shape does not hide that; as a single-line pointer, the BL-880 gate
+now catches the dangling path at the *first* hop instead of the last,
+which is the intended outcome, not a regression.
+
+`swarmforge/backlog-schema.md`'s `acceptance:` row previously read "both
+forms are read" — false against the live gates, corrected in the same
+pass this ticket was minted (a specifier-owned prose file, landed directly
+per the specifier's own BL-798 rule rather than scheduled as a stage of
+this ticket).
+
+Acceptance:
+`specs/features/BL-922-unreadable-acceptance-declaration-caught-at-mint.feature`.
+
+## Review-Forward Evidence Gate (BL-806, widened by BL-950)
+
+A structural backstop for Article 4.4's "commit your explicit-NONE evidence
+(or your fix) and forward THAT commit" — a clean review pass that leaves no
+commit of its own is indistinguishable, in the ancestry QA audits, from a
+skipped stage. BL-536 (2026-08-04) proved prompt text alone isn't enough:
+architect and hardener both ran real passes but fast-forward-merged the
+received commit and forwarded that same bare hash, so QA's ancestry audit
+couldn't tell the passes happened — a full bounce and re-entry cycle burned
+re-running work that had already been done once.
+
+- **Arms** for a `git_handoff` sent by one of the four forward-chain review
+  roles — **cleaner, architect, hardender, documenter** — moving forward
+  (`required_stages_lib/routes-forward?`, the same direction predicate
+  BL-606 routing already uses, never an optional header) to exactly one
+  recipient, **or** for QA's own **approval hop to the coordinator**
+  (BL-950, below). `coder` is excluded (nothing "received" yet to compare
+  against on a fresh task); QA's other send path — integration on `main`
+  — stays out of scope, to avoid entangling integration mechanics.
+- **Refuses** when the outgoing `commit:` is exactly the commit that role
+  received for the same `task:` — read from the sender's own `in_process`
+  mailbox (the newest matching `git_handoff` parcel, since batch roles hold
+  several at once). A bounce (backward direction), a `note`, a
+  `rule_proposal`, and any send carrying a non-blank `reroute_reason` (the
+  BL-425 cannot-fix-forward-onward exemption) all pass through untouched —
+  the gate's refusal surface is exactly review-role forward-direction
+  `git_handoff`s, plus the one QA-approval-hop shape below.
+- **Fails open** — never blocks — when there is nothing to compare against:
+  no received `git_handoff` for the task in the sender's `in_process` box
+  (an initiating send, or a drained box), an unreadable box, or a sender
+  role with no mailbox at all. The gate must never strand a legitimate
+  send.
+
+A refusal reads:
+```
+Cannot send git_handoff for <task>: commit <hash> is exactly the commit
+<hash> already received for this task - Article 4.4 requires a clean
+review pass to commit its explicit-NONE evidence (or its fix) and forward
+THAT commit, never the bare received hash. If <role> legitimately cannot
+act on this parcel, route it onward with a reroute_reason instead of a
+same-commit forward.
+```
+naming the task, the offending hash, and the `reroute_reason` escape hatch
+so the sender can fix and re-send without archaeology.
+
+Implementation: `review_forward_evidence_gate_lib.bb` splits the pure
+decision (`blocked?`, BL-654 property-tested — sender/type/recipient-count/
+direction/reroute-blank/commit-equality, all must hold) from its one
+filesystem read (`received-commit-for-task`, itself fail-open on every
+"nothing to check" shape). Wired live into `swarm_handoff.bb`'s validate
+path alongside the existing ticket-close, duplicate-chain (BL-760), and
+pre-QA (BL-531) gates — not only reachable through the lib.
+
+### QA's approval hop joins the gate (BL-950)
+
+BL-806 originally excluded both of QA's send paths (approval-to-coordinator
+and integration-on-`main`) together. On 2026-08-19, BL-585's QA pass
+dequeued at 07:05:47Z and sent its approval to the coordinator at
+07:10:31Z — four minutes nine seconds later, naming the **documenter's own
+received commit**, with no `backlog/evidence/BL-585-qa-*` file anywhere in
+history. The pass genuinely ran (mailbox trail confirms dequeue, a
+merge-up broadcast, and the approval send), but nothing durable proved it
+— the identical BL-536 shape, one hop past where BL-806 reached. The
+approval was also the last hop before the ticket closed with a red
+`extension/conciergeTick.test.js` already on `main` from BL-585's own
+change (BL-949) — a pass that took four minutes cannot have run the
+extension unit suite.
+
+Adding `QA` to the review-roles set alone would have changed nothing:
+`required_stages_lib/routes-forward?`'s `canonical-order` has no
+`coordinator` entry, so `routes-forward? "QA" "coordinator"` is `false`
+and the existing direction test would never fire (confirmed before
+implementing, not assumed). The approval hop instead gets its own
+narrow direction predicate, `qa-approval-hop?` — sender `QA` **and**
+recipient `coordinator`, nothing else — OR-ed into `blocked?`'s direction
+test. `canonical-order` itself is untouched, so `route-required-stages`'s
+other callers never see a `coordinator` stage; every other conjunct
+`blocked?` already required (single recipient, `git_handoff` type, blank
+`reroute_reason`, commit equality) still applies unchanged to this hop, so
+a QA bounce, a QA merge-up `note`, a marked-detour approval, and an
+approval naming the commit QA actually made all pass through exactly as
+before — only a same-commit approval to the coordinator is new-refused.
+QA's integration send (landing on `main`, pushing origin) remains excluded,
+for the same entangles-integration-mechanics reason BL-806 gave.
+
 ## Dynamic Routing via Specifier-Declared required_stages (BL-606)
 
 When the `required_stages_routing_enabled` config flag is true (default false),
@@ -703,11 +1164,20 @@ changes, config tweaks, pure refactors with existing coverage).
 2. **Routing rewrites the recipient** — when `swarm_handoff.sh` sends a
    `git_handoff` with a task name, it:
    - Extracts the ticket ID from the task
-   - Reads the ticket's `required_stages` from `backlog/active/<id>*.yaml`
+   - Reads the ticket's `required_stages` from `backlog/active/<id>*.yaml` —
+     the freshest resolvable ref (`main`/`origin/main`, whichever
+     `git rev-list --left-right --count` shows ahead) is tried first, so a
+     declaration the coordinator promoted is visible even when the sender's
+     own worktree has not yet merged it; the sender's working tree is the
+     fallback for a root with no resolvable ref (BL-992)
    - If the flag is ON and required_stages is valid, computes the next required
      stage after the current one
    - Rewrites the handoff `to:` field to skip directly to that stage
    - Records the skipped stages in the handoff envelope and in a durable log
+     — **recording runs for every forward hop regardless of declaration
+     state** (absent, invalid, or the sender's worktree simply lacking the
+     field yet); only the *rewrite* is gated on a usable declaration
+     (BL-951, see `docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md`)
 
 3. **Skipped stages are visible** — the handoff trail shows:
    - `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change` envelope header (grammar: `ticket-id from->to skipped=a,b reasons=stage:reason;...`)
@@ -753,7 +1223,7 @@ the old predictable pipeline.
 
 `.swarmforge/routing-skips.jsonl` (one JSON event per line) records every skip:
 
-Envelope header grammar: `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change`
+Envelope header grammar: `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change`. A hop whose `required_stages` declaration is present but invalid also appends `rejected="<reason>"` (BL-951); the jsonl line carries the same reason under `rejection-reason`.
 
 ```json
 {"ticket-id":"BL-042","from":"coder","to":"QA","skipped":["cleaner","architect","hardender","documenter"],"reasons":{"cleaner":"style-only, no code logic","architect":"configuration change","hardender":"no new code paths","documenter":"no user-facing docs change"},"sender":"coder","created_at":"2026-07-23T14:30:15Z"}
@@ -856,6 +1326,186 @@ resolve the wrong pane, so rotation can print success while the resident
 stays on the old role. The same OpenRouter `-e` injection as chase/ensure
 applies on rotate and idle-clear respawn.
 
+### Mono-router wake/rotate resolves from handoffd's project root, not cwd (BL-812)
+
+`handoffd.bb` is launched as `bb handoffd.bb <project-root>`, but its process
+`cwd` is not guaranteed to equal that argv root — observed live with `cwd`
+sitting at the launcher's home directory. Every root-scoped read in
+`handoff_lib.bb` (`roles-tsv-path`, `mono-router-resident-session`,
+`tmux-socket`, `launch-script-path`, `mono-router-active-role-path`, and
+transitively `wake-session` / `rotate-resident-to!`) went through
+`target-root`, which shelled `git rev-parse --git-common-dir` from `cwd`. Under
+the mismatch, `target-root` silently resolved to the wrong project: the
+resident looked absent, chase degraded to `:wake-own-session`, and inject
+targeted a session mono-router never creates (`swarmforge-architect` etc.),
+producing an unbounded `chase-wake-error … tmux send-literal failed` storm
+while the real parcel sat in a dormant mailbox — a full swarm starve.
+
+`handoff_lib.bb` now exposes `set-project-root!`, a process-wide `atom`
+override (not a `binding` — a thread-local dynamic var would not be visible to
+the shutdown-hook thread or any sweep thread). `handoffd.bb` calls it once at
+startup, immediately after parsing `project-root` from argv and before any
+handoff-lib call executes, so every root-scoped read resolves against the
+daemon's real project regardless of its process `cwd`. `target-root` prefers
+the explicit override and falls back to the pre-existing `git-common-dir`
+lookup when no override is set — the fallback is deliberately preserved
+byte-for-byte, because `rotate_to_role.bb`, `operator_runtime.bb`, and
+`operator_lib.bb` call these same functions from a role's linked worktree and
+rely on it.
+
+Acceptance: `specs/features/BL-812-handoffd-cwd-breaks-mono-router-wake-remap.feature`.
+E2e: `swarmforge/scripts/test/test_handoffd_bl812_cwd_invariant_root_resolution.sh`.
+
+### Mono-router resident-invoked rotation gate on unfinished in_process (BL-805, BL-926)
+
+The resident forwards its work (`swarm_handoff.sh`), then rotates. Nothing
+completes the parcel it *received* until it runs `done_with_current.sh` —
+skip that step and the handoff file sits in the departing role's
+`inbox/in_process/`. Left there it caused two faults: the babysitterd
+stuck-in-process check (row 5 above) fired a false WARN after 30 minutes for
+a parcel that was actually finished, and on the next rotation back into that
+role, `ready_for_next.sh` checked `in_process/` first and resumed the
+already-forwarded parcel — a wasted turn and a duplicate-forward risk.
+
+Pack prompts have said "run `done_with_current.sh` before you rotate" since
+commit `897df660`, but a prompt checklist step is a rule the model can skip.
+BL-805 adds a structural backstop at the only resident-invoked rotation
+entry point: `rotate_to_role.sh` → `rotate_to_role.bb` →
+`handoff-lib/respawn-as!`. Before respawning the pane, `respawn-as!` checks
+the departing role's own `inbox/in_process/` (the role read from
+`.swarmforge/mono-router-active-role`) for a real `*.handoff` file:
+
+- **A real parcel is still there, and the rotation target is a DIFFERENT
+  role** → refusal: nonzero exit, the pane is never respawned, and the
+  message names `done_with_current.sh` as the fix.
+- **A real parcel is still there, but the rotation target IS the role that
+  owns it** (BL-926) → proceeds. Rotating a pane INTO the role whose
+  mailbox holds the parcel abandons nothing — it is the only way that
+  parcel gets picked up, which is exactly the case BL-921's live-identity
+  check produces: a resident whose stale `mono-router-active-role` marker
+  disagrees with its live persona needs to rotate into the marker's role to
+  drain it. Before BL-926 the gate refused this rotation too, live-stranding
+  a parcel that BL-921 had just decided the daemon should rotate the pane
+  to reach (measured: BL-640 stranded ~62 minutes on 2026-08-18). The
+  in_process file itself is untouched by the rotation either way — nothing
+  is drained, moved, or completed; the owning role still resumes it through
+  `ready_for_next.sh`'s in_process-first check after the respawn.
+- **Only sidecars are there** (`.claim-progress.json`, `.nudge`, or any
+  filename that merely contains the substring `.handoff` without being a
+  true `*.handoff` parcel file) → rotation proceeds normally; sidecars never
+  block.
+- **The departing role can't be determined** (marker file missing, blank, or
+  naming a role absent from `roles.tsv`) → fails **open** (rotates) rather
+  than guessing an identity and gating on the wrong mailbox.
+
+**Force override:** set `SWARMFORGE_ROTATE_FORCE=1` to rotate anyway over a
+real stuck parcel — for emergencies and tests. The gate still warns loudly on
+stdout, naming the parcel left behind, so the override is never silent. The
+force check runs BEFORE the BL-926 same-role check, so a real block plus
+force always reads `:proceed-forced` — ownership never silently swallows
+that signal.
+
+**Still out of scope (BL-927, paused):** BL-926 only fires when the
+rotation target names the SAME role the raw active-role marker names. A
+marker that has diverged to a THIRD role — neither the departing pane's
+live persona nor the rotation target — never satisfies the equality check,
+so the gate still protects a mailbox the pane does not own. BL-927 closes
+that residual case by resolving the departing role from the pane's live
+tmux identity instead of the raw marker.
+
+**Daemon rotation is deliberately never gated.** `handoffd.bb`'s own chase
+sweep calls `handoff-lib/rotate-resident-to!` *directly*, bypassing
+`respawn-as!` and this gate entirely — gating the daemon path would risk
+deadlocking chase-driven drain on the very parcel it is trying to clear. The
+decision logic itself is a pure function
+(`mono_router_lib.bb/rotate-gate-decision`) fed an already-`*.handoff`-
+filtered blocking-file argument, so this split is enforced by which caller
+feeds it, not by a runtime flag.
+
+Acceptance: `specs/features/BL-805-rotate-gate-on-unfinished-in-process-parcel.feature`,
+`specs/features/BL-926-rotate-gate-refuses-rotation-into-the-parcels-own-owner.feature`.
+E2e: `swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh`,
+`swarmforge/scripts/test/bl926_rotate_gate_owner_property_runner.bb`.
+
+### Mono-router rotation recomposes the role prompt from current sources (BL-911, BL-917)
+
+Before BL-911, a role's system prompt was composed exactly once — at the
+swarm's last full `./swarm` launch — into `.swarmforge/prompts/<role>.md`,
+and every rotation into that role re-executed a launch script that names
+that file by path. Nothing on the rotation path ever recomposed it. An
+accepted `rule_proposal` (Article 5 / BL-035) or a landed constitution
+amendment sat on `main`, in force for no rotating role, until the next full
+relaunch — silently, since `main` shows the rule present and the commit is
+real.
+
+`rotate-resident-to!` (`swarmforge/scripts/handoff_lib.bb`) is the one
+chokepoint both rotation drivers pass through — the resident's own
+`rotate_to_role.bb` path (via `respawn-as!`) and `handoffd.bb`'s
+daemon-driven chase rotation, which calls `rotate-resident-to!` directly —
+so the fix sits there rather than in either caller. Immediately before the
+pane respawn, it now calls `recompose-role-prompt!`, which reuses
+PromptEngine's existing `compose` (the single composition authority,
+BL-546 — never a second composer) with the exact agent/model/two-pack?/
+overlay-prompt context `write_agent_instruction_file` captured in the
+composed prompt's own `.metadata.json` sidecar at launch time (BL-563
+Slice 2). Recomposing with launch-time composition choices against
+current source content means the same role/model/pack shape, just fresh
+prose.
+
+**A recompose failure never blocks the rotation** (the ticket's own
+invariant 2): a missing/unreadable metadata sidecar, an empty compose
+result, or `compose` itself throwing all degrade to `{:ok false :reason
+...}`, logged loudly to stderr, and the pane still respawns — on the
+prompt it already had. The prompt file on disk is left completely
+untouched on any failure path.
+
+**Scope at BL-911's landing — two named drivers, not every prompt
+re-exec.** BL-911 covered exactly the two rotation entry points the ticket
+named: `rotate_to_role.bb`'s resident-invoked path and `handoffd.bb`'s
+chase rotation. It did **not** cover `respawn-self!` (same file), the
+re-exec `maybe-clear-at-idle-boundary!` (BL-089) uses when a role finishes
+a task, stays the same role, and that role's `roles.tsv` idle-clear column
+is `on` — that path booted on whatever `.swarmforge/prompts/<role>.md`
+already held. The architect flagged this as the same class of staleness
+via a third, unnamed entry point (evidence:
+`backlog/evidence/BL-911-architect-followup-note-20260817.md`) but
+confirmed it inert on that swarm: idle-clear is opt-in and every role's
+`roles.tsv` column read `off`, so `respawn-self!` never fired. Sent to the
+specifier as a `note` to judge whether it warranted its own ticket.
+
+**BL-917 closes that gap.** `respawn-self!` re-execs the CURRENT role's
+launch script (the idle-boundary re-exec); `rotate-resident-to!` /
+`respawn-as!` re-exec to become a DIFFERENT role. The two are easy to
+conflate and are not the same trigger — BL-911's invariant 1 was phrased
+over rotation, so the idle-clear path slipped between the words. Now
+`respawn-self!` calls `recompose-role-prompt!` immediately before its own
+`respawn-pane`, the same chokepoint and failure posture as
+`rotate-resident-to!`: a recompose failure warns loudly to stderr but never
+blocks the respawn, and the role boots on the prompt it already had.
+Verified dormant, not live, at spec time — `.swarmforge/roles.tsv` column 8
+still reads `off` for all eight roles and this ticket does not flip it —
+which is precisely why closing it now mattered: flipping one `roles.tsv`
+column to `on` is a config change nobody would expect to have
+prompt-freshness consequences, and would have silently re-armed a defect
+the swarm already paid for once. With idle-clear off, `respawn-self!` is
+never reached at all (gated at the source by `idle-clear-enabled?`,
+unchanged), so nothing new recomposes on every parcel completion — a
+dedicated scenario (07) guards this no-op stays a no-op.
+
+**Out of scope**, both tickets: `articles/reference/` on-demand
+elaborations (BL-640, a distinct build-output-vs-worktree root cause),
+`.swarmforge/launch/<role>.sh` itself (the other launch-time build output,
+which changes far less often), and turning idle-clear on for any role
+(BL-089's opt-in decision, untouched).
+
+Acceptance: `specs/features/BL-911-rotation-recomposes-the-role-prompt.feature`
+(BL-917 extends this file with scenarios 05-07 rather than opening its own,
+since the defect was an incomplete enumeration of re-exec paths on the same
+feature).
+E2e: `swarmforge/scripts/test/test_rotate_recomposes_role_prompt.sh`,
+`swarmforge/scripts/test/bl911_rotation_recompose_test_runner.bb`,
+`swarmforge/scripts/test/bl917_recompose_never_loses_prompt_on_failure_property_runner.bb`.
+
 ### Mono-router aged-note actionability (BL-576)
 
 Under `config rotation router`, the handoff daemon's chase sweep decides which
@@ -894,6 +1544,121 @@ zero, or negative values degrade to default. Cannot be disabled (zero/negative
 would reinstate broadcast thrash). For tuning and live investigation, see
 `docs/how-to/BL-576-aged-note-actionability-mono-router.md`.
 
+### Mono-router rule_proposal actionability and chase redirect (BL-795)
+
+Three coupled chase-sweep gaps let a mono-router pack starve itself with real
+work in flight (observed live 2026-08-03: the resident sat idle at home while
+hardener held `in_process` work, because none of the pokes chase sent could
+reach it). All three are fixed together and are one invariant set, not
+independent tunables:
+
+1. **`rule_proposal` is immediately actionable**, joining `git_handoff` (never
+   the `note_actionable_after_ms` aging path `note` uses). A directed Article
+   5.1 `rule_proposal` parcel is addressed to one role, not a broadcast, so it
+   never needs the BL-576 broadcast-thrash protection — leaving it out meant a
+   `rule_proposal` sitting in a dormant role's `inbox/new` logged
+   `chase-rotate-skip-broadcast` forever. `actionable-mail?`
+   (`mono_router_lib.bb`) and `role-mail-row` (`handoffd.bb`) both count
+   `rule_proposal` mail alongside `in_process`/`git_handoff`/aged-note counts,
+   and it participates in the same BL-636 best-priority ranking as any other
+   actionable parcel.
+2. **A chase poke at a non-preferred role redirects instead of dropping.**
+   Previously, when chase polled a role that was not
+   `preferred-mono-rotate-role`, `chase-rotate-to!` logged
+   `chase-rotate-skip-not-preferred` and returned without rotating — so if the
+   preferred role's own poke was itself gated (busy/cooldown) that sweep, the
+   preferred role's actionable work was never reached from any poke. Now a
+   non-preferred poke immediately attempts to rotate onto the preferred role
+   instead (`chase-rotate-redirect` log line), sharing the same gate+rotate
+   path (`attempt-resident-rotate!`) the direct-poke case already used.
+3. **An exhausted `alert` keeps attempting a resume wake**, instead of
+   permanently abandoning a dormant holder. Once `decide-stuck-action` returns
+   `"alert"` after `maxChases`, `sweep-in-process!` (`chase_sweep_lib.bb`) still
+   arms `chase-escalations.json` (so the human alert fires), but now also keeps
+   applying the same stuck nudge every sweep afterward — a standing-pane pack
+   can absorb the continued wake harmlessly, and a dormant mono-router rotate
+   target has no human-attachable session to fall back to, so stopping the
+   wake at escalation time was a silent permanent stall, not a safety measure.
+
+None of the three change the BL-576 fresh-note broadcast-thrash guard — a
+fresh `note` alone is still non-actionable until it ages in.
+
+**Observing it:** `chase-rotate-redirect <polled-role> <preferred-role>` in
+`handoffd.log` marks case 2 firing; a `rule_proposal` no longer producing
+`chase-rotate-skip-broadcast` marks case 1; repeated stuck-nudge log lines
+after the escalation alert has already fired marks case 3.
+
+**Verifying the wiring:**
+`bash swarmforge/scripts/test/test_handoffd_rule_proposal_rotate_wiring.sh`
+drives the real `--print-preferred-rotate-target` path against fixture
+mailboxes (scenario A: `rule_proposal` alone is preferred; B: a fresh `note`
+alone is not; C: `in_process` outranks a `rule_proposal`). See
+`backlog/evidence/hotfix-2026-08-03-mono-router-starvation.md` for the
+original live incident and `backlog/evidence/BL-795-hardener-verify-pass.md`
+for the full adoption test run.
+
+### Mono-router chase verifies live pane identity (BL-921)
+
+`.swarmforge/mono-router-active-role` is a marker file, not a live fact.
+Two chase decisions used to trust it alone: `dormant-mailbox-chase-action`
+returned `:wake-resident` whenever `active-role` equaled the target role,
+and `should-rotate-resident?` refused to rotate (`:already-active`) on the
+same equality. Neither ever asked the pane itself. When the marker
+diverged from what the resident pane was actually running, the wake landed
+on the wrong persona — it ran `ready_for_next.sh` as itself, read its own
+empty mailbox, got `NO_TASK`, and idled, correctly for who it thought it
+was, while the target role's real mail sat untouched and the next sweep
+made the identical decision roughly every 20 seconds.
+
+**Measured live, 2026-08-18:** the marker read `cleaner` from ~03:48Z while
+the resident pane was running `coder.sh` (`SWARMFORGE_ROLE=coder`).
+`.swarmforge/telemetry/wake-attribution-2026-08.jsonl` recorded 535 landed
+wakes for `cleaner` that day, every one `handoffPresent?: true`, every one
+naming the same unclaimed parcel, on a ~19–20s cadence for hours — while
+cleaner's mailbox genuinely held two QA merge-up notes and three
+`git_handoff`s for BL-913.
+
+**The fix.** `resident-live-role` (`swarmforge/scripts/handoffd.bb`) probes
+the resident pane directly: `tmux list-panes -F '#{pane_start_command}'`,
+matched against `launch/([^/]+)\.sh` — the exact launch script
+`rotate-resident-to!` installs on every respawn, so the live role name is
+read off the pane's own command line, never off the marker. This feeds a
+new `live-role` argument into both pure decision functions
+(`swarmforge/scripts/mono_router_lib.bb`):
+
+- `dormant-mailbox-chase-action`'s `:wake-resident` now requires the
+  marker AND the live identity to both agree with the target role.
+- `should-rotate-resident?`'s `:already-active` requires the same double
+  agreement — a stale marker claiming the resident is already the target
+  can no longer refuse the very rotate that would fix it.
+
+Both routed through one predicate, `live-role-agrees?`: a `live-role` that
+is `nil`, blank, or otherwise unreadable is treated as **divergence, never
+as agreement** — an identity the daemon can't confirm must never be
+trusted more than one it can prove disagrees. The check only ever
+*tightens* the gate: every input that resolved to `:wake-resident` or
+`:already-active` with the marker and the live identity in agreement is
+byte-identical to before; a disagreement or an unreadable identity now
+takes the pre-existing `:rotate` / `respawn-as!` path, which makes the
+identity true instead of assuming it.
+
+**Deterministic acceptance without a wall-clock wait.** `handoffd.bb`
+gained `--chase-sweep-once`, a one-shot-and-exit flag for `chase-sweep!`
+specifically (deliberately not folded into the pre-existing
+`--sweep-once`, which runs delivery plus the ambulance/watchdog/nudge
+sweeps but never `chase-sweep!`) — needed to prove "N chase sweeps never
+inject wake text for a diverged live identity" deterministically, without
+backgrounding the daemon or waiting on its real ~10s cadence.
+
+**Out of scope, deliberately:** *why* the marker diverges from the pane in
+the first place. The 2026-08-18 divergence dated to ~03:48Z, the same
+minute the tmux sessions were created — pointing at the boot path
+(`resolve-boot-role`, BL-648) rather than at rotation. This ticket stops
+the storm and un-strands the mail regardless of how the divergence arose;
+the boot-origin question is a separate slice if it proves real.
+
+Acceptance: `specs/features/BL-921-chase-verifies-live-pane-identity.feature`.
+
 ### Dispatch-gap sweep
 
 The daemon's existing chase/nudge sweep only watches inbox mail (queued or
@@ -923,6 +1688,142 @@ ticket id). Two complementary closes run from that scan, both via the normal
    writes `assigned_to` itself; intake and routing remain the coordinator's
    exclusive duty. Once that nudge note exists as a trail, the item is not
    re-nudged.
+
+### Open-slot nudge sweep (BL-798)
+
+Before this ticket, `open-slot-nudge-draft-lines` sent the coordinator a
+fixed, ticketless phrase — `open slot + paused work - promote+route` —
+whenever `backlog/active/` was under cap and `backlog/paused/` had eligible
+work. Every nudge looked identical, so a live incident (SUP-1, 2026-08-03)
+saw the coordinator treat the Nth identical nudge as noise and clear it
+without ever promoting a candidate: three approved defects starved ~2.5h on
+an idle swarm.
+
+On the same sweep cadence as the dispatch-gap sweep above
+(`chase_sweep_lib.bb` / `handoffd.bb::open-slot-nudge-sweep!`), when
+`decide-open-slot-nudge?` finds capacity under `active_backlog_max_depth`, at
+least one eligible paused ticket, no pending open-slot note already sitting
+in the coordinator's mailbox, and the cooldown has elapsed
+(`open-slot-nudge-cooldown-ms`, default 5 minutes):
+
+1. **Name the top candidate.** `top-open-slot-candidate` ranks every
+   `backlog/paused/*.yaml` by Article 3.2.4 ordering (expedited defects
+   first, fail-closed on missing `severity:`, then ticket priority) and
+   reports its `human_approval` state. The nudge message becomes `open slot
+   + paused work - promote+route: <BL-id>[ awaiting approval]` — never the
+   bare ticketless phrase once a real candidate exists (the 0-arg form
+   survives only as a defensive fallback for a nil candidate, which
+   production never actually calls with one).
+2. **Track unacted nudges per candidate.** `decide-open-slot-escalation`
+   keeps a bounded counter for the SAME top candidate across sweeps (a
+   different or newly-promoted candidate resets it). Below the escalation
+   threshold — default 3, configurable via `config
+   open_slot_escalation_threshold <n>` in `swarmforge.conf` — each tick
+   sends the named nudge above.
+3. **Escalate past the threshold, then go quiet.** At or above the
+   threshold, the first tick sends a standing operator alert instead of
+   another nudge (Telegram OPERATOR topic + email,
+   `send-open-slot-escalation-alert!`), naming the candidate and how many
+   nudges it survived unacted. Every tick after that is silent (`:none`)
+   for that candidate — no repeat escalation, no further identical nudge —
+   until a new top candidate appears. A quiet sweep is therefore not
+   evidence the starvation cleared; it means the same candidate is still
+   waiting and the operator has already been told once.
+
+The coordinator's own "never clear an open-slot nudge without recording a
+cause" duty — promote the named candidate, or durably record the specific
+blocking reason (cap reached, no eligible candidate, orthogonality conflict,
+throttle engaged) — is documented in `swarmforge/roles/coordinator.prompt`,
+not here; it is a coordinator judgment call, never something this sweep
+enforces or promotes on its own.
+
+### Dropped-parcel nudge sweep (BL-719)
+
+The dispatch-gap sweep above answers exactly one question: **was this
+ticket EVER dispatched?** Any trail at all — even a `note` whose message
+text merely mentions the id — marks it dispatched permanently, so a ticket
+dispatched once and then dropped mid-pipeline has no detector of any kind:
+it sits in `backlog/active/` with nothing to wake it. This is the gap
+BL-714 (2026-07-30) fell into — the hardener merged its tip into another
+ticket's parcel and forwarded under that other ticket's task name only, so
+BL-714's diff travelled downstream anonymously while its own identity
+stopped moving. Its id appeared in five different `sent/` files (one of
+them a note *about* the stall), so the dispatch-gap sweep saw it as
+dispatched and would never have fired for it again. Nothing automated
+surfaced it; QA caught it by eye, at review, hours later.
+
+On the same sweep cadence as its siblings (`chase_sweep_lib.bb` /
+`handoffd.bb::dropped-parcel-sweep!`), the daemon flags an active item when
+all three hold:
+
+1. **Has a trail** — its id appears somewhere in the same
+   dispatch-gap-scan-dirs trail set (`:new :in_process :completed :sent
+   :outbox`, every role) the dispatch-gap sweep already uses, so
+   dispatch-gap is provably silent on it.
+2. **No live mail anywhere** — no parcel for its id currently sits in ANY
+   role's `:new` or `:in_process` (scoped to every role, not just the
+   assignee — the parcel may have progressed to, then dropped from, a
+   later stage).
+3. **Trail gone stale** — its newest trail event (`enqueued_at` or
+   `created_at`, never file mtime) is older than
+   `dropped_parcel_stall_threshold_minutes` (default 45 minutes,
+   `swarmforge.conf`). A `nil` newest-trail timestamp fails closed, never
+   open.
+
+The sweep's own prior nudges are excluded from "newest trail event" (they
+would otherwise re-arm themselves as fresh trail and never go stale again).
+On a match, past `dropped_parcel_cooldown_minutes` (default 30 minutes)
+since the last nudge for that same ticket, the daemon sends a `note` **to
+the coordinator only** — `"<id> no parcel in flight - possible drop."` —
+via the normal `swarm_handoff.sh` outbound path. The sweep never routes,
+assigns, or promotes; which stage owns a dropped parcel and what commit it
+should carry are routing judgements reserved to the coordinator (Article
+1.1). Delivering any parcel for that ticket into a role's inbox stops the
+nudging on the next tick, since live-mail? then holds.
+
+### Batch-claim-progress suspect sweep (BL-678)
+
+The dropped-parcel sweep above answers "was this ticket EVER dispatched,
+then dropped mid-pipeline?" — it has nothing to say about a parcel that is
+currently, healthily, claimed by a **batch** role (cleaner, hardener) with a
+live owner still working it. Before BL-678, a batch-mode claim
+(`ready_for_next_batch.bb`) wrote no progress record at all, so a healthy
+in-flight batch parcel was indistinguishable from a lost one — on
+2026-07-25 this nearly caused the coordinator to re-forward a duplicate
+mid-run (see `docs/how-to/BL-648-relaunch-resume-orphan-claims.md` for the
+sibling **dead**-owner half of the same source near-miss, handled at
+relaunch instead of mid-run).
+
+`ready_for_next_batch.bb` now writes a `.batch-claim-progress.json` sidecar
+(`batch_claim_progress_lib.bb`) the instant a batch parcel is claimed —
+never lazily on a later sweep tick — naming the owner role, parcel id,
+claim instant, last-progress instant, and last-seen commit. On the same
+sweep cadence as its siblings (`chase_sweep_lib.bb` /
+`handoffd.bb::batch-claim-progress-sweep!`), the daemon compares each held
+batch item's owning-worktree `HEAD` against the sidecar's last-recorded
+commit:
+
+- **Commit advanced** — the sidecar's last-progress instant refreshes; the
+  item is healthy.
+- **No advance, under `batch_claim_progress_stale_threshold_minutes`**
+  (default 20 minutes) — normal mid-task quiet time; nothing happens.
+- **No advance past the threshold** — the item is a suspect. The sweep
+  sends a `note` (priority `00`) **to the coordinator only** —
+  `"<id> batch claim stale <N>m since progress, not re-delivered."` — past
+  `batch_claim_progress_cooldown_minutes` (default 30 minutes) since the
+  last suspect note for that same item.
+
+Same posture as the dropped-parcel sweep: the sweep never routes, assigns,
+promotes, re-forwards, or re-delivers the parcel itself — it only ever
+surfaces a named, aged suspect to the coordinator. It is deliberately
+separate from BL-528's task-mode claim-idle escalation ladder
+(nudge → bounce → halt): this mechanism assumes a live owner throughout and
+only ever answers "is it progressing", never "is it alive". The sidecar is
+registered in `handoff_lib.bb`'s sidecar suffixes, so the existing
+terminal-cleanup convention (every batch completion calls
+`remove-sidecars-of!`) retires it automatically when the batch finishes.
+See `docs/how-to/BL-678-batch-claim-progress-sidecar.md` for the full
+runbook.
 
 ### Push sweep
 
@@ -962,6 +1863,25 @@ other commit's changed paths. This never force-pushes or rewrites history —
 only the deploy-time gate (BL-629), detection/alerting (BL-631), and
 commit-time guard (BL-632) are separate, companion protections.
 
+**"QA ancestor" itself is bounce-aware (BL-952).** QA merges a parcel into
+`swarmforge-QA` in order to review it, so a parcel QA then BOUNCES stays
+reachable from that ref forever — plain ancestry alone cannot distinguish
+"QA approved this" from "QA merged this to look at it and rejected it".
+`is_qa_ancestor.sh` (the one shared predicate script behind both this sweep
+and `check_pipeline_code_on_main.sh`) now checks ancestry AND the durable
+bounce verdict QA already writes, unioning two stores — the machine-local
+JSONL `record-bounce.js` appends under `.swarmforge/bounces/`, and tracked
+ticket-YAML `bounce_history` entries under `backlog/**` — either naming the
+sha vetoes approval. Exit 0 is approved (ancestor AND no bounce verdict on
+file); exit 1 is a clean refusal (not an ancestor, or a bounce record names
+it — the bounce case prints a `bounced: <sha> ... (BL-952)` line to stderr
+naming the record); any other exit is undeterminable (unresolvable sha,
+missing ref, or an unreadable/corrupt verdict store) and every caller fails
+closed on it, never reading unknown as approved. In `qa-gate-decision`
+(`push_sweep_lib.bb`) a bounced ahead-commit is checked FIRST and refused
+under its own `:bounced-parcel` reason — before the bookkeeping allowlist or
+the trivial-merge exemption ever get a chance to launder it.
+
 Both alarms are delivered via the shared `daemon_alarm_lib.bb` email sender
 and follow the project's delivery-based arming rule: a transient send failure
 never arms the "already alarmed" flag (it retries, bounded), while a terminal
@@ -984,6 +1904,47 @@ Responsibilities:
 - Read that role's receive mode from `.swarmforge/roles.tsv`.
 - Dispatch to `ready_for_next_task.sh` for `task` mode.
 - Dispatch to `ready_for_next_batch.sh` for `batch` mode.
+
+### Reference-freshness pre-turn guard (BL-640)
+
+`ready_for_next.bb` runs one check before any of the above dispatch logic:
+a stale `swarmforge/constitution/articles/reference/` elaboration must
+never be silently acted on. Top-level `articles/*.prompt` files are inlined
+into the composed prompt on every respawn, so an amendment there is
+delivered automatically; the on-demand `reference/` elaborations are read
+straight from each role's own worktree, so an amendment landed on `main`
+reaches no one until that worktree happens to merge — the 2026-07-25 gap
+where an Article 5.1 bounce-revert correction left three role worktrees
+instructing reviewers to run a check that could never pass.
+
+`reference_freshness_lib.bb` (pure) compares a sha256 of every file the
+worktree currently has under that directory against the same files' content
+at whichever of `main` / `origin/main` is actually ahead (`git rev-list
+--left-right --count main...origin/main` — see the workflow rule "A Prior
+QA Bounce Is Not In Your Worktree", BL-340, on why the ahead ref can be
+either one depending on when QA last pushed and when the master checkout
+last merged it in). Any path present on the ahead ref with different
+content — or missing from the worktree entirely — is stale.
+
+- **Fresh** (no stale paths, or the check can't run — no `main` ref, no
+  `reference/` dir, git unavailable): passes through silently, no cost to
+  the normal case.
+- **Stale**: the turn is refused with exit code 2 and a
+  `STALE_REFERENCE_ELABORATION` message naming every drifted file:
+  ```
+  STALE_REFERENCE_ELABORATION: this worktree has not merged an amendment to the
+  swarmforge/constitution/articles/reference file(s) - an inlined constitution
+  rule and its on-demand elaboration could contradict each other until `main`
+  is merged:
+    - swarmforge/constitution/articles/reference/workflow-detailed.prompt
+  Merge main, then run ready_for_next.sh again.
+  ```
+
+The guard never attempts the merge itself and never touches the untracked
+hot-synced script copies that can block one — that gap is BL-924's scope
+(not yet built), deliberately split out so this guard's refuse-and-report
+outcome never depends on a merge succeeding. Run `ready_for_next.sh` again
+after merging `main` in.
 
 ### `done_with_current.sh`
 

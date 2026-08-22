@@ -4,8 +4,10 @@ const {
   composeAskButtons,
   decideCallbackQueryAction,
   decideCursorBridgeExclusion,
+  decideSustainedOutage,
   pollAndForward,
   recordApprovalDecisionAndClose,
+  relaySseReplies,
   roleAskThreadId,
   roleFromAskThreadId,
   ROLE_ASK_THREAD_PREFIX,
@@ -115,14 +117,14 @@ test('property: the ask-close retry loop stops at the first success/terminal out
         errors.push(chunk);
         return true;
       };
-      let changed;
+      let result;
       try {
-        changed = await recordApprovalDecisionAndClose(adapters, 'BL-PROP', { kind: 'approved' }, 0);
+        result = await recordApprovalDecisionAndClose(adapters, 'BL-PROP', { kind: 'approved' }, 0);
       } finally {
         process.stderr.write = originalErrorWrite;
       }
 
-      assert.equal(changed, true, 'the decision recording succeeds regardless of how the edit resolves');
+      assert.equal(result.changed, true, 'the decision recording succeeds regardless of how the edit resolves');
       assert.equal(edits.length, expected.stopAttempt, 'expected the loop to stop at the first success/terminal outcome, bounded by budget');
       assert.deepEqual(waits, expected.waits, 'expected exactly one wait per rate-limited attempt before the stop, each its own retry-after');
 
@@ -268,5 +270,224 @@ test('property: pollAndForward never routes an owned-topic update to SUP/Operato
       assert.equal(result.posted + result.dropped + result.failed, 1, 'exactly one outcome recorded for the one update - never lost, never double-counted');
     }),
     { numRuns: 150 }
+  );
+});
+
+// BL-708 invariant #2 (coder-authored, ticket-declared): "A question record
+// the front desk cannot deliver leaves a surfaced trace (log line or
+// counter) before its id is acked - never a silent ack that reads as
+// delivered." deliverRoleQuestion (relayOneRecord's roleQuestion branch) is
+// the only place a roleQuestion record can become undeliverable -
+// roleTopicIdFor resolving undefined for a role absent from
+// role-topic-map.json - and relayOneRecord always acks afterward regardless
+// (the bridge cannot distinguish "decided to drop" from "never seen"; see
+// deliverRoleQuestion's own comment). This property drives arbitrary role
+// names and arbitrary roleTopicIdFor outcomes (mapped vs unmapped, and an
+// arbitrary topic id when mapped) through the real relaySseReplies wiring
+// and asserts: whenever the role is unmapped, exactly one console.error
+// trace naming that role fires strictly before ackReply; whenever it is
+// mapped, no trace ever fires and delivery proceeds before the ack.
+// telegramFrontDeskBotCore.test.js pins this at one fixed role name
+// ("nobody"); this generalizes across role names fast-check constructs.
+//
+// Non-vacuous: removing the console.error call from deliverRoleQuestion's
+// undefined-topicId branch fails this property on the first unmapped case
+// generated - confirmed manually before restoring the fix.
+//
+// Generator reach: mappedArb independently forces both the unmapped branch
+// (no topic id) and the mapped branch (an arbitrary topic id) on every run,
+// so both of deliverRoleQuestion's two outcomes are reachable by
+// construction, not by sampling luck. Runs ONLY via `npm run test:properties`.
+function mkSingleChunkReader(chunk) {
+  let sent = false;
+  return async () => {
+    if (sent) {
+      return { done: true, chunk: '' };
+    }
+    sent = true;
+    return { done: false, chunk };
+  };
+}
+
+const undeliverableRoleArb = fc.stringMatching(/^[A-Za-z0-9_-]{1,20}$/);
+const mappedArb = fc.boolean();
+const topicIdArb = fc.integer({ min: 1, max: 100000 });
+
+test('property: an undeliverable roleQuestion always surfaces exactly one trace naming the role BEFORE ackReply; a deliverable one never traces at all', async () => {
+  await fc.assert(
+    fc.asyncProperty(undeliverableRoleArb, mappedArb, topicIdArb, async (role, mapped, topicId) => {
+      const order = [];
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        order.push('trace');
+      });
+      const record = { id: 'r1', threadId: `role-ask-${role}`, text: 'which environment?', roleQuestion: role };
+      const sse = `event: telegram-reply\ndata: ${JSON.stringify(record)}\n\n`;
+      try {
+        await relaySseReplies(
+          '',
+          {
+            readChunk: mkSingleChunkReader(sse),
+            sendReply: async () => {
+              order.push('send');
+            },
+            roleTopicIdFor: async () => (mapped ? topicId : undefined),
+            resolveDelivery: () => {
+              throw new Error('resolveDelivery must never be consulted for a roleQuestion record');
+            },
+            ackReply: async () => {
+              order.push('ack');
+            },
+          },
+          new Set()
+        );
+
+        // Read the spy's recorded calls BEFORE mockRestore() below - restore
+        // also clears mock.calls (same as mockReset), so asserting on it
+        // afterward would always see zero calls regardless of what happened.
+        if (mapped) {
+          assert.equal(errorSpy.mock.calls.length, 0, 'a deliverable roleQuestion must never surface an undeliverable trace');
+          assert.deepEqual(order, ['send', 'ack']);
+        } else {
+          assert.equal(errorSpy.mock.calls.length, 1, 'an undeliverable roleQuestion must leave exactly one surfaced trace');
+          assert.match(errorSpy.mock.calls[0][0], new RegExp(role), 'the trace must name the role the question could not be delivered to');
+          assert.deepEqual(order, ['trace', 'ack'], 'the trace must fire strictly before the ack - never a silent ack that reads as delivered');
+        }
+      } finally {
+        errorSpy.mockRestore();
+      }
+    }),
+    { numRuns: 200 }
+  );
+});
+
+// ── GH-26: an undeliverable roleQuestion must ALSO rewrite the role's own
+// awaiting marker (markRoleQuestionUndeliverable) - never leaving it in its
+// original pending shape, which is what wedges the asking role in
+// "already-pending" forever behind a guard that thinks its question is
+// still in flight. Generalizes BL-708's own mapped/unmapped property above
+// to also assert the marker-rewrite side: exactly one call, naming the SAME
+// role/question/options the record carried (forensics preserved
+// byte-for-byte, GH-26's approval_context choice 1), strictly before
+// ackReply; a deliverable roleQuestion never calls it at all.
+//
+// Non-vacuous: removing the markRoleQuestionUndeliverable call from
+// deliverRoleQuestion's undefined-topicId branch fails this property on the
+// first unmapped case generated - confirmed manually before restoring the
+// fix.
+//
+// Generator reach: mappedArb independently forces both the unmapped branch
+// (marker must be rewritten) and the mapped branch (marker must be left
+// alone) on every run; optionsOrNilArb independently forces both an
+// options-carrying and a bare question, so all four (mapped x has-options)
+// combinations are reachable by construction, not by sampling luck. Runs
+// ONLY via `npm run test:properties`.
+const questionTextArb = fc.string({ minLength: 1, maxLength: 60 });
+const optionsOrNilArb = fc.option(optionsArb, { nil: undefined });
+
+test('property: an undeliverable roleQuestion always rewrites the awaiting marker (exactly once, forensics preserved) BEFORE ackReply; a deliverable one never touches it', async () => {
+  await fc.assert(
+    fc.asyncProperty(undeliverableRoleArb, mappedArb, topicIdArb, questionTextArb, optionsOrNilArb, async (role, mapped, topicId, text, options) => {
+      const order = [];
+      const marked = [];
+      const record = { id: 'r1', threadId: `role-ask-${role}`, text, roleQuestion: role, ...(options ? { options } : {}) };
+      const sse = `event: telegram-reply\ndata: ${JSON.stringify(record)}\n\n`;
+      // options travels the SAME JSON round trip real records do (outbox
+      // JSONL -> SSE -> JSON.parse in relayOneRecord) before deliverRoleQuestion
+      // ever sees it - normalizing the expectation the same way makes this
+      // an apples-to-apples comparison regardless of fast-check's own
+      // internal representation of a generated record (e.g. a null-prototype
+      // object, which JSON never distinguishes from a plain one).
+      const expectedOptions = options === undefined ? undefined : JSON.parse(JSON.stringify(options));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await relaySseReplies(
+          '',
+          {
+            readChunk: mkSingleChunkReader(sse),
+            sendReply: async () => {
+              order.push('send');
+            },
+            roleTopicIdFor: async () => (mapped ? topicId : undefined),
+            resolveDelivery: () => {
+              throw new Error('resolveDelivery must never be consulted for a roleQuestion record');
+            },
+            ackReply: async () => {
+              order.push('ack');
+            },
+            markRoleQuestionUndeliverable: async (r, q, o) => {
+              marked.push({ role: r, question: q, options: o });
+              order.push('mark');
+            },
+          },
+          new Set()
+        );
+
+        if (mapped) {
+          assert.deepEqual(marked, [], 'a deliverable roleQuestion must never rewrite the awaiting marker');
+          assert.deepEqual(order, ['send', 'ack']);
+        } else {
+          assert.deepEqual(
+            marked,
+            [{ role, question: text, options: expectedOptions }],
+            'the marker rewrite must name the SAME role/question/options the record carried'
+          );
+          assert.deepEqual(order, ['mark', 'ack'], 'the marker rewrite must fire strictly before the ack');
+        }
+      } finally {
+        errorSpy.mockRestore();
+      }
+    }),
+    { numRuns: 200 }
+  );
+});
+
+// BL-621: decideSustainedOutage's own episode invariant, generalized across
+// ARBITRARY failure/recovery sequences and ARBITRARY clocks/thresholds - the
+// hand-picked unit tests in bl621FrontDeskSustainedOutage.test.js each pin
+// one fixed 10-minute-cadence sequence; this property runs irregular ones,
+// including step gaps that land exactly ON a threshold boundary. The
+// invariant holds at every step of ANY sequence:
+//   (a) a successful step always fully resets the episode to {escalated:
+//       false} - no leftover start time, no leftover latch - no matter what
+//       state came before it.
+//   (b) a failing step escalates iff its OWN run has not already escalated
+//       AND this step's outageMs has reached the threshold - so across one
+//       whole continuous run of failures, escalate is true on at most ONE
+//       step, and never before the threshold is reached.
+// Runs ONLY via `npm run test:properties`.
+const sustainedOutageStepArb = fc.record({ ok: fc.boolean(), dt: fc.integer({ min: 0, max: 20_000 }) });
+const sustainedOutageSequenceArb = fc.array(sustainedOutageStepArb, { minLength: 1, maxLength: 40 });
+const sustainedOutageThresholdArb = fc.integer({ min: 1, max: 200_000 });
+
+test('property: decideSustainedOutage escalates at most once per continuous failure run, never before its own outage reaches the threshold, and any success fully resets it', () => {
+  fc.assert(
+    fc.property(sustainedOutageSequenceArb, sustainedOutageThresholdArb, (steps, thresholdMs) => {
+      let state = { escalated: false };
+      let nowMs = 0;
+      for (const step of steps) {
+        nowMs += step.dt;
+        const prevEscalated = state.escalated;
+        const decision = decideSustainedOutage(state, step.ok, nowMs, thresholdMs);
+        if (step.ok) {
+          assert.deepEqual(decision.state, { escalated: false }, 'a success must fully reset the episode regardless of prior state');
+          assert.equal(decision.escalate, false);
+          assert.equal(decision.outageMs, 0);
+        } else {
+          const expectedEscalate = !prevEscalated && decision.outageMs >= thresholdMs;
+          assert.equal(
+            decision.escalate,
+            expectedEscalate,
+            `escalate must fire iff this run has not already escalated and outageMs (${decision.outageMs}) has reached the threshold (${thresholdMs})`
+          );
+          assert.equal(
+            decision.state.escalated,
+            prevEscalated || decision.escalate,
+            "the escalated latch must only ever be set by this run's own escalation, and must never clear except on success"
+          );
+        }
+        state = decision.state;
+      }
+    }),
+    { numRuns: 300 }
   );
 });

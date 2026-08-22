@@ -49,9 +49,10 @@
    :write-failure-log! (fn [content]
                           (spit failure-log-path content)
                           failure-log-path)
-   :send-email! (fn [subject text]
+   :send-email! (fn [subject text attachments]
                   (log-call! "send-email" subject)
                   (spit (str (fs/path fixture-root "email-text.txt")) text)
+                  (spit (str (fs/path fixture-root "email-attachments.json")) (json/generate-string attachments))
                   {:success true})
    :halt-swarm! (fn [] (log-call! "halt-swarm"))
    :write-status! (fn [status]

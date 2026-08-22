@@ -21,6 +21,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNNER="${SCRIPT_DIR}/chase_sweep_test_runner.bb"
+# BL-872: registers every mktemp -d root below with the shared EXIT trap
+# (swarmforge/scripts/test/lib/tmp_cleanup.sh) so a fixture from a FAILING
+# test (set -euo pipefail exiting before that section's own trailing
+# `rm -rf "${T}"`) is still removed, not just the happy path.
+source "${SCRIPT_DIR}/lib/tmp_cleanup.sh"
 FAILURES=0
 
 fail() { echo "FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
@@ -68,6 +73,7 @@ write_claim_sidecar() {
 
 # ── Test 1: fresh claim (under timeout) — no claim-idle action ────────────────
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 NOW=1000000000
 run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000
@@ -87,6 +93,7 @@ rm -rf "${T}"
 
 # ── Test 2: commit advanced → :progressed, sidecar reset to new commit ────────
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 0
@@ -104,6 +111,7 @@ rm -rf "${T}"
 
 # ── Test 3: same commit past timeout → probe agent before first reclaim ───────
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 0
@@ -124,6 +132,7 @@ rm -rf "${T}"
 
 # ── Test 3b: after probe grace → first reclaim → :nudge ─────────────────────
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 PROBE_MS=1000
@@ -140,6 +149,7 @@ rm -rf "${T}"
 
 # ── Test 4: sidecar reclaims=1 (increments to 2 in sweep) → :nudge ───────────
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 1
@@ -155,6 +165,7 @@ rm -rf "${T}"
 
 # ── Test 5: reclaims=5 (becomes 6 after increment) → :bounce ─────────────────
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 5
@@ -171,6 +182,7 @@ rm -rf "${T}"
 
 # ── Test 6: reclaims=9 (becomes 10 after increment) → :halt ───────────────────
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9
@@ -198,6 +210,7 @@ rm -rf "${T}"
 # read a stale reclaims>=halt-threshold value off disk and immediately halt
 # again — that skipped the whole nudge->bounce ladder in the 4th occurrence.
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9
@@ -224,6 +237,7 @@ rm -rf "${T}"
 # ── Test 7: .claim-progress.json absent in adapter (no CLAIM_HEAD_COMMIT) ────
 # Legacy behavior: sweep runs without the claim check (backward compat).
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 5
@@ -239,6 +253,7 @@ rm -rf "${T}"
 
 # ── Test 8: mono-router stale coder claim while hardender active → paused ───
 T=$(mktemp -d)
+register_tmp_dir "${T}"
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9

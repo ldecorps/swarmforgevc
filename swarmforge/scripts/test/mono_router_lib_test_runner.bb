@@ -2,6 +2,7 @@
 ;; TDD runner for mono_router_lib.bb
 (ns mono-router-lib-test-runner
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "mono_router_lib.bb")))
@@ -65,6 +66,56 @@
          (mono-router-lib/rotate-viable?
           {:resident-alive? false :launch-script-present? false}))
 
+;; BL-805: resident-invoked rotation gate decision - pure over already-
+;; filtered inputs (callers resolve blocking-file via handoff-lib's
+;; *.handoff-only listing before calling this).
+(assert= "rotate-gate: no blocking file proceeds"
+         :proceed
+         (mono-router-lib/rotate-gate-decision {:blocking-file nil :force? false}))
+(assert= "rotate-gate: no blocking file proceeds even if force is set"
+         :proceed
+         (mono-router-lib/rotate-gate-decision {:blocking-file nil :force? true}))
+(assert= "rotate-gate: blocking file refuses without force"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff" :force? false}))
+(assert= "rotate-gate: blocking file with force proceeds-forced"
+         :proceed-forced
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff" :force? true}))
+
+;; BL-926: rotating INTO the role that already owns the blocking parcel is
+;; not abandonment - it is the only way that parcel gets picked up. Table
+;; mirrors specs/features/BL-926-...feature Scenario Outline exactly.
+(assert= "rotate-gate: same-role rotation proceeds even with a real blocking parcel"
+         :proceed
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? false :active-role "coder" :target-role "coder"}))
+(assert= "rotate-gate: different-role rotation still refuses over a real blocking parcel"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? false :active-role "coder" :target-role "documenter"}))
+(assert= "rotate-gate: no blocking file proceeds regardless of active/target roles"
+         :proceed
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file nil :force? false :active-role "coder" :target-role "documenter"}))
+(assert= "rotate-gate: force override still behaves exactly as BL-805 specified, even on same-role ownership"
+         :proceed-forced
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? true :active-role "coder" :target-role "coder"}))
+(assert= "rotate-gate: omitting active-role/target-role keeps BL-805 behavior (refuse)"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff" :force? false}))
+(assert= "rotate-gate: active-role given without target-role never matches - refuses"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff"
+           :force? false :active-role "coder" :target-role nil}))
+
 (let [sum (mono-router-lib/summarize-topology
            roles
            [{:role "coder" :alive? false}
@@ -92,13 +143,14 @@
            :resident-session-exists? true
            :active-role "coder"
            :target-role "cleaner"}))
-(assert= "dormant + already that role → wake resident"
+(assert= "dormant + already that role, live identity agrees → wake resident"
          :wake-resident
          (mono-router-lib/dormant-mailbox-chase-action
           {:target-session-exists? false
            :resident-session-exists? true
            :active-role "cleaner"
-           :target-role "cleaner"}))
+           :target-role "cleaner"
+           :live-role "cleaner"}))
 (assert= "no resident degrades to own-session wake"
          :wake-own-session
          (mono-router-lib/dormant-mailbox-chase-action
@@ -106,6 +158,49 @@
            :resident-session-exists? false
            :active-role "coder"
            :target-role "cleaner"}))
+
+;; BL-921: the marker alone is never sufficient evidence - a diverged or
+;; unreadable live identity must still route to :rotate, never :wake-resident.
+(assert= "BL-921: marker matches but live identity diverged → rotate, not wake"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "cleaner"
+           :target-role "cleaner"
+           :live-role "coder"}))
+(assert= "BL-921: marker matches but live identity unreadable (nil) → rotate"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "cleaner"
+           :target-role "cleaner"
+           :live-role nil}))
+(assert= "BL-921: marker matches but live identity unreadable (blank) → rotate"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "cleaner"
+           :target-role "cleaner"
+           :live-role "   "}))
+(assert= "BL-921: marker itself already wrong stays rotate regardless of live-role"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "coder"
+           :target-role "cleaner"
+           :live-role "coder"}))
+(assert= "BL-921: a role with its own standing session is unaffected by either identity"
+         :wake-own-session
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? true
+           :resident-session-exists? true
+           :active-role "architect"
+           :target-role "architect"
+           :live-role "coder"}))
 
 (assert= "ensure restores cleaner when marker says cleaner"
          "cleaner"
@@ -172,7 +267,12 @@
              (mono-router-lib/actionable-mail? {:in-process-count 1 :git-handoff-count 0}))
 (assert-true "git_handoff in new is actionable"
              (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 1}))
+(assert-true "rule_proposal in new is immediately actionable (directed, not broadcast)"
+             (mono-router-lib/actionable-mail?
+              {:in-process-count 0 :git-handoff-count 0 :rule-proposal-count 1}))
 (assert-true "empty mailbox is not actionable"
+             (not (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 0})))
+(assert-true "rule-proposal-count absent behaves as before (no regression)"
              (not (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 0})))
 
 (assert= "newest actionable role wins when priorities equal/absent"
@@ -252,6 +352,30 @@
          (mono-router-lib/should-rotate-resident?
           {:active-role "coder" :target-role "cleaner" :resident-busy? false
            :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+
+;; BL-921: :already-active requires the marker AND the live identity to
+;; agree with target-role - a stale marker must never refuse the rotate
+;; that would actually fix the divergence.
+(assert= "BL-921: marker and live identity both agree → already-active"
+         :already-active
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role "cleaner"
+           :resident-busy? false :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "BL-921: marker agrees but live identity diverged → rotate, not already-active"
+         :rotate
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role "coder"
+           :resident-busy? false :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "BL-921: marker agrees but live identity unreadable → rotate, not already-active"
+         :rotate
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role nil
+           :resident-busy? false :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "BL-921: busy still wins over a live-agreeing marker"
+         :busy
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "cleaner" :target-role "cleaner" :live-role "cleaner"
+           :resident-busy? true :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
 
 ;; ── BL-550: parse-rotation-home / rotate-home? ────────────────────────────
 (assert= "reads config rotation_home"
@@ -589,6 +713,104 @@
            {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
             :actionable? true :oldest-actionable-waited-ms 60000}]
           600000))
+
+;; ── BL-571: the single-resident predicate accepts every value the launcher does ──
+;; is_sequential_dormant (swarmforge.sh) treats router AND sequential as the
+;; same single-resident topology; ensure must agree. conf-rotation-router?
+;; itself stays router-only (the ROTATE_HOME backstop consumes it - pinned).
+
+(assert-true "BL-571: single-resident-rotation? accepts rotation router"
+             (mono-router-lib/single-resident-rotation?
+              "config active_backlog_max_depth 1\nconfig rotation router\n"))
+(assert-true "BL-571: single-resident-rotation? accepts rotation sequential"
+             (mono-router-lib/single-resident-rotation?
+              "config rotation sequential\nwindow coder aider\n"))
+(assert-true "BL-571: single-resident-rotation? accepts the prefix-less conf form"
+             (mono-router-lib/single-resident-rotation? "rotation sequential\n"))
+(assert-true "BL-571: single-resident-rotation? is false with no rotation line (classic pack)"
+             (not (mono-router-lib/single-resident-rotation?
+                   "config active_backlog_max_depth -1\nwindow coder aider\n")))
+(assert-true "BL-571: single-resident-rotation? is false for nil conf"
+             (not (mono-router-lib/single-resident-rotation? nil)))
+(assert-true "BL-571: word boundary - 'rotation sequentially' does not match"
+             (not (mono-router-lib/single-resident-rotation? "config rotation sequentially\n")))
+
+;; Hardening (BL-571): the LINE ANCHOR is load-bearing and was untested.
+;; rotation-declared-in-conf?'s docstring claims "a commented mention or a
+;; longer word never matches" - the longer-word half is pinned above, the
+;; commented half was not, and a mutant dropping the `^` from the pattern
+;; agreed with the original on EVERY other fixture in this file (verified
+;; 2026-08-19: the whole suite above is blind to it). A commented or
+;; otherwise mid-line mention is the only shape that discriminates it, so
+;; it is pinned here for both value-sets - the two pairs share one
+;; mechanism, so an anchor mutant would otherwise survive on both sides.
+(assert-true "BL-571: a COMMENTED rotation line does not declare a topology (pins the ^ anchor)"
+             (not (mono-router-lib/single-resident-rotation? "# config rotation sequential\n")))
+(assert-true "BL-571: a mid-line 'rotation router' mention does not declare a topology (pins the ^ anchor)"
+             (not (mono-router-lib/single-resident-rotation? "see docs about rotation router here\n")))
+(assert-true "BL-571 pin: conf-rotation-router? also ignores a commented rotation line"
+             (not (mono-router-lib/conf-rotation-router? "# config rotation router\n")))
+;; and the anchor must not over-reach: a real directive still matches when it
+;; is not the first line of the file (guards a mutant swapping (?m) off).
+(assert-true "BL-571: a real rotation directive on a later line still matches (pins the (?m) flag)"
+             (mono-router-lib/single-resident-rotation?
+              "# leading comment\nconfig active_backlog_max_depth 1\nconfig rotation sequential\n"))
+
+(assert-true "BL-571: identity rotation=router is single-resident"
+             (mono-router-lib/single-resident-rotation-from-identity? "rotation\trouter\n"))
+(assert-true "BL-571: identity rotation=sequential is single-resident"
+             (mono-router-lib/single-resident-rotation-from-identity? "rotation\tsequential\n"))
+(assert-true "BL-571: identity with no rotation key is not single-resident"
+             (not (mono-router-lib/single-resident-rotation-from-identity? "pack\tclassic\n")))
+(assert-true "BL-571: identity rotation=classic is not single-resident"
+             (not (mono-router-lib/single-resident-rotation-from-identity? "rotation\tclassic\n")))
+
+;; the ROTATE_HOME consumer's own predicate is untouched by BL-571
+(assert-true "BL-571 pin: conf-rotation-router? still rejects sequential"
+             (not (mono-router-lib/conf-rotation-router? "config rotation sequential\n")))
+(assert-true "BL-571 pin: rotation-router-from-identity? still rejects sequential"
+             (not (mono-router-lib/rotation-router-from-identity? "rotation\tsequential\n")))
+
+;; ── BL-571 D1 (BL-897 guardrail): bash<->Babashka rotation-value parity ──
+;; single-resident-rotation-values mirrors swarmforge.sh's
+;; is_sequential_dormant across a language boundary no import can bridge;
+;; the docstring's "widen ONLY alongside the launcher" is a comment, not a
+;; gate. This DERIVES the launcher's accepted set from swarmforge.sh itself
+;; (the function body's own "$ROTATION_MODE" == "<value>" literals) and
+;; asserts SET EQUALITY - drift in EITHER direction fails here, never
+;; silently. A functional sweep then confirms every derived value is
+;; genuinely accepted by the sourced launcher function and a control value
+;; is rejected, so the textual derivation cannot rot into matching nothing.
+;; Non-vacuity proven at authoring time (2026-08-19), each break restored:
+;; a value added to the bash side only ('rotate') -> set-equality FAILED;
+;; the same value added to the Babashka side only -> set-equality FAILED.
+(def ^:private swarmforge-sh-path
+  (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "swarmforge.sh")))
+
+(let [src (slurp swarmforge-sh-path)
+      body (second (re-find #"(?s)\nis_sequential_dormant\(\)\s*\{(.*?)\n\}" src))
+      bash-set (set (map second (re-seq #"\"\$ROTATION_MODE\"\s*==\s*\"([^\"]+)\"" (or body ""))))
+      bb-set (set @#'mono-router-lib/single-resident-rotation-values)]
+  (assert-true "BL-571 D1: is_sequential_dormant found in swarmforge.sh and names at least one rotation value"
+               (boolean (seq bash-set)))
+  (assert= "BL-571 D1 parity gate: the launcher's accepted rotation-value set equals single-resident-rotation-values exactly (widen BOTH sides together - BL-897)"
+           bash-set bb-set)
+  ;; functional confirmation, against the REAL sourced function (short root:
+  ;; swarmforge.sh derives a unix-socket path from its root at source time,
+  ;; and long $TMPDIR roots overflow the 100-char socket-path limit)
+  (let [short-root (str/trim (:out (process/sh ["mktemp" "-d" "/tmp/bl571p.XXXXXX"])))]
+    (try
+      (let [probe (fn [v]
+                    (zero? (:exit (process/sh ["zsh" "-c" (str "source '" swarmforge-sh-path "' '" short-root "'\n"
+                                                               "ROTATION_MODE='" v "'\n"
+                                                               "ROLES=(one two three four)\n"
+                                                               "is_sequential_dormant 2")]))))]
+        (doseq [v bash-set]
+          (assert-true (str "BL-571 D1: derived value '" v "' is genuinely accepted by the sourced launcher function")
+                       (probe v)))
+        (assert-true "BL-571 D1: a control value the launcher does not accept ('classic') is rejected by the sourced function"
+                     (not (probe "classic"))))
+      (finally (fs/delete-tree short-root)))))
 
 (when (seq @failures)
   (binding [*out* *err*]

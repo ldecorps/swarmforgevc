@@ -20,7 +20,7 @@
  *
  * Usage: node qa-bounce-line.js
  */
-import { computeQaBounceTally, computeBounceTallyByBouncingRole, QaBounceRoleTally, QaBounceTally } from '../quality/qaBounce';
+import { computeQaBounceTally, computeBounceTallyByBouncingRole, computeDefectsPerBounce, QaBounceRoleTally, QaBounceTally } from '../quality/qaBounce';
 import { readBounceRecords } from '../metrics/bounceStore';
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
@@ -28,13 +28,18 @@ function formatRoleCounts(counts: QaBounceRoleTally[]): string {
   return counts.map(({ role, count }) => `${role} x${count}`).join(', ');
 }
 
-export function formatBounceLine(byBouncingRole: QaBounceRoleTally[], tally: QaBounceTally): string {
+// BL-689: defectsPerBounce is optional and, when omitted, produces BYTE-FOR-
+// BYTE the same line this function printed before this ticket - every
+// existing caller (bl635/bl688's own step handlers) keeps working unchanged.
+// Only main() below, and this ticket's own tests, pass the real figure.
+export function formatBounceLine(byBouncingRole: QaBounceRoleTally[], tally: QaBounceTally, defectsPerBounce?: number): string {
   const byType = Object.entries(tally.byTicketType)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([type, count]) => `${type} x${count}`)
     .join(', ');
+  const defectsPerBouncePart = typeof defectsPerBounce === 'number' ? ` (${defectsPerBounce.toFixed(1)} defects/bounce)` : '';
   return (
-    `Bounces: ${tally.total} total - by bouncing role: ${formatRoleCounts(byBouncingRole)} - ` +
+    `Bounces: ${tally.total} total${defectsPerBouncePart} - by bouncing role: ${formatRoleCounts(byBouncingRole)} - ` +
     `whose work: ${formatRoleCounts(tally.byRole)} - by ticket type: ${byType}`
   );
 }
@@ -45,7 +50,7 @@ export function main(): void {
   if (records.length === 0) {
     return;
   }
-  console.log(formatBounceLine(computeBounceTallyByBouncingRole(records), computeQaBounceTally(records)));
+  console.log(formatBounceLine(computeBounceTallyByBouncingRole(records), computeQaBounceTally(records), computeDefectsPerBounce(records)));
 }
 
 if (require.main === module) {

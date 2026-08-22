@@ -7,6 +7,10 @@ const { formatBounceLine, main } = require('../out/tools/qa-bounce-line');
 const { appendQaBounceRecordIfNew, qaBouncesDir } = require('../out/metrics/qaBounceStore');
 const { appendBounceRecordIfNew } = require('../out/metrics/bounceStore');
 
+function inventoryItems(n) {
+  return Array.from({ length: n }, (_, i) => ({ id: `D${i + 1}`, class: 'behavior', blamed: 'coder', pointer: `fixture.ts:${i + 1} fn()` }));
+}
+
 // BL-454/BL-635: the daily-briefing bounce line CLI briefing_email_lib.bb
 // shells out to. Generalised (BL-635) from a QA-only tally to report who
 // bounced as well as whose work bounced, reading the merged bounce log
@@ -84,6 +88,53 @@ test('a legacy by-less record is shown as unattributed, not silently attributed 
 test('breaks a tied by-ticket-type count alphabetically', () => {
   const line = formatBounceLine([], { total: 2, byRole: [], byTicketType: { feature: 1, defect: 1 } });
   assert.match(line, /by ticket type: defect x1, feature x1/);
+});
+
+// ── BL-689: defectsPerBounce is an optional 3rd arg - omitted, the line is
+// byte-for-byte what it was before this ticket (bl635/bl688's own step
+// handlers call formatBounceLine with only 2 args and must keep working).
+
+test('omitting defectsPerBounce prints exactly the pre-BL-689 line, no new segment', () => {
+  const line = formatBounceLine([{ role: 'architect', count: 1 }], { total: 1, byRole: [{ role: 'coder', count: 1 }], byTicketType: { defect: 1 } });
+  assert.equal(line, 'Bounces: 1 total - by bouncing role: architect x1 - whose work: coder x1 - by ticket type: defect x1');
+});
+
+test('passing defectsPerBounce inserts a "(N.N defects/bounce)" segment right after the total', () => {
+  const line = formatBounceLine([{ role: 'architect', count: 1 }], { total: 1, byRole: [{ role: 'coder', count: 1 }], byTicketType: { defect: 1 } }, 2.5);
+  assert.equal(line, 'Bounces: 1 total (2.5 defects/bounce) - by bouncing role: architect x1 - whose work: coder x1 - by ticket type: defect x1');
+});
+
+test('defectsPerBounce of 0 (an empty record set) still renders "0.0 defects/bounce", distinct from omitted', () => {
+  const line = formatBounceLine([], { total: 0, byRole: [], byTicketType: {} }, 0);
+  assert.match(line, /\(0\.0 defects\/bounce\)/);
+});
+
+// ── BL-689 end-to-end: main() wires computeDefectsPerBounce into the printed line ──
+
+test('the end-to-end line reports the real defects-per-bounce figure from the durable log', async () => {
+  const root = mkRepo();
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-689',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'aaaa111111',
+    at: '2026-07-27T10:00:00.000Z',
+    by: 'architect',
+    items: inventoryItems(4),
+    blocked: 0,
+  });
+  appendBounceRecordIfNew(root, {
+    ticket: 'BL-689',
+    producingRole: 'coder',
+    ticketType: 'feature',
+    failureClass: 'behavior',
+    commit: 'bbbb222222',
+    at: '2026-07-27T11:00:00.000Z',
+    by: 'architect',
+  });
+  const output = await runCli(root);
+  assert.match(output, /^Bounces: 2 total \(2\.5 defects\/bounce\)/);
 });
 
 // ── end-to-end: process.cwd stubbed, console.log mocked ───────────────────

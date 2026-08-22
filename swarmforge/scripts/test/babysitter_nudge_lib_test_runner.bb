@@ -15,9 +15,15 @@
   (when-not expr
     (swap! failures conj (str "FAIL: " msg))))
 
-(assert-true "busy footer detected"
+;; BL-970: busy is the pane's LIVE STATUS FRAME, never a marker fragment -
+;; a bare footer-marker string with no frame is the false-busy class the
+;; classifier rework removed (that exact input is persistent idle chrome).
+(assert-true "live status frame detected as busy"
              (babysitter-nudge-lib/pane-busy?
-              "  esc to interrupt · /rc"))
+              "✳ Hatching… (2m 10s · ↓ 5.2k tokens)\n❯"))
+
+(assert-true "bare footer-marker fragment is NOT busy (BL-970 false-busy class)"
+             (not (babysitter-nudge-lib/pane-busy? "  esc to interrupt · /rc")))
 
 (assert-true "idle prompt not busy"
              (not (babysitter-nudge-lib/pane-busy? "❯ ")))

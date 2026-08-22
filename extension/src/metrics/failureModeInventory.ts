@@ -3,6 +3,7 @@
  * Input paths / file contents are injected by callers — never reads
  * repo-root .swarmforge/ itself (Stryker sandbox / live-tree rule).
  */
+import { BounceCorrection, bounceCorrectionTargetKey, isBounceCorrection } from '../quality/qaBounce';
 
 export type EvidenceSource = 'rule_proposal' | 'qa_bounce' | 'commit_subject' | 'chaser';
 
@@ -97,29 +98,74 @@ export function recordsFromRuleProposalJsonl(content: string, sourceLabel = 'rul
   return records;
 }
 
-export function recordsFromQaBounceJsonl(content: string, sourceLabel = 'qa_bounces'): EvidenceRecord[] {
-  const records: EvidenceRecord[] = [];
-  let lineNo = 0;
-  for (const line of content.split(/\r?\n/)) {
-    lineNo += 1;
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const obj = JSON.parse(trimmed) as Record<string, unknown>;
-      const failureClass = typeof obj.failureClass === 'string' ? obj.failureClass : '';
-      const producingRole = typeof obj.producingRole === 'string' ? obj.producingRole : '';
-      const ticket = typeof obj.ticket === 'string' ? obj.ticket : '';
-      const commit = typeof obj.commit === 'string' ? obj.commit : '';
-      if (!failureClass || !producingRole) continue;
-      records.push({
-        source: 'qa_bounce',
-        signature: `qa_bounce:${failureClass}:${producingRole}`,
-        citation: `${sourceLabel}:L${lineNo}:${ticket}@${commit}`,
-      });
-    } catch {
-      // skip
-    }
+function stringField(obj: Record<string, unknown>, key: string): string {
+  const value = obj[key];
+  return typeof value === 'string' ? value : '';
+}
+
+// One parsed JSONL line -> an EvidenceRecord, or null if the line is not a
+// countable bounce (missing required fields, or its ticket+commit is named
+// by a correction). Split out of recordsFromQaBounceJsonl's forEach purely
+// to keep each piece's own cyclomatic complexity under the CRAP budget -
+// same behavior, same field-by-field validation.
+function evidenceRecordFromBounceLine(
+  obj: Record<string, unknown>,
+  index: number,
+  sourceLabel: string,
+  correctedKeys: Set<string>
+): EvidenceRecord | null {
+  const failureClass = stringField(obj, 'failureClass');
+  const producingRole = stringField(obj, 'producingRole');
+  const ticket = stringField(obj, 'ticket');
+  const commit = stringField(obj, 'commit');
+  if (!failureClass || !producingRole) {
+    return null;
   }
+  if (correctedKeys.has(bounceCorrectionTargetKey({ ticket, commit }))) {
+    return null;
+  }
+  return {
+    source: 'qa_bounce',
+    signature: `qa_bounce:${failureClass}:${producingRole}`,
+    citation: `${sourceLabel}:L${index + 1}:${ticket}@${commit}`,
+  };
+}
+
+// BL-990: this reader parses the bounce JSONL ITSELF rather than going
+// through bounceStore.ts's readBounceRecords, so resolving supersession
+// there does not reach it - it has to resolve corrections here too, or the
+// same store yields two different bounce attributions depending on which
+// consumer you ask, which is worse than the single wrong number the ticket
+// set out to fix.
+//
+// Two passes over the same content: collect the corrections first (they can
+// appear anywhere in the file, including before the bounce they correct if
+// months are concatenated), then emit a signature for every bounce record no
+// correction names.
+export function recordsFromQaBounceJsonl(content: string, sourceLabel = 'qa_bounces'): EvidenceRecord[] {
+  const parsed = content.split(/\r?\n/).map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    try {
+      return JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  });
+  const correctedKeys = new Set(
+    parsed
+      .filter((obj): obj is Record<string, unknown> => obj !== null && isBounceCorrection(obj))
+      .map((obj) => bounceCorrectionTargetKey(obj as unknown as BounceCorrection))
+  );
+
+  const records: EvidenceRecord[] = [];
+  parsed.forEach((obj, index) => {
+    if (!obj) return;
+    const record = evidenceRecordFromBounceLine(obj, index, sourceLabel, correctedKeys);
+    if (record) {
+      records.push(record);
+    }
+  });
   return records;
 }
 

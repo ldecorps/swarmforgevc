@@ -29,6 +29,7 @@ const {
   isActiveRunConflict,
   isCursorAuthError,
   isCursorConnectionFailure,
+  isCursorAgentGone,
   shouldResetCursorAgentSession,
   isCursorResourceExhausted,
   parseCursorBridgeCliArgs,
@@ -385,6 +386,11 @@ test('BL-702: syncenv and doctor execute as read/soft appropriately', () => {
     verb: '/doctor',
     args: undefined,
   });
+  assert.deepEqual(decideInboundAction(event('/conf'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'execute-operator',
+    verb: '/conf',
+    args: undefined,
+  });
   assert.deepEqual(decideInboundAction(event('/syncenv'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
     action: 'prompt-operator-confirm',
     tier: 'soft',
@@ -452,6 +458,31 @@ test('cursor bridge: /pilot parses default and explicit ticket', () => {
 
 test('cursor bridge: pilot while busy is rejected as busy', () => {
   assert.deepEqual(gateBusy({ action: 'pilot', ticket: 'BL-696' }, true), { action: 'busy' });
+});
+
+test('cursor bridge: /pilot safe dispatches start and list variants', () => {
+  assert.deepEqual(decideInboundAction(event('/pilot safe'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-start',
+  });
+  assert.deepEqual(decideInboundAction(event('/pilot safe --list'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-list',
+  });
+  assert.deepEqual(decideInboundAction(event('/pilot safe list'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-list',
+  });
+  assert.deepEqual(decideInboundAction(event('/PILOT SAFE'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot-safe-start',
+  });
+  // Explicit ticket ids still take the plain pilot path (BL-722 safe-04).
+  assert.deepEqual(decideInboundAction(event('/pilot BL-650'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot',
+    ticket: 'BL-650',
+  });
+});
+
+test('cursor bridge: pilot safe start while busy is rejected as busy, list is not', () => {
+  assert.deepEqual(gateBusy({ action: 'pilot-safe-start' }, true), { action: 'busy' });
+  assert.deepEqual(gateBusy({ action: 'pilot-safe-list' }, true), { action: 'pilot-safe-list' });
 });
 
 test('cursor bridge: /expedite parses default and explicit ticket', () => {
@@ -821,17 +852,20 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '',
       '/new — start a fresh agent session',
       '/status — show session state',
-      '/queue — list queued questions',
+      '/queue — show queued questions as a poll',
       '/dequeue N — remove queued question #N',
       '/update — short summary of agent / expedite / swarm activity (works while busy)',
       '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
+      '/pilot safe [--list] — auto-pick (or list) the safe pilot pool: approved, low-mutation, specced defects',
       '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
       '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
       '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+      '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
+      '/resume — soft confirm; allow promotion again',
       '/syncenv /compile /pull — soft confirm (one Confirm tap)',
-      '/restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
-      '/doctor /tunnel — read-only checks',
+      '/stop /start /restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
+      '/doctor /tunnel /conf — read-only checks',
       '/confirm-off — clear a pending Confirm',
       '/log [expedite|redeploy|bridge] — tail the active or named operator log',
       '/help — this message',
@@ -846,6 +880,9 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
   assert.match(help, /\/expedite/i);
   assert.match(help, /\/reexpedite/i);
   assert.match(help, /\/redeploy/i);
+  assert.match(help, /\/pause/i);
+  assert.match(help, /\/resume/i);
+  assert.match(help, /\/stop/i);
   assert.match(help, /\/log/i);
 });
 
@@ -900,6 +937,15 @@ test('cursor bridge: shouldResetCursorAgentSession covers auth, active-run, and 
   assert.equal(shouldResetCursorAgentSession('Connection failed repeatedly after retries'), true);
   assert.equal(shouldResetCursorAgentSession('Cursor run failed (run-123): [unavailable] Error'), true);
   assert.equal(shouldResetCursorAgentSession('quota exceeded'), false);
+});
+
+test('cursor bridge: isCursorAgentGone detects a resume whose agentId the SDK no longer has', () => {
+  assert.equal(
+    isCursorAgentGone('Agent agent-47f26e41-65e8-459a-96f0-4a6a8e7bbfb0 not found.'),
+    true
+  );
+  assert.equal(isCursorAgentGone('ticket not found in active/paused'), false);
+  assert.equal(shouldResetCursorAgentSession('Agent agent-47f26e41-65e8-459a-96f0-4a6a8e7bbfb0 not found.'), true);
 });
 
 test('cursor bridge: isCursorResourceExhausted detects rate-limit / quota errors', () => {

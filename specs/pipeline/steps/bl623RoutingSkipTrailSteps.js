@@ -13,6 +13,10 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const SWARM_HANDOFF = path.join(SWARMFORGE_SCRIPTS, 'swarm_handoff.bb');
 const HANDOFF_PROTOCOL = path.join(REPO_ROOT, 'swarmforge', 'handoff-protocol.md');
+const {
+  writeAcceptanceContractFixture,
+  DEFAULT_FEATURE_PATH: ACCEPTANCE_FEATURE_PATH
+} = require('../../../extension/test/helpers/acceptanceContractFixture');
 
 const CANONICAL_CHAIN = ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 
@@ -24,6 +28,17 @@ const DEFAULT_SKIP_REASONS = [
   '  documenter: no user-facing behavior change',
   '',
 ].join('\n');
+
+// BL-800: "the parcel is delivered to QA" collides with
+// bl606RequiredStagesRoutingSteps.js's earlier, unscoped generic pattern
+// /^the parcel is delivered to (.+)$/ (registered first in steps/index.js),
+// whose handler asserts on ctx.bounceHandoff - undefined for this feature's
+// scenarios 02/04, which never send a bounce. Registered via defineScoped,
+// pinned to this exact Feature: title (bl413StaleSandboxSweepSteps.js's own
+// identical note is the precedent for this fix), so it is only ever
+// preferred when THIS feature is running; bl606's own scenarios and its
+// generic pattern are completely unaffected.
+const FEATURE_NAME = 'The routing skip trail records what a hop actually skipped';
 
 function git(root, args) {
   execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
@@ -44,11 +59,20 @@ function writeRolesTsv(root) {
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), roles.map((r) => r.join('\t')).join('\n') + '\n');
 }
 
+// BL-761: every send in this file reuses the ONE commit captured below as
+// `ctx.commit` - the acceptance-contract gate (the third pre-QA finding,
+// sharing this same findings-for-git-handoff entry point) judges a
+// ticket's declared acceptance: file AT that cited commit, so a resolvable,
+// fully-covered contract has to be part of the very first commit, not
+// added later - this suite tests required-stages routing, not acceptance
+// contracts, and must stay orthogonal to a gate added afterward.
+
 function ensureFixture(ctx) {
   if (ctx.targetPath) return ctx.targetPath;
   const targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl623-'));
   git(targetPath, ['init', '-q']);
   fs.writeFileSync(path.join(targetPath, 'README.md'), 'x');
+  writeAcceptanceContractFixture(targetPath);
   git(targetPath, ['add', '.']);
   git(targetPath, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init']);
   ctx.commit = execFileSync('git', ['-C', targetPath, 'rev-parse', '--short=10', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -68,7 +92,7 @@ function writeTicket(ctx, ticketId, extraLines) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, `${ticketId}-demo.yaml`),
-    `id: ${ticketId}\ntitle: "demo"\nstatus: active\n${extraLines || ''}`
+    `id: ${ticketId}\ntitle: "demo"\nstatus: active\nacceptance: ${ACCEPTANCE_FEATURE_PATH}\n${extraLines || ''}`
   );
 }
 
@@ -259,11 +283,15 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the parcel is delivered to QA$/, (ctx) => {
-    if (ctx.lastHandoff.to !== 'QA') {
-      throw new Error(`expected delivery to QA, got ${ctx.lastHandoff.to}`);
-    }
-  });
+  registry.defineScoped(
+    /^the parcel is delivered to QA$/,
+    (ctx) => {
+      if (ctx.lastHandoff.to !== 'QA') {
+        throw new Error(`expected delivery to QA, got ${ctx.lastHandoff.to}`);
+      }
+    },
+    FEATURE_NAME
+  );
 
   // ── Then: skip record content ────────────────────────────────────────────
   registry.define(

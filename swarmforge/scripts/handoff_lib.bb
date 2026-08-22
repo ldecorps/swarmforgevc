@@ -6,7 +6,7 @@
 
 (ns handoff-lib
   (:require [babashka.fs :as fs]
-            [clojure.java.shell :as sh]
+            [cheshire.core :as json]
             [clojure.string :as str])
   (:import [java.nio.channels FileChannel]
            [java.nio.file OpenOption StandardOpenOption]))
@@ -18,27 +18,95 @@
 ;; thread project-root/ambulance state through by hand.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 
+;; BL-967: every subprocess this lib spawns goes through the bounded
+;; chokepoint (daemon-cycle-guard-lib/sh!), never clojure.java.shell/sh -
+;; whose stream-read shim was the BL-057/BL-061 deadlock family and, still
+;; live in session-exists? until this ticket, the unbounded wait behind the
+;; 2026-08-20 handoffd freshness restart storm (blocked in read() inside
+;; observe-standing-role-loops!'s per-role calls, right after the chase
+;; item loop). Outside the daemon the bound is simply a very generous 60s
+;; ceiling no healthy call approaches.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+
+;; BL-805: mono-router-lib is also a leaf dependency (pure, no load-file of
+;; its own) - loaded here so respawn-as! below can gate the resident-invoked
+;; rotation entry via its pure rotate-gate-decision without every caller
+;; (just rotate_to_role.bb today) needing its own load-file. handoffd.bb
+;; already load-files both this file and mono_router_lib.bb directly - a
+;; second load-file here just re-evaluates the same defns, same as the
+;; ambulance-lib double-load above.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+
+;; BL-911: prompt-engine-lib is also a leaf dependency (its own load-file
+;; list is empty) - loaded here so recompose-role-prompt! below can reuse
+;; PromptEngine's compose (the single composition authority, BL-546) rather
+;; than growing a second composer. Same double-load-is-harmless shape as
+;; ambulance-lib/mono-router-lib above.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "prompt_engine_lib.bb")))
+
 (defn worktree-root
   "Handoff state lives at the worktree root even when invoked from a
    subdirectory; the daemon only delivers to worktree-root inboxes (BL-056).
    Falls back to the invocation cwd outside any git worktree."
   []
-  (let [result (sh/sh "git" "rev-parse" "--show-toplevel")]
+  (let [result (daemon-cycle-guard-lib/sh! "git" "rev-parse" "--show-toplevel")]
     (if (zero? (:exit result))
       (str/trim (:out result))
       (System/getProperty "user.dir"))))
 
+;; BL-812: handoffd receives its project root on argv, but every
+;; target-root-scoped read below used to shell `git rev-parse
+;; --git-common-dir` from process cwd. handoffd's own cwd is not guaranteed
+;; to be the project root (observed live: launcher home dir) - under that
+;; mismatch, target-root silently resolved to the WRONG project, so the
+;; resident looked absent, chase degraded to waking a session mono-router
+;; never creates, and the swarm starved forever.
+;;
+;; explicit-project-root is a plain atom (process-wide), not a `binding` -
+;; handoffd installs a shutdown-hook thread (joins the main thread) and runs
+;; sweeps that a thread-local dynamic var would not be visible from. Set
+;; once at daemon startup via set-project-root!; unset (nil) is the default
+;; and preserves every existing caller's git-common-dir behavior exactly -
+;; rotate_to_role.bb, operator_runtime.bb and operator_lib.bb call these same
+;; functions from a role's linked worktree and rely on that fallback.
+;;
+;; BL-654 declared-invariant coverage (backlog/evidence/BL-812-coder-pass.md
+;; has the full record): invariant 1 (this override always wins over cwd) is
+;; a property test - bl812_project_root_override_property_runner.bb.
+;; Invariants 2 (a dormant role's actionable mail always produces a rotate/
+;; wake, never unbounded chase-wake-error) and 3 (wake-session's remap is
+;; cwd-identical) are stated-reason: both reduce to functions this ticket
+;; does not touch (chase-rotate-to!/chase-poke-and-notify!'s real-tmux/
+;; real-mailbox decision logic; resolve-wake-session's pre-existing pure
+;; remap) composed with this override, which invariant 1 already proves
+;; cwd-invariant - encoded instead via the real-fixture acceptance scenarios
+;; 03/04.
+(defonce explicit-project-root (atom nil))
+
+(defn set-project-root!
+  "Process-wide override for target-root. handoffd calls this once at startup
+   with its own argv project-root so every root-scoped read below (roles.tsv,
+   tmux-socket, launch scripts, mono-router-active-role) resolves against the
+   daemon's real project regardless of its process cwd. Pass nil/blank to
+   clear the override and restore the git-common-dir fallback (tests reset
+   between cases this way)."
+  [root]
+  (reset! explicit-project-root (when-not (str/blank? root) (str root))))
+
 (defn target-root
-  "Resolves the target project's root, shared across every role's worktree,
-   via git's common gitdir (stable from a linked worktree or the main
-   checkout alike). Target-root-scoped state — roles.tsv, the daemon dir, and
-   the BL-069 bounce-drain sentinel — lives here, distinct from the
-   per-worktree handoff state under (worktree-root)."
+  "Resolves the target project's root, shared across every role's worktree.
+   Prefers an explicit root set via set-project-root! (handoffd's argv
+   project-root); falls back to git's common gitdir (stable from a linked
+   worktree or the main checkout alike) when no explicit root is set.
+   Target-root-scoped state — roles.tsv, the daemon dir, and the BL-069
+   bounce-drain sentinel — lives here, distinct from the per-worktree
+   handoff state under (worktree-root)."
   []
-  (let [result (sh/sh "git" "rev-parse" "--git-common-dir")]
-    (if (zero? (:exit result))
-      (str (fs/parent (fs/absolutize (str/trim (:out result)))))
-      (worktree-root))))
+  (or @explicit-project-root
+      (let [result (daemon-cycle-guard-lib/sh! "git" "rev-parse" "--git-common-dir")]
+        (if (zero? (:exit result))
+          (str (fs/parent (fs/absolutize (str/trim (:out result)))))
+          (worktree-root)))))
 
 (defn bounce-drain-sentinel []
   (fs/path (target-root) ".swarmforge" "bounce-drain.json"))
@@ -125,7 +193,12 @@
 ;; queued handoff. Once the handoff itself completes/moves, an orphaned
 ;; sidecar can remain - these are the ONLY file kinds completion may ever
 ;; delete on its own; anything else still aborts with a clear error.
-(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json"])
+;; BL-678: .batch-claim-progress.json rides the same list - a batch item's
+;; completion (done_with_current_batch.bb) already calls remove-sidecars-of!
+;; for every terminal sidecar kind, which is exactly how a completed batch
+;; claim's progress sidecar retires itself (invariant: "no longer reads as
+;; an active claim") without any dedicated retirement code.
+(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json" ".batch-claim-progress.json"])
 
 (defn sidecar-file? [path]
   (let [filename (fs/file-name path)]
@@ -276,6 +349,102 @@
 (defn my-handoff-files [dir]
   (vec (filter mine? (handoff-files dir))))
 
+;; ── BL-983: seat-aware stage queue ──────────────────────────────────────
+;; BL-982 split SEAT identity (<stage>@<seat> roles.tsv rows) from STAGE
+;; identity. Parcels still address the STAGE, and the stage-named row's
+;; mailbox is therefore the stage's one addressable QUEUE; a seat CLAIMS
+;; from that queue into its own in_process. For a bare seat the stage queue
+;; IS its own mailbox, so every single-seat path below is byte-identical to
+;; the pre-seat behavior by construction.
+
+(defn seat-stage
+  "The STAGE of a seat id - the part before the optional '@' (BL-982's
+   seat syntax). A bare id IS its own stage."
+  [role-name]
+  (when role-name (first (str/split role-name #"@" 2))))
+
+(defn stage-queue-dir
+  "The current role's STAGE queue in the given state - the mailbox of the
+   roles.tsv row whose id IS the stage name (BL-982's parse guarantees that
+   row exists whenever any @-seat does). Falls back to the seat's own
+   mailbox when no distinct stage row resolves (bare seats, legacy packs,
+   fixtures without roles.tsv) - the pre-BL-983 path, unchanged."
+  [state]
+  (let [me (current-role)
+        stage (seat-stage me)]
+    (if-let [ri (and stage (not= stage me) (load-role-info stage))]
+      (apply fs/path (mailbox-base-dir ri) (mailbox-state->relative-segments state))
+      (my-mailbox-dir state))))
+
+(defn stage-handoff-files
+  "Handoff files in dir addressed to the current role's STAGE (the
+   recipient the daemon stamps on stage-addressed parcels) or to the seat
+   itself; untagged files pass, exactly as mine? treats them. For a bare
+   seat this is my-handoff-files - same filter, same result."
+  [dir]
+  (let [me (current-role)
+        stage (seat-stage me)]
+    (vec (filter (fn [file]
+                   (let [recipient (header-field file "recipient")]
+                     (or (nil? me) (nil? recipient) (= recipient me) (= recipient stage))))
+                 (handoff-files dir)))))
+
+(defn stage-sibling-seats
+  "role-infos of every OTHER seat of the current role's stage - rows whose
+   id shares my stage, excluding me. Empty for bare single-seat stages."
+  []
+  (let [me (current-role)
+        stage (seat-stage me)]
+    (if (nil? me)
+      []
+      (filterv #(and (= stage (seat-stage (:role %))) (not= me (:role %)))
+               (load-all-roles)))))
+
+(defn worked-task-names-in
+  "Task names of every git_handoff directly in dir or inside its batch_*
+   subdirectories - one mailbox state's contribution to a seat's durable
+   record of the tasks it has worked (BL-1004). A missing dir is the empty
+   set, via handoff-files."
+  [dir]
+  (set (keep (fn [f]
+               (when (= "git_handoff" (header-field f "type"))
+                 (header-field f "task")))
+             (concat (handoff-files dir)
+                     (mapcat handoff-files (batch-dirs dir))))))
+
+(defn sibling-worked-task-names
+  "Task names every SIBLING seat of the current role's stage has worked -
+   its completed/ plus in_process/ (the durable record BL-1004 reads; a
+   salvage-parked abandoned/ parcel is deliberately NOT 'worked'). Empty
+   for bare single-seat stages, so the BL-1004 sibling-rework deferral is
+   structurally unreachable there (its invariant 3)."
+  []
+  (set (mapcat (fn [ri]
+                 (mapcat #(worked-task-names-in (mailbox-dir ri %))
+                         [:completed :in_process]))
+               (stage-sibling-seats))))
+
+(defn stage-seat-worked-task-sets
+  "One worked-task set PER SEAT of role-name's stage (the stage row itself
+   included) - completed/ plus in_process/, the same durable record
+   sibling-worked-task-names reads, but role-PARAMETERIZED with an explicit
+   root: the stall sweeps (flow_watchdog_lib.bb / chase_sweep_lib.bb)
+   iterate every role from one daemon process and have no current-role
+   point of view (BL-1004 stall-alarm exemption, architect bounce
+   2026-08-21). Per-seat rather than a union because a deferral needs both
+   a seat that worked the task and one that did not - see
+   seat-affinity-lib/deferral-hold?. A single-seat stage yields one set and
+   a root with no roles.tsv yields none, so that consumer is structurally
+   false in both cases (BL-1004 invariant 3). Order follows roles.tsv."
+  ([role-name] (stage-seat-worked-task-sets role-name (target-root)))
+  ([role-name root]
+   (let [stage (seat-stage role-name)]
+     (mapv (fn [ri]
+             (into (worked-task-names-in (mailbox-dir ri :completed))
+                   (worked-task-names-in (mailbox-dir ri :in_process))))
+           (filterv #(= stage (seat-stage (:role %)))
+                    (load-all-roles root))))))
+
 ;; ── BL-218: mailbox intake idempotency ──────────────────────────────────
 ;; ready_for_next_task.bb/ready_for_next_batch.bb historically only checked
 ;; whether a target in_process file already existed (AMBIGUOUS_TASK_STATE);
@@ -364,6 +533,51 @@
 
 (defn launch-script-path [role-name]
   (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".sh"))))
+
+(defn prompt-file-path
+  "The composed system-prompt artifact a role's launch script names by path
+   (swarmforge.sh's write_agent_instruction_file writes it; a launch/rotation
+   never assembles prompt text itself)."
+  [role-name]
+  (str (fs/path (target-root) ".swarmforge" "prompts" (str role-name ".md"))))
+
+;; BL-911: rotation is the moment freshness is established, not inherited
+;; from launch (see rotate-resident-to! below). recompose-role-prompt!
+;; reuses PromptEngine's compose via the SAME agent/model/two-pack?/
+;; overlay-prompt context write_agent_instruction_file captured in the
+;; prompt's own metadata sidecar at launch time (BL-563 Slice 2) - it never
+;; re-derives that context (e.g. re-reading swarm config), so a rotation
+;; recomposes with exactly the launch-time composition choices, just against
+;; current source content.
+(defn recompose-role-prompt!
+  "Rewrites <role-name>'s composed prompt file from current sources.
+   Returns {:ok true} on a successful, non-blank recompose, or
+   {:ok false :reason ...} on any failure - a missing/unreadable metadata
+   sidecar, an empty compose result, or compose itself throwing (e.g. a
+   source file that cannot be read). The existing prompt file is left
+   completely untouched on failure, satisfying invariant 2: a composition
+   that fails never prevents the rotation, it just leaves the role booting
+   on the prompt it already had."
+  ([role-name] (recompose-role-prompt! role-name {}))
+  ([role-name {:keys [compose-fn] :or {compose-fn prompt-engine-lib/compose}}]
+   (try
+     (let [prompt-file (prompt-file-path role-name)
+           metadata-file (str prompt-file ".metadata.json")]
+       (if-not (fs/exists? metadata-file)
+         {:ok false :reason "no-metadata-sidecar"}
+         (let [metadata (json/parse-string (slurp metadata-file) true)
+               result (compose-fn role-name
+                                   {:agent (:agent metadata)
+                                    :model (:model metadata)
+                                    :two-pack? (boolean (:two-pack? metadata))
+                                    :overlay-prompt (or (:overlay-prompt metadata) "")})
+               text (:system-prompt result)]
+           (if (str/blank? text)
+             {:ok false :reason "empty-compose-result"}
+             (do (spit prompt-file text)
+                 {:ok true})))))
+     (catch Exception e
+       {:ok false :reason (str "recompose-exception: " (.getMessage e))}))))
 
 (defn openrouter-pane-env-args
   "BL-130 ephemeral -e injection for launch_role / chase / ensure / rotate.
@@ -484,12 +698,115 @@
         (mono-router-home-role)
         "coder")))
 
+;; ── BL-805: resident-invoked rotation gate ──────────────────────────────────
+(def rotate-force-env-var
+  "Force-override env seam for the resident-invoked rotation gate below -
+   emergencies and tests only. Set to \"1\" to rotate anyway over a stuck
+   in_process parcel; the gate still warns loudly, naming what was left
+   behind (see respawn-as!)."
+  "SWARMFORGE_ROTATE_FORCE")
+
+(defn rotate-force-override? []
+  (= "1" (System/getenv rotate-force-env-var)))
+
+;; BL-921/BL-927: single definition of "the resident pane's live identity" -
+;; originally handoffd.bb-local (BL-921), relocated here so
+;; departing-role-blocking-handoff below can reuse it too without a circular
+;; load-file (handoffd.bb already load-files this file, not the reverse).
+;; handoffd.bb's own two call sites now read handoff-lib/resident-live-role -
+;; the engineering article's mirrored-predicate rule applies with no
+;; language boundary forcing a duplicate here, so there must be exactly one.
+(defn resident-live-role
+  "Probes the resident pane's OWN start command for the launch script it is
+   actually running - independent of the mono-router-active-role marker file
+   chase/rotation gates would otherwise trust alone. rotate-resident-to!
+   respawns the pane as `zsh '<root>/.swarmforge/launch/<role>.sh'`, so the
+   live role name is read directly off #{pane_start_command}, never off the
+   marker. Returns the role name, or nil when the session is gone, the tmux
+   call fails, or the command names no launch script - an identity that
+   cannot be read must never be treated as agreement (see
+   mono-router-lib/live-role-agrees?).
+
+   BL-927 architect bounce (2026-08-19): must NOT use clojure.java.shell/sh
+   - this file's own handoffd.bb sibling documents why (BL-061:
+   clojure.java.shell's stream-read shim can deadlock on successive
+   subprocess calls within one process run). BL-967 closed the remainder:
+   the sibling clojure.java.shell/sh calls this comment used to name
+   (session-exists? in the same sweep) are gone, and this call itself no
+   longer goes to babashka.process/sh either - every subprocess in this
+   file now runs through daemon-cycle-guard-lib/sh!, which keeps the safe
+   mechanism AND bounds the wait."
+  [socket session]
+  (when-not (str/blank? session)
+    (try
+      (let [result (daemon-cycle-guard-lib/sh! "tmux" "-S" socket "list-panes" "-t" session "-F" "#{pane_start_command}")]
+        (when (zero? (:exit result))
+          (let [line (first (str/split-lines (str (:out result))))]
+            (when-let [[_ role] (re-find #"launch/([^/]+)\.sh" (or line ""))]
+              role))))
+      (catch Exception _ nil))))
+
+(defn departing-role-blocking-handoff
+  "The currently-active (about-to-depart) role, and its own inbox/in_process/
+   *.handoff file if any - what the resident-invoked rotation gate refuses
+   on. Returns {:role ... :blocking-file ...}, both nil when undetermined.
+
+   The RAW active-role marker only gates whether a candidate is considered
+   at all: fails OPEN (both nil, rotation proceeds) exactly as BL-805
+   specified whenever a candidate can't even be found - missing/blank
+   marker, or no roles.tsv row for it. handoff-files already filters to
+   real *.handoff parcels only, so a lone claim-progress/nudge/chase
+   sidecar never blocks.
+
+   BL-927: once a marker candidate exists, the marker's OWN claim is never
+   sufficient evidence on its own - the :role actually returned is resolved
+   from the resident pane's LIVE identity via the :live-role-fn option (an
+   injectable arity-0 seam so tests never need a live tmux session; defaults
+   to a real resident-live-role probe), reusing mono-router-lib/live-role-agrees? for
+   the unreadable-is-divergence rule (BL-921) rather than a second
+   definition. Three outcomes:
+     - live identity agrees with the marker -> byte-identical to the
+       pre-BL-927 result (the common case).
+     - live identity is readable but names a DIFFERENT known role -> the
+       departing role and its mailbox resolve from THAT role instead - the
+       residual case BL-926 alone does not close (marker diverged, target a
+       third role).
+     - live identity cannot be read at all -> fails OPEN, same as a missing
+       marker. Divergence only ever WIDENS the fail-open set here, never
+       narrows a case BL-805 already covered (invariant 2).
+
+   BL-926: :role is the departing role rotate-gate-decision compares
+   against the rotation target under :active-role - rotating INTO the role
+   that owns the blocking parcel is not abandonment."
+  ([] (departing-role-blocking-handoff {}))
+  ([{:keys [live-role-fn]
+     :or {live-role-fn (fn [] (resident-live-role (tmux-socket) (mono-router-resident-session)))}}]
+   (let [marker-path (mono-router-active-role-path)]
+     (or (when (fs/exists? marker-path)
+           (let [marker-role (str/trim (slurp (str marker-path)))]
+             (when-not (str/blank? marker-role)
+               (when-let [marker-role-info (load-role-info marker-role)]
+                 (let [live-role (live-role-fn)]
+                   (cond
+                     (mono-router-lib/live-role-agrees? live-role marker-role)
+                     {:role marker-role
+                      :blocking-file (first (handoff-files (mailbox-dir marker-role-info :in_process)))}
+
+                     (some-> live-role str str/trim not-empty)
+                     (let [live-role* (str/trim (str live-role))]
+                       (when-let [live-role-info (load-role-info live-role*)]
+                         {:role live-role*
+                          :blocking-file (first (handoff-files (mailbox-dir live-role-info :in_process)))}))
+
+                     :else nil))))))
+         {:role nil :blocking-file nil}))))
+
 (defn session-exists?
   "True when tmux has a live session of this name on the project socket."
   [socket session]
   (and (not (str/blank? socket))
        (not (str/blank? session))
-       (zero? (:exit (sh/sh "tmux" "-S" socket "has-session" "-t" session)))))
+       (zero? (:exit (daemon-cycle-guard-lib/sh! "tmux" "-S" socket "has-session" "-t" session)))))
 
 (defn resolve-wake-session
   "Pure wake target for a roles.tsv session name under mono-router.
@@ -523,7 +840,7 @@
   ([socket session]
    (let [args (cond-> ["tmux" "-S" socket "display-message" "-p" "#{pane_id}"]
                 (not (str/blank? session)) (concat ["-t" session]))
-         result (apply sh/sh args)]
+         result (apply daemon-cycle-guard-lib/sh! args)]
      (str/trim (:out result)))))
 
 (defn respawn-self!
@@ -531,18 +848,35 @@
    the same launch script a fresh pane launch would run so the new session
    gets the full role re-bootstrap. Mirrors the coordinator's manual
    respawn-pane procedure, but self-triggered from inside the pane being
-   replaced instead of from an operator pane."
+   replaced instead of from an operator pane.
+
+   BL-917: this is the SAME-role re-exec path BL-911's own fix missed -
+   rotate-resident-to! (a DIFFERENT-role re-exec) established that rotation
+   is the moment prompt freshness gets recomposed from current sources, but
+   respawn-self! re-execs the CURRENT role's launch script and recomposed
+   nothing, so a role cleared at its idle boundary came back up on exactly
+   the stale prompt BL-911 exists to prevent. Same chokepoint, same failure
+   posture as rotate-resident-to!: a recompose failure is reported loudly
+   but never blocks the respawn (invariant 2) - the role still boots on the
+   prompt it already had."
   [role-name]
   (let [socket (tmux-socket)
         session (or (mono-router-resident-session) (pane-id socket))
         script (launch-script-path role-name)
-        env-args (openrouter-pane-env-args)
-        result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
-                                    env-args
-                                    ["-t" session (str "zsh '" script "'")]))]
-    (when (zero? (:exit result))
-      (write-mono-router-active-role! role-name))
-    result))
+        env-args (openrouter-pane-env-args)]
+    (let [recompose-result (recompose-role-prompt! role-name)]
+      (when-not (:ok recompose-result)
+        (binding [*out* *err*]
+          (println (str "respawn-self: WARNING recompose failed for '" role-name
+                        "': " (:reason recompose-result)
+                        " - booting on the previously composed prompt.")))
+        (flush)))
+    (let [result (apply daemon-cycle-guard-lib/sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                                      env-args
+                                      ["-t" session (str "zsh '" script "'")]))]
+      (when (zero? (:exit result))
+        (write-mono-router-active-role! role-name))
+      result)))
 
 ;; ── BL-518: mono-router rotation ────────────────────────────────────────────
 ;; respawn-self! re-execs the CURRENT role's launch script (idle-boundary
@@ -576,11 +910,31 @@
         (>= (System/currentTimeMillis) deadline) false
         :else (do (Thread/sleep 500) (recur))))))
 
+(defn rotation-router-pack?
+  "BL-931: whether THIS project is currently running (or last launched as)
+   a rotation-router pack, via mono-router-lib's shared resolution
+   (invariant 1 - the ONE resolution every gate uses, not a fifth
+   independent copy)."
+  []
+  (mono-router-lib/resolve-rotation-router-mode?
+   (fs/path (target-root) ".swarmforge")
+   (str (fs/path (target-root) "swarmforge" "swarmforge.conf"))))
+
 (defn rotate-resident-to!
   "Rotate the resident pane to <target-role>. Returns {:ok true} or
-   {:ok false :reason ...}. Never System/exit — safe for handoffd chase."
+   {:ok false :reason ...}. Never System/exit — safe for handoffd chase.
+
+   BL-931: refuses outright on a pack that is not a rotation router - a
+   standing pack (e.g. full-forge) gives every role its own pane, so there
+   is no resident to rotate and mono-router-resident-session's 'first
+   non-coordinator roles.tsv row' would otherwise address and evict a
+   working colleague's pane (the specifier, twice, on 2026-08-18). Checked
+   here rather than only in respawn-as! so handoffd's daemon-driven chase
+   (the OTHER caller, invariant 2) is covered by the same gate."
   [target-role]
   (try
+    (if-not (rotation-router-pack?)
+      {:ok false :reason "not-a-rotation-router"}
     (let [socket (tmux-socket)
           session (or (mono-router-resident-session) (pane-id socket))
           script (launch-script-path target-role)
@@ -592,19 +946,33 @@
         {:ok false :reason "no-launch-script"}
         :else
         (do
+          ;; BL-911: recompose BEFORE the respawn so the pane about to boot
+          ;; reads a prompt freshly composed from current sources - the one
+          ;; chokepoint both the resident-invoked path (respawn-as!) and
+          ;; handoffd.bb's daemon-driven chase share, so a fix placed here
+          ;; covers both drivers. A recompose failure is reported loudly but
+          ;; never refuses the rotation - the role still boots, on the
+          ;; prompt it already had (invariant 2).
+          (let [recompose-result (recompose-role-prompt! target-role)]
+            (when-not (:ok recompose-result)
+              (binding [*out* *err*]
+                (println (str "rotate: WARNING recompose failed for '" target-role
+                              "': " (:reason recompose-result)
+                              " - booting on the previously composed prompt.")))
+              (flush)))
           (when-not (wait-for-delivery! target-role 30000)
             (binding [*out* *err*]
               (println (str "rotate: WARNING no parcel delivered to '" target-role
                             "' within 30s; rotating anyway (it will resume via RESUME-ON-START if it arrives).")))
             (flush))
-          (let [result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+          (let [result (apply daemon-cycle-guard-lib/sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
                                             env-args
                                             ["-t" session (str "zsh '" script "'")]))]
             (if (zero? (:exit result))
               (do (write-mono-router-active-role! target-role)
                   {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
-                                     (str "tmux-exit-" (:exit result)))})))))
+                                     (str "tmux-exit-" (:exit result)))}))))))
     (catch Exception e
       {:ok false :reason (.getMessage e)})))
 
@@ -614,23 +982,64 @@
    target-role first (best-effort; proceeds after timeout with a loud warning
    so a fresh role never boots to an inbox handoffd merely hasn't reached yet).
    The target role's launch script must already exist - the router-mode
-   launcher pre-generates every pipeline role's <role>.sh at startup."
+   launcher pre-generates every pipeline role's <role>.sh at startup.
+
+   BL-805: this is the RESIDENT-INVOKED rotation entry (the only caller of
+   respawn-as!, via rotate_to_role.bb), so it first gates on the departing
+   role's own in_process box - a real unfinished parcel there refuses the
+   rotation (loud, nonzero exit, pane never respawned) unless the
+   rotate-force-env-var override is set, in which case it warns loudly,
+   naming what was left behind, and proceeds. rotate-resident-to! itself
+   stays ungated: handoffd.bb's daemon-driven chase calls it directly and
+   must never be able to deadlock on the very parcel it is trying to drain.
+
+   BL-926: also passes the departing role (:active-role) alongside
+   target-role into rotate-gate-decision, so rotating INTO the role that
+   already owns the blocking parcel proceeds - that is not abandonment, it
+   is the only way the parcel gets picked up."
   [target-role]
-  (let [result (rotate-resident-to! target-role)]
-    (when-not (:ok result)
-      (binding [*out* *err*]
-        (case (:reason result)
-          "no-resident-session"
-          (println "rotate: could not resolve mono-router resident session")
-          "no-launch-script"
-          (println (str "rotate: no launch script for role '" target-role
-                        "' - is this swarm a mono-router (config rotation router) launch?"))
-          (println (str "rotate: failed for '" target-role "': " (:reason result)))))
-      (System/exit (case (:reason result)
-                     "no-resident-session" 4
-                     "no-launch-script" 3
-                     1)))
-    result))
+  (let [{:keys [role blocking-file]} (departing-role-blocking-handoff)
+        decision (mono-router-lib/rotate-gate-decision
+                  {:blocking-file (some-> blocking-file str)
+                   :force? (rotate-force-override?)
+                   :active-role role
+                   :target-role target-role})
+        do-respawn! (fn []
+                      (let [result (rotate-resident-to! target-role)]
+                        (when-not (:ok result)
+                          (binding [*out* *err*]
+                            (case (:reason result)
+                              "not-a-rotation-router"
+                              (println (str "rotate: this pack does not rotate - every role has its own pane"
+                                            " (target '" target-role "')"))
+                              "no-resident-session"
+                              (println "rotate: could not resolve mono-router resident session")
+                              "no-launch-script"
+                              (println (str "rotate: no launch script for role '" target-role
+                                            "' - is this swarm a mono-router (config rotation router) launch?"))
+                              (println (str "rotate: failed for '" target-role "': " (:reason result)))))
+                          (System/exit (case (:reason result)
+                                         "not-a-rotation-router" 6
+                                         "no-resident-session" 4
+                                         "no-launch-script" 3
+                                         1)))
+                        result))]
+    (case decision
+      :refuse
+      (do (binding [*out* *err*]
+            (println (str "rotate: refused - in_process still holds an unfinished parcel: " blocking-file
+                          ". Run done_with_current.sh to complete it first, or set "
+                          rotate-force-env-var "=1 to override.")))
+          (System/exit 5))
+
+      :proceed-forced
+      (do (binding [*out* *err*]
+            (println (str "rotate: WARNING " rotate-force-env-var
+                          " override set - rotating over unfinished parcel left behind: " blocking-file)))
+          (do-respawn!))
+
+      :proceed
+      (do-respawn!))))
 
 ;; ── BL-365: durable install ──────────────────────────────────────────────
 ;; A bare `spit` + `fs/move` pair is atomic in ORDERING (the rename is one
@@ -779,7 +1188,7 @@
    blob), matching the send-time semantics in swarm_handoff.bb's
    canonical-commit."
   [commit]
-  (zero? (:exit (sh/sh "git" "cat-file" "-e" (str commit "^{commit}")))))
+  (zero? (:exit (daemon-cycle-guard-lib/sh! "git" "cat-file" "-e" (str commit "^{commit}")))))
 
 (defn unresolvable-commit?
   "True when content is a git_handoff whose 'commit' header no longer

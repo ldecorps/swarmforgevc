@@ -30,10 +30,14 @@ function mkFixtureRoot() {
   const root = mkTmp('bl487-fixture-');
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  // BL-655: handoff_lib.bb now load-files ambulance_lib.bb too - omitting it
-  // here does not throw loudly, it makes the real `bb` subprocess fail and
-  // the CLI wrapper this feature drives silently degrade instead.
-  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb']) {
+  // BL-655: handoff_lib.bb load-files ambulance_lib.bb; BL-805: it also
+  // load-files mono_router_lib.bb. Omitting either here does not throw
+  // loudly at fixture build time - it makes the real `bb` subprocess fail
+  // and (pre-BL-814) the CLI wrapper this feature drives would silently
+  // degrade instead. This exact list going stale twice, in this exact
+  // technique, is BL-814's own root cause - keep it in sync with the
+  // sibling fixture in extension/test/readLiveRoleHeldTicketsCli.test.js.
+  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb']) {
     fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, name), path.join(scriptsDir, name));
   }
   return root;

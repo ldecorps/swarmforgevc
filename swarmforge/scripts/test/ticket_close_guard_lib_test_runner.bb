@@ -70,14 +70,40 @@
 
 (assert= "active/ + done/ for same ticket is a close move"
          "BL-551"
-         (:ticket-id (ticket-close-guard-lib/parse-close-move
-                      ["backlog/active/BL-551-llm-cost.yaml"
-                       "backlog/done/M8/BL-551-llm-cost.yaml"])))
+         (:ticket-id (first (ticket-close-guard-lib/parse-close-move
+                              ["backlog/active/BL-551-llm-cost.yaml"
+                               "backlog/done/M8/BL-551-llm-cost.yaml"]))))
 
 (assert= "ordinary multi-path commit is not a close move"
          nil
          (ticket-close-guard-lib/parse-close-move
           ["backlog/active/BL-100-a.yaml" "backlog/active/BL-101-b.yaml"]))
+
+;; BL-869 fault B: a close commit moving MULTIPLE tickets active -> done
+;; must return one entry PER ticket, not `(first ...)` collapsed to one -
+;; the false-ALLOW fault where tickets 2..N rode through with zero
+;; validation.
+(assert= "a close commit moving two tickets returns one entry per ticket, grouped order"
+         [{:ticket-id "BL-857" :active-path "backlog/active/BL-857-a.yaml" :done-path "backlog/done/BL-857-a.yaml"}
+          {:ticket-id "BL-849" :active-path "backlog/active/BL-849-b.yaml" :done-path "backlog/done/BL-849-b.yaml"}]
+         (ticket-close-guard-lib/parse-close-move
+          ["backlog/active/BL-857-a.yaml" "backlog/done/BL-857-a.yaml"
+           "backlog/active/BL-849-b.yaml" "backlog/done/BL-849-b.yaml"]))
+
+;; BL-869 fault B, second reported shape: with the paths interleaved so the
+;; FIRST active and FIRST done path name DIFFERENT tickets, `(first
+;; (filter active))` + `(first (filter done))` used to pair BL-857's
+;; active path with BL-849's done path (different ids, same-id check
+;; failed) and return nil, which validate-close-allowed then read as "not
+;; a close move at all" - {:allowed true} for an unvalidated close. Every
+;; ticket must still resolve correctly by matching on shared id, regardless
+;; of which path arrives first.
+(assert= "path order does not change which active pairs with which done"
+         [{:ticket-id "BL-857" :active-path "backlog/active/BL-857-a.yaml" :done-path "backlog/done/BL-857-a.yaml"}
+          {:ticket-id "BL-849" :active-path "backlog/active/BL-849-b.yaml" :done-path "backlog/done/BL-849-b.yaml"}]
+         (ticket-close-guard-lib/parse-close-move
+          ["backlog/active/BL-857-a.yaml" "backlog/active/BL-849-b.yaml"
+           "backlog/done/BL-849-b.yaml" "backlog/done/BL-857-a.yaml"]))
 
 ;; ── validate-close-allowed ───────────────────────────────────────────────
 
@@ -102,6 +128,49 @@
            (:reason (ticket-close-guard-lib/validate-close-allowed
                      root ["backlog/active/BL-551-slug.yaml"
                            "backlog/done/M8/BL-551-slug.yaml"]))))
+
+;; BL-869 fault A: qa-approved-ticket? used to compare against
+;; ticket-id-from-headers' single first-match extraction, so a note
+;; approving "BL-857,BL-849,BL-840" credited only BL-857 - closing BL-849
+;; or BL-840 was refused with "no QA git_handoff or note ... referencing
+;; this ticket" against a note that plainly named them (Article 2.6).
+(let [root (mk-root)]
+  (write-ticket! root "active" "BL-857")
+  (write-ticket! root "active" "BL-849")
+  (write-coordinator-handoff! root :new "00_qa.handoff"
+                              (str "id: x\nfrom: QA\nto: coordinator\npriority: 00\ntype: note\n"
+                                   "message: QA approved BL-857,BL-849,BL-840 @ 0bae185f9b, landed on main. Bookkeep all 3.\n\nbody\n"))
+  (let [result (ticket-close-guard-lib/validate-close-allowed
+                root ["backlog/active/BL-857-a.yaml" "backlog/done/BL-857-a.yaml"
+                      "backlog/active/BL-849-b.yaml" "backlog/done/BL-849-b.yaml"])]
+    (assert-true "a multi-ticket QA note authorizes closing every ticket it names, not just the first"
+                 (:allowed result))
+    (assert= "the close reports every ticket-id it closed"
+             ["BL-857" "BL-849"]
+             (:ticket-ids result))))
+
+;; BL-869 fault B: parse-close-move used to collapse an N-ticket close to
+;; ONE {:ticket-id ...} map (`(first (filter active))` / `(first (filter
+;; done))`), so tickets 2..N were committed with NO approval check at all -
+;; the guard's entire purpose silently bypassed. One ticket approved, one
+;; not: the close must block, naming only the one that failed.
+(let [root (mk-root)]
+  (write-ticket! root "active" "BL-857")
+  (write-ticket! root "active" "BL-849")
+  (write-coordinator-handoff! root :new "00_qa.handoff"
+                              (str "id: x\nfrom: QA\nto: coordinator\npriority: 00\ntype: git_handoff\n"
+                                   "task: BL-857-a\ncommit: a1b2c3d4e5\n\nbody\n"))
+  (let [result (ticket-close-guard-lib/validate-close-allowed
+                root ["backlog/active/BL-857-a.yaml" "backlog/done/BL-857-a.yaml"
+                      "backlog/active/BL-849-b.yaml" "backlog/done/BL-849-b.yaml"])]
+    (assert-false "one unapproved ticket blocks the whole multi-ticket close"
+                  (:allowed result))
+    (assert= "the block names only the ticket that failed approval, not the approved one"
+             ["BL-849"]
+             (:blocked-ticket-ids result))
+    (assert= "the block still reports every ticket the commit tried to close"
+             ["BL-857" "BL-849"]
+             (:ticket-ids result))))
 
 (let [root (mk-root)]
   (write-ticket! root "done" "BL-551")

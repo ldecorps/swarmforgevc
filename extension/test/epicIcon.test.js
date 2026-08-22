@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { EPIC_ICON_POOL, resolveEpicIcon } = require('../out/concierge/epicIcon');
-const { ICON_EMOJI, STANDING_TOPIC_ICON } = require('../out/concierge/topicIcon');
+const { FORUM_TOPIC_ICON_STICKER_SET } = require('../out/concierge/forumTopicIconStickerSet');
+const { ICON_EMOJI, STANDING_TOPIC_ICON, ROLE_TOPIC_ICON } = require('../out/concierge/topicIcon');
 
 // BL-449: epic topics are a distinct icon-assignment path from the
 // ticket-state sync in topicIcon.ts - the three seeded epics (Swarm Role
@@ -26,6 +27,25 @@ test('resolveEpicIcon: onboarding-target-repo resolves to the clapperboard', () 
 // - never displaced by the pool-assignment branch below.
 test('resolveEpicIcon: a seeded epic keeps its fixed icon even when it collides with alreadyAssignedIcons', () => {
   assert.equal(resolveEpicIcon('role-benchmarking', ['🎙', '🎭', '🎬']), '🎙');
+});
+
+// BL-946 bounce D1: an epic id named after an Object.prototype member must
+// resolve like any other UNKNOWN epic - a bare table lookup reaches the
+// prototype and returns the inherited FUNCTION as the icon, which both live
+// callers would pass straight to the Telegram API. Exhaustive over the
+// prototype names (deterministic - never left to a lucky fast-check seed,
+// bounce D2), plus '__proto__' whose inherited value is an object, not a
+// function.
+test('resolveEpicIcon: prototype-named epic ids resolve to a pool icon string, never an inherited prototype member', () => {
+  const prototypeIds = ['valueOf', 'toString', 'constructor', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__proto__'];
+  for (const epicId of prototypeIds) {
+    const icon = resolveEpicIcon(epicId, []);
+    assert.equal(typeof icon, 'string', `${epicId}: expected a string icon, got ${typeof icon}`);
+    assert.ok(EPIC_ICON_POOL.includes(icon), `${epicId}: expected a pool member, got ${JSON.stringify(icon)}`);
+    // Same table, same answer: the id is not a known epic, so it takes the
+    // pool-assignment branch exactly as any other unknown id does.
+    assert.equal(icon, resolveEpicIcon('some-ordinary-unknown-epic', []), `${epicId}: must resolve like any other unknown epic`);
+  }
 });
 
 // ── epic-icon-new-topic-02: a new epic beyond the seeded set gets the next
@@ -76,4 +96,28 @@ test('EPIC_ICON_POOL excludes the musical-notes emoji (badge-collision with the 
 
 test('EPIC_ICON_POOL has no internal duplicates', () => {
   assert.equal(new Set(EPIC_ICON_POOL).size, EPIC_ICON_POOL.length);
+});
+
+// ── BL-946: the pool draws from the whole stock set ──────────────────────
+
+test('EPIC_ICON_POOL holds at least 60 icons (39 live epics today, with headroom)', () => {
+  assert.ok(EPIC_ICON_POOL.length >= 60, `expected >= 60 pool icons, got ${EPIC_ICON_POOL.length}`);
+});
+
+test('EPIC_ICON_POOL is disjoint from ROLE_TOPIC_ICON', () => {
+  const roleIcons = new Set(Object.values(ROLE_TOPIC_ICON));
+  for (const icon of EPIC_ICON_POOL) {
+    assert.ok(!roleIcons.has(icon), `expected the epic pool to never collide with the role-topic icon "${icon}"`);
+  }
+});
+
+test('every EPIC_ICON_POOL member is in the committed sticker-set snapshot (an absent glyph fails silently in production)', () => {
+  const live = new Set(FORUM_TOPIC_ICON_STICKER_SET);
+  for (const icon of EPIC_ICON_POOL) {
+    assert.ok(live.has(icon), `pool glyph "${icon}" is not in the snapshot`);
+  }
+});
+
+test('the original 10 glyphs stay as the pool order prefix, so already-assigned epics keep their badges', () => {
+  assert.deepEqual(EPIC_ICON_POOL.slice(0, 10), ['🎙', '🎭', '🎬', '🎤', '🎨', '🎩', '🕺', '💃', '✍️', '📚']);
 });

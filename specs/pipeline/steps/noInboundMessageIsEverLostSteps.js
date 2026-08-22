@@ -253,13 +253,16 @@ function registerSteps(registry) {
   });
 
   // ── no-inbound-message-is-ever-lost-05 ──────────────────────────────
-  const STUCK_CONFIG = { backoffBaseMs: 10, backoffMaxMs: 100, degradedThreshold: 100, stuckRetryLimit: 3 };
+  // BL-621: sustainedOutageThresholdMs completes the config shape; FIXTURE_NOW
+  // pins the clock so no sustained-outage episode can open here.
+  const STUCK_CONFIG = { backoffBaseMs: 10, backoffMaxMs: 100, degradedThreshold: 100, stuckRetryLimit: 3, sustainedOutageThresholdMs: 30 * 60_000 };
+  const FIXTURE_NOW = 0;
 
   registry.define(/^it has retried up to its limit$/, async (ctx) => {
-    ctx.pollState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+    ctx.pollState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: { escalated: false } };
     ctx.escalations = [];
     for (let i = 0; i < STUCK_CONFIG.stuckRetryLimit; i++) {
-      const cycle = await runPollCycle(ctx.pollState, PRINCIPAL_ID, fakePollAdapters(ctx, { deliver: false }), STUCK_CONFIG);
+      const cycle = await runPollCycle(ctx.pollState, PRINCIPAL_ID, fakePollAdapters(ctx, { deliver: false }), STUCK_CONFIG, FIXTURE_NOW);
       ctx.pollState = cycle.state;
       ctx.escalations.push(cycle.escalateStuckDelivery);
     }

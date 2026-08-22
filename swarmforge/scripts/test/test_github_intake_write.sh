@@ -15,11 +15,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WRITER="$SCRIPT_DIR/../github_intake_write.sh"
+# BL-872: registers ROOT with the shared EXIT trap (lib/tmp_cleanup.sh) so a
+# failing assertion below (set -euo pipefail exiting before the trailing
+# `rm -rf "$ROOT"`) still gets it cleaned up.
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 ROOT="$(mktemp -d)"
+register_tmp_dir "$ROOT"
 mkdir -p "$ROOT/backlog"
 cd "$ROOT"
 

@@ -225,7 +225,12 @@ function registerSteps(registry) {
       return true;
     };
     try {
-      ctx.changed = await recordApprovalDecisionAndClose(
+      // BL-892: recordApprovalDecisionAndClose now returns {changed,
+      // committed} - this step only cares about `changed` (the durability
+      // commit is a separate, unrelated concern this feature never wires
+      // an adapter for), so the boolean is extracted immediately and every
+      // downstream step here is unchanged.
+      const result = await recordApprovalDecisionAndClose(
         {
           recordApprovalReply: async (backlogId) => {
             ctx.recordApprovalReplyCalls.push(backlogId);
@@ -242,6 +247,7 @@ function registerSteps(registry) {
         { kind: 'approved' },
         0
       );
+      ctx.changed = result.changed;
     } finally {
       process.stderr.write = originalErrorWrite;
     }

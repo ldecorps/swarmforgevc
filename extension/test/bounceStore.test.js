@@ -104,6 +104,33 @@ test('a line whose `by` is present but not a string (e.g. a number) is skipped, 
   assert.deepEqual(readBounceRecords(target), []);
 });
 
+// ── BL-689: items/blocked round-trip - no change needed in this file's own
+// shape guard (hasBounceRecordShape/hasKnownBounceValues), which only checks
+// the fields it knows about and never strips unknown ones; a JSONL line's
+// extra properties survive JSON.parse untouched. This test proves that
+// stays true rather than assuming it.
+
+test('a record carrying an inventory and blocked count round-trips through append and read unchanged', () => {
+  const target = mkTmp();
+  const withInventory = record({
+    items: [
+      { id: 'D1', class: 'behavior', blamed: 'coder', pointer: 'foo.ts:12 bar()' },
+      { id: 'D2', class: 'compile', blamed: 'architect', pointer: 'baz.ts:3 qux()' },
+    ],
+    blocked: 3,
+  });
+  appendBounceRecordIfNew(target, withInventory);
+  assert.deepEqual(readBounceRecords(target), [withInventory]);
+});
+
+test('a record with no inventory round-trips with neither `items` nor `blocked` present', () => {
+  const target = mkTmp();
+  appendBounceRecordIfNew(target, record());
+  const [read] = readBounceRecords(target);
+  assert.equal('items' in read, false);
+  assert.equal('blocked' in read, false);
+});
+
 // The shape check on the base QA fields (ticket/producingRole/.../at) is
 // AND-ed with the `by` shape check - a line missing a core field entirely
 // must be rejected regardless of `by` being well-formed (or absent), never

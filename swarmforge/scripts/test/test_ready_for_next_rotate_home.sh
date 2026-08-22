@@ -20,11 +20,7 @@ pass() { echo "PASS: $*"; }
 # (target-root, project-root) would resolve to the real repo, not the
 # fixture - silently testing live swarm state instead of the fixture. Give
 # each worktree its own copy so `cd "$(dirname "$0")"` stays inside it.
-install_scripts() {
-  local wt="$1"
-  mkdir -p "$wt/swarmforge/scripts"
-  cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
-}
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT

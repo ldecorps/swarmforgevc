@@ -174,4 +174,119 @@ if pid_alive "$ORPHAN_NODE_PID"; then
 fi
 pass "06: crash-orphaned node --test batch (PPID 1) rooted under a swarm worktree is reaped"
 
+# ── 07: crash-orphaned vitest property-lane root (cwd under worktree, no path
+#     in argv) is reaped — the incident class that overloaded the host when an
+#     npm exec vitest parent died and left a PPID-1 tree running for hours.
+write_fake_vitest_script() {
+  local name="$1"
+  cat > "$CODER_WT/$name" <<'PYEOF'
+import os, sys, time
+pid_file = sys.argv[1]
+worktree_ext = sys.argv[2]
+daemonize = sys.argv[3] == "orphan"
+if daemonize:
+    if os.fork() > 0:
+        sys.exit(0)
+    os.setpgrp()
+os.chdir(worktree_ext)
+with open(pid_file, "w") as f:
+    f.write(str(os.getpid()))
+os.execv("/bin/bash", [
+    "bash", "-c",
+    'exec -a "npm exec vitest run --config vitest.properties.config.mjs" sleep 3600',
+])
+PYEOF
+}
+
+make_fixture
+mkdir -p "$CODER_WT/extension"
+write_fake_vitest_script "run_vitest.py"
+python3 "$CODER_WT/run_vitest.py" "$ROOT/orphan_vitest.pid" "$CODER_WT/extension" orphan >/dev/null 2>&1 &
+for _ in $(seq 1 40); do
+  [[ -s "$ROOT/orphan_vitest.pid" ]] && break
+  sleep 0.1
+done
+[[ -s "$ROOT/orphan_vitest.pid" ]] || fail "07 setup: fake vitest process never wrote its pid file"
+ORPHAN_VITEST_PID="$(cat "$ROOT/orphan_vitest.pid")"
+PPID_NOW=""
+for _ in $(seq 1 40); do
+  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_VITEST_PID" 2>/dev/null | tr -d ' ' || true)"
+  if [[ "$PPID_NOW" == "1" ]]; then break; fi
+  sleep 0.1
+done
+[[ "$PPID_NOW" == "1" ]] || fail "07 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+
+check_once
+
+if pid_alive "$ORPHAN_VITEST_PID"; then
+  kill -9 "$ORPHAN_VITEST_PID"
+  fail "07: crash-orphaned vitest property-lane process was not reaped"
+fi
+pass "07: crash-orphaned vitest property-lane process (cwd under worktree) is reaped"
+
+# ── 08: an UNREGISTERED crash-orphan whose own cmdline names a redirect
+#     target gets the BL-995 best-effort REAPED notice written there.
+#     invariant 3's cmdline-scan branch (append-reap-notice!) is otherwise
+#     never exercised anywhere: every other unregistered-orphan fixture in
+#     this repo (scenarios 04/06/07 above, and the bl995 property runner's
+#     raw-orphan! jobs) uses a bare `exec -a "<name>" sleep N` with no
+#     redirect in argv, so the scan's "found a log target" path has zero
+#     coverage without this scenario. Found via a hand-authored BL-638
+#     mutant sweep (bb has no wired mutation tool): removing the
+#     append-reap-notice! call from reap-orphaned-job-processes! survived
+#     every existing test AND the BL-995 acceptance suite, because every
+#     other unregistered/registered fixture's own detach_job.sh wrapper (or
+#     nothing) already satisfies the acceptance step's
+#     /REAPED|KILLED by SIGTERM/ OR-check via its own TERM trap.
+write_fake_unregistered_orphan_with_log() {
+  local name="$1"
+  cat > "$CODER_WT/$name" <<'PYEOF'
+import os, sys
+pid_file = sys.argv[1]
+log_file = sys.argv[2]
+worktree = sys.argv[3]
+if os.fork() > 0:
+    sys.exit(0)  # parent exits immediately: child reparents to launchd/init
+os.setpgrp()
+os.chdir(worktree)
+with open(pid_file, "w") as f:
+    f.write(str(os.getpid()))
+# The redirect never actually happens (sleep writes nothing) - only its
+# TEXT needs to appear in the process's own argv, which is what ps reports
+# and what append-reap-notice!'s cmdline scan reads. exec -a sets argv[0]
+# to the literal string passed via $1, unescaped by any shell.
+fake_argv0 = "node --test fakejob.js >> " + log_file + " 2>&1"
+os.execv("/bin/bash", ["bash", "-c", 'exec -a "$1" sleep 300', "shell", fake_argv0])
+PYEOF
+}
+
+make_fixture
+write_fake_unregistered_orphan_with_log "run_unregistered.py"
+NOTICE_LOG="$ROOT/unregistered_orphan.log"
+python3 "$CODER_WT/run_unregistered.py" "$ROOT/orphan_unreg.pid" "$NOTICE_LOG" "$CODER_WT" \
+  >/dev/null 2>&1 &
+for _ in $(seq 1 40); do
+  [[ -s "$ROOT/orphan_unreg.pid" ]] && break
+  sleep 0.1
+done
+[[ -s "$ROOT/orphan_unreg.pid" ]] || fail "08 setup: fake unregistered-orphan process never wrote its pid file"
+ORPHAN_UNREG_PID="$(cat "$ROOT/orphan_unreg.pid")"
+PPID_NOW=""
+for _ in $(seq 1 40); do
+  PPID_NOW="$(ps -o ppid= -p "$ORPHAN_UNREG_PID" 2>/dev/null | tr -d ' ' || true)"
+  if [[ "$PPID_NOW" == "1" ]]; then break; fi
+  sleep 0.1
+done
+[[ "$PPID_NOW" == "1" ]] || fail "08 setup: process did not reparent to PPID 1 (got $PPID_NOW)"
+
+check_once
+
+if pid_alive "$ORPHAN_UNREG_PID"; then
+  kill -9 "$ORPHAN_UNREG_PID"
+  fail "08: unregistered crash-orphan with a log target in its own cmdline was not reaped"
+fi
+[[ -f "$NOTICE_LOG" ]] || fail "08: no notice was ever written to the orphan's own log target"
+grep -q "REAPED" "$NOTICE_LOG" || fail "08: notice log does not name the reaping:\n$(cat "$NOTICE_LOG")"
+pass "08: an unregistered crash-orphan naming a log target in its own cmdline gets the best-effort REAPED notice there (BL-995 invariant 3, unregistered path)"
+
 echo "ALL PASS"

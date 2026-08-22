@@ -11,14 +11,18 @@ const EXTENSION_DIR = path.join(__dirname, '..');
 const TEMP_DIR_NAME = '.stryker-tmp'; // must match stryker.config.json's tempDirName
 
 // Every repo-root sibling a test or the code under test resolves a runtime
-// path into. Confirmed instances (complete swept set as of BL-267): pwa/
+// path into. Confirmed instances (complete swept set as of BL-918): pwa/
 // (BL-221, asset reads), swarmforge/ (BL-267, complianceBatteryGate.ts
 // shelling compliance_battery.bb), .github/ (BL-267,
 // backlogDashboardWorkflowCacheStamp.test.js reading
-// .github/workflows/backlog-dashboard.yml), and docs/ (BL-267,
-// gettingStartedDrift.test.js reading docs/tutorials/GettingStarted.md). Adding
+// .github/workflows/backlog-dashboard.yml), docs/ (BL-267,
+// gettingStartedDrift.test.js reading docs/tutorials/GettingStarted.md), and
+// specs/ (BL-918 hardening, bl884GherkinMutationRunnerArgValidation.test.js
+// spawning specs/pipeline/scripts/run_gherkin_mutation.sh - without this the
+// sandboxed dry run can't exec the script at all and every BL-884 assertion
+// on its exit code fails, e.g. expecting 3 and observing bash's 127). Adding
 // coverage for a new sibling is adding its name here.
-const SIBLING_NAMES = ['pwa', 'swarmforge', '.github', 'docs'];
+const SIBLING_NAMES = ['pwa', 'swarmforge', '.github', 'docs', 'specs'];
 
 for (const result of ensureStrykerSandboxSiblingLinks(EXTENSION_DIR, TEMP_DIR_NAME, SIBLING_NAMES)) {
   console.log(`${result.created ? 'Created' : 'Verified'} ${result.siblingName}/ sandbox link at ${result.linkPath}`);

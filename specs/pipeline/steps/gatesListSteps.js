@@ -12,11 +12,12 @@ const os = require('node:os');
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
 const { installFakeTmux } = require(path.join(EXT_DIR, 'test', 'helpers', 'fakeTmux'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const TOKEN = 'aps-gates-list-token';
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'aps-gates-list-'));
+  return mkSocketFixtureRoot('aps-gates-list-');
 }
 
 function mkdirp(dir) {

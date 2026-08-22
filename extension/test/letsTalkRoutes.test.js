@@ -507,3 +507,72 @@ test('processLetsTalkTurn: server TTS success includes audio and ready state', a
   assert.ok(result.replyAudioBase64);
   assert.equal(result.clientTts, undefined);
 });
+
+test('processLetsTalkTurn: BL-863 resolveAudioForTurn failure ends the turn with the named reason, no STT spent', async () => {
+  const target = mkTarget();
+  let sttCalls = 0;
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => {
+        sttCalls += 1;
+        return { kind: 'ok', transcript: 'should-not-run' };
+      },
+      resolveAudioForTurn: () => ({
+        kind: 'failure',
+        engine: 'openai',
+        reason: 'openai audio engine unavailable: the OpenAI key is missing',
+      }),
+    }
+  );
+  assert.equal(sttCalls, 0);
+  assert.equal(result.success, false);
+  assert.equal(result.recoverable, true);
+  assert.equal(result.reason, 'openai audio engine unavailable: the OpenAI key is missing');
+});
+
+test('processLetsTalkTurn: BL-863 resolveAudioForTurn success overrides the static deps for this turn', async () => {
+  const target = mkTarget();
+  let resolvedSttCalls = 0;
+  let staticSttCalls = 0;
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => {
+        staticSttCalls += 1;
+        return { kind: 'ok', transcript: 'should-not-run' };
+      },
+      resolveAudioForTurn: () => ({
+        kind: 'ok',
+        engine: 'local',
+        adapters: {
+          transcribeAudio: async () => {
+            resolvedSttCalls += 1;
+            return { kind: 'ok', transcript: 'resolved per turn' };
+          },
+          clientTts: true,
+        },
+      }),
+    }
+  );
+  assert.equal(staticSttCalls, 0);
+  assert.equal(resolvedSttCalls, 1);
+  assert.equal(result.success, true);
+  assert.equal(result.transcript, 'resolved per turn');
+});
+
+test('processLetsTalkTurn: BL-863 no resolveAudioForTurn wired keeps the static deps behavior unchanged', async () => {
+  const target = mkTarget();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'static path' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.transcript, 'static path');
+});

@@ -550,7 +550,23 @@ async function syncBoardIfWired(
   // buildConciergeTickAdapters in telegram-front-desk-bot.ts). Awaiting a
   // plain (non-Promise) return value is a no-op passthrough, so every
   // existing synchronous test fixture keeps working unchanged.
-  const roleHeldTickets = await readRoleHeldTickets();
+  //
+  // BL-814: the production adapter now THROWS (readLiveRoleHeldTickets'
+  // own RoleHeldTicketsComputationFailedError) rather than silently
+  // returning {} when the underlying bb subprocess fails - a failed
+  // computation must never be indistinguishable from a genuinely empty
+  // one. Catch it here, at the one production caller: log it (the same
+  // stderr posture as logBoardSyncFailure below) and keep the PRIOR tick's
+  // board state untouched, rather than let an uncaught rejection escape
+  // into the tick loop or overwrite a good board with a blank one.
+  let roleHeldTickets: Record<string, string[]>;
+  try {
+    roleHeldTickets = await readRoleHeldTickets();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`syncBoardIfWired: readRoleHeldTickets failed, keeping prior board state: ${message}\n`);
+    return { state: prevBoard };
+  }
   const rootIntakeFiles = readRootIntakeFiles?.() ?? [];
   const data = computePipelineBoard(roleHeldTickets, folders.paused, buildTicketMetaLookup(folders, rootIntakeFiles), {
     rootIntake: rootIntakeFiles,

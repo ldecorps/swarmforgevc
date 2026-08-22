@@ -34,6 +34,7 @@ const GATE_PANE_TEXT = SNIPPET;
 const OPERATOR_DECIDE_STUB = `
 const fs = require('fs');
 const path = require('path');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 fs.appendFileSync(path.join(__dirname, '..', '..', '..', 'consumed.log'), JSON.stringify(process.argv.slice(2)) + '\\n');
 `;
 
@@ -57,7 +58,7 @@ function opPath(root, ...rest) {
 }
 
 function mkRuntimeFixture(roles) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-human-in-loop-'));
+  const root = mkSocketFixtureRoot('aps-human-in-loop-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(opPath(root), { recursive: true });
@@ -106,7 +107,7 @@ function git(cwd, args) {
 }
 
 function mkOperatorDecideCliFixture(role) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aps-human-in-loop-cli-')));
+  const root = fs.realpathSync(mkSocketFixtureRoot('aps-human-in-loop-cli-'));
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 't@t']);
   git(root, ['config', 'user.name', 't']);
@@ -129,7 +130,7 @@ function mkOperatorDecideCliFixture(role) {
 // the exact multi-gate scenario the count-based selector alone cannot
 // direct correctly.
 function mkMultiRoleOperatorDecideCliFixture(roleTickets) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aps-human-in-loop-cli-multi-')));
+  const root = fs.realpathSync(mkSocketFixtureRoot('aps-human-in-loop-cli-multi-'));
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 't@t']);
   git(root, ['config', 'user.name', 't']);

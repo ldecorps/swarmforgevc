@@ -25,6 +25,7 @@ const {
   writeJsonFile,
   writePollHeartbeat,
   BRIDGE_READY_MESSAGE,
+  QUEUED_PROMPT_TTL_MS,
 } = require('../out/tools/telegramCursorBridgeLive');
 
 function mkRoot() {
@@ -710,6 +711,9 @@ test('runCursorBridgePollOnce in inbound-queue mode, busy-queued reply acks the 
   // and its identity must actually reach disk (not a no-op persist).
   const persisted = loadJsonFile(statePath);
   assert.equal(persisted.livenessStatus?.renderedText, 'Bridge: busy · 1 waiting');
+  // BL-767 scenario 03: the busy cue also follows the queued question into
+  // its own origin topic (Bubble, 91), not only Cursor Remote (55).
+  assert.equal(persisted.queuedWorkLivenessStatus?.['91']?.renderedText, 'Bridge: busy · 1 waiting');
 });
 
 test('bootstrapCursorBridgeState persists topic id', async () => {
@@ -1271,15 +1275,51 @@ test('handleInboundDecision status reflects busy state', async () => {
   assert.ok(ctx.posts.some((text) => text.includes('busy (run in flight)')));
 });
 
-test('handleInboundDecision queue lists pending prompts', async () => {
-  const ctx = mkCtx();
-  ctx.state.pendingPrompts = [
-    { id: 'qp-1', text: 'first', createdAtMs: 1 },
-    { id: 'qp-2', text: 'second', createdAtMs: 2 },
-  ];
-  await handleInboundDecision({ action: 'queue' }, ctx, 30, async () => {});
-  assert.ok(ctx.posts.some((text) => text.includes('Queued questions: 2')));
-  assert.ok(ctx.posts.some((text) => text.includes('1. first')));
+test('handleInboundDecision queue posts a selection poll for pending prompts', async () => {
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  const sentPolls = [];
+  telegramClient.sendTelegramPoll = async (_token, _chatId, question, options) => {
+    sentPolls.push({ question, options });
+    return { success: true, pollId: 'poll-queue-cmd' };
+  };
+  try {
+    const ctx = mkCtx();
+    ctx.state.pendingPrompts = [
+      { id: 'qp-1', text: 'first', createdAtMs: 1 },
+      { id: 'qp-2', text: 'second', createdAtMs: 2 },
+    ];
+    ctx.state.pendingPromptPoll = { pollId: 'stale-poll', itemIds: ['qp-1', 'qp-2'] };
+    await handleInboundDecision({ action: 'queue' }, ctx, 30, async () => {});
+    assert.equal(sentPolls.length, 1);
+    assert.match(sentPolls[0].question, /choose next queued question/);
+    assert.ok(sentPolls[0].options.some((opt) => opt.includes('first')));
+    assert.ok(sentPolls[0].options.some((opt) => opt.includes('second')));
+    assert.ok(sentPolls[0].options.includes('Clear all queued questions'));
+    assert.equal(ctx.state.pendingPromptPoll.pollId, 'poll-queue-cmd');
+    assert.ok(!ctx.posts.some((text) => text.includes('Queued questions: 2')));
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+});
+
+test('handleInboundDecision queue reports empty without posting a poll', async () => {
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  let pollCalls = 0;
+  telegramClient.sendTelegramPoll = async () => {
+    pollCalls += 1;
+    return { success: true, pollId: 'should-not-fire' };
+  };
+  try {
+    const ctx = mkCtx();
+    ctx.state.pendingPrompts = [];
+    await handleInboundDecision({ action: 'queue' }, ctx, 30, async () => {});
+    assert.equal(pollCalls, 0);
+    assert.ok(ctx.posts.some((text) => text.includes('Queue is empty.')));
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
 });
 
 test('handleInboundDecision dequeue removes by index and persists state', async () => {
@@ -1712,7 +1752,195 @@ test('runCursorBridgePollOnce runs selected queued prompt from poll_answer', asy
   assert.ok(posts.some((text) => text.includes('queued follow-up')));
 });
 
-test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble topic, never Cursor Remote', async () => {
+test('runCursorBridgePollOnce clear-all poll option empties queue without starting a run', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const posts = [];
+  let prompted = false;
+  deps.agentSession.promptAgent = async () => {
+    prompted = true;
+    return { replyText: 'should not run', agentId: deps.agentSession.readAgentId() };
+  };
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingPrompts: [
+      { id: 'qp-1', text: 'queued first', createdAtMs: Date.now() },
+      { id: 'qp-2', text: 'queued second', createdAtMs: Date.now() },
+    ],
+    pendingPromptPoll: { pollId: 'poll-queue-1', itemIds: ['qp-1', 'qp-2'], clearAllOptionIndex: 2 },
+  };
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-queue-1',
+              option_ids: [2],
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  assert.equal(next.busy, false);
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 0);
+  assert.equal(persisted.pendingPromptPoll, undefined);
+  assert.equal(prompted, false);
+  assert.ok(posts.some((text) => text.includes('Cleared 2 queued questions')));
+});
+
+// BL-811 D1 regression, at the integration level (not just the pure
+// decideQueuedPollAnswerAction unit/property coverage): a poll persisted by
+// a pre-hotfix build has no clearAllOptionIndex field. Telegram sends
+// option_ids: [] on a vote retraction, so selectedIndex is undefined too —
+// before the fix, undefined === undefined cleared the whole queue. This
+// drives the full runCursorBridgePollOnce -> processQueuedPollAnswer path
+// with a real persisted "legacy" poll shape and asserts the queue and poll
+// both survive untouched, and no "Cleared" receipt is posted.
+test('runCursorBridgePollOnce ignores a vote retraction against a legacy poll with no clearAllOptionIndex field, leaving the queue and poll untouched', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const posts = [];
+  let prompted = false;
+  deps.agentSession.promptAgent = async () => {
+    prompted = true;
+    return { replyText: 'should not run', agentId: deps.agentSession.readAgentId() };
+  };
+  const legacyPoll = { pollId: 'poll-legacy-1', itemIds: ['qp-1'] }; // no clearAllOptionIndex — pre-hotfix shape
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingPrompts: [{ id: 'qp-1', text: 'queued first', createdAtMs: Date.now() }],
+    pendingPromptPoll: legacyPoll,
+  };
+  writeJsonFile(deps.statePath, initialState);
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-legacy-1',
+              option_ids: [], // retraction
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  assert.equal(next.busy, false);
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 1, 'the retraction must not wipe the queue');
+  assert.equal(persisted.pendingPrompts[0].id, 'qp-1');
+  assert.deepEqual(persisted.pendingPromptPoll, legacyPoll, 'the poll itself is untouched by an ignored vote');
+  assert.equal(prompted, false);
+  assert.ok(!posts.some((text) => text.includes('Cleared')), 'no clear-all receipt for an ignored retraction');
+});
+
+test('runCursorBridgePollOnce reposts selection poll when outstanding poll is missing newer queued items', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  const sentPolls = [];
+  telegramClient.sendTelegramPoll = async (_token, _chatId, question, options) => {
+    sentPolls.push({ question, options });
+    return { success: true, pollId: 'poll-queue-refreshed' };
+  };
+  try {
+    const initialState = {
+      updateOffset: 90,
+      cursorTopicId: 55,
+      pendingPrompts: [
+        { id: 'qp-1', text: 'first queued', createdAtMs: Date.now() },
+        { id: 'qp-2', text: 'second queued', createdAtMs: Date.now() },
+      ],
+      // Stale outstanding poll from before the second question arrived — the
+      // prior anyAlive guard starved a refresh here.
+      pendingPromptPoll: { pollId: 'poll-queue-stale', itemIds: ['qp-1'], clearAllOptionIndex: 1 },
+    };
+    writeJsonFile(deps.statePath, initialState);
+    await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async () => {},
+        getUpdates: async () => ({ success: true, updates: [] }),
+      },
+      initialState,
+      false,
+      0
+    );
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+  assert.equal(sentPolls.length, 1);
+  assert.match(sentPolls[0].question, /2 queued/);
+  assert.equal(sentPolls[0].options.length, 3); // two questions + clear-all
+  assert.equal(sentPolls[0].options[2], 'Clear all queued questions');
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal(persisted.pendingPromptPoll.pollId, 'poll-queue-refreshed');
+  assert.deepEqual(persisted.pendingPromptPoll.itemIds, ['qp-1', 'qp-2']);
+  assert.equal(persisted.pendingPromptPoll.clearAllOptionIndex, 2);
+});
+
+test('runCursorBridgePollOnce sweeps queued prompts older than 72h and posts a receipt', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const posts = [];
+  const now = Date.now();
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingPrompts: [
+      { id: 'qp-old', text: 'stale prompt', createdAtMs: now - QUEUED_PROMPT_TTL_MS - 1 },
+      { id: 'qp-fresh', text: 'fresh prompt', createdAtMs: now - 1_000 },
+    ],
+  };
+  await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({ success: true, updates: [] }),
+    },
+    initialState,
+    false,
+    0
+  );
+  const persisted = loadJsonFile(deps.statePath);
+  assert.deepEqual((persisted.pendingPrompts ?? []).map((p) => p.id), ['qp-fresh']);
+  assert.ok(posts.some((text) => text.includes('Dropped 1 queued question older than 72h')));
+  assert.ok(posts.some((text) => text.includes('stale prompt')));
+});
+
+// BL-767: the reply must follow the poll's OWN recorded origin topic, never
+// a hardcoded "Bubble first" guess — bubbleTopicId (91) is bound here but the
+// poll was posted in a different topic (77), so the reply must land in 77.
+test('runCursorBridgePollOnce routes a choice-poll answer reply to the topic the poll was posted in, not the bound Bubble topic', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);
   const postCalls = [];
@@ -1721,7 +1949,7 @@ test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble to
     cursorTopicId: 55,
     bubbleTopicId: 91,
     pendingChoicePolls: [
-      { pollId: 'poll-choice-1', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now() },
+      { pollId: 'poll-choice-1', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now(), originTopicId: 77 },
     ],
   };
   const next = await runCursorBridgePollOnce(
@@ -1750,17 +1978,23 @@ test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble to
   );
   assert.equal(next.busy, true);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.ok(postCalls.some((c) => c.topicId === 91 && c.text.includes('Agent started')));
+  assert.ok(postCalls.some((c) => c.topicId === 77 && c.text.includes('Agent started')));
+  assert.ok(!postCalls.some((c) => c.topicId === 91));
   assert.ok(!postCalls.some((c) => c.topicId === 55));
 });
 
-test('runCursorBridgePollOnce routes a choice-poll answer reply to Cursor Remote when no Bubble topic is bound', async () => {
+// BL-767 invariant: "answered in exactly one topic: the one it was asked in,
+// or the Cursor Remote topic when no origin was recorded" — never Bubble as
+// a silent default. bubbleTopicId (91) is bound but the poll predates origin
+// recording, so the reply must fall back to Cursor Remote (55), not Bubble.
+test('runCursorBridgePollOnce routes a choice-poll answer reply to Cursor Remote when the poll has no recorded origin, even with a Bubble topic bound', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);
   const postCalls = [];
   const initialState = {
     updateOffset: 80,
     cursorTopicId: 55,
+    bubbleTopicId: 91,
     pendingChoicePolls: [
       { pollId: 'poll-choice-2', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now() },
     ],
@@ -1792,6 +2026,109 @@ test('runCursorBridgePollOnce routes a choice-poll answer reply to Cursor Remote
   assert.equal(next.busy, true);
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.ok(postCalls.some((c) => c.topicId === 55 && c.text.includes('Agent started')));
+  assert.ok(!postCalls.some((c) => c.topicId === 91));
+});
+
+// BL-767: a choice-poll answer arriving while the bridge is busy must queue
+// with the poll's origin topic preserved, not drop it — otherwise the later
+// drain answers on Cursor Remote regardless of where the poll was posted.
+test('runCursorBridgePollOnce queues a choice-poll answer with its origin topic preserved when the bridge is busy', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    bubbleTopicId: 91,
+    pendingChoicePolls: [
+      { pollId: 'poll-choice-3', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now(), originTopicId: 91 },
+    ],
+  };
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async () => {},
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-choice-3',
+              option_ids: [0],
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    true, // busy
+    0
+  );
+  assert.equal(next.busy, true, 'busy is untouched — nothing new was started');
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 1);
+  assert.equal(persisted.pendingPrompts[0].originTopicId, 91);
+  assert.ok(persisted.pendingPrompts[0].text.includes('I choose option 1'));
+  assert.equal((persisted.pendingChoicePolls ?? []).length, 0, 'the answered poll is cleared');
+});
+
+// BL-767 feature scenario 03, full drain path: a question queued from Bubble
+// carries a standing "N waiting" cue in Bubble (posted earlier, message id
+// 3001 already on disk); once the selection poll picks it and the run
+// completes, that same cue must be EDITED to "0 waiting" in place — not left
+// stuck at 1, and not a fresh message in some other topic.
+test('runCursorBridgePollOnce edits the Bubble queued-work cue to 0 waiting once the drained question finishes', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const telegramCalls = [];
+  const telegramPostFn = async (url, body) => {
+    const parsedBody = JSON.parse(body);
+    telegramCalls.push({ url, body: parsedBody });
+    if (url.endsWith('/sendMessage')) {
+      return { ok: true, status: 200, json: { ok: true, result: { message_id: 9000 + telegramCalls.length } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  let promptedText;
+  deps.agentSession.promptAgent = async (prompt) => {
+    promptedText = prompt;
+    return { replyText: 'done', agentId: deps.agentSession.readAgentId() };
+  };
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    bubbleTopicId: 91,
+    pendingPrompts: [{ id: 'qp-1', text: 'from bubble', createdAtMs: Date.now(), originTopicId: 91 }],
+    pendingPromptPoll: { pollId: 'poll-drain-1', itemIds: ['qp-1'], clearAllOptionIndex: 1 },
+    queuedWorkLivenessStatus: { '91': { topicId: 91, messageId: 3001, renderedText: 'Bridge: busy · 1 waiting' } },
+  };
+  writeJsonFile(deps.statePath, initialState);
+  await runCursorBridgePollOnce(
+    {
+      ...deps,
+      telegramPostFn,
+      post: async () => {},
+      getUpdates: async () => ({
+        success: true,
+        updates: [{ update_id: 81, poll_answer: { poll_id: 'poll-drain-1', option_ids: [0], user: { id: 42 } } }],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(promptedText, 'from bubble');
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 0);
+  const editsToBubbleCue = telegramCalls.filter(
+    (c) => c.url.endsWith('/editMessageText') && c.body.message_id === 3001
+  );
+  assert.ok(
+    editsToBubbleCue.some((c) => c.body.text === 'Bridge: idle · 0 waiting'),
+    `expected an edit of message 3001 to "0 waiting"; got ${JSON.stringify(editsToBubbleCue)}`
+  );
 });
 
 test('runCursorBridgePollOnce uses default postChunks when post override is omitted', async () => {
@@ -2444,6 +2781,93 @@ test('handleInboundDecision /pilot refuses while automated expedite is running',
   assert.ok(posts.some((p) => p.includes('Cannot pilot BL-700')));
 });
 
+// BL-722: writes a paused defect ticket matching (or, via overrides, failing)
+// the safe pilot filter used by pilotSafeDefects.ts.
+function writeSafePilotTicket(root, id, overrides = {}) {
+  const dir = path.join(root, 'backlog', 'paused');
+  fs.mkdirSync(dir, { recursive: true });
+  const fields = {
+    title: id,
+    type: 'defect',
+    status: 'todo',
+    severity: 'high',
+    priority: 1,
+    human_approval: 'approved',
+    mutation_cost: 'low',
+    ...overrides,
+  };
+  const body = [
+    `id: ${id}`,
+    `title: "${fields.title}"`,
+    `type: ${fields.type}`,
+    `status: ${fields.status}`,
+    `severity: ${fields.severity}`,
+    `priority: ${fields.priority}`,
+    `human_approval: ${fields.human_approval}`,
+    `mutation_cost: ${fields.mutation_cost}`,
+    `acceptance: specs/features/${id}-x.feature`,
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(dir, `${id}.yaml`), body);
+  const featDir = path.join(root, 'specs', 'features');
+  fs.mkdirSync(featDir, { recursive: true });
+  fs.writeFileSync(path.join(featDir, `${id}-x.feature`), `Feature: ${id}\n`);
+}
+
+test('handleInboundDecision /pilot safe --list posts the ranked safe pool', async () => {
+  const root = mkRoot();
+  writeSafePilotTicket(root, 'BL-910', { severity: 'high', priority: 1 });
+  writeSafePilotTicket(root, 'BL-911', { severity: 'low', priority: 1 });
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  const busy = await handleInboundDecision({ action: 'pilot-safe-list' }, ctx, 15, async () => {});
+  assert.equal(busy, false);
+  assert.ok(posts.some((p) => p.includes('BL-910') && p.includes('BL-911')));
+});
+
+test('handleInboundDecision /pilot safe --list on an empty pool says so without starting a pilot', async () => {
+  const root = mkRoot();
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  const busy = await handleInboundDecision({ action: 'pilot-safe-list' }, ctx, 15, async () => {});
+  assert.equal(busy, false);
+  assert.ok(posts.some((p) => /Safe pilot pool empty/.test(p)));
+});
+
+test('handleInboundDecision /pilot safe picks and starts the top-ranked ticket', async () => {
+  const root = mkRoot();
+  writeSafePilotTicket(root, 'BL-910', { severity: 'low', priority: 1 });
+  writeSafePilotTicket(root, 'BL-911', { severity: 'high', priority: 1 });
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  let captured;
+  ctx.agentSession.promptAgent = async (prompt) => {
+    captured = prompt;
+    return { replyText: 'piloting', agentId: ctx.agentSession.readAgentId() };
+  };
+  const busy = await handleInboundDecision({ action: 'pilot-safe-start' }, ctx, 15, async () => {});
+  assert.equal(busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(posts.some((p) => /Safe filter matched 2/.test(p) && p.includes('BL-911')));
+  assert.ok(posts.some((p) => p.includes('Pilot BL-911 started')));
+  assert.match(String(captured), /OFFLINE EXPEDITION for BL-911/);
+});
+
+test('handleInboundDecision /pilot safe on an empty pool does not start a pilot', async () => {
+  const root = mkRoot();
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  let prompted = false;
+  ctx.agentSession.promptAgent = async () => {
+    prompted = true;
+    return { replyText: 'nope', agentId: ctx.agentSession.readAgentId() };
+  };
+  const busy = await handleInboundDecision({ action: 'pilot-safe-start' }, ctx, 15, async () => {});
+  assert.equal(busy, false);
+  assert.equal(prompted, false);
+  assert.ok(posts.some((p) => /Safe pilot pool empty/.test(p)));
+});
+
 test('handleInboundDecision /update posts an operational summary', async () => {
   const root = mkRoot();
   const progressDir = path.join(root, '.swarmforge', 'expedite', 'BL-696');
@@ -2570,6 +2994,177 @@ test('handleInboundDecision log posts tail without reply quote', async () => {
   await handleInboundDecision({ action: 'log', target: { kind: 'expedite', ticket: 'BL-696' } }, ctx, 99, async () => {});
   assert.ok(posts.some((p) => p.includes('bravo')));
   assert.deepEqual(replyTargets, [undefined]);
+});
+
+// BL-894 P3: /queue must never adopt wherever it was sent from as the
+// permanent Host topic — only ensureCursorTopic's own canonical binding may
+// set cursorTopicId. Drives handleQueueInboundAction directly (via the same
+// handleInboundDecision entry point production uses) so the assertion holds
+// regardless of which caller reaches it.
+test('handleInboundDecision queue never adopts the arrival topic as the permanent Host topic', async () => {
+  const root = mkRoot();
+  const posts = [];
+  const ctx = mkCtx({ root, posts, cursorTopicId: undefined });
+  ctx.state.pendingPrompts = [
+    { id: 'qp-1', text: 'first', createdAtMs: Date.now() },
+    { id: 'qp-2', text: 'second', createdAtMs: Date.now() },
+  ];
+  const busy = await handleInboundDecision({ action: 'queue' }, ctx, undefined, async () => {}, 999);
+  assert.equal(busy, false);
+  assert.equal(
+    ctx.state.cursorTopicId,
+    undefined,
+    'the /queue arrival topic (999) must never become the permanent Host topic'
+  );
+  assert.equal(posts.length, 0, 'no poll (or any post) is possible without a bound Host topic');
+});
+
+// BL-894 P2: a vote on a poll this bridge itself superseded (a fresh /queue
+// repost) must tell the human, not vanish in silence.
+test('runCursorBridgePollOnce tells the human a vote landed on a superseded queue poll, and leaves the queue untouched', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root, { cursorTopicId: 55 });
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  const sentPolls = [];
+  telegramClient.sendTelegramPoll = async (_token, _chatId, question, options) => {
+    sentPolls.push({ question, options });
+    return { success: true, pollId: 'poll-fresh' };
+  };
+  const posts = [];
+  try {
+    const initialState = {
+      updateOffset: 0,
+      cursorTopicId: 55,
+      pendingPrompts: [
+        { id: 'qp-1', text: 'first queued', createdAtMs: Date.now() },
+        { id: 'qp-2', text: 'second queued', createdAtMs: Date.now() },
+      ],
+      pendingPromptPoll: { pollId: 'poll-old', itemIds: ['qp-1', 'qp-2'], clearAllOptionIndex: 2 },
+    };
+    writeJsonFile(deps.statePath, initialState);
+
+    const first = await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async (_t, _c, _topic, text) => {
+          posts.push(text);
+        },
+        getUpdates: async () => ({
+          success: true,
+          updates: [
+            {
+              update_id: 1,
+              message: { message_id: 1, text: '/queue', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 },
+            },
+          ],
+        }),
+      },
+      initialState,
+      false,
+      0
+    );
+    assert.equal(sentPolls.length, 1, 'expected the repost to send a fresh poll');
+    const afterRepost = loadJsonFile(deps.statePath);
+    assert.equal(afterRepost.pendingPromptPoll.pollId, 'poll-fresh');
+    assert.deepEqual(afterRepost.supersededPromptPollIds, ['poll-old']);
+
+    await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async (_t, _c, _topic, text) => {
+          posts.push(text);
+        },
+        getUpdates: async () => ({
+          success: true,
+          updates: [{ update_id: 2, poll_answer: { poll_id: 'poll-old', option_ids: [0], user: { id: 42 } } }],
+        }),
+      },
+      first.state,
+      first.busy,
+      0
+    );
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+  assert.ok(
+    posts.some((t) => /no longer live/i.test(t)),
+    `expected a reply telling the human the poll is stale; posts:\n${posts.join('\n---\n')}`
+  );
+  const finalState = loadJsonFile(deps.statePath);
+  assert.equal((finalState.pendingPrompts ?? []).length, 2, 'a vote on a superseded poll must never change the queue');
+  assert.equal(finalState.pendingPromptPoll.pollId, 'poll-fresh', 'the live poll is untouched by a vote on the superseded one');
+});
+
+// BL-894 D1 (hardener bounce 2026-08-14): supersededPromptPollId was a
+// single scalar, so a SECOND /queue repost overwrote the first repost's id
+// and a vote on the now-doubly-superseded poll fell through silently (no
+// post, no queue change). Reproduces two reposts before voting on the very
+// first (generation-0) poll.
+test('runCursorBridgePollOnce tells the human a vote landed on a poll superseded by TWO reposts, not just one', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root, { cursorTopicId: 55 });
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  let freshCounter = 0;
+  telegramClient.sendTelegramPoll = async () => ({ success: true, pollId: `poll-fresh-${++freshCounter}` });
+  const posts = [];
+  function queueUpdate(updateId) {
+    return {
+      update_id: updateId,
+      message: { message_id: updateId, text: '/queue', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 },
+    };
+  }
+  try {
+    const initialState = {
+      updateOffset: 0,
+      cursorTopicId: 55,
+      pendingPrompts: [
+        { id: 'qp-1', text: 'first queued', createdAtMs: Date.now() },
+        { id: 'qp-2', text: 'second queued', createdAtMs: Date.now() },
+      ],
+      pendingPromptPoll: { pollId: 'poll-gen0', itemIds: ['qp-1', 'qp-2'], clearAllOptionIndex: 2 },
+    };
+    writeJsonFile(deps.statePath, initialState);
+
+    const first = await runCursorBridgePollOnce(
+      { ...deps, post: async (_t, _c, _topic, text) => posts.push(text), getUpdates: async () => ({ success: true, updates: [queueUpdate(1)] }) },
+      initialState,
+      false,
+      0
+    );
+    const second = await runCursorBridgePollOnce(
+      { ...deps, post: async (_t, _c, _topic, text) => posts.push(text), getUpdates: async () => ({ success: true, updates: [queueUpdate(2)] }) },
+      first.state,
+      first.busy,
+      0
+    );
+    assert.equal(freshCounter, 2, 'expected two reposts to each send a fresh poll');
+    const afterSecondRepost = loadJsonFile(deps.statePath);
+    assert.equal(afterSecondRepost.pendingPromptPoll.pollId, 'poll-fresh-2');
+
+    await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async (_t, _c, _topic, text) => posts.push(text),
+        getUpdates: async () => ({
+          success: true,
+          updates: [{ update_id: 3, poll_answer: { poll_id: 'poll-gen0', option_ids: [0], user: { id: 42 } } }],
+        }),
+      },
+      second.state,
+      second.busy,
+      0
+    );
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+  assert.ok(
+    posts.some((t) => /no longer live/i.test(t)),
+    `expected a reply telling the human the doubly-superseded poll is stale, not silence; posts:\n${posts.join('\n---\n')}`
+  );
+  const finalState = loadJsonFile(deps.statePath);
+  assert.equal((finalState.pendingPrompts ?? []).length, 2, 'a vote on a doubly-superseded poll must never change the queue');
 });
 
 test('telegramCursorBridgeLive exports poll and file name constants', () => {

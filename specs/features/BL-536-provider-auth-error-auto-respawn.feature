@@ -23,7 +23,7 @@ Feature: provider auth failures auto-heal
   # BL-536 persistent-auth-failure-alerts-03
   Scenario: an auth failure that persists after respawn raises an operator-visible alert
     Given a standing role pane was just respawned for an auth-class failure
-    And the role's scrollback still matches auth-class text after N respawn attempts
-    When the reliability observe tick runs again
+    And the role's scrollback still matches auth-class text after the configured respawn attempt cap is reached
+    When the reliability observe tick runs
     Then an operator-visible alert is recorded
     And the role is not respawned again beyond the attempt cap

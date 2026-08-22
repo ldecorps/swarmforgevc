@@ -71,6 +71,11 @@ AUDIT="$DAEMON_DIR/kill-all-audit.log"
 # fixture, matched and killed the live swarm's real socket 5 times in one
 # session - see swarmforge/scripts/test/test_swarm_socket_not_in_tmp.sh.)
 source "$SCRIPT_DIR/project_socket_id_lib.sh"
+source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/availability_ledger_lib.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/pipeline_survivor_scan_lib.sh"
 SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
 LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
 # Test-only override, matching swarmforge.sh's own SWARMFORGE_CONFIG
@@ -158,6 +163,10 @@ reap_orphaned_pane_descendants() {
 
 mkdir -p "$DAEMON_DIR"
 log "kill_all_swarm begin root=$ROOT sweep_inbox=$SWEEP_INBOX reset_worktrees=$RESET_WORKTREES"
+# BL-823: a stop with no durable record is the interval class BL-650 most
+# needs - this is the single choke point every stop path funnels through
+# (kill_all_swarm.sh is a shim over this script; stop-swarm.sh calls it too).
+availability_record "$ROOT" "stop" "swarm-stop" "kill_pipeline_swarm.sh"
 
 # Captured BEFORE any teardown below - pgrep -P only sees live parent/child
 # links, so this MUST run while the swarm's own process tree is still intact.
@@ -214,6 +223,10 @@ reap_orphaned_pane_descendants "$PANE_DESCENDANT_PIDS"
 signal_pid_file "$DAEMON_DIR/handoffd-supervisor.pid"
 signal_pid_file "$DAEMON_DIR/handoffd.pid"
 rm -f "$DAEMON_DIR/stop"
+# BL-785: record that handoffd was stopped ON PURPOSE, so the BL-675
+# freshness cron does not resurrect it. Pipeline-only scope: never marks
+# babysitterd, which this script deliberately leaves running.
+freshness_mark_stopped "$ROOT" "handoffd"
 if [[ -f "$DAEMON_DIR/handoffd.status.json" ]]; then
   if grep -q '"state":"halted"' "$DAEMON_DIR/handoffd.status.json" 2>/dev/null; then
     rm -f "$DAEMON_DIR/handoffd.status.json"
@@ -268,10 +281,9 @@ if [[ -x "$SCRIPT_DIR/collect_daemon_postmortem.sh" ]]; then
   log "postmortem $postmortem"
 fi
 
-remaining="$(pgrep -fl 'handoffd\.bb|copilot.*SwarmForge' 2>/dev/null | grep -v pgrep || true)"
-if [[ -n "$remaining" ]]; then
+if pipeline_survivor_scan "$ROOT"; then
   log "WARNING survivors remain:"
-  printf '%s\n' "$remaining" | tee -a "$AUDIT"
+  printf '%s\n' "$pipeline_survivor_lines" | tee -a "$AUDIT"
   exit 1
 fi
 

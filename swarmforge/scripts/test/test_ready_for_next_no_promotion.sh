@@ -13,10 +13,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 READY_DISPATCH="$SCRIPT_DIR/../ready_for_next.bb"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# ready_for_next.sh (and its .sh siblings) `cd` into their OWN directory
+# (dirname "$0") before invoking bb, so that relative load-file paths
+# resolve regardless of the caller's cwd - correct in production, where
+# every worktree carries its own hot-synced swarmforge/scripts/ copy. A
+# fixture worktree has no such copy: invoking the real repo's
+# ready_for_next.bb by absolute path would `cd` OUT of the fixture and INTO
+# this real checkout when it execs its sibling .sh wrapper, so every
+# git-rev-parse-based root lookup downstream (target-root, project-root)
+# would resolve to the real repo, not the fixture - silently testing live
+# swarm state instead of the fixture (same trap test_ready_for_next_rotate_
+# home.sh already documents and works around). Give each worktree its own
+# copy so `cd "$(dirname "$0")"` stays inside it.
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 # ── symbol removed ────────────────────────────────────────────────────────
 grep -q "promote-next-paused-item-if-needed" "$READY_DISPATCH" \
@@ -34,6 +49,10 @@ TASK_WT="$ROOT/.worktrees/taskrole"
 BATCH_WT="$ROOT/.worktrees/batchrole"
 git -C "$ROOT" worktree add -q -b taskrole "$TASK_WT"
 git -C "$ROOT" worktree add -q -b batchrole "$BATCH_WT"
+install_scripts "$TASK_WT"
+install_scripts "$BATCH_WT"
+TASK_DISPATCH="$TASK_WT/swarmforge/scripts/ready_for_next.bb"
+BATCH_DISPATCH="$BATCH_WT/swarmforge/scripts/ready_for_next.bb"
 
 ROLES="taskrole\ttaskrole\t$TASK_WT\tswarmforge-taskrole\tTaskrole\tclaude\ttask
 batchrole\tbatchrole\t$BATCH_WT\tswarmforge-batchrole\tBatchrole\tclaude\tbatch
@@ -53,13 +72,13 @@ queue_inbox_task() {
 # ── dispatch-unchanged-01 (Scenario Outline: task, batch) ────────────────
 TASK_INBOX="$TASK_WT/.swarmforge/handoffs/inbox"
 queue_inbox_task "$TASK_INBOX/new" "item1" "taskrole"
-OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole bb "$READY_DISPATCH")"
+OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole bb "$TASK_DISPATCH")"
 echo "$OUT" | grep -q "^TASK:" || fail "dispatch-unchanged-01 (task): expected the task-mode helper's own output (got: $OUT)"
 pass "dispatch-unchanged-01: task-mode role still execs ready_for_next_task.sh"
 
 BATCH_INBOX="$BATCH_WT/.swarmforge/handoffs/inbox"
 queue_inbox_task "$BATCH_INBOX/new" "item2" "batchrole"
-OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=batchrole bb "$READY_DISPATCH")"
+OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=batchrole bb "$BATCH_DISPATCH")"
 echo "$OUT" | grep -q '^BATCH:' || fail "dispatch-unchanged-01 (batch): expected the batch-mode helper's own output (got: $OUT)"
 pass "dispatch-unchanged-01: batch-mode role still execs ready_for_next_batch.sh"
 
@@ -71,7 +90,7 @@ mkdir -p "$TASK_WT/backlog/active" "$TASK_WT/backlog/paused" "$TASK_WT/swarmforg
 printf 'id: BL-9001\ntitle: "demo"\nstatus: paused\n' > "$TASK_WT/backlog/paused/BL-9001-demo.yaml"
 printf 'config active_backlog_max_depth 10\n' > "$TASK_WT/swarmforge/swarmforge.conf"
 queue_inbox_task "$TASK_INBOX/new" "item3" "taskrole"
-(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole bb "$READY_DISPATCH" >/dev/null)
+(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole bb "$TASK_DISPATCH" >/dev/null)
 
 [[ -f "$TASK_WT/backlog/paused/BL-9001-demo.yaml" ]] \
   || fail "no-helper-promotion-02: the paused item must not have been moved out of backlog/paused/"

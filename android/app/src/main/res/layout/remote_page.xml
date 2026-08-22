@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BL-829: one pager page for a remote (WebView) screen. remoteFailureReason
+     is what RemotePageHost.showFailure shows in place of the WebView — a
+     blank WebView is never an acceptable rendering of a failure. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/sf_bg">
+
+    <WebView
+        android:id="@+id/remoteWebView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/remoteFailureReason"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:padding="24dp"
+        android:textColor="@color/sf_muted"
+        android:textSize="15sp"
+        android:visibility="gone" />
+</FrameLayout>

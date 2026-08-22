@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { sinceLastBriefingMs, formatMergedBlockedDigest, main } = require('../out/tools/briefing-digest-line');
+const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'briefing-digest-line.js');
 
@@ -92,8 +93,9 @@ function runCliSubprocess(cwd) {
 // interception (globals: true) rewrites console.log independently of
 // process.stdout - so console.log itself is overridden here to capture the
 // digest text.
-async function runCli(cwd) {
+async function runCli(cwd, argv = []) {
   const originalCwd = process.cwd;
+  const originalArgv = process.argv;
   const writes = [];
   const originalLog = console.log;
   console.log = (...args) => {
@@ -101,16 +103,51 @@ async function runCli(cwd) {
   };
   try {
     process.cwd = () => cwd;
+    process.argv = ['node', 'briefing-digest-line.js', ...argv];
     await main();
   } finally {
     console.log = originalLog;
     process.cwd = originalCwd;
+    process.argv = originalArgv;
   }
   return writes.join('\n') + '\n';
 }
 
 test('the compiled CLI runs against the real repo and prints both lines', async () => {
   const output = await runCli(path.join(__dirname, '..', '..'));
+  assert.match(output, /^Merged since last briefing: /);
+  assert.match(output, /Blocked\/stalled: /);
+});
+
+// BL-897: with --snapshot given and usable, the merged-since digest
+// reflects the SHARED snapshot's records, not a fresh runGitLog walk - a
+// ticket id that could never appear in this real repo's own git history
+// proves which source won.
+test('the compiled CLI uses a shared --snapshot for the merged line when one is given', async () => {
+  const repoRoot = path.join(__dirname, '..', '..');
+  const nowMs = Date.now();
+  const snapshotDir = mkTmp();
+  const snapshotPath = path.join(snapshotDir, 'snapshot.json');
+  fs.writeFileSync(
+    snapshotPath,
+    JSON.stringify(
+      serializeLifecycleSnapshot(
+        [{ ticketId: 'ZZ-90003', specDateIso: new Date(nowMs - 60 * 60 * 1000).toISOString(), closeDateIso: new Date(nowMs - 30 * 60 * 1000).toISOString() }],
+        nowMs
+      ),
+      null,
+      2
+    ),
+    'utf8'
+  );
+
+  const output = await runCli(repoRoot, ['--snapshot', snapshotPath]);
+
+  assert.match(output, /Merged since last briefing: ZZ-90003/);
+});
+
+test('the compiled CLI falls back to deriving its own history when --snapshot points at a nonexistent file', async () => {
+  const output = await runCli(path.join(__dirname, '..', '..'), ['--snapshot', '/no/such/snapshot.json']);
   assert.match(output, /^Merged since last briefing: /);
   assert.match(output, /Blocked\/stalled: /);
 });

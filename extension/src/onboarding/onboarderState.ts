@@ -10,7 +10,31 @@ export type PrerequisiteStepId = (typeof PREREQUISITE_STEP_IDS)[number];
 
 export const PREREQUISITE_STEP_ORDER: readonly PrerequisiteStepId[] = PREREQUISITE_STEP_IDS;
 
-export type OnboardingPhase = 'checking-prerequisites' | 'prerequisites-ready';
+// BL-624: the four phases past prerequisites-ready - survey through the
+// agreed contract. There is no separate "surveying" phase: the clone,
+// survey and propose steps all run synchronously within the single
+// principal turn that posts "proceed" at prerequisites-ready (BL-624's own
+// contractPhaseRelay.ts owns that turn), so the only phases ever actually
+// persisted/observed are the ones below - a transient "surveying" value
+// would never be read back and is not added here.
+// BL-625: four more phases past contract-agreed - prompts, launch handoff,
+// done. Same posture as 'gate-open' below: contractPhaseRelay.ts's own
+// runProposePrompts advances contract-agreed straight to 'prompts-proposed'
+// in one turn (never through 'gate-open'), so 'gate-open' is never itself
+// durably persisted - it exists as a type member only so postLaunchHandoff
+// can be tested directly against a state at that conceptual waypoint,
+// mirroring proveGateAndPush's own directly-testable shape (BL-624 scenario
+// 05, "the onboarder checks the build-start gate").
+export type OnboardingPhase =
+  | 'checking-prerequisites'
+  | 'prerequisites-ready'
+  | 'contract-proposed'
+  | 'negotiating'
+  | 'contract-agreed'
+  | 'prompts-proposed'
+  | 'gate-open'
+  | 'ready-to-launch'
+  | 'done';
 
 // BL-590 architect bounce #6/#7 (D3/D4): target identity is POLICY, not
 // persistence, so it lives here and both the handler (findInFlightStateForTarget
@@ -170,8 +194,14 @@ export function classifyControl(text: string): OnboardingControl | null {
   return null;
 }
 
+// BL-624: guards on "still checking prerequisites" rather than the single
+// old terminal value ('prerequisites-ready') - now that OnboardingPhase has
+// phases PAST prerequisites-ready too, matching only the one old terminal
+// string would fall through to indexing PREREQUISITE_STEP_ORDER with a
+// stale stepIndex for those, which happens to read back undefined today but
+// is not a guarantee this function's own contract should depend on.
 export function currentPrerequisiteStep(state: OnboarderState): PrerequisiteStepId | null {
-  if (state.phase === 'prerequisites-ready') {
+  if (state.phase !== 'checking-prerequisites') {
     return null;
   }
   return PREREQUISITE_STEP_ORDER[state.stepIndex] ?? null;
@@ -186,7 +216,23 @@ const PREREQUISITES_READY_MESSAGE =
   'All prerequisites verified - prerequisites are ready. Next comes the survey phase: I will survey your ' +
   'target repo and propose an onboarding contract.';
 
+// BL-624: a target that has moved past prerequisites-ready (into one of
+// the survey/negotiation/agreement phases) is BL-624's own contractPhaseRelay.ts's
+// territory, not this module's - this function stays a short, honest
+// pointer rather than duplicating contract-status rendering here (which
+// would need to import contractPhaseRelay.ts and create a cycle, since
+// that module imports OnboarderState/OnboardingPhase from here).
+function renderPastPrerequisitesMessage(state: OnboarderState): string {
+  return (
+    `Onboarding ${state.targetRepoUrl} is past the prerequisites phase (current phase: "${state.phase}"). ` +
+    'Post "show-me" to see the current proposed contract, "change-this <objection>" to revise it, or "proceed" to continue.'
+  );
+}
+
 export function renderStatus(state: OnboarderState): string {
+  if (state.phase !== 'checking-prerequisites' && state.phase !== 'prerequisites-ready') {
+    return renderPastPrerequisitesMessage(state);
+  }
   const step = currentPrerequisiteStep(state);
   if (!step) {
     return PREREQUISITES_READY_MESSAGE;
@@ -229,8 +275,15 @@ export function isLikelyRepoUrl(text: string): boolean {
 // onboarding-at-a-time flow slice 1's own QA procedure walks. A target that
 // already reached prerequisites-ready is done with THIS topic's job (survey
 // is BL-624's own topic turn), so it is never picked back up here.
+// BL-624: narrowed from "not prerequisites-ready" to "still checking
+// prerequisites" now that OnboardingPhase carries phases PAST
+// prerequisites-ready too - those are BL-624's own contractPhaseRelay.ts's
+// "in flight" (its own pickActiveContractPhaseState), never this
+// function's. The old `!== 'prerequisites-ready'` filter would otherwise
+// start matching every one of those new phases as if they were still this
+// module's concern.
 export function pickActiveOnboardingState(states: readonly OnboarderState[]): OnboarderState | undefined {
-  const inFlight = states.filter((s) => s.phase !== 'prerequisites-ready');
+  const inFlight = states.filter((s) => s.phase === 'checking-prerequisites');
   if (inFlight.length === 0) {
     return undefined;
   }
@@ -309,11 +362,18 @@ export function applyPrincipalReply(state: OnboarderState, text: string, now: ()
 const NO_ACTIVE_ONBOARDING_MESSAGE =
   'No onboarding is currently in progress in this topic. Post a target GitHub repo URL to start one.';
 
+// BL-625 invariant 2: a plain reply that cannot be attributed to exactly one
+// in-flight target (more than one target in flight, none of them named in
+// the text) is refused rather than silently applied to whichever target was
+// last active - message-only, same "nothing durable to guard" shape as
+// 'no-active-onboarding' (onboarderContractPhaseRouter.ts's own
+// pickUnambiguousInFlightState decides when this fires).
 export type OnboardingMessageOutcome =
   | { kind: 'started'; state: OnboarderState; message: string }
   | { kind: 'resumed'; state: OnboarderState; message: string }
   | { kind: 'advanced'; state: OnboarderState; message: string }
-  | { kind: 'no-active-onboarding'; message: string };
+  | { kind: 'no-active-onboarding'; message: string }
+  | { kind: 'ambiguous-target'; message: string };
 
 // BL-590 architect bounce (defect 2, 2026-07-25): a repo URL for a target
 // that already has an in-flight (non-prerequisites-ready) state must RESUME
@@ -323,6 +383,14 @@ export type OnboardingMessageOutcome =
 // progress. The human's reasons to re-paste the URL are ordinary (checking
 // in, scrolling back, resuming after a pause), so this must be the default,
 // not an opt-in.
+// BL-624: unchanged by the new phases below, and deliberately so - a target
+// that is exactly 'prerequisites-ready' still opens a fresh state on
+// re-paste (BL-590's own tested "finished, never resumes a done flow"
+// behavior), but every new phase this ticket adds (contract-proposed,
+// negotiating, contract-agreed) is NOT the literal string
+// 'prerequisites-ready', so `!== 'prerequisites-ready'` already matches
+// them and resumes - exactly what BL-624 needs (never silently overwrite an
+// in-flight negotiation or an already-agreed contract with a fresh state).
 function findInFlightStateForTarget(
   existingStates: readonly OnboarderState[],
   targetRepoUrl: string

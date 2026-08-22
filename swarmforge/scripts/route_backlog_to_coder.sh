@@ -99,7 +99,11 @@ echo "Routing $(basename "$YAML") → ${ROLE} (message: ${MSG})"
 
 INBOX="$(bb "$SCRIPT_DIR/mailbox_dir.bb" "$ROOT" "$ROLE" new)"
 if compgen -G "${INBOX}"/*"_for_${ROLE}.handoff" >/dev/null 2>&1; then
-  echo "${ROLE^} inbox: $(ls -1t "${INBOX}"/*"_for_${ROLE}.handoff" | head -1)"
+  # Bash 3.2 (macOS /bin/bash) has no caret case-transform parameter
+  # expansion — that bash-4 form aborts this script under set -e after a
+  # successful route. Capitalize the first character with portable tools.
+  ROLE_LABEL="$(printf '%s' "${ROLE:0:1}" | tr '[:lower:]' '[:upper:]')${ROLE:1}"
+  echo "${ROLE_LABEL} inbox: $(ls -1t "${INBOX}"/*"_for_${ROLE}.handoff" | head -1)"
 else
   echo "Warning: parcel not found in ${INBOX} — see .swarmforge/handoffs/inject-traffic.log" >&2
   exit 1

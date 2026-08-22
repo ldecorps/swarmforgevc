@@ -12,16 +12,105 @@
 ;; Every finding is {:key :severity ("CRIT"|"WARN") :message}.
 
 (ns babysitterd-sweep-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
+
+;; BL-996: classify-pane-busy? (below) now delegates to chase_sweep_lib.bb's
+;; actively-processing? - the BL-970 chokepoint every wake predicate already
+;; funnels through - instead of its own private whole-pane substring match.
+;; Loading a sibling lib is a build-time module load, not the kind of live
+;; fs/tmux/clock read this file's own header disclaims for its business
+;; logic (chase_sweep_lib.bb is itself a pure classifier, same posture).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 
 ;; ── check 1: live-session-per-role ──────────────────────────────────────────
 
+;; BL-1017: how often a single role may be handed a session-recreate before
+;; the sweep gives up and just keeps alerting. Deliberately small — a session
+;; that will not come back is a human's problem, and a daemon that keeps
+;; retrying it forever is a respawn storm, not a repair.
+(def default-repair-cooldown-ms (* 10 60 1000))
+(def default-max-repair-attempts 1)
+
+(defn session-repair-allowed?
+  "BL-1017 invariant 2 — repair is BOUNDED. Within `cooldown-ms` of the last
+   attempt a role gets at most `max-attempts` repairs; once that window has
+   elapsed the budget resets, so a role that vanishes again hours later is
+   still repaired. With no prior attempt recorded (the common case, and every
+   pre-BL-1017 caller) repair is allowed."
+  [{:keys [now-ms last-repair-ms repair-attempts repair-cooldown-ms max-repair-attempts]
+    :or {repair-attempts 0
+         repair-cooldown-ms default-repair-cooldown-ms
+         max-repair-attempts default-max-repair-attempts}}]
+  (let [in-window? (boolean (and now-ms last-repair-ms
+                                 (< (- now-ms last-repair-ms) repair-cooldown-ms)))]
+    (or (not in-window?)
+        (< repair-attempts max-repair-attempts))))
+
+;; BL-1017: the other half of the bound — how an issued repair is RECORDED.
+;; Pure (state in, state out) and kept here beside session-repair-allowed?
+;; deliberately: the two must agree on what "inside the window" means, and a
+;; bound whose accounting lived in the I/O gatherer could drift from the
+;; predicate that reads it while both still looked correct in isolation. The
+;; gatherer only persists what this returns.
+;;
+;; The attempt is recorded whether or not tmux succeeded. A repair that FAILED
+;; is exactly the case the bound exists for — counting only successes would
+;; let an unrecreatable session be retried every sweep forever, which is the
+;; respawn storm invariant 2 forbids.
+;;
+;; Keys are plain strings, matching what the gatherer round-trips through JSON
+;; (see its read-repair-state comment on never keywordizing).
+(defn note-repair-attempt
+  [state role now-ms cooldown-ms]
+  (let [prior (get state role)
+        last-ms (get prior "last-ms")
+        in-window? (boolean (and last-ms (< (- now-ms last-ms) cooldown-ms)))]
+    (assoc state role {"attempts" (if in-window? (inc (get prior "attempts" 0)) 1)
+                       "last-ms" now-ms})))
+
 (defn check-live-session
-  [{:keys [role pane-exists? has-claude-process?]}]
+  ;; BL-804: should-stand? is topology-derived (mono_router_lib, via the
+  ;; babysitter_check.bb gatherer) and defaults to true so every pre-BL-804
+  ;; caller — classic packs, and every existing test that never mentions
+  ;; the key — keeps CRIT-ing a missing session exactly as before. It is
+  ;; consulted ONLY on the absence branch: once pane-exists? is true, the
+  ;; process/menu/frozen/remote-control checks below (and their sibling
+  ;; check-* fns) run unconditionally, so topology suppression can never
+  ;; skip a check on a session that is actually present.
+  ;;
+  ;; BL-1017: the missing-session branch now also carries a bounded :repair
+  ;; intent. Three things about its placement are load-bearing:
+  ;;   - it hangs off the SAME branch the should-stand? suppression already
+  ;;     guards, so invariant 1 (never resurrect a role the topology says
+  ;;     should not stand) holds by construction rather than by a second,
+  ;;     drift-prone predicate;
+  ;;   - it is emitted ALONGSIDE the CRIT, never instead of it. A repair that
+  ;;     silenced the alert would hide a role that keeps vanishing, which is
+  ;;     the opposite of what this ticket is for;
+  ;;   - no other branch can produce it. A pane that EXISTS is never a missing
+  ;;     session, whatever state its process is in, so the half-launch CRIT and
+  ;;     the UNAVAILABLE gather report below stay repair-free — recreating a
+  ;;     session that is already there would kill a live pane.
+  [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?]
+    :as opts
+    :or {should-stand? true}}]
   (cond
+    (and (not pane-exists?) (not should-stand?))
+    nil
+
     (not pane-exists?)
-    {:key (str "pane-" role) :severity "CRIT"
-     :message (str "swarmforge-" role ": tmux session missing")}
+    (cond-> {:key (str "pane-" role) :severity "CRIT"
+             :message (str "swarmforge-" role ": tmux session missing")}
+      (session-repair-allowed? opts)
+      (assoc :repair {:action :ensure-session :role role}))
+
+    ;; BL-802: the process gather itself failed (e.g. ps errored on an
+    ;; unsupported dialect) — report the check unavailable, never the
+    ;; half-launch CRIT below, which is a claim about a REAL absence.
+    process-gather-failed?
+    {:key (str "proc-gather-" role) :severity "UNAVAILABLE"
+     :message (str "swarmforge-" role ": pane process gather unavailable this sweep (ps failed) — live-process check skipped")}
 
     (not has-claude-process?)
     {:key (str "proc-" role) :severity "CRIT"
@@ -65,11 +154,19 @@
      :message (str failed-count " parcel(s) in handoffs/failed/ dead-letter box")}))
 
 ;; ── check 5: stuck-in-process ─────────────────────────────────────────────────
+;; BL-807 R1: gate on the busy signal the sweep already computes for check 10
+;; (owner-busy?, threaded in by the gatherer's busy-by-role map) — a stuck
+;; parcel whose owning role's pane is busy is suppressed, never warned. Age
+;; and mailbox shape play no further role here: every item this function
+;; receives was already past the stuck threshold by the gatherer (R2), and
+;; the gatherer resolves the owning role for every mailbox shape (R4/R5) —
+;; this decision only ever consumes the resolved :owner-busy? boolean.
 
 (defn check-stuck-in-process
   [stuck-parcels]
   (vec
-   (for [{:keys [name age-min]} (or stuck-parcels [])]
+   (for [{:keys [name age-min owner-busy?]} (or stuck-parcels [])
+         :when (not owner-busy?)]
      {:key (str "stuck-" (subs (str name) 0 (min 40 (count (str name)))))
       :severity "WARN"
       :message (str "in_process parcel older than 30m (age=" age-min "m): " name)})))
@@ -97,9 +194,19 @@
 
 (defn check-memory-floor
   [{:keys [available-mb floor-mb]}]
-  (when (< (long (or available-mb 0)) (long (or floor-mb 0)))
+  (cond
+    ;; BL-802: no readable memory facility this sweep (nil, distinct from a
+    ;; genuinely low reading of 0) — report unavailable, never a fabricated
+    ;; CRIT or a silent pass-through as OK.
+    (nil? available-mb)
+    {:key "memory" :severity "UNAVAILABLE"
+     :message "memory floor check unavailable this sweep — no readable memory facility (BABYSITTER_MEMINFO_PATH unset, /proc/meminfo absent, vm_stat unavailable)"}
+
+    (< (long available-mb) (long (or floor-mb 0)))
     {:key "memory" :severity "CRIT"
-     :message (str "only " available-mb "MB available (< " floor-mb "MB) — check for orphaned vitest/stryker workers (free -h FIRST)")}))
+     :message (str "only " available-mb "MB available (< " floor-mb "MB) — check for orphaned vitest/stryker workers (free -h FIRST)")}
+
+    :else nil))
 
 ;; ── check 11: claim-progress risk scan (BL-528 salvage) ──────────────────────
 
@@ -159,21 +266,16 @@
                                new-streak " consecutive sweeps — likely a lost instruction or stale assignment; check the newest completed notes and ticket assigned_to fields")})
      :new-streak new-streak}))
 
-;; ── 6d-09: busy detection survives 80-column truncation ─────────────────────
-;; A truncated pane capture can lose the "esc to interrupt" hint text before
-;; the spinner glyph/elapsed-time pattern that precedes it in the footer, so
-;; busy detection must not depend on that literal substring alone.
-
-(def ^:private spinner-glyph-re #"[✻✽✶✳]")
-(def ^:private elapsed-time-re #"\(?\d+s\b|\bfor\s+\d+m?\d*s\b")
-
+;; BL-996: was a private whole-pane substring match (`(str/includes? text
+;; "esc to interrupt")` or'd with a spinner-glyph+elapsed-time co-occurrence)
+;; - exactly the false-busy shape BL-970 fixed at the chokepoint (a pane
+;; quoting the marker in old scrollback, not actually mid-turn, read as
+;; busy). Delegates to the SAME classifier every wake predicate already
+;; reaches instead of a second, private copy - see chase_sweep_lib.bb's own
+;; actively-processing? for the structural/tail-window contract.
 (defn classify-pane-busy?
   [pane-text]
-  (let [text (str pane-text)]
-    (boolean
-     (or (str/includes? text "esc to interrupt")
-         (and (re-find spinner-glyph-re text)
-              (re-find elapsed-time-re text))))))
+  (chase-sweep-lib/actively-processing? pane-text))
 
 ;; ── check 12 / 17: resume-overdue (planned pause failed to auto-resume) ─────
 
@@ -187,6 +289,90 @@
     {:key "resume-overdue" :severity "CRIT"
      :message (str "pause untilMs expired " (quot (- (long now-ms) (long until-ms)) 60000)
                    "min ago but control-pause.json still active — auto-resume sweep failed, swarm sleeping past its window")}))
+
+;; ── check: resident-stranded (BL-685, Class B) ──────────────────────────────
+;; A mono-router resident that ended its turn in a NON-HOME role without the
+;; protocol's mandatory rotate step sits dormant forever: dormant roles are
+;; never poked, so the pipeline stops silently while every dashboard reads
+;; green. Both existing safeguards miss this by construction - ROTATE_HOME
+;; only fires if the resident runs ready_for_next.sh (it didn't run
+;; anything), and rotate-unhonored (check 9, additive, deliberately
+;; untouched) looks for a rotate instruction that was never written. So
+;; every input here is observable from OUTSIDE the resident's own turn
+;; (invariant 1): the active-role marker file, its mtime, the pane's busy
+;; state, mailbox contents on disk, and a pending dispatch note - never
+;; anything the stranded resident would have had to do.
+;;
+;; Grace rides the marker file's own mtime (how long the resident has been
+;; in its current role) - no new persisted counter, so it cannot collide
+;; with check-swarm-starved's single-scalar streak-file (the ticket's own
+;; Wiring finding 2).
+
+(def default-resident-stranded-grace-min 10)
+
+(defn check-resident-stranded
+  [{:keys [rotation-router? rotation-home resident-active-role
+           resident-active-role-mtime-ms resident-pane-busy?
+           resident-mailbox-empty? dispatch-note-pending? paused? now-ms
+           resident-stranded-grace-min]
+    :or {resident-stranded-grace-min default-resident-stranded-grace-min}}]
+  (when (and rotation-router? (not paused?)
+             resident-active-role rotation-home
+             (not= (str/lower-case (str resident-active-role))
+                   (str/lower-case (str rotation-home)))
+             (not resident-pane-busy?)
+             resident-mailbox-empty?
+             (not dispatch-note-pending?)
+             resident-active-role-mtime-ms now-ms
+             (> (- (long now-ms) (long resident-active-role-mtime-ms))
+                (* (long resident-stranded-grace-min) 60000)))
+    {:key (str "resident-stranded-" resident-active-role) :severity "CRIT"
+     :message (str "mono-router resident stranded as '" resident-active-role
+                   "' (home: " rotation-home ") for >" resident-stranded-grace-min
+                   "m - pane idle, mailbox empty, no dispatch note pending, no rotate instruction ever issued;"
+                   " coordinator should re-dispatch (route work or rotate_to_role.sh " rotation-home ")")}))
+
+;; ── check N: pipeline-code-on-main (BL-631) ─────────────────────────────────
+;; Detects pipeline code landing on `main` outside QA's own integration path
+;; (Article 4.2/BL-247) - the BL-590 post-mortem gap: nothing errored, and
+;; nothing told anyone, when an entire pipeline pass ran in the master
+;; checkout. This fn is pure: the gatherer (babysitter_check.bb, impure)
+;; already resolved which commits are reachable from a main ref, NOT an
+;; ancestor of swarmforge-QA (via is_qa_ancestor.sh, the ONE shared
+;; predicate - BL-925 invariant 2), and touch a QA-exclusive path read at
+;; runtime from BL-632's own check_pipeline_code_on_main.sh --list-paths
+;; (never restated here - invariant 2) - merge commits diffed with
+;; `git diff-tree -m --first-parent`, never plain `git show`, which is
+;; blind to a merge's own content (BL-590's f8dc07963: 0 files plain, 13
+;; via --first-parent).
+;;
+;; BL-962: that first-parent diff attributes everything a QA-side parent
+;; brought in to the merge itself, which raised a false CRIT on every
+;; operator reconciliation merge of QA-landed work. The gatherer now
+;; adjudicates each merge's offending paths against its non-first parents
+;; BEFORE handing them here: a path is exempt only when some parent is BOTH
+;; QA-approved (the same is_qa_ancestor.sh predicate) AND holds
+;; byte-identical content for it, so a path differing from every
+;; QA-approved parent still reports (the coat-tails case), and any failure
+;; in that adjudication fails the WHOLE sweep closed to
+;; ancestry-unavailable. Non-merge commits are untouched. This fn only
+;; classifies what it is handed - unchanged by BL-962.
+
+(defn check-pipeline-code-on-main
+  "offending-commits: seq of {:sha :subject :paths [...]} the gatherer
+   already resolved as offending. ancestry-unavailable?: true when
+   swarmforge-QA could not be resolved at all this sweep - fails CLOSED to
+   an UNAVAILABLE finding, never a silent all-clear (invariant 3)."
+  [{:keys [offending-commits ancestry-unavailable?]}]
+  (if ancestry-unavailable?
+    [{:key "pipeline-code-on-main" :severity "UNAVAILABLE"
+      :message "pipeline-code-on-main check unavailable this sweep - the swarmforge-QA ref could not be resolved (fails closed, never reads as clean)"}]
+    (mapv (fn [{:keys [sha subject paths]}]
+            {:key (str "pipeline-code-on-main-" sha)
+             :severity "CRIT"
+             :message (str "pipeline code landed on main outside QA (Article 4.2/BL-247): "
+                           sha " \"" subject "\" touches " (str/join ", " paths))})
+          (or offending-commits []))))
 
 ;; ── nudge eligibility (scenario 13) ──────────────────────────────────────────
 
@@ -229,19 +415,26 @@
        " — investigate and take the minimal correct action (or tell the human)."))
 
 ;; ── assemble-findings: the single pure entry point ──────────────────────────
-;; snapshot keys: :roles (seq of per-role maps for checks 1/2/6/7),
+;; snapshot keys: :roles (seq of per-role maps for checks 1/2/6/7 — each may
+;; carry :should-stand? (BL-804), topology-derived by the gatherer and
+;; defaulting to true when absent),
 ;; :handoffd-alive? :handoffd-supervisor-alive? :handoffd-log-age-secs
 ;; :handoffd-max-age-secs, :failed-count, :stuck-parcels, :available-mb
 ;; :mem-floor-mb, :claim-risks (pre-scanned assessments), :rotate-note (or nil),
 ;; :pause {:active? :until-ms}, :now-ms, :active-ticket-count :any-pane-busy?
-;; :prev-streak :pending-claims :in-process-claims :overdue-threshold-ms.
+;; :prev-streak :pending-claims :in-process-claims :overdue-threshold-ms,
+;; :offending-commits :ancestry-unavailable? (BL-631, check-pipeline-code-on-main).
 
 (defn assemble-findings
   [{:keys [roles handoffd-alive? handoffd-supervisor-alive? handoffd-log-age-secs
            handoffd-max-age-secs failed-count stuck-parcels available-mb mem-floor-mb
            claim-risks rotate-note pause now-ms active-ticket-count any-pane-busy?
            prev-streak pending-claims in-process-claims overdue-threshold-ms
-           pending-max-age-min]}]
+           pending-max-age-min offending-commits ancestry-unavailable?
+           rotation-router? rotation-home resident-active-role
+           resident-active-role-mtime-ms resident-pane-busy?
+           resident-mailbox-empty? dispatch-note-pending?
+           resident-stranded-grace-min]}]
   (let [paused? (boolean (:active? pause))
         role-findings (mapcat (fn [role]
                                  (remove nil?
@@ -272,11 +465,34 @@
                                                       :now-ms now-ms
                                                       :until-ms (:until-ms pause)
                                                       :overdue-threshold-ms overdue-threshold-ms})
+        pipeline-code-on-main-findings (check-pipeline-code-on-main
+                                        {:offending-commits offending-commits
+                                         :ancestry-unavailable? ancestry-unavailable?})
+        resident-stranded-finding (check-resident-stranded
+                                   {:rotation-router? rotation-router?
+                                    :rotation-home rotation-home
+                                    :resident-active-role resident-active-role
+                                    :resident-active-role-mtime-ms resident-active-role-mtime-ms
+                                    :resident-pane-busy? resident-pane-busy?
+                                    :resident-mailbox-empty? resident-mailbox-empty?
+                                    :dispatch-note-pending? dispatch-note-pending?
+                                    :paused? paused?
+                                    :now-ms now-ms
+                                    :resident-stranded-grace-min (or resident-stranded-grace-min default-resident-stranded-grace-min)})
         findings (vec (remove nil?
                               (concat role-findings
                                       [handoffd-finding dead-letter-finding]
                                       stuck-findings
                                       [memory-finding]
                                       claim-findings
-                                      [rotate-finding starved-finding resume-overdue-finding])))]
-    {:findings findings :new-streak new-streak}))
+                                      [rotate-finding starved-finding resume-overdue-finding
+                                       resident-stranded-finding]
+                                      pipeline-code-on-main-findings)))
+        ;; BL-1017: repairs are SURFACED as their own key rather than left
+        ;; buried inside the findings list. The live caller acts on this
+        ;; directly - a decision it had to re-derive by re-inspecting findings
+        ;; is the BL-419 shape (mechanism built, wired nowhere) this ticket's
+        ;; required_wiring exists to prevent. Always a vector, never nil, so
+        ;; the caller's `doseq` needs no nil guard.
+        repairs (vec (keep :repair findings))]
+    {:findings findings :new-streak new-streak :repairs repairs}))

@@ -84,6 +84,24 @@ an operator console; STT remains reproducible with a pinned local model.
    - `LETS_TALK_AUDIO_ENGINE=openai` + `OPENAI_API_KEY` preserves v1 behaviour for hosts that
      prefer cloud speech. Not required for Let's Talk to function once local STT is installed.
 
+6. **Stored preference takes precedence over the env var (BL-863)**
+   - `LETS_TALK_AUDIO_ENGINE` is now only the *bootstrap default*. A durable preference at
+     `.swarmforge/operator/lets-talk-audio-engine-preference.json` — an engine name only, no
+     credential accepted — wins whenever one is stored, and is resolved fresh on every turn
+     (`resolveLetsTalkAudioForTurn` in `letsTalkAudioPreference.ts`), so switching the stored
+     engine applies to the very next turn with **no bridge restart**. With no preference
+     stored, or an unreadable preference file, the env var above still decides. Selecting an
+     engine the host cannot serve — OpenAI with no key, or Local with no local engine — now
+     fails the turn loudly with a reason naming the engine and what is missing, instead of the
+     old silent empty-adapter turn.
+
+7. **Phone-facing selector (BL-864).** Bubble Settings exposes the write path: `GET`/`POST
+   /lets-talk/audio-engine`, gated by the bubble-config `voiceEngineSwitch` capability flag.
+   The selector opens on the engine the bridge reports as actually in use, offers an
+   unserviceable engine disabled with its reason, and never shows an engine as selected that
+   the bridge has not accepted — a tap does not visibly register until the bridge answers. See
+   [how-to/BL-864-bubble-voice-engine-selector.md](../../how-to/BL-864-bubble-voice-engine-selector.md).
+
 ---
 
 ## Operator setup (local mode)
@@ -97,7 +115,8 @@ export WHISPER_CPP_BIN=/path/to/whisper-cli   # name TBD
 export WHISPER_MODEL_PATH=~/.swarmforge/models/whisper-base.en.bin
 ```
 
-Restart the bridge headless / front-desk process after env changes.
+Restart the bridge headless / front-desk process after env changes to this bootstrap default.
+A stored voice-engine preference (BL-863, above) does not require a restart.
 
 ---
 

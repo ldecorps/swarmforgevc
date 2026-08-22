@@ -6,7 +6,7 @@
 import { topicForSubject } from './telegramTopicDecisions';
 import { buildPhotoPromptText } from '../bridge/cursorBridgeTelegramMedia';
 import { parseExpediteTicket, parseReexpediteTicket } from './telegramCursorBridgeExpedite';
-import { parsePilotTicket } from './telegramCursorBridgePilot';
+import { parsePilotTicket, parsePilotSafeCommand } from './telegramCursorBridgePilot';
 import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
 import { parseMiniAppRedeployCommand } from './telegramCursorBridgeMiniAppRedeploy';
 import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
@@ -30,12 +30,39 @@ export interface CursorBridgeQueuedPrompt {
   text: string;
   photoFileIds?: string[];
   replyToMessageId?: number;
+  originTopicId?: number;
   createdAtMs: number;
 }
 
 export interface CursorBridgeQueuedPromptPoll {
   pollId: string;
   itemIds: string[];
+  clearAllOptionIndex?: number;
+}
+
+export type QueuedPollAnswerAction =
+  | { kind: 'ignore' }
+  | { kind: 'clear-all' }
+  | { kind: 'select'; itemId: string };
+
+/**
+ * BL-811 D1: a vote retraction sends option_ids: [], so selectedIndex is
+ * undefined. A poll persisted by a pre-hotfix build has no
+ * clearAllOptionIndex field either (also undefined) - clearAllOptionIndex
+ * must be a real number match, never an undefined === undefined coincidence,
+ * or a retraction against a legacy poll silently wipes the whole queue.
+ */
+export function decideQueuedPollAnswerAction(
+  pendingPoll: CursorBridgeQueuedPromptPoll,
+  selectedIndex: number | undefined
+): QueuedPollAnswerAction {
+  if (typeof selectedIndex === 'number' && selectedIndex >= 0 && selectedIndex < pendingPoll.itemIds.length) {
+    return { kind: 'select', itemId: pendingPoll.itemIds[selectedIndex] };
+  }
+  if (typeof pendingPoll.clearAllOptionIndex === 'number' && selectedIndex === pendingPoll.clearAllOptionIndex) {
+    return { kind: 'clear-all' };
+  }
+  return { kind: 'ignore' };
 }
 
 export interface CursorBridgeChoicePoll {
@@ -43,6 +70,7 @@ export interface CursorBridgeChoicePoll {
   question: string;
   options: string[];
   createdAtMs: number;
+  originTopicId?: number;
 }
 
 export interface CursorBridgeLivenessStatusState {
@@ -59,9 +87,23 @@ export interface CursorBridgePersistedState {
   agentId?: string;
   pendingPrompts?: CursorBridgeQueuedPrompt[];
   pendingPromptPoll?: CursorBridgeQueuedPromptPoll;
+  /**
+   * BL-894: ids of replaced queue polls, so a vote arriving after any of
+   * them was superseded gets told so instead of vanishing in silence.
+   * BL-894 D1: a single scalar forgot everything but the newest id, so a
+   * SECOND repost silently dropped the first — this must stay a bounded
+   * history, not the latest id alone.
+   */
+  supersededPromptPollIds?: string[];
   pendingChoicePolls?: CursorBridgeChoicePoll[];
   /** Edit-in-place Host liveness line identity. */
   livenessStatus?: CursorBridgeLivenessStatusState;
+  /**
+   * BL-767: per-topic "N waiting" edit-in-place cue identity, keyed by
+   * topic id (stringified — JSON object keys), for every topic OTHER than
+   * cursorTopicId that currently holds (or recently held) queued work.
+   */
+  queuedWorkLivenessStatus?: Record<string, CursorBridgeLivenessStatusState>;
 }
 
 export interface CursorBridgeInboundEvent {
@@ -88,6 +130,8 @@ export type CursorBridgeDecision =
   | { action: 'expedite'; ticket: string }
   | { action: 'reexpedite'; ticket: string }
   | { action: 'pilot'; ticket: string }
+  | { action: 'pilot-safe-start' }
+  | { action: 'pilot-safe-list' }
   | { action: 'redeploy' }
   | { action: 'redeploy-miniapp' }
   | { action: 'log'; target: LogTarget }
@@ -289,11 +333,21 @@ function parseDequeuePosition(text: string): number | undefined {
   return Number.isFinite(position) && position > 0 ? position : undefined;
 }
 
+// BL-722 CRAP split: isolates the pilot-safe kind->action mapping so
+// decideOperatorCommand's own branch count stays at the CRAP <= 6 gate.
+function pilotSafeDecision(pilotSafe: NonNullable<ReturnType<typeof parsePilotSafeCommand>>): CursorBridgeDecision {
+  return { action: pilotSafe.kind === 'list' ? 'pilot-safe-list' : 'pilot-safe-start' };
+}
+
 function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
   // BL-702: /redeploy is gated via operator soft confirm (not fire-and-forget).
   const logTarget = parseLogCommand(text);
   if (logTarget) {
     return { action: 'log', target: logTarget };
+  }
+  const pilotSafe = parsePilotSafeCommand(text);
+  if (pilotSafe) {
+    return pilotSafeDecision(pilotSafe);
   }
   const pilotTicket = parsePilotTicket(text);
   if (pilotTicket) {
@@ -463,7 +517,7 @@ export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorB
   if (!busy) {
     return decision;
   }
-  if (['prompt', 'expedite', 'reexpedite', 'pilot'].includes(decision.action)) {
+  if (['prompt', 'expedite', 'reexpedite', 'pilot', 'pilot-safe-start'].includes(decision.action)) {
     return { action: 'busy' };
   }
   if (decision.action === 'execute-operator') {
@@ -556,6 +610,21 @@ export function collectAssistantTextFromMessages(messages: readonly unknown[]): 
   return out;
 }
 
+/**
+ * BL-767 invariant #1: a deferred reply (a drained queued prompt, a
+ * choice-poll answer) is posted to exactly one topic — the one it was
+ * asked/posted in, or the Cursor Remote topic when no origin was recorded.
+ * Single source of truth for every deferred-reply site, so they cannot
+ * independently drift into "whichever topic I happen to guess" (BL-767's
+ * root cause was exactly that: sites each wrote their own fallback).
+ */
+export function resolveDeferredReplyTopicId(
+  originTopicId: number | undefined,
+  cursorTopicId: number | undefined
+): number | undefined {
+  return originTopicId ?? cursorTopicId;
+}
+
 export function parseNonNegativeInt(value: unknown, fallback: number): number {
   if (typeof value !== 'number') {
     return fallback;
@@ -592,6 +661,20 @@ function parseLivenessStatus(value: unknown): CursorBridgeLivenessStatusState | 
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+function parseQueuedWorkLivenessStatus(value: unknown): Record<string, CursorBridgeLivenessStatusState> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const result: Record<string, CursorBridgeLivenessStatusState> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    const parsed = parseLivenessStatus(entry);
+    if (parsed) {
+      result[key] = parsed;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function parseOptionalStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -618,6 +701,9 @@ function parseQueuedPrompt(value: unknown): CursorBridgeQueuedPrompt | undefined
   if (typeof value.replyToMessageId === 'number') {
     queued.replyToMessageId = value.replyToMessageId;
   }
+  if (typeof value.originTopicId === 'number') {
+    queued.originTopicId = value.originTopicId;
+  }
   return queued;
 }
 
@@ -630,7 +716,11 @@ function parseQueuedPromptPoll(value: unknown): CursorBridgeQueuedPromptPoll | u
   if (!pollId || !itemIds || itemIds.length === 0) {
     return undefined;
   }
-  return { pollId, itemIds };
+  const poll: CursorBridgeQueuedPromptPoll = { pollId, itemIds };
+  if (typeof value.clearAllOptionIndex === 'number' && value.clearAllOptionIndex >= 0) {
+    poll.clearAllOptionIndex = value.clearAllOptionIndex;
+  }
+  return poll;
 }
 
 function parseChoicePoll(value: unknown): CursorBridgeChoicePoll | undefined {
@@ -644,7 +734,11 @@ function parseChoicePoll(value: unknown): CursorBridgeChoicePoll | undefined {
   if (!pollId || !question || !options || options.length < 2 || createdAtMs < 0) {
     return undefined;
   }
-  return { pollId, question, options, createdAtMs };
+  const poll: CursorBridgeChoicePoll = { pollId, question, options, createdAtMs };
+  if (typeof value.originTopicId === 'number') {
+    poll.originTopicId = value.originTopicId;
+  }
+  return poll;
 }
 
 function buildPersistedState(record: Record<string, unknown>): CursorBridgePersistedState {
@@ -676,6 +770,10 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   if (pendingPromptPoll) {
     state.pendingPromptPoll = pendingPromptPoll;
   }
+  const supersededPromptPollIds = parseOptionalStringArray(record.supersededPromptPollIds);
+  if (supersededPromptPollIds !== undefined) {
+    state.supersededPromptPollIds = supersededPromptPollIds;
+  }
   const pendingChoicePollsRaw = Array.isArray(record.pendingChoicePolls) ? record.pendingChoicePolls : undefined;
   if (pendingChoicePollsRaw) {
     const pendingChoicePolls = pendingChoicePollsRaw
@@ -688,6 +786,10 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   const livenessStatus = parseLivenessStatus(record.livenessStatus);
   if (livenessStatus) {
     state.livenessStatus = livenessStatus;
+  }
+  const queuedWorkLivenessStatus = parseQueuedWorkLivenessStatus(record.queuedWorkLivenessStatus);
+  if (queuedWorkLivenessStatus) {
+    state.queuedWorkLivenessStatus = queuedWorkLivenessStatus;
   }
   return state;
 }
@@ -715,17 +817,20 @@ export function formatHelpMessage(): string {
     '',
     '/new — start a fresh agent session',
     '/status — show session state',
-    '/queue — list queued questions',
+    '/queue — show queued questions as a poll',
     '/dequeue N — remove queued question #N',
     '/update — short summary of agent / expedite / swarm activity (works while busy)',
     '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
+    '/pilot safe [--list] — auto-pick (or list) the safe pilot pool: approved, low-mutation, specced defects',
     '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
     '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+    '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
+    '/resume — soft confirm; allow promotion again',
     '/syncenv /compile /pull — soft confirm (one Confirm tap)',
-    '/restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
-    '/doctor /tunnel — read-only checks',
+    '/stop /start /restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
+    '/doctor /tunnel /conf — read-only checks',
     '/confirm-off — clear a pending Confirm',
     '/log [expedite|redeploy|bridge] — tail the active or named operator log',
     '/help — this message',
@@ -769,8 +874,18 @@ export function isCursorConnectionFailure(message: string): boolean {
   );
 }
 
+/** Cursor SDK can no longer resume this stored agentId (deleted or expired). */
+export function isCursorAgentGone(message: string): boolean {
+  return /\bagent\s+agent-[a-z0-9-]+\s+not found\b/i.test(message);
+}
+
 export function shouldResetCursorAgentSession(message: string): boolean {
-  return isActiveRunConflict(message) || isCursorAuthError(message) || isCursorConnectionFailure(message);
+  return (
+    isActiveRunConflict(message) ||
+    isCursorAuthError(message) ||
+    isCursorConnectionFailure(message) ||
+    isCursorAgentGone(message)
+  );
 }
 
 /** Rate-limit / quota errors from the Cursor API — fail fast with a clear message, no session reset. */

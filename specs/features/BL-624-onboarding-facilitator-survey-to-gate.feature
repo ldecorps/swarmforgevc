@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-15T22:14:56.954649Z","feature_name":"Onboarder slice 2 - survey to agreed contract through the existing gate","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-624-onboarding-facilitator-survey-to-gate.feature","background_hash":"02fe32fe095630f1aeacb070580cd9e6a265f50120eba7f6eb741b3776cd7258","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Onboarder slice 2 - survey to agreed contract through the existing gate
 
   # BL-624 (BL-590 slice 2). The do-for-you phase: the onboarder clones

@@ -16,10 +16,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { computeMergedSince, computeBlockedTickets, MergedTicketEntry, BlockedTicketEntry } from '../metrics/briefingDigest';
 import { deriveTicketLifecycles, runGitLog } from '../metrics/gitHistoryAdapter';
+import { readLifecycleSnapshot } from '../metrics/lifecycleSnapshot';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
 import { formatDurationMs } from '../metrics/swarmMetrics';
 import { readPwaBaseUrl, buildTicketDeepLink } from '../metrics/pwaDeepLinks';
 import { resolveProjectRoot, loadRoles, runCliMain } from './swarm-metrics';
+import { parseSnapshotPath } from './briefingSnapshotArgs';
 
 const FALLBACK_SINCE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -70,10 +72,15 @@ export function main(): void {
   const projectRoot = resolveProjectRoot(process.cwd());
   const roles = loadRoles(projectRoot);
   const nowMs = Date.now();
+  const snapshotPath = parseSnapshotPath(process.argv.slice(2));
 
   const briefingsDir = path.join(projectRoot, 'docs', 'briefings');
   const sinceMs = sinceLastBriefingMs(briefingsDir, nowMs);
-  const lifecycles = deriveTicketLifecycles(runGitLog(projectRoot, 'backlog'));
+  // BL-897: the shared snapshot's records win over a fresh walk when
+  // usable; computeMergedSince takes a Map, so a records array (the
+  // snapshot's own shape) needs re-keying by ticketId to match.
+  const shared = snapshotPath ? readLifecycleSnapshot(snapshotPath, nowMs) : null;
+  const lifecycles = shared ? new Map(shared.map((r) => [r.ticketId, r])) : deriveTicketLifecycles(runGitLog(projectRoot, 'backlog'));
   const merged = computeMergedSince(lifecycles, sinceMs);
 
   const windowsByRole: Record<string, TicketHoldingWindow[]> = {};

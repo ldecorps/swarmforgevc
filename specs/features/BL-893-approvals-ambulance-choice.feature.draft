@@ -1,0 +1,31 @@
+Feature: Approvals offers Ambulance as a hold for that ticket
+
+  # BL-893 approvals-ambulance-button-01
+  Scenario: Tapping Ambulance engages hold and does not approve
+    Given an Approvals ask for a live ticket whose human_approval is pending
+    When the human taps Ambulance on that ask
+    Then ambulance is engaged for that ticket via the existing Control marker
+    And the ticket's human_approval is still pending
+    And a receipt naming the ticket is posted in Approvals
+
+  # BL-893 approvals-ambulance-slash-02
+  Scenario: /ambulance in Approvals is the same engage as the button
+    Given the Approvals topic
+    When the human sends "/ambulance BL-xxx" naming a ticket that exists under backlog/
+    Then ambulance is engaged for that ticket via the existing Control marker
+    And human_approval is not flipped by this command
+
+  # BL-893 approvals-ambulance-unknown-id-03
+  Scenario: A missing id is refused and does not engage
+    Given the Approvals topic
+    When the human sends "/ambulance BL-99999" naming no YAML under backlog/
+    Then ambulance is not engaged
+    And the refusal is posted in Approvals
+
+  # BL-893 approvals-ambulance-not-qjump-04
+  Scenario: Ambulance is not Q jump and not the expeditor
+    Given an Approvals ask
+    When the human taps Ambulance
+    Then the ticket is not force-promoted
+    And no build is dispatched
+    And the offline expeditor is not started

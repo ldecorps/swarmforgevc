@@ -123,17 +123,17 @@ function registerSteps(registry) {
     ctx.action = decideTopicAction({ type: 'ApprovalRequested', backlogId: TICKET_ID, payload: {} }, {}, 'expedite fixture');
   });
 
-  registry.define(/^the rendered buttons include an Expedite button$/, (ctx) => {
+  registry.define(/^the rendered buttons include a Q jump button$/, (ctx) => {
     const labels = ctx.action.buttons.flat().map((b) => b.text);
-    if (!labels.includes('Expedite')) {
-      throw new Error(`expected an Expedite button among the rendered buttons, got: ${JSON.stringify(labels)}`);
+    if (!labels.includes('Q jump')) {
+      throw new Error(`expected a Q jump button among the rendered buttons, got: ${JSON.stringify(labels)}`);
     }
   });
 
-  registry.define(/^the Expedite button carries the expedite verb tagged with the ticket id$/, (ctx) => {
-    const expedite = ctx.action.buttons.flat().find((b) => b.text === 'Expedite');
-    if (!expedite || expedite.callbackData !== `expedite:${TICKET_ID}`) {
-      throw new Error(`expected the Expedite button tagged expedite:${TICKET_ID}, got: ${JSON.stringify(expedite)}`);
+  registry.define(/^the Q jump button still carries the expedite verb tagged with the ticket id$/, (ctx) => {
+    const qjump = ctx.action.buttons.flat().find((b) => b.text === 'Q jump');
+    if (!qjump || qjump.callbackData !== `expedite:${TICKET_ID}`) {
+      throw new Error(`expected the Q jump button tagged expedite:${TICKET_ID}, got: ${JSON.stringify(qjump)}`);
     }
   });
 
@@ -276,13 +276,13 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^an Expedited decision line with the recorded UTC time is appended to the message$/, (ctx) => {
+  registry.define(/^a Q jumped decision line with the recorded UTC time is still appended to the message$/, (ctx) => {
     const editedText = ctx.editCalls[0].text;
     if (!editedText.startsWith(ORIGINAL_ASK_TEXT)) {
       throw new Error(`expected the original ask text preserved above the decision line, got:\n${editedText}`);
     }
-    if (!/-- Expedited \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/.test(editedText)) {
-      throw new Error(`expected an "-- Expedited <UTC timestamp>" decision line, got:\n${editedText}`);
+    if (!/-- Q jumped \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/.test(editedText)) {
+      throw new Error(`expected a "-- Q jumped <UTC timestamp>" decision line, got:\n${editedText}`);
     }
   });
 

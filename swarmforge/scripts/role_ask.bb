@@ -90,8 +90,19 @@
           (println (str "role_ask.bb: --options was not a usable JSON array of strings/label-objects (" (.getMessage e) ") - falling back to a plain message")))
         nil))))
 
+(defn read-awaiting-marker
+  "The existing marker's parsed contents, or nil if no marker file exists.
+   GH-26: unreadable/corrupt content degrades to {} (present but no :state)
+   rather than nil, so operator-lib/role-ask-blocked? still fails CLOSED on
+   it - the same conservative posture the bare file-existence check had
+   before this ticket."
+  []
+  (when (fs/exists? awaiting-file)
+    (try (json/parse-string (slurp (str awaiting-file)) true)
+         (catch Exception _ {}))))
+
 (defn -main []
-  (if (fs/exists? awaiting-file)
+  (if (operator-lib/role-ask-blocked? (read-awaiting-marker))
     (do
       (binding [*out* *err*]
         (println (str "role_ask.bb: \"" role "\" already has a clarifying question pending - refusing to ask a second one until it is answered")))

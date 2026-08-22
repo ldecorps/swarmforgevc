@@ -39,7 +39,12 @@ Feature: promote_and_route enforces every promotion gate at one chokepoint
     And the feature ticket is not promoted ahead of it
 
   # BL-663 existing-gates-still-enforced-04
-  Scenario Outline: depth, orthogonality, and hold markers are enforced through the same chokepoint
+  # BL-854: orthogonality was demoted from a refusing gate to a non-blocking
+  # advisory (see BL-854-orthogonality-advises-instead-of-blocking.feature) -
+  # its row is removed here since this scenario now asserts a refusal, and
+  # orthogonality never refuses. depth and hold marker are still blocking
+  # gates and still enforced through this same chokepoint, unchanged.
+  Scenario Outline: depth and hold markers are enforced through the same chokepoint
     Given a paused ticket blocked by the <gate> gate
     When promote_and_route evaluates it as a promotion candidate
     Then the ticket is not promoted
@@ -48,7 +53,6 @@ Feature: promote_and_route enforces every promotion gate at one chokepoint
     Examples:
       | gate                     |
       | active_backlog_max_depth |
-      | orthogonality            |
       | hold marker              |
 
   # BL-663 compliant-promotion-passes-unchanged-05

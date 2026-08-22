@@ -25,6 +25,9 @@ test('BL-702: read verbs execute without confirm', () => {
   assert.deepEqual(d, { action: 'execute', verb: '/status', args: undefined });
   const doctor = decideOperatorVerbConfirm('/doctor', undefined);
   assert.deepEqual(doctor, { action: 'execute', verb: '/doctor', args: undefined });
+  assert.equal(operatorDangerTier('/conf'), 'read');
+  const conf = decideOperatorVerbConfirm('/conf', undefined);
+  assert.deepEqual(conf, { action: 'execute', verb: '/conf', args: undefined });
 });
 
 test('BL-702: soft verb prompts light confirm', () => {

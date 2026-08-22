@@ -53,7 +53,7 @@ export async function main(): Promise<void> {
   // Cleared FIRST, unconditionally - a missing/unreachable Telegram config
   // must never leave the swarm permanently frozen on a marker that has
   // already, definitionally, expired.
-  writeControlPauseState(projectRoot, { active: false });
+  writeControlPauseState(projectRoot, { active: false }, 'resume-expired-pauses');
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;

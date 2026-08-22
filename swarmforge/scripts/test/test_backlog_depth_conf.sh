@@ -23,6 +23,10 @@ mk_fixture() {
   git -C "$root" init -q
   git -C "$root" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
   mkdir -p "$root/.swarmforge" "$root/swarmforge" "$root/backlog/active" "$root/backlog/paused"
+  # BL-808: real checkouts (and every role worktree) carry a tracked
+  # .gitkeep in backlog/active/. Fixtures without it never exercised the
+  # raw list-dir off-by-one that made the WARNING cry wolf under cap 1.
+  : > "$root/backlog/active/.gitkeep"
   printf "coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n" "$root" > "$root/.swarmforge/roles.tsv"
   printf 'config active_backlog_max_depth %s\n' "$cap" > "$root/swarmforge/swarmforge.conf"
   echo "$root"
@@ -71,6 +75,25 @@ OUT="$(run_handoff_capture_stderr "$ROOT")"
 echo "$OUT" | grep -qi "Active backlog depth exceeded" \
   && fail "depth-01c: cap=3, active=2 must not warn; got: $OUT"
 pass "depth-01c: cap=3, active=2 -> no warning"
+rm -rf "$ROOT"
+
+# ── BL-808: .gitkeep is not a ticket — one real ticket at cap 1 is silent ─
+ROOT="$(mk_fixture 1)"
+write_active_items "$ROOT" 1
+[[ -f "$ROOT/backlog/active/.gitkeep" ]] \
+  || fail "bl808 setup: fixture must carry .gitkeep (regression guard)"
+OUT="$(run_handoff_capture_stderr "$ROOT")"
+echo "$OUT" | grep -qi "Active backlog depth exceeded" \
+  && fail "bl808-gitkeep-01: cap=1 with one ticket yaml + .gitkeep must not warn; got: $OUT"
+pass "bl808-gitkeep-01: cap=1, one ticket + .gitkeep -> no warning"
+rm -rf "$ROOT"
+
+ROOT="$(mk_fixture 1)"
+write_active_items "$ROOT" 2
+OUT="$(run_handoff_capture_stderr "$ROOT")"
+echo "$OUT" | grep -qi "Active backlog depth exceeded (active=2, max=1)" \
+  || fail "bl808-gitkeep-02: genuine overflow must still warn as active=2 (not 3); got: $OUT"
+pass "bl808-gitkeep-02: cap=1, two tickets + .gitkeep -> warning active=2"
 rm -rf "$ROOT"
 
 # ── depth-02: removed ─────────────────────────────────────────────────────

@@ -24,10 +24,24 @@ ok() { echo "SMOKE OK: $*"; }
 
 [[ -f "$PROFILE" ]] || fail "stabilize-two-pack profile missing at $PROFILE"
 
-mapfile -t roles < <(grep -E '^window ' "$PROFILE" | awk '{print $2}')
-expected=(coordinator coder cleaner)
+# BL-937: bash 3.2 has no `mapfile`/`readarray` builtin (bash 4.0+ only) -
+# portable read-loop equivalent (`|| [[ -n "$line" ]]` keeps a final line
+# with no trailing newline; the read still populates $line at EOF).
+roles=()
+line=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  roles+=("$line")
+done < <(grep -E '^window ' "$PROFILE" | awk '{print $2}')
+# BL-939: BL-243 made the coordinator reserved infrastructure - swarmforge.sh's
+# parse_config rejects a `window coordinator` line outright (exit 1), and
+# provision_coordinator always adds exactly one automatically. A profile's
+# `window` lines are its pack-configurable roles only; asserting coordinator
+# among them was stale BL-203-era wording that, if acted on, breaks ./swarm
+# for this pack. Never re-add coordinator here without also changing what
+# parse_config accepts.
+expected=(coder cleaner)
 if [[ "${roles[*]:-}" != "${expected[*]}" ]]; then
-  fail "profile defines roles [${roles[*]:-<none>}], expected [${expected[*]}] (coordinator+coder+cleaner only, per BL-203 scope)"
+  fail "profile defines roles [${roles[*]:-<none>}], expected [${expected[*]}] (coder+cleaner only - coordinator is reserved infrastructure, provisioned automatically by ./swarm and never declared as a window; BL-203 scope, corrected under BL-939)"
 fi
 ok "profile defines exactly ${expected[*]}"
 

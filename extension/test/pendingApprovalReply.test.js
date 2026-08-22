@@ -16,6 +16,8 @@ const {
   classifyApprovalsTopicReply,
   readRecordedVerdict,
   readApprovalCloseVerdict,
+  classifyApprovalRecordNoOp,
+  explainApprovalRecordNoOp,
 } = require('../out/concierge/pendingApprovalReply');
 
 // BL-357: the human's reply in a ticket's own topic RECORDS the approval
@@ -232,6 +234,33 @@ test('BL-434: reject wins over an "approve" substring appearing inside its own r
 test('BL-434: classification trims surrounding whitespace before matching and after capturing', () => {
   assert.deepEqual(classifyApprovalsTopicReply('  reject   BL-433   no good  '), { kind: 'reject', backlogId: 'BL-433', reason: 'no good' });
   assert.deepEqual(classifyApprovalsTopicReply('  approve   BL-433  '), { kind: 'approve', backlogId: 'BL-433' });
+});
+
+// BL-721: "/qjump <id>" - a typed alternative to tapping the Approvals ask's
+// Q jump button, same verb+id grammar as approve/reject above.
+
+test('BL-721: "/qjump <id>" is classified as qjump for that exact ticket id', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/qjump BL-433'), { kind: 'qjump', backlogId: 'BL-433' });
+});
+
+test('BL-721: "/qjump" classification is case-insensitive on the verb', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/QJump BL-433'), { kind: 'qjump', backlogId: 'BL-433' });
+});
+
+test('BL-721: a bare "/qjump" with no id classifies as none - the grammar requires an id', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/qjump'), { kind: 'none' });
+});
+
+test('BL-721: "qjump <id>" with no leading slash classifies as none - the slash prefix is required', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('qjump BL-433'), { kind: 'none' });
+});
+
+test('BL-721: "/qjump <id>" classification trims surrounding whitespace', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('  /qjump   BL-433  '), { kind: 'qjump', backlogId: 'BL-433' });
+});
+
+test('BL-721: "/expedite <id>" (the offline Cursor-bridge verb) is never classified as qjump - queue-jump and the offline expeditor are distinct commands', () => {
+  assert.deepEqual(classifyApprovalsTopicReply('/expedite BL-433'), { kind: 'none' });
 });
 
 // ── rejectHumanApprovalText (pure) - BL-409 ────────────────────────────────
@@ -525,4 +554,37 @@ test('readApprovalCloseVerdict: still-pending ticket yields undefined', () => {
   const targetPath = mkTmp();
   writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-953.yaml', 'id: BL-953\ntitle: t\nhuman_approval: pending\n');
   assert.equal(readApprovalCloseVerdict(targetPath, 'BL-953'), undefined);
+});
+
+
+// ── BL-582: WHY a record changed nothing ─────────────────────────────────
+//    recordApprovalReply returns a bare boolean, so the tap that failed on
+//    2026-07-23 had nothing to say even to a listener. Every no-op now
+//    classifies into a reason a human can act on.
+
+test('BL-582: classifyApprovalRecordNoOp distinguishes each already-resolved verdict', () => {
+  assert.equal(classifyApprovalRecordNoOp('id: BL-1\nhuman_approval: approved\n'), 'already-approved');
+  assert.equal(classifyApprovalRecordNoOp('id: BL-1\nhuman_approval: rejected # too big\n'), 'already-rejected');
+  assert.equal(classifyApprovalRecordNoOp('id: BL-1\nhuman_approval: amending\n'), 'already-amending');
+});
+
+test('BL-582: classifyApprovalRecordNoOp reports a missing field as its own case, never as a verdict', () => {
+  assert.equal(classifyApprovalRecordNoOp('id: BL-1\ntitle: t\n'), 'no-human-approval-field');
+});
+
+test('BL-582: classifyApprovalRecordNoOp reports an unrecognized value rather than mislabelling it as decided', () => {
+  assert.equal(classifyApprovalRecordNoOp('id: BL-1\nhuman_approval: pending\n'), 'human-approval-not-pending');
+  assert.equal(classifyApprovalRecordNoOp('id: BL-1\nhuman_approval: whatever\n'), 'human-approval-not-pending');
+});
+
+test('BL-582: explainApprovalRecordNoOp names a missing ticket file - the stale-topic-mapping case', () => {
+  const targetPath = mkTmp();
+  assert.equal(explainApprovalRecordNoOp(targetPath, 'BL-999'), 'no-ticket-file');
+});
+
+test('BL-582: explainApprovalRecordNoOp reads the real ticket, wherever it lives', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-582-slug.yaml', 'id: BL-582\ntitle: t\nhuman_approval: approved\n');
+
+  assert.equal(explainApprovalRecordNoOp(targetPath, 'BL-582'), 'already-approved');
 });

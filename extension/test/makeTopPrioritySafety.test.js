@@ -233,3 +233,79 @@ test('BL-672: a transitively (not directly) worse-ranked dependency still refuse
   assert.equal(result.changed, false);
   assert.match(result.reason, /T2/);
 });
+
+// BL-687: dependencyLiveItems separates the ORDERING array (walked/displaced,
+// now widenable to include active/ items) from the DEPENDENCY-LIVENESS set
+// (which ids count as "live" for traversal) - the two used to be the same
+// array. These tests exercise the new 6th parameter directly against the
+// pure core, mirroring topicMakeTopBridge.test.js's own scenario 06 at the
+// bridge layer.
+test('BL-687: a depends_on id present in the ORDERING array but absent from dependencyLiveItems is classified via resolveNonLiveDependency, never treated as live', () => {
+  // E3 depends on ACTIVE-1. ACTIVE-1 IS present in sortedLiveItems (so it can
+  // be walked/displaced as an ordering peer) but is NOT in dependencyLiveItems
+  // - it must resolve 'active' (inert), never block or bound E3's move.
+  const sortedLiveItems = sortEpicsByPriority([
+    { id: 'E1', priority: 0, dependsOn: [] },
+    { id: 'E3', priority: 2, dependsOn: ['ACTIVE-1'] },
+    { id: 'ACTIVE-1', priority: 1, dependsOn: [] },
+  ]);
+  const dependencyLiveItems = sortEpicsByPriority([
+    { id: 'E1', priority: 0, dependsOn: [] },
+    { id: 'E3', priority: 2, dependsOn: ['ACTIVE-1'] },
+  ]);
+  const resolve = (id) => (id === 'ACTIVE-1' ? 'active' : 'unknown');
+  const result = computeMakeTopPriority(sortedLiveItems, 'E3', resolve, sortedLiveItems, 'the live backlog', dependencyLiveItems);
+  assert.equal(result.changed, true);
+  const after = apply(sortedLiveItems, result.writes);
+  assert.equal(after[0].id, 'E3', 'ACTIVE-1 must never bound or refuse E3 - it is not a live dependency');
+});
+
+test('BL-687: the target itself may be ABSENT from dependencyLiveItems (an in-flight target with no depends_on) and still be walkable', () => {
+  // E3 is the target and carries no depends_on of its own - only present in
+  // the widened ordering array, absent from the narrow dependencyLiveItems.
+  // Without the target-fallback, traversal would find no depends_on entry
+  // for E3 at all and throw.
+  const sortedLiveItems = sortEpicsByPriority([
+    { id: 'E1', priority: 0, dependsOn: [] },
+    { id: 'E2', priority: 1, dependsOn: [] },
+    { id: 'E3', priority: 2, dependsOn: [] },
+  ]);
+  const dependencyLiveItems = sortEpicsByPriority([
+    { id: 'E1', priority: 0, dependsOn: [] },
+    { id: 'E2', priority: 1, dependsOn: [] },
+  ]);
+  const result = computeMakeTopPriority(sortedLiveItems, 'E3', neverResolves, sortedLiveItems, 'the live backlog', dependencyLiveItems);
+  assert.equal(result.changed, true);
+  const after = apply(sortedLiveItems, result.writes);
+  assert.equal(after[0].id, 'E3');
+});
+
+test('BL-687: the target itself, absent from dependencyLiveItems, still has ITS OWN depends_on traversed (via the target-fallback), and a live dependency among them still bounds the move', () => {
+  // E3 (the target, in-flight) depends on E1 (live, in dependencyLiveItems).
+  // Even though E3 itself is outside dependencyLiveItems, its own depends_on
+  // list must still be read (from sortedLiveItems, via the fallback) and E1
+  // must still bound the move exactly as if E3 were in the narrow set too.
+  const sortedLiveItems = sortEpicsByPriority([
+    { id: 'E1', priority: 0, dependsOn: [] },
+    { id: 'T1', priority: 1, dependsOn: [] },
+    { id: 'E3', priority: 2, dependsOn: ['E1'] },
+  ]);
+  const dependencyLiveItems = sortEpicsByPriority([
+    { id: 'E1', priority: 0, dependsOn: [] },
+    { id: 'T1', priority: 1, dependsOn: [] },
+  ]);
+  const result = computeMakeTopPriority(sortedLiveItems, 'E3', neverResolves, sortedLiveItems, 'the live backlog', dependencyLiveItems);
+  assert.equal(result.changed, true);
+  assert.match(result.reason, /E1/);
+  const after = apply(sortedLiveItems, result.writes);
+  const e1Index = after.findIndex((i) => i.id === 'E1');
+  const e3Index = after.findIndex((i) => i.id === 'E3');
+  assert.equal(e3Index, e1Index + 1, 'expected E3 immediately after its live dependency E1');
+});
+
+test('BL-687: omitting dependencyLiveItems keeps BL-672\'s original single-set behavior (defaults to sortedLiveItems)', () => {
+  const before = backgroundItems({ E3: { dependsOn: ['E1'] }, E1: {} });
+  const withDefault = computeMakeTopPriority(before, 'E3', neverResolves);
+  const withExplicitSameSet = computeMakeTopPriority(before, 'E3', neverResolves, before, 'the live backlog', before);
+  assert.deepEqual(withDefault, withExplicitSameSet);
+});

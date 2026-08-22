@@ -141,3 +141,20 @@ export function decideDisposition(openBlockers: OpenBlocker[], observedFailure?:
   const matching = openBlockers.filter((b) => failureSignature(b.failureClass, b.check) === signature);
   return matching.length > 0 ? { kind: 'defer', blockers: matching } : { kind: 'bounce' };
 }
+
+// BL-861: a `--check` is refused at defer time when it reads the blocker's
+// OWN ticket file under backlog/active/ - closing the blocker MOVES that
+// file to backlog/done/, so the one command the runbook tells QA to re-run
+// to release the sibling stops being runnable at exactly the moment it
+// should succeed. Fixed-string, case-insensitive containment (this
+// codebase's established style for this kind of check - see
+// TICKET_PATTERN's siblings in qa-sibling-check.ts), not a path parse: a
+// check naming both "backlog/active/" and the blocker's own ticket id is
+// refused regardless of the exact shell syntax around them (test -f, cat,
+// grep, a glob, …). A check referencing a DIFFERENT ticket's active-backlog
+// path, or the blocker's id without "backlog/active/" (e.g. a test file
+// name that happens to embed it), is unaffected.
+export function checkReadsBlockerActivePath(check: string, blockedBy: string): boolean {
+  const normalized = check.toUpperCase();
+  return normalized.includes('BACKLOG/ACTIVE/') && normalized.includes(blockedBy.toUpperCase());
+}

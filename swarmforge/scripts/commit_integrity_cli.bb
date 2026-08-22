@@ -17,12 +17,40 @@
 
 (ns commit-integrity-cli
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "commit_integrity_lib.bb")))
 (load-file (str (fs/path script-dir "ticket_close_guard_lib.bb")))
+
+;; BL-819: the "close point" side of the lifecycle ledger - this CLI is the
+;; codepath ticket_close_guard_lib.bb's own doc comment names as the one
+;; place a close move (active/ -> done/) is validated and committed, so it
+;; is the natural existing hook for the ledger's close event too. Same
+;; process/sh-a-compiled-tool + best-effort/degrade-quietly convention as
+;; done_with_current_task.bb's own record-lean-ledger! (and
+;; handoffd.bb's emit-cost-health-sidecar!): a ledger-write failure must
+;; never turn a genuinely successful close commit into a reported failure.
+;;
+;; The CLI is part of THIS project's own extension/ build, not something
+;; every project-root carries - a project-root that isn't swarmforge-vc's
+;; own checkout (or a fixture/test worktree with no `npm run compile`
+;; output) genuinely has no such instrument; skip quietly rather than warn
+;; on that expected-missing case, and reserve the warning for a CLI that
+;; exists but still failed.
+(defn record-lean-ledger! [project-root ticket-id]
+  (let [cli-path (str (fs/path project-root "extension" "out" "tools" "lean-ledger-record.js"))]
+    (when (fs/exists? cli-path)
+      (try
+        (let [{:keys [exit err]} (process/sh ["node" cli-path "--ticket" ticket-id "--target" project-root])]
+          (when-not (zero? exit)
+            (binding [*out* *err*]
+              (println "lean-ledger-record-warn:" ticket-id (str/trim (or err ""))))))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println "lean-ledger-record-warn:" ticket-id (.getMessage e))))))))
 
 (defn usage []
   (binding [*out* *err*]
@@ -49,13 +77,19 @@
     (cond-> {:project-root project-root :paths paths :message message}
       max-retries (assoc :max-retries max-retries))))
 
-(defn close-guard-failure-message [{:keys [reason ticket-id]}]
-  (case reason
-    :missing-qa-approval
-    (str "commit_integrity_cli: CLOSE BLOCKED for " ticket-id
-         " — no QA git_handoff or note to coordinator referencing this ticket. "
-         "Coder/architect bookkeeping notes do not authorize close; wait for QA approval.")
-    (str "commit_integrity_cli: CLOSE BLOCKED for " ticket-id " (" (name reason) ").")))
+(defn close-guard-failure-message
+  "BL-869: names the tickets that actually FAILED validation
+   (:blocked-ticket-ids), not every ticket the commit touched - a
+   partially-approved multi-ticket close must not read as if the already-
+   approved ticket were also rejected."
+  [{:keys [reason blocked-ticket-ids ticket-ids]}]
+  (let [names (str/join "," (or (seq blocked-ticket-ids) ticket-ids))]
+    (case reason
+      :missing-qa-approval
+      (str "commit_integrity_cli: CLOSE BLOCKED for " names
+           " — no QA git_handoff or note to coordinator referencing this ticket. "
+           "Coder/architect bookkeeping notes do not authorize close; wait for QA approval.")
+      (str "commit_integrity_cli: CLOSE BLOCKED for " names " (" (name reason) ")."))))
 
 (defn -main [args]
   (let [project-root (first args)
@@ -67,20 +101,26 @@
         (println (close-guard-failure-message close-check)))
       (System/exit 1))
     (let [result (commit-integrity-lib/commit-with-integrity! request)
-          abandoned (when (and (:success result) (:ticket-id close-check))
-                      (ticket-close-guard-lib/abandon-inflight-for-ticket!
-                       project-root (:ticket-id close-check)))]
+          ticket-ids (when (:success result) (:ticket-ids close-check))
+          abandoned (vec (mapcat #(ticket-close-guard-lib/abandon-inflight-for-ticket! project-root %)
+                                  ticket-ids))]
+      (doseq [ticket-id ticket-ids]
+        (record-lean-ledger! project-root ticket-id))
       (when (seq abandoned)
         (binding [*out* *err*]
           (println (str "commit_integrity_cli: abandoned " (count abandoned)
-                        " in-flight handoff(s) for " (:ticket-id close-check)))))
+                        " in-flight handoff(s) for " (str/join "," ticket-ids)))))
       (println (json/generate-string (cond-> result
+                                       (seq ticket-ids)
+                                       (assoc :closed-ticket-ids ticket-ids)
                                        (seq abandoned)
                                        (assoc :abandoned-handoffs (count abandoned)))))
       (when-not (:success result)
         (binding [*out* *err*]
           (println (str "commit_integrity_cli: FAILED (" (name (:reason result))
-                         ") after " (:attempts result) " attempt(s)")))
+                         ") after " (:attempts result) " attempt(s)"
+                         (when (:index-left-dirty result)
+                           " — INDEX LEFT DIRTY: restoring the caller's paths to their pre-call state also failed"))))
         (System/exit 1)))))
 
 (-main *command-line-args*)

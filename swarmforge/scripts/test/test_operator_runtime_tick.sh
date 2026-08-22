@@ -545,6 +545,33 @@ check "BL-307/swarm-auto-hibernate-07: the backed-up roster is restored" \
   'grep -q "^coder" "$F/.swarmforge/roles.tsv"'
 rm -rf "$F"
 
+# ── GH-26: an undeliverable role-question marker (deliverRoleQuestion's own
+# rewrite on an undeliverable drop, telegram-front-desk-bot.ts) is scanned
+# every tick and surfaced into status.json under :role_questions_undeliverable,
+# the SAME "read a dedicated per-source file/dir, merge into the one
+# status.json write" pattern :tunnel already uses. An ORDINARY pending marker
+# (no :state field - role_ask.bb's own shape on every successful ask) is
+# never surfaced - only an in-flight, not-yet-re-asked undeliverable drop is.
+F="$(make_fixture)"
+mkdir -p "$F/.swarmforge/operator/role-awaiting"
+printf '{"question":"which env?","asked_at_ms":1000,"state":"undeliverable"}' > "$F/.swarmforge/operator/role-awaiting/specifier.json"
+printf '{"question":"which branch?","asked_at_ms":2000}' > "$F/.swarmforge/operator/role-awaiting/coder.json"
+OUT_GH26="$(tick "$F")"
+check "GH-26: tick still reports launched (unrelated to this sweep)" '[[ "$OUT_GH26" == *"\"launched?\":true"* ]]'
+check "GH-26: status.json surfaces the undeliverable specifier question" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:role_questions_undeliverable :specifier :question]")" == "which env?" ]]'
+check "GH-26: the ordinary pending coder marker (no state) is never surfaced" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:role_questions_undeliverable :coder]")" == "nil" ]]'
+rm -rf "$F"
+
+# ── GH-26: no role-awaiting dir at all (no role has ever asked) -> the key
+# is omitted from status.json entirely, never an empty {} placeholder ─────
+F="$(make_fixture)"
+OUT_GH26B="$(tick "$F")"
+check "GH-26: no role-awaiting dir -> role_questions_undeliverable key omitted from status.json" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:role_questions_undeliverable]")" == "nil" ]]'
+rm -rf "$F"
+
 # ── 21-24. BL-310: seed-race launch grace. runtime-started-at-ms reuses the
 #          pid-file's own mtime (only ever written by the real -main
 #          while-loop, never by --tick-once) - these fixtures seed that same
@@ -562,7 +589,10 @@ rm -rf "$F"
 # ── 22: grace window elapsed (pid-file mtime backdated) -> hibernates as before
 F="$(make_roster_fixture)"
 : > "$F/.swarmforge/operator/runtime.pid"
-touch -d "-5 minutes" "$F/.swarmforge/operator/runtime.pid"
+# BL-874: BSD touch has no -d relative-time form; portable_time_lib.sh
+# hides the BSD/GNU split behind one shared helper.
+source "$SCRIPT_DIR/../portable_time_lib.sh"
+portable_touch_relative 5 minutes "$F/.swarmforge/operator/runtime.pid"
 OUT22="$(OPERATOR_SKIP_LAUNCH=1 tick "$F")"
 check "swarm-seed-race-02: hibernates once the grace window has elapsed" \
   '[[ -f "$F/.swarmforge/operator/hibernation.json" ]] && [[ ! -s "$F/.swarmforge/roles.tsv" ]]'

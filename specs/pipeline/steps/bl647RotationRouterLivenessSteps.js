@@ -13,6 +13,8 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
+const { track } = require('./lib/fixtureReaper');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -56,7 +58,7 @@ function knownEventSubject(role) {
 }
 
 function mkTmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return mkSocketFixtureRoot(prefix);
 }
 
 function mkFixture() {
@@ -167,6 +169,10 @@ function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^a roles fixture with the live system's eight roles\.tsv rows$/, (ctx) => {
     ctx.bl647Target = mkFixture();
+    // BL-817: registered BEFORE any tmux server is spawned (later, by
+    // startTmuxSessions), so even a crash mid-launch is covered - the
+    // ordering fixtureReaperAbnormalExitHarness.js models.
+    track(ctx.bl647Target);
     writeRosterRolesTsv(ctx.bl647Target);
   });
 

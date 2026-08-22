@@ -318,6 +318,22 @@ export function printJsonToStdout(data: unknown): void {
   process.stdout.write(JSON.stringify(data, null, 2) + '\n');
 }
 
+export interface TargetAtArgs {
+  target?: string;
+  at?: string;
+}
+
+// Shared by tools/ CLIs whose args accept optional --target/--at seams
+// (closing-ceremony-*.ts): resolves the real target path and clock once,
+// rather than each wrapper's main() repeating
+// `args.target ?? resolveProjectRoot(process.cwd())` / `args.at ?? new Date().toISOString()`.
+export function resolveTargetAndNow(args: TargetAtArgs): { targetPath: string; nowIso: string } {
+  return {
+    targetPath: args.target ?? resolveProjectRoot(process.cwd()),
+    nowIso: args.at ?? new Date().toISOString(),
+  };
+}
+
 function reportFatalAndExit(error: unknown): void {
   console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);

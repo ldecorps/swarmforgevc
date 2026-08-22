@@ -48,11 +48,19 @@ healthy.
 ## Liveness cue
 
 The Cursor Remote topic carries a standing, edit-in-place status line —
-`Bridge: busy` / `Bridge: idle · N waiting` — so a stuck queue is visible
+`Bridge: busy · N waiting` / `Bridge: idle` — so a stuck queue is visible
 without checking logs (`syncCursorBridgeLivenessStatus`,
 `extension/src/tools/telegramCursorBridgeLiveness.ts`). It edits the same
 message in place rather than posting a new one per turn, and is
-change-gated: an unchanged status does not touch Telegram.
+change-gated: an unchanged status does not touch Telegram. The idle line
+dropped its own `· N waiting` count (BL-811): once idle, a queued question's
+actionable surface is the [queue selection poll](BL-810-host-queue-selection-poll-clear-all-and-ttl.md),
+not a second ambient counter.
+
+Any OTHER topic (e.g. Bubble) currently holding queued work gets its own
+standing cue too, so it doesn't go quiet between the queue ack and the
+eventual answer — see
+[Queued questions answer where they were asked](BL-767-queued-question-answers-in-origin-topic.md).
 
 ## `--help`
 
@@ -76,6 +84,8 @@ process that could steal updates from the real bridge.
 ## Out of scope
 
 - Bubble remote configuration and hold-music catalog (BL-765).
-- The busy-queue "choose next queued question" poll staying Cursor-Remote-only
-  even for Bubble-originated messages — flagged as a likely BL-765 follow-up,
-  not part of this fix.
+- A queued question's answer posting to the Cursor Remote topic regardless of
+  where it was asked — this was flagged as a likely BL-765 follow-up but
+  turned out to be neither BL-765 nor this ticket's mechanism; fixed
+  separately, see
+  [Queued questions answer where they were asked](BL-767-queued-question-answers-in-origin-topic.md).

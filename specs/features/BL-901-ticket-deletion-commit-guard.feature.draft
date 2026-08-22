@@ -1,0 +1,55 @@
+Feature: A commit cannot silently delete a backlog ticket it does not own
+
+  The shared pre-commit hook refuses a commit whose staged changes remove a
+  backlog ticket YAML when that ticket survives nowhere else in the staged
+  tree and the commit message never names it. Moving a ticket (promote,
+  close) and deliberately retiring one both stay allowed; only the silent
+  drop is refused.
+
+  Background:
+    Given the shared pre-commit hook is installed via core.hooksPath
+    And the repository has a tracked backlog ticket YAML for "BL-893"
+
+  # BL-901 ticket-deletion-commit-guard-01
+  Scenario Outline: The guard refuses only a deletion that is both unrecoverable and unannounced
+    Given a staged change that deletes the backlog ticket YAML for "BL-893"
+    And the ticket id "BL-893" <survives> at another staged path
+    And the commit message <names> the ticket id "BL-893"
+    When the hook runs on that commit
+    Then the commit is <outcome>
+
+    Examples:
+      | survives     | names     | outcome |
+      | survives     | omits     | refused |
+      | survives     | names     | allowed |
+      | disappears   | names     | allowed |
+      | disappears   | omits     | refused |
+
+  # BL-901 ticket-deletion-commit-guard-02
+  Scenario: A commit that stages no ticket deletion is untouched by the guard
+    Given a staged change that only edits "swarmforge/constitution/articles/engineering.prompt"
+    When the hook runs on that commit
+    Then the commit is allowed
+
+  # BL-901 ticket-deletion-commit-guard-03
+  Scenario: An untracked copy in the working tree does not excuse the deletion
+    Given a staged change that deletes the backlog ticket YAML for "BL-893"
+    And an untracked copy of that same ticket YAML exists in the working tree
+    And the commit message omits the ticket id "BL-893"
+    When the hook runs on that commit
+    Then the commit is refused
+
+  # BL-901 ticket-deletion-commit-guard-04
+  Scenario: The refusal names the ticket and how to proceed
+    Given a staged change that deletes the backlog ticket YAML for "BL-893"
+    And the commit message omits the ticket id "BL-893"
+    When the hook runs on that commit
+    Then the refusal message names "BL-893"
+    And the refusal message states that naming the ticket in the commit message permits it
+
+  # BL-901 ticket-deletion-commit-guard-05
+  Scenario: The pre-existing commit-size guard still runs alongside the new guard
+    Given a staged change of 200 files that deletes no backlog ticket YAML
+    When the hook runs on that commit
+    Then the commit is refused
+    And the refusal message comes from the commit-size guard

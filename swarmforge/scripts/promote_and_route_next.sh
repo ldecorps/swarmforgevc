@@ -12,9 +12,12 @@
 #     priority/id order, but see promotion_gates below for the real ranking
 #   - promotion_gates (BL-663; promotion_gates_cli.bb / promotion_gates_lib.bb)
 #     is the one chokepoint for: human_approval, Article 3.2.4 expedite
-#     ordering, active_backlog_max_depth, orthogonality, and the hold marker —
-#     every promotion (auto-pick AND by-name) is refused with a named reason
-#     when any of these do not hold
+#     ordering, active_backlog_max_depth, and the hold marker — every
+#     promotion (auto-pick AND by-name) is refused with a named reason when
+#     any of these do not hold. Orthogonality (BL-854) never refuses; it
+#     prints an ADVISORY|orthogonality|... line to stderr instead, naming
+#     every active ticket sharing the candidate's epic — see gates_evaluate
+#     below for why that reaches this script's own stderr unmodified.
 #   - assignee/spec-stage routing also goes through promotion_gates:
 #     assigned_to: specifier is never rewritten and routes to the specifier;
 #     every other ticket routes to coder via route_backlog_to_coder.sh
@@ -78,19 +81,30 @@ fi
 mkdir -p "$ACTIVE_DIR"
 
 # Effective depth cap (Article 3.5 / BL-432 folds auto-throttle when present).
+# BL-853: -1 (or any negative value) is the documented no-limit sentinel,
+# never a real ceiling - accept a SIGNED integer at every step (the
+# unsigned ^[0-9]+$ check used to discard the sentinel as "malformed" and
+# fall through to a tighter cap no operator configured). This script parses
+# no config and declares no depth default of its own: every value below
+# comes from the shared depth library via its own CLIs, and the one literal
+# fallback at the very end mirrors backlog-depth-lib/default-max-depth for
+# the sole case where bb itself cannot be run at all.
 CAP=""
 if [[ -f "$SCRIPT_DIR/effective_backlog_depth_cli.bb" ]]; then
   CAP="$(bb "$SCRIPT_DIR/effective_backlog_depth_cli.bb" "$ROOT" 2>/dev/null | tr -d '[:space:]' || true)"
 fi
-if [[ -z "$CAP" || ! "$CAP" =~ ^[0-9]+$ ]]; then
-  CAP="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$ROOT" 2>/dev/null | tr -d '[:space:]' || echo 1)"
+if [[ -z "$CAP" || ! "$CAP" =~ ^-?[0-9]+$ ]]; then
+  CONF_PATH="$(bb "$SCRIPT_DIR/backlog_depth_conf_path_cli.bb" "$ROOT" 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ -n "$CONF_PATH" ]]; then
+    CAP="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$CONF_PATH" 2>/dev/null | tr -d '[:space:]' || true)"
+  fi
 fi
-if [[ -z "$CAP" || ! "$CAP" =~ ^[0-9]+$ ]]; then
-  CAP=1
+if [[ -z "$CAP" || ! "$CAP" =~ ^-?[0-9]+$ ]]; then
+  CAP=5
 fi
 
 ACTIVE_COUNT="$(find "$ACTIVE_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
-if (( ACTIVE_COUNT >= CAP )); then
+if (( CAP >= 0 )) && (( ACTIVE_COUNT >= CAP )); then
   echo "Error: active_backlog_max_depth gate: active count $ACTIVE_COUNT >= cap $CAP — no open slot" >&2
   exit 2
 fi
@@ -134,7 +148,15 @@ is_buildable() {
 # promotion_gates: the BL-663 chokepoint (promotion_gates_cli.bb) is the ONE
 # place human_approval / Article 3.2.4 expedite ordering / depth /
 # orthogonality / hold marker are decided — both invocation modes below call
-# it, never a locally-reimplemented check.
+# it, never a locally-reimplemented check. BL-854: promotion_gates_cli.bb
+# writes any orthogonality ADVISORY line to ITS OWN stderr, never stdout —
+# neither call site below redirects stderr, so command substitution
+# ($(...), which only ever captures stdout) leaves that ADVISORY line to
+# fall straight through to this script's own stderr (and whatever is
+# watching it — operator terminal, coordinator log) unmodified. That is what
+# "print the advisory for the ticket it actually promotes" means here: do
+# not add a `2>...` redirect to any promotion_gates_cli.bb call below, or
+# the advisory goes dark exactly where the file-overlap judgement is made.
 gates_evaluate() {
   local file="$1" held="$2"
   bb "$SCRIPT_DIR/promotion_gates_cli.bb" evaluate "$ROOT" "$file" "$held" "$CAP"
@@ -215,7 +237,15 @@ ROUTE_ROLE="${ROUTE_DECISION%% *}"
 ROUTE_FLAG="${ROUTE_DECISION##* }"
 if [[ "$ROUTE_FLAG" == "REWRITE" ]]; then
   if grep -qE '^assigned_to:' "$DEST"; then
-    sed -i "s/^assigned_to:.*/assigned_to: ${ROUTE_ROLE}/" "$DEST"
+    # `sed -i` takes a mandatory suffix operand on BSD/macOS but forbids one
+    # (with no space) on GNU — no single invocation satisfies both. Route
+    # through a temp file and `cat` back in place instead: identical output
+    # on both sed flavors, and writing into the existing $DEST (rather than
+    # `mv`-ing a fresh mktemp file over it) keeps its original mode bits.
+    SED_TMP="$(mktemp)"
+    sed "s/^assigned_to:.*/assigned_to: ${ROUTE_ROLE}/" "$DEST" > "$SED_TMP"
+    cat "$SED_TMP" > "$DEST"
+    rm -f "$SED_TMP"
   else
     printf '\nassigned_to: %s\n' "$ROUTE_ROLE" >> "$DEST"
   fi

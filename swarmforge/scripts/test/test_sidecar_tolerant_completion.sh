@@ -10,17 +10,30 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DONE_TASK="$SCRIPT_DIR/../done_with_current_task.bb"
-DONE_BATCH="$SCRIPT_DIR/../done_with_current_batch.bb"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-998: the completion helpers are self-rooting one hop out. Neither
+# done_with_current_task.bb nor done_with_current_batch.bb resolves a root
+# itself, but each ends by process/exec'ing its ready_for_next_*.sh sibling
+# from its OWN on-disk directory, and that wrapper cd's to its own dirname.
+# Run from the real scripts dir they therefore land in THIS checkout - the
+# fixture is never consulted, the test proves nothing about it, and the
+# helper does what it always does: it claims, out of a real role's real
+# mailbox. Give each fixture root its own copy and dispatch through that.
+source "$SCRIPT_DIR/lib/install_scripts.sh"
+
+done_task()  { echo "$1/swarmforge/scripts/done_with_current_task.bb"; }
+done_batch() { echo "$1/swarmforge/scripts/done_with_current_batch.bb"; }
 
 mk_root() {
   local root; root="$(cd "$(mktemp -d)" && pwd -P)"
   register_tmp_dir "$root"
   git -C "$root" init -q
   git -C "$root" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
+  install_scripts "$root"
   echo "$root"
 }
 
@@ -38,7 +51,7 @@ IN_PROCESS2="$ROOT2/.swarmforge/handoffs/inbox/in_process"
 HANDOFF2="$(make_handoff "$IN_PROCESS2" "task-a")"
 touch "${HANDOFF2}.nudge" "${HANDOFF2}.chase.json"
 
-OUT="$(cd "$ROOT2" && SWARMFORGE_ROLE=coder bb "$DONE_TASK")"
+OUT="$(cd "$ROOT2" && SWARMFORGE_ROLE=coder bb "$(done_task "$ROOT2")")"
 grep -q "^COMPLETED:" <<< "$OUT" || fail "02: task completion did not report COMPLETED; got: $OUT"
 [[ ! -e "${HANDOFF2}.nudge" ]] || fail "02: .nudge sidecar survived task completion"
 [[ ! -e "${HANDOFF2}.chase.json" ]] || fail "02: .chase.json sidecar survived task completion"
@@ -56,7 +69,7 @@ touch "${HANDOFF1}.nudge"
 rm -f "$HANDOFF1"
 mkdir -p "$ROOT1/.swarmforge/handoffs/inbox/completed"
 
-OUT="$(cd "$ROOT1" && SWARMFORGE_ROLE=coder bb "$DONE_BATCH" 2>&1)" && RC=0 || RC=$?
+OUT="$(cd "$ROOT1" && SWARMFORGE_ROLE=coder bb "$(done_batch "$ROOT1")" 2>&1)" && RC=0 || RC=$?
 if [[ "$RC" != 0 ]]; then
   fail "01: batch completion aborted on an orphaned sidecar-only batch; got: $OUT"
 fi
@@ -72,7 +85,7 @@ touch "${HANDOFF1C}.chase.json"
 rm -f "$HANDOFF1C"
 mkdir -p "$ROOT1C/.swarmforge/handoffs/inbox/completed"
 
-OUT="$(cd "$ROOT1C" && SWARMFORGE_ROLE=coder bb "$DONE_BATCH" 2>&1)" && RC=0 || RC=$?
+OUT="$(cd "$ROOT1C" && SWARMFORGE_ROLE=coder bb "$(done_batch "$ROOT1C")" 2>&1)" && RC=0 || RC=$?
 [[ "$RC" == 0 ]] || fail "01c: batch completion aborted on an orphaned .chase.json-only batch; got: $OUT"
 [[ ! -d "$BATCH_DIR_C" ]] || fail "01c: batch directory was not deleted"
 pass "01c: batch completion tolerates and removes an orphaned .chase.json sidecar, deletes the batch dir"
@@ -85,7 +98,7 @@ HANDOFF1B="$(make_handoff "$BATCH_DIR_B" "batch-b")"
 touch "${HANDOFF1B}.nudge" "${HANDOFF1B}.chase.json"
 mkdir -p "$ROOT1B/.swarmforge/handoffs/inbox/completed"
 
-OUT="$(cd "$ROOT1B" && SWARMFORGE_ROLE=coder bb "$DONE_BATCH" 2>&1)" && RC=0 || RC=$?
+OUT="$(cd "$ROOT1B" && SWARMFORGE_ROLE=coder bb "$(done_batch "$ROOT1B")" 2>&1)" && RC=0 || RC=$?
 [[ "$RC" == 0 ]] || fail "01b: batch completion failed with real handoff + sidecars present; got: $OUT"
 [[ ! -d "$BATCH_DIR_B" ]] || fail "01b: batch directory was not deleted"
 [[ -f "$ROOT1B/.swarmforge/handoffs/inbox/completed/batch_20260706T000001Z/00_batch-b.handoff" ]] \
@@ -108,7 +121,7 @@ for file in notes.txt; do
   mkdir -p "$ROOT3/.swarmforge/handoffs/inbox/completed"
 
   set +e
-  OUT="$(cd "$ROOT3" && SWARMFORGE_ROLE=coder bb "$DONE_BATCH" 2>&1)"
+  OUT="$(cd "$ROOT3" && SWARMFORGE_ROLE=coder bb "$(done_batch "$ROOT3")" 2>&1)"
   RC=$?
   set -e
   [[ "$RC" != 0 ]] || fail "03 ($file): batch completion did not abort on an unexpected file; got: $OUT"

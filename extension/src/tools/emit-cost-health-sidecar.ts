@@ -14,6 +14,7 @@
  */
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { computeCostHealthSidecar, writeCostHealthSidecar, commitCostHealthSidecar } from '../notify/costHealthSidecar';
+import { parseSnapshotPath } from './briefingSnapshotArgs';
 
 // Exported (same "CLI main() run only via execFileSync is coverage-invisible"
 // lesson this codebase's other CLIs already established - e.g.
@@ -26,7 +27,8 @@ export function formatEmitResult(committed: boolean, filePath: string): string {
 
 export function main(): void {
   const { mainWorktreePath, roleWorktrees } = resolveCliMainWorktreeContext();
-  const sidecar = computeCostHealthSidecar(mainWorktreePath, roleWorktrees);
+  const snapshotPath = parseSnapshotPath(process.argv.slice(2));
+  const sidecar = computeCostHealthSidecar(mainWorktreePath, roleWorktrees, Date.now(), undefined, snapshotPath);
   const filePath = writeCostHealthSidecar(mainWorktreePath, sidecar);
   const committed = commitCostHealthSidecar(mainWorktreePath, filePath, sidecar.dateIso);
   console.log(formatEmitResult(committed, filePath));

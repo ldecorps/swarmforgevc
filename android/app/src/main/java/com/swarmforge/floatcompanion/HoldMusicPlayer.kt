@@ -186,8 +186,27 @@ class HoldMusicPlayer {
         private const val Bb5 = 82; private const val B5 = 83
         private const val C6 = 84
 
+        @Volatile private var remoteSongs: List<Song>? = null
+
+        /**
+         * BL-765 invariant 1 (BL-654 coder-authored property test in
+         * HoldMusicPlayerPropertyTest): a missing/empty/unusable remote
+         * catalog leaves the bundled defaults in place, never an empty
+         * songs list. `internal` (BL-769 precedent) so the JVM unit suite
+         * can exercise the pure decision directly.
+         */
+        internal fun chooseEffectiveSongs(remote: List<Song>?): List<Song> =
+            if (remote.isNullOrEmpty()) BUNDLED_DEFAULT_SONGS else remote
+
+        /** Called on pair/resume once [BridgeClient.fetchChiptunesCatalog] resolves. */
+        fun applyRemoteCatalog(songs: List<Song>?) {
+            remoteSongs = songs
+        }
+
+        val SONGS: List<Song> get() = chooseEffectiveSongs(remoteSongs)
+
         // Ported from letsTalkUiHtml.ts chiptuneSongs (pulse1, pulse2, triangle, hat)
-        val SONGS: List<Song> = listOf(
+        private val BUNDLED_DEFAULT_SONGS: List<Song> = listOf(
             Song("Peaches en Regalia", 138, arrayOf(
                 intArrayOf(E5,G4,C3,1), intArrayOf(G5,B4,C3,0), intArrayOf(A5,C5,E3,1), intArrayOf(G5,B4,E3,0),
                 intArrayOf(F5,A4,F3,1), intArrayOf(E5,G4,F3,0), intArrayOf(D5,F4,G3,2), intArrayOf(C5,E4,G3,0),

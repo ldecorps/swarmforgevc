@@ -10,6 +10,8 @@ const {
   resolveReplyTopicId,
   resolveReplyDelivery,
   decideUpdateAction,
+  annotateRoutedMediaText,
+  formatDropAuditLine,
   pollAndForward,
   decideCursorBridgeExclusion,
   parseNextSseRecord,
@@ -58,6 +60,7 @@ const {
   decideEnsureOnboardingTopicAction,
   ONBOARDING_SUBJECT_ID,
   decideOnboardingReplyAction,
+  formatCallbackDiagnosticLine,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -71,6 +74,23 @@ function mkVoiceUpdate({ fromId, topicId, chatId, fileId, updateId } = {}) {
   return {
     update_id: updateId ?? 1,
     message: { message_id: 1, chat: { id: chatId ?? 1 }, from: { id: fromId }, message_thread_id: topicId, voice: { file_id: fileId ?? 'file-1', duration: 3 } },
+  };
+}
+
+// BL-620: a photo update - the incident shape (photo + caption directive
+// from the principal). `caption` carries the words; `text` is absent on a
+// media message.
+function mkPhotoUpdate({ fromId, topicId, caption, chatId, updateId } = {}) {
+  return {
+    update_id: updateId ?? 1,
+    message: {
+      message_id: 1,
+      chat: { id: chatId ?? 1 },
+      from: { id: fromId },
+      message_thread_id: topicId,
+      photo: [{ file_id: 'photo-1', width: 90, height: 60 }],
+      ...(caption === undefined ? {} : { caption }),
+    },
   };
 }
 
@@ -1712,6 +1732,171 @@ test('BL-434 approvals-standing-topic-02: "reject <id> <reason>" in the Approval
   assert.equal(result.posted, 1);
 });
 
+// ── BL-721: "/qjump <id>" in the Approvals topic - the SAME queue-jump
+// (approve + force-promote + dispatch now) effect as tapping the ask's Q
+// jump button, reached through the SAME recordExpediteDecisionAndClose
+// routine, never a second effect path. ────────────────────────────────────
+
+test('BL-721: "/qjump <id>" in the Approvals topic records approval through the same recordApprovalReply effect a plain Approve tap uses', async () => {
+  const approvals = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    recordRejectionReply: async () => {
+      throw new Error('recordRejectionReply should not be called for a qjump reply');
+    },
+  });
+  assert.deepEqual(approvals, ['BL-433']);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-721: "/qjump <id>" force-promotes the ticket via promoteTicketIfPaused', async () => {
+  const promoted = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    promoteTicketIfPaused: async (backlogId) => {
+      promoted.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(promoted, ['BL-433']);
+});
+
+test('BL-721: "/qjump <id>" dispatches the build immediately when no same-file collision is reported', async () => {
+  const dispatched = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    checkExpediteFileCollision: async () => undefined,
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatched.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(dispatched, ['BL-433']);
+});
+
+test('BL-721: "/qjump <id>" on a same-file collision skips dispatch and posts an unsafe-dispatch toast into the Approvals topic, without preempting the in-flight build', async () => {
+  const dispatched = [];
+  const notified = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    checkExpediteFileCollision: async () => 'BL-100',
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatched.push(backlogId);
+      return true;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(dispatched, [], 'expected the in-flight build never preempted - no dispatch on a collision');
+  assert.equal(notified.length, 1);
+  assert.equal(notified[0].topicId, 750);
+  assert.match(notified[0].text, /unsafe/i);
+  assert.match(notified[0].text, /BL-100/);
+  assert.equal(result.posted, 1, 'the ticket is still approved - qjump always "posted" on a real transition, even when dispatch is skipped for safety');
+});
+
+test('BL-721: "/qjump <id>" for a ticket that is NOT currently pending is surfaced, never applied', async () => {
+  const approvals = [];
+  const notified = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-999' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return false;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, ['BL-999']);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /BL-999/);
+  assert.match(notified[0].text, /isn't awaiting approval/);
+  assert.equal(result.posted, 0);
+  assert.equal(result.dropped, 1, 'a not-currently-pending id is a deliberate drop, never a retryable failure');
+});
+
+test('BL-721: "/expedite <id>" (the offline Cursor-bridge verb) typed in the Approvals topic is unrecognized, never triggers the queue-jump effect', async () => {
+  const approvals = [];
+  const promoted = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/expedite BL-433' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async (backlogId) => {
+      approvals.push(backlogId);
+      return true;
+    },
+    promoteTicketIfPaused: async (backlogId) => {
+      promoted.push(backlogId);
+      return true;
+    },
+  });
+  assert.deepEqual(approvals, [], 'the offline expeditor verb must never drive the Approvals-topic queue-jump effect');
+  assert.deepEqual(promoted, []);
+  assert.equal(result.dropped, 1);
+});
+
+// BL-721: "/qjump <id>" closes the posted ask exactly the way a Q jump
+// button tap does - proves the typed-reply path routes through the SAME
+// recordExpediteDecisionAndClose routine as processCallbackQuery's
+// dispatchExpediteCallback, never a second, divergent close path.
+test('BL-721: "/qjump <id>" in the Approvals topic closes the posted ask - strips buttons, appends the Q jumped verdict', async () => {
+  const editCalls = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: '/qjump BL-721' })] }),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordApprovalReply: async () => true,
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 42, text: `${backlogId} needs your approval...` }),
+    editApprovalAskMessage: async (topicId, messageId, text) => {
+      editCalls.push({ topicId, messageId, text });
+      return { success: true };
+    },
+  });
+  assert.equal(editCalls.length, 1);
+  assert.equal(editCalls[0].topicId, 800);
+  assert.equal(editCalls[0].messageId, 42);
+  assert.match(editCalls[0].text, /^BL-721 needs your approval\.\.\.\n-- Q jumped \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
+  assert.equal(result.posted, 1);
+});
+
 // BL-484 decided-ask-closes-02: a typed-reply decision closes the posted
 // ask exactly the way a button tap does - proves the Approvals-topic reply
 // path routes through the SAME recordApprovalDecisionAndClose routine as
@@ -2241,6 +2426,12 @@ function callbackFixtureAdapters(overrides = {}) {
     redirectToRole: overrides.redirectToRole,
     enqueueRoleAnswerNote: overrides.enqueueRoleAnswerNote,
     clearRolePendingQuestion: overrides.clearRolePendingQuestion,
+    // BL-582: the durable diagnostic sink and the no-op explainer - both
+    // optional, same "absent degrades to a no-op" posture as every other
+    // optional field above.
+    logDiagnostic: overrides.logDiagnostic,
+    explainApprovalRecordNoOp: overrides.explainApprovalRecordNoOp,
+    commitApprovalWrites: overrides.commitApprovalWrites,
   };
 }
 
@@ -2946,7 +3137,7 @@ test('BL-490-VIOLATION: commitExpediteWrites absent degrades to the pre-fix beha
   assert.equal(result.changed, true);
 });
 
-test('recordExpediteDecisionAndClose: closes the ask with an Expedited decision line, not Approved', async () => {
+test('recordExpediteDecisionAndClose: closes the ask with a Q jumped decision line, not Approved', async () => {
   const adapters = expediteFixtureAdapters({
     readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
   });
@@ -2956,7 +3147,7 @@ test('recordExpediteDecisionAndClose: closes the ask with an Expedited decision 
 
   assert.equal(result.changed, true);
   assert.equal(result.collision, undefined);
-  assert.deepEqual(adapters.editCalls, [{ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...\n-- Expedited 2026-07-17 03:07 UTC' }]);
+  assert.deepEqual(adapters.editCalls, [{ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...\n-- Q jumped 2026-07-17 03:07 UTC' }]);
 });
 
 test('recordExpediteDecisionAndClose: a same-file collision is reported and skips dispatch, but still promotes/closes', async () => {
@@ -3022,6 +3213,9 @@ function amendFixtureAdapters(overrides = {}) {
         editCalls.push({ topicId, messageId, text });
         return { success: true };
       }),
+    // BL-892: same absent-means-not-wired posture as closingFixtureAdapters'.
+    commitApprovalWrites: overrides.commitApprovalWrites,
+    notifyApprovalsTopic: overrides.notifyApprovalsTopic,
     editCalls,
   };
 }
@@ -3042,7 +3236,7 @@ test('recordAmendDecisionAndClose: a real transition records amending, resets em
 
   const result = await recordAmendDecisionAndClose(adapters, 'BL-509', 'tighten the acceptance criteria', nowMs);
 
-  assert.equal(result, true);
+  assert.equal(result.changed, true);
   assert.deepEqual(resets, ['BL-509']);
   assert.deepEqual(directives, [{ backlogId: 'BL-509', text: 'tighten the acceptance criteria' }]);
   assert.deepEqual(adapters.editCalls, [
@@ -3066,7 +3260,7 @@ test('recordAmendDecisionAndClose: no real transition (recordAmendReply reports 
 
   const result = await recordAmendDecisionAndClose(adapters, 'BL-509', 'tighten the acceptance criteria', 0);
 
-  assert.equal(result, false);
+  assert.equal(result.changed, false);
   assert.deepEqual(resets, []);
   assert.deepEqual(directives, []);
   assert.deepEqual(adapters.editCalls, []);
@@ -3074,7 +3268,7 @@ test('recordAmendDecisionAndClose: no real transition (recordAmendReply reports 
 
 test('recordAmendDecisionAndClose: every optional adapter absent degrades to record-only, never crashes', async () => {
   const result = await recordAmendDecisionAndClose({ recordAmendReply: async () => true }, 'BL-509', 'tighten the acceptance criteria', 0);
-  assert.equal(result, true);
+  assert.equal(result.changed, true);
 });
 
 // ── BL-484: recordApprovalDecisionAndClose - the ONE closing routine
@@ -3100,6 +3294,12 @@ function closingFixtureAdapters(overrides = {}) {
     waitForAskCloseRetry: overrides.waitForAskCloseRetry,
     askCloseRetryBudget: overrides.askCloseRetryBudget,
     scheduleConciergeTick: overrides.scheduleConciergeTick,
+    // BL-892: pass through only when the test actually supplies one - an
+    // absent commitApprovalWrites means "not wired", the same
+    // "new capability defaults to a no-op" posture every other optional
+    // PollAdapters field here already has.
+    commitApprovalWrites: overrides.commitApprovalWrites,
+    notifyApprovalsTopic: overrides.notifyApprovalsTopic,
     editCalls,
   };
 }
@@ -3110,9 +3310,9 @@ test('recordApprovalDecisionAndClose: an approved decision with a stored ask edi
   });
   const nowMs = Date.UTC(2026, 6, 17, 3, 7);
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, nowMs);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, nowMs);
 
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
   assert.deepEqual(adapters.editCalls, [
     { topicId: 800, messageId: 999, text: 'BL-484 needs your approval...\n-- Approved 2026-07-17 03:07 UTC' },
   ]);
@@ -3166,14 +3366,14 @@ test('BL-496: a stored ask message with no editApprovalAskMessage adapter wired 
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still succeed with no edit adapter wired');
+  assert.equal(result.changed, true, 'expected the decision recording to still succeed with no edit adapter wired');
   assert.ok(
     errors.some((e) => e.includes('BL-484') && e.includes('message edit failed or not wired')),
     `expected the "not wired" fallback logged, got: ${JSON.stringify(errors)}`
@@ -3193,9 +3393,9 @@ test('recordApprovalDecisionAndClose: a rejected decision appends the reason', a
 test('recordApprovalDecisionAndClose: no stored ask message (never captured) records the decision but attempts no edit, never crashes', async () => {
   const adapters = closingFixtureAdapters({ readApprovalAskMessage: undefined });
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
 
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
   assert.deepEqual(adapters.editCalls, []);
 });
 
@@ -3205,9 +3405,9 @@ test('recordApprovalDecisionAndClose: a decision that was NOT actually pending (
     readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
   });
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
 
-  assert.equal(changed, false);
+  assert.equal(result.changed, false);
   assert.deepEqual(adapters.editCalls, [], 'expected no edit attempted for a no-op (already-decided) recording');
 });
 
@@ -3222,25 +3422,109 @@ test('recordApprovalDecisionAndClose: a failed message edit is logged and does n
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still be reported as successful');
+  assert.equal(result.changed, true, 'expected the decision recording to still be reported as successful');
   assert.ok(errors.some((e) => e.includes('BL-484')), `expected a failed-edit warning naming the ticket, got: ${JSON.stringify(errors)}`);
 });
 
 test('recordApprovalDecisionAndClose: readApprovalAskMessage/editApprovalAskMessage both absent (pre-BL-484 PollAdapters) records the decision and never crashes', async () => {
-  const changed = await recordApprovalDecisionAndClose(
+  const result = await recordApprovalDecisionAndClose(
     { recordApprovalReply: async () => true, recordRejectionReply: async () => true },
     'BL-484',
     { kind: 'approved' },
     0
   );
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
+});
+
+// ── BL-892: commitApprovalWrites is called on every real transition; a
+//    GENUINE failure (adapter wired, returns false) is surfaced loudly to
+//    the Approvals topic, an ABSENT adapter (not wired at all) degrades
+//    silently - the same "new capability defaults to a no-op" posture
+//    every other optional PollAdapters field here already has. ───────────
+
+test('recordApprovalDecisionAndClose: a successful commit is reported and never surfaces a failure notice', async () => {
+  const commitCalls = [];
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    commitApprovalWrites: async (backlogId, message) => {
+      commitCalls.push({ backlogId, message });
+      return true;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, true);
+  assert.deepEqual(commitCalls, [{ backlogId: 'BL-892', message: 'Approve BL-892: record human_approval\n\nBy coder.' }]);
+  assert.deepEqual(notified, [], 'a successful commit needs no surfacing reply');
+});
+
+test('recordApprovalDecisionAndClose: a GENUINE commit failure (adapter wired, returns false) is reported and surfaced loudly', async () => {
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    commitApprovalWrites: async () => false,
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'rejected', reason: 'scope creep' }, 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, false);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /BL-892/);
+  assert.match(notified[0].text, /FAILED TO COMMIT/);
+});
+
+test('recordApprovalDecisionAndClose: commitApprovalWrites ABSENT (not wired) degrades silently - never surfaces a failure notice', async () => {
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, false);
+  assert.deepEqual(notified, [], 'an absent adapter is a deployment that has not wired this capability yet, not a failure');
+});
+
+test('recordAmendDecisionAndClose: a GENUINE commit failure is reported and surfaced loudly, naming "amending"', async () => {
+  const notified = [];
+  const adapters = amendFixtureAdapters({
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-892 needs your approval...' }),
+    commitApprovalWrites: async () => false,
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordAmendDecisionAndClose(adapters, 'BL-892', 'tighten scope', 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, false);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /BL-892/);
+  assert.match(notified[0].text, /amending/);
+  assert.match(notified[0].text, /FAILED TO COMMIT/);
 });
 
 // ── BL-496: the ask-close's own bounded, retry_after-honouring retry ─────
@@ -3297,9 +3581,9 @@ test('BL-496 ask-close-rate-limit-02: a rate-limited edit waits the told-you-so 
     },
   });
 
-  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
 
-  assert.equal(changed, true);
+  assert.equal(result.changed, true);
   assert.equal(attempts, 3, 'expected 3 total edit attempts (2 failed + 1 succeeded)');
   assert.deepEqual(waits, [3000, 3000], 'expected a 3-second wait requested before each of the 2 retries');
   assert.equal(adapters.editCalls.length, 1, 'expected the message finally edited on the successful attempt');
@@ -3325,14 +3609,14 @@ test('BL-496 ask-close-rate-limit-03: a persistently rate-limited edit stops at 
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still succeed despite the undelivered close');
+  assert.equal(result.changed, true, 'expected the decision recording to still succeed despite the undelivered close');
   assert.equal(attempts, 3, 'expected exactly the bounded budget of attempts, never more');
   assert.deepEqual(waits, [3000, 3000], 'expected a wait only BETWEEN attempts, never after the last one');
   assert.ok(
@@ -3357,14 +3641,14 @@ test('BL-496: an askCloseRetryBudget of 0 (misconfigured) attempts no edit at al
     errors.push(chunk);
     return true;
   };
-  let changed;
+  let result;
   try {
-    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+    result = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
   } finally {
     process.stderr.write = originalErrorWrite;
   }
 
-  assert.equal(changed, true, 'expected the decision recording to still succeed despite the zero retry budget');
+  assert.equal(result.changed, true, 'expected the decision recording to still succeed despite the zero retry budget');
   assert.equal(attempts, 0, 'expected zero edit attempts with a zero budget - the loop must never run');
   assert.ok(errors.some((e) => e.includes('BL-484')), `expected the undelivered close logged, got: ${JSON.stringify(errors)}`);
 });
@@ -4646,9 +4930,11 @@ test('BL-607: a roleQuestion record with no options falls back to a plain messag
   assert.deepEqual(posted, []);
 });
 
-test('BL-607: a roleQuestion for a role absent from role-topic-map.json (roleTopicIdFor resolves undefined) degrades to dropping the question, never crashes or posts to nowhere', async () => {
+test('BL-708: a roleQuestion for a role absent from role-topic-map.json (roleTopicIdFor resolves undefined) drops the question - never crashes, never posts to nowhere - but surfaces a trace naming the role BEFORE the record is acked', async () => {
   const posted = [];
   const sentReplies = [];
+  const acked = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   await relaySseReplies(
     '',
     {
@@ -4662,12 +4948,126 @@ test('BL-607: a roleQuestion for a role absent from role-topic-map.json (roleTop
       },
       roleTopicIdFor: async () => undefined,
       resolveDelivery: () => ({ kind: 'undeliverable' }),
-      ackReply: async () => {},
+      ackReply: async (id) => acked.push(id),
     },
     new Set()
   );
   assert.deepEqual(posted, []);
   assert.deepEqual(sentReplies, []);
+  assert.equal(errorSpy.mock.calls.length, 1, 'an undeliverable roleQuestion must leave exactly one surfaced trace');
+  assert.match(errorSpy.mock.calls[0][0], /nobody/, 'the trace must name the role the question could not be delivered to');
+  assert.deepEqual(acked, ['r1'], 'still acked - the bridge cannot tell "decided to drop" from "never seen" and would replay it every reconnect');
+  errorSpy.mockRestore();
+});
+
+test('BL-708: the undeliverable-roleQuestion trace is surfaced strictly BEFORE the ackReply call - never a silent ack that reads as delivered', async () => {
+  const order = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => order.push('trace'));
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody"}\n\n',
+      ]),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => undefined,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => order.push('ack'),
+    },
+    new Set()
+  );
+  assert.deepEqual(order, ['trace', 'ack']);
+  errorSpy.mockRestore();
+});
+
+// ── GH-26: an undeliverable roleQuestion must also rewrite the role's
+// awaiting marker (via markRoleQuestionUndeliverable) so the asking role
+// never wedges in "already-pending" forever behind a guard that thinks its
+// question is still in flight. ───────────────────────────────────────────
+
+test('GH-26: an undeliverable roleQuestion rewrites the awaiting marker via markRoleQuestionUndeliverable, naming the role/question/options', async () => {
+  const marked = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody","options":[{"label":"staging"}]}\n\n',
+      ]),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => undefined,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => {},
+      markRoleQuestionUndeliverable: async (role, question, options) => {
+        marked.push({ role, question, options });
+      },
+    },
+    new Set()
+  );
+  assert.deepEqual(marked, [{ role: 'nobody', question: 'which environment?', options: [{ label: 'staging' }] }]);
+  errorSpy.mockRestore();
+});
+
+test('GH-26: markRoleQuestionUndeliverable fires strictly BEFORE ackReply - never a silent ack over an unrewritten marker', async () => {
+  const order = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody"}\n\n',
+      ]),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => undefined,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => order.push('ack'),
+      markRoleQuestionUndeliverable: async () => order.push('mark'),
+    },
+    new Set()
+  );
+  assert.deepEqual(order, ['mark', 'ack']);
+  errorSpy.mockRestore();
+});
+
+test('GH-26: a deliverable roleQuestion never calls markRoleQuestionUndeliverable', async () => {
+  const marked = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-specifier","text":"anything else?","roleQuestion":"specifier"}\n\n']),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => 1595,
+      resolveDelivery: () => {
+        throw new Error('resolveDelivery should never be consulted for a roleQuestion record');
+      },
+      ackReply: async () => {},
+      markRoleQuestionUndeliverable: async (role, question, options) => marked.push({ role, question, options }),
+    },
+    new Set()
+  );
+  assert.deepEqual(marked, []);
+});
+
+test('GH-26: markRoleQuestionUndeliverable absent from the adapters fixture never crashes the relay (optional-adapter convention)', async () => {
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  const acked = [];
+  await assert.doesNotReject(() =>
+    relaySseReplies(
+      '',
+      {
+        readChunk: mkChunkReader([
+          'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody"}\n\n',
+        ]),
+        sendReply: async () => {},
+        roleTopicIdFor: async () => undefined,
+        resolveDelivery: () => ({ kind: 'undeliverable' }),
+        ackReply: async (id) => acked.push(id),
+      },
+      new Set()
+    )
+  );
+  assert.deepEqual(acked, ['r1']);
+  errorSpy.mockRestore();
 });
 
 test('BL-607: a roleQuestion record is never delivered through deliverAgentQuestion\'s Agent Questions topic path, even when both adapters are wired', async () => {
@@ -4827,7 +5227,13 @@ test('relaySseReplies adds a newly-sent record\'s id to the shared seenIds set s
 
 // ── BL-302: poll-loop resilience (backoff, escalation, isolation) ────────
 
-const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3 };
+// BL-621: sustainedOutageThresholdMs is part of the config shape now. These
+// pre-BL-621 cycle fixtures all run on the pinned FIXTURE_NOW clock below, so
+// no episode here ever ages past this window - the escalation path is
+// specified separately, in bl621FrontDeskSustainedOutage.test.js.
+const BACKOFF_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3, sustainedOutageThresholdMs: 30 * 60_000 };
+const FIXTURE_NOW = 0;
+const NO_OUTAGE = { escalated: false };
 
 // ── computePollBackoffMs / shouldRaiseDegradedWarning (pure) ─────────────
 
@@ -4869,33 +5275,33 @@ function fakeCycleAdapters(getUpdatesResult) {
 }
 
 test('poll-resilience-01: a failed cycle increments consecutiveFailures and returns a positive delay', async () => {
-  const state = { offset: 5, consecutiveFailures: 0 };
-  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), BACKOFF_CONFIG);
+  const state = { offset: 5, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 1);
   assert.equal(cycle.delayMs, 1000);
   assert.equal(cycle.degradedWarning, false);
 });
 
 test('poll-resilience-01: a run of failures backs off with growing delay, then a success resets to the floor', async () => {
-  let state = { offset: 0, consecutiveFailures: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const delays = [];
   for (let i = 0; i < 4; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
     delays.push(cycle.delayMs);
     state = cycle.state;
   }
   assert.deepEqual(delays, [1000, 2000, 4000, 8000]);
 
-  const recovered = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG);
+  const recovered = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(recovered.state.consecutiveFailures, 0);
   assert.equal(recovered.delayMs, 0);
 });
 
 test('poll-resilience-02: the degraded warning fires on the exact cycle the threshold is crossed', async () => {
-  let state = { offset: 0, consecutiveFailures: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const warnings = [];
   for (let i = 0; i < 5; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
     warnings.push(cycle.degradedWarning);
     state = cycle.state;
   }
@@ -4903,24 +5309,79 @@ test('poll-resilience-02: the degraded warning fires on the exact cycle the thre
 });
 
 test('poll-resilience-02: retries continue past the degraded threshold (never gives up)', async () => {
-  let state = { offset: 0, consecutiveFailures: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   for (let i = 0; i < 10; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
     state = cycle.state;
   }
   assert.equal(state.consecutiveFailures, 10);
-  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG);
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 0, 'the loop must still be able to recover after a sustained outage');
 });
 
 test('a successful cycle with real updates still advances the offset via runPollCycle', async () => {
   const update = { update_id: 1, message: { message_id: 1, chat: { id: 1 }, from: { id: PRINCIPAL_ID }, text: 'hi' } };
-  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2, stuckAttempts: 0 }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG);
+  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 2, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [update] }), BACKOFF_CONFIG, FIXTURE_NOW);
   // BL-369: the offset is the delivered update's own update_id + 1 (real
   // Telegram semantics, offsetAfterDelivery), never an injected adapter's
   // arbitrary arithmetic - update_id:1 delivered means offset advances to 2.
   assert.equal(cycle.state.offset, 2);
   assert.equal(cycle.state.consecutiveFailures, 0);
+});
+
+// ── BL-1036: runPollCycle actually WIRES pollRecovered/pollUnresolved/
+// conflictWindow, not just computes them in isolation. bl1036RestartConflict
+// Window.test.js and its property sibling only exercise the pure predicate
+// functions directly - never runPollCycle's own use of them. Confirmed a real
+// gap by hand: hardcoding `pollRecovered: false` in runPollCycle's success
+// branch left all 424 pre-existing tests (13 + 2 + 409) green.
+
+test('runPollCycle: pollRecovered is true on the first success after crossing the degraded threshold', async () => {
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
+  for (let i = 0; i < BACKOFF_CONFIG.degradedThreshold; i++) {
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+    state = cycle.state;
+  }
+  const recovered = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(recovered.pollRecovered, true, 'a success after crossing the degraded threshold must be reported as a recovery');
+  assert.equal(recovered.pollUnresolved, false);
+});
+
+test('runPollCycle: pollRecovered is false on a success that never crossed the degraded threshold', async () => {
+  const state = { offset: 0, consecutiveFailures: 1, sustainedOutage: NO_OUTAGE };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(cycle.pollRecovered, false, 'nothing was announced, so nothing should be closed');
+});
+
+test('runPollCycle: a failing cycle never reports pollRecovered', async () => {
+  const state = { offset: 0, consecutiveFailures: BACKOFF_CONFIG.degradedThreshold, sustainedOutage: NO_OUTAGE };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(cycle.pollRecovered, false);
+});
+
+test('runPollCycle: pollUnresolved is true exactly on the cycle the sustained-outage threshold is crossed', async () => {
+  const sustainedOutage = { failingSinceMs: FIXTURE_NOW - BACKOFF_CONFIG.sustainedOutageThresholdMs, escalated: false };
+  const state = { offset: 0, consecutiveFailures: 9, sustainedOutage };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(cycle.pollUnresolved, true, 'crossing the sustained-outage threshold must be reported as unresolved');
+  assert.equal(cycle.escalateSustainedOutage, true, 'sanity: this is genuinely the crossing cycle');
+
+  // The very next failing cycle: already escalated, must not re-announce.
+  const again = await runPollCycle(cycle.state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(again.pollUnresolved, false, 'unresolved must fire once per episode, not every cycle after');
+});
+
+test('runPollCycle: conflictWindow is set from a 409 error and carries the configured poll timeout, and unset otherwise', async () => {
+  const state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
+  // 99, deliberately distinct from the 25s the caller happens to configure
+  // elsewhere - a hardcoded fallback of 25 must not read as "wired".
+  const config = { ...BACKOFF_CONFIG, pollTimeoutSeconds: 99 };
+  const conflict = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'Telegram API responded with status 409: Conflict: terminated by other getUpdates request' }), config, FIXTURE_NOW);
+  assert.ok(conflict.conflictWindow, 'a 409 must be described as a conflict window');
+  assert.ok(conflict.conflictWindow.includes('99'), 'must carry the configured pollTimeoutSeconds, not a silent default');
+
+  const other = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), config, FIXTURE_NOW);
+  assert.equal(other.conflictWindow, undefined, 'a non-409 failure must not be described as a conflict window');
 });
 
 // ── applyPollCycleResult (adapter-injected per-cycle side effects) ───────
@@ -4933,7 +5394,7 @@ test('applyPollCycleResult writes the warning and waits when both are present', 
   const warnings = [];
   const waits = [];
   await applyPollCycleResult(
-    { state: { offset: 0, consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    { state: { offset: 0, consecutiveFailures: 3, sustainedOutage: NO_OUTAGE }, delayMs: 4000, degradedWarning: true },
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
   );
@@ -4946,7 +5407,7 @@ test('applyPollCycleResult writes nothing and waits nothing on a successful cycl
   const warnings = [];
   const waits = [];
   await applyPollCycleResult(
-    { state: { offset: 5, consecutiveFailures: 0 }, delayMs: 0, degradedWarning: false },
+    { state: { offset: 5, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false },
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
   );
@@ -4958,12 +5419,74 @@ test('applyPollCycleResult still waits on a failed cycle below the degraded thre
   const warnings = [];
   const waits = [];
   await applyPollCycleResult(
-    { state: { offset: 0, consecutiveFailures: 1 }, delayMs: 1000, degradedWarning: false },
+    { state: { offset: 0, consecutiveFailures: 1, sustainedOutage: NO_OUTAGE }, delayMs: 1000, degradedWarning: false },
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
   );
   assert.deepEqual(warnings, []);
   assert.deepEqual(waits, [1000]);
+});
+
+// ── BL-1036: applyPollCycleResult actually USES pollRecovered/pollUnresolved/
+// conflictWindow - the other half of the same wiring gap as runPollCycle
+// above. Nothing in the pre-existing suite ever set these fields on a cycle
+// passed to applyPollCycleResult, so the log-writing branches that read them
+// were reachable only through the live, untested poll loop.
+
+test('applyPollCycleResult writes a recovery line when pollRecovered is true', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, pollRecovered: true, pollUnresolved: false },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /poll recovered/);
+});
+
+test('applyPollCycleResult writes nothing extra when pollRecovered is false', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, pollRecovered: false, pollUnresolved: false },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.deepEqual(warnings, [], 'no recovery/unresolved line when neither is true');
+});
+
+test('applyPollCycleResult writes an UNRESOLVED line naming the cause when pollUnresolved is true', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 12, sustainedOutage: NO_OUTAGE }, delayMs: 8000, degradedWarning: false, pollRecovered: false, pollUnresolved: true, errorMessage: 'network error' },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /poll UNRESOLVED/);
+});
+
+test('applyPollCycleResult appends the conflict window to the degraded warning line when present', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 5, sustainedOutage: NO_OUTAGE }, delayMs: 1000, degradedWarning: true, pollRecovered: false, pollUnresolved: false, conflictWindow: 'conflict window: our own predecessor poll still holds the getUpdates slot' },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /5 consecutive failures/);
+  assert.match(warnings[0], /\(conflict window: our own predecessor poll still holds the getUpdates slot\)/,
+    'the conflict-window explanation must ride along on the degraded line, not be silently dropped');
+});
+
+test('applyPollCycleResult does not append a parenthetical when conflictWindow is absent', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 5, sustainedOutage: NO_OUTAGE }, delayMs: 1000, degradedWarning: true, pollRecovered: false, pollUnresolved: false },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.ok(!warnings[0].includes('('), `no stray parenthetical when there is no conflict window: ${warnings[0]}`);
 });
 
 // ── computeReplyRelayCycleResult / applyReplyRelayCycleResult (BL-320) ───
@@ -4974,17 +5497,17 @@ test('applyPollCycleResult still waits on a failed cycle below the degraded thre
 // pollLoop/runPollCycle/applyPollCycleResult), mirroring that exact split.
 
 test('computeReplyRelayCycleResult on success resets consecutiveFailures and waits the base backoff, not zero', () => {
-  const cycle = computeReplyRelayCycleResult({ consecutiveFailures: 3 }, true, BACKOFF_CONFIG);
+  const cycle = computeReplyRelayCycleResult({ consecutiveFailures: 3, sustainedOutage: NO_OUTAGE }, true, BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 0);
   assert.equal(cycle.delayMs, BACKOFF_CONFIG.backoffBaseMs);
   assert.equal(cycle.degradedWarning, false);
 });
 
 test('computeReplyRelayCycleResult on failure increments consecutiveFailures and backs off like the poll cycle', () => {
-  let state = { consecutiveFailures: 0 };
+  let state = { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const delays = [];
   for (let i = 0; i < 4; i++) {
-    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG, FIXTURE_NOW);
     delays.push(cycle.delayMs);
     state = cycle.state;
   }
@@ -4992,10 +5515,10 @@ test('computeReplyRelayCycleResult on failure increments consecutiveFailures and
 });
 
 test('computeReplyRelayCycleResult raises the degraded warning on the exact cycle the threshold is crossed', () => {
-  let state = { consecutiveFailures: 0 };
+  let state = { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   const warnings = [];
   for (let i = 0; i < 5; i++) {
-    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG);
+    const cycle = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG, FIXTURE_NOW);
     warnings.push(cycle.degradedWarning);
     state = cycle.state;
   }
@@ -5003,12 +5526,12 @@ test('computeReplyRelayCycleResult raises the degraded warning on the exact cycl
 });
 
 test('computeReplyRelayCycleResult keeps retrying past the degraded threshold and still recovers on success', () => {
-  let state = { consecutiveFailures: 0 };
+  let state = { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
   for (let i = 0; i < 10; i++) {
-    state = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG).state;
+    state = computeReplyRelayCycleResult(state, false, BACKOFF_CONFIG, FIXTURE_NOW).state;
   }
   assert.equal(state.consecutiveFailures, 10);
-  const cycle = computeReplyRelayCycleResult(state, true, BACKOFF_CONFIG);
+  const cycle = computeReplyRelayCycleResult(state, true, BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 0, 'reconnects must still be able to recover after a sustained outage');
 });
 
@@ -5016,7 +5539,7 @@ test('applyReplyRelayCycleResult writes the warning (with the error message) and
   const warnings = [];
   const waits = [];
   await applyReplyRelayCycleResult(
-    { state: { consecutiveFailures: 3 }, delayMs: 4000, degradedWarning: true },
+    { state: { consecutiveFailures: 3, sustainedOutage: NO_OUTAGE }, delayMs: 4000, degradedWarning: true },
     'socket terminated',
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
@@ -5031,7 +5554,7 @@ test('applyReplyRelayCycleResult writes no warning but still waits the base back
   const warnings = [];
   const waits = [];
   await applyReplyRelayCycleResult(
-    { state: { consecutiveFailures: 0 }, delayMs: BACKOFF_CONFIG.backoffBaseMs, degradedWarning: false },
+    { state: { consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: BACKOFF_CONFIG.backoffBaseMs, degradedWarning: false },
     undefined,
     (message) => warnings.push(message),
     async (ms) => waits.push(ms)
@@ -5171,7 +5694,7 @@ test('BL-389 scenario 03 (converse): a dropped message AFTER a failure is never 
 
 // ── shouldEscalateStuckDelivery (pure) — BL-369 scenario 05 ─────────────
 
-const STUCK_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3, stuckRetryLimit: 3 };
+const STUCK_CONFIG = { backoffBaseMs: 1000, backoffMaxMs: 8000, degradedThreshold: 3, stuckRetryLimit: 3, sustainedOutageThresholdMs: 30 * 60_000 };
 
 test('shouldEscalateStuckDelivery fires exactly on the threshold crossing, not before or after', () => {
   assert.equal(shouldEscalateStuckDelivery(2, STUCK_CONFIG), false);
@@ -5195,9 +5718,9 @@ function fakeStuckCycleAdapters({ deliver }) {
 }
 
 test('BL-369 no-inbound-message-is-ever-lost-05: a cycle whose only update keeps failing increments stuckAttempts each time', async () => {
-  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE };
   for (let i = 1; i <= 3; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG, FIXTURE_NOW);
     state = cycle.state;
     assert.equal(state.stuckAttempts, i);
     assert.equal(state.offset, 0, 'the offset must never advance past the still-undelivered update');
@@ -5205,10 +5728,10 @@ test('BL-369 no-inbound-message-is-ever-lost-05: a cycle whose only update keeps
 });
 
 test('BL-369 no-inbound-message-is-ever-lost-05: escalateStuckDelivery fires exactly on the cycle stuckAttempts crosses the limit, never before or again after', async () => {
-  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  let state = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE };
   const escalations = [];
   for (let i = 1; i <= 5; i++) {
-    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG, FIXTURE_NOW);
     state = cycle.state;
     escalations.push(cycle.escalateStuckDelivery);
   }
@@ -5216,16 +5739,16 @@ test('BL-369 no-inbound-message-is-ever-lost-05: escalateStuckDelivery fires exa
 });
 
 test('a delivery success resets stuckAttempts to 0 and lets the offset advance again', async () => {
-  const failing = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2 }, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG);
+  const failing = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2, sustainedOutage: NO_OUTAGE }, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: false }), STUCK_CONFIG, FIXTURE_NOW);
   assert.equal(failing.state.stuckAttempts, 3);
-  const recovered = await runPollCycle(failing.state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: true }), STUCK_CONFIG);
+  const recovered = await runPollCycle(failing.state, PRINCIPAL_ID, fakeStuckCycleAdapters({ deliver: true }), STUCK_CONFIG, FIXTURE_NOW);
   assert.equal(recovered.state.stuckAttempts, 0);
   assert.equal(recovered.state.offset, 2, 'expected the previously-stuck update to finally be delivered and acked');
 });
 
 test('a whole-cycle getUpdates failure never touches stuckAttempts (a distinct failure mode from a per-message delivery failure)', async () => {
   const adapters = { getUpdates: async () => ({ success: false, updates: [], error: 'down' }) };
-  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2 }, PRINCIPAL_ID, adapters, STUCK_CONFIG);
+  const cycle = await runPollCycle({ offset: 0, consecutiveFailures: 0, stuckAttempts: 2, sustainedOutage: NO_OUTAGE }, PRINCIPAL_ID, adapters, STUCK_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.stuckAttempts, 2, 'expected stuckAttempts left untouched by a getUpdates-level failure');
   assert.equal(cycle.escalateStuckDelivery, false);
 });
@@ -5234,7 +5757,7 @@ test('a whole-cycle getUpdates failure never touches stuckAttempts (a distinct f
 
 test('applyPollCycleResult calls escalate when escalateStuckDelivery is true, and waits/warns independently as usual', async () => {
   const escalateCalls = [];
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
   await applyPollCycleResult(
     cycle,
     () => {
@@ -5250,7 +5773,7 @@ test('applyPollCycleResult calls escalate when escalateStuckDelivery is true, an
 
 test('applyPollCycleResult never calls escalate when escalateStuckDelivery is false', async () => {
   const escalateCalls = [];
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await applyPollCycleResult(
     cycle,
     () => {},
@@ -5261,7 +5784,7 @@ test('applyPollCycleResult never calls escalate when escalateStuckDelivery is fa
 });
 
 test('applyPollCycleResult defaults escalate to a no-op when the caller does not supply one (back-compat)', async () => {
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 3, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: true };
   await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
 });
 
@@ -5291,15 +5814,15 @@ test('a bot that has never completed a single poll cycle (no heartbeat at all) i
 
 test('applyPollCycleResult calls recordHeartbeat on every completed cycle, success or failure alike', async () => {
   const beats = [];
-  const okCycle = { state: { offset: 2, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  const okCycle = { state: { offset: 2, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await applyPollCycleResult(okCycle, () => {}, async () => {}, async () => {}, () => beats.push('ok'));
-  const failedCycle = { state: { offset: 0, consecutiveFailures: 1, stuckAttempts: 0 }, delayMs: 2000, degradedWarning: false, escalateStuckDelivery: false };
+  const failedCycle = { state: { offset: 0, consecutiveFailures: 1, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 2000, degradedWarning: false, escalateStuckDelivery: false };
   await applyPollCycleResult(failedCycle, () => {}, async () => {}, async () => {}, () => beats.push('failed'));
   assert.deepEqual(beats, ['ok', 'failed']);
 });
 
 test('applyPollCycleResult defaults recordHeartbeat to a no-op when the caller does not supply one (back-compat)', async () => {
-  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
+  const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
 });
 
@@ -5677,4 +6200,472 @@ test('cursor bridge: a callback_query in a bridge-owned topic is an explicit dro
   assert.equal(result.dropped, 1);
   assert.equal(result.posted, 0);
   assert.equal(result.failed, 0);
+});
+
+
+// ── BL-620: photo captions route like text, drops are audited ────────────
+
+test('BL-620: messageTextOf reads a photo caption when text is absent', () => {
+  const update = mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'the caption directive' });
+  assert.equal(messageTextOf(update), 'the caption directive');
+});
+
+test('BL-620: messageTextOf still prefers text when both are somehow present', () => {
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'the text' });
+  update.message.caption = 'the caption';
+  assert.equal(messageTextOf(update), 'the text');
+});
+
+test('BL-620: a principal photo caption decides EXACTLY like the identical plain text (the incident shape)', () => {
+  const subjectFor = (topicId) => (topicId === 7 ? 'SUP-1' : undefined);
+  const asPhoto = decideUpdateAction(mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'usage screenshot: act on this' }), PRINCIPAL_ID, '1', subjectFor);
+  const asText = decideUpdateAction(mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'usage screenshot: act on this' }), PRINCIPAL_ID, '1', subjectFor);
+  assert.deepEqual(asPhoto, asText);
+  assert.notEqual(asPhoto.action, 'drop');
+});
+
+test('BL-620: a captionless photo drops with the distinct media-no-caption reason, never a silent no-text', () => {
+  const decision = decideUpdateAction(mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'media-no-caption' });
+});
+
+test('BL-620: an EMPTY-string caption behaves identically to an absent one (media-no-caption)', () => {
+  const decision = decideUpdateAction(mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: '' }), PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'media-no-caption' });
+});
+
+test('BL-620: a plain textless non-media message still drops as no-text (the reason stays distinct)', () => {
+  const decision = decideUpdateAction(mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), PRINCIPAL_ID, '1', () => undefined);
+  assert.deepEqual(decision, { action: 'drop', reason: 'no-text' });
+});
+
+test('BL-620 regression: a voice note is never classified media-no-caption (voice pre-emption vocabulary untouched)', () => {
+  const decision = decideUpdateAction(mkVoiceUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), PRINCIPAL_ID, '1', () => undefined);
+  assert.equal(decision.action, 'drop');
+  assert.equal(decision.reason, 'no-text');
+});
+
+test('BL-620: annotateRoutedMediaText marks a photo-sourced routing as image-not-read, and leaves plain text alone', () => {
+  const photo = mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'the caption' });
+  const annotated = annotateRoutedMediaText('the caption', photo);
+  assert.notEqual(annotated, 'the caption');
+  assert.match(annotated, /image.*not read/i);
+  assert.ok(annotated.startsWith('the caption'));
+  const text = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'plain' });
+  assert.equal(annotateRoutedMediaText('plain', text), 'plain');
+});
+
+test('BL-620: formatDropAuditLine is one bounded line naming update id and reason, never message content', () => {
+  const line = formatDropAuditLine(41, 'media-no-caption');
+  assert.equal(line.includes('\n'), false);
+  assert.match(line, /41/);
+  assert.match(line, /media-no-caption/);
+});
+
+test('BL-620: every dropped update in a poll cycle logs exactly one audit line; posted updates log none', async () => {
+  const auditLines = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'accepted' }), update_id: 10 },
+        { ...mkUpdate({ fromId: 999, topicId: 7, text: 'stranger' }), update_id: 11 },
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, chatId: 2, text: 'foreign chat' }), update_id: 12 },
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7 }), update_id: 13 },
+        mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, updateId: 14 }),
+      ],
+    }),
+    postToBridge: async () => true,
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    logDropAudit: (line) => auditLines.push(line),
+  });
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 4);
+  assert.equal(auditLines.length, 4, `expected one line per drop, got: ${JSON.stringify(auditLines)}`);
+  assert.match(auditLines[0], /11/);
+  assert.match(auditLines[0], /not-principal/);
+  assert.match(auditLines[1], /12/);
+  assert.match(auditLines[1], /not-my-chat/);
+  assert.match(auditLines[2], /13/);
+  assert.match(auditLines[2], /no-text/);
+  assert.match(auditLines[3], /14/);
+  assert.match(auditLines[3], /media-no-caption/);
+  // BL-389 offset semantics unchanged: drops never block the offset.
+  assert.equal(result.nextOffset, 15);
+});
+
+test('BL-620: the audit adapter is optional - a fixture without it drops exactly as before', async () => {
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, updateId: 21 })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+  });
+  assert.equal(result.dropped, 1);
+  assert.equal(result.nextOffset, 22);
+});
+
+test('BL-620: a routed photo caption posts with the image-not-read annotation; the same words as text post unannotated', async () => {
+  const posted = [];
+  const adapters = {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [
+        mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'route these words', updateId: 31 }),
+        { ...mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'route these words' }), update_id: 32 },
+      ],
+    }),
+    postToBridge: async (subjectId, text) => {
+      posted.push(text);
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+  };
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.equal(posted.length, 2);
+  assert.match(posted[0], /^route these words/);
+  assert.match(posted[0], /image.*not read/i);
+  assert.equal(posted[1], 'route these words');
+});
+
+// ── BL-955: every forwarding surface annotates caption-derived text ───────
+
+const IMAGE_NOTE = '[image attached - not read by the front desk]';
+
+test('BL-955: a photo-caption steer reaches the role pane with the image-not-read note appended', async () => {
+  const redirected = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'focus on the edge case' })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'delivered' };
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'coder', text: `focus on the edge case\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a plain-text steer is forwarded byte-identical, no stray note', async () => {
+  const redirected = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'focus on the edge case' })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'delivered' };
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'coder', text: 'focus on the edge case' }]);
+});
+
+test('BL-955: a photo-caption answer queued for a dormant role carries the note into the answer note too', async () => {
+  const queued = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'use the blue variant' })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coder: 42 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async () => {},
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return true;
+    },
+  });
+  assert.deepEqual(queued, [{ role: 'coder', text: `use the blue variant\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a photo-caption reply in the Agent Questions topic reaches the asking role with the note', async () => {
+  const posted = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    agentQuestionsPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'staging' })] }),
+      postToBridge: async (subjectId, text, updateId) => {
+        posted.push({ subjectId, text, updateId });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(posted, [{ subjectId: 'SUP-1', text: `staging\n${IMAGE_NOTE}`, updateId: 1 }]);
+});
+
+test('BL-955: a photo-caption message in the Onboarding topic reaches the onboarder with the note', async () => {
+  const handled = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    onboardingPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 42, caption: 'https://github.com/acme/widget' })] }),
+      handleOnboarderMessage: async (topicId, text, updateId) => {
+        handled.push({ topicId, text, updateId });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(handled, [{ topicId: 42, text: `https://github.com/acme/widget\n${IMAGE_NOTE}`, updateId: 1 }]);
+});
+
+test('BL-955: a photo-caption reject stores the note in the DURABLE rejection reason', async () => {
+  const rejections = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 750, caption: 'reject BL-433 no good' })] }),
+    postToBridge: async () => true,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+  });
+  assert.deepEqual(rejections, [{ backlogId: 'BL-433', reason: `no good\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a photo-caption amend stores the note in the DURABLE amend proposal text', async () => {
+  const amends = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    recertPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 900, caption: 'amend BL-207-thing-01 Given a revised precondition' })],
+      }),
+      queueRecertAmendProposal: async (scenarioId, newText) => {
+        amends.push({ scenarioId, newText });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(amends, [{ scenarioId: 'BL-207-thing-01', newText: `Given a revised precondition\n${IMAGE_NOTE}` }]);
+});
+
+test('BL-955: a control command sent as a photo caption executes as the command - the parser text is never annotated', async () => {
+  const armed = [];
+  const menus = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 900, caption: '/stop' })] }),
+      setPendingControlConfirm: async (c) => armed.push(c),
+      postControlStopModesMenu: async () => menus.push(true),
+    })
+  );
+  assert.deepEqual(armed, [{ kind: 'stop-modes' }], 'the caption command must parse exactly like plain text');
+  assert.deepEqual(menus, [true]);
+  assert.equal(result.posted, 1);
+});
+
+// ── BL-582: every approval tap produces an observable, durable outcome ──
+//    The 2026-07-23 taps failed silently: a drop returned with no toast and
+//    no log, and a changed:false record cleared the spinner having done
+//    nothing. Whatever the root cause (still open - see the ticket), a tap
+//    that does nothing must SAY so. Every drop path emits a distinguishable
+//    diagnostic; the two human-facing ones also answer with a toast rather
+//    than an empty spinner-clear. not-my-chat/not-principal stay toast-less
+//    on purpose - answering an unauthorized tap confirms the bot exists to
+//    a stranger, the reason isUnauthorizedCallbackDrop never answered.
+
+function bl582Adapters(overrides = {}) {
+  const diagnostics = [];
+  const answered = [];
+  const adapters = callbackFixtureAdapters({
+    ...overrides,
+    logDiagnostic: (line) => diagnostics.push(line),
+    answerCallbackQuery: async (id, text) => answered.push({ id, text }),
+  });
+  return { adapters, diagnostics, answered };
+}
+
+test('BL-582: formatCallbackDiagnosticLine is one bounded line naming the callback id and reason, never message content', () => {
+  const line = formatCallbackDiagnosticLine('cbq-9', 'not-principal');
+  assert.equal(line, 'front-desk callback callback_query_id=cbq-9 reason=not-principal');
+  assert.equal(line.includes('\n'), false);
+});
+
+test('BL-582: formatCallbackDiagnosticLine appends a detail when the reason alone does not explain the failure', () => {
+  assert.equal(
+    formatCallbackDiagnosticLine('cbq-9', 'record-no-op', 'BL-123:already-approved'),
+    'front-desk callback callback_query_id=cbq-9 reason=record-no-op detail=BL-123:already-approved'
+  );
+});
+
+test('BL-582 drop-03 not-my-chat: a foreign-chat tap emits a distinguishable diagnostic and is still never answered', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ update: { fromId: PRINCIPAL_ID, data: 'approve:BL-123', chatId: 2 } });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=not-my-chat']);
+  assert.deepEqual(answered, [], 'an unauthorized tap is still answered never');
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-582 drop-03 not-principal: a stranger tap in my chat emits its own distinguishable diagnostic', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ update: { fromId: 999, data: 'approve:BL-123' } });
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=not-principal']);
+  assert.deepEqual(answered, []);
+});
+
+test('BL-582 drop-03 unrecognized-data: a principal tap with unusable data gets a toast, not a silent spinner-clear', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ data: 'snooze:BL-123' });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=unrecognized-data']);
+  assert.equal(answered.length, 1);
+  assert.equal(answered[0].id, 'cbq-1');
+  assert.match(answered[0].text, /not recognized/i);
+  assert.match(answered[0].text, /nothing was recorded/i);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-582 drop-03 record-no-op: an Approve tap whose record changes nothing names WHY in both the toast and the diagnostic', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({
+    data: 'approve:BL-123',
+    recordApprovalReply: async () => false,
+    explainApprovalRecordNoOp: async () => 'no-ticket-file',
+  });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=record-no-op detail=BL-123:no-ticket-file']);
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /no-ticket-file/);
+  assert.match(answered[0].text, /not saved/i);
+  assert.equal(result.dropped, 1, 'a tap that recorded nothing was not a successful post');
+});
+
+test('BL-582 drop-03 record-no-op: an unexplainable no-op still names itself rather than falling back to silence', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ data: 'approve:BL-123', recordApprovalReply: async () => false });
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=record-no-op detail=BL-123:unexplained']);
+  assert.match(answered[0].text, /unexplained/);
+});
+
+test('BL-582 records-and-repaints-01: a successful Approve tap answers with a bare spinner-clear and emits no diagnostic', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ data: 'approve:BL-123' });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, [], 'a tap that did what it said needs no diagnostic');
+  assert.deepEqual(answered, [{ id: 'cbq-1', text: undefined }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-582 repaint-02: a repaint failure after a successful record is reported through the durable sink, verdict intact', async () => {
+  const commits = [];
+  const { adapters, diagnostics } = bl582Adapters({
+    data: 'approve:BL-123',
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+    editApprovalAskMessage: async () => ({ success: false, error: 'message to edit not found' }),
+    commitApprovalWrites: async (backlogId) => {
+      commits.push(backlogId);
+      return true;
+    },
+  });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0], /reason=repaint-failed/);
+  assert.match(diagnostics[0], /BL-123/);
+  assert.deepEqual(commits, ['BL-123'], 'the recorded verdict is still committed - a repaint failure never rolls it back');
+  assert.equal(result.posted, 1, 'the record succeeded; only the repaint did not');
+});
+
+test('BL-582 repaint-02b: a repaint exhausted by rate-limiting is reported with its own distinct cause, not the generic edit-failed one', async () => {
+  const diagnostics = [];
+  const adapters = {
+    ...closingFixtureAdapters({
+      readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+      editApprovalAskMessage: async () => ({ success: false, retryAfterSeconds: 3 }),
+      askCloseRetryBudget: 1,
+      waitForAskCloseRetry: async () => {},
+    }),
+    logDiagnostic: (line) => diagnostics.push(line),
+  };
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-123', { kind: 'approved' }, 0);
+  assert.equal(result.changed, true);
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0], /reason=repaint-failed/);
+  assert.match(diagnostics[0], /BL-123:rate-limited-retry-budget-exhausted/, `expected the rate-limit cause, got: ${diagnostics[0]}`);
+});
+
+test('BL-582 repaint-02c: a repaint that fails with no adapter wired at all falls back to the unwired-edit cause, not an empty detail', async () => {
+  const diagnostics = [];
+  // No editApprovalAskMessage at all - closingFixtureAdapters's `??` would
+  // otherwise substitute its own always-succeeds stub for an explicit
+  // undefined override, so this is built directly rather than through it.
+  const adapters = {
+    recordApprovalReply: async () => true,
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+    logDiagnostic: (line) => diagnostics.push(line),
+  };
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-123', { kind: 'approved' }, 0);
+  assert.equal(result.changed, true);
+  assert.equal(diagnostics.length, 1);
+  assert.match(
+    diagnostics[0],
+    /BL-123:message-edit-failed-or-not-wired/,
+    `expected the not-wired fallback cause, got: ${diagnostics[0]}`
+  );
+});
+
+test('BL-582 idempotent-04: a repeat tap on an already-recorded verdict writes nothing and says the verdict is already recorded', async () => {
+  const writes = [];
+  const { adapters, answered } = bl582Adapters({
+    data: 'approve:BL-123',
+    readRecordedApprovalVerdict: async () => 'approved',
+    recordApprovalReply: async (backlogId) => {
+      writes.push(backlogId);
+      return true;
+    },
+  });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(writes, [], 'no second write on an already-decided ticket');
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /approved/i);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-582: the Approve tap is answered as soon as the record outcome is known - never after a repaint that can sleep on a rate limit', async () => {
+  const order = [];
+  const { adapters } = bl582Adapters({
+    data: 'approve:BL-123',
+    recordApprovalReply: async () => {
+      order.push('record');
+      return true;
+    },
+    commitApprovalWrites: async () => {
+      order.push('commit');
+      return true;
+    },
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+    editApprovalAskMessage: async () => {
+      order.push('repaint');
+      return { success: true };
+    },
+  });
+  // bl582Adapters installs its own recording answerCallbackQuery; re-wrap it
+  // so this test can see WHERE in the sequence it lands.
+  const answer = adapters.answerCallbackQuery;
+  adapters.answerCallbackQuery = async (id, text) => {
+    order.push('answer');
+    return answer(id, text);
+  };
+
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+
+  assert.deepEqual(order, ['record', 'answer', 'commit', 'repaint'], 'the spinner clears before the commit and the repaint, both of which can block');
 });

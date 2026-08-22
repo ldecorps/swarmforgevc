@@ -21,6 +21,24 @@ You are the coder.
   the existing registry doesn't yet resolve). This is in addition to, not
   instead of, your own unit tests. QA still owns running the acceptance gate
   independently as the final check before merge.
+- Promoting a parked `.feature.draft` (BL-233) is TWO edits in ONE commit:
+  (1) move the draft to its live `specs/features/*.feature` alongside the
+  step handlers you add for it, and (2) flip the ticket YAML's `acceptance:`
+  pointer to the promoted path. The rename alone leaves the ticket citing a
+  file that no longer exists — BL-877 and BL-879 both shipped exactly that,
+  and a downstream role had to re-fix the pointer by hand each time.
+- A new `swarmforge/scripts/launch_*.sh` is never a standalone file. BL-643's
+  step handler enumerates the non-pipeline agents FROM that glob and THROWS on
+  any launcher it cannot name, so an unmapped one fails every scenario in a
+  feature file your ticket never mentions — a red that reads as an unrelated
+  ticket's breakage. Land three edits in the same commit: the
+  `LAUNCH_SCRIPT_AGENT_NAMES` entry in
+  `specs/pipeline/steps/bl643NonPipelineAgentsSteps.js`, a complete row in
+  `docs/reference/BL-643-non-pipeline-agents-reference-table.md` under that
+  same Agent name (every column non-empty, every path resolvable or written as
+  the deliberate "none" marker), and a Log location whose basename actually
+  appears in the launcher you wrote. Deleting a launcher fails the same
+  scenario from the other side — the row goes with it. (BL-993, 2026-08-20.)
 
 ## Invariants (BL-654)
 - If the ticket YAML declares `invariants:` entries, first authorship of each

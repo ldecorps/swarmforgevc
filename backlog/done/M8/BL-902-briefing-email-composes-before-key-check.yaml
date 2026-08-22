@@ -1,0 +1,176 @@
+id: BL-902
+title: "handoffd's briefing-email sweep composes the entire briefing before discovering RESEND_API_KEY is missing — a ~96s stall every cycle that blows the 120s freshness threshold and drives an all-day restart storm"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 20
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-902-briefing-email-composes-before-key-check.feature
+
+approval_context: >
+  One call worth your sign-off: severity `high` rather than `critical`.
+
+  The intake is explicit that this is "not currently a swarm-down emergency"
+  — cool-off/restart keeps it self-healing — which rules out `critical`. It
+  is above `medium` because the cost is paid on EVERY cycle and is
+  unbounded in time: 255 handoffd freshness incidents were recorded today
+  alone, each one killing and restarting the daemon mid-cycle, and every
+  restart costs handoff latency and push freshness. Downgrade to `medium`
+  if you would rather it not take the Article 3.2.4 expedite lane.
+
+  Nothing else here needs a decision — the cause is confirmed against the
+  live log (below), not inferred, and the direction is the one you already
+  gave in the intake.
+
+source: |
+  `.swarmforge/operator/INTAKE-handoffd-freshness-restart-storm.md` — human
+  via Cursor 2026-08-16 ~10:56 CEST, from an Operator-topic screenshot.
+  Prompted by today's briefing Flagged #4 / Ask #2 — still no ticket.
+
+  ONE of three tickets this intake was split into (specifier consolidation
+  authority, BL-680; no human sentence lost, Article 5.3). This ticket is
+  the briefing-path stall the intake asked be minted. Its two "also in the
+  same log" observations became BL-903 (push-sweep) and BL-904 (sidecar
+  daemonRestarts) — each separable, independently closeable, and both
+  upgraded from the intake's own hedged wording to confirmed by probe.
+
+  The human's directive on this one, verbatim:
+
+  > Direction (not mandate): stop the briefing-email path from blocking the
+  > main loop past 120s (timeout / skip-when-key-missing before the
+  > expensive work / heartbeat during the walk). Do not "fix" this by
+  > raising the threshold alone — BL-789 already documented Mac cycles near
+  > 120s for a different reason; this stall is a real wait, not a
+  > slow-but-healthy tick.
+
+  And on its severity, verbatim:
+
+  > This is **not** currently a swarm-down emergency: cool-off/restart keeps
+  > it self-healing, at the cost of handoff latency and push freshness every
+  > time.
+
+description: |
+  ## What is wrong
+
+  `handoffd`'s per-tick `briefing-email-sweep!` gathers and renders the
+  ENTIRE briefing before it ever asks whether the mail can be sent. Only
+  after all that work does it call `:send-email!`, which returns
+  `{:success false :reason :missing-api-key}` immediately and logs
+  `email-misconfigured` / `briefing-skip-missing-key`.
+
+  The wasted work is not incidental. `send-unsent-briefings!`
+  (`swarmforge/scripts/briefing_email_lib.bb`) runs, in order, before the
+  send: `apply-optional-sections` over eleven adapters — suite duration,
+  needs-approval, merged/blocked digest, stage dwell, chase trend,
+  not-done count, standing-rule violations, suboptimality verdict, QA
+  bounce, telegram bridge cost — then `:diagram-section` (which renders
+  diagrams), then `:token-burn-section`, then a full markdown-to-HTML
+  render. Several of those shell out to node CLIs or walk git and the
+  backlog.
+
+  Because the briefing is only marked sent on `:success true`, a
+  missing key means the file is left "to retry on the next sweep" — so the
+  full compose is repeated on EVERY cycle, forever, as long as the key is
+  absent.
+
+  ## Confirmed, not inferred
+
+  The intake asked that the cause be confirmed rather than re-derived. It is,
+  against the live `.swarmforge/daemon/handoffd.log`:
+
+      14:52:09.552607Z  lifecycle-snapshot-ensured   {...}
+      14:53:45.116739Z  email-misconfigured          ... RESEND_API_KEY is missing ...
+      14:53:45.119496Z  briefing-skip-missing-key    2026-08-16.md
+
+  96 seconds elapse inside the sweep before it discovers the key is absent,
+  and 3 milliseconds after that discovery the sweep is done. The gap is
+  entirely compose, and it is entirely wasted.
+
+  That alone is 80% of the 120s budget, spent in one sweep, on a tick that
+  also has to fit every other sweep in the same bundle. The result is
+  visible in `.swarmforge/daemon/freshness-incidents.log`: 255 handoffd
+  entries today, e.g.
+
+      age_secs=125 action=restart      age_secs=133 action=restart
+      age_secs=237 action=escalate     age_secs=196 action=restart
+      age_secs=187 action=restart      age_secs=137 action=restart
+
+  The watchdog is behaving correctly. The daemon is not dead — a cycle step
+  goes silent longer than 120s, cron kills and restarts it, and the loop
+  repeats.
+
+  ## How (direction, not mandate)
+
+  The human's direction offered three shapes — timeout, skip-when-key-missing
+  before the expensive work, or heartbeat during the walk. The second is the
+  one that removes the waste rather than tolerating it, and it is cheap:
+
+  - Decide sendability BEFORE composing. The knowledge already exists inside
+    `daemon_alarm_lib.bb` (`:disabled` / `:missing-api-key` are computed from
+    conf + env alone, with no I/O). Expose that as a pure predicate and have
+    `send-unsent-briefings!` consult it first, skipping straight to the same
+    `briefing-skip-*` log line it emits today.
+  - Keep the existing one-shot warning behaviour intact — the
+    `already-warned?!` / `mark-warned!` atoms exist so the log is not spammed
+    every cycle, and a cheap early skip must not start spamming it again.
+  - The skip must be indistinguishable from today's outcome to every
+    downstream consumer: the briefing file stays unsent, un-marked, and is
+    retried when a key appears. This changes WHEN the decision is made, never
+    WHAT is decided.
+  - Do not raise `daemon_freshness_threshold`. The human ruled that out
+    explicitly, and BL-789 already documented Mac cycles near 120s for an
+    unrelated reason — moving the threshold would mask both.
+
+  ## Scope
+
+  `swarmforge/scripts/briefing_email_lib.bb` (the compose-then-send ordering)
+  and whatever pure sendability predicate `swarmforge/scripts/daemon_alarm_lib.bb`
+  needs to expose for it. Not the watchdog, not the threshold, not the other
+  sweeps in the tick bundle.
+
+invariants:
+  - "When a briefing cannot be delivered, zero section adapters are invoked — sendability is decided before any gathering, rendering, or shell-out happens."
+  - "The undeliverable path's cost is independent of backlog size, diagram count, and briefing length."
+  - "Deciding sendability earlier changes only timing: which briefings are marked sent, and every log line a consumer keys off, are byte-identical to today's behaviour."
+
+qa_e2e_procedure: |
+  Against a scratch briefings dir, never the live one:
+
+  1. THE REGRESSION. With `RESEND_API_KEY` unset and `notify_email_to`
+     configured, place one unsent briefing containing enough content to
+     exercise the section adapters. Run the sweep and time it. Expect the
+     same `briefing-skip-missing-key` line as today, and a runtime that is a
+     small fraction of the 96s measured above — the point is the collapse in
+     elapsed time, not a specific number.
+  2. NO GATHERING. Same as 1, with every section adapter replaced by a fn
+     that records having been called. Expect zero recorded calls.
+  3. INVARIANT 3, UNCHANGED OUTCOME. Same as 1, then assert the briefing is
+     still NOT marked sent and is picked up again on a second sweep.
+  4. HAPPY PATH UNTOUCHED. With a key present (use the existing
+     `*_FORCE_RESULT` seam rather than sending real mail), run the sweep and
+     assert the briefing is composed in full — every section present — and
+     marked sent exactly once.
+  5. WARNING NOT SPAMMED. Run the sweep three times with no key. Expect the
+     `email-misconfigured` warning exactly once, as today.
+  6. LIVE. Restart handoffd with no key and watch `handoffd.log`: the gap
+     between `lifecycle-snapshot-ensured` and `briefing-skip-missing-key`
+     should close, and `freshness-incidents.log` should stop gaining handoffd
+     rows.
+
+notes: |
+  BL-903 and BL-904 came from this same intake and this same log. They are
+  independent of this ticket and can land in any order.
+
+  Worth a look while in here, but explicitly NOT this ticket's scope: the
+  compose-then-decide ordering is a shape, and `send-unsent-briefings!` is
+  only the instance the human caught. If the same ordering exists in the
+  escalation-email or push-alarm paths that share `daemon_alarm_lib.bb`, that
+  is a follow-on ticket, not a silent widening of this one.
+
+assigned_to: coder

@@ -76,6 +76,32 @@
            #{"02_handoffs.md" "workflow.prompt" "hardender.prompt"}
            (names (standing-rule-violations-files/rule-source-files root))))
 
+;; ── BL-986: the reference/ elaborations are scanned too ──────────────────
+;; The boot prefix has a hard budget, so rule prose is routinely RELOCATED
+;; from an inlined article into its reference/ elaboration. When the scanned
+;; set stopped at the boot boundary, a relocation silently zeroed whatever
+;; violation citations travelled with the prose - a FALSE ZERO, which reads
+;; as "this rule is being obeyed". The scanned set follows the prose now.
+
+(let [root (mk-tmp)
+      articles (fs/path root "swarmforge" "constitution" "articles")
+      reference (fs/path articles "reference")]
+  (touch! articles "engineering.prompt")
+  (touch! reference "engineering-detailed.prompt")
+  (touch! reference "02-handoffs-detailed.md")
+  (touch! reference "notes.txt") ;; same extension filter as the parent dir
+  (assert= "rule-source-files: reference/ elaborations are scanned alongside the inlined articles"
+           #{"engineering.prompt" "engineering-detailed.prompt" "02-handoffs-detailed.md"}
+           (names (standing-rule-violations-files/rule-source-files root))))
+
+(let [root (mk-tmp)
+      articles (fs/path root "swarmforge" "constitution" "articles")]
+  (touch! articles "engineering.prompt")
+  ;; reference/ intentionally never created
+  (assert= "rule-source-files: a missing reference dir contributes zero files, not a crash"
+           #{"engineering.prompt"}
+           (names (standing-rule-violations-files/rule-source-files root))))
+
 ;; ── missing directories never crash, they just contribute nothing ──
 
 (let [root (mk-tmp)

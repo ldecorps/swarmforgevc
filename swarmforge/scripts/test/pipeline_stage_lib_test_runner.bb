@@ -116,6 +116,37 @@
          nil
          (pipeline-stage-lib/ticket-id-from-headers {:task nil :message "no ticket id here"}))
 
+;; ── extract-ticket-ids: BL-869 sibling all-ids extractor ─────────────────
+;; extract-ticket-id's first-match contract (scenario 05 above) stays
+;; untouched for its seven live callers - this is a SIBLING for call sites
+;; that must credit/validate every id a text names, e.g. a QA note approving
+;; several tickets in one commit.
+(assert= "extracts every id-shaped token, canonicalized, in order of appearance"
+         ["BL-857" "BL-849" "BL-840"]
+         (pipeline-stage-lib/extract-ticket-ids "QA approved BL-857,BL-849,BL-840 @ 0bae185f9b, landed on main. Bookkeep all 3."))
+(assert= "a single id resolves to a one-element vector, same as the leading id"
+         ["BL-217"]
+         (pipeline-stage-lib/extract-ticket-ids "BL-217-inbound-email-webhook"))
+(assert= "nil for text with no id-shaped token" nil (pipeline-stage-lib/extract-ticket-ids "just a note, no ticket"))
+(assert= "nil for nil text" nil (pipeline-stage-lib/extract-ticket-ids nil))
+(assert= "duplicate mentions of the same id collapse to one entry"
+         ["BL-857"]
+         (pipeline-stage-lib/extract-ticket-ids "BL-857 again, BL-857 confirmed"))
+(assert= "mixed case and no-hyphen forms still canonicalize"
+         ["BL-857" "BL-849"]
+         (pipeline-stage-lib/extract-ticket-ids "bl857 and BL849 both approved"))
+
+;; ── ticket-ids-from-headers: union of every id in task and message ───────
+(assert= "task and message ids both contribute, task first"
+         ["BL-1" "BL-2"]
+         (pipeline-stage-lib/ticket-ids-from-headers {:task "BL-1-thing" :message "BL-2 unrelated"}))
+(assert= "message-only note yields every id it names"
+         ["BL-857" "BL-849" "BL-840"]
+         (pipeline-stage-lib/ticket-ids-from-headers {:task nil :message "QA approved BL-857,BL-849,BL-840 @ 0bae185f9b, landed on main."}))
+(assert= "nil when neither header yields any id"
+         nil
+         (pipeline-stage-lib/ticket-ids-from-headers {:task nil :message "no ticket id here"}))
+
 ;; ── reconcile-stage-map: one role per ticket, most-downstream wins ───────
 (def ROLE-ORDER ["specifier" "coder" "cleaner" "architect" "hardender" "documenter" "QA" "coordinator"])
 

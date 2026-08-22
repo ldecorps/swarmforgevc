@@ -4,6 +4,8 @@ const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   formatSyncenvReport,
+  formatConfReport,
+  resolveEffectiveConfPath,
   writeOperatorBounceSentinel,
   executeOperatorVerb,
   writeOperatorPauseState,
@@ -12,6 +14,20 @@ const {
   releaseEnsureLock,
   runOperatorStart,
 } = require('../out/tools/telegramCursorOperatorExec');
+const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
+
+function readLedgerLines(root) {
+  const month = new Date().toISOString().slice(0, 7);
+  const filePath = availabilityLedgerFileForMonth(root, month);
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l));
+}
 
 test('BL-702: syncenv reports presence without values', () => {
   const root = mkTmpDir('bl702-syncenv-');
@@ -26,6 +42,46 @@ test('BL-702: syncenv reports presence without values', () => {
   assert.match(report, /FOO: present/);
   assert.doesNotMatch(report, /super-secret/);
   assert.doesNotMatch(report, /=bar/);
+});
+
+test('/conf prints effective swarmforge.conf path and body', () => {
+  const root = mkTmpDir('conf-default-');
+  fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'swarmforge', 'swarmforge.conf'),
+    'config active_backlog_max_depth 3\nconfig swarm_name primary\n',
+    'utf8'
+  );
+  const confPath = resolveEffectiveConfPath(root);
+  assert.equal(confPath, path.join(root, 'swarmforge', 'swarmforge.conf'));
+  const report = formatConfReport(root);
+  assert.match(report, new RegExp(`^conf: ${confPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm'));
+  assert.match(report, /config active_backlog_max_depth 3/);
+  assert.match(report, /config swarm_name primary/);
+  const executed = executeOperatorVerb(root, '/conf');
+  assert.equal(executed.wroteBounceSentinel, false);
+  assert.equal(executed.text, report);
+});
+
+test('/conf honors swarm-identity pack override path', () => {
+  const root = mkTmpDir('conf-override-');
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'custom'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'swarm-identity'),
+    'swarm_name\tprimary\nactive_backlog_max_depth_conf_path\tcustom/override.conf\n',
+    'utf8'
+  );
+  fs.writeFileSync(path.join(root, 'custom', 'override.conf'), 'config active_backlog_max_depth -1\n', 'utf8');
+  const report = formatConfReport(root);
+  assert.match(report, /custom[/\\]override\.conf/);
+  assert.match(report, /config active_backlog_max_depth -1/);
+});
+
+test('/conf reports missing file', () => {
+  const root = mkTmpDir('conf-missing-');
+  const report = formatConfReport(root);
+  assert.match(report, /^conf: missing /);
 });
 
 test('BL-702: restart writes bounce sentinel', () => {
@@ -89,6 +145,51 @@ test('BL-702: writeOperatorPauseState round-trip', () => {
   assert.deepEqual(readOperatorPauseState(root), { active: true, untilMs: 99 });
   writeOperatorPauseState(root, { active: false });
   assert.deepEqual(readOperatorPauseState(root), { active: false });
+});
+
+// ── BL-823: writeOperatorPauseState also appends to the availability ledger ─
+
+test('BL-823: /pause and /resume via executeOperatorVerb each append their own control-pause record naming source', () => {
+  const root = mkTmpDir('bl823-operator-pause-');
+  executeOperatorVerb(root, '/pause');
+  executeOperatorVerb(root, '/resume');
+  const lines = readLedgerLines(root);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].event, 'pause-start');
+  assert.equal(lines[0].class, 'control-pause');
+  assert.equal(lines[0].source, 'telegramCursorOperatorExec:pause');
+  assert.equal(lines[1].event, 'pause-end');
+  assert.equal(lines[1].source, 'telegramCursorOperatorExec:resume');
+});
+
+test('BL-823: writeOperatorPauseState appends a record naming an explicit source', () => {
+  const root = mkTmpDir('bl823-operator-pause-source-');
+  writeOperatorPauseState(root, { active: true, untilMs: 99 }, 'explicit-source');
+  const [record] = readLedgerLines(root);
+  assert.equal(record.source, 'explicit-source');
+});
+
+// BL-823: a caller that omits the source argument entirely still records a
+// real, named source - never a blank or undefined one - so the ledger
+// never carries an unattributable record. Twin of the same-named test in
+// telegramFrontDeskBotCli.test.js for writeControlPauseState.
+test('BL-823: writeOperatorPauseState with no source argument records the function-name default', () => {
+  const root = mkTmpDir('bl823-operator-pause-default-source-');
+  writeOperatorPauseState(root, { active: true, untilMs: 99 });
+  const [record] = readLedgerLines(root);
+  assert.equal(record.source, 'writeOperatorPauseState');
+});
+
+// BL-823 scenario 05 (control pause, operator side): a ledger write failure
+// never blocks the operator pause state write it observes.
+test('BL-823: a ledger write failure never blocks writeOperatorPauseState from completing', () => {
+  const root = mkTmpDir('bl823-operator-pause-eisdir-');
+  const month = new Date().toISOString().slice(0, 7);
+  fs.mkdirSync(availabilityLedgerFileForMonth(root, month), { recursive: true });
+  assert.doesNotThrow(() => {
+    writeOperatorPauseState(root, { active: true, untilMs: 99 });
+  });
+  assert.deepEqual(readOperatorPauseState(root), { active: true, untilMs: 99 });
 });
 
 test('BL-703: autopilot dry and land dry via execute', () => {

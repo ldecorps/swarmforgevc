@@ -6,6 +6,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import {
   buildBridgeState,
   buildDeliveryMetricsState,
@@ -53,18 +54,31 @@ import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
-import { computeEpicTopics, resolveTopicMembership } from './epicTopicSlugMatch';
+import { computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } from './epicTopicSlugMatch';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
-import { runCommitIntegrity } from '../util/commitIntegrityRunner';
+import { runCommitIntegrity, commitApprovalWrites } from '../util/commitIntegrityRunner';
 import { getLetsTalkUiHtml } from './letsTalkUiHtml';
 import {
   createLetsTalkWriteRoutes,
   isLetsTalkPath,
 } from './letsTalkRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
+import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
+import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
+import { createLetsTalkMetaRoutes } from './letsTalkMetaRoutes';
+import { getLetsTalkBubbleConfig, isLetsTalkBubbleConfigPath } from './letsTalkBubbleConfig';
+import { getLetsTalkChiptunesCatalog, isLetsTalkChiptunesPath } from './letsTalkChiptunes';
+import { getLetsTalkUiBundleManifest, isLetsTalkUiBundlePath } from './letsTalkUiBundle';
+import {
+  isCompanionManifestPath,
+  isCompanionPackagePath,
+  listCompanionPackages,
+  parseCompanionPackageRequest,
+  readCompanionPackage,
+} from './companionManifest';
 import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
@@ -79,6 +93,8 @@ import {
   parseCursorBridgeState,
   splitTelegramChunks,
 } from '../tools/telegramCursorBridgeCore';
+import { execFileSync } from 'child_process';
+import { estimateEpicEta } from '../metrics/epicEta';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -223,7 +239,7 @@ function extractLetsTalkChoicePoll(replyText: string): LetsTalkChoicePollSpec | 
   return { question: question.slice(0, 280), options: options.map((opt) => opt.slice(0, 100)) };
 }
 
-function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsTalkChoicePollSpec): void {
+function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsTalkChoicePollSpec, originTopicId: number): void {
   const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
   let raw: Record<string, unknown> = {};
   if (fs.existsSync(statePath)) {
@@ -237,7 +253,7 @@ function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsT
     }
   }
   const existing = Array.isArray(raw.pendingChoicePolls) ? raw.pendingChoicePolls : [];
-  const next = [...existing, { pollId, question: spec.question, options: spec.options, createdAtMs: Date.now() }].slice(-20);
+  const next = [...existing, { pollId, question: spec.question, options: spec.options, createdAtMs: Date.now(), originTopicId }].slice(-20);
   raw.pendingChoicePolls = next;
   fs.writeFileSync(statePath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
 }
@@ -265,7 +281,7 @@ async function mirrorLetsTalkChoicePollToBubble(
   if (!sent.success || !sent.pollId) {
     return;
   }
-  appendPendingChoicePoll(targetPath, sent.pollId, spec);
+  appendPendingChoicePoll(targetPath, sent.pollId, spec, topicId);
 }
 
 /** Best-effort mirror of Bubble / Let's Talk turns into the standing Bubble Telegram topic. */
@@ -345,6 +361,11 @@ export interface StartBridgeOptions {
     transcribeAudio?: TranscribeAudio;
     synthesizeSpeech?: SynthesizeSpeech;
   };
+  // BL-763: injectable /lets-talk/meta instanceId, so a test can pin two
+  // startBridge() calls (simulating a bounce) to known, distinct values
+  // instead of asserting only "different" against real randomUUID() output.
+  // Undefined in production - a fresh randomUUID() is generated below.
+  instanceId?: string;
 }
 
 // BL-241: startBridge's auth param generalizes from BL-065's one static
@@ -776,6 +797,33 @@ function handlePausedPagerExpediteRoute(
   });
 }
 
+// BL-892 (hardener split, CRAP): the route's actual decide-what-happened
+// logic, pulled out of the request callback below so each half stays under
+// the CRAP complexity budget - this one is unit-testable in-process with no
+// HTTP layer at all. Behavior-preserving: same status/body per branch, same
+// synchronous-commit posture (a paused-pager tap has no external owner to
+// defer its commit to, unlike Expedite's own poll-tick deferral) as
+// commitEpicReorderWrites below. A failed commit must not report
+// unqualified success: disk holds the flip, but the human is told it is
+// not yet durable.
+async function computePausedPagerApproveOutcome(
+  targetPath: string,
+  backlogId: string
+): Promise<{ status: number; body: Record<string, unknown>; conciergeTick: boolean }> {
+  if (!findBacklogFilePath(targetPath, backlogId)) {
+    return { status: 404, body: { success: false, reason: 'ticket not found in active/paused' }, conciergeTick: false };
+  }
+  const changed = recordApprovalReply(targetPath, backlogId);
+  if (!changed) {
+    return { status: 200, body: { success: false, id: backlogId, reason: 'not pending approval' }, conciergeTick: false };
+  }
+  const committed = await commitApprovalWrites(targetPath, backlogId, `Approve ${backlogId}: record human_approval\n\nBy coder.`);
+  if (!committed) {
+    return { status: 500, body: { success: false, changed: true, id: backlogId, reason: 'approved but failed to commit' }, conciergeTick: false };
+  }
+  return { status: 200, body: { success: true, id: backlogId }, conciergeTick: true };
+}
+
 function handlePausedPagerApproveRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -791,23 +839,16 @@ function handlePausedPagerApproveRoute(
     PAUSED_PAGER_CONTROL_MAX_BODY_BYTES,
     isPausedPagerIdRequestShape,
     'expected a JSON body of {id}'
-  ).then((value) => {
+  ).then(async (value) => {
     if (!value) {
       return;
     }
-    const backlogId = value.id;
     try {
-      if (!findBacklogFilePath(targetPath, backlogId)) {
-        respondJson(res, 404, { success: false, reason: 'ticket not found in active/paused' });
-        return;
+      const outcome = await computePausedPagerApproveOutcome(targetPath, value.id);
+      if (outcome.conciergeTick) {
+        requestConciergeTick(targetPath);
       }
-      const changed = recordApprovalReply(targetPath, backlogId);
-      if (!changed) {
-        respondJson(res, 200, { success: false, id: backlogId, reason: 'not pending approval' });
-        return;
-      }
-      requestConciergeTick(targetPath);
-      respondJson(res, 200, { success: true, id: backlogId });
+      respondJson(res, outcome.status, outcome.body);
     } catch (err) {
       respondJson(res, 500, {
         success: false,
@@ -818,10 +859,10 @@ function handlePausedPagerApproveRoute(
 }
 
 // BL-572: paused `type: epic` tickets, normalized to a required numeric
-// priority and sorted the same way the screen displays them - the one place
-// both the read (state) and write (move) routes derive "current order"
-// from, so they can never disagree about who a mover's on-screen neighbour
-// is.
+// priority and sorted. The reorder screen itself (and the move neighbour
+// set) uses the child-bearing subset from readEpicReorderMembership, so a
+// childless tracker is never an on-screen neighbour. Make-top still reads
+// this full paused-epic list via readLiveBacklogItems's domination set.
 function readPausedEpics(targetPath: string): (BacklogItem & EpicPriorityItem)[] {
   const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
   const epics = readBacklogFolders(targetPath)
@@ -839,29 +880,126 @@ function hasLiveDependency(item: MakeTopItem, liveIds: Set<string>): boolean {
   return (item.dependsOn ?? []).some((depId) => liveIds.has(depId));
 }
 
-function computeEpicReorderState(targetPath: string): unknown {
+// Shared by the reorder-state feed and the move route so a childless epic
+// never appears as a tile AND never acts as a Move up / Move down neighbour.
+function readEpicReorderMembership(targetPath: string) {
   const epics = readPausedEpics(targetPath);
+  const topics = computeEpicTopics(readWithinEpicLiveBacklogItems(targetPath), epics);
+  return { epics, topics, reorderable: filterEpicsWithTopics(epics, topics) };
+}
+
+// ── BL-591: per-epic velocity ETA, folded into the reorder tiles ─────────────
+// The estimator itself is pure (extension/src/metrics/epicEta.ts); this is
+// its impure collector. Completion events are when each backlog/done
+// ticket YAML was ADDED (`git log --diff-filter=A`, the same approach
+// leanLedgerComposeClose uses - burnRate.ts measures TOKEN burn, a
+// different quantity). One commit can land several done files, so events
+// are counted per FILE via --name-only, never per commit. The git spawn is
+// TTL-cached in the bridge process: never one `git log` per
+// /epic-reorder-state poll.
+
+const EPIC_ETA_WINDOW_MS = 28 * 24 * 60 * 60 * 1000;
+const EPIC_ETA_CACHE_TTL_MS = 5 * 60 * 1000;
+// Keyed on targetPath: one process can serve several bridges over
+// DIFFERENT targets (the test fixtures do exactly this), and an unkeyed
+// slot would leak one repo's completion history into another's ETA.
+let epicEtaCompletionCache: { targetPath: string; atMs: number; events: number[] } | null = null;
+
+function readEpicEtaCompletionEvents(targetPath: string, nowMs: number): number[] {
+  if (
+    epicEtaCompletionCache &&
+    epicEtaCompletionCache.targetPath === targetPath &&
+    nowMs - epicEtaCompletionCache.atMs < EPIC_ETA_CACHE_TTL_MS
+  ) {
+    return epicEtaCompletionCache.events;
+  }
+  let events: number[] = [];
+  try {
+    const out = execFileSync(
+      'git',
+      ['log', '--diff-filter=A', '--since=28 days ago', '--format=%ct', '--name-only', '--', 'backlog/done/'],
+      { cwd: targetPath, encoding: 'utf8' }
+    );
+    let currentMs = NaN;
+    for (const line of out.split('\n')) {
+      const trimmed = line.trim();
+      if (/^\d+$/.test(trimmed)) {
+        currentMs = parseInt(trimmed, 10) * 1000;
+      } else if (trimmed.endsWith('.yaml') && Number.isFinite(currentMs)) {
+        events.push(currentMs);
+      }
+    }
+  } catch {
+    // Advisory display only: an unreadable history degrades to the
+    // estimator's honest no-recent-pace state, never a fabricated range.
+    events = [];
+  }
+  epicEtaCompletionCache = { targetPath, atMs: nowMs, events };
+  return events;
+}
+
+// The pack the pace assumption names (invariant 1) - the measured ~5x
+// throughput swing between packs dwarfs every other factor, so an ETA that
+// does not name its pack is close to meaningless.
+function epicEtaPackLabel(targetPath: string): string {
+  if (process.env.SWARMFORGE_PACK) {
+    return process.env.SWARMFORGE_PACK;
+  }
+  try {
+    const identity = fs.readFileSync(path.join(targetPath, '.swarmforge', 'swarm-identity'), 'utf8');
+    const match = identity.match(/^launch_pack\t(.+)$/m);
+    if (match && match[1].trim()) {
+      return match[1].trim();
+    }
+  } catch {
+    // fall through to the honest label below
+  }
+  return 'unknown-pack';
+}
+
+function computeEpicReorderState(targetPath: string): unknown {
+  const { topics, reorderable } = readEpicReorderMembership(targetPath);
+  // BL-672's own paused+hold domination set - kept for hasLiveDependency's
+  // dependency-liveness check ONLY (invariant 2: widening the drill-down's
+  // MEMBERSHIP must never widen what counts as a live dependency).
   const liveItems = readLiveBacklogItems(targetPath);
   const liveIds = new Set(liveItems.map((item) => item.id));
-  // BL-686: membership is resolved by slug (epicTopicSlugMatch.ts), never by
-  // comparing a child's `epic:` slug against an epic tile's `id:` - those
-  // are different strings by design (BL-542/BL-545's shared slug proves a
-  // slug isn't even unique). `type: epic` rows are excluded from `topics`
-  // by computeEpicTopics itself.
-  const topics = computeEpicTopics(liveItems, epics);
+  // Childless trackers are omitted from `items` (and from the move neighbour
+  // set) so an empty shell cannot swallow a tap. Topics still span paused +
+  // hold + active (BL-687), resolved by slug (BL-686).
+  // BL-591: fold the pure estimator's per-epic output into the tiles. An
+  // epic's children are the SAME slug-resolved topics the drill-down uses
+  // (active+paused+hold, BL-686/BL-687) - never a second membership notion.
+  const etaNowMs = Date.now();
+  const etaCompletionsMs = readEpicEtaCompletionEvents(targetPath, etaNowMs);
+  const etaPackLabel = epicEtaPackLabel(targetPath);
   return {
-    items: epics.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
-    total: epics.length,
+    items: reorderable.map((epic) => ({
+      id: epic.id,
+      title: epic.title,
+      priority: epic.priority,
+      epicEta: estimateEpicEta({
+        children: topics.filter((topic) => topic.epicIds.includes(epic.id)),
+        completionsMs: etaCompletionsMs,
+        nowMs: etaNowMs,
+        windowMs: EPIC_ETA_WINDOW_MS,
+        packLabel: etaPackLabel,
+      }),
+    })),
+    total: reorderable.length,
     // BL-674/BL-686: every live topic, tagged with every epic TICKET ID
     // (unique, unlike its raw slug) whose own slug matches it - the
     // drill-down filters client-side on this ticket id (presentation-only,
-    // no new decision logic in the webview).
+    // no new decision logic in the webview). BL-687: inFlight badges a topic
+    // sourced from active/ - hasLiveDependency stays computed against the
+    // UNWIDENED liveIds above, so an active depends_on never lights it.
     topics: topics.map((topic) => ({
       id: topic.id,
       title: topic.title,
       priority: topic.priority,
       epicIds: topic.epicIds,
       hasLiveDependency: hasLiveDependency(topic, liveIds),
+      inFlight: topic.inFlight,
     })),
   };
 }
@@ -917,15 +1055,16 @@ export function resolveEpicWritePaths(
   return resolved;
 }
 
-// BL-572: the epic reorder screen's write route. Reads paused epics fresh
-// (same order the screen itself was built from), asks the pure decision
-// core which files change, applies those as atomic writes, then commits
-// them - scenario 06's "committed to main" is not a separate step, it is
-// part of what a successful move means. A move is never refused by the
-// decision core except at the true list boundary (first epic up / last
+// BL-572: the epic reorder screen's write route. Reads the same child-
+// bearing paused-epic subset the screen was built from, asks the pure
+// decision core which files change, applies those as atomic writes, then
+// commits them - scenario 06's "committed to main" is not a separate step,
+// it is part of what a successful move means. A move is never refused by
+// the decision core except at the true list boundary (first epic up / last
 // epic down); that boundary answers changed:false with a human-readable
 // reason the screen must display (architect bounce #2's response-contract
-// finding) rather than a payload indistinguishable from success.
+// finding) rather than a payload indistinguishable from success. A
+// childless tracker is not a neighbour here, matching the tiles.
 function handleEpicReorderMoveRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -945,12 +1084,12 @@ function handleEpicReorderMoveRoute(
     if (!value) {
       return;
     }
-    const epics = readPausedEpics(targetPath);
-    if (!epics.some((epic) => epic.id === value.id)) {
+    const { reorderable } = readEpicReorderMembership(targetPath);
+    if (!reorderable.some((epic) => epic.id === value.id)) {
       respondJson(res, 404, { success: false, reason: 'epic not found in paused' });
       return;
     }
-    const result = computeEpicReorder(epics, value.id, value.direction);
+    const result = computeEpicReorder(reorderable, value.id, value.direction);
     if (!result) {
       respondJson(res, 404, { success: false, reason: 'epic not found in paused' });
       return;
@@ -1005,6 +1144,52 @@ function readLiveBacklogItems(targetPath: string): (BacklogItem & MakeTopItem)[]
     dependsOn: item.dependsOn ?? [],
   }));
   return sortEpicsByPriority(live);
+}
+
+// BL-687: pure combination step for the within-epic drill-down's own widened
+// live set (paused + hold + active, done never passed in at all - excluded
+// by this function's own signature rather than filtered, so "done never
+// appears" holds by construction). Tags each item's provenance so the
+// drill-down can badge an active/ child without a second lookup. Kept
+// separate from the FS read (readWithinEpicLiveBacklogItems below) so
+// invariant 1 (every backlog state's membership) is property-testable
+// without a filesystem - same testable-core split the rest of this module
+// follows.
+export function combineWithinEpicLiveItems<T extends BacklogItem>(folders: {
+  paused: T[];
+  hold: T[];
+  active: T[];
+}): (T & MakeTopItem & { inFlight: boolean; held: boolean })[] {
+  const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+  // BL-591: `held` marks the hold/ folder - one input of the epic-ETA
+  // blocked predicate (a held child never contributes weight to a
+  // velocity-derived duration). Additive alongside inFlight; no consumer
+  // of the existing fields changes.
+  const tag =
+    (inFlight: boolean, held: boolean) =>
+    (item: T): T & MakeTopItem & { inFlight: boolean; held: boolean } => ({
+      ...item,
+      priority: item.priority ?? MAX_PRIORITY,
+      dependsOn: item.dependsOn ?? [],
+      inFlight,
+      held,
+    });
+  const within = [
+    ...folders.paused.map(tag(false, false)),
+    ...folders.hold.map(tag(false, true)),
+    ...folders.active.map(tag(true, false)),
+  ];
+  return sortEpicsByPriority(within);
+}
+
+// BL-687: the within-epic drill-down surface ONLY - never shared with
+// readLiveBacklogItems above (BL-672's own paused+hold domination set,
+// which handleEpicMakeTopRoute and computeEpicReorderState's own
+// hasLiveDependency check keep using unchanged, invariant 3). Approval
+// context #1: an active/ ticket is a full ordering peer and a valid make-top
+// target here, never merely displayed.
+function readWithinEpicLiveBacklogItems(targetPath: string): (BacklogItem & MakeTopItem & { inFlight: boolean })[] {
+  return combineWithinEpicLiveItems(readBacklogFolders(targetPath));
 }
 
 // BL-672: classifies a depends_on id NOT present in the live domination set
@@ -1158,6 +1343,14 @@ function isEpicReorderTopicMakeTopRequestShape(value: unknown): value is { epicI
 // dominationSet parameter. The named epic and the target topic's own
 // `epic:` field must agree - a mismatch is a 404-class refusal (scenario
 // 07), never a silent move scoped to the wrong epic or the whole backlog.
+//
+// BL-687: membership (target + peers) and the ordering array both resolve
+// from withinEpicItems (paused+hold+active) - an active/ sibling is now a
+// full ordering peer and a valid target itself (approval_context #1).
+// Dependency traversal keeps reading liveItems (paused+hold only), passed as
+// computeMakeTopPriority's separate dependencyLiveItems parameter, so an
+// active depends_on stays exactly the inert 'active' classification BL-672
+// already gave it (invariant 2) regardless of how it's tagged for ordering.
 function handleEpicReorderTopicMakeTopRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -1180,23 +1373,25 @@ function handleEpicReorderTopicMakeTopRoute(
     const folders = readBacklogFolders(targetPath);
     const epics = readPausedEpics(targetPath);
     const liveItems = readLiveBacklogItems(targetPath);
+    const withinEpicItems = readWithinEpicLiveBacklogItems(targetPath);
     // BL-686: `epicId` on the wire is the tile's TICKET id; membership is
     // decided by resolving THAT ticket's own slug and comparing it against
     // the target's `epic:` slug (epicTopicSlugMatch.ts) - the same rule the
     // read side uses, so read and write can never disagree about who is in
     // the epic (invariant 2). A `type: epic` row is never itself a valid
     // make-top target or peer here (invariant 3).
-    const membership = resolveTopicMembership(liveItems, epics, value.epicId, value.topicId);
+    const membership = resolveTopicMembership(withinEpicItems, epics, value.epicId, value.topicId);
     if (!membership) {
       respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
       return;
     }
     const result = computeMakeTopPriority(
-      liveItems,
+      withinEpicItems,
       value.topicId,
       buildResolveNonLiveDependency(folders),
       membership.peers,
-      `epic ${value.epicId}'s live topics`
+      `epic ${value.epicId}'s live topics`,
+      liveItems
     );
     if (!result) {
       respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
@@ -1243,8 +1438,240 @@ function requestPath(req: http.IncomingMessage): string {
   return req.url ?? '/';
 }
 
+// Sideload APKs: publish-apk.sh copies versioned debug builds into
+// `.swarmforge/operator/public/`. bubble.musicalsifu.com terminates on this
+// bridge, so those files must be served here (pre-auth — phones cannot set
+// Authorization when opening a download link). Basename-only, fixed prefix.
+export const SIDELOAD_APK_PATH = /^\/swarmforge-float-companion-[A-Za-z0-9._-]+\.apk$/;
+
+// BL-788: any request under this literal prefix is claimed by the sideload
+// namespace pre-auth, even one that fails SIDELOAD_APK_PATH (a malformed
+// name, a traversal attempt, a percent-encoded one). Before this, such a
+// request fell through to the generic 401 gate - safe only by coincidence
+// (no other route happened to match it either), not because this route
+// deliberately rejected it. Claiming the whole prefix makes the rejection
+// explicit and guarantees it 404s rather than depending on nothing else in
+// the routing table ever matching it.
+export const SIDELOAD_APK_NAMESPACE_PREFIX = '/swarmforge-float-companion';
+
+function sideloadApkPublicDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'public');
+}
+
+// A symlink whose own name lives inside publicRoot and matches
+// SIDELOAD_APK_PATH resolves (lexically) to a path under publicRoot even
+// when its target does not, so the prefix check alone cannot catch it -
+// resolveSideloadApkFile's lstat/isSymbolicLink check below is what does.
+function isWithinPublicRoot(resolvedPath: string, publicRoot: string): boolean {
+  const resolvedRoot = path.resolve(publicRoot);
+  const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
+  return resolvedPath.startsWith(rootPrefix);
+}
+
+// fs.statSync/createReadStream both follow symlinks, so without this
+// lstat/isSymbolicLink check, planting a symlink under
+// .swarmforge/operator/public/ would serve any file on the host,
+// unauthenticated. Returns the lstat only for a REGULAR file that is
+// itself not a symlink; null means "do not serve".
+function statRegularNonSymlinkFile(resolved: string): fs.Stats | null {
+  let lstat: fs.Stats;
+  try {
+    lstat = fs.lstatSync(resolved);
+  } catch {
+    return null;
+  }
+  if (lstat.isSymbolicLink() || !lstat.isFile()) {
+    return null;
+  }
+  return lstat;
+}
+
+// BL-851 review goal 1: path.resolve is lexical only - it never touches the
+// filesystem, so the containment check and the symlink check are two
+// separate, both-required guards (see the two helpers above). Returns the
+// resolved path only when both hold; null means "do not serve" (caller
+// decides whether that means fall-through or 404).
+export function resolveSideloadApkFile(pathname: string, publicRoot: string): string | null {
+  if (!SIDELOAD_APK_PATH.test(pathname)) {
+    return null;
+  }
+  const fileName = path.basename(pathname);
+  const resolvedRoot = path.resolve(publicRoot);
+  const resolved = path.resolve(path.join(resolvedRoot, fileName));
+  if (!isWithinPublicRoot(resolved, publicRoot)) {
+    return null;
+  }
+  if (!statRegularNonSymlinkFile(resolved)) {
+    return null;
+  }
+  return resolved;
+}
+
+function isEligibleSideloadRequestMethod(method: string | undefined): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
+function extractSideloadRequestPathname(url: string): string {
+  return (url.split('?')[0] ?? '').split('#')[0] ?? '';
+}
+
+function writeSideloadApkFileResponse(
+  res: http.ServerResponse,
+  resolved: string,
+  method: string | undefined
+): void {
+  const fileName = path.basename(resolved);
+  const stat = fs.statSync(resolved);
+  res.writeHead(200, {
+    'content-type': 'application/vnd.android.package-archive',
+    'content-length': stat.size,
+    'content-disposition': `attachment; filename="${fileName}"`,
+    'cache-control': 'no-store',
+  });
+  if (method === 'HEAD') {
+    res.end();
+    return;
+  }
+  fs.createReadStream(resolved).pipe(res);
+}
+
+function tryServeSideloadApk(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  url: string
+): boolean {
+  if (!isEligibleSideloadRequestMethod(req.method)) {
+    return false;
+  }
+  const pathname = extractSideloadRequestPathname(url);
+  if (!pathname.startsWith(SIDELOAD_APK_NAMESPACE_PREFIX)) {
+    return false;
+  }
+  if (!SIDELOAD_APK_PATH.test(pathname)) {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
+    return true;
+  }
+  const resolved = resolveSideloadApkFile(pathname, sideloadApkPublicDir(targetPath));
+  if (!resolved) {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
+    return true;
+  }
+  writeSideloadApkFileResponse(res, resolved, req.method);
+  return true;
+}
+
 function queryToken(url: string): string | undefined {
   return parseQueryCredential(url);
+}
+
+// BL-788: applicationId the shipped Bubble build installs under. Single
+// source of truth for the pairing page's intent:// link -
+// bl788BubblePairingInvariants.property.test.js parses
+// android/app/build.gradle.kts's applicationId and asserts it never drifts
+// from this constant (invariant 2: the bridge must never hand the phone a
+// package id the build declares differently).
+export const BUBBLE_APPLICATION_ID = 'com.swarmforge.float';
+
+const PAIR_PAGE_PATH = '/pair';
+
+function isPairPagePath(pathname: string): boolean {
+  return pathname === PAIR_PAGE_PATH;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// BL-788: pre-auth pairing page. A phone that has never paired has no
+// bearer token to send, so - like the sideload APK route above - this is
+// gated by a query-string credential rather than an Authorization header.
+// The intent:// link is a plain, clickable <a> (never an auto-navigating
+// <meta refresh> or script redirect to a bare swarmforge-bubble:// URL):
+// the old hotfix's bare custom-scheme auto-redirect failed silently with no
+// fallback when Bubble was not yet installed. Exported for direct unit
+// testing without needing a live HTTP round trip.
+export function buildPairPageHtml(bridgeUrl: string, token: string): string {
+  const intentHref =
+    `intent://pair?url=${encodeURIComponent(bridgeUrl)}&token=${encodeURIComponent(token)}` +
+    `#Intent;scheme=swarmforge-bubble;package=${BUBBLE_APPLICATION_ID};end`;
+  return [
+    '<!doctype html>',
+    '<html><head><meta charset="utf-8"><title>Pair Bubble</title></head><body>',
+    '<h1>Pair the Bubble app</h1>',
+    `<p><a href="${escapeHtml(intentHref)}">Open in Bubble</a></p>`,
+    "<p>If the button does nothing (Bubble not installed, or the browser blocks intent: links), copy these into Bubble's Settings screen by hand:</p>",
+    `<p>Bridge URL: <code>${escapeHtml(bridgeUrl)}</code></p>`,
+    `<p>Token: <code>${escapeHtml(token)}</code></p>`,
+    '</body></html>',
+  ].join('\n');
+}
+
+function tryServePairPage(res: http.ServerResponse, url: string, host: string | undefined, registry: DeviceRegistry): boolean {
+  const pathname = extractSideloadRequestPathname(url);
+  if (!isPairPagePath(pathname)) {
+    return false;
+  }
+  if (!isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry))) {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unauthorized' }));
+    return true;
+  }
+  const token = primaryTokenOf(registry);
+  const bridgeUrl = `https://${host ?? ''}`;
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(buildPairPageHtml(bridgeUrl, token));
+  return true;
+}
+
+// BL-866: companion-manifest + package catalog. Neither fits the JsonRoute
+// table (always-200) shape below - a package request needs 304/404/503
+// depending on generation/readability - so both are handled by this one
+// boolean-returning dispatcher, same extract-and-return-handled shape as
+// tryServeSideloadApk above. Extracted (rather than left inline in the
+// request listener) to keep that listener's own CRAP from absorbing this
+// block's complexity - this block is independently 100%-covered by
+// companionManifest.test.js and bridgeServer.test.js's own companion-route
+// tests.
+function tryServeCompanionRoutes(res: http.ServerResponse, url: string, targetPath: string): boolean {
+  if (isCompanionManifestPath(url)) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ packages: listCompanionPackages(targetPath) }));
+    return true;
+  }
+  if (!isCompanionPackagePath(url)) {
+    return false;
+  }
+  const { name, generation } = parseCompanionPackageRequest(url);
+  const result = readCompanionPackage(targetPath, name, generation);
+  if (result.status === 'unknown') {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unknown_package', name: result.name, reason: result.reason }));
+    return true;
+  }
+  if (result.status === 'unreadable') {
+    res.writeHead(503, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unreadable_package', name: result.name, reason: result.reason }));
+    return true;
+  }
+  if (result.status === 'unchanged') {
+    res.writeHead(304, { etag: result.generation });
+    res.end();
+    return true;
+  }
+  res.writeHead(200, { 'content-type': 'application/json', etag: result.generation });
+  res.end(
+    JSON.stringify({
+      name: result.name,
+      generation: result.generation,
+      format: result.format,
+      formatVersion: result.formatVersion,
+      data: result.data,
+    })
+  );
+  return true;
 }
 
 // BL-094/BL-241: every route stays header-only EXCEPT the root HTML shell,
@@ -1427,7 +1854,7 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     },
     {
       matches: isResidentPanePath,
-      compute: () => captureMonoRouterLiveScreen(targetPath),
+      compute: () => captureMonoRouterLiveScreen(targetPath, nowMs),
     },
     {
       matches: isPipelineBoardPath,
@@ -1448,6 +1875,28 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       matches: isContextBudgetStatePath,
       compute: (url) => buildContextBudgetState(targetPath, url),
     },
+    {
+      // BL-763: Bubble capability flags (e.g. bridgeBounceAutoSessionReset)
+      // — the module already existed (BL-864 built it for voiceEngineSwitch,
+      // read internally by letsTalkAudioEngineRoutes.ts) but was never wired
+      // to a served route of its own until now.
+      matches: isLetsTalkBubbleConfigPath,
+      compute: () => getLetsTalkBubbleConfig(targetPath, process.env),
+    },
+    {
+      // BL-765: hold-music catalog as data — the module landed (f175bc56d)
+      // but was never wired to a served route, same dead-code shape BL-763
+      // fixed for bubble-config.
+      matches: isLetsTalkChiptunesPath,
+      compute: () => getLetsTalkChiptunesCatalog(),
+    },
+    {
+      // BL-825 slice A: versioned UI bundle manifest — same sibling shape
+      // as bubble-config/chiptunes above, so Android's UiBundleResolver can
+      // decide fresh/cached/stale/bare from what this route actually serves.
+      matches: isLetsTalkUiBundlePath,
+      compute: () => getLetsTalkUiBundleManifest(targetPath, process.env),
+    },
   ];
 }
 
@@ -1465,16 +1914,39 @@ export function startBridge(
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
 
-    const letsTalkAudio = resolveLetsTalkAudioAdaptersFromEnv(process.env, {
+    // BL-863: transcribeAudio/synthesizeSpeech overrides (test/mock
+    // injection, e.g. BL-696's step handlers) are resolved once here, same
+    // as before overrides are deterministic and don't change over the
+    // bridge's lifetime. The real, non-override path resolves fresh per
+    // turn via resolveAudioForTurn below (required_wiring: resolution must
+    // live in the turn path, not startup, or a stored engine preference
+    // written between turns would not apply until a restart).
+    const letsTalkOverrides = {
       transcribeAudio: options.letsTalk?.transcribeAudio,
       synthesizeSpeech: options.letsTalk?.synthesizeSpeech,
-    });
+    };
+    const hasLetsTalkOverrides = Boolean(letsTalkOverrides.transcribeAudio || letsTalkOverrides.synthesizeSpeech);
+    const staticLetsTalkAudio = hasLetsTalkOverrides
+      ? resolveLetsTalkAudioAdaptersFromEnv(process.env, letsTalkOverrides)
+      : undefined;
     const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
     // BL-696: POST /lets-talk/turn, POST /lets-talk/new-session (write routes).
     const letsTalkWriteRoutes = createLetsTalkWriteRoutes(
       {
         agentSession: letsTalkAgentSession,
-        ...letsTalkAudio,
+        ...(staticLetsTalkAudio?.kind === 'ok' ? staticLetsTalkAudio.adapters : {}),
+        resolveAudioForTurn: hasLetsTalkOverrides
+          ? undefined
+          : () => {
+              const { resolution, unreadablePreference } = resolveLetsTalkAudioForTurn(targetPath, process.env);
+              if (unreadablePreference) {
+                appendOperatorEvent(targetPath, {
+                  type: 'lets-talk-audio-preference-unreadable',
+                  at: new Date().toISOString(),
+                });
+              }
+              return resolution;
+            },
         onTurnSuccess: (turn) => {
           void mirrorLetsTalkTurnToBubble(targetPath, turn.transcript, turn.replyText).catch((err) => {
             const error = err instanceof Error ? err.message : String(err);
@@ -1488,6 +1960,25 @@ export function startBridge(
         },
       },
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason),
+      requireLetsTalkControlAuth,
+      respondJson
+    );
+    // BL-864: GET/POST /lets-talk/audio-engine — Bubble Settings reads and
+    // writes the BL-863 voice-engine preference through here.
+    const letsTalkAudioEngineRoutes = createLetsTalkAudioEngineRoutes(
+      targetPath,
+      requireLetsTalkControlAuth,
+      respondJson,
+      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
+    );
+    // BL-763: GET /lets-talk/meta — a stable-per-process instanceId (+
+    // startedAt), generated ONCE per startBridge() call so it changes only
+    // on a real bounce (a fresh process re-running this function), never
+    // mid-process. Bubble polls this to detect a bounce and refresh its
+    // session (BL-763 session-01).
+    const letsTalkMetaRoutes = createLetsTalkMetaRoutes(
+      options.instanceId ?? randomUUID(),
+      new Date(options.nowMs ?? Date.now()).toISOString(),
       requireLetsTalkControlAuth,
       respondJson
     );
@@ -1568,7 +2059,24 @@ export function startBridge(
         return;
       }
 
-      const writeRoute = [...writeRoutes, ...letsTalkWriteRoutes].find((route) => route.matches(req, url));
+      // Public sideload APKs (no bearer) — must stay ahead of the 401 gate.
+      if (tryServeSideloadApk(req, res, targetPath, url)) {
+        return;
+      }
+
+      // BL-788: pre-auth pairing page — a phone that has never paired has
+      // no bearer token to send, so this is gated by query token like the
+      // sideload route above, not the Authorization header.
+      if (tryServePairPage(res, url, req.headers.host, registry)) {
+        return;
+      }
+
+      const writeRoute = [
+        ...writeRoutes,
+        ...letsTalkWriteRoutes,
+        ...letsTalkAudioEngineRoutes,
+        ...letsTalkMetaRoutes,
+      ].find((route) => route.matches(req, url));
       if (writeRoute) {
         writeRoute.handle(req, res, targetPath, registry);
         return;
@@ -1577,6 +2085,12 @@ export function startBridge(
       if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
         res.writeHead(401, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+
+      // BL-866: companion-manifest + package catalog - see
+      // tryServeCompanionRoutes above.
+      if (tryServeCompanionRoutes(res, url, targetPath)) {
         return;
       }
 

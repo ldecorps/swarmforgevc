@@ -10,15 +10,33 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
-READY_DISPATCH="$SCRIPT_DIR/../ready_for_next.bb"
-READY_TASK="$SCRIPT_DIR/../ready_for_next_task.bb"
-DONE_TASK="$SCRIPT_DIR/../done_with_current_task.bb"
-READY_BATCH="$SCRIPT_DIR/../ready_for_next_batch.bb"
-DONE_BATCH="$SCRIPT_DIR/../done_with_current_batch.bb"
+# BL-998: every SELF-ROOTING helper this file runs dispatches through the
+# fixture's own copy, bound below; the ones that take the root they are
+# given stay anchored at the real scripts dir, which is legal and cheaper.
+# The ticket originally classified ready_for_next_task.bb,
+# done_with_current_task.bb and the *_batch pair alike as a safe "leaf"
+# shape. That is wrong for the COMPLETION helpers, and was reproduced twice:
+# run from the real scripts dir, done_with_current_batch.bb read the REAL
+# repo's in_process and named a LIVE parcel of the running coder, and
+# done_with_current_task.bb escapes the same way one hop later - its
+# run-ready! tail call process/exec's ready_for_next_task.sh out of its own
+# on-disk directory, and that wrapper cd's to its own dirname. The RECEIVE
+# helpers have no such tail call and stay where they are.
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-998: the receive/completion helpers resolve their OWN root - the .sh
+# wrappers cd to their own dirname and the .bb dispatchers hand off to those
+# wrappers by name. Correct in production, where every worktree carries its
+# own hot-synced swarmforge/scripts/ copy; fatal here, because dispatching
+# the REAL repo's copy would cd out of the fixture and resolve THIS checkout
+# - testing live swarm state instead of the fixture, and claiming real
+# parcels out of real mailboxes while doing it. Give the fixture its own
+# copy and dispatch through that.
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 # ── fixture: a project root with a coder git worktree ────────────────────────
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
@@ -30,6 +48,21 @@ COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 CODER_WT="$ROOT/.worktrees/coder"
 git -C "$ROOT" worktree add -q -b coder "$CODER_WT"
+install_scripts "$CODER_WT"
+READY_DISPATCH="$CODER_WT/swarmforge/scripts/ready_for_next.bb"
+READY_BATCH="$CODER_WT/swarmforge/scripts/ready_for_next_batch.bb"
+DONE_BATCH="$CODER_WT/swarmforge/scripts/done_with_current_batch.bb"
+DONE_TASK="$CODER_WT/swarmforge/scripts/done_with_current_task.bb"
+
+# NOT converted, deliberately: ready_for_next_task.bb is a TRUE leaf. It
+# starts no sibling process at all (0 process/exec; its (fs/parent *file*)
+# uses are load-file, which runs in-process and changes no cwd), so it takes
+# the root it is given - here, cwd $ROOT/subdir. Calling it from the real
+# scripts dir is the safe shape, and the isolation guard DERIVES that rather
+# than being told it: if a tail call is ever added to this helper, the guard
+# closes over it on the next run and flags this line. Converting it too
+# would be churn buying protection the guard already provides.
+READY_TASK="$SCRIPT_DIR/../ready_for_next_task.bb"
 
 mkdir -p "$ROOT/.swarmforge" "$CODER_WT/.swarmforge" "$CODER_WT/extension" "$ROOT/subdir"
 ROLES="coordinator\tmaster\t$ROOT\tswarmforge-coordinator\tCoordinator\tclaude\ttask

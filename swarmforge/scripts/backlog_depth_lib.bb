@@ -10,6 +10,11 @@
 ;; compare against -1 as a real cap. ONE shared reader here, used by both
 ;; call sites, so they cannot diverge again.
 ;;
+;; BL-808: the active COUNT was left out of that consolidation. The warning
+;; kept using (count (fs/list-dir ...)), which counted the tracked .gitkeep
+;; as a ticket. count-active-tickets below is the shared counter; the
+;; warning must call it (required_wiring), not re-inline a yaml filter.
+;;
 ;; Loaded via load-file, not required on a classpath:
 ;;   (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 ;; and referred to as backlog-depth-lib/foo.
@@ -32,6 +37,9 @@
 ;; (write_swarm_identity_file), the same durable per-launch state
 ;; swarm_identity_lib.bb already reads generically.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
+;; BL-967: subprocess waits are bounded at the shared chokepoint - this lib
+;; is loaded by handoffd.bb and runs inside its poll cycle.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (def default-max-depth
   "Used only when the config line is absent/unparseable - never masks a
@@ -68,12 +76,51 @@
   [active-count max-depth]
   (or (no-limit? max-depth) (< active-count max-depth)))
 
+(defn count-active-tickets
+  "BL-808: count ticket yaml files in a backlog folder (typically
+   backlog/active/). Filters by kind — *.yaml regular files only — never
+   by blocklisting a placeholder name. A missing directory degrades to 0
+   (never throws), matching chase_sweep_lib/count-backlog-yaml."
+  [dir]
+  (if-not (fs/exists? dir)
+    0
+    (->> (fs/list-dir dir)
+         (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")))
+         count)))
+
 (def default-conf-relpath
   "The tracked default config - used both as the historical BL-216 fallback
    (not the nonexistent .swarmforge/swarmforge.conf both call sites used to
    read, which made slurp throw on every call) and, per BL-313, as the
    effective config for a bare launch with no pack/override at all."
   ["swarmforge" "swarmforge.conf"])
+
+(defonce ^:private identity-root-cache (atom {}))
+
+(defn resolve-identity-root
+  "BL-966: the checkout whose .swarmforge/ holds this repository's
+   swarm-identity - the MASTER checkout, found from any linked worktree via
+   `git rev-parse --git-common-dir` (its parent directory). Worktrees carry
+   no .swarmforge/, so resolving identity at the caller's own root split
+   the cap per checkout (7 from master, 3 from a worktree, silently). A
+   non-git root - the standard test-harness shape, a plain temp dir -
+   resolves to itself unchanged, as does any git failure: never a crash,
+   never a requirement that fixtures be git repositories (invariant 3).
+   Memoized per root: the mapping is stable for a process lifetime and this
+   lib runs inside handoffd's poll cycle."
+  [project-root]
+  (let [k (str project-root)]
+    (or (get @identity-root-cache k)
+        (let [r (try (daemon-cycle-guard-lib/sh! {:continue true :dir k}
+                                                 "git" "rev-parse" "--git-common-dir")
+                     (catch Exception _ nil))
+              common (some-> (:out r) str/trim)
+              root (if (and r (zero? (:exit r)) (not (str/blank? common)))
+                     (try (str (fs/parent (fs/canonicalize (fs/path k common))))
+                          (catch Exception _ k))
+                     k)]
+          (swap! identity-root-cache assoc k root)
+          root))))
 
 (defn conf-file-path
   "BL-313: the EFFECTIVE config for the swarm that is actually running -
@@ -93,13 +140,27 @@
    original launch cwd. (fs/path project-root persisted) is defense in
    depth even though swarmforge.sh now also normalizes to absolute before
    persisting: java.nio's own Path/resolve returns an ABSOLUTE second
-   argument verbatim, so this is correct for both cases with no branch."
+   argument verbatim, so this is correct for both cases with no branch.
+
+   BL-966: identity (and the paths derived from it) resolves at the
+   repository's MASTER checkout via resolve-identity-root above, so every
+   linked worktree gets the same answer as master; the no-identity
+   fall-through to the tracked default conf is loud on stderr, never
+   silent."
   [project-root]
-  (let [persisted (get (swarm-identity-lib/read-swarm-identity project-root)
+  (let [identity-root (resolve-identity-root project-root)
+        persisted (get (swarm-identity-lib/read-swarm-identity identity-root)
                         "active_backlog_max_depth_conf_path")]
     (if (not-empty persisted)
-      (fs/path project-root persisted)
-      (apply fs/path project-root default-conf-relpath))))
+      (fs/path identity-root persisted)
+      (let [fallback (apply fs/path identity-root default-conf-relpath)]
+        ;; BL-966 invariant 2: a cap that does not derive from a resolvable
+        ;; swarm-identity is never returned silently. Loud on stderr, exit
+        ;; unchanged - existing scripted callers keep parsing stdout.
+        (binding [*out* *err*]
+          (println (str "backlog_depth_lib: no swarm-identity for " project-root
+                        " - falling back to the tracked default conf " fallback)))
+        fallback))))
 
 (defn read-max-depth
   "The impure fs-reading half: slurps the real tracked config and parses it

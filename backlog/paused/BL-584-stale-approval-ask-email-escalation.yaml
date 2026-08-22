@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 30
+priority: 177
 direction: human-requested
 depends_on: [BL-582]
 mutation_cost: medium
@@ -163,15 +163,9 @@ description: |
     tick), mirroring `daemon_alarm_lib.bb`'s own `:missing-api-key` warning. No
     recipient configured at all is an ordinary disabled state and warns nothing.
 
-acceptance: |
-  specs/features/BL-584-stale-approval-ask-email-escalation.feature
+acceptance: specs/features/BL-584-stale-approval-ask-email-escalation.feature
 
-  Gates: unit + acceptance + coverage + mutation (Stryker `--mutate` scoped to
-  the compiled `out/**/*.js`, never `src/**/*.ts`) + CRAP <= 6, as usual. The
-  wiring test must prove the disk reads and the send are load-bearing — a sweep
-  that is fully green over fakes while nothing calls it in the bot is the
-  failure mode this codebase has hit repeatedly (epic runtime-wiring-slice rule).
-
+qa_e2e_procedure: |
   QA end-to-end procedure (live swarm, real Telegram, real Resend):
   1. Confirm `RESEND_API_KEY` is exported in the shell that launched the swarm
      and that `notify_email_to` is set in `swarmforge/swarmforge.conf`.
@@ -193,6 +187,18 @@ acceptance: |
   7. Decide the ticket (approve). Confirm it drops out of the digest entirely.
   8. Negative: unset `RESEND_API_KEY` and restart the front desk. Confirm the
      stderr warning appears once and the tick keeps running normally.
+
+notes: |
+  BL-922 bookkeeping only: acceptance: made a single-line pointer (was a
+  block scalar hiding the pointer from the pre-QA gates until the
+  documenter->QA hop). Nothing anyone builds changes; the text below and in
+  qa_e2e_procedure: is the same text, relocated verbatim.
+
+  Gates: unit + acceptance + coverage + mutation (Stryker `--mutate` scoped to
+  the compiled `out/**/*.js`, never `src/**/*.ts`) + CRAP <= 6, as usual. The
+  wiring test must prove the disk reads and the send are load-bearing — a sweep
+  that is fully green over fakes while nothing calls it in the bot is the
+  failure mode this codebase has hit repeatedly (epic runtime-wiring-slice rule).
 
 docs: |
   documenter: a docs/how-to runbook entry for the two new conf keys

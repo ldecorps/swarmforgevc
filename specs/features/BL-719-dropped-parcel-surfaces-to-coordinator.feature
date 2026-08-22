@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=39b29ea13751f9ab7da8b75a5c8ddb91ff057a79405e3e980bae80e45754dde7
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-14T01:10:46.246538Z","feature_name":"A dropped parcel surfaces — an active ticket with no live mail nudges the coordinator","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-719-dropped-parcel-surfaces-to-coordinator.feature","background_hash":"009310b6b4d8e7b1451c31b7661ff21aae718319399105cff4d1d961a69a5acc","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a ticket holding live mail is never nudged, however stale its trail","scenario_hash":"cd2d641b8e8ee272ccd46f549aa595a48519f0b817c3748786a6b2da5269fce7","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-14T01:10:46.246538Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A dropped parcel surfaces — an active ticket with no live mail nudges the coordinator
 
   The BL-222 dispatch-gap sweep answers one question: was this ticket EVER

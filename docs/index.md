@@ -7,10 +7,11 @@ lives under the mode that matches what a reader is trying to do with it.
 Generated/asset directories that are not part of this classification —
 `docs/archive/` (superseded material), `docs/briefings/` (daily briefing
 artifacts), `docs/benchmarks/` (recorded benchmark data), `docs/i18n/`
-(translation cache), `docs/roles-future/` (draft future-role prompts), and
-`docs/diagrams/` (Mermaid sources, linked from Reference below) — stay where
-the tooling that reads them expects them, and are not migrated or rewritten
-here.
+(translation cache), `docs/roles-future/` (draft future-role prompts),
+`docs/branding/` (design-exploration doc + image/generator assets, marked
+not-yet-ratified at its own top), and `docs/diagrams/` (Mermaid sources,
+linked from Reference below) — stay where the tooling that reads them
+expects them, and are not migrated or rewritten here.
 
 ## Tutorials
 
@@ -51,6 +52,48 @@ here.
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md)
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
+- [The Host question queue: selection poll, clear-all, and 72h TTL](how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md)
+- [Queued questions answer where they were asked](how-to/BL-767-queued-question-answers-in-origin-topic.md)
+- [Named tunnel Bubble — fixed URL on a Cloudflare zone you own](how-to/named-tunnel-bubble-musicalsifu.md)
+- [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
+- [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks, what a nudge looks like, start/stop/ensure, state layout, the flipped env skip, the Operator's tell-never-restart freshness watchdog (down/pidfile-lie/announce-mute/healthy), the bounded vanished-session repair, and the detector that tells someone when pipeline code lands on `main` outside QA.
+- [Recovering from control-plane loss (tmux server gone, daemons still up)](how-to/BL-958-control-plane-loss-recovery.md) — how to recognise the shape, the single `control-plane` status row that replaces stale per-role DOWN rows, the incident artifact under `.swarmforge/incidents/`, `./swarm ensure`'s recover-or-halt paths, and why `babysitterd` owns the response.
+- [Recovering from a crossed Pipeline Board topic, and cleaning up zombie topics](how-to/BL-586-pipeline-board-topic-identity-runbook.md) — diagnosing a crossed identity post-BL-586, why the 2026-07-23 stack-down repair procedure is now legacy, and the manual zombie-topic cleanup the Bot API cannot do for you.
+- [Provider auth-error auto-respawn: healing a wedged standing role](how-to/BL-536-provider-auth-error-auto-respawn.md) — how the chase sweep detects and heals an `AuthenticationError`-wedged role, the `auth_respawn_max_attempts` cap, and the operator alert.
+- [The coordinator raises a clarifying question through `role_ask.bb`](how-to/BL-773-coordinator-role-ask-clarifying-question.md) — wiring the coordinator into the same per-role ask path the specifier already uses, so its questions reach Telegram instead of blocking on an unwatched surface.
+- [`/pilot safe` — auto-pick a low-blast defect for offline pilot](how-to/BL-722-pilot-safe-defects.md) — the safe-pool filter (approved, low-mutation, specced defect, not needs_design), its ranking, and the empty-pool refusal.
+- [Certifying an operator hotfix](how-to/BL-848-certify-an-operator-hotfix.md) — declaring a hand-landed hotfix with the `Hotfix-Certification: pending` trailer, the ledger state machine, and why no hotfix becomes an official swarm deal on green tests alone.
+- [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
+- [Master-Main Reconcile Sweep — Understanding the Note](how-to/BL-891-master-main-reconcile-sweep.md) — the cadence sweep that merges `origin/main` forward into the master checkout's local `main` ref, and what to do when it surfaces a dirty-overlap-or-conflict note instead.
+- [Token-Burn Exhaustion Warning in the Morning Briefing](how-to/BL-619-token-burn-briefing-warning.md) — recording a usage-percentage anchor, what the warning looks like, the weekly-reset config, and troubleshooting a missing or wrong projection.
+- [Bedtime vs. lights-out: which stop verb to run](how-to/BL-762-finish-shift-bedtime-vs-lights-out.md) — the keep-vs-kill table `./finish-shift` and `./stop-swarm.sh` both read, and why bedtime leaves the phone path up.
+- [Diagnosing a wake with attribution records](how-to/BL-870-wake-attribution.md) — the `wake-attribution-<YYYY-MM>.jsonl` log every landed or skipped wake now writes, its fields, and how to read a false-wake report from it.
+- [Hotfix record: 2026-08-02 Mac host-switch (freshness + bridge)](how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md) — the three false/misleading failure modes from the Linux→Mac host switch (handoffd reported down forever, babysitterd restart spam, bridge EADDRINUSE crash loop), adopted and reviewed under BL-789.
+- [The Boot-Prefix Budget Gate — Understanding the Check](how-to/BL-859-boot-prefix-budget-gate.md) — the specifier's authoring-time gate against boot-prefix growth, the 44000/51200 two-threshold split, and remediation on failure.
+- [The Bubble Settings voice-engine selector](how-to/BL-864-bubble-voice-engine-selector.md) — the Local/OpenAI control in Bubble Settings: opens on the truth, never shows a tap the bridge hasn't accepted, and where the pure state machine ends and device wiring begins.
+- [Hotfix record: 2026-08-02 Bubble pairing + client-logs](how-to/hotfix-2026-08-02-bubble-client-logs-and-pairing.md) — the pre-auth `/pair` page, the widened sideload-APK guard, and the pairing-save blank-overwrite fix adopted and reviewed under BL-788, plus the corrections (applicationId, signing, Architecture Rule 7) the original hand-hotfix's narrative no longer matched.
+- [Remote-control health/respawn tooling, and its `./swarm ensure` wiring](how-to/BL-514-remote-control-health-and-ensure-wiring.md) — the `--fix`/`--dry-run` standalone scripts (retro-ticketed, KEEP), and the new `rc:<role>` component `./swarm ensure` now reports and repairs alongside `agent:<role>`.
+- [Bubble's capability flags and hold-music catalog, served from the bridge](how-to/BL-765-bubble-remote-config-and-chiptune-catalog.md) — the two versioned documents (`bubble-config.json`, `chiptunes.json`), whole-document rejection on a malformed payload, the remote hold-music kill switch, and the reply-voice/music-volume split.
+- [Bare-host bootstrap for an autonomous swarm](how-to/BL-628-autonomous-swarm-bringup.md) — `provision_autonomous_host.sh`, the shared shape-agnostic bootstrap library, the front-desk unit an autonomous box needs that the secondary path never installs, and why the onboarding ceremony runs on the primary box, never the remote one.
+- [One briefing send, one backlog history walk: the shared lifecycle snapshot](how-to/BL-897-briefing-lifecycle-snapshot.md) — the machine-local, gitignored snapshot handoffd gathers once per UTC day and hands every briefing-section CLI via `--snapshot`, and the per-consumer fallback when it's missing, unreadable, or stale.
+- [The Morning Briefing's Open-Ticket Chart](how-to/BL-896-briefing-open-ticket-chart.md) — what the chart shows, why its heading keeps the word "burndown" per an explicit human ruling despite BL-659's ban elsewhere, the projected-ETA caption and how to recompute it by hand (and why a growing backlog states a reason instead of a date), and its fail-open independence from the architecture diagram section.
+- [Bubble caches the bridge's companion packages, offline-first](how-to/BL-907-bubble-offline-package-sync.md) — the pure sync/cache decision layer, the atomic per-package file store, the two BL-654 invariants, and the manual device procedure that verifies the storage/lifecycle wiring the JVM suite can't reach.
+- [Bubble's browsable knowledge screen — backlog and docs panels](how-to/BL-908-bubble-knowledge-screen-backlog-docs-panels.md) — the read-only backlog/docs panels over what BL-907 holds on the device, the generation stamped on every Ready view, and the permanent header sync trigger that replaced the empty-state-only button.
+- [Running a >120s job that survives the orphan reaper](how-to/BL-995-detached-job-registry.md) — `detach_job.sh`, the single sanctioned escape hatch for jobs over the Bash tool's ~120s cap, its detach-registration registry, and why a registered job is still reaped once its registration expires.
+- [Bubble decides which UI bundle to render, without ever losing Talk](how-to/BL-825-bubble-remote-ui-bundle-resolution.md) — the four-outcome resolver (fresh/cached/stale/bare) behind the coming remote-UI pager screens, the shell-behind refusal that never renders a bundle the installed APK can't honour, and the whole-or-nothing manifest parsing on both the bridge and the phone.
+- [Bubble's pager renders the bundle's pages, without ever stranding Talk](how-to/BL-829-bubble-remote-page-pager.md) — the manifest's new `pages` list, the pure `PagerListResolver` allowlist/degraded-state decision, the `RemotePageHost` WebView edge that never shows a blank failure, and the `TalkPanelActivity`/`MainActivity` wiring correction to the ticket's own `required_wiring`.
+- [Pinned Shell + One Classified Retry (Tool-Miss Auto-Heal, Slice A)](how-to/BL-913-pinned-shell-and-tool-miss-auto-heal.md) — the `PreToolUse` hook that pins every role's Bash command to its own worktree and heals one recoverable miss (wrong-cwd, wrong-surface, missing-root-argv) in silence before the model ever sees a failure, versus a real failure returned untouched.
+- [The Batch-Claim Progress Sidecar](how-to/BL-678-batch-claim-progress-sidecar.md) — the live-owner half of BL-648's source near-miss: the sidecar every batch claim now writes at claim time, the chase sweep that refreshes it and surfaces (never re-forwards or re-delivers) a stale one to the coordinator, and the two staleness/cooldown config knobs.
+- [The Reference-Freshness Pre-Turn Guard](how-to/BL-640-reference-freshness-guard.md) — why `ready_for_next.sh` can now refuse a turn with `STALE_REFERENCE_ELABORATION`, what it checks (worktree vs. whichever of `main`/`origin/main` is ahead), and what to do when it fires.
+- [Clearing Byte-Identical Hot-Synced Copies Before a Worktree Merge](how-to/BL-924-clear-identical-untracked-copies-before-merge.md) — the `clear_identical_untracked_and_merge.bb` script to run instead of a bare `git merge` when untracked, hot-synced script copies block a worktree fast-forward, its all-or-nothing identity proof, and what it deliberately never touches.
+- [Keeping the operator_runtime.bb JS fixture list honest](how-to/BL-944-operator-runtime-fixture-closure-guard.md) — the source-derived load-file closure guard that replaced a six-times-drifted hand-maintained list, how to add a new dependency without repeating the drift, and how this differs from BL-671's separate shell-fixture sandbox.
+- [The Constitution Doc-Citation Guard](how-to/BL-945-constitution-doc-citation-guard.md) — why a constitution article citing a `docs/...` path now fails the standing extension suite if that path doesn't resolve on `main`, what it deliberately does and doesn't scan, and how it differs from BL-640's worktree-freshness guard.
+- [The Hardening-Debt Ledger](how-to/BL-942-hardening-debt-ledger.md) — why the office-hours mutation/CRAP bypass's "runs later against a quiet host" promise can no longer be kept under continuous 3x8 shifts, how to record a deferral and read outstanding debt, and its dedup/no-row-on-success rules.
+- [Running the APS candidate-toolchain equivalence harness](how-to/BL-959-aps-candidate-toolchain-equivalence-run.md) — how to measure a candidate APS toolchain against the pinned one before a human pin bump: the clone-at-SHA-and-verify run, the three gate lanes and their EQUIVALENT/DIVERGENT/INCOMPLETE matrix, the fail-closed exit, the `--do-not-infer` shim seam, and the pinned surfaces it never writes.
+- [Diagnosing a handoffd cycle stall from the log](how-to/BL-967-handoffd-cycle-stall-diagnosis.md) — how to read `sweep-boundary` and `subprocess-timeout` lines when the daemon goes quiet mid-cycle, the 60s bounded-subprocess chokepoint and its `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` seam, why raising the freshness threshold is not a fix, and why a slow 120–232s cycle is healthy rather than stalled.
+- [The operator-runtime watch — an always-on supervisor for `operator_runtime.bb`](how-to/BL-993-operator-runtime-watch.md) — the tell-and-restart watch that closes the "nothing notices a crashed operator runtime" gap: the shared liveness check, the park-flag/skip-env deliberate-stop signals, bounded restart with backoff, human-channel announcements, and why the watcher must never depend on the runtime it watches.
+- [Cross-seat rework claim deferral](how-to/BL-1004-cross-seat-rework-claim-deferral.md) — why a multi-seat stage now defers a rework to the sibling seat that built it, the bounded `cross_seat_claim_deadline_ms` wait and the out-loud cross-seat claim past it, why single-seat stages are structurally untouched, and how the flow watchdog/chase sweep avoid a false stuck-parcel alarm mid-window.
+- [Rescuing orphaned work with `rescue_orphaned_work.bb`](how-to/BL-1041-rescue-orphaned-work.md) — the commit-verify-then-release ordering that stops a rescue from losing the thing it rescued, why the changed-path set is read from the stash and not the receiving tree, the capped owner notification, and its boundary against `salvage_lib.bb`.
 
 ## Reference
 
@@ -60,6 +103,7 @@ here.
 - [docs-tree.json schema](reference/docs-tree-schema.md)
 - [backlog.json schema](reference/backlog-dashboard-schema.md)
 - [Mutation-run worker RSS measurement report](reference/BL-427-mutation-worker-rss-measurement.md)
+- [Unit suite per-file duration profile (BL-792 baseline)](reference/BL-792-test-duration-profile.md) — the green-run measurement slice B's speed cuts are specced against.
 - [BL-007 Spec: Backlog Panel](reference/specs/BL-007-spec.md)
 - [BL-008 Spec: Named runs](reference/specs/BL-008-spec.md)
 - [BL-009 Spec: Hardened Message Bus](reference/specs/BL-009-spec.md)
@@ -69,7 +113,15 @@ here.
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
 - [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver.
 - [Build Freshness QA Approval Gate (BL-629)](reference/BL-629-build-freshness-qa-approval-gate.md) — the deploy-time gate preventing sync of pre-QA code to daemons.
+- [Commit-Time Guard Refuses Pipeline Code on Main (BL-632)](reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md) — the pre-commit/pre-merge-commit hooks that stop a non-QA role from putting pipeline code on `main` in the first place.
+- [Ticket Lifecycle Ledger (BL-819)](reference/BL-819-ticket-lifecycle-ledger.md) — the coordinator-owned, append-only per-ticket lifecycle record: event/snapshot schema, storage, idempotency, write points, and its boundary vs the coordinator's other duties.
+- [Closing-Ceremony Lean Pass (BL-820)](reference/BL-820-closing-ceremony-lean-pass.md) — the shift-close step that folds BL-819's ledger into a packet, delivers it to the specifier, and records a coordinator adjustment / specifier outcome; storage, CLIs, and boundary.
 - Architecture and swarm-flow diagrams: [architecture.mmd](diagrams/architecture.mmd), [swarm-flow.mmd](diagrams/swarm-flow.mmd) (Mermaid sources)
+- [Non-Pipeline Agents — Reference Table](reference/BL-643-non-pipeline-agents-reference-table.md) — every launcher, stop path, role prompt (or its stated absence), log location, and supervising service, checked against the repo.
+- [Fixture Tmux-Server Reaper Adoption (BL-817)](reference/BL-817-fixture-tmux-server-reaper-adoption.md) — the seven step-handler files that now register their fixture tmux servers with the shared `fixtureReaper`, the socket-path-only kill guardrail, and the standing `tmuxReaperGuard` gate that catches the idiom returning.
+- [Socket-Fixture Short Root and Its Gate (BL-948)](reference/BL-948-socket-fixture-short-root-and-gate.md) — the shared short-base fixture-root helper for socket-building step files, its headroom assertion and exit-hook backstop, and the by-inspection gate (plus BL-897 parity test) that stops the long-base root returning.
+- [Retired `SWARMFORGE_ENSURE_*` Env-Var Regression Gate (BL-964)](reference/BL-964-retired-ensure-env-var-regression-gate.md) — the standing gate that fails loud when a retired ensure-hook env-var name reappears in test code, with a needle set derived from `swarm_ensure.bb`'s own reads rather than a hand-written roster.
+- [Boy Scout Scan (BL-1014)](reference/BL-1014-boy-scout-scan.md) — the on-demand, read-only CLI that ranks technical debt by cross-source recurrence across five evidence sources, with an evidence pointer per item; slice 1 of the `boy-scout` epic.
 
 ## Explanation
 
@@ -80,3 +132,5 @@ here.
 - [Handoff dual-path delivery (tmux primary, mailbox backup)](explanation/handoff-dual-path.md)
 - [Why the expeditor commands the stack but never depends on it](explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md)
 - [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.
+- [The Non-Pipeline Agents, As a Class](explanation/BL-643-non-pipeline-agents-as-a-class.md) — what makes an agent non-pipeline, the taxonomy, and what the Onboarder's three shipped slices actually do.
+- [Why Promotion Ranks by Epic Priority Before Ticket Priority](explanation/BL-900-epic-priority-promotion-ranking.md) — the rank-key shape, the epic-priority lookup and its fallbacks, and why expedited defects, queue-jump, and ambulance mode are untouched.

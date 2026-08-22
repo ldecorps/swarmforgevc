@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { mapInputToTmuxKey, mapSpecialKeyToTmux, normalizeHistoryLines } = require('../out/panel/paneTailer');
 const { stripAnsi } = require('../out/panel/ansi');
 const { getPaneCommand } = require('../out/swarm/tmuxClient');
@@ -304,17 +306,48 @@ test('lastChangedMs undefined (never observed) is not working from recency alone
   assert.equal(decision.working, false);
 });
 
+// BL-1003 QA bounce D1: the fixture this test used before was a synthetic
+// string built from the bare pre-BL-1003 marker substring (see the
+// pre-existing 'Thinking…' fixtures below for its exact shape), not a
+// captured pane frame - unrepresentative, because rawText here is the
+// same tmux pane-capture text the respawn precheck reads, and real mid-turn
+// captures carry a spinner-glyph-led live status frame line (see
+// specs/features/fixtures/BL-970/). Read the shared captures both sides are
+// verified against, so this caller's coverage cannot drift from them again.
+const BL970_FIXTURES_DIR = path.join(
+  __dirname, '..', '..', 'specs', 'features', 'fixtures', 'BL-970'
+);
+function bl970Capture(name) {
+  return fs.readFileSync(path.join(BL970_FIXTURES_DIR, name), 'utf8');
+}
+
 test('an active-work command/pane text makes a role working regardless of recency', () => {
-  // "esc to interrupt" is isAgentActivelyWorking's own busy-footer
-  // pattern (agentPaneState.ts's ACTIVELY_PROCESSING) - reusing its real
-  // detection, not re-deriving it here.
+  // The REAL capture BL-1003 was minted over: live frame
+  // `✢ Precipitating… (10m 13s · ↓ 16.7k tokens)`, no busy-marker
+  // substring anywhere - the pre-BL-1003 lexical contract read it as idle
+  // (measured in the ticket), so this test is red against that
+  // implementation, not merely green with the structural one.
   const status = roleActivityStatus({
     command: 'node',
-    rawText: 'Thinking… (esc to interrupt)',
+    rawText: bl970Capture('midturn-unlisted-verb-real-capture.txt'),
     lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 100_000),
   });
   const decision = decideRoleActivity(status, ACTIVITY_NOW);
   assert.equal(decision.working, true);
+});
+
+test('a stale pane merely quoting the busy marker in scrollback is not working', () => {
+  // idle-quoted-busy-marker.txt: transcript text quoting the bare
+  // pre-BL-1003 marker substring in scrollback, with no live status frame -
+  // the false-busy direction the old lexical contract got wrong at this
+  // caller (it reported working).
+  const status = roleActivityStatus({
+    command: 'node',
+    rawText: bl970Capture('idle-quoted-busy-marker.txt'),
+    lastChangedMs: ACTIVITY_NOW - (WORKING_INDICATOR_MS + 100_000),
+  });
+  const decision = decideRoleActivity(status, ACTIVITY_NOW);
+  assert.equal(decision.working, false);
 });
 
 test('changed is true only when working differs from wasWorking', () => {

@@ -1,0 +1,32 @@
+Feature: BL-888 pipeline teardown copilot kill scope
+
+  kill_pipeline_swarm.sh step 5 signals SwarmForge copilot agent processes
+  with an unscoped `pkill -f 'copilot.*SwarmForge'`, which matches copilot
+  agents belonging to ANY project root on the host. Tearing down one
+  pipeline must never signal a sibling root's agents. A copilot agent's
+  argv carries its role worktree path (the `-C '<worktree>'` argument built
+  in swarmforge.sh's launch_body), so the kill can be anchored to the root
+  under teardown the same way the handoffd reaping loop above it already is.
+
+  Background:
+    Given a project root under teardown
+
+  # BL-888 teardown-copilot-kill-scope-01
+  Scenario Outline: the copilot kill signals only the root under teardown's agents
+    Given a copilot-shaped fixture process whose command line names <process root>
+    When kill_pipeline_swarm.sh runs against the root under teardown
+    Then the fixture process is <fate>
+    And the teardown log reports "<log line>"
+
+    Examples:
+      | process root             | fate          | log line                                   |
+      | a different project root | still running | no SwarmForge copilot processes            |
+      | the root under teardown  | signaled      | signaled SwarmForge copilot processes      |
+
+  # BL-888 teardown-copilot-kill-scope-02
+  Scenario: no copilot processes present is not a failure
+    Given no copilot-shaped process on the host
+    And an otherwise clean teardown condition
+    When kill_pipeline_swarm.sh runs against the root under teardown
+    Then the teardown log reports "no SwarmForge copilot processes"
+    And the teardown exits zero

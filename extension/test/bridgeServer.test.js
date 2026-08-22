@@ -1,10 +1,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { startBridge } = require('../out/bridge/bridgeServer');
+const { startBridge, buildPairPageHtml } = require('../out/bridge/bridgeServer');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
+const residentPaneLiveModule = require('../out/bridge/residentPaneLive');
 
 const TOKEN = 'test-token-123';
 
@@ -189,6 +190,125 @@ test('serves the holistic endpoint with assignments/swarms/doneByMilestone/recen
     assert.deepEqual(body.swarms, [{ name: 'primary', isLocal: true, agents: [] }]);
     assert.deepEqual(body.doneByMilestone, {});
     assert.deepEqual(body.recentActivity, { recentCloses: [], recentMerges: [], currentRun: null });
+  });
+});
+
+// Sideload APKs under .swarmforge/operator/public are public (no bearer) so a
+// phone can open https://bubble.musicalsifu.com/<versioned>.apk directly.
+test('serves a published float-companion APK without authorization', async () => {
+  const target = mkTmp();
+  const publicDir = path.join(target, '.swarmforge', 'operator', 'public');
+  mkdirp(publicDir);
+  const name = 'swarmforge-float-companion-0.3.12-install-fix.apk';
+  const bytes = Buffer.from('PK-fake-apk-bytes');
+  fs.writeFileSync(path.join(publicDir, name), bytes);
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/${name}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/vnd.android.package-archive');
+    assert.equal(Number(res.headers.get('content-length')), bytes.length);
+    assert.equal(Buffer.compare(Buffer.from(await res.arrayBuffer()), bytes), 0);
+  });
+});
+
+// BL-788: widened from 401 to 404. A name under the sideload namespace
+// prefix that fails SIDELOAD_APK_PATH is now claimed and rejected by THIS
+// route rather than falling through to the generic 401 gate (previously
+// safe only by coincidence - no other route happened to match it either).
+test('rejects path-traversal looking APK names', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/swarmforge-float-companion-../secret.apk`);
+    assert.equal(res.status, 404);
+  });
+});
+
+// BL-788 acceptance scenario 03: a request under the sideload namespace
+// prefix but shaped so it never matches SIDELOAD_APK_PATH at all (a raw "/"
+// or a percent-encoded one right after the prefix, no matching "-") must
+// still 404, not fall through to the generic unauthorized gate. Raw
+// http.request is used (not fetch) so the exact wire bytes reach the
+// server, matching bl851SideloadApkPreauthSteps.js's own rationale.
+test('404s a traversal-shaped sideload request that never matches the naming pattern at all', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const http = require('node:http');
+    const raw = (rawPath) =>
+      new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port: handle.port, path: rawPath, method: 'GET' }, (res) => {
+          res.on('data', () => {});
+          res.on('end', () => resolve(res.statusCode));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    assert.equal(await raw('/swarmforge-float-companion/../../../../etc/passwd.apk'), 404);
+    assert.equal(await raw('/swarmforge-float-companion%2f..%2f..%2fsecrets.apk'), 404);
+  });
+});
+
+// BL-851 review goal 1: the prefix check runs on the resolved path, which is
+// computed lexically (path.resolve never touches the filesystem). A symlink
+// whose OWN name lives inside the public dir and matches the naming pattern
+// passes that check trivially - fs.statSync/createReadStream then follow it
+// to whatever it points at. This is the case the four hand-written traversal
+// cases (all rejected by the naming regex before any fs call) cannot catch,
+// and it is also the goal-3 case: the regex DOES match here, so a request
+// only reaches a 404 because the guard actively rejected a symlink, not
+// because the route never matched.
+test('does not follow a symlink inside the public dir that resolves outside it', async () => {
+  const target = mkTmp();
+  const publicDir = path.join(target, '.swarmforge', 'operator', 'public');
+  mkdirp(publicDir);
+  const secretDir = mkTmp();
+  const secretPath = path.join(secretDir, 'host-secret.txt');
+  fs.writeFileSync(secretPath, 'super-secret-host-contents');
+  const name = 'swarmforge-float-companion-escape.apk';
+  fs.symlinkSync(secretPath, path.join(publicDir, name));
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/${name}`);
+    assert.equal(res.status, 404);
+  });
+});
+
+// BL-788: the pairing page - like the sideload APK route - has no bearer to
+// check (a phone that has never paired cannot set an Authorization header),
+// so it is gated by a query-string token instead.
+test('serves the pairing page with an intent:// link naming the shipped package id, and copy fallbacks', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pair?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /intent:\/\/pair\?/);
+    assert.match(html, /package=com\.swarmforge\.float/);
+    assert.doesNotMatch(html, /http-equiv="refresh"/);
+    assert.doesNotMatch(html, /href="swarmforge-bubble:\/\//);
+    assert.match(html, /<code>https:\/\//);
+    assert.match(html, new RegExp(`<code>${TOKEN}</code>`));
+  });
+});
+
+// BL-788: bridgeUrl comes from the client-controlled Host header (see
+// tryServePairPage's `https://${host}`), so buildPairPageHtml must escape
+// HTML-special characters in both the URL and the token before reflecting
+// them into the page. No prior test drives buildPairPageHtml with a value
+// containing '&', '<', '>' or '"', so a broken/removed escapeHtml call
+// would pass every existing assertion.
+test('buildPairPageHtml escapes HTML-special characters in the bridge URL and token', () => {
+  const html = buildPairPageHtml('https://evil.example/"><script>x</script>&x=1', 'tok<>&"en');
+  assert.doesNotMatch(html, /<script>x<\/script>/);
+  assert.match(html, /<code>https:\/\/evil\.example\/&quot;&gt;&lt;script&gt;x&lt;\/script&gt;&amp;x=1<\/code>/);
+  assert.match(html, /<code>tok&lt;&gt;&amp;&quot;en<\/code>/);
+});
+
+test('rejects a pairing page request with no or the wrong token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const noToken = await fetch(`http://127.0.0.1:${handle.port}/pair`);
+    assert.equal(noToken.status, 401);
+    const wrongToken = await fetch(`http://127.0.0.1:${handle.port}/pair?token=not-${TOKEN}`);
+    assert.equal(wrongToken.status, 401);
   });
 });
 
@@ -1122,6 +1242,31 @@ test('serves /resident-pane JSON given a valid bearer token', async () => {
   });
 });
 
+// BL-881 architect bounce: /resident-pane's compute() must thread the
+// server's injected nowMs through to captureMonoRouterLiveScreen, exactly
+// like its /stage-dwell, /burn-rate, and /pipeline-board siblings in the
+// same buildJsonRoutes table (bridgeServer.ts:1550) - the bug was silently
+// falling back to real Date.now() instead, invisible in the response body
+// (no live tmux pane in the fixture), so this asserts the wiring directly.
+test('threads the server-injected nowMs through to captureMonoRouterLiveScreen (BL-881 bounce)', async () => {
+  const target = mkTmp();
+  const FIXED_NOW_MS = Date.parse('2026-08-13T09:00:00.000Z');
+  const spy = vi.spyOn(residentPaneLiveModule, 'captureMonoRouterLiveScreen');
+  try {
+    await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      });
+      assert.equal(res.status, 200);
+      assert.ok(spy.mock.calls.length > 0, 'expected the route to call captureMonoRouterLiveScreen');
+      const [, calledNowMs] = spy.mock.calls[0];
+      assert.equal(calledNowMs, FIXED_NOW_MS, 'expected the route to pass the server-injected nowMs, not fall back to real Date.now()');
+    });
+  } finally {
+    spy.mockRestore();
+  }
+});
+
 // BL-526: Console menu + pipeline STATUS GRID Mini App
 test('serves /console HTML without a prior bearer/query token', async () => {
   const target = mkTmp();
@@ -1543,4 +1688,225 @@ test('stopping the bridge leaves the swarm state on disk unaffected and a new br
   } finally {
     second.stop();
   }
+});
+
+// BL-763 meta-01: live bridge serves instance metadata.
+test('GET /lets-talk/meta returns a non-empty instanceId, stable across repeated requests', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const first = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/meta`, {
+      headers: replyAckHeaders(),
+    });
+    assert.equal(first.status, 200);
+    const firstBody = await first.json();
+    assert.equal(firstBody.success, true);
+    assert.equal(typeof firstBody.instanceId, 'string');
+    assert.ok(firstBody.instanceId.length > 0);
+    assert.equal(typeof firstBody.startedAt, 'string');
+
+    const second = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/meta`, {
+      headers: replyAckHeaders(),
+    });
+    const secondBody = await second.json();
+    assert.equal(secondBody.instanceId, firstBody.instanceId);
+    assert.equal(secondBody.startedAt, firstBody.startedAt);
+  });
+});
+
+// BL-763 meta-02: bridge bounce (a fresh startBridge() call, same as the
+// stop/start pair above) yields a new instanceId.
+test('GET /lets-talk/meta: a bridge bounce (fresh startBridge call) yields a different instanceId', async () => {
+  const target = mkTmp();
+
+  const first = await startBridge(target, path.join(target, 'runs.jsonl'), TOKEN, {});
+  const firstRes = await fetch(`http://127.0.0.1:${first.port}/lets-talk/meta`, {
+    headers: replyAckHeaders(),
+  });
+  const firstBody = await firstRes.json();
+  first.stop();
+
+  const second = await startBridge(target, path.join(target, 'runs.jsonl'), TOKEN, {});
+  try {
+    const secondRes = await fetch(`http://127.0.0.1:${second.port}/lets-talk/meta`, {
+      headers: replyAckHeaders(),
+    });
+    const secondBody = await secondRes.json();
+    assert.notEqual(secondBody.instanceId, firstBody.instanceId);
+  } finally {
+    second.stop();
+  }
+});
+
+test('GET /lets-talk/meta rejects a request with no bearer token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/meta`);
+    assert.equal(res.status, 401);
+  });
+});
+
+// BL-763: letsTalkBubbleConfig.ts (BL-864) was never wired to a served
+// route until now — this is the wiring's own test, the pure defaults/parse
+// behavior is covered by letsTalkBubbleConfig.test.js already.
+test('GET /lets-talk/bubble-config.json serves the bundled default config, including bridgeBounceAutoSessionReset', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/bubble-config.json`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.features.bridgeBounceAutoSessionReset, true);
+  });
+});
+
+// BL-765: letsTalkChiptunes.ts (f175bc56d) was never wired to a served
+// route until now — this is the wiring's own test, same shape as BL-763's
+// bubble-config wiring test above.
+test('GET /lets-talk/chiptunes.json serves the hold-music catalog', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/chiptunes.json`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(typeof body.version, 'number');
+    assert.ok(Array.isArray(body.songs));
+    assert.ok(body.songs.length > 0);
+    assert.equal(typeof body.songs[0].name, 'string');
+    assert.ok(Array.isArray(body.songs[0].steps));
+  });
+});
+
+test('GET /lets-talk/chiptunes.json rejects a request with no bearer token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/chiptunes.json`);
+    assert.equal(res.status, 401);
+  });
+});
+
+// BL-866: companion-manifest + package catalog, the bridge-side contract
+// epic BL-865's phone-side slices will read.
+
+function writeVisionDocFor(target, relativePath, content) {
+  const filePath = path.join(target, relativePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+}
+
+test('GET /companion-manifest requires authorization, like every other bridge route', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('GET /companion-package/backlog requires authorization', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('GET /companion-manifest lists each available package with a generation and a format version', async () => {
+  const target = mkTmp();
+  writeVisionDocFor(target, 'docs/reference/Specification.MD', '# Spec');
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const names = body.packages.map((p) => p.name).sort();
+    assert.deepEqual(names, ['backlog', 'docs']);
+    for (const pkg of body.packages) {
+      assert.equal(typeof pkg.generation, 'string');
+      assert.equal(typeof pkg.formatVersion, 'number');
+    }
+  });
+});
+
+test('GET /companion-package/backlog serves a body carrying the generation the manifest advertised', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const manifest = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`, { headers: auth }).then((r) => r.json());
+    const advertised = manifest.packages.find((p) => p.name === 'backlog');
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`, { headers: auth });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.generation, advertised.generation);
+  });
+});
+
+test('GET /companion-package/backlog?generation=<current> answers unchanged with no body on the wire', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const first = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`, { headers: auth }).then((r) => r.json());
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog?generation=${first.generation}`, { headers: auth });
+    assert.equal(res.status, 304);
+    const bytes = await res.arrayBuffer();
+    assert.equal(bytes.byteLength, 0);
+  });
+});
+
+test('GET /companion-package/backlog?generation=<stale> sends the current body at the current generation', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const first = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog`, { headers: auth }).then((r) => r.json());
+
+    fs.mkdirSync(path.join(target, 'backlog', 'active'), { recursive: true });
+    fs.writeFileSync(path.join(target, 'backlog', 'active', 'BL-1.yaml'), 'id: BL-1\ntitle: "t"\nstatus: todo\n');
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/backlog?generation=${first.generation}`, { headers: auth });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.notEqual(body.generation, first.generation);
+  });
+});
+
+test('GET /companion-manifest omits docs when its source cannot be read, backlog still listed', async () => {
+  const target = mkTmp(); // no docs/ tree
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-manifest`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const body = await res.json();
+    const names = body.packages.map((p) => p.name);
+    assert.deepEqual(names, ['backlog']);
+  });
+});
+
+test('GET /companion-package/docs is refused with a reason once its source is unreadable, not served empty', async () => {
+  const target = mkTmp(); // no docs/ tree — never readable
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/docs`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(typeof body.reason, 'string');
+    assert.ok(body.reason.length > 0);
+    assert.equal('data' in body, false);
+  });
+});
+
+test('GET /companion-package/does-not-exist is refused with a reason naming the unknown package', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/companion-package/does-not-exist`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.match(body.reason, /does-not-exist/);
+  });
 });

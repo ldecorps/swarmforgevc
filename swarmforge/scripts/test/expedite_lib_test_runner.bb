@@ -9,7 +9,8 @@
 ;; bound of 3 with its spec-defect reading.
 
 (ns expedite-lib-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "expedite_lib.bb")))
 
@@ -20,6 +21,7 @@
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
 (defn assert-true [msg actual] (assert= msg true (boolean actual)))
+(defn assert-nil [msg actual] (assert= msg nil actual))
 (defn assert-false [msg actual] (assert= msg false (boolean actual)))
 
 ;; ── argument parsing ──────────────────────────────────────────────────────
@@ -319,6 +321,241 @@
 (assert= "15: the default budget applies when none is given"
          expedite-lib/default-stage-timeout-ms
          (:timeout-ms (expedite-lib/stage-timeout-verdict {:started-at-ms 0 :now-ms 1})))
+
+;; BL-1026. The assertion above compares the constant to itself, so it passes
+;; for ANY value and says nothing about where the boundary actually falls. The
+;; two below drive the boundary through the default the same way the explicit
+;; cases above drive it through 5000 - one ms under is not an overrun, exactly
+;; the default is. They stay red if the default is ever read as `>` rather than
+;; `>=`, or if the no-budget path stops reaching the constant at all.
+;;
+;; What holds the VALUE (90 minutes) is deliberately not here: pinning it would
+;; mint a sixth hand-mirrored copy of the constant. The value is held by the
+;; mirror gate below, against the four places that state it in prose.
+(assert-false "15 (BL-1026): one ms under the default is not an overrun when no budget is given"
+              (:overrun? (expedite-lib/stage-timeout-verdict
+                           {:started-at-ms 0 :now-ms (dec expedite-lib/default-stage-timeout-ms)})))
+(assert-true "15 (BL-1026): exactly the default IS an overrun when no budget is given (>= not >)"
+             (:overrun? (expedite-lib/stage-timeout-verdict
+                          {:started-at-ms 0 :now-ms expedite-lib/default-stage-timeout-ms})))
+(assert= "15 (BL-1026): an explicit budget under the default is the one reported, not the default"
+         {:overrun? true :elapsed-ms 360000 :timeout-ms 360000}
+         (expedite-lib/stage-timeout-verdict
+           {:started-at-ms 0 :now-ms 360000 :timeout-ms 360000}))
+
+;; ── BL-1026: the stated-budget mirror gate ────────────────────────────────
+;; The default is stated in four places OUTSIDE the code - two usage comments
+;; and two documents - and nothing gated them, so drift there was silent. These
+;; cases hold the pure half: what counts as a statement, and what counts as a
+;; disagreement. The gate is run against the REAL four sites at the end.
+
+(assert= "bl1026: a usage comment's `(default N min)` is read as a budget in ms"
+         [2700000]
+         (expedite-lib/budget-statements "#   --stage-timeout-ms N  per-stage budget (default 45 min)"))
+
+(assert= "bl1026: a doc stating BOTH the ms literal and the minutes yields both, so both are gated"
+         [2700000 2700000]
+         (expedite-lib/budget-statements
+           "| `--stage-timeout-ms` | integer | `2700000` (45 min) | Per-stage wall-clock budget. |"))
+
+(assert= "bl1026: a doc whose ms literal and minutes disagree with EACH OTHER yields both, so the pair cannot hide"
+         [5400000 2700000]
+         (expedite-lib/budget-statements "| `5400000` (45 min) |"))
+
+(assert= "bl1026: prose with no budget statement yields none (a bare minute count is not a budget)"
+         []
+         (expedite-lib/budget-statements "the run took 45 minutes and 45 min of that was the coder"))
+
+(assert= "bl1026: every site agreeing with the code produces no findings"
+         []
+         (expedite-lib/budget-mirror-findings
+           [{:site "a" :content "(default 90 min)"}
+            {:site "b" :content "| `5400000` (90 min) |"}]
+           5400000))
+
+(let [f (expedite-lib/budget-mirror-findings
+          [{:site "agrees" :content "(default 90 min)"}
+           {:site "drifted" :content "(default 45 min)"}]
+          5400000)]
+  (assert= "bl1026: exactly one disagreeing site is reported" 1 (count f))
+  (assert= "bl1026: and the finding NAMES the site that disagrees" "drifted" (:site (first f)))
+  (assert= "bl1026: and reports what it states against what the code says"
+           [2700000 5400000] [(:stated-ms (first f)) (:expected-ms (first f))]))
+
+(let [f (expedite-lib/budget-mirror-findings [{:site "silent" :content "no budget here"}] 5400000)]
+  (assert= "bl1026: a site that states NO budget is drift too - deleting the mention must not pass"
+           [1 "silent" :states-no-budget]
+           [(count f) (:site (first f)) (:reason (first f))]))
+
+(let [f (expedite-lib/budget-mirror-findings
+          [{:site "near-miss" :content "per-stage budget (default 90 minutes)"}]
+          5400000)]
+  (assert= "bl1026: a spelling the gate cannot read fails CLOSED - a site it cannot parse is reported, never silently passed"
+           [1 :states-no-budget] [(count f) (:reason (first f))]))
+
+(assert-true "bl1026: the report of a finding names the site a human must go fix"
+             (str/includes? (expedite-lib/format-budget-mirror-findings
+                              (expedite-lib/budget-mirror-findings
+                                [{:site "docs/reference/BL-567-expeditor-manual.md" :content "(default 45 min)"}]
+                                5400000))
+                            "docs/reference/BL-567-expeditor-manual.md"))
+
+;; The real gate, over the real four sites, against the real constant. This is
+;; the case that goes red when someone retunes the default and updates three of
+;; the four places - the drift this ticket exists to stop.
+(let [root (str (fs/parent (fs/parent (fs/parent (fs/parent (fs/canonicalize *file*))))))
+      findings (expedite-lib/budget-mirror-findings
+                 (expedite-lib/read-budget-mirrors root)
+                 expedite-lib/default-stage-timeout-ms)]
+  (assert= "bl1026: every place the expeditor states its default agrees with the code"
+           [] findings)
+  (assert= "bl1026: and all four stated sites were actually read (a gate over zero sites is vacuous)"
+           4 (count (expedite-lib/read-budget-mirrors root))))
+
+;; ── BL-1025: the QA hat's verdict becomes machine-checkable ───────────────
+;; An expedite run never advances swarmforge-QA (no live QA worktree with the
+;; swarm stopped), so its commits read as "landed outside QA" to Article
+;; 4.2's check. The run now records its own QA-hat verdict where the shared
+;; predicate can read it. Pure here; the CLI does the writing.
+
+(assert= "bl1025: the store lives under .swarmforge/, machine-local like every other run artifact"
+         ".swarmforge/expedite-approvals"
+         expedite-lib/expedite-approval-store-dir)
+
+(assert= "bl1025: one file per month, mirroring the bounce store's own layout"
+         ".swarmforge/expedite-approvals/2026-08.jsonl"
+         (expedite-lib/expedite-approval-store-file "2026-08-22T00:12:00Z"))
+
+(assert= "bl1025: a QA-hat PASS becomes a record naming the sha it advanced"
+         {:at "2026-08-22T00:12:00Z" :ticket "BL-1021" :stage "QA" :approval true :verdict "pass" :commit "44ef693d9c"}
+         (expedite-lib/qa-hat-verdict-record
+          {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))
+
+(assert= "bl1025: a QA-hat BOUNCE is recorded too - a verdict on file that says no is not the same as no verdict"
+         "bounce"
+         (:verdict (expedite-lib/qa-hat-verdict-record
+                    {:stage "QA" :verdict :bounce :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"})))
+
+;; ── BL-1025 architect bounce D1: the reader must not re-derive the verdict
+;;    vocabulary. The record carries the ALREADY-CLASSIFIED decision, so
+;;    `advance-verdicts` is spelled in exactly one place and a fourth token
+;;    added there needs no second edit anywhere. Every member of the real
+;;    vocabulary is driven here, not just the two the first draft covered.
+
+(doseq [v expedite-lib/advance-verdicts]
+  (assert= (str "bl1025 D1: every advance verdict (" v ") records approval true")
+           true
+           (:approval (expedite-lib/qa-hat-verdict-record
+                       {:stage "QA" :verdict v :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))))
+
+(doseq [v expedite-lib/bounce-verdicts]
+  (assert= (str "bl1025 D1: every bounce verdict (" v ") records approval false")
+           false
+           (:approval (expedite-lib/qa-hat-verdict-record
+                       {:stage "QA" :verdict v :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))))
+
+(assert-true "bl1025 D1: the vocabulary is genuinely plural - a single-token set would make this whole class of drift untestable"
+             (< 1 (count expedite-lib/advance-verdicts)))
+
+(assert= "bl1025: the commit is recorded at the 10-hex width every other verdict store uses"
+         "44ef693d9c"
+         (:commit (expedite-lib/qa-hat-verdict-record
+                   {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "44ef693d9c1234567890" :at "2026-08-22T00:12:00Z"})))
+
+(assert-nil "bl1025: no other stage writes an approval - only the QA hat's verdict is an approval"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "coder" :verdict :pass :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))
+
+(assert-nil "bl1025: a stage that FAILED records nothing - a run that fell over approved nothing"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :timed-out :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))
+
+(assert-nil "bl1025: an unresolvable commit records nothing rather than a record naming nothing"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :pass :ticket "BL-1021" :commit nil :at "2026-08-22T00:12:00Z"}))
+
+(assert-nil "bl1025: a blank commit records nothing either"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "  " :at "2026-08-22T00:12:00Z"}))
+
+;; ── BL-1024: the run names what it leaves for someone else ────────────────
+;; The BL-1021 run of 2026-08-21 ended printing "ticket=done restart=failed"
+;; and nothing else. Three tickets sat unrestored in hold/, four backlog moves
+;; sat STAGED in the shared master checkout, and the pipeline idled with an
+;; empty active/ until a human noticed. Both deferrals are deliberate; neither
+;; had an owner or a mention. A deferral nobody is told about is a drop.
+
+(def bl1024-parked
+  (expedite-lib/outstanding-work
+   {:ticket "BL-1021" :parked ["BL-586" "BL-1012" "BL-1017"] :ticket-moved? true}))
+
+(assert= "bl1024: a run that parked tickets reports exactly two outstanding items"
+         2 (count bl1024-parked))
+
+(assert= "bl1024: the parked tickets are one outstanding subject"
+         "the parked tickets"
+         (:subject (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked))))
+
+(assert= "bl1024: it names the folder they are held in - Article 3.1 forbids promoting from there"
+         "backlog/hold/"
+         (:folder (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked))))
+
+(assert= "bl1024: it names every parked ticket, not a count"
+         ["BL-586" "BL-1012" "BL-1017"]
+         (:tickets (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked))))
+
+(assert-true "bl1024: the parked item names an owner"
+             (seq (:owner (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked)))))
+
+(assert-true "bl1024: the uncommitted backlog moves are the other outstanding subject"
+             (seq (filter #(= "the uncommitted backlog moves" (:subject %)) bl1024-parked)))
+
+(assert-true "bl1024: the moves item names an owner too - two deferrals, two owners"
+             (seq (:owner (first (filter #(= "the uncommitted backlog moves" (:subject %)) bl1024-parked)))))
+
+(assert= "bl1024: the moves are enumerated - three parks plus the run ticket's own move"
+         4
+         (count (:moves (first (filter #(= "the uncommitted backlog moves" (:subject %)) bl1024-parked)))))
+
+;; Honesty, both directions.
+(assert-true "bl1024: a run that parked NOTHING manufactures no parked-tickets item"
+             (empty? (filter #(= "the parked tickets" (:subject %))
+                             (expedite-lib/outstanding-work
+                              {:ticket "BL-1021" :parked [] :ticket-moved? true}))))
+
+(assert= "bl1024: a DRY run has nothing outstanding at all - it changed nothing"
+         []
+         (expedite-lib/outstanding-work
+          {:ticket "BL-1021" :parked ["BL-586"] :ticket-moved? true :dry-run? true}))
+
+(assert= "bl1024: a run that parked nothing AND moved nothing has nothing outstanding"
+         []
+         (expedite-lib/outstanding-work {:ticket "BL-1021" :parked [] :ticket-moved? false}))
+
+;; The rendered summary is the actual channel - the expeditor may not use the
+;; mailboxes, tmux, or the coordinator ("machinery it may never use"), so what
+;; it PRINTS is its only way to reach the next actor.
+(def bl1024-text (expedite-lib/format-outstanding-summary
+                  {:items bl1024-parked :parked ["BL-586" "BL-1012" "BL-1017"]}))
+
+(assert-true "bl1024: the summary names each parked ticket"
+             (every? #(str/includes? bl1024-text %) ["BL-586" "BL-1012" "BL-1017"]))
+(assert-true "bl1024: the summary names the hold folder" (str/includes? bl1024-text "backlog/hold/"))
+(assert-true "bl1024: the summary names an owner for each item"
+             (<= 2 (count (re-seq #"owner:" bl1024-text))))
+(assert-true "bl1024: the summary is labelled OUTSTANDING, so it is skimmable in a terminal"
+             (str/includes? bl1024-text "OUTSTANDING"))
+
+(assert-true "bl1024: a run that parked nothing SAYS so rather than staying silent about it"
+             (str/includes? (expedite-lib/format-outstanding-summary
+                             {:items (expedite-lib/outstanding-work
+                                      {:ticket "BL-1021" :parked [] :ticket-moved? true})
+                              :parked []})
+                            "no tickets are held"))
+
+(assert-true "bl1024: nothing outstanding says exactly that, never an empty heading"
+             (str/includes? (expedite-lib/format-outstanding-summary {:items [] :parked [] :dry-run? true})
+                            "nothing outstanding"))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
