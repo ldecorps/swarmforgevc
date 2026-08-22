@@ -21,8 +21,10 @@ const {
   renderRunReport,
   commitEdits,
   PROPOSAL_PATH,
-  main,
 } = require('../out/tools/boyScoutRun');
+// BL-1015 D2: main lives at ./boyScoutRun/cli, not re-exported from the
+// barrel - see the comment above that export list for why.
+const { main } = require('../out/tools/boyScoutRun/cli');
 
 // BL-1015. The acting half of the Boy Scout activity: take the TOP item from
 // BL-1014's ranking, clean exactly that one inside a declared envelope, and

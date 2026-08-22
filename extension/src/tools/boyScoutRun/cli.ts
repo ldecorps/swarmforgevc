@@ -6,8 +6,8 @@
 import * as path from 'path';
 
 import { renderRunReport } from './report';
+import { boyScoutRun } from './run';
 import type { RunEnvironment } from './types';
-import { boyScoutRun } from '../boyScoutRun';
 
 /**
  * Thin wrapper over `boyScoutRun`/`renderRunReport`: resolve a root, run,
