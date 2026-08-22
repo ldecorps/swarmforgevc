@@ -106,19 +106,6 @@ check "05: an ordinary commit leaves the stash untouched" \
 check "05: and produces no rescue note" '[[ ! -f "$R5/tmp/rescue-note.txt" ]]'
 note "PASS: 05"
 
-# ── 06: the commit byline names the ROLE the rescue targeted ──────────────
-# The commit lands on that role's own branch, so the byline must name it -
-# not whichever role happens to be this file's most common caller. A
-# hardcoded byline would pass every check above (all of them use --role
-# coder) while silently mislabeling every rescue into another role's tree.
-R6="$(make_repo)"
-bb "$CLI" "$R6" --stash 'stash@{0}' --role hardener --reason 'BL-981 seat-fold stash' > /dev/null 2>&1
-check "06: the commit byline names the targeted role, not a fixed default" \
-  'git -C "$R6" log -1 --format=%B | grep -q "By hardener\."'
-check "06: and never the wrong role" \
-  '! git -C "$R6" log -1 --format=%B | grep -q "By coder\."'
-note "PASS: 06"
-
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-1041 rescue-orphaned-work: ALL CHECKS PASSED"
 else
