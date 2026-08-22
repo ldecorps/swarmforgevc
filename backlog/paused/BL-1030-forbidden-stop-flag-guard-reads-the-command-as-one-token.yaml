@@ -204,3 +204,9 @@ notes: |
   moments before this nudge was actioned) - no capacity to promote. Not
   cleared as noise; cleared for capacity, cause recorded per BL-798. Remains
   top-ranked paused candidate for the next opened slot.
+
+  2026-08-22 coordinator (2nd instance, same day): recurred. Cap now 5/6
+  ->6/6, slot filled by BL-1060 (expedite lane, higher-priority) moments
+  before this second nudge was actioned. Same cause as above - a timing
+  race between the sweep and this coordinator's own promote actions, not
+  starvation. Remains top-ranked paused candidate for the next opened slot.
