@@ -10,7 +10,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-qwen-code.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Nothing here needs a technical decision from you - you already made the
   hard one by smoke-testing the CLI and confirming it really executes. Two
