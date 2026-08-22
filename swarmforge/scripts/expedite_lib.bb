@@ -18,7 +18,8 @@
 ;; and referred to as expedite-lib/foo.
 
 (ns expedite-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 ;; ── argument parsing ───────────────────────────────────────────────────────
 ;; Pure, so it lives here and is tested. `value-flags` is the SINGLE source of
@@ -560,7 +561,24 @@
 ;; Operator — the two processes that would otherwise notice it wedging. It has
 ;; deliberately killed its own watchdog, so it must observe itself.
 
-(def default-stage-timeout-ms (* 45 60 1000))
+;;
+;; The value: 90 minutes, ruled 2026-08-22 (BL-1026) against measurement rather
+;; than doubling. 45 was demonstrably too tight - run 1 of the BL-1021 expedite
+;; killed its coder stage AT the budget while that stage was producing work run
+;; 2 then reused from a checkpoint, so the kill cost a stage and bought nothing.
+;; The one from-scratch coder stage ever observed therefore needed MORE than 45
+;; minutes; run 2's coder, resuming from that checkpoint, took a further 31, so
+;; the same work from scratch needed on the order of 76 minutes. 90 clears that
+;; single measurement with roughly a fifth in hand, which is the honest claim -
+;; not that 90 is the right number for every stage, but that it is above the
+;; only from-scratch stage anyone has measured, where 45 was below it.
+;;
+;; It stays a blunt wall-clock budget on purpose: a progress-aware valve can
+;; itself wedge, and this valve exists precisely because the expeditor has
+;; killed its own watchdog. Raising it never disarms it - see
+;; `stage-timeout-verdict`, whose boundary is `>=`.
+
+(def default-stage-timeout-ms (* 90 60 1000))
 
 (defn stage-timeout-verdict
   "Pure: has this stage overrun? Clock is injected — never (System/currentTimeMillis)
@@ -571,3 +589,86 @@
     {:overrun? (>= elapsed budget)
      :elapsed-ms elapsed
      :timeout-ms budget}))
+
+;; ── BL-1026: the stated-budget mirror gate ────────────────────────────────
+;; `default-stage-timeout-ms` above is the code. Four places OUTSIDE the code
+;; also state it - two usage comments a user reads with `--help` in mind, two
+;; documents - and until this gate existed nothing held them together. That is
+;; the shape the engineering guardrail names: a constant hand-mirrored across a
+;; boundary no import can bridge, where drift fails silently. It did drift: the
+;; raise from 45 lived only as an uncommitted working-tree edit while committed
+;; main still said 45 in all five places.
+;;
+;; The gate compares each stated value against the CONSTANT rather than against
+;; a second hardcoded literal, so retuning the default needs no edit here - only
+;; the four prose sites, which is exactly what it is checking.
+
+(def budget-mirror-sites
+  ["swarmforge/scripts/expedite_cli.bb"
+   "swarmforge/scripts/expedite.sh"
+   "docs/reference/BL-567-expeditor-manual.md"
+   "docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md"])
+
+;; Two spellings are in use and both must be read, because a document that
+;; states the budget twice can disagree with ITSELF:
+;;   `(default 45 min)`            - the usage comments and the how-to table
+;;   `` `2700000` (45 min) ``      - the manual, which gives ms AND minutes
+;; The leading ms literal is optional and only recognised when it immediately
+;; precedes the minutes, so an unrelated backticked number is not mistaken for
+;; a budget. A bare "45 min" in prose is not a statement of the default either -
+;; it must be parenthesised, which is what every real site does.
+(def ^:private budget-statement-re #"(?:`(\d+)`\s+)?\(\s*(?:default\s+)?(\d+)\s+min\)")
+
+(defn budget-statements
+  "Pure: every per-stage budget `content` states, in ms, in the order stated.
+   A site that gives both an ms literal and a minute count yields BOTH, so a
+   document cannot half-update itself and still pass."
+  [content]
+  (vec
+    (mapcat
+      (fn [[_ ms-literal minutes]]
+        (let [from-minutes (* (parse-long minutes) 60 1000)]
+          (if ms-literal
+            [(parse-long ms-literal) from-minutes]
+            [from-minutes])))
+      (re-seq budget-statement-re (or content "")))))
+
+(defn budget-mirror-findings
+  "Pure: which readings disagree with the code's budget, and how. A reading is
+   `{:site path :content text}`. Stating NOTHING is a finding in its own right -
+   deleting the mention is drift too, and a gate that only compares values it
+   finds would pass a site that stopped stating one."
+  [readings expected-ms]
+  (vec
+    (mapcat
+      (fn [{:keys [site content]}]
+        (let [stated (budget-statements content)]
+          (if (empty? stated)
+            [{:site site :stated-ms nil :expected-ms expected-ms :reason :states-no-budget}]
+            (for [s stated :when (not= s expected-ms)]
+              {:site site :stated-ms s :expected-ms expected-ms :reason :disagrees}))))
+      readings)))
+
+(defn format-budget-mirror-findings
+  "Pure: the findings as the text a human acts on. Every finding NAMES its site,
+   because 'something disagrees' sends the reader hunting through four files."
+  [findings]
+  (if (empty? findings)
+    (str "OK: every place the expeditor states its default per-stage budget agrees with the code")
+    (str/join "\n"
+      (cons (str "DRIFT: " (count findings) " stated budget(s) disagree with default-stage-timeout-ms")
+            (map (fn [{:keys [site stated-ms expected-ms reason]}]
+                   (if (= reason :states-no-budget)
+                     (str "  " site " states no per-stage budget at all (expected " expected-ms " ms)")
+                     (str "  " site " states " stated-ms " ms, the code says " expected-ms " ms")))
+                 findings)))))
+
+(defn read-budget-mirrors
+  "The one impure step: read each stated site under `root`. A site that is
+   missing reads as empty content, so it surfaces as :states-no-budget rather
+   than vanishing from the gate."
+  [root]
+  (mapv (fn [rel]
+          (let [f (str (fs/path root rel))]
+            {:site rel :content (if (fs/exists? f) (slurp f) "")}))
+        budget-mirror-sites))

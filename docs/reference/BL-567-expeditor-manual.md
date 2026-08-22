@@ -34,7 +34,7 @@ bb swarmforge/scripts/expedite_cli.bb <project-root> <BL-id> [options]
 | `--no-restart` | — | off | Skip the final restart phase. `restart` is reported as `not-attempted`. |
 | `--override` | — | off | Proceed even though a live swarm could not be brought down. Always warns, and is recorded in `run.json`. Covers **both** liveness gates — see [Refusals](#refusals). |
 | `--bounce-bound` | integer | `3` | Bounces allowed per (stage, ticket) before the run stops. A value above the default is announced as `RAISED explicitly` and recorded. |
-| `--stage-timeout-ms` | integer | `2700000` (45 min) | Per-stage wall-clock budget. On overrun the stage's whole process group is killed. |
+| `--stage-timeout-ms` | integer | `5400000` (90 min) | Per-stage wall-clock budget. On overrun the stage's whole process group is killed. |
 
 Unknown flags are ignored rather than rejected. A value-taking flag with a missing
 value yields `nil` for that option and does **not** consume the following flag.

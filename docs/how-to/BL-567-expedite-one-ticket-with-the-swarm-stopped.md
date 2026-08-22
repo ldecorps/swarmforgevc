@@ -25,7 +25,7 @@ swarmforge/scripts/expedite.sh /path/to/repo BL-123
 | `--dry-run` | plan and print; touches nothing |
 | `--no-restart` | skip the final restart phase |
 | `--bounce-bound N` | change the per-stage bound (default **3**) |
-| `--stage-timeout-ms N` | per-stage budget (default 45 min) |
+| `--stage-timeout-ms N` | per-stage budget (default 90 min) |
 | `--override` | proceed even though a live swarm could not be stopped |
 
 Start with `--dry-run`. It prints the liveness verdict, what it would park, and
