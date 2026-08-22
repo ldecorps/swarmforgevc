@@ -17,10 +17,13 @@ const {
   assertionsWouldChange,
   buildCommitMessage,
   runDeclaredGates,
+  defaultGateSpawn,
   boyScoutRun,
   renderRunReport,
   commitEdits,
   PROPOSAL_PATH,
+  readProposalFile,
+  defaultEnvironment,
 } = require('../out/tools/boyScoutRun');
 // BL-1015 D2: main lives at ./boyScoutRun/cli, not re-exported from the
 // barrel - see the comment above that export list for why.
@@ -120,6 +123,47 @@ test('BL-1015: a wholesale rewrite of a large file is over the envelope, not sil
     `a 3000-line rewrite must exceed the ${SIZE_ENVELOPE.lines}-line envelope; measured ${changed}`);
 });
 
+test('BL-1015: prefix trimming stops at the SHORTER side\'s bound, not just the longer side\'s', () => {
+  // The prefix-trim guard is a genuine AND of both lengths - if either half
+  // were replaced by an always-true condition, `start` would keep advancing
+  // past the shorter array's real length, corrupting the interior diff.
+  assert.equal(countChangedLines('x\nx\nx', 'x'), 2, 'b is exhausted after one shared line; a keeps its other two as changes');
+});
+
+test('BL-1015: suffix trimming stops at the SHORTER side\'s bound too', () => {
+  assert.equal(countChangedLines('p\nx\nx\nx', 'q\nx'), 4, 'no common prefix at all, so the whole of both sides differ');
+});
+
+test('BL-1015: the interior LCS genuinely walks the whole DP table, not just the trimmed edges', () => {
+  // Prefix/suffix trim strip 'p' and 'q'; the interior ['A','B','C'] vs
+  // ['B','A','D'] cannot be resolved by trimming alone - it needs the real
+  // recurrence (a[i-1] vs a[i], the ternary's match branch, Math.max, not
+  // Math.min) to find the true best common subsequence (length 1: at most
+  // one of A or B, never both, since their order is swapped).
+  assert.equal(countChangedLines('p\nA\nB\nC\nq', 'p\nB\nA\nD\nq'), 4);
+});
+
+test('BL-1015: the LCS cell cap is a strict >, not >=  - EXACTLY at the cap still runs the real (cheaper, correct) LCS', () => {
+  // 2000x2000 = 4,000,000 = LCS_CELL_CAP exactly. A >= mutant here would
+  // wrongly take the cap shortcut (which ignores real sharing) at the exact
+  // boundary the real algorithm is still meant to handle.
+  const mid = Array.from({ length: 1998 }, (_, i) => `SHARED_${i}`);
+  const a = ['A_START', ...mid, 'A_END'].join('\n');
+  const b = ['B_START', ...mid, 'B_END'].join('\n');
+  assert.equal(countChangedLines(a, b), 4, 'only the two distinct endpoints differ; the shared middle must be recognised');
+});
+
+test('BL-1015: one cell OVER the cap takes the declared upper-bound shortcut, not the real (lower, sharing-aware) count', () => {
+  const mid = Array.from({ length: 1999 }, (_, i) => `SHARED_${i}`);
+  const a = ['A_START', ...mid, 'A_END'].join('\n');
+  const b = ['B_START', ...mid, 'B_END'].join('\n');
+  // 2001 x 2001 = 4,004,001 > LCS_CELL_CAP: the shortcut ra.length+rb.length
+  // is used, which - unlike the real LCS - does NOT credit the shared
+  // middle, so it reports a much larger (wrong-if-you-forgot-the-cap-exists,
+  // but declared and intentional) count.
+  assert.equal(countChangedLines(a, b), 4002, 'the declared upper bound, not the true (much smaller) shared-aware count');
+});
+
 test('BL-1015: measureProposal counts distinct files, and ignores an edit that changes nothing', () => {
   const current = { 'a.ts': 'x\n', 'b.ts': 'y\n', 'c.ts': 'z\n' };
   const currentOf = (p) => current[p] ?? null;
@@ -134,6 +178,83 @@ test('BL-1015: measureProposal counts distinct files, and ignores an edit that c
   );
   assert.equal(measured.files, 2, 'b.ts is unchanged, so it is not a changed file; a.ts is named twice but is one file');
   assert.equal(measured.lines, 4);
+});
+
+// ── readProposalFile: reading, validating, and filtering a written proposal ─
+
+test('BL-1015: readProposalFile returns null, not a crash, when there is no file at all', () => {
+  assert.equal(readProposalFile('/root', () => null), null);
+});
+
+test('BL-1015: readProposalFile returns null on unparseable JSON', () => {
+  assert.equal(readProposalFile('/root', () => '{ not json'), null);
+});
+
+test('BL-1015: readProposalFile rejects a non-object candidate even with no subject/edits check reached', () => {
+  // Valid JSON, but not a candidate object at all (null, a bare number) -
+  // isolates the `!candidate` arm of the OR from the other two.
+  assert.equal(readProposalFile('/root', () => 'null'), null);
+  assert.equal(readProposalFile('/root', () => '42'), null);
+});
+
+test('BL-1015: readProposalFile rejects a missing/non-string subject even when edits is a valid array', () => {
+  assert.equal(readProposalFile('/root', () => JSON.stringify({ edits: [] })), null, 'no subject at all');
+  assert.equal(readProposalFile('/root', () => JSON.stringify({ subject: 3, edits: [] })), null, 'subject is not a string');
+});
+
+test('BL-1015: readProposalFile rejects a missing/non-array edits even when subject is a valid string', () => {
+  assert.equal(readProposalFile('/root', () => JSON.stringify({ subject: 'a.ts' })), null, 'no edits at all');
+  assert.equal(
+    readProposalFile('/root', () => JSON.stringify({ subject: 'a.ts', edits: 'not-an-array' })),
+    null,
+    'edits is not an array'
+  );
+});
+
+test('BL-1015: readProposalFile filters out every malformed edit, keeping only well-shaped ones', () => {
+  const result = readProposalFile(
+    '/root',
+    () =>
+      JSON.stringify({
+        subject: 'a.ts',
+        edits: [
+          { path: 'a.ts', after: 'new\n' }, // valid: after is a string
+          { path: 'b.ts', after: null }, // valid: after is null (deletion)
+          null, // falsy edit, dropped
+          { path: 42, after: 'x' }, // non-string path, dropped
+          { path: 'c.ts', after: 7 }, // after is neither string nor null, dropped
+        ],
+      })
+  );
+  assert.deepEqual(result.edits, [
+    { path: 'a.ts', after: 'new\n' },
+    { path: 'b.ts', after: null },
+  ]);
+});
+
+test('BL-1015: readProposalFile falls back to the subject as the summary when none is given', () => {
+  const result = readProposalFile('/root', () => JSON.stringify({ subject: 'a.ts', edits: [] }));
+  assert.equal(result.summary, 'a.ts');
+});
+
+// ── the default environment's real-disk IO ─────────────────────────────────
+
+test('BL-1015: defaultEnvironment.writeFile(root, path, null) deletes a file, and tolerates one that never existed', () => {
+  const root = mkTmpDir('bl1015-');
+  fs.writeFileSync(path.join(root, 'present.txt'), 'x');
+  defaultEnvironment.writeFile(root, 'present.txt', null);
+  assert.ok(!fs.existsSync(path.join(root, 'present.txt')));
+  // force: true is load-bearing here - without it, deleting a path that was
+  // never created (a NEW file this run added and is now rolling back) throws
+  // ENOENT instead of being a no-op.
+  assert.doesNotThrow(() => defaultEnvironment.writeFile(root, 'never-existed.txt', null));
+});
+
+test('BL-1015: defaultEnvironment.runGates actually runs the real declared gates, not a stub returning undefined', () => {
+  const root = mkTmpDir('bl1015-');
+  const result = defaultEnvironment.runGates(root);
+  assert.equal(typeof result, 'object');
+  assert.ok(Array.isArray(result.ran), 'a real GateResult names which gates it ran');
 });
 
 // ── which paths are tests, and what counts as an assertion ────────────────
@@ -159,6 +280,20 @@ test('BL-1015: isTestPath recognises every test lane this repository actually ha
   assert.ok(TEST_PATH_PATTERNS.length > 0, 'the test-path set is declared, not inferred');
 });
 
+test('BL-1015: isTestPath regex boundaries - anchors and negated classes actually bound the match', () => {
+  // (^|\/)tests?\/ - the anchor must require a path SEGMENT boundary, not any substring.
+  assert.ok(!isTestPath('xtests/foo.js'), '"xtests/" must not be mistaken for a "tests/" segment');
+  assert.ok(isTestPath('src/tests/foo.ts'), 'tests/ preceded by a slash still matches');
+  // test_[^/]*\.(sh|bb)$ - [^/] must stop the match at a directory separator.
+  assert.ok(!isTestPath('swarmforge/scripts/test_dir/thing.sh'), 'a slash inside the middle segment must not be swallowed by [^/]*');
+  assert.ok(isTestPath('swarmforge/scripts/test_babysitter.sh'), 'no slash after test_ still matches');
+  // _test(_runner)?\.bb$ - the trailing $ must reject a longer suffix.
+  assert.ok(!isTestPath('swarmforge/scripts/foo_test.bb.orig'), 'a suffix after .bb must not match the $-anchored pattern');
+  assert.ok(!isTestPath('swarmforge/scripts/foo_test_other.bb'), '"_test_other" is not the declared "_test" or "_test_runner" shape');
+  // _property_runner\.bb$ - same anchor requirement.
+  assert.ok(!isTestPath('swarmforge/scripts/foo_property_runner.bb.bak'), 'a suffix after .bb must not match');
+});
+
 test('BL-1015: assertionLines finds assertions in each language this repo tests in', () => {
   const text = [
     "  assert.equal(a, b);",
@@ -173,6 +308,26 @@ test('BL-1015: assertionLines finds assertions in each language this repo tests 
   assert.equal(found.length, 5, `expected five assertion lines, got ${JSON.stringify(found)}`);
   assert.ok(!found.some((l) => l.includes('notAnAssertion')));
   assert.ok(ASSERTION_PATTERNS.length > 0, 'the assertion set is declared, not inferred');
+});
+
+test('BL-1015: assertionLines regex boundaries - whitespace quantifiers and anchors actually bound the match', () => {
+  // ^\s*assert[-_\w]*\s+\S - \s+ requires at least the ONE separating space,
+  // and a leading run of whitespace before "assert" must still be allowed.
+  assert.equal(assertionLines('  assert_elements  "a" "b"').length, 1, 'multiple spaces before the argument still matches \\s+');
+  assert.equal(assertionLines('assert_elements"a"').length, 0, 'no separating space at all must not match \\s+\\S');
+  // \bexpect\s*\( - \s* must accept whitespace between "expect" and "(".
+  assert.equal(assertionLines('expect (x).toBe(1);').length, 1, 'a space before the paren is still \\s* zero-or-more whitespace');
+  // \(\s*is\s+ - both \s* (before "is") and \s+ (after "is") must accept real whitespace.
+  assert.equal(assertionLines('( is  (= 1 1))').length, 1, 'whitespace after "(" and two spaces after "is" both still match');
+});
+
+test('BL-1015: assertionLines trims each line before comparison, so re-indenting is not mistaken for a change', () => {
+  // Without trim(), a line's leading whitespace becomes part of the stored
+  // string, so a purely cosmetic re-indent (moving an assertion one level
+  // deeper) would look like the old assertion vanished and a DIFFERENT one
+  // appeared - a false positive against invariant 2, not a missed one, but a
+  // real behavioural difference this function exists to avoid.
+  assert.deepEqual(assertionLines('assert.ok(a);'), assertionLines('    assert.ok(a);'));
 });
 
 test('BL-1015: assertionsWouldChange fires when an existing assertion is removed or reworded', () => {
@@ -271,6 +426,10 @@ test('BL-1015: a proposal for something other than the top item is refused whole
   assert.equal(result.outcome, 'refused');
   assert.equal(result.reason, 'wrong-item');
   assert.equal(calls.writes.length, 0, 'nothing is applied');
+  // The subject-mismatch refusal and the trespass refusal share the same
+  // {outcome, reason} shape - only `detail` distinguishes which check fired,
+  // so it must name both the wrong subject and the top-ranked one.
+  assert.ok(result.detail.includes('b.ts') && result.detail.includes('a.ts') && result.detail.includes('not the top-ranked'));
 });
 
 test('BL-1015: a proposal that would edit ANOTHER ranked item is refused whole', () => {
@@ -288,6 +447,20 @@ test('BL-1015: a proposal that would edit ANOTHER ranked item is refused whole',
   assert.equal(result.reason, 'wrong-item');
   assert.ok(renderRunReport(result).includes('b.ts'), 'the report names the other item it would have touched');
   assert.equal(calls.writes.length, 0);
+});
+
+test('BL-1015: trespass onto MULTIPLE other ranked items are all named, joined by comma-space', () => {
+  const { env } = harness({
+    ranked: [item('a.ts', 3), item('b.ts', 2), item('c.ts', 1)],
+    files: { 'a.ts': 'old\n', 'b.ts': 'old\n', 'c.ts': 'old\n' },
+    proposal: {
+      subject: 'a.ts',
+      summary: 's',
+      edits: [{ path: 'a.ts', after: 'new\n' }, { path: 'b.ts', after: 'new\n' }, { path: 'c.ts', after: 'new\n' }],
+    },
+  });
+  const result = boyScoutRun('/root', env);
+  assert.ok(result.detail.includes('b.ts, c.ts'), `expected a comma-space joined list, got: ${result.detail}`);
 });
 
 // ── scenario 02: the envelope boundary, both sides of it ──────────────────
@@ -493,6 +666,13 @@ test('BL-1015: an empty inventory states why nothing was cleaned', () => {
   assert.equal(result.reason, 'nothing-ranked');
   assert.equal(calls.writes.length, 0);
   assert.match(renderRunReport(result), /nothing-ranked/);
+  // The blank-result shape itself, not just the reason - an unfilled `measured`
+  // or a planted placeholder in `exceeded`/`editedPaths` would still read as
+  // "nothing-ranked" but would be lying about there being no measurement or
+  // no edited paths yet.
+  assert.deepEqual(result.measured, { files: 0, lines: 0 });
+  assert.deepEqual(result.exceeded, []);
+  assert.deepEqual(result.editedPaths, []);
 });
 
 test('BL-1015: a top item with no proposal states that, rather than reading as a clean repository', () => {
@@ -510,7 +690,12 @@ test('BL-1015: a proposal with no edits is not a cleanup', () => {
     ranked: [item('a.ts', 3)],
     proposal: { subject: 'a.ts', summary: 's', edits: [] },
   });
-  assert.equal(boyScoutRun('/root', env).reason, 'no-cleanup-proposed');
+  const result = boyScoutRun('/root', env);
+  assert.equal(result.reason, 'no-cleanup-proposed');
+  // Isolates this early "no edits at all" refusal from the LATER
+  // "measured.files === 0" refusal a few checks downstream - both report the
+  // same reason, but only the later one sets a detail string.
+  assert.equal(result.detail, null, 'the early empty-edits refusal carries no detail of its own');
 });
 
 test('BL-1015: a proposal whose edits change nothing is not a cleanup either', () => {
@@ -526,11 +711,22 @@ test('BL-1015: a proposal whose edits change nothing is not a cleanup either', (
   assert.equal(result.outcome, 'nothing-to-do');
   assert.equal(result.reason, 'no-cleanup-proposed');
   assert.equal(calls.commits.length, 0);
+  assert.equal(result.detail, 'the proposal changes nothing');
 });
 
 test('BL-1015: every no-clean outcome carries a reason from the declared set', () => {
   assert.ok(NO_CLEAN_REASONS.length >= 4, 'the four reasons invariant 3 names, at minimum');
-  for (const required of ['envelope-exceeded', 'gate-failed', 'assertion-would-change', 'nothing-ranked']) {
+  // All SIX declared values, not just the four the ticket names verbatim -
+  // 'no-cleanup-proposed' and 'wrong-item' are real states this run reports
+  // and must not silently collapse to an empty string.
+  for (const required of [
+    'envelope-exceeded',
+    'gate-failed',
+    'assertion-would-change',
+    'nothing-ranked',
+    'no-cleanup-proposed',
+    'wrong-item',
+  ]) {
     assert.ok(NO_CLEAN_REASONS.includes(required), `invariant 3 names ${required} explicitly`);
   }
 });
@@ -566,13 +762,217 @@ test('BL-1015: the commit message names the ticket, the item and the gates it pa
     subject: 'extension/src/a.ts',
     summary: 'extract the duplicated block',
     measured: { files: 1, lines: 12 },
-    envelope: SIZE_ENVELOPE,
-    gate: { passed: true, ran: ['unit'], failed: [] },
+    envelope: { files: 3, lines: 120 },
+    gate: { passed: true, ran: ['unit', 'lint'], failed: [] },
   });
-  assert.ok(message.includes('BL-1015'));
-  assert.ok(message.includes('extension/src/a.ts'));
-  assert.ok(message.includes('extract the duplicated block'));
-  assert.ok(message.includes('unit'));
+  // Exact line-by-line shape, not loose substrings - so an emptied template
+  // literal, a dropped join separator, or a stray blank-line swap all fail.
+  assert.deepEqual(message.split('\n'), [
+    'BL-1015 boy scout: extract the duplicated block',
+    '',
+    'Cleaned the top-ranked debt item from the Boy Scout scan: extension/src/a.ts.',
+    'Envelope: 1 file(s), 12 line(s) of 3/120.',
+    'Gates passed before commit: unit, lint.',
+  ]);
+});
+
+test('BL-1015: the commit message names "none" for the gates when no gate result is available', () => {
+  // The optional chaining on result.gate?.ran matters precisely when gate is
+  // null/undefined - a caller that never ran a gate (or a report rendered
+  // before gating) must not crash reading .ran off null.
+  const message = buildCommitMessage({
+    subject: 'a.ts',
+    summary: 's',
+    measured: { files: 1, lines: 1 },
+    envelope: SIZE_ENVELOPE,
+    gate: null,
+  });
+  assert.ok(message.includes('Gates passed before commit: none.'));
+});
+
+// ── renderRunReport: the exact text a human reads before accepting a commit ─
+//
+// Every branch here asserts the FULL report string, not a loose substring -
+// an emptied template literal, a swapped ternary branch, a dropped join
+// separator, or a mis-cased switch label all produce a visibly different
+// exact string, which a `.includes()` check would happily let through.
+
+test('BL-1015 report: a CLEANED run, full exact text', () => {
+  const result = {
+    outcome: 'cleaned', reason: null, subject: 'a.ts', summary: 'tidy up',
+    measured: { files: 1, lines: 5 }, envelope: { files: 3, lines: 120 },
+    exceeded: [], editedPaths: ['a.ts', 'b.ts'], committed: true,
+    gate: { passed: true, ran: ['unit', 'lint'], failed: [] }, ranked: 2, detail: null,
+  };
+  assert.equal(
+    renderRunReport(result),
+    [
+      'BOY SCOUT RUN — one item, cleaned or refused whole',
+      '',
+      'items ranked: 2',
+      'top-ranked item: a.ts',
+      'proposed cleanup: tidy up',
+      '',
+      'outcome: CLEANED — a.ts',
+      '  changed 1 file(s), 5 line(s) within an envelope of 3 file(s), 120 line(s)',
+      '  gates passed before commit: unit, lint',
+      '  files: a.ts, b.ts',
+      '  committed: yes',
+      '',
+    ].join('\n')
+  );
+});
+
+test('BL-1015 report: a CLEANED run that was not committed, and had no proposed-cleanup summary', () => {
+  const result = {
+    outcome: 'cleaned', reason: null, subject: 'a.ts', summary: null,
+    measured: { files: 1, lines: 5 }, envelope: { files: 3, lines: 120 },
+    exceeded: [], editedPaths: ['a.ts'], committed: false,
+    gate: null, ranked: 1, detail: null,
+  };
+  assert.equal(
+    renderRunReport(result),
+    [
+      'BOY SCOUT RUN — one item, cleaned or refused whole',
+      '',
+      'items ranked: 1',
+      'top-ranked item: a.ts',
+      '',
+      'outcome: CLEANED — a.ts',
+      '  changed 1 file(s), 5 line(s) within an envelope of 3 file(s), 120 line(s)',
+      '  gates passed before commit: none',
+      '  files: a.ts',
+      '  committed: no',
+      '',
+    ].join('\n')
+  );
+});
+
+test('BL-1015 report: no top item at all - "(none)" and no proposed-cleanup line', () => {
+  const result = {
+    outcome: 'nothing-to-do', reason: 'nothing-ranked', subject: null, summary: null,
+    measured: { files: 0, lines: 0 }, envelope: { files: 3, lines: 120 },
+    exceeded: [], editedPaths: [], committed: false, gate: null, ranked: 0, detail: null,
+  };
+  assert.equal(
+    renderRunReport(result),
+    [
+      'BOY SCOUT RUN — one item, cleaned or refused whole',
+      '',
+      'items ranked: 0',
+      'top-ranked item: (none)',
+      '',
+      'outcome: NOTHING CLEANED — nothing-ranked',
+      '  the scan ranked no debt at all, so there was no top item to clean.',
+      '  nothing was committed; the working tree is unchanged.',
+      '',
+    ].join('\n')
+  );
+});
+
+test('BL-1015 report: REFUSED for wrong-item names the detail, and the envelope line is absent (nothing exceeded)', () => {
+  const result = {
+    outcome: 'refused', reason: 'wrong-item', subject: 'b.ts', summary: 's',
+    measured: { files: 0, lines: 0 }, envelope: { files: 3, lines: 120 },
+    exceeded: [], editedPaths: ['b.ts'], committed: false, gate: null, ranked: 2,
+    detail: 'the proposal is for b.ts, not the top-ranked a.ts',
+  };
+  assert.equal(
+    renderRunReport(result),
+    [
+      'BOY SCOUT RUN — one item, cleaned or refused whole',
+      '',
+      'items ranked: 2',
+      'top-ranked item: b.ts',
+      'proposed cleanup: s',
+      '',
+      'outcome: REFUSED — wrong-item',
+      '  the proposal is for b.ts, not the top-ranked a.ts; a run cleans the top-ranked item or nothing.',
+      '  nothing was committed; the working tree is unchanged.',
+      '',
+    ].join('\n')
+  );
+});
+
+test('BL-1015 report: REFUSED for envelope-exceeded names BOTH exceeded axes, joined by " and "', () => {
+  const result = {
+    outcome: 'refused', reason: 'envelope-exceeded', subject: 'a.ts', summary: 's',
+    measured: { files: 5, lines: 400 }, envelope: { files: 3, lines: 120 },
+    exceeded: ['files', 'lines'], editedPaths: [], committed: false, gate: null, ranked: 1,
+    detail: 'the cleanup would change 5 file(s) and 400 line(s)',
+  };
+  assert.equal(
+    renderRunReport(result),
+    [
+      'BOY SCOUT RUN — one item, cleaned or refused whole',
+      '',
+      'items ranked: 1',
+      'top-ranked item: a.ts',
+      'proposed cleanup: s',
+      '',
+      'outcome: REFUSED — envelope-exceeded',
+      '  the cleanup would change 5 file(s) and 400 line(s), which is bigger than one sitting.',
+      '  the envelope is 3 file(s) and 120 line(s); exceeded: files and lines',
+      '  nothing was committed; the working tree is unchanged.',
+      '',
+    ].join('\n')
+  );
+});
+
+test('BL-1015 report: ABANDONED for assertion-would-change names the offending test file', () => {
+  const result = {
+    outcome: 'abandoned', reason: 'assertion-would-change', subject: 'a.ts', summary: 's',
+    measured: { files: 2, lines: 10 }, envelope: { files: 3, lines: 120 },
+    exceeded: [], editedPaths: ['a.ts', 'a.test.js'], committed: false, gate: null, ranked: 1,
+    detail: 'a.test.js',
+  };
+  assert.equal(
+    renderRunReport(result),
+    [
+      'BOY SCOUT RUN — one item, cleaned or refused whole',
+      '',
+      'items ranked: 1',
+      'top-ranked item: a.ts',
+      'proposed cleanup: s',
+      '',
+      'outcome: ABANDONED — assertion-would-change',
+      '  the cleanup could only reach green by changing an existing assertion in a.test.js. ' +
+        'That is a behaviour change wearing a refactor\'s clothes, so it is abandoned: this item needs its own ticket.',
+      '  nothing was committed; the working tree is unchanged.',
+      '',
+    ].join('\n')
+  );
+});
+
+test('BL-1015 report: ABANDONED for gate-failed names the failed gate, and "unknown" when gate itself is null', () => {
+  const withGate = {
+    outcome: 'abandoned', reason: 'gate-failed', subject: 'a.ts', summary: 's',
+    measured: { files: 1, lines: 5 }, envelope: { files: 3, lines: 120 }, exceeded: [],
+    editedPaths: ['a.ts'], committed: false, gate: { passed: false, ran: ['unit'], failed: ['unit'] },
+    ranked: 1, detail: null,
+  };
+  assert.ok(
+    renderRunReport(withGate).includes('the repository gate set failed on the cleaned result (failed: unit).'),
+  );
+  const noGate = { ...withGate, gate: null };
+  assert.ok(
+    renderRunReport(noGate).includes('the repository gate set failed on the cleaned result (failed: unknown).'),
+    'the optional chaining on result.gate?.failed matters when gate is null'
+  );
+});
+
+test('BL-1015 report: a no-cleanup-proposed refusal names the subject, with and without a detail parenthetical', () => {
+  const withDetail = {
+    outcome: 'nothing-to-do', reason: 'no-cleanup-proposed', subject: 'a.ts', summary: null,
+    measured: { files: 0, lines: 0 }, envelope: { files: 3, lines: 120 }, exceeded: [],
+    editedPaths: [], committed: false, gate: null, ranked: 1, detail: 'the proposal changes nothing',
+  };
+  assert.ok(renderRunReport(withDetail).includes('no cleanup was proposed for a.ts (the proposal changes nothing).'));
+  const withoutDetail = { ...withDetail, detail: null };
+  assert.ok(
+    renderRunReport(withoutDetail).includes('no cleanup was proposed for a.ts.'),
+    'no detail at all must render with no trailing parenthetical, not a placeholder'
+  );
 });
 
 // ── the declared gate set ─────────────────────────────────────────────────
@@ -631,6 +1031,48 @@ test('BL-1015: a gate that could not be spawned at all is a failure, never a pas
   }));
   assert.equal(result.passed, false, 'a gate that never ran must not read as a gate that passed');
   assert.deepEqual(result.failed, ['unit']);
+  assert.equal(result.output, 'ENOENT', 'the spawn error message must reach the report, not be swallowed');
+});
+
+test('BL-1015: a gate with no output at all contributes nothing - a falsy-guard removed would insert a stray blank line', () => {
+  const result = runDeclaredGates(
+    '/root',
+    [
+      { name: 'unit', command: 'a', args: [], cwd: '.' },
+      { name: 'lint', command: 'b', args: [], cwd: '.' },
+    ],
+    () => ({ status: 0, output: '' })
+  );
+  assert.equal(result.output, '', 'two gates with empty output must not join into a bare newline');
+});
+
+test('BL-1015: runDeclaredGates reports passed=true, and joins every gate\'s output with a newline, when everything succeeds', () => {
+  const result = runDeclaredGates(
+    '/root',
+    [
+      { name: 'unit', command: 'a', args: [], cwd: '.' },
+      { name: 'lint', command: 'b', args: [], cwd: '.' },
+    ],
+    (cmd) => ({ status: 0, output: `${cmd}-output` })
+  );
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.failed, []);
+  assert.equal(result.output, 'a-output\nb-output', 'each gate\'s output is on its own line, not concatenated bare');
+});
+
+test('BL-1015: DEFAULT_GATE_COMMANDS is the literal npm test in extension, not merely non-empty', () => {
+  assert.deepEqual(DEFAULT_GATE_COMMANDS, [{ name: 'unit', command: 'npm', args: ['test'], cwd: 'extension' }]);
+});
+
+test('BL-1015: defaultGateSpawn runs a real command and concatenates BOTH stdout and stderr, in utf8', () => {
+  const outcome = defaultGateSpawn(
+    process.execPath,
+    ['-e', "process.stdout.write('out-line'); process.stderr.write('err-line');"],
+    '.'
+  );
+  assert.equal(outcome.status, 0);
+  assert.equal(outcome.output, 'out-lineerr-line', 'stdout and stderr must both appear, not one dropped by a falsy-guard');
+  assert.equal(typeof outcome.output, 'string', 'utf8 encoding must decode to a real string, not a Buffer');
 });
 
 // ── the default environment reaches BL-1014's scan, and the CLI is thin ───
@@ -827,6 +1269,101 @@ test('BL-1015: a git ls-files that fails falls back to staging everything, and c
   );
   assert.deepEqual(spawned[1], ['add', '--', 'src/a.ts', 'src/b.ts']);
   assert.deepEqual(spawned[3], ['reset', '--quiet', '--', 'src/a.ts', 'src/b.ts']);
+});
+
+test('BL-1015: ls-files status and error are both independently checked, and neither alone is trusted', () => {
+  // A nonzero status alone (no error object) must still fall back to "stage
+  // everything" - checked against output that would otherwise be misread as
+  // this path being tracked, so the fallback is observable rather than
+  // coincidentally matching the non-fallback parse.
+  const spawnedA = [];
+  commitEdits('/repo', 'm', ['src/a.ts', 'src/b.ts'], (_c, args) => {
+    spawnedA.push(args);
+    if (args[0] === 'ls-files') return { status: 1, output: 'src/a.ts\0' };
+    return { status: 0, output: '' };
+  });
+  assert.deepEqual(spawnedA[1], ['add', '--', 'src/a.ts', 'src/b.ts'], 'a nonzero status alone must still fall back to staging both paths');
+
+  // A ZERO status but a truthy .error must ALSO fall back - the two conditions
+  // are independent, not ANDed.
+  const spawnedB = [];
+  commitEdits('/repo', 'm', ['src/a.ts', 'src/b.ts'], (_c, args) => {
+    spawnedB.push(args);
+    if (args[0] === 'ls-files') return { status: 0, error: new Error('weird'), output: 'src/a.ts\0' };
+    return { status: 0, output: '' };
+  });
+  assert.deepEqual(spawnedB[1], ['add', '--', 'src/a.ts', 'src/b.ts'], 'status 0 with an error object must still fall back to staging both paths');
+});
+
+test('BL-1015: unstage short-circuits on an empty path list rather than spawning a no-op git reset', () => {
+  // Reached when every edited path was already tracked and the commit still
+  // fails - created is [] and unstage must not spawn `git reset --` with an
+  // empty pathspec.
+  const spawned = [];
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/tracked.ts'], (_c, args) => {
+        spawned.push(args);
+        if (args[0] === 'ls-files') return { status: 0, output: 'src/tracked.ts\0' };
+        if (args[0] === 'commit') return { status: 1, output: 'refused' };
+        return { status: 0, output: '' };
+      }),
+    /git commit failed/
+  );
+  assert.ok(!spawned.some((a) => a[0] === 'reset'), 'nothing was staged by this run, so nothing should be reset');
+});
+
+test('BL-1015: a successful unstage leaves NO warning suffix at all - the empty string, not a placeholder', () => {
+  const spawned = [];
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/created.ts'], (_c, args) => {
+        spawned.push(args);
+        if (args[0] === 'ls-files') return { status: 0, output: '' };
+        if (args[0] === 'commit') return { status: 1, output: 'refused' };
+        if (args[0] === 'reset') return { status: 0, output: '' };
+        return { status: 0, output: '' };
+      }),
+    (err) => err.message === 'git commit failed: refused'
+  );
+});
+
+test('BL-1015: a reset that reports status 0 but carries an error object still counts as an unstage failure', () => {
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/created.ts'], (_c, args) => {
+        if (args[0] === 'ls-files') return { status: 0, output: '' };
+        if (args[0] === 'commit') return { status: 1, output: 'refused' };
+        if (args[0] === 'reset') return { status: 0, error: new Error('leftover lock'), output: '' };
+        return { status: 0, output: '' };
+      }),
+    /could not unstage src\/created\.ts/
+  );
+});
+
+test('BL-1015: the WARNING names every left-staged path joined by comma-space, not concatenated bare', () => {
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/a.ts', 'src/b.ts'], (_c, args) => {
+        if (args[0] === 'ls-files') return { status: 0, output: '' };
+        if (args[0] === 'commit') return { status: 1, output: 'refused' };
+        if (args[0] === 'reset') return { status: 1, output: 'reset refused' };
+        return { status: 0, output: '' };
+      }),
+    /could not unstage src\/a\.ts, src\/b\.ts/
+  );
+});
+
+test('BL-1015: a git add failure reports the real output text, not a coalesced empty string', () => {
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['a.ts'], (_c, args) => {
+        if (args[0] === 'ls-files') return { status: 0, output: '' };
+        if (args[0] === 'add') return { status: 1, output: 'nothing to add' };
+        return { status: 0, output: '' };
+      }),
+    (err) => err.message === 'git add failed: nothing to add'
+  );
 });
 
 test('BL-1015: a commit with no paths is refused rather than becoming a whole-tree commit', () => {
