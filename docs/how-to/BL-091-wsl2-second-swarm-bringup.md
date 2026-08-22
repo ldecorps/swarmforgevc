@@ -95,6 +95,17 @@ On a successful launch:
   never conf-declared, in every mode — not only under secondary mode as
   before). Fix the conf and relaunch; nothing partially starts.
 
+**Fleet status publishes under this swarm's own name (BL-1010).** Every
+running swarm — this one included — publishes a heartbeat doc to
+`~/.swarmforge/fleet/<swarm_name>/status.json` on each `handoffd` cycle,
+resolved from `.swarmforge/swarm-identity` (the file the launcher just
+wrote from this pack's `swarm_name second`), never from `swarmforge.conf`
+alone. That heartbeat requires a compiled `extension/out` in this checkout —
+if you haven't run `npm install && npm run compile` in `extension/` yet (see
+`docs/tutorials/GettingStarted.md`), `handoffd`'s fleet-status log line now
+names that exact command instead of a bare node module-not-found, so a
+never-built checkout is diagnosable from the log alone.
+
 BL-215: this headless daemon reads `RESEND_API_KEY` from its own process
 environment (never VS Code SecretStorage, which a headless launch has no
 access to) — export it in the same shell/session before running `./swarm`,
