@@ -172,6 +172,97 @@ contains "18: and promotes nothing" "$RUN9" '"promoted" : [ ]'
 check "18: the parked ticket is still in hold/ after the restart" \
   "$(ls "$R9/backlog/hold/" | tr -d '\n')" "BL-590-fixture.yaml"
 
+# ── BL-1024 (architect send-back): the closing summary survives every ───────
+# PRE-FLIGHT refusal, not only the endings that fall through -main's let chain.
+#
+# park-others! stages real `git mv` moves for every sibling ticket BEFORE three
+# refusals that each terminate the process. Until this fix all three ended with
+# a sibling genuinely parked and staged in the shared master checkout and
+# NOTHING saying so - the 2026-08-21 incident reached by a different trigger,
+# and on the common path: a host with a live swarm refuses teardown unless
+# --override, which is every host this pipeline actually runs on.
+#
+# Every case here PINS the probe. The real probe reads the HOST, not the
+# fixture, so an unpinned case passes or fails depending on whether this
+# machine happens to be running a swarm. (That host-dependence is pre-existing
+# and affects the unpinned cases above; it is not this ticket's to fix, but a
+# new regression gate must not inherit it.)
+echo "BL-1024: the summary survives the pre-flight refusals"
+cat > "$TMPROOT/bl1024-probe-stopped.json" <<'JSON'
+{"tmux-servers-answering":0,"role-agents":0}
+JSON
+cat > "$TMPROOT/bl1024-probe-live.json" <<'JSON'
+{"tmux-servers-answering":1,"handoffd":true,"role-agents":8}
+JSON
+
+# Every refusal below must say the same three things, because a reader on the
+# terminal needs all three: what is held, where, and who picks it up.
+assert_named_the_leavings() {
+  local label="$1" out="$2"
+  contains "$label: the summary reaches the terminal" "$out" "OUTSTANDING"
+  # Assert against the SUMMARY, not the whole run log. `expedite park BL-590 ->
+  # backlog/hold/` already spells both the ticket id and the folder, so the
+  # same two assertions over the whole output pass even when no summary is
+  # printed at all - measured, they did, against the unfixed driver.
+  local summary; summary="$(sed -n '/OUTSTANDING/,$p' <<<"$out")"
+  contains "$label: it names the parked ticket" "$summary" "BL-590"
+  contains "$label: and the folder holding it" "$summary" "backlog/hold/"
+  contains "$label: it names who decides whether the ticket returns" "$summary" "Article 3.1"
+  contains "$label: it names the uncommitted move" "$summary" "backlog/active/ -> backlog/hold/"
+  contains "$label: and who must commit it" "$summary" "whoever next commits in the master checkout"
+}
+
+# (a) stop-stack!: the stop invocation carries a forbidden flag
+RA="$(mkfix ta --active BL-567 --active BL-590)"
+OUTA="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-stopped.json" STOP_CMD="--sweep-inbox" \
+        run "$RA" BL-567 --no-restart)"; EXITA=$?
+check "BL-1024a: a forbidden stop flag still refuses" "$EXITA" "1"
+contains "BL-1024a: naming the refusal" "$OUTA" "REFUSE stop command carries a forbidden flag"
+check "BL-1024a: and the sibling really is parked, so the leavings are real" \
+  "$(ls "$RA/backlog/hold/" | tr -d '\n')" "BL-590-fixture.yaml"
+assert_named_the_leavings "BL-1024a" "$OUTA"
+contains "BL-1024a: a refused run leaves the leavings structured too" \
+  "$(cat "$RA/.swarmforge/expedite/BL-567/run.json" 2>&1)" '"outstanding"'
+contains "BL-1024a: and says it was refused rather than finished" \
+  "$(cat "$RA/.swarmforge/expedite/BL-567/run.json" 2>&1)" '"outcome" : "refused"'
+
+# (b) initiate!: the teardown did not reach a clean slate (the common path)
+RB="$(mkfix tb --active BL-567 --active BL-590)"
+OUTB="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-live.json" run "$RB" BL-567 --no-restart)"; EXITB=$?
+check "BL-1024b: an unstoppable swarm still refuses" "$EXITB" "1"
+contains "BL-1024b: naming the refusal" "$OUTB" "REFUSE teardown did not reach a clean slate"
+check "BL-1024b: and the sibling really is parked, so the leavings are real" \
+  "$(ls "$RB/backlog/hold/" | tr -d '\n')" "BL-590-fixture.yaml"
+assert_named_the_leavings "BL-1024b" "$OUTB"
+
+# (c) ensure-worktree!: `git worktree add` cannot create the run worktree
+RC="$(mkfix tc --active BL-567 --active BL-590)"
+git -C "$RC" branch "expedite/BL-567" main >/dev/null 2>&1
+OUTC="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-stopped.json" run "$RC" BL-567 --no-restart)"; EXITC=$?
+check "BL-1024c: a worktree that cannot be created still refuses" "$EXITC" "1"
+contains "BL-1024c: naming the refusal" "$OUTC" "REFUSE could not create the run worktree"
+check "BL-1024c: and the sibling really is parked, so the leavings are real" \
+  "$(ls "$RC/backlog/hold/" | tr -d '\n')" "BL-590-fixture.yaml"
+assert_named_the_leavings "BL-1024c" "$OUTC"
+
+# (d) honest in the other direction on a refusal too: a run that parked nothing
+#     must not manufacture a handover just because it ended badly.
+RD="$(mkfix td --active BL-567)"
+OUTD="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-live.json" run "$RD" BL-567 --no-restart)"
+contains "BL-1024d: a refused run that parked nothing claims nothing" "$OUTD" "nothing outstanding"
+absent "BL-1024d: and invents no parked ticket" "$OUTD" "BL-590"
+
+# (e) the gate that keeps it closed. This defect existed because a refusal
+#     could terminate the process from inside a helper, three frames below the
+#     code that reports the leavings. One exit point is what makes "every
+#     ending reports" structural rather than a convention a future edit forgets.
+#     Derived from the source, never a hand list of the exits we know about.
+echo "BL-1024: one exit point"
+CLI_EXITS="$(grep -v '^[[:space:]]*;;' "$CLI" | grep -c '(System/exit')"
+check "BL-1024e: expedite_cli.bb terminates the process in exactly one place" "$CLI_EXITS" "1"
+contains "BL-1024e: and that one place is the reporting exit" \
+  "$(sed -n '/defn- exit!/,/^$/p' "$CLI")" "(System/exit"
+
 # ── 15: a stage that overruns its budget is KILLED, not merely reported ────
 echo "15: stage timeout"
 R10="$(mkfix t10 --active BL-567)"
