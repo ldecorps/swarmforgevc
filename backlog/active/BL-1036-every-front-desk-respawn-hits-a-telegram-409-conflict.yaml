@@ -162,3 +162,5 @@ notes: |
   reports degradation), so there is no new wiring to pin - only behaviour to
   change. Naming a pattern for an identifier that does not exist yet is the
   BL-874 failure mode.
+
+assigned_to: coder

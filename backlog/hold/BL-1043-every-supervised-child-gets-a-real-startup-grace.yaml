@@ -235,3 +235,21 @@ notes: |
   the heartbeat situation instead). Collapsing any of them would erase the
   distinction the scenario exists to draw.
 
+  2026-08-22T08:23Z coordinator: mistakenly promoted+routed to coder despite
+  the specifier's own explicit "do NOT run concurrently with BL-1035, same
+  function" note - promote_and_route_next.sh's orthogonality advisory only
+  caught the generic epic-level overlap (swarm-reliability), not this
+  specific same-function conflict. Caught before coder claimed it (handoff
+  still in new/, moved to abandoned/); reverted to paused/,
+  assigned_to reset to none.
+
+  2026-08-22T08:26Z coordinator: re-promoted itself right back (same
+  priority-ordering logic, no memory of the revert) before I could act -
+  caught again before coder claimed it, reverted a second time. Moved to
+  backlog/hold/ this time instead of paused/, since paused/ was proven not
+  sufficient to keep the auto-promoter from re-picking it. Per Article 3.1,
+  hold/ is never auto-promoted from - move it back to paused/ by hand once
+  BL-1035 has closed, or once BL-1043's ticket itself gets a formal
+  depends_on: [BL-1035] so the constraint is machine-checkable instead of
+  advisory-only.
+
