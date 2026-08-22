@@ -128,6 +128,7 @@ notes: |
   possibly attempt", which no enumeration of fixtures can express.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-22, by: architect, blamed: coder, class: behavior, commit: 61131fa34c, evidence: backlog/evidence/BL-1015-a-boy-scout-run-cleans-one-thing-or-says-why-it-cleaned-nothing-bounce-20260822.md }
+  - { at: 2026-08-22, by: QA, blamed: hardender, class: behavior, commit: 91e45bcdbd, evidence: backlog/evidence/BL-1015-a-boy-scout-run-cleans-one-thing-or-says-why-it-cleaned-nothing-bounce2-20260822.md }
