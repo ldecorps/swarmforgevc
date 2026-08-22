@@ -129,6 +129,7 @@ NN-<role>/verdict.json         the stage's verdict, enriched with driver fields
 | `teardown` | object | `{clean?, alive, exit-code-lied?}` |
 | `override-used?` | bool | whether the override was in force |
 | `deferred` | array | bookkeeping deliberately **not** done |
+| `outstanding` | array | BL-1024: what the run left for someone else, each with an owner |
 | `finished-at-ms` | int | completion timestamp |
 
 `deferred` is always populated when applicable, so a next boot sees what was skipped
@@ -237,6 +238,12 @@ mid-run (BL-637).
 | `EXHAUSTED {...:probable-spec-defect...}` | the bounce bound was reached on one repeating class | route to the specifier with the named class; do not re-run the coder |
 | `stage-timeout` | a stage exceeded its budget | the stage and its whole process group were killed; read that stage's `transcript.jsonl` |
 
+All three `REFUSE` rows above fire **after** `park-others!` has already staged
+sibling tickets into `backlog/hold/` (BL-1024) — so each one also prints the
+`OUTSTANDING` block and writes `run.json`'s `outstanding` array before the
+process exits. Read it: a refusal is exactly when a parked ticket is most
+likely to sit forgotten. See [the closing summary](#the-closing-summary-bl-1024).
+
 `--override` covers the liveness refusal **and** the teardown refusal, because both
 express the same decision: run despite a live swarm. Gating only the first would leave
 every overridden run refused at the second.
@@ -265,13 +272,60 @@ JSON to `<verdict-file>`.
 
 ## What it deliberately does not do
 
+Every entry here is a **deferral with an owner**, not a drop. BL-1024: the
+2026-08-21 run ended printing `ticket=done restart=failed`, named none of its
+leavings, and the pipeline idled with an empty `active/` until a human noticed.
+A deferral nobody is told about is a drop.
+
 - **No push.** Publishing local `main` is a human decision on the next boot.
+  *Owner: a human, on the next boot.*
 - **No promotion.** One ticket, one run; it has no queue.
+  *Owner: the coordinator, through ordinary promotion.*
 - **No BL topic record, no briefing hook, no board sync.** Those need front-desk
   machinery it exists to work without. All three appear in `deferred`.
+  *Owner: the next live swarm; they reconcile on their own sweeps.*
 - **No revert on bounce.**
-- **No commit on `main`** outside the QA stage's own merge.
+  *Owner: the role the bounce routed to, in its own worktree.*
+- **No commit on `main`** outside the QA stage's own merge. `move-ticket!` uses
+  `git mv`, so every backlog move ends the run **staged and uncommitted** in
+  the shared master checkout. Until someone commits them, `main` and the
+  working tree disagree about where those tickets live, and any role committing
+  anything else there sweeps them into an unrelated commit.
+  *Owner: whoever next commits in the master checkout — deliberately. Named in
+  the closing summary.*
+- **No re-promotion of what it parked.** Parked tickets stay in `backlog/hold/`,
+  which Article 3.1 makes human-held and forbids the coordinator promoting
+  from; a parked ticket may also be stale against what the run changed.
+  *Owner: a human. Named in the closing summary.*
 - **No role worktree is touched.**
+
+### The closing summary (BL-1024)
+
+Every run ends by printing an `OUTSTANDING` block naming what it left and who
+picks each item up — on **every** ending, including a failed restart, a bounce
+bound exhausted, a stage that overran its timeout, and each of the three
+pre-flight [Refusals](#refusals) (forbidden stop flag, teardown not clean,
+worktree creation failed), all of which fire after `park-others!` has already
+staged real moves. Those three exit through the same single `exit!` call site
+as every other ending, so there is exactly one place in `expedite_cli.bb` that
+terminates the process (`grep -c '(System/exit' expedite_cli.bb` is `1`,
+inside `exit!` alone) and no ending can bypass the summary. A run that parked
+nothing says `no tickets are held` rather than staying silent, and a
+`--dry-run` reports `nothing outstanding` because it changed nothing. The same
+data rides `run.json` as `outstanding`, so it survives the terminal scrolling
+away — which matters most for a refusal, since a refused run never reaches
+`-main`'s own tail.
+
+```
+expedite OUTSTANDING - this run left work for someone else:
+expedite   the parked tickets:
+expedite     BL-586, BL-1012  held in backlog/hold/
+expedite     owner: a human - Article 3.1 makes backlog/hold/ human-held ...
+expedite   the uncommitted backlog moves:
+expedite     backlog/active/ -> backlog/hold/  (BL-586)
+expedite     backlog/active/ -> backlog/done/  (BL-1021)
+expedite     owner: whoever next commits in the master checkout ...
+```
 
 ## Machinery it may never use
 
@@ -305,6 +359,7 @@ schedule, if it runs at all.
 | `bash swarmforge/scripts/test/test_expedite_qa_verdict_store.sh` | BL-1025: the run writes its QA-hat verdict; `--dry-run` writes none |
 | `bash swarmforge/scripts/test/test_is_qa_ancestor_expedite_store.sh` | BL-1025: the shared predicate's reader half, including the fail-closed rows |
 | `bb swarmforge/scripts/test/bl1025_expedite_approval_property_runner.bb` | BL-1025: both declared invariants, exhaustive over all 32 states |
+| `bb swarmforge/scripts/test/bl1024_outstanding_summary_property_runner.bb` | BL-1024: nothing left behind goes unnamed; 400 runs |
 
 `PROPERTY_RUNS` overrides the property run count.
 

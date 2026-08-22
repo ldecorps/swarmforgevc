@@ -469,6 +469,92 @@
    :promoted []
    :note "left in hold/ deliberately; promotion is not the expeditor's call"})
 
+;; ── BL-1024: what the run leaves for someone else ──────────────────────────
+;; The expeditor may not use handoffd, the mailboxes, tmux, or the coordinator
+;; ("machinery it may never use"), so it cannot notify anyone through the
+;; swarm. What it PRINTS is its only channel to the next actor - which is why
+;; a deferral that never reaches the closing summary is not a deferral, it is
+;; a drop.
+;;
+;; Two deliberate deferrals, neither of which had an owner before this:
+;;   - move-ticket! moves with `git mv`, so every backlog move ends the run
+;;     STAGED and uncommitted in the SHARED master checkout. Until someone
+;;     commits them, main and the working tree disagree about where tickets
+;;     live - and any role committing anything else there sweeps them into an
+;;     unrelated commit.
+;;   - parked tickets are left in backlog/hold/, which Article 3.1 makes
+;;     human-held and forbids auto-promoting from. The coordinator may not
+;;     restore them even after noticing active/ is empty.
+;;
+;; On 2026-08-21 the BL-1021 run ended "ticket=done restart=failed", named
+;; neither, and the pipeline idled with an empty active/ until a human was
+;; told.
+;;
+;; Pure, and derived from facts the run already holds (the park plan and
+;; whether the run ticket moved) rather than tracked a second time.
+
+(def hold-folder "backlog/hold/")
+
+(def parked-tickets-owner
+  "a human - Article 3.1 makes backlog/hold/ human-held and forbids the coordinator promoting from it")
+
+(def uncommitted-moves-owner
+  "whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them")
+
+(defn- backlog-moves [ticket parked ticket-moved?]
+  (cond-> (mapv #(str "backlog/active/ -> " hold-folder "  (" % ")") parked)
+    ticket-moved? (conj (str "backlog/active/ -> backlog/done/  (" ticket ")"))))
+
+(defn outstanding-work
+  "Pure: every piece of work this run leaves for someone else, each with an
+   owner. Empty when there is genuinely nothing - a dry run changed nothing,
+   and a run that parked nothing must not manufacture a handover.
+
+   Reported on EVERY ending, including the unhappy ones. A run that bounced
+   past its bound, overran a stage, or failed its restart is exactly when the
+   leavings matter most, and the failed-restart case is the one that bit."
+  [{:keys [ticket parked ticket-moved? dry-run?]}]
+  (if dry-run?
+    []
+    (let [parked (vec (remove nil? parked))
+          moves (backlog-moves ticket parked ticket-moved?)]
+      (cond-> []
+        (seq parked)
+        (conj {:subject "the parked tickets"
+               :tickets parked
+               :folder hold-folder
+               :owner parked-tickets-owner})
+
+        (seq moves)
+        (conj {:subject "the uncommitted backlog moves"
+               :moves (vec moves)
+               :owner uncommitted-moves-owner})))))
+
+(defn format-outstanding-summary
+  "Pure: the closing summary's text. One `expedite ` prefix per line, matching
+   every other line this run prints, so the whole run reads as one voice in a
+   terminal."
+  [{:keys [items parked]}]
+  (let [line (fn [& parts] (str "expedite " (apply str parts)))]
+    (if (empty? items)
+      (str/join "\n" [(line "OUTSTANDING: nothing outstanding - this run left no work for anyone else")])
+      (str/join
+       "\n"
+       (concat
+        [(line "OUTSTANDING - this run left work for someone else:")]
+        (mapcat (fn [{:keys [subject tickets folder moves owner]}]
+                  (concat
+                   [(line "  " subject ":")]
+                   (when (seq tickets) [(line "    " (str/join ", " tickets) "  held in " folder)])
+                   (map #(line "    " %) (or moves []))
+                   [(line "    owner: " owner)]))
+                items)
+        ;; Honest in the other direction too: a run that parked nothing says
+        ;; so out loud rather than leaving the reader to infer it from an
+        ;; absent heading.
+        (when (empty? parked)
+          [(line "  no tickets are held - this run parked nothing")]))))))
+
 ;; ── stage timeouts ─────────────────────────────────────────────────────────
 ;; Scenario 15. By stopping the stack the expeditor kills the babysitter and the
 ;; Operator — the two processes that would otherwise notice it wedging. It has
