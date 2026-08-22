@@ -9,7 +9,8 @@
 ;; bound of 3 with its spec-defect reading.
 
 (ns expedite-lib-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "expedite_lib.bb")))
 
@@ -386,6 +387,85 @@
 (assert-nil "bl1025: a blank commit records nothing either"
             (expedite-lib/qa-hat-verdict-record
              {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "  " :at "2026-08-22T00:12:00Z"}))
+
+;; ── BL-1024: the run names what it leaves for someone else ────────────────
+;; The BL-1021 run of 2026-08-21 ended printing "ticket=done restart=failed"
+;; and nothing else. Three tickets sat unrestored in hold/, four backlog moves
+;; sat STAGED in the shared master checkout, and the pipeline idled with an
+;; empty active/ until a human noticed. Both deferrals are deliberate; neither
+;; had an owner or a mention. A deferral nobody is told about is a drop.
+
+(def bl1024-parked
+  (expedite-lib/outstanding-work
+   {:ticket "BL-1021" :parked ["BL-586" "BL-1012" "BL-1017"] :ticket-moved? true}))
+
+(assert= "bl1024: a run that parked tickets reports exactly two outstanding items"
+         2 (count bl1024-parked))
+
+(assert= "bl1024: the parked tickets are one outstanding subject"
+         "the parked tickets"
+         (:subject (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked))))
+
+(assert= "bl1024: it names the folder they are held in - Article 3.1 forbids promoting from there"
+         "backlog/hold/"
+         (:folder (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked))))
+
+(assert= "bl1024: it names every parked ticket, not a count"
+         ["BL-586" "BL-1012" "BL-1017"]
+         (:tickets (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked))))
+
+(assert-true "bl1024: the parked item names an owner"
+             (seq (:owner (first (filter #(= "the parked tickets" (:subject %)) bl1024-parked)))))
+
+(assert-true "bl1024: the uncommitted backlog moves are the other outstanding subject"
+             (seq (filter #(= "the uncommitted backlog moves" (:subject %)) bl1024-parked)))
+
+(assert-true "bl1024: the moves item names an owner too - two deferrals, two owners"
+             (seq (:owner (first (filter #(= "the uncommitted backlog moves" (:subject %)) bl1024-parked)))))
+
+(assert= "bl1024: the moves are enumerated - three parks plus the run ticket's own move"
+         4
+         (count (:moves (first (filter #(= "the uncommitted backlog moves" (:subject %)) bl1024-parked)))))
+
+;; Honesty, both directions.
+(assert-true "bl1024: a run that parked NOTHING manufactures no parked-tickets item"
+             (empty? (filter #(= "the parked tickets" (:subject %))
+                             (expedite-lib/outstanding-work
+                              {:ticket "BL-1021" :parked [] :ticket-moved? true}))))
+
+(assert= "bl1024: a DRY run has nothing outstanding at all - it changed nothing"
+         []
+         (expedite-lib/outstanding-work
+          {:ticket "BL-1021" :parked ["BL-586"] :ticket-moved? true :dry-run? true}))
+
+(assert= "bl1024: a run that parked nothing AND moved nothing has nothing outstanding"
+         []
+         (expedite-lib/outstanding-work {:ticket "BL-1021" :parked [] :ticket-moved? false}))
+
+;; The rendered summary is the actual channel - the expeditor may not use the
+;; mailboxes, tmux, or the coordinator ("machinery it may never use"), so what
+;; it PRINTS is its only way to reach the next actor.
+(def bl1024-text (expedite-lib/format-outstanding-summary
+                  {:items bl1024-parked :parked ["BL-586" "BL-1012" "BL-1017"]}))
+
+(assert-true "bl1024: the summary names each parked ticket"
+             (every? #(str/includes? bl1024-text %) ["BL-586" "BL-1012" "BL-1017"]))
+(assert-true "bl1024: the summary names the hold folder" (str/includes? bl1024-text "backlog/hold/"))
+(assert-true "bl1024: the summary names an owner for each item"
+             (<= 2 (count (re-seq #"owner:" bl1024-text))))
+(assert-true "bl1024: the summary is labelled OUTSTANDING, so it is skimmable in a terminal"
+             (str/includes? bl1024-text "OUTSTANDING"))
+
+(assert-true "bl1024: a run that parked nothing SAYS so rather than staying silent about it"
+             (str/includes? (expedite-lib/format-outstanding-summary
+                             {:items (expedite-lib/outstanding-work
+                                      {:ticket "BL-1021" :parked [] :ticket-moved? true})
+                              :parked []})
+                            "no tickets are held"))
+
+(assert-true "bl1024: nothing outstanding says exactly that, never an empty heading"
+             (str/includes? (expedite-lib/format-outstanding-summary {:items [] :parked [] :dry-run? true})
+                            "nothing outstanding"))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

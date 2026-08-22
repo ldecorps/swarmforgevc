@@ -112,7 +112,36 @@ NN-<role>/verdict.json
 records, briefing hooks, board sync — so the next boot can see what was skipped
 instead of inferring it.
 
+### Read the OUTSTANDING block before you walk away
+
+The last thing every run prints is what it left for someone else, and who picks
+it up:
+
+```
+expedite OUTSTANDING - this run left work for someone else:
+expedite   the parked tickets:
+expedite     BL-586, BL-1012  held in backlog/hold/
+expedite     owner: a human - Article 3.1 makes backlog/hold/ human-held ...
+expedite   the uncommitted backlog moves:
+expedite     backlog/active/ -> backlog/hold/  (BL-586)
+expedite     owner: whoever next commits in the master checkout ...
+```
+
+**Two things there need you, not the swarm.** The parked tickets sit in
+`backlog/hold/`, which Article 3.1 forbids the coordinator promoting from — so
+if you do not move them back, `active/` can stay empty and the pipeline idles
+(this is what happened on 2026-08-21). And the backlog moves are **staged, not
+committed**, in the shared master checkout: commit them deliberately, or the
+next role to commit anything there sweeps them into an unrelated commit.
+
+It prints on every ending, including a failed restart — which is exactly when
+it matters. `nothing outstanding` means there is genuinely nothing, and a
+`--dry-run` always says that, because it changed nothing.
+
 ## Things it will not do
+
+Each of these is a **handover**, not a drop — the closing summary names the
+owner of the two that leave state behind.
 
 It does not push. Publishing local `main` is your call on the next boot.
 
@@ -120,6 +149,9 @@ It does not promote a next ticket. One ticket, one run.
 
 It does not write a BL topic record or touch the briefing. Those need the front-desk
 machinery it exists to work without.
+
+It does not commit the backlog moves it made, and it does not restore what it
+parked. Both are yours — see the OUTSTANDING block above.
 
 ## When it refuses
 
