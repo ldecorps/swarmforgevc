@@ -17,8 +17,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1067-tmux-reaper-guard-certifies-track-without-the-socket-pointer.feature
-human_approval: pending
-
+human_approval: approved
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1067::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
 
