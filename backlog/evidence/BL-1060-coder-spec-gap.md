@@ -1,8 +1,14 @@
-# BL-1060 — coder pass, 2026-08-22: scenario 05 is unsatisfiable as written
+# BL-1060 — coder pass, 2026-08-22: scenario 05 was unsatisfiable as written
 
-Status: **the code fix is complete and green. One scenario in the feature file
-cannot pass against correct code.** Reported under Article 4.4 (spec gaps leave
-by note, never a parcel bounce) rather than worked around in the handler.
+Status: **RESOLVED.** The specifier amended the feature file at `47397456a`
+("Amend BL-1060 scn05: assert each surface's own buttons, not an impossible
+topic web_app"). After merging main, the feature runs **9 passed, 0 failed**,
+alongside 60 unit tests, 4 property tests, and a fully green default unit lane
+(467 files / 8275 tests). The parcel was then forwarded to the cleaner.
+
+The record below is kept as filed, because the reasoning is what the
+amendment was made from. Reported under Article 4.4 (spec gaps leave by note,
+never a parcel bounce) rather than worked around in the handler.
 
 ## What is green
 
@@ -81,9 +87,34 @@ Spy mini app button, which is the thing the scenario exists to check.
 
 ## What the coder did with the parcel
 
-Held it. The behaviour change, its unit tests, its property tests and its step
-handler are committed. It is NOT forwarded to the cleaner, because the
-acceptance gate is red and forwarding a red gate would push the defect
-downstream. Awaiting the specifier's amendment per BL-317/BL-325 — the
-specifier sends a priority-00 note to whoever holds the parcel, and the
-receiver merges `main` first.
+Held it until the amendment landed. The behaviour change, its unit tests, its
+property tests and its step handler were committed at that point but NOT
+forwarded, because forwarding a red acceptance gate pushes the defect
+downstream.
+
+The amendment arrived exactly as BL-317/BL-325 prescribes — a priority-00 note
+to the holder of the parcel — and the holder merged `main` FIRST. That order
+matters here and is not ceremony: the amended feature file existed only on
+main, so re-running the gate against this worktree's stale copy would have
+re-confirmed the old failure and read as the specifier not having fixed it.
+
+## What the specifier changed
+
+Better than the amendment proposed above. Rather than moving the whole outline
+to `private DM`, the Examples table now pairs each surface with the apps that
+surface actually carries:
+
+```gherkin
+    Examples:
+      | surface    | app          |
+      | topic      | Console      |
+      | private DM | Console      |
+      | private DM | Resident Spy |
+```
+
+That keeps the topic-surface coverage the single-surface fix would have lost,
+and the scenario is renamed to "Every other button each surface carries is
+unaffected", which is what it now asserts. No step-handler change was needed —
+the handler already resolved a mini app by the URL its button opens rather
+than by button text, so both surfaces and both apps were already known
+values.

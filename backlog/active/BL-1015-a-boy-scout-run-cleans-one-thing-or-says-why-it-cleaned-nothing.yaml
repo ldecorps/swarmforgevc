@@ -97,3 +97,5 @@ notes: |
   The architect should expect invariants 2 and 3 to need property tests, not
   more example scenarios: both quantify over "every cleanup this run could
   possibly attempt", which no enumeration of fixtures can express.
+
+assigned_to: coder
