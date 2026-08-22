@@ -86,7 +86,7 @@
 - commit: f6b6aef25e
   subject: "Land Cursor hotfix: babysitter auto-heal for control-plane-missing on WSL."
   detected_at: 2026-08-22
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1071
   human_decision: null
   decided_at: null
@@ -94,6 +94,6 @@
   subject: "Land Cursor hotfix: prefer tmux >=3.7 on WSL to stop control-plane segfaults."
   detected_at: 2026-08-22
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1069
   human_decision: null
   decided_at: null
