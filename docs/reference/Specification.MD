@@ -1,6 +1,48 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1061: two coupled defects in
+**Last Updated:** August 22, 2026 (BL-1058: the entire shell test lane was
+dark on a GNU/Linux host. `swarmforge/scripts/test/lib/tmp_cleanup.sh`
+created its registry with `mktemp -t swarmforge-tmp-cleanup-registry` —
+BSD/macOS syntax, where the operand is a prefix; GNU coreutils reads the
+operand as a TEMPLATE and requires three trailing X's, so the call was a
+hard error (`mktemp: too few X's in template ...`). Every one of the 83
+shell test files that source this helper does so at the top under
+`set -euo pipefail`, so the failed command substitution killed the script
+before a single test body ran — including the helper's own suite, which is
+why nothing caught this until the host moved from macOS to WSL2/Linux on
+2026-08-22. The call is now `mktemp "${TMPDIR:-/tmp}/swarmforge-tmp-cleanup-registry.XXXXXX"`:
+an explicit path template with six X's and no dialect-specific flag,
+accepted identically by both userlands; TMPDIR is still honoured so
+dropping `-t` does not silently relocate anyone's fixtures. A registry that
+still cannot be created now fails loud and by name (naming the tmp-cleanup
+registry and the directory), rather than propagating mktemp's own message
+and leaving `set -u` to surface an unbound-variable error at some later,
+unrelated `register_tmp_dir` call. BL-801's design — the registry as a FILE
+keyed per top-level process, swept by a `while read` EXIT trap that touches
+no array index — is untouched; only the creation call changed. The seam
+that makes either dialect's exclusive syntax catchable on either host going
+forward is a new mktemp shim on PATH modelling exactly one userland at a
+time (`swarmforge/scripts/test/lib/mktemp_dialect_shim.sh`), with one
+implementation and three consumers (the shell suite sources it, the
+acceptance handlers exec it as a CLI, the property test drives it through
+the same CLI) so no lane can end up modelling a userland the others do not.
+Hardener verification, same ticket: `test_tmp_cleanup_lib.sh` 17/17
+(scenarios 07-09 cover init under both dialects, the sweep across every
+dialect × registration-site × ending combination, and the fail-loud path),
+the property test 3/3 against both declared invariants, acceptance 9/9,
+the full standing guard sweep 13/13, BL-113 Gherkin mutation 20/20 killed.
+Non-vacuity was proven by hand-reverting the fix and reproducing the
+original "too few X's" failure verbatim, then restoring it and reconfirming
+green. TOOLING FALLBACK: shell-only, no `.ts`/`src` touched, so
+Stryker/CRAP/DRY do not apply — the shell lane's only gate is its own unit
+suite, and the hardener compensated with the hand-mutation above rather
+than reporting a mutation/CRAP result that was never run. No extension
+command, setting, or UI changed — pure test infrastructure, and the class
+of failure this ticket exists to close (a bare mktemp dialect error at
+source time, silencing every test in the file) is now caught by the
+helper's own suite instead of only discoverable by a host migration.)
+Prior entry —
+BL-1061: two coupled defects in
 `swarmforge/scripts/tunnel_ownership_lib.sh`'s orphan reap, landed together
 because fixing one alone would have been worse than fixing neither. (1) The
 reap had never worked on a GNU/Linux host: candidate enumeration used
