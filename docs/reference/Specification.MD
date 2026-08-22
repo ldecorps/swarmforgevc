@@ -1,6 +1,256 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1066: the panel's mean-ticket-time
+**Last Updated:** August 22, 2026 (BL-1075: found during BL-1069's own
+review (goal 4) and minted as its narrow follow-up rather than folded in.
+The swarm's hardening step set `window-size largest` as a stability
+mitigation on the control-plane server — and named it as one in the ops
+runbook — but tmux(1) is explicit that `resize-window` "will automatically
+set window-size to manual **in the window options**", and a window option
+beats the server global. The extension's `paneTailer.ts` calls
+`resizeWindow` on every role window it tiles, so `largest` was unreachable
+on every window the panel manages, by construction — not a race, not an
+ordering bug, and not fixable by changing which writer runs last. Stopped
+applying and stopped claiming a mitigation that cannot hold, on both call
+paths that set it (`swarmforge/scripts/swarmforge.sh`'s
+`harden_tmux_server`, `swarmforge/scripts/control_plane_lib.bb`'s
+`harden-server!`) — nothing else changes: `focus-events off` is untouched
+and still applied on every path that applied it before, since it is not
+overridden by anything and remains the mitigation that actually holds.
+`docs/how-to/BL-tmux-wsl-segfault-upgrade.md` now names only
+`focus-events off` among the soft mitigations, states plainly that the
+tmux ≥ 3.7 version upgrade is what actually protects the host, and adds a
+sentence on why the window-size line was dropped rather than silently
+disappearing. Severity `medium`, deliberately: the knob was inert and the
+runbook overstated it, but nobody was actually less protected than they
+would be with the knob absent — the tmux ≥ 3.7 preference (BL-1069) is the
+defence that carries the load, landed and live. Explicitly deferred to a
+successor ticket: what the swarm should do when the panel is about to tile
+a control plane running tmux older than 3.7 — where `resize-window` arms
+the exact WINDOW_SIZE_MANUAL segfault trigger per window — needs the
+server-version fact BL-1069 was still building at mint time, so folding it
+in here would have made this slice depend on unlanded sibling work.
+`extension/src/panel/paneTailer.ts` was not modified by this parcel — the
+panel is the thing the swarm-side fix stopped fighting, not itself a party
+to the fix. Degraded gate on the swarm-side half only: shell + Babashka,
+no mutation/CRAP/DRY tooling wired, gated by
+`bl1075_window_size_ownership_property_runner.bb` (which re-measures the
+window-option-beats-global mechanism every run, so a future tmux changing
+that scope rule fails the test rather than silently enforcing a decision
+whose premise had gone) plus the acceptance scenarios. No new extension
+command or setting.)
+Prior entry —
+BL-1029: the family sweep BL-1018 left
+undone. tmux hands a `respawn-pane` command's trailing argument straight to
+`$SHELL -c`, so that argument must itself be valid POSIX shell; five
+remaining repair sites (`remote_control_health_lib.bb`, both
+`handoff_lib.bb` sites, both `handoffd.bb` sites — two of the ticket's
+original seven, in `swarm_ensure.bb`/`babysitter_check.bb`, had already
+been converted by BL-1018 landing on `main` between mint and this pass)
+still built that argument as a bare `(str "zsh '" launch-script "'")`, with
+no escaping, which stops being valid shell the instant the wrapped launch
+path contains an apostrophe — on such a host every one of these repair
+paths would fail to restart the role it was invoked to save. All five now
+route through one new shared constructor,
+`swarmforge/scripts/shell_quote_lib.bb`'s `launch-command` (deliberately a
+command builder, not just the quoting primitive — the `zsh ` prefix and
+the quoting are one decision, and splitting them is how a site ends up
+with the prefix right and the quoting wrong); BL-1018's own private
+`shell-quote-single` in `single_role_repair_lib.bb` is removed, not
+duplicated, and that lib now loads the shared one. The verification shape
+was itself part of the ask: this defect already survived BL-1018's own
+property runner behind a `str/includes?` substring check on the raw path,
+which passes whether the escaping is correct or broken, so every assertion
+that matters here hands the constructed argument to a REAL shell and
+compares what comes back, byte for byte, to what went in — eight path
+shapes (apostrophe, spaces, `$`, backslash, `;&|`, backticks, double
+quotes, an embedded newline) round-tripped, with the pre-fix construction
+kept as a negative control proven to actually fail in a shell. The
+enumeration proving no site quotes a launch path on its own derives its
+site list from the tree (`swarmforge/scripts/*.bb`, excluding the test
+tree) rather than a hand-maintained list, so an eighth site written later
+cannot go unrouted unnoticed — proven non-vacuous by renaming the helper
+and confirming the check catches the unrouted files (which itself
+surfaced and fixed a substring-match bug in the check's own site-detector
+during authoring). Degraded gate: shell + Babashka only, no
+mutation/CRAP/DRY tooling wired; gated by
+`shell_quote_lib_test_runner.bb` and
+`bl1029_respawn_quoting_property_runner.bb` (200 generated paths) plus the
+acceptance scenarios; three Gherkin mutation survivors on this feature
+were confirmed genuine equivalent mutants (BL-234), not a coverage gap.
+No new extension command or setting — swarm-substrate repair tooling
+under `swarmforge/scripts/`.)
+Prior entry —
+BL-991: the operator ruling
+("make required_stages binding so a declared stage cannot be jumped")
+enforced. Before this, `route-required-stages` treated a ticket's declared
+`required_stages` set as a PRUNING list only — membership was permission:
+a coder addressing QA directly on a ticket declaring the full chain was
+delivered straight to QA, jumping cleaner/architect/hardender/documenter.
+BL-951 (2026-08-19, above) made that jump visible with a `routing_skipped`
+record; this ticket is the enforcement half BL-951 deliberately left
+undone. Now, on any forward hop, the router computes `next` — the first
+declared stage strictly after the sender — and whenever the literal `to:`
+is later than `next` in canonical order, the handoff is redirected to
+`next` instead, regardless of whether the literal target is itself a
+declared stage. The same rule closes an easy-to-miss twin on the
+non-member branch: declaring `[coder, cleaner, qa]`, a coder addressing
+`architect` used to rewrite forward to QA (jumping the declared `cleaner`);
+it now redirects to `cleaner`. A redirected hop is not a skip — the stage
+it lands on still runs — so it must never appear in the envelope's
+`routing_skipped=` or a `routing-skips.jsonl` line the way a genuinely
+pruned undeclared stage does; conflating the two would assert a stage was
+bypassed when it is precisely what will still run. Two boundaries were
+deliberately preserved: an UNDECLARED stage is still pruned exactly as
+BL-606 always pruned it (declaring `[coder, qa]` still lets coder address
+QA directly, skipping the undeclared middle stages) — the rule binds only
+what a ticket actually declares, so a docs-only ticket declaring
+`[documenter, qa]` is unaffected; and sender judgement over WHERE a
+bounce-fix should return to is untouched — the operator ruled that out, so
+this adds no default and no coder/QA-prompt routing rule. The rewrite
+REDIRECTS rather than REFUSES: a jump lands on the next declared stage
+instead of erroring the sender back to re-address it, reusing the
+mechanism the non-member branch already had rather than dead-ending a
+committed parcel. Enforcement reaches exactly as far as routing already
+reaches and no further: a backward bounce, a `rejection_reason`/
+`reroute_reason` detour, the `required_stages_routing_enabled` kill switch,
+and an unusable (absent/invalid/not-yet-merged) declaration all behave
+exactly as they did before this ticket. Sibling contract amended in the
+same parcel, not separately: BL-951's own feature file's `full-chain`
+Scenario Outline row (asserting a coder→QA hop skips four stages) became
+false the moment this landed — a genuine acceptance red, not a stale
+assertion — and was removed, with this ticket's own scenario 01 now
+carrying that case in its binding, redirected form. Degraded gate: shell +
+Babashka only, no mutation/CRAP/DRY tooling wired; gated by
+`bl991_binding_stages_property_runner.bb` plus the acceptance scenarios.
+The coder's own reach floors on that runner caught a generator defect in
+its OWN first draft — a per-run reseeded RNG pinned the declaration to
+`no-cleaner` in 40 of 40 runs, leaving the entire non-member branch (the
+second hole this ticket exists to close) untested — fixed by advancing one
+generator across every run instead of reseeding per run; the coder
+separately flagged the identical defect class in BL-1057's own in-flight
+runner by note, which the specifier recorded and the hardener fixed hours
+later on both BL-1057 and, independently, BL-1069's runner during this
+same batch pass — three occurrences of the same class in one day. Updated
+the "Dynamic Routing via Specifier-Declared
+required_stages" section and added a "declared stage is binding" guardrail
+to `swarmforge/handoff-protocol.md`, and cross-referenced the binding rule
+from `docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md` (whose
+own worked examples all use an undeclared-middle-stage shape and remain
+accurate unchanged). No new extension command or setting — swarm-substrate
+handoff-routing tooling under `swarmforge/scripts/`.)
+Prior entry —
+BL-1069: swarm review/stamp-off of an
+operator hotfix already live on `main` (`61c62f579`, landed by hand via
+Cursor the same day) for a WSL control-plane crash loop — Ubuntu's packaged
+tmux 3.4 SIGSEGVs (`resize.c` NULL-window deref, fault at 0x208) whenever
+`WINDOW_SIZE_MANUAL` is set, fixed upstream in tmux >= 3.7 (commit
+`6234d79`) but absent from Ubuntu's 3.4 package; `./swarm ensure` restores
+the agents but the server crashes again within minutes. Three of the
+landed hotfix's five review goals were confirmed real defects and fixed
+narrowly in place, not reimplemented. The most load-bearing: the version
+warning read `tmux -V`, the CLIENT on PATH, while the incident's own
+signature is a client that is already fine (3.7b) in front of a SERVER
+that predates the install (3.4) — so the landed warning was silent in
+exactly the state the crash loop lives in. The judgement now reads `tmux
+-S <socket> display-message -p '#{version}'`, the server the swarm is
+actually talking to, falling back to the client only when no server
+answers. Second: `prefer_local_tmux_bin` prepended `~/.local/bin`
+whenever a tmux existed there with no version comparison at all, so a
+host whose local build was OLDER than the one already on PATH was
+silently downgraded by the function meant to upgrade it — it now compares
+before preferring, on both macOS and Linux, since the prepend fired on
+both. Third: `install_tmux_wsl.sh`'s guard
+`[[ -z "$SRC" || ! -x "$SRC" && ! -f "$SRC" ]]` didn't mean what it read
+as (`&&` binds tighter inside `[[ ]]`, so it reduced to `-z "$SRC"` alone)
+and the installer downloaded an unpinned, unverified, x86_64-only build;
+it now resolves against a table of architectures that actually have a
+published build (refusing by name otherwise) and verifies a sha256 digest
+before installing anything — with `KNOWN_SHA256` deliberately empty (a
+digest is a pin, and pinning is a human commit, never an agent action), a
+caller passes `TMUX_INSTALL_SHA256=<digest>` until a human adds a row. The
+soft-hardening knobs (`focus-events off` on both the shell and Babashka
+paths) were confirmed to never fail an `ensure`/launch/restore even when
+the running tmux rejects them; `window-size largest` was investigated
+(goal 4) and ultimately removed entirely by a same-day follow-up, BL-1075 — it
+contended with the extension's own tiling panel, which
+periodically puts the same server back into `window-size manual` (the
+exact tmux 3.4 crash trigger) on every role-set change. Degraded gate,
+recorded explicitly: the whole diff is shell + Babashka, so no
+mutation/CRAP/DRY tooling applies; the gate is the runners under
+`swarmforge/scripts/test/` plus the acceptance scenarios. Runbook
+`docs/how-to/BL-tmux-wsl-segfault-upgrade.md` (already existed from the
+hand-landed hotfix, updated in place for the digest requirement and the
+`window-size largest` removal) was missing from `docs/index.md` — added.
+No new extension command or setting; this is swarm/ops tooling only.)
+Prior entry —
+BL-1057: a host move (this swarm's own
+Mac → WSL2 move on 2026-08-22) silently leaves host-pinned config behind —
+local editor settings, `$HOME`-rooted credential/registry directories,
+machine-local env files — and nothing in any daemon's restart path ever
+reports it; two real casualties were found only by hand (a stale
+`extension/.vscode/settings.json` target path, and a live Cloudflare Error
+1033 because the Bubble named tunnel was never registered on the new
+host). `bb swarmforge/scripts/host_switchover_doctor.bb [<repo-root>]
+[--json | --inventory]` is the command that would have reported both in
+one run: it walks a declared inventory of host-pinned locations (both
+`.vscode/settings.json` files, the named-tunnel operator-root registry,
+`~/.cloudflared/`'s cert/config/credentials, and
+`.swarmforge/operator/named-tunnel.env`) and gives each exactly one
+verdict — `OK`, `STALE` (quoting the stale value it found), `MISSING`, or
+`BLOCKED` (the check itself could not run — never omitted, never counted
+as OK). Every non-OK finding names both the concrete location and its
+remediation step; the tunnel findings point at the existing named-tunnel
+runbook, since registering it is a deliberate interactive human step the
+doctor deliberately does not perform. The doctor is permanently read-only
+— a durable property, not a slice boundary a future repair capability may
+relax; repair is out of scope and would be a separate command, never a
+`--fix` flag here. Run from any per-role worktree, it resolves through the
+worktree's `.git` file to the forge's own main-checkout root rather than
+reporting that worktree's own paths as false-STALE. `--inventory` prints
+the declared inventory as JSON so the acceptance step handlers build their
+fixture host from the one declared definition rather than a second copy.
+Babashka lane, per this project's Startup Tools fallback: no
+mutation/CRAP/DRY tooling wired there, gated by its own unit + property
+suite instead (60 generated host states against an independent oracle,
+reach asserted per verdict class). New runbook:
+`docs/how-to/BL-1057-host-switchover-doctor.md`, linked from
+`docs/index.md` (`required_wiring`, confirmed present through hardener).)
+Prior entry —
+BL-1015: the acting half of the
+`boy-scout` epic. `node extension/out/tools/boyScoutRun.js [path-to-root]`
+takes BL-1014's scan, reads an already-written cleanup proposal for the
+top-ranked item from `.swarmforge/boy-scout/proposal.json` (whole new file
+content per path, `after: null` to delete — no patch/diff format), and
+either commits it or refuses the whole thing and states why. This run does
+not generate the cleanup itself; it bounds and verifies one someone else
+already wrote, because a generator that invented its own edits would have
+no bound on it at all. The size envelope (3 files, 120 changed lines) is
+derived from BL-634's recorded 65-insertion slice median, not chosen by
+taste — a proposal at or under both limits is eligible, over either one is
+refused whole and never partially applied. Every check that can refuse or
+abandon runs before the first write, in order: nothing ranked; no proposal
+or an empty one; the proposal names the wrong item or trespasses onto a
+different ranked item's files; the diff, applied, changes nothing
+measurable; the envelope is exceeded; an existing test assertion would have
+to change to reach green (invariant 2 — checked verbatim as a multiset
+across every language this repo tests in, so a cleanup can never smuggle in
+a behaviour change wearing a refactor's clothes); the repository's existing
+gate set (`npm test` in `extension/`, the same gate every pipeline role
+already runs — this ticket adds no gate and weakens none) fails on the
+written result, restoring the tree from a pre-write snapshot. A run that
+clears every check commits exactly the paths it edited and nothing else —
+never `git add -A`, which would sweep in unrelated dirt and would commit
+the proposal file itself since it lives under `.swarmforge/` — staging only
+the paths git does not already track and unstaging them again on a failed
+add/commit, so a failure never leaves a partial commit sitting in the
+index. Invariant 3: a run that cleans nothing always states which of the
+six declared reasons applied (`nothing-ranked`, `no-cleanup-proposed`,
+`wrong-item`, `envelope-exceeded`, `assertion-would-change`,
+`gate-failed`) — a quiet no-op is otherwise indistinguishable from a clean
+repository. New reference doc: `docs/reference/BL-1015-boy-scout-run.md`,
+cross-linked from BL-1014's own doc and `docs/index.md`.)
+Prior entry —
+BL-1066: the panel's mean-ticket-time
 metric recomputed on the 2-second stage-poll tick, and one computation
 walked `git log --follow` once per closed ticket — 794 `.yaml` files under
 `backlog/done/` on this host (the lister recurses into milestone

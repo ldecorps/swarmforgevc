@@ -26,6 +26,15 @@ import type { CleanupProposal, FileEdit, RunEnvironment } from './types';
  * A missing or malformed file is "no proposal", never a crash and never a
  * silent success.
  */
+function isWellFormedProposal(candidate: Partial<CleanupProposal>): boolean {
+  return !!candidate && typeof candidate.subject === 'string' && Array.isArray(candidate.edits);
+}
+
+function isWellFormedEdit(edit: unknown): edit is FileEdit {
+  const e = edit as Partial<FileEdit> | null;
+  return !!e && typeof e.path === 'string' && (typeof e.after === 'string' || e.after === null);
+}
+
 export function readProposalFile(root: string, readFile: RunEnvironment['readFile']): CleanupProposal | null {
   const raw = readFile(root, PROPOSAL_PATH);
   if (raw === null) return null;
@@ -36,12 +45,9 @@ export function readProposalFile(root: string, readFile: RunEnvironment['readFil
     return null;
   }
   const candidate = parsed as Partial<CleanupProposal>;
-  if (!candidate || typeof candidate.subject !== 'string' || !Array.isArray(candidate.edits)) return null;
-  const edits = candidate.edits.filter(
-    (edit): edit is FileEdit =>
-      !!edit && typeof edit.path === 'string' && (typeof edit.after === 'string' || edit.after === null)
-  );
-  return { subject: candidate.subject, summary: candidate.summary ?? candidate.subject, edits };
+  if (!isWellFormedProposal(candidate)) return null;
+  const edits = candidate.edits!.filter(isWellFormedEdit);
+  return { subject: candidate.subject!, summary: candidate.summary ?? candidate.subject!, edits };
 }
 
 export const defaultEnvironment: RunEnvironment = {

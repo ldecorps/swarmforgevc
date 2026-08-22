@@ -14,8 +14,8 @@
  * should be smaller than a normal slice, not larger. Roughly twice that median
  * is generous enough for a real refactor and small enough to stay one sitting.
  *
- * Three invariants govern everything below, and the order of the checks in
- * `boyScoutRun` is how two of them are made true by construction:
+ * Three invariants govern the state machine in `./boyScoutRun/run`, and the
+ * order of the checks there is how two of them are made true by construction:
  *
  *   1. BOUNDED AND VERIFIED. At most ONE item, never over the envelope, and
  *      committed only after the repository's existing gate set passes on the
@@ -40,8 +40,8 @@
  * out into `./boyScoutRun/*`, the same policy/IO seam BL-1014's
  * `boyScoutScan.ts` split used (7 modules, 8274108c3d). Two things that split
  * had to preserve, kept here too:
- *   - `boyScoutRun.ts` stays the entry file and keeps importing
- *     `./boyScoutScan` BY NAME. A second, private ranking is the failure this
+ *   - `./boyScoutRun/run` stays the state machine and keeps importing
+ *     `../boyScoutScan` BY NAME. A second, private ranking is the failure this
  *     import exists to prevent, and BL-1015's `required_wiring` entry 1 pins
  *     that import to this path.
  *   - `required_wiring` resolves a LITERAL file path against the sender's
@@ -49,27 +49,26 @@
  *     written. BL-1014 hit exactly that: the fix is a spec-gap `note` to the
  *     specifier re-pointing the entry, not a bounce and not a silent edit.
  * The default `RunEnvironment` (real-disk IO, proposal-file parsing) lives in
- * `./boyScoutRun/environment`, and the CLI wrapper in `./boyScoutRun/cli` —
- * `main` imports `boyScoutRun` from here to keep printing the report of the
- * SAME state machine this file exports, not a second copy of it.
+ * `./boyScoutRun/environment`, the state machine in `./boyScoutRun/run`, and
+ * the CLI wrapper in `./boyScoutRun/cli` — both `main` and this barrel import
+ * `boyScoutRun` from `./boyScoutRun/run` so there is one state machine, not a
+ * second copy of it.
+ *
+ * BL-1015 D2 (architect send-back #1): `run.ts` exists specifically so this
+ * barrel and `./boyScoutRun/cli` do not import each other. `cli.ts` used to
+ * import `boyScoutRun` from this file while this file dynamically
+ * `require()`s `./boyScoutRun/cli` for the block below — dependency-cruiser's
+ * acyclic rule counts a resolved `require()` the same as a static import, so
+ * that pair was a real cycle. Both sides now depend inward on `./run`.
  */
-
-import { normalizeSubject } from './boyScoutScan';
-
-import { assertionsWouldChange } from './boyScoutRun/assertionGuard';
-import { buildCommitMessage } from './boyScoutRun/commit';
-import { defaultEnvironment } from './boyScoutRun/environment';
-import { exceedsEnvelope, measureProposal, normalizeEdits } from './boyScoutRun/measure';
-import { SIZE_ENVELOPE } from './boyScoutRun/types';
-import type { CurrentContent, GateResult, RunEnvironment, RunResult } from './boyScoutRun/types';
 
 export { assertionLines, assertionsWouldChange, isTestPath, TEST_PATH_PATTERNS, ASSERTION_PATTERNS } from './boyScoutRun/assertionGuard';
 export { buildCommitMessage, commitEdits } from './boyScoutRun/commit';
-export { main } from './boyScoutRun/cli';
 export { defaultEnvironment, readProposalFile } from './boyScoutRun/environment';
 export { DEFAULT_GATE_COMMANDS, defaultGateSpawn, runDeclaredGates } from './boyScoutRun/gates';
 export { countChangedLines, exceedsEnvelope, measureProposal, normalizeEdits } from './boyScoutRun/measure';
 export { renderRunReport } from './boyScoutRun/report';
+export { boyScoutRun } from './boyScoutRun/run';
 export {
   NO_CLEAN_REASONS,
   PROPOSAL_PATH,
@@ -91,134 +90,10 @@ export type {
   SpawnOutcome,
 } from './boyScoutRun/types';
 
-function blank(ranked: number): RunResult {
-  return {
-    outcome: 'nothing-to-do',
-    reason: null,
-    subject: null,
-    summary: null,
-    measured: { files: 0, lines: 0 },
-    envelope: { ...SIZE_ENVELOPE },
-    exceeded: [],
-    editedPaths: [],
-    committed: false,
-    gate: null,
-    ranked,
-    detail: null,
-  };
-}
-
-/**
- * The whole run. The ORDER of the checks is load-bearing, not stylistic:
- * everything that can refuse happens before the first write, so a refused or
- * abandoned cleanup leaves the working tree exactly as it found it
- * (invariant 1, "never partially applied").
- */
-export function boyScoutRun(root: string, overrides: Partial<RunEnvironment> = {}): RunResult {
-  const env: RunEnvironment = { ...defaultEnvironment, ...overrides };
-
-  const { ranked } = env.scanRepository(root);
-  if (ranked.length === 0) {
-    return { ...blank(0), reason: 'nothing-ranked' };
-  }
-
-  const top = ranked[0];
-  const base = { ...blank(ranked.length), subject: top.subject };
-  const proposal = env.propose(top, root, env.readFile);
-  if (!proposal || proposal.edits.length === 0) {
-    return { ...base, reason: 'no-cleanup-proposed' };
-  }
-
-  const edits = normalizeEdits(proposal.edits);
-  const withProposal = { ...base, summary: proposal.summary, editedPaths: edits.map((e) => e.path) };
-
-  // Invariant 1, "at most ONE item": the run never touches anything other than
-  // the top-ranked one, and a proposal that names something else is refused
-  // rather than quietly re-pointed at the right item.
-  if (normalizeSubject(proposal.subject) !== normalizeSubject(top.subject)) {
-    return {
-      ...withProposal,
-      outcome: 'refused',
-      reason: 'wrong-item',
-      detail: `the proposal is for ${proposal.subject}, not the top-ranked ${top.subject}`,
-    };
-  }
-  const others = new Set(ranked.slice(1).map((entry) => normalizeSubject(entry.subject)));
-  const trespass = edits.filter((edit) => others.has(normalizeSubject(edit.path)));
-  if (trespass.length > 0) {
-    return {
-      ...withProposal,
-      outcome: 'refused',
-      reason: 'wrong-item',
-      detail: `the proposal would also edit other ranked item(s): ${trespass.map((e) => e.path).join(', ')}`,
-    };
-  }
-
-  const currentOf: CurrentContent = (relPath) => env.readFile(root, relPath);
-  const measured = measureProposal(edits, currentOf);
-  if (measured.files === 0) {
-    // Applying, gating and committing an empty diff would report "cleaned"
-    // for a run that changed nothing — invariant 3's exact ambiguity.
-    return { ...withProposal, reason: 'no-cleanup-proposed', detail: 'the proposal changes nothing' };
-  }
-
-  const exceeded = exceedsEnvelope(measured, SIZE_ENVELOPE);
-  if (exceeded.length > 0) {
-    return {
-      ...withProposal,
-      outcome: 'refused',
-      reason: 'envelope-exceeded',
-      measured,
-      exceeded,
-      detail: `the cleanup would change ${measured.files} file(s) and ${measured.lines} line(s)`,
-    };
-  }
-
-  const offending = assertionsWouldChange(edits, currentOf);
-  if (offending) {
-    return {
-      ...withProposal,
-      outcome: 'abandoned',
-      reason: 'assertion-would-change',
-      measured,
-      detail: offending.path,
-    };
-  }
-
-  // From here on the tree is written to, so every exit restores it first.
-  const snapshot = new Map<string, string | null>(edits.map((edit) => [edit.path, currentOf(edit.path)]));
-  const restore = () => {
-    for (const [relPath, content] of snapshot) env.writeFile(root, relPath, content);
-  };
-
-  let gate: GateResult;
-  try {
-    for (const edit of edits) env.writeFile(root, edit.path, edit.after);
-    gate = env.runGates(root);
-  } catch (err) {
-    restore();
-    throw err;
-  }
-
-  if (!gate.passed) {
-    restore();
-    return { ...withProposal, outcome: 'abandoned', reason: 'gate-failed', measured, gate };
-  }
-
-  const cleaned: RunResult = { ...withProposal, outcome: 'cleaned', reason: null, measured, gate };
-  try {
-    env.commit(root, buildCommitMessage(cleaned), cleaned.editedPaths);
-  } catch (err) {
-    restore();
-    throw err;
-  }
-  return { ...cleaned, committed: true };
-}
-
 // ── CLI ───────────────────────────────────────────────────────────────────
-// `main` lives in `./boyScoutRun/cli` (imported and re-exported above) so
-// this file's own mutation-site count stays about the state machine, not the
-// argv/stdout wrapper around it.
+// `main` lives in `./boyScoutRun/cli` (not re-exported from here - see the
+// file doc comment above for why) so this file's own mutation-site count
+// stays about re-export wiring, not the argv/stdout wrapper.
 
 if (require.main === module) {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
