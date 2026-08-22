@@ -736,19 +736,95 @@ test('BL-1015: the commit stages only the paths this run edited, never the whole
   // the exact shape the house rule against `git add -A` exists to prevent
   // (an approval authorizes only its own ticket's work). Worse, the run's own
   // proposal file lives under .swarmforge/, so `-A` would commit that too.
+  //
+  // The empty `git ls-files` reply below means "git tracks neither path", so
+  // both are ones the cleanup created and both need staging (BL-1015 D1: only
+  // untracked paths are staged at all - see the tracked case in the next
+  // test).
   const spawned = [];
   commitEdits('/repo', 'BL-1015 boy scout: tidy', ['src/a.ts', 'src/b.ts'], (command, args, cwd) => {
     spawned.push({ command, args, cwd });
     return { status: 0, output: '' };
   });
-  assert.deepEqual(spawned.map((s) => s.command), ['git', 'git']);
-  assert.deepEqual(spawned[0].args, ['add', '--', 'src/a.ts', 'src/b.ts']);
-  assert.deepEqual(spawned[1].args, ['commit', '-m', 'BL-1015 boy scout: tidy', '--', 'src/a.ts', 'src/b.ts']);
+  assert.deepEqual(spawned.map((s) => s.command), ['git', 'git', 'git']);
+  assert.deepEqual(spawned[0].args, ['ls-files', '-z', '--', 'src/a.ts', 'src/b.ts']);
+  assert.deepEqual(spawned[1].args, ['add', '--', 'src/a.ts', 'src/b.ts']);
+  assert.deepEqual(spawned[2].args, ['commit', '-m', 'BL-1015 boy scout: tidy', '--', 'src/a.ts', 'src/b.ts']);
   for (const call of spawned) {
     assert.equal(call.cwd, '/repo');
     assert.ok(!call.args.includes('-A'), 'never the whole tree');
     assert.ok(!call.args.includes('.'), 'and never a bare pathspec standing in for it');
   }
+});
+
+test('BL-1015: a path git already tracks is never staged - the partial commit reaches it on its own', () => {
+  // BL-1015 architect send-back #1, D1. `git commit -- <path>` takes its
+  // partial commit through a TEMPORARY index, so a tracked path needs no
+  // staging - and staging it is precisely what left the real index diverged
+  // when the commit then failed.
+  const spawned = [];
+  commitEdits('/repo', 'BL-1015 boy scout: tidy', ['src/a.ts', 'src/b.ts'], (command, args, cwd) => {
+    spawned.push({ command, args, cwd });
+    return args[0] === 'ls-files' ? { status: 0, output: 'src/a.ts\0src/b.ts\0' } : { status: 0, output: '' };
+  });
+  assert.deepEqual(
+    spawned.map((s) => s.args[0]),
+    ['ls-files', 'commit'],
+    'a tracked path was staged anyway'
+  );
+});
+
+test('BL-1015: a failed commit takes back exactly the staging it did, and nothing else', () => {
+  // The undo is scoped to the paths THIS function staged - the ones git did
+  // not already track. Unstaging a tracked path would throw away whatever the
+  // operator had staged there before the run.
+  const spawned = [];
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/tracked.ts', 'src/created.ts'], (command, args, cwd) => {
+        spawned.push({ command, args, cwd });
+        if (args[0] === 'ls-files') return { status: 0, output: 'src/tracked.ts\0' };
+        if (args[0] === 'commit') return { status: 1, output: 'pre-commit hook refused' };
+        return { status: 0, output: '' };
+      }),
+    /git commit failed/
+  );
+  const reset = spawned.filter((s) => s.args[0] === 'reset');
+  assert.equal(reset.length, 1, 'a failed commit left its own staging behind');
+  assert.deepEqual(reset[0].args, ['reset', '--quiet', '--', 'src/created.ts']);
+});
+
+test('BL-1015: an unstage that itself fails is reported alongside the commit failure, never instead of it', () => {
+  // The commit failure is the reason the operator needs; a leaked index entry
+  // is something they also need to know about. Neither may hide the other.
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/created.ts'], (_command, args) => {
+        if (args[0] === 'ls-files') return { status: 0, output: '' };
+        if (args[0] === 'commit') return { status: 1, output: 'pre-commit hook refused' };
+        if (args[0] === 'reset') return { status: 1, output: 'reset refused' };
+        return { status: 0, output: '' };
+      }),
+    /git commit failed.*pre-commit hook refused.*could not unstage src\/created\.ts/s
+  );
+});
+
+test('BL-1015: a git ls-files that fails falls back to staging everything, and can still take it all back', () => {
+  // Unable to tell tracked from created, the safe reading is that every path
+  // may need staging - and then every path is this run's own staging to undo.
+  const spawned = [];
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/a.ts', 'src/b.ts'], (_command, args) => {
+        spawned.push(args);
+        if (args[0] === 'ls-files') return { status: 1, output: 'not a git repository' };
+        if (args[0] === 'commit') return { status: 1, output: 'refused' };
+        return { status: 0, output: '' };
+      }),
+    /git commit failed/
+  );
+  assert.deepEqual(spawned[1], ['add', '--', 'src/a.ts', 'src/b.ts']);
+  assert.deepEqual(spawned[3], ['reset', '--quiet', '--', 'src/a.ts', 'src/b.ts']);
 });
 
 test('BL-1015: a commit with no paths is refused rather than becoming a whole-tree commit', () => {

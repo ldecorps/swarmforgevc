@@ -570,7 +570,6 @@ const DOMAINS = [
   require('./bl1010SecondarySwarmPublishesUnderItsOwnNameSteps'),
   require('./bl1011FreshnessAlarmNamesSwarmAndReasonSteps'),
   require('./bl1014BoyScoutScanRanksDebtSteps'),
-  require('./bl1015BoyScoutRunCleansOneThingSteps'),
   require('./bl1035RespawnedBotGetsItsOwnGraceSteps'),
   require('./bl1036RestartDoesNotCostAConflictWindowSteps'),
   require('./bl1041RescueNeverReducesDurabilitySteps'),
@@ -586,7 +585,8 @@ const DOMAINS = [
   require('./bl1064LogGroundingSourceSteps'),
   require('./bl1061TunnelFixtureIsolationSteps'),
   require('./bl1058PortableMktempSteps'),
-  require('./bl1066MetricsTickSteps')
+  require('./bl1066MetricsTickSteps'),
+  require('./bl1015BoyScoutRunCleansOneThingSteps')
 ];
 
 function registerSteps(registry) {

@@ -58,6 +58,23 @@
 //
 // Each break was applied to src/tools/boyScoutRun.ts, compiled, run against
 // this file, and reverted; none of the five survived.
+//
+// ADDED after the architect's send-back #1 (2026-08-22), which found this
+// generator never made the COMMIT fail: invariant 1's "never partially
+// applied" was reaching the paths that refuse before the first write and the
+// failing-gate path, but never the one path that writes, passes its gates,
+// and then cannot commit. `commitThrows` now generates that arm (~1 in 5
+// cases) with its own reach floor, and the assertion is that the working tree
+// came back. Break proven the same way:
+//
+//   the commit-failure catch rethrows WITHOUT calling restore()
+//       -> inv 1: "a commit that FAILED must leave the working tree exactly
+//          as it was" (run 0, shape trespass)
+//
+// The INDEX half of that same defect cannot be reached from here at all - this
+// harness's `writeFile` is an in-memory Map with no git index behind it - so it
+// is covered fixture-level, against a real temp repository with a real refusing
+// pre-commit hook, in boyScoutRunCommitIndex.test.js.
 
 const assert = require('node:assert/strict');
 
@@ -208,6 +225,12 @@ function runCase(rng) {
   const ranked = SUBJECTS.slice(0, rankedCount).map((s, i) => debtItem(s, 3 - i));
   const shape = SHAPES[rng(SHAPES.length)];
   const gatePasses = rng(4) !== 0;
+  // BL-1015 architect send-back #1: this generator never made the COMMIT
+  // fail, so invariant 1's "never partially applied" was only ever exercised
+  // on the paths that refuse BEFORE the first write, or on a failing gate -
+  // never on the one path that writes, passes, and then cannot commit. A
+  // pre-commit hook refusing is the ticket's own named example.
+  const commitThrows = rng(5) === 0;
 
   const calls = { proposedFor: [], gateRuns: 0, commits: 0, order: [] };
   const env = {
@@ -231,11 +254,18 @@ function runCase(rng) {
     commit: () => {
       calls.commits += 1;
       calls.order.push('commit');
+      if (commitThrows) throw new Error('git commit failed: pre-commit hook refused');
     },
   };
 
-  const result = boyScoutRun('/root', env);
-  return { result, tree, before, ranked, calls, shape, gatePasses };
+  let result = null;
+  let thrown = null;
+  try {
+    result = boyScoutRun('/root', env);
+  } catch (err) {
+    thrown = err;
+  }
+  return { result, thrown, tree, before, ranked, calls, shape, gatePasses, commitThrows };
 }
 
 function multisetCounts(list) {
@@ -259,8 +289,23 @@ test('BL-1015 invariants 1-3 hold over every cleanup the run could attempt', () 
 
   for (let runIndex = 0; runIndex < RUNS; runIndex++) {
     const rng = makeRng(runIndex * 7919 + 13);
-    const { result, tree, before, ranked, calls, shape, gatePasses } = runCase(rng);
+    const { result, thrown, tree, before, ranked, calls, shape, gatePasses, commitThrows } = runCase(rng);
     const where = `run ${runIndex} (shape ${shape}, gate ${gatePasses ? 'passes' : 'fails'})`;
+
+    // ── invariant 1 on the one path that writes and then cannot commit ────
+    if (thrown) {
+      bump('commit-threw');
+      assert.equal(commitThrows, true,
+        `${where}: the run threw for something other than the injected commit failure: ${thrown.message}`);
+      assert.match(thrown.message, /git commit failed/,
+        `${where}: the commit failure must reach the caller, not be swallowed into a success`);
+      assert.equal(calls.commits, 1, `${where}: at most one commit attempt per run`);
+      assert.ok(treesEqual(tree, before),
+        `${where}: a commit that FAILED must leave the working tree exactly as it was - ` +
+        'neither as-it-was-plus-the-edits nor committed');
+      seededAssertions += assertionLines(before.get(TEST_FILE)).length;
+      continue;
+    }
 
     bump(`outcome:${result.outcome}`);
     bump(`reason:${result.reason}`);
@@ -338,6 +383,7 @@ test('BL-1015 invariants 1-3 hold over every cleanup the run could attempt', () 
   floor('outcome:nothing-to-do', 20);
   for (const reason of NO_CLEAN_REASONS) floor(`reason:${reason}`, 5);
   floor('at-the-limit', 3);
+  floor('commit-threw', 5);
   assert.ok(seededAssertions >= RUNS,
     'every generated case must seed at least one real assertion, or invariant 2 is vacuous');
 });
