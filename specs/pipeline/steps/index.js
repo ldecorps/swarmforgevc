@@ -594,7 +594,8 @@ const DOMAINS = [
   require('./bl1075WindowSizeOwnershipSteps'),
   require('./bl713CursorSeatDriverSteps'),
   require('./bl1050CursorRunFailureLogSteps'),
-  require('./bl777BargeInDetectorSteps')
+  require('./bl777BargeInDetectorSteps'),
+  require('./bl844HandsFreeSessionSteps')
 ];
 
 function registerSteps(registry) {
