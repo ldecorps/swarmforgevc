@@ -54,6 +54,14 @@
 ;;   FRONT_DESK_HEALTHY_RESET_MS   continuous-uptime attempt reset (default 600000)
 ;;   FRONT_DESK_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
 ;;   FRONT_DESK_STALL_MS           bot poll-heartbeat staleness window (default 90000)
+;;   FRONT_DESK_BUILD_GRACE_MS     BL-582: how long a HEALTHY child may keep
+;;                                 serving a build that no longer matches
+;;                                 main before it is restarted onto a fresh
+;;                                 one (default 300000). Freshness used to
+;;                                 be checked only on a crash respawn, so a
+;;                                 healthy bot served a stale build for
+;;                                 2h23m on 2026-07-23 and every approval
+;;                                 tap in that window silently did nothing.
 ;;   FRONT_DESK_ESCALATION_MAX_ATTEMPTS bounded retry cap on the give-up
 ;;                                 escalation email (default 5)
 ;;   FRONT_DESK_ESCALATION_BACKOFF_BASE_MS / FRONT_DESK_ESCALATION_BACKOFF_MAX_MS
@@ -129,7 +137,15 @@
    ;; proven it is not in a crash loop, so its attempt count resets to 0 -
    ;; the cap counts CONSECUTIVE rapid crashes, not lifetime-accumulated
    ;; ones. Default 10 minutes.
-   :healthy-reset-ms (env-long "FRONT_DESK_HEALTHY_RESET_MS" 600000)})
+   :healthy-reset-ms (env-long "FRONT_DESK_HEALTHY_RESET_MS" 600000)
+   ;; BL-582: how long a running child may serve a build that no longer
+   ;; matches main before it is restarted onto a fresh one. The 2026-07-23
+   ;; window ran 2h23m stale because freshness was only ever checked on a
+   ;; CRASH respawn and a healthy process never crashed. Five minutes is
+   ;; long enough that a merge landing mid-conversation does not yank the
+   ;; front desk away, short enough that the next tap is served by current
+   ;; code. Default 5 minutes.
+   :build-grace-ms (env-long "FRONT_DESK_BUILD_GRACE_MS" 300000)})
 ;; BL-303: "gave-up" is a TIMED state, not terminal - once this (longer)
 ;; cooldown elapses the child re-arms with a fresh attempt budget. Default
 ;; 15 minutes - long enough to stay a bounded-RATE retry (never a tight
@@ -396,13 +412,25 @@
                                  "BRIDGE_CONTROL_TOKEN" (System/getenv "BRIDGE_TOKEN")}}
                     "node" (str bot-entrypoint) (str "http://127.0.0.1:" bridge-port) project-root))
 
+;; BL-582: the RUNNING child's own build identity - :build_sha, stamped at
+;; the moment it was spawned (stamp-build-sha below) - compared against
+;; main. Never extension/out/BUILD_SHA, which reports whatever is on disk
+;; NOW: after someone else recompiles, that reads fresh while the child
+;; still holds the old code in memory, which is exactly the state that
+;; served the failed taps for 2h23m on 2026-07-23. A child with no stamp
+;; yet (pre-BL-328 status file) reads as not-stale, never as a restart.
+(defn- child-build-stale? [entry]
+  (front-desk-supervisor-lib/build-stale? (:build_sha entry) (main-sha!)))
+
 (def process-specs
-  [{:key :bridge :spawn-pid! (fn [] (maybe-adopt-or-spawn-bridge!)) :heartbeat-stale? (fn [_ _] false)}
+  [{:key :bridge :spawn-pid! (fn [] (maybe-adopt-or-spawn-bridge!)) :heartbeat-stale? (fn [_ _] false)
+    :build-stale? child-build-stale?}
    {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))
     :heartbeat-stale? (fn [now entry]
                         (front-desk-supervisor-lib/poll-heartbeat-stale?
                           (read-poll-heartbeat-ms) now stall-ms
-                          (:started-at-ms entry) heartbeat-startup-grace-ms))}])
+                          (:started-at-ms entry) heartbeat-startup-grace-ms))
+    :build-stale? child-build-stale?}])
 
 ;; ── persisted state (JSON: {"bridge": {...}, "bot": {...}}) ───────────────
 
@@ -428,6 +456,15 @@
     ;; apart even though they recover through the identical mechanism.
     :stalled (log! "stalled" (name spec-key) "no poll heartbeat within" (str stall-ms) "ms")
     :healthy-reset (log! "healthy-reset" (name spec-key))
+    ;; BL-582: the grace has STARTED, nothing has been restarted yet -
+    ;; logged so a human reading the log can see the countdown begin, and
+    ;; so a restart that follows is never a surprise.
+    :build-stale-detected (log! "build-stale-detected" (name spec-key) "build_sha=" (str (:build_sha entry))
+                                "grace-ms=" (str (:build-grace-ms restart-config)))
+    ;; Distinct from :crashed and :stalled - the pid never died and the
+    ;; heartbeat was fine; the code it was running was out of date. Same
+    ;; recovery mechanism, deliberately different report.
+    :build-stale (log! "build-stale" (name spec-key) "restarting a HEALTHY process onto a fresh build")
     :gave-up (log! "gave-up" (name spec-key) "after" (str (:attempts entry)) "attempt(s)")
     :re-armed (log! "re-armed" (name spec-key) "pid=" (str (:pid entry)))
     nil))
@@ -538,7 +575,8 @@
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
                                        heartbeat-stale? ((:heartbeat-stale? spec) now entry)
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
-                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!)
+                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!
+                                                               ((:build-stale? spec) entry))
                                        entry (stamp-build-sha entry event)]
                                    (log-event! (:key spec) event entry)
                                    [(:key spec) entry])))

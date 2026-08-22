@@ -435,6 +435,106 @@
            {:pid 444 :cmdline "python3 -m http.server 8765"}]
           onb-root (onb-parent-orphaned-set [111 333 444])))
 
+;; ── BL-582 scenario 06: a healthy bot on a stale build ──────────────────
+;; The 2026-07-23 window ran 12:23 -> 14:46 on an outdated build because the
+;; supervisor only ever checked freshness on a CRASH respawn. A healthy
+;; process never crashed, so it never got checked, so it served the stale
+;; build for two hours and twenty minutes. Freshness is now checked on the
+;; healthy tick too - after a grace period, so a merge landing mid-poll does
+;; not restart the front desk out from under a human mid-conversation.
+
+(def build-cfg (assoc healthy-cfg :build-grace-ms 300000))
+
+(assert= "bl582: a build sha matching main is not stale"
+         false
+         (front-desk-supervisor-lib/build-stale? "abc123" "abc123"))
+
+(assert= "bl582: a build sha differing from main is stale"
+         true
+         (front-desk-supervisor-lib/build-stale? "abc123" "def456"))
+
+(assert= "bl582: an unresolvable running sha never FABRICATES staleness"
+         false
+         (front-desk-supervisor-lib/build-stale? nil "def456"))
+
+(assert= "bl582: an unresolvable main sha never fabricates staleness either"
+         false
+         (front-desk-supervisor-lib/build-stale? "abc123" nil))
+
+;; running + build stale + first observation -> grace starts, NO restart
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 10000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: the first stale observation stays running" "running" (:status entry))
+  (assert= "bl582: the first stale observation stamps when the grace started" 10000 (:build-stale-since-ms entry))
+  (assert= "bl582: the first stale observation is reported, not silent" :build-stale-detected event))
+
+;; running + build stale + WITHIN grace -> unchanged, no restart
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 100000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: still inside the grace window, still running" "running" (:status entry))
+  (assert= "bl582: the grace start is not re-stamped on every tick" 10000 (:build-stale-since-ms entry))
+  (assert= "bl582: no event while the grace has not elapsed" nil event))
+
+;; running + build stale + grace ELAPSED -> restarted, no crash required
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 311000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: past the grace, the healthy process is moved to restart" "stale-build" (:status entry))
+  (assert= "bl582: the restart is reported under its own event, distinct from a crash" :build-stale event)
+  (assert= "bl582: the restart clock starts now, feeding the shared backoff clause" 311000 (:crashed-at-ms entry)))
+
+;; the stale-build status restarts through the SAME bounded-backoff clause
+(let [stale-entry {:pid 4242 :attempts 1 :status "stale-build" :crashed-at-ms 311000 :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              stale-entry 999999 alive? fixed-pid! build-cfg giveup-cfg)]
+  (assert= "bl582: a stale-build entry respawns exactly like a crashed one" "running" (:status entry))
+  (assert= "bl582: the respawn emits :started" :started event)
+  (assert= "bl582: the respawned entry's stale-grace stamp is cleared" nil (:build-stale-since-ms entry)))
+
+;; a build that goes fresh again before the grace elapses forgets the grace
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 100000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) false)]
+  (assert= "bl582: a build that became fresh again clears the grace stamp" nil (:build-stale-since-ms entry))
+  (assert= "bl582: clearing the grace is not itself an event" nil event))
+
+;; a crash still wins over build staleness - never a stale-build report for a dead pid
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 10000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 999999 dead? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "bl582: a dead pid is still reported as crashed, never as a stale build" :crashed event))
+
+;; every pre-BL-582 caller keeps its exact behaviour (build-stale? defaults false)
+(let [running-entry {:pid 4242 :attempts 0 :status "running" :crashed-at-ms nil :started-at-ms 1000 :gave-up-at-ms nil}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 999999 alive? fixed-pid! build-cfg giveup-cfg)]
+  (assert= "bl582: an 8-arity caller never sees a stale-build transition" "running" (:status entry))
+  (assert= "bl582: an 8-arity caller sees no build event" nil event))
+
+;; healthy-reset wins over an equally-eligible build-stale restart - same
+;; "two conditions eligible at once, cond order must not swap" shape as the
+;; BL-370 heartbeat-stale?/healthy-long-enough? test above, one clause over.
+;; check-one! tests build-freshness LAST specifically so a healthy-reset
+;; (bookkeeping, fires at most once per process) is never starved by a
+;; stale-build report on the same tick; the deferred report catches up next
+;; tick since the grace is measured in minutes. Without this test, a cond-
+;; order swap promoting the freshness clause ahead of healthy-reset would
+;; pass every other bl582/BL-370 assertion above undetected.
+(let [running-entry {:pid 4242 :attempts 1 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 100000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 650000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "healthy-reset-vs-build-stale: healthy-reset wins, status stays running" "running" (:status entry))
+  (assert= "healthy-reset-vs-build-stale: attempts is reset to 0, not left untouched by a stale-build branch" 0 (:attempts entry))
+  (assert= "healthy-reset-vs-build-stale: the grace stamp is untouched - the freshness clause never ran this tick" 100000 (:build-stale-since-ms entry))
+  (assert= "healthy-reset-vs-build-stale emits :healthy-reset, never :build-stale" :healthy-reset event))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
