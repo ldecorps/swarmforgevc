@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1038-unit-tests-pin-the-repo-they-derive-from.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "No unit-lane test's cost is a function of the live repository's size or history depth: a test that needs repository history or maintained sources reads a pinned fixture whose contents do not change as the repo grows."
