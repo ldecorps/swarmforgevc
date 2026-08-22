@@ -71,6 +71,22 @@ function requireKnownParcelState(token) {
   return state;
 }
 
+// Hardening (BL-1048): the Background creates ctx.root, but a Given step
+// below can throw while VALIDATING an Examples value (requireKnownParcelState
+// on an unrecognized <parcel state> token, or the later-role bound check)
+// before the When step's own try/finally ever runs - the same cross-step
+// leak shape documented against bl931RotatePackGateSteps.js. Confirmed
+// leaking a real fixture dir into $TMPDIR on a mutated <parcel state> token
+// during this ticket's own hardening pass. A try/finally local to the
+// throwing step cannot save it either: the dir was created by a DIFFERENT
+// (earlier) step. Every throw that can fire before the When step's cleanup
+// must release the fixture itself.
+function cleanupFixture(ctx) {
+  if (ctx.root) {
+    fs.rmSync(ctx.root, { recursive: true, force: true });
+  }
+}
+
 function mailboxDir(root, role, state) {
   const segments = state === 'new' ? ['inbox', 'new'] : ['inbox', 'in_process'];
   return MASTER_RESIDENT.has(role)
@@ -138,7 +154,13 @@ function registerSteps(registry) {
   // Scenario Outline -01, and scenarios -03/-05's own literal Given lines
   // (which are this same step text with the token spelled out).
   scoped(/^a ticket's parcel is (.+) at a role$/, (ctx, parcelStateToken) => {
-    const state = requireKnownParcelState(parcelStateToken);
+    let state;
+    try {
+      state = requireKnownParcelState(parcelStateToken);
+    } catch (err) {
+      cleanupFixture(ctx);
+      throw err;
+    }
     markActive(ctx, ctx.ticketId);
     writeGitHandoff(ctx, ctx.role, state, ctx.ticketId);
   });
@@ -156,7 +178,10 @@ function registerSteps(registry) {
   scoped(/^that ticket's parcel is delivered but unopened at a later role$/, (ctx) => {
     const order = ROLES.map(([role]) => role);
     const laterIndex = order.indexOf(ctx.role) + 1;
-    assert.ok(laterIndex > 0 && laterIndex < order.length, `no role later than ${ctx.role} in roles.tsv order`);
+    if (!(laterIndex > 0 && laterIndex < order.length)) {
+      cleanupFixture(ctx);
+      throw new Error(`no role later than ${ctx.role} in roles.tsv order`);
+    }
     ctx.laterRole = order[laterIndex];
     writeGitHandoff(ctx, ctx.laterRole, 'new', ctx.ticketId);
   });
@@ -186,7 +211,7 @@ function registerSteps(registry) {
       // The board is fully computed in memory by here, so every Then below
       // reads ctx.board, never the fixture - remove it in a finally rather
       // than after the last assertion, so a bounce or throw cannot leak it.
-      fs.rmSync(ctx.root, { recursive: true, force: true });
+      cleanupFixture(ctx);
     }
   });
 
