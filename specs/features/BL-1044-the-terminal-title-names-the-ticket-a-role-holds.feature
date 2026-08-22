@@ -14,11 +14,11 @@ Feature: The terminal title names the ticket its own pane holds
   with its own - the board's one-column-per-stage view is a different
   question with the opposite answer.
 
-  An idle pane shows the last ticket that PASSED THROUGH it - the last one it
-  handled as a parcel, not the last one that got closed and not the last one
-  it merely saw named. A role's completed mailbox holds notes as well as
-  parcels, and those notes name tickets, so "the newest completed item" gives
-  a confident wrong answer.
+  An idle pane shows the last ticket THAT PANE ACTED ON - whatever kind of
+  item it was, because reaching a pane's completed mailbox means the pane
+  worked it. What is excluded is a ticket the pane never handled: an
+  abandoned parcel, or an id merely named somewhere else. The purpose is a
+  human glancing across windows to see who is doing what.
 
   Background:
     Given a seat running in its own tmux window, with its own mailbox
@@ -37,31 +37,46 @@ Feature: The terminal title names the ticket its own pane holds
       | BL-9-x                                              | 9 with a slug      |
 
   # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-02
-  Scenario: an idle seat shows the last ticket that passed through it
+  Scenario: an idle seat shows the last ticket it acted on
     Given the seat holds no parcel
-    And the seat has handled a parcel before
+    And the seat has acted on a ticket before
     When the window title is composed
-    Then it names the last ticket that passed through the seat
+    Then it names the last ticket the seat acted on
     And the ticket is shown in the not-held form, not the held form
 
   # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-03
-  Scenario: a note naming a ticket is not a ticket that passed through
+  Scenario: the most recent item the seat acted on wins, whatever kind it was
     Given the seat holds no parcel
-    And the seat has handled a parcel before
-    And the seat has since handled a note that names a different ticket
+    And the seat handled a parcel for one ticket
+    And the seat has since handled a note about a different ticket
     When the window title is composed
-    Then it names the last ticket that passed through the seat
-    And it does not name the ticket the note mentioned
+    Then it names the ticket the note was about
 
   # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-04
-  Scenario: a seat that has never handled a parcel names no ticket
+  Scenario: a ticket the seat never acted on is never named
     Given the seat holds no parcel
-    And the seat has never handled a parcel
+    And the seat handled a parcel for one ticket
+    And a different ticket was abandoned without the seat acting on it
+    When the window title is composed
+    Then it names the last ticket the seat acted on
+    And it does not name the abandoned ticket
+
+  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-05
+  Scenario: a seat that has never acted on a ticket names none
+    Given the seat holds no parcel
+    And the seat has never acted on a ticket
     When the window title is composed
     Then it names the seat
     And it names no ticket
 
-  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-05
+  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-06
+  Scenario: a seat holding several parcels names one and counts the rest
+    Given the seat holds parcels for more than one ticket
+    When the window title is composed
+    Then it names one of those tickets
+    And it says how many further tickets the seat holds
+
+  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-07
   Scenario: two seats of one stage title themselves with their own tickets
     Given a second seat of the same stage running in its own tmux window
     And each seat holds a parcel for a different ticket
@@ -69,13 +84,13 @@ Feature: The terminal title names the ticket its own pane holds
     Then each window names the ticket its own seat holds
     And neither names the ticket the other seat holds
 
-  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-06
+  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-08
   Scenario: the composed title reaches the terminal's own title bar
     Given the seat holds a parcel
     When the window title is composed
     Then the terminal running that window reports the same title
 
-  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-07
+  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-09
   Scenario: the agent's own pane title is left alone
     Given the seat holds a parcel
     And the agent inside the pane rewrites its pane title

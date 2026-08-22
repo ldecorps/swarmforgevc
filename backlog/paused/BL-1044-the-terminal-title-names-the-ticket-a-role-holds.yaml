@@ -16,7 +16,7 @@ human_approval: pending
 
 invariants:
   - "The window name is SwarmForge's slot alone: nothing running inside the pane can change it, and the title updater never writes the pane title the agent already owns."
-  - "A title is never stale-but-plausible: a role holding nothing shows the last ticket that actually PASSED THROUGH it as a parcel, in a visibly not-held form - never the held form, and never a ticket it merely saw named in a note."
+  - "A title is never stale-but-plausible: a pane holding nothing shows the last ticket that pane itself took an action on - something that reached its OWN completed mailbox - in a visibly not-held form, never the held form and never a ticket it only saw named elsewhere."
 
 description: |
   ## What
@@ -31,51 +31,29 @@ description: |
   ticket that passed through it, in a form that reads as past rather than
   current.
 
-  ## What "passed through" means, precisely
+  ## What counts as "a ticket this pane is on"
 
-  Operator clarification 2026-08-22: *"by cleared I mean the last ticket you
-  saw going through you"* - the last ticket this role actually HANDLED as a
-  parcel. Not "the last ticket that got closed", and not "the last ticket
-  whose id this role happened to see".
+  Operator clarifications 2026-08-22, in order: *"by cleaed I mean the last
+  ticket you saw going through you"*, *"through the given pane"*, and *"I mean
+  the last ticket the pane took some action on. This is to help human get a
+  feel of who is doing what."*
 
-  That distinction has teeth, because a role's `inbox/completed/` holds both
-  parcels and notes. The architect's, newest first, right now:
+  So the test is **did THIS PANE act on it**, and the purpose is a human
+  glancing across windows. Concretely:
 
-      note         message: BL-1014 wiring path fixed on main ...
-      note         message: BL-1010 QA-approved 910427ccb8 - merge your ...
-      git_handoff  task:    BL-1035-a-respawned-bot-gets-its-own-startup-grace
-      git_handoff  task:    BL-1014-the-boy-scout-scan-ranks-debt-by-what-...
+  - **Holding** - the parcels in that pane's own `in_process/`.
+  - **Idle** - the newest item in that pane's own `completed/`. Reaching
+    `completed/` means the pane worked it, so a `note` counts as much as a
+    `git_handoff`: acting on "BL-1022 QA-approved - merge your branch up" IS
+    what that pane last did, and it is what a human wants to see.
+  - **Never** - `inbox/abandoned/` (the pane did not act on it), and any
+    ticket merely named somewhere the pane never handled.
 
-  The newest FILE is a note, and the two newest notes both name tickets. A
-  title built from "the newest completed file" would show BL-1014 or BL-1010;
-  the last ticket that actually went through the architect is **BL-1035**.
-  Both wrong answers are plausible-looking, which is the whole hazard.
-
-  So: the newest `git_handoff` in `inbox/completed/`, read from its `task:`
-  header. Notes are skipped even when they name a ticket. `inbox/abandoned/`
-  is skipped too - an abandoned parcel did not pass through (these exist:
-  coder 3, architect 1, documenter 1).
-
-  ## Where it goes, and why not the obvious place
-
-  Not the pane title. The screenshot's `"* Handoff mail ready "`,
-  `"Role loop initializ"` and friends are **Claude Code's own** OSC title
-  updates, captured by tmux as `pane_title`. Anything written there is
-  overwritten on the agent's next turn, and writing over it would also
-  destroy a signal the operator is already reading.
-
-  The **tmux window name** is the free slot, and it is already SwarmForge's:
-  `swarmforge.sh:1047` renames the window and then sets
-  `allow-rename off`, so no in-pane escape can touch it. That is why the
-  window name stays `Coordinator` while the pane title churns.
-
-  ## Reaching the OS title bar, on every OS, with no per-OS code
-
-  tmux's own `set-titles on` + `set-titles-string` emits the standard OSC
-  title sequence to the OUTER terminal. macOS Terminal, iTerm2,
-  gnome-terminal, konsole, xterm and VS Code's terminal all honour it, so
-  "and other OSes" needs no branch: it is a terminal-level convention, not
-  an OS-level API. Nothing Windows-specific is written or needed.
+  An earlier draft of this ticket restricted the idle case to `git_handoff`
+  only, on the reasoning that a note "merely names" a ticket. That was wrong
+  and is corrected here: an item in `completed/` was handled, not merely
+  seen. The distinction that actually matters is handled-versus-not, and
+  `completed/` already draws it.
 
   ## Where the data is - the PANE's own mailbox, not the board
 
@@ -105,10 +83,31 @@ description: |
   theirs at `.swarmforge/handoffs/<role>/inbox/`, and that difference has
   caught people before.
 
-  The held ticket is that pane's own `in_process/` parcel; the last one
-  through is the newest `git_handoff` in that pane's own `completed/`, per
-  the definition above. The slug is in the handoff's `task:` header - e.g.
-  `task: BL-1035-a-respawned-bot-gets-its-own-startup-grace`.
+  ## Reuse the extension tiles' own derivation - do not write a second one
+
+  The operator's pointer: *"See the extension tiles logic (it evens has
+  colour coding, which we don't need here)."* That logic is
+  `extension/src/panel/badgeSummary.ts`, reached from `swarmPanel.ts:296`'s
+  `getTicketBadge`. It already produces, per tile, exactly this ticket's
+  payload:
+
+  - `buildBadgeMap(items, targetPath)` -> role -> `{ id, summary,
+    extraCount?, heldTicketIds }`, resolving the holder through
+    `swarmState.findLiveHolder`.
+  - `truncateSummary(title)` - **the small slug is already written**: strips
+    a leading `... — ` section prefix and truncates at
+    `SUMMARY_MAX_LENGTH = 40` with an ellipsis.
+  - `extraCount` (BL-068) - set when a tile's role holds MORE THAN ONE active
+    parcel, which is normal for the batch roles (cleaner, hardender). A
+    title that assumed one ticket per pane would silently drop the rest, the
+    exact regression BL-068 fixed in the tiles.
+
+  Take the derivation and the slug from there. The one thing that does not
+  transfer is the KEY: `buildBadgeMap` is keyed by tile role, and this needs
+  per-seat resolution (see above), so the seat is what must be looked up.
+
+  Explicitly NOT wanted: `extension/src/panel/ticketColors.ts` (BL-139) and
+  its per-ticket palette and rainbow segments. A title bar is text.
 
   ## How (direction, not mandate)
 
@@ -168,6 +167,10 @@ qa_e2e_procedure: >
 
   8. Confirm no per-OS code was written - the change should be a tmux option
      plus a rename, with no platform branch anywhere in the diff.
+
+  9. Confirm the slug logic was reused, not re-implemented: the diff should
+     reach `truncateSummary`/`buildBadgeMap` rather than carry a second
+     title-shortening routine, and should not pull in `ticketColors.ts`.
 
 approval_context: >
   Your ask, from the six-window screenshot: put the ticket in the terminal
@@ -232,10 +235,18 @@ notes: |
 
   ## IR-DRY judgment recorded
 
-  5 findings, all kept. Three are polarity pairs the checker cannot see as
-  negation (holds a parcel / holds no parcel, names the ticket / names no
-  ticket, has handled a parcel before / has never handled a parcel). The
-  other two are arity: one seat versus a second seat of the same stage, and
-  one parcel versus two seats each holding a different one. In both, the
-  count IS the behaviour under test - collapsing them would erase the
-  per-pane isolation this ticket exists to specify.
+  11 findings -> 7. One was real drift: scenario 04 said "it names the ticket
+  the seat handled" where scenario 02 said "it names the last ticket the seat
+  acted on" for the same assertion; normalized to the latter.
+
+  The remaining 7 are polarity pairs the checker cannot read as negation
+  (holds / holds no, names the ticket / names no ticket, has acted before /
+  has never acted) and arity contrasts (one seat versus a second seat of the
+  same stage; one parcel versus several). In both families the distinction IS
+  the behaviour under test - the three title states and the per-pane
+  isolation - so collapsing them would erase what the scenarios exist to say.
+
+  Nine scenarios is past "a sharp handful", and that is deliberate: five of
+  them (act-based idle, abandoned exclusion, batch multi-parcel, two seats,
+  never-acted) came from operator clarifications or from the tiles logic they
+  pointed at. Dropping one would drop a case that was explicitly raised.
