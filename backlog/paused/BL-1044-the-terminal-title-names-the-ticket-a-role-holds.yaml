@@ -15,7 +15,7 @@ acceptance: specs/features/BL-1044-the-terminal-title-names-the-ticket-a-role-ho
 human_approval: pending
 
 invariants:
-  - "The window name is SwarmForge's slot alone: nothing running inside the pane can change it, and the title updater never writes the pane title the agent already owns."
+  - "The title updater writes only its own per-window option: it never rewrites the window name - the status line renders that as the role - and never the pane title, which the agent owns and rewrites every turn."
   - "A title is never stale-but-plausible: a pane holding nothing shows the last ticket that pane itself took an action on - something that reached its OWN completed mailbox - in a visibly not-held form, never the held form and never a ticket it only saw named elsewhere."
 
 description: |
@@ -26,10 +26,34 @@ description: |
   them, so six windows are indistinguishable at a glance, and the tmux status
   line names only the role (`Coordinator`, `Specifier`, ...).
 
-  Put the ticket there: role plus the ticket number **without the `BL-`
-  prefix** plus a short slug. When the role holds nothing, show the last
-  ticket that passed through it, in a form that reads as past rather than
-  current.
+  Put the ticket there: the ticket number **without the `BL-` prefix**, a
+  short slug, and how long the pane has been on it. When the pane holds
+  nothing, show the last ticket it acted on, in a form that reads as past
+  rather than current.
+
+  ## Where it goes - a per-window option, not the window name
+
+  Operator: *"i dont need role repeated (it is in the footer)."* Right, and
+  that rules out the slot an earlier draft of this ticket chose.
+
+  The footer IS the window name: the status line renders
+  `[session:window_name]`, and `window_name` is the role, set at
+  `swarmforge.sh:1047` from `roles.tsv` column 5. Renaming the window to
+  carry the ticket would have taken the role OUT of the footer - the
+  opposite of what is wanted, and a regression the operator caught before it
+  was built.
+
+  So the window name is left exactly as it is. The composed ticket string
+  goes into a **per-window user option** (`tmux set -w @<name> "..."`), and
+  `set-titles-string` renders that option; tmux here is 3.7, so `#{@name}`
+  in a format string is available. Two consequences: the title bar carries
+  the ticket ALONE, with no role to repeat, and nothing this ticket does
+  touches `window_name` or `pane_title`.
+
+  Not the pane title, separately. The screenshot's `"* Handoff mail ready "`
+  and `"Role loop initializ"` are **Claude Code's own** OSC updates,
+  rewritten every turn - a signal the operator already reads, and not ours
+  to take.
 
   ## What counts as "a ticket this pane is on"
 
@@ -129,23 +153,26 @@ description: |
   **Because it will not always fit, the fields have a drop order**, and that
   order is the spec's real content here. Widest to narrowest:
 
-      Coder 1035 startup-grace 32m
-      Coder 1035 startup-gr… 32m
-      Coder 1035 32m
-      Coder 1035
-      Coder
+      1035 startup-grace 32m
+      1035 startup-gr… 32m
+      1035 32m
+      1035
 
-  Role first (it is what identifies the window in a window list), then the
-  ticket number, then elapsed, and the slug shortens and then disappears
-  before either. Never truncate mid-number: a half-printed ticket id is worse
-  than an absent one.
+  The ticket number survives longest, elapsed next, and the slug shortens and
+  then disappears before either. Never truncate mid-number: a half-printed
+  ticket id is worse than an absent one.
+
+  **The one case where the role appears** is a pane with no ticket at all -
+  never acted, or nothing in its mailbox names one. A blank title bar is
+  useless in a window list, so fall back to the role there. That is a
+  fallback rather than a repetition, and it is my call, not the operator's:
+  say so if a blank or a neutral marker is preferred.
 
   ## How (direction, not mandate)
 
   A small updater run from the daemon's existing poll cycle, reading each
-  seat's own mailbox, and renaming windows via
-  `tmux rename-window` (an external command - unaffected by
-  `allow-rename off`). Exact separator, marker for the not-held form, and
+  seat's own mailbox and writing each window's own user option via
+  `tmux set -w`. Exact separator, marker for the not-held form, and
   slug budget are the implementer's call; a title bar truncates, so the slug
   needs a bound rather than the whole task name.
 
@@ -197,7 +224,13 @@ qa_e2e_procedure: >
      sending and receiving windows update within one daemon poll cycle.
 
   8. Confirm no per-OS code was written - the change should be a tmux option
-     plus a rename, with no platform branch anywhere in the diff.
+     plus a format string, with no platform branch anywhere in the diff.
+
+  8b. Confirm the footer is untouched, which is the operator's whole point:
+     with titles live, confirm the status line still reads the ROLE for every
+     window, and confirm via `tmux list-windows -F '#{window_name}'` that no
+     window name changed. Confirm the pane titles still churn with the
+     agent's own messages.
 
   9. Confirm the derivation was reused, not re-implemented: the diff should
      reach `buildBadgeMap` rather than carry a second holder-resolution
@@ -212,7 +245,8 @@ qa_e2e_procedure: >
 
   11. Confirm the drop order by narrowing the window through each step of the
      ladder in the description, and confirm the ticket NUMBER is never shown
-     half-truncated at any width.
+     half-truncated at any width. Confirm the role appears in the title ONLY
+     for a pane with no ticket at all.
 
 approval_context: >
   Your ask, from the six-window screenshot: put the ticket in the terminal
