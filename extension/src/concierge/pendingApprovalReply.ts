@@ -247,6 +247,51 @@ export function readApprovalCloseVerdict(targetPath: string, backlogId: string):
   return undefined;
 }
 
+// BL-582: WHY a record changed nothing. recordApprovalReply below returns a
+// bare boolean, so the tap that failed on 2026-07-23 could not have said
+// anything more useful than "false" even if anyone had been listening. Pure
+// over the ticket text, so the classification itself is testable without a
+// filesystem; explainApprovalRecordNoOp below is the one-line file-reading
+// driver, mirroring every other read/driver pair in this module.
+export type ApprovalRecordNoOpReason =
+  | 'no-ticket-file'
+  | 'already-approved'
+  | 'already-rejected'
+  | 'already-amending'
+  | 'no-human-approval-field'
+  | 'human-approval-not-pending';
+
+const HUMAN_APPROVAL_FIELD_PATTERN = /^human_approval:\s*(\S+)/m;
+
+export function classifyApprovalRecordNoOp(rawText: string): ApprovalRecordNoOpReason {
+  const match = rawText.match(HUMAN_APPROVAL_FIELD_PATTERN);
+  if (!match) {
+    return 'no-human-approval-field';
+  }
+  const value = match[1];
+  if (value === 'approved') {
+    return 'already-approved';
+  }
+  if (value === 'rejected') {
+    return 'already-rejected';
+  }
+  if (value === 'amending') {
+    return 'already-amending';
+  }
+  // A `pending` value reaching here means the write itself was refused for
+  // some other reason - reported as its own case rather than mislabelled as
+  // one of the resolved verdicts above.
+  return 'human-approval-not-pending';
+}
+
+export function explainApprovalRecordNoOp(targetPath: string, backlogId: string): ApprovalRecordNoOpReason {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return 'no-ticket-file';
+  }
+  return classifyApprovalRecordNoOp(fs.readFileSync(filePath, 'utf8'));
+}
+
 // Impure driver: flips the ticket's human_approval to approved if it is
 // currently pending. Returns whether it actually changed, so the live
 // wiring can tell a real flip from a no-op (already approved, or the
