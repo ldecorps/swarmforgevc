@@ -14,6 +14,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
@@ -2897,10 +2898,18 @@
 ;; (coordinator lost)".
 (defn fleet-status-sweep! []
   (try
-    (let [cli-path (node-tool-path "emit-fleet-status.js")
-          {:keys [exit err]} (daemon-cycle-guard-lib/sh! ["node" cli-path (str project-root)] {:dir (str project-root)})]
-      (when-not (zero? exit)
-        (log! "fleet-status-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (let [cli-path (node-tool-path "emit-fleet-status.js")]
+      ;; BL-1010: a checkout that has never been built fails here every cycle
+      ;; with node's module-not-found, which names the BUILD ARTIFACT rather
+      ;; than the bring-up step that is missing - loud, repeated and
+      ;; unactionable, as the WSL2 secondary reported. Check first and say what
+      ;; to run instead of letting node describe a path.
+      (if-not (fs/exists? cli-path)
+        (log! "fleet-status-sweep-error"
+              (node-tool-bringup-lib/missing-tool-message "emit-fleet-status.js" (str cli-path)))
+        (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["node" cli-path (str project-root)] {:dir (str project-root)})]
+          (when-not (zero? exit)
+            (log! "fleet-status-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))))
     (catch Exception e
       (log! "fleet-status-sweep-error" (.getMessage e)))))
 
