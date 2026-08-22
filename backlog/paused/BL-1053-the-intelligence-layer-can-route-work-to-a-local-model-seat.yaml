@@ -89,6 +89,13 @@ notes: |
   was retired in the same commit as this rewrite - it named a `qwen` provider
   key for a cloud Token Plan endpoint that this ticket no longer targets.
 
+  Salvage pointer (QA, 2026-08-22). The qwen provider-routing implementation
+  built under the retired contract is reachable at commit 3a878de9ff on
+  branches swarmforge-QA and swarmforge-documenter (model_factory_lib.bb
+  provider->agent entry, Steward registration, both step handlers, property
+  runner, shell suite). The registration shape carries over; only the provider
+  key and cost-class rationale changed.
+
 qa_e2e_procedure: |
   On the live host, after BL-1052 has landed:
 

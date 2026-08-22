@@ -111,6 +111,15 @@ notes: |
   retired in the same commit as this rewrite - it asserted a cloud Token Plan
   endpoint this ticket no longer targets.
 
+  Salvage pointer (QA, 2026-08-22). The qwen-code-only implementation built
+  under the retired contract was never landed on main, but it is NOT lost: it
+  is reachable at commit 82973dd3f3 on branches swarmforge-QA and
+  swarmforge-documenter (pack conf/prompt, ancillary_provider_lib.sh additions,
+  prompt_engine_lib.bb + swarmforge.sh launch-adapter changes, step handler,
+  property runner, shell suite - all green through documenter). Read it before
+  rebuilding the seat path; the launch-adapter and capability-map shapes carry
+  over even though the endpoint does not.
+
 qa_e2e_procedure: |
   On the live host, after BL-1082 has landed and a local Qwen coder model is
   being served:
