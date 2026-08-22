@@ -172,3 +172,17 @@ notes_coordinator_hold: >
 
 
 assigned_to: coder
+
+coordinator_notes: |
+  2026-08-22: QA blocked (commit f8e61157b). Two spec gaps, neither a code
+  defect: (1) the target 2026-08-20 soak window's raw log evidence has
+  rotated out of both daemon-start-audit.log and freshness-incidents.log,
+  unrecoverable (.swarmforge/ gitignored) - only the coordinator's aggregate
+  observation note survives, which can't resolve the pre-fix-tail vs
+  post-fix-fail ambiguity it flagged. (2) required_stages:[qa] meant no
+  coder stage was ever tasked to wire a step handler for this feature file,
+  so its acceptance scenarios cannot be mechanically run at all. Routed by
+  QA to specifier+coordinator per Article 4.4 (spec-gap note, never a
+  parcel). Ticket stays active/blocked pending specifier disposition
+  (re-scope verification method, or accept undetermined verdict, or add a
+  coder stage to wire the handler) - not abandoned, no replacement slot.
