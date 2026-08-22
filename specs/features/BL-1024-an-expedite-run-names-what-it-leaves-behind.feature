@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7a5814a3168daac01361430ecf1f8c3ef33f9d58232fb32ee30d9fb8713c18ab
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T02:10:21.729653Z","feature_name":"an expedited run's closing summary names every piece of work it left for someone else","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-1024-an-expedite-run-names-what-it-leaves-behind.feature","background_hash":"ca6f543c418f4b6c5d5687d2a3a50e1f60b85e21d3a848735eeba92cf9452cf9","implementation_hash":"unknown","scenarios":[{"index":4,"name":"a run that ended badly still says what it left behind","scenario_hash":"47088f202e08eecc6ebf342de8b6befec5ec3bf11a640449f3182694fa02bcda","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-22T02:10:21.729653Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: an expedited run's closing summary names every piece of work it left for someone else
 
   # BL-1024. The expeditor deliberately does not commit on main and
