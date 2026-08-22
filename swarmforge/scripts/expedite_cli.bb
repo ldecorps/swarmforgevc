@@ -18,7 +18,7 @@
 ;;   expedite_cli.bb <project-root> <BL-id> [options]
 ;;     --override            proceed even though the swarm is live (logged)
 ;;     --bounce-bound N      raise/lower the per-stage bound (default 3)
-;;     --stage-timeout-ms N  per-stage budget (default 45 min)
+;;     --stage-timeout-ms N  per-stage budget (default 90 min)
 ;;     --no-restart          skip the final restart phase
 ;;     --dry-run             plan and print; touch nothing
 ;;
