@@ -6,7 +6,7 @@ instead of relying on hand-rolled terminal-step `cleanup()`. A new standing
 gate refuses any step-handler file that starts a tmux server without that
 registration.
 
-**Last Updated:** 2026-08-19
+**Last Updated:** 2026-08-22
 
 ## Background
 
@@ -83,9 +83,38 @@ guessed:
 `findTmuxReaperViolation(basename, text)` plus an impure, non-recursive scan
 of `specs/pipeline/steps/*.js` — never `lib/`, where `fixtureReaper.js` and
 its own abnormal-exit harnesses legitimately call `track()` directly. It
-flags a file that contains a quoted `new-session` token without a paired
+flags a file that can cause a real tmux server to run without a paired
 `require('./lib/fixtureReaper')` and `track()` call, so the idiom cannot
 return a seventh time unnoticed.
+
+**BL-1032 update:** the gate originally scoped this on the presence of a
+quoted `'new-session'` token anywhere in the file. That check went RED on
+`bl1018SingleRoleRepairNeverKillsServerSteps.js`, a file that never spawns
+tmux — it evaluates resolved tmux command vectors as data and asserts
+`'new-session'`/`'kill-server'` inside `filter`/`assert` expressions,
+because it is a test for which tmux commands a repair may resolve to. A
+file that *asserts about* tmux argv writes the same quoted token as a file
+that *starts* a server, so the token-only check could not tell the two
+apart, and the only way to satisfy it was a `track()` call guarding nothing.
+
+`startsTmuxServer(text)` (exported for testing) now scopes by the hazard
+instead: it requires a server-creating subcommand
+(`CREATES_A_SERVER = /['"](?:new-session|start-server)['"]/`) plus one of
+two routes —
+
+1. **Direct spawn** — the file spawns `tmux` itself
+   (`SPAWNS_TMUX = /(?:execFileSync|execSync|spawnSync|spawn|exec)\s*\(\s*['"]tmux['"]/`).
+2. **PATH stub** — the file writes its own `tmux` to disk and prepends it to
+   `PATH` (`WRITES_TMUX_ON_PATH` + `PREPENDS_TO_PATH`), the shape
+   `bl958ControlPlaneLossSteps.js` uses. A literal-spawn-only fix would have
+   silently exempted this route too.
+
+Requiring a server-creating subcommand on *both* routes is what keeps
+query-only files (`tmux list-sessions`/`has-session`, which fail rather than
+start a server) and PATH-stub no-ops (an `exit 0` stub with no
+server-creating subcommand, used by a couple of files to keep a probe
+quiet) out of scope — pulling those in would have demanded reaper calls for
+servers they never start, the same false-positive shape in reverse.
 
 `extension/test/tmuxReaperGuard.test.js` gives the gate a standing home in
 the one suite every parcel runs, including the real "`specs/pipeline/steps`
@@ -138,3 +167,10 @@ changes no extension command, setting, or UI.
   servers) and raised the `rule_proposal` this ticket answers.
 - **BL-654:** Property-testing convention `fixtureReaperLiveSocketGuard.property.test.js`
   follows for invariant 2.
+- **BL-1032:** Re-scoped the standing gate from a quoted-token match to a
+  hazard-based check, fixing a false positive on
+  `bl1018SingleRoleRepairNeverKillsServerSteps.js` without reopening the
+  `bl958ControlPlaneLossSteps.js` PATH-stub hole. See the standing-gate
+  section above.
+- **BL-1033:** Sibling `tempDirTrapGuard.js` finding; a true positive, not
+  re-scoped by BL-1032.

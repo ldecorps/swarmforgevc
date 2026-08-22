@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=aca0edb0bf5134b7f3cdd330f2a3f99ba51562a130523527e876015f940f95ed
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T13:09:57.098451151Z","feature_name":"the tmux-reaper guard scopes by hazard, not by a token","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1032-tmux-reaper-guard-scopes-by-hazard-not-by-token.feature","background_hash":"3a910d6de4d0ca144ce8193cb75816a36f87281028311df921c4ec0219b55357","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a file that can cause tmux to run stays in scope","scenario_hash":"c2716daca2c4418373a0e719f458eb34a072d05eb2a8dfea710a0468e6b17ce9","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T13:09:57.098451151Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the tmux-reaper guard scopes by hazard, not by a token
 
   BL-817's guard keeps every step handler that starts a fixture tmux server

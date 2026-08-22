@@ -135,3 +135,41 @@ test('BL-1032: the token alone no longer puts a file in scope', () => {
   // The whole defect in one assertion.
   assert.equal(findTmuxReaperViolation('prose.js', "// we never call 'new-session' here"), null);
 });
+
+// ── hardening: CREATES_A_SERVER's second alternative was untested ─────────
+// startsTmuxServer requires a server-creating subcommand before either route
+// can put a file in scope, /['"](?:new-session|start-server)['"]/ - but no
+// fixture anywhere in this suite or the property test's generator ever wrote
+// 'start-server'. A mutant deleting that alternative left every existing
+// test green (nothing exercises it either way).
+
+test('BL-1032: "start-server" is a server-creating subcommand, same as "new-session"', () => {
+  const text = "execFileSync('tmux', ['-S', sock, 'start-server']);";
+  assert.ok(findTmuxReaperViolation('starts.js', text),
+    'start-server creates a server just as new-session does');
+});
+
+test('BL-1032: spawning tmux without naming a server-creating subcommand is not in scope', () => {
+  // Route 1 needs BOTH halves - a bare tmux spawn naming no creating
+  // subcommand (e.g. a query) starts nothing.
+  const text = "spawnSync('tmux', ['list-sessions']);";
+  assert.equal(findTmuxReaperViolation('query.js', text), null,
+    'a query-only spawn never creates a server');
+});
+
+// ── hardening: Route 2's PREPENDS_TO_PATH conjunct was never isolated ─────
+// Route 2 requires WRITES_TMUX_ON_PATH *and* PREPENDS_TO_PATH - "writing a
+// file called tmux is harmless until something can find it" (the guard's own
+// comment). Every existing fixture (unit and property) that writes a tmux
+// stub also prepends PATH in the same breath, so a mutant dropping the
+// PREPENDS_TO_PATH half of that conjunction left every existing test green.
+
+test('BL-1032: writing a tmux stub without ever putting it on PATH is not in scope', () => {
+  const text = [
+    "fs.writeFileSync(path.join(root, 'bin', 'tmux'), stubSource);",
+    "fs.chmodSync(path.join(root, 'bin', 'tmux'), 0o755);",
+    "const creates = commands.filter((c) => has(c, 'new-session'));",
+  ].join('\n');
+  assert.equal(findTmuxReaperViolation('unreachable-stub.js', text), null,
+    'a tmux stub nothing ever prepends to PATH can never be found and run');
+});
