@@ -229,6 +229,16 @@ check "06: escalate action recorded" \
   'grep -q "action=escalate" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
 check "06: escalation announce invoked" \
   'grep -q "FRESHNESS_VIOLATION escalate swarm=primary daemon=handoffd" "$ROOT/announces.log"'
+# BL-1011: the escalate ANNOUNCE line above is checked verbatim (it must
+# include swarm=), but the escalate DURABLE RECORD was only ever checked for
+# action=escalate - never for swarm=/reason=, which is a separate string built
+# a line earlier in the same branch. Hand-verified this was a real, silent
+# gap: dropping swarm=/reason=/render_age from just the record (leaving the
+# announce untouched) left every check in this suite green.
+check "06: the escalate durable record names its swarm too, not just the announce" \
+  'grep -q "action=escalate" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "swarm=primary" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+check "06: and states the reason instead of a raw sentinel in the record" \
+  'grep "action=escalate" "$ROOT/.swarmforge/daemon/freshness-incidents.log" | grep -q "reason=stale-heartbeat"'
 pass "06: cool-off escalates without hammering restarts"
 
 # ── BL-789: SWARMFORGE_SKIP_BABYSITTERD honoured by the real checker ──────
@@ -829,6 +839,19 @@ check "BL-1012 invariant 2: and no second restart is issued from the evidence we
   '[[ ! -s "$ROOT/starts.log" ]] || ! grep -q "start_handoff_daemon.sh" "$ROOT/starts.log"'
 check "BL-1012 invariant 2: the suppression is still recorded, never silent" \
   'grep -q "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+# BL-1011: the grace record is written by append_incident with no announce at
+# all (grace never calls do_announce), so it was the one action path this
+# ticket's own BL-1011 test cases never drove - every other case above goes
+# through do_announce, which is what all the reason=/swarm=/no-raw-sentinel
+# checks above actually inspect. Hand-verified this was a real, silent gap:
+# reverting the grace record's swarm=/reason=/render_age to the pre-BL-1011
+# raw "age_secs=${age}" shape left every check in this suite green.
+check "BL-1011: the grace record names its swarm too, not just the restart/escalate records" \
+  'grep -q "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "swarm=primary" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+check "BL-1011: and states the reason instead of a raw sentinel - the log is absent here, by construction" \
+  'grep -q "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "reason=log-absent" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+check "BL-1011: the grace record itself contains no raw 999999999, even though its own condition IS the sentinel" \
+  '! (grep "action=grace" "$ROOT/.swarmforge/daemon/freshness-incidents.log" | grep -q "999999999")'
 
 # qa step 5 - past the grace window the same absent log IS a violation again.
 grace_run 600
@@ -942,6 +965,20 @@ run_checker "$ROOT" 1800000000 >/dev/null 2>&1 || true
 check "BL-1011: a checkout with no identity file still names a swarm rather than none" \
   'grep -q "swarm=primary" "$ROOT/announces.log"'
 pass "BL-1011: attribution never degrades to silence"
+
+# BL-1011: SWARMFORGE_SWARM_NAME is the FIRST source resolve_swarm_name checks
+# - ahead of the identity file - and this whole resolver now runs
+# unconditionally (it used to run only inside the credential-fallback branch,
+# which is this ticket's own fix). No case above ever sets this var, so
+# dropping it entirely from the resolver was a silent gap: hand-verified by
+# clearing it to always-empty, which left every other BL-1011 check green.
+ROOT="$(make_root)"
+write_identity "$ROOT" "second"
+SWARMFORGE_SWARM_NAME=env-override \
+  run_checker "$ROOT" 1800000000 >/dev/null 2>&1 || true
+check "BL-1011: SWARMFORGE_SWARM_NAME overrides the identity file, not just supplements it" \
+  'grep -q "swarm=env-override" "$ROOT/announces.log"'
+pass "BL-1011: the env-var swarm-name source is still consulted first"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-675 daemon-log-freshness: ALL CHECKS PASSED"
