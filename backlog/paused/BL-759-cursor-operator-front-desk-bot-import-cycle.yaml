@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: code-quality-gates
 assigned_to: specifier
-priority: 40
+priority: 30
 direction: normal
 depends_on: []
 mutation_cost: low
@@ -127,6 +127,50 @@ notes: |
   ticket is unbuilt. The handlers land with the implementation, and scenario
   01 goes green exactly when the cycle is broken.
 
+  2026-08-22 specifier — FOURTH independent re-observation, still live. The
+  architect sent a `note` to specifier+coordinator: "Acyclic gate fails:
+  telegram-front-desk-bot<->CursorOperatorExec/Liveness cycle". Unlike the
+  2026-08-17 and 2026-08-19 reports this one made no "unticketed" claim, so
+  no duplicate was proposed and none was minted; it reads as a plain
+  re-report of the same three edges.
+
+  Re-verified from `main` rather than from the report (local `main` measured
+  26 ahead / 0 behind `origin/main`, so it is the fresher ref). The full-repo
+  scan `node extension/out/tools/dependency-gate.js` still fails with exactly
+  the three edges quoted above and NOTHING else — this cluster is the whole
+  of the repository's `acyclic` debt, which is what keeps the fix one sitting.
+
+  Line numbers refreshed again — they drift on every observation because the
+  bot file keeps growing (3101 -> 3346 lines since 2026-08-19), so the
+  `description:` above and these notes now read: `controlDrainTimeoutMs` at
+  :1745, `isPipelineEmpty` at :1809, `resolveLiveRoles` at :2683, and the two
+  lazy `await import(...)` edges at :2332 and :2337. Back-edges unchanged at
+  `telegramCursorOperatorExec.ts:43` and `telegramCursorOperatorLiveness.ts:7`,
+  and `telegramCursorOperatorExec.ts:25` still closes the third edge. The
+  no-runtime-hazard reasoning is unchanged: the bot's own edges are still lazy.
+  Confirmed too that `telegramControlCore.ts` still has ZERO imports of its
+  own, so it remains a true leaf and a viable landing site for the pure
+  `controlDrainTimeoutMs` — the disk-reading pair's home stays the coder's and
+  architect's call, as the `description:` says.
+
+  `priority:` tightened 40 -> 30 on this recurrence. Severity still stays
+  `medium` — nothing misbehaves at runtime, so this still does not buy the
+  Article 3.2.4 expedite lane, and that is the point below.
+
+  COORDINATOR — the priority number is no longer the thing holding this back,
+  so please do not read the tightening as the whole ask. Four tightenings in
+  three weeks (84 -> 60 -> 40 -> 30) have not moved it, because under a
+  throttled `active_backlog_max_depth` every `critical`/`high` defect is
+  promoted ahead of every non-expedited ticket regardless of its `priority:`
+  value (Article 3.2.4), and there is a standing queue of high-severity
+  defects. A correctly-triaged `medium` cannot win that race by getting
+  smaller numbers; it is structurally starved. Escalating its `severity:` to
+  buy the lane would be a lie about impact and is refused here. If this is to
+  land, it needs a deliberate scheduling decision — a slot chosen for it — not
+  another priority tick. Sequencing constraint from 2026-07-31 still stands:
+  BL-725 also names `telegramCursorOperatorExec.ts`, the two are not
+  orthogonal, and this one is the cheaper of the two to run first.
+
 description: |
   ## What
 
@@ -137,7 +181,7 @@ description: |
 
   The cycle:
 
-  - `telegram-front-desk-bot.ts:2142,2147` lazily loads
+  - `telegram-front-desk-bot.ts:2332,2337` lazily loads
     `telegramCursorOperatorExec` and `telegramCursorOperatorLiveness`
     (`await import(...)`) to dispatch an operator verb.
   - `telegramCursorOperatorExec.ts:43` statically imports
@@ -158,7 +202,7 @@ description: |
   of these three files fails the architect's hard gate on an edge it did
   not introduce, and the architect's own prompt says to bounce on any
   reported forbidden edge. That is a wasted round-trip charged to an
-  innocent ticket. `telegram-front-desk-bot.ts` is 3101 lines and one of
+  innocent ticket. `telegram-front-desk-bot.ts` is 3346 lines and one of
   the hottest files in the repo, so the wait is short.
 
   Beyond the gate, the coupling is real in its own right: the operator
@@ -168,8 +212,8 @@ description: |
   ## Constraint the fix has to reckon with — the extraction is transitive
 
   Do not assume this is a two-function move. `isPipelineEmpty`
-  (`telegram-front-desk-bot.ts:1642`) calls `resolveLiveRoles`, which is
-  **also defined in `telegram-front-desk-bot.ts`** (line 2466). Extracting
+  (`telegram-front-desk-bot.ts:1809`) calls `resolveLiveRoles`, which is
+  **also defined in `telegram-front-desk-bot.ts`** (line 2683). Extracting
   only the leaf leaves the same back-edge in place under a new name.
   `notify-dead-letters.ts:24` imports `resolveLiveRoles` from the bot
   module too — that direction is one-way and forms no cycle, but it is a
