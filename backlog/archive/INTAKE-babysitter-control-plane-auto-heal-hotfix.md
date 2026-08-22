@@ -67,3 +67,12 @@ Related (do not conflate)
 - Replacing babysitterd's memory floor with something other than
   meminfo/`vm_stat`.
 - Restarting or redesigning handoffd chase-respawn.
+
+---
+
+DISPOSITION (specifier, 2026-08-22): minted as **BL-1071**
+(`backlog/paused/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.yaml`),
+a `high` severity swarm-review stamp-off of commit f6b6aef25, as this intake
+directed. All three locked human decisions, the related-do-not-conflate list
+and the out-of-scope list are carried into that ticket verbatim. 1:1 -
+nothing merged, nothing split.

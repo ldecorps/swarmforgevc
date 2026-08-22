@@ -143,6 +143,10 @@ notes: |
   landed, re-scope this ticket to the expedite_cli.bb probes (and the
   multi-worktree verification bar), and keep acceptance item 3's
   genuine-survivor scenario for what remains. Also: BL-888 (paused) fixes the
-  same file's step-5 copilot KILL scope — all three tickets touch
+  same file's step-5 copilot KILL scope, and BL-1068 (paused, minted
+  2026-08-22) fixes the truncated `pgrep -fl` listing that defeats the
+  supervisor filter at :243 — all four tickets touch
   kill_pipeline_swarm.sh or its test suite, so none of them may be active
-  concurrently (Concurrent Work Orthogonality).
+  concurrently (Concurrent Work Orthogonality). BL-1068 is adjacent, not
+  duplicate: this ticket scopes which processes the reap MATCHES, BL-1068
+  fixes what the reap READS once matched. Neither subsumes the other.
