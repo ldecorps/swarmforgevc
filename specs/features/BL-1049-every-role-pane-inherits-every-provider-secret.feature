@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e01ab7c47ccf5f3d3c813d07001292059154871580989efacd80ec4203793c6c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T14:06:39.660145917Z","feature_name":"The tmux server's global environment carries only the secrets the running configuration needs","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1049-every-role-pane-inherits-every-provider-secret.feature","background_hash":"e2add37118a2e8ca03cce34506f5c1882d89ae0bc3976513f9ab16368008d309","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a provider secret survives the scrub only when the running configuration needs it","scenario_hash":"e68a39f8c251ad23ee8c9e12a9e320e55277d39d81e037d6f237b1e17c60dd39","mutation_count":21,"result":{"Total":21,"Killed":21,"Survived":0,"Errors":0},"tested_at":"2026-08-22T14:06:39.660145917Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The tmux server's global environment carries only the secrets the running configuration needs
 
   tmux seeds a new server's global environment from the entire calling shell,
