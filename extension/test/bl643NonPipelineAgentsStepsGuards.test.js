@@ -20,7 +20,16 @@ const {
   REF_TABLE_PATH,
 } = require('../../specs/pipeline/steps/bl643NonPipelineAgentsSteps');
 
-const SCRIPTS_DIR = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+// realpathSync, not a plain path.join: under a Stryker mutation sandbox this
+// file runs from `.stryker-tmp/sandbox-<id>/test/`, so `../../swarmforge`
+// resolves through the `.stryker-tmp/swarmforge` sibling symlink
+// (ensureStrykerSandboxSiblings.js) rather than landing on the real
+// directory directly. The step handler under test computes its OWN
+// SCRIPTS_DIR from its own real (non-sandboxed, symlinked-in via `specs/`)
+// `__dirname`, so its `dir`/`p` arguments are the real absolute path with no
+// `.stryker-tmp` component - an unresolved comparison here would silently
+// never match under Stryker, and the mock would never fire.
+const SCRIPTS_DIR = fs.realpathSync(path.join(__dirname, '..', '..', 'swarmforge', 'scripts'));
 const BABYSITTER_LAUNCHER = path.join(SCRIPTS_DIR, 'start_babysitterd.sh');
 
 let readdirSpy;

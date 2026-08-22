@@ -27,6 +27,20 @@ test('the first run computes, reports "ran", and publishes the value as latest',
   assert.equal(gate.latest(), 'first');
 });
 
+test('the first run computes even when the clock starts at zero (below the refresh interval)', () => {
+  // `lastCompletedAtMs` starts null; `null` coerces to 0 in subtraction, so
+  // if the guard read only `options.now() - lastCompletedAtMs < minIntervalMs`
+  // (dropping the explicit `!== null` check), a caller whose `now()` starts
+  // near zero - rather than a real Date.now() epoch, always far larger than
+  // any sane refresh interval - would read the pre-first-run state as
+  // already fresh and wrongly throttle the very first computation.
+  let nowMs = 0;
+  const gate = createMetricsTickGate({ minIntervalMs: 300_000, now: () => nowMs });
+
+  assert.equal(gate.run(() => 'first'), 'ran');
+  assert.equal(gate.latest(), 'first');
+});
+
 test('a tick inside the refresh interval is throttled and never calls compute', () => {
   const clock = fakeClock();
   const gate = createMetricsTickGate({ minIntervalMs: 300_000, now: clock.now });
