@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T22:18:46.026249905Z","feature_name":"BL-1069 the swarm judges its tmux by the server it is actually running","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1069-swarm-stamp-tmux-wsl-segfault-upgrade-hotfix.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":3,"name":"the installer produces a verified tmux or refuses by name","scenario_hash":"90fcb1cb60bc124ab0676258c410aa776e88bb622bdb79b694c1180ea757dd6b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T22:18:46.026249905Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1069 the swarm judges its tmux by the server it is actually running
   Ubuntu's tmux 3.4 SIGSEGVs in resize.c on a NULL window (fault at offset
   0x208) whenever WINDOW_SIZE_MANUAL is set; the upstream guard lands in 3.7.
