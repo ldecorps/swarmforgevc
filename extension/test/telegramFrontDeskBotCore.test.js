@@ -60,6 +60,7 @@ const {
   decideEnsureOnboardingTopicAction,
   ONBOARDING_SUBJECT_ID,
   decideOnboardingReplyAction,
+  formatCallbackDiagnosticLine,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -2425,6 +2426,12 @@ function callbackFixtureAdapters(overrides = {}) {
     redirectToRole: overrides.redirectToRole,
     enqueueRoleAnswerNote: overrides.enqueueRoleAnswerNote,
     clearRolePendingQuestion: overrides.clearRolePendingQuestion,
+    // BL-582: the durable diagnostic sink and the no-op explainer - both
+    // optional, same "absent degrades to a no-op" posture as every other
+    // optional field above.
+    logDiagnostic: overrides.logDiagnostic,
+    explainApprovalRecordNoOp: overrides.explainApprovalRecordNoOp,
+    commitApprovalWrites: overrides.commitApprovalWrites,
   };
 }
 
@@ -6350,4 +6357,160 @@ test('BL-955: a control command sent as a photo caption executes as the command 
   assert.deepEqual(armed, [{ kind: 'stop-modes' }], 'the caption command must parse exactly like plain text');
   assert.deepEqual(menus, [true]);
   assert.equal(result.posted, 1);
+});
+
+// ── BL-582: every approval tap produces an observable, durable outcome ──
+//    The 2026-07-23 taps failed silently: a drop returned with no toast and
+//    no log, and a changed:false record cleared the spinner having done
+//    nothing. Whatever the root cause (still open - see the ticket), a tap
+//    that does nothing must SAY so. Every drop path emits a distinguishable
+//    diagnostic; the two human-facing ones also answer with a toast rather
+//    than an empty spinner-clear. not-my-chat/not-principal stay toast-less
+//    on purpose - answering an unauthorized tap confirms the bot exists to
+//    a stranger, the reason isUnauthorizedCallbackDrop never answered.
+
+function bl582Adapters(overrides = {}) {
+  const diagnostics = [];
+  const answered = [];
+  const adapters = callbackFixtureAdapters({
+    ...overrides,
+    logDiagnostic: (line) => diagnostics.push(line),
+    answerCallbackQuery: async (id, text) => answered.push({ id, text }),
+  });
+  return { adapters, diagnostics, answered };
+}
+
+test('BL-582: formatCallbackDiagnosticLine is one bounded line naming the callback id and reason, never message content', () => {
+  const line = formatCallbackDiagnosticLine('cbq-9', 'not-principal');
+  assert.equal(line, 'front-desk callback callback_query_id=cbq-9 reason=not-principal');
+  assert.equal(line.includes('\n'), false);
+});
+
+test('BL-582: formatCallbackDiagnosticLine appends a detail when the reason alone does not explain the failure', () => {
+  assert.equal(
+    formatCallbackDiagnosticLine('cbq-9', 'record-no-op', 'BL-123:already-approved'),
+    'front-desk callback callback_query_id=cbq-9 reason=record-no-op detail=BL-123:already-approved'
+  );
+});
+
+test('BL-582 drop-03 not-my-chat: a foreign-chat tap emits a distinguishable diagnostic and is still never answered', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ update: { fromId: PRINCIPAL_ID, data: 'approve:BL-123', chatId: 2 } });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=not-my-chat']);
+  assert.deepEqual(answered, [], 'an unauthorized tap is still answered never');
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-582 drop-03 not-principal: a stranger tap in my chat emits its own distinguishable diagnostic', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ update: { fromId: 999, data: 'approve:BL-123' } });
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=not-principal']);
+  assert.deepEqual(answered, []);
+});
+
+test('BL-582 drop-03 unrecognized-data: a principal tap with unusable data gets a toast, not a silent spinner-clear', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ data: 'snooze:BL-123' });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=unrecognized-data']);
+  assert.equal(answered.length, 1);
+  assert.equal(answered[0].id, 'cbq-1');
+  assert.match(answered[0].text, /not recognized/i);
+  assert.match(answered[0].text, /nothing was recorded/i);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-582 drop-03 record-no-op: an Approve tap whose record changes nothing names WHY in both the toast and the diagnostic', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({
+    data: 'approve:BL-123',
+    recordApprovalReply: async () => false,
+    explainApprovalRecordNoOp: async () => 'no-ticket-file',
+  });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=record-no-op detail=BL-123:no-ticket-file']);
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /no-ticket-file/);
+  assert.match(answered[0].text, /not saved/i);
+  assert.equal(result.dropped, 1, 'a tap that recorded nothing was not a successful post');
+});
+
+test('BL-582 drop-03 record-no-op: an unexplainable no-op still names itself rather than falling back to silence', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ data: 'approve:BL-123', recordApprovalReply: async () => false });
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, ['front-desk callback callback_query_id=cbq-1 reason=record-no-op detail=BL-123:unexplained']);
+  assert.match(answered[0].text, /unexplained/);
+});
+
+test('BL-582 records-and-repaints-01: a successful Approve tap answers with a bare spinner-clear and emits no diagnostic', async () => {
+  const { adapters, diagnostics, answered } = bl582Adapters({ data: 'approve:BL-123' });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(diagnostics, [], 'a tap that did what it said needs no diagnostic');
+  assert.deepEqual(answered, [{ id: 'cbq-1', text: undefined }]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-582 repaint-02: a repaint failure after a successful record is reported through the durable sink, verdict intact', async () => {
+  const commits = [];
+  const { adapters, diagnostics } = bl582Adapters({
+    data: 'approve:BL-123',
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+    editApprovalAskMessage: async () => ({ success: false, error: 'message to edit not found' }),
+    commitApprovalWrites: async (backlogId) => {
+      commits.push(backlogId);
+      return true;
+    },
+  });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0], /reason=repaint-failed/);
+  assert.match(diagnostics[0], /BL-123/);
+  assert.deepEqual(commits, ['BL-123'], 'the recorded verdict is still committed - a repaint failure never rolls it back');
+  assert.equal(result.posted, 1, 'the record succeeded; only the repaint did not');
+});
+
+test('BL-582 idempotent-04: a repeat tap on an already-recorded verdict writes nothing and says the verdict is already recorded', async () => {
+  const writes = [];
+  const { adapters, answered } = bl582Adapters({
+    data: 'approve:BL-123',
+    readRecordedApprovalVerdict: async () => 'approved',
+    recordApprovalReply: async (backlogId) => {
+      writes.push(backlogId);
+      return true;
+    },
+  });
+  const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
+  assert.deepEqual(writes, [], 'no second write on an already-decided ticket');
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /approved/i);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-582: the Approve tap is answered as soon as the record outcome is known - never after a repaint that can sleep on a rate limit', async () => {
+  const order = [];
+  const { adapters } = bl582Adapters({
+    data: 'approve:BL-123',
+    recordApprovalReply: async () => {
+      order.push('record');
+      return true;
+    },
+    commitApprovalWrites: async () => {
+      order.push('commit');
+      return true;
+    },
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+    editApprovalAskMessage: async () => {
+      order.push('repaint');
+      return { success: true };
+    },
+  });
+  // bl582Adapters installs its own recording answerCallbackQuery; re-wrap it
+  // so this test can see WHERE in the sequence it lands.
+  const answer = adapters.answerCallbackQuery;
+  adapters.answerCallbackQuery = async (id, text) => {
+    order.push('answer');
+    return answer(id, text);
+  };
+
+  await pollAndForward(0, PRINCIPAL_ID, adapters);
+
+  assert.deepEqual(order, ['record', 'answer', 'commit', 'repaint'], 'the spinner clears before the commit and the repaint, both of which can block');
 });

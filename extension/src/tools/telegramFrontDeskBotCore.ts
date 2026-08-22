@@ -230,6 +230,20 @@ export function formatDropAuditLine(updateId: number, reason: string): string {
   return `front-desk drop update_id=${updateId} reason=${reason}`;
 }
 
+// BL-582: the callback twin of formatDropAuditLine above - the SAME bounded
+// "one line, ids and an already-computed reason, never message content"
+// shape, keyed by the callback_query's own id rather than an update_id
+// (a callback_query drop has no update-level identity a human can match to
+// what they tapped). `detail` carries the one thing a bare reason cannot
+// say - WHICH ticket, and why its record changed nothing - and is omitted
+// entirely when the reason already explains itself.
+export type CallbackDiagnosticReason = 'not-my-chat' | 'not-principal' | 'unrecognized-data' | 'record-no-op' | 'repaint-failed';
+
+export function formatCallbackDiagnosticLine(callbackQueryId: string, reason: CallbackDiagnosticReason, detail?: string): string {
+  const suffix = detail === undefined ? '' : ` detail=${detail}`;
+  return `front-desk callback callback_query_id=${callbackQueryId} reason=${reason}${suffix}`;
+}
+
 // BL-620 (hardener CRAP isolation, matching the bridgeServer.ts
 // tryServeSideloadApk precedent): processMessageUpdate is a pre-existing
 // dispatcher already over the CRAP<=6 threshold before this ticket - the
@@ -561,6 +575,19 @@ export interface PollAdapters {
   // pure decision code. Optional: every pre-BL-620 fixture keeps working,
   // and production wires it to the supervisor log.
   logDropAudit?: (line: string) => void;
+  // BL-582: the DURABLE diagnostic sink. logDropAudit above went to stderr,
+  // which the supervisor inherits and nothing keeps - when the 2026-07-23
+  // taps failed there was no line anywhere to read afterwards. Production
+  // wires this (and logDropAudit) to an append-only file under
+  // .swarmforge/operator/ that outlives the bot process, which is the whole
+  // point: a diagnostic lost with the process explains nothing. Optional,
+  // like every other adapter here - absent means an unwired fixture.
+  logDiagnostic?: (line: string) => void;
+  // BL-582: why a record changed nothing, for the toast and the diagnostic
+  // (recordApprovalReply itself returns a bare boolean and cannot say).
+  // Absent, or returning undefined, degrades to the 'unexplained' marker -
+  // never back to silence.
+  explainApprovalRecordNoOp?: (backlogId: string) => Promise<string | undefined>;
   getUpdates: (offset: number) => Promise<GetUpdatesResult>;
   // BL-369: updateId (the Telegram update's own update_id) rides every call
   // so the bridge can dedupe a redelivered message by its natural
@@ -1053,6 +1080,22 @@ function logAskCloseFailure(backlogId: string, result: EditMessageTextResult): v
   }
 }
 
+// BL-582: the repaint half of the invariant. A record that landed and then
+// failed to repaint leaves the human staring at an unchanged ask with its
+// buttons still on - visually identical to a tap that did nothing at all.
+// The verdict is NOT rolled back (it is on disk, and committed); the
+// failure is reported instead, through the same durable sink every other
+// callback diagnostic uses. The three entry points that can repaint (a tap,
+// a typed reply, the reconcile sweep) do not all have a callback id, so the
+// line is keyed '-' and identified by the ticket in its detail instead.
+function emitRepaintFailureDiagnostic(adapters: PollAdapters, backlogId: string, result: EditMessageTextResult): void {
+  emitCallbackDiagnostic(adapters, '-', 'repaint-failed', `${backlogId}:${repaintFailureCause(result)}`);
+}
+
+function repaintFailureCause(result: EditMessageTextResult): string {
+  return result.retryAfterSeconds !== undefined ? 'rate-limited-retry-budget-exhausted' : (result.error ?? 'message-edit-failed-or-not-wired');
+}
+
 // BL-484: performs the actual Telegram edit that closes a decided ask -
 // split out of recordApprovalDecisionAndClose below for the same CRAP-
 // budget reason this file already applies throughout (e.g.
@@ -1084,6 +1127,7 @@ async function closeApprovalAskIfPossible(adapters: PollAdapters, backlogId: str
     await adapters.persistClosedApprovalAskText?.(backlogId, newText);
   } else {
     logAskCloseFailure(backlogId, result);
+    emitRepaintFailureDiagnostic(adapters, backlogId, result);
   }
 }
 
@@ -1140,14 +1184,25 @@ async function commitApprovalDecision(adapters: PollAdapters, backlogId: string,
 // nowMs defaults to the real clock (mirrors runConciergeTick's own
 // injectable-nowMs convention) so every existing call site needs no clock
 // plumbing of its own, while a test can still pin an exact instant.
+// BL-582: onDecisionRecorded fires the INSTANT the record outcome is known,
+// before the commit and the ask repaint. The tap path uses it to answer its
+// callback query - which must happen promptly (a spinner that hangs is the
+// very symptom this ticket is about) and can only happen ONCE, so it cannot
+// wait for closeApprovalAskIfPossible below: that call can sleep on
+// Telegram's own retry_after during a rate-limited edit. Optional, so the
+// typed-reply and reconcile entry points - which have no spinner to clear -
+// pass nothing and are unaffected. Keeping it a hook is what preserves
+// BL-484's own constraint that there is exactly ONE closing routine.
 export async function recordApprovalDecisionAndClose(
   adapters: PollAdapters,
   backlogId: string,
   verdict: { kind: 'approved' } | { kind: 'rejected'; reason: string },
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  onDecisionRecorded?: (changed: boolean) => Promise<void>
 ): Promise<{ changed: boolean; committed: boolean }> {
   const changed =
     verdict.kind === 'approved' ? await adapters.recordApprovalReply(backlogId) : await adapters.recordRejectionReply(backlogId, verdict.reason);
+  await onDecisionRecorded?.(changed);
   if (!changed) {
     return { changed: false, committed: false };
   }
@@ -1554,8 +1609,37 @@ function decisionForApprovalCallbackKind(kind: string, backlogId: string): Callb
 // message path's own silent drop for the same two reasons). Split out of
 // processCallbackQuery below for the same CRAP-budget reason as
 // isNoopControlDecision above.
-function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
+// BL-582: "answered never" stays true - an unauthorized tap must not learn
+// this bot exists - but "logged never" does not. Both branches now leave a
+// diagnostic; only the toast is withheld. A type PREDICATE rather than a
+// plain boolean, so the caller's own diagnostic can read decision.reason
+// without an `as` re-assertion of what this function just proved.
+function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): decision is { action: 'drop'; reason: 'not-my-chat' | 'not-principal' } {
   return decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal');
+}
+
+// BL-582: the one emission point for every callback diagnostic - the
+// postFn-style injected-writer posture emitDropAuditIfDropped above already
+// establishes, so the decision code itself stays free of console calls.
+function emitCallbackDiagnostic(
+  adapters: PollAdapters,
+  callbackQueryId: string,
+  reason: CallbackDiagnosticReason,
+  detail?: string
+): void {
+  adapters.logDiagnostic?.(formatCallbackDiagnosticLine(callbackQueryId, reason, detail));
+}
+
+const UNRECOGNIZED_CALLBACK_TOAST_TEXT = 'This button was not recognized - nothing was recorded. It is probably from an older message.';
+
+// BL-582: the marker a no-op wears when nothing on disk explains it. Not a
+// fallback to silence - the human is still told the tap did nothing, and
+// the diagnostic still names the ticket, which is what makes the failure
+// investigable at all.
+const UNEXPLAINED_RECORD_NO_OP = 'unexplained';
+
+function recordNoOpToastText(backlogId: string, reason: string): string {
+  return `${backlogId}: nothing was recorded (${reason}). Your verdict is NOT saved - tell a human.`;
 }
 
 // BL-484: a tap on an ALREADY-DECIDED ask is stale - answered with an
@@ -1773,24 +1857,66 @@ function formatApprovalMoreFallback(backlogId: string): string {
   return `${backlogId}\n\n— Spec —\n(no spec on disk for this ticket)\n\n— Gherkin —\n(no Gherkin scenarios on disk for this ticket)`;
 }
 
+// BL-582: the Approve tap's own dispatch - split out of
+// dispatchApproveOrFollowup below because it answers its callback with a
+// CONDITIONAL toast (the "nothing was recorded, and here is why" text, or
+// the ordinary bare spinner-clear), exactly the shape - and exactly the
+// reason - dispatchExpediteCallback above is already split out for. The
+// answer moves from BEFORE the record to the moment the record outcome is
+// known, which is what makes naming the failure possible at all: a callback
+// query can be answered once, so a spinner cleared up front can no longer
+// carry the reason. The tap that started this ticket cleared its spinner
+// and did nothing.
+async function answerApproveTap(
+  callbackQuery: TelegramCallbackQuery,
+  backlogId: string,
+  changed: boolean,
+  adapters: PollAdapters
+): Promise<void> {
+  if (changed) {
+    await adapters.answerCallbackQuery(callbackQuery.id);
+    return;
+  }
+  const reason = (await adapters.explainApprovalRecordNoOp?.(backlogId)) ?? UNEXPLAINED_RECORD_NO_OP;
+  await adapters.answerCallbackQuery(callbackQuery.id, recordNoOpToastText(backlogId, reason));
+  emitCallbackDiagnostic(adapters, callbackQuery.id, 'record-no-op', `${backlogId}:${reason}`);
+}
+
+async function dispatchApproveCallback(
+  callbackQuery: TelegramCallbackQuery,
+  decision: { action: 'approve'; backlogId: string },
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  const result = await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' }, Date.now(), (changed) =>
+    answerApproveTap(callbackQuery, decision.backlogId, changed, adapters)
+  );
+  // A tap that recorded nothing is not a delivery - counting it 'posted'
+  // is how a silent no-op looked healthy in the poll telemetry.
+  return result.changed ? 'posted' : 'dropped';
+}
+
 async function dispatchApproveOrFollowup(
   callbackQuery: TelegramCallbackQuery,
   decision: RecognizedApprovalDecision,
   adapters: PollAdapters
 ): Promise<UpdateDeliveryOutcome> {
-  await adapters.answerCallbackQuery(callbackQuery.id);
+  // BL-582: the only drop reaching here is 'unrecognized-data' - a real tap
+  // by the principal, in our chat, on data we cannot act on (a stale button
+  // from an older deployment). It used to clear the spinner and say nothing.
   if (decision.action === 'drop') {
+    await adapters.answerCallbackQuery(callbackQuery.id, UNRECOGNIZED_CALLBACK_TOAST_TEXT);
+    emitCallbackDiagnostic(adapters, callbackQuery.id, decision.reason);
     return 'dropped';
   }
   if (decision.action === 'approve') {
-    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
-  } else {
-    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
-    // BL-509: only Amend prompts on tap - Reject stays the pre-existing
-    // silent-stash behavior (unchanged by this ticket).
-    if (decision.kind === 'amend') {
-      await adapters.notifyApprovalsTopic?.(callbackQuery.message?.message_thread_id, amendPromptText(decision.backlogId));
-    }
+    return dispatchApproveCallback(callbackQuery, decision, adapters);
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
+  // BL-509: only Amend prompts on tap - Reject stays the pre-existing
+  // silent-stash behavior (unchanged by this ticket).
+  if (decision.kind === 'amend') {
+    await adapters.notifyApprovalsTopic?.(callbackQuery.message?.message_thread_id, amendPromptText(decision.backlogId));
   }
   return 'posted';
 }
@@ -1837,6 +1963,10 @@ async function processCallbackQuery(
   }
   const decision = decideCallbackQueryAction(callbackQuery, principalUserId, adapters.chatId);
   if (isUnauthorizedCallbackDrop(decision)) {
+    // BL-582: still unanswered (see isUnauthorizedCallbackDrop), but no
+    // longer unrecorded - this is the branch that made "the human tapped
+    // and nothing happened" indistinguishable from "the bot never saw it".
+    emitCallbackDiagnostic(adapters, callbackQuery.id, decision.reason);
     return 'dropped';
   }
   return dispatchRecognizedCallbackDecision(callbackQuery, decision, updateId, adapters);
