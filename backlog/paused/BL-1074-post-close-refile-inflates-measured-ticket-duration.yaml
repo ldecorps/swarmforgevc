@@ -18,8 +18,7 @@ invariants:
   - "A closed ticket's measured duration never moves as a result of a commit made after its close: re-filing it, renaming the milestone directory it sits in, or moving it again leaves the duration it reports unchanged."
   - "The whole-corpus computation still costs the single shared git walk BL-1066 established - the fix adds no git subprocess, and no per-ticket subprocess returns however many tickets were re-filed."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   This is a sibling defect deferred out of BL-1066 by BOTH the coder and the
   architect, who each declined to fix it inside that parcel and asked the
