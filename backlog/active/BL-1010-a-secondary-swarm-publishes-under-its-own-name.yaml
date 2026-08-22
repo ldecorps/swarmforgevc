@@ -139,3 +139,5 @@ notes: |
   describing the same action). The 1 remaining finding is the known
   quoted-literal limitation - a Scenario Outline placeholder against the same
   step written with a literal - and is legitimate.
+
+assigned_to: coder

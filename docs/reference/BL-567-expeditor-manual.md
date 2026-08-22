@@ -238,6 +238,12 @@ mid-run (BL-637).
 | `EXHAUSTED {...:probable-spec-defect...}` | the bounce bound was reached on one repeating class | route to the specifier with the named class; do not re-run the coder |
 | `stage-timeout` | a stage exceeded its budget | the stage and its whole process group were killed; read that stage's `transcript.jsonl` |
 
+All three `REFUSE` rows above fire **after** `park-others!` has already staged
+sibling tickets into `backlog/hold/` (BL-1024) — so each one also prints the
+`OUTSTANDING` block and writes `run.json`'s `outstanding` array before the
+process exits. Read it: a refusal is exactly when a parked ticket is most
+likely to sit forgotten. See [the closing summary](#the-closing-summary-bl-1024).
+
 `--override` covers the liveness refusal **and** the teardown refusal, because both
 express the same decision: run despite a live swarm. Gating only the first would leave
 every overridden run refused at the second.
@@ -297,11 +303,18 @@ A deferral nobody is told about is a drop.
 
 Every run ends by printing an `OUTSTANDING` block naming what it left and who
 picks each item up — on **every** ending, including a failed restart, a bounce
-bound exhausted, and a stage that overran its timeout, which is when the
-leavings matter most. A run that parked nothing says `no tickets are held`
-rather than staying silent, and a `--dry-run` reports `nothing outstanding`
-because it changed nothing. The same data rides `run.json` as `outstanding`,
-so it survives the terminal scrolling away.
+bound exhausted, a stage that overran its timeout, and each of the three
+pre-flight [Refusals](#refusals) (forbidden stop flag, teardown not clean,
+worktree creation failed), all of which fire after `park-others!` has already
+staged real moves. Those three exit through the same single `exit!` call site
+as every other ending, so there is exactly one place in `expedite_cli.bb` that
+terminates the process (`grep -c '(System/exit' expedite_cli.bb` is `1`,
+inside `exit!` alone) and no ending can bypass the summary. A run that parked
+nothing says `no tickets are held` rather than staying silent, and a
+`--dry-run` reports `nothing outstanding` because it changed nothing. The same
+data rides `run.json` as `outstanding`, so it survives the terminal scrolling
+away — which matters most for a refusal, since a refused run never reaches
+`-main`'s own tail.
 
 ```
 expedite OUTSTANDING - this run left work for someone else:

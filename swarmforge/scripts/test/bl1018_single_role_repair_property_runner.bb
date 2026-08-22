@@ -35,9 +35,24 @@
 ;;     shape) -> 123 P3 failures, exactly the missing-session draws;
 ;;   - letting a refusal return the command it would have built -> 65 P2
 ;;     failures, the refusal half.
+;;
+;; Hardening 2026-08-22: the original P3 launch-carried check was a bare
+;; substring match, which cannot see a broken shell escape - a launch-script
+;; containing an apostrophe (the :quoted-launch generator case) no longer
+;; appears as a literal substring once correctly escaped, and unescaped it
+;; still "contained" the substring while producing invalid shell syntax
+;; (confirmed live: `sh -c "echo zsh '<path-with-apostrophe>'"` exits 2,
+;; "unexpected EOF looking for matching ''"). The coverage counter was
+;; incrementing on every quoted-launch draw while nothing asserted the
+;; result was actually valid shell. Replaced with a real `sh -c` round-trip
+;; (launch-arg/shell-round-trips? below); confirmed this newly written check
+;; itself fails against the pre-fix resolver (28/400 failures at this seed)
+;; and passes once single_role_repair_lib.bb escapes embedded quotes via
+;; shell-quote-single.
 
 (ns bl1018-single-role-repair-property-runner
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "single_role_repair_lib.bb")))
@@ -87,6 +102,22 @@
 
 (defn- session-shaped-tokens [cmd]
   (filterv #(str/starts-with? (str %) "swarmforge-") cmd))
+
+;; The resolver always emits exactly one trailing argument shaped
+;; "zsh <shell-quoted-launch-script>". A raw substring check for the
+;; launch-script text CANNOT survive the escaping a quote-containing path
+;; legitimately requires (a launch-script with an apostrophe no longer
+;; appears as a literal substring once correctly escaped) - so the only
+;; assertion that actually proves the launch survives is running the quoted
+;; argument through a REAL shell and checking what comes back out.
+(defn- launch-arg [cmd]
+  (let [last-arg (str (last cmd))]
+    (when (str/starts-with? last-arg "zsh ")
+      (subs last-arg (count "zsh ")))))
+
+(defn- shell-round-trips? [quoted-arg expected]
+  (let [{:keys [exit out]} (process/sh {:continue true} "sh" "-c" (str "printf '%s' " quoted-arg))]
+    (and (zero? exit) (= expected out))))
 
 (loop [i 0 s 20260822]
   (when (< i runs)
@@ -141,8 +172,11 @@
                 (report! "P3 (a missing session is never respawned into - BL-958)" s c (pr-str commands)))
               (when-not (some #(some #{"new-session"} %) commands)
                 (report! "P3 (a missing session is created)" s c (pr-str commands)))
-              (when-not (some (fn [cmd] (some #(str/includes? (str %) (:launch-script c)) cmd)) commands)
-                (report! "P3 (the create carries the launch script, so no respawn is needed after it)" s c (pr-str commands)))))))
+              (when-not (some (fn [cmd]
+                                 (when-let [q (launch-arg cmd)]
+                                   (shell-round-trips? q (:launch-script c))))
+                               commands)
+                (report! "P3 (the create carries the launch script AND it survives a real shell round-trip - a raw substring match cannot see a broken escape)" s c (pr-str commands)))))))
       (recur (inc i) s'))))
 
 ;; Reachability floor, asserted rather than hoped for: a generator that
