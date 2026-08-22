@@ -16,6 +16,16 @@ const {
   updateTargetContract,
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
+
+// BL-1039-EXEMPT: the two BL-443 defect-3 tests below must run against a repo
+// with NO identity configured - "the commit succeeds with a fallback author
+// identity when the target has no git identity configured" is precisely their
+// subject, and the isolation-mechanism check beside it asserts what git
+// resolves when only a redirected GLOBAL identity exists. The shared seeded
+// fixture configures user.name/user.email into every copy by construction, so
+// it cannot express the unconfigured state. Every other repo in this file - 16
+// call sites - IS taken from the shared fixture.
 
 // BL-443 QA bounce: hasGitIdentityConfigured/resolveCommitIdentityOverrides
 // (targetBootstrap.ts) resolve the identity the same way `git commit` itself
@@ -166,9 +176,7 @@ test('initializeTargetRepo skips commit when all files already present', async (
 // exercises the empty-pathspec-safe path via a genuine second run instead.
 test('initializeTargetRepo skips commit when all files are already present and committed, in a git repository', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   await initializeTargetRepo(tmp);
 
   const result = await initializeTargetRepo(tmp);
@@ -180,9 +188,7 @@ test('initializeTargetRepo skips commit when all files are already present and c
 
 test('initializeTargetRepo commits new files in a git repository', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   const result = await initializeTargetRepo(tmp);
   assert.equal(result.committed, true);
   assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
@@ -198,9 +204,7 @@ test('initializeTargetRepo commits new files in a git repository', async () => {
 // reported as created since it was freshly written to disk.
 test('initializeTargetRepo does not throw when re-creating a file whose content is unchanged from HEAD (nothing to commit)', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   await initializeTargetRepo(tmp);
   fs.unlinkSync(path.join(tmp, 'engineering.prompt'));
   fs.unlinkSync(path.join(tmp, 'project.prompt'));
@@ -259,9 +263,7 @@ test('initializeTargetContract skips a contract file that already exists (idempo
 
 test('initializeTargetContract commits new contract files in a git repository with a distinct commit message', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
 
   const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
 
@@ -298,9 +300,7 @@ test('updateTargetContract rewrites both contract files unconditionally, even th
 
 test('updateTargetContract commits a real content change in a git repository', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   await initializeTargetContract(tmp, FIXTURE_CONTRACT);
   const revised = { ...FIXTURE_CONTRACT, scope: [...FIXTURE_CONTRACT.scope, 'Per operator request: add logging'] };
 
@@ -313,9 +313,7 @@ test('updateTargetContract commits a real content change in a git repository', a
 
 test('updateTargetContract returns committed:false when the content is unchanged from HEAD (nothing to commit)', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   await initializeTargetContract(tmp, FIXTURE_CONTRACT);
 
   const result = await updateTargetContract(tmp, FIXTURE_CONTRACT, 'Revise contract (no-op)');
@@ -332,9 +330,7 @@ test('updateTargetContract returns committed:false when the content is unchanged
 // here instead.
 test('updateTargetContract propagates a real git commit failure instead of swallowing it', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   const hooksDir = path.join(tmp, '.git', 'hooks');
   fs.writeFileSync(path.join(hooksDir, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
 
@@ -376,9 +372,7 @@ test('initializeTargetPrompts withholds the prompts from the target repo when th
 // BL-269 onboarding-generated-prompts-03 (agreed row)
 test('initializeTargetPrompts releases the prompts for commit to the target repo when the gate allows (agreed)', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
 
   const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
 
@@ -392,9 +386,7 @@ test('initializeTargetPrompts releases the prompts for commit to the target repo
 
 test('initializeTargetPrompts is idempotent: re-running with unchanged content commits nothing', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
 
   await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
   const secondResult = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
@@ -414,9 +406,7 @@ test('initializeTargetPrompts is idempotent: re-running with unchanged content c
 // this path) commonly has.
 test('initializeTargetPrompts re-run with unchanged content does not throw when the repo has an unrelated untracked file', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
 
   await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
   fs.writeFileSync(path.join(tmp, 'unrelated-untracked.txt'), 'never committed');
@@ -436,9 +426,7 @@ test('initializeTargetPrompts re-run with unchanged content does not throw when 
 
 test('BL-443 defect 2: the contract commits even when the target ignores .swarmforge/ (force-add past the ignore rule)', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   fs.writeFileSync(path.join(tmp, '.gitignore'), '.swarmforge/\n');
 
   const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
@@ -494,9 +482,7 @@ test('BL-443 defect 3 (isolation mechanism check): a real global identity at the
 
 test('BL-443 defect 4: a re-run after a partial failure that left the contract written but uncommitted actually commits it', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   // Simulate defects 2/3 having aborted mid-commit: the files are on disk
   // exactly as writeFilesAndCommit would leave them, but never staged or
   // committed - existence-only idempotency used to treat this as "done".
@@ -516,9 +502,7 @@ test('BL-443 defect 4: a re-run after a partial failure that left the contract w
 
 test('BL-443 defect 4: a re-run when the contract is already present and committed is a clean no-op (no empty commit)', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
   await initializeTargetContract(tmp, FIXTURE_CONTRACT);
 
   const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
@@ -530,9 +514,7 @@ test('BL-443 defect 4: a re-run when the contract is already present and committ
 
 test('initializeTargetPrompts overwrites already-materialized content when the prompts change (change-of-mind)', async () => {
   const tmp = mkTmpDir('sfvc-bootstrap-');
-  execSync('git init', { cwd: tmp });
-  execSync('git config user.email "test@test.com"', { cwd: tmp });
-  execSync('git config user.name "Test"', { cwd: tmp });
+  copySeededRepoInto(tmp);
 
   await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
   const revisedPrompts = {

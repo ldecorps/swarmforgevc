@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/propose-onboarding-prompts');
 const { renderContractYaml } = require('../out/onboarding/contractView');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'propose-onboarding-prompts.js');
 
@@ -48,9 +49,7 @@ function mkTmpFile(name, content) {
 
 function mkTargetRepo() {
   const targetRepo = mkTmpDir('propose-onboarding-prompts-target-');
-  execFileSync('git', ['init'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });
+  copySeededRepoInto(targetRepo);
   return targetRepo;
 }
 

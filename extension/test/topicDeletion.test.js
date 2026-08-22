@@ -277,14 +277,12 @@ function git(cwd, args) {
 
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   return target;
 }
 
 const { isRecordCommitted } = require('../out/concierge/blTopicStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 test('a verified record written to a REAL git repo but never committed is never deleted (real induced non-durability, not a mocked boolean)', async () => {
   const t = ticket({ id: 'BL-778' });

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   readRecord,
   appendMessage,
@@ -135,12 +136,15 @@ function git(cwd, args) {
   execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+// BL-1039-EXEMPT: one call site in this file creates a BARE repository -
+// `git(remote, ['init', '-q', '--bare'])`, the push target the durability test
+// pushes to and then re-reads `rev-parse main` from. A bare repo is a different
+// artifact from the shared seeded fixture, which is a working copy by
+// construction and cannot stand in for a push remote. The file's working-copy
+// repositories ARE taken from the shared fixture, in mkGitRepo below.
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   return target;
 }
 

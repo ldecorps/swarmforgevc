@@ -13,6 +13,7 @@ const {
   main,
 } = require('../out/tools/drain-answer-files');
 const { readRecord, appendMessage } = require('../out/concierge/blTopicStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-440: the human->swarm offline return path. Drives the REAL compiled
 // module against a real git repo fixture - the archive move is a real git
@@ -21,9 +22,7 @@ const { readRecord, appendMessage } = require('../out/concierge/blTopicStore');
 
 function mkRepo() {
   const dir = mkTmpDir('bl440-drain-answer-files-');
-  execFileSync('git', ['init'], { cwd: dir });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+  copySeededRepoInto(dir);
   return dir;
 }
 

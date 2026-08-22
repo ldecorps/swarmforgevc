@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/suite-duration-line');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-252: the compiled suite-duration-line CLI is what briefing_email_lib.bb
 // shells out to (Babashka cannot import compiled TS) - reuses
@@ -24,9 +25,7 @@ function git(cwd, args) {
 }
 
 function writeRolesTsv(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `specifier\tmaster\t${root}\tsession\tSpecifier\tclaude\ttask\n`);
   git(root, ['add', '-A']);
