@@ -293,6 +293,157 @@ REGISTRY6="$(echo "$OUT6" | sed -n 's/^REGISTRY=//p')"
 [[ -f "$REGISTRY6" ]] && fail "06: registry file itself still exists after the fixture exited: $REGISTRY6"
 [[ ! -f "$REGISTRY6" ]] && pass "06: the registry file itself (not only the roots it named) is removed on exit"
 
+
+# ── BL-1058: the registry creation call must be one BOTH userlands accept ──
+#
+# `mktemp -t <prefix>` is BSD/macOS syntax, where the operand is a prefix. GNU
+# coreutils reads the operand as a TEMPLATE needing three trailing X's and
+# refuses, so on a GNU userland the helper died at source time - under
+# `set -euo pipefail`, before a single test body ran - and took all 83 sourcing
+# suites with it, this file included. Nothing caught it for twelve days because
+# every test above runs against whatever mktemp THIS host happens to ship, so
+# they all prove the same one thing: that the authoring host works.
+#
+# The seam is a mktemp SHIM on PATH modelling exactly ONE userland. It is what
+# makes either dialect's exclusive syntax catchable on either host, instead of
+# only after a migration.
+
+# The shim itself is shared with the BL-1058 acceptance step handlers, which
+# exec the same file as a CLI. One implementation, two consumers - the unit
+# lane and the acceptance lane can never end up modelling different userlands.
+# shellcheck source=lib/mktemp_dialect_shim.sh
+source "$SCRIPT_DIR/lib/mktemp_dialect_shim.sh"
+
+# Every dialect scenario runs inside its own PATH and TMPDIR sandbox under
+# WORKDIR, so the registry the helper creates - and every fixture root - land
+# where this suite's own EXIT trap already sweeps, and TMPDIR being honoured
+# is itself asserted rather than assumed.
+new_dialect_sandbox() {
+  local sandbox="$WORKDIR/$1"
+  mkdir -p "$sandbox/bin" "$sandbox/tmp"
+  write_mktemp_shim "$sandbox/bin" "$2"
+  printf '%s' "$sandbox"
+}
+
+# Runs a fixture body with only the shim's mktemp reachable. The registry
+# variable is cleared so an exported one from an outer harness cannot
+# short-circuit the guard under test.
+run_under_dialect() {
+  local sandbox="$1" body="$2"
+  PATH="$sandbox/bin:$PATH" TMPDIR="$sandbox/tmp" \
+    env -u __SWARMFORGE_TMP_CLEANUP_REGISTRY bash -c "$body" 2>&1
+}
+
+# ── 07: the helper initializes under EITHER dialect - a registry file that
+#    really exists, created under TMPDIR (BSD's -t honoured TMPDIR, so
+#    dropping the flag must not silently relocate anyone's fixtures) ───────
+
+for DIALECT in gnu bsd; do
+  SANDBOX7="$(new_dialect_sandbox "dialect07_$DIALECT" "$DIALECT")"
+  set +e
+  OUT7="$(run_under_dialect "$SANDBOX7" "
+set -euo pipefail
+source \"$LIB\"
+printf 'REGISTRY=%s\n' \"\$__SWARMFORGE_TMP_CLEANUP_REGISTRY\"
+[[ -f \"\$__SWARMFORGE_TMP_CLEANUP_REGISTRY\" ]] || exit 3
+")"
+  CODE7=$?
+  set -e
+  REGISTRY7="$(echo "$OUT7" | sed -n 's/^REGISTRY=//p')"
+
+  if [[ $CODE7 -ne 0 ]]; then
+    fail "07 ($DIALECT): sourcing the helper under a ${DIALECT}-only mktemp exited $CODE7: $OUT7"
+  elif [[ -z "$REGISTRY7" ]]; then
+    fail "07 ($DIALECT): the helper exposed no registry path: $OUT7"
+  elif [[ "$REGISTRY7" != "$SANDBOX7/tmp/"* ]]; then
+    fail "07 ($DIALECT): the registry landed outside TMPDIR ($SANDBOX7/tmp): $REGISTRY7"
+  else
+    pass "07: the helper initializes and exposes a real registry file under TMPDIR with only a ${DIALECT} mktemp on PATH"
+  fi
+done
+
+# ── 08: under either dialect, a registered fixture root is swept on every
+#    exit path and from either registration site - BL-801's whole finding is
+#    that the command-substitution site forks, so it must still reach the
+#    top-level trap ────────────────────────────────────────────────────────
+
+for DIALECT in gnu bsd; do
+  for SITE in direct subshell; do
+    for ENDING in clean failed; do
+      # A subshell registration followed by a failing command is not a
+      # distinct path: the fork is what scenario 01b already varies against
+      # the failing ending, and the feature file's examples fix the pair the
+      # same way.
+      [[ "$SITE" == subshell && "$ENDING" == failed ]] && continue
+
+      SANDBOX8="$(new_dialect_sandbox "dialect08_${DIALECT}_${SITE}_${ENDING}" "$DIALECT")"
+      FIXTURE8="$SANDBOX8/fixture.sh"
+      {
+        echo '#!/usr/bin/env bash'
+        echo 'set -euo pipefail'
+        echo "source \"$LIB\""
+        # An explicit template with X's under TMPDIR: the one form BOTH
+        # dialects accept, so the fixture's own scaffolding never decides
+        # which arm passes.
+        echo 'make_root() { local d; d="$(mktemp -d "$TMPDIR/bl1058-root.XXXXXX")"; register_tmp_dir "$d"; printf "%s" "$d"; }'
+        if [[ "$SITE" == direct ]]; then
+          echo 'ROOT="$(mktemp -d "$TMPDIR/bl1058-root.XXXXXX")"'
+          echo 'register_tmp_dir "$ROOT"'
+        else
+          echo 'ROOT="$(make_root)"'
+        fi
+        echo 'echo "ROOT=$ROOT"'
+        [[ "$ENDING" == failed ]] && echo 'false'
+      } > "$FIXTURE8"
+      chmod +x "$FIXTURE8"
+
+      set +e
+      OUT8="$(run_under_dialect "$SANDBOX8" "bash \"$FIXTURE8\"")"
+      CODE8=$?
+      set -e
+      ROOT8="$(echo "$OUT8" | sed -n 's/^ROOT=//p')"
+
+      if [[ -z "$ROOT8" ]]; then
+        fail "08 ($DIALECT/$SITE/$ENDING): the fixture never printed a registered root: $OUT8"
+      elif [[ "$ENDING" == clean && $CODE8 -ne 0 ]]; then
+        fail "08 ($DIALECT/$SITE/$ENDING): a cleanly ending fixture exited $CODE8: $OUT8"
+      elif [[ "$ENDING" == failed && $CODE8 -eq 0 ]]; then
+        fail "08 ($DIALECT/$SITE/$ENDING): a fixture ending on a failed command exited 0"
+      elif [[ -d "$ROOT8" ]]; then
+        fail "08 ($DIALECT/$SITE/$ENDING): the registered fixture root survived: $ROOT8"
+      else
+        pass "08: a root registered $SITE is swept on a $ENDING exit with only a ${DIALECT} mktemp on PATH"
+      fi
+    done
+  done
+done
+
+# ── 09: a registry that cannot be created fails loud and BY NAME. Before
+#    this ticket the only clue was mktemp's own message, which names neither
+#    this helper nor the registry - and `set -u` then surfaced the real
+#    problem as an unbound-variable error somewhere else entirely ──────────
+
+SANDBOX9="$(new_dialect_sandbox "dialect09_refuses" "refuses-everything")"
+set +e
+OUT9="$(run_under_dialect "$SANDBOX9" "
+set -euo pipefail
+source \"$LIB\"
+echo REACHED_BODY
+")"
+CODE9=$?
+set -e
+
+if [[ $CODE9 -eq 0 ]]; then
+  fail "09: sourcing succeeded with an mktemp that refuses every invocation: $OUT9"
+elif echo "$OUT9" | grep -q "REACHED_BODY"; then
+  fail "09: the sourcing script kept running past a registry it could not create: $OUT9"
+elif echo "$OUT9" | grep -qi "unbound variable"; then
+  fail "09: the failure surfaced as an unbound-variable error instead of a named one: $OUT9"
+elif ! echo "$OUT9" | grep -qi "tmp-cleanup registry"; then
+  fail "09: the error never names the tmp-cleanup registry as what could not be created: $OUT9"
+else
+  pass "09: a registry that cannot be created exits non-zero and names the tmp-cleanup registry"
+fi
 # ── report ────────────────────────────────────────────────────────────────
 if [[ $FAILURES -gt 0 ]]; then
   echo "$FAILURES failure(s)"
