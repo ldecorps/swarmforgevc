@@ -568,7 +568,8 @@ const DOMAINS = [
   require('./bl1026StageBudgetStatedOnceSteps'),
   require('./bl1022DaemonClosureFollowsSpawnEdgesSteps'),
   require('./bl1010SecondarySwarmPublishesUnderItsOwnNameSteps'),
-  require('./bl1011FreshnessAlarmNamesSwarmAndReasonSteps')
+  require('./bl1011FreshnessAlarmNamesSwarmAndReasonSteps'),
+  require('./bl1014BoyScoutScanRanksDebtSteps')
 ];
 
 function registerSteps(registry) {
