@@ -10,7 +10,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1054-a-hydrate-run-boots-on-specifier-and-stays-there.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   You offered three shapes and asked the specifier to pick one. Picked: A -
   a dedicated hydrate PACK carrying both the boot ordering and the lock, read
