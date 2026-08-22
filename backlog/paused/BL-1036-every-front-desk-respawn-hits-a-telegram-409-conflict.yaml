@@ -14,6 +14,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1036-a-restart-does-not-cost-a-telegram-conflict-window.feature
+human_approval: approved
 
 invariants:
   - "A restart initiated by the supervisor never leaves two holders of the bot token polling at once, whether the old process exited gracefully or was killed outright."
