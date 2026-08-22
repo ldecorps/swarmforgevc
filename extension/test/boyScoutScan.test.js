@@ -10,6 +10,7 @@ const {
   parseDuplicationReport,
   summarizeRuntimeBloat,
   renderReport,
+  scan,
 } = require('../out/tools/boyScoutScan');
 
 // BL-1014. Debt that costs once is just debt; debt that costs again and again
@@ -43,6 +44,29 @@ test('BL-1014: recurrence counts DISTINCT sources, not repeated hits from one so
     { subject: 'corroborated', source: 'duplication', artifact: 'dry', detail: '1' },
   ]));
   assert.deepEqual(ranked.map((i) => i.subject), ['corroborated', 'chatty']);
+});
+
+test('BL-1014: equal source counts are broken by total hit count before falling back to subject', () => {
+  // rankInventory's comparator has THREE clauses: sourceCount, then
+  // evidence.length, then subject. The chatty-source test above and the
+  // ties-break test below each exercise clauses 1 and 3, but neither ever
+  // constructs two items with an EQUAL sourceCount and a DIFFERENT
+  // evidence.length - so clause 2 had no test that would fail if it were
+  // dropped from the sort entirely. Hand-verified: deleting
+  // `b.evidence.length - a.evidence.length ||` from rank.ts left every
+  // other test and property in this suite green.
+  const ranked = rankInventory(mergeBySubject([
+    // 'few': one source, one hit.
+    { subject: 'few', source: 'duplication', artifact: 'dry', detail: '1' },
+    // 'many': the SAME single source, but three separate hits - sourceCount
+    // is still 1 (one distinct source), so clause 1 cannot break this tie.
+    { subject: 'many', source: 'duplication', artifact: 'dry', detail: '1' },
+    { subject: 'many', source: 'duplication', artifact: 'dry', detail: '2' },
+    { subject: 'many', source: 'duplication', artifact: 'dry', detail: '3' },
+  ]));
+  assert.equal(ranked[0].sourceCount, ranked[1].sourceCount, 'this test requires an actual sourceCount tie');
+  assert.deepEqual(ranked.map((i) => i.subject), ['many', 'few'],
+    'with sourceCount tied, more total hits must outrank fewer before alphabetical subject ever applies');
 });
 
 test('BL-1014: ties break deterministically, with no clock and no input order dependence', () => {
@@ -102,6 +126,20 @@ test('BL-1014: a malformed bounce line is skipped, never thrown - a forgiving re
   assert.equal(ev[0].subject, 'docs/qa');
 });
 
+test('BL-1014: a bounce record missing EITHER field is skipped, not just one missing both', () => {
+  // The guard is `!rec.failureClass || !rec.producingRole` - an OR of two
+  // independent checks. Every existing record fixture had both fields set
+  // or both missing (via bad JSON), so a mutant dropping either half of the
+  // OR survived silently: hand-verified that reducing the guard to check
+  // only failureClass left the rest of this suite, and the property suite,
+  // fully green.
+  const ev = parseBounceRecords([
+    JSON.stringify({ ticket: 'BL-1', failureClass: 'wiring' }),        // no producingRole
+    JSON.stringify({ ticket: 'BL-2', producingRole: 'coder' }),        // no failureClass
+  ]);
+  assert.equal(ev.length, 0, `a record missing either field must be skipped entirely, got ${JSON.stringify(ev)}`);
+});
+
 test('BL-1014: only CRAP rows over the threshold are debt', () => {
   const tsv = [
     'src/a.ts\tfnA\tcomplexity=9\tcoverage=50%\tCRAP=18.00  *** CRAP > 6 ***',
@@ -140,6 +178,22 @@ test('BL-1014: a clean repository names every source consulted and says each was
     assert.ok(report.includes(s), `a clean report must still name ${s} - an empty list tells the operator nothing`);
   }
   assert.ok(/clean/i.test(report), 'each consulted source must be stated clean rather than omitted');
+});
+
+test('BL-1014: a source that WAS consulted and found signal reports its count, not "clean" and not "unavailable"', () => {
+  // The report's per-source loop is if(!available) / else if(count===0) /
+  // else - and no existing test ever hit that third branch: the "clean"
+  // test uses count:0 everywhere, the "unavailable" test uses
+  // available:false, and every renderReport call elsewhere passes an empty
+  // consulted array. Left uncovered, this was 9% of the function missing
+  // from CRAP's coverage measurement and the sole reason renderReport sat at
+  // CRAP 6.02 (just over the threshold) despite complexity alone being fine.
+  const report = renderReport({
+    ranked: [],
+    consulted: [{ source: 'crap-over-threshold', available: true, count: 3 }],
+  });
+  assert.ok(/crap-over-threshold:\s*3 signal\(s\)/.test(report),
+    `a consulted source with real signal must state its count; got: ${report}`);
 });
 
 test('BL-1014: a source that could not be consulted is reported as such, never silently as clean', () => {
@@ -192,6 +246,48 @@ test('BL-1014: the ledger and CRAP now agree on one key, so a file in both is at
   ]));
   assert.equal(ranked[0].subject, 'extension/src/tools/x.ts');
   assert.equal(ranked[0].sourceCount, 2, 'a file in both the ledger and CRAP must outrank one in CRAP alone');
+});
+
+// ── scan() itself: consult's unavailable-vs-clean branching ───────────────
+// scan() was otherwise only exercised through the property test (which ties
+// crap/duplication's emptiness to the SAME `broken` flag as a throwing
+// hardeningLedger, so "some source unavailable" was always trivially true
+// regardless of whether crap's OWN branch was correct) and the acceptance
+// steps (whose scenarios never assert the unavailable-vs-clean distinction
+// for crap/duplication specifically). Hand-verified: reversing the
+// `crapText.trim() === ''` check to always answer "available" here left this
+// whole file, the property suite, AND the acceptance feature (10/10) green.
+
+const emptyReaders = () => ({
+  hardeningLedger: () => [],
+  bounceLines: () => [],
+  crapReport: () => '',
+  duplicationReport: () => '',
+  countedPaths: () => [],
+});
+
+test('BL-1014: a truly-empty CRAP report is NOT CONSULTED, never reported as clean', () => {
+  const result = scan('/unused', emptyReaders());
+  const crap = result.consulted.find((c) => c.source === 'crap-over-threshold');
+  assert.equal(crap.available, false, `an empty CRAP report must be unavailable, got ${JSON.stringify(crap)}`);
+  assert.ok(crap.why && crap.why.length > 0, 'and must say why');
+});
+
+test('BL-1014: a non-empty CRAP report with nothing flagged IS clean, not unavailable', () => {
+  // The inverse fixture, so the two branches of the same ternary are each
+  // independently pinned - a below-threshold report is real data, not absence.
+  const readers = emptyReaders();
+  readers.crapReport = () => 'src/a.ts\tfn\tcomplexity=1\tcoverage=100%\tCRAP=1.00';
+  const result = scan('/unused', readers);
+  const crap = result.consulted.find((c) => c.source === 'crap-over-threshold');
+  assert.equal(crap.available, true, `a real but clean CRAP report must be available, got ${JSON.stringify(crap)}`);
+  assert.equal(crap.count, 0);
+});
+
+test('BL-1014: a truly-empty duplication report is NOT CONSULTED, never reported as clean', () => {
+  const result = scan('/unused', emptyReaders());
+  const dup = result.consulted.find((c) => c.source === 'duplication');
+  assert.equal(dup.available, false, `an empty duplication report must be unavailable, got ${JSON.stringify(dup)}`);
 });
 
 // ── report readability ────────────────────────────────────────────────────
