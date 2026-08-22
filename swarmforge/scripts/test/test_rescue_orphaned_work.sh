@@ -106,18 +106,55 @@ check "05: an ordinary commit leaves the stash untouched" \
 check "05: and produces no rescue note" '[[ ! -f "$R5/tmp/rescue-note.txt" ]]'
 note "PASS: 05"
 
-# ── 06: the commit byline names the ROLE the rescue targeted ──────────────
-# The commit lands on that role's own branch, so the byline must name it -
-# not whichever role happens to be this file's most common caller. A
-# hardcoded byline would pass every check above (all of them use --role
-# coder) while silently mislabeling every rescue into another role's tree.
+# ── D1a (architect bounce): a role's OWN pre-existing work is never swept ──
+# Every fixture above starts from a clean tree, which is exactly why the first
+# implementation shipped this defect: it derived its file set from
+# `git diff --name-only HEAD` AFTER the apply - "everything uncommitted in the
+# tree" - rather than from the stash. A role's in-progress ticket work sitting
+# in its worktree was committed under a rescue message describing something
+# else. That is the very harm this ticket exists to prevent, automated.
 R6="$(make_repo)"
-bb "$CLI" "$R6" --stash 'stash@{0}' --role hardener --reason 'BL-981 seat-fold stash' > /dev/null 2>&1
-check "06: the commit byline names the targeted role, not a fixed default" \
-  'git -C "$R6" log -1 --format=%B | grep -q "By hardener\."'
-check "06: and never the wrong role" \
-  '! git -C "$R6" log -1 --format=%B | grep -q "By coder\."'
-note "PASS: 06"
+printf 'my own in-progress ticket work
+' > "$R6/mine.ts"
+git -C "$R6" add mine.ts && git -C "$R6" commit -qm "add mine.ts"
+printf 'my own UNCOMMITTED edit
+' > "$R6/mine.ts"
+OUT6="$(bb "$CLI" "$R6" --stash 'stash@{0}' --role coder --reason 'BL-981 seat-fold stash' 2>&1)"
+check "D1a: only the stash's own file is rescued, not the tree's other dirt" \
+  'grep -q "1 file(s)" <<< "$OUT6"'
+check "D1a: the role's own uncommitted edit is NOT in the rescue commit" \
+  '! git -C "$R6" show --stat --format= HEAD | grep -q "mine.ts"'
+check "D1a: and it is still sitting uncommitted where its owner left it" \
+  '[[ "$(cat "$R6/mine.ts")" == "my own UNCOMMITTED edit" ]]'
+check "D1a: the rescued file itself did land" \
+  '[[ "$(git -C "$R6" show HEAD:seat.ts)" == "the reviewed-sound fix" ]]'
+note "PASS: D1a"
+
+# ── D1b (architect bounce): a stash carrying only an UNTRACKED file ────────
+# `git diff --name-only HEAD` never reports untracked files, so such a stash
+# was applied (the file landed on disk), reported as "changed no tracked file",
+# refused - and the applied file was left untracked and unaccounted for.
+R7="$(make_repo)"
+git -C "$R7" stash drop -q 'stash@{0}'
+printf 'brand new orphaned work
+' > "$R7/brandnew.ts"
+git -C "$R7" stash push -q -u -m "orphaned untracked fix" -- brandnew.ts
+check "D1b: the fixture really does hold an untracked-only stash" \
+  '[[ ! -e "$R7/brandnew.ts" ]] && git -C "$R7" stash list | grep -q "orphaned untracked fix"'
+OUT7="$(bb "$CLI" "$R7" --stash 'stash@{0}' --role coder --reason 'untracked orphan' 2>&1)"
+check "D1b: an untracked-only stash is rescued, not refused" \
+  'grep -q "RESCUED" <<< "$OUT7"'
+check "D1b: and its content is in the commit" \
+  '[[ "$(git -C "$R7" show HEAD:brandnew.ts)" == "brand new orphaned work" ]]'
+# Excludes tmp/, which holds the CLI's own note draft: ./tmp/ is the sanctioned
+# scratch location for a worktree and is gitignored in the real repo, but a
+# bare fixture repo has no ignore rules. What must not be left behind is
+# RESCUED CONTENT - the D1b defect left brandnew.ts itself untracked.
+check "D1b: no rescued content is left untracked and unaccounted for" \
+  '[[ -z "$(git -C "$R7" status --porcelain | grep -v "tmp/")" ]]'
+check "D1b: and only then is the source released" \
+  '! git -C "$R7" stash list | grep -q "orphaned untracked fix"'
+note "PASS: D1b"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-1041 rescue-orphaned-work: ALL CHECKS PASSED"

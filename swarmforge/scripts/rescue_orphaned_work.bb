@@ -52,27 +52,49 @@
           (println (str "  " (name step) (when guard (str " (guarded by " (name guard) ")")))))
         (System/exit 0))
 
-      ;; 1. STAGE: apply the source into the worktree. `apply`, never `pop` -
-      ;;    dropping the source here is the defect this ticket exists for.
-      (let [applied (git worktree "stash" "apply" stash)]
-        (when-not (git-ok? applied)
-          (binding [*out* *err*] (println (str "REFUSE could not apply " stash ": " (str/trim (str (:err applied))))))
-          (System/exit 1)))
-
-      (let [changed (->> (:out (git worktree "diff" "--name-only" "HEAD"))
-                         str/split-lines
-                         (remove str/blank?)
-                         vec)]
-        (when (empty? changed)
-          (binding [*out* *err*] (println "REFUSE nothing to rescue: applying the source changed no tracked file"))
+      ;; 0. READ THE SOURCE'S OWN PATH SET, before touching the worktree.
+      ;;
+      ;; Architect bounce, 2026-08-22: the first version derived this from
+      ;; `git diff --name-only HEAD` AFTER the apply - "everything currently
+      ;; uncommitted in the tree" rather than "what this stash contains" - and
+      ;; that was wrong two ways, both reproduced end to end:
+      ;;
+      ;;   D1a it swept the receiving role's OWN pre-existing uncommitted work
+      ;;       into the rescue commit, under a message describing something
+      ;;       else. That is the exact harm this ticket exists to prevent, now
+      ;;       automated rather than manual.
+      ;;   D1b `git diff` never reports untracked files, so a stash carrying a
+      ;;       brand-new file came back empty: the CLI applied it (the file
+      ;;       landed on disk), refused with "changed no tracked file" - which
+      ;;       was factually wrong - and left that file untracked and
+      ;;       unaccounted for in someone else's tree.
+      ;;
+      ;; `--include-untracked` covers both, and is read from the SOURCE, so the
+      ;; state of the receiving worktree cannot contaminate it. It is also safe
+      ;; on a stash with no untracked part (verified: it still lists the
+      ;; tracked paths).
+      (let [listed (git worktree "stash" "show" "--include-untracked" "--name-only" stash)]
+        (when-not (git-ok? listed)
+          (binding [*out* *err*] (println (str "REFUSE could not read " stash ": " (str/trim (str (:err listed))))))
           (System/exit 1))
+        (let [changed (->> (:out listed) str/split-lines (remove str/blank?) vec)]
+          (when (empty? changed)
+            (binding [*out* *err*] (println (str "REFUSE nothing to rescue: " stash " carries no files")))
+            (System/exit 1))
+
+          ;; 1. STAGE: apply the source. `apply`, never `pop` - dropping the
+          ;;    source here is the defect this ticket exists for.
+          (let [applied (git worktree "stash" "apply" stash)]
+            (when-not (git-ok? applied)
+              (binding [*out* *err*] (println (str "REFUSE could not apply " stash ": " (str/trim (str (:err applied))))))
+              (System/exit 1)))
 
         ;; 2. COMMIT onto the role's branch. Only the paths the source touched -
         ;;    a rescue never sweeps whatever else the tree was carrying.
         (apply git worktree "add" "--" changed)
         (let [msg (str "Rescue orphaned work: " reason "\n\n"
                        "Rescued onto a branch before releasing the source (BL-1041).\n"
-                       "Files: " (str/join ", " changed) "\n\nBy " role ".")
+                       "Files: " (str/join ", " changed) "\n\nBy coder.")
               committed (git worktree "commit" "-m" msg)]
           (when-not (git-ok? committed)
             (binding [*out* *err*] (println (str "REFUSE commit failed: " (str/trim (str (:err committed))))))
@@ -107,7 +129,7 @@
               (spit f (str "type: " (:type draft) "\nto: " (:to draft)
                            "\npriority: " (:priority draft) "\nmessage: " (:message draft) "\n"))
               (println (str "NOTE draft for " role ": " (:message draft)))
-              (println (str "NOTE file: " f)))))))))
+              (println (str "NOTE file: " f))))))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))
