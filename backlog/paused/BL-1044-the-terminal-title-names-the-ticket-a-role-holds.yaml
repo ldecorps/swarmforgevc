@@ -16,7 +16,7 @@ human_approval: pending
 
 invariants:
   - "The window name is SwarmForge's slot alone: nothing running inside the pane can change it, and the title updater never writes the pane title the agent already owns."
-  - "A title is never stale-but-plausible: a role holding nothing shows its last cleared ticket in a visibly cleared form, never in the held form."
+  - "A title is never stale-but-plausible: a role holding nothing shows the last ticket that actually PASSED THROUGH it as a parcel, in a visibly not-held form - never the held form, and never a ticket it merely saw named in a note."
 
 description: |
   ## What
@@ -28,7 +28,33 @@ description: |
 
   Put the ticket there: role plus the ticket number **without the `BL-`
   prefix** plus a short slug. When the role holds nothing, show the last
-  ticket it cleared, in a form that reads as cleared rather than held.
+  ticket that passed through it, in a form that reads as past rather than
+  current.
+
+  ## What "passed through" means, precisely
+
+  Operator clarification 2026-08-22: *"by cleared I mean the last ticket you
+  saw going through you"* - the last ticket this role actually HANDLED as a
+  parcel. Not "the last ticket that got closed", and not "the last ticket
+  whose id this role happened to see".
+
+  That distinction has teeth, because a role's `inbox/completed/` holds both
+  parcels and notes. The architect's, newest first, right now:
+
+      note         message: BL-1014 wiring path fixed on main ...
+      note         message: BL-1010 QA-approved 910427ccb8 - merge your ...
+      git_handoff  task:    BL-1035-a-respawned-bot-gets-its-own-startup-grace
+      git_handoff  task:    BL-1014-the-boy-scout-scan-ranks-debt-by-what-...
+
+  The newest FILE is a note, and the two newest notes both name tickets. A
+  title built from "the newest completed file" would show BL-1014 or BL-1010;
+  the last ticket that actually went through the architect is **BL-1035**.
+  Both wrong answers are plausible-looking, which is the whole hazard.
+
+  So: the newest `git_handoff` in `inbox/completed/`, read from its `task:`
+  header. Notes are skipped even when they name a ticket. `inbox/abandoned/`
+  is skipped too - an abandoned parcel did not pass through (these exist:
+  coder 3, architect 1, documenter 1).
 
   ## Where it goes, and why not the obvious place
 
@@ -61,15 +87,15 @@ description: |
 
   The slug is already in the handoff's own `task:` header - e.g.
   `task: BL-1035-a-respawned-bot-gets-its-own-startup-grace`. The last
-  cleared ticket is the newest `task:`-bearing file in the role's
-  `inbox/completed/`.
+  last ticket that passed through is the newest `git_handoff` in the role's
+  `inbox/completed/`, per the definition above.
 
   ## How (direction, not mandate)
 
   A small updater run from the daemon's existing poll cycle, consuming the
   stage map rather than re-deriving it, and renaming windows via
   `tmux rename-window` (an external command - unaffected by
-  `allow-rename off`). Exact separator, marker for the cleared form, and
+  `allow-rename off`). Exact separator, marker for the not-held form, and
   slug budget are the implementer's call; a title bar truncates, so the slug
   needs a bound rather than the whole task name.
 
@@ -93,13 +119,20 @@ qa_e2e_procedure: >
      window's title matches the stage that map assigns it.
 
   4. Confirm the idle form: pick a role holding nothing and confirm its title
-     shows its last cleared ticket in the cleared form, visibly different
-     from a held one. Verify that ticket against the newest `task:`-bearing
-     file in that role's `inbox/completed/`.
+     shows the last ticket that passed through it, visibly different from a
+     held one. Verify that ticket against the newest `git_handoff` in that
+     role's `inbox/completed/` - read the file, do not infer it from the
+     title you are checking.
+
+  4b. Confirm a note does not fool it, which is the live case: the
+     architect's two newest completed items are notes naming BL-1014 and
+     BL-1010, while its last actual parcel was BL-1035. Confirm the title
+     says BL-1035's number, not either note's.
 
   5. Confirm the never-held case, which is live today: the cleaner's
      `inbox/completed/` is empty, so its title must show the role alone and
-     must not invent a ticket.
+     must not invent a ticket. Confirm the same for a role whose completed
+     mailbox holds ONLY notes and no parcel yet.
 
   6. Confirm the two do not fight: watch a pane through several agent turns
      and confirm the pane title keeps churning with the agent's own messages
@@ -135,7 +168,7 @@ approval_context: >
 
 
   ONE CALL OF MINE. **I left the exact format to the implementer** - separator,
-  how "cleared" is marked, how many characters of slug. A title bar truncates
+  how the not-held form is marked, how many characters of slug. A title bar truncates
   and the right budget is something you see rather than specify, so pinning it
   in the ticket would just invite a second ticket to re-tune it. If you have a
   format in mind, say it and I will pin it.
@@ -146,6 +179,9 @@ source: |
   terminal title bar to show which ticket the agent is working on, (ticket
   number without BL prefix is fine + small slug). if it's idle, show the last
   ticket it cleared."
+
+  Clarified in-chat the same day, verbatim: "by cleaed I mean the last ticket
+  you saw going through you".
 
 notes: |
   ## Facts confirmed live while scoping
@@ -168,8 +204,8 @@ notes: |
 
   ## IR-DRY judgment recorded
 
-  4 findings, all kept. Every one is a polarity pair the checker cannot see
+  3 findings, all kept. Every one is a polarity pair the checker cannot see
   as negation - holds a parcel / holds no parcel, names the ticket / names no
-  ticket, has cleared before / has never cleared - and those contrasts are
-  exactly what the three title states are. Nothing here is accidental drift.
-
+  ticket, has handled a parcel before / has never handled a parcel - and
+  those contrasts are exactly what the three title states are. Nothing here
+  is accidental drift.
