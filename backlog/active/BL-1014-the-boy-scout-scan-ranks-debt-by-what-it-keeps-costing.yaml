@@ -97,3 +97,5 @@ notes: |
   The "annoying = recurrence" framing is the whole reason this slice is
   gateable. It was chosen over ranking by severity precisely because severity
   is a judgement that would differ run to run, which invariant 1 forbids.
+
+assigned_to: coder

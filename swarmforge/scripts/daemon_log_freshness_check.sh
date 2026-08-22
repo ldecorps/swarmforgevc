@@ -153,25 +153,46 @@ effective_threshold() {
 }
 
 # Newest heartbeat line age in seconds, or a huge number if none/unparseable.
+# BL-1011: prints "<age> <reason>". The age keeps its historical shape - the
+# 999999999 sentinel still comes back for the three unmeasurable conditions, so
+# every numeric comparison downstream (the BL-1012 grace check especially)
+# keeps working byte-for-byte. What is NEW is the second field: which of the
+# three conditions produced it, so a human never has to decode a number.
+#
+# The sentinel is an INTERNAL value from here on. Nothing may print it to a
+# person - render_age below is the only thing that turns an age into text.
+SENTINEL_AGE=999999999
+
 heartbeat_age_secs() {
   log_path=$1
   if [ ! -f "$log_path" ]; then
-    printf '%s\n' "999999999"
+    printf '%s %s\n' "$SENTINEL_AGE" "log-absent"
     return
   fi
   # Last line containing the token "heartbeat" (content-free pulse).
   line=$(grep -E '[[:space:]]heartbeat([[:space:]]|$)' "$log_path" | tail -n 1 || true)
   if [ -z "$line" ]; then
-    printf '%s\n' "999999999"
+    printf '%s %s\n' "$SENTINEL_AGE" "no-heartbeat-line"
     return
   fi
   ts=$(printf '%s' "$line" | awk '{print $1}')
   epoch=$(iso_to_epoch "$ts")
   if [ -z "$epoch" ] || [ "$epoch" -eq 0 ]; then
-    printf '%s\n' "999999999"
+    printf '%s %s\n' "$SENTINEL_AGE" "unparseable-timestamp"
     return
   fi
-  printf '%s\n' $((NOW - epoch))
+  printf '%s %s\n' $((NOW - epoch)) "stale-heartbeat"
+}
+
+# BL-1011: a value that is not an age never renders as a number. This is the
+# single place an age becomes human-facing text, so there is one place to be
+# right rather than four interpolation sites to keep in step.
+render_age() {
+  if [ "$1" -eq "$SENTINEL_AGE" ]; then
+    printf '%s\n' "unknown"
+  else
+    printf '%s\n' "$1"
+  fi
 }
 
 last_restart_epoch() {
@@ -291,7 +312,12 @@ process_daemon() {
   pid_path="$ROOT/$pid_rel"
   start_script="$SCRIPT_DIR/$start_name"
 
-  age=$(heartbeat_age_secs "$log_path")
+  # BL-1011: "<age> <reason>". `age` keeps its old numeric meaning (sentinel
+  # included) so every comparison below is unchanged; `reason` is what a human
+  # reads instead of the sentinel.
+  age_and_reason=$(heartbeat_age_secs "$log_path")
+  age=${age_and_reason%% *}
+  reason=${age_and_reason#* }
 
   # BL-1012: the threshold is now relative to host contention, within a hard
   # ceiling. At factor 1 this is byte-for-byte today's behaviour.
@@ -317,16 +343,16 @@ process_daemon() {
   # Scoped deliberately to the SENTINEL only (absent log / no heartbeat line),
   # never to a real measured age: a daemon that came back up and then went
   # stale inside the grace window is a genuine violation and must still fire.
-  if [ "$age" -eq 999999999 ] && [ "$last" -gt 0 ] && [ "$since" -lt "$RESTART_GRACE" ]; then
-    record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=grace grace_remaining=$((RESTART_GRACE - since))"
+  if [ "$age" -eq "$SENTINEL_AGE" ] && [ "$last" -gt 0 ] && [ "$since" -lt "$RESTART_GRACE" ]; then
+    record="epoch=${NOW} swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=grace grace_remaining=$((RESTART_GRACE - since))"
     append_incident "$record"
     return 0
   fi
 
   if [ "$last" -gt 0 ] && [ "$since" -lt "$COOL_OFF" ]; then
-    record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=escalate cool_off_remaining=$((COOL_OFF - since))"
+    record="epoch=${NOW} swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=escalate cool_off_remaining=$((COOL_OFF - since))"
     append_incident "$record"
-    do_announce "FRESHNESS_VIOLATION escalate daemon=${name} age_secs=${age} threshold=${effective} (cool-off; no second restart)"
+    do_announce "FRESHNESS_VIOLATION escalate swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective} (cool-off; no second restart)"
     return 0
   fi
 
@@ -337,9 +363,9 @@ process_daemon() {
   # is interpretable from the record alone and never needs re-running at the
   # same load to classify. `threshold=` stays the BASE, unchanged, so every
   # existing reader of these records keeps working.
-  record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=restart"
+  record="epoch=${NOW} swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=restart"
   append_incident "$record"
-  do_announce "FRESHNESS_VIOLATION restart daemon=${name} age_secs=${age} threshold=${effective}"
+  do_announce "FRESHNESS_VIOLATION restart swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective}"
 }
 
 # Load project + telegram env files when present (production cron path).
@@ -376,12 +402,26 @@ json_number() {
   [ -f "$file" ] || return 0
   sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\(-*[0-9][0-9]*\\).*/\\1/p" "$file" | head -n 1
 }
-if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+# BL-1011: resolve this checkout's own swarm name UNCONDITIONALLY. It used to
+# be computed only inside the credential-fallback branch below, so a checkout
+# whose TELEGRAM_* were already exported never computed it and announced
+# anonymously - which is exactly why the five alarms of 2026-08-21 could not be
+# attributed to any host. Attribution must not depend on which credential path
+# supplied the token.
+resolve_swarm_name() {
   swarm_name=${SWARMFORGE_SWARM_NAME:-}
   if [ -z "$swarm_name" ] && [ -f "$ROOT/.swarmforge/swarm-identity" ]; then
     swarm_name=$(awk -F '\t' '$1=="swarm_name" {print $2; exit}' "$ROOT/.swarmforge/swarm-identity" || true)
   fi
+  # Never empty: an unattributable alarm is the defect. Falls back to the same
+  # default swarm_identity_lib.bb uses.
   [ -n "$swarm_name" ] || swarm_name=primary
+  printf '%s\n' "$swarm_name"
+}
+SWARM_NAME=$(resolve_swarm_name)
+
+if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+  swarm_name=$SWARM_NAME
   fleet_home=${SWARMFORGE_FLEET_HOME:-${HOME:-}}
   fleet_json="$fleet_home/.swarmforge/fleet/$swarm_name/telegram.json"
   if [ -f "$fleet_json" ]; then
