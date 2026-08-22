@@ -10,7 +10,7 @@ depends_on: [BL-1079]
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1080-a-pack-can-name-cursor-on-a-window-line.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted 2026-08-22 by operator Let's Talk ask for Cursor-as-swarm-seat
   enabling tickets. This is BL-712 slice D — pack lines and docs after
