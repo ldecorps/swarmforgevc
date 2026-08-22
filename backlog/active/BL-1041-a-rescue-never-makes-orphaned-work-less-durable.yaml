@@ -11,7 +11,7 @@ severity: high
 # backlog/evidence/ by hand an hour earlier, which is not a mechanism.
 status: todo
 epic: swarm-reliability
-assigned_to: none
+assigned_to: coder
 priority: 12
 direction: swarm-reported
 depends_on: []
@@ -180,3 +180,6 @@ notes: |
   severe (172/144/98, 15-min window still climbing) - this cycle's
   promotion was skipped for load regardless of approval state; see
   project_circuit_breaker_severe_load_20260822 memory thread.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-22, by: architect, blamed: coder, class: behavior, commit: 0543e3874b, evidence: backlog/evidence/BL-1041-bounce-20260822.md }

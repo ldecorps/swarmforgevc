@@ -5329,6 +5329,61 @@ test('a successful cycle with real updates still advances the offset via runPoll
   assert.equal(cycle.state.consecutiveFailures, 0);
 });
 
+// ── BL-1036: runPollCycle actually WIRES pollRecovered/pollUnresolved/
+// conflictWindow, not just computes them in isolation. bl1036RestartConflict
+// Window.test.js and its property sibling only exercise the pure predicate
+// functions directly - never runPollCycle's own use of them. Confirmed a real
+// gap by hand: hardcoding `pollRecovered: false` in runPollCycle's success
+// branch left all 424 pre-existing tests (13 + 2 + 409) green.
+
+test('runPollCycle: pollRecovered is true on the first success after crossing the degraded threshold', async () => {
+  let state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
+  for (let i = 0; i < BACKOFF_CONFIG.degradedThreshold; i++) {
+    const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+    state = cycle.state;
+  }
+  const recovered = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(recovered.pollRecovered, true, 'a success after crossing the degraded threshold must be reported as a recovery');
+  assert.equal(recovered.pollUnresolved, false);
+});
+
+test('runPollCycle: pollRecovered is false on a success that never crossed the degraded threshold', async () => {
+  const state = { offset: 0, consecutiveFailures: 1, sustainedOutage: NO_OUTAGE };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: true, updates: [] }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(cycle.pollRecovered, false, 'nothing was announced, so nothing should be closed');
+});
+
+test('runPollCycle: a failing cycle never reports pollRecovered', async () => {
+  const state = { offset: 0, consecutiveFailures: BACKOFF_CONFIG.degradedThreshold, sustainedOutage: NO_OUTAGE };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(cycle.pollRecovered, false);
+});
+
+test('runPollCycle: pollUnresolved is true exactly on the cycle the sustained-outage threshold is crossed', async () => {
+  const sustainedOutage = { failingSinceMs: FIXTURE_NOW - BACKOFF_CONFIG.sustainedOutageThresholdMs, escalated: false };
+  const state = { offset: 0, consecutiveFailures: 9, sustainedOutage };
+  const cycle = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(cycle.pollUnresolved, true, 'crossing the sustained-outage threshold must be reported as unresolved');
+  assert.equal(cycle.escalateSustainedOutage, true, 'sanity: this is genuinely the crossing cycle');
+
+  // The very next failing cycle: already escalated, must not re-announce.
+  const again = await runPollCycle(cycle.state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'down' }), BACKOFF_CONFIG, FIXTURE_NOW);
+  assert.equal(again.pollUnresolved, false, 'unresolved must fire once per episode, not every cycle after');
+});
+
+test('runPollCycle: conflictWindow is set from a 409 error and carries the configured poll timeout, and unset otherwise', async () => {
+  const state = { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE };
+  // 99, deliberately distinct from the 25s the caller happens to configure
+  // elsewhere - a hardcoded fallback of 25 must not read as "wired".
+  const config = { ...BACKOFF_CONFIG, pollTimeoutSeconds: 99 };
+  const conflict = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'Telegram API responded with status 409: Conflict: terminated by other getUpdates request' }), config, FIXTURE_NOW);
+  assert.ok(conflict.conflictWindow, 'a 409 must be described as a conflict window');
+  assert.ok(conflict.conflictWindow.includes('99'), 'must carry the configured pollTimeoutSeconds, not a silent default');
+
+  const other = await runPollCycle(state, PRINCIPAL_ID, fakeCycleAdapters({ success: false, updates: [], error: 'network error' }), config, FIXTURE_NOW);
+  assert.equal(other.conflictWindow, undefined, 'a non-409 failure must not be described as a conflict window');
+});
+
 // ── applyPollCycleResult (adapter-injected per-cycle side effects) ───────
 // Split out of pollLoop's own for(;;) (found during cleaner review: two
 // ifs inline in that forever loop pushed its own CRAP over threshold at
@@ -5370,6 +5425,68 @@ test('applyPollCycleResult still waits on a failed cycle below the degraded thre
   );
   assert.deepEqual(warnings, []);
   assert.deepEqual(waits, [1000]);
+});
+
+// ── BL-1036: applyPollCycleResult actually USES pollRecovered/pollUnresolved/
+// conflictWindow - the other half of the same wiring gap as runPollCycle
+// above. Nothing in the pre-existing suite ever set these fields on a cycle
+// passed to applyPollCycleResult, so the log-writing branches that read them
+// were reachable only through the live, untested poll loop.
+
+test('applyPollCycleResult writes a recovery line when pollRecovered is true', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, pollRecovered: true, pollUnresolved: false },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /poll recovered/);
+});
+
+test('applyPollCycleResult writes nothing extra when pollRecovered is false', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 0, sustainedOutage: NO_OUTAGE }, delayMs: 0, degradedWarning: false, pollRecovered: false, pollUnresolved: false },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.deepEqual(warnings, [], 'no recovery/unresolved line when neither is true');
+});
+
+test('applyPollCycleResult writes an UNRESOLVED line naming the cause when pollUnresolved is true', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 12, sustainedOutage: NO_OUTAGE }, delayMs: 8000, degradedWarning: false, pollRecovered: false, pollUnresolved: true, errorMessage: 'network error' },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /poll UNRESOLVED/);
+});
+
+test('applyPollCycleResult appends the conflict window to the degraded warning line when present', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 5, sustainedOutage: NO_OUTAGE }, delayMs: 1000, degradedWarning: true, pollRecovered: false, pollUnresolved: false, conflictWindow: 'conflict window: our own predecessor poll still holds the getUpdates slot' },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /5 consecutive failures/);
+  assert.match(warnings[0], /\(conflict window: our own predecessor poll still holds the getUpdates slot\)/,
+    'the conflict-window explanation must ride along on the degraded line, not be silently dropped');
+});
+
+test('applyPollCycleResult does not append a parenthetical when conflictWindow is absent', async () => {
+  const warnings = [];
+  await applyPollCycleResult(
+    { state: { offset: 0, consecutiveFailures: 5, sustainedOutage: NO_OUTAGE }, delayMs: 1000, degradedWarning: true, pollRecovered: false, pollUnresolved: false },
+    (message) => warnings.push(message),
+    async () => {}
+  );
+  assert.equal(warnings.length, 1);
+  assert.ok(!warnings[0].includes('('), `no stray parenthetical when there is no conflict window: ${warnings[0]}`);
 });
 
 // ── computeReplyRelayCycleResult / applyReplyRelayCycleResult (BL-320) ───

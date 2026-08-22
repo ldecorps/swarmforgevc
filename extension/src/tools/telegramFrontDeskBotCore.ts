@@ -2627,6 +2627,12 @@ export async function pollAndForward(offset: number, principalUserId: string, ad
 export interface PollBackoffConfig {
   backoffBaseMs: number;
   backoffMaxMs: number;
+  // BL-1036: the long-poll timeout the bot asks Telegram for. It is the BOUND
+  // on a post-restart conflict window - the predecessor's slot is released
+  // when its long poll times out server-side - so the log can state how long
+  // the window can last. Optional so every existing caller is unaffected;
+  // 25 is what telegram-front-desk-bot.ts passes.
+  pollTimeoutSeconds?: number;
   // Consecutive FAILED cycles before raising a degraded warning. The
   // warning fires exactly once per outage streak (consecutiveFailures
   // strictly increases while failing and resets to 0 on success, so it
@@ -2763,6 +2769,58 @@ export function shouldRaiseDegradedWarning(consecutiveFailures: number, config: 
   return consecutiveFailures === config.degradedThreshold;
 }
 
+// BL-1036 (invariant 2): a degraded report is never left open. The supervisor
+// log carried 626860 lines and not one recovery line - only "poll degraded ...
+// still retrying", over and over - so a human could not tell a four-second
+// conflict from an outage that lasted until the next restart. That ambiguity
+// is why diagnosing the restart storm needed a hand-built timeline.
+//
+// A degradation ends exactly one of two ways, and both are now announced:
+// it recovers, or it is declared unresolved. Both fire ONCE - repeating either
+// every cycle would recreate the wall of unclosed reports in a new costume.
+
+// The streak crossed the threshold (so a degradation WAS announced) and this
+// cycle succeeded. Derived from the two consecutive-failure counts rather than
+// from a new flag: the state already carries everything this needs, and a
+// second source of truth is a second thing to keep in step.
+export function shouldRaisePollRecoveredNotice(
+  previousConsecutiveFailures: number,
+  nextConsecutiveFailures: number,
+  config: PollBackoffConfig
+): boolean {
+  return previousConsecutiveFailures >= config.degradedThreshold && nextConsecutiveFailures === 0;
+}
+
+// The other ending: the outage outlived its budget. Announced once, so the log
+// records "this never came back" rather than falling silent mid-retry.
+export function shouldRaisePollUnresolvedNotice({
+  sustainedOutageReached,
+  alreadyReported,
+}: {
+  sustainedOutageReached: boolean;
+  alreadyReported: boolean;
+}): boolean {
+  return Boolean(sustainedOutageReached) && !alreadyReported;
+}
+
+// BL-1036: Telegram's own 409 text accuses a second bot instance ("make sure
+// that only one bot instance is running"), which sent an operator hunting for
+// a rival poller that did not exist. On a supervisor restart the conflict is
+// with the token's OWN just-killed poll: the predecessor died mid-long-poll
+// without closing its request, and Telegram holds that getUpdates slot until
+// the poll times out server-side. The log should say so, and say how long the
+// window can last, rather than repeating an accusation that misdirects.
+export function describePollConflictWindow(
+  errorMessage: string | undefined,
+  pollTimeoutSeconds: number
+): string | undefined {
+  if (!errorMessage || !errorMessage.includes('409')) return undefined;
+  return (
+    `conflict window: our own predecessor poll still holds the getUpdates slot; ` +
+    `it is released when that long poll times out server-side, within ${pollTimeoutSeconds}s`
+  );
+}
+
 // BL-369 (scenario 05): same exactly-once-per-streak shape as
 // shouldRaiseDegradedWarning above, for the distinct "stuck on one
 // undelivered message" signal.
@@ -2809,6 +2867,15 @@ export interface PollCycleResult {
   // ticket's own root-cause analysis).
   delayMs: number;
   degradedWarning: boolean;
+  // BL-1036 (invariant 2): the two ways a degradation CLOSES. Exactly one of
+  // them eventually fires for every degradedWarning, so the log never leaves a
+  // degradation open - which it always did before, across 626860 lines.
+  pollRecovered: boolean;
+  pollUnresolved: boolean;
+  // BL-1036: set on a 409 so the log explains the conflict is with our own
+  // just-killed predecessor rather than repeating Telegram's misdirecting
+  // "make sure that only one bot instance is running".
+  conflictWindow?: string;
   // BL-369 (scenario 05): true on the exact cycle stuckAttempts crosses
   // config.stuckRetryLimit - "it has retried up to its limit" (each poll
   // cycle IS a retry, the offset never having advanced past the stuck
@@ -2852,6 +2919,8 @@ export async function runPollCycle(
       state: { offset: result.nextOffset, consecutiveFailures: 0, stuckAttempts, sustainedOutage: outage.state },
       delayMs: 0,
       degradedWarning: false,
+      pollRecovered: shouldRaisePollRecoveredNotice(state.consecutiveFailures, 0, config),
+      pollUnresolved: false,
       escalateStuckDelivery: shouldEscalateStuckDelivery(stuckAttempts, config),
       escalateSustainedOutage: false,
       sustainedOutageMs: outage.outageMs,
@@ -2862,6 +2931,14 @@ export async function runPollCycle(
     state: { offset: result.nextOffset, consecutiveFailures, stuckAttempts: state.stuckAttempts, sustainedOutage: outage.state },
     delayMs: computePollBackoffMs(consecutiveFailures, config),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
+    // `outage.escalate` is already once-per-episode, so it doubles as the
+    // "not already reported" fact - no second flag to keep in step.
+    pollRecovered: false,
+    pollUnresolved: shouldRaisePollUnresolvedNotice({
+      sustainedOutageReached: outage.escalate,
+      alreadyReported: false,
+    }),
+    conflictWindow: describePollConflictWindow(result.error, config.pollTimeoutSeconds ?? 25),
     escalateStuckDelivery: false,
     escalateSustainedOutage: outage.escalate,
     sustainedOutageMs: outage.outageMs,
@@ -2894,7 +2971,19 @@ export async function applyPollCycleResult(
   recordHeartbeat();
   if (cycle.degradedWarning) {
     writeWarning(
-      `front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying: ${describeOutageCause(cycle.errorMessage)}\n`
+      `front-desk bot: poll degraded - ${cycle.state.consecutiveFailures} consecutive failures, still retrying: ${describeOutageCause(cycle.errorMessage)}` +
+        (cycle.conflictWindow ? ` (${cycle.conflictWindow})` : '') +
+        `\n`
+    );
+  }
+  // BL-1036 (invariant 2): close it. Before this the log only ever opened
+  // degradations, so an operator could not tell a blip from an outage.
+  if (cycle.pollRecovered) {
+    writeWarning('front-desk bot: poll recovered - polling normally again\n');
+  }
+  if (cycle.pollUnresolved) {
+    writeWarning(
+      `front-desk bot: poll UNRESOLVED - still failing after the retry budget: ${describeOutageCause(cycle.errorMessage)}\n`
     );
   }
   if (cycle.escalateStuckDelivery) {
