@@ -174,17 +174,17 @@
       ;; and nothing between here and the pane checks that :agent names a
       ;; runtime that exists. A candidate whose provider has no entry is a
       ;; registry/config error, so it stops here, by name.
-      (let [{:keys [known? reason]} (resolve-launch-agent (:provider chosen))]
+      (let [{:keys [agent known? reason]} (resolve-launch-agent (:provider chosen))]
         (when-not known?
           (throw (ex-info (str "cannot assign role " role ": " reason)
-                          {:role role :provider (:provider chosen) :model (:model chosen)}))))
-      {:role role
-       :agent (agent-for-provider (:provider chosen))
-       :provider (:provider chosen)
-       :model (:model chosen)
-       :policy mode
-       :reason (build-reason steward-registry mode chosen {:override-uncertified? override-uncertified?
-                                           :excluded-providers excluded-providers})})))
+                          {:role role :provider (:provider chosen) :model (:model chosen)})))
+        {:role role
+         :agent agent
+         :provider (:provider chosen)
+         :model (:model chosen)
+         :policy mode
+         :reason (build-reason steward-registry mode chosen {:override-uncertified? override-uncertified?
+                                             :excluded-providers excluded-providers})}))))
 
 (defn assign-swarm
   "Resolves every role in `swarm-roles` under `mode`, returning a map of
