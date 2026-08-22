@@ -11,8 +11,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1029-respawn-launch-argument-survives-a-quoted-path.feature
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Two things want a decision. FIRST, severity. This is a real correctness
   defect in seven live repair paths, but it cannot fire on THIS host: the

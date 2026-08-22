@@ -21,8 +21,7 @@ invariants:
   - "A failure in routing-skip recording never changes a handoff's delivery outcome or whether the draft is consumed - recording is observational only."
   - "A suppressed recording failure is never silent: it always leaves a diagnostic on stderr."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   No open design decision - this is a confirmation that the acceptance contract
   is the right one. The fix direction is settled by in-repo precedent:

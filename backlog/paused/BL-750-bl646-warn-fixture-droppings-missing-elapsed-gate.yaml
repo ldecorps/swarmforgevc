@@ -20,8 +20,7 @@ acceptance: specs/features/BL-750-fixture-droppings-alert-respects-the-shared-gr
 invariants:
   - "No severity derived from worktree file state alone can wake the babysitter on a claim younger than the shared grace threshold - present branches and any added later."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   One decision, with a recommendation rather than an open fork. The originating
   note left it open whether immediate wake was deliberate - if so it wanted the
