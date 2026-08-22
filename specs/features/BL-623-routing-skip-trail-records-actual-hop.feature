@@ -52,12 +52,19 @@ Feature: The routing skip trail records what a hop actually skipped
     And no routing-skips journal line is appended
 
   # BL-623 skipped-required-stage-visible-04
-  Scenario: skipping over a required stage is recorded even without a declared reason
+  # BL-991 amended the SENDER here, not the assertions. This scenario is about
+  # a skip record carrying a mix of stages with and without a declared reason.
+  # It used to reach that state by having the coder jump the DECLARED cleaner -
+  # which BL-991's ruling now redirects, so the hop skips nothing and there is
+  # no record left to inspect. Sending from cleaner reaches the same mixed
+  # record (architect has a declared reason, hardender has none) without
+  # asserting a jump the declaration forbids.
+  Scenario: a stage skipped without a declared reason is recorded all the same
     Given the active ticket declares required_stages of coder and cleaner and qa
-    When the coder sends a git_handoff addressed directly to QA
+    When the cleaner sends a git_handoff addressed directly to QA
     Then the parcel is delivered to QA
-    And the skip record names cleaner among the skipped stages
-    And the skip record carries no declared reason for cleaner
+    And the skip record names hardender among the skipped stages
+    And the skip record carries no declared reason for hardender
     And the skip record carries the ticket's declared reason for architect
 
   # BL-623 kill-switch-off-inert-05
