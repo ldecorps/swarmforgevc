@@ -1,6 +1,46 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1018: what a single-role tmux session
+**Last Updated:** August 22, 2026 (BL-1022: the daemon's subprocess-API gate
+now walks spawn edges, not only load-file edges, closing the blind spot that
+let BL-1021's banned `clojure.java.shell` call sit unseen on the daemon's
+critical path. `daemon_cycle_guard_lib_test_runner.bb`'s closure check
+(BL-967) had one edge kind: `handoffd.bb` reaches `swarm_handoff.bb` by
+*spawning* it, not loading it, so the walk never visited it or anything it
+loads, and the gate read green while missing the file that took production
+down. `resolve-daemon-reachability` (`master_checkout_drift_lib.bb`) now
+follows `:load` and `:spawn` edges together, transitively and mutually
+recursive, reading spawn vectors as Clojure data (`read-string`) rather than
+regex-matching them so real nesting and quoting resolve correctly; three
+shapes resolve statically (a bare literal, a literal behind path plumbing, a
+same-file zero-arg helper), and anything else is reported as `:unresolved`
+and fails the gate loudly rather than being silently skipped — the same
+class of blind spot one level up. The gate also now reports `:reached-by` per
+file (`:entrypoint` / `[:load f]` / `[:spawn f]`), so a closure that
+silently shrinks is visible instead of passing for the wrong reason. The
+pre-existing load-only entry point (`resolve-daemon-executed-paths`, the
+BL-839 master-checkout drift check) is unchanged in behavior by design — it
+now delegates to the same walk restricted to `:load` — since widening what
+the drift check compares against `main` is a different, un-taken decision
+from widening what the subprocess-API ban covers. Following the new edge
+grew the daemon's reachable closure from 38 files to 53 and surfaced three
+more files still carrying an unbounded `clojure.java.shell`/`process/sh`
+call, reached transitively through the `swarm_handoff.bb` spawn:
+`handoff_inject_lib.bb` (tmux), `pre_qa_gate_gather_lib.bb` (git), and
+`salvage_lib.bb` (generic). Removing the banned API from any of the three is
+explicitly out of this ticket's scope (BL-1021's kind of follow-up), so the
+gate holds them as a named ratchet instead — an equality assertion, not a
+subset, so a new offender fails it and so does a stale entry still listed
+after a fix — and a `note` was sent to the specifier naming all three rather
+than fixing or silently dropping them here. No extension command, setting,
+or UI change — an internal `swarmforge/`-fork test-gate fix, gated by its own
+unit/property suites (`daemon_cycle_guard_lib_test_runner.bb`,
+`master_checkout_drift_lib_test_runner.bb`,
+`bl1022_daemon_closure_property_runner.bb`) since Babashka has no
+mutation/CRAP/DRY tooling wired. Acceptance:
+[`specs/features/BL-1022-daemon-guard-closure-follows-process-spawn-edges.feature`](../../specs/features/BL-1022-daemon-guard-closure-follows-process-spawn-edges.feature),
+4/4; runbook updated in the same parcel:
+[`docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`](../how-to/BL-967-handoffd-cycle-stall-diagnosis.md).); Previously
+August 22, 2026 (BL-1018: what a single-role tmux session
 repair may resolve to is now pinned to one pure definition,
 `single_role_repair_lib.bb`'s `resolve-single-role-repair`, so repairing one
 role's vanished session can never again reach the whole pack server. On

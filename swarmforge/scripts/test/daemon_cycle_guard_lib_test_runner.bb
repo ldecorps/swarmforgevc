@@ -231,6 +231,34 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_api_ban_lib.bb")))
 
+;; ── BL-1022 hardening: strip-comments-and-strings isolated edge cases ──────
+;; The end-to-end closure check below proves comment/string stripping works
+;; against the REAL tree's docstrings (handoff_lib.bb), but two shapes that
+;; do not happen to occur verbatim anywhere in the current tree - an escaped
+;; quote inside a string, and a real multi-line string - are otherwise
+;; untested. A hand-mutation sweep (breaking escape handling; making a
+;; newline close a string early) proved both cases are genuinely
+;; discriminating: each mutant made a probe below flip from false to true.
+(let [hit? (fn [content]
+             (boolean (re-find daemon-api-ban-lib/forbidden-re
+                                (daemon-api-ban-lib/strip-comments-and-strings content))))]
+  (assert-false "bl1022 scan: a comment naming the banned API is not a call"
+                (hit? "; this forbids clojure.java.shell forever\n(defn x [] 1)"))
+  (assert-true "bl1022 scan: a real call is a call"
+               (hit? "(defn x [] (clojure.java.shell/sh \"ls\"))"))
+  (assert-false "bl1022 scan: the banned API named inside a string literal is not a call"
+                (hit? "(def doc \"do not use clojure.java.shell here\")"))
+  (assert-false "bl1022 scan: an escaped quote keeps the string open, so text after it is still string content"
+                (hit? "(def doc \"a \\\" clojure.java.shell mention\")"))
+  (assert-false "bl1022 scan: a real multi-line string is all string content, not code"
+                (hit? "(def doc \"line one\nclojure.java.shell\nline three\")"))
+  (assert-true "bl1022 scan: a char-literal escaped quote does not toggle string state, so code right after it is still scanned"
+               (hit? "(def c \\\") (process/sh \"ls\")"))
+  (assert-false "bl1022 scan: a semicolon inside a string does not start a comment"
+                (hit? "(def doc \"; not a comment babashka.process\")"))
+  (assert-true "bl1022 scan: the bare namespace token alone is a call site"
+               (hit? "(require '[babashka.process :as p])")))
+
 (let [scripts-dir (fs/path (fs/parent (fs/canonicalize *file*)) "..")
       read-file (fn [bare]
                   (let [p (fs/path scripts-dir bare)]
