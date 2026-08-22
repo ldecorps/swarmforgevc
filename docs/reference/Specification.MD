@@ -1,6 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1037: the build-freshness watchdog
+**Last Updated:** August 22, 2026 (BL-1032: the standing `tmuxReaperGuard`
+now scopes by HAZARD — can this file cause a real tmux server to run —
+instead of by the presence of a quoted `'new-session'` token, closing an
+unstated converse: a file that *asserts about* tmux argv (e.g. "which
+commands would this repair resolve to?") also writes `'new-session'` as a
+quoted argv element with no tmux process ever spawned, and the guard was
+flagging exactly that kind of correct file as a violation — the only ways
+to green it were adding a reaper call that guarded nothing or obfuscating
+the string. `startsTmuxServer` now requires a server-creating subcommand
+(`new-session`/`start-server`, never a query like `list-sessions`) plus
+either a literal `tmux` spawn or the file writing its own `tmux` onto
+`PATH` (the shape one already-compliant file used, which a naive
+literal-spawn-only fix would have silently exempted from the gate). All
+nine genuinely tmux-spawning files stay in scope; the wrongly-flagged
+assertion-only file needs no reaper call. See
+[the updated BL-817 doc](BL-817-fixture-tmux-server-reaper-adoption.md).
+No new command, setting, or human-facing surface — an internal
+test-infrastructure gate fix. Prior entry —
+BL-1037: the build-freshness watchdog
 now restarts a healthy front desk only once it has served the build it was
 moved to, instead of once per commit-plus-grace. This swarm lands commits
 faster than one grace-plus-recompile-plus-respawn cycle completes: 24
