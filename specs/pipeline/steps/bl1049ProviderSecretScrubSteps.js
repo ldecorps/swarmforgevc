@@ -57,6 +57,14 @@ const KNOWN_OUTCOMES = new Map([
   ['does not name', false],
   ['still names', true],
 ]);
+// Pinned separately from KNOWN_OUTCOMES/KNOWN_PROVIDERS: a "does not name"
+// row's assertion is non-membership, which any garbled string satisfies
+// trivially - mutating scenario 01's `variable` cell on such a row (e.g.
+// OPENAI_API_KEY -> OPENAI_API_KeY) still reads "not present" and the
+// mutant survives with no signal at all. Pinning `variable` against the
+// exact fixture vocabulary the Background actually seeds closes that:
+// a mutated cell is now an unknown value, caught before the shape lookup.
+const KNOWN_VARIABLES = new Set([...HOST_SECRETS, ...Object.keys(PASSTHROUGHS)]);
 
 let trackedRoots = [];
 afterEach(() => {
@@ -72,10 +80,19 @@ afterEach(() => {
 
 function mkFixture(ctx) {
   const root = mkSocketFixtureRoot('sfvc-bl1049-');
-  fixtureReaper.track(root);
-  trackedRoots.push(root);
   ctx.root = root;
   ctx.sock = path.join(root, 'bl1049.sock');
+  // fixtureReaper.reap() finds a fixture's tmux server ONLY via this pointer
+  // file (role_lifecycle.sh's own shape) - track() alone does not teach it
+  // this fixture's socket. Without it, afterEach's reap() silently no-ops
+  // and every scenario that reaches "the running configuration's windows
+  // all use ..." below leaks a real `sleep 120` tmux server. Written before
+  // track() and well before the server is spawned, so reap() finds it even
+  // if the process dies between here and the tmux new-session call.
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), ctx.sock);
+  fixtureReaper.track(root);
+  trackedRoots.push(root);
   return root;
 }
 
@@ -190,6 +207,8 @@ function registerSteps(registry) {
 
   scoped(/^"tmux show-environment -g" (does not name|still names) "(.+)"$/, (ctx, outcome, variable) => {
     assert.ok(KNOWN_OUTCOMES.has(outcome), `unknown outcome "${outcome}"`);
+    assert.ok(KNOWN_VARIABLES.has(variable),
+      `unknown variable "${variable}" - the handlers know ${[...KNOWN_VARIABLES].join(', ')}`);
     const present = ctx.serverNames.includes(variable);
     assert.equal(present, KNOWN_OUTCOMES.get(outcome),
       `on an all-${ctx.backend} configuration the server ${present ? 'still names' : 'does not name'} ` +
