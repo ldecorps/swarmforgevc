@@ -234,8 +234,29 @@ You are the hardender.
   MERGES each run's results into that file, so a bad run's 0% persists
   alongside a later good one (stale-cache trap above). Act on a 0% only once
   the solo, cache-cleared run agrees with it.
-- **This is a RE-MEASUREMENT rule, never a dismissal.** A solo, cache-cleared
-  re-run that STILL reads 0% is a REAL gap and you harden it. "A 0% is probably
+- **The same false reading happens per MUTANT, not only per file (proposed by
+  the hardender, BL-1015, 2026-08-22; accepted with its cause amended).** A
+  single mutant can read `Survived` in a solo run while a real test run kills
+  it. Evidence: `lineDiff.js` 36:12 `LogicalOperator` read Survived, and
+  hand-applying that mutation to `out/` and running the test file directly
+  failed 22 of 98 tests — 10 of that pass's 19 survivors were this class.
+- **Cause: assume the incremental cache first, not `coverageAnalysis`.** The
+  proposal attributed it to `coverageAnalysis` misattribution on the grounds
+  that both `perTest` and `all` reported Survived. That is not evidence
+  against the cache: switching `coverageAnalysis` does not invalidate
+  `stryker-incremental.json`, and `incremental: true` MERGES verdicts, so both
+  runs can inherit the same stale Survived. The cache is the documented cause
+  of this exact symptom (stale-cache trap above) and is far cheaper to rule
+  out. So, in order: (1) delete `stryker-incremental.json` (gitignored, safe)
+  or pass `--force`, and re-run that one file; (2) only if it STILL reads
+  Survived, hand-apply the mutation to the compiled `out/` file and run the
+  test file directly, which settles it in seconds; (3) restore `out/` from
+  the compile before doing anything else — a hand-mutated `out/` left in place
+  poisons every later run in the pass.
+- **This is a RE-MEASUREMENT rule, never a dismissal — for both readings.** A
+  solo, cache-cleared re-run that STILL reads 0% is a REAL gap and you harden
+  it, and a mutant still Survived after a cache-cleared re-run AND a
+  hand-applied check is a REAL survivor you kill. "A 0% is probably
   a false reading" is precisely the standing licence that was REJECTED for
   BL-387 — it would wave through real gaps — and it stays rejected; only the
   re-run settles it. Before concluding anything about a 0%, also confirm the
