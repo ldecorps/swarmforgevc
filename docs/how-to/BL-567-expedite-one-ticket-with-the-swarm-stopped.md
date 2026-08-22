@@ -134,8 +134,10 @@ if you do not move them back, `active/` can stay empty and the pipeline idles
 committed**, in the shared master checkout: commit them deliberately, or the
 next role to commit anything there sweeps them into an unrelated commit.
 
-It prints on every ending, including a failed restart — which is exactly when
-it matters. `nothing outstanding` means there is genuinely nothing, and a
+It prints on every ending, including a failed restart and each of the
+pre-flight refusals below — which is exactly when it matters, since a
+refusal fires after tickets are already parked and never reaches the run's
+own tail. `nothing outstanding` means there is genuinely nothing, and a
 `--dry-run` always says that, because it changed nothing.
 
 ## Things it will not do
@@ -159,7 +161,12 @@ parked. Both are yours — see the OUTSTANDING block above.
 |---|---|
 | `REFUSE teardown did not reach a clean slate: <names>` | stop the named processes by hand, then re-run. `./stop-swarm.sh` misses `babysitterd` and the Operator agent — see BL-637 |
 | `REFUSE stop command carries a forbidden flag` | never pass `--sweep-inbox`, `--reset-worktrees` or `--full`: they archive the very parcels a parked ticket needs to resume |
+| `REFUSE could not create the run worktree` | remove the stale worktree, or delete the branch, then re-run |
 | `EXHAUSTED … probable-spec-defect` | route the ticket to the specifier with the named defect class; do not re-run the coder |
+
+Every `REFUSE` row above prints the OUTSTANDING block too — check it before you
+fix the refusal and re-run, since a sibling ticket may already be parked and
+staged from before the refusal fired.
 | `stage-timeout` | the stage was killed at its budget, along with everything it spawned. Read that stage's `transcript.jsonl` |
 
 ## Why a stage timeout is not optional
