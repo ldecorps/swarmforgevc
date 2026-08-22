@@ -96,6 +96,7 @@ expects them, and are not migrated or rewritten here.
 - [Cross-seat rework claim deferral](how-to/BL-1004-cross-seat-rework-claim-deferral.md) — why a multi-seat stage now defers a rework to the sibling seat that built it, the bounded `cross_seat_claim_deadline_ms` wait and the out-loud cross-seat claim past it, why single-seat stages are structurally untouched, and how the flow watchdog/chase sweep avoid a false stuck-parcel alarm mid-window.
 - [Rescuing orphaned work with `rescue_orphaned_work.bb`](how-to/BL-1041-rescue-orphaned-work.md) — the commit-verify-then-release ordering that stops a rescue from losing the thing it rescued, why the changed-path set is read from the stash and not the receiving tree, the capped owner notification, and its boundary against `salvage_lib.bb`.
 - [Role panes stop inheriting every provider secret](how-to/BL-1049-provider-secret-scrub-from-role-panes.md) — the BL-657 tmux-server scrub's new provider-secret half: the configuration-derived keep-list, the launcher-vs-server separation invariant that protects `handoffd`'s briefing email, and the fail-open posture on both an unreadable conf and an unrecognized backend.
+- [WSL tmux control-plane segfault — upgrade to ≥ 3.7](how-to/BL-tmux-wsl-segfault-upgrade.md) — the Ubuntu tmux 3.4 NULL-window segfault (`resize.c`, fault at 0x208) that crash-loops the control plane on WSL, the no-root `~/.local/bin` install with digest verification (BL-1069), and bouncing the live server so the fix reaches the *server*, not just the client on PATH.
 
 ## Reference
 
