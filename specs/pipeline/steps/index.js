@@ -587,7 +587,8 @@ const DOMAINS = [
   require('./bl1058PortableMktempSteps'),
   require('./bl1066MetricsTickSteps'),
   require('./bl1015BoyScoutRunCleansOneThingSteps'),
-  require('./bl1057HostSwitchoverDoctorSteps')
+  require('./bl1057HostSwitchoverDoctorSteps'),
+  require('./bl1069TmuxServerVersionSteps')
 ];
 
 function registerSteps(registry) {
