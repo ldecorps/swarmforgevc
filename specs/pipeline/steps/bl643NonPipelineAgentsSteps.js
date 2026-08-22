@@ -152,15 +152,40 @@ const LOG_VERIFICATION_SOURCE_OVERRIDES = {
   // always-alive runtime it is launched from, support_runtime.bb.
   Support: [path.join(SCRIPTS_DIR, 'support_runtime.bb')],
   'Model Steward': [path.join(SCRIPTS_DIR, 'model_steward_store.bb')],
+  // BL-1064: the Front Desk row names TWO logs written by two different
+  // files. launch_front_desk.sh writes front-desk-supervisor.log; BL-582's
+  // durable diagnostic sink, front-desk-diagnostics.log, is written by the
+  // BOT ITSELF, not by its launcher. The launcher-derived fallback could
+  // never contain that second literal, so the row was permanently ungrounded
+  // and both bl643 property tests failed on every host. The table is right;
+  // what was missing is the checker's knowledge of which file writes what.
+  'Front Desk': [
+    path.join(SCRIPTS_DIR, 'launch_front_desk.sh'),
+    path.join(REPO_ROOT, 'extension', 'src', 'tools', 'telegram-front-desk-bot.ts'),
+  ],
   Expeditor: null, // checked structurally below (a directory, not a literal in one script)
 };
 
+/**
+ * The files a row's log literals are checked against, and whether that list
+ * was DECLARED or merely derived from the Launcher column.
+ *
+ * BL-1064 invariant 1: the check must never fall back to a source that cannot
+ * contain the literal. It cannot know that in advance - but when a derived
+ * source fails to ground a literal, that is a missing declaration rather than
+ * documentation drift, and the two need different messages because they need
+ * different fixes.
+ */
 function logVerificationSources(row) {
   if (Object.prototype.hasOwnProperty.call(LOG_VERIFICATION_SOURCE_OVERRIDES, row.Agent)) {
     return LOG_VERIFICATION_SOURCE_OVERRIDES[row.Agent];
   }
   const launcherTargets = extractLinkTargets(row.Launcher).map(resolveDocLink);
   return launcherTargets.filter((p) => fs.existsSync(p) && fs.statSync(p).isFile());
+}
+
+function logSourcesAreDeclared(row) {
+  return Object.prototype.hasOwnProperty.call(LOG_VERIFICATION_SOURCE_OVERRIDES, row.Agent);
 }
 
 // ── shared row-path checkers (invariant 1 - reused by both the acceptance
@@ -211,7 +236,27 @@ function checkLogGrounding(row) {
     return !combined.includes(basename);
   });
   if (ungrounded.length > 0) {
-    throw new Error(`bl643: row "${row.Agent}" log literal(s) not found (by basename) in its verification source(s): ${JSON.stringify(ungrounded)}`);
+    // BL-1064: say which of the two failures this is. A DECLARED source that
+    // no longer contains the literal is real drift - the table or the writer
+    // moved. A DERIVED source that never could contain it is a missing
+    // declaration, and reporting it as drift sends the reader to fix prose
+    // that is already correct, which is how this one sat until a property run
+    // surfaced it.
+    // One shared prefix, so the existing BL-643 assertions keep matching and
+    // both failures name the row and the literal. The derived case then adds
+    // WHY, because it needs a different fix.
+    const base = `bl643: row "${row.Agent}" log literal(s) not found (by basename) in its verification source(s): ${JSON.stringify(ungrounded)}`;
+    if (logSourcesAreDeclared(row)) {
+      throw new Error(base);
+    }
+    const shown = sources.map((abs) => {
+      const rel = path.relative(REPO_ROOT, abs);
+      return rel.startsWith('..') ? abs : rel;
+    });
+    throw new Error(
+      `${base} — and those source(s) were DERIVED from the Launcher column (${shown.join(', ')}), not declared. ` +
+      `If another file writes the literal, declare it in LOG_VERIFICATION_SOURCE_OVERRIDES; do not delete the claim from the table.`
+    );
   }
 }
 
@@ -625,6 +670,8 @@ module.exports = {
   isDeliberatelyAbsent,
   resolveDocLink,
   logVerificationSources,
+  logSourcesAreDeclared,
+  LOG_VERIFICATION_SOURCE_OVERRIDES,
   checkPathColumn,
   checkLogGrounding,
   extractBuildStateClaims,
