@@ -1,0 +1,207 @@
+id: BL-1038
+title: "Seven unit-lane tests take the LIVE repo as their subject, so the suite's cost rises with every commit landed: 121.6s of a measured 533.8s profile, and no fixed budget can hold a number that grows on its own"
+milestone: M8
+type: defect
+severity: high
+# high: this is the GROWTH term behind a health signal the operator has now
+# escalated twice (2026-08-03 "absolute priority: under 13s", 2026-08-22
+# "this is not acceptable"). Not merely slow - a duration derived from the
+# live repository makes every budget stale by construction, so BL-378's
+# per-file gate and BL-445's suite ratchet decay into permanent red whatever
+# number is chosen. Not critical: nothing ships wrong and the swarm moves.
+status: todo
+epic: unit-suite-speed
+assigned_to: none
+priority: 8
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1038-unit-tests-pin-the-repo-they-derive-from.feature
+human_approval: pending
+
+invariants:
+  - "No unit-lane test's cost is a function of the live repository's size or history depth: a test that needs repository history or maintained sources reads a pinned fixture whose contents do not change as the repo grows."
+  - "An exemption from the pinned-fixture rule is justified in place by a recorded reason, never merely present - and the guard checks that relation, not the field's existence (BL-999's lesson, one layer up)."
+  - "Speed is never bought with coverage: the recorded test_count never falls, and no test is deleted, skipped, or added to an exclude glob."
+
+description: |
+  ## What is measured
+
+  Profiled from the QA worktree's own Vitest JSON report, run finishing
+  2026-08-22 05:52 (`.worktrees/QA/extension/.vitest-report.json`, wall clock
+  689420ms recorded in `.test-durations.jsonl`):
+
+  - 460 unit-lane files collected (589 files in `test/`, of which 131 are
+    `*.property.test.js` and excluded from this lane).
+  - **533.8s** of summed per-file work.
+  - **Seven of those files take the live repository as their subject**, and
+    together cost **121.6s - 22.8% of the whole lane**:
+
+    | file | measured | what it reaches for |
+    |---|---|---|
+    | `renderBriefingDiagramsCli.test.js` | 51.8s | renders the two real maintained `docs/diagrams/*.mmd` through real mermaid layout + native resvg, then again through the spawned CLI against the real project root |
+    | `renderBriefingBurndownCli.test.js` | 34.0s | three of its five tests derive burndown history from the real repo |
+    | `blTopicStore.test.js` | 10.7s | live repo |
+    | `briefingDigestLineCli.test.js` | 10.1s | live repo |
+    | `gitHistoryAdapter.test.js` | 6.6s | walks real git history |
+    | `costHealthSidecar.test.js` | 4.4s | live repo |
+    | `emitLifecycleSnapshotCli.test.js` | 4.0s | live repo |
+
+  ## Why this is the defect and not just a cost
+
+  Every one of those seven gets slower on its own, with no test being added
+  and no code being changed, because the thing it measures is a repository
+  that grows every day. That is why this surface has absorbed four measured
+  budget raises in four days (BL-815, BL-914, BL-969, BL-999) and is queued
+  for a fifth (BL-1007): **each raise is correct when measured and stale
+  within days.** A budget cannot hold a number that rises on its own.
+
+  BL-999 already found the same disease one layer down and named it exactly:
+  a budget that is present but no longer adequate. This ticket removes the
+  reason the number moves, rather than repricing it again.
+
+  ## How (direction, not mandate)
+
+  A test that needs repository history or maintained sources reads a
+  **pinned fixture** - a small committed repository/history whose contents do
+  not change as this repo grows. A file that genuinely must observe the live
+  repository (a smoke test that the real maintained diagrams still render is
+  a legitimate example) stays, but behind an **exemption that records why**;
+  present-but-unjustified must fail, or this decays the same way the budgets
+  did.
+
+  How the guard identifies a live-repository read is the implementer's call.
+  A note on designing it, learned the expensive way (BL-1032, and the standing
+  rule about self-referential guards): the guard's own source, and the
+  fixture-builder helper's, will necessarily contain whatever needle it
+  matches on. Exclude them explicitly, or the guard goes red precisely
+  because the code is correct.
+
+  ## What this ticket does NOT do
+
+  - It does not delete, skip, or exclude a test, and does not raise
+    `SUITE_DURATION_BUDGET_MS` or BL-378's per-file 7s budget.
+  - It does not touch the fork-pool size, the pack/platform ceiling
+    (BL-935), or anything else about how much of the host the lane may use.
+    That is a live operator question and is deliberately not decided here.
+  - It does not address the sibling cost family - unit tests that build a
+    real git repository per scenario - which is BL-1039.
+  - It does not reprice any budget. BL-1007 owns load-relative budgets;
+    BL-999 owns budget justification. This ticket is upstream of both:
+    fewer numbers need to move if they stop drifting.
+
+qa_e2e_procedure: >
+  1. At the parent commit, run the unit lane to completion in the QA
+     worktree and keep its `.vitest-report.json`. Record `uptime` load
+     before and after - a lane run at a wildly different load is not
+     comparable and the comparison must be redone, not adjusted.
+
+  2. From that report, record the measured duration of each of the seven
+     files named in the description. Confirm the total is in the same
+     neighbourhood as the recorded 121.6s (this is a re-measurement, not an
+     assertion that it matches to the second).
+
+  3. At the parcel commit, run the lane again at comparable load and record
+     the same seven durations. Confirm each converted file is materially
+     faster and that none of them exceeds BL-378's 7000ms per-file budget.
+     Any file left over budget must be named in the parcel as a recorded,
+     justified exemption - not left silently over.
+
+  4. Confirm the guard is armed rather than vacuous: temporarily point one
+     converted test back at the live repository root, run the guard, and
+     confirm it FAILS and names that file. Restore.
+
+  5. Confirm the exemption path is not a rubber stamp: strip the recorded
+     reason from an exempted file's exemption, run the guard, and confirm it
+     FAILS. Restore.
+
+  6. Confirm coverage was not traded for speed: diff the parcel against its
+     parent and confirm no test file was deleted, no test skipped, no
+     exclude glob widened, and that the newly recorded `test_count` in
+     `.test-durations.jsonl` is not lower than the previous row's.
+
+  7. Confirm the growth term is actually gone: run the converted files at
+     two different repository states (before and after landing an unrelated
+     commit) and confirm their assertions read identical fixture contents.
+
+approval_context: >
+  Your "this is not acceptable" on the 9m 18s trend, specced against a fresh
+  profile rather than against the trend line.
+
+
+  THE HEADLINE YOU SHOULD SEE FIRST, because it changes what you can ask for.
+  The lane's summed work is 533.8s across 460 files, and it currently runs on
+  ONE fork - BL-935 sets the fork ceiling to 1 on a full-forge pack on macOS,
+  deliberately, because this host has 2 physical cores and 8 resident Claude
+  sessions. So wall clock is roughly the sum, plus overhead. Even if every
+  one of the 19 files now over the 7s per-file budget were cut to exactly 7s,
+  the lane would still be 322s - over five minutes. The 13s ceiling from your
+  2026-08-03 intake is not reachable on this host without changing either how
+  much of the host the lane may use, or what `npm test` runs. That is your
+  call, not mine, and I have asked it separately rather than guessing.
+
+
+  WHAT THIS TICKET IS. The part that is unambiguous under every answer you
+  might give: seven files measure the live repository, so they get slower
+  every day on their own. 121.6s of 533.8s today, and rising. This is why the
+  same surface has taken four measured budget raises in four days and has a
+  fifth queued - every one of them was correct when measured and stale within
+  days. I would rather stop the number moving than reprice it a fifth time.
+
+
+  TWO CALLS OF MINE.
+
+
+  (1) **I did not put a duration assertion in the acceptance scenarios.** A
+  scenario asserting "under 7000ms" would flake at load 100 on this host,
+  which is the exact disease BL-1007 exists to fix. The scenarios assert the
+  STRUCTURAL property (nothing reads the live repo without a justified
+  exemption); the durations are verified in the QA e2e procedure by
+  re-measurement. If you would rather have a hard executable duration gate,
+  say so and I will add it - but it will flake.
+
+
+  (2) **I allowed exemptions.** Some of these tests are legitimately smoke
+  tests that the REAL maintained diagrams still render, and converting them
+  wholesale would delete real signal. So an exemption exists - but it must
+  record why, and the guard checks the reason is there. If you want zero
+  exemptions instead, that is a one-line change to the ticket.
+
+source: |
+  Operator, 2026-08-22, direct: "WARN Suite duration trend: 9m 18s latest
+  (-5m 46s vs prior). this is nit acceptable. somethinh must be done to
+  reduce that duration"
+
+  Slice B of epic `unit-suite-speed` (BL-791), whose own text deferred this
+  scope until a profile existed: "Scope is written only once that profile
+  exists; writing it now would be guessing." The profile now exists - BL-792
+  (slice A, done) plus the fresh 2026-08-22 measurement in the description.
+
+  Sibling minted from the same profile: BL-1039 (unit tests that build a real
+  git repository per scenario, ~88s). Split rather than merged because they
+  have different root causes and different fixes - per the epic's own slice
+  discipline and INVEST-Small.
+
+notes: |
+  ## Prior art this must not repeat
+
+  - **BL-445** (done) - `isolate: false` cut the suite to ~25s at ~273 files
+    and delivered the 10s `SUITE_DURATION_BUDGET_MS`. Load-bearing; not to be
+    reverted.
+  - **BL-422 / BL-792 / BL-935** - the fork-pool caps. Each closed a real
+    incident (OOM spiral killing swarm agents; an 8GB host; a 2-core host
+    under 8 Claude sessions). None may be quietly relaxed by this ticket.
+  - **BL-378** - the per-file 7000ms hard budget. Measured 2026-08-22 it has
+    **19 live offenders** and therefore fails every `npm test` run through
+    `computeFinalExitCode`. A gate that is always red is not a gate; that
+    observation belongs to the epic's slice C and to BL-816, and is recorded
+    here only so the next reader does not rediscover it.
+  - **BL-815 / BL-914 / BL-969 / BL-999 / BL-1007** - four measured budget
+    raises in four days on this same surface, plus a fifth queued.
+
+  ## Overlap to watch
+
+  `renderBriefingBurndownCli.test.js` is also BL-999's subject (budget
+  justification, approved, paused). Orthogonality is the coordinator's call:
+  these two should not be active at the same time.
