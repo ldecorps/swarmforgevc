@@ -577,7 +577,8 @@ const DOMAINS = [
   require('./bl1048DeliveredParcelIsNotNotStartedSteps'),
   require('./bl1038UnitTestsPinTheRepoSteps'),
   require('./bl1032TmuxReaperScopeSteps'),
-  require('./bl1039SharedSeededFixtureSteps')
+  require('./bl1039SharedSeededFixtureSteps'),
+  require('./bl1049ProviderSecretScrubSteps')
 ];
 
 function registerSteps(registry) {
