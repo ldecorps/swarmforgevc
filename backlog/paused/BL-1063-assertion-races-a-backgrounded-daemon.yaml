@@ -1,0 +1,94 @@
+id: BL-1063
+title: "The nvm-PATH property test reads a marker file written by a BACKGROUNDED daemon with no wait at all - the read races the child on an idle host and the race widens under contention, which is the one file where 'flaky under worktree load' is the right diagnosis"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 55
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1063-assertion-races-a-backgrounded-daemon.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1063::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
+
+invariants:
+  - "Every assertion about a backgrounded child's side effect waits for that side effect under a bounded deadline, and returns as soon as it appears; no assertion reads a path the child may not have written yet."
+
+description: >
+  `extension/test/bl796NvmNodePathFollowUpAdoptInvariants.property.test.js`,
+  invariant 1 ("the launched daemon inherits a PATH on which both bb and node
+  resolve, however minimal the caller PATH") spawns
+  `swarmforge/scripts/start_handoff_daemon.sh` with `spawnSync`. That script
+  BACKGROUNDS the daemon and returns immediately, so `spawnSync` returning tells
+  us nothing about whether the child has run. The child is a stub whose body is
+  `{ command -v bb; command -v node; } > "$resolvedLog"`, and the test then
+  reads `resolvedLog` on the very next line with no wait, no poll, and no
+  synchronization of any kind:
+
+    assert.equal(fs.existsSync(resolvedLog), true,
+      `expected the launched daemon to have run at all ...`)
+
+  The observed red was that assertion, failing on the first generated case
+  (counterexample `["/usr/bin:/bin", false]`) after 476ms.
+
+  This is the ONE file in the reporting note's list of five where the note's own
+  diagnosis - "flaky under worktree load" - is accurate: the race exists on an
+  idle host and widens as contention delays the child's first scheduling slice.
+  The other four have mechanisms unrelated to load (see notes).
+
+  HOW (direction, not mandate). Poll for the marker under a bounded maximum
+  deadline, returning as soon as it appears - the engineering rule is "bounded
+  retries with backoff; max-wait deadlines on lock loops". A fixed `sleep` is
+  explicitly NOT the fix: it trades a fast race for a slow one, is still wrong
+  under enough load, and taxes every passing run for the worst case. The
+  codebase already has `test/helpers/boundedWatchWait.js` in this shape; whether
+  to reuse it or add a local helper is the implementer's call, but note BL-1008
+  covers a defect in that helper's own inner deadline, so reuse should be a
+  deliberate check rather than an assumption.
+
+  SCOPE. This test file's waits on backgrounded children. Not
+  `start_handoff_daemon.sh` itself - backgrounding the daemon is the behaviour
+  under test and correct. Not the other property files in the same report.
+
+qa_e2e_procedure: >
+  1. At the parent commit, run
+  `npx vitest run --config vitest.properties.config.mjs
+  test/bl796NvmNodePathFollowUpAdoptInvariants.property.test.js` from
+  extension/ repeatedly while the host is under load (the live swarm running is
+  sufficient; record the load average you tested at) and confirm the absence of
+  the behaviour by reproducing the "expected the launched daemon to have run at
+  all" failure. 2. At the parcel commit, repeat under the same load and confirm
+  the file passes. 3. Confirm the wait is bounded, not unbounded: make the stub
+  never write its marker and confirm the test fails after the declared deadline
+  rather than hanging, with a message naming the marker that never appeared.
+  4. Confirm it returns early: with the marker written promptly, confirm the
+  file's wall-clock is not inflated to the deadline - a fixed sleep would show
+  up here. 5. Confirm no fixed sleep was introduced: grep the parcel diff for
+  added `sleep`/`setTimeout` constants used as synchronization.
+
+notes: >
+  PROVENANCE. QA `note` 00_20260822T134343Z_000879: "Property lane flaky under
+  worktree load: bl857,796,643,968,948 - investigate". Split 1:4 under the
+  specifier's Consolidation Authority. This is the only one of the four whose
+  cause is genuinely contention-sensitive; recording that here so the note's
+  diagnosis is preserved where it is true rather than discarded wholesale.
+  Siblings: BL-1061 (bl857, live-process-table contamination), BL-1062
+  (bl968 + bl948, unseeded reach floors), BL-1064 (bl643, deterministic
+  grounding gap). Evidence:
+  backlog/evidence/BL-1061-property-lane-triage-20260822.md.
+
+  RELATED. BL-1008 (the bounceWatcher inner 10000ms race deadline in
+  test/helpers/boundedWatchWait.js) is a defect in the helper this ticket might
+  otherwise reach for. The two do not conflict - this ticket needs a bounded
+  wait, BL-1008 fixes a specific helper's deadline - but the implementer should
+  read BL-1008 before reusing that helper.
+
+  IR-DRY: 0 findings; no normalization needed.
+
+source: >
+  QA note 00_20260822T134343Z_000879 to specifier (via coordinator).
+  Failure observed in the property-lane run at .worktrees/QA, 2026-08-22.
