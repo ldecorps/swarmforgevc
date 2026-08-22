@@ -258,3 +258,6 @@ source: |
   against unknown values. Merge `main` and re-read before hardening.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-22, by: QA, blamed: hardender, class: behavior, commit: d7ca665024, evidence: backlog/evidence/BL-1069-swarm-stamp-tmux-wsl-segfault-upgrade-hotfix-bounce-20260822.md }
