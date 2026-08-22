@@ -198,3 +198,9 @@ notes: |
 
   No `required_wiring:` - this fixes an existing call site rather than
   building a mechanism that needs one.
+
+  2026-08-22 coordinator: open-slot nudge named this ticket as top candidate,
+  but active/ was already 5/5 (cap just raised 4->5, slot filled by BL-1028
+  moments before this nudge was actioned) - no capacity to promote. Not
+  cleared as noise; cleared for capacity, cause recorded per BL-798. Remains
+  top-ranked paused candidate for the next opened slot.
