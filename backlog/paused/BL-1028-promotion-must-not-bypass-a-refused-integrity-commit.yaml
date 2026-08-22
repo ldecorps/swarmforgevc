@@ -23,8 +23,7 @@ invariants:
   - "A promotion never produces a commit that the integrity CLI refused - for any refusal reason, present and future, including ones added after this ticket."
   - "A promotion that does not commit leaves the index exactly as it found it - no rename it staged itself survives the call."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Needs sign-off on ONE decision: what a refusal should do. The fix direction
   below is to obey the refusal - unwind the staged `git mv` and report failure

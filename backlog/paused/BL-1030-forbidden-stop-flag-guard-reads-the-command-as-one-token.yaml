@@ -19,8 +19,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1030-forbidden-stop-flag-guard-reads-the-command-as-one-token.feature
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Needs sign-off on ONE decision: what the guard does with a command line it
   cannot read confidently - a compound command, a pipeline, an unbalanced

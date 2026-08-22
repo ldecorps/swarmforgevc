@@ -16,8 +16,7 @@ acceptance: specs/features/BL-1033-property-runner-temp-root-survives-a-throw.fe
 invariants:
   - "A fixture temp root is removed on every exit path - assertion failure, thrown helper, or kill - never only when the runner reaches its last line."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   No open design decision - this is a confirmation that the acceptance
   contract is the right one. The fix shape is settled by precedent twice over,

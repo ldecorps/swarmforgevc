@@ -100,11 +100,37 @@
   ([last-heartbeat-ms now-ms stall-ms]
    (poll-heartbeat-stale? last-heartbeat-ms now-ms stall-ms nil stall-ms))
   ([last-heartbeat-ms now-ms stall-ms started-at-ms startup-grace-ms]
-   (if (and started-at-ms (nil? last-heartbeat-ms)
-            (< (- now-ms started-at-ms) startup-grace-ms))
-     false
-     (boolean (or (nil? last-heartbeat-ms)
-                  (>= (- now-ms last-heartbeat-ms) stall-ms))))))
+   ;; BL-1035: the heartbeat is a FILE
+   ;; (.swarmforge/operator/front-desk-poll-heartbeat.json), rewritten by the
+   ;; bot each completed poll cycle and reset by NOBODY at spawn - grep shows a
+   ;; reader and a writer and no clearer. So the timestamp a fresh child is
+   ;; judged against can belong to the DEAD instance it replaced: non-nil, so
+   ;; the nil-guard below never fired, and already older than the stall window,
+   ;; so the replacement was condemned on its first tick. Live 2026-08-22:
+   ;; started 06:13:56, "stalled" 06:13:58, respawned 06:14:02 - four seconds
+   ;; per attempt against a bounded budget that escalates to a 15-minute
+   ;; gave-up cooldown it never earned.
+   ;;
+   ;; The grace asks "has THIS child had time to speak yet", so it is decided
+   ;; from facts about this child: a heartbeat written before this child
+   ;; spawned was written by a different process and says nothing about it.
+   ;; Comparing timestamps rather than clearing the file at spawn keeps this
+   ;; correct when the file is missing, unreadable, or written by a bot that
+   ;; outlived a supervisor restart - in that last case the adopted bot's next
+   ;; heartbeat lands after the new started-at-ms and it self-heals.
+   ;;
+   ;; The waiver stays SCOPED to the grace. Once the grace ends, an absent own
+   ;; heartbeat is stale exactly as a nil one always was, so this never widens
+   ;; the stall check and never reintroduces BL-370's original fault.
+   (let [own-heartbeat-ms (when (and last-heartbeat-ms
+                                     (or (nil? started-at-ms)
+                                         (>= last-heartbeat-ms started-at-ms)))
+                            last-heartbeat-ms)]
+     (if (and started-at-ms (nil? own-heartbeat-ms)
+              (< (- now-ms started-at-ms) startup-grace-ms))
+       false
+       (boolean (or (nil? own-heartbeat-ms)
+                    (>= (- now-ms own-heartbeat-ms) stall-ms)))))))
 
 ;; BL-582: the healthy-tick build-freshness clause, split out so the
 ;; "running" cond above stays readable and this decision carries its own

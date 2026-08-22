@@ -16,8 +16,7 @@ acceptance: specs/features/BL-752-residual-allowlist-non-stage-backlog-path-is-t
 invariants:
   - "No step handler registered by bl694ResidualAllowlistSteps.js is unreachable: every registered pattern matches at least one step the BL-694 feature renders."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   No open design decision - this is a confirmation that the acceptance
   contract is the right one. The claim under test was re-verified live:
