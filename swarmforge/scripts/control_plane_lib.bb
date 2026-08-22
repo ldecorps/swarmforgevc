@@ -179,6 +179,17 @@
       {:responds? (zero? (:exit result))
        :output (str/trim (str (:out result) " " (:err result)))})))
 
+(defn harden-server!
+  "Soft WSL stability knobs (focus-events / window-size). Never fails the
+   caller — older tmux builds may reject an option; the real fix is tmux
+   >= 3.7 (resize.c NULL-window guard)."
+  [socket]
+  (when-not (str/blank? (str socket))
+    (daemon-cycle-guard-lib/sh! {:continue true}
+                                "tmux" "-S" (str socket) "set-option" "-g" "focus-events" "off")
+    (daemon-cycle-guard-lib/sh! {:continue true}
+                                "tmux" "-S" (str socket) "set-option" "-g" "window-size" "largest")))
+
 ;; ── IO edge: observe (the ONE fact-set all three consumers share) ────────────
 
 (defn control-plane-facts
