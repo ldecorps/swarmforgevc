@@ -15,7 +15,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1045-the-board-surfaces-held-tickets.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "A held ticket is never rendered as in-flight: it appears in its own section, never in a role column and never as not-started, because no role holds it."
