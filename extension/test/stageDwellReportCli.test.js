@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatStageDwellReport, parseArgs, main } = require('../out/tools/stage-dwell-report');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-102 dwell-05: the presenter for computeStageDwellReportForRoles -
 // resolveProjectRoot/roles.tsv wiring is exercised by swarm-metrics.ts's own
@@ -169,9 +170,7 @@ function git(root, args) {
 
 function makeFixtureRoot() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, 'backlog', 'active'));
   git(root, ['add', '-A']);
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);

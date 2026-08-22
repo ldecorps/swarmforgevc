@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execSync } = require('node:child_process');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // We test the CLI logic by requiring its exported helpers directly.
 // The CLI entry point (main) is exercised indirectly via those helpers.
@@ -138,7 +139,7 @@ test('resolveTracesDir throws when env unset and git common dir fails', () => {
 
 test('resolveTracesDir resolves to <repoRoot>/.swarmforge/traces in a plain (non-worktree) repo', () => {
   const repoRoot = fs.realpathSync(mkTmp());
-  execSync('git init -q', { cwd: repoRoot });
+  copySeededRepoInto(repoRoot);
 
   const tracesDir = resolveTracesDir(null, repoRoot);
 
@@ -147,8 +148,7 @@ test('resolveTracesDir resolves to <repoRoot>/.swarmforge/traces in a plain (non
 
 test('resolveTracesDir resolves to the MAIN repo root from inside a linked worktree', () => {
   const mainRepo = fs.realpathSync(mkTmp());
-  execSync('git init -q', { cwd: mainRepo });
-  execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: mainRepo });
+  copySeededRepoInto(mainRepo);
   const worktreesParent = fs.realpathSync(mkTmp());
   const worktreePath = path.join(worktreesParent, 'linked-worktree');
   execSync(`git worktree add -q -b sfvc-test-worktree "${worktreePath}"`, { cwd: mainRepo });

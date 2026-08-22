@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const {
   readRecertStore,
@@ -127,9 +128,7 @@ test('readRecertEmailTo defaults (never throws) when swarmforge.conf is missing'
 // derivation of its own.
 test('computeRecertBatch selects the oldest-reviewed tagged scenario across the whole docs tree', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 
   mkdirp(path.join(root, 'backlog', 'active'));
   fs.writeFileSync(
@@ -173,9 +172,7 @@ test('computeRecertBatch reflects a configured recert_email_to override (future 
 
 function mkGenerateRecertBatchFixture() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 
   mkdirp(path.join(root, 'backlog', 'active'));
   fs.writeFileSync(
@@ -283,9 +280,7 @@ test('queueRecertDeleteProposal queues nothing and returns false for a scenario 
 
 test('after validating the current oldest scenario, the queue advances to the next-oldest scenario', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, 'backlog', 'active'));
   fs.writeFileSync(
     path.join(root, 'backlog', 'active', 'BL-902.yaml'),

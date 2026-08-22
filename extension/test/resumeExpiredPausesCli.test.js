@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/resume-expired-pauses');
 const { controlPauseStatePath, readControlPauseState } = require('../out/tools/telegram-front-desk-bot');
 const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'resume-expired-pauses.js');
 const TOPIC_MAP_PATH = (root) => path.join(root, '.swarmforge', 'operator', 'telegram-topic-map.json');
@@ -22,10 +23,7 @@ function mkdirp(dir) {
 
 function mkFixture(pauseMarker, bindControlTopic) {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, '.swarmforge', 'operator'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tmaster\t${root}\tswarmforge-coder\tcoder\tclaude\ttask\n`);
   if (pauseMarker !== undefined) {

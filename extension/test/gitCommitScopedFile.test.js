@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { commitScopedFile, isFileCommitted } = require('../out/util/gitCommitScopedFile');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // Shared by costHealthSidecar.ts's commitCostHealthSidecar and
 // blTopicStore.ts's commitTopicRecord - see cleaner DRY extraction, 2026-07-13.
@@ -19,10 +20,7 @@ function git(cwd, args) {
 
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   return target;
 }
 

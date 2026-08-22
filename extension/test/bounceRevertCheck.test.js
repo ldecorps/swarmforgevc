@@ -5,6 +5,7 @@ const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { bouncingBranchForRole, decideBounceRevertVerdict } = require('../out/quality/bounceRevertVerdict');
 const { bounceRevertCheck } = require('../out/metrics/bounceRevertGitAdapter');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-954: the bounce recorder verifies its own BL-490/BL-495 revert. The
 // verdict is decided by whether the bounced commit's CONTENT is present at
@@ -20,9 +21,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q', '-b', 'main']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function commitFile(root, file, content, message) {

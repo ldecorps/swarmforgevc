@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, formatQueueStatus, formatRoleStatus } = require('../out/tools/queue-status');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'queue-status.js');
 
@@ -115,9 +116,7 @@ test('formatQueueStatus in debug mode omits the sidecar suffix for a role with n
 
 function mkPayloadOnlyFixture() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   git(root, ['add', '-A']);
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
 
@@ -153,9 +152,7 @@ test('the compiled queue-status CLI runs from a worktree, defaults to payload-on
 // the compiled CLI end to end, not just the pure formatter.
 test('BL-323: the compiled queue-status CLI reports "claimed by nobody" for an in_process-only role, distinct from idle', async () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   git(root, ['add', '-A']);
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
 

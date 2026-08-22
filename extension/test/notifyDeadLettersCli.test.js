@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/notify-dead-letters');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'notify-dead-letters.js');
 const STATE_PATH = (root) => path.join(root, '.swarmforge', 'operator', 'dead-letter-notify-state.json');
@@ -27,10 +28,7 @@ function mkdirp(dir) {
 // notify CLI must degrade gracefully, never crash, when it is not).
 function mkFixtureWithDeadLetter(role, deadLetterName, headerLines, bindOperatorTopic) {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  copySeededRepoInto(root);
 
   mkdirp(path.join(root, '.swarmforge'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `${role}\tmaster\t${root}\tswarmforge-${role}\t${role}\tclaude\ttask\n`);
@@ -111,10 +109,7 @@ test('BL-353: the SAME dead letter is never re-announced on the next sweep', asy
 
 test('BL-353: no dead letters at all never announces', async () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, '.swarmforge'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tmaster\t${root}\tswarmforge-coder\tcoder\tclaude\ttask\n`);
   const result = await runCli(root, { TELEGRAM_BOT_TOKEN: 'fake-token', TELEGRAM_CHAT_ID: 'fake-chat' });

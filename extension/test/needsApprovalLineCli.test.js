@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatNeedsApprovalSection, main } = require('../out/tools/needs-approval-line');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-251: the compiled needs-approval-line CLI is what briefing_email_lib.bb
 // shells out to (Babashka cannot import compiled TS) - reuses
@@ -40,9 +41,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {
