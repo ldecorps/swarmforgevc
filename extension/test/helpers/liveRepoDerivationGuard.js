@@ -60,13 +60,118 @@ function growthPatternsFor(rootName) {
 const EXEMPTION_RE = /BL-1038-EXEMPT:[ \t]*(\S[^\n]*)/;
 
 /** Pure: why this text derives from the live repository, or null. */
-function liveRepoDerivation(text) {
-  const bound = text.match(LIVE_ROOT_BINDING_RE);
-  if (!bound) return null;
-  for (const { re, what } of growthPatternsFor(bound[1])) {
-    if (re.test(text)) return what;
+// ── D1: the live root ESCAPING into production code ───────────────────────
+//
+// Architect SEND BACK #1 and #2, same defect both times. The four files this
+// ticket was minted to fix - renderBriefingDiagramsCli, renderBriefingBurndownCli,
+// briefingDigestLineCli, emitLifecycleSnapshotCli, ~99.9s of the measured
+// profile - never write a growth operation in their own source. They hand the
+// bound root to a production module and let IT do the reading, so every
+// pattern above missed them, `findLiveRepoDerivations` returned `[]`, and the
+// "real tree is clean" assertion passed vacuously against the majority of the
+// cost this guard exists to hold.
+//
+// THE BOUNDARY MOVES, deliberately, and the note above records why it sat
+// where it did: "code given a root may read one file or a thousand, and no
+// static pattern separates them." That was true and is still true - which is
+// precisely why it cannot be settled by a cleverer pattern. Handing the LIVE
+// root to production code IS the derivation, because the test stops
+// controlling what gets read; whether a given escape is acceptable is settled
+// by a RECORDED EXEMPTION, not by the scanner guessing.
+//
+// Text-only, no module resolution: what makes a callee "production" is that
+// the file imports it from ../out/ or ../src/, which the source says outright.
+const PROD_REQUIRE = /require\(\s*['"](\.\.[^'"]*\/(?:out|src)\/[^'"]*)['"]\s*\)/;
+const LIVE_ROOT_INLINE_SRC = String.raw`path\.join\(\s*__dirname\s*,\s*'\.\.'\s*,\s*'\.\.'\s*\)`;
+
+// Identifiers bound to a production module: both `const { a, b } = require(...)`
+// and `const m = require(...)`.
+function productionImportNames(text) {
+  const names = new Set();
+  for (const m of text.matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    if (!PROD_REQUIRE.test(`require('${m[2]}')`)) continue;
+    for (const raw of m[1].split(',')) {
+      const n = raw.split(':').pop().trim();
+      if (n) names.add(n);
+    }
+  }
+  for (const m of text.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    if (PROD_REQUIRE.test(`require('${m[2]}')`)) names.add(m[1]);
+  }
+  return names;
+}
+
+// A local function is production-reaching when its body calls one (one level
+// of indirection, closed to a fixpoint) or spawns something under out/.
+// runCli()/runCliSubprocess() are exactly this shape, and matching only the
+// direct call is why two of the four files stayed invisible.
+function productionReachingCallees(text) {
+  const reaching = productionImportNames(text);
+  // Both body shapes, because both occur: a multi-line body closing on its own
+  // line, and a one-liner like `async function runCli(root) { return main(root); }`.
+  // Matching only the first is why the local-wrapper case stayed invisible.
+  const bodies = [];
+  const decls = [
+    /(?:async\s+)?function\s+(\w+)\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/g,
+    /(?:async\s+)?function\s+(\w+)\s*\([^)]*\)\s*\{([^\n]*)\}/g,
+    /(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{([\s\S]*?)\n\}/g,
+    /(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{([^\n]*)\}/g,
+  ];
+  for (const re of decls) {
+    for (const m of text.matchAll(re)) bodies.push({ name: m[1], body: m[2] });
+  }
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const { name, body } of bodies) {
+      if (reaching.has(name)) continue;
+      const spawnsBuild = /(?:execFileSync|execSync|spawnSync|spawn|fork)\s*\([\s\S]*?['"][^'"]*\bout\b/.test(body) ||
+        /\bout['"]\s*,\s*['"]tools['"]/.test(body);
+      const callsProd = [...reaching].some((p) => new RegExp(String.raw`\b${p}\s*\(`).test(body));
+      if (spawnsBuild || callsProd) {
+        reaching.add(name);
+        grew = true;
+      }
+    }
+  }
+  return reaching;
+}
+
+// The live root as this file names it: every `x = path.join(__dirname,'..','..')`
+// binding, plus the inline expression written straight into a call.
+function liveRootArgumentPatterns(text) {
+  const alts = [LIVE_ROOT_INLINE_SRC];
+  for (const m of text.matchAll(new RegExp(String.raw`(?:const|let|var)\s+(\w+)\s*=\s*${LIVE_ROOT_INLINE_SRC}`, 'g'))) {
+    alts.push(String.raw`\b${m[1]}\b`);
+  }
+  return alts;
+}
+
+function liveRootEscapesIntoProduction(text) {
+  const callees = productionReachingCallees(text);
+  if (callees.size === 0) return null;
+  const roots = liveRootArgumentPatterns(text).join('|');
+  for (const callee of callees) {
+    // The root as ANY argument of the call, not only the first.
+    const re = new RegExp(String.raw`\b${callee}\s*\(\s*(?:[^()]*?,\s*)?(?:${roots})`);
+    if (re.test(text)) {
+      return `hands the live repository root to production code (${callee}), whose cost is whatever that code reads`;
+    }
   }
   return null;
+}
+
+function liveRepoDerivation(text) {
+  const bound = text.match(LIVE_ROOT_BINDING_RE);
+  if (bound) {
+    for (const { re, what } of growthPatternsFor(bound[1])) {
+      if (re.test(text)) return what;
+    }
+  }
+  // The indirect case runs even with no binding at all: an inline
+  // `path.join(__dirname,'..','..')` written straight into the call is how
+  // briefingDigestLineCli reaches the live repo.
+  return liveRootEscapesIntoProduction(text);
 }
 
 /** Pure: the recorded reason, or null. A marker with no reason yields null. */

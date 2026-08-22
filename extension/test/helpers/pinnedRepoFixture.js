@@ -89,13 +89,4 @@ function copyScriptClosure(liveScriptsDir, targetScriptsDir, entrypoints) {
   return copied;
 }
 
-// The six bridge/CLI fixtures that used to copy the whole live
-// swarmforge/scripts/ directory (BL-1038) all resolve the live scripts
-// directory the same way, relative to THIS file rather than to each
-// caller's own __dirname - one path expression instead of six copies of it.
-function copyLiveScriptClosureInto(targetScriptsDir, entrypoints) {
-  const liveScriptsDir = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
-  return copyScriptClosure(liveScriptsDir, targetScriptsDir, entrypoints);
-}
-
-module.exports = { loadFileDeps, resolveScriptClosure, copyScriptClosure, copyLiveScriptClosureInto };
+module.exports = { loadFileDeps, resolveScriptClosure, copyScriptClosure };

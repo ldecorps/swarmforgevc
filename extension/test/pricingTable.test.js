@@ -11,6 +11,12 @@ const {
 } = require('../out/metrics/pricingTable');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
+// BL-1038-EXEMPT: the live read is the assertion. This test collects the
+// claude-* models actually referenced by the repo's own conf/packs and asserts
+// the pricing table covers every one of them - a pinned copy would freeze the
+// model list and let a newly-referenced, unpriced model pass unnoticed, which
+// is the single thing this test exists to catch.
+
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
 // BL-100 cost-03 / BL-627: cost derives from a versioned, in-repo pricing table -
