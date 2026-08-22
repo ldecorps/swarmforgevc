@@ -132,7 +132,7 @@ merge), do **not** always rotate straight home to coder.
 3. If the root is **empty**, rotate **home**: `rotate_to_role.sh coder`.
    The coordinator — woken by QA's close/bookkeeping handoff — must in the
    **same turn**: Close → Promote next eligible paused → **Route Work to coder**
-   (see coordinator.prompt QA bookkeeping step 3 / `route_backlog_to_coder.sh`).
+   (see coordinator.prompt QA bookkeeping step 4 / `route_backlog_to_coder.sh`).
    There is **no** coordinator self-loop; if you land as coder and get
    `NO_TASK` with an open slot and paused work, send **one** note asking the
    coordinator to promote+route, then idle for wake. Then run

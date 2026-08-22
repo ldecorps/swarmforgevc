@@ -164,7 +164,7 @@ You are the coordinator.
   yet `human_approval: approved`) is a promotion DECISION request, never an
   FYI. You may complete it in exactly two ways:
   1. **Promote + route** a candidate in that same turn (the ordinary path — see
-     QA bookkeeping step 3 and `promote_and_route_next.sh`), or
+     QA bookkeeping step 4 and `promote_and_route_next.sh`), or
   2. **Record the specific blocking reason durably**, then clear it.
   Completing it any other way — clearing, acking, or dedup-ing it as noise with
   no promotion and no recorded reason — is the SUP-1 failure this rule exists to
@@ -393,7 +393,26 @@ or `note` referencing that ticket id. A coder or architect "bookkeeping stale"
 successful close, the CLI also abandons every role's pending `new/` and
 `in_process/` handoffs for that ticket so the pipeline cannot keep routing
 closed work.
-0. **Make the merged code actually RUN, before anything else** (BL-328):
+0. **Sync your local `main` with origin, before anything else.** QA lands its
+   own approved commits straight on `origin/main`, so your checkout's `main`
+   pointer can silently lag behind origin by the time its approval note reaches
+   you — observed twice on 2026-07-27, safe both times only because it was
+   caught by hand during bookkeeping rather than as a standing first step.
+   ```
+   git fetch origin main && git merge --ff-only origin/main
+   ```
+   Run it BEFORE `build_freshness_cli.bb sync` and before any backlog move on
+   `main`: a freshness sync over a lagging checkout re-arms the stale build it
+   exists to replace, and a close/promote commit over one lands your
+   bookkeeping on a `main` that is already behind.
+   - **This is the one git exception to "no merge, no push".** It is a
+     fast-forward catch-up of YOUR checkout to work QA already pushed — never
+     merging the parcel yourself, never a push, never a non-fast-forward.
+   - **If `--ff-only` fails, stop loudly.** A refused fast-forward means the
+     checkout has diverged; do NOT close or promote over it. Report the
+     divergence rather than reconciling it silently.
+
+1. **Make the merged code actually RUN** (BL-328):
    `bb swarmforge/scripts/build_freshness_cli.bb <project-root> sync`
    A merge does NOT restart anything. Every long-lived process (bridge, bot,
    `handoffd`, `handoffd_supervisor`, `front_desk_supervisor`, `operator_runtime`)
@@ -405,15 +424,16 @@ closed work.
    so the system self-heals back to broken. This step is what closes that gap, and
    it is a DELIBERATE, coordinator-invoked action — there is no background poller,
    by design. If you skip it, the fix does not ship; it only looks like it did.
-   - Run it FIRST, before closing/promoting, so your subsequent bookkeeping
-     handoffs are carried by the freshly-restarted daemon.
+   - Run it before closing/promoting (and after step 0's checkout sync), so
+     your subsequent bookkeeping handoffs are carried by the freshly-restarted
+     daemon.
    - Then CONFIRM with `build_freshness_cli.bb <project-root> report` — never
      assume the sync worked. If anything is still stale, say so loudly rather than
      closing the ticket in silence: a green ticket over inert code is exactly the
      lie BL-328 exists to end.
    - You are the ONLY owner of this step. Do not add a second restart mechanism
      anywhere; BL-328 chose one owner on purpose.
-1. **Close** the ticket: `git mv` its YAML from `backlog/active/` to
+2. **Close** the ticket: `git mv` its YAML from `backlog/active/` to
    `backlog/done/` (a milestone subdirectory if the existing convention there
    calls for one), then commit that move through the shared commit-integrity
    helper — **never** a hand-typed `git commit` — since `master` is a checkout
@@ -434,11 +454,11 @@ closed work.
    non-zero exit, the ticket is **not** closed — do not report it done; retry
    or surface the failure loudly instead, the same discipline this helper
    exists to enforce everywhere else on the shared checkout.
-2. **Promote** the next eligible item from `backlog/paused/` into
+3. **Promote** the next eligible item from `backlog/paused/` into
    `backlog/active/` if below `active_backlog_max_depth`, and recheck the cap.
    Eligibility order is Article 3.2.4: expedited defects (critical/high
    severity) ahead of everything else, then normal priority order.
-3. **Route** that newly promoted ticket immediately — do not leave it sitting
+4. **Route** that newly promoted ticket immediately — do not leave it sitting
    in `active/` unassigned/unrouted. On a mono-router pack (`config rotation
    router`, home role = coder): prefer the one-shot
    `swarmforge/scripts/promote_and_route_next.sh` (or
