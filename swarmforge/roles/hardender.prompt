@@ -1387,3 +1387,42 @@ You are the hardender.
   test would catch the mutation while `test_swarm_ensure.sh` ran detached for
   the same ticket. A subprocess parsed the mid-edit state, the spurious parse
   failure read as a real regression, and the pass paid for a full re-run.)
+
+## A shared fixture builder silently DROPS an override it does not thread — the test then runs the REAL wait (rule_proposal 2026-08-22, accepted)
+- Proposer's rule, verbatim: "Before overriding an adapter field via a shared
+  test fixture builder, grep the builder for that field - an unthreaded
+  override silently no-ops, falling through to a REAL wait/retry default."
+- A JS fixture builder that returns an object LITERAL only forwards the keys it
+  names. `foo(({ waitForAskCloseRetry: fake }))` on a builder whose body never
+  reads `overrides.waitForAskCloseRetry` is not an error and not a warning — the
+  key is simply discarded. There is no arity check, no unknown-key check, and
+  nothing downstream that can see it.
+- It fails SOFT in the worst direction: the field's ABSENCE is meaningful. These
+  adapters are deliberately optional with an `?? productionDefault` at the call
+  site, so a dropped override does not disable the behaviour, it re-enables the
+  PRODUCTION one. The suite stays green and pays real wall-clock, which is
+  exactly the engineering rule "keep the unit suite in seconds — no real timers"
+  being violated by a test that looks like it faked the timer.
+- Mechanics: before passing an override, grep the builder body for that exact
+  key. Every key you pass must appear as `overrides.<key>` in the builder. A key
+  it never reads is a defect in the parcel even while the suite passes — the
+  same set-compare discipline as the env-var rule above, applied to adapter
+  fields. Where the dropped default is a timer, the tell is duration: a suite
+  slice that got seconds slower with no new assertions is this bug until proven
+  otherwise.
+- Evidence (proposed by the hardender, 2026-08-22, BL-582; verified at HEAD
+  while accepting): `extension/test/telegramFrontDeskBotCore.test.js`.
+  `closingFixtureAdapters` (3271) threads `waitForAskCloseRetry` and
+  `askCloseRetryBudget` (3286-3287, added by BL-496);
+  `callbackFixtureAdapters` (2378) threads neither, though it forwards ~20 other
+  optional adapters. The fallback is real: `telegramFrontDeskBotCore.ts:1079-1080`
+  resolves `adapters.askCloseRetryBudget ?? DEFAULT_ASK_CLOSE_RETRY_BUDGET` (5)
+  and `adapters.waitForAskCloseRetry ?? defaultAskCloseWait`, and
+  `defaultAskCloseWait` (1007-1009) is a bare
+  `new Promise(resolve => setTimeout(resolve, ms))`. Measured cost 12s of real
+  wait per run, silently, still passing.
+- Distinct from the two nearest siblings: the env-var rule above is a MISSPELLED
+  stub name for an out-of-process fake; "A builder's side effect fires on its own
+  defaults" is an ORDERING fault where the override exists but arrives too late.
+  Here the override is spelled correctly and arrives on time, and the builder
+  simply never had a line for it.
