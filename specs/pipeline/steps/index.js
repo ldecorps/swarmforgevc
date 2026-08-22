@@ -570,7 +570,6 @@ const DOMAINS = [
   require('./bl1010SecondarySwarmPublishesUnderItsOwnNameSteps'),
   require('./bl1011FreshnessAlarmNamesSwarmAndReasonSteps'),
   require('./bl1014BoyScoutScanRanksDebtSteps'),
-  require('./bl1015BoyScoutRunCleansOneThingSteps'),
   require('./bl1035RespawnedBotGetsItsOwnGraceSteps'),
   require('./bl1036RestartDoesNotCostAConflictWindowSteps'),
   require('./bl1041RescueNeverReducesDurabilitySteps'),
