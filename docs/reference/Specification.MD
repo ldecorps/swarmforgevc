@@ -1,6 +1,46 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1032: `tmuxReaperGuard.js` (BL-817) now
+**Last Updated:** August 22, 2026 (BL-1028: `promote_and_route_next.sh`
+staged its `paused → active` rename with `git mv` and then asked
+`commit_integrity_cli.bb` to commit it, but answered every non-zero exit —
+`:no-git-dir`, `:lock-timeout`, `:add-failed`, `:commit-failed`,
+`:verify-mismatch`, and a close-guard rejection alike — with a raw, unlocked
+`git add`/`git commit` fallback. That `||` fires only when the CLI is
+present and refused (the CLI-absent case already has its own `else`
+branch), so the fallback's entire job was to override refusals, including
+the two shapes — `:lock-timeout` and `:verify-mismatch` — that mean a
+concurrent writer is live in the shared master checkout, exactly the case
+the lock exists to serialise; commit_integrity's own header says callers
+must never answer with a hand-rolled commit that races the roles committing
+to `main`, and this caller did precisely that. When the fallback itself
+failed, the staged `git mv` was left in the shared index with nothing to
+unwind it. A refusal is now obeyed: the two paths this script staged
+(`backlog/paused/<ticket>`, `backlog/active/<ticket>`) are snapshotted with
+`ls-files --stage` before the `mv` and replayed with `update-index
+--index-info` on refusal — never a blanket `git reset`, which on this
+shared checkout would also discard another role's staged work — restoring
+the ticket to `backlog/paused/` and exiting non-zero naming the refusal
+reason. Reason extraction reads both refusal shapes: a `:success false`
+refusal prints its JSON on stdout plus a `FAILED (reason)` line on stderr,
+while a close-guard rejection exits before the JSON is ever produced and
+prints only a `CLOSE BLOCKED` line — reading just one shape reported
+`unknown` for the other. The CLI-absent `else` branch (a target repo that
+never had the integrity guard) is deliberate degradation and stays
+unchanged, now logging out loud that it committed without the guard so
+that path is never mistaken for a guarded one. No extension command,
+setting, or UI change — this is a swarm-machinery correctness fix to an
+existing promotion call site, not user-visible behavior. Hardener pass,
+same ticket: shell suite 8/8, property runner 30/30 across 5 refusal
+shapes plus novel/unknown reason names, acceptance 10/10, BL-113 Gherkin
+mutation 8/8 killed; independently re-derived one non-vacuity break beyond
+the coder's own authoring-time proofs (keying the refusal guard on
+`INTEGRITY_RC == 1` instead of `!= 0` survives the shell suite, which only
+ever exits 1, but is killed by the property runner's non-1 exit codes); a
+pre-existing, separately-ticketed guard failure (BL-1033) was confirmed an
+ancestor of both `main` and `origin/main` before this merge, and left
+alone as not this parcel's fix.
+Prior entry —
+BL-1032: `tmuxReaperGuard.js` (BL-817) now
 scopes by the HAZARD — can this file cause a real tmux server to run —
 instead of by the presence of a quoted `'new-session'` token anywhere in the
 file. The token-only check was RED on
