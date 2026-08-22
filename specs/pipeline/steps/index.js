@@ -591,7 +591,8 @@ const DOMAINS = [
   require('./bl1069TmuxServerVersionSteps'),
   require('./bl991DeclaredStageNeverJumpedSteps'),
   require('./bl1029RespawnLaunchQuotingSteps'),
-  require('./bl1075WindowSizeOwnershipSteps')
+  require('./bl1075WindowSizeOwnershipSteps'),
+  require('./bl1052QwenCodeSeatSteps')
 ];
 
 function registerSteps(registry) {
