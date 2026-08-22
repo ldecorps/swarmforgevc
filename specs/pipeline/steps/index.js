@@ -575,7 +575,8 @@ const DOMAINS = [
   require('./bl1041RescueNeverReducesDurabilitySteps'),
   require('./bl1037WatchdogRestartsFewerThanMainMovesSteps'),
   require('./bl1048DeliveredParcelIsNotNotStartedSteps'),
-  require('./bl1038UnitTestsPinTheRepoSteps')
+  require('./bl1038UnitTestsPinTheRepoSteps'),
+  require('./bl1032TmuxReaperScopeSteps')
 ];
 
 function registerSteps(registry) {
