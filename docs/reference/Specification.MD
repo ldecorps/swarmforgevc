@@ -1,6 +1,47 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-991: the operator ruling
+**Last Updated:** August 22, 2026 (BL-1029: the family sweep BL-1018 left
+undone. tmux hands a `respawn-pane` command's trailing argument straight to
+`$SHELL -c`, so that argument must itself be valid POSIX shell; five
+remaining repair sites (`remote_control_health_lib.bb`, both
+`handoff_lib.bb` sites, both `handoffd.bb` sites — two of the ticket's
+original seven, in `swarm_ensure.bb`/`babysitter_check.bb`, had already
+been converted by BL-1018 landing on `main` between mint and this pass)
+still built that argument as a bare `(str "zsh '" launch-script "'")`, with
+no escaping, which stops being valid shell the instant the wrapped launch
+path contains an apostrophe — on such a host every one of these repair
+paths would fail to restart the role it was invoked to save. All five now
+route through one new shared constructor,
+`swarmforge/scripts/shell_quote_lib.bb`'s `launch-command` (deliberately a
+command builder, not just the quoting primitive — the `zsh ` prefix and
+the quoting are one decision, and splitting them is how a site ends up
+with the prefix right and the quoting wrong); BL-1018's own private
+`shell-quote-single` in `single_role_repair_lib.bb` is removed, not
+duplicated, and that lib now loads the shared one. The verification shape
+was itself part of the ask: this defect already survived BL-1018's own
+property runner behind a `str/includes?` substring check on the raw path,
+which passes whether the escaping is correct or broken, so every assertion
+that matters here hands the constructed argument to a REAL shell and
+compares what comes back, byte for byte, to what went in — eight path
+shapes (apostrophe, spaces, `$`, backslash, `;&|`, backticks, double
+quotes, an embedded newline) round-tripped, with the pre-fix construction
+kept as a negative control proven to actually fail in a shell. The
+enumeration proving no site quotes a launch path on its own derives its
+site list from the tree (`swarmforge/scripts/*.bb`, excluding the test
+tree) rather than a hand-maintained list, so an eighth site written later
+cannot go unrouted unnoticed — proven non-vacuous by renaming the helper
+and confirming the check catches the unrouted files (which itself
+surfaced and fixed a substring-match bug in the check's own site-detector
+during authoring). Degraded gate: shell + Babashka only, no
+mutation/CRAP/DRY tooling wired; gated by
+`shell_quote_lib_test_runner.bb` and
+`bl1029_respawn_quoting_property_runner.bb` (200 generated paths) plus the
+acceptance scenarios; three Gherkin mutation survivors on this feature
+were confirmed genuine equivalent mutants (BL-234), not a coverage gap.
+No new extension command or setting — swarm-substrate repair tooling
+under `swarmforge/scripts/`.)
+Prior entry —
+BL-991: the operator ruling
 ("make required_stages binding so a declared stage cannot be jumped")
 enforced. Before this, `route-required-stages` treated a ticket's declared
 `required_stages` set as a PRUNING list only — membership was permission:
