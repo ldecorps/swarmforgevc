@@ -6,7 +6,7 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 30
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-590, BL-624, BL-625, BL-643, BL-684]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-590, BL-624, BL-625, BL-643, BL-684, BL-1052, BL-1053]
 # ^ BL-590 and BL-684 added 2026-07-26: both carry `epic: swarm-intelligence-layer`
 #   but were absent from this list, so the epic under-reported its own orbit — the
 #   Onboarder half of it entirely, including the slice already on `main`.
