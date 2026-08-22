@@ -192,3 +192,8 @@ notes: |
   has no mutation, CRAP or DRY tooling wired. Its gate is its own unit suite.
   A hardening pass must record that degraded fallback explicitly and must not
   report a mutation or CRAP result it did not run.
+
+  APPROVED AS WRITTEN at 9c0fcd5e4 (2026-08-22), with no amendment to the
+  approval_context. The recommended direction therefore stands: the field
+  stops mirroring the folder. The coder does not need to re-open that choice —
+  what remains negotiable is where the gate lives and how the sweep is run.
