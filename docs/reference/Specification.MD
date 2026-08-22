@@ -1,6 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1041: a new CLI,
+**Last Updated:** August 22, 2026 (BL-1037: the build-freshness watchdog
+now restarts a healthy front desk only once it has served the build it was
+moved to, instead of once per commit-plus-grace. This swarm lands commits
+faster than one grace-plus-recompile-plus-respawn cycle completes: 24
+`build-stale-detected` events and 12 respawns in 105 minutes on
+2026-08-22, staleness re-detected 33 seconds to 14 minutes after the
+previous restart finished paying for itself — each restart also costing a
+Telegram conflict window (BL-1036) and, if it followed a stall, a tight
+loop (BL-1035). The bound: a child restarted onto a fresh build must
+complete one poll cycle on it before the watchdog may restart it again,
+reusing the same "heartbeat at or after this child's own spawn" fact
+BL-1035 already uses to judge staleness. The staleness debt is **carried,
+not cleared** while deferred — `build-stale-since-ms` is left exactly as
+it was, so the restart already owed fires the moment the child serves and
+lands on `main`'s newest build; clearing it instead would forget a
+staleness already seen and reopen the 2h23m stale-serving window BL-582
+exists to close. Defaults `true` for callers that cannot observe serving
+(the bridge has no poll heartbeat, so it keeps BL-582's original behavior
+rather than being silently exempted from the watchdog by a fact it can't
+check). Deferrals log as `build-stale-deferred`, naming the build and that
+a restart is still owed, so a pause is visible rather than inferred from a
+restart that didn't happen. Full detail in the BL-582 entry below, amended
+in place rather than duplicated. Hardener pass, same ticket: extracted the
+served/not-served comparison into a pure `build-served-fact?` (mirroring
+BL-1035's own `own-heartbeat-ms` shape) so its `>=` boundary is directly
+testable rather than only reachable through an already-resolved boolean —
+behavior-preserving, no observable change. Prior entry —
+BL-1041: a new CLI,
 `swarmforge/scripts/rescue_orphaned_work.bb`, rescues work sitting outside
 any branch (a stash entry with no worktree, most often) without the rescue
 itself becoming the way the work gets lost. On 2026-08-22 a reviewed-sound
