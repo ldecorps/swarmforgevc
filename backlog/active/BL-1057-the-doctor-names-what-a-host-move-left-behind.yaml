@@ -194,3 +194,5 @@ notes: |
   root-capability-commands epic already lists a `doctor` verb; if that epic is
   ruled on and built, this command is the thing that verb should call, not a
   second implementation.
+
+assigned_to: coder
