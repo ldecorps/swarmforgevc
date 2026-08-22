@@ -1,6 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1014: a new on-demand, read-only CLI
+**Last Updated:** August 22, 2026 (BL-1035: a respawned front-desk bot is now
+judged on its own heartbeat, not its dead predecessor's, closing a restart
+loop that could burn the bot's whole bounded restart budget in seconds.
+`front_desk_supervisor_lib.bb`'s `poll-heartbeat-stale?` waived staleness
+during the startup grace only when `last-heartbeat-ms` was `nil` — but the
+heartbeat is a FILE
+(`.swarmforge/operator/front-desk-poll-heartbeat.json`), rewritten by the
+bot every completed poll cycle and reset by nobody at spawn. So after any
+restart of a bot that had not been polling successfully, the supervisor read
+the dead instance's already-stale timestamp, the nil-guard never fired, and
+the replacement was declared stalled on its first tick — observed live,
+06:13:56 spawned / 06:13:58 stalled / 06:14:02 respawned, against a 90s
+grace written to cover the first long-poll cycle. The predicate now derives
+`own-heartbeat-ms`: a heartbeat timestamp older than this child's own
+`started-at-ms` carries no information about it and is treated as absent,
+exactly as a genuinely missing heartbeat always was — comparing timestamps
+rather than clearing the file at spawn, so it stays correct when the file is
+missing, unreadable, or written by a bot that outlived a *supervisor*
+restart. The waiver stays scoped to the grace window only, so a replacement
+that genuinely never polls is still caught once its grace expires (BL-370's
+original fault stays fixed). Three of six call sites share this predicate
+and inherit the fix (`front_desk_supervisor.bb`, the reported fault;
+`cursor_bridge_supervisor.bb`; `bridge_headless_supervisor.bb`); two callers
+using the 3-arity form are byte-for-byte unaffected. Split 1 of 3 from the
+same restart-storm intake — BL-1036 (a Telegram 409 on every respawn) and
+BL-1037 (build-freshness restart cadence) are independent root causes, not
+addressed here. No new command, setting, or log-format change — the
+supervisor log still records each stall with the window it exceeded, per the
+intake's own standing constraint. Prior entry —
+BL-1014: a new on-demand, read-only CLI
 (`node extension/out/tools/boyScoutScan`) ranks the repo's technical debt by
 cross-source RECURRENCE rather than re-judged severity, across five live
 evidence sources — deferred hardening gates, bounce recurrence (by
