@@ -28,7 +28,8 @@ Feature: The terminal title names the ticket its own pane holds
   one screen, so the fields have a drop order: the ticket number survives
   longest, elapsed time next, and the slug shortens and then disappears
   before either. Only a pane with no ticket at all falls back to naming the
-  role, because a blank title bar is useless in a window list.
+  role, because a blank title bar is useless in a window list - a deliberate
+  exception, not a contradiction of the rule above it.
 
   Background:
     Given a seat running in its own tmux window, with its own mailbox

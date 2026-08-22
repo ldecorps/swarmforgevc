@@ -165,8 +165,10 @@ description: |
   **The one case where the role appears** is a pane with no ticket at all -
   never acted, or nothing in its mailbox names one. A blank title bar is
   useless in a window list, so fall back to the role there. That is a
-  fallback rather than a repetition, and it is my call, not the operator's:
-  say so if a blank or a neutral marker is preferred.
+  fallback rather than a repetition. **Confirmed by the operator 2026-08-22:
+  "i agree with fallback"** - so it is a settled decision, not an open one,
+  and a reviewer should not re-litigate it as an inconsistency with "i dont
+  need role repeated".
 
   ## How (direction, not mandate)
 
@@ -246,7 +248,8 @@ qa_e2e_procedure: >
   11. Confirm the drop order by narrowing the window through each step of the
      ladder in the description, and confirm the ticket NUMBER is never shown
      half-truncated at any width. Confirm the role appears in the title ONLY
-     for a pane with no ticket at all.
+     for a pane with no ticket at all - that fallback is operator-confirmed
+     and is not a violation of "no role in the title".
 
 approval_context: >
   Your ask, from the six-window screenshot: put the ticket in the terminal
