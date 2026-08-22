@@ -61,4 +61,37 @@ machine/path, that at minimum:
 Whether this becomes a small standalone script, a `./swarm` subcommand, or
 gets folded into onboarding/bounce tooling is a specifier design call.
 
+## Update 2026-08-22 ~12:47 UTC — live casualty found: Bubble named tunnel down
+
+Human reported (screenshot): `bubble.musicalsifu.com` serves Cloudflare
+**Error 1033** (Tunnel error — no connector reaching the edge for that
+hostname). Coordinator diagnosis:
+
+- A `cloudflared` process IS running on this WSL host (pid alive), but it is
+  the **anonymous quick tunnel** (`cloudflared tunnel --url
+  http://127.0.0.1:8765 --no-autoupdate`, would only ever produce a
+  `*.trycloudflare.com` URL) — not the **named tunnel** that
+  `bubble.musicalsifu.com` is DNS-routed to.
+- `~/.cloudflared/` (cert.pem, config.yml, tunnel credentials) does not exist
+  on this host at all.
+- `~/.swarmforge/tunnels/` (the BL-857 host-level tunnel-ownership registry,
+  `swarmforge-bubble.operator-root` etc.) does not exist on this host either
+  — this WSL host has never registered as the named-tunnel operator root.
+  `.swarmforge/operator/named-tunnel.env` is also absent.
+- This is a clean, first-time-on-this-host state, not corruption — per
+  `docs/how-to/named-tunnel-bubble-musicalsifu.md`, registering the operator
+  root is "a deliberate human edit," and creating the named tunnel needs an
+  interactive `cloudflared tunnel login` (browser). The coordinator can't
+  complete either step unattended, so this was handed back to the human as a
+  short command sequence rather than acted on directly.
+- This is the single most concrete instance of the general gap this intake
+  is about: a host-pinned credential/registration directory that the
+  switchover silently left behind, with no automated detection until a real
+  user-facing surface broke.
+
+Evidence: `docs/how-to/named-tunnel-bubble-musicalsifu.md` (full runbook),
+`swarmforge/scripts/setup_bubble_named_tunnel.sh`,
+`swarmforge/scripts/launch_resident_spy_tunnel.sh`,
+`swarmforge/scripts/tunnel_ownership_lib.sh`.
+
 ---
