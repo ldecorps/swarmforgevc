@@ -4,7 +4,7 @@
  */
 
 import { defaultGateSpawn } from './gates';
-import type { Envelope, GateResult, GateSpawn } from './types';
+import type { Envelope, GateResult, GateSpawn, SpawnOutcome } from './types';
 
 /**
  * The paths among `paths` that git does not already track — the only ones that
@@ -78,6 +78,28 @@ function leftStagedWarning(unstaged: boolean, paths: string[]): string {
  * did not happen" and "the cleanup was committed" are opposite facts, and
  * `boyScoutRun` restores the tree on a throw.
  */
+/**
+ * Both failure branches below share this shape exactly: take back whatever
+ * this function staged, then throw naming the git action, its own error or
+ * output, and whether the unstage itself worked - never silently dropping
+ * either half.
+ */
+function throwWithUnstage(
+  action: string,
+  outcome: SpawnOutcome,
+  root: string,
+  created: string[],
+  spawn: GateSpawn
+): never {
+  const unstaged = unstage(root, created, spawn);
+  throw new Error(`${action} failed: ${outcome.error?.message ?? outcome.output ?? ''}${leftStagedWarning(unstaged, created)}`);
+}
+
+/** A single named check, so neither call site below re-carries its own `||`. */
+function didFail(outcome: SpawnOutcome): boolean {
+  return outcome.status !== 0 || !!outcome.error;
+}
+
 export function commitEdits(
   root: string,
   message: string,
@@ -92,22 +114,12 @@ export function commitEdits(
   }
   const created = untrackedAmong(root, paths, spawn);
   if (created.length > 0) {
+    // `git add` over several paths can stage some before failing on another.
     const add = spawn('git', ['add', '--', ...created], root);
-    if (add.status !== 0 || add.error) {
-      // `git add` over several paths can stage some before failing on another.
-      const unstaged = unstage(root, created, spawn);
-      throw new Error(
-        `git add failed: ${add.error?.message ?? add.output ?? ''}${leftStagedWarning(unstaged, created)}`
-      );
-    }
+    if (didFail(add)) throwWithUnstage('git add', add, root, created, spawn);
   }
   const commit = spawn('git', ['commit', '-m', message, '--', ...paths], root);
-  if (commit.status !== 0 || commit.error) {
-    const unstaged = unstage(root, created, spawn);
-    throw new Error(
-      `git commit failed: ${commit.error?.message ?? commit.output ?? ''}${leftStagedWarning(unstaged, created)}`
-    );
-  }
+  if (didFail(commit)) throwWithUnstage('git commit', commit, root, created, spawn);
 }
 
 export function buildCommitMessage(result: {
