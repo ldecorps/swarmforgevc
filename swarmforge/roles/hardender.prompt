@@ -1426,3 +1426,72 @@ You are the hardender.
   defaults" is an ORDERING fault where the override exists but arrives too late.
   Here the override is spelled correctly and arrives on time, and the builder
   simply never had a line for it.
+
+## A coverage counter is not an assertion — round-trip a generated hazardous input through the REAL interpreter (rule_proposal 2026-08-22, accepted)
+- Proposer's rule, verbatim: "A coverage counter on a hazardous generated
+  input is not an assertion. Verify escaping via a real sh -c round-trip, not
+  str/includes? on raw text - that passes whether escaping is correct or
+  broken."
+- **The shape.** A property generator deliberately draws a hazardous input — a
+  path with an embedded quote, a backslash, a newline, a `$` or a backtick —
+  and a coverage floor requires N such draws per run, so the case is exercised
+  every single time. The only check on the result is
+  `(str/includes? output raw-input)`. The floor proves the case was DRAWN. It
+  says nothing about what was ASSERTED, and the two read identically in a
+  green report: high coverage on the dangerous case, zero information about it.
+- **Worse than vacuous — the check is ANTI-correlated with correctness.** For
+  an embedded-quote input the substring assertion holds exactly when the code
+  is WRONG. Unescaped output splices the raw text in verbatim, so the literal
+  substring IS present and the check passes while the emitted string is
+  invalid shell. Correctly escaped output no longer contains that literal at
+  all — the escape sequence splits it — so the same check would go RED against
+  the fix. Neither direction of that assertion could ever have caught the
+  defect, and a hardener who "fixes the red" by loosening it has cemented the
+  bug. When you find a substring check over a generated hazardous input, ask
+  which way it points before touching either side.
+- **The remedy: put the real interpreter inside the test.** Feed the code's
+  ACTUAL output to an actual evaluator and compare what comes back to what
+  went in — for a shell string, `sh -c "printf '%s' <the-quoted-arg>"` must
+  exit 0 with stdout byte-identical to the original path. The same move
+  generalizes to every generate-then-embed surface: parse the emitted JSON and
+  compare structures, compile the emitted regex, execute the emitted SQL
+  against a real parser. A hand-written model of the escaping rules is just a
+  second implementation of the bug; only the interpreter that will run it in
+  production is authoritative.
+- **Confirm the new assertion goes RED against the pre-fix code.** A
+  round-trip you never watched fail is another coverage counter wearing a
+  better name. Revert the fix (or point the check at the old construction),
+  see the failure count, then re-apply — the hardender did exactly this here:
+  28 of 400 failures at seed 20260822, passing once the escape landed.
+- **Pin a DETERMINISTIC case beside the property.** A generator's draw is a
+  probability, and the coverage floor that guaranteed it can be retuned by
+  anyone later. Add one fixed scenario carrying the hazardous literal so the
+  guard survives a reseed.
+- Evidence (proposed by the hardender, 2026-08-22, BL-1018; verified at HEAD
+  while accepting): `swarmforge/scripts/single_role_repair_lib.bb` built the
+  tmux command's trailing argument as `(str "zsh '" launch-script "'")` —
+  tmux hands that string to `$SHELL -c`, so a launch path such as
+  `/Users/O'Brien/...` produced text that is not valid POSIX shell. Confirmed
+  live: `sh -c` exits 2 with "unexpected EOF looking for matching `''". The
+  `:quoted-launch` generator case in
+  `swarmforge/scripts/test/bl1018_single_role_repair_property_runner.bb` drew
+  that shape on roughly a third of non-refusal cases against a floor of 30,
+  and the P3 assertion was a bare substring match. Fixed by
+  `shell-quote-single` (close-quote / escaped-quote / reopen-quote) plus
+  `shell-round-trips?`, with unit scenario 04 pinning the apostrophe case
+  (commit fcd3bc7d1).
+- **Distinct from "A negative substring assertion is a proxy" above — they are
+  mirror images, and the difference is which way they fail.** That rule is
+  about a NEGATIVE check that is too broad: it false-FAILS, going red on a new
+  and legitimate use of the string while the invariant still holds. This one
+  is a POSITIVE check that false-PASSES on the broken code and would go red on
+  the correct code. Same ingredient, opposite hazard: there the risk is
+  disarming a guard that was genuinely working; here the guard never worked
+  and its red is the fix arriving.
+- **Family note (2026-08-22, at accept time).** The same bare-quote
+  construction is live at seven OTHER respawn sites that BL-1018 did not touch:
+  `swarm_ensure.bb:228`, `handoffd.bb:902` and `:1171`,
+  `handoff_lib.bb:876` and `:970`, `babysitter_check.bb:712`, and
+  `remote_control_health_lib.bb:65`. Swept as BL-1029 — a fix landing at one
+  member of a construction family is a prompt to grep for the siblings, not
+  evidence they were covered.
