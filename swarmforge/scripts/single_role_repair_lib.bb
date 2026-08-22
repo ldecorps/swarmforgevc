@@ -29,6 +29,16 @@
 
 (defn- blank? [v] (str/blank? (str v)))
 
+;; A launch-script path is filesystem-backed and cannot assume it never
+;; contains an apostrophe (a macOS home directory like /Users/O'Brien/...
+;; is a real shape, not a hypothetical). tmux runs the resolved shell-command
+;; string via `$SHELL -c <string>`, so the string itself must be valid POSIX
+;; shell syntax - a bare wrap-in-single-quotes breaks the instant the wrapped
+;; text contains one. Standard POSIX escape: close the quote, emit an
+;; escaped literal quote, reopen the quote.
+(defn- shell-quote-single [s]
+  (str "'" (str/replace (str s) "'" "'\\''") "'"))
+
 ;; Every command starts here. Nothing in this lib builds a tmux invocation any
 ;; other way, so "names the pack socket explicitly" is a property of the one
 ;; constructor rather than a rule each call site has to remember - a rule
@@ -62,7 +72,7 @@
     (blank? session) {:status :no-session-name :commands []}
     (blank? launch-script) {:status :no-launch-script :commands []}
     :else
-    (let [launch (str "zsh '" launch-script "'")
+    (let [launch (str "zsh " (shell-quote-single launch-script))
           env (vec env-args)]
       {:status :ok
        :commands
