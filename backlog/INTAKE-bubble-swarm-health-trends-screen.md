@@ -3,7 +3,10 @@
 Status: new intake, not minted. Capture only (human via Let's Talk / Cursor
 2026-07-31). Human asked for intake so the specifier can weigh in — not a
 pre-minted ticket. Picture mock emailed to notify_email_to the same evening
-for phone review.
+for phone review. Persisted for specifier/coder (copied into repo 2026-08-01):
+`docs/design/bubble-health-trends-screen-mock.png` (layout v1) and
+`docs/design/bubble-health-trends-REAL-data-mock.png` (same layout with
+live telemetry numbers from 2026-07-31).
 
 Related
 - Same evening: Workflow Canary intake (tracer bullet → Canary). Canary

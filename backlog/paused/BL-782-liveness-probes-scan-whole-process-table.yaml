@@ -10,8 +10,7 @@ direction: aligned
 depends_on: []
 assigned_to: unassigned
 mutation_cost: low
-human_approval: pending
-
+human_approval: approved
 invariants:
   - "Every liveness/survivor probe in a teardown or audit path matches only processes belonging to the project root under test — a process from another root, or from the operator's own tooling, can never be counted as a survivor."
 

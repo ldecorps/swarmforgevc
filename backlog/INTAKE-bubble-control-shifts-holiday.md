@@ -3,7 +3,8 @@
 Status: new intake, not minted. Capture only (human via Let's Talk / Cursor
 2026-07-31). Human asked for intake so the specifier can weigh in — not a
 pre-minted ticket. Picture mock emailed to notify_email_to the same evening
-for phone review.
+for phone review. Persisted for specifier/coder:
+`docs/design/bubble-control-screen-mock.png` (copied into repo 2026-08-01).
 
 Related
 - `backlog/INTAKE-bubble-send-notes-swipe-screen.md` — sibling Bubble pager

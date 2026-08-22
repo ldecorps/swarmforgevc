@@ -1,0 +1,187 @@
+id: BL-786
+title: "Stryker concurrency is three hand-tuned constants (8, 12, 12) that no host ever checks: BL-427 measured the number and built the recommender, but nothing calls it"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: medium
+priority: 20
+direction: aligned
+depends_on: []
+assigned_to: unassigned
+mutation_cost: medium
+human_approval: approved
+invariants:
+  - "The concurrency Stryker actually runs at is never higher than the launching host's free RAM can hold at the declared per-worker peak minus the reserve — on every mutation entry point, not only the default config."
+  - "An explicitly pinned concurrency always wins over the computed one, and whichever value is used is printed at launch — an adaptive number that is invisible is harder to debug than a wrong constant."
+required_wiring:
+  - "extension/package.json::mutation-concurrency::every mutation npm script must resolve concurrency through the shared resolver at launch; a resolver that exists but is called from no script is this ticket's own failure mode repeated"
+
+approval_context: >
+  Filed medium deliberately, and the reasoning is worth a glance because the
+  expedite lane is crowded and the human has twice asked to unblock the JumpQ
+  batch.
+
+  The honest read is that this is real but contained: it degrades manually
+  invoked, usually overnight mutation runs, not the swarm's steady state; the
+  operator has a one-line workaround (edit the number); and no data is lost.
+  That is the medium bar, not the high one. It would be easy to argue high
+  from "OOM spiral" alone, and the specifier chose not to.
+
+  Two facts that could move it up if the human weighs them differently. It has
+  already bitten this host at least once as an orphaned-vitest OOM spiral. And
+  the two letsTalk configs sit at 12 — higher than the measured recommendation
+  of 9 on a host with MORE headroom than this one has right now — so the worst
+  offenders are the two nobody measured.
+
+  Blocked in practice, not by a depends_on: mutation runs are currently
+  blocked repo-wide by BL-714's two pre-existing defects, so this cannot be
+  verified end to end until that clears. That is another reason not to
+  expedite it.
+
+source: |
+  Coordinator note to the specifier, 2026-08-01 21:43Z: "Ticket needed -
+  stryker concurrency:8 hardcoded, not host-aware".
+
+  Verified on `main` at 2026-08-01:
+
+  1. **Three constants, three different values, no shared source.**
+     `extension/stryker.config.json` has `"concurrency": 8`;
+     `extension/stryker.letsTalkCore.config.json` and
+     `extension/stryker.letsTalkCursorBridge.config.json` both have 12.
+     Nothing reads the host.
+
+  2. **The value has been hand-tuned four times, never derived.**
+     `git log -L` on the line: BL-048 introduced 2, BL-124 raised it to 4,
+     and BL-454/BL-456 raised it to 8 inside a commit whose subject is about
+     CRAP and mutation gaps — not a sizing decision. The two 12s arrived with
+     the letsTalk configs in BL-696 with no measurement reference at all.
+
+  3. **The recommender exists, is pure, is tested, and has no production
+     caller.** `recommendMutationConcurrency` in
+     `extension/src/metrics/mutationWorkerRss.ts` computes
+     `clamp(floor((freeRam - reserve) / peakRssPerWorker), 1, cores)`. Its
+     only non-test caller is `extension/src/tools/profile-mutation-workers.ts`,
+     the measurement harness — whose own only caller is a docs page telling a
+     human to run it by hand.
+
+  4. **The measurement was done and committed, and the follow-up never was.**
+     `docs/reference/BL-427-mutation-worker-rss-measurement.md` records a real
+     run: peak RSS per Stryker worker ~783 MB (821121024 bytes), reserve
+     2048 MB, recommended concurrency 9 at that moment. The report closes by
+     naming "the named adaptive-concurrency follow-up ticket" whose "whole
+     point is to compute this recommendation live at launch time rather than
+     freeze today's reading into a new fixed constant." No such ticket was
+     ever filed. Instead the constant was frozen — 4 to 8 by hand — which is
+     the exact outcome the report warned against.
+
+  5. **The numbers do not fit this host now.** 20 cores, 15 GiB total, 7.9 GiB
+     available, swap already 3.3 of 4 GiB used. At the measured 783 MB peak
+     and 2048 MB reserve that is room for roughly 7 workers. The default
+     config asks for 8 and the letsTalk configs ask for 12.
+
+  This is the BL-419 shape again — mechanism shipped, unit-tested, green, and
+  wired into zero of the places it was built to serve — and this time the
+  ticket that built it said so in its own report.
+
+description: |
+  Resolve mutation concurrency from the launching host at run time instead of
+  reading a frozen constant out of each Stryker config, using the recommender
+  BL-427 already built and the per-worker peak BL-427 already measured.
+
+  The pure calculation is done and needs no changes: `recommendMutationConcurrency`
+  takes free RAM, the per-worker peak, core count and a reserve, and returns a
+  value clamped to `[1, cores]`. What is missing is a caller — something each
+  mutation entry point goes through before Stryker starts, which reads the
+  host, computes the number, and passes it to Stryker (`--concurrency N`, which
+  overrides the config file) while printing what it chose and why.
+
+  Five things this must get right:
+
+  1. **All three entry points, not just the default.** The two letsTalk configs
+     at 12 are the ones furthest from what any host was measured to hold.
+     Fixing only `stryker.config.json` leaves the worst case in place and would
+     read as done.
+
+  2. **The per-worker peak is declared once, with its provenance.** The
+     calculation needs a peak RSS figure. That figure is a measurement
+     (~783 MB, from the BL-427 report), not a guess — it belongs in one named
+     place that cites where it came from, so the next person to change it knows
+     what would have to be re-measured. Repeating it per config recreates
+     today's drift in a new location.
+
+  3. **A pin must still win.** An operator sizing a run by hand — or pinning a
+     low value to leave room for something else on the box — must be able to,
+     and the pin must beat the computed value. Whether that is an env var or a
+     CLI flag is the coder's call; that it exists and is documented is not.
+
+  4. **Say the number out loud.** The resolved concurrency, the inputs it came
+     from (free RAM, cores, peak, reserve), and whether it was computed or
+     pinned must appear in the run output. A silent adaptive value turns every
+     future "why was this run slow / why did it OOM" into an archaeology
+     exercise.
+
+  5. **Never zero, never more than cores.** Already true of the recommender —
+     this ticket must not lose it by clamping somewhere new.
+
+  Naming constraint, deliberate: the resolver's path or script name must
+  contain `mutation-concurrency`, so the `required_wiring` gate above can see
+  the call sites. This ticket's entire value is the call site existing, which
+  is precisely what that gate is for.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. On a host with plenty of free RAM, a mutation run resolves a concurrency
+     equal to the recommender's output for that host's readings, and Stryker
+     is invoked with that value rather than the config file's.
+
+  2. On a RAM-starved host — free RAM below the reserve — the resolved value
+     is 1, not 0 and not negative, and the run still starts.
+
+  3. On a host whose RAM headroom would allow more workers than it has cores,
+     the resolved value is the core count.
+
+  4. Each of the three mutation entry points (`mutation`,
+     `mutation:lets-talk-core`, `mutation:lets-talk-cursor-bridge`) resolves
+     its own concurrency the same way, proven per entry point — a scenario that
+     covers only the default config must not be able to pass this.
+
+  5. An explicit pin is honoured exactly, even when it is far above or far
+     below what the host would have been sized to, and the output says the
+     value was pinned rather than computed.
+
+  6. Every run prints the resolved concurrency together with the free RAM,
+     core count, per-worker peak and reserve it was derived from.
+
+  7. The declared per-worker peak has exactly one definition in the tree, and
+     changing it changes what every entry point resolves.
+
+out_of_scope: |
+  - Changing `recommendMutationConcurrency`'s formula, its clamping, or the
+    2048 MB `DEFAULT_RESERVE_MB` margin. All three are BL-427's, measured and
+    tested; this ticket is the missing caller, not a re-tuning.
+  - Re-running the RSS measurement to refresh the ~783 MB figure. Worth doing
+    periodically, and worth its own ticket when the suite's shape changes
+    enough to matter; not a prerequisite here.
+  - Vitest's own worker pool sizing, and the unit suite's concurrency. Related
+    RAM pressure, different knob, different ticket.
+  - The BL-714 defects currently blocking mutation runs repo-wide. Independent
+    fault, already ticketed and in flight; this ticket assumes they clear.
+  - Auto-adjusting concurrency mid-run as RAM fluctuates. Sizing once at launch
+    is the whole scope — the report's own framing is "compute this
+    recommendation live at launch time".
+
+notes: |
+  The lesson worth carrying into review, beyond the fix: BL-427 was an
+  explicitly measure-first slice that did everything right except file its own
+  follow-up. It measured, it built the recommender, it wrote the report, and
+  it said in that report that a follow-up must exist so the reading is not
+  frozen into a constant — and then someone froze it into a constant, twice,
+  in commits about something else.
+
+  A slice that ends with "a follow-up wires this in" has not finished until
+  that follow-up has an id. A sentence in a doc is not a ticket, and the
+  measurement harness's own comment naming the fixed value it was going to
+  replace has been stale since the value moved from 4 to 8.
