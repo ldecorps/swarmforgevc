@@ -65,6 +65,14 @@ class TalkEngine(private val appContext: Context) {
     private var replyPlayer: ReplyAudioPlayer? = null
     private var autoListenRunnable: Runnable? = null
     private var recordStartedAt = 0L
+
+    /**
+     * BL-777: barge-in bookkeeping. Every decision - onset, mode gate,
+     * listening-session count - lives in [BargeInDetector] on the pure-logic
+     * side of BL-769's JVM seam; this class owns only the android.* half
+     * (opening the mic, reading levels, stopping the player).
+     */
+    private var bargeInState = BargeInDetector.State()
     private var listener: Listener? = null
 
     init {
@@ -78,6 +86,11 @@ class TalkEngine(private val appContext: Context) {
         holdMusic.setPreferredSong(preferredSong.ifBlank { null })
         recorder = AudioTurnRecorder(appContext.cacheDir) {
             mainHandler.post { onRecorderAutoStop() }
+        }
+        // BL-777 required_wiring: the detector is driven from the LIVE talk
+        // loop, not only from tests. Every capture buffer becomes a frame.
+        recorder?.onLevel = { rms, atMs ->
+            mainHandler.post { onBargeInFrame(rms, atMs) }
         }
     }
 
@@ -151,6 +164,7 @@ class TalkEngine(private val appContext: Context) {
         clearAutoListen()
         abortInFlightTurn()
         recorder?.cancel()
+        bargeInListeningClosed()
         holdMusic.stop()
         replyPlayer?.shutdown()
         listener = null
@@ -166,6 +180,10 @@ class TalkEngine(private val appContext: Context) {
             scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS)
         } else if (!on) {
             clearAutoListen()
+            // BL-777: hands-free off ends barge-in detection, so a watch open
+            // over live playback must not outlive the mode that opened it.
+            closeBargeInWatch()
+            bargeInListeningClosed()
             if (phase == Phase.RECORDING) stopRecording(manual = false)
         }
         publish()
@@ -248,6 +266,11 @@ class TalkEngine(private val appContext: Context) {
             abortInFlightTurn()
             if (recorder?.isRecording == true) recorder?.cancel()
             replyPlayer?.stopNow()
+            // BL-777: pause cancels the mic and the player, so the detector
+            // must not go on believing a watch is open over live playback.
+            bargeInState = BargeInDetector.listeningClosed(
+                BargeInDetector.playbackFinished(bargeInState, BargeInDetector.VoiceMode.PUSH_TO_TALK).state
+            )
             holdMusic.stop()
             holdMusicTitle = null
             if (phase != Phase.READY) {
@@ -318,6 +341,7 @@ class TalkEngine(private val appContext: Context) {
         }
         setPhase(Phase.SPEAKING)
         replyPlayer?.speakPlain(greeting)
+        bargeInPlaybackStarted()
     }
 
     fun startRecording(auto: Boolean) {
@@ -478,6 +502,7 @@ class TalkEngine(private val appContext: Context) {
             return
         }
         val capture = recorder?.stop()
+        bargeInListeningClosed()
         when {
             capture == null || capture.audioBase64.isBlank() -> {
                 replyText = when (capture?.reason) {
@@ -554,6 +579,7 @@ class TalkEngine(private val appContext: Context) {
         replyIsErrorStyle = false
         setPhase(Phase.SPEAKING)
         replyPlayer?.play(result, muted)
+        bargeInPlaybackStarted()
     }
 
     /**
@@ -574,8 +600,106 @@ class TalkEngine(private val appContext: Context) {
         scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_AFTER_ERROR_MS)
     }
 
+    // ── BL-777: barge-in ────────────────────────────────────────────────
+
+    private fun bargeInMode(): BargeInDetector.VoiceMode =
+        if (handsFree) BargeInDetector.VoiceMode.HANDS_FREE else BargeInDetector.VoiceMode.PUSH_TO_TALK
+
+    /**
+     * One capture buffer, reduced to a plain [BargeInDetector.Frame]. Bubble's
+     * true output RMS is not available to the capture path, so playback
+     * contributes a fixed reference level - output gating - on top of the
+     * AcousticEchoCanceler [AudioTurnRecorder] already attaches. A human has
+     * to clear that reference by the detector's margin to get through, which
+     * is what stops Bubble hearing itself.
+     */
+    private fun onBargeInFrame(rms: Double, atMs: Long) {
+        if (!alive.get() || pausedAll) return
+        val reference = if (replyPlayer?.isAudioActive() == true) {
+            BargeInDetector.SELF_OUTPUT_REFERENCE_LEVEL
+        } else {
+            0.0
+        }
+        applyBargeInStep(
+            BargeInDetector.frame(
+                bargeInState,
+                BargeInDetector.Frame(atMs = atMs, capturedLevel = rms, referenceLevel = reference),
+                bargeInMode()
+            )
+        )
+    }
+
+    /** Bubble has started speaking: open the watch so an interruption is
+     *  already being captured when it is spoken. */
+    private fun bargeInPlaybackStarted() {
+        applyBargeInStep(BargeInDetector.playbackStarted(bargeInState, bargeInMode()))
+    }
+
+    /** Playback ended on its own: the watch has nothing left to consume it. */
+    private fun bargeInPlaybackFinished() {
+        applyBargeInStep(BargeInDetector.playbackFinished(bargeInState, bargeInMode()))
+    }
+
+    /** The mic closed for a reason the detector did not decide (turn
+     *  submitted, hands-free off, pause, shutdown). */
+    private fun bargeInListeningClosed() {
+        bargeInState = BargeInDetector.listeningClosed(bargeInState)
+    }
+
+    private fun applyBargeInStep(step: BargeInDetector.Step) {
+        bargeInState = step.state
+        for (effect in step.effects) {
+            when (effect) {
+                is BargeInDetector.Effect.AbortPlayback -> onBargeIn(effect)
+                is BargeInDetector.Effect.OpenListening -> openBargeInWatch()
+                is BargeInDetector.Effect.CloseListening -> closeBargeInWatch()
+            }
+        }
+    }
+
+    private fun openBargeInWatch() {
+        if (recorder?.isRecording == true) return
+        if (recorder?.start(handsFree = true, watch = true) != true) {
+            // The mic is unavailable; the detector must not believe a session
+            // is open that is not.
+            bargeInListeningClosed()
+        }
+    }
+
+    private fun closeBargeInWatch() {
+        if (recorder?.isWatching == true) recorder?.cancel()
+    }
+
+    /**
+     * The human spoke over Bubble. Stop the speech, and hand the watch that
+     * was already capturing them straight over as their turn - no second
+     * listening session is opened, and the mic is never closed and reopened
+     * around the words that prompted the interruption.
+     *
+     * This slice deliberately does NOT touch the in-flight task: aborting
+     * playback has no side effect beyond silence, and cancel/pause/supersede
+     * semantics are a later slice.
+     */
+    private fun onBargeIn(effect: BargeInDetector.Effect.AbortPlayback) {
+        replyPlayer?.abort(effect.reason)
+        clearAutoListen()
+        if (recorder?.isWatching == true) {
+            recorder?.promoteWatchToTurn()
+            recordStartedAt = System.currentTimeMillis()
+            setPhase(Phase.RECORDING)
+        } else {
+            // No watch was open (the mic was refused, or hands-free came on
+            // mid-reply): fall back to the ordinary re-arm rather than leaving
+            // the human with nothing listening.
+            bargeInListeningClosed()
+            setPhase(Phase.READY)
+            scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS)
+        }
+    }
+
     private fun onPlaybackDone() {
         if (!alive.get()) return
+        bargeInPlaybackFinished()
         if (phase == Phase.SPEAKING || phase == Phase.THINKING) {
             // BL-826: onPlaybackDone can fire from THINKING (a stale signal
             // from a player callback queued before a new turn started) —
