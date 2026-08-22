@@ -121,8 +121,9 @@ tunnel_clear_owner() {
 
 # ── Pure orphan decision (Invariants 1 & 3) ─────────────────────────────
 #
-# Reads candidate lines from stdin, shaped "<pid> <command...>" (pgrep -fl's
-# own format - the caller decides how to obtain that list; this function
+# Reads candidate lines from stdin, shaped "<pid> <command...>" (`ps -o pid=
+# -o args=`'s own format - the caller decides how to obtain that list; this
+# function
 # never calls pgrep or kill itself, so a unit test can feed it fabricated
 # lines without touching any real process - the ticket's "process list and
 # the kill as injected edges" constraint). Prints the pids that ARE
@@ -163,7 +164,25 @@ tunnel_decide_orphans() {
 # against anything other than the name it was scoped to reap).
 _tunnel_live_process_lines() {
   local name="$1"
-  pgrep -fl -- "run $name" 2>/dev/null || true
+  local pids
+  # `pgrep -f` narrows on the FULL command line, which is correct on both
+  # userlands. `pgrep -l` decides what is PRINTED, and there the two disagree:
+  # BSD/macOS prints the full argument list, procps-ng (Linux) prints only the
+  # process NAME. So `pgrep -fl` fed tunnel_decide_orphans lines shaped
+  # "12345 bash", which carry no `run <name>` token pair, matched nothing, and
+  # reaped nothing - this reap has never worked on a GNU userland, which is
+  # why orphaned fixture tunnels accumulate there. (BL-1061; same class as
+  # BL-1058's BSD-only `mktemp -t`.)
+  #
+  # `ps -o pid= -o args=` is POSIX and prints the full command line on both,
+  # so the pid narrowing stays with pgrep and the LISTING moves to ps. The
+  # word-boundary check in tunnel_decide_orphans is unchanged and still the
+  # thing that decides; this only makes sure it is given something to read.
+  pids="$(pgrep -f -- "run $name" 2>/dev/null || true)"
+  [[ -n "$pids" ]] || return 0
+  # shellcheck disable=SC2086
+  ps -o pid= -o args= -p $(printf '%s' "$pids" | tr '\n' ',' | sed 's/,$//') 2>/dev/null \
+    | sed 's/^[[:space:]]*//' || true
 }
 
 _tunnel_signal_pid() {
