@@ -55,11 +55,12 @@ Feature: A Telegram button carries a URL Telegram will accept
     And the private direct message is sent
 
   # BL-1060 pairing-button-scheme-05
-  Scenario Outline: The mini app buttons are unaffected
-    When the "topic" keyboard is built
-    Then it still offers the "<mini app>" button
+  Scenario Outline: Every other button each surface carries is unaffected
+    When the "<surface>" keyboard is built
+    Then it still offers the "<app>" button
 
     Examples:
-      | mini app     |
-      | Resident Spy |
-      | Console      |
+      | surface    | app          |
+      | topic      | Console      |
+      | private DM | Console      |
+      | private DM | Resident Spy |
