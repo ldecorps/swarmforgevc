@@ -180,3 +180,9 @@ notes: |
   with no supervisor to catch it. It is already tracked against BL-611/653/685
   and is a different defect from this one; folding it in would fail INVEST's
   I and V. Recorded here only so the trail from the intake is not lost.
+
+  APPROVED AS WRITTEN at 89ff4ee38 (2026-08-22), with no amendment. Both
+  judgement calls put to the human therefore stand: severity `high` (so this
+  ticket takes the Article 3.2.4 expedite lane), and the stage set
+  `[coder, cleaner, hardender, qa]` with architect and documenter skipped for
+  the reasons recorded above.
