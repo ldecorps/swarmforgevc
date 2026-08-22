@@ -581,7 +581,8 @@ const DOMAINS = [
   require('./bl1049ProviderSecretScrubSteps'),
   require('./bl1028PromotionRefusalSteps'),
   require('./bl1060PairingButtonSchemeSteps'),
-  require('./bl1033TempRootCleanupSteps')
+  require('./bl1033TempRootCleanupSteps'),
+  require('./bl1064LogGroundingSourceSteps')
 ];
 
 function registerSteps(registry) {
