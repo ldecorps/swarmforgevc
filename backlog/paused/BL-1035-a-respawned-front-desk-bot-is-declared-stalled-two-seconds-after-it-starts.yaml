@@ -151,3 +151,11 @@ notes: |
 
   No `required_wiring:` is declared: the predicate is already called from the
   bot entry's `:heartbeat-stale?`, so there is no new call site to pin.
+
+  2026-08-22T06:35Z coordinator: open-slot nudge received, NOT promoted.
+  Two independent blocking reasons, both durable: (1) no human_approval
+  field/approval recorded on this ticket yet - awaiting human approval.
+  (2) active_backlog_max_depth was dropped to 0 the same session (Article
+  3.5 circuit breaker, sustained host load 110-150 avg on 4 cores) - see
+  project_circuit_breaker_severe_load_20260822 memory thread. Even once
+  approved, this ticket cannot promote until that throttle is lifted.
