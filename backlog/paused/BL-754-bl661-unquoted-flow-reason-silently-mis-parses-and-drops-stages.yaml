@@ -22,8 +22,7 @@ invariants:
   - "Quote style alone never changes what a reason parses to."
   - "Reading skip reasons is observational and never blocks or aborts the handoff it describes."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   One decision to confirm, and a recommendation rather than an open fork. The
   originating note left it undecided between rejecting unquoted comma-bearing
