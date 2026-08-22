@@ -350,3 +350,10 @@ test('BL-464: invertTicketStageToRoleHeldTickets groups ticket ids under their r
 test('BL-464: invertTicketStageToRoleHeldTickets returns an empty map for an empty stage map', () => {
   assert.deepEqual(invertTicketStageToRoleHeldTickets({}), {});
 });
+
+test('BL-983: invertTicketStageToRoleHeldTickets folds a seat id onto its stage', () => {
+  assert.deepEqual(
+    invertTicketStageToRoleHeldTickets({ 'BL-995': 'coder', 'BL-993': 'coder@sonnet2' }),
+    { coder: ['BL-995', 'BL-993'] }
+  );
+});

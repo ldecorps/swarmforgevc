@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs, readSurveyFacts } = require('../out/tools/propose-onboarding-contract');
 const { parseContractYaml } = require('../out/onboarding/contractView');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'propose-onboarding-contract.js');
 
@@ -126,7 +127,11 @@ test('readSurveyFacts accepts an empty useCaseObservations array (a legitimate o
 
 test('the compiled CLI scaffolds a proposed contract from survey facts into a fresh target', async () => {
   const targetRepo = mkTmpDir('propose-onboarding-contract-target-');
-  execFileSync('git', ['init'], { cwd: targetRepo });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(targetRepo, SHAPES.empty);
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });
   const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));
@@ -168,7 +173,11 @@ test('main() prints usage and exits non-zero when a required argument is missing
 // in-process tests above, never the only cover for the real logic.
 test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
   const targetRepo = mkTmpDir('propose-onboarding-contract-target-');
-  execFileSync('git', ['init'], { cwd: targetRepo });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(targetRepo, SHAPES.empty);
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });
   const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));

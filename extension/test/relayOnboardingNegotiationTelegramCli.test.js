@@ -20,6 +20,7 @@ const { main: proposeMain } = require('../out/tools/propose-onboarding-contract'
 const { parseContractYaml } = require('../out/onboarding/contractView');
 const { writeTelegramChannel } = require('../out/onboarding/telegramChannelStore');
 const { storeTelegramBotToken } = require('../out/onboarding/telegramChannelSecretStore');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 
 const VALID_FACTS = {
   languages: ['TypeScript'],
@@ -84,7 +85,11 @@ let PREPARED_ROOT;
 
 beforeAll(async () => {
   PREPARED_ROOT = mkSharedTmpDir('relay-onboarding-negotiation-prepared-');
-  execFileSync('git', ['init'], { cwd: PREPARED_ROOT });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(PREPARED_ROOT, SHAPES.empty);
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: PREPARED_ROOT });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: PREPARED_ROOT });
   const surveyPath = path.join(PREPARED_ROOT, 'survey.json');

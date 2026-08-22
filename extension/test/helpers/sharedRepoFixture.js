@@ -26,7 +26,36 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 
-let templateDir = null;
+// Pinned, never inherited. `git init` takes its branch name from the HOST's
+// init.defaultBranch, so a template that did not pin one would make every
+// fixture host-dependent - green on a machine configured for `main`, red on
+// one still defaulting to `master`. A shared fixture that varies by host is a
+// worse foundation than the per-scenario seeding it replaces.
+const SEEDED_BRANCH = 'main';
+
+// Two shapes, because callers genuinely need different ones. Handing a caller
+// the wrong shape is a coverage loss dressed as a speed win: config.test.js
+// exercises initializeTargetRepo against a FRESHLY-INITIALIZED repo, and its
+// `git log` assertion reads exactly the history an unrelated seeded commit
+// would pollute - so seeding one there would change the subject under test,
+// not just its setup.
+const SHAPES = {
+  committed: 'committed',   // initialized, identity set, one empty commit
+  // Initialized and NOTHING else - no identity, no commits. Exactly what a
+  // plain `git init` leaves behind, which is what makes it a behaviour-
+  // preserving replacement for one.
+  //
+  // Setting identity here looked harmless and was not: config.test.js's
+  // BL-443 cases exercise "the target has NO git identity configured" and
+  // assert a fallback author is used. A seeded identity silently satisfied
+  // the precondition and the assertions inverted - a coverage loss dressed as
+  // a speed win, which is the exact failure invariant 3 forbids. Callers that
+  // want identity still set it themselves, as they always did.
+  empty: 'empty',
+  bare: 'bare',             // a bare repository, for callers needing a push target
+};
+
+const templates = new Map();
 let seedings = 0;
 
 function gitIn(dir, args) {
@@ -37,16 +66,30 @@ function gitIn(dir, args) {
  * The template, seeded at most once per process. Callers never touch it - they
  * only ever receive copies - so it can be reused for the whole run.
  */
-function seedTemplateOnce() {
-  if (templateDir && fs.existsSync(templateDir)) return templateDir;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1039-seed-template-'));
-  gitIn(dir, ['init', '-q']);
-  gitIn(dir, ['config', 'user.email', 't@t']);
-  gitIn(dir, ['config', 'user.name', 't']);
-  gitIn(dir, ['commit', '-q', '-m', 'init', '--allow-empty']);
-  templateDir = dir;
+function seedTemplateOnce(shape = SHAPES.committed) {
+  const cached = templates.get(shape);
+  if (cached && fs.existsSync(cached)) return cached;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `bl1039-seed-${shape}-`));
+  if (shape === SHAPES.bare) {
+    // A push target. Served rather than exempted: an exemption may only name a
+    // shape this fixture CANNOT provide, and a bare repo is cheap to seed once
+    // like any other.
+    gitIn(dir, ['init', '-q', '--bare', '-b', SEEDED_BRANCH]);
+    templates.set(shape, dir);
+    seedings += 1;
+    return dir;
+  }
+  gitIn(dir, ['init', '-q', '-b', SEEDED_BRANCH]);
+  if (shape === SHAPES.committed) {
+    // Identity belongs to the committed shape only: it needs one to make the
+    // commit. The empty shape must stay a bare `git init` equivalent.
+    gitIn(dir, ['config', 'user.email', 't@t']);
+    gitIn(dir, ['config', 'user.name', 't']);
+    gitIn(dir, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  }
+  templates.set(shape, dir);
   seedings += 1;
-  return templateDir;
+  return dir;
 }
 
 /**
@@ -58,8 +101,8 @@ function seedTemplateOnce() {
  * cleanup it already uses (mkTmpDir's sweep, a reaper, its own rmSync) -
  * this helper deliberately owns no cleanup policy of its own.
  */
-function checkoutSeededRepo(prefix = 'bl1039-repo-', register = null) {
-  const template = seedTemplateOnce();
+function checkoutSeededRepo(prefix = 'bl1039-repo-', register = null, shape = SHAPES.committed) {
+  const template = seedTemplateOnce(shape);
   const dest = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   fs.cpSync(template, dest, { recursive: true });
   if (typeof register === 'function') register(dest);
@@ -78,8 +121,8 @@ function checkoutSeededRepo(prefix = 'bl1039-repo-', register = null) {
  * Isolation is the same structural guarantee as checkoutSeededRepo: the
  * caller's directory is its own, so no two callers share a repository.
  */
-function copySeededRepoInto(dir) {
-  const template = seedTemplateOnce();
+function copySeededRepoInto(dir, shape = SHAPES.committed) {
+  const template = seedTemplateOnce(shape);
   fs.cpSync(template, dir, { recursive: true });
   return dir;
 }
@@ -91,8 +134,8 @@ function seedCount() {
 
 /** Test-only: forget the template so a test can observe a fresh seeding. */
 function resetForTest() {
-  templateDir = null;
+  templates.clear();
   seedings = 0;
 }
 
-module.exports = { checkoutSeededRepo, copySeededRepoInto, seedTemplateOnce, seedCount, resetForTest };
+module.exports = { checkoutSeededRepo, copySeededRepoInto, seedTemplateOnce, seedCount, resetForTest, SHAPES, SEEDED_BRANCH };

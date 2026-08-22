@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readCooldownWindowMarker } = require('../out/tools/cooldownWindowState');
 const { copyScriptClosure } = require('./helpers/pinnedRepoFixture');
-const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 const {
   parseCliArgs,
   conciergeTickIntervalMs,
@@ -3120,21 +3120,33 @@ test('readRootIntakeFiles lists a real root intake file, id from the filename an
 
 test('readRepoBaseUrl resolves an HTTPS github.com origin remote to its base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(root, SHAPES.empty);
   execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl resolves an SSH github.com origin remote to its HTTPS base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(root, SHAPES.empty);
   execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl degrades to undefined (never throws) when there is no git remote at all', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(root, SHAPES.empty);
   assert.equal(readRepoBaseUrl(root), undefined);
 });
 

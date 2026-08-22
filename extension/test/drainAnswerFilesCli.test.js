@@ -13,6 +13,7 @@ const {
   main,
 } = require('../out/tools/drain-answer-files');
 const { readRecord, appendMessage } = require('../out/concierge/blTopicStore');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 
 // BL-440: the human->swarm offline return path. Drives the REAL compiled
 // module against a real git repo fixture - the archive move is a real git
@@ -21,7 +22,11 @@ const { readRecord, appendMessage } = require('../out/concierge/blTopicStore');
 
 function mkRepo() {
   const dir = mkTmpDir('bl440-drain-answer-files-');
-  execFileSync('git', ['init'], { cwd: dir });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(dir, SHAPES.empty);
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
   return dir;

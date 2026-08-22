@@ -11,6 +11,7 @@ const { execSync } = require('node:child_process');
 const { parseBacklogYaml, readBacklog } = require('../out/panel/backlogReader');
 const { nextEligibleItem } = require('../out/swarm/backlogLoop');
 const { lastCommitForItem } = require('../out/panel/gitTracer');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 
 function mkTmp() {
   return mkTmpDir('sfvc-wt-test-');
@@ -169,7 +170,11 @@ test('nextEligibleItem returns null when all active items are blocked', () => {
 // ── BL-019: gitTracer ─────────────────────────────────────────────────────
 
 function initGitRepo(dir) {
-  execSync('git init', { cwd: dir, stdio: 'pipe' });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(dir, SHAPES.empty);
   execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
   execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
   fs.writeFileSync(path.join(dir, 'README.md'), '# test');

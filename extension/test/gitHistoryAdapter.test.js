@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 const {
   parseGitLog,
   deriveTicketLifecycles,
@@ -105,7 +106,11 @@ test('parseGitLog returns an empty array for empty output', () => {
 
 function initTestRepo() {
   const dir = mkTmpDir('sfvc-git-history-adapter-');
-  execSync('git init', { cwd: dir, stdio: 'pipe' });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(dir, SHAPES.empty);
   execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
   execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
   fs.writeFileSync(path.join(dir, 'example.txt'), 'hello');
@@ -118,7 +123,11 @@ const ONE_MIB = 1024 * 1024;
 
 function buildOversizedTestRepo() {
   const dir = mkTmpDir('sfvc-git-history-adapter-oversized-');
-  execSync('git init', { cwd: dir, stdio: 'pipe' });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(dir, SHAPES.empty);
   execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
   execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
   const subdir = 'd'.repeat(200);

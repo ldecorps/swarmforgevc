@@ -175,10 +175,19 @@ export function readTicketStageMap(targetPath: string): Record<string, string> {
 // structurally closes the double-row defect at its source; computePipeline
 // Board's own dedup (BL-464) is the belt-and-braces guarantee for whatever
 // reaches it regardless of the source.
+// BL-983: seat ids (`coder@sonnet2`) must never reach the board — only the
+// stage (`coder`). Defensive for any stage-map producer that still leaks a
+// seat; pipeline_stage_cli.bb report/sync already normalizes at the source.
+function stageOfSeat(roleOrSeat: string): string {
+  const at = roleOrSeat.indexOf('@');
+  return at === -1 ? roleOrSeat : roleOrSeat.slice(0, at);
+}
+
 export function invertTicketStageToRoleHeldTickets(stageMap: Record<string, string>): Record<string, string[]> {
   const byRole: Record<string, string[]> = {};
   for (const [ticketId, role] of Object.entries(stageMap)) {
-    (byRole[role] ??= []).push(ticketId);
+    const stage = stageOfSeat(role);
+    (byRole[stage] ??= []).push(ticketId);
   }
   return byRole;
 }

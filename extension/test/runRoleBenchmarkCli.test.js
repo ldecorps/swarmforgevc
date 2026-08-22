@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { parseArgs, reportDateKey, runRoleBenchmarkCli, main } = require('../out/tools/run-role-benchmark');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 
 test('parseArgs rejects missing arguments', () => {
   assert.equal(parseArgs([]), null);
@@ -113,7 +114,11 @@ function mkBatteryRootWithCoderTask01() {
 
 function mkTargetRepo() {
   const root = mkTmpDir('sfvc-run-role-benchmark-target-');
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(root, SHAPES.empty);
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
   execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: root });

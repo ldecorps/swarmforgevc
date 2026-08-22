@@ -362,11 +362,40 @@ function listEntryFor(item: PipelineBoardListSourceItem): PipelineBoardListEntry
 // pipeline_stage_lib.bb's own reconcile-stage-map "most downstream wins"
 // rule - the same guarantee, belt-and-braces at the renderer, whatever the
 // authoritative source's own shape already structurally prevents.
+//
+// BL-983: also fold any seat-keyed entries (`coder@sonnet2`) onto their
+// stage column. Seat identity must not escape the mailbox layer; a leaked
+// seat key would otherwise never match ALL_SWARM_ROLES and paint as NS
+// while the seat is busy.
+function stageOfSeat(roleOrSeat: string): string {
+  const at = roleOrSeat.indexOf('@');
+  return at === -1 ? roleOrSeat : roleOrSeat.slice(0, at);
+}
+
 function heldRoleByTicketId(roleHeldTickets: Record<string, string[]>): Map<string, string> {
   const heldRoleById = new Map<string, string>();
+  const rank = (role: string): number => {
+    const i = ALL_SWARM_ROLES.indexOf(role);
+    return i === -1 ? -1 : i;
+  };
+  const consider = (roleOrSeat: string, id: string): void => {
+    const stage = stageOfSeat(roleOrSeat);
+    const prev = heldRoleById.get(id);
+    if (prev === undefined || rank(stage) > rank(prev)) {
+      heldRoleById.set(id, stage);
+    }
+  };
   for (const role of ALL_SWARM_ROLES) {
     for (const id of roleHeldTickets[role] ?? []) {
-      heldRoleById.set(id, role);
+      consider(role, id);
+    }
+  }
+  for (const [roleOrSeat, ids] of Object.entries(roleHeldTickets)) {
+    if (ALL_SWARM_ROLES.includes(roleOrSeat)) {
+      continue;
+    }
+    for (const id of ids) {
+      consider(roleOrSeat, id);
     }
   }
   return heldRoleById;

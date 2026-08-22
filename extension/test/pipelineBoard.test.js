@@ -77,6 +77,22 @@ test('BL-464: the double-role collapse is independent of which role the input ma
   assert.deepEqual(rows, [{ id: 'BL-460', column: 'cleaner', epic: undefined, slug: '' }]);
 });
 
+test('BL-983: a second seat key paints on the stage column, never as not-started', () => {
+  const { rows } = computePipelineBoard(
+    { coder: ['BL-995'], 'coder@sonnet2': ['BL-993'] },
+    [],
+    {},
+    { activeIds: ['BL-993', 'BL-995'] }
+  );
+  assert.deepEqual(
+    rows.map((r) => ({ id: r.id, column: r.column })),
+    [
+      { id: 'BL-993', column: 'coder' },
+      { id: 'BL-995', column: 'coder' },
+    ]
+  );
+});
+
 test('BL-464: a ticket held under two roles alongside other distinct tickets still yields one row per distinct id', () => {
   const { rows } = computePipelineBoard({ coder: ['BL-1', 'BL-460'], cleaner: ['BL-460', 'BL-2'] }, [], {});
   assert.deepEqual(rows.map((r) => `${r.id}:${r.column}`).sort(), ['BL-1:coder', 'BL-2:cleaner', 'BL-460:cleaner']);

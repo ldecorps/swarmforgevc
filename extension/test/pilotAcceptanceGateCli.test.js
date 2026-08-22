@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 const {
   parseArgs,
   resolveRepoRoot,
@@ -23,7 +24,18 @@ function mkRepo(prefix) {
 }
 
 function initGitRepo(root, { commit = true } = {}) {
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(root, SHAPES.empty);
+  // This helper's whole distinction from initGitRepoOnMain is that its branch
+  // is NOT "main" - "resolveRunCommits returns undefined when main does not
+  // exist" depends on it. That was previously left to the HOST's
+  // init.defaultBranch, so the test passed only on a machine whose default was
+  // not main; the shared template now pins main, which made the accident
+  // visible. Renaming here states the precondition instead of inheriting it.
+  execFileSync('git', ['checkout', '-q', '-b', 'not-main'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root });
   if (commit) {
@@ -37,7 +49,11 @@ function initGitRepo(root, { commit = true } = {}) {
 // whatever the local git default happens to be - this sandbox defaults to
 // `master`), so these fixtures create the base branch by that exact name.
 function initGitRepoOnMain(root) {
-  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(root, SHAPES.empty);
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root });
   fs.writeFileSync(path.join(root, 'README.md'), 'x', 'utf8');

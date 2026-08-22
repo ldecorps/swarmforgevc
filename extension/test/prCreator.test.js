@@ -7,10 +7,15 @@ const cp = require('node:child_process');
 const { installExecutable } = require('./helpers/sharedBin');
 
 const { getCurrentBranch, buildPrArgs, openPullRequest } = require('../out/swarm/prCreator');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 
 function mkTmpGitRepo(branchName) {
   const tmp = mkTmpDir('sfvc-pr-');
-  cp.execSync('git init', { cwd: tmp, stdio: 'ignore' });
+  // BL-1039: the repository comes from the shared seeded fixture (one seeding
+  // per RUN, not per scenario). The `empty` shape is a plain `git init`
+  // equivalent - no identity, no commits - so this file's own config/commit
+  // calls still mean exactly what they did.
+  copySeededRepoInto(tmp, SHAPES.empty);
   cp.execSync('git commit --allow-empty -m init', { cwd: tmp, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' } });
   if (branchName) {
     cp.execSync(`git checkout -b ${branchName}`, { cwd: tmp, stdio: 'ignore' });

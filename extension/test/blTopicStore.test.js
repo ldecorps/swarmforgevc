@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { copySeededRepoInto, SHAPES } = require('./helpers/sharedRepoFixture');
 const {
   readRecord,
   appendMessage,
@@ -137,10 +138,9 @@ function git(cwd, args) {
 
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  // BL-1039: one seeding per RUN, not per scenario - the quartet this replaced
+  // cost four process spawns before the behaviour under test was reached.
+  copySeededRepoInto(target, SHAPES.committed);
   return target;
 }
 
@@ -245,7 +245,9 @@ test('BL-390 scenario 03: nothing is pushed when nothing was committed - HEAD ca
   const filePath = recordPath(target, 'BL-900');
 
   const remote = mkTmp();
-  git(remote, ['init', '-q', '--bare']);
+  // BL-1039: a bare push target, served by the shared fixture rather than
+  // exempted - an exemption may only name a shape the fixture CANNOT provide.
+  copySeededRepoInto(remote, SHAPES.bare);
   git(target, ['remote', 'add', 'origin', remote]);
   git(target, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
   const remoteHeadBefore = execFileSync('git', ['-C', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
