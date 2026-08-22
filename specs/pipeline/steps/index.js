@@ -584,7 +584,8 @@ const DOMAINS = [
   require('./bl1033TempRootCleanupSteps'),
   require('./bl1064LogGroundingSourceSteps'),
   require('./bl1061TunnelFixtureIsolationSteps'),
-  require('./bl1058PortableMktempSteps')
+  require('./bl1058PortableMktempSteps'),
+  require('./bl1066MetricsTickSteps')
 ];
 
 function registerSteps(registry) {

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=311c65814d5fd7559c5f1dd8c1755d29dbbe12e5e6add07ddacc5de93cb07365
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T20:15:25.282036677Z","feature_name":"BL-1066 a metrics poll tick never stacks on one still running","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1066-metrics-poll-tick-restarts-a-102-second-git-walk.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the cost of one computation does not grow with the corpus","scenario_hash":"55360590f40e324a3c400c2951cd8f3dee7a83a5caf98db645da82d87dc63980","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T20:15:25.282036677Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1066 a metrics poll tick never stacks on one still running
   The panel recomputes swarm metrics on a 2-second poll tick, and that
   computation walks every closed ticket with its own rename-following
