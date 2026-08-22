@@ -185,6 +185,85 @@
          false
          (front-desk-supervisor-lib/poll-heartbeat-stale? nil 50000 90000 1000 90000))
 
+
+;; ── BL-1035: a respawned bot is judged on ITS OWN heartbeat ──────────────
+;; The grace was nil-guarded, but the heartbeat is a FILE that outlives the
+;; process that wrote it and nothing resets it at spawn. So a replacement was
+;; judged against the DEAD instance's timestamp - non-nil and already stale -
+;; and declared stalled on the first tick. Live 2026-08-22: started 06:13:56,
+;; "stalled" 06:13:58, respawned 06:14:02, against a 90000ms grace.
+;;
+;; The rule: a heartbeat written BEFORE this child spawned was written by a
+;; different process and carries no information about this one.
+
+(assert= "bl1035-01: a predecessor's stale heartbeat does NOT condemn the replacement inside its grace"
+         false
+         ;; heartbeat at 1000 (the dead instance), this child spawned at 500000,
+         ;; now 502000 - two seconds in, exactly the live shape.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 502000 90000 500000 90000))
+
+(assert= "bl1035-02: the grace still EXPIRES - a replacement that never polls is caught"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 590001 90000 500000 90000))
+
+(assert= "bl1035-02: exactly AT the end of the grace it is stale (boundary is inclusive, like the stall window)"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 590000 90000 500000 90000))
+
+(assert= "bl1035-03: a heartbeat the replacement itself wrote clears the grace"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500100 502000 90000 500000 90000))
+
+(assert= "bl1035-03: a heartbeat written exactly AT spawn counts as the child's own"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500000 502000 90000 500000 90000))
+
+(assert= "bl1035-03: but the child's OWN heartbeat going stale is still stale after the grace"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500100 590200 90000 500000 90000))
+
+(assert= "bl1035-04: the case that already worked keeps working - no heartbeat ever recorded"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 502000 90000 500000 90000))
+
+;; The six supervisors sharing this predicate include callers that pass no
+;; spawn time at all. Their behaviour must be byte-for-byte unchanged: with no
+;; started-at-ms there is no "before this child" to speak of.
+(assert= "bl1035: the 3-arity form is unchanged - a stale heartbeat is still stale with no spawn time"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000))
+
+(assert= "bl1035: the 3-arity form is unchanged - a fresh heartbeat is still fresh"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000))
+
+(assert= "bl1035: a pre-spawn heartbeat AFTER the grace is stale, not silently waived forever"
+         true
+         ;; The waiver is scoped to the grace. Once it ends, an absent own
+         ;; heartbeat is stale exactly as a nil one always was - otherwise the
+         ;; fix would reintroduce BL-370's original fault.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 999999 90000 500000 90000))
+
+;; bl1035-03's "exactly AT spawn" case above (500000/502000/90000/500000/90000)
+;; cannot actually discriminate `>=` from a strict `>` in
+;; `(>= last-heartbeat-ms started-at-ms)`: with grace-ms == stall-ms in every
+;; existing fixture (unit AND property runner alike), a mutant that treats an
+;; at-spawn heartbeat as "not the child's own" (own-heartbeat-ms => nil) still
+;; answers "not stale" there via the STILL-IN-GRACE branch, coincidentally
+;; matching the correct answer. Hand-verified: with `>` in place of `>=`, this
+;; whole test runner and the property runner BOTH still report all-green.
+;; Discriminating case: grace SHORTER than stall, so the grace ends while the
+;; at-spawn heartbeat is still well within the stall window - only there does
+;; treating it as "not the child's own" (falling to the nil branch, stale
+;; unconditionally past grace) diverge from treating it as the child's own
+;; fresh heartbeat (not stale).
+(assert= "bl1035-03: at-spawn heartbeat is the child's own even once the (shorter) grace has ended"
+         false
+         ;; last-heartbeat=started-at=500000 (exactly at spawn); grace is only
+         ;; 1000ms (already over by now=501500) but stall is 90000ms (heartbeat
+         ;; is only 1500ms old) - if `>=` were `>`, this would wrongly be stale.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500000 501500 90000 500000 1000))
+
 ;; ── BL-370: check-one! extended with heartbeat-stale? ────────────────────
 
 ;; front-desk-liveness-01: running + pid alive + heartbeat stale -> "stalled",
