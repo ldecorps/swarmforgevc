@@ -593,7 +593,8 @@ const DOMAINS = [
   require('./bl1029RespawnLaunchQuotingSteps'),
   require('./bl1075WindowSizeOwnershipSteps'),
   require('./bl1052QwenCodeSeatSteps'),
-  require('./bl1053QwenProviderRoutingSteps')
+  require('./bl1053QwenProviderRoutingSteps'),
+  require('./bl713CursorSeatDriverSteps')
 ];
 
 function registerSteps(registry) {

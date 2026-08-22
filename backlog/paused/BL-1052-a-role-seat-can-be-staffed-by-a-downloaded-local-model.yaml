@@ -1,0 +1,102 @@
+id: BL-1052
+title: "A role seat can be staffed by a downloaded local model: the swarm has no generic on-host model seat path, so every new local model would need a bespoke adapter — first proof is Qwen"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature
+human_approval: pending
+approval_context: >
+  Operator reframed this ticket on 2026-08-22 via Let's Talk. The previous
+  shape was qwen-code-only (cloud Token Plan CLI). The real ask is generic:
+  download a model, run it on-host, staff a swarm seat with it. Qwen is the
+  FIRST concrete proof of that path, not the permanent product of the ticket.
+  Needs your re-approval of this wider scope before the specifier rewrites
+  the acceptance feature. Any coder work already started against the
+  qwen-code-only shape is out of date and must not continue under that
+  contract.
+
+required_wiring:
+  - 'swarmforge/scripts/prompt_engine_lib.bb::local-model-agent::the capability entry for the local-model seat agent must land in the live provider-capabilities map - the launch adapter reads its shape from there, and an adapter built against a map with no entry falls through to the default and silently launches the wrong agent shape'
+  - "specs/pipeline/steps/index.js::bl1052::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
+
+invariants:
+  - "A capability entry describes the AGENT, never the model. The local-model seat agent and any file-editor path that happens to share a model catalog must never share a capability shape - they differ in whether the agent can execute a shell command at all."
+  - "The path is model-generic. Staffing a second downloaded model must not require a second copy of this ticket's adapter, pack family, or credential plumbing - only model identity, weights location or pull specifier, and cost-class registration."
+  - "Secrets and model weights never land in a pack file, a generated launch script, a prompt, or anything that reaches a commit. Credentials reach the pane only through the launching environment and tmux -e."
+
+description: |
+  ## What is wrong
+
+  The swarm can staff seats with a fixed set of cloud agent CLIs. It has no
+  generic path to download a model onto the host, run inference locally, and
+  put that model behind a real shell-capable seat.
+
+  The previous draft of this ticket solved only the Qwen cloud CLI case
+  (`qwen-code` against the Token Plan endpoint). That is a useful first
+  quest, but it is not the product. A second local model must not need
+  another bespoke agent shape, launch adapter and pack of the same size.
+
+  ## First quest (not the whole product)
+
+  Prove the path end-to-end with Qwen: weights or runtime pull on this host,
+  a shell-capable seat that actually executes (not an aider-shaped narrator),
+  and a pack that launches against a scratch target. Whatever concrete
+  runtime the builder picks (local OpenAI-compat server, vendor CLI pointed
+  at a local endpoint, or equivalent) is fine if the seat is real and the
+  path stays reusable for the next model.
+
+  ## How (direction, not mandate)
+
+  Add one local-model seat path: agent shape in provider-capabilities
+  (mirroring other bash-capable agents), launch adapter, pack family that
+  does not demand an unrelated editor binary, and credential or runtime
+  plumbing that is parameterized by model identity rather than hard-coded
+  to one vendor forever.
+
+  Deliberately NOT in this slice: ModelFactory provider->agent routing and
+  Model Steward registration (BL-1053, depends on this); autonomous seat
+  mutation; replacing the live Claude pipeline; every possible runtime
+  backend in one go.
+
+  The old acceptance feature named for qwen-code alone is obsolete. The
+  specifier rewrites it under the new acceptance path above before coding
+  resumes.
+
+notes: |
+  Operator reframing, 2026-08-22 Let's Talk (voice): first use quest is
+  Qwen; the real capability is download any model and run it inside the
+  swarm. Active intake (same evening, generalized):
+  `.swarmforge/operator/INTAKE-download-any-local-model-as-swarm-member.md`
+  — drain this ticket from that intake. Prior cloud-only intake
+  `.swarmforge/operator/archive/INTAKE-onboard-qwen-code-provider.md`
+  remains historical context only.
+
+  Split 1:N with BL-1053 preserved: this ticket is the seat path; BL-1053
+  is intelligence-layer routing onto that seat.
+
+  Coder-in-flight work under the qwen-code-only contract (including the
+  2026-08-22 specifier answers about pack PREREQ and aider family routing)
+  is superseded by this rewrite. Useful discoveries (credential name
+  mismatch -> BL-1077; pack-name-to-aider-family trap) still apply to any
+  new pack and should be carried forward, not re-discovered.
+
+qa_e2e_procedure: |
+  On the live host, after a local Qwen (or Qwen-backed) model is available:
+
+  1. Launch the new pack against a SCRATCH target - never the live repo.
+  2. Confirm the seat is a real agent, not a narrator: ask it to run
+     ready_for_next.sh and confirm the pane shows the command's actual
+     output.
+  3. Confirm a second model identity can be selected on the same seat path
+     without a new adapter - at least by configuration or registration,
+     even if the second weights file is a fixture stub.
+  4. Confirm secrets and weights paths never reached a committed file.
+  5. Confirm existing cloud packs are untouched.
+
+assigned_to: specifier

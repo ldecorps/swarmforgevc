@@ -1,0 +1,84 @@
+id: BL-1053
+title: "The intelligence layer cannot route work to a local-model seat: provider->agent knows only cloud providers, so a downloaded model registered under the wrong key would launch through the wrong binary — first proof is Qwen"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 0
+direction: queue-jump
+depends_on: [BL-1052]
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1053-the-intelligence-layer-can-route-work-to-a-local-model-seat.feature
+human_approval: pending
+approval_context: >
+  Operator reframed the pair on 2026-08-22 via Let's Talk. BL-1052 is now
+  the generic downloaded-local-model seat path (Qwen first). This ticket
+  stays the bookkeeping half: give the intelligence layer a provider key
+  and Steward registration so routing can select that seat. Needs your
+  re-approval of the wider framing. Inert until BL-1052 lands something
+  generic to launch.
+
+required_wiring:
+  - 'swarmforge/scripts/model_factory_lib.bb::local-model-provider::the provider key for on-host models must land in the live provider->agent map - resolution reads that map, and a key registered anywhere else leaves ModelFactory resolving local models through another provider binary'
+  - "specs/pipeline/steps/index.js::bl1053::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
+
+invariants:
+  - "Every provider key in the registry resolves to exactly one launch agent, and no two provider keys resolve to an agent that cannot serve them. A provider added without its own provider->agent entry falls through to another provider's binary rather than failing, which is the confusing failure this ticket exists to prevent."
+  - "Registration is model-generic. Adding a second downloaded model under the same local-model provider must be Steward registration only - never a new provider->agent map edit."
+
+description: |
+  ## What is wrong
+
+  ModelFactory's provider->agent map knows cloud providers only. Once
+  BL-1052 makes a downloaded local-model seat launchable, the intelligence
+  layer still cannot select it unless a provider key points at that seat
+  agent.
+
+  The trap is the same shape as before: an OpenAI-compatible local endpoint
+  looks registerable under provider openai, which resolves to the wrong
+  cloud CLI. Local models need their own provider key pointed at the
+  local-model seat agent BL-1052 registers.
+
+  ## First quest (not the whole product)
+
+  Register Qwen as the first candidate under that local-model provider key
+  with an honest cost class, so cost-sensitive routing can select it. The
+  map entry itself must stay reusable for the next downloaded model.
+
+  ## How (direction, not mandate)
+
+  Give on-host models their own provider key with an entry pointing at the
+  launch agent BL-1052 registers. Register the first Qwen candidate through
+  the Steward CLI. Registration makes a model SELECTABLE; it never changes
+  a live seat on its own.
+
+  Not in this slice: the seat path itself (BL-1052); autonomous seat
+  mutation; pricing of every future local model.
+
+  The old qwen-only acceptance feature is obsolete. Specifier rewrites it
+  under the new acceptance path above after BL-1052's new contract is
+  approved.
+
+notes: |
+  Operator reframing, 2026-08-22 Let's Talk: Qwen is the first routing
+  proof, not the only model this provider key will ever serve. Active
+  intake:
+  `.swarmforge/operator/INTAKE-download-any-local-model-as-swarm-member.md`.
+  Historical cloud intake remains archived
+  `INTAKE-onboard-qwen-code-provider.md`.
+
+qa_e2e_procedure: |
+  On the live host, after BL-1052 has landed:
+
+  1. Register one Qwen (or Qwen-backed) local model through the CLI and
+     confirm it is stored under the local-model provider key, not openai.
+  2. Ask ModelFactory to resolve that model's launch agent and confirm it
+     names the local-model seat agent - not a cloud CLI.
+  3. Confirm the negative: resolve an openai-provider model and confirm it
+     still resolves as before.
+  4. Confirm a second model identity can be registered under the same
+     provider key without editing provider->agent again.
+  5. Confirm registration alone changed no live seat.
+
+assigned_to: specifier
