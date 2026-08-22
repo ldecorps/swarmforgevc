@@ -20,13 +20,7 @@ brand-new untracked file. The role whose worktree is touched is now told: a
 capped (80-char) `note` names the file count and the commit sha, trimming
 the reason before ever trimming the sha, since the sha is what makes the
 note actionable. See
-[the rescue how-to](../how-to/BL-1041-rescue-orphaned-work.md). Sibling
-landing, same session — **BL-1037**: the build-freshness watchdog now
-restarts a healthy front desk only once it has served the build it was
-moved to, bounding restarts to fewer than commits under a fast-moving
-`main` while still carrying the staleness debt forward rather than
-dropping it; see the BL-582 entry below, amended in place, for the full
-detail. Prior entry —
+[the rescue how-to](../how-to/BL-1041-rescue-orphaned-work.md). Prior entry —
 BL-1036: a front-desk restart now releases
 its Telegram `getUpdates` slot instead of leaving the replacement to poll
 straight into a 409 conflict, and the supervisor log now closes every
