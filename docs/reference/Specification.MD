@@ -1,6 +1,50 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1057: a host move (this swarm's own
+**Last Updated:** August 22, 2026 (BL-1069: swarm review/stamp-off of an
+operator hotfix already live on `main` (`61c62f579`, landed by hand via
+Cursor the same day) for a WSL control-plane crash loop — Ubuntu's packaged
+tmux 3.4 SIGSEGVs (`resize.c` NULL-window deref, fault at 0x208) whenever
+`WINDOW_SIZE_MANUAL` is set, fixed upstream in tmux >= 3.7 (commit
+`6234d79`) but absent from Ubuntu's 3.4 package; `./swarm ensure` restores
+the agents but the server crashes again within minutes. Three of the
+landed hotfix's five review goals were confirmed real defects and fixed
+narrowly in place, not reimplemented. The most load-bearing: the version
+warning read `tmux -V`, the CLIENT on PATH, while the incident's own
+signature is a client that is already fine (3.7b) in front of a SERVER
+that predates the install (3.4) — so the landed warning was silent in
+exactly the state the crash loop lives in. The judgement now reads `tmux
+-S <socket> display-message -p '#{version}'`, the server the swarm is
+actually talking to, falling back to the client only when no server
+answers. Second: `prefer_local_tmux_bin` prepended `~/.local/bin`
+whenever a tmux existed there with no version comparison at all, so a
+host whose local build was OLDER than the one already on PATH was
+silently downgraded by the function meant to upgrade it — it now compares
+before preferring, on both macOS and Linux, since the prepend fired on
+both. Third: `install_tmux_wsl.sh`'s guard
+`[[ -z "$SRC" || ! -x "$SRC" && ! -f "$SRC" ]]` didn't mean what it read
+as (`&&` binds tighter inside `[[ ]]`, so it reduced to `-z "$SRC"` alone)
+and the installer downloaded an unpinned, unverified, x86_64-only build;
+it now resolves against a table of architectures that actually have a
+published build (refusing by name otherwise) and verifies a sha256 digest
+before installing anything — with `KNOWN_SHA256` deliberately empty (a
+digest is a pin, and pinning is a human commit, never an agent action), a
+caller passes `TMUX_INSTALL_SHA256=<digest>` until a human adds a row. The
+soft-hardening knobs (`focus-events off` on both the shell and Babashka
+paths) were confirmed to never fail an `ensure`/launch/restore even when
+the running tmux rejects them; `window-size largest` was investigated
+(goal 4) and ultimately removed entirely by a same-day follow-up, BL-1075 — it
+contended with the extension's own tiling panel, which
+periodically puts the same server back into `window-size manual` (the
+exact tmux 3.4 crash trigger) on every role-set change. Degraded gate,
+recorded explicitly: the whole diff is shell + Babashka, so no
+mutation/CRAP/DRY tooling applies; the gate is the runners under
+`swarmforge/scripts/test/` plus the acceptance scenarios. Runbook
+`docs/how-to/BL-tmux-wsl-segfault-upgrade.md` (already existed from the
+hand-landed hotfix, updated in place for the digest requirement and the
+`window-size largest` removal) was missing from `docs/index.md` — added.
+No new extension command or setting; this is swarm/ops tooling only.)
+Prior entry —
+BL-1057: a host move (this swarm's own
 Mac → WSL2 move on 2026-08-22) silently leaves host-pinned config behind —
 local editor settings, `$HOME`-rooted credential/registry directories,
 machine-local env files — and nothing in any daemon's restart path ever
