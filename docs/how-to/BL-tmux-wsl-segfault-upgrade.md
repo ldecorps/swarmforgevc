@@ -18,7 +18,13 @@ preferred by babysitterd and by `./swarm ensure` / launch via
 `prefer_local_tmux_bin` in `swarmforge.sh`):
 
 ```bash
-bash swarmforge/scripts/install_tmux_wsl.sh
+# BL-1069: the installer verifies the download before it installs anything,
+# so it needs the digest you expect. Take the sha256 from the release page:
+TMUX_INSTALL_SHA256=<sha256 from the release page> \
+  bash swarmforge/scripts/install_tmux_wsl.sh
+# It refuses BY NAME - and leaves nothing at ~/.local/bin/tmux - when the
+# host architecture has no published build, or the download fails its digest.
+#
 # or manually:
 mkdir -p ~/.local/bin
 curl -fsSL -o /tmp/tmux-3.7b.tar.gz \
