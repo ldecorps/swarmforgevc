@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c96ee055e1baf790a96525e501e7696162b57a84d3a3a1793c5cb5b373ac9629
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T04:49:38.697189Z","feature_name":"the expeditor's default per-stage budget holds, and every place that states it agrees","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-1026-the-expeditor-states-its-stage-budget-once.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a stage is judged against its own budget when it has one, the default when it does not","scenario_hash":"0c4a49d0d08e7c8d854286f1d7edf74e15319ef426bf22fa3b507b7a68486169","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-08-22T04:49:27.916386Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the expeditor's default per-stage budget holds, and every place that states it agrees
 
   # BL-1026. The budget is the expeditor's only self-observation: by stopping
