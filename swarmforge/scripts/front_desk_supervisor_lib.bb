@@ -139,7 +139,7 @@
 ;; restarted, and one that went fresh again inside the grace forgets it -
 ;; the last case is what keeps a mid-merge race from ever reaching a
 ;; restart at all.
-(defn- build-freshness-transition [entry now-ms restart-config build-stale?]
+(defn- build-freshness-transition [entry now-ms restart-config build-stale? build-served?]
   (cond
     (not build-stale?)
     (when (:build-stale-since-ms entry)
@@ -149,7 +149,21 @@
     {:entry (assoc entry :build-stale-since-ms now-ms) :event :build-stale-detected}
 
     (build-stale-long-enough? (:build-stale-since-ms entry) now-ms restart-config)
-    {:entry (assoc entry :status "stale-build" :crashed-at-ms now-ms) :event :build-stale}
+    ;; BL-1037: past the grace, but a child that has not yet completed a poll
+    ;; cycle on the build it was restarted ONTO has not bought anything yet.
+    ;; Restarting it again spends a recompile, a respawn and a Telegram
+    ;; conflict window (BL-1036) to replace a build that never served - which
+    ;; is how 24 staleness detections became 12 respawns in 105 minutes while
+    ;; main kept moving.
+    ;;
+    ;; The debt is CARRIED, not cleared: `:build-stale-since-ms` is left
+    ;; exactly as it was, so the moment this child serves, the restart it is
+    ;; already owed fires and lands on main's newest build. Clearing it here
+    ;; would reintroduce the 2h23m stale window BL-582 exists to close, which
+    ;; is why invariant 1 is stated as a property rather than a scenario.
+    (if build-served?
+      {:entry (assoc entry :status "stale-build" :crashed-at-ms now-ms) :event :build-stale}
+      {:entry entry :event :build-stale-deferred})
 
     :else
     {:entry entry :event nil}))
@@ -191,6 +205,12 @@
   ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid!]
    (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid! false))
   ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid! build-stale?]
+   ;; BL-1037: defaults TRUE, so a caller that does not know whether its child
+   ;; has served keeps BL-582's behaviour byte-for-byte. Only a caller that can
+   ;; actually observe serving opts into the bound - defaulting FALSE would
+   ;; silently disable the watchdog for every child that never passes it.
+   (check-one! entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid! build-stale? true))
+  ([entry now-ms pid-alive? spawn! restart-config giveup-config heartbeat-stale? kill-pid! build-stale? build-served?]
    (case (:status entry)
      "not-started"
      {:entry (started-entry entry now-ms (spawn!)) :event :started}
@@ -198,7 +218,7 @@
      "running"
      ;; BL-582: computed once up front (pure, no I/O) so the cond below can
      ;; test and return the same value without calling twice.
-     (let [freshness (build-freshness-transition entry now-ms restart-config build-stale?)]
+     (let [freshness (build-freshness-transition entry now-ms restart-config build-stale? build-served?)]
        (cond
          (not (pid-alive? (:pid entry)))
          {:entry (assoc entry :status "waiting" :crashed-at-ms now-ms) :event :crashed}
