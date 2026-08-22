@@ -11,8 +11,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1066-metrics-poll-tick-restarts-a-102-second-git-walk.feature
-human_approval: pending
-
+human_approval: approved
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1066::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
 
