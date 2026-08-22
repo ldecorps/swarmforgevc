@@ -1495,3 +1495,62 @@ You are the hardender.
   `remote_control_health_lib.bb:65`. Swept as BL-1029 — a fix landing at one
   member of a construction family is a prompt to grep for the siblings, not
   evidence they were covered.
+
+## `fixtureReaper.track(root)` does not teach the reaper your socket — write `<root>/.swarmforge/tmux-socket` too, or the tmux half silently no-ops (rule_proposal 2026-08-22, accepted)
+- Proposer's rule, verbatim: "fixtureReaper.track(root) alone can't kill a
+  fixture's tmux server - reap() finds it only via a .swarmforge/tmux-socket
+  pointer file. Write that file too, or afterEach silently no-ops."
+- **The mechanism, verified at HEAD while accepting.** `reap(root)` in
+  `specs/pipeline/steps/lib/fixtureReaper.js` kills three things and finds each
+  by reading a file under the root: the supervisor's
+  `.swarmforge/operator/front-desk-supervisor.status.json`, its sibling
+  `.pid`, and — for the tmux server — `<root>/.swarmforge/tmux-socket`, whose
+  contents it passes to `killTmuxServer`. That pointer file is the ONLY path
+  from a tracked root to a socket. `track()` registers the root for the
+  exit/SIGINT/SIGTERM handlers; it never discovers a socket, and every read in
+  `reap()` is deliberately best-effort, so a missing pointer file is not an
+  error, not a warning, and not a log line. The tmux branch simply does not
+  run. A fixture that spawns its server on `path.join(root, 'x.sock')` and
+  calls only `track(root)` has cleanup that is fully wired, fully green, and
+  reaps nothing.
+- **Write the pointer file BEFORE the server exists, next to `track()`.**
+  Order matters for the same reason `track()` precedes the spawn: if the
+  process dies between the two, the handler must still find the socket. The
+  BL-1049 fix is the shape to copy — `fs.writeFileSync(path.join(root,
+  '.swarmforge', 'tmux-socket'), ctx.sock)` immediately followed by
+  `fixtureReaper.track(root)`, both before the `tmux new-session`.
+- **`mkSocketFixtureRoot` does not cover you either, and its comment reads as
+  if it does.** `specs/pipeline/steps/lib/socketFixtureRoot.js` installs a
+  `process.on('exit')` hook that calls the same `reap(root)`, and its header
+  says it reaps "any fixture tmux server by SOCKET PATH first (BL-817/BL-458
+  hygiene, via the shared fixtureReaper)". That sentence is true only when the
+  pointer file is present — the helper knows the root it minted and never the
+  socket you later chose inside it. So both backstops, the signal handlers and
+  the exit hook, share one blind spot, and the second one advertises a reach it
+  does not have. Do not read a `mkSocketFixtureRoot` call at the top of a step
+  file as evidence the tmux server is handled.
+- **The standing guard cannot catch this — it checks the call, not the
+  reach.** `tmuxReaperGuard` flags a step file that starts a tmux server and
+  never requires `fixtureReaper`, or requires it and never calls `track(`. A
+  file that calls `track(root)` and writes no pointer file is CLEAN by that
+  guard, in the whole-tree assertion `extension/test/tmuxReaperGuard.test.js`
+  runs on every parcel. Treat a green tmux-reaper guard as evidence about
+  adoption syntax only, never about whether anything would actually die. The
+  false negative is ticketed as BL-1067; until it lands, this check is yours to
+  perform by eye.
+- **Prove the reap, do not infer it.** A leak here is invisible from inside the
+  run — the suite passes either way, and the servers are detached, so nothing
+  in the report changes. Confirm with `pgrep -f '[t]mux -S' | wc -l` (or `ps`
+  against your fixture's socket name) taken before and after a full run of the
+  suite you touched; the two numbers must match. A count that climbs by the
+  number of scenarios is the signature.
+- Evidence (proposed by the hardender, 2026-08-22, BL-1049): the provider-secret
+  scrub's step file started a real tmux server per scenario on
+  `<root>/bl1049.sock` and called `fixtureReaper.track(root)` with no pointer
+  file; two runs each left nine real tmux servers alive. The hardender's own fix
+  writes the pointer file at
+  `specs/pipeline/steps/bl1049ProviderSecretScrubSteps.js:93`, immediately above
+  the `track()` call. The repo-wide audit at accept time found no other live
+  offender: every other step file that starts a real server already writes the
+  pointer file, and `bl1032TmuxReaperScopeSteps.js`'s apparent match is fixture
+  TEXT it plants for the guard to scan, not a server it starts.

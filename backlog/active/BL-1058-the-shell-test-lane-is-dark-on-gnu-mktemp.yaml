@@ -138,3 +138,5 @@ notes: |
   `while read` sweep is what keeps the EXIT trap safe under bash 3.2's empty-array
   `unbound variable` behaviour. Change the creation call only; do not revisit
   the registry's shape.
+
+assigned_to: coder
