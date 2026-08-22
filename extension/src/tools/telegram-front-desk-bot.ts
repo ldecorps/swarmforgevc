@@ -215,6 +215,43 @@ export { parseNextSseRecord };
 
 const POLL_TIMEOUT_SECONDS = 25;
 
+// BL-1036: the in-flight long poll, so shutdown can RELEASE Telegram's
+// getUpdates slot rather than abandon it.
+//
+// Before this the bot installed no signal handler at all and its poll used
+// fetch with no signal, so the supervisor's SIGTERM killed it mid-request with
+// the connection still open. Telegram held that slot until its own 25s
+// timeout, and the replacement polled straight into it: twelve respawns on
+// 2026-08-22, twelve 409 conflicts. FRONT_DESK_KILL_GRACE_MS (2s) was never
+// the lever - the child died instantly either way, so lengthening the grace
+// could not have helped, which is why this fixes the release rather than the
+// wait.
+let inFlightPoll: AbortController | undefined;
+
+export function abortInFlightPoll(): void {
+  inFlightPoll?.abort();
+  inFlightPoll = undefined;
+}
+
+// Exported for test: installs the handlers on an injected emitter, so a test
+// never has to signal its own process. `onShutdown` runs after the abort.
+// `abort` is injected alongside `onShutdown` so the ORDER between them is
+// observable to a test. That order is the invariant - exiting first abandons
+// the poll slot, which is exactly the behaviour being fixed - and asserting it
+// through any proxy that cannot see the abort proves nothing.
+export function installPollShutdownHandlers(
+  emitter: { on(event: string, listener: () => void): unknown } = process,
+  onShutdown: () => void = () => {},
+  abort: () => void = abortInFlightPoll
+): void {
+  for (const sig of ['SIGTERM', 'SIGINT']) {
+    emitter.on(sig, () => {
+      abort();
+      onShutdown();
+    });
+  }
+}
+
 function topicMapPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'telegram-topic-map.json');
 }
@@ -2128,7 +2165,13 @@ function buildPollAdapters(
     logDropAudit: (line) => appendFrontDeskDiagnostic(targetPath, line),
     logDiagnostic: (line) => appendFrontDeskDiagnostic(targetPath, line),
     explainApprovalRecordNoOp: (backlogId) => Promise.resolve(explainApprovalRecordNoOp(targetPath, backlogId)),
-    getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
+    getUpdates: (offset) => {
+      // One controller per cycle: aborting a spent one would do nothing, and
+      // holding a single controller forever means the first abort disables
+      // every later poll.
+      inFlightPoll = new AbortController();
+      return getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS, undefined, inFlightPoll.signal);
+    },
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
     cursorBridgeTopicId: () => Promise.resolve(readCursorBridgeTopicId(targetPath)),
@@ -3296,5 +3339,8 @@ export async function main(): Promise<void> {
 }
 
 if (require.main === module) {
+  // BL-1036: release the poll slot on the way out. Without this the
+  // replacement inherits a conflict window it did nothing to earn.
+  installPollShutdownHandlers(process, () => process.exit(0));
   runCliMain(main);
 }

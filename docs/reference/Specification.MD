@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1035: a respawned front-desk bot is now
+**Last Updated:** August 22, 2026 (BL-1036: a front-desk restart now releases
+its Telegram `getUpdates` slot instead of leaving the replacement to poll
+straight into a 409 conflict, and the supervisor log now closes every
+degradation it opens. Root cause, confirmed from the code rather than
+assumed (the ticket required this): the bot installed no signal handler
+anywhere and `defaultPost` called `fetch` with no `signal`, so SIGTERM
+killed it instantly mid-long-poll with the request still open, and Telegram
+held that slot until its own ~25s server-side timeout — the replacement's
+first poll landed inside it. Twelve respawns, twelve conflicts, 04:30–06:14Z
+2026-08-22. This **refutes** the intake's leading remedy: a longer
+graceful-shutdown window could not have helped, because
+`FRONT_DESK_KILL_GRACE_MS` was never reached — the child was already dead.
+An unconditional pre-poll wait was rejected on the same evidence, since it
+would tax every clean restart to pay for the unclean one. **The fix**:
+`signal?: AbortSignal` is threaded through `TelegramPostFn` →
+`callTelegramApi` → `getTelegramUpdates` (added last in each signature, so
+every existing caller is unaffected); the bot creates one `AbortController`
+per poll cycle and installs SIGTERM/SIGINT handlers that abort before
+exiting, which is what actually closes the connection and frees the slot.
+A child that ignores SIGTERM is unchanged and still bounded by the existing
+backoff (this ticket makes restarts cheap, not restarts rarer — that is
+BL-1037). **The observability half**: `describePollConflictWindow` stops
+the degraded-poll log line from repeating Telegram's own misdirecting
+"make sure that only one bot instance is running" text and instead names
+the cause (`conflict window: our own predecessor poll still holds the
+getUpdates slot; it is released when that long poll times out server-side,
+within 25s`); and where 626,860 lines of `front-desk-supervisor.log`
+previously contained not one recovery line, every `poll degraded` line is
+now followed by exactly one of `poll recovered - polling normally again`
+or `poll UNRESOLVED - still failing after the retry budget: <cause>` —
+derived from the existing consecutive-failure/outage state, no new flag to
+keep in step. Outstanding, by design: the ticket's own qa_e2e step 5 is a
+live check against real Telegram (the conflict window is server-side state
+no fixture can establish) and is not claimed done by this parcel. Prior
+entry —
+BL-1035: a respawned front-desk bot is now
 judged on its own heartbeat, not its dead predecessor's, closing a restart
 loop that could burn the bot's whole bounded restart budget in seconds.
 `front_desk_supervisor_lib.bb`'s `poll-heartbeat-stale?` waived staleness

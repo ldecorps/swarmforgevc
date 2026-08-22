@@ -12,13 +12,25 @@ export interface TelegramPostResponse {
   json: unknown;
 }
 
-export type TelegramPostFn = (url: string, body: string) => Promise<TelegramPostResponse>;
+// BL-1036: `signal` is optional and every existing implementation ignores it
+// unchanged. It exists so a long poll can be RELEASED rather than merely
+// abandoned: the front-desk bot died mid-getUpdates with its request still
+// open, and Telegram held that slot until its own timeout, so every restart
+// cost the replacement a 409 conflict window.
+export type TelegramPostFn = (
+  url: string,
+  body: string,
+  signal?: AbortSignal
+) => Promise<TelegramPostResponse>;
 
-async function defaultPost(url: string, body: string): Promise<TelegramPostResponse> {
+async function defaultPost(url: string, body: string, signal?: AbortSignal): Promise<TelegramPostResponse> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body,
+    // Aborting this closes the connection, which is what actually frees
+    // Telegram's server-side getUpdates slot for the replacement.
+    signal,
   });
   let json: unknown;
   try {
@@ -98,9 +110,9 @@ function formatNetworkError(prefix: string, err: unknown, token: string): string
 // identically (a non-ok status becomes a description-carrying error, a
 // thrown request becomes a redacted network-error message). Every caller
 // still owns interpreting a SUCCESSFUL response's own json shape.
-async function callTelegramApi(token: string, method: string, body: string, postFn: TelegramPostFn): Promise<TelegramApiCallResult> {
+async function callTelegramApi(token: string, method: string, body: string, postFn: TelegramPostFn, signal?: AbortSignal): Promise<TelegramApiCallResult> {
   try {
-    const res = await postFn(apiUrl(token, method), body);
+    const res = await postFn(apiUrl(token, method), body, signal);
     if (!res.ok) {
       return {
         success: false,
@@ -563,7 +575,12 @@ export async function getTelegramUpdates(
   token: string,
   offset: number,
   timeoutSeconds: number,
-  postFn: TelegramPostFn = defaultPost
+  postFn: TelegramPostFn = defaultPost,
+  // BL-1036: added LAST, so every existing caller is unaffected. Aborting this
+  // is how a departing bot RELEASES Telegram's getUpdates slot instead of
+  // leaving it held until the long poll times out server-side - which is what
+  // made every front-desk restart cost its replacement a 409 window.
+  signal?: AbortSignal
 ): Promise<GetUpdatesResult> {
   // Always pin allowed_updates. Telegram remembers the last non-empty
   // filter across deleteWebhook / getUpdates calls ("If not specified, the
@@ -573,7 +590,7 @@ export async function getTelegramUpdates(
   // Empty list = all default types (includes callback_query; excludes
   // chat_member / message_reaction* per Bot API).
   const body = JSON.stringify({ offset, timeout: timeoutSeconds, allowed_updates: [] });
-  const result = await callTelegramApi(token, 'getUpdates', body, postFn);
+  const result = await callTelegramApi(token, 'getUpdates', body, postFn, signal);
   if (!result.success) {
     return { success: false, updates: [], error: result.error };
   }
