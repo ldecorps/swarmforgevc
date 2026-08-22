@@ -1,6 +1,65 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1069: swarm review/stamp-off of an
+**Last Updated:** August 22, 2026 (BL-991: the operator ruling
+("make required_stages binding so a declared stage cannot be jumped")
+enforced. Before this, `route-required-stages` treated a ticket's declared
+`required_stages` set as a PRUNING list only — membership was permission:
+a coder addressing QA directly on a ticket declaring the full chain was
+delivered straight to QA, jumping cleaner/architect/hardender/documenter.
+BL-951 (2026-08-19, above) made that jump visible with a `routing_skipped`
+record; this ticket is the enforcement half BL-951 deliberately left
+undone. Now, on any forward hop, the router computes `next` — the first
+declared stage strictly after the sender — and whenever the literal `to:`
+is later than `next` in canonical order, the handoff is redirected to
+`next` instead, regardless of whether the literal target is itself a
+declared stage. The same rule closes an easy-to-miss twin on the
+non-member branch: declaring `[coder, cleaner, qa]`, a coder addressing
+`architect` used to rewrite forward to QA (jumping the declared `cleaner`);
+it now redirects to `cleaner`. A redirected hop is not a skip — the stage
+it lands on still runs — so it must never appear in the envelope's
+`routing_skipped=` or a `routing-skips.jsonl` line the way a genuinely
+pruned undeclared stage does; conflating the two would assert a stage was
+bypassed when it is precisely what will still run. Two boundaries were
+deliberately preserved: an UNDECLARED stage is still pruned exactly as
+BL-606 always pruned it (declaring `[coder, qa]` still lets coder address
+QA directly, skipping the undeclared middle stages) — the rule binds only
+what a ticket actually declares, so a docs-only ticket declaring
+`[documenter, qa]` is unaffected; and sender judgement over WHERE a
+bounce-fix should return to is untouched — the operator ruled that out, so
+this adds no default and no coder/QA-prompt routing rule. The rewrite
+REDIRECTS rather than REFUSES: a jump lands on the next declared stage
+instead of erroring the sender back to re-address it, reusing the
+mechanism the non-member branch already had rather than dead-ending a
+committed parcel. Enforcement reaches exactly as far as routing already
+reaches and no further: a backward bounce, a `rejection_reason`/
+`reroute_reason` detour, the `required_stages_routing_enabled` kill switch,
+and an unusable (absent/invalid/not-yet-merged) declaration all behave
+exactly as they did before this ticket. Sibling contract amended in the
+same parcel, not separately: BL-951's own feature file's `full-chain`
+Scenario Outline row (asserting a coder→QA hop skips four stages) became
+false the moment this landed — a genuine acceptance red, not a stale
+assertion — and was removed, with this ticket's own scenario 01 now
+carrying that case in its binding, redirected form. Degraded gate: shell +
+Babashka only, no mutation/CRAP/DRY tooling wired; gated by
+`bl991_binding_stages_property_runner.bb` plus the acceptance scenarios.
+The coder's own reach floors on that runner caught a generator defect in
+its OWN first draft — a per-run reseeded RNG pinned the declaration to
+`no-cleaner` in 40 of 40 runs, leaving the entire non-member branch (the
+second hole this ticket exists to close) untested — fixed by advancing one
+generator across every run instead of reseeding per run; the coder
+separately flagged the identical defect class in BL-1057's own in-flight
+runner by note, which the specifier recorded and the hardener fixed hours
+later on both BL-1057 and, independently, BL-1069's runner during this
+same batch pass — three occurrences of the same class in one day. Updated
+the "Dynamic Routing via Specifier-Declared
+required_stages" section and added a "declared stage is binding" guardrail
+to `swarmforge/handoff-protocol.md`, and cross-referenced the binding rule
+from `docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md` (whose
+own worked examples all use an undeclared-middle-stage shape and remain
+accurate unchanged). No new extension command or setting — swarm-substrate
+handoff-routing tooling under `swarmforge/scripts/`.)
+Prior entry —
+BL-1069: swarm review/stamp-off of an
 operator hotfix already live on `main` (`61c62f579`, landed by hand via
 Cursor the same day) for a WSL control-plane crash loop — Ubuntu's packaged
 tmux 3.4 SIGSEGVs (`resize.c` NULL-window deref, fault at 0x208) whenever
