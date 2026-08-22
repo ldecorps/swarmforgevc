@@ -432,9 +432,7 @@
 ;; watchdog by a fact it cannot observe. Saying so here is the point - a child
 ;; that cannot prove it served must not thereby become unrestartable.
 (defn- child-build-served? [entry]
-  (let [hb (read-poll-heartbeat-ms)
-        started (:started-at-ms entry)]
-    (boolean (and hb started (>= hb started)))))
+  (front-desk-supervisor-lib/build-served-fact? (read-poll-heartbeat-ms) (:started-at-ms entry)))
 
 (def process-specs
   [{:key :bridge :spawn-pid! (fn [] (maybe-adopt-or-spawn-bridge!)) :heartbeat-stale? (fn [_ _] false)

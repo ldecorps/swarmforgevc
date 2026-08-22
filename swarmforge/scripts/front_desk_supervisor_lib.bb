@@ -132,6 +132,19 @@
        (boolean (or (nil? own-heartbeat-ms)
                     (>= (- now-ms own-heartbeat-ms) stall-ms)))))))
 
+;; BL-1037: the same "is this heartbeat THIS child's own" fact as
+;; poll-heartbeat-stale?'s own-heartbeat-ms above (a heartbeat file the bot
+;; rewrites per completed poll cycle and nobody resets at spawn, so a
+;; leftover heartbeat from the predecessor a fresh child was restarted onto
+;; must not be read as proof this child has served) - pulled out to its own
+;; pure, testable function rather than re-inlined at the one caller
+;; (front_desk_supervisor.bb's child-build-served?, which only supplies the
+;; two live values), so the >= boundary this shares with BL-1035's own guard
+;; is exercised directly rather than only reachable through check-one!'s
+;; already-resolved boolean parameter.
+(defn build-served-fact? [heartbeat-ms started-at-ms]
+  (boolean (and heartbeat-ms started-at-ms (>= heartbeat-ms started-at-ms))))
+
 ;; BL-582: the healthy-tick build-freshness clause, split out so the
 ;; "running" cond above stays readable and this decision carries its own
 ;; name. Three ordered states, not two: a build that has JUST gone stale
