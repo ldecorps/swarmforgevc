@@ -15,6 +15,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1035-a-respawned-bot-gets-its-own-startup-grace.feature
+human_approval: approved
 
 invariants:
   - "A freshly spawned child is never judged on a heartbeat written by a process that is no longer running."
