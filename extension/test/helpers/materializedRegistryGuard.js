@@ -18,7 +18,44 @@ const { spawnSync } = require('node:child_process');
 // remains the one cleanup path there.
 const { mkSharedTmpDir } = require('./tmpDir');
 
-const REPO_ROOT = path.join(__dirname, '..', '..', '..');
+// A fixed-depth `__dirname` walk-up (the original approach here) assumes
+// this file always sits three levels under the real repo root. That holds
+// for a normal checkout (extension/test/helpers/) but NOT under a Stryker
+// mutation sandbox: Stryker copies `extension/` itself into
+// `.stryker-tmp/sandbox-<id>/` and runs tests from there, so the sandboxed
+// copy of THIS file sits three levels under `.stryker-tmp/`, not under the
+// real repo root - `.stryker-tmp/` carries the sibling symlinks
+// (ensureStrykerSandboxSiblings.js: specs/, swarmforge/, docs/, pwa/,
+// .github/) but never an `extension` entry, because the sandbox root IS the
+// extension checkout, not a child of one. `findExtensionRoot` walks up from
+// wherever this file actually is to the nearest directory whose
+// package.json is this package (swarmforge-vc), which is the sandbox root
+// under Stryker and the real `extension/` otherwise - so `EXTENSION_ROOT`
+// is correct in both, and `REPO_ROOT` (its parent) keeps resolving `specs/`
+// via the existing sibling-symlink mechanism.
+function findExtensionRoot(startDir) {
+  let dir = startDir;
+  for (;;) {
+    const pkgPath = path.join(dir, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      try {
+        if (JSON.parse(fs.readFileSync(pkgPath, 'utf8')).name === 'swarmforge-vc') {
+          return dir;
+        }
+      } catch {
+        // not a readable/parseable package.json - keep walking up
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(`findExtensionRoot: no swarmforge-vc package.json found above ${startDir}`);
+    }
+    dir = parent;
+  }
+}
+
+const EXTENSION_ROOT = findExtensionRoot(__dirname);
+const REPO_ROOT = path.dirname(EXTENSION_ROOT);
 const RESOLVER = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js');
 
 // The same shape pre_qa_gate_gather_lib.bb materializes: specs/pipeline
@@ -31,18 +68,25 @@ const RESOLVER = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'resolve_c
 // permission error), and only THIS function has the root in scope on that
 // path, so the failure cleanup lives here, for every caller. Outside
 // vitest (the acceptance step handlers) no sweep exists, making this the
-// one cleanup path there. `sourceRoot`/`prefix` are test seams for the
-// failure-path guard test only - production callers pass nothing.
-function materializeCurrentPipeline({ sourceRoot = REPO_ROOT, prefix = 'bl968-materialized-' } = {}) {
+// one cleanup path there. `sourceRoot`/`extensionRoot`/`prefix` are test
+// seams for the failure-path guard test only - production callers pass
+// nothing. `extensionRoot` is resolved separately from `sourceRoot`
+// (rather than as `sourceRoot/extension`) precisely because the two
+// diverge under a Stryker sandbox - see `findExtensionRoot` above.
+function materializeCurrentPipeline({
+  sourceRoot = REPO_ROOT,
+  extensionRoot = EXTENSION_ROOT,
+  prefix = 'bl968-materialized-',
+} = {}) {
   const root = mkSharedTmpDir(prefix);
   try {
     const dest = path.join(root, 'specs', 'pipeline');
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.cpSync(path.join(sourceRoot, 'specs', 'pipeline'), dest, { recursive: true });
-    for (const sibling of ['node_modules', 'extension']) {
-      const target = path.join(sourceRoot, sibling);
+    const siblings = { node_modules: path.join(extensionRoot, 'node_modules'), extension: extensionRoot };
+    for (const [name, target] of Object.entries(siblings)) {
       if (fs.existsSync(target)) {
-        fs.symlinkSync(fs.realpathSync(target), path.join(root, sibling));
+        fs.symlinkSync(fs.realpathSync(target), path.join(root, name));
       }
     }
     return { root, pipelineDir: dest };
