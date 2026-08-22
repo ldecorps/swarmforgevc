@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ad67b22a441a07e1d72df895a185efe4880b3b643aee5b9ea0980fee8b94a900
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T12:56:17.477462917Z","feature_name":"A delivered parcel is not not-started","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1048-a-delivered-parcel-is-not-not-started.feature","background_hash":"e6cbdf7227f142bd28113ba4bdb2ba5a9ae1bf5434b4e66edabdf0338410b8f3","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a routed parcel names its role whatever state it is in","scenario_hash":"4e86aaacb71e2a014d70142740f13e41130d94202d435c9be11f5beff3f0ee66","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T12:56:17.477462917Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A delivered parcel is not not-started
 
   The board's stage scan reads each role's opened mail and nothing else, so a
