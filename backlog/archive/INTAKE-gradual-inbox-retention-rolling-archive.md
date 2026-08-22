@@ -128,3 +128,22 @@ queue priority, epic and milestone per the hygiene gate. Cite the BL-977/BL-978
 family as the follow-on it is; do NOT merge into BL-1066 (separate live CPU
 defect) and do not fold into the Boy Scout epic (BL-1013), which classifies
 repo debt and does not bound mailbox retention.
+
+---
+
+## Dispositioned — 2026-08-22
+
+Minted as **BL-1073**
+(`backlog/paused/BL-1073-rolling-mailbox-retention-drips-settled-mail-out-of-the-hot-path.yaml`,
+acceptance `specs/features/BL-1073-rolling-mailbox-retention.feature`). One
+intake, one ticket — no consolidation, nothing split off.
+
+The clarifying question parked above was answered by the human at
+2026-08-22T17:01:36Z: *"Archive in-repo, still readable - move under the
+handoffs root; nothing deleted; evidence consumers can still read older
+trails"* — settling open questions 2 and 6. The four questions settled without
+asking (what moves / who runs it / window / pace) carried into the ticket as
+stated, and are listed in its `approval_context` so the human can still move
+them at approval.
+
+Archived to `backlog/archive/` so it is not drained twice.
