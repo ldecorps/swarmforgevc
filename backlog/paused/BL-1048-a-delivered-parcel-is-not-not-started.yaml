@@ -18,8 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1048-a-delivered-parcel-is-not-not-started.feature
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Firm: a delivered-but-unopened parcel must stop rendering NS. That is the
   reported defect and the spec below fixes it.
