@@ -6,7 +6,7 @@ instead of relying on hand-rolled terminal-step `cleanup()`. A new standing
 gate refuses any step-handler file that starts a tmux server without that
 registration.
 
-**Last Updated:** 2026-08-19
+**Last Updated:** 2026-08-22 (BL-1032: guard re-scoped by hazard, not token)
 
 ## Background
 
@@ -83,9 +83,31 @@ guessed:
 `findTmuxReaperViolation(basename, text)` plus an impure, non-recursive scan
 of `specs/pipeline/steps/*.js` — never `lib/`, where `fixtureReaper.js` and
 its own abnormal-exit harnesses legitimately call `track()` directly. It
-flags a file that contains a quoted `new-session` token without a paired
+flags a file that can cause a real tmux server to run without a paired
 `require('./lib/fixtureReaper')` and `track()` call, so the idiom cannot
 return a seventh time unnoticed.
+
+**Scoped by hazard, not by token (BL-1032).** The guard originally scoped on
+the presence of a quoted `'new-session'` token anywhere in the file. That
+missed an unstated converse: a file that *asserts about* tmux argv — "which
+commands would this repair resolve to?" — also writes `'new-session'` as a
+quoted argv element, because it is comparing against argv, with no tmux
+process ever spawned. `bl1018SingleRoleRepairNeverKillsServerSteps.js` is
+exactly that shape (it spawns only `bb -e` to evaluate command vectors as
+data) and was flagged RED *because it was correct* — the only ways to green
+it were adding a reaper call that guarded nothing, or obfuscating the
+string. `startsTmuxServer(text)` now requires a server-creating subcommand
+(`new-session` or `start-server` — never a query like `list-sessions` or
+`has-session`, which fail rather than start anything) **plus** one of two
+routes that can actually reach a real tmux: (1) the file spawns `tmux`
+itself via `execFileSync`/`exec`/`spawn`/etc., or (2) the file writes its
+own `tmux` onto `PATH` (`bl958ControlPlaneLossSteps.js`'s shape — a stub
+written to `bin/tmux` and prepended onto `PATH`, so whatever the file runs
+next can reach it; scoping on route (1) alone would have silently exempted
+this file too, since nothing in it literally spawns `tmux`). A file that
+names neither route is out of scope regardless of how many `new-session`
+tokens it contains, and gains nothing by adding a reaper call it doesn't
+need.
 
 `extension/test/tmuxReaperGuard.test.js` gives the gate a standing home in
 the one suite every parcel runs, including the real "`specs/pipeline/steps`
@@ -138,3 +160,6 @@ changes no extension command, setting, or UI.
   servers) and raised the `rule_proposal` this ticket answers.
 - **BL-654:** Property-testing convention `fixtureReaperLiveSocketGuard.property.test.js`
   follows for invariant 2.
+- **BL-1032:** Re-scoped `tmuxReaperGuard.js` from a quoted-token match to a
+  hazard match (spawns tmux directly, or writes its own onto `PATH`, and
+  names a server-creating subcommand) — see "The standing gate" above.
