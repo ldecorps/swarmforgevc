@@ -231,6 +231,16 @@ not only on a crash respawn — the reason a healthy bot served a stale build
 for 2h23m on 2026-07-23. A newly-stale build starts a grace
 (`FRONT_DESK_BUILD_GRACE_MS`, default 5 minutes); past the grace the
 process restarts through the same bounded-backoff clause a crash uses.
+**BL-1037 bounds how often that may happen.** A child restarted onto a fresh
+build must complete one poll cycle on it before the watchdog may restart it
+again — otherwise a `main` that moves faster than one grace plus
+recompile-and-respawn costs a restart per commit (24 staleness detections and
+12 respawns in 105 minutes on 2026-08-22, each paying a Telegram conflict
+window). The staleness is **carried, not cleared**, while it waits: a deferred
+restart is still owed and fires the moment the child serves, so this bounds
+the rate without reopening the 2h23m stale-serving window. Deferrals are
+logged as `build-stale-deferred` so the pause is visible rather than inferred
+from a restart that did not happen.
 Every diagnostic now lands in a new durable sink,
 `.swarmforge/operator/front-desk-diagnostics.log`, closing the gap that
 left the 2026-07-23 failure window with no bot output preserved anywhere.
