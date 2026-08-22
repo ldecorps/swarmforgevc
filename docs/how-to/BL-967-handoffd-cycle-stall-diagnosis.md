@@ -125,13 +125,28 @@ subprocess calls in `briefing_email_lib.bb`, `control_plane_lib.bb`, and
 sites above were found by walking `handoffd.bb`'s *load-file* closure — the
 gate `daemon_cycle_guard_lib_test_runner.bb` locks in. `dispatch-gap-sweep!`
 does not load its collaborator, `swarm_handoff.bb` — it *spawns* it as a
-subprocess, an edge type the closure walk cannot see. `swarm_handoff.bb`
-still used `clojure.java.shell/sh` on all nine of its own subprocess sites, so
-the banned API was back on the daemon's critical path via a hop the gate
-never checked. It now routes through the same `sh!` chokepoint (already in
-scope via `handoff_lib.bb`'s load-file chain, so no new wiring was needed).
-Widening the closure gate itself to follow process-spawn edges, so this class
-of hole cannot recur, is filed separately as BL-1022.
+subprocess, an edge type the closure walk could not see at the time.
+`swarm_handoff.bb` still used `clojure.java.shell/sh` on all nine of its own
+subprocess sites, so the banned API was back on the daemon's critical path
+via a hop the gate never checked. It now routes through the same `sh!`
+chokepoint (already in scope via `handoff_lib.bb`'s load-file chain, so no
+new wiring was needed).
+
+**BL-1022 (2026-08-22) closed that blind spot in the gate itself.** The
+closure walk (`resolve-daemon-reachability` in `master_checkout_drift_lib.bb`)
+now follows spawn edges as well as load edges, transitively and mutually
+recursive, and records which edge kind reached each file so a closure that
+silently shrinks is visible instead of passing for the wrong reason. A spawn
+target it cannot resolve statically fails the gate loudly rather than being
+skipped. Following the new edge grew the daemon's reported closure from 38
+files to 53 and surfaced three more files still making an unbounded
+`clojure.java.shell`/`process/sh` call, reached transitively through the
+`swarm_handoff.bb` spawn: `handoff_inject_lib.bb` (tmux),
+`pre_qa_gate_gather_lib.bb` (git), and `salvage_lib.bb` (generic). Fixing
+those is out of BL-1022's scope — the same class of follow-up BL-1021 was for
+the first offender — so the gate holds them as a named ratchet (an equality
+assertion, not a subset, so removing one from the list is a required gate
+change, not an incidental pass) rather than leaving the debt invisible again.
 
 One caveat worth keeping in mind: the stall never reproduced under a fixture —
 it needs a genuinely wedged tmux server under real load — so that
