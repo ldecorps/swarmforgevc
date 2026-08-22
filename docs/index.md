@@ -31,6 +31,7 @@ expects them, and are not migrated or rewritten here.
 - [Stuck-Role Escalation Email — Understanding the Alert](how-to/BL-349-stuck-role-escalation-email.md)
 - [Driving one ticket through every gate with the swarm stopped (the expeditor)](how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md)
 - [Ambulance mode — running one ticket exclusively while the swarm stays live](how-to/BL-655-ambulance-mode-the-hold.md)
+- [Host switchover doctor — the post-move checklist](how-to/BL-1057-host-switchover-doctor.md)
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
