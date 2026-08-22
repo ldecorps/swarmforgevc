@@ -228,3 +228,5 @@ notes: |
   leavings) and BL-1025 (approved commits read as a QA bypass) are all about
   what the run says or does at its edges. This one is about a constant the
   run enforces in the middle. None blocks any other.
+
+assigned_to: coder
