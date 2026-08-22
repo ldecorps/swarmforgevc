@@ -10,7 +10,7 @@ depends_on: [BL-713]
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1078-a-cursor-agent-token-is-accepted-by-the-launcher.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted 2026-08-22 by operator Let's Talk ask: queue every ticket that lets
   a Cursor agent work as a model inside the swarm. This is BL-712 slice B —
