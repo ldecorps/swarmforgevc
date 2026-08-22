@@ -633,7 +633,32 @@
                     (if skip
                       {:recipients recipients :routing-skipped skip}
                       identity-result))
-                  (let [effective (:effective decision)]
+                  (let [effective (:effective decision)
+                        ;; BL-991: the declaration BINDS. The first declared
+                        ;; stage strictly after the sender is the furthest
+                        ;; this hop may travel, whatever it was addressed to.
+                        ;; Computed from the SENDER alone, so it is the same
+                        ;; answer on both branches below - the membership
+                        ;; branch treated membership as permission (a coder
+                        ;; addressing QA on a full chain went straight to QA),
+                        ;; and the non-member branch rewrote forward of the
+                        ;; ADDRESSED stage (with [coder cleaner qa], a coder
+                        ;; addressing architect went to QA, jumping the
+                        ;; declared cleaner). One guard ahead of both.
+                        next-after-sender (required-stages-lib/next-required-stage effective sender)]
+                    (if (and next-after-sender
+                             (required-stages-lib/routes-forward? next-after-sender literal-to))
+                      ;; A binding rewrite is NOT a skip of the stage it
+                      ;; defers: QA is precisely what will still run, so the
+                      ;; deferred target never goes in the skip record
+                      ;; (invariant 2). Any stage genuinely passed over -
+                      ;; one the declaration prunes, between the sender and
+                      ;; the stage delivered to - is still recorded, by the
+                      ;; same hop-derived rule as every other forward hop.
+                      (let [skip (emit-skip next-after-sender nil)]
+                        (if skip
+                          {:recipients [next-after-sender] :routing-skipped skip}
+                          {:recipients [next-after-sender] :routing-skipped nil}))
                     (if (contains? effective literal-to)
                       (let [skip (emit-skip literal-to nil)]
                         (if skip
@@ -650,7 +675,7 @@
                                                  :from sender
                                                  :to next-stage
                                                  :skipped [literal-to]
-                                                 :reasons reasons})})))))))))))))
+                                                 :reasons reasons})}))))))))))))))
 (defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons rejection-reason]}]
   (str ticket-id " " from "->" to
        " skipped=" (str/join "," skipped)

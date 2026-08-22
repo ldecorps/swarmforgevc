@@ -253,6 +253,14 @@ function registerSteps(registry) {
     sendHandoff(ctx, { from: 'coder', to: 'QA', task: ctx.ticketId });
   });
 
+  // BL-991: with [coder, cleaner, qa] there is no DECLARED stage between
+  // cleaner and QA, so this hop is left exactly as addressed - and it still
+  // passes over architect, hardender and documenter, which is the skip record
+  // scenario 04 inspects.
+  registry.define(/^the cleaner sends a git_handoff addressed directly to QA$/, (ctx) => {
+    sendHandoff(ctx, { from: 'cleaner', to: 'QA', task: ctx.ticketId });
+  });
+
   registry.define(/^the coder sends a git_handoff addressed to cleaner$/, (ctx) => {
     sendHandoff(ctx, { from: 'coder', to: 'cleaner', task: ctx.ticketId });
   });
@@ -311,6 +319,30 @@ function registerSteps(registry) {
       }
     }
   );
+
+  // BL-991: the same two assertions against hardender, which this ticket's
+  // ruling leaves genuinely skipped on a cleaner->QA hop. Kept alongside the
+  // cleaner pair rather than replacing it - the cleaner registrations are
+  // still the ones BL-748's own scenarios resolve.
+  registry.define(/^the skip record names hardender among the skipped stages$/, (ctx) => {
+    const { header, journal } = skipRecord(ctx);
+    if (!header || !header.skipped.includes('hardender')) {
+      throw new Error(`expected hardender in header skipped=, got: ${header && header.line}`);
+    }
+    if (!journal || !journal.skipped.includes('hardender')) {
+      throw new Error(`expected hardender in journal.skipped, got: ${JSON.stringify(journal && journal.skipped)}`);
+    }
+  });
+
+  registry.define(/^the skip record carries no declared reason for hardender$/, (ctx) => {
+    const { header, journal } = skipRecord(ctx);
+    if (header && header.reasons.hardender !== undefined) {
+      throw new Error(`expected no declared reason for hardender in header, got: ${JSON.stringify(header.reasons.hardender)}`);
+    }
+    if (journal && journal.reasons && journal.reasons.hardender !== undefined) {
+      throw new Error(`expected no declared reason for hardender in journal, got: ${JSON.stringify(journal.reasons.hardender)}`);
+    }
+  });
 
   registry.define(/^the skip record names cleaner among the skipped stages$/, (ctx) => {
     const { header, journal } = skipRecord(ctx);
