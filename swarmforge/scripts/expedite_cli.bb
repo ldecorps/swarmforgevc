@@ -118,6 +118,39 @@
   (fs/create-dirs (fs/parent path))
   (spit (str path) (str (json/generate-string data {:pretty true}) "\n")))
 
+(defn- now-iso []
+  (.format (java.time.format.DateTimeFormatter/ISO_INSTANT) (java.time.Instant/now)))
+
+;; BL-1025: the impure half of expedite-lib/qa-hat-verdict-record - append the
+;; QA hat's verdict where is_qa_ancestor.sh can read it. Written into the
+;; PROJECT root, not the run worktree: the store is a fact about this repo's
+;; approvals, and the worktree is torn down. Appended (never rewritten) so a
+;; second run never erases the first run's verdicts.
+;;
+;; The sha recorded is the run worktree's HEAD at the instant the QA hat gave
+;; its verdict - the commit that hat actually looked at. A worktree whose HEAD
+;; cannot be read records nothing, rather than a record naming the wrong
+;; commit: a verdict store that can be wrong is worse than one with a gap,
+;; because the gap only costs a false CRIT while a wrong record waves real
+;; work through.
+(defn- worktree-head [dir]
+  (let [{:keys [exit out]} (sh {:dir (str dir)} "git" "rev-parse" "HEAD")]
+    (when (zero? exit) (str/trim out))))
+
+(defn- record-qa-hat-verdict! [{:keys [project-root ticket dry-run?]} {:keys [dir]} stage res]
+  (when-not dry-run?
+    (when-let [record (expedite-lib/qa-hat-verdict-record
+                       {:stage stage
+                        :verdict (:verdict res)
+                        :ticket ticket
+                        :commit (worktree-head dir)
+                        :at (now-iso)})]
+      (let [f (fs/path project-root (expedite-lib/expedite-approval-store-file (:at record)))]
+        (fs/create-dirs (fs/parent f))
+        (spit (str f) (str (json/generate-string record) "\n") :append true)
+        (log! "recorded QA-hat verdict" (:verdict record) "for" (:commit record) "->" (str f))
+        record))))
+
 (defn- write-progress! [run-dir ticket stage status & [detail]]
   (write-json! (fs/path run-dir "progress.json")
                {:ticket ticket
@@ -405,6 +438,9 @@
                                 (when-let [r (:reason res)] (str " reason=" (name r)))))
           (swap! history conj (select-keys res [:stage :verdict :reason :class]))
           (write-json! (fs/path stage-dir "verdict.json") res)
+          ;; BL-1025: a no-op for every stage but QA, and for a QA stage that
+          ;; failed rather than ruled - see qa-hat-verdict-record.
+          (record-qa-hat-verdict! opts worktree stage res)
           (case (expedite-lib/classify-verdict (:verdict res))
             :advance (recur (expedite-lib/next-stage stages stage) (inc n))
 

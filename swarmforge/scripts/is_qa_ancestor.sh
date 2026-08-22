@@ -114,6 +114,68 @@ if [[ -d backlog ]]; then
              | sed -E 's/.*commit: ([0-9a-fA-F]+).*/\1/')
 fi
 
+# ── approval: an expedite run's own QA-hat verdict (BL-1025) ──────────────
+# The SECOND constitutionally sanctioned way pipeline code reaches main
+# ("Same gates, no machinery", BL-567). An expedite run walks the same role
+# hats - its QA hat gives a real advance-or-bounce verdict - but with the
+# swarm stopped there is no live QA worktree, so swarmforge-QA never moves
+# and the ancestry test below can only ever answer "no". Three commits from
+# BL-1021's run tripped the Article 4.2 CRIT on 2026-08-21 for exactly that
+# reason.
+#
+# Read here, alongside ancestry, rather than by teaching each caller a second
+# rule (BL-925 invariant 2: ONE approval predicate). Checked AFTER the bounce
+# stores above, so a bounce still vetoes both approval routes.
+#
+# Only an APPROVING verdict approves. A record whose verdict is a bounce is a
+# verdict on file that says no - it must not read as approval, and it must
+# not read as absence either. And nothing weaker than a record counts: this
+# never looks at the commit MESSAGE, so a subject claiming an expedite run
+# buys exactly nothing (BL-972 - commit-subject matching standing in for a
+# real gate is a failure this repo has already had once).
+#
+# Same fail-closed discipline as the bounce stores: absent means "no expedite
+# run ever approved this" and falls through to ancestry, but a store that
+# EXISTS and cannot be consulted is undeterminable (invariant 3).
+EXPEDITE_DIR=".swarmforge/expedite-approvals"
+if [[ -e "$EXPEDITE_DIR" && ! -d "$EXPEDITE_DIR" ]]; then
+  echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $EXPEDITE_DIR exists but is not a directory (missing/obstructed record store)" >&2
+  exit 2
+fi
+if [[ -d "$EXPEDITE_DIR" ]]; then
+  for f in "$EXPEDITE_DIR"/*.jsonl; do
+    [[ -e "$f" ]] || continue  # bash 3.2: unmatched glob stays literal
+    if [[ ! -r "$f" ]]; then
+      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f is unreadable" >&2
+      exit 2
+    fi
+    # Every non-empty line must carry BOTH fields the verdict is made of. A
+    # line missing either is a corrupt record and the store cannot be
+    # trusted either way - the same prefix tolerance on the commit field as
+    # the bounce stores, for the same reason (recorders abbreviate).
+    if grep -v -E '^\{.*"commit":"[0-9a-fA-F]{7,40}".*\}$' "$f" | grep -q -E '.'; then
+      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no commit field" >&2
+      exit 2
+    fi
+    if grep -v -E '^\{.*"verdict":"[a-zA-Z-]+".*\}$' "$f" | grep -q -E '.'; then
+      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no verdict field" >&2
+      exit 2
+    fi
+    # The advance vocabulary is expedite_lib.bb's own `advance-verdicts`.
+    while IFS= read -r token; do
+      [[ -n "$token" ]] || continue
+      case "$FULL_SHA" in
+        "$token"*)
+          echo "approved: $SHORT_SHA has an expedite QA-hat approval on file ($f, recorded as $token) - BL-1025" >&2
+          exit 0
+          ;;
+      esac
+    done < <(grep -E '"verdict":"(pass|forward|approved)"' "$f" \
+               | grep -oE '"commit":"[0-9a-fA-F]{7,40}"' \
+               | sed -E 's/"commit":"([0-9a-fA-F]+)"/\1/')
+  done
+fi
+
 # ── ancestry (unchanged from BL-925): git's own exit code passes through -
 #    0 ancestor, 1 clean no, anything else a real failure callers must
 #    fail closed on ──────────────────────────────────────────────────────

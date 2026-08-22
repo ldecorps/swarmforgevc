@@ -126,6 +126,61 @@
       (contains? bounce-verdicts v) :bounce
       :else :fail)))
 
+;; ── BL-1025: the QA hat's verdict, made machine-checkable ──────────────────
+;; An expedite run is the SECOND constitutionally sanctioned way pipeline code
+;; reaches main ("Same gates, no machinery", BL-567). Its QA hat gives a real
+;; advance-or-bounce verdict - but with the swarm stopped there is no live QA
+;; worktree, so `swarmforge-QA` never moves and Article 4.2's
+;; pipeline-code-on-main check reads every commit of the run as having landed
+;; outside QA. Three of BL-1021's did, on 2026-08-21.
+;;
+;; The fix is not to soften that check. It is to leave the verdict somewhere
+;; the shared predicate (is_qa_ancestor.sh - the ONE approval predicate,
+;; BL-925 invariant 2) can read: a durable per-sha record, written ONLY here,
+;; never hand-authored, and never a substitute for the verdict itself. A
+;; commit that merely CLAIMS an expedite run in its subject buys nothing
+;; (BL-972).
+;;
+;; Machine-local under .swarmforge/ and per-month, the same layout and the
+;; same reasoning as the bounce store the predicate already consults.
+
+(def expedite-approval-store-dir ".swarmforge/expedite-approvals")
+
+(defn expedite-approval-store-file
+  "The store file an ISO-8601 instant belongs in. One file per month, so a
+   long-lived repo's store stays greppable and the predicate's per-file
+   read stays bounded."
+  [at-iso]
+  (str expedite-approval-store-dir "/" (subs (str at-iso) 0 7) ".jsonl"))
+
+;; Recorded at the width every other verdict store in this repo uses. The
+;; predicate prefix-matches, so a shorter record still resolves - but writing
+;; a consistent width keeps the stores readable side by side.
+(def ^:private approval-commit-width 10)
+
+(defn qa-hat-verdict-record
+  "Pure: the record an expedite stage's verdict leaves behind, or nil when it
+   leaves none.
+
+   Only the QA hat's verdict is an approval, so only that stage writes. A
+   BOUNCE writes too, deliberately: 'a verdict on file that says no' and 'no
+   verdict at all' are different states, and the check must be able to tell
+   them apart rather than treat both as absence. Anything that classifies as
+   :fail (a timeout, an unrecognised verdict) writes NOTHING - a run that
+   fell over approved nothing, and a record is a claim about a gate that
+   passed or refused, never about one that never finished."
+  [{:keys [stage verdict ticket commit at]}]
+  (let [class (classify-verdict verdict)
+        sha (str/trim (str commit))]
+    (when (and (= "QA" (str stage))
+               (contains? #{:advance :bounce} class)
+               (seq sha))
+      {:at (str at)
+       :ticket (str ticket)
+       :stage "QA"
+       :verdict (-> verdict name str/lower-case)
+       :commit (subs sha 0 (min approval-commit-width (count sha)))})))
+
 ;; ── liveness ───────────────────────────────────────────────────────────────
 ;; Scenarios 09/10/14. The interlock the ticket ORIGINALLY specified globbed
 ;; `.swarmforge/tmux/*.sock` — measured 2026-07-25, that reads a fully stopped
