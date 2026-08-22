@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=718976dffa6aed507eec5c4593b8ff99e94b9268ea15bac37071df31fa3dd57c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T14:50:42.389801420Z","feature_name":"A Telegram button carries a URL Telegram will accept","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1060-bubble-pairing-button-uses-a-scheme-telegram-rejects.feature","background_hash":"b57143e0a40656b98c945846640d496d258c890364a75dc324100eb1a8a857e9","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The pairing button uses a scheme Telegram accepts","scenario_hash":"ed98d31ecd54298f71c4367d1bf89746ba1f4e94d372ce9825f7ff5a286b5037","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T14:50:36.452601747Z"},{"index":1,"name":"No button in either keyboard carries a scheme Telegram rejects","scenario_hash":"5a21f0674c3fe999f8cbb543b80c30609d02a850dd098e1000bcf7f2aae387d9","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T14:50:36.452601747Z"},{"index":4,"name":"Every other button each surface carries is unaffected","scenario_hash":"7f7a54f7f13c4ca7ee637e90fbd10d43ff00d642fc794eaa3958312fe93d72a3","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-22T14:50:36.452601747Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A Telegram button carries a URL Telegram will accept
 
   The tunnel notifier attaches an "Update Bubble pairing" button to both the
