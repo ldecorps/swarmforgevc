@@ -156,6 +156,42 @@ check "D1b: and only then is the source released" \
   '! git -C "$R7" stash list | grep -q "orphaned untracked fix"'
 note "PASS: D1b"
 
+# ── 06: the commit byline names the ROLE the rescue targeted ──────────────
+# The commit lands on that role's own branch, so the byline must name it -
+# not whichever role happens to be this file's most common caller. A
+# hardcoded byline would pass every check above (all of them use --role
+# coder) while silently mislabeling every rescue into another role's tree.
+R8="$(make_repo)"
+bb "$CLI" "$R8" --stash 'stash@{0}' --role hardener --reason 'BL-981 seat-fold stash' > /dev/null 2>&1
+check "06: the commit byline names the targeted role, not a fixed default" \
+  'git -C "$R8" log -1 --format=%B | grep -q "By hardener\."'
+check "06: and never the wrong role" \
+  '! git -C "$R8" log -1 --format=%B | grep -q "By coder\."'
+note "PASS: 06"
+
+# ── 07 (hardener): orphaned work that IS a deletion still verifies and
+# releases its source ────────────────────────────────────────────────────
+# A path the stash removes is never going to exist on disk again, so a verify
+# check that requires `fs/exists?` can never pass for a deletion - the commit
+# lands correctly but the source is retained forever, exactly the durability
+# defect BL-1041 exists to fix, now reintroduced by the verify step's own
+# blind spot. Found by hand-probing the real CLI against a deletion-only
+# stash before this test existed: it printed "source RETAINED - content not
+# verified" even though the deletion was committed correctly.
+R9="$(make_repo)"
+rm "$R9/seat.ts"
+git -C "$R9" stash push -q -m "orphaned deletion" -- seat.ts
+OUT9="$(bb "$CLI" "$R9" --stash 'stash@{0}' --role coder --reason 'deletion rescue' 2>&1)"
+check "07: a deletion-only rescue still reports the source released" \
+  'grep -q "source released" <<< "$OUT9"'
+check "07: and does not fall back to retaining it as unverified" \
+  '! grep -q "not verified" <<< "$OUT9"'
+check "07: the deletion is actually committed" \
+  '[[ ! -e "$R9/seat.ts" ]] && ! git -C "$R9" ls-tree -r HEAD --name-only | grep -q "^seat.ts$"'
+check "07: and only then is the source released" \
+  '! git -C "$R9" stash list | grep -q "orphaned deletion"'
+note "PASS: 07"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-1041 rescue-orphaned-work: ALL CHECKS PASSED"
 else
