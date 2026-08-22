@@ -76,7 +76,153 @@
                  (second (last matches)))))
        (into #{})))
 
+;; ── pure: which .bb files does one script SPAWN? (BL-1022) ─────────────────
+;; The load-file scan above follows one edge kind. handoffd.bb reaches
+;; swarm_handoff.bb by spawning it - `sh! ["bb" (swarm-handoff-script) ...]` -
+;; and a spawn edge is invisible to a load-file walk. That is why the banned
+;; clojure.java.shell API sat on the daemon's critical path unseen until it
+;; deadlocked production (BL-1021). A derived guard still has a DEPTH, and one
+;; hop is the default nobody notices choosing.
+;;
+;; The spawn vector is read as Clojure data rather than matched with a regex:
+;; these are real source forms, and `read-string` gets nesting and quoting
+;; right where a regex guesses. Anything unreadable is reported, not skipped.
+
+(defn- string-literals-in
+  "Every string literal anywhere inside an already-read form."
+  [form]
+  (cond
+    (string? form) [form]
+    (coll? form) (mapcat string-literals-in form)
+    :else []))
+
+(defn- bb-basename
+  "The bare `foo.bb` at the end of a path literal, or nil."
+  [s]
+  (when-let [m (re-find #"([^/\"]+\.bb)$" (str s))]
+    (second m)))
+
+(defn- resolve-spawn-target
+  "The .bb basename `target-form` names, or nil if it cannot be resolved
+   statically. Three shapes are resolvable, and they are the three that occur:
+   a bare literal, a literal wrapped in path plumbing, and a zero-arg helper
+   defined in the SAME file whose body carries the literal - which is the shape
+   handoffd.bb actually uses. Anything else is deliberately nil so the caller
+   can report it."
+  [target-form content]
+  (or (some bb-basename (string-literals-in target-form))
+      ;; A zero-arg same-file helper: find `(defn <name> [] ...)` and resolve
+      ;; through its body. Read the whole defn form so a multi-line body works.
+      (when (and (list? target-form) (= 1 (count target-form)) (symbol? (first target-form)))
+        (let [nm (name (first target-form))
+              needle (str "(defn " nm " [")]
+          (when-let [i (str/index-of content needle)]
+            (try
+              (some bb-basename (string-literals-in (read-string (subs content i))))
+              (catch Exception _ nil)))))))
+
+(defn- spawn-forms
+  "Every `[\"<runtime>\" ...]` vector in `content`, read as data, paired with the
+   runtime. Comment lines are blanked first so a documentation example is never
+   an edge - the same rule extract-load-file-basenames applies."
+  [content]
+  (let [decommented (->> (str/split-lines content)
+                         (map #(if (str/starts-with? (str/trim %) ";") "" %))
+                         (str/join "\n"))]
+    ;; Scan by POSITION, not by re-finding the matched text: several spawns in
+    ;; one file share the same `["bb"` prefix, and looking each one up by its
+    ;; text would read the FIRST occurrence every time - so every spawn after
+    ;; the first would be silently mistaken for it. That is the same
+    ;; silently-skipped-target failure this walk exists to prevent, one level
+    ;; down, and it hid an unresolvable target during authoring.
+    (loop [from 0 acc []]
+      (if-let [i (loop [j from]
+                   (when-let [k (str/index-of decommented "[\"" j)]
+                     (if (re-find #"^\[\"(bb|bash|sh|zsh)\"" (subs decommented k (min (count decommented) (+ k 8))))
+                       k
+                       (recur (inc k)))))]
+        (let [runtime (second (re-find #"^\[\"([a-z]+)\"" (subs decommented i)))
+              form (try (read-string (subs decommented i)) (catch Exception _ nil))]
+          (recur (inc i) (if (vector? form) (conj acc [runtime form]) acc)))
+        acc))))
+
+(defn extract-spawn-targets
+  "Pure text scan of one script's source: which scripts it SPAWNS.
+     :resolved   - bare .bb filenames, real edges to follow
+     :unresolved - spawn targets this walk could not resolve statically,
+                   as source text. Reported LOUDLY by the caller and never
+                   silently dropped: a skipped target is the same class of
+                   blind spot one level up.
+     :non-bb     - scripts spawned under another runtime (bash). These are
+                   real edges, but the Clojure subprocess-namespace ban cannot
+                   speak about a shell script, so they are RECORDED to make the
+                   gate's scope visible rather than left to be assumed."
+  [content]
+  (reduce
+    (fn [acc [runtime form]]
+      (let [target (second form)]
+        (if (= runtime "bb")
+          (if-let [b (resolve-spawn-target target content)]
+            (update acc :resolved conj b)
+            ;; A `bb -e "<expr>"` runs an inline expression rather than a repo
+            ;; script - it has no file to reach, and the expression itself is
+            ;; already inside the file being scanned.
+            (if (= "-e" target)
+              acc
+              (update acc :unresolved conj (pr-str target))))
+          (if-let [sh (some #(re-find #"[^/\"]+\.(sh|bash|zsh)$" (str %))
+                            (string-literals-in target))]
+            (update acc :non-bb conj (first sh))
+            (update acc :unresolved conj (pr-str target))))))
+    {:resolved #{} :unresolved #{} :non-bb #{}}
+    (spawn-forms content)))
+
 ;; ── pure (given an injected reader): the transitive closure ────────────────
+
+(defn resolve-daemon-reachability
+  "BFS over the daemon's reachability graph from `entrypoints`, following the
+   edge kinds in `edge-kinds` (default both `:load` and `:spawn`). Returns
+
+     {:closure    #{bare .bb filenames, entrypoints included}
+      :reached-by {filename #{:entrypoint | [:load from] | [:spawn from]}}
+      :unresolved [{:from filename :target source-text}]
+      :non-bb     #{scripts spawned under another runtime}}
+
+   `reached-by` is what makes scenario 04 answerable: a gate that reports only
+   a COUNT passes for the wrong reason when its closure silently shrinks - which
+   is exactly how the old walk read green while missing the file that took
+   production down.
+
+   A filename `read-file` cannot read is still included (it contributes no
+   further edges, but must not vanish from the set), matching the original
+   walk's contract."
+  [{:keys [entrypoints read-file edge-kinds]}]
+  (let [kinds (or edge-kinds #{:load :spawn})
+        read-one (fn [f] (if (map? read-file) (get read-file f) (read-file f)))]
+    (loop [frontier (vec entrypoints)
+           visited #{}
+           reached-by (into {} (map (fn [e] [e #{:entrypoint}]) entrypoints))
+           unresolved []
+           non-bb #{}]
+      (if-let [f (first frontier)]
+        (if (contains? visited f)
+          (recur (subvec frontier 1) visited reached-by unresolved non-bb)
+          (let [content (read-one f)
+                loads (if (and content (kinds :load)) (extract-load-file-basenames content) #{})
+                spawn (if (and content (kinds :spawn)) (extract-spawn-targets content)
+                          {:resolved #{} :unresolved #{} :non-bb #{}})
+                spawns (:resolved spawn)]
+            (recur (into (subvec frontier 1) (concat loads spawns))
+                   (conj visited f)
+                   (as-> reached-by rb
+                     (reduce (fn [m d] (update m d (fnil conj #{}) [:load f])) rb loads)
+                     (reduce (fn [m d] (update m d (fnil conj #{}) [:spawn f])) rb spawns))
+                   (into unresolved (map (fn [t] {:from f :target t}) (sort (:unresolved spawn))))
+                   (into non-bb (:non-bb spawn)))))
+        {:closure visited
+         :reached-by (select-keys reached-by visited)
+         :unresolved unresolved
+         :non-bb non-bb}))))
 
 (defn resolve-daemon-executed-paths
   "BFS closure of (load-file ...) dependencies starting from `entrypoints`
@@ -87,18 +233,17 @@
    entrypoints themselves. A filename `read-file` cannot read is still
    included in the result (its own drift check reports :unknown rather than
    silently vanishing from the set - see check-master-checkout-drift!) but
-   contributes no further edges, since its dependencies can't be discovered."
+   contributes no further edges, since its dependencies can't be discovered.
+
+   BL-1022: this deliberately still follows LOAD edges only. Widening what the
+   master-checkout DRIFT check compares against main is a different decision
+   from widening what the subprocess-API ban covers, and only the latter is
+   this ticket. Callers that want spawn edges too use
+   resolve-daemon-reachability directly."
   [{:keys [entrypoints read-file]}]
-  (loop [frontier (set entrypoints)
-         visited #{}]
-    (if-let [next-file (first frontier)]
-      (if (contains? visited next-file)
-        (recur (disj frontier next-file) visited)
-        (let [content (read-file next-file)
-              deps (if content (extract-load-file-basenames content) #{})]
-          (recur (into (disj frontier next-file) deps)
-                 (conj visited next-file))))
-      visited)))
+  (:closure (resolve-daemon-reachability
+              {:entrypoints entrypoints :read-file read-file :edge-kinds #{:load}})))
+
 
 ;; ── pure: per-file drift classification ─────────────────────────────────────
 
