@@ -559,6 +559,7 @@ const DOMAINS = [
   require('./bl1021SubprocessOutlivesWaitBoundSteps'),
   require('./bl582ApprovalTapObservableSteps'),
   require('./bl1025ExpediteApprovalSatisfiesGateSteps'),
+  require('./bl1018SingleRoleRepairNeverKillsServerSteps'),
   require('./bl984SweepStaleFixturesSteps'),
   require('./bl979PipelineBoardTicketRowsSteps'),
   require('./bl990BounceAttributionCorrectableSteps'),

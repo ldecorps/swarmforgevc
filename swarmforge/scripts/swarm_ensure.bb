@@ -56,6 +56,9 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
+;; BL-1018: the ONE definition of what a single-role repair may resolve to,
+;; shared with babysitter_check.bb's own ensure-role-session!.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "single_role_repair_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
@@ -220,29 +223,41 @@
   ([] (provider-respawn-env-args nil))
   ([role] (provider-respawn-env-lib/provider-respawn-env-args state-dir role)))
 
-(defn respawn-role! [socket role session]
+;; BL-1018: WHAT to run comes from single-role-repair-lib (pure, one
+;; definition); this only RUNS it. `session-present?` is the observed state,
+;; read once by the caller - the resolver never looks at tmux itself.
+(defn- run-single-role-repair! [socket role session session-present?]
   (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
-        env-args (provider-respawn-env-args role)
-        cmd (concat ["tmux" "-S" socket "respawn-pane" "-k"]
-                    env-args
-                    ["-t" session (str "zsh '" launch-script "'")])]
-    (apply process/sh {:continue true} cmd)))
+        {:keys [status commands]}
+        (single-role-repair-lib/resolve-single-role-repair
+         {:socket socket
+          :role role
+          :session session
+          ;; Passed unconditionally, as this path always did - whether the
+          ;; script exists on disk is not this ticket's question, and making
+          ;; it one would silently stop repairing panes whose launch script
+          ;; the fixture (or a mid-launch host) has not written yet.
+          :launch-script (str launch-script)
+          :env-args (provider-respawn-env-args role)
+          :session-present? session-present?})]
+    (if (not= :ok status)
+      {:exit 1 :err (str "single-role repair refused: " (name status))}
+      (reduce (fn [_ cmd] (apply process/sh {:continue true} cmd)) nil commands))))
 
-(defn create-session! [socket session]
-  (process/sh {:continue true}
-              "tmux" "-S" socket "new-session" "-d" "-s" session "-n" "swarm"))
+(defn respawn-role! [socket role session]
+  (run-single-role-repair! socket role session true))
 
 (defn kill-session! [socket session]
   (process/sh {:continue true}
               "tmux" "-S" socket "kill-session" "-t" session))
 
 (defn ensure-standing-role!
-  "Create the session if missing, then respawn the launch script into it."
+  "BL-1018: ONE resolved command either way - a missing session is created
+   WITH its launch command, a present one is respawned in place. Never the
+   create-then-respawn-into-it sequence that took the pack tmux server down on
+   2026-08-21 (BL-958's hazard class)."
   [socket role session]
-  (when-not (session-exists? socket session)
-    (create-session! socket session)
-    (Thread/sleep 250))
-  (respawn-role! socket role session))
+  (run-single-role-repair! socket role session (boolean (session-exists? socket session))))
 
 ;; ── daemon component ─────────────────────────────────────────────────────────
 
@@ -853,7 +868,8 @@
         ;; BL-958 D1: the recovery decision GATES the repair loop - under
         ;; :halt (control plane missing, no persisted launch scripts) the
         ;; per-role loop must not run at all: ensure-standing-role!'s
-        ;; create-session! would restart the bare tmux server, the re-probe
+        ;; session create (BL-1018: now the resolver's new-session, formerly
+        ;; create-session!) would restart the bare tmux server, the re-probe
         ;; would answer, and the report would claim FIXED while every role
         ;; is dead - exactly invariant 2's forbidden half-alive state.
         halt? (halt-decision? (:decision cp-state))

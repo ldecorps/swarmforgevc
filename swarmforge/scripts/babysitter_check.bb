@@ -30,6 +30,8 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "babysitterd_sweep_lib.bb")))
+;; BL-1018: the ONE definition of what a single-role repair may resolve to.
+(load-file (str (fs/path script-dir "single_role_repair_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
@@ -695,24 +697,31 @@
 ;; Scope: this recreates ONE session. It is deliberately not start-swarm.sh,
 ;; whose eight-session sweep is the disproportionate action this ticket exists
 ;; to avoid.
+;; BL-1018: WHAT to run is resolved by single-role-repair-lib (pure, one
+;; definition, shared with swarm_ensure.bb) and only RUN here. The old shape -
+;; bare create, sleep, then respawn-pane into it - is the exact sequence that
+;; took the whole pack tmux server down on 2026-08-21; a missing session is now
+;; created WITH its command and never respawned into.
 (defn ensure-role-session! [socket role session]
-  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))]
-    (cond
-      (nil? socket) {:status :no-socket}
-      (str/blank? (str session)) {:status :no-session-name}
-      (not (fs/exists? launch-script)) {:status :no-launch-script :detail (str launch-script)}
-      :else
-      (do
-        (when-not (pane-exists? socket session)
-          (sh! "tmux" "-S" socket "new-session" "-d" "-s" session "-n" "swarm")
-          (Thread/sleep 250))
-        (let [env-args (provider-respawn-env-lib/provider-respawn-env-args (str state-dir) role)
-              r (apply sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
-                                   env-args
-                                   ["-t" session (str "zsh '" launch-script "'")]))]
-          (if (zero? (:exit r))
-            {:status :repaired}
-            {:status :failed :detail (str/trim (str (:err r)))}))))))
+  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+        {:keys [status commands]}
+        (single-role-repair-lib/resolve-single-role-repair
+         {:socket socket
+          :role role
+          :session session
+          ;; An absent launch script is a refusal, not a repair against a
+          ;; script that is not there - checked here because existence is I/O.
+          :launch-script (when (fs/exists? launch-script) (str launch-script))
+          :env-args (provider-respawn-env-lib/provider-respawn-env-args (str state-dir) role)
+          :session-present? (pane-exists? socket session)})]
+    (if (not= :ok status)
+      (if (= :no-launch-script status)
+        {:status status :detail (str launch-script)}
+        {:status status})
+      (let [r (reduce (fn [_ cmd] (apply sh! cmd)) nil commands)]
+        (if (zero? (:exit r))
+          {:status :repaired}
+          {:status :failed :detail (str/trim (str (:err r)))})))))
 
 (defn read-streak []
   (if (fs/exists? streak-file)
