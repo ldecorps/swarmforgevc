@@ -84,6 +84,15 @@ test('BL-1015: the envelope is 3 files and 120 lines, derived from BL-634 rather
   assert.deepEqual(SIZE_ENVELOPE, { files: 3, lines: 120 });
 });
 
+test('BL-1015: PROPOSAL_PATH is exactly .swarmforge/boy-scout/proposal.json, not merely "wherever the constant points"', () => {
+  // A test that only ever compares PROPOSAL_PATH against itself (e.g. "the
+  // seam read from PROPOSAL_PATH") can never catch a mutation to one of its
+  // OWN path segments - the mutated build would still read from "wherever
+  // PROPOSAL_PATH points now" and pass. Pin the literal segments here,
+  // independently of the constant under test.
+  assert.equal(PROPOSAL_PATH, path.join('.swarmforge', 'boy-scout', 'proposal.json'));
+});
+
 test('BL-1015: exceedsEnvelope names every dimension that blew, not just the first', () => {
   assert.deepEqual(exceedsEnvelope({ files: 1, lines: 40 }, SIZE_ENVELOPE), []);
   assert.deepEqual(exceedsEnvelope({ files: 3, lines: 120 }, SIZE_ENVELOPE), [],
@@ -134,6 +143,32 @@ test('BL-1015: suffix trimming stops at the SHORTER side\'s bound too', () => {
   assert.equal(countChangedLines('p\nx\nx\nx', 'q\nx'), 4, 'no common prefix at all, so the whole of both sides differ');
 });
 
+test('BL-1015: suffix trimming must not walk PAST the prefix boundary, even when content repeats', () => {
+  // `a` is entirely consumed as the common prefix (start === a.length), so
+  // there is nothing left of `a` for the suffix scan to legitimately trim.
+  // `b`'s LAST line happens to equal that same prefix line ('SAME') by
+  // coincidence - a suffix guard that forgot to stop at `start` would keep
+  // matching backward past the boundary anyway, treating the prefix's own
+  // 'SAME' as if it were more shared suffix, and silently swallow one line
+  // of `b`'s real addition ('Q').
+  assert.equal(countChangedLines('SAME', 'SAME\nQ\nSAME'), 2,
+    'both "Q" and the second "SAME" are additions; the guard must stop suffix trimming exactly at the prefix boundary');
+});
+
+test('BL-1015: a common prefix AND a common suffix each big enough alone to force the LCS cap, if either trim is skipped', () => {
+  // Disabling EITHER trim independently (leaving the untrimmed side's full
+  // bulk in the "differing middle") must still cross LCS_CELL_CAP on its
+  // own - proving neither trim is optional for staying both cheap AND
+  // correct on a file this large, not just as a joint optimization.
+  const N = 2200;
+  const prefix = Array.from({ length: N }, (_, i) => `PRE_${i}`);
+  const suffix = Array.from({ length: N }, (_, i) => `SUF_${i}`);
+  const before = [...prefix, 'MID_A1', 'MID_A2', ...suffix].join('\n');
+  const after = [...prefix, 'MID_B1', 'MID_B2', ...suffix].join('\n');
+  assert.equal(countChangedLines(before, after), 4,
+    'only the 2-line middle differs; skipping either trim would report thousands of lines changed instead');
+});
+
 test('BL-1015: the interior LCS genuinely walks the whole DP table, not just the trimmed edges', () => {
   // Prefix/suffix trim strip 'p' and 'q'; the interior ['A','B','C'] vs
   // ['B','A','D'] cannot be resolved by trimming alone - it needs the real
@@ -141,6 +176,16 @@ test('BL-1015: the interior LCS genuinely walks the whole DP table, not just the
   // Math.min) to find the true best common subsequence (length 1: at most
   // one of A or B, never both, since their order is swapped).
   assert.equal(countChangedLines('p\nA\nB\nC\nq', 'p\nB\nA\nD\nq'), 4);
+});
+
+test('BL-1015: the LCS recurrence walks EVERY row of `a`, including the last one', () => {
+  // An off-by-one outer bound (`i < a.length` instead of `i <= a.length`)
+  // would silently drop `a`'s LAST line from the DP table. That only shows
+  // up when the dropped line is the one that matches something in `b` -
+  // 'm' here matches at a DIFFERENT position in `b`, so skipping it changes
+  // the best common subsequence found, not just which row computed it.
+  assert.equal(countChangedLines('PRE\np\nm\nSUF', 'PRE\nm\nq\nSUF'), 2,
+    'the trailing "m" is common (length-1 LCS via a mid-array match), not just the endpoints');
 });
 
 test('BL-1015: the LCS cell cap is a strict >, not >=  - EXACTLY at the cap still runs the real (cheaper, correct) LCS', () => {
@@ -657,6 +702,17 @@ test('BL-1015: a throw from the gate set restores the tree rather than leaving i
   assert.equal(files.get('a.ts'), 'old\n', 'never partially applied, even when the run itself fails');
 });
 
+test('BL-1015: a throw from the commit itself restores the tree rather than leaving the edit applied uncommitted', () => {
+  const { env, files } = harness({
+    ranked: [item('a.ts', 3)],
+    files: { 'a.ts': 'old\n' },
+    proposal: { subject: 'a.ts', summary: 's', edits: [{ path: 'a.ts', after: 'new\n' }] },
+  });
+  const boom = { ...env, commit: () => { throw new Error('git commit crashed'); } };
+  assert.throws(() => boyScoutRun('/root', boom), /git commit crashed/);
+  assert.equal(files.get('a.ts'), 'old\n', 'a commit that throws must not leave the gated edit sitting uncommitted on disk');
+});
+
 // ── scenario 06: never silently empty ─────────────────────────────────────
 
 test('BL-1015: an empty inventory states why nothing was cleaned', () => {
@@ -975,6 +1031,23 @@ test('BL-1015 report: a no-cleanup-proposed refusal names the subject, with and 
   );
 });
 
+test('BL-1015 report: a reason outside the declared set renders the defensive fallback, not a crash', () => {
+  // Unreachable by construction in a real run - every no-clean path sets a
+  // declared reason - but explain()'s dispatch-table lookup must still
+  // handle a missing key defensively rather than throwing. Bypasses the
+  // NoCleanReason type deliberately (this is a plain JS test file) to
+  // exercise the fallback directly.
+  const result = {
+    outcome: 'refused', reason: 'not-a-declared-reason', subject: 'a.ts', summary: null,
+    measured: { files: 0, lines: 0 }, envelope: { files: 3, lines: 120 }, exceeded: [],
+    editedPaths: [], committed: false, gate: null, ranked: 1, detail: null,
+  };
+  assert.ok(
+    renderRunReport(result).includes('no reason was recorded, which is itself a defect'),
+    'a reason the formatter table does not know must fall back, not throw'
+  );
+});
+
 // ── the declared gate set ─────────────────────────────────────────────────
 
 test('BL-1015: the gate set is the repository\'s existing one, declared in one place', () => {
@@ -1218,6 +1291,21 @@ test('BL-1015: a path git already tracks is never staged - the partial commit re
   );
 });
 
+test('BL-1015: the trailing empty segment after a null-terminated git ls-files reply is never treated as a tracked path', () => {
+  // `git ls-files -z` NULL-terminates every entry, so splitting on '\0'
+  // always leaves one trailing empty string in the array - the filter
+  // exists to drop exactly that artifact. Pass an actual empty-string path
+  // to observe it: unfiltered, that stray '' would land in `tracked` and
+  // make this genuinely-untracked path look tracked, skipping `git add`.
+  const spawned = [];
+  commitEdits('/repo', 'm', [''], (command, args, cwd) => {
+    spawned.push({ command, args, cwd });
+    return { status: 0, output: '' };
+  });
+  assert.deepEqual(spawned.map((s) => s.args[0]), ['ls-files', 'add', 'commit'],
+    'the empty-string path is genuinely untracked (git ls-files replied with nothing) and must still be staged');
+});
+
 test('BL-1015: a failed commit takes back exactly the staging it did, and nothing else', () => {
   // The undo is scoped to the paths THIS function staged - the ones git did
   // not already track. Unstaging a tracked path would throw away whatever the
@@ -1311,6 +1399,23 @@ test('BL-1015: unstage short-circuits on an empty path list rather than spawning
     /git commit failed/
   );
   assert.ok(!spawned.some((a) => a[0] === 'reset'), 'nothing was staged by this run, so nothing should be reset');
+});
+
+test('BL-1015: the empty-path-list unstage shortcut reports SUCCESS, not a phantom failure', () => {
+  // Nothing was staged (the one edited path was already tracked), so there is
+  // nothing to unstage. If that shortcut ever reported failure, a totally
+  // untouched index would get an incorrect "could not unstage" warning
+  // appended onto the real commit failure below.
+  assert.throws(
+    () =>
+      commitEdits('/repo', 'm', ['src/tracked.ts'], (_c, args) => {
+        if (args[0] === 'ls-files') return { status: 0, output: 'src/tracked.ts\0' };
+        if (args[0] === 'commit') return { status: 1, output: 'refused' };
+        return { status: 0, output: '' };
+      }),
+    (err) => err.message === 'git commit failed: refused',
+    'no WARNING suffix - nothing was staged, so the unstage trivially succeeded'
+  );
 });
 
 test('BL-1015: a successful unstage leaves NO warning suffix at all - the empty string, not a placeholder', () => {
