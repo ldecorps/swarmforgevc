@@ -10,7 +10,7 @@ depends_on: []
 mutation_cost: high
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted 2026-08-22 by operator Let's Talk ask: add any ticket that helps a
   Cursor agent work as a swarm model. This drains the archived ACP spike
