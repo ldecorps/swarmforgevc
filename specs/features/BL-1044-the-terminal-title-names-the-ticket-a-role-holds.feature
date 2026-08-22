@@ -20,6 +20,11 @@ Feature: The terminal title names the ticket its own pane holds
   abandoned parcel, or an id merely named somewhere else. The purpose is a
   human glancing across windows to see who is doing what.
 
+  A title bar is narrow, and narrower still with several windows tiled
+  across one screen, so the fields have a drop order: the role and the ticket
+  number survive longest, elapsed time next, and the slug shortens and then
+  disappears before either.
+
   Background:
     Given a seat running in its own tmux window, with its own mailbox
 
@@ -85,12 +90,27 @@ Feature: The terminal title names the ticket its own pane holds
     And neither names the ticket the other seat holds
 
   # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-08
+  Scenario Outline: the title drops its least important field first as width shrinks
+    Given the seat holds a parcel and has held it for a measurable time
+    When the window title is composed for a width of <width>
+    Then it shows <fields>
+    And the ticket number is never shown partly truncated
+
+    Examples:
+      | width      | fields                                    |
+      | generous   | seat, ticket number, slug and elapsed     |
+      | reduced    | seat, ticket number, shortened slug and elapsed |
+      | narrow     | seat, ticket number and elapsed           |
+      | very narrow| seat and ticket number                    |
+      | minimal    | seat only                                 |
+
+  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-09
   Scenario: the composed title reaches the terminal's own title bar
     Given the seat holds a parcel
     When the window title is composed
     Then the terminal running that window reports the same title
 
-  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-09
+  # BL-1044 the-terminal-title-names-the-ticket-a-role-holds-10
   Scenario: the agent's own pane title is left alone
     Given the seat holds a parcel
     And the agent inside the pane rewrites its pane title

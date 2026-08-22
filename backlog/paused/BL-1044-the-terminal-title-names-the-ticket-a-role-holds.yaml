@@ -94,9 +94,12 @@ description: |
   - `buildBadgeMap(items, targetPath)` -> role -> `{ id, summary,
     extraCount?, heldTicketIds }`, resolving the holder through
     `swarmState.findLiveHolder`.
-  - `truncateSummary(title)` - **the small slug is already written**: strips
-    a leading `... — ` section prefix and truncates at
-    `SUMMARY_MAX_LENGTH = 40` with an ellipsis.
+  - `truncateSummary(title)` - the slug SHAPE (strip a leading `... — `
+    section prefix, then truncate with an ellipsis). Reuse the shape, **not
+    its `SUMMARY_MAX_LENGTH = 40`**: that budget was sized for a tile, and a
+    title bar is far narrower - narrower still with six windows tiled three
+    across, as the operator runs them. The title needs its own, much smaller
+    slug budget.
   - `extraCount` (BL-068) - set when a tile's role holds MORE THAN ONE active
     parcel, which is normal for the batch roles (cleaner, hardender). A
     title that assumed one ticket per pane would silently drop the rest, the
@@ -108,6 +111,34 @@ description: |
 
   Explicitly NOT wanted: `extension/src/panel/ticketColors.ts` (BL-139) and
   its per-ticket palette and rainbow segments. A title bar is text.
+
+  ## Elapsed time, and what to drop when it will not fit
+
+  Operator: *"+ elapsed time if you think it can fit"*. It fits, and it is
+  probably the most useful field of the four - it is what turns "who is doing
+  what" into "who is STUCK". Live right now: QA's in_process parcel carries
+  `dequeued_at: 2026-08-22T07:24:20Z`, so at 07:56 its title would read 32m
+  on BL-1011 - a fact no other surface puts in front of a glancing human.
+
+  The clock: `now - dequeued_at` from the held handoff's own header (present
+  on every parcel, alongside `created_at`/`enqueued_at`). For an idle pane,
+  time since the last item completed; the honest available signal there is
+  the completed entry's own timestamp, so use that rather than inventing a
+  field. Render compactly - `32m`, `2h`, `3d`, not `32 minutes`.
+
+  **Because it will not always fit, the fields have a drop order**, and that
+  order is the spec's real content here. Widest to narrowest:
+
+      Coder 1035 startup-grace 32m
+      Coder 1035 startup-gr… 32m
+      Coder 1035 32m
+      Coder 1035
+      Coder
+
+  Role first (it is what identifies the window in a window list), then the
+  ticket number, then elapsed, and the slug shortens and then disappears
+  before either. Never truncate mid-number: a half-printed ticket id is worse
+  than an absent one.
 
   ## How (direction, not mandate)
 
@@ -168,9 +199,20 @@ qa_e2e_procedure: >
   8. Confirm no per-OS code was written - the change should be a tmux option
      plus a rename, with no platform branch anywhere in the diff.
 
-  9. Confirm the slug logic was reused, not re-implemented: the diff should
-     reach `truncateSummary`/`buildBadgeMap` rather than carry a second
-     title-shortening routine, and should not pull in `ticketColors.ts`.
+  9. Confirm the derivation was reused, not re-implemented: the diff should
+     reach `buildBadgeMap` rather than carry a second holder-resolution
+     routine, and should not pull in `ticketColors.ts`. It may legitimately
+     carry its OWN slug budget - `SUMMARY_MAX_LENGTH = 40` is a tile budget,
+     not a title-bar one.
+
+  10. Confirm elapsed against a real parcel: read `dequeued_at` from a held
+     handoff, compare with the clock, and confirm the title's elapsed figure
+     matches to the rendering precision. QA's live parcel is a worked
+     example - `dequeued_at: 07:24:20Z`, so at 07:56 it reads 32m.
+
+  11. Confirm the drop order by narrowing the window through each step of the
+     ladder in the description, and confirm the ticket NUMBER is never shown
+     half-truncated at any width.
 
 approval_context: >
   Your ask, from the six-window screenshot: put the ticket in the terminal
@@ -235,18 +277,24 @@ notes: |
 
   ## IR-DRY judgment recorded
 
-  11 findings -> 7. One was real drift: scenario 04 said "it names the ticket
-  the seat handled" where scenario 02 said "it names the last ticket the seat
-  acted on" for the same assertion; normalized to the latter.
+  8 findings, all kept. They are polarity pairs the checker cannot read as
+  negation (holds / holds no, names the ticket / names no ticket, has acted
+  before / has never acted) and arity contrasts (one seat versus a second
+  seat of the same stage; one parcel versus several). In both families the
+  distinction IS the behaviour under test, so collapsing them would erase
+  what the scenarios exist to say. One earlier finding was real drift and was
+  fixed: scenario 04 phrased the same assertion two ways.
 
-  The remaining 7 are polarity pairs the checker cannot read as negation
-  (holds / holds no, names the ticket / names no ticket, has acted before /
-  has never acted) and arity contrasts (one seat versus a second seat of the
-  same stage; one parcel versus several). In both families the distinction IS
-  the behaviour under test - the three title states and the per-pane
-  isolation - so collapsing them would erase what the scenarios exist to say.
+  ## On the scenario count, since it is past a sharp handful
 
-  Nine scenarios is past "a sharp handful", and that is deliberate: five of
-  them (act-based idle, abandoned exclusion, batch multi-parcel, two seats,
-  never-acted) came from operator clarifications or from the tiles logic they
-  pointed at. Dropping one would drop a case that was explicitly raised.
+  Ten scenarios, deliberately. Six of them came directly from operator
+  clarifications or from the tiles logic they pointed at - act-based idle,
+  abandoned exclusion, batch multi-parcel, two seats, never-acted, and the
+  width drop ladder. Dropping any would drop a case that was explicitly
+  raised.
+
+  It stays INVEST-Small because the count measures the CONTRACT, not the
+  build: a tmux option, a small per-seat reader, and one pure formatter with
+  a five-step degradation ladder. A pure formatter is exactly where many
+  cheap scenarios belong. If the architect still judges it oversized, the
+  natural cut is the formatter as its own slice, with the tmux wiring second.
