@@ -231,4 +231,30 @@ source: |
   finding from that read, cross-checked against the live probe the intake
   already recorded.
 
+  ## Spec amended in flight 2026-08-22 - bookkeeping only, nothing to rebuild
+
+  Scenario 03 lost two Examples rows (`window-size`, `both`) and is now a plain
+  Scenario over the surviving knob, and the Feature narrative was re-tensed to
+  say so. Reported by the coder as note
+  `00_20260822T211409Z_000819_from_coder_to_specifier`: "BL-1069 scn03: 2 rows
+  now vacuous + runner reseeds per run."
+
+  Cause: BL-1075 (coder commit 37e12a71e) removed `window-size largest` from
+  both hardening halves - `swarmforge/scripts/swarmforge.sh`'s
+  `harden_tmux_server` and `control_plane_lib/harden-server!`. Nothing sets
+  that option any more, so a fake tmux that REJECTS it is never asked to, and
+  the row passed whether or not the code handled a rejection. Vacuous, not red:
+  the mirror image of BL-1006's stale-assertion case and just as much the
+  successor slice's job to retire. `both` went with it - with one knob left it
+  names nothing. The scenario's property is unchanged and still gated by
+  `focus-events`, which survives in both halves.
+
+  The coder's second clause is why this had to happen in the feature file:
+  `specs/pipeline/generated/` is gitignored and rebuilt from the `.feature` on
+  every run, so a downstream edit would be reseeded away.
+
+  No code change, no new scenarios, no new step handlers - `KNOWN_OPTIONS` in
+  `bl1069TmuxServerVersionSteps.js` may keep its wider set, which only guards
+  against unknown values. Merge `main` and re-read before hardening.
+
 assigned_to: coder
