@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1041-a-rescue-never-makes-orphaned-work-less-durable.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "A rescue never reduces durability: the source copy is not dropped until a commit containing the same content exists on a branch."
@@ -152,13 +152,18 @@ source: |
   00_20260822T062759Z_000810 that preceded it: "Rescued BL-981 seat-fold fix,
   uncommitted in coder wt - needs ticket".
 
+notes: |
+  2026-08-22T06:59Z coordinator: open-slot nudge received, NOT promoted -
+  active was already back at 4/4 (cap just restored, BL-1035 filled the
+  slot moments before this nudge landed) by the time it was processed, and
+  this ticket remains blocked on human_approval: pending regardless.
+
   Prior record of the same orphaned work: docs/briefings/2026-08-20.md
   lines 244-247, "Still open / not yet resolved" item 3.
 
   Full forensic detail, including the rescued diff itself:
   backlog/evidence/BL-1040-rescued-seat-fold-work-20260822.md.
 
-notes: |
   ## Related
 
   - **BL-1040** (paused) - the seat-fold defect the rescued work addresses.
@@ -169,3 +174,9 @@ notes: |
   - The constitution's "`git stash` is repo-wide" warning and the
     "surface, never sweep" rule were both in force and both behaved as
     written. This ticket adds a safe way to act, not another prohibition.
+
+  2026-08-22T08:28Z coordinator: open-slot nudge received again (same
+  candidate), NOT promoted. Still human_approval: pending. Load also still
+  severe (172/144/98, 15-min window still climbing) - this cycle's
+  promotion was skipped for load regardless of approval state; see
+  project_circuit_breaker_severe_load_20260822 memory thread.

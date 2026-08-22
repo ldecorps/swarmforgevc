@@ -160,3 +160,5 @@ notes: |
   3.5 circuit breaker, sustained host load 110-150 avg on 4 cores) - see
   project_circuit_breaker_severe_load_20260822 memory thread. Even once
   approved, this ticket cannot promote until that throttle is lifted.
+
+assigned_to: coder

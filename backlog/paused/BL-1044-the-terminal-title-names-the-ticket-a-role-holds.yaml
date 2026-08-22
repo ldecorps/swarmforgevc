@@ -1,0 +1,175 @@
+id: BL-1044
+title: "A glance at six terminal windows says which role each is, never which ticket it holds: put the ticket in the tmux window name so it reaches the OS title bar"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: swarmforge-console
+assigned_to: none
+priority: 30
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1044-the-terminal-title-names-the-ticket-a-role-holds.feature
+human_approval: pending
+
+invariants:
+  - "The window name is SwarmForge's slot alone: nothing running inside the pane can change it, and the title updater never writes the pane title the agent already owns."
+  - "A title is never stale-but-plausible: a role holding nothing shows its last cleared ticket in a visibly cleared form, never in the held form."
+
+description: |
+  ## What
+
+  Each agent runs in its own terminal window. The title bar reads
+  `swarmforgevc — tmux -S ~/projects/swarmforgevc/.swarm...` in every one of
+  them, so six windows are indistinguishable at a glance, and the tmux status
+  line names only the role (`Coordinator`, `Specifier`, ...).
+
+  Put the ticket there: role plus the ticket number **without the `BL-`
+  prefix** plus a short slug. When the role holds nothing, show the last
+  ticket it cleared, in a form that reads as cleared rather than held.
+
+  ## Where it goes, and why not the obvious place
+
+  Not the pane title. The screenshot's `"* Handoff mail ready "`,
+  `"Role loop initializ"` and friends are **Claude Code's own** OSC title
+  updates, captured by tmux as `pane_title`. Anything written there is
+  overwritten on the agent's next turn, and writing over it would also
+  destroy a signal the operator is already reading.
+
+  The **tmux window name** is the free slot, and it is already SwarmForge's:
+  `swarmforge.sh:1047` renames the window and then sets
+  `allow-rename off`, so no in-pane escape can touch it. That is why the
+  window name stays `Coordinator` while the pane title churns.
+
+  ## Reaching the OS title bar, on every OS, with no per-OS code
+
+  tmux's own `set-titles on` + `set-titles-string` emits the standard OSC
+  title sequence to the OUTER terminal. macOS Terminal, iTerm2,
+  gnome-terminal, konsole, xterm and VS Code's terminal all honour it, so
+  "and other OSes" needs no branch: it is a terminal-level convention, not
+  an OS-level API. Nothing Windows-specific is written or needed.
+
+  ## Where the data already is
+
+  Do not invent a second sweep. `pipeline_stage_cli.bb`'s `compute-stage-map`
+  already derives exactly this from each role's `in_process` mailbox and
+  writes `.swarmforge/board/ticket-stage-map.json`, currently e.g.
+
+      {"BL-1035":"coder","BL-1014":"cleaner","BL-1011":"hardender","BL-1010":"QA"}
+
+  The slug is already in the handoff's own `task:` header - e.g.
+  `task: BL-1035-a-respawned-bot-gets-its-own-startup-grace`. The last
+  cleared ticket is the newest `task:`-bearing file in the role's
+  `inbox/completed/`.
+
+  ## How (direction, not mandate)
+
+  A small updater run from the daemon's existing poll cycle, consuming the
+  stage map rather than re-deriving it, and renaming windows via
+  `tmux rename-window` (an external command - unaffected by
+  `allow-rename off`). Exact separator, marker for the cleared form, and
+  slug budget are the implementer's call; a title bar truncates, so the slug
+  needs a bound rather than the whole task name.
+
+  ## Out of scope
+
+  - The pane title, and `allow-rename`. Both stay exactly as they are.
+  - The tmux status-line format, the dashboard, and the holistic UI.
+  - Any new state file, sweep, or telemetry. This reads what exists.
+  - Windows support.
+
+qa_e2e_procedure: >
+  1. With the swarm running and at least one role holding a parcel, read the
+     macOS Terminal window title for that role's window. Confirm the defect
+     first at the parent commit: it names the socket path, not the ticket.
+
+  2. At the parcel commit, confirm the same window's title names the role,
+     the ticket number WITHOUT the `BL-` prefix, and a slug.
+
+  3. Cross-check against the source of truth: read
+     `.swarmforge/board/ticket-stage-map.json` and confirm the ticket in each
+     window's title matches the stage that map assigns it.
+
+  4. Confirm the idle form: pick a role holding nothing and confirm its title
+     shows its last cleared ticket in the cleared form, visibly different
+     from a held one. Verify that ticket against the newest `task:`-bearing
+     file in that role's `inbox/completed/`.
+
+  5. Confirm the never-held case, which is live today: the cleaner's
+     `inbox/completed/` is empty, so its title must show the role alone and
+     must not invent a ticket.
+
+  6. Confirm the two do not fight: watch a pane through several agent turns
+     and confirm the pane title keeps churning with the agent's own messages
+     while the window name stays put.
+
+  7. Confirm it survives a handoff: forward a parcel and confirm both the
+     sending and receiving windows update within one daemon poll cycle.
+
+  8. Confirm no per-OS code was written - the change should be a tmux option
+     plus a rename, with no platform branch anywhere in the diff.
+
+approval_context: >
+  Your ask, from the six-window screenshot: put the ticket in the terminal
+  title, number without the `BL-` prefix plus a small slug, and show the last
+  cleared ticket when idle. Kept deliberately small.
+
+
+  ONE FINDING THAT SHAPED IT. The obvious place - the pane title - is already
+  taken. The `"* Handoff mail ready "` and `"Role loop initializ"` strings in
+  your screenshot are Claude Code's own title updates, and anything written
+  there gets overwritten on the agent's next turn. The tmux WINDOW name is
+  free and is already SwarmForge's: `swarmforge.sh` sets `allow-rename off`
+  right after naming it, which is exactly why it still reads `Coordinator`
+  while the pane title churns. So this goes in the window name, and tmux's
+  own `set-titles` carries it out to the real title bar.
+
+
+  THE GOOD NEWS ON "AND OTHER OSES". There is nothing per-OS to write. The
+  title bar is driven by a standard terminal escape sequence that macOS
+  Terminal, iTerm2, gnome-terminal, konsole and xterm all honour, and tmux
+  emits it for us. I made "no platform branch in the diff" a QA check rather
+  than a hope.
+
+
+  ONE CALL OF MINE. **I left the exact format to the implementer** - separator,
+  how "cleared" is marked, how many characters of slug. A title bar truncates
+  and the right budget is something you see rather than specify, so pinning it
+  in the ticket would just invite a second ticket to re-tune it. If you have a
+  format in mind, say it and I will pin it.
+
+source: |
+  Operator, 2026-08-22, in-chat with a screenshot of six agent terminal
+  windows: "write little spec to change text in the macos (and other os)
+  terminal title bar to show which ticket the agent is working on, (ticket
+  number without BL prefix is fine + small slug). if it's idle, show the last
+  ticket it cleared."
+
+notes: |
+  ## Facts confirmed live while scoping
+
+  - `swarmforge/scripts/swarmforge.sh:1047` renames the window, then sets
+    `allow-rename off` on it - the window name is already an owned slot.
+  - `.swarmforge/board/ticket-stage-map.json` currently holds
+    `{"BL-1035":"coder","BL-1014":"cleaner","BL-1011":"hardender","BL-1010":"QA"}`.
+  - `task:` headers carry the slug already, e.g.
+    `BL-1035-a-respawned-bot-gets-its-own-startup-grace`.
+  - Completed-mailbox counts differ wildly by role (coder 623, architect 542,
+    documenter 489, QA 307, hardender 4, **cleaner 0**). The cleaner's empty
+    one is why the never-held case is a real scenario and not a hypothetical.
+
+  ## Related
+
+  - **BL-1040** (paused) - folds seat ids onto their stage in that same stage
+    map. A title built from the map inherits the fix for free; nothing here
+    needs to handle `coder@sonnet2` itself.
+
+  ## IR-DRY judgment recorded
+
+  4 findings, all kept. Every one is a polarity pair the checker cannot see
+  as negation - holds a parcel / holds no parcel, names the ticket / names no
+  ticket, has cleared before / has never cleared - and those contrasts are
+  exactly what the three title states are. Nothing here is accidental drift.
+
