@@ -11,8 +11,8 @@ severity: medium
 # and should be fixed first.
 status: todo
 epic: swarm-reliability
-priority: 45
-direction: swarm-reported
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -154,3 +154,5 @@ notes: |
 
   No `required_wiring:` is declared: `build-freshness-transition` is already
   called from `check-one!`, so there is no new call site to pin.
+
+assigned_to: coder
