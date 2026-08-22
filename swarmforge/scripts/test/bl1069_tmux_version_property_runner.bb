@@ -144,8 +144,18 @@
 
 ;; ── P1: the verdict is the SERVER's, and a client can never rescue it ─────
 
+;; ONE generator per loop, advanced across every run - NOT a fresh one
+;; seeded per run index. A fresh LCG seeded `base + i*stride` returns a
+;; near-constant FIRST draw for a small modulus (this is what BL-1057's and
+;; BL-991's own property runners hit and fixed this same day): `client`
+;; here is the very first draw of this loop's rng, so a per-run reseed
+;; would pin it near-constant across all 40 runs even though the aggregate
+;; warned/silent floors still pass - exactly the kind of per-position gap
+;; an aggregate floor cannot see.
+(def rng-p1 (make-rng 4409))
+
 (doseq [run-index (range runs)]
-  (let [rng (make-rng (+ 4409 (* run-index 7919)))
+  (let [rng rng-p1
         client (versions (rng (count versions)))
         server (if (zero? (rng 5)) "none" (versions (rng (count versions))))
         root (str (fs/path temp-root (str "p1-" run-index)))
@@ -160,6 +170,7 @@
 
     (when (and (not= "none" server) (version-lt? server safe-floor) (not (version-lt? client safe-floor)))
       (bump! :incident-pairing))
+    (when (= "none" server) (bump! (keyword (str "no-server-client-" client))))
     (when (and (= "3.7b" measured)) (bump! :near-miss-letter))
     (when (contains? #{"3.10" "3.9"} measured) (bump! :near-miss-numeric))
     (bump! (if warned? :warned :silent))
@@ -186,8 +197,12 @@
 
 ;; ── P2: preferring never lowers the version in use ───────────────────────
 
+;; Same fix, same reason - one generator advanced across this loop's own 40
+;; runs, not reseeded per run index.
+(def rng-p2 (make-rng 8821))
+
 (doseq [run-index (range runs)]
-  (let [rng (make-rng (+ 8821 (* run-index 6733)))
+  (let [rng rng-p2
         local (if (zero? (rng 6)) "absent" (versions (rng (count versions))))
         on-path (if (zero? (rng 6)) "none" (versions (rng (count versions))))
         root (str (fs/path temp-root (str "p2-" run-index)))

@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T22:25:22.995489529Z","feature_name":"every respawn path's launch argument survives a quote-bearing install path","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1029-respawn-launch-argument-survives-a-quoted-path.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: every respawn path's launch argument survives a quote-bearing install path
 
   BL-1029: tmux hands a respawn-pane's trailing argument to `$SHELL -c`, so
