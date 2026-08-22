@@ -158,3 +158,5 @@ notes: |
   bookkeeping) but independent of it: neither blocks the other, and they
   touch different functions. BL-1023 is about the run ticket's move
   happening; this is about the run declaring what it left for someone else.
+
+assigned_to: coder

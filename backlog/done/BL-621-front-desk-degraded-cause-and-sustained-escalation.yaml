@@ -170,3 +170,18 @@ notes: |
   own manual read, not a hard gate the tooling enforces, but the human
   override stands regardless of which one applies. Routed to coder in the
   same turn.
+
+  2026-08-21 coordinator: specifier note received - hold BL-621, same file
+  as BL-582 (telegramFrontDeskBotCore.ts / telegram-front-desk-bot.ts),
+  BL-621's own scope note says sequence-never-concurrent. Checked live
+  state before acting: BL-621 is mid-flight, in_process at hardener right
+  now (batch_20260821T223134Z), not idle and not merely queued - force-
+  stopping a live hardener session to yank this back to hold/ risks losing
+  in-progress work for a conflict that has not actually materialized yet.
+  BL-582 was only just routed to coder this turn; its coder stage has not
+  written any code against these files yet. Judgment: let BL-621 finish its
+  remaining stages (hardener -> documenter -> QA) and land - it is far
+  closer to done than BL-582 is to touching the shared files, so natural
+  completion order already satisfies "never concurrent" without a forced
+  stop. Will intervene only if BL-582's coder reaches these files before
+  BL-621 lands on main.
