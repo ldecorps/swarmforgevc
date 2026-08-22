@@ -306,7 +306,36 @@ notes: |
   acceptance runner would throw for every downstream role the moment it
   merged `main` (BL-233). Scenario 07 is parked in the non-executable
   companion `specs/features/BL-1038-unit-tests-pin-the-repo-they-derive-
-  from.feature.draft` and is **BL-1039's to land, with its handlers**. The
-  behaviour it describes is already delivered and correct; only its
-  executable pinning is deferred. The `Feature:` narrative's superseded
-  "seven files / 121.6s" was re-tensed in the same commit.
+  from.feature.draft`. The `Feature:` narrative's superseded "seven files /
+  121.6s" was re-tensed in the same commit.
+
+  ### Correction, same day: the handlers exist, and the restore is THIS
+  ### parcel's - not BL-1039's
+
+  The parking check above was run against the FORWARDED commit `6c62a65495`
+  and never re-run against what the coder had committed since. It had:
+  `81f79d5f03` adds handlers for all three of scenario 07's unmatched steps,
+  four minutes after the forward. The coder merged `main`, saw the scenario
+  the amendment had added, and wrote them - and forwarded that commit to the
+  cleaner as a second parcel, which the cleaner merged (its tip `1f0736223`
+  carries both).
+
+  Parking on `main` remains correct, for a DIFFERENT reason than the one
+  first recorded: `main` has no handlers either - it does not even have
+  `specs/pipeline/steps/bl1038UnitTestsPinTheRepoSteps.js`, which arrives with
+  the parcel. So a scenario 07 on `main` today breaks `main`'s own acceptance
+  run, not just the parcel's.
+
+  **The restore belongs to this parcel.** Whoever holds it: re-add scenario 07
+  to the live feature file and delete the `.feature.draft` in the same commit.
+  Scenario and handlers then land on `main` together at QA, which is what
+  BL-233 asks for. The BL-1039 scoping added earlier has been removed.
+
+  ### Also found while checking this: the forward to the architect is stale
+
+  Both cleaner -> architect forwards name `891bc7d702`, the cleaner's merge of
+  the FIRST parcel, committed 11:09:57 - before `81f79d5f03` existed. The
+  second is marked `rejection_reason: manual redo` and re-sends the same
+  commit. The cleaner's real tip `1f0736223` (11:23:07) carries the handlers
+  and is not an ancestor of what the architect was handed. Reviewing
+  `891bc7d702` reviews the parcel as it stood before the scenario-07 work.

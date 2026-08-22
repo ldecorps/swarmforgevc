@@ -1,20 +1,25 @@
-# NOT EXECUTABLE. Parked per BL-233: no *.feature glob and no acceptance
-# runner picks this file up, so the design below is preserved without the
-# runner throwing on a scenario whose step handlers do not exist yet.
+# NOT EXECUTABLE, and about to be short-lived. No *.feature glob and no
+# acceptance runner picks this file up.
 #
-# Why it is parked. This scenario was added to the live feature file on
-# 2026-08-22 (commit 2dd75c9294) by the amendment that established the
-# operation boundary. The BL-1038 parcel had already been built and
-# forwarded at 6c62a65495 - it does not contain handlers for three of the
-# six steps below, and the runner hard-fails on a step it cannot match.
-# The BEHAVIOUR is already delivered and correct: liveRepoDerivationGuard
-# requires the growth operation to target the BOUND live root by name, so a
-# file's own `git init` into a temp dir is never named. What is missing is
-# only the executable pinning of that boundary.
+# WHERE THE TWO HALVES ARE. The step handlers for this scenario EXIST, in the
+# BL-1038 parcel, at 81f79d5f03 ("scenario 07 - a file doing BOTH is flagged
+# only for its live read") - the coder merged main, saw the scenario the
+# amendment had added, and wrote them. They are in the cleaner's tip
+# 1f0736223 too. What is NOT on main is either half: main has no scenario 07
+# and does not even have bl1038UnitTestsPinTheRepoSteps.js, which arrives with
+# the parcel.
 #
-# Who lands it. BL-1039 - it owns repository CREATION and must show that the
-# two guards do not collide on a file that performs both operations. Land it
-# WITH its step handlers, in the same parcel, or leave it here.
+# WHY IT IS PARKED HERE ANYWAY. It was parked at a538e0a2d against the
+# FORWARDED commit 6c62a65495, which predates the handlers by four minutes -
+# the check was run against the parcel as forwarded and never re-run against
+# what the coder had committed since. Parking it on main is still right, for a
+# different reason than the one recorded then: main has no handlers either, so
+# a scenario 07 on main breaks main's own acceptance run.
+#
+# WHO RESTORES IT: the BL-1038 parcel, not BL-1039. Add the scenario below
+# back to the live feature file in the parcel that already carries its
+# handlers, and DELETE this file in the same commit. Scenario and handlers
+# then land on main together at QA, which is what BL-233 asks for.
 
   # BL-1038 unit-tests-pin-the-repo-they-derive-from-07
   Scenario: a test that both reads live sources and builds its own repository is flagged only for the live read
