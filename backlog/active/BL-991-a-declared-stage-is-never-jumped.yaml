@@ -222,3 +222,5 @@ approval_context: >
   ticketed it separately as BL-992 rather than growing this one. If you want
   the gate to be trustworthy from day one, BL-992 should be promoted with or
   before this.
+
+assigned_to: coder
