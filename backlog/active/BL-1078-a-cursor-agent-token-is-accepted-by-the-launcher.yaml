@@ -1,0 +1,53 @@
+id: BL-1078
+title: "A cursor agent token is accepted by the launcher: swarmforge whitelist, ensure and poke/wake have no cursor path, so a proven Cursor seat driver still cannot staff an ordinary pack window"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 0
+direction: queue-jump
+depends_on: [BL-713]
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1078-a-cursor-agent-token-is-accepted-by-the-launcher.feature
+human_approval: approved
+approval_context: >
+  Minted 2026-08-22 by operator Let's Talk ask: queue every ticket that lets
+  a Cursor agent work as a model inside the swarm. This is BL-712 slice B —
+  launcher + agent runtime after the BL-713 spike proves one seat. Needs your
+  approval of the feature file once the specifier writes it. Do not start
+  before BL-713 lands a working spike.
+
+required_wiring:
+  - 'swarmforge/scripts/swarmforge.sh::cursor::the cursor agent token must be accepted on the live whitelist, ensure and poke/wake path - a token that exists only in docs or a dark helper still leaves every pack window line rejected at launch'
+  - "specs/pipeline/steps/index.js::bl1078::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler"
+
+invariants:
+  - "A Cursor seat reaches the swarm only through the same handoff helpers, mailbox and poke/wake path every other agent uses — never a private side channel."
+  - "An uncertified Cursor identity remains refused on production packs unless an explicit spike-only escape is set; this slice does not silently certify."
+
+description: |
+  ## What is wrong
+
+  BL-713 proves a Cursor agent can complete one parcel through a spike CLI.
+  Ordinary packs still cannot staff a window with cursor: swarmforge.sh's
+  agent whitelist is `claude|codex|copilot|grok|aider|vibe|gemini` — no
+  cursor token — and ensure / poke / wake have no Cursor ACP or SDK host
+  process behind them.
+
+  ## How (direction, not mandate)
+
+  Accept a cursor agent token on the launcher whitelist. Wire ensure and
+  poke/wake to the ACP or SDK host process that backs a Cursor seat,
+  reusing the seat driver BL-713 landed. Replace the spike-only CLI as the
+  ordinary launch path for pack windows that name cursor.
+
+  Not in this slice: steward certify (BL-1079); pack lines and how-tos
+  (BL-1080); changing /pilot.
+
+notes: |
+  BL-712 remaining slice B. Parent epic BL-712. Spike prerequisite BL-713.
+  Operator Let's Talk 2026-08-22: promote Cursor-as-seat work and mint
+  enabling children.
+
+assigned_to: specifier
