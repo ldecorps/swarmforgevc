@@ -10,7 +10,7 @@ depends_on: [BL-1078]
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Feature file written 2026-08-23; the approval the original context reserved.
   Four scenarios, and the shape is narrower than the ticket first read because
