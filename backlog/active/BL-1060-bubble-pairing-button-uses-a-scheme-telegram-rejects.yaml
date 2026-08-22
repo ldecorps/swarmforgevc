@@ -187,4 +187,30 @@ notes: |
   `[coder, cleaner, hardender, qa]` with architect and documenter skipped for
   the reasons recorded above.
 
+  SPEC AMENDED 2026-08-22 (specifier defect, not the coder's). Scenario 05 as
+  minted asserted the "Resident Spy" button on the "topic" keyboard. That
+  combination cannot exist: mini app buttons are Telegram `web_app` buttons,
+  and a forum topic cannot carry one — the topic keyboard has only ever held
+  the console `url:` button and the pairing `url:` button. The coder reported
+  it under Article 4.4 by note with evidence at
+  backlog/evidence/BL-1060-coder-spec-gap.md, held the parcel rather than
+  forwarding a red gate, and hand-authored no Gherkin. Correct call on both
+  counts.
+
+  The amendment makes the surface a Scenario Outline column instead of
+  hard-coding "topic", so each surface is checked for the buttons it actually
+  carries: topic × Console, private DM × Console, private DM × Resident Spy.
+  This preserves more coverage than the coder's proposed one-word fix (which
+  would have dropped the topic console button entirely) and matches
+  qa_e2e_procedure step 5, which asks that the mini-app buttons still open
+  "in the same keyboards". The scenario title now says what it checks. No step
+  handler change is needed — KNOWN_SURFACES already holds both surfaces and
+  KNOWN_MINI_APPS both apps, and the handler identifies an app by destination
+  URL rather than button text.
+
+  NOTHING THE CODER BUILT CHANGES. The behaviour, its unit tests, its property
+  tests and its step handler at c4404ed8f stand as written; only the feature
+  file moved. Re-run the acceptance gate after merging main and forward to the
+  cleaner.
+
 assigned_to: coder
