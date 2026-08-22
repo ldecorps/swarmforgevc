@@ -10,7 +10,7 @@ depends_on: [BL-1052]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1053-the-intelligence-layer-can-route-work-to-a-qwen-seat.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Nothing needs deciding - this is the bookkeeping half of the ordering you
   already accepted, and it is here as its own ticket only because it is inert
