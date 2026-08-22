@@ -218,14 +218,27 @@ suite covered only the pure decision function, never the live consumption
 point, until this pass added scenarios exercising both.
 
 **What it does.** `ensure-role-session!` mirrors `swarm_ensure.bb`'s own
-single-role launch path: create the tmux session if truly missing, then
-`respawn-pane -k` the role's canonical launch script
-(`.swarmforge/launch/<role>.sh` — always the project-root copy, never a
-worktree-local one, which can drift), through `provider_respawn_env_lib.bb`
-so the relaunched pane keeps whatever alternate-runtime auth env
-`swarm_ensure.bb`/`handoffd.bb`'s own respawn path would have passed it. This
-recreates **one** session — deliberately not `start-swarm.sh`'s eight-session
-sweep, which is the disproportionate action this ticket exists to avoid.
+single-role launch path, and what it may resolve to is now pinned by
+`single_role_repair_lib.bb`'s `resolve-single-role-repair` (BL-1018): a
+missing session is created with its launch command carried directly on the
+`new-session` call and is **never** followed by a `respawn-pane` into it; an
+existing session is `respawn-pane -k`'d in place and never recreated. That
+split matters because create-then-respawn against a missing session is the
+exact sequence a 2026-08-21 incident took — a single-role repair of the
+specifier brought down the entire pack tmux server (socket, `handoffd`, and
+all eight sessions), root mechanism unproven but BL-958's leading hypothesis
+is a respawn issued against a missing session restarting a half-alive tmux
+server. `ensure-role-session!` reads `.swarmforge/launch/<role>.sh` — always
+the project-root copy, never a worktree-local one, which can drift — and
+threads it through `provider_respawn_env_lib.bb` so the relaunched pane keeps
+whatever alternate-runtime auth env `swarm_ensure.bb`/`handoffd.bb`'s own
+respawn path would have passed it. This recreates **one** session —
+deliberately not `start-swarm.sh`'s eight-session sweep, which is the
+disproportionate action this ticket exists to avoid. Every resolved command
+also names the pack socket explicitly (`tmux -S <socket> ...`) and is never a
+`kill-server`/`kill-session` — the two properties BL-1018's acceptance
+asserts directly against the resolver's output, see
+[the feature file](../../specs/features/BL-1018-single-role-respawn-never-kills-the-server.feature).
 
 **Bounds (invariant 2 — no respawn storm).** At most 1 repair attempt per
 role per 10-minute cooldown window (`default-max-repair-attempts` /

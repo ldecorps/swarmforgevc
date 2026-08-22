@@ -636,12 +636,15 @@ cat > "$ROOT/.swarmforge/incidents/control-plane.json" <<JSON
 JSON
 RESPAWN_LOG="$ROOT/respawns"
 : > "$RESPAWN_LOG"
+NEW_SESSION_LOG="$ROOT/new_sessions"
+: > "$NEW_SESSION_LOG"
 SERVER_MARKER="$ROOT/server_started"
 cat > "$FAKE_BIN/tmux" <<TMUXFAKE
 #!/usr/bin/env bash
 sock_cmd="\$3"
 if [[ "\$sock_cmd" == "new-session" ]]; then
   touch "$SERVER_MARKER"
+  echo "\$*" >> "$NEW_SESSION_LOG"
   exit 0
 fi
 if [[ ! -f "$SERVER_MARKER" ]]; then
@@ -669,7 +672,12 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
 echo "$OUTPUT" | grep -q 'control-plane: FIXED (control-plane-missing: recreating role sessions from persisted launch scripts; tmux server restored)' \
   || fail "BL-958: control-plane row not reported FIXED with the lib's decision, got: $OUTPUT"
 echo "$OUTPUT" | grep -q 'agent:coder: FIXED' || fail "BL-958: coder session was not repaired, got: $OUTPUT"
-[[ -s "$RESPAWN_LOG" ]] || fail "BL-958: recovery did not respawn the role from its launch script"
+# BL-1018: a missing session is created WITH its launch command and never
+# respawned into afterward - the create-then-respawn-into-it sequence is the
+# shape that took the whole pack tmux server down on 2026-08-21.
+grep -q -- 'new-session -d -s swarmforge-coder .*coder\.sh' "$NEW_SESSION_LOG" \
+  || fail "BL-958: expected the create to carry the role's launch script; log: $(cat "$NEW_SESSION_LOG")"
+[[ -s "$RESPAWN_LOG" ]] && fail "BL-958 (BL-1018): a missing session must never be respawned into; log: $(cat "$RESPAWN_LOG")"
 grep -q '"resolved"' "$ROOT/.swarmforge/incidents/control-plane.json" \
   || fail "BL-958: the open control-plane incident was not resolved after recovery"
 pass "BL-958: control-plane loss is classified, recovered, reported, and its incident resolved"
@@ -1000,10 +1008,12 @@ pass "09b: mono-router illicit session that survives kill-session! is reported F
 # ---------------------------------------------------------------------------
 # 10: mono-router :ensure-standing wiring — the resident role's tmux session
 #     has vanished entirely (not merely pane-dead), so ensure must create a
-#     fresh session (create-session!) before respawning into it
-#     (ensure-standing-role!), then report FIXED. Distinct from test 08's
-#     dead-pane repair, where the session already exists and only the pane
-#     needs respawning; this is the "session itself is gone" repair the
+#     fresh session carrying the launch command directly (BL-1018:
+#     single-role-repair-lib's missing-session branch, resolved via
+#     ensure-standing-role!), then report FIXED - never a bare create
+#     followed by a respawn-pane into it. Distinct from test 08's dead-pane
+#     repair, where the session already exists and only the pane needs
+#     respawning; this is the "session itself is gone" repair the
 #     mono-router path adds and no existing test exercised.
 # ---------------------------------------------------------------------------
 make_fixture
@@ -1038,7 +1048,7 @@ if [[ "\$sock_cmd" == "list-panes" ]]; then
 fi
 if [[ "\$sock_cmd" == "new-session" ]]; then
   target="\$6"
-  echo "CREATE \$target" >> "$CREATE_LOG"
+  echo "CREATE \$*" >> "$CREATE_LOG"
   [[ "\$target" == "swarmforge-coder" ]] && touch "$CODER_CREATED"
   exit 0
 fi
@@ -1055,13 +1065,18 @@ OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
   SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
   bb "$ENSURE" "$ROOT" 2>&1) || true
-grep -q "^CREATE swarmforge-coder$" "$CREATE_LOG" \
+grep -q -- '-s swarmforge-coder' "$CREATE_LOG" \
   || fail "10: a fully-vanished resident session was never recreated; create log: $(cat "$CREATE_LOG")"
+# BL-1018: a missing session is created WITH its launch command and never
+# respawned into afterward - the create-then-respawn-into-it sequence is the
+# shape that took the whole pack tmux server down on 2026-08-21.
+grep -q -- 'new-session .*coder\.sh' "$CREATE_LOG" \
+  || fail "10: expected the create to carry the resident role's launch script; create log: $(cat "$CREATE_LOG")"
 [[ -s "$RESPAWN_LOG_10" ]] \
-  || fail "10: the recreated resident session was never respawned into"
+  && fail "10 (BL-1018): a fully-vanished session must never be respawned into after create; log: $(cat "$RESPAWN_LOG_10")"
 echo "$OUTPUT" | grep -q "^agent:coder: FIXED (restored mono-router resident pane)$" \
   || fail "10: a recreated resident session was not reported FIXED; got: $OUTPUT"
-pass "10: mono-router resident session that has vanished entirely is recreated and respawned, reported FIXED"
+pass "10: mono-router resident session that has vanished entirely is recreated with its launch command, reported FIXED"
 
 # ---------------------------------------------------------------------------
 # BL-514: remote-control (RC) component wiring — rc:<role> alongside
