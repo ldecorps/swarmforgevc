@@ -21,8 +21,7 @@ invariants:
   - "No expeditor exit path leaves a backlog move that run made staged and uncommitted in the shared master checkout."
   - "A commit the expeditor makes contains only the backlog paths that run moved - no other content in the shared master checkout, staged or unstaged, is ever carried into it."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   This ticket REVERSES a documented deliberate deferral, so it needs a ruling
   before it is promoted rather than a reviewer discovering the reversal at
