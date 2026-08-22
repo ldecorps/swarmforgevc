@@ -1,6 +1,43 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1028: `promote_and_route_next.sh`
+**Last Updated:** August 22, 2026 (BL-1033:
+`bl1025_expedite_approval_property_runner.bb` created its fixture temp root
+at the top of the file and removed it with `fs/delete-tree` at the bottom,
+at top level, in no `try`/`finally` and behind no shutdown hook — reached
+only when every preceding form completes. The runner's own `g` git helper
+throws `ex-info` on any non-zero git exit, so a throw during fixture setup
+exited before that last form and left a `bl1025-prop-*` directory behind
+permanently, the exact BL-971 trap
+(`extension/test/tempDirTrapGuard.test.js`, in the default unit lane) two
+sibling runners in the same directory had already been bounced under and
+fixed. The runner now adds a JVM shutdown hook that deletes the root if it
+still exists, keeping the happy-path `delete-tree` as the fast path — the
+hook is an abnormal-exit backstop, not a replacement, and covers a throw, a
+mid-run `System/exit`, and SIGTERM; SIGKILL is named as uncovered rather
+than silently claimed. Writing the tests surfaced three findings that would
+otherwise have shipped fake coverage: the property's own leak detector used
+`fs/glob`, which does not match directories, so it passed vacuously with the
+fix removed until switched to listing the directory and filtering by name;
+the acceptance handler's forced-throw call was floored at 17 (the deepest
+call that genuinely exits the run before the happy-path delete), replacing
+call 20, which proved nothing because failure past call 17 is recorded as
+an ordinary property failure that still reaches the happy path; and the
+throw-propagation property is scoped to git calls that actually throw
+out of the run, since one of them (`is_qa_ancestor.sh`) is a predicate whose
+non-zero exit is a legitimate "no", not a failure. The runner's own
+assertions and its 32-case exhaustive sweep are untouched — this ticket is
+about cleanup, not about making the runner stop failing on legitimate
+throws. No extension command, setting, or UI change — pure test
+infrastructure, and it clears `tempDirTrapGuard.test.js`, which had been
+red at HEAD for every pipeline role to baseline. Hardener pass, same
+ticket: runner 32/32, new property runner 30 runs / 20 distinct throw
+points all floors met, shell integration suite 4/4 (including a real
+SIGTERM kill mid-run), BL-113 Gherkin mutation 2/2 killed, and the standing
+`tempDirTrapGuard` guard now clean over the whole `swarmforge/scripts`
+tree — the BL-1028 hardening pass had ruled this same violation out of its
+own scope and pointed at this ticket to fix it; it is now closed.
+Prior entry —
+BL-1028: `promote_and_route_next.sh`
 staged its `paused → active` rename with `git mv` and then asked
 `commit_integrity_cli.bb` to commit it, but answered every non-zero exit —
 `:no-git-dir`, `:lock-timeout`, `:add-failed`, `:commit-failed`,
