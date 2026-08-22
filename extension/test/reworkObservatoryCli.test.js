@@ -11,6 +11,7 @@ const {
   BASELINE_WINDOW_DAYS,
 } = require('../out/tools/rework-observatory');
 const { observatorySignalsPath } = require('../out/metrics/reworkObservatoryStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkTmp() {
   return mkTmpDir('sfvc-rework-cli-');
@@ -30,10 +31,7 @@ function git(cwd, args, dateIso) {
 }
 
 function initRepoOnMain(dir) {
-  git(dir, ['init', '-q']);
-  git(dir, ['config', 'user.email', 't@t']);
-  git(dir, ['config', 'user.name', 't']);
-  git(dir, ['checkout', '-q', '-b', 'main']);
+  copySeededRepoInto(dir);
 }
 
 // ── formatReworkSignal (pure) ────────────────────────────────────────────

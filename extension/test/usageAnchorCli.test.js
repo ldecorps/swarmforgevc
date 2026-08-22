@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/usage-anchor');
 const { readUsageAnchors } = require('../out/metrics/usageAnchorStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-619 anchor-validation-07: the CLI is a thin wrapper over
 // usageAnchorStore.ts's appendUsageAnchor - these wiring tests prove argv
@@ -20,10 +21,7 @@ function git(cwd, args) {
 }
 function mkFixture() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  copySeededRepoInto(root);
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tmaster\t${root}\tswarmforge-coder\tcoder\tclaude\ttask\n`);
   return root;

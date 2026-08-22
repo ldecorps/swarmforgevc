@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   parseGitLog,
   deriveTicketLifecycles,
@@ -105,9 +106,7 @@ test('parseGitLog returns an empty array for empty output', () => {
 
 function initTestRepo() {
   const dir = mkTmpDir('sfvc-git-history-adapter-');
-  execSync('git init', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
+  copySeededRepoInto(dir);
   fs.writeFileSync(path.join(dir, 'example.txt'), 'hello');
   execSync('git add example.txt', { cwd: dir, stdio: 'pipe' });
   execSync('git commit -m "add example.txt"', { cwd: dir, stdio: 'pipe' });
@@ -118,9 +117,7 @@ const ONE_MIB = 1024 * 1024;
 
 function buildOversizedTestRepo() {
   const dir = mkTmpDir('sfvc-git-history-adapter-oversized-');
-  execSync('git init', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
+  copySeededRepoInto(dir);
   const subdir = 'd'.repeat(200);
   fs.mkdirSync(path.join(dir, subdir));
   for (let i = 0; i < 3000; i++) {

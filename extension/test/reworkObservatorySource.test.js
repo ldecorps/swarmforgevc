@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { loadCompletedTicketRecords, latestReworkRoleByTicket } = require('../out/metrics/reworkObservatorySource');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkTmp() {
   return mkTmpDir('sfvc-rework-source-');
@@ -26,10 +27,7 @@ function git(cwd, args, dateIso) {
 // so every fixture has a real branch literally named "main" - the ref
 // loadCompletedTicketRecords always reads from (BL-340).
 function initRepoOnMain(dir) {
-  git(dir, ['init', '-q']);
-  git(dir, ['config', 'user.email', 't@t']);
-  git(dir, ['config', 'user.name', 't']);
-  git(dir, ['checkout', '-q', '-b', 'main']);
+  copySeededRepoInto(dir);
 }
 
 function writeTicket(repo, subdir, filename, extraYaml = '') {

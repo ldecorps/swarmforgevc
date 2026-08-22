@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkTmp() {
   return fs.realpathSync(mkTmpDir('sfvc-dashboard-cli-'));
@@ -23,9 +24,7 @@ function git(cwd, args) {
 // swarmMetricsCli.test.js's own end-to-end convention.
 test('the compiled generator prints a valid, schema-versioned backlog.json to stdout', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, 'backlog', 'active'));
   git(root, ['add', '-A']);
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);

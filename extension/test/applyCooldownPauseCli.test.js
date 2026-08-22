@@ -7,6 +7,7 @@ const { main } = require('../out/tools/apply-cooldown-pause');
 const { controlPauseStatePath, readControlPauseState } = require('../out/tools/telegram-front-desk-bot');
 const { cooldownWindowMarkerPath, readCooldownWindowMarker } = require('../out/tools/cooldownWindowState');
 const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'apply-cooldown-pause.js');
 const TOPIC_MAP_PATH = (root) => path.join(root, '.swarmforge', 'operator', 'telegram-topic-map.json');
@@ -30,10 +31,7 @@ function localMs(monthDay, hhmm) {
 
 function mkFixture({ confLines, pauseMarker, windowMarker, bindControlTopic } = {}) {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, '.swarmforge', 'operator'));
   mkdirp(path.join(root, 'swarmforge'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tmaster\t${root}\tswarmforge-coder\tcoder\tclaude\ttask\n`);

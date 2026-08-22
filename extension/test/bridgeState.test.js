@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { buildBridgeState, buildHolisticState } = require('../out/bridge/bridgeState');
 const { appendRun } = require('../out/runs/runLog');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function git(cwd, args, dateIso) {
   const env = { ...process.env };
@@ -133,9 +134,7 @@ test('buildBridgeState returns empty agents when roles.tsv is missing', () => {
 
 test('buildHolisticState wires swarm-name, assignments, done-by-milestone, and recent activity together', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
+  copySeededRepoInto(target);
 
   mkdirp(path.join(target, 'backlog', 'active'));
   fs.writeFileSync(
