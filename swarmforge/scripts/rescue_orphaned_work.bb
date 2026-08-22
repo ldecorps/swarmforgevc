@@ -72,7 +72,7 @@
         (apply git worktree "add" "--" changed)
         (let [msg (str "Rescue orphaned work: " reason "\n\n"
                        "Rescued onto a branch before releasing the source (BL-1041).\n"
-                       "Files: " (str/join ", " changed) "\n\nBy coder.")
+                       "Files: " (str/join ", " changed) "\n\nBy " role ".")
               committed (git worktree "commit" "-m" msg)]
           (when-not (git-ok? committed)
             (binding [*out* *err*] (println (str "REFUSE commit failed: " (str/trim (str (:err committed))))))
