@@ -31,6 +31,7 @@ expects them, and are not migrated or rewritten here.
 - [Stuck-Role Escalation Email — Understanding the Alert](how-to/BL-349-stuck-role-escalation-email.md)
 - [Driving one ticket through every gate with the swarm stopped (the expeditor)](how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md)
 - [Ambulance mode — running one ticket exclusively while the swarm stays live](how-to/BL-655-ambulance-mode-the-hold.md)
+- [Host switchover doctor — the post-move checklist](how-to/BL-1057-host-switchover-doctor.md)
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
@@ -123,6 +124,7 @@ expects them, and are not migrated or rewritten here.
 - [Socket-Fixture Short Root and Its Gate (BL-948)](reference/BL-948-socket-fixture-short-root-and-gate.md) — the shared short-base fixture-root helper for socket-building step files, its headroom assertion and exit-hook backstop, and the by-inspection gate (plus BL-897 parity test) that stops the long-base root returning.
 - [Retired `SWARMFORGE_ENSURE_*` Env-Var Regression Gate (BL-964)](reference/BL-964-retired-ensure-env-var-regression-gate.md) — the standing gate that fails loud when a retired ensure-hook env-var name reappears in test code, with a needle set derived from `swarm_ensure.bb`'s own reads rather than a hand-written roster.
 - [Boy Scout Scan (BL-1014)](reference/BL-1014-boy-scout-scan.md) — the on-demand, read-only CLI that ranks technical debt by cross-source recurrence across five evidence sources, with an evidence pointer per item; slice 1 of the `boy-scout` epic.
+- [Boy Scout Run (BL-1015)](reference/BL-1015-boy-scout-run.md) — the acting half: applies an already-written proposal for the scan's top-ranked item inside a declared size envelope, verified against the repository's existing gate set and committed, or refuses the whole thing and states why; slice 2 of the `boy-scout` epic.
 - [Pinned-Repo Fixture and the Live-Derivation Guard (BL-1038)](reference/BL-1038-pinned-repo-fixture-and-live-derivation-guard.md) — the dependency-closure fixture that replaces whole-directory copies of the live `swarmforge/scripts/`, the guard that catches both direct and indirect (escapes-into-production) live-repository reads, and its six scoped exemptions.
 - [Shared Git-Repo Fixture and Its Guard (BL-1039)](reference/BL-1039-shared-git-repo-fixture.md) — the seed-once template that replaces per-test `git init`/`config`/`commit` in the unit lane, its structural isolation, the by-inspection creation guard and its three scoped exemptions.
 

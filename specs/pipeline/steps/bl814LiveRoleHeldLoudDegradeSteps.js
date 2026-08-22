@@ -25,7 +25,9 @@ const FEATURE = 'a live role-held computation that did not run is distinguishabl
 // `report` actually needs to run - kept in sync with the sibling fixtures
 // in extension/test/readLiveRoleHeldTicketsCli.test.js and
 // bl487BoardFreshnessWithoutCoordinatorSyncSteps.js.
-const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb'];
+// BL-1029: handoff_lib.bb now also load-files shell_quote_lib.bb - the THIRD
+// staleness of this hand list, in the technique BL-814 was filed about.
+const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'shell_quote_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb'];
 
 function scoped(registry, pattern, handler) {
   registry.defineScoped(pattern, handler, FEATURE);

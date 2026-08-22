@@ -585,7 +585,13 @@ const DOMAINS = [
   require('./bl1064LogGroundingSourceSteps'),
   require('./bl1061TunnelFixtureIsolationSteps'),
   require('./bl1058PortableMktempSteps'),
-  require('./bl1066MetricsTickSteps')
+  require('./bl1066MetricsTickSteps'),
+  require('./bl1015BoyScoutRunCleansOneThingSteps'),
+  require('./bl1057HostSwitchoverDoctorSteps'),
+  require('./bl1069TmuxServerVersionSteps'),
+  require('./bl991DeclaredStageNeverJumpedSteps'),
+  require('./bl1029RespawnLaunchQuotingSteps'),
+  require('./bl1075WindowSizeOwnershipSteps')
 ];
 
 function registerSteps(registry) {

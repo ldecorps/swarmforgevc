@@ -1,6 +1,73 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1066: the panel's mean-ticket-time
+**Last Updated:** August 22, 2026 (BL-1057: a host move (this swarm's own
+Mac → WSL2 move on 2026-08-22) silently leaves host-pinned config behind —
+local editor settings, `$HOME`-rooted credential/registry directories,
+machine-local env files — and nothing in any daemon's restart path ever
+reports it; two real casualties were found only by hand (a stale
+`extension/.vscode/settings.json` target path, and a live Cloudflare Error
+1033 because the Bubble named tunnel was never registered on the new
+host). `bb swarmforge/scripts/host_switchover_doctor.bb [<repo-root>]
+[--json | --inventory]` is the command that would have reported both in
+one run: it walks a declared inventory of host-pinned locations (both
+`.vscode/settings.json` files, the named-tunnel operator-root registry,
+`~/.cloudflared/`'s cert/config/credentials, and
+`.swarmforge/operator/named-tunnel.env`) and gives each exactly one
+verdict — `OK`, `STALE` (quoting the stale value it found), `MISSING`, or
+`BLOCKED` (the check itself could not run — never omitted, never counted
+as OK). Every non-OK finding names both the concrete location and its
+remediation step; the tunnel findings point at the existing named-tunnel
+runbook, since registering it is a deliberate interactive human step the
+doctor deliberately does not perform. The doctor is permanently read-only
+— a durable property, not a slice boundary a future repair capability may
+relax; repair is out of scope and would be a separate command, never a
+`--fix` flag here. Run from any per-role worktree, it resolves through the
+worktree's `.git` file to the forge's own main-checkout root rather than
+reporting that worktree's own paths as false-STALE. `--inventory` prints
+the declared inventory as JSON so the acceptance step handlers build their
+fixture host from the one declared definition rather than a second copy.
+Babashka lane, per this project's Startup Tools fallback: no
+mutation/CRAP/DRY tooling wired there, gated by its own unit + property
+suite instead (60 generated host states against an independent oracle,
+reach asserted per verdict class). New runbook:
+`docs/how-to/BL-1057-host-switchover-doctor.md`, linked from
+`docs/index.md` (`required_wiring`, confirmed present through hardener).)
+Prior entry —
+BL-1015: the acting half of the
+`boy-scout` epic. `node extension/out/tools/boyScoutRun.js [path-to-root]`
+takes BL-1014's scan, reads an already-written cleanup proposal for the
+top-ranked item from `.swarmforge/boy-scout/proposal.json` (whole new file
+content per path, `after: null` to delete — no patch/diff format), and
+either commits it or refuses the whole thing and states why. This run does
+not generate the cleanup itself; it bounds and verifies one someone else
+already wrote, because a generator that invented its own edits would have
+no bound on it at all. The size envelope (3 files, 120 changed lines) is
+derived from BL-634's recorded 65-insertion slice median, not chosen by
+taste — a proposal at or under both limits is eligible, over either one is
+refused whole and never partially applied. Every check that can refuse or
+abandon runs before the first write, in order: nothing ranked; no proposal
+or an empty one; the proposal names the wrong item or trespasses onto a
+different ranked item's files; the diff, applied, changes nothing
+measurable; the envelope is exceeded; an existing test assertion would have
+to change to reach green (invariant 2 — checked verbatim as a multiset
+across every language this repo tests in, so a cleanup can never smuggle in
+a behaviour change wearing a refactor's clothes); the repository's existing
+gate set (`npm test` in `extension/`, the same gate every pipeline role
+already runs — this ticket adds no gate and weakens none) fails on the
+written result, restoring the tree from a pre-write snapshot. A run that
+clears every check commits exactly the paths it edited and nothing else —
+never `git add -A`, which would sweep in unrelated dirt and would commit
+the proposal file itself since it lives under `.swarmforge/` — staging only
+the paths git does not already track and unstaging them again on a failed
+add/commit, so a failure never leaves a partial commit sitting in the
+index. Invariant 3: a run that cleans nothing always states which of the
+six declared reasons applied (`nothing-ranked`, `no-cleanup-proposed`,
+`wrong-item`, `envelope-exceeded`, `assertion-would-change`,
+`gate-failed`) — a quiet no-op is otherwise indistinguishable from a clean
+repository. New reference doc: `docs/reference/BL-1015-boy-scout-run.md`,
+cross-linked from BL-1014's own doc and `docs/index.md`.)
+Prior entry —
+BL-1066: the panel's mean-ticket-time
 metric recomputed on the 2-second stage-poll tick, and one computation
 walked `git log --follow` once per closed ticket — 794 `.yaml` files under
 `backlog/done/` on this host (the lister recurses into milestone

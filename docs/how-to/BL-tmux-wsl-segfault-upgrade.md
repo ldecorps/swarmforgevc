@@ -18,7 +18,13 @@ preferred by babysitterd and by `./swarm ensure` / launch via
 `prefer_local_tmux_bin` in `swarmforge.sh`):
 
 ```bash
-bash swarmforge/scripts/install_tmux_wsl.sh
+# BL-1069: the installer verifies the download before it installs anything,
+# so it needs the digest you expect. Take the sha256 from the release page:
+TMUX_INSTALL_SHA256=<sha256 from the release page> \
+  bash swarmforge/scripts/install_tmux_wsl.sh
+# It refuses BY NAME - and leaves nothing at ~/.local/bin/tmux - when the
+# host architecture has no published build, or the download fails its digest.
+#
 # or manually:
 mkdir -p ~/.local/bin
 curl -fsSL -o /tmp/tmux-3.7b.tar.gz \
@@ -40,9 +46,15 @@ tmux -S "$(cat .swarmforge/tmux-socket)" display-message -p '#{version}'
 # expect: 3.7b (not 3.4)
 ```
 
-`./swarm ensure` and full launch also set `focus-events off` and
-`window-size largest` as soft mitigations; they do **not** replace the
-version upgrade.
+`./swarm ensure` and full launch also set `focus-events off` as a soft
+mitigation; it does **not** replace the version upgrade, which is the only
+thing that actually protects this host.
+
+They no longer set `window-size largest`. It read as a second mitigation and
+was never one: `resize-window` sets `window-size` to `manual` *in the window
+options* (tmux(1)), and the extension's tiling panel resizes every role
+window, so a window option beat the server global on exactly the windows the
+swarm runs in (BL-1075).
 
 ## Verify
 

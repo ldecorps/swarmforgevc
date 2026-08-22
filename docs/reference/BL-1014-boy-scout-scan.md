@@ -109,7 +109,8 @@ or the scan never looked, so the sources-consulted block is never omitted.
 - **Not BL-820** (closing-ceremony lean pass: forge *process* only, fires
   at shift close). This scan targets code/ops debt, on demand.
 - **Not the acting half.** Ranking and reporting only — minting a ticket or
-  cleaning anything is BL-1015, slice 2 of the same epic.
+  cleaning anything is [BL-1015](BL-1015-boy-scout-run.md), slice 2 of the
+  same epic.
 
 ## Source layout
 
