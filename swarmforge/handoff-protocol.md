@@ -1170,9 +1170,20 @@ changes, config tweaks, pure refactors with existing coverage).
      declaration the coordinator promoted is visible even when the sender's
      own worktree has not yet merged it; the sender's working tree is the
      fallback for a root with no resolvable ref (BL-992)
-   - If the flag is ON and required_stages is valid, computes the next required
-     stage after the current one
-   - Rewrites the handoff `to:` field to skip directly to that stage
+   - If the flag is ON and required_stages is valid, computes the first
+     declared stage strictly after the sender (`next-required-stage`)
+   - **A declared stage can never be jumped, even by the sender's own literal
+     `to:` field (BL-991).** If the literal recipient is later in canonical
+     order than that next declared stage, the handoff `to:` field is
+     rewritten to the next declared stage instead — this is true whether or
+     not the literal recipient is itself a declared stage; membership is no
+     longer permission to skip an earlier declared stage. Otherwise (the
+     literal recipient is not later than the next declared stage, or no
+     further stage is declared after the sender) delivery proceeds exactly
+     as addressed, which is what still lets BL-606's pruning of an
+     *undeclared* stage through unchanged. A binding rewrite is recorded
+     separately from a skip (below) — the stage it redirects to is not
+     bypassed, it still runs, so it is never named as skipped.
    - Records the skipped stages in the handoff envelope and in a durable log
      — **recording runs for every forward hop regardless of declaration
      state** (absent, invalid, or the sender's worktree simply lacking the
@@ -1204,6 +1215,17 @@ never be silent.
 **Per-ticket visibility** — for any completed ticket, `git log` + the routing-skips
 log answer which stages actually ran. Skip recording is not a nice-to-have; it is
 load-bearing for post-hoc audit and debugging.
+
+**A declared stage is binding, not just visible (BL-991)** — a coder
+addressing QA directly on a ticket that declares the full chain is
+redirected to the next declared stage (cleaner), not delivered to QA;
+BL-951 made the jump visible, BL-991 stops it happening at all. This only
+constrains stages the ticket actually *declares* — an undeclared stage is
+still pruned exactly as BL-606 always pruned it, and sender judgement over
+where a bounce-fix returns to is untouched. Enforcement reaches only as far
+as routing already reaches: a backward bounce, a rejection/reroute detour,
+the kill switch below, and an unusable declaration all behave exactly as
+they did before this ticket.
 
 ### Kill-Switch Recovery
 

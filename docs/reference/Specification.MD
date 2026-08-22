@@ -1,6 +1,109 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1057: a host move (this swarm's own
+**Last Updated:** August 22, 2026 (BL-991: the operator ruling
+("make required_stages binding so a declared stage cannot be jumped")
+enforced. Before this, `route-required-stages` treated a ticket's declared
+`required_stages` set as a PRUNING list only — membership was permission:
+a coder addressing QA directly on a ticket declaring the full chain was
+delivered straight to QA, jumping cleaner/architect/hardender/documenter.
+BL-951 (2026-08-19, above) made that jump visible with a `routing_skipped`
+record; this ticket is the enforcement half BL-951 deliberately left
+undone. Now, on any forward hop, the router computes `next` — the first
+declared stage strictly after the sender — and whenever the literal `to:`
+is later than `next` in canonical order, the handoff is redirected to
+`next` instead, regardless of whether the literal target is itself a
+declared stage. The same rule closes an easy-to-miss twin on the
+non-member branch: declaring `[coder, cleaner, qa]`, a coder addressing
+`architect` used to rewrite forward to QA (jumping the declared `cleaner`);
+it now redirects to `cleaner`. A redirected hop is not a skip — the stage
+it lands on still runs — so it must never appear in the envelope's
+`routing_skipped=` or a `routing-skips.jsonl` line the way a genuinely
+pruned undeclared stage does; conflating the two would assert a stage was
+bypassed when it is precisely what will still run. Two boundaries were
+deliberately preserved: an UNDECLARED stage is still pruned exactly as
+BL-606 always pruned it (declaring `[coder, qa]` still lets coder address
+QA directly, skipping the undeclared middle stages) — the rule binds only
+what a ticket actually declares, so a docs-only ticket declaring
+`[documenter, qa]` is unaffected; and sender judgement over WHERE a
+bounce-fix should return to is untouched — the operator ruled that out, so
+this adds no default and no coder/QA-prompt routing rule. The rewrite
+REDIRECTS rather than REFUSES: a jump lands on the next declared stage
+instead of erroring the sender back to re-address it, reusing the
+mechanism the non-member branch already had rather than dead-ending a
+committed parcel. Enforcement reaches exactly as far as routing already
+reaches and no further: a backward bounce, a `rejection_reason`/
+`reroute_reason` detour, the `required_stages_routing_enabled` kill switch,
+and an unusable (absent/invalid/not-yet-merged) declaration all behave
+exactly as they did before this ticket. Sibling contract amended in the
+same parcel, not separately: BL-951's own feature file's `full-chain`
+Scenario Outline row (asserting a coder→QA hop skips four stages) became
+false the moment this landed — a genuine acceptance red, not a stale
+assertion — and was removed, with this ticket's own scenario 01 now
+carrying that case in its binding, redirected form. Degraded gate: shell +
+Babashka only, no mutation/CRAP/DRY tooling wired; gated by
+`bl991_binding_stages_property_runner.bb` plus the acceptance scenarios.
+The coder's own reach floors on that runner caught a generator defect in
+its OWN first draft — a per-run reseeded RNG pinned the declaration to
+`no-cleaner` in 40 of 40 runs, leaving the entire non-member branch (the
+second hole this ticket exists to close) untested — fixed by advancing one
+generator across every run instead of reseeding per run; the coder
+separately flagged the identical defect class in BL-1057's own in-flight
+runner by note, which the specifier recorded and the hardener fixed hours
+later on both BL-1057 and, independently, BL-1069's runner during this
+same batch pass — three occurrences of the same class in one day. Updated
+the "Dynamic Routing via Specifier-Declared
+required_stages" section and added a "declared stage is binding" guardrail
+to `swarmforge/handoff-protocol.md`, and cross-referenced the binding rule
+from `docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md` (whose
+own worked examples all use an undeclared-middle-stage shape and remain
+accurate unchanged). No new extension command or setting — swarm-substrate
+handoff-routing tooling under `swarmforge/scripts/`.)
+Prior entry —
+BL-1069: swarm review/stamp-off of an
+operator hotfix already live on `main` (`61c62f579`, landed by hand via
+Cursor the same day) for a WSL control-plane crash loop — Ubuntu's packaged
+tmux 3.4 SIGSEGVs (`resize.c` NULL-window deref, fault at 0x208) whenever
+`WINDOW_SIZE_MANUAL` is set, fixed upstream in tmux >= 3.7 (commit
+`6234d79`) but absent from Ubuntu's 3.4 package; `./swarm ensure` restores
+the agents but the server crashes again within minutes. Three of the
+landed hotfix's five review goals were confirmed real defects and fixed
+narrowly in place, not reimplemented. The most load-bearing: the version
+warning read `tmux -V`, the CLIENT on PATH, while the incident's own
+signature is a client that is already fine (3.7b) in front of a SERVER
+that predates the install (3.4) — so the landed warning was silent in
+exactly the state the crash loop lives in. The judgement now reads `tmux
+-S <socket> display-message -p '#{version}'`, the server the swarm is
+actually talking to, falling back to the client only when no server
+answers. Second: `prefer_local_tmux_bin` prepended `~/.local/bin`
+whenever a tmux existed there with no version comparison at all, so a
+host whose local build was OLDER than the one already on PATH was
+silently downgraded by the function meant to upgrade it — it now compares
+before preferring, on both macOS and Linux, since the prepend fired on
+both. Third: `install_tmux_wsl.sh`'s guard
+`[[ -z "$SRC" || ! -x "$SRC" && ! -f "$SRC" ]]` didn't mean what it read
+as (`&&` binds tighter inside `[[ ]]`, so it reduced to `-z "$SRC"` alone)
+and the installer downloaded an unpinned, unverified, x86_64-only build;
+it now resolves against a table of architectures that actually have a
+published build (refusing by name otherwise) and verifies a sha256 digest
+before installing anything — with `KNOWN_SHA256` deliberately empty (a
+digest is a pin, and pinning is a human commit, never an agent action), a
+caller passes `TMUX_INSTALL_SHA256=<digest>` until a human adds a row. The
+soft-hardening knobs (`focus-events off` on both the shell and Babashka
+paths) were confirmed to never fail an `ensure`/launch/restore even when
+the running tmux rejects them; `window-size largest` was investigated
+(goal 4) and ultimately removed entirely by a same-day follow-up, BL-1075 — it
+contended with the extension's own tiling panel, which
+periodically puts the same server back into `window-size manual` (the
+exact tmux 3.4 crash trigger) on every role-set change. Degraded gate,
+recorded explicitly: the whole diff is shell + Babashka, so no
+mutation/CRAP/DRY tooling applies; the gate is the runners under
+`swarmforge/scripts/test/` plus the acceptance scenarios. Runbook
+`docs/how-to/BL-tmux-wsl-segfault-upgrade.md` (already existed from the
+hand-landed hotfix, updated in place for the digest requirement and the
+`window-size largest` removal) was missing from `docs/index.md` — added.
+No new extension command or setting; this is swarm/ops tooling only.)
+Prior entry —
+BL-1057: a host move (this swarm's own
 Mac → WSL2 move on 2026-08-22) silently leaves host-pinned config behind —
 local editor settings, `$HOME`-rooted credential/registry directories,
 machine-local env files — and nothing in any daemon's restart path ever
