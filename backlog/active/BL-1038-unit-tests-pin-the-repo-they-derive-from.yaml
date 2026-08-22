@@ -339,3 +339,6 @@ notes: |
   commit. The cleaner's real tip `1f0736223` (11:23:07) carries the handlers
   and is not an ancestor of what the architect was handed. Reviewing
   `891bc7d702` reviews the parcel as it stood before the scenario-07 work.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-22, by: architect, blamed: coder, class: behavior, commit: dc0514a925, evidence: backlog/evidence/BL-1038-architect-bounce2-20260822.md }
