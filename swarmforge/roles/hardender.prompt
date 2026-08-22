@@ -217,6 +217,32 @@ You are the hardender.
   changing tests without touching source, rerun with `--force` — a plain
   incremental rerun reuses the old survivor verdicts and will show your
   new killer tests as having no effect.
+- **A multi-file Stryker run can report SOME files at a false 0% while the
+  other files in the SAME run score correctly (accepted rule_proposal from the
+  hardender, BL-1015, 2026-08-22).** This is a large part of why the
+  one-file-at-a-time rule above exists, and it is why a batch run's summary
+  table cannot be read at face value: the correct-looking neighbours make the
+  run look healthy, so the 0% reads as a genuine coverage gap rather than a bad
+  measurement, and you spend the pass writing tests for code that is already
+  covered. Evidence: a 10-file `--mutate` over the `boyScoutRun*` set reported
+  `measure.js`, `report.js`, `run.js` and `types.js` at 0% with every mutant
+  Survived; a single-file re-run of each proved all four were really 96–100%
+  killed — wrong numbers, not a test gap.
+- So: re-verify EVERY 0% file with its own single-file run before acting on it,
+  and clear `stryker-incremental.json` (or pass `--force`) for that re-run, or
+  it can inherit the very verdicts you are checking — `incremental: true`
+  MERGES each run's results into that file, so a bad run's 0% persists
+  alongside a later good one (stale-cache trap above). Act on a 0% only once
+  the solo, cache-cleared run agrees with it.
+- **This is a RE-MEASUREMENT rule, never a dismissal.** A solo, cache-cleared
+  re-run that STILL reads 0% is a REAL gap and you harden it. "A 0% is probably
+  a false reading" is precisely the standing licence that was REJECTED for
+  BL-387 — it would wave through real gaps — and it stays rejected; only the
+  re-run settles it. Before concluding anything about a 0%, also confirm the
+  run's `--mutate` targeted the compiled `out/**/*.js`, never `src/**/*.ts`
+  (engineering.prompt): a wrong-scope run shows 0% killed across EVERY file
+  including long-hardened ones, which is the shape that distinguishes it from
+  this defect, where only some files read 0%.
 - Then run the CRAP tool and keep CRAP at or below 6 on changed code.
 - Differential complexity gate (accepted rule_proposal from the hardender,
   2026-08-19): measure each changed function's complexity against `main`'s

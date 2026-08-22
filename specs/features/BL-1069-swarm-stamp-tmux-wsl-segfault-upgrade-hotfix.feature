@@ -5,6 +5,10 @@ Feature: BL-1069 the swarm judges its tmux by the server it is actually running
   tmux, warns below 3.7, soft-hardens two server options, and documents a
   no-root install. This feature is the gate that hotfix never passed.
 
+  One of those two knobs is gone: BL-1075 retired `window-size largest`, which
+  the tiling panel overrode per window and so never held. `focus-events off` is
+  the surviving soft knob, and scenario 03 gates it.
+
   The incident's own live probe is the case that matters: the client on PATH
   was ALREADY 3.7b while `#{version}` on the swarm socket still answered 3.4,
   because the server predated the install. Any version judgement that reads
@@ -40,17 +44,11 @@ Feature: BL-1069 the swarm judges its tmux by the server it is actually running
       | absent | 3.7b | path   |
 
   # BL-1069 tmux-hardening-is-soft-03
-  Scenario Outline: a rejected stability knob never fails the caller
-    Given a live control plane whose tmux rejects the "<option>" option
+  Scenario: a rejected stability knob never fails the caller
+    Given a live control plane whose tmux rejects the "focus-events" option
     When the swarm hardens the server during an ensure
     Then the ensure still reports the control plane up
     And the rejection is not recorded as a control-plane failure
-
-    Examples:
-      | option       |
-      | focus-events |
-      | window-size  |
-      | both         |
 
   # BL-1069 tmux-install-refuses-04
   Scenario Outline: the installer produces a verified tmux or refuses by name
