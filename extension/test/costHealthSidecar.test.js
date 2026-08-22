@@ -21,6 +21,7 @@ const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
 const { freshnessIncidentLogPath } = require('../out/metrics/swarmMetrics');
 const { appendHostLoadSample } = require('../out/metrics/resourceTelemetry');
 const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -867,10 +868,7 @@ test('writeCostHealthSidecar writes valid JSON at the expected path', () => {
 
 test('commitCostHealthSidecar commits only the sidecar file, scoped, into a real repo', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   // An unrelated dirty file must NOT be swept into the sidecar commit.
   fs.writeFileSync(path.join(target, 'unrelated.txt'), 'do not commit me');
@@ -890,9 +888,7 @@ test('commitCostHealthSidecar commits only the sidecar file, scoped, into a real
 
 test('commitCostHealthSidecar returns false (never throws) when there is nothing to commit', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
+  copySeededRepoInto(target);
 
   const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
   const filePath = writeCostHealthSidecar(target, sidecar);
@@ -907,10 +903,7 @@ test('commitCostHealthSidecar returns false (never throws) when there is nothing
 
 test('computeCostHealthSidecar wires real BL-100/BL-096 producers together without throwing on an empty target', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   assert.doesNotThrow(() => computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]));
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
@@ -922,10 +915,7 @@ test('computeCostHealthSidecar wires real BL-100/BL-096 producers together witho
 
 test('computeCostHealthSidecar folds real .swarmforge/bounces/ records into flowBalance.rework', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   const nowMs = Date.parse('2026-07-26T12:00:00.000Z');
   fs.mkdirSync(path.join(target, '.swarmforge', 'bounces'), { recursive: true });
@@ -941,9 +931,7 @@ test('computeCostHealthSidecar folds real .swarmforge/bounces/ records into flow
 
 test('computeCostHealthSidecar derives closed-ticket dates from real git history, excluding a still-open ticket', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
+  copySeededRepoInto(target);
 
   fs.mkdirSync(path.join(target, 'backlog', 'active'), { recursive: true });
   fs.writeFileSync(path.join(target, 'backlog', 'active', 'BL-700-open.yaml'), 'id: BL-700\n');
@@ -973,10 +961,7 @@ test('computeCostHealthSidecar derives closed-ticket dates from real git history
 
 test('BL-312 burn-meter-master-resident-04: coordinator+specifier sharing one worktreePath appear as ONE combined sidecar agent, not two byte-identical day-totals', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   const sidecar = computeCostHealthSidecar(target, [
     { role: 'coordinator', worktreePath: target },
@@ -1003,10 +988,7 @@ test('BL-290: suiteDurationTrend is omitted entirely (not null) when none is giv
 
 test('BL-290: computeCostHealthSidecar folds in a real suiteDurationTrend without throwing on an empty target', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
   assert.equal(sidecar.suiteDurationTrend.hasLocalData, false, 'no .test-durations.jsonl exists in this fixture, so hasLocalData must be false, never fabricated');
@@ -1057,10 +1039,7 @@ test('BL-338: the rendered briefing section shows the figure with its accounting
 
 test('BL-338: computeCostHealthSidecar folds in a real costPerTicket summary without throwing on an empty target', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
   assert.equal(sidecar.costPerTicket.average, null, 'no delivered ticket exists in this empty fixture, so the average must be null, never fabricated');
@@ -1069,10 +1048,7 @@ test('BL-338: computeCostHealthSidecar folds in a real costPerTicket summary wit
 
 test('BL-338: computeCostHealthSidecar accepts an injectable claudeProjectsDir, matching computeCostTelemetry\'s own testability seam', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   const claudeProjectsDir = mkTmp();
   const slug = target.replace(/[/.]/g, '-');
@@ -1189,10 +1165,7 @@ test('BL-551: the rendered section omits "Top expensive origins" entirely when e
 
 test('BL-551: computeCostHealthSidecar folds in real ledger rollups without throwing on an empty target', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
 
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
   assert.deepEqual(sidecar.topExpensiveOriginsByHorizon, { '3h': [], '24h': [], '7d': [] }, 'no ledger exists in this empty fixture, so every horizon must be an empty rollup, never fabricated');
@@ -1200,10 +1173,7 @@ test('BL-551: computeCostHealthSidecar folds in real ledger rollups without thro
 
 test('BL-551: computeCostHealthSidecar rolls up real ledger records for the horizon they fall inside', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   const nowMs = Date.parse('2026-07-09T18:00:00Z');
   writeLlmLedger(target, [
     llmInvocation({ at: '2026-07-09T17:00:00Z', costUsd: 5, origin: llmOrigin({ role: 'coder', trigger: 'handoff' }) }),
@@ -1269,10 +1239,7 @@ test('renderCostTrendChartLines returns no lines when there is no series to draw
 
 test('BL-551: computeCostHealthSidecar wires real ledger records into a rolling origin trend series', () => {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   const nowMs = Date.parse('2026-07-09T18:00:00Z');
   writeLlmLedger(target, [
     llmInvocation({ at: '2026-07-09T17:00:00Z', costUsd: 5, origin: llmOrigin({ role: 'coder', trigger: 'handoff' }) }),

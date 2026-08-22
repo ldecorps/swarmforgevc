@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { startBridge, resolveEpicWritePaths } = require('../out/bridge/bridgeServer');
 const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const TOKEN = 'test-token-123';
 
@@ -52,10 +53,11 @@ function readPriority(targetPath, id) {
 // telegramFrontDeskBotCli.test.js's commitExpediteWrites tests.
 function mkGitTarget() {
   const root = mkTmp();
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
-  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  // BL-1039: the seeded repository comes from the shared fixture - one
+  // seeding per RUN instead of init+config+commit per scenario. Four
+  // process spawns before the behaviour under test was even reached,
+  // repeated across every test in this file. Measured 190ms -> 33ms.
+  copySeededRepoInto(root);
   // BL-1038: copies commit_integrity_cli.bb's load-file CLOSURE (11 files),
   // not the whole live scripts directory - see pinnedRepoFixture.js for why.
   copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['commit_integrity_cli.bb']);

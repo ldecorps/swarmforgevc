@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, bridgeCostLogPath, readBridgeCostRecords } = require('../out/tools/telegram-bridge-cost-line');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-511: the daily-briefing line CLI briefing_email_lib.bb shells out to.
 
@@ -19,9 +20,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {

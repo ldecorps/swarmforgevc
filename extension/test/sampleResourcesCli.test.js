@@ -7,6 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { formatSampleResult, main } = require('../out/tools/sample-resources');
 const { installFakeTmux, installInProcessTmux } = require('./helpers/fakeTmux');
 const { spawnFakeAgentTree } = require('./helpers/fakeAgentTree');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // ── formatSampleResult (pure) ────────────────────────────────────────────
 
@@ -34,9 +35,7 @@ function git(cwd, args) {
 
 function initFixture() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   git(root, ['add', '-A']);
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
@@ -207,10 +206,7 @@ test('main() skips sampling in-process when a sample was already recorded within
 
 test('a missing .swarmforge/roles.tsv (no resolvable project root) exits non-zero rather than sampling nothing silently', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(root);
 
   assert.throws(() => runCli(root));
 });

@@ -13,6 +13,7 @@ const {
   unrecognizedChaserTelemetryTypes,
 } = require('../out/metrics/leanLedgerCompose');
 const { formatBounceHistoryEntry } = require('../out/quality/bounceHistory');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-819: each composer reads ONE already-shipping instrument and maps it
 // to LeanLedgerEvent[] for a single ticket - reuse before invent (no new
@@ -356,9 +357,7 @@ test('composeCloseEvent finds a ticket sitting in backlog/done/ and dates the cl
 
 test('composeCloseEvent names the approved commit - the real commit that added the ticket\'s file to backlog/done/', () => {
   const target = mkTmp();
-  execFileSync('git', ['init', '-q'], { cwd: target });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: target });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: target });
+  copySeededRepoInto(target);
   writeTicketYaml(path.join(target, 'backlog', 'done'), 'BL-819');
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'close BL-819'], { cwd: target });

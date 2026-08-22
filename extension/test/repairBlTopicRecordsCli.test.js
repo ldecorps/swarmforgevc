@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { repairBlTopicRecords, main } = require('../out/tools/repair-bl-topic-records');
 const { readRecord, recordPath } = require('../out/concierge/blTopicStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-348: the CLI cross-references backlog/topics/*.json against
 // readBacklogFolders(...).done and repairs exactly the records whose first
@@ -23,10 +24,7 @@ function git(cwd, args) {
 
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   return target;
 }
 

@@ -10,6 +10,7 @@ const {
 } = require('../out/tools/backfill-standing-topic-icons');
 const { readSwarmIconId } = require('../out/concierge/blTopicStore');
 const { readTickState } = require('../out/tools/telegram-front-desk-bot');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-418: the standing-topic sibling of backfill-topic-icons.ts's own test
 // (BL-342 scenario 07) - a bulk, human-initiated seed for the Operator
@@ -32,10 +33,7 @@ function git(cwd, args) {
 // every test here.
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   return target;
 }
 
