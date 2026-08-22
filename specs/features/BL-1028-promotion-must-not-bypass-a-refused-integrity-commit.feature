@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=dcb9801434b8200d452f08341d8483d52f0c1db127105f964f631d6b9046553e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T14:18:17.036861206Z","feature_name":"a promotion never bypasses an integrity commit that refused","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1028-promotion-must-not-bypass-a-refused-integrity-commit.feature","background_hash":"8dfb43339a755a9a1cd0a40262f6a6cde8461598f483ef288f9cfe4d146b86fd","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a refused integrity commit is never overridden by a raw commit","scenario_hash":"83487217bc49eca1c3e726835eae24c4e71c5717d4b2d08c68f1c87ca91e3978","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-22T14:18:13.210748988Z"},{"index":1,"name":"a promotion that does not commit leaves the index as it found it","scenario_hash":"ae205593bd1ffbf14db1e154396ff884066a5cdd6baf01d6014f0b8d0994f721","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-22T14:18:13.210748988Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a promotion never bypasses an integrity commit that refused
 
   promote_and_route_next.sh stages its paused -> active rename with `git mv`

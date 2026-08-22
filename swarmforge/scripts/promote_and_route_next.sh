@@ -227,6 +227,48 @@ BASE="$(basename "$SRC")"
 DEST="$ACTIVE_DIR/$BASE"
 ID="$(grep -E '^id:' "$SRC" | head -1 | awk '{print $2}' | tr -d '\r')"
 
+# BL-1028: snapshot what this promotion is about to stage, BEFORE staging it,
+# so a refused integrity commit can be unwound exactly. Scoped to the two
+# paths this script stages itself - never a blanket `git reset`, which on the
+# shared master checkout every role commits from would discard other roles'
+# staged work.
+PROMOTION_SNAPSHOT_DIR="$(mktemp -d)"
+trap 'rm -rf "$PROMOTION_SNAPSHOT_DIR"' EXIT
+git -C "$ROOT" ls-files --stage -- "backlog/paused/$BASE" "backlog/active/$BASE" \
+  > "$PROMOTION_SNAPSHOT_DIR/index" 2>/dev/null || : > "$PROMOTION_SNAPSHOT_DIR/index"
+cp "$SRC" "$PROMOTION_SNAPSHOT_DIR/src"
+
+# Puts the index and the working tree back exactly as they were before the
+# `git mv` below - including the assigned_to rewrite, which edits $DEST in
+# the working tree after the rename is staged.
+rollback_promotion() {
+  git -C "$ROOT" update-index --force-remove -- \
+    "backlog/paused/$BASE" "backlog/active/$BASE" 2>/dev/null || true
+  if [[ -s "$PROMOTION_SNAPSHOT_DIR/index" ]]; then
+    git -C "$ROOT" update-index --index-info < "$PROMOTION_SNAPSHOT_DIR/index" 2>/dev/null || true
+  fi
+  rm -f "$DEST"
+  cp "$PROMOTION_SNAPSHOT_DIR/src" "$SRC"
+}
+
+# The CLI refuses in two shapes and they do not look alike. A :success-false
+# refusal prints the raw result JSON on stdout and a `FAILED (reason)` line on
+# stderr; a close-guard rejection exits before commit-with-integrity! ever
+# runs, so it prints ONLY a `CLOSE BLOCKED` line and no JSON at all. Reading
+# just one of them would report `unknown` for the other.
+integrity_refusal_reason() {
+  local out="$1" err="$2" reason=""
+  if grep -q 'CLOSE BLOCKED' "$err" 2>/dev/null; then
+    printf '%s\n' close-guard
+    return 0
+  fi
+  reason="$(sed -n 's/.*"reason":"\([^"]*\)".*/\1/p' "$out" 2>/dev/null | head -1)"
+  if [[ -z "$reason" ]]; then
+    reason="$(sed -n 's/.*FAILED (\([^)]*\)).*/\1/p' "$err" 2>/dev/null | head -1)"
+  fi
+  printf '%s\n' "${reason:-unknown}"
+}
+
 git -C "$ROOT" mv "$SRC" "$DEST"
 
 # promotion_gates: assignee/spec-stage routing decision — assigned_to:
@@ -251,21 +293,45 @@ if [[ "$ROUTE_FLAG" == "REWRITE" ]]; then
   fi
 fi
 
-# Commit via integrity helper when available
+# Commit via integrity helper when available.
+#
+# BL-1028: a refusal is OBEYED, never overridden. The old `|| { git add;
+# git commit; }` fired only when the CLI was PRESENT and REFUSED, so its
+# entire job was to override refusals - including :lock-timeout and
+# :verify-mismatch, which mean a concurrent writer is live in the shared
+# checkout, i.e. exactly what the lock exists to serialise. commit_integrity's
+# own header says callers must commit through it "never a hand-rolled `git
+# commit` that would race the roles committing to main"; that fallback did
+# precisely that, in the one case where it was most dangerous. And when the
+# fallback itself failed, the `git mv` above stayed staged in the shared index
+# with nothing to unwind it.
 if [[ -f "$SCRIPT_DIR/commit_integrity_cli.bb" ]]; then
+  INTEGRITY_RC=0
   bb "$SCRIPT_DIR/commit_integrity_cli.bb" "$ROOT" \
     --message "Promote ${ID}: paused → active for ${ROUTE_ROLE}" \
     --path "backlog/paused/$BASE" \
     --path "backlog/active/$BASE" \
-    || {
-      git -C "$ROOT" add -A "backlog/active/$BASE"
-      git -C "$ROOT" add -u "backlog/paused/$BASE" 2>/dev/null || true
-      git -C "$ROOT" commit -m "Promote ${ID}: paused → active for ${ROUTE_ROLE}"
-    }
+    > "$PROMOTION_SNAPSHOT_DIR/integrity.out" \
+    2> "$PROMOTION_SNAPSHOT_DIR/integrity.err" || INTEGRITY_RC=$?
+  # The CLI's own output still reaches the caller either way - obeying a
+  # refusal must not also make it quieter than the old bypass was.
+  cat "$PROMOTION_SNAPSHOT_DIR/integrity.out"
+  cat "$PROMOTION_SNAPSHOT_DIR/integrity.err" >&2
+  if (( INTEGRITY_RC != 0 )); then
+    REFUSAL_REASON="$(integrity_refusal_reason \
+      "$PROMOTION_SNAPSHOT_DIR/integrity.out" "$PROMOTION_SNAPSHOT_DIR/integrity.err")"
+    rollback_promotion
+    echo "promote_and_route_next: integrity commit REFUSED (${REFUSAL_REASON}) for ${ID} — rolled the staged paused → active rename back; ${BASE} is still in backlog/paused/ for the next attempt. NOT overriding a refusal with a raw commit." >&2
+    exit 1
+  fi
 else
+  # Deliberate degradation for a target repo that never had the guard - not a
+  # refusal path. It says so out loud so an unguarded commit is never mistaken
+  # for a guarded one.
   git -C "$ROOT" add -A "backlog/active/$BASE"
   git -C "$ROOT" add -u "backlog/paused/$BASE" 2>/dev/null || true
   git -C "$ROOT" commit -m "Promote ${ID}: paused → active for ${ROUTE_ROLE}"
+  echo "promote_and_route_next: no commit_integrity_cli.bb in this target — committed WITHOUT the integrity guard." >&2
 fi
 
 echo "Promoted $BASE → backlog/active/ (assigned_to: ${ROUTE_ROLE})"
