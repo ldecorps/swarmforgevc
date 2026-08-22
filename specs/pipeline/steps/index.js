@@ -578,7 +578,8 @@ const DOMAINS = [
   require('./bl1038UnitTestsPinTheRepoSteps'),
   require('./bl1032TmuxReaperScopeSteps'),
   require('./bl1039SharedSeededFixtureSteps'),
-  require('./bl1049ProviderSecretScrubSteps')
+  require('./bl1049ProviderSecretScrubSteps'),
+  require('./bl1028PromotionRefusalSteps')
 ];
 
 function registerSteps(registry) {
