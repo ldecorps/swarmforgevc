@@ -1,6 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1036: a front-desk restart now releases
+**Last Updated:** August 22, 2026 (BL-1041: a new CLI,
+`swarmforge/scripts/rescue_orphaned_work.bb`, rescues work sitting outside
+any branch (a stash entry with no worktree, most often) without the rescue
+itself becoming the way the work gets lost. On 2026-08-22 a reviewed-sound
+fix was applied out of a stash into a role's worktree and the stash entry
+was dropped in the SAME operation — for about an hour its only two copies
+were an uncommitted working tree and an evidence file a specifier had
+happened to hand-copy elsewhere; a `git restore` in that window would have
+destroyed it. The CLI now commits the rescued content onto a branch, reads
+that commit's content back out and compares it to disk, and only THEN drops
+the source stash entry — guarded explicitly (`source-release-allowed?`), so
+it cannot be reached by falling through. The changed-path set is read from
+the stash itself (`--include-untracked`) before the apply touches the
+worktree, not derived from a post-apply `git diff`, which an architect
+bounce found could sweep the receiving role's own pre-existing uncommitted
+work into the rescue commit or miss a stash whose orphaned work was a
+brand-new untracked file. The role whose worktree is touched is now told: a
+capped (80-char) `note` names the file count and the commit sha, trimming
+the reason before ever trimming the sha, since the sha is what makes the
+note actionable. See
+[the rescue how-to](../how-to/BL-1041-rescue-orphaned-work.md). Sibling
+landing, same session — **BL-1037**: the build-freshness watchdog now
+restarts a healthy front desk only once it has served the build it was
+moved to, bounding restarts to fewer than commits under a fast-moving
+`main` while still carrying the staleness debt forward rather than
+dropping it; see the BL-582 entry below, amended in place, for the full
+detail. Prior entry —
+BL-1036: a front-desk restart now releases
 its Telegram `getUpdates` slot instead of leaving the replacement to poll
 straight into a 409 conflict, and the supervisor log now closes every
 degradation it opens. Root cause, confirmed from the code rather than
@@ -231,6 +258,16 @@ not only on a crash respawn — the reason a healthy bot served a stale build
 for 2h23m on 2026-07-23. A newly-stale build starts a grace
 (`FRONT_DESK_BUILD_GRACE_MS`, default 5 minutes); past the grace the
 process restarts through the same bounded-backoff clause a crash uses.
+**BL-1037 bounds how often that may happen.** A child restarted onto a fresh
+build must complete one poll cycle on it before the watchdog may restart it
+again — otherwise a `main` that moves faster than one grace plus
+recompile-and-respawn costs a restart per commit (24 staleness detections and
+12 respawns in 105 minutes on 2026-08-22, each paying a Telegram conflict
+window). The staleness is **carried, not cleared**, while it waits: a deferred
+restart is still owed and fires the moment the child serves, so this bounds
+the rate without reopening the 2h23m stale-serving window. Deferrals are
+logged as `build-stale-deferred` so the pause is visible rather than inferred
+from a restart that did not happen.
 Every diagnostic now lands in a new durable sink,
 `.swarmforge/operator/front-desk-diagnostics.log`, closing the gap that
 left the 2026-07-23 failure window with no bot output preserved anywhere.
