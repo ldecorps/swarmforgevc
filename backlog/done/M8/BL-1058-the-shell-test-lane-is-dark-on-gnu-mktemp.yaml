@@ -140,3 +140,17 @@ notes: |
   the registry's shape.
 
 assigned_to: coder
+
+coordinator_notes: |
+  2026-08-22: QA paused verification. The qa_e2e step's own full sweep loop
+  (`for f in swarmforge/scripts/test/*.sh; do bash "$f"; done`) wiped all 8
+  running swarm tmux sessions ~8x when run from QA's own pane (correlates
+  test_bl1049 fixtures, root cause undiagnosed). Per operator-caught incident,
+  this loop must only run from a detached host shell (env -u TMUX), never an
+  agent pane. Blocked pending a human/operator running the qa_e2e sweep
+  externally and reporting pass/fail back to QA, OR an alternate verification
+  approach. Cannot self-resolve via routing; a coordinator clarifying question
+  is already pending on an unrelated issue (specifier pane launch mixup), so
+  this is recorded here rather than asked, per BL-798 durable-reason
+  discipline. Do not promote a replacement for this slot — the ticket stays
+  active/blocked, not abandoned.

@@ -11,7 +11,7 @@ direction: pipeline-note
 depends_on: []
 mutation_cost: low
 required_stages: [qa]
-acceptance: specs/features/BL-975-bl967-owed-live-soak-recorded.feature
+acceptance: specs/features/BL-975-bl967-owed-live-soak-recorded.feature.draft
 
 invariants: []
 
@@ -84,28 +84,125 @@ constraints: >
     never counted in the window.
 
 qa_e2e_procedure: >
-  1. Establish the window start from daemon-start-audit.log: the
-     first handoffd claim AFTER the master checkout's local main
-     merged origin/main containing a5ecfc281 (~05:56Z; confirm the
-     merge commit's time yourself - the 05:50:19Z start was PRE-fix,
-     see the corrected window facts).
-  2. Confirm the swarm was active during the window (roles working;
-     an idle-swarm window proves little - extend or choose a later
-     30-minute active window if needed).
-  3. Read freshness-incidents.log for handoffd entries with epoch
-     inside the window: zero -> PASS half 1. Any entry -> FAIL path.
+  AMENDED 2026-08-22 (specifier), after QA's BLOCKED verdict
+  (evidence f8e61157b). The 2026-08-20 window this procedure used
+  to name is UNRECOVERABLE - both daemon-start-audit.log and
+  freshness-incidents.log have rotated past it, .swarmforge/ is
+  gitignored, and no backup exists. Do NOT reconstruct it, and do
+  NOT round the coordinator's surviving secondary observation
+  (a ps-derived uptime approximation, plus one incident its own
+  author flagged as undated and ambiguous) into a primary-source
+  PASS. The debt BL-967 recorded was never "that particular
+  half-hour"; it was "observe the landed fix on a live daemon".
+  That is still observable, and on a BETTER primary source than
+  the one the original steps assumed.
+
+  1. Pin the window from .swarmforge/daemon/handoffd-build.json:
+     it carries the RUNNING daemon's own build_sha and started_at,
+     which is a direct answer to "is this daemon post-fix?" that
+     daemon-start-audit.log cannot give (the audit log records
+     starts, never the loaded sha - the exact gap that let the
+     05:50Z PRE-fix daemon be mispinned as post-fix at mint).
+     Confirm post-fix with:
+       git merge-base --is-ancestor a5ecfc281b <build_sha>
+     A daemon whose build_sha fails that check is NOT eligible;
+     wait for the next start and re-read the file.
+  2. Confirm the swarm was ACTIVE across the window (roles working,
+     parcels moving). An idle window proves little - if the swarm
+     was quiet, extend or pick a later 30-minute active stretch
+     inside the same daemon's uptime.
+  3. Read freshness-incidents.log for entries whose epoch falls in
+     the window AND whose field is daemon=handoffd. The file is
+     SHARED: babysitterd writes its own entries (daemon=babysitterd,
+     with swarm= and reason= fields). Only daemon=handoffd lines
+     count toward this soak; babysitterd lines are noise here.
+     Zero handoffd entries -> PASS half 1. Any entry -> FAIL path.
   4. Read handoffd.log (current daemon) for completed heartbeat
-     cycles; on heavy cycles, per-sweep boundary lines. An attributed
-     timeout line names sweep+call -> record as identified cause.
+     cycles; on heavy cycles, per-sweep boundary lines. An
+     attributed timeout line names sweep+call -> record as the
+     identified cause and request the follow-on mint.
   5. Step-4 half: confirm no kill of a slow-but-healthy cycle
      (120-232s legit range, BL-789) occurred in the window.
-  6. Write backlog/evidence/BL-975-soak-<date>.md with: window
-     start/end epochs, daemon pids observed, incident delta, cycle
-     evidence, verdict PASS or the attributed cause + the follow-on
-     ticket id requested from the specifier. Acceptance scenarios
-     01-02 gate this file's content.
+  6. Write backlog/evidence/BL-975-soak-<date>.md with: the
+     daemon's build_sha and the ancestry check's output, window
+     start/end epochs, pid observed, handoffd-only incident count,
+     cycle evidence, and verdict PASS or the attributed cause plus
+     the follow-on ticket id requested from the specifier.
+     This file, judged by you, IS the contract - there is no
+     executable acceptance gate (see the acceptance draft's header
+     and finding-2 disposition in notes).
+
+  Classification hint, not a verdict: the log's handoffd entries
+  come in two shapes - age_secs=999999999 (a sentinel meaning no
+  heartbeat file was found at all) and a real elapsed age such as
+  age_secs=4080. They are plausibly different failures, and
+  BL-967's cycle guard speaks to the second. If the window is not
+  clean, say which shape you saw rather than pooling them.
+
+  Live facts at amendment time (2026-08-22T20:10Z), given so you
+  can start immediately - re-derive them yourself, do not trust
+  this paragraph as the evidence: handoffd pid 1858730 running
+  since 2026-08-22T19:18:07Z (epoch 1787426287) on build_sha
+  fb1acf132a71596b4706c0b2c5530e4b0185943f, which the ancestry
+  check above confirms is post-fix; zero daemon=handoffd entries
+  at or after that epoch (the most recent is 2026-08-22T11:34:01Z,
+  on an earlier daemon whose loaded sha is no longer determinable).
+  A full 30-minute window inside that uptime is therefore already
+  available and already looks clean - steps 2, 4 and 5 are what
+  remain to actually judge it.
 
 notes: >
+  AMENDMENT 2026-08-22 (specifier), disposing QA's BLOCKED verdict
+  (note 00_20260822T200644Z_000899, evidence f8e61157b). QA was
+  right to refuse both PASS and FAIL, and right to route this as a
+  spec gap rather than a parcel. Two findings, two dispositions:
+
+  FINDING 1 (the 2026-08-20 window is gone) - RE-TARGETED, not
+  closed. Neither of the two options QA offered is taken. Accepting
+  the secondary evidence as a PASS would launder a ps-derived
+  approximation and an admittedly-undated incident into a
+  primary-source claim, which is the failure mode "a green suite is
+  not evidence" names; QA declining to do that was correct. But
+  closing this "undeterminable" is worse than it looks: it would
+  leave BL-967's cycle-guard fix with NO live observation at all,
+  which is precisely the debt the documenter flagged and this chore
+  exists to discharge. The debt's value was never tied to that
+  date. So the window is re-pinned to any 30-minute active stretch
+  on a daemon whose OWN build_sha is confirmed post-fix - see the
+  amended qa_e2e_procedure. This is not a lower bar than the
+  original: handoffd-build.json answers "did this process load the
+  fix?" directly, where daemon-start-audit.log only ever recorded
+  that a start happened - the gap that produced the mispin the
+  coordinator had to correct at mint+6min.
+
+  FINDING 2 (no step handler under required_stages [qa]) - the
+  ticket carries NO executable acceptance gate, by decision. Not
+  "a handler is owed to someone": there is no honest one to write.
+  The scenarios gate an evidence markdown's prose, so a handler
+  could only assert that certain words were written - fake
+  acceptance, green while the observation may never have happened.
+  A handler reading the real logs instead would have to touch
+  .swarmforge/daemon/*.log, a live runtime path acceptance handlers
+  are forbidden to read, and would rot at the next rotation - the
+  very failure that blocked this ticket. Adding a coder stage would
+  buy only the first of those. The feature file is therefore parked
+  as specs/features/BL-975-...feature.draft (retired, never to be
+  wired; its header says so), acceptance: points at the draft, and
+  the qa_e2e_procedure is the operative contract. required_stages
+  stays [qa] - the human already said the word on qa-only routing
+  in approval_context, and finding 2 does not change that call.
+
+  human_approval left at approved deliberately: the approved
+  substance ("run BL-967's owed observation and record the
+  verdict") is unchanged. What changed is which daemon is observed
+  and the removal of a gate that could never have been honest.
+  Flagged to the human in the coordinator note rather than by
+  flipping the field, which would strand an active ticket.
+
+  Not recorded via record-bounce.js: no producing role was blamed
+  and none exists to blame under required_stages [qa]; QA's
+  evidence file is the durable record.
+
   Source: documenter note handoff 20_20260820T054749Z_000227
   ("BL-967 qa_e2e step 3 (30min live soak) recorded OWED by QA; no
   ticket tracks it"), sent to specifier + coordinator. QA's own
@@ -172,3 +269,17 @@ notes_coordinator_hold: >
 
 
 assigned_to: coder
+
+coordinator_notes: |
+  2026-08-22: QA blocked (commit f8e61157b). Two spec gaps, neither a code
+  defect: (1) the target 2026-08-20 soak window's raw log evidence has
+  rotated out of both daemon-start-audit.log and freshness-incidents.log,
+  unrecoverable (.swarmforge/ gitignored) - only the coordinator's aggregate
+  observation note survives, which can't resolve the pre-fix-tail vs
+  post-fix-fail ambiguity it flagged. (2) required_stages:[qa] meant no
+  coder stage was ever tasked to wire a step handler for this feature file,
+  so its acceptance scenarios cannot be mechanically run at all. Routed by
+  QA to specifier+coordinator per Article 4.4 (spec-gap note, never a
+  parcel). Ticket stays active/blocked pending specifier disposition
+  (re-scope verification method, or accept undetermined verdict, or add a
+  coder stage to wire the handler) - not abandoned, no replacement slot.
