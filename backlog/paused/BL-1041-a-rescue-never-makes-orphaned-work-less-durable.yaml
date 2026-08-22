@@ -152,13 +152,18 @@ source: |
   00_20260822T062759Z_000810 that preceded it: "Rescued BL-981 seat-fold fix,
   uncommitted in coder wt - needs ticket".
 
+notes: |
+  2026-08-22T06:59Z coordinator: open-slot nudge received, NOT promoted -
+  active was already back at 4/4 (cap just restored, BL-1035 filled the
+  slot moments before this nudge landed) by the time it was processed, and
+  this ticket remains blocked on human_approval: pending regardless.
+
   Prior record of the same orphaned work: docs/briefings/2026-08-20.md
   lines 244-247, "Still open / not yet resolved" item 3.
 
   Full forensic detail, including the rescued diff itself:
   backlog/evidence/BL-1040-rescued-seat-fold-work-20260822.md.
 
-notes: |
   ## Related
 
   - **BL-1040** (paused) - the seat-fold defect the rescued work addresses.

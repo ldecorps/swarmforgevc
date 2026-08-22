@@ -138,6 +138,33 @@ fixed 2026-08-02 (adopted/reviewed under BL-789; see
   no process ever having run), the other an explicit runtime-stop event —
   both are consulted, on purpose.
 
+## Attribution: swarm name and violation reason (BL-1011)
+
+`heartbeat_age_secs` returns a huge sentinel age (`999999999`) for three
+different, unmeasurable conditions — the log file is missing, the log has no
+heartbeat line, or the newest heartbeat's timestamp will not parse — and
+that sentinel used to reach the operator raw, printed as though it were a
+real age, with no indication of which of the three had happened. Every
+announce and every durable incident record now carries two more fields:
+
+- **`swarm=`** — this checkout's swarm name, resolved once, unconditionally,
+  before either the Telegram credential fallback or any violation check
+  runs. Previously the resolution lived *only* inside the branch that fills
+  in missing `TELEGRAM_*` credentials, so a checkout whose credentials were
+  already exported never computed it and announced anonymously — exactly
+  what stalled attribution of the five `age_secs=999999999` alarms received
+  on 2026-08-21. Resolution order: `SWARMFORGE_SWARM_NAME`, then
+  `swarm_name` from `.swarmforge/swarm-identity`, then the fallback
+  `primary` — it is never empty, because an unattributable alarm is the
+  defect this fixes.
+- **`reason=`** — which condition produced the age: `log-absent`,
+  `no-heartbeat-line`, `unparseable-timestamp`, or (the normal, non-sentinel
+  case) `stale-heartbeat`.
+
+And `age_secs=` itself no longer ever prints the raw `999999999` sentinel to
+a person — a value that is not a real age renders as the word `unknown`; a
+real measured age still renders as a number, unchanged.
+
 ## What happens on a stale heartbeat
 
 0. **Check for a deliberate stop** (BL-785, below). If this daemon was stopped
@@ -155,7 +182,12 @@ fixed 2026-08-02 (adopted/reviewed under BL-789; see
    `action=grace` — names `effective_threshold=` and `contention_factor=`
    alongside the unchanged `threshold=` (the base value, so existing readers
    keep working), so a past decision is interpretable from the record alone
-   without re-running it at the same load.
+   without re-running it at the same load. Since BL-1011 every record also
+   names `swarm=` and `reason=`, and `age_secs=` is the word `unknown`
+   instead of a raw sentinel — see "Attribution" above. Example:
+   `epoch=1785625446 swarm=primary daemon=babysitterd age_secs=unknown
+   reason=log-absent threshold=600 effective_threshold=600
+   contention_factor=1 action=restart`.
 4. **Announce** on Telegram via curl. The message is grep-able as
    `FRESHNESS_VIOLATION` (for composition with BL-653 escalation).
 
@@ -244,6 +276,12 @@ deliberate-stop behaviour above has its own feature file,
 `specs/features/BL-785-freshness-deliberate-stop.feature`. The
 contention-relative threshold and grace window above have their own,
 `specs/features/BL-1012-the-freshness-watchdog-stops-manufacturing-its-own-incidents.feature`.
+The swarm/reason attribution above has its own,
+`specs/features/BL-1011-a-freshness-alarm-names-its-swarm-and-its-reason.feature`,
+plus a property test that runs the real script as a subprocess against
+generated checkouts, `swarmforge/scripts/test/bl1011_freshness_attribution_property_runner.bb`
+— the defect was about which shell branch computed a variable, which only
+running the script can answer.
 
 ## Consumer: cost-health sidecar's `daemonRestarts` (BL-904)
 
@@ -266,9 +304,9 @@ change here: this section only documents the new reader.
 2. Wait past the *effective* threshold (120s at contention factor 1 — see
    "Contention-relative threshold" above; longer on a busy host, never past
    600s) plus one cron tick.
-3. Confirm: new pid, incident line names `handoffd` + age +
-   `effective_threshold=` + `contention_factor=`, Telegram
-   `FRESHNESS_VIOLATION` arrived.
+3. Confirm: new pid, incident line names `handoffd` + age (or `unknown` +
+   `reason=`) + `swarm=` + `effective_threshold=` + `contention_factor=`,
+   Telegram `FRESHNESS_VIOLATION` arrived naming the same swarm and reason.
 4. `kill -CONT` is unnecessary — the checker already replaced it.
 5. Hold the swarm quiet past all thresholds; heartbeats keep writing and
    nothing restarts.

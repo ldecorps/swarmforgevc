@@ -1,6 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1010: a secondary swarm now publishes
+**Last Updated:** August 22, 2026 (BL-1011: a freshness alarm now names
+which swarm sent it and which of three conditions produced its sentinel
+age, in both the Telegram announce and the durable incident record.
+`heartbeat_age_secs` (`daemon_log_freshness_check.sh`) returned the literal
+`999999999` for three different unmeasurable conditions — the log file
+missing, the log with no heartbeat line, or an unparseable newest-heartbeat
+timestamp — and `process_daemon` interpolated that straight into
+`age_secs=${age}` as though it were a real age, while the checker's own
+swarm-name resolution lived only inside the branch that fills in missing
+Telegram credentials, so a checkout whose credentials were already exported
+never computed it and announced anonymously. Both together are why five
+`age_secs=999999999` alarms received 2026-08-21 10:58-11:06 BST could not be
+attributed to any host after a full investigation of the receiving one.
+`resolve_swarm_name` is hoisted out of the credential branch and now runs
+unconditionally (falling back to `primary`, never empty); `heartbeat_age_secs`
+now returns `"<age> <reason>"`, and `render_age` is the one place an age
+becomes human-facing text, mapping the sentinel to the word `unknown` rather
+than a raw number. Every announce and every incident record now carries
+`swarm=` and `reason=` (`log-absent`, `no-heartbeat-line`,
+`unparseable-timestamp`, or `stale-heartbeat`) alongside the existing
+`age_secs=`. See
+[the freshness-watchdog how-to](../how-to/BL-675-daemon-log-freshness-watchdog.md).
+Prior entry — BL-1010: a secondary swarm now publishes
 fleet status under its own name instead of silently clobbering the
 primary's. `holisticProjections.ts`'s `readSwarmName` read only
 `swarmforge.conf`, defaulting to `primary` when the key was absent, and
