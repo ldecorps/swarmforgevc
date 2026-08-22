@@ -71,6 +71,13 @@ description: |
   BL-1041 renders QA correctly for the only reason that separates it: its
   parcel is in `in_process/`, not `new/`.
 
+  Sharpest form of the defect: BL-1032 renders NS *because it made progress*.
+  On the board the operator posted at 11:35 it sat at CO, correctly, while the
+  coder held it opened. The coder then forwarded it to the cleaner - and the
+  moment the parcel left the coder's `in_process/` for the cleaner's `new/`,
+  the ticket fell off the stage map entirely and moved BACKWARDS to
+  not-started. A successful handoff is currently rendered as a regression.
+
   This is the fifth "durable false not-started" in this file's lineage, and
   the first that is not an id-extraction failure. BL-464 (note-aware read),
   BL-471 (case), BL-488 (non-leading id), BL-503 (missing hyphen) each taught
