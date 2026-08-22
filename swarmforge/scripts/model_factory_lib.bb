@@ -45,10 +45,41 @@
 (def provider->agent
   {"anthropic" "claude"
    "openai" "codex"
-   "cerebras" "aider"})
+   "cerebras" "aider"
+   ;; qwen gets its OWN key rather than reusing "openai", even though the
+   ;; wire protocol is OpenAI-compatible and qwen-code authenticates with
+   ;; `--auth-type openai`. Under "openai" a qwen model resolves to "codex"
+   ;; and would be launched through the Codex CLI - failing confusingly
+   ;; rather than loudly. The provider key names WHICH CLI LAUNCHES THE
+   ;; MODEL, not which protocol it speaks (BL-1053; the same
+   ;; agent-not-model distinction prompt_engine_lib.bb's capability map
+   ;; draws between qwen-code and aider).
+   "qwen" "qwen-code"})
 
-(defn agent-for-provider [provider]
-  (get provider->agent provider provider))
+(defn agent-for-provider
+  "The launch agent for `provider`, or nil when the map has never heard of
+   it. nil, and deliberately NOT the provider's own name: this used to fall
+   back to `provider`, which reads downstream as a perfectly ordinary agent
+   string and travels all the way into an assignment descriptor before
+   anything notices it names no real runtime."
+  [provider]
+  (get provider->agent provider))
+
+(defn resolve-launch-agent
+  "Provider -> launch agent as a REPORT rather than a bare value, so an
+   unknown provider is impossible to mistake for a resolved one. The reason
+   names both the provider that failed and the keys that exist, because the
+   fix for this failure is always 'add the missing entry' and the caller
+   should not have to open this file to find out which entries there are."
+  [provider]
+  (if-let [agent (get provider->agent provider)]
+    {:provider provider :agent agent :known? true}
+    {:provider provider
+     :agent nil
+     :known? false
+     :reason (str "unknown provider " (pr-str provider)
+                  " - no launch agent is registered for it. Known providers: "
+                  (clojure.string/join ", " (sort (keys provider->agent))))}))
 
 (defn eligible-candidates
   "Role-recommendation entries for `role`, filtered to the certification gate
@@ -138,13 +169,22 @@
                  cheap? (pick-cheap steward-registry survivors)
                  :else (pick-quality survivors))]
     (when chosen
-      {:role role
-       :agent (agent-for-provider (:provider chosen))
-       :provider (:provider chosen)
-       :model (:model chosen)
-       :policy mode
-       :reason (build-reason steward-registry mode chosen {:override-uncertified? override-uncertified?
-                                           :excluded-providers excluded-providers})})))
+      ;; An assignment naming no launch agent is worse than no assignment:
+      ;; every consumer downstream reads the descriptor as an ordinary one,
+      ;; and nothing between here and the pane checks that :agent names a
+      ;; runtime that exists. A candidate whose provider has no entry is a
+      ;; registry/config error, so it stops here, by name.
+      (let [{:keys [agent known? reason]} (resolve-launch-agent (:provider chosen))]
+        (when-not known?
+          (throw (ex-info (str "cannot assign role " role ": " reason)
+                          {:role role :provider (:provider chosen) :model (:model chosen)})))
+        {:role role
+         :agent agent
+         :provider (:provider chosen)
+         :model (:model chosen)
+         :policy mode
+         :reason (build-reason steward-registry mode chosen {:override-uncertified? override-uncertified?
+                                             :excluded-providers excluded-providers})}))))
 
 (defn assign-swarm
   "Resolves every role in `swarm-roles` under `mode`, returning a map of
