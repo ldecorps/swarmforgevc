@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1041-a-rescue-never-makes-orphaned-work-less-durable.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "A rescue never reduces durability: the source copy is not dropped until a commit containing the same content exists on a branch."
