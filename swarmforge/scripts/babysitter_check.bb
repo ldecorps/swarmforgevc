@@ -35,6 +35,9 @@
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
+;; BL-958: shared control-plane classify / response-policy — babysitterd is
+;; the owning daemon for :recover via ./swarm ensure.
+(load-file (str (fs/path script-dir "control_plane_lib.bb")))
 ;; BL-1017: the SAME provider env-passthrough swarm_ensure.bb/respawn-role!
 ;; and handoffd.bb's auth-observe respawn use, via BL-536's extraction — so a
 ;; session repair never strips alternate-runtime auth from the relaunched
@@ -61,6 +64,9 @@
 ;; every sweep and invariant 2 ("no respawn storm") would be unenforceable,
 ;; since each sweep is its own process.
 (def repair-file (fs/path babysitterd-dir "session-repairs.json"))
+;; BL-958: bound for ./swarm ensure when the whole control plane is gone —
+;; same shape as session-repairs.json (attempts + last-ms), one key only.
+(def control-plane-ensure-file (fs/path babysitterd-dir "control-plane-ensure.json"))
 
 (def stuck-min 30)
 (def heartbeat-max-secs 300)
@@ -73,7 +79,17 @@
 (defn now-iso [] (str (java.time.Instant/now)))
 
 (defn sh! [& args]
-  (apply process/sh {:continue true} args))
+  ;; {:continue true} only softens a non-zero exit. A binary that cannot be
+  ;; spawned at all (ENOENT / EACCES — the live WSL shape for macOS-only
+  ;; `vm_stat`) throws IOException from ProcessBuilder before any exit code
+  ;; exists. Catching here keeps every gather soft-failed instead of aborting
+  ;; the whole babysitter sweep (which previously permanently disabled
+  ;; BL-1017 session auto-heal on Linux/WSL whenever /proc/meminfo also
+  ;; failed to read via slurp — see read-meminfo-text).
+  (try
+    (apply process/sh {:continue true} args)
+    (catch Exception e
+      {:exit 127 :out "" :err (or (.getMessage e) "exec-failed")})))
 
 ;; ── tmux socket + roles ──────────────────────────────────────────────────
 
@@ -527,14 +543,30 @@
 ;; overrides it — the existing hermetic test seam, unchanged), then fall back
 ;; to macOS's vm_stat. nil only when neither facility yields a reading —
 ;; available-mem-mb's nil-means-truly-unavailable contract is unchanged.
+;;
+;; WSL/Linux note: babashka/`slurp` (and java.io.Reader paths that seek) fail
+;; on /proc/meminfo with "Invalid argument" even when the file is perfectly
+;; readable via FileInputStream or `cat`. That used to make every Linux sweep
+;; fall through to `vm_stat`, which then threw ENOENT and aborted -main
+;; before any BL-1017 repair ran — permanent auto-heal blackout. Always read
+;; meminfo via a non-seeking FileInputStream.
 
 (defn meminfo-path []
   (or (System/getenv "BABYSITTER_MEMINFO_PATH") "/proc/meminfo"))
 
+(defn read-meminfo-text
+  "Read a meminfo-style file without seeking. Returns nil on any I/O failure
+   (missing path, /proc Invalid argument from a seeking reader, etc.)."
+  [path]
+  (try
+    (with-open [in (java.io.FileInputStream. (str path))]
+      (String. (.readAllBytes in) java.nio.charset.StandardCharsets/US_ASCII))
+    (catch Exception _ nil)))
+
 (defn read-proc-meminfo-mb []
-  (let [meminfo (try (slurp (meminfo-path)) (catch Exception _ ""))
-        m (re-find #"MemAvailable:\s+(\d+)" meminfo)]
-    (when m (quot (parse-long (second m)) 1024))))
+  (when-let [meminfo (read-meminfo-text (meminfo-path))]
+    (when-let [m (re-find #"MemAvailable:\s+(\d+)" meminfo)]
+      (quot (parse-long (second m)) 1024))))
 
 (def ^:private vm-stat-page-size-pattern #"page size of (\d+) bytes")
 
@@ -686,6 +718,33 @@
   (fs/create-dirs babysitterd-dir)
   (spit (str repair-file) (json/generate-string m)))
 
+(defn read-control-plane-ensure-state []
+  (if (fs/exists? control-plane-ensure-file)
+    (try (json/parse-string (slurp (str control-plane-ensure-file)))
+         (catch Exception _ {}))
+    {}))
+
+(defn write-control-plane-ensure-state! [m]
+  (fs/create-dirs babysitterd-dir)
+  (spit (str control-plane-ensure-file) (json/generate-string m)))
+
+(defn run-control-plane-ensure!
+  "BL-958 response-policy :recover — babysitterd owns `./swarm ensure`.
+   Never load-file swarm_ensure.bb (it System/exit's). Env seams let the
+   wiring test assert the call without launching a real ensure."
+  []
+  (if-let [fake (System/getenv "BABYSITTER_FAKE_ENSURE_RESULT")]
+    (do
+      (when-let [count-file (System/getenv "BABYSITTER_ENSURE_COUNT_FILE")]
+        (spit count-file "1\n" :append true))
+      (try (json/parse-string fake true)
+           (catch Exception _
+             {:exit 1 :tail fake})))
+    (let [{:keys [exit out err]} (process/sh {:continue true :dir (str project-root)}
+                                             "bash" "./swarm" "ensure")
+          combined (str (or out "") (when (seq err) (str "\n" err)))
+          tail (str/join "\n" (take-last 12 (str/split-lines combined)))]
+      {:exit (long (or exit 1)) :tail tail})))
 
 ;; The daemon's existing single-role launch path, mirroring
 ;; swarm_ensure.bb/ensure-standing-role!: create the session if it is missing,
@@ -773,6 +832,16 @@
                                 :repair-attempts (get prior "attempts" 0)))
                     roles)
         session-by-role (into {} (map (juxt :role :session) role-rows))
+        ;; BL-958: observe the control plane through the SAME lib status/ensure
+        ;; use, so babysitterd can own the prescribed ./swarm ensure recovery.
+        cp-observe (try (control-plane-lib/observe! (str state-dir) socket)
+                        (catch Exception _ {:classification :unknown}))
+        cp-ensure-state (read-control-plane-ensure-state)
+        cp-prior (get cp-ensure-state "control-plane")
+        cp-repair-allowed? (babysitterd-sweep-lib/session-repair-allowed?
+                            {:now-ms sweep-now-ms
+                             :last-repair-ms (get cp-prior "last-ms")
+                             :repair-attempts (get cp-prior "attempts" 0)})
         snapshot
         {:now-ms (now-ms)
          :roles (mapv #(dissoc % :pane-text) roles)
@@ -788,6 +857,12 @@
          :available-mb (available-mem-mb)
          :mem-floor-mb mem-floor-mb
          :claim-risks claim-risks
+         :control-plane-classification (:classification cp-observe)
+         :launch-scripts-present? (boolean
+                                   (try (control-plane-lib/launch-scripts-present? (str state-dir))
+                                        (catch Exception _ false)))
+         :control-plane-repair-allowed? cp-repair-allowed?
+         :socket-path socket
          :rotate-note (gather-rotate-note)
          :pause pause
          :active-ticket-count (count (fs/glob (fs/path project-root "backlog" "active") "*.yaml"))
@@ -820,17 +895,35 @@
     ;; - a repair never swallows its alert, because a session that keeps
     ;; vanishing is the signal worth keeping (qa_e2e_procedure step 2).
     (when (seq repairs)
-      (let [new-repair-state
-            (reduce (fn [st {:keys [role]}]
-                      (let [session (get session-by-role role)
-                            result (ensure-role-session! socket role session)]
-                        (println (str ts " REPAIR [" (name (:status result)) "] swarmforge-" role
-                                      (when-let [d (:detail result)] (str " — " d))))
-                        (babysitterd-sweep-lib/note-repair-attempt st role sweep-now-ms
-                                             babysitterd-sweep-lib/default-repair-cooldown-ms)))
-                    repair-state
-                    repairs)]
-        (write-repair-state! new-repair-state)))
+      (let [cp-repairs (filter #(= :ensure-control-plane (:action %)) repairs)
+            role-repairs (filter #(= :ensure-session (:action %)) repairs)]
+        ;; BL-958: whole-plane recovery first (./swarm ensure). Per-role
+        ;; ensure-session repairs are already suppressed in assemble-findings
+        ;; when this fires; the filter keeps the executor honest if that
+        ;; suppression ever regresses.
+        (doseq [_ cp-repairs]
+          (let [result (run-control-plane-ensure!)
+                ok? (zero? (long (or (:exit result) 1)))]
+            (println (str ts " REPAIR [" (if ok? "repaired" "failed")
+                          "] control-plane — ./swarm ensure"
+                          (when-let [t (:tail result)]
+                            (when (seq (str/trim t)) (str "\n" t)))))
+            (write-control-plane-ensure-state!
+             (babysitterd-sweep-lib/note-repair-attempt
+              cp-ensure-state "control-plane" sweep-now-ms
+              babysitterd-sweep-lib/default-repair-cooldown-ms))))
+        (when (seq role-repairs)
+          (let [new-repair-state
+                (reduce (fn [st {:keys [role]}]
+                          (let [session (get session-by-role role)
+                                result (ensure-role-session! socket role session)]
+                            (println (str ts " REPAIR [" (name (:status result)) "] swarmforge-" role
+                                          (when-let [d (:detail result)] (str " — " d))))
+                            (babysitterd-sweep-lib/note-repair-attempt st role sweep-now-ms
+                                                 babysitterd-sweep-lib/default-repair-cooldown-ms)))
+                        repair-state
+                        role-repairs)]
+            (write-repair-state! new-repair-state)))))
     (if (empty? findings)
       (println (str ts " OK all checks green"))
       (doseq [f findings]

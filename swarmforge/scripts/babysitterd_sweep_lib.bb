@@ -414,6 +414,33 @@
        (str/join " ; " (map :message findings))
        " — investigate and take the minimal correct action (or tell the human)."))
 
+;; ── check: control-plane-missing (BL-958 ownership) ─────────────────────────
+;; babysitterd owns the response (:recover via ./swarm ensure when launch
+;; scripts exist, else a single escalation). The gatherer observes via
+;; control_plane_lib and threads the classification + bound here; this check
+;; only decides the finding/repair. Per-role ensure-session repairs are
+;; suppressed by assemble-findings when a control-plane ensure is queued —
+;; ensure's :relaunch-roles path is the coordinated recovery, and racing it
+;; with eight individual new-session calls is the wrong shape.
+
+(defn check-control-plane
+  [{:keys [control-plane-classification launch-scripts-present?
+           control-plane-repair-allowed? socket-path]}]
+  (when (= :control-plane-missing control-plane-classification)
+    (if launch-scripts-present?
+      (cond-> {:key "control-plane" :severity "CRIT"
+               :message (str "tmux control plane missing"
+                             (when socket-path (str " at " socket-path))
+                             "; role metadata still present — running ./swarm ensure")}
+        control-plane-repair-allowed?
+        (assoc :repair {:action :ensure-control-plane}))
+      {:key "control-plane" :severity "CRIT"
+       :message (str "tmux control plane missing"
+                     (when socket-path (str " at " socket-path))
+                     " and no persisted launch scripts exist to respawn roles from"
+                     " — relaunch the swarm (./start-swarm.sh) and inspect "
+                     ".swarmforge/incidents/control-plane.json")})))
+
 ;; ── assemble-findings: the single pure entry point ──────────────────────────
 ;; snapshot keys: :roles (seq of per-role maps for checks 1/2/6/7 — each may
 ;; carry :should-stand? (BL-804), topology-derived by the gatherer and
@@ -424,6 +451,8 @@
 ;; :pause {:active? :until-ms}, :now-ms, :active-ticket-count :any-pane-busy?
 ;; :prev-streak :pending-claims :in-process-claims :overdue-threshold-ms,
 ;; :offending-commits :ancestry-unavailable? (BL-631, check-pipeline-code-on-main).
+;; :control-plane-classification :launch-scripts-present?
+;; :control-plane-repair-allowed? :socket-path (BL-958 babysitter ownership).
 
 (defn assemble-findings
   [{:keys [roles handoffd-alive? handoffd-supervisor-alive? handoffd-log-age-secs
@@ -434,11 +463,25 @@
            rotation-router? rotation-home resident-active-role
            resident-active-role-mtime-ms resident-pane-busy?
            resident-mailbox-empty? dispatch-note-pending?
-           resident-stranded-grace-min]}]
+           resident-stranded-grace-min
+           control-plane-classification launch-scripts-present?
+           control-plane-repair-allowed? socket-path]}]
   (let [paused? (boolean (:active? pause))
+        control-plane-finding (check-control-plane
+                               {:control-plane-classification control-plane-classification
+                                :launch-scripts-present? launch-scripts-present?
+                                :control-plane-repair-allowed? control-plane-repair-allowed?
+                                :socket-path socket-path})
+        control-plane-ensure? (= :ensure-control-plane
+                                 (get-in control-plane-finding [:repair :action]))
         role-findings (mapcat (fn [role]
                                  (remove nil?
-                                         [(check-live-session role)
+                                         [(let [f (check-live-session role)]
+                                            ;; Coordinated ./swarm ensure owns relaunch-roles;
+                                            ;; do not also fire eight per-role creates.
+                                            (cond-> f
+                                              (and f control-plane-ensure? (:repair f))
+                                              (dissoc :repair)))
                                           (check-remote-control role)
                                           (check-menu-blocked role)
                                           (check-busy-frozen role)]))
@@ -480,7 +523,8 @@
                                     :now-ms now-ms
                                     :resident-stranded-grace-min (or resident-stranded-grace-min default-resident-stranded-grace-min)})
         findings (vec (remove nil?
-                              (concat role-findings
+                              (concat [control-plane-finding]
+                                      role-findings
                                       [handoffd-finding dead-letter-finding]
                                       stuck-findings
                                       [memory-finding]
