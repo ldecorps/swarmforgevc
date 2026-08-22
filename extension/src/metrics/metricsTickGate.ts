@@ -55,10 +55,13 @@ export function createMetricsTickGate<T>(options: MetricsTickGateOptions): Metri
       if (standingValueAnswers(subject)) {
         return 'throttled';
       }
-      latestSubject = subject;
       inFlight = true;
       try {
         latestValue = compute();
+        // Only a SUCCESSFUL compute adopts the new subject. A throw here must
+        // not relabel the old subject's stale value as the new subject's
+        // answer - see the "throwing while switching subjects" test.
+        latestSubject = subject;
         return 'ran';
       } finally {
         // A computation that THREW still opens the refresh window and still

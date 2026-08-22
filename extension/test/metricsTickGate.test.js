@@ -147,6 +147,28 @@ test('changing the subject recomputes immediately rather than serving the previo
   assert.equal(gate.latest(), 'value for B');
 });
 
+test('a computation that throws while switching subjects does not relabel the old subject stale value as the new subject', () => {
+  const clock = fakeClock();
+  const gate = createMetricsTickGate({ minIntervalMs: 300_000, now: clock.now });
+
+  assert.equal(gate.run(() => 'value for A', '/repo/a'), 'ran');
+
+  clock.advance(1000);
+  assert.throws(
+    () =>
+      gate.run(() => {
+        throw new Error('git exploded on repo b');
+      }, '/repo/b'),
+    /git exploded on repo b/
+  );
+
+  // The failed attempt at B must not make a later B tick believe it already
+  // has a fresh B answer standing - it must retry, not throttle onto A's value.
+  clock.advance(1000);
+  assert.equal(gate.run(() => 'value for B', '/repo/b'), 'ran');
+  assert.equal(gate.latest(), 'value for B');
+});
+
 test('an in-flight computation still refuses a tick that names a different subject', () => {
   const clock = fakeClock();
   const gate = createMetricsTickGate({ minIntervalMs: 300_000, now: clock.now });
