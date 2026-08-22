@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1039-unit-tests-share-one-seeded-git-fixture.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "No unit-lane test creates a git repository of its own: a repository comes from the shared seeded fixture, so the seeding cost is paid once per run rather than once per scenario."
