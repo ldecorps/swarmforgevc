@@ -9,7 +9,7 @@ severity: high
 # and no work is lost.
 status: todo
 epic: swarm-reliability
-assigned_to: coder
+assigned_to: none
 priority: 14
 direction: swarm-reported
 depends_on: []
@@ -234,4 +234,12 @@ notes: |
   written no heartbeat" (the short form is used where the next `Given` states
   the heartbeat situation instead). Collapsing any of them would erase the
   distinction the scenario exists to draw.
+
+  2026-08-22T08:23Z coordinator: mistakenly promoted+routed to coder despite
+  the specifier's own explicit "do NOT run concurrently with BL-1035, same
+  function" note - promote_and_route_next.sh's orthogonality advisory only
+  caught the generic epic-level overlap (swarm-reliability), not this
+  specific same-function conflict. Caught before coder claimed it (handoff
+  still in new/, moved to abandoned/); reverted to paused/,
+  assigned_to reset to none. Re-promote only once BL-1035 has closed.
 
