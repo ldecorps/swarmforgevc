@@ -229,48 +229,110 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "master_checkout_drift_lib.bb")))
 
-(defn strip-comments-and-strings
-  "Blanks ;-comments and the CONTENTS of double-quoted strings (keeping
-   their newlines, so line numbers survive multi-line docstrings). A
-   backslash outside a string starts a char literal - its next char is
-   skipped, so the \\\" char literal never opens a phantom string."
-  [content]
-  (let [sb (StringBuilder.)]
-    (loop [chars (seq content) in-string? false escaped? false]
-      (if-let [c (first chars)]
-        (cond
-          in-string?
-          (cond
-            escaped? (recur (rest chars) true false)
-            (= c \\) (recur (rest chars) true true)
-            (= c \") (do (.append sb c) (recur (rest chars) false false))
-            (= c \newline) (do (.append sb c) (recur (rest chars) true false))
-            :else (recur (rest chars) true false))
-          (= c \\) (recur (rest (rest chars)) false false)
-          (= c \") (do (.append sb c) (recur (rest chars) true false))
-          (= c \;) (recur (drop-while #(not= % \newline) chars) false false)
-          :else (do (.append sb c) (recur (rest chars) false false)))
-        (str sb)))))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_api_ban_lib.bb")))
+
+;; ── BL-1022 hardening: strip-comments-and-strings isolated edge cases ──────
+;; The end-to-end closure check below proves comment/string stripping works
+;; against the REAL tree's docstrings (handoff_lib.bb), but two shapes that
+;; do not happen to occur verbatim anywhere in the current tree - an escaped
+;; quote inside a string, and a real multi-line string - are otherwise
+;; untested. A hand-mutation sweep (breaking escape handling; making a
+;; newline close a string early) proved both cases are genuinely
+;; discriminating: each mutant made a probe below flip from false to true.
+(let [hit? (fn [content]
+             (boolean (re-find daemon-api-ban-lib/forbidden-re
+                                (daemon-api-ban-lib/strip-comments-and-strings content))))]
+  (assert-false "bl1022 scan: a comment naming the banned API is not a call"
+                (hit? "; this forbids clojure.java.shell forever\n(defn x [] 1)"))
+  (assert-true "bl1022 scan: a real call is a call"
+               (hit? "(defn x [] (clojure.java.shell/sh \"ls\"))"))
+  (assert-false "bl1022 scan: the banned API named inside a string literal is not a call"
+                (hit? "(def doc \"do not use clojure.java.shell here\")"))
+  (assert-false "bl1022 scan: an escaped quote keeps the string open, so text after it is still string content"
+                (hit? "(def doc \"a \\\" clojure.java.shell mention\")"))
+  (assert-false "bl1022 scan: a real multi-line string is all string content, not code"
+                (hit? "(def doc \"line one\nclojure.java.shell\nline three\")"))
+  (assert-true "bl1022 scan: a char-literal escaped quote does not toggle string state, so code right after it is still scanned"
+               (hit? "(def c \\\") (process/sh \"ls\")"))
+  (assert-false "bl1022 scan: a semicolon inside a string does not start a comment"
+                (hit? "(def doc \"; not a comment babashka.process\")"))
+  (assert-true "bl1022 scan: the bare namespace token alone is a call site"
+               (hit? "(require '[babashka.process :as p])")))
 
 (let [scripts-dir (fs/path (fs/parent (fs/canonicalize *file*)) "..")
       read-file (fn [bare]
                   (let [p (fs/path scripts-dir bare)]
                     (when (fs/exists? p) (slurp (str p)))))
-      closure (master-checkout-drift-lib/resolve-daemon-executed-paths
-               {:entrypoints #{"handoffd.bb"} :read-file read-file})
-      forbidden #"babashka\.process|clojure\.java\.shell|process/sh|process/process"
-      violations (vec (for [f (sort closure)
-                            :when (not= f "daemon_cycle_guard_lib.bb")
-                            :let [content (read-file f)]
-                            :when content
-                            [i line] (map-indexed vector
-                                                  (str/split-lines (strip-comments-and-strings content)))
-                            :when (re-find forbidden line)]
-                        (str f ":" (inc i) ": " (str/trim line))))]
+      reach (master-checkout-drift-lib/resolve-daemon-reachability
+             {:entrypoints #{"handoffd.bb"} :read-file read-file})
+      closure (:closure reach)
+      offenders-in (fn [files] (daemon-api-ban-lib/offenders files read-file))
+      ;; The closure the ORIGINAL gate covered - load edges only. Held at zero,
+      ;; exactly as before: BL-1022 widens what is gated and weakens nothing.
+      load-closure (master-checkout-drift-lib/resolve-daemon-executed-paths
+                    {:entrypoints #{"handoffd.bb"} :read-file read-file})
+      violations (offenders-in load-closure)
+      ;; What following SPAWN edges newly brought into view.
+      spawn-only (remove load-closure closure)
+      spawn-offender-files (into (sorted-set)
+                                 (map #(first (str/split % #":")) (offenders-in spawn-only)))]
   (assert-true "closure gate sanity: the BFS actually resolved handoffd.bb's dependency closure"
                (> (count closure) 20))
-  (assert= "invariant 1 structural half: no subprocess path outside the chokepoint anywhere in handoffd.bb's load-file closure"
-           [] violations))
+  (assert= "invariant 1 structural half: no subprocess path outside the chokepoint anywhere in handoffd.bb's reachability closure"
+           [] violations)
+
+  ;; ── BL-1022 ─────────────────────────────────────────────────────────────
+  ;; The walk above now follows SPAWN edges as well as load-file edges. Three
+  ;; things have to hold for that to be worth anything.
+
+  ;; 1. The edge kind that was missing is actually being followed. Asserting
+  ;;    the specific file AND the specific edge kind, not just a bigger count:
+  ;;    a count grows for any reason, and this is the file that took production
+  ;;    down while the gate read green.
+  (assert-true "bl1022: swarm_handoff.bb is in the closure, reached by a SPAWN edge from handoffd.bb"
+               (contains? (get-in reach [:reached-by "swarm_handoff.bb"]) [:spawn "handoffd.bb"]))
+
+  ;; 2. Nothing was skipped on the way. A spawn target this walk cannot resolve
+  ;;    statically is reported and fails here rather than being dropped -
+  ;;    silently skipping one is the same blind spot one level up.
+  (assert= "bl1022: every spawn target in the daemon's closure resolved - an unresolvable one fails loudly, never silently"
+           [] (:unresolved reach))
+
+  ;; 2b. What following spawn edges revealed, held as a RATCHET rather than
+  ;;    silently tolerated or silently fixed. Every file below is live code on
+  ;;    the daemon's critical path making an UNBOUNDED subprocess call - the
+  ;;    exact class that deadlocked production in BL-1021 - reached through
+  ;;    handoffd.bb -> (spawn) swarm_handoff.bb -> (load) ... Removing the
+  ;;    banned API from a specific script is explicitly out of BL-1022's scope
+  ;;    (it is BL-1021's), so this ticket makes the debt VISIBLE and gated
+  ;;    instead of leaving it invisible, and reports the spec gap by note.
+  ;;
+  ;;    This is strictly stronger than the gate it replaces: before BL-1022
+  ;;    these files were not checked at all. The assertion is an EQUALITY, not
+  ;;    a subset - a new offender fails it, and so does a fixed one still
+  ;;    listed, so the list cannot quietly go stale the way a hand-maintained
+  ;;    allowlist does.
+  (assert= "bl1022: the spawn-reachable subtree's banned-API debt is exactly the known set - a new offender fails, and so does a stale entry"
+           #{"handoff_inject_lib.bb"      ; unbounded process/sh on tmux
+             "pre_qa_gate_gather_lib.bb"  ; unbounded process/sh on git
+             "salvage_lib.bb"}            ; unbounded process/sh, generic
+           (set spawn-offender-files))
+
+  ;; 3. The gate reports what it covered, so a closure that silently SHRINKS is
+  ;;    visible instead of passing for the wrong reason. Every file carries how
+  ;;    it was reached; a file in the closure with no recorded edge would mean
+  ;;    the report and the walk had drifted apart.
+  (assert= "bl1022: the report accounts for every file in the closure, and how each was reached"
+           #{} (set (remove #(seq (get-in reach [:reached-by %])) closure)))
+
+  (println (str "  BL-1022 closure: " (count closure) " files ("
+                (count (filter #(contains? (get-in reach [:reached-by %]) :entrypoint) closure)) " entrypoint, "
+                (count (filter (fn [f] (some (fn [e] (and (vector? e) (= :spawn (first e))))
+                                             (get-in reach [:reached-by f]))) closure))
+                " reached by spawn), non-bb spawns recorded: "
+                (pr-str (:non-bb reach))
+                "\n  BL-1022 spawn-only files: " (count spawn-only)
+                ", of which carry banned-API debt: " (pr-str (vec spawn-offender-files)))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

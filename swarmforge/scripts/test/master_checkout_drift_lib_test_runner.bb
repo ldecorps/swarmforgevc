@@ -106,6 +106,123 @@
                        "backlog/active/BL-000.yaml" "id: BL-000"
                        "scratch.txt" "whatever"}}))
 
+;; ── BL-1022: process-spawn edges ──────────────────────────────────────────
+;; The load-file walk above follows ONE edge kind. handoffd.bb reaches
+;; swarm_handoff.bb by SPAWNING it, so that file - and the banned API that sat
+;; in it until BL-1021 - was outside a gate whose message claims to cover the
+;; daemon. These cases hold the spawn half.
+
+(assert= "bl1022: a spawn with a literal .bb target resolves to that script"
+         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          "(sh! [\"bb\" \"swarm_handoff.bb\" (str draft)])"))
+
+(assert= "bl1022: a spawn whose target is built with fs/path resolves through to the literal"
+         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          "(sh! [\"bb\" (str (fs/path dir \"swarm_handoff.bb\")) x])"))
+
+;; The shape that actually bit: the target is a zero-arg helper, so there is no
+;; literal in the spawn form at all. Resolving it needs the helper's own body,
+;; which is in the same file.
+(assert= "bl1022: a spawn whose target is a same-file zero-arg helper resolves through the helper's body"
+         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          (str "(defn swarm-handoff-script []\n"
+               "  (str (fs/path (fs/parent (fs/canonicalize *file*)) \"swarm_handoff.bb\")))\n"
+               "(sh! [\"bb\" (swarm-handoff-script) (str draft)])")))
+
+;; The conservative answer to the ticket's real design question: a target this
+;; walk cannot resolve is REPORTED, never skipped. Silently dropping it is the
+;; same class of blind spot one level up.
+(assert= "bl1022: a target that cannot be resolved statically is reported, never silently skipped"
+         {:resolved #{} :unresolved #{"(pick-a-script-at-runtime cfg)"} :non-bb #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          "(sh! [\"bb\" (pick-a-script-at-runtime cfg) x])"))
+
+;; A helper that exists but yields no .bb literal is NOT resolvable - it must
+;; not silently read as "no edge".
+(assert= "bl1022: a same-file helper with no .bb literal in its body is unresolved, not empty"
+         {:resolved #{} :unresolved #{"(script-from-config)"} :non-bb #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          (str "(defn script-from-config [] (get cfg :script))\n"
+               "(sh! [\"bb\" (script-from-config) x])")))
+
+;; A non-bb runtime is a real edge but not one this ban can speak about: a
+;; bash script cannot reference a Clojure namespace. It is RECORDED so the
+;; scope of the gate is visible rather than assumed.
+(assert= "bl1022: a bash spawn is recorded as out-of-ban-scope, not dropped and not mistaken for a .bb edge"
+         {:resolved #{} :unresolved #{} :non-bb #{"kill_all_swarm.sh"}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          "(sh! [\"bash\" (str (fs/path script-dir \"kill_all_swarm.sh\")) root])"))
+
+(assert= "bl1022: a commented-out spawn is never an edge, exactly as for load-file"
+         {:resolved #{} :unresolved #{} :non-bb #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          ";; (sh! [\"bb\" \"swarm_handoff.bb\" x])"))
+
+(assert= "bl1022: content with no spawn at all yields nothing"
+         {:resolved #{} :unresolved #{} :non-bb #{}}
+         (master-checkout-drift-lib/extract-spawn-targets "(defn foo [] (+ 1 2))"))
+
+;; ── BL-1022: reachability over BOTH edge kinds ────────────────────────────
+
+(assert= "bl1022: a script reached ONLY by spawning is in the closure"
+         #{"a.bb" "spawned.bb"}
+         (:closure (master-checkout-drift-lib/resolve-daemon-reachability
+                    {:entrypoints #{"a.bb"}
+                     :read-file {"a.bb" "(sh! [\"bb\" \"spawned.bb\" x])"
+                                 "spawned.bb" "(defn foo [])"}})))
+
+(assert= "bl1022: spawn and load edges are transitive TOGETHER (spawn -> load -> spawn)"
+         #{"a.bb" "b.bb" "c.bb" "d.bb"}
+         (:closure (master-checkout-drift-lib/resolve-daemon-reachability
+                    {:entrypoints #{"a.bb"}
+                     :read-file {"a.bb" "(sh! [\"bb\" \"b.bb\" x])"
+                                 "b.bb" "(load-file (str (fs/path x \"c.bb\")))"
+                                 "c.bb" "(sh! [\"bb\" \"d.bb\" x])"
+                                 "d.bb" "(defn foo [])"}})))
+
+(assert= "bl1022: a spawn/load cycle terminates"
+         #{"a.bb" "b.bb"}
+         (:closure (master-checkout-drift-lib/resolve-daemon-reachability
+                    {:entrypoints #{"a.bb"}
+                     :read-file {"a.bb" "(sh! [\"bb\" \"b.bb\" x])"
+                                 "b.bb" "(load-file (str (fs/path x \"a.bb\")))"}})))
+
+;; Scenario 04: the report must say HOW each file was reached, so a closure
+;; that silently shrinks is visible instead of passing for the wrong reason.
+(let [r (master-checkout-drift-lib/resolve-daemon-reachability
+         {:entrypoints #{"a.bb"}
+          :read-file {"a.bb" (str "(load-file (str (fs/path x \"loaded.bb\")))\n"
+                                  "(sh! [\"bb\" \"spawned.bb\" x])")
+                      "loaded.bb" "(defn foo [])"
+                      "spawned.bb" "(defn foo [])"}})]
+  (assert= "bl1022: the report records the entrypoint as an entrypoint"
+           #{:entrypoint} (get-in r [:reached-by "a.bb"]))
+  (assert= "bl1022: the report records a load edge as a load edge"
+           #{[:load "a.bb"]} (get-in r [:reached-by "loaded.bb"]))
+  (assert= "bl1022: the report records a spawn edge as a spawn edge - the distinction this ticket exists for"
+           #{[:spawn "a.bb"]} (get-in r [:reached-by "spawned.bb"]))
+  (assert= "bl1022: nothing was unresolved in a fully literal graph" [] (:unresolved r)))
+
+(let [r (master-checkout-drift-lib/resolve-daemon-reachability
+         {:entrypoints #{"a.bb"}
+          :read-file {"a.bb" "(sh! [\"bb\" (chosen-at-runtime) x])"}})]
+  (assert= "bl1022: an unresolvable spawn target surfaces in the report, attributed to the file that spawns it"
+           [{:from "a.bb" :target "(chosen-at-runtime)"}] (:unresolved r)))
+
+;; Backward compatibility: the drift check (BL-839) keeps its load-file-only
+;; scope. Widening WHAT gets drift-checked is a separate decision from widening
+;; what gets API-gated, so the old entry point delegates with :load only and
+;; its behaviour is unchanged.
+(assert= "bl1022: resolve-daemon-executed-paths still follows load edges ONLY, so BL-839's drift scope is untouched"
+         #{"a.bb"}
+         (master-checkout-drift-lib/resolve-daemon-executed-paths
+          {:entrypoints #{"a.bb"}
+           :read-file {"a.bb" "(sh! [\"bb\" \"spawned.bb\" x])"
+                       "spawned.bb" "(defn foo [])"}}))
+
 ;; ── classify-drift ───────────────────────────────────────────────────────────
 
 (assert= "all three readings agree -> :no-drift"
