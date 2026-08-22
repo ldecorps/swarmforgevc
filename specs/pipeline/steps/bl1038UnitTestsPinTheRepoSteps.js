@@ -64,6 +64,43 @@ function registerSteps(registry) {
     ctx.file = 'somePinned.test.js';
   });
 
+  // ── scenario 07: the two families in ONE file ──────────────────────────
+  // The boundary this ticket's guard is built around, and the one that took
+  // four attempts to place: BL-1038's growth term (reading the live tree) and
+  // BL-1039's (building a git repo per scenario) can occur in the SAME file.
+  // They are separable by OPERATION, not by file - which is why a guard that
+  // flagged whole files named the sibling ticket's family as this one's.
+  scoped(/^that same file creates a git repository of its own$/, (ctx) => {
+    ctx.body = [
+      "const REPO_ROOT = path.join(__dirname, '..', '..');",
+      "const root = mkTmpDir('fixture-');",
+      "execFileSync('git', ['init', '-q'], { cwd: root });",
+      "execFileSync('git', ['-C', root, 'log', '--format=%H']);",
+      "fs.readdirSync(path.join(REPO_ROOT, 'swarmforge', 'scripts'));",
+    ].join('\n');
+    ctx.file = 'bothFamilies.test.js';
+  });
+
+  scoped(/^the guard names the live-repository read as the violation$/, (ctx) => {
+    assert.ok(ctx.violation, 'the live read must still be flagged');
+    assert.match(ctx.violation.reason, /repo size|history depth/,
+      `the violation must name the LIVE read: ${ctx.violation.reason}`);
+  });
+
+  scoped(/^the guard does not name the created git repository as a violation$/, (ctx) => {
+    // A fixture repo's cost is set by the fixture, not by this repository, so
+    // it does not grow on its own - that is BL-1039's ticket, not this one.
+    assert.doesNotMatch(ctx.violation.reason, /init|fixture|temp/i,
+      `the created repo must not be the stated reason: ${ctx.violation.reason}`);
+    // Exactly one violation, not one per family - otherwise converting the
+    // live read would leave the file still flagged for something this ticket
+    // does not own.
+    const { violationFor } = require(path.join(EXT, 'test', 'helpers', 'liveRepoDerivationGuard'));
+    const withoutLiveRead = ctx.body.split('\n').filter((l) => !l.includes('readdirSync')).join('\n');
+    assert.equal(violationFor(ctx.file, withoutLiveRead), null,
+      'removing the live read alone must clear the file - the git repo is not this guard\'s business');
+  });
+
   scoped(/^that file carries no exemption$/, (ctx) => {
     ctx.exemption = '';
   });

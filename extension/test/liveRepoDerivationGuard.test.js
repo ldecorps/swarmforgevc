@@ -58,6 +58,25 @@ test('BL-1038: the growth op must target the BOUND root, not merely coexist with
   assert.equal(liveRepoDerivation("fs.readdirSync(path.join(__dirname, '..', '..', 'x'));"), null);
 });
 
+test('BL-1038: a file doing BOTH is flagged only for the live read', () => {
+  // Scenario 07. The two families can occur in one file; they are separable by
+  // OPERATION, not by file. Removing the live read alone must clear it - the
+  // git repo it builds is BL-1039's business, not this guard's.
+  const both = [
+    "const REPO_ROOT = path.join(__dirname, '..', '..');",
+    "const root = mkTmpDir('fixture-');",
+    "execFileSync('git', ['init', '-q'], { cwd: root });",
+    "execFileSync('git', ['-C', root, 'log', '--format=%H']);",
+    "fs.readdirSync(path.join(REPO_ROOT, 'swarmforge', 'scripts'));",
+  ].join('\n');
+  const v = violationFor('both.test.js', both);
+  assert.ok(v, 'the live read must still be flagged');
+  assert.match(v.reason, /repo size/, 'and named as the live read');
+  const withoutLiveRead = both.split('\n').filter((l) => !l.includes('readdirSync')).join('\n');
+  assert.equal(violationFor('both.test.js', withoutLiveRead), null,
+    'the created git repository alone is not a violation of THIS ticket');
+});
+
 // ── the exemption records WHY, and the relation is what is checked ────────
 
 test('BL-1038: an exemption with a recorded reason is honoured', () => {
