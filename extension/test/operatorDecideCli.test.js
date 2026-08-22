@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { parseArgs, buildStatusQuery, composeTicketApprovalOverride, appendToReplyOutbox, main } = require('../out/tools/operator-decide');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // ── parseArgs (pure) ─────────────────────────────────────────────────────
 
@@ -56,9 +57,7 @@ function git(cwd, args) {
 
 function initFixture() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(
     path.join(root, '.swarmforge', 'roles.tsv'),

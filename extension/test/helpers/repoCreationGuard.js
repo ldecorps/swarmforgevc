@@ -20,7 +20,30 @@ const path = require('path');
 
 // `git init` however it is spawned: execFileSync('git', ['init'...]),
 // spawnSync('git', ['init'...]), or a command string.
-const CREATES_A_REPO = /['"]git['"]\s*,\s*\[\s*['"]init['"]|['"]git\s+init\b|\binit\b[^\n]*--bare/;
+//
+// D1 (architect SEND BACK #1) - THE SECOND ALTERNATION IS LOAD-BEARING, and
+// leaving it out is what sent this parcel back. Every pattern above requires
+// `git` to appear as a quoted STRING argument. The DOMINANT shape in this
+// corpus is not that: it is a local wrapper function literally named `git`,
+//
+//     function git(cwd, args) { execFileSync('git', args, { cwd }); }
+//     git(dir, ['init', '-q']);          // <- `git` is an identifier, not a string
+//
+// used by 43 files, of which the guard saw exactly zero - measured, and with
+// zero overlap against its own violation list. The guard reported 16
+// violations against a real 59.
+//
+// It keys on the CALL SITE rather than resolving the wrapper's binding. That
+// is the same shortcut the inline case already takes, and it is the cheaper
+// and more robust of the two: a file may import its wrapper or define it far
+// from the call, and neither costs this pattern anything.
+//
+// `\bgit\(` deliberately requires the paren immediately after `git`, so
+// `gitIn(dir, ['init'...])` - the shared fixture helper's OWN internal spawn,
+// whose whole purpose is to create the template - is not matched by it. Widen
+// this and the guard goes red precisely because the code is correct, which is
+// the BL-1032 defect repeated one guard over.
+const CREATES_A_REPO = /['"]git['"]\s*,\s*\[\s*['"]init['"]|['"]git\s+init\b|\binit\b[^\n]*--bare|\bgit\(\s*[^,()]+,\s*\[\s*['"]init['"]/;
 
 // An exemption must RECORD A REASON - the relation is checked, not the
 // marker's presence, the same rule BL-1038's guard applies one concern over.

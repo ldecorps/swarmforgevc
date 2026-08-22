@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   resolveProjectRoot,
   resolveMainWorktreePath,
@@ -34,7 +35,7 @@ function git(cwd, args) {
 
 test('resolveProjectRoot finds the root from the main checkout itself', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, '.swarmforge'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), 'specifier\tmaster\t' + root + '\tswarmforge-specifier\tSpecifier\tclaude\ttask\n');
 
@@ -43,10 +44,7 @@ test('resolveProjectRoot finds the root from the main checkout itself', () => {
 
 test('resolveProjectRoot finds the root from inside a linked worktree', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, '.swarmforge'));
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), 'specifier\tmaster\t' + root + '\tswarmforge-specifier\tSpecifier\tclaude\ttask\n');
 
@@ -489,9 +487,7 @@ test('formatResourceTrendsLine prints the placeholder when only one of rss/cpu i
 
 test('the compiled swarm-metrics CLI runs from a worktree and exits 0 on a fresh repo', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, 'backlog', 'active'));
   git(root, ['add', '-A']);
   git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);

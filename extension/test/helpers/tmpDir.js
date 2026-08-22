@@ -41,6 +41,30 @@ function mkSharedTmpDir(prefix) {
   return dir;
 }
 
+// The PROCESS-lifetime sibling of the two above, for a dir that must outlive
+// both sweeps this module offers. mkTmpDir's afterEach and mkSharedTmpDir's
+// afterAll are both too short for a cache seeded once and reused across FILES:
+// with `isolate: false` the unit lane runs its files in one process, so an
+// afterAll sweep re-pays the seeding cost in the next file that asks
+// (BL-1039's shared git-repo template is the case this exists for - it seeds a
+// repository with real git spawns and hands out fs.cpSync copies).
+//
+// It is still never leaked: removal is registered on process exit rather than
+// on a test hook, so nothing outlives the run. Kept HERE, in the module that
+// owns temp-dir policy, so callers need no raw mkdtemp of their own and
+// rawMkdtempGuard's exempt list stays exactly the three documented paths.
+function mkProcessTmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  process.once('exit', () => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best effort at exit - a leaked temp dir is not a test failure */
+    }
+  });
+  return dir;
+}
+
 // Removes every path handed out via mkTmpDir since the last sweep and
 // returns them (mainly for the helper's own tests to assert against).
 // force:true tolerates a path already removed (by the test itself, or a
@@ -66,4 +90,4 @@ function sweepSharedTmpDirs() {
   return dirs;
 }
 
-module.exports = { mkTmpDir, mkSharedTmpDir, sweepPendingTmpDirs, sweepSharedTmpDirs };
+module.exports = { mkTmpDir, mkSharedTmpDir, mkProcessTmpDir, sweepPendingTmpDirs, sweepSharedTmpDirs };

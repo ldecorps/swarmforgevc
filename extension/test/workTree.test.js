@@ -11,6 +11,7 @@ const { execSync } = require('node:child_process');
 const { parseBacklogYaml, readBacklog } = require('../out/panel/backlogReader');
 const { nextEligibleItem } = require('../out/swarm/backlogLoop');
 const { lastCommitForItem } = require('../out/panel/gitTracer');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkTmp() {
   return mkTmpDir('sfvc-wt-test-');
@@ -169,9 +170,7 @@ test('nextEligibleItem returns null when all active items are blocked', () => {
 // ── BL-019: gitTracer ─────────────────────────────────────────────────────
 
 function initGitRepo(dir) {
-  execSync('git init', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
+  copySeededRepoInto(dir);
   fs.writeFileSync(path.join(dir, 'README.md'), '# test');
   execSync('git add README.md', { cwd: dir, stdio: 'pipe' });
   execSync('git commit -m "init"', { cwd: dir, stdio: 'pipe' });

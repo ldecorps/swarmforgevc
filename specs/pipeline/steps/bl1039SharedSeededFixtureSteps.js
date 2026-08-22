@@ -19,7 +19,12 @@ const { execFileSync } = require('node:child_process');
 const FEATURE = 'A unit-lane test takes its repository from one shared seeded fixture';
 
 const EXT = path.join(__dirname, '..', '..', '..', 'extension');
-const { violationFor, isSelfExempt } = require(path.join(EXT, 'test', 'helpers', 'repoCreationGuard'));
+const {
+  violationFor,
+  isSelfExempt,
+  findRepoCreations,
+  exemptionReason,
+} = require(path.join(EXT, 'test', 'helpers', 'repoCreationGuard'));
 const {
   checkoutSeededRepo,
   seedCount,
@@ -63,9 +68,66 @@ function registerSteps(registry) {
     // Asserted, not assumed: if the helper stopped creating one, scenario 03
     // would pass while testing nothing.
     const helper = fs.readFileSync(path.join(EXT, 'test', 'helpers', 'sharedRepoFixture.js'), 'utf8');
-    assert.match(helper, /\['init', '-q'\]/,
+    // Match the `init` SUBCOMMAND, not the exact argument array. Pinning the
+    // full `['init', '-q']` text made this precondition fail the moment the
+    // seed gained `-b main` (pinning the template's branch so a converted
+    // caller's `git checkout main` stops depending on the host's
+    // init.defaultBranch) - a red that says nothing about whether the helper
+    // still creates a repository, which is all this step claims.
+    assert.match(helper, /\[\s*'init'/,
       'the helper must genuinely create a repository for this scenario to mean anything');
     ctx.checkMachinery = true;
+  });
+
+  // Scenario 08 (architect SEND BACK #1, D4). `findRepoCreations` was exported
+  // and called from nowhere in either lane, so 59 real violations were invisible
+  // to `npm test` and would have stayed invisible after merge - "a gate that can
+  // never usefully turn red at all". These three steps drive the scanner over
+  // the REAL test directory, the same subject the lane-level gate in
+  // extension/test/repoCreationGuard.test.js uses.
+  scoped(/^the whole unit-lane test directory as the guard's subject$/, (ctx) => {
+    ctx.scanDir = path.join(EXT, 'test');
+    assert.ok(fs.existsSync(ctx.scanDir), 'the real unit-lane test directory must exist to be scanned');
+  });
+
+  scoped(/^the guard scans it$/, (ctx) => {
+    ctx.scanned = findRepoCreations(ctx.scanDir);
+  });
+
+  // The other half of scenario 08, and the reason an exemption is allowed at
+  // all. A file may keep its own `git init` when the seeded fixture cannot
+  // express the repository it needs - an EMPTY repo, a BARE push remote, one
+  // with NO identity configured - but it must say which. A bare marker buys
+  // nothing (BL-999 one layer up: present-but-unjustified is the state that
+  // lets a gate decay), so the relation is checked, not the marker.
+  scoped(/^every exempted file records the repository shape it needs$/, () => {
+    const testDir = path.join(EXT, 'test');
+    const unjustified = [];
+    for (const entry of fs.readdirSync(testDir, { recursive: true })) {
+      const rel = String(entry).split(path.sep).join('/');
+      if (!rel.endsWith('.test.js') || rel.endsWith('.property.test.js')) continue;
+      if (isSelfExempt(rel)) continue;
+      const abs = path.join(testDir, rel);
+      if (!fs.statSync(abs).isFile()) continue;
+      const text = fs.readFileSync(abs, 'utf8');
+      if (!text.includes('BL-1039-EXEMPT:')) continue;
+      const reason = exemptionReason(text);
+      if (!reason || reason.length < 20) unjustified.push(`${rel}: ${reason === null ? '(bare marker)' : reason}`);
+    }
+    assert.deepEqual(
+      unjustified,
+      [],
+      'an exemption must say which repository shape the shared fixture cannot express:\n  ' + unjustified.join('\n  ')
+    );
+  });
+
+  scoped(/^no unexempted file is named$/, (ctx) => {
+    assert.deepEqual(
+      ctx.scanned,
+      [],
+      'every unit-lane test must take its repository from the shared seeded fixture, or record why it cannot:\n' +
+        ctx.scanned.map((v) => `  ${v.file}: ${v.reason}`).join('\n')
+    );
   });
 
   scoped(/^two unit-lane tests that each obtain a repository from the shared seeded fixture$/, (ctx) => {

@@ -23,6 +23,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, execSync } = require('node:child_process');
 const { main } = require('../out/tools/trace-hop');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'trace-hop.js');
 
@@ -213,8 +214,7 @@ test('BL-133 master-checkout-01: a hop from the master checkout lands in the pre
   const parentDir = fs.realpathSync(mkTmp());
   const repoRoot = path.join(parentDir, 'repo');
   fs.mkdirSync(repoRoot);
-  execSync('git init -q', { cwd: repoRoot });
-  execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: repoRoot });
+  copySeededRepoInto(repoRoot);
 
   const tracesDir = path.join(repoRoot, '.swarmforge', 'traces');
   fs.mkdirSync(tracesDir, { recursive: true });
@@ -235,8 +235,7 @@ test('BL-133 master-checkout-01: a hop from the master checkout lands in the pre
 
 test('BL-133 worktree-still-works-02: a hop from a linked worktree still lands in the main repo-rooted trace log', () => {
   const mainRepo = fs.realpathSync(mkTmp());
-  execSync('git init -q', { cwd: mainRepo });
-  execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: mainRepo });
+  copySeededRepoInto(mainRepo);
   const worktreePath = path.join(fs.realpathSync(mkTmp()), 'linked-worktree');
   execSync(`git worktree add -q -b sfvc-test-bl133 "${worktreePath}"`, { cwd: mainRepo });
 

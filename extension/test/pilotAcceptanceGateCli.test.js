@@ -17,11 +17,19 @@ const {
   checkCommitClaims,
   main,
 } = require('../out/tools/pilot-acceptance-gate');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkRepo(prefix) {
   return mkTmpDir(prefix || 'sfvc-pag-cli-');
 }
 
+// BL-1039-EXEMPT: the `{ commit: false }` path must hand four tests a repo with
+// NO commit and no `main` branch - "getLandedCommit throws when the repo has no
+// commit yet", "resolveRunCommits returns undefined when main does not exist",
+// and their two CLI-level equivalents. That EMPTY state is their subject, and
+// the shared seeded fixture cannot provide it by construction: it exists
+// precisely to arrive pre-seeded with identity and one commit. The seeded path
+// in this file, initGitRepoOnMain, IS converted to the shared fixture below.
 function initGitRepo(root, { commit = true } = {}) {
   execFileSync('git', ['init', '-q'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
@@ -37,9 +45,7 @@ function initGitRepo(root, { commit = true } = {}) {
 // whatever the local git default happens to be - this sandbox defaults to
 // `master`), so these fixtures create the base branch by that exact name.
 function initGitRepoOnMain(root) {
-  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root });
+  copySeededRepoInto(root);
   fs.writeFileSync(path.join(root, 'README.md'), 'x', 'utf8');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: root });

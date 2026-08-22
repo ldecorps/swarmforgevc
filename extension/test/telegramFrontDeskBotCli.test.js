@@ -3120,21 +3120,21 @@ test('readRootIntakeFiles lists a real root intake file, id from the filename an
 
 test('readRepoBaseUrl resolves an HTTPS github.com origin remote to its base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl resolves an SSH github.com origin remote to its HTTPS base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl degrades to undefined (never throws) when there is no git remote at all', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   assert.equal(readRepoBaseUrl(root), undefined);
 });
 
