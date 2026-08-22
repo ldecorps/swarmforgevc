@@ -10,7 +10,7 @@ depends_on: [BL-1054]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1055-a-hydrate-run-ends-when-the-specifier-hands-work-to-the-coder.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Nothing needs deciding; this is the stop condition BL-698 already pinned,
   made real on the pack. Flagged pending only because the feature file is new.
