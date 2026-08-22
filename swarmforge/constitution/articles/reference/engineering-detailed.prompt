@@ -70,6 +70,24 @@ not as the several separate edits that produced it).
   property-test tags in normal unit coverage, Gherkin acceptance mutation,
   language mutation, CRAP, or coverage commands unless the role owns
   property-test verification or the user explicitly asks.
+- **A reach floor measures aggregate reach, not per-draw-position reach, so a
+  degenerate generator meets every floor.** Seeding a fresh LCG `base + i*stride`
+  once per run returns a near-constant FIRST draw for a small modulus: the value
+  each run consumes first is effectively pinned while overall reach stays healthy
+  and no floor trips. Twice in one week. BL-991's runner drew one declaration in
+  40 of 40 runs, leaving a whole branch — the one its ticket had to spell out —
+  untested. BL-1057's drew state `1` in 57 of 60 runs and never drew two of its
+  four states at all, so its first inventory row (the only two-key check in the
+  inventory) never reached STALE or BLOCKED — the exact verdicts that ticket's
+  invariant 2 exists to protect. Both suites were green with every floor met.
+  Thread ONE generator across every draw and every run — `(defn- gen-int [s n]
+  [(mod (quot s 65536) (max 1 n)) (step s)])` returning `[value next-seed]`, the
+  convention 63 of this repo's property runners already follow and none departs
+  from on `main` — and floor the arms that matter individually, so a later
+  reseeding cannot quietly reintroduce it. A generator is not exercised by the
+  suite that uses it: check its distribution directly. Evidence:
+  `backlog/evidence/BL-991-coder-20260822.md`,
+  `backlog/evidence/BL-1057-generator-defect-20260822.md`.
 - **CLI `main()` is a thin wrapper** over exported, testable helpers; call
   `main()` in-process with stubbed `process.cwd` / `process.argv` / `os.homedir`
   (never `process.chdir()` under mutation). Inject side effects (`postFn` seams),
