@@ -17,7 +17,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1040-seat-identity-never-escapes-on-the-observation-path.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "Seat identity never escapes the mailbox layer on the OBSERVATION path either - no stage map, board column, or held-role reading ever carries a seat id. This is BL-983's own invariant 3, closed over reading as well as over forwarding."
