@@ -1,0 +1,125 @@
+id: BL-1061
+title: "A tunnel-ownership property fixture binds the operator's REAL tunnel name and drives a reap that enumerates the host process table - so the suite cannot pass while the live tunnel is up, and the suite's own reap can kill it"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 95
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1061-tunnel-ownership-fixture-binds-a-live-tunnel-name.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1061::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
+
+invariants:
+  - "A tunnel-ownership fixture never binds a name any process outside the run could be serving: the name is unique to the run, and a reap the run performs can only ever select a pid that run created."
+  - "The suite leaves no cloudflared-shaped process alive past its own run, however the test dies; a fixture leaked by an earlier run is not alive by the time any assertion reads the process table."
+
+description: >
+  `extension/test/bl857TunnelOwnershipInvariants.property.test.js` drives the
+  REAL reap edge of `swarmforge/scripts/tunnel_ownership_lib.sh`, and that edge
+  enumerates the host process table:
+  `pgrep -fl -- "run $name"` (tunnel_ownership_lib.sh:166). The fixture launches
+  its fake cloudflared under the literal production tunnel name
+  `swarmforge-bubble`, so the test's own pattern matches processes the test did
+  not create.
+
+  MEASURED ON THIS HOST, 2026-08-22, while the property lane was running:
+  two live processes match that pattern. PID 316866 is the operator's genuine
+  tunnel (`/home/carillon/.local/bin/cloudflared tunnel --config
+  /home/carillon/.cloudflared/config.yml --no-autoupdate run swarmforge-bubble`),
+  and PID 752728 is a fake cloudflared LEAKED by an earlier property run
+  (`bash /tmp/bl787-ready-prop-sw7H7K/bin/cloudflared ... run swarmforge-bubble`)
+  that is still alive. Invariants 1 and 3 of that test both failed on the FIRST
+  generated case (counterexamples `[1,1]` and `["unrelated",false]`, 202ms and
+  29ms) - a fast, first-case failure, which is what distinguishes this from a
+  timeout.
+
+  THE HAZARD RUNS IN BOTH DIRECTIONS, and the second direction is why this is
+  severity high rather than a test annoyance. (a) The suite cannot pass on any
+  host where the real Bubble tunnel is up: no retry, no seed, and no amount of
+  host quiet fixes it, because the extra process is genuinely there.
+  (b) `stop_ancillary_services.sh` reaps through the SAME name-matched
+  enumeration, so a fixture bound to the production name means the test suite is
+  entitled to signal the operator's real tunnel. A test that can kill production
+  transport is a live fault.
+
+  This is the engineering rule "never diff shared globals (/tmp, broad `ps`
+  patterns, live runtime paths) - redirect through env seams", and the lib
+  already provides the seam: tunnel_ownership_lib.sh:124-128 documents a pure
+  filter that "never calls pgrep or kill itself, so a unit test can feed it
+  fabricated" candidate lines. The property test reaches past that seam to the
+  real edge.
+
+  HOW (direction, not mandate). Either drive the existing pure filter with
+  fabricated candidate lines, or give the fixture a per-run unique tunnel name
+  that no real process can be serving - or both. The reap's production behaviour
+  is the thing under test and is NOT what changes here. Whichever route is
+  taken, invariant 2's sweep obligation is separate and still owed: the suite
+  must not depend on a clean process table it did not establish (the process-table
+  analogue of BL-971's sweep-generated-fixtures-by-prefix-BEFORE-the-run rule -
+  nothing traps SIGKILL, so a killed run always leaves its fixture behind).
+
+  OUT OF SCOPE. The other four files in the same QA report are NOT this ticket
+  and are NOT the same defect - see notes.
+
+qa_e2e_procedure: >
+  1. At the parent commit, with the operator's real Bubble tunnel UP, run
+  `npx vitest run --config vitest.properties.config.mjs
+  test/bl857TunnelOwnershipInvariants.property.test.js` from extension/ and
+  confirm the absence of the behaviour: invariants 1 and 3 fail on the first
+  generated case. 2. At the parcel commit, repeat with the real tunnel still UP
+  and confirm all three invariants pass. 3. Confirm the fixture never binds the
+  production name: grep the parcel's test and fixture sources for the literal
+  `swarmforge-bubble` and confirm any remaining occurrence is a negative
+  assertion, not a name the fixture launches under. 4. Confirm the reap is
+  scoped: with a process bound to a DIFFERENT name alive, run the suite and
+  confirm that process is still alive afterwards (`kill -0`). 5. Confirm the
+  sweep: leave a fixture-shaped process alive, start the suite, and confirm it
+  is gone before the run's first process-table assertion. 6. Confirm no leak:
+  after a full run AND after a run killed mid-flight with SIGKILL, confirm no
+  cloudflared-shaped process from the fixture survives.
+
+notes: >
+  OPERATOR ACTION, OUTSIDE THIS TICKET AND NOT DONE BY ME: PID 752728 is a
+  leaked fake cloudflared from an earlier property run, still alive at spec
+  time and bound to the production tunnel name `swarmforge-bubble`. I have not
+  killed it - it is not mine and the standing rule is to surface, never sweep,
+  what I did not create. It should be killed by hand, and until it is, this
+  test and any hand re-run of it will keep seeing a phantom owner. Its /tmp
+  fixture root is `bl787-ready-prop-sw7H7K`, so BL-787's ready-property fixture
+  is the leaker, which is corroborating evidence for invariant 2 rather than a
+  separate finding.
+
+  PROVENANCE. QA `note` 00_20260822T134343Z_000879: "Property lane flaky under
+  worktree load: bl857,796,643,968,948 - investigate". That single note named
+  five files with one diagnosis; investigation found FOUR distinct mechanisms
+  and the diagnosis holds for only one of them (BL-1063). Split 1:4 under the
+  specifier's Consolidation Authority: this ticket (bl857, live-process-table
+  contamination), BL-1062 (bl968 + bl948, unseeded reach floors), BL-1063
+  (bl796, unsynchronized backgrounded child - the only genuinely load-sensitive
+  one), BL-1064 (bl643, a deterministic grounding gap that is not flakiness at
+  all). Full evidence, including the raw run log line numbers, is in
+  backlog/evidence/BL-1061-property-lane-triage-20260822.md.
+
+  NOT A LOAD PROBLEM. Recorded explicitly because the reporting note said load:
+  these failures are contamination, not contention. They fail identically on an
+  idle host whenever the real tunnel is up, and they would keep failing if the
+  fork pool were reduced to one.
+
+  IR-DRY judgment recorded: 1 finding -> 0. A medium-confidence possible-synonym
+  between "the ownership suite starts" and "the ownership suite runs". Real
+  drift, not deliberate contrast, so it was resolved: the sweep scenario now
+  says "reaches its first assertion about the process table", which is also the
+  behaviourally precise moment the invariant cares about.
+
+source: >
+  QA note 00_20260822T134343Z_000879 to specifier (via coordinator).
+  Live evidence gathered 2026-08-22 from the property-lane run at
+  .worktrees/QA and from the host process table.
+
+assigned_to: coder
