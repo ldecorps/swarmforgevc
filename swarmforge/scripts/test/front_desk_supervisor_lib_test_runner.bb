@@ -264,6 +264,35 @@
          ;; is only 1500ms old) - if `>=` were `>`, this would wrongly be stale.
          (front-desk-supervisor-lib/poll-heartbeat-stale? 500000 501500 90000 500000 1000))
 
+;; ── BL-1037 (hardener): build-served-fact? directly, not only through
+;; check-one!'s already-resolved boolean ────────────────────────────────
+;; The same >= boundary as bl1035-03 above, extracted to its own function so
+;; it is exercised directly rather than only reachable as an already-computed
+;; true/false handed to build-freshness-transition/check-one!. Unlike
+;; poll-heartbeat-stale?, there is no grace/stall dual-window here to hide the
+;; boundary behind a coincidentally-matching branch - a direct >= vs >
+;; mutation is immediately observable.
+
+(assert= "bl1037: a heartbeat written exactly AT spawn counts as this child having served"
+         true
+         (front-desk-supervisor-lib/build-served-fact? 500000 500000))
+
+(assert= "bl1037: a heartbeat one tick BEFORE spawn is the predecessor's, not this child's"
+         false
+         (front-desk-supervisor-lib/build-served-fact? 499999 500000))
+
+(assert= "bl1037: a heartbeat after spawn is unambiguously this child's own"
+         true
+         (front-desk-supervisor-lib/build-served-fact? 500100 500000))
+
+(assert= "bl1037: no heartbeat at all is never read as served"
+         false
+         (front-desk-supervisor-lib/build-served-fact? nil 500000))
+
+(assert= "bl1037: no spawn time at all is never read as served"
+         false
+         (front-desk-supervisor-lib/build-served-fact? 500000 nil))
+
 ;; ── BL-370: check-one! extended with heartbeat-stale? ────────────────────
 
 ;; front-desk-liveness-01: running + pid alive + heartbeat stale -> "stalled",
