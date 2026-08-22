@@ -9,11 +9,15 @@ priority: 28
 direction: human-requested
 depends_on: []
 mutation_cost: medium
-decomposes_into: [BL-792]
+decomposes_into: [BL-792, BL-1038, BL-1039]
 
 remaining_slices:
-  - "Slice B — cut the measured poles: reduce the run to under the 13s operational ceiling (prefer under the 10s budget already in code) by fixing what slice A's per-file profile actually names. Scope is written only once that profile exists; writing it now would be guessing."
-  - "Slice C — hold the line: whatever gate or ratchet is needed so the suite cannot silently walk back up. BL-378's per-file 7s budget and BL-445's suite ratchet both already exist — this slice is about why they did not stop a 25s-to-169s regression, not about inventing a third one."
+  - "Slice C — hold the line: whatever gate or ratchet is needed so the suite cannot silently walk back up. BL-378's per-file 7s budget and BL-445's suite ratchet both already exist — this slice is about why they did not stop a 25s-to-169s regression, not about inventing a third one. NOT YET MINTED, and deliberately so: what the gate should be depends on the operator's pending answer about lane composition and host budget (see the 2026-08-22 profile note below). Measured 2026-08-22: BL-378's guard has 19 live offenders and therefore fails every `npm test` through computeFinalExitCode — it is already a permanently-red gate, which is half of slice C's answer."
+
+slice_b_minted_2026_08_22:
+  - "BL-1038 — seven tests take the LIVE repo as their subject (121.6s of 533.8s). The growth term: their cost rises with every commit, which is why four measured budget raises in four days all went stale."
+  - "BL-1039 — fourteen tests build a real git repository per scenario (144.2s of 533.8s). The largest fixed block."
+  - "Together 265.8s of 533.8s — just under half the lane — with disjoint file sets. Neither is sufficient for the 13s ceiling on its own; see the profile note."
 
 description: |
   ## What the human asked for
@@ -142,3 +146,33 @@ notes: |
   fails is a suite whose failures carry no signal — a real regression and
   worker-termination noise are indistinguishable in that log. Slice A restores
   the signal, which is worth landing even if the wall-clock never moves.
+
+profile_2026_08_22: |
+  ## 2026-08-22 re-profile — why slice B became two tickets, and why slice C waits
+
+  Operator escalated again 2026-08-22: "WARN Suite duration trend: 9m 18s
+  latest (-5m 46s vs prior). this is nit acceptable."
+
+  Fresh profile, QA worktree Vitest JSON report for the run finishing
+  2026-08-22 05:52 (wall clock 689420ms in .test-durations.jsonl):
+
+  - 460 unit-lane files collected (589 in test/, 131 of them property files
+    excluded from this lane), 533.8s of summed per-file work.
+  - The lane runs on ONE fork. BL-935 (2026-08-19) sets the fork ceiling to 1
+    for a full-forge pack on macOS - this host has 2 physical cores and 8
+    resident Claude sessions. So wall clock is approximately the sum plus
+    overhead, which is why 689s > 533.8s rather than being a fraction of it.
+  - 19 files exceed BL-378's 7000ms per-file budget, accounting for 344.4s.
+    Capping every one of them at exactly 7s would still leave 322.4s.
+
+  That last line is the epic's central finding and it supersedes the epic's
+  own framing: **the 13s ceiling is not reachable on this host by cutting
+  poles alone.** It requires a decision about how much of the host the lane
+  may use (BL-935's ceiling), or about what `npm test` runs at all (lane
+  split, change-scoped runs). Both are operator calls - asked 2026-08-22,
+  answer pending - and slice C's gate cannot be specced before that answer,
+  because the number the gate would hold is exactly what the answer sets.
+
+  The prime suspect the epic named in 2026-08-03 (isolate:false colliding with
+  the 1280MB per-fork cap at 438 files) is not the current cause: BL-792
+  closed that, and the recent runs record `pass` as well as `fail`.

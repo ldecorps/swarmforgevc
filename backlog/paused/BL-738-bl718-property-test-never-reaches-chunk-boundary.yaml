@@ -17,8 +17,7 @@ invariants:
   - "A property test carrying a declared invariant must be falsifiable: breaking the code path the invariant names turns that property red."
   - "The property's generator reach and splitTelegramChunks's own boundary stay related by construction - the property keeps crossing the boundary when TELEGRAM_MESSAGE_MAX_LENGTH changes, with no second literal to keep in sync by hand."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   One open decision, with a recommendation. The ticket offers two fixes:
   generate longer strings against the real 4096 default, or pass a small

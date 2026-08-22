@@ -17,8 +17,7 @@ invariants:
   - "Every pane title display_name_for_role can emit is recognized as chrome - the recognized set is derived from what the launcher produces, never a hand-listed subset of separators."
   - "Widening chrome recognition never swallows content: a box-rule line whose text is not a launcher-produced session name is still kept, and a pane of nothing but chrome still yields the no-question-captured placeholder rather than an empty body."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   One open decision, with a recommendation. Speccing traced this defect wider
   than filed: the shipped pattern misses four of the six role names this repo
