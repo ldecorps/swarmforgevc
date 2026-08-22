@@ -10,7 +10,7 @@ depends_on: [BL-1078]
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted 2026-08-22 by operator Let's Talk ask for Cursor-as-swarm-seat
   enabling tickets. This is BL-712 slice C — Model Steward registration and
