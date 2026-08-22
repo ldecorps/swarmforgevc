@@ -4,7 +4,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { runCommitIntegrity, commitIntegrityCliPath, commitApprovalWrites } = require('../out/util/commitIntegrityRunner');
-const { copyScriptClosure } = require('./helpers/pinnedRepoFixture');
+const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 
 // runCommitIntegrity is the exec+parse shared by commitExpediteWrites
 // (telegram-front-desk-bot.ts, BL-490/BL-538) and commitEpicReorderWrites
@@ -69,21 +69,10 @@ function gitFixture() {
   return root;
 }
 
+// BL-1038: copies commit_integrity_cli.bb's load-file CLOSURE (11 files),
+// not the whole live scripts directory - see pinnedRepoFixture.js for why.
 function copyCommitIntegrityScripts(root) {
-  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
-  fs.mkdirSync(scriptsDir, { recursive: true });
-  // BL-1038: copy the load-file CLOSURE of the entry points this fixture
-  // actually invokes, not the whole live scripts directory. That directory
-  // holds 208 .bb files (2.16MB) and grows every day, so the old copy made
-  // every fixture build slower forever with no test added and no code
-  // changed - the growth term behind four budget raises in four days.
-  // commit_integrity_cli.bb's closure is 11 files, and it grows only with
-  // that CLI's own dependencies, never with the repository.
-  copyScriptClosure(
-    path.join(__dirname, '..', '..', 'swarmforge', 'scripts'),
-    scriptsDir,
-    ['commit_integrity_cli.bb']
-  );
+  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['commit_integrity_cli.bb']);
 }
 
 test('commitApprovalWrites: commits an active ticket file through the real commit-integrity helper, with the given message', async () => {
