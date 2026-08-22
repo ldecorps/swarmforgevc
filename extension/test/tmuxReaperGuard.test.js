@@ -73,3 +73,65 @@ test('the real specs/pipeline/steps tree has zero tmux-reaper violations', () =>
     `expected zero tmux-reaper violations under specs/pipeline/steps, found:\n${violations.map((v) => `${v.file}: ${v.reason}`).join('\n')}`
   );
 });
+
+// ── BL-1032: scope by the HAZARD, not by a quoted token ───────────────────
+// BL-817's guard decided scope with /['"]new-session['"]/ and its own comment
+// explains the quoting: prose and URLs must never false-positive, because
+// "every real tmux-server starter in this repo passes 'new-session' as its own
+// argv array element". The converse was never checked, and it is where the
+// guard broke: a file that ASSERTS ABOUT tmux argv also writes 'new-session'
+// as a quoted argv element, because it is comparing against argv.
+//
+// bl1018SingleRoleRepairNeverKillsServerSteps.js is exactly that shape. Its
+// header says "Nothing here runs tmux, and that is the design, not a
+// shortcut". It was RED BECAUSE IT IS CORRECT, and the two ways to green it
+// were to add a reaper call guarding nothing or to obfuscate the string - a
+// guard whose cheapest satisfying move is to write a lie is not measuring the
+// hazard it names.
+
+test('BL-1032: a file that only ASSERTS about tmux argv is not in scope', () => {
+  const text = [
+    "const creates = ctx.commands.filter((c) => has(c, 'new-session'));",
+    "assert.ok(!has(cmd, 'kill-server'), 'no repair may kill the server');",
+    "execFileSync('bb', ['-e', expr], { encoding: 'utf8' });",
+  ].join('\n');
+  assert.equal(findTmuxReaperViolation('asserting.js', text), null,
+    'asserting about argv starts no server, so there is nothing to reap');
+});
+
+test('BL-1032: a file that SPAWNS tmux directly stays in scope', () => {
+  const text = "execFileSync('tmux', ['-S', sock, 'new-session', '-d']);";
+  assert.ok(findTmuxReaperViolation('spawning.js', text),
+    'a direct tmux spawn is the hazard this guard exists for');
+});
+
+test('BL-1032: a file that reaches tmux through a PATH stub stays in scope', () => {
+  // bl958ControlPlaneLossSteps.js's shape, and the measured reason the obvious
+  // fix is wrong: keying purely on a literal tmux spawn would exempt it. It
+  // happens to be compliant today, so exempting it would regress nothing
+  // VISIBLE - which is exactly what makes that hole worth closing before it is
+  // dug.
+  const text = [
+    "fs.writeFileSync(path.join(root, 'bin', 'tmux'), stubSource);",
+    "fs.chmodSync(path.join(root, 'bin', 'tmux'), 0o755);",
+    "env.PATH = `${path.join(ctx.root, 'bin')}:${env.PATH}`;",
+    "execFileSync('bb', [script], { env });",
+    "const creates = commands.filter((c) => has(c, 'new-session'));",
+  ].join('\n');
+  assert.ok(findTmuxReaperViolation('stubbing.js', text),
+    'a file that puts a tmux on PATH can still cause one to run');
+});
+
+test('BL-1032: an in-scope file that adopts the reaper is still clean', () => {
+  const text = [
+    "const { track } = require('./lib/fixtureReaper');",
+    "execFileSync('tmux', ['-S', sock, 'new-session', '-d']);",
+    'track(sock);',
+  ].join('\n');
+  assert.equal(findTmuxReaperViolation('ok.js', text), null);
+});
+
+test('BL-1032: the token alone no longer puts a file in scope', () => {
+  // The whole defect in one assertion.
+  assert.equal(findTmuxReaperViolation('prose.js', "// we never call 'new-session' here"), null);
+});
