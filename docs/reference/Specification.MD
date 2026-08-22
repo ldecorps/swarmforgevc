@@ -1,6 +1,58 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1075: found during BL-1069's own
+**Last Updated:** August 22, 2026 (BL-1052: a role seat can now be staffed
+by **qwen-code** (`@qwen-code/qwen-code`, binary `qwen`), Alibaba's own
+agentic CLI — the swarm's only prior Qwen path drove the same Token Plan
+models through `aider`, a file editor with no autonomous shell execution,
+the same structural failure already proven live with Mistral: a role
+staffed that way narrates `ready_for_next.sh` instead of running it. The
+operator smoke-tested qwen-code outside any production path first and
+confirmed the thing that matters — with `--auth-type openai -y` it
+actually executed a shell command and returned the real result, and
+without `-y` it refused and said so rather than pretending. Slice (a) of
+an accepted ordering: this ticket is the agent shape, launch adapter, and
+base pack only; the ModelFactory `provider->agent` entry and Model Steward
+cost-class registration are BL-1053 (below), deliberately separate since
+registering a provider with nothing to launch would be inert bookkeeping.
+`qwen-code` is registered in `prompt_engine_lib.bb`'s
+`provider-capabilities` as `chat-message`/`embedded`, mirroring `vibe` and
+`gemini` — declared invariant 1: a capability entry describes the AGENT,
+never the model, so qwen-code and the aider-based `qwen-mono-router` pack
+share a model catalog, endpoint and key but get distinct capability
+shapes, the one difference that is the whole reason one works as a swarm
+role and the other does not. `swarmforge.sh` gained a `qwen-code` launch
+composer (`qwen --auth-type openai -y`, taking gemini's launch shape since
+qwen-code is Gemini-CLI-derived; prompt delivered by path, not a slurped
+argv, since composed role prompts run 51-155KB and would hard-fail
+`MAX_ARG_STRLEN`) and its own `qwen_guard`, reusing the same
+`QWEN_API_KEY`/`BAILIAN_CODING_PLAN_API_KEY` credential mapping
+`qwen-mono-router` already established rather than adding a second
+credential path — declared invariant 2: the key reaches the pane only
+through the launching environment and tmux `-e`, never written into a
+pack file, a generated launch script, a prompt, or a commit; verified via
+`git show` on the landed diff (zero literal key values) and a property
+test proving the key actually arrives via `respawn-pane -e`, not merely
+that the property is satisfiable by a launcher that silently drops it. New
+pack `swarmforge/packs/qwen-code-mono-router.conf` (mono-router topology,
+BL-518), beside the untouched aider-based `qwen-mono-router.conf`;
+naming the agent `qwen-code` had to be given its OWN routing arm in
+`ancillary_provider_lib.sh` ahead of the existing catch-all `qwen-*` arm,
+which otherwise routed any qwen-named pack into the `openai_aider` family
+and its hard `aider`-on-PATH requirement — a pack that refuses to launch
+without a dependency it never uses is not a pack. The Personal-plan ToS
+caution is carried verbatim into the pack file's own comment ("headless
+swarm may risk key revocation — prefer Team Edition for automation, or
+verify eligibility in console first") and pinned by its own acceptance
+scenario, so building the capability does not quietly decide that running
+it headless is allowed — that call is the operator's, per launch. New
+runbook `docs/how-to/BL-1052-qwen-code-mono-router-launch.md`, linked
+from `docs/index.md`. Degraded gate: shell + Babashka only, no
+mutation/CRAP/DRY tooling wired; gated by `test_qwen_code_seat.sh` and
+`bl1052_qwen_code_seat_property_runner.bb` (200 map runs, 40 launch runs)
+plus 8 acceptance scenarios. No `extension/**` file touched at all — no
+new extension command or setting.)
+Prior entry —
+BL-1075: found during BL-1069's own
 review (goal 4) and minted as its narrow follow-up rather than folded in.
 The swarm's hardening step set `window-size largest` as a stability
 mitigation on the control-plane server — and named it as one in the ops

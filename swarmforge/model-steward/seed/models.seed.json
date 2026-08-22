@@ -2,7 +2,12 @@
   "models": [
     { "provider": "anthropic", "model": "claude-sonnet-5", "status": "certified", "context_window": 200000, "cost_class": "medium" },
     { "provider": "openai", "model": "gpt-5.3-codex", "status": "certified", "context_window": 128000, "cost_class": "medium" },
-    { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low" }
+    { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low" },
+
+    { "provider": "qwen", "model": "qwen3.7-plus", "status": "candidate", "cost_class": "low" },
+    { "provider": "qwen", "model": "qwen3.6-flash", "status": "candidate", "cost_class": "low" },
+    { "provider": "qwen", "model": "qwen3.7-max", "status": "candidate", "cost_class": "medium" },
+    { "provider": "qwen", "model": "qwen3.8-max-preview", "status": "candidate", "cost_class": "medium" }
   ],
 
   "capabilities": {
