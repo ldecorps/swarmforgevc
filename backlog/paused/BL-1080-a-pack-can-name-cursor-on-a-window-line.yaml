@@ -1,0 +1,45 @@
+id: BL-1080
+title: "A pack can name cursor on a window line: without pack lines, how-tos and an honest unsupported-agent error, operators cannot choose a Cursor seat over pilot or Claude on purpose"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 0
+direction: queue-jump
+depends_on: [BL-1079]
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1080-a-pack-can-name-cursor-on-a-window-line.feature
+human_approval: pending
+approval_context: >
+  Minted 2026-08-22 by operator Let's Talk ask for Cursor-as-swarm-seat
+  enabling tickets. This is BL-712 slice D — pack lines and docs after
+  launcher and certify land. Needs feature-file approval.
+
+required_wiring:
+  - 'swarmforge/packs::cursor::at least one documented pack or overlay must accept a window line staffing a role with agent cursor against a certified Cursor identity'
+  - "specs/pipeline/steps/index.js::bl1080::the new step handler must be registered in the step registry"
+
+invariants:
+  - "The unsupported-agent error for a rejected cursor token points operators at the Cursor-seat how-to, not a dead end."
+  - "Docs state when to use a Cursor seat versus /pilot versus Claude — /pilot remains the offline expeditor, not a live seat."
+
+description: |
+  ## What is wrong
+
+  Even with a launcher token and a certified Cursor identity, operators have
+  no pack line that names cursor, no how-to for when to use it, and a
+  whitelist rejection that does not point at the Cursor-seat path.
+
+  ## How (direction, not mandate)
+
+  Add pack or overlay window lines that staff a role with cursor once
+  certified. Write the how-to. Point the unsupported-agent error here.
+
+  Not in this slice: proving the spike (BL-713); launcher (BL-1078);
+  certify (BL-1079); replacing every Claude seat.
+
+notes: |
+  BL-712 remaining slice D. Depends on BL-1079. Parent epic BL-712.
+
+assigned_to: specifier
