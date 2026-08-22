@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import { MetricsTickGate } from './metricsTickGate';
 
 // BL-071: single, vscode-free metrics computation module. Both the panel
 // (swarmPanel.ts) and the CLI (tools/swarm-metrics.ts) call these functions
@@ -112,13 +113,56 @@ function parseGitBlocks(output: string): GitLogBlock[] {
   return blocks;
 }
 
-function gitFollowHistory(targetPath: string, relativePath: string): GitLogBlock[] {
+// BL-1066: ONE walk for the whole closed corpus, never one per closed
+// ticket. This used to shell `git log --follow` once per file in
+// backlog/done/ - 794 walks at ~0.128s on the reference host, ~102 seconds
+// of git for a single computation that the panel scheduled every 2 seconds.
+// The cost is now a constant number of git subprocesses regardless of how
+// many tickets have been closed, so closing another one adds no git work.
+export const MEAN_TICKET_TIME_GIT_SUBPROCESS_BOUND = 1;
+
+// How long a computed mean stands before a caller's tick may recompute it.
+// The metric is an average over hundreds of closed tickets and moves
+// glacially; the panel's stage poll runs every 2 seconds. Deliberately far
+// apart - the ratio between the two IS the defect this ticket closes.
+export const MEAN_TICKET_TIME_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+// Ticket files only ever move WITHIN backlog/ (paused -> active -> done), so
+// a single directory-wide walk sees both sides of every move and git's own
+// rename detection pairs them - which is what `--follow` was being asked for
+// one file at a time.
+const BACKLOG_PATHSPEC = 'backlog';
+const ACTIVE_PREFIX = 'backlog/active/';
+
+// The whole backlog history is ~1MB of --name-status on the reference repo
+// (5000+ commits); Node's 1MB default would truncate it into silence.
+const MAX_GIT_OUTPUT_BYTES = 256 * 1024 * 1024;
+
+function gitBacklogHistory(targetPath: string): GitLogBlock[] {
   let output: string;
   try {
     output = execFileSync(
       'git',
-      ['-C', targetPath, 'log', '--follow', '--name-status', '--format=COMMIT%x09%cI', '--', relativePath],
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+      [
+        '-C',
+        targetPath,
+        'log',
+        // Default history simplification prunes a side branch whose net
+        // effect on backlog/ was nothing - which is exactly what a
+        // reopen-then-reclose looks like from the mainline. Those are the
+        // commits carrying the LAST cycle's dates, so dropping them silently
+        // reports a stale, much longer duration.
+        '--full-history',
+        // Rename detection explicitly on: a host or repo with
+        // diff.renames=false would otherwise report adds and deletes, and
+        // every duration would quietly become unmeasurable.
+        '-M',
+        '--name-status',
+        '--format=COMMIT%x09%cI',
+        '--',
+        BACKLOG_PATHSPEC,
+      ],
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: MAX_GIT_OUTPUT_BYTES }
     );
   } catch {
     return [];
@@ -126,29 +170,99 @@ function gitFollowHistory(targetPath: string, relativePath: string): GitLogBlock
   return parseGitBlocks(output);
 }
 
-function findArrivalDate(blocks: GitLogBlock[], matchesPath: (newPath: string) => boolean): Date | null {
-  for (const block of blocks) {
-    const arrived = block.statusLines.some((line) => {
-      const cols = line.split('\t');
-      const status = cols[0];
-      const newPath = cols[cols.length - 1];
-      return (status.startsWith('R') || status === 'A') && matchesPath(newPath);
-    });
-    if (arrived) {
-      return new Date(block.dateIso);
-    }
+// One commit in which a path came into existence at `toPath` - either renamed
+// from `fromPath` or added outright.
+interface PathArrival {
+  timeMs: number;
+  fromPath: string | null;
+}
+
+function readArrival(line: string): { toPath: string; fromPath: string | null } | null {
+  const cols = line.split('\t');
+  const status = cols[0];
+  if (status.startsWith('R')) {
+    return { toPath: cols[cols.length - 1], fromPath: cols[1] };
+  }
+  if (status === 'A') {
+    return { toPath: cols[cols.length - 1], fromPath: null };
   }
   return null;
 }
 
-function getTicketDuration(blocks: GitLogBlock[], donePath: string): number | null {
-  const posixDonePath = donePath.split(path.sep).join('/');
-  const closedAt = findArrivalDate(blocks, (p) => p === posixDonePath);
-  const activatedAt = findArrivalDate(blocks, (p) => p.startsWith('backlog/active/'));
-  if (!closedAt || !activatedAt) {
+// Indexes every arrival in the walk by the path arrived AT, newest first -
+// the shape the per-ticket lineage walk below needs, built in one pass so
+// that walk costs a chain lookup rather than a rescan of the whole log.
+// Ordered by commit TIME rather than by position in the log: --full-history
+// interleaves branches, so log position is not a reliable clock.
+function indexArrivals(blocks: GitLogBlock[]): Map<string, PathArrival[]> {
+  const byPath = new Map<string, PathArrival[]>();
+  for (const block of blocks) {
+    const timeMs = new Date(block.dateIso).getTime();
+    for (const line of block.statusLines) {
+      const arrival = readArrival(line);
+      if (!arrival) {
+        continue;
+      }
+      const entry = { timeMs, fromPath: arrival.fromPath };
+      const existing = byPath.get(arrival.toPath);
+      if (existing) {
+        existing.push(entry);
+      } else {
+        byPath.set(arrival.toPath, [entry]);
+      }
+    }
+  }
+  for (const arrivals of byPath.values()) {
+    arrivals.sort((a, b) => b.timeMs - a.timeMs);
+  }
+  return byPath;
+}
+
+// The newest arrival at `filePath` strictly older than `beforeMs`.
+function arrivalBefore(byPath: Map<string, PathArrival[]>, filePath: string, beforeMs: number): PathArrival | null {
+  return byPath.get(filePath)?.find((arrival) => arrival.timeMs < beforeMs) ?? null;
+}
+
+// When this ticket's file was last put into backlog/active/, read out of the
+// shared walk instead of a per-file `git log --follow`. Walks the rename
+// chain back from the closing commit through any re-files WITHIN done/ (the
+// live backlog has two-hop ones: done/ -> done/M3/ -> done/M3-<name>/).
+//
+// The walk needs no hop limit: every step moves to a STRICTLY older arrival,
+// and there are finitely many, so it cannot cycle or run away.
+function activationTimeMs(
+  byPath: Map<string, PathArrival[]>,
+  donePath: string,
+  closing: PathArrival
+): number | null {
+  let step = closing;
+  while (step.fromPath !== null) {
+    const previous = arrivalBefore(byPath, step.fromPath, step.timeMs);
+    if (step.fromPath.startsWith(ACTIVE_PREFIX)) {
+      return previous?.timeMs ?? null;
+    }
+    if (!previous) {
+      break;
+    }
+    step = previous;
+  }
+  // A close recorded as a COPY rather than a move (the active file deleted in
+  // a separate, later commit) leaves git no rename to follow back, so the
+  // lineage above dead-ends on an Add. The ticket's own file name under
+  // backlog/active/ is what `--follow` was effectively falling back on.
+  return arrivalBefore(byPath, ACTIVE_PREFIX + path.posix.basename(donePath), closing.timeMs)?.timeMs ?? null;
+}
+
+function ticketDurationMs(byPath: Map<string, PathArrival[]>, donePath: string): number | null {
+  const closing = byPath.get(donePath)?.[0];
+  if (!closing) {
     return null;
   }
-  const durationMs = closedAt.getTime() - activatedAt.getTime();
+  const activatedAtMs = activationTimeMs(byPath, donePath, closing);
+  if (activatedAtMs === null) {
+    return null;
+  }
+  const durationMs = closing.timeMs - activatedAtMs;
   return durationMs > 0 ? durationMs : null;
 }
 
@@ -156,19 +270,10 @@ function getTicketDuration(blocks: GitLogBlock[], donePath: string): number | nu
 // tracking on the backlog file's path history, rather than parsing commit
 // message wording (which is a convention, not a protocol contract).
 export function computeMeanTicketTime(targetPath: string): MeanTicketTime {
-  const donePaths = listDoneBacklogPaths(targetPath);
-  const durationsMs: number[] = [];
-
-  for (const donePath of donePaths) {
-    const blocks = gitFollowHistory(targetPath, donePath);
-    if (blocks.length === 0) {
-      continue;
-    }
-    const duration = getTicketDuration(blocks, donePath);
-    if (duration !== null) {
-      durationsMs.push(duration);
-    }
-  }
+  const byPath = indexArrivals(gitBacklogHistory(targetPath));
+  const durationsMs = listDoneBacklogPaths(targetPath)
+    .map((donePath) => ticketDurationMs(byPath, donePath.split(path.sep).join('/')))
+    .filter((duration): duration is number => duration !== null);
 
   if (durationsMs.length === 0) {
     return { meanMs: null, sampleCount: 0 };
@@ -898,9 +1003,15 @@ export function computeSwarmMetrics(
   roles: RoleWorktree[],
   runStartMs: number | null,
   nowMs: number = Date.now(),
-  suiteWarnSeconds: number = DEFAULT_SUITE_WARN_SECONDS
+  suiteWarnSeconds: number = DEFAULT_SUITE_WARN_SECONDS,
+  // BL-1066: every other metric here reads small local files; mean ticket
+  // time is the one that walks git. A caller polling on a short tick passes
+  // in the value it already holds (see computeSwarmMetricsOnTick) so the walk
+  // is not repeated per tick. Omitted - as the one-shot CLI omits it - it is
+  // computed fresh, exactly as before.
+  meanTicketTime?: MeanTicketTime
 ): SwarmMetrics {
-  const { meanMs, sampleCount } = computeMeanTicketTime(targetPath);
+  const { meanMs, sampleCount } = meanTicketTime ?? computeMeanTicketTime(targetPath);
   const busyness =
     runStartMs !== null
       ? computeBusyness(roles, runStartMs, nowMs)
@@ -925,4 +1036,25 @@ export function computeSwarmMetrics(
     chaserTelemetry,
     providerTelemetry,
   };
+}
+
+// BL-1066: what a short-cadence poller calls instead of computeSwarmMetrics.
+// The caller owns the gate (so it survives across ticks); this function owns
+// the wiring, so the tick's cost policy is one testable call rather than a
+// rule restated in the VS Code panel, which no unit test can reach. Every
+// tick still returns a complete metrics object - the mean is republished from
+// the gate's last value rather than recomputed.
+export function computeSwarmMetricsOnTick(
+  meanTicketTimeGate: MetricsTickGate<MeanTicketTime>,
+  targetPath: string,
+  roles: RoleWorktree[],
+  runStartMs: number | null,
+  nowMs: number = Date.now(),
+  suiteWarnSeconds: number = DEFAULT_SUITE_WARN_SECONDS
+): SwarmMetrics {
+  // The target repo is the gate's subject: re-pointing the panel at another
+  // repo must never serve the previous one's mean while the interval runs out.
+  meanTicketTimeGate.run(() => computeMeanTicketTime(targetPath), targetPath);
+  const meanTicketTime = meanTicketTimeGate.latest() ?? { meanMs: null, sampleCount: 0 };
+  return computeSwarmMetrics(targetPath, roles, runStartMs, nowMs, suiteWarnSeconds, meanTicketTime);
 }
