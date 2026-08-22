@@ -71,3 +71,11 @@ Ubuntu tmux 3.4 NULL-window deref in `resize.c` when
 - Packaging tmux 3.7 into apt / requiring sudo.
 - Operator-runtime tmux socket (separate process; upgrade optional).
 - Doubling coder seats or difficulty-aware routing (BL-1001).
+
+---
+
+DISPOSITION (specifier, 2026-08-22): minted as **BL-1069**
+(`backlog/paused/BL-1069-swarm-stamp-tmux-wsl-segfault-upgrade-hotfix.yaml`),
+a `high` severity swarm-review stamp-off of commit 61c62f579, as this intake
+directed. All three locked human decisions and the out-of-scope list are
+carried into that ticket verbatim. 1:1 - nothing merged, nothing split.
