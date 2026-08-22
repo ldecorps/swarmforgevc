@@ -26,6 +26,9 @@ mk_fixture() {
   printf 'specifier\tmaster\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
   printf 'coder\tcoder\t%s/wt-coder\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
   printf 'cleaner\tcleaner\t%s/wt-cleaner\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+  printf 'architect\tarchitect\t%s/wt-architect\tswarmforge-architect\tArchitect\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+  printf 'hardender\thardender\t%s/wt-hardender\tswarmforge-hardender\tHardender\tclaude\tbatch\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+  printf 'documenter\tdocumenter\t%s/wt-documenter\tswarmforge-documenter\tDocumenter\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
   printf 'QA\tQA\t%s/wt-QA\tswarmforge-QA\tQa\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
   printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
 }
@@ -40,6 +43,10 @@ write_backlog_active() {
 master_in_process_dir() { printf '%s/.swarmforge/handoffs/%s/inbox/in_process' "$ROOT" "$1"; }
 # in_process dir for an ordinary (own-worktree) role.
 role_in_process_dir() { printf '%s/wt-%s/.swarmforge/handoffs/inbox/in_process' "$ROOT" "$1"; }
+# BL-1048: the DELIVERED-but-unopened mailbox state (inbox/new/) - the
+# source the scan used to skip entirely, in both mailbox layouts.
+master_new_dir() { printf '%s/.swarmforge/handoffs/%s/inbox/new' "$ROOT" "$1"; }
+role_new_dir() { printf '%s/wt-%s/.swarmforge/handoffs/inbox/new' "$ROOT" "$1"; }
 
 run_cli() {
   bb "$CLI" "$ROOT" "$1"
@@ -156,6 +163,109 @@ printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-7-th
 run_cli sync > /dev/null
 check "a re-sync reflects the ticket's NEW stage, dropping the stale one" \
   '[[ "$(cat "$ROOT/.swarmforge/board/ticket-stage-map.json")" == *"\"BL-7\":\"cleaner\""* ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048: a DELIVERED but unopened parcel (inbox/new/) names its role ──
+#    The not-started column means no role has the parcel - not that no role
+#    has opened it. Before this, inbox/new/ was never scanned, so a routed,
+#    delivered, woken handoff whose recipient had not yet run
+#    ready_for_next.sh fell off the stage map entirely and rendered NS.
+mk_fixture
+write_backlog_active "BL-1037"
+DIR="$(role_new_dir QA)"
+mkdir -p "$DIR"
+printf 'from: documenter\nto: QA\ntype: git_handoff\npriority: 50\ntask: BL-1037-thing\ncommit: cfd70ed26d\n\nmerge_and_process documenter cfd70ed26d\n' > "$DIR/50_a.handoff"
+OUT="$(run_cli report)"
+check "BL-1048-01: a delivered-but-unopened git_handoff resolves to the role whose new/ holds it" \
+  '[[ "$OUT" == *"\"BL-1037\":\"QA\""* ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048-01 (master-resident role): the per-role new/ subdirectory is
+#    read through the SAME mailbox-dir resolver, not a re-derived path ─────
+mk_fixture
+write_backlog_active "BL-1043"
+DIR="$(master_new_dir specifier)"
+mkdir -p "$DIR"
+printf 'from: coordinator\nto: specifier\ntype: git_handoff\npriority: 50\ntask: BL-1043-spec\ncommit: 1234567890\n\nmerge_and_process coordinator 1234567890\n' > "$DIR/50_a.handoff"
+OUT="$(run_cli report)"
+check "BL-1048-01: a master-resident role's own new/ subdirectory is scanned too" \
+  '[[ "$OUT" == *"\"BL-1043\":\"specifier\""* ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048-02: a ticket with no parcel in ANY new/ or in_process/ is
+#    still not-started - widening the source set never fabricates one ──────
+mk_fixture
+write_backlog_active "BL-1044"
+OUT="$(run_cli report)"
+check "BL-1048-02: an active ticket with no parcel at any role is still absent (not-started)" \
+  '[[ "$OUT" == "{}" ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048-03: opened upstream + delivered downstream resolves to exactly
+#    ONE role, the more downstream one - the transition window this
+#    widening makes common must never reintroduce BL-464's double row ──────
+mk_fixture
+write_backlog_active "BL-1032"
+CODER_DIR="$(role_in_process_dir coder)"
+CLEANER_DIR="$(role_new_dir cleaner)"
+mkdir -p "$CODER_DIR" "$CLEANER_DIR"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-1032-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$CODER_DIR/50_a.handoff"
+printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-1032-thing\ncommit: 89e04323af\n\nmerge_and_process coder 89e04323af\n' > "$CLEANER_DIR/50_b.handoff"
+OUT="$(run_cli report)"
+check "BL-1048-03: opened upstream + delivered downstream resolves to the later role only" \
+  '[[ "$OUT" == *"\"BL-1032\":\"cleaner\""* ]] && [[ "$OUT" != *"\"BL-1032\":\"coder\""* ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048-03 (same role, both states): a redelivered copy alongside the
+#    role's own opened parcel is still exactly one row at that role ────────
+mk_fixture
+write_backlog_active "BL-1040"
+NEW_DIR="$(role_new_dir coder)"
+IP_DIR="$(role_in_process_dir coder)"
+mkdir -p "$NEW_DIR" "$IP_DIR"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-1040-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$IP_DIR/50_a.handoff"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-1040-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$NEW_DIR/50_a.handoff"
+OUT="$(run_cli report)"
+check "BL-1048-03: the same ticket delivered AND opened at one role is that role, once" \
+  '[[ "$OUT" == "{\"BL-1040\":\"coder\"}" ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048-04: a delivered NOTE names its ticket the same way a delivered
+#    git_handoff does - the message-header read is not in_process-only ─────
+mk_fixture
+write_backlog_active "BL-1045"
+DIR="$(role_new_dir hardender)"
+mkdir -p "$DIR"
+printf 'from: coordinator\nto: hardender\ntype: note\npriority: 10\nmessage: BL-1045 needs a hardening pass\n\nRe-read your role and constitution.\n\nBL-1045 needs a hardening pass\n' > "$DIR/10_note.handoff"
+OUT="$(run_cli report)"
+check "BL-1048-04: a delivered-but-unopened note resolves the same way a handoff does" \
+  '[[ "$OUT" == *"\"BL-1045\":\"hardender\""* ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048-05: a delivered parcel naming a ticket no longer in
+#    backlog/active/ puts nothing on the board - filter-active still owns
+#    the membership test on the widened source set ─────────────────────────
+mk_fixture
+DIR="$(role_new_dir cleaner)"
+mkdir -p "$DIR"
+printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-996-closed\ncommit: 1234567890\n\nmerge_and_process coder 1234567890\n' > "$DIR/50_a.handoff"
+OUT="$(run_cli report)"
+check "BL-1048-05: a delivered parcel naming a closed ticket never appears" \
+  '[[ "$OUT" == "{}" ]]'
+rm -rf "$ROOT"
+
+# ── BL-1048: a batch role's delivered batch_* subdirectory is enumerated in
+#    new/ through the SAME batch walk in_process already uses ──────────────
+mk_fixture
+write_backlog_active "BL-1046"
+write_backlog_active "BL-1047"
+DIR="$(role_new_dir cleaner)/batch_20260822T000000Z_a"
+mkdir -p "$DIR"
+printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-1046-thing\ncommit: 1234567890\n\nmerge_and_process coder 1234567890\n' > "$DIR/50_a.handoff"
+printf 'from: coder\nto: cleaner\ntype: git_handoff\npriority: 50\ntask: BL-1047-other\ncommit: 2234567890\n\nmerge_and_process coder 2234567890\n' > "$DIR/50_b.handoff"
+OUT="$(run_cli report)"
+check "BL-1048: a delivered batch_* subdirectory's tickets are all visible" \
+  '[[ "$OUT" == *"\"BL-1046\":\"cleaner\""* ]] && [[ "$OUT" == *"\"BL-1047\":\"cleaner\""* ]]'
 rm -rf "$ROOT"
 
 if [[ $fail -eq 0 ]]; then
