@@ -10,7 +10,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1057-the-doctor-names-what-a-host-move-left-behind.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two design calls in this ticket narrow what you asked for, so they need your
   ruling before it is built.
