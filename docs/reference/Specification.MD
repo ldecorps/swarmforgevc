@@ -1,6 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1015: the acting half of the
+**Last Updated:** August 22, 2026 (BL-1057: a host move (this swarm's own
+Mac → WSL2 move on 2026-08-22) silently leaves host-pinned config behind —
+local editor settings, `$HOME`-rooted credential/registry directories,
+machine-local env files — and nothing in any daemon's restart path ever
+reports it; two real casualties were found only by hand (a stale
+`extension/.vscode/settings.json` target path, and a live Cloudflare Error
+1033 because the Bubble named tunnel was never registered on the new
+host). `bb swarmforge/scripts/host_switchover_doctor.bb [<repo-root>]
+[--json | --inventory]` is the command that would have reported both in
+one run: it walks a declared inventory of host-pinned locations (both
+`.vscode/settings.json` files, the named-tunnel operator-root registry,
+`~/.cloudflared/`'s cert/config/credentials, and
+`.swarmforge/operator/named-tunnel.env`) and gives each exactly one
+verdict — `OK`, `STALE` (quoting the stale value it found), `MISSING`, or
+`BLOCKED` (the check itself could not run — never omitted, never counted
+as OK). Every non-OK finding names both the concrete location and its
+remediation step; the tunnel findings point at the existing named-tunnel
+runbook, since registering it is a deliberate interactive human step the
+doctor deliberately does not perform. The doctor is permanently read-only
+— a durable property, not a slice boundary a future repair capability may
+relax; repair is out of scope and would be a separate command, never a
+`--fix` flag here. Run from any per-role worktree, it resolves through the
+worktree's `.git` file to the forge's own main-checkout root rather than
+reporting that worktree's own paths as false-STALE. `--inventory` prints
+the declared inventory as JSON so the acceptance step handlers build their
+fixture host from the one declared definition rather than a second copy.
+Babashka lane, per this project's Startup Tools fallback: no
+mutation/CRAP/DRY tooling wired there, gated by its own unit + property
+suite instead (60 generated host states against an independent oracle,
+reach asserted per verdict class). New runbook:
+`docs/how-to/BL-1057-host-switchover-doctor.md`, linked from
+`docs/index.md` (`required_wiring`, confirmed present through hardener).)
+Prior entry —
+BL-1015: the acting half of the
 `boy-scout` epic. `node extension/out/tools/boyScoutRun.js [path-to-root]`
 takes BL-1014's scan, reads an already-written cleanup proposal for the
 top-ranked item from `.swarmforge/boy-scout/proposal.json` (whole new file

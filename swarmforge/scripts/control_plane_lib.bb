@@ -180,15 +180,32 @@
        :output (str/trim (str (:out result) " " (:err result)))})))
 
 (defn harden-server!
-  "Soft WSL stability knobs (focus-events / window-size). Never fails the
-   caller — older tmux builds may reject an option; the real fix is tmux
-   >= 3.7 (resize.c NULL-window guard)."
+  "The soft WSL stability knob (focus-events). Never fails the caller — older
+   tmux builds may reject an option; the real fix is tmux >= 3.7 (resize.c
+   NULL-window guard).
+
+   BL-1075: `window-size largest` used to be set here too, and could never
+   take effect on any window the extension tiles - `resize-window -x/-y`
+   \"will automatically set window-size to manual in the window options\"
+   (tmux(1)), and a WINDOW option beats the server global. Measured: after
+   the panel resizes a window the global still answers `largest` while that
+   window answers `manual`. Applying it was advertising a mitigation that
+   never held. `focus-events off` is overridden by nothing and stays -
+   deleting this function to remove the inert half would take a live knob
+   with it.
+
+   BL-1069 stamp-off: what makes this soft is the RUNNER, not the
+   `:continue true` below. `babashka.process/sh` returns its result map on a
+   non-zero exit either way (`p/shell` is the one that throws), and this
+   function reads neither exit code. The flag stays as a statement of intent,
+   but the edit to be careful about is swapping `sh!` for anything that
+   propagates a failure, or starting to check `(:exit ...)` here - either
+   turns a knob an old tmux rejects into a failed ensure. Pinned by
+   test/bl1069_tmux_version_property_runner.bb (invariant 3)."
   [socket]
   (when-not (str/blank? (str socket))
     (daemon-cycle-guard-lib/sh! {:continue true}
-                                "tmux" "-S" (str socket) "set-option" "-g" "focus-events" "off")
-    (daemon-cycle-guard-lib/sh! {:continue true}
-                                "tmux" "-S" (str socket) "set-option" "-g" "window-size" "largest")))
+                                "tmux" "-S" (str socket) "set-option" "-g" "focus-events" "off")))
 
 ;; ── IO edge: observe (the ONE fact-set all three consumers share) ────────────
 

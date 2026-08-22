@@ -23,7 +23,10 @@ const REAL_SCRIPTS_DIR = path.join(__dirname, '..', '..', 'swarmforge', 'scripts
 // daemon_cycle_guard_lib.bb - each time this copy list went stale and the
 // fixture missed it, because the failure it produced was a passing-shaped
 // {} rather than an error (see BL-814).
-const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb', 'prompt_engine_lib.bb', 'daemon_cycle_guard_lib.bb'];
+// BL-1029: handoff_lib.bb loads shell_quote_lib.bb (the one place a launch
+// path becomes a shell word), so the fixture has to carry it or the CLI
+// cannot load at all.
+const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'shell_quote_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb', 'prompt_engine_lib.bb', 'daemon_cycle_guard_lib.bb'];
 
 function mkFixtureRoot(omit) {
   const root = mkTmpDir('bl487-live-role-held-');
