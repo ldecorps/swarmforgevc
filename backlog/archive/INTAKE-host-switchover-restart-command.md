@@ -95,3 +95,39 @@ Evidence: `docs/how-to/named-tunnel-bubble-musicalsifu.md` (full runbook),
 `swarmforge/scripts/tunnel_ownership_lib.sh`.
 
 ---
+
+## Disposition (specifier, 2026-08-22)
+
+Drained to **BL-1057**
+(`backlog/paused/BL-1057-the-doctor-names-what-a-host-move-left-behind.yaml`,
+`type: feature`, epic `swarm-reliability`/BL-539 — recorded on that tracker's
+`decomposes_into`). The whole intake went to that one ticket (1:1); all three
+verbatim operator directives are preserved in its `notes:` per Article 5.3.
+
+Two design calls narrow what the intake asked for, so the ticket carries
+`human_approval: pending` with both stated in `approval_context`:
+
+- **Detect only, no repair.** Of the two real casualties this switchover
+  produced, the stale `extension/.vscode/settings.json` target path is a
+  one-line rewrite, while the Bubble named tunnel needs an interactive browser
+  login plus a deliberate human operator-root registration that no script may
+  do unattended. Speccing repair alongside detection would have minted a ticket
+  that is mostly detection wearing a repair label. Guided repair for the
+  mechanically fixable subset is a follow-up if the human wants it.
+- **Standalone script, not a `./swarm doctor` subcommand.** The intake left the
+  form to the specifier. A subcommand means editing the fork's `swarmforge.sh`,
+  and a `doctor` verb already sits inside BL-554's `root-capability-commands`
+  epic, itself blocked on an unrelated human ruling. Standalone now, foldable
+  into that verb later — BL-1057's `notes:` says so explicitly, so the verb
+  calls this command rather than reimplementing it.
+
+The live Bubble Error 1033 is **not** ticketed separately: its remediation is
+the interactive `cloudflared tunnel login` sequence the coordinator already
+handed back to the human. It is carried in BL-1057 as the motivating evidence
+and as the ticket's `qa_e2e:` verification target, since this host's three
+tunnel locations are still absent and are exactly the MISSING findings the
+doctor must produce.
+
+Not scoped, recorded in BL-1057's `notes:` for a later ticket: the root
+`.vscode/settings.json` is tracked in git and carries host paths, so every host
+move dirties a tracked file.
