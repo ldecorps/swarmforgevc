@@ -1,0 +1,48 @@
+id: BL-1079
+title: "A Cursor identity can be steward-certified for production routing: without register, compliance battery and certify, ModelFactory must not silently route ordinary packs to Cursor"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 0
+direction: queue-jump
+depends_on: [BL-1078]
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature
+human_approval: pending
+approval_context: >
+  Minted 2026-08-22 by operator Let's Talk ask for Cursor-as-swarm-seat
+  enabling tickets. This is BL-712 slice C — Model Steward registration and
+  certify. Needs feature-file approval. Depends on the launcher path
+  (BL-1078) so certify has something real to point at.
+
+required_wiring:
+  - 'swarmforge/scripts/model_steward_cli.bb::cursor::register and certify must operate on the live steward registry for the Cursor identity - a registry entry that never reaches ModelFactory leaves production routing unchanged'
+  - "specs/pipeline/steps/index.js::bl1079::the new step handler must be registered in the step registry"
+
+invariants:
+  - "Before ordinary pack routing or ModelFactory assignment, a Cursor identity is registered as candidate, runs the steward compliance battery, produces an evidence artifact, then certify — never a fabricated Anthropic id."
+  - "Pack apply refuses a candidate Cursor unless certify has succeeded or an explicit spike-only escape is set."
+
+description: |
+  ## What is wrong
+
+  BL-712's non-negotiable gate: an uncertified Cursor must not be silently
+  routable on mono-router or full-forge production packs. Today there is no
+  Cursor identity in the steward registry under a form that matches how the
+  seat bills and identifies itself.
+
+  ## How (direction, not mandate)
+
+  Register the Cursor identity as candidate. Run the existing compliance
+  battery. Land an evidence artifact. Certify. Document Cursor-specific
+  residuals (ACP bootstrap limits, remote-control differences versus
+  Claude /rc, cost attribution).
+
+  Not in this slice: launcher whitelist (BL-1078); pack how-tos (BL-1080).
+
+notes: |
+  BL-712 remaining slice C. Depends on BL-1078. Parent epic BL-712.
+
+assigned_to: specifier
