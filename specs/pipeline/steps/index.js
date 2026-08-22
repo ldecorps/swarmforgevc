@@ -574,7 +574,8 @@ const DOMAINS = [
   require('./bl1036RestartDoesNotCostAConflictWindowSteps'),
   require('./bl1041RescueNeverReducesDurabilitySteps'),
   require('./bl1037WatchdogRestartsFewerThanMainMovesSteps'),
-  require('./bl1032TmuxReaperScopeSteps')
+  require('./bl1032TmuxReaperScopeSteps'),
+  require('./bl1039SharedSeededFixtureSteps')
 ];
 
 function registerSteps(registry) {

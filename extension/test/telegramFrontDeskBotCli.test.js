@@ -6,6 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readCooldownWindowMarker } = require('../out/tools/cooldownWindowState');
+const { copyScriptClosure } = require('./helpers/pinnedRepoFixture');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   parseCliArgs,
   conciergeTickIntervalMs,
@@ -318,25 +320,29 @@ test('runExpediteDispatch passes the ticket id and target path as positional arg
 
 function gitFixture() {
   const root = mkTmp();
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
-  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  // BL-1039: the seeded repository comes from the shared fixture - one
+  // seeding per RUN instead of init+config+commit per scenario. Four
+  // process spawns before the behaviour under test was even reached,
+  // repeated across every test in this file. Measured 190ms -> 33ms.
+  copySeededRepoInto(root);
   return root;
 }
 
 function copyCommitIntegrityScripts(root) {
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
-  // BL-551: commit_integrity_cli loads ticket_close_guard_lib and its full
-  // Babashka dependency chain — copy every .bb helper the real scripts dir
-  // carries so expedite fixtures exercise the same CLI production does.
-  for (const name of fs.readdirSync(repoScriptsDir)) {
-    if (name.endsWith('.bb')) {
-      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
-    }
-  }
+  // BL-551 wanted the CLI's FULL Babashka dependency chain, and copying the
+  // whole directory was how it got one. BL-1038: the closure gives the same
+  // chain - transitively, by construction - without the 208-file, 2.16MB copy
+  // that grew with every script added to the repo. The dependency chain is
+  // still complete; it is now bounded by the CLI's own dependencies rather
+  // than by the size of swarmforge/scripts.
+  copyScriptClosure(
+    path.join(__dirname, '..', '..', 'swarmforge', 'scripts'),
+    scriptsDir,
+    ['commit_integrity_cli.bb', 'swarm_handoff.bb', 'ambulance_cli.bb',
+     'operator_ask.bb', 'role_ask.bb', 'support_thread.bb']
+  );
 }
 
 test('commitExpediteWrites commits the ticket file at its CURRENT (post-promote) path through the real commit-integrity helper', async () => {
