@@ -11,7 +11,8 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1015-a-boy-scout-run-cleans-one-thing-or-says-why-it-cleaned-nothing.feature
 
 required_wiring:
-  - "extension/src/tools/boyScoutRun.ts::boyScoutScan::the run must consume BL-1014's ranking rather than re-deriving one of its own. A second, private ranking would drift from the one the operator was shown, so the run reaches the scan module by name"
+  - "extension/src/tools/boyScoutRun/run.ts::from '../boyScoutScan'::the run must consume BL-1014's ranking rather than re-deriving one of its own. A second, private ranking would drift from the one the operator was shown, so the run reaches the scan module by name. This is the CONSUMPTION site: run.ts compares the proposal's subject against the top-ranked entry and detects trespass onto the others"
+  - "extension/src/tools/boyScoutRun/environment.ts::from '../boyScoutScan'::the same by-name reach at the ACQUISITION site - the default environment obtains the ranking from BL-1014's scan module instead of computing one. One entry per call site per BL-531; either import disappearing breaks the invariant, so both are anchored"
   - "specs/pipeline/steps/index.js::bl1015::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
 
 invariants:
@@ -79,6 +80,34 @@ source:
   - "Operator, 2026-08-21: 'devise a boyscoot activity: on demand cleaning ticket that identifies and clean the most annoying technical dept'. Split 1:N under Consolidation Authority - this is the clean half. Operator explicitly chose 'clean it in the same run' over report-only and over mint-and-route."
 
 notes: |
+
+  2026-08-22 specifier — required_wiring entry #1 AMENDED IN FLIGHT (bookkeeping
+  only; nothing you build changes). The architect raised a priority-00 note
+  during its pass: the anchor had been left pointing at
+  `extension/src/tools/boyScoutRun.ts::boyScoutScan`, and the cleaner's split of
+  that file into `boyScoutRun/` (7 modules) moved the real by-name reach out of
+  it. The old anchor had become VACUOUS rather than absent: `boyScoutRun.ts`
+  survives as a doc header and still contains the literal `boyScoutScan` three
+  times, all in comments, so the gate would have gone green on prose while the
+  actual imports could be deleted unnoticed — the exact failure required_wiring
+  exists to catch (BL-419/BL-531).
+
+  Entry #1 is now TWO entries, one per real call site, both anchored on
+  `from '../boyScoutScan'`:
+  `boyScoutRun/run.ts` (consumption — compares the proposal's subject against
+  the top-ranked entry, detects trespass onto the others) and
+  `boyScoutRun/environment.ts` (acquisition — obtains the ranking from the scan
+  module rather than computing one). The pattern is the import's module
+  specifier rather than the imported symbol list, deliberately: it survives a
+  reformat or a change to which symbols are imported, and it appears exactly
+  once in each file and never in a comment there. Verified with
+  `parse-wiring-entry` on the finished lines (both print
+  `from '../boyScoutScan'`, byte-identical to the file literal) and matched
+  against the architect's parcel commit `aae815e09` — all three entries hit, so
+  the documenter's forward to QA will not be blocked.
+
+  No rebuild is owed by anyone for this. The code is already correct; only the
+  ticket's description of where to look was stale.
   2026-08-21 specifier: slice 2 of epic boy-scout (BL-1013), filed with slice 1
   (BL-1014) in the same pass. `depends_on: [BL-1014]` is enforced by the BL-957
   promotion gate, which refuses any candidate naming a dependency not yet in
