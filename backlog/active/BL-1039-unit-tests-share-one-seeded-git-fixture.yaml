@@ -11,7 +11,7 @@ severity: medium
 # 3.2.4's "two priority scales - never conflate").
 status: todo
 epic: unit-suite-speed
-assigned_to: none
+assigned_to: coder
 priority: 9
 direction: human-requested
 depends_on: []
