@@ -12,7 +12,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1042-host-load-throttles-intake-automatically.feature
-human_approval: pending
+human_approval: approved
 
 required_wiring:
   - "extension/src/tools/emit-throttle-recommendation.ts::readHostLoadSampleEvents::the emitter must actually READ the host-load store. Without this call site the diagnosis is computed and nothing ever consumes it - a mechanism shipped, unit-green, and wired into zero of the places it was filed to fix (the BL-419 shape). `readHostLoadSampleEvents` is an existing export of extension/src/metrics/resourceTelemetry.ts, so this is an anchor that already exists rather than a name nobody has written yet."
