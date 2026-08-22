@@ -5,6 +5,13 @@ const path = require('node:path');
 const { ensureLifecycleSnapshot, main } = require('../out/tools/emit-lifecycle-snapshot');
 const { lifecycleSnapshotPath, writeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
+// BL-1038-EXEMPT: the live root goes to lifecycleSnapshotPath(), which only
+// RESOLVES a path under the root - the test then reads and restores that file
+// so the real snapshot is left untouched. It is a wiring check that the
+// compiled CLI writes where the library says it will, and a pinned root would
+// resolve to a fixture path and prove nothing about the real one. No walk of
+// the repository, so no growth in its size or history.
+
 const DAY1 = Date.parse('2026-08-15T09:00:00Z');
 const DAY1_LATER = Date.parse('2026-08-15T18:00:00Z');
 const DAY2 = Date.parse('2026-08-16T09:00:00Z');
