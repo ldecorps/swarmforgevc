@@ -263,9 +263,9 @@ class HandsFreeSessionPropertyTest {
             // original deadline - which is exactly the conflation being tested.
             val howMany = 1 + rng.nextInt(4)
             var last = armedAt
-            repeat(howMany) {
+            repeat(howMany) closerInjection@{
                 last += rng.nextLong(1L, window - 1)
-                if (last - armedAt >= window) return@repeat
+                if (last - armedAt >= window) return@closerInjection
                 val step = HandsFreeSession.on(
                     session,
                     Event.Utterance(softClosers.random(rng), last),
