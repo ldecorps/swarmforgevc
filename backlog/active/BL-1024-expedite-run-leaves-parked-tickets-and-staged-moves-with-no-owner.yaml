@@ -160,3 +160,6 @@ notes: |
   happening; this is about the run declaring what it left for someone else.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-22, by: architect, blamed: coder, class: behavior, commit: 6203b15da1, evidence: backlog/evidence/BL-1024-architect-bounce-20260822.md }
