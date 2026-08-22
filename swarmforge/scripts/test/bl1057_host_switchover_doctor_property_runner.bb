@@ -202,9 +202,21 @@
 ;; BL-971: removed on EVERY exit path, not only when the last assertion passes.
 (.addShutdownHook (Runtime/getRuntime) (Thread. #(fs/delete-tree temp-root)))
 
+;; ONE generator advanced across every run, deliberately not a fresh one
+;; seeded per run index (same convention as every other seeded-LCG
+;; `*_property_runner.bb` in this directory - BL-991 hit the identical
+;; defect and this is the same fix). A fresh LCG seeded `base + i*stride`
+;; returns a near-constant FIRST draw for a small modulus: seeded per run,
+;; this generator's first draw (which becomes row 1's, `.vscode/settings.json`
+;; - the only two-key settings row) landed on :absent in 57 of 60 runs and
+;; NEVER on :stale or :unreadable, at every run count, structurally. The
+;; per-row-1 floor below is what catches a future reseeding reintroducing
+;; this; the distribution is no longer merely hoped to decorrelate.
+(def rng (make-rng 20260822))
+(def first-row-id (:id (first host-switchover-doctor-lib/default-inventory)))
+
 (doseq [run-index (range runs)]
-  (let [rng (make-rng (+ 977 (* run-index 7919)))
-        root (str (fs/path temp-root (str "run-" run-index)))
+  (let [root (str (fs/path temp-root (str "run-" run-index)))
         {:keys [repo-root env states]} (build-host! root rng)
         before (fingerprint root)
         result (host-switchover-doctor-lib/run-doctor {:repo-root repo-root :env env})
@@ -237,6 +249,14 @@
           (check! (str where ": the report a human reads drops " (:id f) "'s remediation")
                   (str/includes? (host-switchover-doctor-lib/format-report result)
                                  (:remediation f))))))
+
+    ;; A per-row-1 floor, not merely an aggregate one: 60 draws spread over 7
+    ;; rows still pass the AGGREGATE :stale/:unreadable floors even if row 1
+    ;; specifically never lands on either - the aggregate floors measure reach
+    ;; over the whole run, not reach at one draw POSITION, so a pin at
+    ;; position 1 is invisible to them by construction (this is what let the
+    ;; original per-run reseed slip through).
+    (bump! (keyword (str "row1-" (name (states first-row-id)))))
 
     ;; ── the generated state IS the oracle ────────────────────────────────
     ;; Structural invariants alone would let a location the generator made
@@ -271,6 +291,14 @@
 (floor! :oracle-stale 10)
 (floor! :oracle-missing 10)
 (floor! :oracle-blocked 10)
+;; Per-row-1 floors: row 1 (.vscode/settings.json) is the only two-key
+;; settings row, so its STALE/BLOCKED coverage cannot be substituted by any
+;; other row - a defect in how a two-key row decides STALE, or its BLOCKED
+;; read, is invisible unless THIS row itself reaches those states.
+(floor! :row1-healthy 3)
+(floor! :row1-absent 3)
+(floor! :row1-stale 3)
+(floor! :row1-unreadable 3)
 
 (if (empty? @failures)
   (println (str "bl1057_host_switchover_doctor_property (BL-1057): ALL " runs " RUNS PASSED "

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c1d1fa6d4a18cc0fa5413e3d8056b2fa8284d5f7529b8e6fad98d6dc3fa1d278
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T22:06:56.039589046Z","feature_name":"The host switchover doctor names what a host move left behind","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1057-the-doctor-names-what-a-host-move-left-behind.feature","background_hash":"da7ab12e506c0caf742c77966f77589e8107caf14f4a43ef9d54e3a0863c37fd","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Each host-pinned location gets exactly one verdict","scenario_hash":"5d699155a8128626602bdcc6f7cb21dd5339fe2deb5c09e6fa965faa75bb6416","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-22T22:06:56.039589046Z"},{"index":3,"name":"The exit code says whether this host needs attention","scenario_hash":"7f86b258511859904e4ae8d307008bd532b76834fccbc7be5282f5195bc6f23a","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-22T22:06:56.039589046Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The host switchover doctor names what a host move left behind
 
   This swarm's host moved from a Mac to WSL2 on 2026-08-22. The daemons and
