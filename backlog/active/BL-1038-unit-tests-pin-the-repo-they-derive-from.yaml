@@ -150,6 +150,12 @@ description: |
     superseded by ~99.9s across four files plus the shared-copy operation;
     re-measure rather than carrying the old figure into evidence.
 
+  > **Read the AMENDMENT FOLLOW-UP in `notes:` before acting on the
+  > amendment above.** The coder withdrew the spec-gap note and delivered
+  > the ticket at `6c62a65495` without merging this amendment, having
+  > placed the same operation boundary independently. Nothing here needs
+  > rebuilding; scenario 07 is parked for BL-1039.
+
   ## What this ticket does NOT do
 
   - It does not delete, skip, or exclude a test, and does not raise
@@ -279,3 +285,28 @@ notes: |
   `renderBriefingBurndownCli.test.js` is also BL-999's subject (budget
   justification, approved, paused). Orthogonality is the coordinator's call:
   these two should not be active at the same time.
+
+  ## AMENDMENT FOLLOW-UP 2026-08-22 - bookkeeping only, nothing to rebuild
+
+  The coder withdrew the spec-gap note ("families are separable") and
+  delivered the ticket at `6c62a65495` before merging the amendment
+  `2dd75c9294`. The amendment is NOT an ancestor of the parcel, and needs
+  none: the coder placed the same boundary independently and recorded four
+  rejected placements in the source. `liveRepoDerivationGuard.js` requires
+  the growth operation to TARGET the bound live root by name, which is the
+  amendment's "guards classify OPERATIONS, not FILES" rule expressed as a
+  predicate. All six shared files the amendment named were converted.
+
+  **Do not rebuild anything against the amendment.** Its file reassignment
+  and its operation rule are both satisfied by the delivered commit.
+
+  One correction was needed and is made here rather than by a bounce: the
+  amendment added scenario 07 to the live feature file, and the parcel -
+  built earlier - has no handler for three of its six steps, so the
+  acceptance runner would throw for every downstream role the moment it
+  merged `main` (BL-233). Scenario 07 is parked in the non-executable
+  companion `specs/features/BL-1038-unit-tests-pin-the-repo-they-derive-
+  from.feature.draft` and is **BL-1039's to land, with its handlers**. The
+  behaviour it describes is already delivered and correct; only its
+  executable pinning is deferred. The `Feature:` narrative's superseded
+  "seven files / 121.6s" was re-tensed in the same commit.
