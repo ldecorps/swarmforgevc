@@ -252,6 +252,50 @@
              (let [f (sw/check-memory-floor {:available-mb nil :floor-mb 1500})]
                (and f (= "UNAVAILABLE" (:severity f)) (= "memory" (:key f)))))
 
+;; ── check: control-plane-missing (BL-958 babysitter ownership) ───────────────
+(assert-nil "healthy control plane produces no finding"
+            (sw/check-control-plane {:control-plane-classification :ok
+                                     :launch-scripts-present? true
+                                     :control-plane-repair-allowed? true}))
+(assert-true "control-plane-missing with scripts + budget queues ensure-control-plane repair"
+             (let [f (sw/check-control-plane {:control-plane-classification :control-plane-missing
+                                              :launch-scripts-present? true
+                                              :control-plane-repair-allowed? true
+                                              :socket-path "/tmp/sock"})]
+               (and f (= "CRIT" (:severity f)) (= "control-plane" (:key f))
+                    (= {:action :ensure-control-plane} (:repair f)))))
+(assert-true "control-plane-missing with scripts but exhausted budget CRIT-only (no repair)"
+             (let [f (sw/check-control-plane {:control-plane-classification :control-plane-missing
+                                              :launch-scripts-present? true
+                                              :control-plane-repair-allowed? false
+                                              :socket-path "/tmp/sock"})]
+               (and f (= "CRIT" (:severity f)) (nil? (:repair f)))))
+(assert-true "control-plane-missing without launch scripts escalates (no ensure repair)"
+             (let [f (sw/check-control-plane {:control-plane-classification :control-plane-missing
+                                              :launch-scripts-present? false
+                                              :control-plane-repair-allowed? true
+                                              :socket-path "/tmp/sock"})]
+               (and f (= "CRIT" (:severity f)) (nil? (:repair f))
+                    (str/includes? (:message f) "start-swarm"))))
+(assert-true "assemble-findings suppresses per-role ensure-session when control-plane ensure is queued"
+             (let [{:keys [repairs findings]}
+                   (sw/assemble-findings
+                    {:roles [{:role "coder" :pane-exists? false :should-stand? true
+                              :now-ms 1000 :repair-attempts 0}]
+                     :control-plane-classification :control-plane-missing
+                     :launch-scripts-present? true
+                     :control-plane-repair-allowed? true
+                     :socket-path "/tmp/sock"
+                     :handoffd-alive? true :handoffd-supervisor-alive? true
+                     :available-mb 4000 :mem-floor-mb 1500
+                     :pause {:active? false} :prev-streak 0
+                     :active-ticket-count 0 :any-pane-busy? false
+                     :pending-claims [] :in-process-claims []})]
+               (and (= [{:action :ensure-control-plane}] repairs)
+                    (some #(= "control-plane" (:key %)) findings)
+                    (some #(= "pane-coder" (:key %)) findings)
+                    (not-any? #(= :ensure-session (:action %)) repairs))))
+
 ;; ── check 11: claim-progress risk scan (BL-528 salvage) ─────────────────────
 (assert-true "critical claim-risk assessment maps to CRIT"
              (let [f (sw/check-claim-risk {:role "hardener" :severity "critical" :reclaims 6})]
