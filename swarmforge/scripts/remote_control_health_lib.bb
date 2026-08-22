@@ -30,6 +30,12 @@
             [babashka.process :as process]
             [clojure.string :as str]))
 
+;; BL-1029: the ONE place a launch-script path becomes a shell word. Every
+;; respawn site in the tree routes through shell-quote-lib/launch-command, so
+;; an install path carrying an apostrophe cannot break the repair that exists
+;; to save the role.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
+
 (def ^:private nul (str (char 0)))
 
 (defn extract-rc-name
@@ -62,7 +68,7 @@
    graceful respawn so the exact tmux invocation exists in one place."
   [socket session launch-path]
   (process/sh {:continue true} "tmux" "-S" socket "respawn-pane" "-k"
-              "-t" session (str "zsh '" launch-path "'")))
+              "-t" session (shell-quote-lib/launch-command launch-path)))
 
 (defn descendant-pids
   "pane-pid plus every transitive child pid. The pane process is the role's

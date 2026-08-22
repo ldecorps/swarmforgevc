@@ -14,6 +14,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
@@ -900,7 +901,7 @@
         (log! "chase-respawn" role (str launch-script))
         (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
                              env-args
-                             ["-t" session (str "zsh '" launch-script "'")]))))))
+                             ["-t" session (shell-quote-lib/launch-command launch-script)]))))))
 
 (defn write-chase-status! [now-ms]
   (fs/create-dirs daemon-dir)
@@ -1169,7 +1170,7 @@
         (log! "auth-respawn" role (str launch-script))
         (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
                              env-args
-                             ["-t" session (str "zsh '" launch-script "'")]))))))
+                             ["-t" session (shell-quote-lib/launch-command launch-script)]))))))
 
 (defn send-auth-persist-alert!
   "BL-536: reuses the same operator alert channel the endless-loop breaker

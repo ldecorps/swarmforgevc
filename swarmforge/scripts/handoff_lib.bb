@@ -18,6 +18,12 @@
 ;; thread project-root/ambulance state through by hand.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 
+;; BL-1029: the ONE place a launch-script path becomes a shell word. Every
+;; respawn site in the tree routes through shell-quote-lib/launch-command, so
+;; an install path carrying an apostrophe cannot break the repair that exists
+;; to save the role.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
+
 ;; BL-967: every subprocess this lib spawns goes through the bounded
 ;; chokepoint (daemon-cycle-guard-lib/sh!), never clojure.java.shell/sh -
 ;; whose stream-read shim was the BL-057/BL-061 deadlock family and, still
@@ -720,7 +726,9 @@
   "Probes the resident pane's OWN start command for the launch script it is
    actually running - independent of the mono-router-active-role marker file
    chase/rotation gates would otherwise trust alone. rotate-resident-to!
-   respawns the pane as `zsh '<root>/.swarmforge/launch/<role>.sh'`, so the
+   respawns the pane as `zsh <shell-quoted launch script>` (BL-1029: the
+   path goes through shell-quote-lib/launch-command, so an install path
+   carrying an apostrophe still produces valid shell), so the
    live role name is read directly off #{pane_start_command}, never off the
    marker. Returns the role name, or nil when the session is gone, the tmux
    call fails, or the command names no launch script - an identity that
@@ -873,7 +881,7 @@
         (flush)))
     (let [result (apply daemon-cycle-guard-lib/sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
                                       env-args
-                                      ["-t" session (str "zsh '" script "'")]))]
+                                      ["-t" session (shell-quote-lib/launch-command script)]))]
       (when (zero? (:exit result))
         (write-mono-router-active-role! role-name))
       result)))
@@ -967,7 +975,7 @@
             (flush))
           (let [result (apply daemon-cycle-guard-lib/sh! (concat ["tmux" "-S" socket "respawn-pane" "-k"]
                                             env-args
-                                            ["-t" session (str "zsh '" script "'")]))]
+                                            ["-t" session (shell-quote-lib/launch-command script)]))]
             (if (zero? (:exit result))
               (do (write-mono-router-active-role! target-role)
                   {:ok true})
