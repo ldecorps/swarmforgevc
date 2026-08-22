@@ -37,7 +37,10 @@ function mkFixtureRoot() {
   // degrade instead. This exact list going stale twice, in this exact
   // technique, is BL-814's own root cause - keep it in sync with the
   // sibling fixture in extension/test/readLiveRoleHeldTicketsCli.test.js.
-  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb']) {
+  // BL-1029: handoff_lib.bb now also load-files shell_quote_lib.bb (the one
+  // place a launch path becomes a shell word) - the THIRD time this hand
+  // list has gone stale, in the technique BL-814 was filed about.
+  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'shell_quote_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb']) {
     fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, name), path.join(scriptsDir, name));
   }
   return root;
