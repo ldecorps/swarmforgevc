@@ -6,9 +6,16 @@
     <color name="sf_text">#FFE6EDF3</color>
     <color name="sf_muted">#FF8B949E</color>
     <color name="sf_bubble">#FF238636</color>
+    <!-- BL-845: passive wake listening. Deliberately NOT red - red is
+         reserved for a hot mic to the model (human constraint). -->
+    <color name="sf_bubble_passive">#FF2A9D8F</color>
     <color name="sf_bubble_recording">#FFDA3633</color>
     <color name="sf_bubble_thinking">#FFD29922</color>
     <color name="sf_bubble_speaking">#FF1F6FEB</color>
+    <!-- BL-845: unreferenced from code since red became a single derived
+         colour (WakeSpotter.colourFor), which resolves both Error and
+         ActiveListen to sf_bubble_recording - the same #DA3633 this always
+         was. Kept because the human's colour table names an error colour. -->
     <color name="sf_bubble_error">#FFDA3633</color>
     <color name="sf_bubble_paused">#FF6E7681</color>
     <style name="Theme.FloatCompanion" parent="Theme.MaterialComponents.DayNight.NoActionBar">
