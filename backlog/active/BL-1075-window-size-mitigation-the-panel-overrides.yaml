@@ -221,3 +221,5 @@ source: |
   raised while reviewing BL-1069 against its own review goal 4. Verified by the
   specifier before minting against tmux(1) `resize-window`, and against the
   three live call sites named in the description.
+
+assigned_to: coder
