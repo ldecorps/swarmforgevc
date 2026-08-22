@@ -1,6 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1037: the build-freshness watchdog
+**Last Updated:** August 22, 2026 (BL-1048: the Pipeline Board's live stage
+scan (`pipeline_stage_cli.bb`) resolved a ticket's role from only a role's
+`in_process/` mailbox — the OPENED state. A `git_handoff` that had been
+routed, delivered and woken, but whose recipient had not yet run
+`ready_for_next.sh`, named its ticket only in `inbox/new/`, a directory the
+scan never opened; the ticket reached no `{ticket -> role}` pair,
+`filter-active` dropped it, and the board's BL-473 not-started sentinel
+rendered it NS. That made a successful handoff read as a regression: the
+moment a parcel left one role's `in_process/` for the next role's `new/`,
+the ticket fell off the stage map and moved backwards to not-started — and
+blinded the board to exactly the state Article 2.4 puts a ten-minute chase
+clock on. `role-ticket-pairs-for` now scans `[:new :in_process]` through the
+same `mailbox-dir` resolver and `batch_*` enumeration the `in_process` scan
+already used — a source widening only: `ticket-id-from-headers`,
+`reconcile-stage-map` and `filter-active` are untouched, and
+reconciliation's existing most-downstream-wins collapse absorbs the wider
+transition window without reopening BL-464's double row. Live before/after
+against the project root, with all four active tickets' parcels sitting at
+the coder's door: `{}` → `{"BL-1032":"coder","BL-1039":"coder",
+"BL-1048":"coder","BL-1038":"coder"}` — 4 of 4 active tickets were rendering
+not-started, worse than the 2 of 4 originally reported. Hardener pass, same
+ticket: closed an unrelated cross-step fixture leak in the acceptance steps
+(`cleanupFixture(ctx)` now runs before each validating `Given` throw, not
+only in the `When` step's own `finally`) — the same leak shape already
+documented against `bl931RotatePackGateSteps.js`. Verified: shell suite
+20/20 (8 new checks), `pipeline_stage_lib` runner all pass, acceptance 6/6,
+property test 1/1 encoding both declared invariants, consumer sweep
+exhaustive — BL-464 5/5, BL-488 4/4, BL-489 3/3, BL-503 8/8, `conciergeTick`
++ `readLiveRoleHeldTicketsCli` 119/119. BL-487 and BL-814 remain red,
+confirmed pre-existing and already ticketed as BL-973 (stale bb fixture
+copy-list, unrelated to this parcel). No extension command, setting, or UI
+change beyond the board now rendering delivered-but-unopened parcels in
+their holding role's column instead of NS — a distinct glyph for
+delivered-vs-opened was deliberately left unscoped, per the ticket's
+`approval_context`, pending a human ruling. Prior entry —
+BL-1037: the build-freshness watchdog
 now restarts a healthy front desk only once it has served the build it was
 moved to, instead of once per commit-plus-grace. This swarm lands commits
 faster than one grace-plus-recompile-plus-respawn cycle completes: 24
