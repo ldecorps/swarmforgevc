@@ -592,7 +592,8 @@ const DOMAINS = [
   require('./bl991DeclaredStageNeverJumpedSteps'),
   require('./bl1029RespawnLaunchQuotingSteps'),
   require('./bl1075WindowSizeOwnershipSteps'),
-  require('./bl713CursorSeatDriverSteps')
+  require('./bl713CursorSeatDriverSteps'),
+  require('./bl777BargeInDetectorSteps')
 ];
 
 function registerSteps(registry) {

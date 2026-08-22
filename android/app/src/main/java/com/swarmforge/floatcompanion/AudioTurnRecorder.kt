@@ -41,9 +41,28 @@ class AudioTurnRecorder(
     private var lastSoundAt = 0L
     private var autoStopReason: String? = null
 
+    /**
+     * BL-777: true while the mic is open only to WATCH for a barge-in over
+     * Bubble's own speech. A watch never auto-stops (it has no turn to end)
+     * and keeps only a short pre-roll, so a long reply cannot grow an
+     * unbounded buffer of its own echo.
+     */
+    private val watching = AtomicBoolean(false)
+
+    /**
+     * BL-777: per-buffer normalized RMS and the instant it was measured, for
+     * [BargeInDetector]. The frame values are plain numbers, so every decision
+     * taken from them is testable off-device.
+     */
+    @Volatile
+    var onLevel: ((rms: Double, atMs: Long) -> Unit)? = null
+
     val isRecording: Boolean get() = recording.get()
 
-    fun start(handsFree: Boolean): Boolean {
+    /** BL-777: whether the open mic is a barge-in watch rather than a turn. */
+    val isWatching: Boolean get() = watching.get()
+
+    fun start(handsFree: Boolean, watch: Boolean = false): Boolean {
         if (recording.get()) return false
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
         if (minBuf <= 0) return false
@@ -65,6 +84,7 @@ class AudioTurnRecorder(
             return false
         }
         pcm.reset()
+        watching.set(watch)
         speechDetected = false
         autoStopReason = null
         autoStopFired.set(false)
@@ -88,7 +108,17 @@ class AudioTurnRecorder(
                 }
                 val bytes = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN)
                 for (i in 0 until n) bytes.putShort(buf[i])
-                synchronized(pcm) { pcm.write(bytes.array()) }
+                synchronized(pcm) {
+                    pcm.write(bytes.array())
+                    // A watch keeps only the pre-roll: enough to carry the
+                    // first syllables of the interruption into the turn it
+                    // becomes, never the whole reply it was listening over.
+                    if (watching.get() && pcm.size() > PREROLL_BYTES * 2) {
+                        val tail = pcm.toByteArray().copyOfRange(pcm.size() - PREROLL_BYTES, pcm.size())
+                        pcm.reset()
+                        pcm.write(tail)
+                    }
+                }
                 checkLimits(buf, n, handsFree)
             }
         }, "sf-mic").also { it.start() }
@@ -127,6 +157,23 @@ class AudioTurnRecorder(
         }
         echoCanceler = null
         noiseSuppressor = null
+    }
+
+    /**
+     * BL-777: the barge-in fired, so the watch IS the human's turn now. The
+     * pre-roll already in the buffer is kept - it holds the first syllables
+     * that prompted the interruption - and the turn clocks restart from this
+     * instant so silence and max-listen measure the human, not the reply they
+     * spoke over.
+     */
+    fun promoteWatchToTurn() {
+        if (!watching.getAndSet(false)) return
+        val now = System.currentTimeMillis()
+        startedAt = now
+        lastSoundAt = now
+        speechDetected = true
+        autoStopReason = null
+        autoStopFired.set(false)
     }
 
     fun stop(): Capture? {
@@ -185,7 +232,6 @@ class AudioTurnRecorder(
     }
 
     private fun checkLimits(buf: ShortArray, n: Int, handsFree: Boolean) {
-        if (autoStopFired.get()) return
         var sum = 0.0
         for (i in 0 until n) {
             val s = buf[i] / 32768.0
@@ -193,6 +239,15 @@ class AudioTurnRecorder(
         }
         val rms = sqrt(sum / n.coerceAtLeast(1))
         val now = System.currentTimeMillis()
+        // BL-777: reported before any auto-stop bookkeeping, so the barge-in
+        // detector sees every buffer including the ones a latched auto-stop
+        // would otherwise swallow.
+        onLevel?.invoke(rms, now)
+        // A watch has no turn to end: no silence auto-stop, no no-speech
+        // latch, no max-listen cap. TalkEngine ends it, either by promoting it
+        // to the human's turn or by cancelling it when playback finishes.
+        if (watching.get()) return
+        if (autoStopFired.get()) return
         val recordingMs = now - startedAt
         if (rms >= SPEECH_LEVEL_THRESHOLD) {
             speechDetected = true
@@ -270,6 +325,10 @@ class AudioTurnRecorder(
         /** @deprecated use [MAX_LISTEN_MS] */
         const val HANDS_FREE_MAX_LISTEN_MS = MAX_LISTEN_MS
         const val SPEECH_LEVEL_THRESHOLD = 0.02
+        /** BL-777: audio a barge-in watch keeps, so the interruption's first
+         *  syllables survive into the turn it becomes. */
+        const val BARGE_IN_PREROLL_MS = 900L
+        private const val PREROLL_BYTES = (SAMPLE_RATE * 2 * BARGE_IN_PREROLL_MS / 1000).toInt()
         const val STT_RETRY_BUDGET = 3
     }
 }
