@@ -120,6 +120,7 @@ expects them, and are not migrated or rewritten here.
 - [Fixture Tmux-Server Reaper Adoption (BL-817)](reference/BL-817-fixture-tmux-server-reaper-adoption.md) — the seven step-handler files that now register their fixture tmux servers with the shared `fixtureReaper`, the socket-path-only kill guardrail, and the standing `tmuxReaperGuard` gate that catches the idiom returning.
 - [Socket-Fixture Short Root and Its Gate (BL-948)](reference/BL-948-socket-fixture-short-root-and-gate.md) — the shared short-base fixture-root helper for socket-building step files, its headroom assertion and exit-hook backstop, and the by-inspection gate (plus BL-897 parity test) that stops the long-base root returning.
 - [Retired `SWARMFORGE_ENSURE_*` Env-Var Regression Gate (BL-964)](reference/BL-964-retired-ensure-env-var-regression-gate.md) — the standing gate that fails loud when a retired ensure-hook env-var name reappears in test code, with a needle set derived from `swarm_ensure.bb`'s own reads rather than a hand-written roster.
+- [Boy Scout Scan (BL-1014)](reference/BL-1014-boy-scout-scan.md) — the on-demand, read-only CLI that ranks technical debt by cross-source recurrence across five evidence sources, with an evidence pointer per item; slice 1 of the `boy-scout` epic.
 
 ## Explanation
 

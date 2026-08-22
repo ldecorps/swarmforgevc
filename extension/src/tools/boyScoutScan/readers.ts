@@ -38,6 +38,31 @@ export function readBounceLines(root: string): string[] {
 }
 
 /**
+ * Hardener extraction (CRAP + DRY): readCrapReport and readDuplicationReport
+ * both wrapped an execFileSync in the identical try/catch - "the tool's exit
+ * code is its gate behaviour, not a failure, so take stdout either way, and
+ * fall back to empty if even that isn't there." That duplication was one
+ * clone jscpd would itself have flagged, and each site's own try/catch also
+ * pushed its function's complexity high enough that, at these functions'
+ * real-world 0% unit-test coverage (they shell out to real external tools;
+ * see the module header on why that stays exercised live rather than
+ * mocked), CRAP crossed the threshold - readDuplicationReport alone scored
+ * 20.00. Extracting the shared, PURE part (interpreting the exec result) is
+ * both a DRY fix and a CRAP fix: the exec-wrapping functions above it drop to
+ * a single `if` each, and the interpretation logic itself is a pure function
+ * this file's own test suite can cover directly at 100%, with no subprocess
+ * involved.
+ */
+function stdoutOrEmptyOnError(run: () => string): string {
+  try {
+    return run();
+  } catch (err) {
+    const e = err as { stdout?: string };
+    return typeof e.stdout === 'string' ? e.stdout : '';
+  }
+}
+
+/**
  * crapReport.js READS the existing coverage report and prints; it writes
  * nothing, so running it keeps the scan read-only. It exits non-zero when
  * functions are flagged - that is its gate behaviour, not a failure, so the
@@ -48,26 +73,17 @@ export function readBounceLines(root: string): string[] {
 export function readCrapReport(root: string): string {
   const script = path.join(root, 'extension', 'scripts', 'crapReport.js');
   if (!fs.existsSync(script)) return '';
-  try {
-    return execFileSync('node', [script], { cwd: path.join(root, 'extension'), encoding: 'utf8' });
-  } catch (err) {
-    const e = err as { stdout?: string };
-    return typeof e.stdout === 'string' ? e.stdout : '';
-  }
+  return stdoutOrEmptyOnError(() =>
+    execFileSync('node', [script], { cwd: path.join(root, 'extension'), encoding: 'utf8' })
+  );
 }
 
 export function readDuplicationReport(root: string): string {
   const ext = path.join(root, 'extension');
   if (!fs.existsSync(path.join(ext, '.jscpd.json'))) return '';
-  try {
-    return execFileSync('npx', ['jscpd', '--config', '.jscpd.json', 'src'], {
-      cwd: ext,
-      encoding: 'utf8',
-    });
-  } catch (err) {
-    const e = err as { stdout?: string };
-    return typeof e.stdout === 'string' ? e.stdout : '';
-  }
+  return stdoutOrEmptyOnError(() =>
+    execFileSync('npx', ['jscpd', '--config', '.jscpd.json', 'src'], { cwd: ext, encoding: 'utf8' })
+  );
 }
 
 /**

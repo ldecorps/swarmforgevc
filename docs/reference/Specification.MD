@@ -1,6 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1011: a freshness alarm now names
+**Last Updated:** August 22, 2026 (BL-1014: a new on-demand, read-only CLI
+(`node extension/out/tools/boyScoutScan`) ranks the repo's technical debt by
+cross-source RECURRENCE rather than re-judged severity, across five live
+evidence sources — deferred hardening gates, bounce recurrence (by
+failure-class/role pair; per-file join is deferred), CRAP-over-threshold,
+jscpd duplication, and counted runtime/ops bloat (rotated logs, mailbox
+directories) — printing a ranked inventory with a checkable evidence pointer
+per item. Recurrence (distinct-source count, not row count) is the whole
+rank key because it is the only definition of "most annoying" that is
+measurable rather than re-argued every run, which is also what makes two
+runs over the same repository state produce an identical ranking. A source
+that cannot be read is reported `NOT CONSULTED`, never silently folded into
+"clean". Slice 1 of the new `boy-scout` epic; slice 2 (BL-1015) is what acts
+on the ranking — this slice only ranks and reports, and writes nothing but
+its own report to stdout. See
+[the Boy Scout scan reference](BL-1014-boy-scout-scan.md). Prior entry —
+BL-1011: a freshness alarm now names
 which swarm sent it and which of three conditions produced its sentinel
 age, in both the Telegram announce and the durable incident record.
 `heartbeat_age_secs` (`daemon_log_freshness_check.sh`) returned the literal
