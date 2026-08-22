@@ -1578,3 +1578,26 @@ You are the hardender.
   offender: every other step file that starts a real server already writes the
   pointer file, and `bl1032TmuxReaperScopeSteps.js`'s apparent match is fixture
   TEXT it plants for the guard to scan, not a server it starts.
+
+## A parent-counted path is off by one inside a Stryker sandbox (BL-1066)
+- Stryker mirrors `extension/`'s tree into `.stryker-tmp/sandbox-<id>/`, so
+  **the sandbox dir IS the extension root**, not a child of one. Any
+  `path.join(__dirname, '..', ...)` whose parent count was calibrated on
+  `extension/` sitting one level under the repo root lands one level too
+  shallow there. **Anchor the walk-up on a marker at the level you want** —
+  `package.json` for the extension root, which is correct both in the sandbox
+  and out of it. Where a test's `fs` mock keys on a path, key it on the path
+  the code under test actually computes (`fs.realpathSync`), never a
+  re-derived parent count.
+- **Do not "fix" a walk-up that is reaching a repo-root SIBLING.** Those
+  deliberately bottom out at `.stryker-tmp/<name>`, where
+  `ensureStrykerSandboxSiblingLinks` plants the symlinks; re-anchoring one to
+  the true repo root escapes the sandbox and reads UNMUTATED code, silently
+  sparing mutants. Cover a new sibling by adding its name to `SIBLING_NAMES`.
+- **The failure is silent and repo-wide.** BL-968's materialized-tree helper
+  skipped the `extension/node_modules` symlink this way and broke Stryker's
+  dry run for EVERY ticket from 2026-08-20 until BL-1066 found it — no test
+  went red, the dry run just failed. A mutation run that will not start is
+  this class until ruled out; check it before blaming the ticket's own diff.
+  (Proposed by the hardender, accepted 2026-08-22; fix `findExtensionRoot` in
+  `extension/test/helpers/materializedRegistryGuard.js` at b53875b71.)

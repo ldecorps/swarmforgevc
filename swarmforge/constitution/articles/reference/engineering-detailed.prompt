@@ -654,6 +654,37 @@ not as the several separate edits that produced it).
   verify against the sandbox. (pwa/ confirmed 2026-07-09 during BL-132 QA;
   swarmforge/, .github/, docs/ confirmed 2026-07-11 during/after BL-260;
   generalized to all four by BL-267; systemic.)
+- **The sibling mechanism above depends on the walk-up landing SHALLOW; a
+  walk-up that wants the extension root must not.** Stryker mirrors
+  `extension/`'s tree into `.stryker-tmp/sandbox-<id>/`, so the sandbox dir IS
+  the extension root, not a child of one. Two consequences pull in opposite
+  directions, and conflating them breaks one or the other:
+    - A resolution reaching a repo-root SIBLING (`pwa/`, `docs/`, `specs/`,
+      ...) is CORRECT as a fixed parent count: it bottoms out at
+      `.stryker-tmp/<name>`, which is exactly where the shared symlinks are
+      planted. Re-anchoring such a walk-up to the true repo root escapes the
+      sandbox and reads UNMUTATED code — mutants survive with no test going
+      red. Cover a new sibling by adding its name to `SIBLING_NAMES`, never by
+      changing the walk-up.
+    - A resolution reaching the EXTENSION root (e.g. `extension/node_modules`)
+      is off by one inside the sandbox, because the parent count was
+      calibrated on `extension/` sitting under the repo root. Anchor it on a
+      marker present at the level you want — `package.json` resolves to the
+      real `extension/` outside the sandbox and to `sandbox-<id>/` inside it,
+      correct in both, and it never escapes.
+  Where a test's `fs` mock keys on a path, key it on the path the code under
+  test actually computes (`fs.realpathSync`), not a re-derived parent count —
+  a mock keyed on a parent count silently never matches.
+  The failure mode is SILENT and repo-wide: BL-968's materialized-tree helper
+  (`extension/test/helpers/materializedRegistryGuard.js`) skipped the
+  `extension/node_modules` symlink this way and broke Stryker's dry run for
+  EVERY ticket from its landing on 2026-08-20 until BL-1066 found it on
+  2026-08-22 — no test went red, the dry run simply would not start. Treat "a
+  mutation run that will not start" as this class until ruled out, before
+  blaming the ticket's own diff. (Fixed by `findExtensionRoot` at b53875b71;
+  second instance, the fs-mock key, in
+  `bl643NonPipelineAgentsStepsGuards.test.js`. Proposed by the hardender as a
+  rule and accepted 2026-08-22.)
 
 ## Diagrams
 - The project's documentation must include an up-to-date architecture
