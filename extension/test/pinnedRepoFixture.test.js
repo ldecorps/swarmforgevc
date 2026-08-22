@@ -71,3 +71,20 @@ test('BL-1038: a missing entry point throws rather than yielding a silent partia
     'a test failing later for a missing script is far harder to read than one failing here'
   );
 });
+
+test('BL-1038: a missing DEPENDENCY (not an entry point) is skipped, not thrown', () => {
+  // resolveScriptClosure's own doc: "a name the reader cannot resolve is still
+  // included ... but contributes no further edges" - copyScriptClosure must
+  // honour that for anything that is not itself a requested entry point,
+  // rather than throwing on every unresolvable name.
+  const liveScriptsDir = mkTmpDir('bl1038-dep-source-');
+  fs.writeFileSync(
+    path.join(liveScriptsDir, 'a.bb'),
+    '(load-file (str (fs/path x "missing_dep.bb")))'
+  );
+  const target = path.join(mkTmpDir('bl1038-dep-target-'), 'scripts');
+  const copied = copyScriptClosure(liveScriptsDir, target, ['a.bb']);
+  assert.deepEqual(copied, ['a.bb'], 'the entry point is copied and the absent dependency is silently dropped');
+  assert.ok(fs.existsSync(path.join(target, 'a.bb')));
+  assert.ok(!fs.existsSync(path.join(target, 'missing_dep.bb')));
+});
