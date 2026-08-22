@@ -580,7 +580,8 @@ const DOMAINS = [
   require('./bl1039SharedSeededFixtureSteps'),
   require('./bl1049ProviderSecretScrubSteps'),
   require('./bl1028PromotionRefusalSteps'),
-  require('./bl1060PairingButtonSchemeSteps')
+  require('./bl1060PairingButtonSchemeSteps'),
+  require('./bl1033TempRootCleanupSteps')
 ];
 
 function registerSteps(registry) {
