@@ -1,0 +1,1 @@
+{"id":"BL-1064","messages":[{"seq":0,"ts":1787407852184,"author":"swarm","type":"outbound","text":"BL-1064 🎵 in progress — The Front Desk row's BL-582 diagnostics log is grounded against a launcher that never writes it, so both bl643 property tests fail on EVERY host, deterministically - the property lane has a permanent red that is not flakiness and not load"}]}

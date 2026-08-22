@@ -46,6 +46,22 @@
 (def predicate (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "is_qa_ancestor.sh")))
 (def failures (atom []))
 (def root (str (fs/create-temp-dir {:prefix "bl1025-prop-"})))
+;; BL-1033 / BL-971 temp-dir trap (flagged by
+;; extension/test/tempDirTrapGuard.test.js): the end-of-run delete-tree at the
+;; bottom of this file is at top level, so it is reached ONLY when every
+;; preceding form completes. `g` below throws ex-info on any non-zero git
+;; exit, and that throw exits before it - leaving a bl1025-prop-* directory
+;; behind permanently. Reclaim the root on EVERY exit path, tolerant of the
+;; happy path having already deleted it. Mirrors bl977_supervisor_progress and
+;; bl887_scope_predicate_invariants in this same directory; bl887's own
+;; comment records the QA bounce under this very guard that put it there.
+;;
+;; The hook is the abnormal-exit BACKSTOP, not a replacement: the happy-path
+;; delete-tree stays, so a passing run still reclaims the root immediately
+;; rather than holding it until the JVM exits. It covers a throw, a mid-run
+;; System/exit and SIGTERM; nothing covers SIGKILL.
+(-> (Runtime/getRuntime)
+    (.addShutdownHook (Thread. #(when (fs/exists? root) (fs/delete-tree root)))))
 
 (defn- g [& args]
   (let [{:keys [exit out err]}

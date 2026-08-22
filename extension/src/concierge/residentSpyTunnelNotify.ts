@@ -77,20 +77,36 @@ export function formatResidentSpyTunnelTopicMessage(botUsername?: string): strin
   ].join('\n');
 }
 
-/** Group/forum topics cannot use web_app buttons — url opens the system browser. */
+/**
+ * Group/forum topics cannot use web_app buttons — url opens the system browser.
+ *
+ * BL-1060: the pairing button carries pairingHttpsUrl, NOT pairingDeepLink.
+ * The Bot API rejects a `url:` button on any scheme other than http(s)/tg:,
+ * so the bare swarmforge-bubble:// URI returned
+ * `400 ... 'swarmforge-bubble://pair?...' is invalid: Unsupported URL
+ * protocol` on every tunnel rotation, and the user got no re-pair path at
+ * all. The https URL reaches the bridge's own pre-auth /pair page (BL-788),
+ * which hands the deep link on from a page any browser will open.
+ */
 export function buildResidentSpyTunnelTopicButtons(urls: ResidentSpyTunnelUrls): InlineKeyboardButton[][] {
   return [
     [{ text: 'Open in browser', url: urls.consoleUrl }],
-    [{ text: 'Update Bubble pairing', url: urls.pairingDeepLink }],
+    [{ text: 'Update Bubble pairing', url: urls.pairingHttpsUrl }],
   ];
 }
 
-/** web_app buttons work only in a private chat with the bot. */
+/**
+ * web_app buttons work only in a private chat with the bot.
+ *
+ * BL-1060: same scheme rule as the topic keyboard above — the pairing button
+ * is a plain `url:` button, so it carries pairingHttpsUrl. The two web_app
+ * buttons are a different field with a different rule and are unaffected.
+ */
 export function buildResidentSpyTunnelPrivateWebAppButtons(urls: ResidentSpyTunnelUrls): InlineKeyboardButton[][] {
   return [
     [{ text: 'Open console', webAppUrl: urls.consoleUrl }],
     [{ text: 'Live screen', webAppUrl: urls.liveUrl }],
-    [{ text: 'Update Bubble pairing', url: urls.pairingDeepLink }],
+    [{ text: 'Update Bubble pairing', url: urls.pairingHttpsUrl }],
   ];
 }
 

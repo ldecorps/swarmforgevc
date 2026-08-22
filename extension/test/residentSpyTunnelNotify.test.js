@@ -14,6 +14,7 @@ const {
   RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION,
   syncResidentSpyTunnelUrl,
 } = require('../out/concierge/residentSpyTunnelNotify');
+const { findButtonUrlSchemeViolations, describeViolations } = require('./helpers/telegramButtonUrlScheme');
 
 test('buildResidentSpyMiniAppUrl appends resident-spy path and bearer query', () => {
   assert.equal(
@@ -128,34 +129,66 @@ test('buildResidentSpyTunnelUrls includes the HTTPS pairing URL', () => {
   assert.match(urls.pairingHttpsUrl, /token=abc123$/);
 });
 
-test('buildResidentSpyTunnelTopicButtons uses url buttons for group topics', () => {
-  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
-  const buttons = buildResidentSpyTunnelTopicButtons({
+// BL-1060: every keyboard assertion below pins the SCHEME, which is what the
+// Bot API enforces, and never `=== pairingDeepLink`. The old shape asserted
+// the button equalled the value the code passed, so it stayed green while
+// every live call returned "Unsupported URL protocol" - the identifier was
+// right and the kind of thing was wrong, and equality cannot tell them apart.
+function urlsFor(live) {
+  return {
     liveUrl: live,
     consoleUrl: consoleUrlFromLiveUrl(live),
     pairingDeepLink: buildBubblePairingDeepLink(live),
-  });
+    pairingHttpsUrl: buildBubblePairingHttpsUrl(live),
+  };
+}
+
+test('buildResidentSpyTunnelTopicButtons uses url buttons for group topics', () => {
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
+  const buttons = buildResidentSpyTunnelTopicButtons(urlsFor(live));
   assert.equal(buttons[0][0].text, 'Open in browser');
   assert.equal(buttons[0][0].url, consoleUrlFromLiveUrl(live));
   assert.equal(buttons[0][0].webAppUrl, undefined);
   assert.equal(buttons[1][0].text, 'Update Bubble pairing');
-  assert.equal(buttons[1][0].url, buildBubblePairingDeepLink(live));
+  assert.match(buttons[1][0].url, /^https:\/\//);
+  assert.match(buttons[1][0].url, /\/pair\?token=abc$/);
 });
 
 test('buildResidentSpyTunnelPrivateWebAppButtons uses web_app for private chat plus a plain-url re-pair button', () => {
   const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
-  const buttons = buildResidentSpyTunnelPrivateWebAppButtons({
-    liveUrl: live,
-    consoleUrl: consoleUrlFromLiveUrl(live),
-    pairingDeepLink: buildBubblePairingDeepLink(live),
-  });
+  const buttons = buildResidentSpyTunnelPrivateWebAppButtons(urlsFor(live));
   assert.equal(buttons[0][0].text, 'Open console');
   assert.equal(buttons[0][0].webAppUrl, consoleUrlFromLiveUrl(live));
   assert.equal(buttons[1][0].text, 'Live screen');
   assert.equal(buttons[1][0].webAppUrl, live);
   assert.equal(buttons[2][0].text, 'Update Bubble pairing');
-  assert.equal(buttons[2][0].url, buildBubblePairingDeepLink(live));
+  assert.match(buttons[2][0].url, /^https:\/\//);
+  assert.match(buttons[2][0].url, /\/pair\?token=abc$/);
   assert.equal(buttons[2][0].webAppUrl, undefined);
+});
+
+test('neither keyboard carries a button URL on a scheme Telegram rejects', () => {
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
+  const urls = urlsFor(live);
+  for (const [name, keyboard] of [
+    ['topic', buildResidentSpyTunnelTopicButtons(urls)],
+    ['private', buildResidentSpyTunnelPrivateWebAppButtons(urls)],
+  ]) {
+    const violations = findButtonUrlSchemeViolations(keyboard);
+    assert.deepEqual(violations, [], `${name} keyboard: ${describeViolations(violations)}`);
+  }
+});
+
+test('the scheme check refuses the bare app-scheme URI, naming the scheme', () => {
+  // The exact keyboard HEAD shipped, so this test is the defect itself held
+  // still: if the check ever stops catching it, the guard is decorative.
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
+  const violations = findButtonUrlSchemeViolations([
+    [{ text: 'Update Bubble pairing', url: buildBubblePairingDeepLink(live) }],
+  ]);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].scheme, 'swarmforge-bubble:');
+  assert.match(describeViolations(violations), /swarmforge-bubble:/);
 });
 
 test('shouldNotifyResidentSpyTunnel is true when the URL changed or format version is stale', () => {
