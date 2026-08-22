@@ -100,6 +100,20 @@ description: |
   only. A guard that flagged "reads a live path" would fire on BL-1038's
   work, and one written to own a file list would collide outright.
 
+  ### This ticket also lands BL-1038's parked scenario 07
+
+  BL-1038 delivered its guard at `6c62a65495` with the operation boundary
+  in place, but scenario 07 - "a test that both reads live sources and
+  builds its own repository is flagged only for the live read" - was added
+  to its feature file after the parcel was built, so no handler exists for
+  three of its steps. It is parked, non-executable, in
+  `specs/features/BL-1038-unit-tests-pin-the-repo-they-derive-from.feature.draft`.
+
+  Move it into BL-1038's live feature file **with its step handlers, in this
+  parcel**. It belongs here because it is the cross-guard claim: one file
+  performs both operations, and neither guard may name the other's. Landing
+  the sibling guard without pinning that is how the two collide later.
+
   ## How (direction, not mandate)
 
   Seed **one** repository fixture per run and hand each caller an
