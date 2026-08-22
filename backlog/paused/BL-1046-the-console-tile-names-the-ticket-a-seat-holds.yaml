@@ -12,7 +12,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1046-the-console-tile-names-the-ticket-a-seat-holds.feature
-human_approval: pending
+human_approval: approved
 
 approval_context: >
   Two calls are mine and worth your veto. (1) I scoped this to the HELD form
