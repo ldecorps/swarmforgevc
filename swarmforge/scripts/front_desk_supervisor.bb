@@ -422,15 +422,31 @@
 (defn- child-build-stale? [entry]
   (front-desk-supervisor-lib/build-stale? (:build_sha entry) (main-sha!)))
 
+;; BL-1037: "has this child completed a poll cycle on the build it was
+;; restarted ONTO". Same fact BL-1035 uses to judge staleness - a heartbeat at
+;; or after this child's own spawn - read here to bound how often a HEALTHY
+;; child may be restarted for build staleness.
+;;
+;; The bridge has no poll heartbeat to read, so it reports TRUE: it keeps
+;; BL-582's behaviour exactly rather than being silently exempted from the
+;; watchdog by a fact it cannot observe. Saying so here is the point - a child
+;; that cannot prove it served must not thereby become unrestartable.
+(defn- child-build-served? [entry]
+  (let [hb (read-poll-heartbeat-ms)
+        started (:started-at-ms entry)]
+    (boolean (and hb started (>= hb started)))))
+
 (def process-specs
   [{:key :bridge :spawn-pid! (fn [] (maybe-adopt-or-spawn-bridge!)) :heartbeat-stale? (fn [_ _] false)
-    :build-stale? child-build-stale?}
+    :build-stale? child-build-stale?
+    :build-served? (fn [_] true)}
    {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))
     :heartbeat-stale? (fn [now entry]
                         (front-desk-supervisor-lib/poll-heartbeat-stale?
                           (read-poll-heartbeat-ms) now stall-ms
                           (:started-at-ms entry) heartbeat-startup-grace-ms))
-    :build-stale? child-build-stale?}])
+    :build-stale? child-build-stale?
+    :build-served? child-build-served?}])
 
 ;; ── persisted state (JSON: {"bridge": {...}, "bot": {...}}) ───────────────
 
@@ -465,6 +481,16 @@
     ;; heartbeat was fine; the code it was running was out of date. Same
     ;; recovery mechanism, deliberately different report.
     :build-stale (log! "build-stale" (name spec-key) "restarting a HEALTHY process onto a fresh build")
+    ;; BL-1037: past the grace, but this child has not completed a poll cycle
+    ;; on the build it was restarted onto, so restarting it again would spend a
+    ;; recompile, a respawn and a Telegram conflict window to replace a build
+    ;; that never served. The staleness is CARRIED, not dropped - logged so the
+    ;; deferral is visible and a human never has to infer it from a restart
+    ;; that did not happen. That silence is what made the 2026-08-22 restart
+    ;; storm need a hand-built timeline to read.
+    :build-stale-deferred (log! "build-stale-deferred" (name spec-key)
+                                "build_sha=" (str (:build_sha entry))
+                                "still owed a restart; this child has not served yet")
     :gave-up (log! "gave-up" (name spec-key) "after" (str (:attempts entry)) "attempt(s)")
     :re-armed (log! "re-armed" (name spec-key) "pid=" (str (:pid entry)))
     nil))
@@ -576,7 +602,8 @@
                                        heartbeat-stale? ((:heartbeat-stale? spec) now entry)
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
                                                                entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!
-                                                               ((:build-stale? spec) entry))
+                                                               ((:build-stale? spec) entry)
+                                                               ((:build-served? spec) entry))
                                        entry (stamp-build-sha entry event)]
                                    (log-event! (:key spec) event entry)
                                    [(:key spec) entry])))
