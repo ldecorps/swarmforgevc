@@ -16,7 +16,7 @@ invariants:
   - "A ticket is routed to the specifier exactly when its design is still unsettled - never because of a value a minting session left behind."
   - "The router's decision and the assignment it records never disagree: a ticket routed to the coder is never left carrying an assignment naming another role."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One decision, with a recommendation and measured evidence, and one thing
   that is firm.
