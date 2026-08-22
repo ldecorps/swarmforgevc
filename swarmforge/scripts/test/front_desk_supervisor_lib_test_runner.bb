@@ -244,6 +244,26 @@
          ;; fix would reintroduce BL-370's original fault.
          (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 999999 90000 500000 90000))
 
+;; bl1035-03's "exactly AT spawn" case above (500000/502000/90000/500000/90000)
+;; cannot actually discriminate `>=` from a strict `>` in
+;; `(>= last-heartbeat-ms started-at-ms)`: with grace-ms == stall-ms in every
+;; existing fixture (unit AND property runner alike), a mutant that treats an
+;; at-spawn heartbeat as "not the child's own" (own-heartbeat-ms => nil) still
+;; answers "not stale" there via the STILL-IN-GRACE branch, coincidentally
+;; matching the correct answer. Hand-verified: with `>` in place of `>=`, this
+;; whole test runner and the property runner BOTH still report all-green.
+;; Discriminating case: grace SHORTER than stall, so the grace ends while the
+;; at-spawn heartbeat is still well within the stall window - only there does
+;; treating it as "not the child's own" (falling to the nil branch, stale
+;; unconditionally past grace) diverge from treating it as the child's own
+;; fresh heartbeat (not stale).
+(assert= "bl1035-03: at-spawn heartbeat is the child's own even once the (shorter) grace has ended"
+         false
+         ;; last-heartbeat=started-at=500000 (exactly at spawn); grace is only
+         ;; 1000ms (already over by now=501500) but stall is 90000ms (heartbeat
+         ;; is only 1500ms old) - if `>=` were `>`, this would wrongly be stale.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500000 501500 90000 500000 1000))
+
 ;; ── BL-370: check-one! extended with heartbeat-stale? ────────────────────
 
 ;; front-desk-liveness-01: running + pid alive + heartbeat stale -> "stalled",
