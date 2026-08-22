@@ -170,3 +170,5 @@ notes_coordinator_hold: >
   daemon, so it says nothing about BL-967 either way; attributing it to the fix
   would be crediting a process that never loaded it.
 
+
+assigned_to: coder

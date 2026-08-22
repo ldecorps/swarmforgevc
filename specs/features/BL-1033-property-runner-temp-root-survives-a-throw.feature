@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e28a6cd0bfa331895568a5c0cad9ae183cba0614fa795f6b5247d54110f3026c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T14:54:30.700061685Z","feature_name":"a property runner's temp root is removed even when the run throws","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1033-property-runner-temp-root-survives-a-throw.feature","background_hash":"b3e238d468667a846952c5968ccb6c0fbe0723ba7a6651b33bc02477613219de","implementation_hash":"unknown","scenarios":[{"index":1,"name":"an abnormal exit still leaves no fixture directory","scenario_hash":"637f95048fba0fafedaed4cafe8aa618b03b884575cb13dbe901d31d5b8511fd","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T14:54:30.700061685Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a property runner's temp root is removed even when the run throws
 
   bl1025_expedite_approval_property_runner.bb creates its fixture root at line
