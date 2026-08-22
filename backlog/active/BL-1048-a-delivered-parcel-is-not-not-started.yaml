@@ -11,7 +11,7 @@ severity: high
 # or corrupted, the parcels are intact and the swarm keeps moving.
 status: todo
 epic: pipeline-board
-assigned_to: none
+assigned_to: coder
 priority: 18
 direction: human-requested
 depends_on: []
