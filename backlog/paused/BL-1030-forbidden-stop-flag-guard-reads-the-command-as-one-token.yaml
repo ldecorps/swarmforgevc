@@ -156,6 +156,14 @@ qa_e2e_procedure: |
      three flagged commands and `true` for the bare command.
 
 notes: |
+  2026-08-22 10:16 coordinator: open-slot nudge named this candidate again.
+  Same pattern as before - the slot was open when the nudge fired but had
+  already been filled by the time I acted: BL-1032 (severity high, priority
+  20, expedited per Article 3.2.4) still outranks this ticket's priority 55
+  and was promoted instead. Active is now back at cap (4/4). Not held for
+  orthogonality or approval; outranked twice running by expedited defects.
+  Will re-evaluate at the next open slot.
+
   2026-08-22 09:38 coordinator: open-slot nudge named this candidate, but by
   the time I acted the slot had already been filled - BL-1038 (severity high,
   priority 8, expedited per Article 3.2.4) outranks this ticket's priority 55
