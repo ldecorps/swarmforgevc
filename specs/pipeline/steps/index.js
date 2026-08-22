@@ -564,7 +564,8 @@ const DOMAINS = [
   require('./bl984SweepStaleFixturesSteps'),
   require('./bl979PipelineBoardTicketRowsSteps'),
   require('./bl990BounceAttributionCorrectableSteps'),
-  require('./bl998ShellFixtureDispatchIsolationSteps')
+  require('./bl998ShellFixtureDispatchIsolationSteps'),
+  require('./bl1026StageBudgetStatedOnceSteps')
 ];
 
 function registerSteps(registry) {
