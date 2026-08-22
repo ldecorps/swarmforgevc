@@ -1,6 +1,56 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-582: a silently no-op Approve tap now
+**Last Updated:** August 22, 2026 (BL-1018: what a single-role tmux session
+repair may resolve to is now pinned to one pure definition,
+`single_role_repair_lib.bb`'s `resolve-single-role-repair`, so repairing one
+role's vanished session can never again reach the whole pack server. On
+2026-08-21 ~08:26 UTC an operator single-role respawn of the specifier — the
+existing shape, create the session then `respawn-pane` the launch script into
+it — brought down the ENTIRE pack tmux server (socket, `handoffd`, all eight
+sessions); no audit trail survived the teardown so the root mechanism is
+UNPROVEN, and this ticket does not claim otherwise (BL-958's leading
+hypothesis: a respawn issued against a missing session can restart a
+half-alive server). The value doesn't rest on that hypothesis — constraining
+what a repair may resolve to removes the whole family of ways it could reach
+the server, whichever member fired. The resolver is pure (returns commands,
+never runs them) with two branches that are deliberately not one command with
+a flag flipped: a missing session resolves to ONE `new-session` that carries
+the launch command directly, never followed by a respawn into it; a present
+session resolves to ONE `respawn-pane -k` in place, never a duplicate create.
+Every command is built through one constructor that prepends `tmux -S
+<socket>`, so naming the socket explicitly can't be a rule an individual call
+site forgets, and a refusal (blank socket/session/launch script) resolves to
+NO commands rather than a best-effort one with a hole in it. Both real
+callers — `babysitter_check.bb`'s `ensure-role-session!` (BL-1017's own
+automated repair path, this ticket supersedes its create-then-respawn shape
+described when BL-1017 shipped, see the entry below and
+[the runbook](../how-to/BL-611-babysitterd-runbook.md#bounded-session-repair-for-a-vanished-standing-role-bl-1017))
+and `swarm_ensure.bb`'s `ensure-standing-role!` — now resolve through it and
+only run the result; `handoffd.bb`'s `do-respawn!` is deliberately NOT
+converted (it respawns into a pane it just captured text from, so it can
+never hit the missing-session shape, and already names `-S` explicitly),
+flagged for the architect as the natural next consumer rather than silently
+skipped. **Hardener pass, same ticket:** a launch-script path containing an
+apostrophe (a real shape — e.g. a macOS home directory) broke the resolved
+shell command outright — the resolver wrapped it in bare unescaped single
+quotes, producing a string `tmux` hands to `$SHELL -c` that is not valid
+shell syntax, confirmed live by feeding the exact string to `sh -c` (exits 2,
+unexpected-EOF). Fixed with a proper POSIX single-quote escape
+(close-quote/escaped-quote/reopen-quote); the property runner's own
+substring-match assertion could never have caught this (an unescaped embed
+still contains the substring; a correctly-escaped one no longer does either),
+so it was replaced with a real shell round-trip through `sh -c`. Both
+declared invariants — no resolved command ever affects another role's
+session, and none is ever a kill-server/kill-session — are encoded in a
+400-run property suite with an asserted reachability floor per shape,
+verified non-vacuous by three independent breaks (dropping `-S`: 234
+failures; resolving a missing session to create-then-respawn: 123; a refusal
+returning its would-be command: 65). No extension command, setting, or UI
+change — an internal `swarmforge/`-fork daemon safety fix. Acceptance:
+[`specs/features/BL-1018-single-role-respawn-never-kills-the-server.feature`](../../specs/features/BL-1018-single-role-respawn-never-kills-the-server.feature),
+4/4; live kill-one-session confirmation left as a manual QA procedure,
+outside the unit testability boundary (real tmux).); Previously
+August 22, 2026 (BL-582: a silently no-op Approve tap now
 says so, durably, and a healthy front-desk bot stops serving a stale build
 past a grace period. Three hardening gaps closed together, none of which
 settle the ticket's still-open root-cause question (BL-588 and BL-1026 both
