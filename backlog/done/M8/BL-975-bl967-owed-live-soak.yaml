@@ -268,7 +268,7 @@ notes_coordinator_hold: >
   would be crediting a process that never loaded it.
 
 
-assigned_to: coder
+assigned_to: QA
 
 coordinator_notes: |
   2026-08-22: QA blocked (commit f8e61157b). Two spec gaps, neither a code
