@@ -20,6 +20,7 @@
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
 (defn assert-true [msg actual] (assert= msg true (boolean actual)))
+(defn assert-nil [msg actual] (assert= msg nil actual))
 (defn assert-false [msg actual] (assert= msg false (boolean actual)))
 
 ;; ── argument parsing ──────────────────────────────────────────────────────
@@ -319,6 +320,51 @@
 (assert= "15: the default budget applies when none is given"
          expedite-lib/default-stage-timeout-ms
          (:timeout-ms (expedite-lib/stage-timeout-verdict {:started-at-ms 0 :now-ms 1})))
+
+;; ── BL-1025: the QA hat's verdict becomes machine-checkable ───────────────
+;; An expedite run never advances swarmforge-QA (no live QA worktree with the
+;; swarm stopped), so its commits read as "landed outside QA" to Article
+;; 4.2's check. The run now records its own QA-hat verdict where the shared
+;; predicate can read it. Pure here; the CLI does the writing.
+
+(assert= "bl1025: the store lives under .swarmforge/, machine-local like every other run artifact"
+         ".swarmforge/expedite-approvals"
+         expedite-lib/expedite-approval-store-dir)
+
+(assert= "bl1025: one file per month, mirroring the bounce store's own layout"
+         ".swarmforge/expedite-approvals/2026-08.jsonl"
+         (expedite-lib/expedite-approval-store-file "2026-08-22T00:12:00Z"))
+
+(assert= "bl1025: a QA-hat PASS becomes a record naming the sha it advanced"
+         {:at "2026-08-22T00:12:00Z" :ticket "BL-1021" :stage "QA" :verdict "pass" :commit "44ef693d9c"}
+         (expedite-lib/qa-hat-verdict-record
+          {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))
+
+(assert= "bl1025: a QA-hat BOUNCE is recorded too - a verdict on file that says no is not the same as no verdict"
+         "bounce"
+         (:verdict (expedite-lib/qa-hat-verdict-record
+                    {:stage "QA" :verdict :bounce :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"})))
+
+(assert= "bl1025: the commit is recorded at the 10-hex width every other verdict store uses"
+         "44ef693d9c"
+         (:commit (expedite-lib/qa-hat-verdict-record
+                   {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "44ef693d9c1234567890" :at "2026-08-22T00:12:00Z"})))
+
+(assert-nil "bl1025: no other stage writes an approval - only the QA hat's verdict is an approval"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "coder" :verdict :pass :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))
+
+(assert-nil "bl1025: a stage that FAILED records nothing - a run that fell over approved nothing"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :timed-out :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))
+
+(assert-nil "bl1025: an unresolvable commit records nothing rather than a record naming nothing"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :pass :ticket "BL-1021" :commit nil :at "2026-08-22T00:12:00Z"}))
+
+(assert-nil "bl1025: a blank commit records nothing either"
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "  " :at "2026-08-22T00:12:00Z"}))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

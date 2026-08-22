@@ -123,3 +123,5 @@ notes: |
   held by their own orthogonality conflict against active BL-586 (same file,
   telegram-front-desk-bot.ts) - see their own notes. Awaiting a human
   decision on which of these three blockers to clear first.
+
+assigned_to: coder
