@@ -1,3 +1,7 @@
+> **DISPOSITIONED 2026-08-22 — minted as [BL-1066](../paused/BL-1066-metrics-poll-tick-restarts-a-102-second-git-walk.yaml)** (1:1, no split). All three locked human decisions carried through verbatim into that
+> ticket's `notes:` (defect / high / queue-jump + `human_approval: pending` / front of queue).
+> One correction was made during scoping: the per-call fan-out is SEQUENTIAL (`execFileSync`), not parallel — the concurrency comes from a ~102s computation being scheduled on a 2s poll tick.
+
 # Raw intake — Mean-ticket-time walks every done backlog file with `git log --follow`, and parallel runs melt the host CPU
 
 Status: **URGENT** — new intake, not minted. Capture only (human via Let's
