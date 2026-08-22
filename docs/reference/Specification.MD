@@ -1,6 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1048: the Pipeline Board's live stage
+**Last Updated:** August 22, 2026 (BL-1032: `tmuxReaperGuard.js` (BL-817) now
+scopes by the HAZARD — can this file cause a real tmux server to run —
+instead of by the presence of a quoted `'new-session'` token anywhere in the
+file. The token-only check was RED on
+`bl1018SingleRoleRepairNeverKillsServerSteps.js` precisely because that file
+is correct: it spawns only `bb -e` to evaluate resolved tmux command vectors
+as data, asserting `'new-session'`/`'kill-server'` inside `filter`/`assert`
+expressions, and never spawns tmux itself — the only ways to green the old
+check were to add a `track()` call guarding nothing or to obfuscate the
+string. `startsTmuxServer(text)` now requires a server-creating subcommand
+(`CREATES_A_SERVER`: `new-session` or `start-server`) plus either of two
+hazard routes — the file spawns `tmux` itself (`SPAWNS_TMUX`), or it writes
+its own `tmux` onto `PATH` (`WRITES_TMUX_ON_PATH` + `PREPENDS_TO_PATH`), the
+shape `bl958ControlPlaneLossSteps.js` uses and the one a naive
+literal-spawn-only fix would have silently exempted. The
+server-creating-subcommand requirement on both routes is what keeps
+query-only files (`bl458`, `bl571`, `bl952`, `tmuxDoubleAnswers` — `tmux
+list-sessions`/`has-session`, which fail rather than start a server) and
+PATH-stub no-ops (`bl571`, `bl952`'s `exit 0` stubs) out of scope, so the fix
+does not demand reaper calls in the opposite, equally-wrong direction.
+Hardener pass, same ticket: a hand-authored mutation sweep (Stryker/CRAP/DRY
+do not reach this plain-JS file outside `extension/src`) found two
+mutation-uncovered gaps in the new logic — dropping `start-server` from
+`CREATES_A_SERVER`, and dropping the `PREPENDS_TO_PATH` conjunct from route
+2 — both survived because no existing fixture isolated them; closed with new
+unit tests plus a new property-generator kind (`stubber-unreachable`, a
+PATH-write with no PATH-prepend). Verified: `tmuxReaperGuard.test.js`
+15/15, property suite 2/2 invariants across 5 generated kinds, Gherkin
+acceptance mutation 2/2 killed, full default unit lane 8220/8221 (the one
+failure is the pre-existing, separately-tracked BL-1033 defect named in this
+ticket's own scope, confirmed still an ancestor of both `main` and
+`origin/main`). No extension command, setting, or UI change — this is a
+test-infrastructure gate correcting its own false-positive/false-negative
+scoping, not user-visible behavior. See
+[BL-817: Fixture Tmux-Server Reaper Adoption](BL-817-fixture-tmux-server-reaper-adoption.md#the-standing-gate-tmuxreaperguard).
+Prior entry —
+BL-1048: the Pipeline Board's live stage
 scan (`pipeline_stage_cli.bb`) resolved a ticket's role from only a role's
 `in_process/` mailbox — the OPENED state. A `git_handoff` that had been
 routed, delivered and woken, but whose recipient had not yet run
