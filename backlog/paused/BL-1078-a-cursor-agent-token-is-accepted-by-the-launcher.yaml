@@ -124,4 +124,20 @@ notes: |
   synonym phrasing of that step in scenario 02, and a set/unset pair that
   wanted to be one Scenario Outline) were resolved by rewriting.
 
+
+  DEPENDS_ON CONTESTED, NOT RESOLVED (specifier, 2026-08-23). The specifier
+  proposed `depends_on: []` on the premise correction above; commit 1572d2f2d
+  ("formalize depends_on:[BL-713] (expedite path skipped the gate), park active
+  -> paused. By coordinator.") restored `[BL-713]`. Both actions were correct
+  from where they were taken - from the coordinator's side an emptied
+  depends_on on an expedite-promoted ticket is indistinguishable from the gate
+  bypass it was flagging - but they answer different questions, and the real
+  one is still open: whether a Cursor seat needs the BL-713 ACP/SDK spike at
+  all, given cursor-agent is a terminal-native CLI in the vibe/gemini/grok
+  family. `human_approval` was likewise restored to `approved` (e46fbedaf,
+  "park is enough"), so the questions in approval_context are unanswered even
+  though the field reads approved. Raised to the human directly rather than by
+  flipping either field back. The field stays `[BL-713]` until they answer -
+  nothing should be built on the specifier's reading alone.
+
 assigned_to: specifier
