@@ -154,3 +154,5 @@ notes: |
 
   No `required_wiring:` is declared: `build-freshness-transition` is already
   called from `check-one!`, so there is no new call site to pin.
+
+assigned_to: coder
