@@ -6467,6 +6467,44 @@ test('BL-582 repaint-02: a repaint failure after a successful record is reported
   assert.equal(result.posted, 1, 'the record succeeded; only the repaint did not');
 });
 
+test('BL-582 repaint-02b: a repaint exhausted by rate-limiting is reported with its own distinct cause, not the generic edit-failed one', async () => {
+  const diagnostics = [];
+  const adapters = {
+    ...closingFixtureAdapters({
+      readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+      editApprovalAskMessage: async () => ({ success: false, retryAfterSeconds: 3 }),
+      askCloseRetryBudget: 1,
+      waitForAskCloseRetry: async () => {},
+    }),
+    logDiagnostic: (line) => diagnostics.push(line),
+  };
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-123', { kind: 'approved' }, 0);
+  assert.equal(result.changed, true);
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0], /reason=repaint-failed/);
+  assert.match(diagnostics[0], /BL-123:rate-limited-retry-budget-exhausted/, `expected the rate-limit cause, got: ${diagnostics[0]}`);
+});
+
+test('BL-582 repaint-02c: a repaint that fails with no adapter wired at all falls back to the unwired-edit cause, not an empty detail', async () => {
+  const diagnostics = [];
+  // No editApprovalAskMessage at all - closingFixtureAdapters's `??` would
+  // otherwise substitute its own always-succeeds stub for an explicit
+  // undefined override, so this is built directly rather than through it.
+  const adapters = {
+    recordApprovalReply: async () => true,
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
+    logDiagnostic: (line) => diagnostics.push(line),
+  };
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-123', { kind: 'approved' }, 0);
+  assert.equal(result.changed, true);
+  assert.equal(diagnostics.length, 1);
+  assert.match(
+    diagnostics[0],
+    /BL-123:message-edit-failed-or-not-wired/,
+    `expected the not-wired fallback cause, got: ${diagnostics[0]}`
+  );
+});
+
 test('BL-582 idempotent-04: a repeat tap on an already-recorded verdict writes nothing and says the verdict is already recorded', async () => {
   const writes = [];
   const { adapters, answered } = bl582Adapters({
