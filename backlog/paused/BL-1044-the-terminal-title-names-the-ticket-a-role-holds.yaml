@@ -77,23 +77,43 @@ description: |
   "and other OSes" needs no branch: it is a terminal-level convention, not
   an OS-level API. Nothing Windows-specific is written or needed.
 
-  ## Where the data already is
+  ## Where the data is - the PANE's own mailbox, not the board
 
-  Do not invent a second sweep. `pipeline_stage_cli.bb`'s `compute-stage-map`
-  already derives exactly this from each role's `in_process` mailbox and
-  writes `.swarmforge/board/ticket-stage-map.json`, currently e.g.
+  Operator clarification 2026-08-22: the ticket shown is the one that went
+  through **the given pane**. That rules out the obvious source and this
+  ticket previously named the wrong one.
 
-      {"BL-1035":"coder","BL-1014":"cleaner","BL-1011":"hardender","BL-1010":"QA"}
+  `.swarmforge/board/ticket-stage-map.json` is keyed by STAGE
+  (`{"BL-1035":"coder","BL-1014":"cleaner",...}`), and BL-1040 will
+  deliberately fold seat ids onto their stage so the board renders one
+  column per stage. That fold is right for the board and **wrong here**: two
+  seats of one stage working two different tickets would both title
+  themselves with whichever ticket the fold kept. Do not build this on the
+  stage map.
 
-  The slug is already in the handoff's own `task:` header - e.g.
-  `task: BL-1035-a-respawned-bot-gets-its-own-startup-grace`. The last
-  last ticket that passed through is the newest `git_handoff` in the role's
-  `inbox/completed/`, per the definition above.
+  Each seat already has its own mailbox, so per-pane data exists directly.
+  The retired `coder@sonnet2` seat's worktree still shows it:
+  `.worktrees/coder-sonnet2/.swarmforge/handoffs/inbox/completed/` holds 14
+  handoffs of its own, entirely separate from `coder`'s 623.
+
+  The chain from a window to its mailbox is `roles.tsv`: column 5 is the
+  display name that IS the tmux window name (`Specifier`, `Coder`,
+  `Cleaner`, ...), column 1 the role, column 3 its worktree path. Resolve
+  the mailbox through `handoff_lib.bb`'s own `mailbox-dir` rather than
+  building the path by hand - worktree-resident roles keep theirs under
+  their worktree, while master-resident roles (specifier, coordinator) keep
+  theirs at `.swarmforge/handoffs/<role>/inbox/`, and that difference has
+  caught people before.
+
+  The held ticket is that pane's own `in_process/` parcel; the last one
+  through is the newest `git_handoff` in that pane's own `completed/`, per
+  the definition above. The slug is in the handoff's `task:` header - e.g.
+  `task: BL-1035-a-respawned-bot-gets-its-own-startup-grace`.
 
   ## How (direction, not mandate)
 
-  A small updater run from the daemon's existing poll cycle, consuming the
-  stage map rather than re-deriving it, and renaming windows via
+  A small updater run from the daemon's existing poll cycle, reading each
+  seat's own mailbox, and renaming windows via
   `tmux rename-window` (an external command - unaffected by
   `allow-rename off`). Exact separator, marker for the not-held form, and
   slug budget are the implementer's call; a title bar truncates, so the slug
@@ -119,10 +139,15 @@ qa_e2e_procedure: >
      window's title matches the stage that map assigns it.
 
   4. Confirm the idle form: pick a role holding nothing and confirm its title
-     shows the last ticket that passed through it, visibly different from a
-     held one. Verify that ticket against the newest `git_handoff` in that
-     role's `inbox/completed/` - read the file, do not infer it from the
-     title you are checking.
+     shows the last ticket that passed through THAT PANE, visibly different
+     from a held one. Verify it against the newest `git_handoff` in that
+     pane's own seat mailbox - read the file, do not infer it from the title
+     you are checking.
+
+  4c. Confirm per-pane isolation, which is the point of the clarification:
+     configure two seats of one stage, give each a different parcel, and
+     confirm each window titles itself with its OWN ticket. Then confirm the
+     board still shows that stage as ONE column - both must hold at once.
 
   4b. Confirm a note does not fool it, which is the live case: the
      architect's two newest completed items are notes naming BL-1014 and
@@ -198,14 +223,19 @@ notes: |
 
   ## Related
 
-  - **BL-1040** (paused) - folds seat ids onto their stage in that same stage
-    map. A title built from the map inherits the fix for free; nothing here
-    needs to handle `coder@sonnet2` itself.
+  - **BL-1040** (paused) - folds seat ids onto their stage in the board's
+    stage map. **That fold must not be reused here**, and an earlier draft of
+    this ticket wrongly said it could be inherited "for free". The board
+    wants one column per stage; a pane title wants what THAT pane is doing.
+    The two requirements are opposite, and both are correct for their own
+    surface.
 
   ## IR-DRY judgment recorded
 
-  3 findings, all kept. Every one is a polarity pair the checker cannot see
-  as negation - holds a parcel / holds no parcel, names the ticket / names no
-  ticket, has handled a parcel before / has never handled a parcel - and
-  those contrasts are exactly what the three title states are. Nothing here
-  is accidental drift.
+  5 findings, all kept. Three are polarity pairs the checker cannot see as
+  negation (holds a parcel / holds no parcel, names the ticket / names no
+  ticket, has handled a parcel before / has never handled a parcel). The
+  other two are arity: one seat versus a second seat of the same stage, and
+  one parcel versus two seats each holding a different one. In both, the
+  count IS the behaviour under test - collapsing them would erase the
+  per-pane isolation this ticket exists to specify.
