@@ -6,7 +6,13 @@ import { AVAILABLE_CLAUDE_MODELS, readCurrentModel, switchRoleModel } from '../s
 import { EFFORT_LEVELS, hasEffortSetting, readCurrentEffort, suggestRoleEffort, switchRoleEffort } from '../swarm/effortDial';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
-import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
+import {
+  computeSwarmMetricsOnTick,
+  DEFAULT_SUITE_WARN_SECONDS,
+  MEAN_TICKET_TIME_REFRESH_INTERVAL_MS,
+  MeanTicketTime,
+} from '../metrics/swarmMetrics';
+import { createMetricsTickGate } from '../metrics/metricsTickGate';
 import { computeLiveTransportHealth, TRANSPORT_CANARY_BUDGET_SECONDS } from '../swarm/transportHealth';
 import { runCanaryCycle, canaryQueueCompletedDir } from '../swarm/canaryInjector';
 import { computeDaemonProcessStatus } from '../swarm/daemonHealth';
@@ -53,6 +59,14 @@ export class SwarmPanel {
   private disposables: vscode.Disposable[] = [];
   private wasActive = false;
   private readonly needsHumanReconciler = new NeedsHumanReconciler();
+  // BL-1066: mean ticket time walks git; every other metric on this tick
+  // reads small local files. The gate keeps that walk on its own far slower
+  // cadence and stops a tick re-entering one still running - it lives on the
+  // panel, not inside the computation, because it has to survive across ticks.
+  private readonly meanTicketTimeGate = createMetricsTickGate<MeanTicketTime>({
+    minIntervalMs: MEAN_TICKET_TIME_REFRESH_INTERVAL_MS,
+    now: () => Date.now(),
+  });
   private dogfoodShown = false;
   private workspaceState: vscode.Memento | undefined;
   private emailNotifier: NeedsHumanEmailNotifier | undefined;
@@ -379,6 +393,9 @@ export class SwarmPanel {
       });
       // BL-071: reuses this existing poll tick - no new polling loop, no
       // per-second git invocations.
+      // BL-1066: reusing the tick was right; letting the tick drive the git
+      // walk was not. The one expensive metric (mean ticket time) is gated to
+      // its own refresh interval inside postMetrics - see meanTicketTimeGate.
       this.postMetrics();
       this.postStuckEscalations();
       this.emailNotifier?.sweep(Date.now());
@@ -405,7 +422,14 @@ export class SwarmPanel {
     const suiteWarnSeconds = vscode.workspace
       .getConfiguration('swarmforge')
       .get<number>('metrics.suiteWarnSeconds', DEFAULT_SUITE_WARN_SECONDS);
-    const metrics = computeSwarmMetrics(this.targetPath, roles, runStartMs, Date.now(), suiteWarnSeconds);
+    const metrics = computeSwarmMetricsOnTick(
+      this.meanTicketTimeGate,
+      this.targetPath,
+      roles,
+      runStartMs,
+      Date.now(),
+      suiteWarnSeconds
+    );
     this.panel.webview.postMessage({
       type: 'metricsUpdate',
       metrics,

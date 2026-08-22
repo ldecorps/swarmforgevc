@@ -1047,9 +1047,33 @@ You are the hardender.
   The helper writes `[detach_job] STARTED pgid=…` first, then exactly one of
   two endings: `[detach_job] EXIT=<code>` (the run finished — that code is your
   result) or `[detach_job] KILLED by SIGTERM …` (something killed it; an expired
-  or missing registration makes the reaper the likely sender). Neither marker
-  means it is still running. A log that stops mid-run is not evidence of a flaky
-  suite or an overloaded host until you have looked for those lines.
+  or missing registration makes the reaper the likely sender). A log that stops
+  mid-run is not evidence of a flaky suite or an overloaded host until you have
+  looked for those lines.
+- **"Neither marker" does NOT prove it is still running — confirm with `ps`
+  before you wait on it (rule_proposal 2026-08-22, accepted; BL-1072).** This
+  rule used to say neither marker means the job is still alive. That is a THIRD
+  outcome the contract does not admit but the host produces: a detached run can
+  die with no `EXIT=`, no `KILLED`, and no reap notice appended to its own log,
+  leaving children orphaned under its pgid. Treated as "still running" you wait
+  forever on a corpse. So a missing ending is a QUESTION, not a verdict:
+  `ps -o pgid= -p <pid>`, or `pgrep -g <pgid>`, and believe the process table
+  over the log. If the group is gone, the run is dead however clean its log
+  looks.
+- **Recovering from a silent death: reap the group, then retry in the
+  foreground per test.** Clear the strays with `kill -- -<pgid>` (the same
+  reaping discipline as above), then re-run the work as SEPARATE foreground
+  invocations — one per invariant or per test file — each sized to finish
+  inside the ~120s a foreground call gets. The point is not that the
+  foreground is more reliable; it is that a foreground run that dies tells you
+  so immediately, whereas a detached one that dies this way tells you nothing.
+  Splitting also brings each piece under the cap, which is what makes the
+  retry legal without a detach at all.
+- **Report the silent death rather than absorbing it.** It is a defect in the
+  detach machinery (BL-1072), not your bad luck: note the pgid, the log's last
+  line, and whether `.swarmforge/daemon/handoffd-supervisor.log` recorded a
+  `reap-job-orphan` for that group at that time. A pass that quietly works
+  around it leaves the next hardener to rediscover it.
 - **The directory you launch from is the directory the job runs in — make it
   absolute.** The helper pins the worker's cwd to your invocation cwd, so
   `cd /abs/path && swarmforge/scripts/detach_job.sh …` is the shape, and you
