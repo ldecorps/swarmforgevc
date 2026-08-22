@@ -12,8 +12,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1031-bounded-chokepoint-covers-the-spawn-reachable-subtree.feature
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Needs sign-off on ONE decision, and it is a live operational trade-off, not a
   style question. Two of the seven call sites are the acceptance-contract gate's
