@@ -708,9 +708,14 @@ export function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEv
 // BL-904: daemon restart/escalate incidents from BL-675's freshness
 // watchdog (swarmforge/scripts/daemon_log_freshness_check.sh), one
 // space-separated key=value record per line, e.g.:
-// "epoch=1785625446 daemon=babysitterd age_secs=999999999 threshold=600 action=restart"
+// "epoch=1785625446 swarm=primary daemon=babysitterd age_secs=unknown
+//  reason=log-absent threshold=600 action=restart"
 // (an "action=escalate" record additionally carries cool_off_remaining=<n>,
 // ignored here - only the fields below are read).
+// BL-1011 added swarm= and reason=, and age_secs is now the word "unknown"
+// when no age could be measured rather than a 999999999 sentinel. The reader
+// below is field-addressed and forgiving, so it is unaffected - the example is
+// updated only so it still shows a record this watchdog actually writes.
 export interface FreshnessIncidentEvent {
   epoch: number;
   daemon: string;
