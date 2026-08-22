@@ -5,6 +5,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { notifyResidentSpyTunnelUrl, main } = require('../out/tools/notify-resident-spy-tunnel');
 const { RESIDENT_SPY_SUBJECT_ID, RESIDENT_SPY_TOPIC_NAME } = require('../out/tools/telegramTopicDecisions');
 const { buildBubblePairingDeepLink } = require('../out/concierge/residentSpyTunnelNotify');
+const { findButtonUrlSchemeViolations, describeViolations } = require('./helpers/telegramButtonUrlScheme');
 
 // BL-716 hardening pass: notify-resident-spy-tunnel.ts had ZERO test
 // coverage before this ticket touched it (added the pairingDeepLink field
@@ -346,7 +347,14 @@ test('notifyResidentSpyTunnelUrl private DM buttons include the exact pairing de
   const buttons = dmCall.body.reply_markup.inline_keyboard;
   const pairButton = buttons.flat().find((b) => b.text === 'Update Bubble pairing');
   assert.ok(pairButton, 'expected an "Update Bubble pairing" button');
-  assert.equal(pairButton.url, buildBubblePairingDeepLink(LIVE_URL));
+  // BL-1060: the SCHEME, not `=== buildBubblePairingDeepLink(LIVE_URL)`. The
+  // old equality passed while the live DM was never sent at all, because the
+  // Bot API rejects a `url:` button on any scheme but http(s)/tg: and this
+  // one carried swarmforge-bubble:.
+  assert.match(pairButton.url, /^https:\/\//);
+  assert.match(pairButton.url, /\/pair\?token=/);
+  const violations = findButtonUrlSchemeViolations(buttons);
+  assert.deepEqual(violations, [], `private DM keyboard: ${describeViolations(violations)}`);
 });
 
 test('notifyResidentSpyTunnelUrl never sends a private DM when TELEGRAM_PRINCIPAL_USER_ID is unset', async () => {
