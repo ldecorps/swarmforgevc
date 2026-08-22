@@ -11,7 +11,7 @@ severity: high
 # backlog/evidence/ by hand an hour earlier, which is not a mechanism.
 status: todo
 epic: swarm-reliability
-assigned_to: none
+assigned_to: coder
 priority: 12
 direction: swarm-reported
 depends_on: []
