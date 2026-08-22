@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=948c65771b13edf6115e12b9716816e4b7dc2e4db338083d2a515a6c772fbf80
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T16:25:00.074447927Z","feature_name":"BL-1061 a tunnel-ownership fixture never binds a name the host is already serving","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1061-tunnel-ownership-fixture-binds-a-live-tunnel-name.feature","background_hash":"0eb87fd09152d02357c3b20fa3626e0bc27ba06ccdc7219647da03edb0efeeab","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a reap signals only processes this run created","scenario_hash":"48093a5219c8bcaf7041548f40b02ccd1f5145048b9e719cd4e46a0d8409c1a8","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T16:25:00.074447927Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1061 a tunnel-ownership fixture never binds a name the host is already serving
   The ownership property test drives the real reap edge, and that edge
   enumerates the HOST process table with `pgrep -fl -- "run <name>"`. The

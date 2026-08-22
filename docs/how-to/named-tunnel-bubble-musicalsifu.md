@@ -189,6 +189,17 @@ most one real `swarmforge-bubble` cloudflared remains on the host — the
 operator's own — regardless of how many sandboxes started and abandoned one
 in between.
 
+**The reap never actually ran on a GNU/Linux host until BL-1061.** Candidate
+enumeration used `pgrep -fl -- "run $name"`: `-f` matches on the full command
+line (correct on both userlands), but `-l` decides what gets *printed*, and
+BSD/macOS and procps-ng (Linux) disagree there — BSD prints the full argument
+list, procps-ng prints only the process name. The orphan decision looks for a
+`run <name>` token pair in that printed text, so on Linux it was always handed
+something shaped like `12345 bash` and matched nothing: the reap silently
+no-opped on every Linux host. `pgrep -f` still narrows the pids; listing them
+now goes through `ps -o pid= -o args=`, which prints the full command line on
+both userlands. The scoping and word-boundary decision above are unchanged.
+
 ## Verify
 
 ```bash
@@ -258,3 +269,4 @@ and `cloudflared` / the bridge go dark with it.
 | Idle sleep kills tunnel (lid open) | pidfile missing / `SWARMFORGE_SKIP_CAFFEINATE=1`; relaunch tunnel |
 | `refusing named tunnel ... not the registered operator root` | Expected from any non-operator root (a test sandbox, a second checkout). Use a quick tunnel there, or register that root as operator via `setup_bubble_named_tunnel.sh` if it genuinely should own the production name |
 | Orphan `cloudflared ... run swarmforge-bubble` survives a sandbox/teardown | Run `stop_ancillary_services.sh` (or `bash swarmforge/scripts/tunnel_ownership_lib.sh reap-orphans swarmforge-bubble`) — reaping reads the host registry, not the deleted sandbox's own pidfile |
+| Reap never signals anything on a GNU/Linux host | Fixed by BL-1061 (see "Tunnel ownership and orphan reaping" above) — confirm the checkout includes it; older checkouts silently no-op the reap on Linux |
