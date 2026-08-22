@@ -89,12 +89,37 @@
     (some (fn [line] (when (str/starts-with? line prefix) (subs line (count prefix))))
           (str/split-lines header))))
 
+;; BL-1048: the DELIVERED state (:new) is scanned alongside the OPENED one
+;; (:in_process). A parcel that has been routed, delivered and woken - but
+;; whose recipient has not yet run ready_for_next.sh - names its ticket only
+;; in inbox/new/, which this scan never opened; the ticket therefore reached
+;; no {ticket -> role} pair, filter-active dropped it, and the board's
+;; BL-473 not-started sentinel rendered it NS. That made a SUCCESSFUL
+;; handoff read as a regression: the moment a parcel left the coder's
+;; in_process for the cleaner's new/, the ticket fell off the stage map and
+;; moved backwards to not-started.
+;;
+;; The not-started column means no role has the parcel - not that no role
+;; has OPENED it - and inbox/new/ is exactly the state Article 2.4 puts the
+;; ten-minute chase clock on, i.e. the one state the board most needs to
+;; show. Both states go through the SAME mailbox-dir resolver (BL-128) and
+;; the SAME batch_* enumeration, so a master-resident role's per-role
+;; subdirectory and a batch role's delivered batch_* dir are covered by
+;; construction rather than by a second re-derived path.
+;;
+;; This is a SOURCE widening only: ticket-id-from-headers, reconcile-stage-map
+;; and filter-active are untouched. Reconciliation already collapses one
+;; ticket observed at two roles to a single most-downstream role, which is
+;; the transition window this makes more common - not a new case - so
+;; BL-464's double row cannot return through it.
+(def ^:private scanned-mailbox-states [:new :in_process])
+
 (defn- role-ticket-pairs-for [role-info]
-  (let [dir (str (handoff-lib/mailbox-dir role-info :in_process))]
-    (->> (list-handoff-files-with-batches dir)
-         (map (fn [f] {:task (read-header-field f "task") :message (read-header-field f "message")}))
-         (keep pipeline-stage-lib/ticket-id-from-headers)
-         (map (fn [ticket-id] {:role (:role role-info) :ticket-id ticket-id})))))
+  (->> scanned-mailbox-states
+       (mapcat (fn [state] (list-handoff-files-with-batches (str (handoff-lib/mailbox-dir role-info state)))))
+       (map (fn [f] {:task (read-header-field f "task") :message (read-header-field f "message")}))
+       (keep pipeline-stage-lib/ticket-id-from-headers)
+       (map (fn [ticket-id] {:role (:role role-info) :ticket-id ticket-id}))))
 
 (defn compute-stage-map [project-root]
   (let [roles (handoff-lib/load-all-roles project-root)
