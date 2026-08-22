@@ -16,7 +16,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1051-a-lets-talk-reply-answers-in-the-language-it-was-asked-in.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   ONE design call needs your answer; the rest of the ticket is settled.
 
