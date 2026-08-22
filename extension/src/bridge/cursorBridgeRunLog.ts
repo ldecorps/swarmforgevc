@@ -109,6 +109,27 @@ export function logCursorRunFailure(failure: CursorRunFailure, deps: CursorRunLo
   return line;
 }
 
+/**
+ * A progress post that failed. Deliberately its own marker: this is NOT a run
+ * failure, and counting it as one would corrupt every `grep 'run failed'` the
+ * ticket's own runbook performs. Same three-field discipline - no prompt, no
+ * reply, no credential.
+ */
+export const CURSOR_PROGRESS_POST_FAILURE_MARKER = 'cursor-bridge progress post failed';
+
+export function logProgressPostFailure(reason: string, deps: CursorRunLogDeps): string {
+  const line =
+    `${deps.now()} ${CURSOR_PROGRESS_POST_FAILURE_MARKER} (run continues) ` +
+    `reason=${oneLine(redactEnvironmentSecrets(reason, deps.env)) || 'unknown'}`;
+  try {
+    deps.sink(line);
+  } catch {
+    // Same reasoning as logCursorRunFailure: a broken log device must not
+    // become the error anyone sees.
+  }
+  return line;
+}
+
 /** The default seams: stderr (which the supervisor already redirects) and the real clock. */
 export function defaultCursorRunLogDeps(): CursorRunLogDeps {
   return {

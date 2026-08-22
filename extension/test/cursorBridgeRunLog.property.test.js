@@ -76,11 +76,18 @@ const QUOTA_REASONS = ['resource_exhausted', 'RESOURCE EXHAUSTED now', 'rate lim
 const RESET_REASONS = ['Connection failed repeatedly', 'fetch failed', 'already has active run', '[UNAVAILABLE] service'];
 const PLAIN_REASONS = ['boom', 'internal error', 'the model declined', 'unknown error'];
 
+// The stream MUST yield an event summarizeSdkProgressLine actually renders, or
+// onProgress is never invoked and a "failing post" arm tests nothing. An
+// `assistant` event renders to undefined - which is exactly how the first
+// version of this file's failing-post arm was silently inert (architect
+// send-back #1 on scenario 03, chased into this file too). A `tool_call` does
+// render, so the post is genuinely attempted.
 function stubAgent(status, id, reason) {
   return {
     async send() {
       return {
         async *stream() {
+          yield { type: 'tool_call', name: 'shell', status: 'running' };
           yield { type: 'assistant', message: { content: [{ type: 'text', text: 'the assistant reply text' }] } };
         },
         async wait() {
@@ -116,11 +123,15 @@ test('invariant 1: every failure a human can be told about also lands on disk, p
       // The "post" is the progress callback the Cursor Remote topic renders.
       // When it throws, the record must already exist: the log path must not
       // be reachable only through the code path that also posts.
+      let postAttempts = 0;
       const onProgress = postThrows
         ? () => {
+            postAttempts++;
             throw new Error('telegram post failed');
           }
-        : () => {};
+        : () => {
+            postAttempts++;
+          };
 
       let thrown;
       try {
@@ -130,6 +141,9 @@ test('invariant 1: every failure a human can be told about also lands on disk, p
       }
 
       assert.ok(thrown, 'a failing run must still fail');
+      // The post must really have been ATTEMPTED, or the postThrows arm proves
+      // nothing about independence from posting.
+      assert.ok(postAttempts > 0, 'the progress post was never attempted at all');
       const failureLines = lines.filter((l) => l.includes(CURSOR_RUN_FAILURE_MARKER));
       assert.equal(failureLines.length, 1, `expected exactly one recorded failure, got ${failureLines.length}`);
       assert.ok(failureLines[0].includes(`run=${id}`), 'the record must name the run id the human was told');
@@ -141,7 +155,7 @@ test('invariant 1: every failure a human can be told about also lands on disk, p
       // The reset decision is the one the recovery path uses, not a copy.
       assert.ok(failureLines[0].includes(shouldResetCursorAgentSession(reason) ? 'reset=yes' : 'reset=no'));
 
-      if (postThrows) reached.postThrew++;
+      if (postThrows) reached.postThrew += postAttempts;
       if (QUOTA_REASONS.includes(reason)) {
         reached.quota++;
         assert.match(thrown.message, /quota exhausted/, 'quota failures keep their rewritten human message');

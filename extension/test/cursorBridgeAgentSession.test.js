@@ -1022,3 +1022,70 @@ test('BL-1050: the default deps print the failure line to stderr, which the supe
   assert.equal(deps.env, process.env);
   assert.match(deps.now(), /^\d{4}-\d{2}-\d{2}T/);
 });
+
+// ── BL-1050 (architect send-back #1): a failing post must not abort the run ─
+
+function progressEventAgent(status, id, message) {
+  return {
+    async send() {
+      return {
+        async *stream() {
+          // A tool_call renders to a progress line; an assistant event does
+          // not, which is how a "failing post" test can be silently inert.
+          yield { type: 'tool_call', name: 'shell', status: 'running' };
+          yield { type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } };
+        },
+        async wait() {
+          return { status, id, error: message === undefined ? undefined : { message } };
+        },
+      };
+    },
+  };
+}
+
+test('BL-1050: a progress post that throws still lets the run failure reach the log', async () => {
+  const lines = [];
+  let attempts = 0;
+  await assert.rejects(
+    () =>
+      runCursorAgentPrompt(
+        progressEventAgent('error', 'run-err', 'Connection failed repeatedly'),
+        'ping',
+        () => {
+          attempts++;
+          throw new Error('telegram post failed');
+        },
+        { sink: (l) => lines.push(l), now: () => '2026-08-22T23:00:00.000Z', env: {} }
+      ),
+    /Connection failed repeatedly/
+  );
+  assert.ok(attempts > 0, 'the post must actually have been attempted');
+  assert.equal(lines.filter((l) => l.includes('cursor-bridge run failed')).length, 1);
+  assert.equal(lines.filter((l) => l.includes('cursor-bridge progress post failed')).length, 1);
+});
+
+test('BL-1050: a progress post that throws does not fail an otherwise healthy run', async () => {
+  const lines = [];
+  const text = await runCursorAgentPrompt(
+    progressEventAgent('success', 'run-ok', undefined),
+    'ping',
+    () => {
+      throw new Error('telegram post failed');
+    },
+    { sink: (l) => lines.push(l), now: () => '2026-08-22T23:00:00.000Z', env: {} }
+  );
+  assert.equal(text, 'hello');
+  assert.deepEqual(lines.filter((l) => l.includes('cursor-bridge run failed')), []);
+  assert.equal(lines.filter((l) => l.includes('cursor-bridge progress post failed')).length, 1);
+});
+
+test('BL-1050: a healthy post is still delivered, so the guard is not a blanket swallow', async () => {
+  const posted = [];
+  await runCursorAgentPrompt(
+    progressEventAgent('success', 'run-ok', undefined),
+    'ping',
+    (line) => posted.push(line),
+    quietLogDeps()
+  );
+  assert.ok(posted.length > 0, 'progress must still reach the topic when posting works');
+});

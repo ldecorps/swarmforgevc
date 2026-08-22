@@ -19,11 +19,13 @@
 const assert = require('node:assert/strict');
 
 const {
+  CURSOR_PROGRESS_POST_FAILURE_MARKER,
   CURSOR_RUN_FAILURE_MARKER,
   formatCursorRunFailureLine,
   redactEnvironmentSecrets,
   secretEnvironmentValues,
   logCursorRunFailure,
+  logProgressPostFailure,
 } = require('../out/bridge/cursorBridgeRunLog');
 
 const AT = '2026-08-22T23:00:00.000Z';
@@ -155,4 +157,58 @@ test('nothing but the three fields can reach the line', () => {
   );
   assert.ok(!line.includes('deploy the staging key'));
   assert.ok(!line.includes('ok'));
+});
+
+// ── the progress-post failure line (architect send-back #1 follow-through) ─
+
+test('a failed progress post is recorded under its OWN marker, never as a run failure', () => {
+  const written = [];
+  const line = logProgressPostFailure('telegram post failed', {
+    sink: (l) => written.push(l),
+    now: () => AT,
+    env: {},
+  });
+  assert.deepEqual(written, [line]);
+  assert.equal(CURSOR_PROGRESS_POST_FAILURE_MARKER, 'cursor-bridge progress post failed');
+  assert.match(line, new RegExp(CURSOR_PROGRESS_POST_FAILURE_MARKER));
+  assert.match(line, /reason=telegram post failed/);
+  assert.ok(
+    !line.includes(CURSOR_RUN_FAILURE_MARKER),
+    "a failed post must not corrupt every grep for 'run failed'"
+  );
+});
+
+test('the progress-post line says the run continues, because it does', () => {
+  const line = logProgressPostFailure('boom', { sink: () => {}, now: () => AT, env: {} });
+  assert.match(line, /run continues/);
+});
+
+test('a secret in a post failure is redacted exactly as it is in a run failure', () => {
+  const written = [];
+  logProgressPostFailure('rejected 12345:AAsecrettoken', {
+    sink: (l) => written.push(l),
+    now: () => AT,
+    env: { TELEGRAM_BOT_TOKEN: '12345:AAsecrettoken' },
+  });
+  assert.ok(!written[0].includes('12345:AAsecrettoken'));
+  assert.match(written[0], /\[redacted\]/);
+});
+
+test('a multi-line post failure collapses to one greppable line, and an empty one is named', () => {
+  assert.equal(
+    logProgressPostFailure('first\nsecond', { sink: () => {}, now: () => AT, env: {} }).split('\n').length,
+    1
+  );
+  assert.match(logProgressPostFailure('', { sink: () => {}, now: () => AT, env: {} }), /reason=unknown/);
+});
+
+test('a sink that throws never becomes the failure the caller reports, here either', () => {
+  const line = logProgressPostFailure('boom', {
+    sink: () => {
+      throw new Error('log device full');
+    },
+    now: () => AT,
+    env: {},
+  });
+  assert.match(line, /reason=boom/);
 });

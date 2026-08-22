@@ -11,7 +11,12 @@ import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from '
 import { readSwarmEnvValue } from '../tools/swarmEnv';
 import type { CursorAgentProgressCallback } from './cursorBridgeProgress';
 import { summarizeSdkProgressLine } from './cursorBridgeProgress';
-import { defaultCursorRunLogDeps, logCursorRunFailure, type CursorRunLogDeps } from './cursorBridgeRunLog';
+import {
+  defaultCursorRunLogDeps,
+  logCursorRunFailure,
+  logProgressPostFailure,
+  type CursorRunLogDeps,
+} from './cursorBridgeRunLog';
 
 const MISSING_CURSOR_API_KEY_MESSAGE =
   'CURSOR_API_KEY is not set for the headless bridge. Add `export CURSOR_API_KEY=...` to .swarmforge/swarm.env and restart the bridge supervisor. The Cursor IDE login session is not passed to telegram/headless bridge processes.';
@@ -199,13 +204,31 @@ export function withPromptProgress<T>(onProgress: CursorAgentProgressCallback | 
   });
 }
 
-async function reportSdkProgress(event: SDKMessage, onProgress: CursorAgentProgressCallback | undefined): Promise<void> {
+async function reportSdkProgress(
+  event: SDKMessage,
+  onProgress: CursorAgentProgressCallback | undefined,
+  logDeps: CursorRunLogDeps
+): Promise<void> {
   if (!onProgress) {
     return;
   }
   const line = summarizeSdkProgressLine(event);
-  if (line) {
+  if (!line) {
+    return;
+  }
+  try {
     await onProgress(line);
+  } catch (err) {
+    // BL-1050 (architect send-back #1, chased one level deeper): a progress
+    // post is best effort. It used to be able to abort the stream loop, so a
+    // Telegram outage meant `run.wait()` was never reached, the run's outcome
+    // was never determined, and NOTHING was written to cursor-bridge.log -
+    // while the caller's catch still told the operator the run had failed.
+    // That is precisely the invariant this ticket declares: a failure a human
+    // can be told about must also land on disk, whether or not the post
+    // succeeds. Swallowing here is what makes the record independent of the
+    // post rather than merely written earlier than it.
+    logProgressPostFailure(err instanceof Error ? err.message : String(err), logDeps);
   }
 }
 
@@ -257,7 +280,7 @@ export async function runCursorAgentPrompt(
   const messages: SDKMessage[] = [];
   for await (const event of run.stream()) {
     messages.push(event);
-    await reportSdkProgress(event, onProgress);
+    await reportSdkProgress(event, onProgress, logDeps);
   }
   const result = await run.wait();
   assertCursorRunSucceeded(result, logDeps);

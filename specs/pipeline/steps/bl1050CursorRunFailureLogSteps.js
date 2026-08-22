@@ -48,11 +48,16 @@ const FIXTURE_ENV = {
   TELEGRAM_BOT_TOKEN: 'bl1050-bot-token-must-never-reach-a-log',
 };
 
+// The stream MUST yield an event summarizeSdkProgressLine actually renders, or
+// onProgress is never invoked and scenario 03's "posting to Telegram fails"
+// is inert whatever the Given sets. An `assistant` event renders to undefined;
+// a `tool_call` renders, so the post is genuinely attempted.
 function stubAgent(status, id, reason) {
   return {
     async send() {
       return {
         async *stream() {
+          yield { type: 'tool_call', name: 'shell', status: 'running' };
           yield { type: 'assistant', message: { content: [{ type: 'text', text: 'reply text' }] } };
         },
         async wait() {
@@ -89,6 +94,25 @@ async function runAgainstRealLog(ctx, { status, reason, prompt = 'ping', progres
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+// The progress callback the Cursor Remote topic renders - i.e. "posting to
+// Telegram". When scenario 03 has armed a failing post it THROWS, which is the
+// whole point of that scenario: the record must already exist by then, because
+// the log write happens where the failure is decided rather than in the code
+// path that also posts.
+function telegramSink(ctx) {
+  ctx.postAttempts = 0;
+  if (ctx.telegramFails) {
+    return () => {
+      ctx.postAttempts++;
+      throw new Error('telegram post failed');
+    };
+  }
+  return (line) => {
+    ctx.postAttempts++;
+    ctx.topicMessages.push(line);
+  };
 }
 
 function failureLines(ctx) {
@@ -130,7 +154,7 @@ function registerSteps(registry) {
     const sdkStatus = KNOWN_RUN_STATUSES[status];
     assert.ok(sdkStatus, `unknown run status "${status}" - known: ${Object.keys(KNOWN_RUN_STATUSES).join(', ')}`);
     ctx.reason = reason;
-    await runAgainstRealLog(ctx, { status: sdkStatus, reason, progressSink: (l) => ctx.topicMessages.push(l) });
+    await runAgainstRealLog(ctx, { status: sdkStatus, reason, progressSink: telegramSink(ctx) });
   });
 
   registry.define(/^a Cursor run ends with status "([^"]+)"$/, async (ctx, status) => {
@@ -141,6 +165,16 @@ function registerSteps(registry) {
 
   registry.define(/^"([^"]+)" gains a line naming that run id$/, (ctx, logName) => {
     assert.equal(logName, ctx.logName);
+    if (ctx.telegramFails) {
+      // Scenario 03 only proves anything if the post really was ATTEMPTED and
+      // really did throw. Assert both here rather than trusting the Given: a
+      // stream that stopped producing a postable event, or a sink that stopped
+      // throwing, would silently turn this back into a copy of scenario 01 -
+      // which is exactly how it was first written.
+      assert.ok(ctx.postAttempts > 0, 'the Telegram post was never attempted, so nothing could fail');
+      assert.ok(ctx.thrown, 'the run must still surface a failure to its caller');
+      assert.deepEqual(ctx.topicMessages, [], 'a failing post must post nothing');
+    }
     const lines = failureLines(ctx);
     assert.equal(lines.length, 1, `expected one failure line in ${logName}, got ${lines.length}`);
     assert.match(lines[0], new RegExp(`run=${RUN_ID}\\b`));
@@ -170,8 +204,11 @@ function registerSteps(registry) {
 
   // ── cursor-run-failure-log-03 ───────────────────────────────────────────
   registry.define(/^posting to Telegram fails$/, (ctx) => {
-    // The record must not be reachable only through the code path that also
-    // posts, so the "post" the run performs throws.
+    // ARMS the failing post [telegramSink] then builds. Without this the
+    // scenario ran byte-identical steps to scenario 01 and proved nothing
+    // beyond it (architect send-back #1, 2026-08-23): a regression that made
+    // the log write depend on a successful post would have gone straight
+    // through it.
     ctx.topicMessages = [];
     ctx.telegramFails = true;
   });
