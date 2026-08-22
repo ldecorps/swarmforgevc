@@ -33,6 +33,17 @@ test('BL-1039: a --bare init creates a repository', () => {
   assert.equal(createsRepository("execFileSync('git', ['init', '--bare'], { cwd: remote });"), true);
 });
 
+// hardening: the above fixture already matches the FIRST alternation
+// (`['"]git['"]\s*,\s*\[\s*['"]init['"]`) regardless of `--bare`, so it never
+// isolates the third alternation (`\binit\b[^\n]*--bare`) on its own -
+// deleting that alternation entirely still leaves this suite green. Its
+// unique job is a command built with a template literal, whose backtick
+// delimiter neither the first nor the second (`['"]`-anchored) alternation
+// can see.
+test('BL-1039: a template-literal `git init --bare` command creates a repository', () => {
+  assert.equal(createsRepository('execSync(`git init --bare`, { cwd: remote });'), true);
+});
+
 // D1 - the blind spot that sent this parcel back. The guard recognised only
 // `'git'` as a quoted STRING argument, so it could not see the DOMINANT shape
 // in this corpus: a local wrapper function literally named `git`, where `git`
