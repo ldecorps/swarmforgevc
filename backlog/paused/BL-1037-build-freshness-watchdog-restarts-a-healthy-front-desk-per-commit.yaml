@@ -17,6 +17,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1037-the-build-freshness-watchdog-restarts-fewer-times-than-main-moves.feature
+human_approval: approved
 
 invariants:
   - "Staleness deferred is never staleness dropped: a commit the watchdog declines to restart for now is still owed a restart later."
