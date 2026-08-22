@@ -10,8 +10,8 @@ severity: medium
 # Not high: no live fault degrades behaviour; this is the evidence trail.
 status: todo
 epic: swarmforge-console
-priority: 32
-direction: human-requested
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -156,3 +156,4 @@ qa_e2e_procedure: |
   5. `grep -iE 'api[_-]?key|bot[_-]?token' .swarmforge/operator/cursor-bridge.log`
      prints nothing, and no prompt or reply text appears in the new lines.
   6. Send one healthy prompt and confirm the log gains no failure line for it.
+assigned_to: coder
