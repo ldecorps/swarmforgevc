@@ -46,7 +46,8 @@ run "$R" BL-567 --no-restart --override >/dev/null || true
 STORE_LINES="$(cat "$R"/.swarmforge/expedite-approvals/*.jsonl 2>/dev/null || true)"
 check "the run wrote exactly one verdict record" "$(grep -c . <<<"$STORE_LINES" | tr -d ' ')" "1"
 contains "the record names the QA stage, not whichever stage ran last" "$STORE_LINES" '"stage":"QA"'
-contains "the record carries the advancing verdict" "$STORE_LINES" '"verdict":"pass"'
+contains "the record carries the load-bearing approval flag - what the predicate keys on (D1)" "$STORE_LINES" '"approval":true'
+contains "the record also carries the human-readable verdict" "$STORE_LINES" '"verdict":"pass"'
 contains "the record names the ticket the run walked" "$STORE_LINES" '"ticket":"BL-567"'
 
 RECORDED_SHA="$(sed -E 's/.*"commit":"([0-9a-f]+)".*/\1/' <<<"$STORE_LINES")"

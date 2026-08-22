@@ -35,7 +35,13 @@
 
 (require '[babashka.fs :as fs]
          '[babashka.process :as process]
+         '[cheshire.core :as json]
          '[clojure.string :as str])
+
+;; The REAL writer, so the sweep's records are the ones production writes -
+;; never a hand-built JSON line that could agree with the reader while the
+;; writer disagrees with both (architect bounce D1, 2026-08-22).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "expedite_lib.bb")))
 
 (def predicate (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "is_qa_ancestor.sh")))
 (def failures (atom []))
@@ -90,10 +96,19 @@
   (fs/delete-tree store-dir)
   (when-not (= :absent state)
     (fs/create-dirs store-dir)
+    ;; Written through the REAL writer, and cycling the REAL vocabulary, so
+    ;; `forward` and `approved` ride this sweep too - the architect's D1 was
+    ;; that only "pass" was ever exercised end to end (2026-08-22).
     (spit (str store-file)
-          (str "{\"at\":\"2026-08-22T00:00:00Z\",\"ticket\":\"BL-1025\",\"stage\":\"QA\",\"verdict\":\""
-               (if (= :bouncing state) "bounce" "pass")
-               "\",\"commit\":\"" (subs sha 0 10) "\"}\n"))
+          (str (json/generate-string
+                (expedite-lib/qa-hat-verdict-record
+                 {:stage "QA"
+                  :verdict (if (= :bouncing state)
+                             (first (sort (map name expedite-lib/bounce-verdicts)))
+                             (nth (vec (sort (map name expedite-lib/advance-verdicts)))
+                                  (mod (hash sha) (count expedite-lib/advance-verdicts))))
+                  :ticket "BL-1025" :commit sha :at "2026-08-22T00:00:00Z"}))
+               "\n"))
     (when (= :unreadable state)
       (fs/set-posix-file-permissions store-file "---------"))))
 

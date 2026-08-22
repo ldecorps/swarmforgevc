@@ -157,11 +157,20 @@ if [[ -d "$EXPEDITE_DIR" ]]; then
       echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no commit field" >&2
       exit 2
     fi
-    if grep -v -E '^\{.*"verdict":"[a-zA-Z-]+".*\}$' "$f" | grep -q -E '.'; then
-      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no verdict field" >&2
+    if grep -v -E '^\{.*"approval":(true|false).*\}$' "$f" | grep -q -E '.'; then
+      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no approval field" >&2
       exit 2
     fi
-    # The advance vocabulary is expedite_lib.bb's own `advance-verdicts`.
+    # This side deliberately knows NOTHING about the verdict vocabulary.
+    # `approval` is the already-classified decision expedite_lib.bb's own
+    # `classify-verdict` computed, so `advance-verdicts` has exactly one
+    # spelling in this codebase and a fourth token added to it needs no
+    # second edit here. A hand-copied token list across this
+    # Babashka/bash boundary - which no import can bridge - is the hazard
+    # the Guardrails article names after BL-897, and the "kept in sync"
+    # comment that used to sit on this line is precisely what that rule
+    # says is not a gate. The record's `verdict` string is for a human
+    # reading the store; nothing below reads it.
     while IFS= read -r token; do
       [[ -n "$token" ]] || continue
       case "$FULL_SHA" in
@@ -170,7 +179,7 @@ if [[ -d "$EXPEDITE_DIR" ]]; then
           exit 0
           ;;
       esac
-    done < <(grep -E '"verdict":"(pass|forward|approved)"' "$f" \
+    done < <(grep -E '"approval":true' "$f" \
                | grep -oE '"commit":"[0-9a-fA-F]{7,40}"' \
                | sed -E 's/"commit":"([0-9a-fA-F]+)"/\1/')
   done
