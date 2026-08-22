@@ -517,6 +517,24 @@
   (assert= "bl582: an 8-arity caller never sees a stale-build transition" "running" (:status entry))
   (assert= "bl582: an 8-arity caller sees no build event" nil event))
 
+;; healthy-reset wins over an equally-eligible build-stale restart - same
+;; "two conditions eligible at once, cond order must not swap" shape as the
+;; BL-370 heartbeat-stale?/healthy-long-enough? test above, one clause over.
+;; check-one! tests build-freshness LAST specifically so a healthy-reset
+;; (bookkeeping, fires at most once per process) is never starved by a
+;; stale-build report on the same tick; the deferred report catches up next
+;; tick since the grace is measured in minutes. Without this test, a cond-
+;; order swap promoting the freshness clause ahead of healthy-reset would
+;; pass every other bl582/BL-370 assertion above undetected.
+(let [running-entry {:pid 4242 :attempts 1 :status "running" :crashed-at-ms nil :started-at-ms 1000
+                     :gave-up-at-ms nil :build-stale-since-ms 100000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one!
+                              running-entry 650000 alive? fixed-pid! build-cfg giveup-cfg false (fn [_] nil) true)]
+  (assert= "healthy-reset-vs-build-stale: healthy-reset wins, status stays running" "running" (:status entry))
+  (assert= "healthy-reset-vs-build-stale: attempts is reset to 0, not left untouched by a stale-build branch" 0 (:attempts entry))
+  (assert= "healthy-reset-vs-build-stale: the grace stamp is untouched - the freshness clause never ran this tick" 100000 (:build-stale-since-ms entry))
+  (assert= "healthy-reset-vs-build-stale emits :healthy-reset, never :build-stale" :healthy-reset event))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
