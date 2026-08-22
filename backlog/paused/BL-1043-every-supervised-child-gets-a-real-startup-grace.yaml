@@ -16,7 +16,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1043-every-supervised-child-gets-a-real-startup-grace.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "No supervisor declares a freshly spawned child stalled before that child has had one full startup grace in which to produce its first heartbeat - and no call site can opt out of that grace by accident."
