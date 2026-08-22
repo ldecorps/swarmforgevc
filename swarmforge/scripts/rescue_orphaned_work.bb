@@ -103,13 +103,19 @@
           (let [sha (str/trim (str (:out (git worktree "rev-parse" "--short=10" "HEAD"))))
                 branch (str/trim (str (:out (git worktree "rev-parse" "--abbrev-ref" "HEAD"))))
                 ;; 3. VERIFY by reading the content back OUT of the commit -
-                ;;    never by trusting its subject line.
+                ;;    never by trusting its subject line. A path the stash
+                ;;    DELETES is verified when it is absent from both the
+                ;;    commit and the disk, not by requiring it to exist: a
+                ;;    stash's orphaned work can itself be a deletion, and
+                ;;    `fs/exists?` would otherwise never pass for one -
+                ;;    retaining a correctly rescued deletion's source forever.
                 verified? (every? (fn [p]
                                     (let [in-commit (git worktree "show" (str sha ":" p))
                                           on-disk (str (fs/path worktree p))]
-                                      (and (git-ok? in-commit)
-                                           (fs/exists? on-disk)
-                                           (= (str (:out in-commit)) (slurp on-disk)))))
+                                      (if (git-ok? in-commit)
+                                        (and (fs/exists? on-disk)
+                                             (= (str (:out in-commit)) (slurp on-disk)))
+                                        (not (fs/exists? on-disk)))))
                                   changed)]
 
             ;; 4. RELEASE the source - guarded, never reached by falling through.
