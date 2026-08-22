@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { parseArgs, reportDateKey, runRoleBenchmarkCli, main } = require('../out/tools/run-role-benchmark');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 test('parseArgs rejects missing arguments', () => {
   assert.equal(parseArgs([]), null);
@@ -113,10 +114,7 @@ function mkBatteryRootWithCoderTask01() {
 
 function mkTargetRepo() {
   const root = mkTmpDir('sfvc-run-role-benchmark-target-');
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
-  execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: root });
+  copySeededRepoInto(root);
   return root;
 }
 

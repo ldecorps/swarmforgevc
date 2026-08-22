@@ -7,6 +7,7 @@ const { backfillEpicTopicIcons, formatBackfillEpicSummary, main } = require('../
 const { readSwarmIconId } = require('../out/concierge/blTopicStore');
 const { readBacklogTopicMap } = require('../out/concierge/backlogTopicMapStore');
 const { decideEpicTopicAction } = require('../out/concierge/topicRouter');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-449: the one-time backfill for the three pre-existing, hand-created
 // epic topics (147 Swarm Role Benchmarking, 149 Dynamic Routing, 151
@@ -24,10 +25,7 @@ function git(cwd, args) {
 
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   return target;
 }
 

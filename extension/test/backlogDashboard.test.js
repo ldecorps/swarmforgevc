@@ -15,6 +15,7 @@ const {
 const { computeDeliveryMetrics } = require('../out/metrics/deliveryMetrics');
 const { createTranslationSession } = require('../out/i18n/translate');
 const { emptyTranslationCache } = require('../out/i18n/translationCache');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function item(overrides = {}) {
   return { id: 'BL-100', title: 't', status: 'active', ...overrides };
@@ -323,9 +324,7 @@ function git(cwd, args, dateIso) {
 
 test('computeBacklogDashboard wires git history + current backlog state into one dashboard payload, matching the metrics CLI (dashboard-01/02)', () => {
   const repo = mkTmp();
-  git(repo, ['init', '-q']);
-  git(repo, ['config', 'user.email', 't@t']);
-  git(repo, ['config', 'user.name', 't']);
+  copySeededRepoInto(repo);
 
   mkdirp(path.join(repo, 'backlog', 'active'));
   fs.writeFileSync(path.join(repo, 'backlog', 'active', 'BL-101.yaml'), 'id: BL-101\ntitle: t\nstatus: active\nmilestone: M4\n');

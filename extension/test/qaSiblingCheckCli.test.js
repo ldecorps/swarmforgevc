@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/qa-sibling-check');
 const { readSiblingDeferralRecords } = require('../out/metrics/siblingDeferralStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function writeTicketYaml(root, folder, id, milestone) {
   const dir = milestone ? path.join(root, 'backlog', folder, milestone) : path.join(root, 'backlog', folder);
@@ -26,9 +27,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {

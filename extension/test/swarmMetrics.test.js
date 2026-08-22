@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   computeMeanTicketTime,
   computeBusyness,
@@ -37,9 +38,7 @@ function git(cwd, args, dateIso) {
 }
 
 function initRepo(dir) {
-  git(dir, ['init', '-q']);
-  git(dir, ['config', 'user.email', 't@t']);
-  git(dir, ['config', 'user.name', 't']);
+  copySeededRepoInto(dir);
 }
 
 // --- computeMeanTicketTime (BL-071 swarm-metrics-02) ---

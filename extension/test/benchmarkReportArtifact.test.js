@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { benchmarkReportPath, writeBenchmarkReport, commitBenchmarkReport } = require('../out/benchmark/reportArtifact');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkTmp() {
   return fs.realpathSync(mkTmpDir('sfvc-benchmark-artifact-'));
@@ -14,10 +15,7 @@ function git(cwd, args) {
 }
 function initRepo() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(root);
   return root;
 }
 

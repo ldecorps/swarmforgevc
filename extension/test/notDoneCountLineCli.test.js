@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatNotDoneCountLine, main } = require('../out/tools/not-done-count-line');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-263: the compiled not-done-count-line CLI is what briefing_email_lib.bb
 // shells out to (Babashka cannot import compiled TS) - reuses
@@ -38,9 +39,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {

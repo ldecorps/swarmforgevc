@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { parkCycleLogPath, resolveRoleWorktreePath } = require('../out/tools/park-cycle-report');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-343 hardening (BL-233 CLI-entrypoint CRAP trap): this CLI had zero
 // tests of any kind before this pass, so its wiring logic sat at 0%
@@ -54,10 +55,7 @@ test('resolveRoleWorktreePath returns null against an empty roster', () => {
 
 test('the compiled park-cycle-report CLI reports honestly-unmeasured on a fresh repo with no park-cycle log', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(root);
 
   mkdirp(path.join(root, '.swarmforge'));
   fs.writeFileSync(

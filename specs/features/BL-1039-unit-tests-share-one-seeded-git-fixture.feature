@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=58fd741c439dd884c02fe3778f218515a2e2d90400ee042567ac4af933abfc01
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T13:39:21.949845696Z","feature_name":"A unit-lane test takes its repository from one shared seeded fixture","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1039-unit-tests-share-one-seeded-git-fixture.feature","background_hash":"305de672ad820394ed6733d26df90bbf5ad9756e854439b6ccc35b1f05931f6d","implementation_hash":"unknown","scenarios":[{"index":3,"name":"one test's writes are never visible to another","scenario_hash":"5d31afbd605efdf33dafb61368bc0ea96cb7fce5b00712bdfd8c65429879b00e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T13:39:21.949845696Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A unit-lane test takes its repository from one shared seeded fixture
 
   Unit-lane test files shell out to real `git init` and then build real
