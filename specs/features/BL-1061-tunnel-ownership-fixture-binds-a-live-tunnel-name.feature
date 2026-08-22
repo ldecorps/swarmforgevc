@@ -5,10 +5,15 @@
 
 Feature: BL-1061 a tunnel-ownership fixture never binds a name the host is already serving
   The ownership property test drives the real reap edge, and that edge
-  enumerates the HOST process table with `pgrep -fl -- "run <name>"`. The
-  fixture launches its fake cloudflared under the literal production name
-  `swarmforge-bubble`, so any genuine tunnel of that name is both a false red
-  for the suite and a real process the suite's own reap is entitled to signal.
+  enumerates the HOST process table with `pgrep -fl -- "run <name>"`. Two
+  coupled defects meet there. The enumeration has never worked on a GNU
+  userland: `-l` prints the full argument list on BSD and the process NAME
+  alone on procps-ng, so `tunnel_decide_orphans` is handed `<pid> bash`,
+  matches no `run <name>` token pair, and selects nothing. Separately, a
+  fixture in a sibling property suite binds the literal production name
+  `swarmforge-bubble` - a binding the inert enumeration kept harmless.
+  Repairing the enumeration is precisely what would ARM a reap scoped to that
+  name to reach the operator's real tunnel, so the two cannot land apart.
   The hazard runs in both directions: the suite cannot pass while the operator's
   tunnel is up, and the operator's tunnel can be killed by the suite.
 

@@ -179,3 +179,5 @@ source: |
   Live probe re-verified by the specifier 2026-08-22 in the master checkout at
   449f5ac54: swarmPanel.ts:37/:388/:408, swarmMetrics.ts:89-90/:115-122/:158,
   794 recursive done .yaml files, ~0.128s per --follow walk.
+
+assigned_to: coder

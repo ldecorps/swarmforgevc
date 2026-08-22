@@ -1,5 +1,5 @@
 id: BL-1063
-title: "The nvm-PATH property test reads a marker file written by a BACKGROUNDED daemon with no wait at all - the read races the child on an idle host and the race widens under contention, which is the one file where 'flaky under worktree load' is the right diagnosis"
+title: "The nvm-PATH property test's invariant 1 is wrong twice over: it reads a BACKGROUNDED daemon's marker with no wait at all, and it then asserts node came from the fake nvm tree - which contradicts BL-796's own no-shadow invariant and is deterministically red on any host with a system node"
 milestone: M8
 type: defect
 severity: medium
@@ -17,6 +17,7 @@ required_wiring:
 
 invariants:
   - "Every assertion about a backgrounded child's side effect waits for that side effect under a bounded deadline, and returns as soon as it appears; no assertion reads a path the child may not have written yet."
+  - "An assertion tests the invariant it names, not one host's way of satisfying it: where a lib documents a fallback, the test accepts every branch the lib may legitimately take, and never asserts a branch the lib is required NOT to take."
 
 description: >
   `extension/test/bl796NvmNodePathFollowUpAdoptInvariants.property.test.js`,
@@ -50,9 +51,60 @@ description: >
   covers a defect in that helper's own inner deadline, so reuse should be a
   deliberate check rather than an assumption.
 
-  SCOPE. This test file's waits on backgrounded children. Not
+  --- THE SECOND DEFECT, same file, same property, same edit ---
+
+  Found by the architect 2026-08-22 and reproduced by the specifier before
+  minting. Invariant 1 carries a SECOND, independent defect, four lines below
+  the racing read:
+
+    assert.ok(lines[1].includes(path.join(home, '.nvm', 'versions', 'node')),
+      `expected node resolved from the fake nvm tree ...`)
+
+  The property is named "both bb and node RESOLVE, however minimal the caller
+  PATH". That is a claim about resolvability. The assertion instead demands
+  node resolve from the FAKE NVM TREE specifically - a claim about which
+  branch answered.
+
+  Those are not the same claim, and on this host they are opposites.
+  `callerPathArb` generates `/usr/bin:/bin`; this host has a real
+  `/usr/bin/node`. `operator_path_lib.sh` reaches nvm only as a fallback -
+  `if [ -z "$_node_dir" ]` - and its own comment states the rule: "a binary
+  the caller's PATH already resolves ... is never shadowed by a different
+  installation the curated/nvm fallback would otherwise find". So the lib
+  correctly returns `/usr/bin/node`, and the assertion fails.
+
+  **The test is red exactly BECAUSE the production code is correct.** The
+  assertion contradicts BL-796's own third invariant, which the same lib is
+  built to honour. Nothing is wrong in production; the fixture bound a host
+  fact - the absence of a system node, true on the nvm-only macOS box where
+  it was authored, false here. Same class as BL-1061 (fixture binds a live
+  tunnel name) and BL-1058 (BSD-only syntax, silently wrong on GNU).
+
+  Measured 2026-08-22: 3 runs, 3 failures, always invariant 1, shrunk to
+  `["/usr/bin:/bin", false]`. Deterministic - NOT the race above, whose
+  signature is the intermittent "expected the launched daemon to have run at
+  all". Here `resolvedLog` exists and holds both lines; the child ran.
+
+  WHY THE TWO CANNOT BE SPLIT. They sit in one property, and the race fix
+  alone cannot turn this file green on this host: repair the wait and the
+  deterministic assertion still fails on the next line. Shipping the race fix
+  by itself would leave the lane red and read as a failed fix - the next
+  person would re-diagnose it, or bounce a parcel that was correct. Both are
+  in scope here. Reviewers: the assertion repair is IN SCOPE and is not an
+  out-of-scope diff.
+
+  HOW (direction, not mandate). Assert what invariant 1 claims: that node
+  resolves at all. If the nvm fallback branch is worth its own coverage - it
+  is - drive it by generating a caller PATH on which node genuinely does not
+  resolve, so the branch is reached by construction rather than by luck about
+  the host. Do not assert a branch the lib is required not to take.
+
+  SCOPE. This test file's invariant-1 assertions: its wait on the backgrounded
+  child, and its over-specified assertion about where node resolved. Not
   `start_handoff_daemon.sh` itself - backgrounding the daemon is the behaviour
-  under test and correct. Not the other property files in the same report.
+  under test and correct. Not `operator_path_lib.sh`, which is correct as
+  written and must not be changed to satisfy a wrong assertion. Not the other
+  property files in the same report.
 
 qa_e2e_procedure: >
   1. At the parent commit, run
@@ -68,7 +120,21 @@ qa_e2e_procedure: >
   4. Confirm it returns early: with the marker written promptly, confirm the
   file's wall-clock is not inflated to the deadline - a fixed sleep would show
   up here. 5. Confirm no fixed sleep was introduced: grep the parcel diff for
-  added `sleep`/`setTimeout` constants used as synchronization.
+  added `sleep`/`setTimeout` constants used as synchronization. 6. For the second defect, confirm the
+  premise on this host first: `ls /usr/bin/node` must exist, since that is what
+  makes the old assertion red. At the parent commit run the file 3 times and
+  confirm 3 deterministic invariant-1 failures shrinking to
+  `["/usr/bin:/bin", false]` - deterministic, not intermittent, which is what
+  distinguishes it from the race. 7. At the parcel commit confirm the file
+  passes on THIS host, with a system node present and the caller PATH resolving
+  it. 8. Confirm the nvm fallback branch is still genuinely exercised, not
+  merely no longer asserted: force a caller PATH on which node does not resolve
+  and confirm the test still proves node came from the nvm tree there. 9.
+  Confirm `swarmforge/scripts/operator_path_lib.sh` is untouched by the parcel
+  diff - a change there would be the fix pointed at the wrong file. 10. Record
+  the degraded gate: the property lane is deliberately separate from unit
+  coverage and mutation (engineering.prompt, Design And Testability), so a
+  hardening pass must not imply mutation ran over it.
 
 notes: >
   PROVENANCE. QA `note` 00_20260822T134343Z_000879: "Property lane flaky under
@@ -87,7 +153,31 @@ notes: >
   wait, BL-1008 fixes a specific helper's deadline - but the implementer should
   read BL-1008 before reusing that helper.
 
-  IR-DRY: 0 findings; no normalization needed.
+  SECOND DEFECT PROVENANCE. Architect `note`
+  50_20260822T163408Z_000635 to specifier and coordinator: "BL-796 property
+  test regressed on this host (BL-1058 evidence) - a ticket?" - answered by
+  folding it here rather than minting a separate ticket, under the specifier's
+  Consolidation Authority (N:1). The word "regressed" is worth correcting for
+  the record: nothing regressed. The assertion has been wrong since it was
+  written and is red on any host with a system node; this host merely has one.
+  Reproduced by the specifier before amending - 3 runs, 3 deterministic
+  failures - and `operator_path_lib.sh` read at `main` to confirm the
+  production side is correct.
+
+  WHY FOLDED, NOT A NEW TICKET. Same file, same property, same function body:
+  two tickets would collide in one edit, would be barred from running
+  concurrently under Concurrent Work Orthogonality, and - decisively - the
+  race fix alone cannot turn the file green, so a separate race ticket would
+  ship looking failed. Still INVEST-small: two assertions in one test file,
+  mutation_cost unchanged at low.
+
+  IR-DRY: 0 findings at mint. On the amendment, 1 medium-confidence
+  possible-synonym between scenario 04's parameterized "a caller PATH on which
+  node <caller_resolves>" and scenario 06's "a caller PATH on which node does
+  not resolve" - real drift, since 06 was restating row 2 of 04. Resolved by
+  rewriting 06 around the property that is genuinely distinct: the file's
+  verdict must not depend on whether the HOST carries a system node, which is
+  the claim the second defect actually falsifies. Re-run clean: 0 findings.
 
 source: >
   QA note 00_20260822T134343Z_000879 to specifier (via coordinator).
