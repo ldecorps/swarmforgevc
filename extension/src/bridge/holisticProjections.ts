@@ -25,6 +25,21 @@ export function parseSwarmName(confContent: string): string {
   return parseConfigValue(confContent, 'swarm_name') ?? DEFAULT_SWARM_NAME;
 }
 
+// Hardener split (CRAP): the per-line parse was inlined into
+// readSwarmIdentityValue's loop, which alone pushed its cyclomatic complexity
+// to 7 (CRAP 7.00 at 100% coverage - coverage was never the problem, the
+// branch count was). Extracted as its own pure, behavior-preserving helper so
+// each function's CRAP is measured on its own branches, not the sum of both.
+function parseIdentityLine(line: string, key: string): string | undefined {
+  if (!line.trim()) return undefined;
+  const tab = line.indexOf('\t');
+  if (tab < 0) return undefined;
+  if (line.slice(0, tab) !== key) return undefined;
+  const value = line.slice(tab + 1).trim();
+  // An empty value is not a name - fall through rather than publish under "".
+  return value || undefined;
+}
+
 // BL-1010: the swarm-identity file swarmforge.sh's write_swarm_identity_file
 // actually writes - tab-separated `key<TAB>value` lines under .swarmforge/.
 // This is the file the launcher writes and the conf is not; reading only the
@@ -39,14 +54,8 @@ function readSwarmIdentityValue(targetPath: string, key: string): string | undef
     return undefined;
   }
   for (const line of content.split('\n')) {
-    if (!line.trim()) continue;
-    const tab = line.indexOf('\t');
-    if (tab < 0) continue;
-    if (line.slice(0, tab) === key) {
-      const value = line.slice(tab + 1).trim();
-      // An empty value is not a name - fall through rather than publish under "".
-      if (value) return value;
-    }
+    const value = parseIdentityLine(line, key);
+    if (value) return value;
   }
   return undefined;
 }
