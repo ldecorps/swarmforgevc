@@ -85,3 +85,46 @@ Human via Let's Talk (Cursor), 2026-08-22. Session thread: gradual
 inbox shrink after discussing BL-978 (scan fix without compaction) and
 rejecting a plain global size cap in favor of rolling archive-on-use /
 drip retention.
+
+---
+
+## Specifier working note — 2026-08-22, DO NOT DRAIN YET
+
+Read and triaged; **not yet minted**, deliberately. One clarifying question is
+outstanding via `role_ask.bb` (specifier topic), so this raw item stays in the
+backlog root until it is answered. Per BL-607 the specifier asks once and ends
+its turn — an unanswered ask is a park, not a stall.
+
+**Question asked (archive vs delete, one tap):** what happens to mail once it
+leaves the window — archive in-repo and still readable / archive to cold
+storage off the hot path / delete after the window. It was raised as ONE
+question because it settles open questions 2 and 6 together: whether older
+trails remain readable to the dropped-parcel and audit checks follows directly
+from where the mail goes. These are the two the intake itself marks as needing
+a human lock ("Durability / audit needs a clear answer", "human must lock
+this"); the rest are defaulted below rather than asked, since the intake says
+defaults are welcome.
+
+**Settled without asking (resume with these; they need no further input):**
+
+1. **What moves** — `inbox/completed/` and `*/sent/` only. `new/` and
+   `in_process/` are sacred per the intake's own firm lines.
+2. **Who runs it** — a bounded janitor tick on handoffd, not a role's dequeue
+   path: piggybacking on dequeue makes retention cost fall on whichever role
+   happens to read mail, and makes the pace untestable.
+3. **Window** — conf-tunable, default 14 days, per the human's stated lean.
+4. **Pace** — conf-tunable ceiling of files (or bytes) moved per tick, so the
+   first run over today's ~5900 files drains across many cycles rather than in
+   one pass. This is the "au fil de l'eau" requirement made checkable.
+
+**On resume:** take the tapped answer, write the ticket into `backlog/paused/`
+with a feature file, then remove THIS file from the backlog root so it is not
+processed twice. Write the YAML once and complete — the concierge bot commits
+and approves a new paused ticket within ~30s of the file appearing, so a
+half-written first draft can be approved before it is finished.
+
+**Classification to carry through:** feature / reliability hardening, ordinary
+queue priority, epic and milestone per the hygiene gate. Cite the BL-977/BL-978
+family as the follow-on it is; do NOT merge into BL-1066 (separate live CPU
+defect) and do not fold into the Boy Scout epic (BL-1013), which classifies
+repo debt and does not bound mailbox retention.
