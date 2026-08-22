@@ -322,6 +322,96 @@
          expedite-lib/default-stage-timeout-ms
          (:timeout-ms (expedite-lib/stage-timeout-verdict {:started-at-ms 0 :now-ms 1})))
 
+;; BL-1026. The assertion above compares the constant to itself, so it passes
+;; for ANY value and says nothing about where the boundary actually falls. The
+;; two below drive the boundary through the default the same way the explicit
+;; cases above drive it through 5000 - one ms under is not an overrun, exactly
+;; the default is. They stay red if the default is ever read as `>` rather than
+;; `>=`, or if the no-budget path stops reaching the constant at all.
+;;
+;; What holds the VALUE (90 minutes) is deliberately not here: pinning it would
+;; mint a sixth hand-mirrored copy of the constant. The value is held by the
+;; mirror gate below, against the four places that state it in prose.
+(assert-false "15 (BL-1026): one ms under the default is not an overrun when no budget is given"
+              (:overrun? (expedite-lib/stage-timeout-verdict
+                           {:started-at-ms 0 :now-ms (dec expedite-lib/default-stage-timeout-ms)})))
+(assert-true "15 (BL-1026): exactly the default IS an overrun when no budget is given (>= not >)"
+             (:overrun? (expedite-lib/stage-timeout-verdict
+                          {:started-at-ms 0 :now-ms expedite-lib/default-stage-timeout-ms})))
+(assert= "15 (BL-1026): an explicit budget under the default is the one reported, not the default"
+         {:overrun? true :elapsed-ms 360000 :timeout-ms 360000}
+         (expedite-lib/stage-timeout-verdict
+           {:started-at-ms 0 :now-ms 360000 :timeout-ms 360000}))
+
+;; ── BL-1026: the stated-budget mirror gate ────────────────────────────────
+;; The default is stated in four places OUTSIDE the code - two usage comments
+;; and two documents - and nothing gated them, so drift there was silent. These
+;; cases hold the pure half: what counts as a statement, and what counts as a
+;; disagreement. The gate is run against the REAL four sites at the end.
+
+(assert= "bl1026: a usage comment's `(default N min)` is read as a budget in ms"
+         [2700000]
+         (expedite-lib/budget-statements "#   --stage-timeout-ms N  per-stage budget (default 45 min)"))
+
+(assert= "bl1026: a doc stating BOTH the ms literal and the minutes yields both, so both are gated"
+         [2700000 2700000]
+         (expedite-lib/budget-statements
+           "| `--stage-timeout-ms` | integer | `2700000` (45 min) | Per-stage wall-clock budget. |"))
+
+(assert= "bl1026: a doc whose ms literal and minutes disagree with EACH OTHER yields both, so the pair cannot hide"
+         [5400000 2700000]
+         (expedite-lib/budget-statements "| `5400000` (45 min) |"))
+
+(assert= "bl1026: prose with no budget statement yields none (a bare minute count is not a budget)"
+         []
+         (expedite-lib/budget-statements "the run took 45 minutes and 45 min of that was the coder"))
+
+(assert= "bl1026: every site agreeing with the code produces no findings"
+         []
+         (expedite-lib/budget-mirror-findings
+           [{:site "a" :content "(default 90 min)"}
+            {:site "b" :content "| `5400000` (90 min) |"}]
+           5400000))
+
+(let [f (expedite-lib/budget-mirror-findings
+          [{:site "agrees" :content "(default 90 min)"}
+           {:site "drifted" :content "(default 45 min)"}]
+          5400000)]
+  (assert= "bl1026: exactly one disagreeing site is reported" 1 (count f))
+  (assert= "bl1026: and the finding NAMES the site that disagrees" "drifted" (:site (first f)))
+  (assert= "bl1026: and reports what it states against what the code says"
+           [2700000 5400000] [(:stated-ms (first f)) (:expected-ms (first f))]))
+
+(let [f (expedite-lib/budget-mirror-findings [{:site "silent" :content "no budget here"}] 5400000)]
+  (assert= "bl1026: a site that states NO budget is drift too - deleting the mention must not pass"
+           [1 "silent" :states-no-budget]
+           [(count f) (:site (first f)) (:reason (first f))]))
+
+(let [f (expedite-lib/budget-mirror-findings
+          [{:site "near-miss" :content "per-stage budget (default 90 minutes)"}]
+          5400000)]
+  (assert= "bl1026: a spelling the gate cannot read fails CLOSED - a site it cannot parse is reported, never silently passed"
+           [1 :states-no-budget] [(count f) (:reason (first f))]))
+
+(assert-true "bl1026: the report of a finding names the site a human must go fix"
+             (str/includes? (expedite-lib/format-budget-mirror-findings
+                              (expedite-lib/budget-mirror-findings
+                                [{:site "docs/reference/BL-567-expeditor-manual.md" :content "(default 45 min)"}]
+                                5400000))
+                            "docs/reference/BL-567-expeditor-manual.md"))
+
+;; The real gate, over the real four sites, against the real constant. This is
+;; the case that goes red when someone retunes the default and updates three of
+;; the four places - the drift this ticket exists to stop.
+(let [root (str (fs/parent (fs/parent (fs/parent (fs/parent (fs/canonicalize *file*))))))
+      findings (expedite-lib/budget-mirror-findings
+                 (expedite-lib/read-budget-mirrors root)
+                 expedite-lib/default-stage-timeout-ms)]
+  (assert= "bl1026: every place the expeditor states its default agrees with the code"
+           [] findings)
+  (assert= "bl1026: and all four stated sites were actually read (a gate over zero sites is vacuous)"
+           4 (count (expedite-lib/read-budget-mirrors root))))
+
 ;; ── BL-1025: the QA hat's verdict becomes machine-checkable ───────────────
 ;; An expedite run never advances swarmforge-QA (no live QA worktree with the
 ;; swarm stopped), so its commits read as "landed outside QA" to Article
