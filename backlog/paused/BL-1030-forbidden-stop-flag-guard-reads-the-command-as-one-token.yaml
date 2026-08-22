@@ -156,6 +156,13 @@ qa_e2e_procedure: |
      three flagged commands and `true` for the bare command.
 
 notes: |
+  2026-08-22 11:00 coordinator: open-slot nudge named this candidate a 3rd
+  time. Same pattern: slot filled before I acted, this time by BL-1039
+  (priority 9, ordinary ranking, no expedite involved) which simply beats
+  this ticket's priority 55 outright. Active back at cap (4/4). Will
+  re-evaluate at the next open slot; if this keeps recurring, the actual
+  fix is raising this ticket's own priority, not repeating this note.
+
   2026-08-22 10:16 coordinator: open-slot nudge named this candidate again.
   Same pattern as before - the slot was open when the nudge fired but had
   already been filled by the time I acted: BL-1032 (severity high, priority
