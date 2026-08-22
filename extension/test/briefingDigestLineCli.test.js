@@ -7,6 +7,12 @@ const { execFileSync } = require('node:child_process');
 const { sinceLastBriefingMs, formatMergedBlockedDigest, main } = require('../out/tools/briefing-digest-line');
 const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
+// BL-1038-EXEMPT: these two run the compiled CLI against the real repo to prove
+// the thin main() wrapper is genuinely wired - the CLI main()-thin-wrapper rule
+// this file's own header cites, which an in-process fixture run cannot check.
+// Every unit of the digest logic beneath it is covered by the fixture-driven
+// tests above, against mkTmpDir roots. The live read here is the wiring proof.
+
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'briefing-digest-line.js');
 
 function mkTmp() {

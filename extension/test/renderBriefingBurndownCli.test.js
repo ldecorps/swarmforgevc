@@ -6,6 +6,15 @@ const { renderBriefingBurndown, main } = require('../out/tools/render-briefing-b
 const { NOT_DONE_BURNDOWN_DIAGRAM_NAME } = require('../out/metrics/notDoneBurndownChart');
 const { serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
 
+// BL-1038-EXEMPT: the two tests below are labelled "smoke test against the real
+// repo" in their own titles and assert only that the no-snapshot FALLBACK path
+// still derives a diagram from real history. The derivation logic itself is
+// covered by the two fixture-snapshot tests in this same file, which stay fast
+// and are unaffected; pinning these two as well would leave nothing exercising
+// the real-repo fallback at all. This is the file's own recorded design
+// (BL-914/BL-969), not an accident, and both carry per-test timeout overrides
+// for exactly this reason.
+
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const NOW_MS = Date.parse('2026-08-15T15:00:00Z');
 
