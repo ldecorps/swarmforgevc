@@ -32,6 +32,39 @@ function lcsLength(a: string[], b: string[]): number {
   return prev[b.length];
 }
 
+function commonPrefixLength(a: string[], b: string[]): number {
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  return start;
+}
+
+function commonSuffixBounds(a: string[], b: string[], start: number): { endA: number; endB: number } {
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--;
+    endB--;
+  }
+  return { endA, endB };
+}
+
+/** How far a common prefix and a common suffix reach into `a`/`b`, so only the
+ * genuinely differing middle needs the expensive LCS pass. */
+function trimCommonEnds(a: string[], b: string[]): { start: number; endA: number; endB: number } {
+  const start = commonPrefixLength(a, b);
+  const { endA, endB } = commonSuffixBounds(a, b, start);
+  return { start, endA, endB };
+}
+
+/** Added plus removed lines within the already-trimmed differing middle. */
+function countDifferingMiddle(ra: string[], rb: string[]): number {
+  if (ra.length === 0) return rb.length;
+  if (rb.length === 0) return ra.length;
+  if (ra.length * rb.length > LCS_CELL_CAP) return ra.length + rb.length;
+  const common = lcsLength(ra, rb);
+  return ra.length - common + (rb.length - common);
+}
+
 /**
  * Added plus removed lines, the way `git diff --numstat` counts them.
  *
@@ -46,19 +79,6 @@ export function countChangedLines(before: string | null, after: string | null): 
   const a = before === null ? [] : splitLines(before);
   const b = after === null ? [] : splitLines(after);
 
-  let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  let endA = a.length;
-  let endB = b.length;
-  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
-    endA--;
-    endB--;
-  }
-  const ra = a.slice(start, endA);
-  const rb = b.slice(start, endB);
-  if (ra.length === 0) return rb.length;
-  if (rb.length === 0) return ra.length;
-  if (ra.length * rb.length > LCS_CELL_CAP) return ra.length + rb.length;
-  const common = lcsLength(ra, rb);
-  return ra.length - common + (rb.length - common);
+  const { start, endA, endB } = trimCommonEnds(a, b);
+  return countDifferingMiddle(a.slice(start, endA), b.slice(start, endB));
 }

@@ -161,6 +161,8 @@ Split along the same policy/IO seam BL-1014's `boyScoutScan.ts` used
   declared envelope, `PROPOSAL_PATH`, `NO_CLEAN_REASONS`
 - `extension/src/tools/boyScoutRun/measure.ts` — line/file-count
   measurement and the envelope check (pure)
+- `extension/src/tools/boyScoutRun/lineDiff.ts` — the LCS line-diff
+  algorithm `measure.ts` counts changed lines with (pure)
 - `extension/src/tools/boyScoutRun/assertionGuard.ts` — invariant 2's
   per-language assertion-preservation check (pure)
 - `extension/src/tools/boyScoutRun/gates.ts` — the declared gate set and

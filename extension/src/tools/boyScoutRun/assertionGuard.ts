@@ -47,6 +47,39 @@ export function assertionLines(text: string): string[] {
 }
 
 /**
+ * Whether `after`'s assertion lines are a strict multiset SUBSET-match
+ * failure against `before`'s: some assertion line `before` had is not
+ * accounted for in `after`, at the same multiplicity.
+ *
+ * A multiset, not a set: a test that asserted something twice and now
+ * asserts it once HAS had an assertion removed.
+ */
+function buildMultiset(lines: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const line of lines) {
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** True the moment an assertion line from `had` has no remaining copy in `remaining` — depletes as it checks. */
+function hasUnaccountedLine(had: string[], remaining: Map<string, number>): boolean {
+  for (const line of had) {
+    const left = remaining.get(line) ?? 0;
+    if (left === 0) return true;
+    remaining.set(line, left - 1);
+  }
+  return false;
+}
+
+function editRemovesAnAssertion(before: string, after: string): boolean {
+  const had = assertionLines(before);
+  if (had.length === 0) return false;
+  const remaining = buildMultiset(assertionLines(after));
+  return hasUnaccountedLine(had, remaining);
+}
+
+/**
  * The offending edit, or null when every existing test assertion survives.
  *
  * Deliberately conservative in one direction: renaming a symbol that appears
@@ -60,20 +93,7 @@ export function assertionsWouldChange(edits: FileEdit[], currentOf: CurrentConte
     if (!isTestPath(edit.path)) continue;
     const before = currentOf(edit.path);
     if (before === null) continue; // a brand-new test file has nothing to preserve
-    const had = assertionLines(before);
-    if (had.length === 0) continue;
-
-    const remaining = new Map<string, number>();
-    for (const line of assertionLines(edit.after ?? '')) {
-      remaining.set(line, (remaining.get(line) ?? 0) + 1);
-    }
-    for (const line of had) {
-      const left = remaining.get(line) ?? 0;
-      // A multiset, not a set: a test that asserted something twice and now
-      // asserts it once HAS had an assertion removed.
-      if (left === 0) return edit;
-      remaining.set(line, left - 1);
-    }
+    if (editRemovesAnAssertion(before, edit.after ?? '')) return edit;
   }
   return null;
 }
