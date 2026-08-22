@@ -6,6 +6,16 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { renderBriefingDiagrams, main } = require('../out/tools/render-briefing-diagrams');
 
+// BL-1038-EXEMPT: the signal IS the live read. These two tests render the REAL
+// maintained docs/diagrams/*.mmd - in-process and again through the compiled
+// CLI as a subprocess - and exist to catch a maintained diagram that has
+// stopped rendering. Pinning copies of the .mmd files would leave the guard
+// green while the real diagrams silently broke, which is the one failure this
+// file is for. Its cost is set by mermaid + resvg rendering two named files,
+// not by the repository's size or history depth: adding commits or files to
+// this repo does not make it slower. Named in the ticket's own
+// approval_context as the legitimate exemption case.
+
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const FIXTURE_MMD = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample-diagram.mmd'), 'utf8');
 
