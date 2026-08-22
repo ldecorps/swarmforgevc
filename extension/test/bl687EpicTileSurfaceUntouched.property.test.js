@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { startBridge } = require('../out/bridge/bridgeServer');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { copyScriptClosure } = require('./helpers/pinnedRepoFixture');
 
 const TOKEN = 'bl687-invariant3-token';
 
@@ -36,12 +37,18 @@ function mkFixtureRoot() {
   execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
-  for (const name of fs.readdirSync(repoScriptsDir)) {
-    if (name.endsWith('.bb')) {
-      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
-    }
-  }
+  // BL-1038: copy the load-file CLOSURE of the entry points this fixture
+  // actually invokes, not the whole live scripts directory. That directory
+  // holds 208 .bb files (2.16MB) and grows every day, so the old copy made
+  // every fixture build slower forever with no test added and no code
+  // changed - the growth term behind four budget raises in four days.
+  // commit_integrity_cli.bb's closure is 11 files, and it grows only with
+  // that CLI's own dependencies, never with the repository.
+  copyScriptClosure(
+    path.join(__dirname, '..', '..', 'swarmforge', 'scripts'),
+    scriptsDir,
+    ['commit_integrity_cli.bb']
+  );
   return root;
 }
 
