@@ -46,8 +46,8 @@ SELF_REPORT_SHA="$(mk_commit d.js 'BL-999: landed via an expedite run, approved 
 STORE_DIR="$ROOT/.swarmforge/expedite-approvals"
 mkdir -p "$STORE_DIR"
 {
-  printf '{"at":"2026-08-22T00:00:00Z","ticket":"BL-1021","stage":"QA","verdict":"pass","commit":"%s"}\n' "${APPROVED_SHA:0:10}"
-  printf '{"at":"2026-08-22T00:01:00Z","ticket":"BL-1021","stage":"QA","verdict":"bounce","commit":"%s"}\n' "${BOUNCED_SHA:0:10}"
+  printf '{"at":"2026-08-22T00:00:00Z","ticket":"BL-1021","stage":"QA","approval":true,"verdict":"pass","commit":"%s"}\n' "${APPROVED_SHA:0:10}"
+  printf '{"at":"2026-08-22T00:01:00Z","ticket":"BL-1021","stage":"QA","approval":false,"verdict":"bounce","commit":"%s"}\n' "${BOUNCED_SHA:0:10}"
 } > "$STORE_DIR/2026-08.jsonl"
 
 run_predicate() { # <sha> -> sets OUT and EXIT_CODE
@@ -95,7 +95,7 @@ printf 'not json at all\n' >> "$STORE_DIR/2026-08.jsonl"
 run_predicate "$APPROVED_SHA"
 check "a CORRUPT record line makes the whole store undeterminable, never a silent approval" \
   "[[ $EXIT_CODE -ne 0 && $EXIT_CODE -ne 1 ]]"
-printf '{"at":"2026-08-22T00:00:00Z","ticket":"BL-1021","stage":"QA","verdict":"pass","commit":"%s"}\n' "${APPROVED_SHA:0:10}" > "$STORE_DIR/2026-08.jsonl"
+printf '{"at":"2026-08-22T00:00:00Z","ticket":"BL-1021","stage":"QA","approval":true,"verdict":"pass","commit":"%s"}\n' "${APPROVED_SHA:0:10}" > "$STORE_DIR/2026-08.jsonl"
 
 # An obstructed store directory is undeterminable too.
 rm -rf "$STORE_DIR"
@@ -117,11 +117,59 @@ check "a commit a live QA agent merged still reads approved with no expedite rec
 mkdir -p "$ROOT/.swarmforge/bounces" "$ROOT/.swarmforge/expedite-approvals"
 printf '{"at":"2026-08-22T00:02:00Z","commit":"%s","by":"QA","role":"coder","failure_class":"correctness","ticket":"BL-1021"}\n' "${LIVE_SHA:0:10}" \
   > "$ROOT/.swarmforge/bounces/2026-08.jsonl"
-printf '{"at":"2026-08-22T00:03:00Z","ticket":"BL-1021","stage":"QA","verdict":"pass","commit":"%s"}\n' "${LIVE_SHA:0:10}" \
+printf '{"at":"2026-08-22T00:03:00Z","ticket":"BL-1021","stage":"QA","approval":true,"verdict":"pass","commit":"%s"}\n' "${LIVE_SHA:0:10}" \
   > "$ROOT/.swarmforge/expedite-approvals/2026-08.jsonl"
 run_predicate "$LIVE_SHA"
 check "a QA BOUNCE still vetoes, even with BOTH ancestry and an expedite approval on file (BL-952 survives)" \
   "[[ $EXIT_CODE -eq 1 ]]"
+
+# ── D1 (architect bounce 2026-08-22): the reader must not re-derive the
+#    writer's verdict vocabulary. The two live in different languages with no
+#    import across the boundary, so a hand-copied token list drifts silently -
+#    the hazard the Guardrails article names after BL-897, and the reason a
+#    "kept in sync" comment is not a gate. This is that gate.
+#
+#    Structural, and in BOTH directions: the predicate must name none of the
+#    verdict tokens, and the writer's vocabulary must remain plural (a
+#    one-token set would make the whole class of drift untestable).
+VOCAB="$(bb -e '
+(require (quote [babashka.fs :as fs]))
+(load-file "'"$SCRIPT_DIR"'/../expedite_lib.bb")
+(println (clojure.string/join " " (map name (concat expedite-lib/advance-verdicts expedite-lib/bounce-verdicts))))')"
+check "the writer's vocabulary is non-empty (a gate over an empty set proves nothing)" \
+  "[[ -n \"\$(printf '%s' \"$VOCAB\" | tr -d '[:space:]')\" ]]"
+
+leaked=""
+for tok in $VOCAB; do
+  if grep -qE "\"$tok\"|\($tok\||\|$tok\)|\|$tok\|" "$PREDICATE"; then
+    leaked="$leaked $tok"
+  fi
+done
+check "the predicate re-derives NO verdict token - the vocabulary has exactly one spelling, in expedite_lib.bb (BL-897/D1)" \
+  "[[ -z \"$leaked\" ]]"
+
+# And the positive half: EVERY advance token, driven through the REAL writer,
+# produces a record the REAL predicate reads as approved. The first draft only
+# ever exercised "pass"; `forward` and `approved` were never tested end to end,
+# which is exactly what let the mirrored regex look correct.
+for tok in $(bb -e '
+(require (quote [babashka.fs :as fs]))
+(load-file "'"$SCRIPT_DIR"'/../expedite_lib.bb")
+(println (clojure.string/join " " (map name expedite-lib/advance-verdicts)))'); do
+  VSHA="$(mk_commit "adv-$tok.js" "work advanced with the $tok verdict")"
+  mkdir -p "$STORE_DIR"
+  bb -e '
+(require (quote [babashka.fs :as fs]) (quote [cheshire.core :as json]))
+(load-file "'"$SCRIPT_DIR"'/../expedite_lib.bb")
+(spit "'"$STORE_DIR"'/2026-08.jsonl"
+      (str (json/generate-string
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :'"$tok"' :ticket "BL-1025"
+              :commit "'"$VSHA"'" :at "2026-08-22T00:00:00Z"})) "\n"))'
+  run_predicate "$VSHA"
+  check "the REAL writer's '$tok' verdict is read as approved by the REAL predicate (end to end, no hand-written record)" \
+    "[[ $EXIT_CODE -eq 0 ]]"
+done
 
 if [[ $fail -ne 0 ]]; then
   note "FAILED"

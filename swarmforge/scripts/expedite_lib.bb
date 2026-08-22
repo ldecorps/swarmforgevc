@@ -178,6 +178,17 @@
       {:at (str at)
        :ticket (str ticket)
        :stage "QA"
+       ;; BL-1025 (architect bounce D1): `approval` is the LOAD-BEARING
+       ;; field - the already-classified decision, so the reader
+       ;; (is_qa_ancestor.sh, a different language with no import across the
+       ;; boundary) never re-derives `advance-verdicts` as a hand-copied
+       ;; literal. That mirroring is the exact hazard the Guardrails article
+       ;; names after BL-897, and a "kept in sync" comment is not a gate.
+       ;; The vocabulary now has exactly one spelling, here; a fourth advance
+       ;; token added to advance-verdicts needs no second edit anywhere.
+       :approval (= :advance class)
+       ;; `verdict` stays for a human reading the store, and is deliberately
+       ;; NOT what the predicate keys on.
        :verdict (-> verdict name str/lower-case)
        :commit (subs sha 0 (min approval-commit-width (count sha)))})))
 
