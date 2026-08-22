@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: code-quality-gates
-assigned_to: specifier
+assigned_to: coder
 priority: 20
 direction: normal
 depends_on: []
@@ -109,6 +109,35 @@ notes: |
   current finding is a TRUE positive (BL-1033), so it is NOT re-scoped here -
   noted only so a reader does not assume both guards are wrong.
 
+  ## Specifier pass 2026-08-22 - no spec work; handed on
+
+  The promotion chokepoint routes on `assigned_to`, and
+  `promotion_gates_lib.bb`'s `route-target` NEVER rewrites the value
+  `specifier` - it is a deliberate "the specifier holds this first" signal.
+  This ticket carried it from mint as an inert default, so
+  `route_backlog_to_coder.sh` sent the specifier a `Work BL-1032` note for a
+  ticket that was already fully specced and human-approved (`c83441f9f`,
+  relaying the operator's confirmation of the proposed direction).
+
+  Verified before handing on, rather than assumed:
+
+  - The spec is complete and the open decision is closed. The recommendation
+    in `approval_context` - scope by HAZARD, not by the quoted token - is what
+    the operator approved, and the feature file already encodes it, including
+    the PATH-stub row that keeps `bl958ControlPlaneLossSteps.js` in scope.
+  - The feature file is tracked and parses cleanly through
+    `gherkin_lint_gate.sh`.
+  - The defect still reproduces at HEAD: `tmuxReaperGuard.js:35` still reads
+    `const STARTS_TMUX_SERVER = /['"]new-session['"]/;`, and
+    `bl1018SingleRoleRepairNeverKillsServerSteps.js` still contains two
+    `new-session` occurrences with no `fixtureReaper` require. The ticket is
+    not stale.
+
+  `assigned_to` set to `coder` so the router can move it - without that edit
+  the ticket routes back to the specifier on every sweep. Nothing about the
+  contract changed; this is the specifier releasing its hold, not an
+  amendment. Coder: no need to merge anything for this note.
+
 description: |
   ## What
 
@@ -167,3 +196,4 @@ qa_e2e_procedure: |
      any failure separately tracked by BL-1033, and record which.
   7. Confirm the acceptance feature runs via specs/pipeline/cli.js, including
      scenario 03's second Then over the committed tree.
+
