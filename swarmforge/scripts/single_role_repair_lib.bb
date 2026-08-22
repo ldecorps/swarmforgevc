@@ -25,19 +25,16 @@
 ;;   single-role-repair-lib/resolve-single-role-repair opts
 
 (ns single-role-repair-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
 
 (defn- blank? [v] (str/blank? (str v)))
 
-;; A launch-script path is filesystem-backed and cannot assume it never
-;; contains an apostrophe (a macOS home directory like /Users/O'Brien/...
-;; is a real shape, not a hypothetical). tmux runs the resolved shell-command
-;; string via `$SHELL -c <string>`, so the string itself must be valid POSIX
-;; shell syntax - a bare wrap-in-single-quotes breaks the instant the wrapped
-;; text contains one. Standard POSIX escape: close the quote, emit an
-;; escaped literal quote, reopen the quote.
-(defn- shell-quote-single [s]
-  (str "'" (str/replace (str s) "'" "'\\''") "'"))
+;; BL-1029: the quoting helper this lib introduced now lives in
+;; shell_quote_lib.bb, so every respawn site in the tree shares ONE
+;; definition. A second copy here is the defect coming back.
 
 ;; Every command starts here. Nothing in this lib builds a tmux invocation any
 ;; other way, so "names the pack socket explicitly" is a property of the one
@@ -72,7 +69,7 @@
     (blank? session) {:status :no-session-name :commands []}
     (blank? launch-script) {:status :no-launch-script :commands []}
     :else
-    (let [launch (str "zsh " (shell-quote-single launch-script))
+    (let [launch (shell-quote-lib/launch-command launch-script)
           env (vec env-args)]
       {:status :ok
        :commands

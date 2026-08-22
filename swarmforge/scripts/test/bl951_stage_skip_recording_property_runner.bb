@@ -131,6 +131,23 @@
         ri (.indexOf canonical recipient)]
     (vec (subvec canonical (inc si) ri))))
 
+;; BL-991 amendment. BL-951 was deliberately "visible but not prevented": its
+;; invariant 2 asserted that a coder->QA hop is DELIVERED as addressed in
+;; every declaration state. The operator has since ruled the declaration
+;; binding, so on the :full-chain root a forward hop is redirected to the
+;; first declared stage after the sender - which for a full chain is always
+;; the sender's immediate successor. :absent and :invalid both resolve to
+;; default-full, where sender judgement still stands, so they are untouched
+;; and BL-951's own point still has two live states to make it in.
+;;
+;; The oracles below are computed here rather than read back from the code
+;; under test, so this file still fails if the router stops obeying either
+;; rule.
+(defn oracle-delivered [state sender recipient]
+  (if (= :full-chain state)
+    (nth canonical (inc (.indexOf canonical sender)))
+    recipient))
+
 ;; Bounded generated sample: every run picks a random forward pair; every
 ;; declaration state is sent for that same pair and compared. Reachability
 ;; floors asserted for the non-empty-between shape and the invalid state's
@@ -148,30 +165,41 @@
         results (into {} (for [state [:absent :invalid :full-chain]]
                            [state (send! state sender recipient)]))]
     (when (seq between) (swap! nonempty-between-reached inc))
-    ;; invariant 2: delivery unchanged in every state
+    ;; invariant 2, as BL-991 amended it: delivery is unchanged wherever the
+    ;; declaration is not usable, and bound to the next declared stage where
+    ;; it is.
     (doseq [[state {:keys [to]}] results]
-      (assert-true (str "invariant 2: " sender "->" recipient " " state " delivers to the literal recipient")
-                   (= recipient to)))
-    ;; invariant 1: identical skipped list across states (or identically none)
+      (assert-true (str "invariant 2: " sender "->" recipient " " state " delivers to "
+                        (oracle-delivered state sender recipient) ", got " to)
+                   (= (oracle-delivered state sender recipient) to)))
+    ;; invariant 1: the two default-full states record identically to each
+    ;; other. :full-chain no longer belongs in that comparison - it takes a
+    ;; different hop now, so a different (and correct) skip list.
     (let [skipped-of (fn [{:keys [log-lines]}] (mapv :skipped log-lines))
-          base (skipped-of (:full-chain results))]
-      (doseq [state [:absent :invalid]]
-        (assert-true (str "invariant 1: " sender "->" recipient " " state " records the same skips as full-chain " base)
-                     (= base (skipped-of (get results state)))))
+          base (skipped-of (:absent results))]
+      (assert-true (str "invariant 1: " sender "->" recipient " invalid records the same skips as absent " base)
+                   (= base (skipped-of (:invalid results))))
+      ;; BL-991: a bound hop lands on the sender's immediate successor in a
+      ;; full chain, so it passes over nothing and correctly records nothing.
+      (let [full (:full-chain results)]
+        (assert-true (str "invariant 1: " sender "->" recipient " full-chain's bound hop skips nothing, so records nothing")
+                     (and (nil? (:header full)) (empty? (:log-lines full)))))
       (if (seq between)
         (do
-          (doseq [[state {:keys [header log-lines]}] results]
-            (assert-true (str "invariant 1: " sender "->" recipient " " state " has header AND exactly one log line")
-                         (and header (= 1 (count log-lines))
-                              (= between (:skipped (first log-lines))))))
+          (doseq [state [:absent :invalid]]
+            (let [{:keys [header log-lines]} (get results state)]
+              (assert-true (str "invariant 1: " sender "->" recipient " " state " has header AND exactly one log line")
+                           (and header (= 1 (count log-lines))
+                                (= between (:skipped (first log-lines)))))))
           (let [inv (:invalid results)]
             (when (some :rejection-reason (:log-lines inv))
               (swap! rejection-carried-reached inc))
             (assert-true (str "invalid declaration carries its rejection reason " sender "->" recipient)
                          (some :rejection-reason (:log-lines inv)))))
-        (doseq [[state {:keys [header log-lines]}] results]
-          (assert-true (str "adjacent hop records nothing in " state)
-                       (and (nil? header) (empty? log-lines))))))))
+        (doseq [state [:absent :invalid]]
+          (let [{:keys [header log-lines]} (get results state)]
+            (assert-true (str "adjacent hop records nothing in " state)
+                         (and (nil? header) (empty? log-lines)))))))))
 
 (when (zero? @nonempty-between-reached)
   (swap! failures conj "FAIL reachability: no generated hop had a non-empty between set"))
