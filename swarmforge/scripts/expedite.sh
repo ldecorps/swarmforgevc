@@ -13,7 +13,7 @@
 # Options are passed through to expedite_cli.bb:
 #   --override            proceed despite a live swarm the stop could not clear
 #   --bounce-bound N      per-stage bound (default 3; a raise is always recorded)
-#   --stage-timeout-ms N  per-stage budget (default 45 min)
+#   --stage-timeout-ms N  per-stage budget (default 90 min)
 #   --no-restart          skip the final restart phase
 #   --dry-run             plan and print; touch nothing
 #
