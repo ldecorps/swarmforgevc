@@ -14,6 +14,7 @@
 
 (ns single-role-repair-lib-test-runner
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "single_role_repair_lib.bb")))
@@ -99,6 +100,32 @@
                 bad))]
     (assert-true (str "refusal (" label "): status is a refusal, never :ok") (not= :ok status))
     (assert= (str "refusal (" label "): resolves to NO commands at all") [] (vec commands))))
+
+;; ── scenario 04: a launch script containing an apostrophe still resolves to
+;; valid shell syntax (hardening 2026-08-22) ───────────────────────────────
+;; A launch-script path is filesystem-backed and cannot assume it never
+;; contains an apostrophe (a macOS home directory like /Users/O'Brien/... is
+;; a real shape, not a hypothetical). Wrapped in single quotes without
+;; escaping, this exact string breaks: confirmed live,
+;; `sh -c "echo zsh '/repo/it's/launch/r.sh'"` exits 2 ("unexpected EOF
+;; looking for matching ''"). A substring check on the raw launch-script text
+;; cannot see this - it still "contains" the path either way - so this
+;; asserts by running the resolved argument through a REAL shell and reading
+;; back what comes out, not by inspecting the string.
+(let [tricky-launch "/repo/it's/launch/r.sh"
+      {:keys [status commands]}
+      (single-role-repair-lib/resolve-single-role-repair
+       {:socket socket :role "specifier" :session session
+        :launch-script tricky-launch :env-args env-args :session-present? false})]
+  (assert= "04: resolves cleanly even with an apostrophe in the launch path" :ok status)
+  (let [last-arg (str (last (first commands)))
+        quoted (when (str/starts-with? last-arg "zsh ") (subs last-arg (count "zsh ")))
+        {:keys [exit out]} (when quoted (process/sh {:continue true} "sh" "-c" (str "printf '%s' " quoted)))]
+    (assert-true "04: the resolved command carries a quoted launch argument" (some? quoted))
+    (assert= "04: the quoted argument is valid POSIX shell syntax (round-trips through a real shell)"
+             0 exit)
+    (assert= "04: the recovered path exactly matches the original launch-script - the apostrophe survived escaping intact"
+             tricky-launch out)))
 
 ;; ── env args are optional, never a crash ─────────────────────────────────
 (let [{:keys [status commands]}
