@@ -1,10 +1,12 @@
 Feature: A unit-lane test takes its repository from one shared seeded fixture
 
-  Fourteen unit-lane test files shell out to real `git init` and then build
-  real commits, most of them once per scenario. Measured 2026-08-22 they cost
-  144.2s of the lane's 533.8s of summed work, and six of them are among the
-  nineteen files breaching BL-378's per-file 7000ms budget - which is why
-  that gate cannot return green while this family exists.
+  Unit-lane test files shell out to real `git init` and then build real
+  commits, most of them once per scenario. Measured 2026-08-22 the family cost
+  a large fraction of the lane's 533.8s of summed work, and several of its
+  files are among the nineteen breaching BL-378's per-file 7000ms budget -
+  which is why that gate cannot return green while this family exists. The
+  scope is the OPERATION, not any file count: the guard's own scan over the
+  test directory is the authority on which files are in it.
 
   One repository fixture is seeded per run and each caller gets an
   independent working copy of it. The sharing is the whole saving and also
@@ -69,3 +71,10 @@ Feature: A unit-lane test takes its repository from one shared seeded fixture
     When the unit lane runs
     Then the recorded test count is not lower than before
     And no test file has been deleted, skipped, or added to an exclude glob
+
+  # BL-1039 unit-tests-share-one-seeded-git-fixture-07
+  Scenario: the guard is armed over the whole unit lane, not just a sample
+    Given the whole unit-lane test directory as the guard's subject
+    When the guard scans it
+    Then no unexempted file is named
+    And every exempted file records the repository shape it needs

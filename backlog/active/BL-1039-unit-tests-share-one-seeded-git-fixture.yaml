@@ -18,6 +18,8 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1039-unit-tests-share-one-seeded-git-fixture.feature
+required_wiring:
+  - 'extension/test/repoCreationGuard.test.js::findRepoCreations::the lane-level scan needs a caller on every npm test or invariant 1 is never checked'
 human_approval: approved
 
 invariants:
@@ -131,6 +133,70 @@ description: |
     repository as their subject - which is BL-1038. The two file sets do not
     overlap.
 
+  ## AMENDMENT 2026-08-22 (second) - the scope is the OPERATION, not the table
+
+  A coder note - "BL-1039 partial: 7 of 21 converted; 16 bespoke shapes
+  remain, not exempted" - exposed a defect in this ticket, and the defect is
+  mine rather than the parcel's.
+
+  **The cost table measured; it never bounded.** This ticket's scope reads as
+  a list of files carrying measured seconds, but invariant 1 and the guard are
+  both written as an OPERATION - creating a repository. Those two do not
+  describe the same set. Run against the live lane the guard names **21**
+  files, and five of them appear nowhere in this ticket: `config.test.js`,
+  `prCreator.test.js`, `traceHopCli.test.js`, `traceHopMain.test.js` and
+  `workTree.test.js`. They are cheap, which is why the profile never surfaced
+  them - and cheapness was never the boundary. They are in scope.
+
+  There is no coherent middle. A guard narrowed back to the measured family
+  would have to carry a file list, which is precisely the collision the first
+  amendment forbade one concern earlier.
+
+  **Re-measure from the guard, not from any figure here.** 14, 17 and 21 all
+  appear in this ticket's history now. The live `findRepoCreations` scan is
+  the authority; quote it rather than carrying a number forward.
+
+  ## The fixture must offer the shapes its callers need
+
+  "Bespoke" is a fair report, and blanket conversion would be wrong. The
+  helper as built seeds ONE shape - initialized, identity set, one empty
+  commit - and some remaining callers need a different one:
+
+  - **A repository with no commits.** `config.test.js` exercises
+    `initializeTargetRepo` against a freshly-initialized target repo. Seeding
+    an unrelated commit into it changes the subject under test rather than
+    just its setup, and that file's `git log` assertion reads the history it
+    would pollute.
+  - **A pinned initial branch.** `pilotAcceptanceGateCli.test.js` runs `git
+    init -q -b main`. The template currently inherits the HOST's
+    `init.defaultBranch`, which makes the fixture itself host-dependent - pin
+    the template's branch name regardless of what else changes here.
+
+  Add the variants those callers need. Handing a caller a repository of the
+  wrong shape is a coverage loss dressed as a speed win, which invariant 3
+  already forbids.
+
+  ## Exemption stays narrow, and the guard must actually run
+
+  An exemption remains available. Its recorded reason must name the repository
+  SHAPE the shared fixture cannot serve - never effort, volume, or "converted
+  later". A reason of that second kind is a deferral marker frozen into a
+  durable file, and BL-1006 is the incident for exactly that.
+
+  **The guard is presently unwired.** `findRepoCreations` - the whole-directory
+  scan, the part that makes invariant 1 checkable - has no caller outside the
+  acceptance steps and the property test. As it stands this ticket could ship
+  green having armed nothing: the BL-419 shape. The siblings already show the
+  convention - `liveRepoDerivationGuard.test.js` runs the scan over the test
+  directory and asserts the violation list is empty, on every `npm test`. Do
+  the same here.
+
+  That assertion is also why this ticket does not split. A split would either
+  leave the gate red until the last slice landed, or arm it against a
+  hand-kept residue - the two failures this ticket exists to avoid. The slice
+  has grown past the one sitting I declared at mint; I am recording that
+  rather than pretending otherwise.
+
 qa_e2e_procedure: >
   1. At the parent commit, run the unit lane to completion in the QA
      worktree and keep its `.vitest-report.json`. Record `uptime` load before
@@ -163,6 +229,14 @@ qa_e2e_procedure: >
      parent and confirm no test file was deleted, no test skipped, no exclude
      glob widened, and that the newly recorded `test_count` in
      `.test-durations.jsonl` is not lower than the previous row's.
+
+  8. Confirm the guard is WIRED, not merely present. Run the unit lane at the
+     parcel commit and confirm `repoCreationGuard.test.js` actually executed
+     and that it scans the whole test directory rather than a fixture string.
+     Then confirm the live `findRepoCreations` scan returns an empty list, and
+     that every exempted file records a reason naming the repository shape the
+     shared fixture cannot serve. An exemption reason citing effort, volume or
+     a later ticket fails this step.
 
 approval_context: >
   The second half of the answer to your "this is not acceptable" on the
