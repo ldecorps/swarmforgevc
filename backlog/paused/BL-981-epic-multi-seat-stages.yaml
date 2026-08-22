@@ -6,7 +6,7 @@ type: epic
 epic: multi-seat-stages
 priority: 25
 depends_on: []
-decomposes_into: [BL-982, BL-983, BL-1001, BL-1004]
+decomposes_into: [BL-982, BL-983, BL-1001, BL-1004, BL-1040]
 
 remaining_slices:
   - "Difficulty-aware routing among seats of a stage: map a ticket difficulty
@@ -17,9 +17,15 @@ remaining_slices:
      operator ruled on the seat/tier mapping (coder1 = the `coder` seat, Fable,
      takes hard work) and the specifier answered wait-vs-spill asymmetrically
      (hard waits and never spills down; easy may spill up)."
-  - "Supervisor / chase / ensure / board / stage-dwell treat seats as instances of a
+  - "Supervisor / chase / ensure / stage-dwell treat seats as instances of a
      stage: dwell still names the STAGE as the bottleneck, while ops surfaces may
-     show seat-level detail including each seat's model."
+     show seat-level detail including each seat's model. The BOARD and STAGE-MAP
+     half of this slice was MINTED 2026-08-22 as BL-1040, from a rescued
+     uncommitted fix found in the coder worktree: BL-983 enforced its own
+     invariant 3 only on the FORWARD path, so a ticket a non-bare seat holds
+     reached the board keyed `coder@sonnet2`, matched no bare role name, and
+     painted as not-started. Supervisor, chase, ensure and stage-dwell are NOT
+     in BL-1040 and this slice stays open for them."
   - "Who may CLAIM a rework, as distinct from who gets fresh work. BL-983's one
      stage queue is a pure race, and seats hold separate worktrees, so a bounce
      can be claimed by a seat with none of the parcel's history - measured live

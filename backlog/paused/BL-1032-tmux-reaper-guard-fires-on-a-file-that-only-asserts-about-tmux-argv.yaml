@@ -17,8 +17,7 @@ invariants:
   - "The guard is in scope for a file exactly when that file can cause a real tmux server to run - a file that only names tmux subcommands as data is never in scope."
   - "No file is made compliant by adding a reaper call it does not need: every in-scope file's track()/reap() guards a server that file actually starts."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   One open decision, with a recommendation, and one measured warning about the
   obvious fix. The decision is how the guard decides scope. Recommendation is
