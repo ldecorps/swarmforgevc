@@ -98,6 +98,51 @@ description: |
   `swarmforge/scripts/test/` - a hardening pass here must record that
   degraded fallback rather than imply a mutation run happened.
 
+  ## Specifier answers to two coder questions, 2026-08-22 (nothing to rebuild)
+
+  Both were raised by the coder as priority-00 notes while holding this
+  parcel, and both are answered here. Neither changes anything already built
+  and no acceptance scenario was added or altered, so this is a read, not a
+  rebuild. The one contract change is an extra confirmation step added to
+  `qa_e2e_procedure` below.
+
+  ### 1. Which credential variable the new pack PREREQ should name
+
+  The coder observed that `qwen-mono-router.conf` PREREQ names
+  `BAILIAN_TOKEN_PLAN_API_KEY` while the generated launch guard ignores it.
+  That is correct and it is a genuine defect, but it is NOT this ticket: it
+  is now BL-1077, minted separately so this slice stays independent of it.
+
+  For THIS ticket, write the new pack PREREQ against what the guard honors
+  TODAY - `QWEN_API_KEY`, or `BAILIAN_CODING_PLAN_API_KEY` as a fallback.
+  Do not add a second credential path to make the other name work; that is
+  BL-1077 fixing it in one place for both packs. Do not wait for BL-1077
+  either. When it lands it will name both pack files and correct this one.
+
+  ### 2. The pack name lands in the aider family, which demands aider
+
+  Also correct, and unlike the first this one IS in scope here, because a
+  pack that refuses to launch is not a pack and step 1 of the QA procedure
+  below launches exactly this pack.
+
+  `ancillary_provider_lib.sh`s `ancillary_provider_family_for_pack` maps
+  `qwen-*` to the `openai_aider` family (line 46), and that family hard
+  requires `aider` on PATH (line 208) and supplies aider-shaped model
+  defaults. A pack named `qwen-code-mono-router` therefore demands an agent
+  it does not use.
+
+  Renaming the pack cannot escape this - the catch-all arm below the case
+  also routes any pack whose name merely CONTAINS `qwen` to the same family
+  (line 52). Both arms match.
+
+  Direction, not mandate: give qwen-code its own family arm ordered ahead of
+  the `qwen-*` arm, the way `gemini-*` and `codex-*` already have their own,
+  and give it the endpoint mapping without the aider requirement. The
+  credential mapping it needs is the same one the aider family already does.
+  Any approach that launches the pack on a host with no aider installed, and
+  leaves the existing `qwen-mono-router` pack behaving exactly as before, is
+  fine.
+
 notes: |
   Source intake: `.swarmforge/operator/INTAKE-onboard-qwen-code-provider.md`
   (operator, filed 2026-07-26 via the coordinator session; archived to
@@ -157,4 +202,10 @@ qa_e2e_procedure: |
      file carrying it.
   5. Confirm the existing aider-based pack is untouched: launching
      `--pack qwen-mono-router` behaves exactly as it did before.
+  5a. Confirm the pack does not demand an agent it never uses: on a host
+     with no `aider` on PATH, the launch in step 1 still comes up. Before
+     this ticket, the pack name alone routed it to the aider family, which
+     refuses without aider installed (specifier answer 2 above).
   6. Read the new pack file and confirm the ToS caution is present in it.
+
+assigned_to: coder
