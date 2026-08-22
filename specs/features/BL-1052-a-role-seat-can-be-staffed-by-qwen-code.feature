@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ae1c8ce87bfa5e7d4fda39f4ae65bfbe07b8448000698b1a6a17c29c267bb562
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T22:29:00.471023874Z","feature_name":"A role seat can be staffed by qwen-code","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1052-a-role-seat-can-be-staffed-by-qwen-code.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":4,"name":"the credential reaches the pane through the environment, never a file","scenario_hash":"ac9e179ca4b7606e93dbd55937d57bb9971b73241c58fab5362c541a03293b50","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T22:29:00.471023874Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A role seat can be staffed by qwen-code
 
   qwen-code is Alibaba's own agentic CLI and really executes shell commands,
