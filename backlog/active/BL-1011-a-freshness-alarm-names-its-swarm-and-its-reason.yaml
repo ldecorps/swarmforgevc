@@ -111,3 +111,5 @@ notes: |
   IR-DRY reviewed 2026-08-21: 4 medium-confidence findings, all the known
   quoted-literal limitation (a Scenario Outline placeholder against the same
   step written with a literal) or a deliberate contrast pair. None edited.
+
+assigned_to: coder
