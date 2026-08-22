@@ -182,7 +182,16 @@
 (defn harden-server!
   "Soft WSL stability knobs (focus-events / window-size). Never fails the
    caller — older tmux builds may reject an option; the real fix is tmux
-   >= 3.7 (resize.c NULL-window guard)."
+   >= 3.7 (resize.c NULL-window guard).
+
+   BL-1069 stamp-off: what makes this soft is the RUNNER, not the
+   `:continue true` below. `babashka.process/sh` returns its result map on a
+   non-zero exit either way (`p/shell` is the one that throws), and this
+   function reads neither exit code. The flag stays as a statement of intent,
+   but the edit to be careful about is swapping `sh!` for anything that
+   propagates a failure, or starting to check `(:exit ...)` here - either
+   turns a knob an old tmux rejects into a failed ensure. Pinned by
+   test/bl1069_tmux_version_property_runner.bb (invariant 3)."
   [socket]
   (when-not (str/blank? (str socket))
     (daemon-cycle-guard-lib/sh! {:continue true}
