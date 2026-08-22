@@ -27,6 +27,12 @@
 // and the query-only shape (`list-sessions`, which fails rather than starting
 // a server) that over-widening wrongly pulled in.
 //
+// Hardener-added kind (BL-1032, mutation pass): 'stubber-unreachable' writes
+// the same tmux-on-disk stub as 'stubber' but never prepends it to PATH.
+// Route 2 is a conjunction - WRITES_TMUX_ON_PATH && PREPENDS_TO_PATH - and
+// 'stubber' always carried both halves together, so nothing isolated the
+// PREPENDS_TO_PATH half; a mutant dropping it left every prior test green.
+//
 // Non-vacuity PROVEN at authoring time (2026-08-22), each break restored:
 //   revert to the quoted-token test (the shipped defect) .. BOTH properties fail
 //   drop the PATH-stub route (would exempt bl958) ......... invariant 1 fails
@@ -82,17 +88,29 @@ function fileOfKind(kind, rng) {
         "env.PATH = `${path.join(root, 'bin')}:${env.PATH}`;",
         "const creates = out.filter((c) => has(c, 'new-session'));",
       ].join('\n');
+    case 'stubber-unreachable':
+      // Hardener-added (BL-1032): writes the SAME tmux stub as 'stubber' but
+      // never prepends it to PATH, so nothing that runs next can ever find
+      // it. Route 2 requires BOTH halves - "writing a file called tmux is
+      // harmless until something can find it" - and 'stubber' always carried
+      // both together, so this half of the conjunction had no isolated
+      // fixture on either side of it.
+      return [
+        "fs.writeFileSync(path.join(root, 'bin', 'tmux'), stub);",
+        "fs.chmodSync(path.join(root, 'bin', 'tmux'), 0o755);",
+        "const creates = out.filter((c) => has(c, 'new-session'));",
+      ].join('\n');
     default:
       throw new Error(`unknown kind ${kind}`);
   }
 }
 
-const KINDS = ['data-only', 'query-only', 'spawner', 'stubber'];
+const KINDS = ['data-only', 'query-only', 'spawner', 'stubber', 'stubber-unreachable'];
 const HAZARDOUS = new Set(['spawner', 'stubber']);
 
 test('BL-1032 invariant 1: in scope exactly when the file can cause a server to run', () => {
   const rng = makeRng(1032);
-  const coverage = { 'data-only': 0, 'query-only': 0, spawner: 0, stubber: 0, withReaper: 0 };
+  const coverage = { 'data-only': 0, 'query-only': 0, spawner: 0, stubber: 0, 'stubber-unreachable': 0, withReaper: 0 };
 
   for (let r = 0; r < RUNS; r++) {
     const kind = KINDS[rng(KINDS.length)];
@@ -117,6 +135,7 @@ test('BL-1032 invariant 1: in scope exactly when the file can cause a server to 
   assert.ok(coverage['query-only'] >= 40, `query-only reached only ${coverage['query-only']}`);
   assert.ok(coverage.spawner >= 40, `spawner reached only ${coverage.spawner}`);
   assert.ok(coverage.stubber >= 40, `stubber reached only ${coverage.stubber}`);
+  assert.ok(coverage['stubber-unreachable'] >= 40, `stubber-unreachable reached only ${coverage['stubber-unreachable']}`);
   assert.ok(coverage.withReaper >= 100, `reaper-adopting files reached only ${coverage.withReaper}`);
 });
 
@@ -124,8 +143,9 @@ test('BL-1032 invariant 2: a reaper can never BUY compliance for a file with no 
   const rng = makeRng(2032);
   let checked = 0;
 
+  const HAZARD_FREE = ['data-only', 'query-only', 'stubber-unreachable'];
   for (let r = 0; r < RUNS; r++) {
-    const kind = rng(2) === 0 ? 'data-only' : 'query-only';   // both hazard-free
+    const kind = HAZARD_FREE[rng(HAZARD_FREE.length)];
     const bare = fileOfKind(kind, rng);
     const withReaper = `${bare}\n${REAPER}`;
 
