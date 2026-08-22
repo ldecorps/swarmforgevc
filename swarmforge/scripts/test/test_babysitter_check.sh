@@ -261,6 +261,53 @@ pass "I: memory floor check reports UNAVAILABLE (never a crash, CRIT, or silent 
 rm -f "$FAKE_BIN/vm_stat"
 rm -rf "$ROOT"
 
+# ── L: vm_stat binary ABSENT (ENOENT), not a failing stub — sweep must
+# complete with UNAVAILABLE memory, never abort. Live WSL hit this every
+# tick: slurp(/proc/meminfo) failed, then ProcessBuilder threw on missing
+# vm_stat and -main never reached BL-1017 repairs.
+ROOT="$(make_root)"
+# No vm_stat on FAKE_BIN; prepend FAKE_BIN so a real macOS vm_stat cannot
+# sneak through either. BABYSITTER_MEMINFO_PATH points at a missing file so
+# both facilities are gone.
+L_OUT="$(PATH="$FAKE_BIN:$PATH" BABYSITTER_MEMINFO_PATH="$ROOT/no-such-meminfo" bash "$CHECK_SH" "$ROOT" 2>&1)" || true
+grep -q "Cannot run program \"vm_stat\"" <<< "$L_OUT" && fail "L: missing vm_stat must not abort the sweep with an uncaught IOException; got: $L_OUT"
+grep -q "UNAVAILABLE \[memory\]" <<< "$L_OUT" || fail "L: expected memory UNAVAILABLE when meminfo+vm_stat are both gone; got: $L_OUT"
+pass "L: missing vm_stat binary does not abort the sweep (UNAVAILABLE memory, repairs still reachable)"
+rm -rf "$ROOT"
+
+# ── M: BL-958 babysitter ownership — control-plane-missing with launch
+# scripts present runs ./swarm ensure (bounded), not eight racing per-role
+# creates. Fake ensure via env seam; fake tmux reports no server.
+ROOT="$(make_root)"
+SOCK="$ROOT/fake.sock"; touch "$SOCK"
+echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
+mkdir -p "$ROOT/.worktrees/coder" "$ROOT/.swarmforge/launch"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+printf '#!/usr/bin/env zsh\necho fake-launch\n' > "$ROOT/.swarmforge/launch/coder.sh"
+ENSURE_COUNT="$ROOT/ensure-count"
+export BABYSITTER_FAKE_ENSURE_RESULT='{"exit":0,"tail":"control-plane: FIXED"}'
+export BABYSITTER_ENSURE_COUNT_FILE="$ENSURE_COUNT"
+CALL_LOG="$ROOT/tmux-calls.log"
+export CALL_LOG
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+echo "$*" >> "$CALL_LOG"
+# Probe path (list-sessions) and has-session both fail → no server.
+exit 1
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+M_OUT="$(run_check "$ROOT")"
+grep -q "CRIT \[control-plane\]" <<< "$M_OUT" || fail "M: expected control-plane CRIT; got: $M_OUT"
+grep -q "REPAIR \[repaired\] control-plane" <<< "$M_OUT" || fail "M: expected control-plane ensure REPAIR; got: $M_OUT"
+[[ -f "$ENSURE_COUNT" ]] || fail "M: expected BABYSITTER_ENSURE_COUNT_FILE to record the ensure call"
+grep -q "REPAIR \[.*\] swarmforge-coder" <<< "$M_OUT" && fail "M: per-role ensure-session must be suppressed when control-plane ensure runs; got: $M_OUT"
+grep -q -- 'new-session' <<< "$(cat "$CALL_LOG" 2>/dev/null || true)" && fail "M: expected no per-role new-session when ensure owns recovery; log: $(cat "$CALL_LOG" 2>/dev/null || true)"
+[[ -f "$ROOT/.swarmforge/babysitterd/control-plane-ensure.json" ]] || fail "M: expected control-plane ensure budget persisted"
+unset BABYSITTER_FAKE_ENSURE_RESULT BABYSITTER_ENSURE_COUNT_FILE
+pass "M: control-plane-missing triggers bounded ./swarm ensure (babysitterd ownership wired)"
+rm -rf "$ROOT"
+
 # ── J: BL-1017 wiring — a standing role's vanished session is recreated,
 # not merely alerted about. This is the required_wiring check itself: the
 # lib's :repair decision must be CONSUMED by the live sweep caller (a repair
