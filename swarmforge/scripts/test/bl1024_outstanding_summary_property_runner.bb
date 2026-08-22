@@ -18,6 +18,24 @@
 ;; identical across endings, so `ending` is generated and then asserted to
 ;; make NO difference - a property, not a scenario.
 ;;
+;; REACH, stated rather than assumed (architect send-back 2026-08-22). The
+;; first version of this runner drew only the four endings that fall through
+;; -main's own let chain, and so never quantified over the three PRE-FLIGHT
+;; refusals - a forbidden stop flag, a teardown that never reached a clean
+;; slate, a run worktree that could not be created - each of which terminated
+;; the process from inside a helper with sibling tickets already parked and
+;; staged. The property held at 400 runs against a live, reproducible defect
+;; for exactly that reason. The ending pool now includes all three, with a
+;; coverage floor, and P6 encodes the structural precondition the fix rests on.
+;;
+;; What this runner CANNOT reach, said out loud so nobody reads it as coverage
+;; it does not have: whether the process actually ARRIVES at the summary is a
+;; control-flow fact about expedite_cli.bb, not a property of the pure pair,
+;; and no generator over run STATE can observe it. That half is gated in
+;; swarmforge/scripts/test/test_expedite_cli.sh - one case per refusal path,
+;; each asserting the summary against a real run, plus a source-derived gate
+;; that the driver still terminates the process in exactly one place.
+;;
 ;; Non-vacuity proven at authoring time (2026-08-22), each break restored,
 ;; counts MEASURED (seed 1024, 400 runs) - and the first measurement is the
 ;; reason P5 exists at all:
@@ -26,6 +44,10 @@
 ;;     P5 was added for exactly that gap and fails 502 on the same break;
 ;;   - dropping the moves item -> P1 failed 138;
 ;;   - making a dry run report its would-be leavings -> P2 failed 327.
+;; P6 measured the same way when it was added (2026-08-22): making the
+;; account require a COMPLETED run - `(if (or dry-run? (not ticket-moved?))
+;; [] ...)`, i.e. exactly what a pre-flight refusal can never satisfy - failed
+;; P6 251 times; restored, all properties hold.
 
 (ns bl1024-outstanding-summary-property-runner
   (:require [babashka.fs :as fs]
@@ -35,14 +57,23 @@
 
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 400))
 (def failures (atom []))
-(def coverage (atom {:parked 0 :no-parks 0 :moved 0 :not-moved 0 :dry 0 :wet 0 :unhappy 0}))
+(def coverage (atom {:parked 0 :no-parks 0 :moved 0 :not-moved 0 :dry 0 :wet 0
+                     :unhappy 0 :refused 0}))
 
 (defn- step [s] (mod (+ (* s 1103515245) 12345) 2147483648))
 (defn- gen-int [s n] [(mod (quot s 65536) (max 1 n)) (step s)])
 (defn- gen-bool [s] (let [[i s'] (gen-int s 2)] [(zero? i) s']))
 
 (def ticket-pool ["BL-586" "BL-1012" "BL-1017" "BL-621" "BL-999"])
-(def endings [:ok :failed-restart :bounce-bound-exhausted :stage-timeout])
+(def endings [:ok :failed-restart :bounce-bound-exhausted :stage-timeout
+              ;; The three PRE-FLIGHT refusals. Each fires strictly AFTER
+              ;; park-others! has staged real moves and strictly BEFORE the run
+              ;; ticket could move, so a refusal ending forces ticket-moved?
+              ;; false below - generating a refusal that also moved its ticket
+              ;; would assert over a state the driver cannot produce.
+              :refused-stop-flags :refused-teardown :refused-worktree])
+
+(def refusal-endings #{:refused-stop-flags :refused-teardown :refused-worktree})
 
 (defn- gen-run [s]
   (let [[n s1] (gen-int s (inc (count ticket-pool)))
@@ -50,9 +81,11 @@
         [moved? s2] (gen-bool s1)
         [dry? s3] (gen-int s2 5)                ; ~1 in 5 runs is a dry run
         [e s4] (gen-int s3 (count endings))]
-    [{:ticket "BL-1021" :parked parked :ticket-moved? moved?
-      :dry-run? (zero? dry?) :ending (nth endings e)}
-     s4]))
+    (let [ending (nth endings e)]
+      [{:ticket "BL-1021" :parked parked
+        :ticket-moved? (and moved? (not (refusal-endings ending)))
+        :dry-run? (zero? dry?) :ending ending}
+       s4])))
 
 ;; Derived from the run state, NOT from outstanding-work - this is the
 ;; independent account of what the run actually left behind. If these two ever
@@ -77,6 +110,7 @@
       (swap! coverage update (if (:ticket-moved? r) :moved :not-moved) inc)
       (swap! coverage update (if (:dry-run? r) :dry :wet) inc)
       (when (not= :ok (:ending r)) (swap! coverage update :unhappy inc))
+      (when (refusal-endings (:ending r)) (swap! coverage update :refused inc))
 
       ;; ── P1: the invariant. Everything left is named. ─────────────────
       (doseq [left (actually-left r)]
@@ -126,9 +160,33 @@
           (report! "P4 (the leavings do not depend on the ending)" s r
                    (str "ending " (:ending r) " changed the summary"))))
 
+      ;; ── P6: the leavings must be computable from what a run knows the
+      ;;    moment it has parked - BEFORE it learns whether its own ticket
+      ;;    moved. This is the structural precondition the whole fix rests on:
+      ;;    the three pre-flight refusals end a run that has parked tickets and
+      ;;    nothing else, so an account that needs a COMPLETED run to exist is
+      ;;    an account those endings can never give. Stated as a property over
+      ;;    every generated state rather than only the refusal ones, because it
+      ;;    has to hold for any ending that stops early.
+      (let [at-park (expedite-lib/outstanding-work (assoc r :ticket-moved? false))]
+        (when (and (not (:dry-run? r)) (seq (:parked r)) (empty? at-park))
+          (report! "P6 (a run that got only as far as parking still has an account)" s r
+                   "outstanding-work returned nothing for a run with parked tickets"))
+        (when-not (every? (set (map :subject items)) (map :subject at-park))
+          (report! "P6 (proceeding never RETRACTS a subject the run already owed)" s r
+                   (str (pr-str (map :subject at-park)) " not all present in "
+                        (pr-str (map :subject items))))))
+
+      ;; A refusal ends before the run ticket can move, so its account is
+      ;; exactly the parked half - never a move of its own.
+      (when (refusal-endings (:ending r))
+        (when (some #(str/includes? (str %) "backlog/done/") (mapcat :moves items))
+          (report! "P6 (a refused run never claims its own ticket moved)" s r (pr-str items))))
+
       (recur (inc i) s'))))
 
-(doseq [[k floor] {:parked 100 :no-parks 40 :moved 100 :not-moved 100 :dry 40 :wet 200 :unhappy 200}]
+(doseq [[k floor] {:parked 100 :no-parks 40 :moved 100 :not-moved 100 :dry 40 :wet 200
+                   :unhappy 200 :refused 100}]
   (when (< (get @coverage k 0) floor)
     (swap! failures conj (str "FAIL coverage: the generator reached " k " only "
                               (get @coverage k 0) " time(s), floor " floor))))
