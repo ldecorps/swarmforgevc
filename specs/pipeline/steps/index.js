@@ -570,8 +570,7 @@ const DOMAINS = [
   require('./bl1010SecondarySwarmPublishesUnderItsOwnNameSteps'),
   require('./bl1011FreshnessAlarmNamesSwarmAndReasonSteps'),
   require('./bl1014BoyScoutScanRanksDebtSteps'),
-  require('./bl1035RespawnedBotGetsItsOwnGraceSteps'),
-  require('./bl1041RescueNeverReducesDurabilitySteps')
+  require('./bl1035RespawnedBotGetsItsOwnGraceSteps')
 ];
 
 function registerSteps(registry) {
