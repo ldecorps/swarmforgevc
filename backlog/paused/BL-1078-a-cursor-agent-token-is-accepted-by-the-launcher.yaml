@@ -6,9 +6,9 @@ status: todo
 epic: swarm-intelligence-layer
 priority: 0
 direction: queue-jump
-depends_on: [BL-713]
+depends_on: []
 mutation_cost: medium
-required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1078-a-cursor-agent-token-is-accepted-by-the-launcher.feature
 human_approval: approved
 approval_context: >
@@ -72,8 +72,8 @@ description: |
   is a terminal agent, and no ACP/SDK host is needed for a pane seat. Wake
   already goes through the shared `agent_runtime_inject.bb` notify path for
   every agent; what is missing is the provider-table entry, not a host
-  process. `depends_on: [BL-713]` is proposed dropped on that basis — see
-  `approval_context`.
+  process. `depends_on: [BL-713]` is dropped on that basis — the human
+  answered the question `approval_context` poses on 2026-08-23 (see `notes`).
 
   Not in this slice: steward certify (BL-1079); pack lines and how-tos
   (BL-1080); changing /pilot.
@@ -124,6 +124,23 @@ notes: |
   synonym phrasing of that step in scenario 02, and a set/unset pair that
   wanted to be one Scenario Outline) were resolved by rewriting.
 
+
+  `required_stages:` fixed 2026-08-23 across BL-1078/1079/1080/1081: the
+  minted list led with `specifier`, which backlog-schema.md does not admit as
+  a stage (valid stages are coder, cleaner, architect, hardender, documenter,
+  qa). An unknown stage is rejected and the ticket defaults to the full chain,
+  so behaviour was already correct — but the field read as a declaration it
+  never was. The canonical six are now written explicitly.
+
+  DEPENDS_ON CONTESTED — RESOLVED 2026-08-23 (history below kept walkable).
+  The human answered the `role_ask` this paragraph was raised for, verbatim:
+
+    "Drop the dep - build BL-1078 now"
+
+  `depends_on:` is therefore `[]` and `human_approval: approved` stands as
+  written — the answer approves the premise correction and the feature file
+  together, so neither field was flipped by the specifier's own reading. The
+  contested history, as it stood before that answer:
 
   DEPENDS_ON CONTESTED, NOT RESOLVED (specifier, 2026-08-23). The specifier
   proposed `depends_on: []` on the premise correction above; commit 1572d2f2d

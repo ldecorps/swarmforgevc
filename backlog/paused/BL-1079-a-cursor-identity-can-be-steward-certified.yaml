@@ -8,7 +8,7 @@ priority: 0
 direction: queue-jump
 depends_on: [BL-1078]
 mutation_cost: medium
-required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature
 human_approval: approved
 approval_context: >
