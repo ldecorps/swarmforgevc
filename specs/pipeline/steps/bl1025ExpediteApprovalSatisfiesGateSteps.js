@@ -43,6 +43,12 @@ const KNOWN_VERDICTS = new Set(['approving', 'bouncing', 'absent', 'unreadable']
 const KNOWN_MESSAGES = new Set(['says nothing about', 'claims it came from']);
 const KNOWN_OUTCOMES = new Set(['reports', 'does not report']);
 
+// A NON-'pass' advance token, deliberately: 'pass' was the only one the first
+// draft ever exercised, which is what let a hand-mirrored vocabulary in the
+// reader look correct (architect bounce D1). 'forward' is a real role outcome
+// (a documenter's own no-op verdict), not a synonym invented for a test.
+const APPROVING_TOKEN = 'forward';
+
 const SUBJECTS = {
   'says nothing about': 'ordinary pipeline work',
   'claims it came from': 'BL-999: landed via an expedite run, approved by its QA hat',
@@ -101,12 +107,24 @@ function unrelatedRoot(root) {
   }).trim();
 }
 
+// Written through the REAL writer (expedite_lib.bb's own
+// qa-hat-verdict-record), never a hand-built JSON line: a hand-built record
+// can agree with the reader while the writer disagrees with both, which is
+// the shape of the architect's D1 bounce (2026-08-22).
 function writeExpediteVerdict(root, sha, verdict) {
   const dir = path.join(root, '.swarmforge', 'expedite-approvals');
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, '2026-08.jsonl');
-  const record = { at: '2026-08-22T00:00:00Z', ticket: 'BL-1025', stage: 'QA', verdict, commit: sha.slice(0, 10) };
-  fs.writeFileSync(file, `${JSON.stringify(record)}\n`);
+  const lib = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'expedite_lib.bb');
+  const expr = `
+(require '[babashka.fs :as fs] '[cheshire.core :as json])
+(load-file "${lib}")
+(spit "${file}"
+      (str (json/generate-string
+            (expedite-lib/qa-hat-verdict-record
+             {:stage "QA" :verdict :${verdict} :ticket "BL-1025"
+              :commit "${sha}" :at "2026-08-22T00:00:00Z"})) "\n"))`;
+  execFileSync('bb', ['-e', expr], { encoding: 'utf8' });
   return file;
 }
 
@@ -146,10 +164,10 @@ function registerSteps(registry) {
     git(ctx.root, ['branch', '-f', 'swarmforge-QA', ctx.liveQa ? ctx.sha : unrelatedRoot(ctx.root)]);
 
     if (ctx.expediteVerdict === 'approving' || ctx.expediteVerdict === 'bouncing') {
-      writeExpediteVerdict(ctx.root, ctx.sha, ctx.expediteVerdict === 'approving' ? 'pass' : 'bounce');
+      writeExpediteVerdict(ctx.root, ctx.sha, ctx.expediteVerdict === 'approving' ? APPROVING_TOKEN : 'bounce');
     } else if (ctx.expediteVerdict === 'unreadable') {
       // A store that EXISTS and cannot be consulted - the fail-closed row.
-      const file = writeExpediteVerdict(ctx.root, ctx.sha, 'pass');
+      const file = writeExpediteVerdict(ctx.root, ctx.sha, APPROVING_TOKEN);
       fs.chmodSync(file, 0o000);
       ctx.unreadableStore = file;
     }

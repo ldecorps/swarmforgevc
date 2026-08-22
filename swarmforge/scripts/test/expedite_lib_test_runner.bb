@@ -336,7 +336,7 @@
          (expedite-lib/expedite-approval-store-file "2026-08-22T00:12:00Z"))
 
 (assert= "bl1025: a QA-hat PASS becomes a record naming the sha it advanced"
-         {:at "2026-08-22T00:12:00Z" :ticket "BL-1021" :stage "QA" :verdict "pass" :commit "44ef693d9c"}
+         {:at "2026-08-22T00:12:00Z" :ticket "BL-1021" :stage "QA" :approval true :verdict "pass" :commit "44ef693d9c"}
          (expedite-lib/qa-hat-verdict-record
           {:stage "QA" :verdict :pass :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))
 
@@ -344,6 +344,27 @@
          "bounce"
          (:verdict (expedite-lib/qa-hat-verdict-record
                     {:stage "QA" :verdict :bounce :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"})))
+
+;; ── BL-1025 architect bounce D1: the reader must not re-derive the verdict
+;;    vocabulary. The record carries the ALREADY-CLASSIFIED decision, so
+;;    `advance-verdicts` is spelled in exactly one place and a fourth token
+;;    added there needs no second edit anywhere. Every member of the real
+;;    vocabulary is driven here, not just the two the first draft covered.
+
+(doseq [v expedite-lib/advance-verdicts]
+  (assert= (str "bl1025 D1: every advance verdict (" v ") records approval true")
+           true
+           (:approval (expedite-lib/qa-hat-verdict-record
+                       {:stage "QA" :verdict v :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))))
+
+(doseq [v expedite-lib/bounce-verdicts]
+  (assert= (str "bl1025 D1: every bounce verdict (" v ") records approval false")
+           false
+           (:approval (expedite-lib/qa-hat-verdict-record
+                       {:stage "QA" :verdict v :ticket "BL-1021" :commit "44ef693d9c1234" :at "2026-08-22T00:12:00Z"}))))
+
+(assert-true "bl1025 D1: the vocabulary is genuinely plural - a single-token set would make this whole class of drift untestable"
+             (< 1 (count expedite-lib/advance-verdicts)))
 
 (assert= "bl1025: the commit is recorded at the 10-hex width every other verdict store uses"
          "44ef693d9c"
