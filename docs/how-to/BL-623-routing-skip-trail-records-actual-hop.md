@@ -100,6 +100,17 @@ Keys:
 
 A skipped **required** stage with no declared reason appears in `skipped` but has no entry in `reasons` — a greppable anomaly (delivery is unchanged; enforcement is out of scope for BL-623).
 
+**As of BL-991**, "delivery is unchanged" no longer holds once the sender's
+literal recipient is a *declared* stage later than the next declared stage
+after the sender — that hop is now redirected to the next declared stage
+instead of delivered as addressed, and the redirected-to stage is never
+named in `skipped` (it still runs). The examples on this page all use a
+`[coder, qa]`-style declaration, where cleaner/architect/hardender/documenter
+are *undeclared* and therefore still pruned exactly as before — BL-991 only
+binds stages a ticket actually declares, so these shapes are unaffected. A
+full-chain declaration's coder→QA hop is the one that changed: see the
+"binding, not just visible" guardrail in `swarmforge/handoff-protocol.md`.
+
 ## Grep the trail for a ticket
 
 ```bash
@@ -118,5 +129,6 @@ Stages **not** listed in `skipped` for a hop are the ones that ran on that hop. 
 
 - BL-606: required-stages routing, kill-switch, rewrite behaviour
 - BL-951: recording no longer gated on a valid/present declaration; adds `rejected="..."` / `rejection-reason`
+- BL-991: a *declared* stage can no longer be jumped even by the sender's own literal `to:` field — see the "binding, not just visible" guardrail in `swarmforge/handoff-protocol.md`
 - `swarmforge/handoff-protocol.md` — "Reading the Routing Log" section
 - `swarmforge/scripts/required_stages_lib.bb` — `hop-skipped-stages`, `ran-and-skipped`, `resolve-effective`
