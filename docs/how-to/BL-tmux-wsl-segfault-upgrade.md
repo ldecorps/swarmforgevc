@@ -46,9 +46,15 @@ tmux -S "$(cat .swarmforge/tmux-socket)" display-message -p '#{version}'
 # expect: 3.7b (not 3.4)
 ```
 
-`./swarm ensure` and full launch also set `focus-events off` and
-`window-size largest` as soft mitigations; they do **not** replace the
-version upgrade.
+`./swarm ensure` and full launch also set `focus-events off` as a soft
+mitigation; it does **not** replace the version upgrade, which is the only
+thing that actually protects this host.
+
+They no longer set `window-size largest`. It read as a second mitigation and
+was never one: `resize-window` sets `window-size` to `manual` *in the window
+options* (tmux(1)), and the extension's tiling panel resizes every role
+window, so a window option beat the server global on exactly the windows the
+swarm runs in (BL-1075).
 
 ## Verify
 
