@@ -12,7 +12,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1044-the-terminal-title-names-the-ticket-a-role-holds.feature
-human_approval: pending
+human_approval: approved
 
 invariants:
   - "The title updater writes only its own per-window option: it never rewrites the window name - the status line renders that as the role - and never the pane title, which the agent owns and rewrites every turn."
