@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { startBridge } = require('../out/bridge/bridgeServer');
 const { copyScriptClosure } = require('./helpers/pinnedRepoFixture');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const TOKEN = 'test-token-123';
 
@@ -20,10 +21,11 @@ function mkTmp() {
 // test.js's own gitFixture()/copyCommitIntegrityScripts().
 function mkGitTmpWithCli() {
   const root = mkTmp();
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
-  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  // BL-1039: the seeded repository comes from the shared fixture - one
+  // seeding per RUN instead of init+config+commit per scenario. Four
+  // process spawns before the behaviour under test was even reached,
+  // repeated across every test in this file. Measured 190ms -> 33ms.
+  copySeededRepoInto(root);
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
   // BL-1038: copy the load-file CLOSURE of the entry points this fixture
