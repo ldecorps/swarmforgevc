@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a07bf045820306263e15d6333ad91074662c286371b1c50af5ee06f1fc110790
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T01:38:48.126199Z","feature_name":"work an expedite run's own QA hat approved is not reported as having bypassed QA","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-1025-expedite-approval-satisfies-the-pipeline-code-on-main-gate.feature","background_hash":"37706aab09c50b1651074662e340948bb6942080477a409f974cc8a6e1e4547e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the check reports on the approval actually on file, from either gate","scenario_hash":"015a9fc2f6bff81ced4c8813d0db197b4c4afb766e00202ec4dfcc6f7097d116","mutation_count":24,"result":{"Total":24,"Killed":24,"Survived":0,"Errors":0},"tested_at":"2026-08-22T01:38:48.126199Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: work an expedite run's own QA hat approved is not reported as having bypassed QA
 
   # BL-1025. Article 4.2's pipeline-code-on-main check asks one question of
