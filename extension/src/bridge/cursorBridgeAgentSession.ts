@@ -11,7 +11,6 @@ import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from '
 import { readSwarmEnvValue } from '../tools/swarmEnv';
 import type { CursorAgentProgressCallback } from './cursorBridgeProgress';
 import { summarizeSdkProgressLine } from './cursorBridgeProgress';
-import { defaultCursorRunLogDeps, logCursorRunFailure, type CursorRunLogDeps } from './cursorBridgeRunLog';
 
 const MISSING_CURSOR_API_KEY_MESSAGE =
   'CURSOR_API_KEY is not set for the headless bridge. Add `export CURSOR_API_KEY=...` to .swarmforge/swarm.env and restart the bridge supervisor. The Cursor IDE login session is not passed to telegram/headless bridge processes.';
@@ -209,24 +208,9 @@ async function reportSdkProgress(event: SDKMessage, onProgress: CursorAgentProgr
   }
 }
 
-/**
- * BL-1050: the ONE place that knows a run failed, so the ONE place the record
- * is written. The line goes out BEFORE either throw - the Telegram post
- * happens in a caller's catch, and a record reachable only through the path
- * that also posts is exactly the gap this closes. `shouldResetCursorAgentSession`
- * is the same predicate promptAgent's recovery uses, so the logged decision is
- * the decision, not a second copy of the rule.
- */
-export function assertCursorRunSucceeded(
-  result: Awaited<ReturnType<Awaited<ReturnType<SDKAgent['send']>>['wait']>>,
-  logDeps: CursorRunLogDeps = defaultCursorRunLogDeps()
-): void {
+function assertCursorRunSucceeded(result: Awaited<ReturnType<Awaited<ReturnType<SDKAgent['send']>>['wait']>>): void {
   if (result.status === 'error') {
     const detail = result.error?.message ?? 'unknown error';
-    logCursorRunFailure(
-      { runId: result.id, reason: detail, reset: shouldResetCursorAgentSession(detail) },
-      logDeps
-    );
     if (isCursorResourceExhausted(detail)) {
       throw new Error('Cursor usage quota exhausted — the agent cannot process requests right now. Wait a few minutes and try again, or check your Cursor plan limits.');
     }
@@ -246,11 +230,7 @@ function toSdkUserMessage(prompt: string | SDKUserMessage): SDKUserMessage {
 export async function runCursorAgentPrompt(
   agent: SDKAgent,
   prompt: string | SDKUserMessage,
-  onProgress: CursorAgentProgressCallback | undefined = activePromptProgress,
-  // BL-1050: the run-log seam. Defaulted, so every existing caller is
-  // unchanged and still logs; injectable, so a test observes the line without
-  // a real file or a real clock.
-  logDeps: CursorRunLogDeps = defaultCursorRunLogDeps()
+  onProgress: CursorAgentProgressCallback | undefined = activePromptProgress
 ): Promise<string> {
   const message = toSdkUserMessage(prompt);
   const run = await agent.send(message);
@@ -260,7 +240,7 @@ export async function runCursorAgentPrompt(
     await reportSdkProgress(event, onProgress);
   }
   const result = await run.wait();
-  assertCursorRunSucceeded(result, logDeps);
+  assertCursorRunSucceeded(result);
   return assistantReplyOrPlaceholder(messages);
 }
 

@@ -28,14 +28,6 @@ beforeEach(() => {
   } = loadCursorBridgeAgentSessionFresh());
 });
 
-// BL-1050: runCursorAgentPrompt now records every run failure. These
-// pre-existing cases care about the THROWN error, not the record, so they get
-// a recording sink rather than printing a real failure line into the suite's
-// stderr. The default stderr sink has its own test at the end of this file.
-function quietLogDeps() {
-  return { sink: () => {}, now: () => '2026-08-22T23:00:00.000Z', env: {} };
-}
-
 function mkRoot() {
   const root = mkTmpDir('sfvc-cursor-session-');
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
@@ -305,7 +297,7 @@ test('cursorBridgeAgentSession: runCursorAgentPrompt throws on error status', as
       };
     },
   };
-  await assert.rejects(() => runCursorAgentPrompt(agent, 'ping', undefined, quietLogDeps()), /boom/);
+  await assert.rejects(() => runCursorAgentPrompt(agent, 'ping'), /boom/);
 });
 
 function mockSdkAgent(replyText = 'live reply') {
@@ -556,7 +548,7 @@ test('cursorBridgeAgentSession: runCursorAgentPrompt throws unknown error when m
       };
     },
   };
-  await assert.rejects(() => runCursorAgentPrompt(agent, 'ping', undefined, quietLogDeps()), /unknown error/);
+  await assert.rejects(() => runCursorAgentPrompt(agent, 'ping'), /unknown error/);
 });
 
 test('cursorBridgeAgentSession: runCursorAgentPrompt handles missing error object via optional chaining', async () => {
@@ -570,7 +562,7 @@ test('cursorBridgeAgentSession: runCursorAgentPrompt handles missing error objec
       };
     },
   };
-  await assert.rejects(() => runCursorAgentPrompt(agent, 'ping', undefined, quietLogDeps()), /unknown error/);
+  await assert.rejects(() => runCursorAgentPrompt(agent, 'ping'), /unknown error/);
 });
 
 test('cursorBridgeAgentSession: runCursorAgentPrompt forwards only streamed messages to collector', async () => {
@@ -876,149 +868,4 @@ test('cursorBridgeAgentSession: resolveCursorApiKey fails with actionable messag
     if (prev === undefined) delete process.env.CURSOR_API_KEY;
     else process.env.CURSOR_API_KEY = prev;
   }
-});
-
-// ── BL-1050: a failed run is recorded on this host, not only in Telegram ──
-
-function failingAgent(status, id, message) {
-  return {
-    async send() {
-      return {
-        async *stream() {
-          yield { type: 'assistant', message: { content: [{ type: 'text', text: 'x' }] } };
-        },
-        async wait() {
-          return { status, id, error: message === undefined ? undefined : { message } };
-        },
-      };
-    },
-  };
-}
-
-function recordingLogDeps(env = {}) {
-  const lines = [];
-  return { lines, deps: { sink: (l) => lines.push(l), now: () => '2026-08-22T23:00:00.000Z', env } };
-}
-
-test('BL-1050: a failed run is logged before the error the Telegram poster catches', async () => {
-  const { lines, deps } = recordingLogDeps();
-  const agent = failingAgent('error', 'run-err', 'Connection failed repeatedly');
-  await assert.rejects(() => runCursorAgentPrompt(agent, 'ping', undefined, deps), /Connection failed repeatedly/);
-  assert.equal(lines.length, 1, 'the failure must be recorded exactly once');
-  assert.match(lines[0], /cursor-bridge run failed/);
-  assert.match(lines[0], /run=run-err/);
-  assert.match(lines[0], /reason=Connection failed repeatedly/);
-});
-
-test('BL-1050: the logged reset decision follows shouldResetCursorAgentSession', async () => {
-  const reset = recordingLogDeps();
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'r1', 'Connection failed repeatedly'), 'ping', undefined, reset.deps),
-    /Connection failed/
-  );
-  assert.match(reset.lines[0], /reset=yes/);
-
-  const notReset = recordingLogDeps();
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'r2', 'resource_exhausted'), 'ping', undefined, notReset.deps),
-    /quota exhausted/
-  );
-  assert.match(notReset.lines[0], /reset=no/);
-});
-
-test('BL-1050: a quota failure is logged with the SDK reason, not the rewritten human message', async () => {
-  const { lines, deps } = recordingLogDeps();
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'r3', 'resource_exhausted'), 'ping', undefined, deps),
-    /quota exhausted/
-  );
-  assert.match(lines[0], /reason=resource_exhausted/);
-});
-
-test('BL-1050: the thrown message a human sees is unchanged by the logging', async () => {
-  const { deps } = recordingLogDeps();
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'run-err', 'boom'), 'ping', undefined, deps),
-    /^Error: Cursor run failed \(run-err\): boom$/
-  );
-});
-
-test('BL-1050: no log line text reaches the progress callback the topic renders', async () => {
-  const { lines, deps } = recordingLogDeps();
-  const progress = [];
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'run-err', 'boom'), 'ping', (l) => progress.push(l), deps),
-    /boom/
-  );
-  assert.equal(lines.length, 1);
-  for (const line of progress) {
-    assert.ok(!line.includes('cursor-bridge run failed'), `a log line reached the topic: ${line}`);
-  }
-});
-
-test('BL-1050: a secret in the SDK reason never reaches the log', async () => {
-  const { lines, deps } = recordingLogDeps({ CURSOR_API_KEY: 'sk-cursor-abcdefgh' });
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'r', 'auth rejected sk-cursor-abcdefgh'), 'ping', undefined, deps),
-    /auth rejected/
-  );
-  assert.ok(!lines[0].includes('sk-cursor-abcdefgh'), "the CURSOR_API_KEY value reached cursor-bridge.log");
-  assert.match(lines[0], /\[redacted\]/);
-});
-
-test('BL-1050: the prompt text never reaches the log', async () => {
-  const { lines, deps } = recordingLogDeps();
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'r', 'boom'), 'deploy the staging key', undefined, deps),
-    /boom/
-  );
-  assert.ok(!lines[0].includes('deploy the staging key'));
-});
-
-test('BL-1050: a successful run logs nothing at all', async () => {
-  const { lines, deps } = recordingLogDeps();
-  const agent = {
-    async send() {
-      return {
-        async *stream() {
-          yield { type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } };
-        },
-        async wait() {
-          return { status: 'success', id: 'run-ok' };
-        },
-      };
-    },
-  };
-  assert.equal(await runCursorAgentPrompt(agent, 'ping', undefined, deps), 'hello');
-  assert.deepEqual(lines, []);
-});
-
-test('BL-1050: a log sink that throws does not replace the run failure the caller reports', async () => {
-  const deps = {
-    sink: () => {
-      throw new Error('log device full');
-    },
-    now: () => '2026-08-22T23:00:00.000Z',
-    env: {},
-  };
-  await assert.rejects(
-    () => runCursorAgentPrompt(failingAgent('error', 'run-err', 'boom'), 'ping', undefined, deps),
-    /Cursor run failed \(run-err\): boom/
-  );
-});
-
-test('BL-1050: the default deps print the failure line to stderr, which the supervisor redirects', async () => {
-  const { defaultCursorRunLogDeps } = require('../out/bridge/cursorBridgeRunLog');
-  const deps = defaultCursorRunLogDeps();
-  const printed = [];
-  const originalError = console.error;
-  console.error = (line) => printed.push(line);
-  try {
-    deps.sink('a line');
-  } finally {
-    console.error = originalError;
-  }
-  assert.deepEqual(printed, ['a line']);
-  assert.equal(deps.env, process.env);
-  assert.match(deps.now(), /^\d{4}-\d{2}-\d{2}T/);
 });

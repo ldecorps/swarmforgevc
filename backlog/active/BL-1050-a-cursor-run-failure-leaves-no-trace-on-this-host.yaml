@@ -157,3 +157,6 @@ qa_e2e_procedure: |
      prints nothing, and no prompt or reply text appears in the new lines.
   6. Send one healthy prompt and confirm the log gains no failure line for it.
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-22, by: architect, blamed: coder, class: acceptance, commit: 9277a60906, evidence: backlog/evidence/BL-1050-a-cursor-run-failure-leaves-no-trace-on-this-host-architect-bounce-20260823.md }
