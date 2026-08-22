@@ -1,6 +1,51 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1033:
+**Last Updated:** August 22, 2026 (BL-1061: two coupled defects in
+`swarmforge/scripts/tunnel_ownership_lib.sh`'s orphan reap, landed together
+because fixing one alone would have been worse than fixing neither. (1) The
+reap had never worked on a GNU/Linux host: candidate enumeration used
+`pgrep -fl -- "run $name"` — `-f` matches on the full command line
+correctly, but `-l` decides what is *printed*, and BSD/macOS prints the full
+argument list while procps-ng (Linux) prints only the process name, so
+`tunnel_decide_orphans` — which looks for a `run <name>` token pair — was
+handed lines shaped `12345 bash` and matched nothing. `pgrep -f` still
+narrows the pids; the listing now goes through `ps -o pid= -o args=`, POSIX
+on both userlands, and the word-boundary decision itself is untouched. (2)
+`extension/test/bl787NamedTunnelInvariants.property.test.js` bound the
+operator's real production tunnel name, `swarmforge-bubble`, at three fixture
+sites — not `bl857TunnelOwnershipInvariants.property.test.js`, which the
+ticket originally (and, per a same-day specifier amendment recorded in the
+ticket, wrongly) named; bl857 mentions the production name once, in a
+comment forbidding it, and routes every fixture through `uniqueName()`.
+Every fixture name now comes from a new shared helper,
+`extension/test/helpers/fixtureTunnelName.js`, which refuses the production
+name outright. The coupling: while the reap silently no-opped, the
+production-name binding was inert — nothing was ever selected, so nothing
+was ever signalled; repairing the enumeration is exactly what arms a reap
+scoped to `swarmforge-bubble` to reach the operator's live tunnel, so
+shipping the enumeration fix without the fixture-name fix would have been
+strictly worse than shipping neither. bl857's suite also now sweeps leaked
+fixture tunnels before its first process-table assertion, selecting by the
+fixture's own throwaway temp path rather than by tunnel name — a
+name-matched sweep would itself select the operator's tunnel, the exact
+hazard under test. New coverage: a real-process shell integration test
+(`test_bl1061_tunnel_reap_enumerates_full_command_lines.sh`) driving the
+actual reap against real fixture processes, and a property suite
+(`bl1061TunnelFixtureIsolation.property.test.js`, 5/5 acceptance scenarios
+registered in `specs/pipeline/steps/index.js`) proving the two declared
+invariants — a fixture can never bind a name any outside process could be
+serving, and a run's reap can never select a pid it did not create — against
+the lib's pure decision seam, with the operator's real tunnel present only
+as a fabricated candidate line, never as a live target. Verification: bl857
+3/3 (was 1/3), bl787 3/3, bl1061 5/5, full acceptance 5/5, BL-113 Gherkin
+mutation 2/2 killed, default unit lane green throughout, the operator's real
+tunnel alive and untouched at every check. No `.ts`/`src` production files
+touched outside the shell lib, so CRAP/DRY/Stryker do not apply; no
+extension command, setting, or UI changed. Documented in
+`docs/how-to/named-tunnel-bubble-musicalsifu.md`'s "Tunnel ownership and
+orphan reaping" section and troubleshooting table.
+Prior entry —
+BL-1033:
 `bl1025_expedite_approval_property_runner.bb` created its fixture temp root
 at the top of the file and removed it with `fs/delete-tree` at the bottom,
 at top level, in no `try`/`finally` and behind no shutdown hook — reached
