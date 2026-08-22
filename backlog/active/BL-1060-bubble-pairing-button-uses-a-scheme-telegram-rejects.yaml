@@ -186,3 +186,5 @@ notes: |
   ticket takes the Article 3.2.4 expedite lane), and the stage set
   `[coder, cleaner, hardender, qa]` with architect and documenter skipped for
   the reasons recorded above.
+
+assigned_to: coder
