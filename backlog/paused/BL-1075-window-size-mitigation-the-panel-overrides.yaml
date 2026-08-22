@@ -12,7 +12,7 @@ mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1075-window-size-mitigation-the-panel-overrides.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Two calls are worth a look before this runs. First, severity `medium` rather
   than `high`: the knob is inert and the how-to overstates it, but the defence
