@@ -1,0 +1,160 @@
+id: BL-1052
+title: "A role seat can be staffed by qwen-code: the shell-capable Qwen CLI has no agent shape, no launch adapter and no pack, so the only Qwen path in the swarm is the aider one that cannot execute"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+priority: 40
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1052-a-role-seat-can-be-staffed-by-qwen-code.feature
+human_approval: approved
+approval_context: >
+  Nothing here needs a technical decision from you - you already made the
+  hard one by smoke-testing the CLI and confirming it really executes. Two
+  things worth your eye before it is built:
+
+  ONE. The ToS caution travels into this ticket rather than being quietly
+  dropped, as you asked: `qwen-mono-router.conf`'s own comment warns that
+  "Personal ToS limits use to interactive coding tools; headless swarm may
+  risk key revocation - prefer Team Edition for automation, or verify
+  eligibility in console first." This ticket BUILDS the capability; it does
+  not decide that running it headless against a Personal plan is allowed.
+  Scenario 06 pins the warning into the pack file so nobody launches it
+  without reading it.
+
+  TWO. This is slice (a) of the ordering you accepted - agent shape, launch
+  adapter, base pack. The ModelFactory `provider->agent` entry and the Model
+  Steward cost-class registration are BL-1053, which depends on this one,
+  because registering a provider with nothing to launch is inert bookkeeping.
+  The trial run - short-lived second swarm, scratch target, live Claude
+  pipeline untouched - is operational and is not ticketed.
+
+required_wiring:
+  - 'swarmforge/scripts/prompt_engine_lib.bb::"qwen-code"::the capability entry must land in the live provider-capabilities map - the launch adapter reads its shape from there, and an adapter built against a map with no entry falls through to the default and silently launches the wrong agent shape'
+  - "specs/pipeline/steps/index.js::bl1052::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them"
+
+invariants:
+  - "A capability entry describes the AGENT, never the model. qwen-code and the aider-based qwen pack share a model catalog, an endpoint and a key, and must never share a capability shape - the two differ in whether the agent can execute a shell command at all, which is the whole reason one works as a swarm role and the other does not."
+  - "The API key reaches the pane only through the launching environment and tmux `-e`. It is never written into a pack file, a generated launch script, a prompt, or anything that reaches a commit."
+
+description: |
+  ## What is wrong
+
+  The swarm has exactly one Qwen path, and it is the broken shape. The
+  `qwen-mono-router` pack drives Qwen models through `aider` - a file editor
+  with no autonomous shell execution - which is the same structural failure
+  already proven live with Mistral, where roles narrated `ready_for_next.sh`
+  instead of running it. `@qwen-code/qwen-code` (npm, binary `qwen`) is
+  Alibaba's own agentic CLI, Gemini-CLI-derived and genuinely tool-use
+  capable, and the swarm cannot staff a seat with it.
+
+  The operator smoke-tested it outside any production path and confirmed the
+  one thing that matters: with `--auth-type openai -y` against the Token Plan
+  OpenAI-compat endpoint, it ACTUALLY EXECUTED a shell command and returned
+  the real result. Without `-y` it refused and said so, rather than
+  pretending - a better failure mode than the aider incident.
+
+  ## Why it is small
+
+  Almost everything it needs already exists.
+
+  `prompt_engine_lib.bb`'s `provider-capabilities` map already carries the
+  exact shape this takes: `"vibe"` and `"gemini"` are registered
+  `:wake-style :chat-message, :bootstrap-style :embedded` precisely because
+  they are real bash-capable agents, and the map's own comment already spells
+  out the distinction this ticket turns on - "Do NOT model it on aider:
+  aider shares Mistral as a MODEL but is a file editor that cannot execute
+  ... Capability entries describe the AGENT, not the model."
+
+  The credential plumbing exists too. `swarmforge.sh`'s `qwen_guard` already
+  maps `QWEN_API_KEY` (falling back to `BAILIAN_CODING_PLAN_API_KEY`) onto
+  `OPENAI_API_KEY` / `OPENAI_API_BASE` / `OPENAI_BASE_URL` for the Token Plan
+  SEA endpoint, and `ancillary_provider_lib.sh` already passes it to a pane
+  through `-e`. Same credentials, different launcher.
+
+  So what is genuinely missing is: an agent shape, a launch adapter that
+  composes `qwen --auth-type openai -y -m <model> ...` with the role prompt
+  embedded the way `vibe` embeds it, and a base pack to launch.
+
+  ## How (direction, not mandate)
+
+  Register `qwen-code` in `provider-capabilities` mirroring `vibe`. Teach the
+  launch-command composer the `qwen` invocation, reusing `qwen_guard` rather
+  than adding a second credential path. Add a NEW pack -
+  `qwen-code-mono-router.conf` - beside the existing `qwen-mono-router.conf`,
+  leaving that one untouched.
+
+  Deliberately NOT in this slice: the ModelFactory `provider->agent` entry
+  and the Model Steward cost-class registration (BL-1053, depends on this);
+  any change to the aider-based `qwen-mono-router` pack; and the trial run
+  itself, which is operational.
+
+  Testing bar: this project's Babashka scripts have no mutation, CRAP or DRY
+  tooling wired (Engineering Rules, "Startup Tools"), so the gate is real
+  unit-test coverage of the new adapter code under
+  `swarmforge/scripts/test/` - a hardening pass here must record that
+  degraded fallback rather than imply a mutation run happened.
+
+notes: |
+  Source intake: `.swarmforge/operator/INTAKE-onboard-qwen-code-provider.md`
+  (operator, filed 2026-07-26 via the coordinator session; archived to
+  `.swarmforge/operator/archive/` on drain). Split 1:N with BL-1053, which
+  carries the intake's Scope items 4 and the `provider->agent` half of its
+  UPDATE section; this ticket carries Scope items 1, 2, 3 and 5.
+
+  The operator's words, verbatim:
+
+  - "where it makes sense, to reduce costs"
+  - "route this through the Swarm Intelligence Layer (BL-545: PromptEngine +
+    Model Steward + ModelFactory), not a bespoke standalone pack — operator's
+    explicit direction after this was filed."
+  - "Operator is fine waiting for whatever ticket sequence the specifier
+    lands on to cover (a) then (b) — no rush, just wants it done through this
+    layer properly rather than a one-off hand-wired pack."
+  - "Priority: cost-reduction infra work, not blocking anything else in
+    flight."
+
+  The ToS caution, carried verbatim from `qwen-mono-router.conf`'s own
+  comment as the intake explicitly asked ("flag it in the ticket's
+  acceptance/notes, don't silently drop it"): "Personal ToS limits use to
+  interactive coding tools; headless swarm may risk key revocation — prefer
+  Team Edition for automation, or verify eligibility in console first."
+
+  The intake's own trial plan, unticketed and operational: "launch as a
+  short-lived SECOND swarm ... against either a throwaway/scratch target or
+  one small low-stakes paused ticket — not folded into the live Claude
+  mono-router pipeline, which stays untouched and continues its current work
+  uninterrupted."
+
+  IR-DRY: three findings reviewed and all deliberately kept - each is the
+  same parameterized step with a different literal argument (the two pack
+  filenames scenarios 06 and 07 compare; "that window" against a
+  "qwen-code" window; the two agent names scenarios 01 and 02 contrast).
+  Collapsing any pair would delete the contrast the scenario exists to draw.
+  No `duplicate` findings.
+
+  Verified at spec time: `qwen-code` appears zero times in
+  `prompt_engine_lib.bb`, and `qwen` zero times in `model_factory_lib.bb`.
+
+qa_e2e_procedure: |
+  On the live host, with `QWEN_API_KEY` (or `BAILIAN_CODING_PLAN_API_KEY`)
+  exported and `qwen` on PATH:
+
+  1. Launch the new pack against a SCRATCH target - never the live repo:
+     `./swarm <scratch-root> --pack qwen-code-mono-router`.
+  2. Confirm the seat is a real agent, not a narrator: in the role pane, ask
+     it to run `ready_for_next.sh` and confirm the pane shows the command's
+     actual output, not a description of what it would do. This is the exact
+     check the aider-based pack fails.
+  3. Confirm the role prompt was embedded at launch, not pasted afterwards -
+     the agent answers a question about its own role from the first turn.
+  4. Confirm the key never reached disk:
+     `grep -rl "$QWEN_API_KEY" <scratch-root> swarmforge/packs/` prints
+     nothing, and `git -C <scratch-root> status --short` shows no generated
+     file carrying it.
+  5. Confirm the existing aider-based pack is untouched: launching
+     `--pack qwen-mono-router` behaves exactly as it did before.
+  6. Read the new pack file and confirm the ToS caution is present in it.
