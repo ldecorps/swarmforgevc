@@ -105,6 +105,16 @@ description: |
   stage. Treat it as saved rediscovery, not as a solution to merge, and feel
   free to discard it if the design goes another way.
 
+  Provenance settled 2026-08-22 after the coder reported the edits were not
+  its own: they are the coordinator's rescue of the stash the 2026-08-20
+  briefing recorded as "stash@{0} (real BL-981 board-seat-leak fix) has no
+  worktree - flagged twice by the specifier, not yet rescued", applied into
+  the coder's worktree at 07:27:04 (all six files share that mtime to the
+  second). **All 38 current stashes and the stash reflog were scanned: the
+  work is in none of them.** The evidence file and the coder's volatile
+  working copy are the only two places it now exists - which is why it was
+  captured. See BL-1041 for the rescue-durability defect that exposed.
+
 qa_e2e_procedure: >
   1. At the parent commit, add a second seat row for an existing stage to a
      fixture `roles.tsv` (`coder@sonnet2`, its own worktree), place one

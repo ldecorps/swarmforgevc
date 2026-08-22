@@ -232,3 +232,44 @@ Three layers each recorded or rendered the raw seat id:
    not-started while the seat was actively working it.
 
 By specifier.
+
+---
+
+## Provenance, settled 2026-08-22 after a coder `note`
+
+The coder reported: *"BL-983 seat-leak edits appeared UNCOMMITTED in coder
+worktree 07:27, not mine"*. It is right that they are not its work, and it
+was right to surface rather than sweep them. They are not a phantom writer
+either. Established:
+
+1. **All six files carry the identical mtime `2026-08-22 07:27:04`** — the
+   same second. An agent editing six files writes them seconds or minutes
+   apart; one atomic six-file write is a bulk apply, not authorship.
+2. **`docs/briefings/2026-08-20.md:244-247` names the source**, under "Still
+   open / not yet resolved":
+
+   > **stash@{0} (real BL-981 board-seat-leak fix) has no worktree** —
+   > flagged twice by the specifier, not yet rescued. Real, reviewed-sound
+   > work (`stageOfSeat()` helper preventing `coder@sonnet2` from leaking
+   > onto the pipeline board) sitting outside any branch.
+
+So this is the coordinator's deliberate rescue of that stash, exactly as its
+own note said — applied into the coder's worktree without telling the coder,
+which is why the coder found unattributable work in its own tree.
+
+### The part that matters more than the attribution
+
+**The work is now in no stash at all.** All 38 current stash entries were
+scanned for `stageOfSeat`: zero hits. `git reflog show stash` has no entry
+for it either — consistent with a `pop`, which drops the entry.
+
+So as of this writing the fix exists in exactly two places:
+
+- the coder worktree's uncommitted working copy, and
+- this file.
+
+It went from "recoverable from a stash" to "one `git restore` from gone" in
+the same operation that rescued it. That is the durability gap; the
+attribution confusion is the symptom that exposed it.
+
+By specifier.
