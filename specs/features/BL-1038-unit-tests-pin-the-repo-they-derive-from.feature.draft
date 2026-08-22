@@ -1,0 +1,26 @@
+# NOT EXECUTABLE. Parked per BL-233: no *.feature glob and no acceptance
+# runner picks this file up, so the design below is preserved without the
+# runner throwing on a scenario whose step handlers do not exist yet.
+#
+# Why it is parked. This scenario was added to the live feature file on
+# 2026-08-22 (commit 2dd75c9294) by the amendment that established the
+# operation boundary. The BL-1038 parcel had already been built and
+# forwarded at 6c62a65495 - it does not contain handlers for three of the
+# six steps below, and the runner hard-fails on a step it cannot match.
+# The BEHAVIOUR is already delivered and correct: liveRepoDerivationGuard
+# requires the growth operation to target the BOUND live root by name, so a
+# file's own `git init` into a temp dir is never named. What is missing is
+# only the executable pinning of that boundary.
+#
+# Who lands it. BL-1039 - it owns repository CREATION and must show that the
+# two guards do not collide on a file that performs both operations. Land it
+# WITH its step handlers, in the same parcel, or leave it here.
+
+  # BL-1038 unit-tests-pin-the-repo-they-derive-from-07
+  Scenario: a test that both reads live sources and builds its own repository is flagged only for the live read
+    Given a unit-lane test file that resolves the live repository root
+    And that same file creates a git repository of its own
+    When the guard runs
+    Then the guard fails
+    And the guard names the live-repository read as the violation
+    And the guard does not name the created git repository as a violation
