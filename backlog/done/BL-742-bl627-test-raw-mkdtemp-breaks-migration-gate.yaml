@@ -42,6 +42,32 @@ source: |
   landed test in this parcel — filed as its own shortfall instead.
 
 notes: |
+  SUPERSEDED — RESOLVED BY BL-771. Verified by the specifier 2026-08-21; this
+  ticket is dead and awaits coordinator closure (paused/ -> done/M8/). It was
+  never promoted, so nothing in flight depends on it.
+
+  A SECOND ticket was filed for this same single defect and was the one that
+  actually shipped: BL-771 "the raw-mkdtemp guard has been red on main since
+  2026-07-28: pricingTable.test.js:92 allocates its temp root directly"
+  (backlog/done/M8/). Its fix commit is `30160c477` "BL-771: migrate
+  pricingTable.test.js off raw mkdtempSync; harden the guard's exemption
+  boundary". BL-742 sat in paused/ the whole time and nobody noticed the two
+  were the same defect.
+
+  Verified by CONTENT on a fresh ref, not by the file's existence:
+    git show origin/main:extension/test/pricingTable.test.js | grep -n 'mkdtempSync\|mkTmpDir'
+      12:const { mkTmpDir } = require('./helpers/tmpDir');
+      92:  const root = mkTmpDir('bl627-unpriced-');
+  Line 92 — the exact site this ticket names — is already the fix this ticket
+  asks for. Both of its own Acceptance bullets are therefore already met:
+  `npx vitest run test/tmpDirMigrationGuard.test.js` is green 11/11 on main,
+  and the four remaining `mkdtempSync` hits under extension/test/ are the
+  guard's own fixtures, its self-reference, and the shared helper — all
+  deliberately exempt.
+
+  Companion BL-743 (the pilot-process half) keeps whatever retrospective value
+  it has, but its "remaining work" is nil for the same reason.
+
   BL-723 hardener verdict on BL-627 (this finding, combined with BL-740):
   not-on-par. Linked pilot-process defect: BL-743.
 

@@ -182,3 +182,8 @@ notes: |
   finding at once: 6 occurrences, 6 unique steps, 0 findings. The
   `commit message` column survives the prune rule deliberately - five rows
   share a value and the sixth is the whole BL-972 guard.
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-22, by: architect, blamed: coder, class: behavior, commit: a49f9cac94, evidence: backlog/evidence/BL-1025-architect-bounce-20260822.md }

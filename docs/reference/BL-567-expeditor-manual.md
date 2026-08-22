@@ -140,6 +140,51 @@ rather than inferring it. Current entries: `bl-topic-record`, `briefing-hooks`,
 `{parked-at-ms, destination, tickets, role-branch-tips, why}`. `destination` is always
 `hold`.
 
+### The QA-hat verdict store (BL-1025)
+
+One artifact does **not** live under the run directory:
+`<project-root>/.swarmforge/expedite-approvals/<YYYY-MM>.jsonl`, one JSON object
+per line, appended.
+
+```
+{"at":"2026-08-22T00:12:00Z","ticket":"BL-1021","stage":"QA","verdict":"pass","commit":"44ef693d9c"}
+```
+
+| key | meaning |
+|---|---|
+| `at` | when the QA hat ruled (ISO-8601; also picks the month file) |
+| `ticket` | the BL id the run walked |
+| `stage` | always `QA` — no other stage writes here |
+| `verdict` | the QA hat's own verdict, e.g. `pass` or `bounce` |
+| `commit` | the run worktree's tip at that instant, 10 hex |
+
+**Why it exists.** An expedite run never advances the `swarmforge-QA` ref — with
+the swarm stopped there is no live QA worktree to merge into. Article 4.2's
+pipeline-code-on-main check asks `is_qa_ancestor.sh` whether a commit was
+approved, and that predicate's only approval signal used to be ancestry of that
+ref. So every commit of an expedite run touching a QA-exclusive path read as
+"landed outside QA" — three of BL-1021's did, on 2026-08-21. This store is the
+run's verdict made machine-checkable, and `is_qa_ancestor.sh` now reads it as an
+alternate approval path.
+
+**What it is not.** It is not a way to *assert* approval. Only
+`expedite_cli.bb` writes it, only from the QA hat's own verdict, and only on a
+real run — `--dry-run` writes nothing, and a QA stage that timed out or returned
+an unrecognised verdict writes nothing either (a run that fell over approved
+nothing). A commit whose *message* claims an expedite run buys exactly nothing:
+the predicate never reads commit subjects (BL-972).
+
+A **bouncing** verdict is recorded too, deliberately. "A verdict on file that
+says no" and "no verdict at all" are different states, and only a record can
+tell them apart. Neither approves.
+
+The store is machine-local under `.swarmforge/` (gitignored), so it does not
+travel with the repo — it is a fact about approvals on *this* checkout, read by
+the babysitter sweep running against that same checkout. Reading it follows the
+same fail-closed discipline as the bounce store: absent means "no expedite run
+ever approved this", but a store that exists and cannot be consulted is
+undeterminable and never reads as approved.
+
 ## Liveness
 
 Liveness is a **probe**, never a file glob. Candidate sockets are found by globbing
@@ -230,6 +275,11 @@ between launches and absent on a bare host.
 `SWARMFORGE_SKIP_DAEMON` is deliberately **not** used: it removes handoffd but still
 reads and writes the mailboxes, which may themselves be the broken thing.
 
+BL-1025's QA-hat verdict store does not weaken this. The run never calls the
+babysitter, never reads its state, and does not depend on it existing — it
+appends a file and moves on. The babysitter reads that file later, on its own
+schedule, if it runs at all.
+
 ## Test suites
 
 | command | covers |
@@ -240,6 +290,9 @@ reads and writes the mailboxes, which may themselves be the broken thing.
 | `bash swarmforge/scripts/test/expedite_mutation_sweep.sh` | 41 mutants; Stryker and the Gherkin mutator cannot see `.bb` |
 | `bash swarmforge/scripts/test/test_expedite_cli.sh` | 58 assertions end to end against a real fixture |
 | `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-567-*.feature <out> specs/pipeline/steps/expeditorOfflineSingleTicketPipelineSteps.js` | 21 scenarios |
+| `bash swarmforge/scripts/test/test_expedite_qa_verdict_store.sh` | BL-1025: the run writes its QA-hat verdict; `--dry-run` writes none |
+| `bash swarmforge/scripts/test/test_is_qa_ancestor_expedite_store.sh` | BL-1025: the shared predicate's reader half, including the fail-closed rows |
+| `bb swarmforge/scripts/test/bl1025_expedite_approval_property_runner.bb` | BL-1025: both declared invariants, exhaustive over all 32 states |
 
 `PROPERTY_RUNS` overrides the property run count.
 

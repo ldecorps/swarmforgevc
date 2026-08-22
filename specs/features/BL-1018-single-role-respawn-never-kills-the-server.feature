@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6397c4c6c6c455b7c1f398c2efb35bef740003e5466ea0cf605a349b1a71c523
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-22T01:25:49.183139Z","feature_name":"a single-role repair command can never reach beyond its own session","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-1018-single-role-respawn-never-kills-the-server.feature","background_hash":"605a058cc62b8dab5a87b7996aee89e3f25bbd57d5549a518785761b082e3691","implementation_hash":"unknown","scenarios":[{"index":2,"name":"no resolved command can affect anything but its own target","scenario_hash":"2ff3f10f66059b5c4582431e9d252214471096d67d22c010db05abe943d9a874","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-22T01:25:49.183139Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a single-role repair command can never reach beyond its own session
 
   BL-1018: on 2026-08-21 ~08:26 UTC an operator single-role respawn of the
