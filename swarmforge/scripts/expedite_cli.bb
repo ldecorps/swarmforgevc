@@ -509,7 +509,8 @@
           worktree (ensure-worktree! opts)
           stages (expedite-lib/stages-for {})
           staged (drive-stages! opts worktree run-dir stages)
-          _ (when (and (= :done (:ticket staged)) (not (:dry-run? opts)))
+          ticket-moved? (boolean (and (= :done (:ticket staged)) (not (:dry-run? opts))))
+          _ (when ticket-moved?
               (move-ticket! root ticket "active" "done"))
           restart (restart-stack! opts)
           _ (when (not (:dry-run? opts))
@@ -518,6 +519,16 @@
                                (str "ticket=" (name (:ticket staged)) " restart=" (name (:outcome restart)))))
           result (expedite-lib/run-result {:ticket (:ticket staged)
                                            :restart (:outcome restart)})
+          ;; BL-1024: derived from facts the run already holds - the park plan
+          ;; and whether the run ticket's own move happened - never tracked a
+          ;; second time. Computed here, before any early exit, so it reaches
+          ;; the summary on EVERY ending including the unhappy ones.
+          parked-tickets (vec (get-in init [:park :park]))
+          outstanding (expedite-lib/outstanding-work
+                       {:ticket ticket
+                        :parked parked-tickets
+                        :ticket-moved? ticket-moved?
+                        :dry-run? (:dry-run? opts)})
           run-record (merge result
                             {:ticket-id ticket
                              :branch (:branch worktree)
@@ -531,6 +542,10 @@
                              :override-used? (get-in init [:gate :override-used?])
                              :restart restart
                              :deferred ["bl-topic-record" "briefing-hooks" "pipeline-stage-sync"]
+                             ;; BL-1024: the leavings ride run.json too, so a
+                             ;; later reader gets them structured rather than
+                             ;; only as terminal text that has scrolled away.
+                             :outstanding outstanding
                              :finished-at-ms (now-ms)})]
       (write-json! (fs/path run-dir "run.json") run-record)
       (log! "ticket" (name (:ticket result)) "| restart" (name (:restart result))
@@ -539,6 +554,12 @@
         (log! "live-set delta (observed vs expected):" (pr-str (into {} d))))
       (when-let [e (:exhaustion staged)]
         (log! "probable-spec-defect:" (pr-str e)))
+      ;; BL-1024: printed LAST of the log lines and unconditionally - a run
+      ;; that ended badly is exactly when its leavings matter most, and the
+      ;; failed-restart ending is the one that stalled the pipeline on
+      ;; 2026-08-21.
+      (println (expedite-lib/format-outstanding-summary
+                {:items outstanding :parked parked-tickets}))
       (println (json/generate-string run-record {:pretty true}))
       (System/exit (:exit-code result)))))
 
