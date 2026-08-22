@@ -354,12 +354,24 @@ detect_tmux_base_indexes() {
   harden_tmux_server
 }
 
+# BL-1075: `window-size largest` used to be set here as a second soft
+# mitigation. It could never take effect on any window the extension tiles:
+# `resize-window -x/-y` "will automatically set window-size to manual in the
+# window options" (tmux(1)), and a WINDOW option beats the server global.
+# Measured on this host - after the panel resizes a window, the global still
+# answers `largest` while that window answers `manual`. There is no ordering
+# in which the global wins, so it was a mitigation the swarm applied and
+# advertised without ever holding it. The tiling cannot stop either: a
+# headless tmux snaps every pane to 80x24, which caps a tile at 24 lines.
+#
+# `focus-events off` is a different matter and stays: nothing overrides it,
+# and dropping the whole function to remove the inert half would take a live
+# knob with it (BL-1075 invariant 2).
 harden_tmux_server() {
   if ! tmux -S "$TMUX_SOCKET" list-sessions >/dev/null 2>&1; then
     return 0
   fi
   tmux -S "$TMUX_SOCKET" set-option -g focus-events off >/dev/null 2>&1 || true
-  tmux -S "$TMUX_SOCKET" set-option -g window-size largest >/dev/null 2>&1 || true
 }
 
 tmux_agent_target() {
