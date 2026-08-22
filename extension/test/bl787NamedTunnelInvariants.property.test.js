@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { isolatedEnv } = require('./helpers/namedTunnelEnvIsolation');
+const { fixtureTunnelName } = require('./helpers/fixtureTunnelName');
 
 // BL-871 QA bounce D2 (2026-08-11): invariants 1 and 3 below launch real
 // background subprocesses (fake cloudflared/caffeinate scripts that
@@ -162,7 +163,12 @@ test(
           env: isolatedEnv({
             CLOUDFLARED: fakeCloudflared,
             HOME: dir,
-            SWARMFORGE_NAMED_TUNNEL: 'swarmforge-bubble',
+            // BL-1061: a per-run unique name, never the production one. These
+            // fixtures spawn REAL processes whose command lines read
+            // "... run <name>", and the reap selects by that name against the
+            // HOST process table - so binding the operator's tunnel name made
+            // this suite both unpassable while it is up and able to kill it.
+            SWARMFORGE_NAMED_TUNNEL: fixtureTunnelName('bl787-ready'),
             SWARMFORGE_NAMED_TUNNEL_HOSTNAME: 'bubble.example.com',
             SWARMFORGE_CLOUDFLARED_CONFIG: configYml,
             SWARMFORGE_SKIP_CAFFEINATE: '1',
@@ -228,7 +234,7 @@ test('property (invariant 2): absent named-tunnel identity fails loud and never 
       if (script === 'launcher') {
         bin = 'bash';
         args = [LAUNCH, dir];
-        env.SWARMFORGE_NAMED_TUNNEL = 'swarmforge-bubble';
+        env.SWARMFORGE_NAMED_TUNNEL = fixtureTunnelName('bl787-launcher'); // BL-1061
         registerOperatorRoot(dir);
         if (noiseFlag) {
           const opDir = path.join(dir, '.swarmforge', 'operator');
@@ -345,7 +351,7 @@ test(
             `tunnel: 00000000-0000-0000-0000-000000000042\ncredentials-file: ${path.join(dir, 'cred.json')}\ningress:\n  - hostname: bubble.example.com\n    service: http://127.0.0.1:8765\n  - service: http_status:404\n`
           );
           fs.writeFileSync(path.join(dir, 'cred.json'), '{}');
-          env.SWARMFORGE_NAMED_TUNNEL = 'swarmforge-bubble';
+          env.SWARMFORGE_NAMED_TUNNEL = fixtureTunnelName('bl787-launcher'); // BL-1061
           env.SWARMFORGE_NAMED_TUNNEL_HOSTNAME = 'bubble.example.com';
           env.SWARMFORGE_CLOUDFLARED_CONFIG = configYml;
         }
