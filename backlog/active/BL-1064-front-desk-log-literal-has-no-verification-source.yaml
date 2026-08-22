@@ -105,3 +105,5 @@ source: >
   launch_front_desk.sh contains front-desk-supervisor 4x and
   front-desk-diagnostics 0x; the literal is written by
   extension/src/tools/telegram-front-desk-bot.ts.
+
+assigned_to: coder
