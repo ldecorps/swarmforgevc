@@ -20,6 +20,7 @@ const { main: proposeMain } = require('../out/tools/propose-onboarding-contract'
 const { parseContractYaml } = require('../out/onboarding/contractView');
 const { writeTelegramChannel } = require('../out/onboarding/telegramChannelStore');
 const { storeTelegramBotToken } = require('../out/onboarding/telegramChannelSecretStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const VALID_FACTS = {
   languages: ['TypeScript'],
@@ -84,9 +85,7 @@ let PREPARED_ROOT;
 
 beforeAll(async () => {
   PREPARED_ROOT = mkSharedTmpDir('relay-onboarding-negotiation-prepared-');
-  execFileSync('git', ['init'], { cwd: PREPARED_ROOT });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: PREPARED_ROOT });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: PREPARED_ROOT });
+  copySeededRepoInto(PREPARED_ROOT);
   const surveyPath = path.join(PREPARED_ROOT, 'survey.json');
   fs.writeFileSync(surveyPath, JSON.stringify(VALID_FACTS));
   await runProposeCli(PREPARED_ROOT, surveyPath);

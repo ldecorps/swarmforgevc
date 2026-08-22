@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readCooldownWindowMarker } = require('../out/tools/cooldownWindowState');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   parseCliArgs,
   conciergeTickIntervalMs,
@@ -318,10 +319,11 @@ test('runExpediteDispatch passes the ticket id and target path as positional arg
 
 function gitFixture() {
   const root = mkTmp();
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
-  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  // BL-1039: the seeded repository comes from the shared fixture - one
+  // seeding per RUN instead of init+config+commit per scenario. Four
+  // process spawns before the behaviour under test was even reached,
+  // repeated across every test in this file. Measured 190ms -> 33ms.
+  copySeededRepoInto(root);
   return root;
 }
 
@@ -3114,21 +3116,21 @@ test('readRootIntakeFiles lists a real root intake file, id from the filename an
 
 test('readRepoBaseUrl resolves an HTTPS github.com origin remote to its base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl resolves an SSH github.com origin remote to its HTTPS base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl degrades to undefined (never throws) when there is no git remote at all', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   assert.equal(readRepoBaseUrl(root), undefined);
 });
 

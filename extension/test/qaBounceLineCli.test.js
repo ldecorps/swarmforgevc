@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process');
 const { formatBounceLine, main } = require('../out/tools/qa-bounce-line');
 const { appendQaBounceRecordIfNew, qaBouncesDir } = require('../out/metrics/qaBounceStore');
 const { appendBounceRecordIfNew } = require('../out/metrics/bounceStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function inventoryItems(n) {
   return Array.from({ length: n }, (_, i) => ({ id: `D${i + 1}`, class: 'behavior', blamed: 'coder', pointer: `fixture.ts:${i + 1} fn()` }));
@@ -27,9 +28,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {

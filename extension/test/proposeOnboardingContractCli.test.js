@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs, readSurveyFacts } = require('../out/tools/propose-onboarding-contract');
 const { parseContractYaml } = require('../out/onboarding/contractView');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI_PATH = path.join(__dirname, '..', 'out', 'tools', 'propose-onboarding-contract.js');
 
@@ -126,9 +127,7 @@ test('readSurveyFacts accepts an empty useCaseObservations array (a legitimate o
 
 test('the compiled CLI scaffolds a proposed contract from survey facts into a fresh target', async () => {
   const targetRepo = mkTmpDir('propose-onboarding-contract-target-');
-  execFileSync('git', ['init'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });
+  copySeededRepoInto(targetRepo);
   const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));
 
   const result = await runCli([targetRepo, surveyPath]);
@@ -168,9 +167,7 @@ test('main() prints usage and exits non-zero when a required argument is missing
 // in-process tests above, never the only cover for the real logic.
 test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
   const targetRepo = mkTmpDir('propose-onboarding-contract-target-');
-  execFileSync('git', ['init'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: targetRepo });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: targetRepo });
+  copySeededRepoInto(targetRepo);
   const surveyPath = mkTmpFile('survey.json', JSON.stringify(VALID_FACTS));
 
   const result = runCliSubprocess([targetRepo, surveyPath]);

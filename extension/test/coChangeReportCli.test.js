@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { parseArgs, formatCoChangeReport, toRepoRelativePath, main } = require('../out/tools/co-change-report');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'co-change-report.js');
 
@@ -142,9 +143,7 @@ async function runCli(cwd, args) {
 
 test('the compiled CLI reports real co-changers from a real git repo, ranked and flagged', async () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   commitFiles(root, { 'a.ts': '1', 'b.ts': '1' });
   commitFiles(root, { 'a.ts': '2', 'b.ts': '2' });
   commitFiles(root, { 'a.ts': '3', 'b.ts': '3' });
@@ -164,9 +163,7 @@ test('the compiled CLI reports real co-changers from a real git repo, ranked and
 
 function mkCrossDirRepo() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   // Three commits touch dirA/target.ts alongside a file in a DIFFERENT
   // top-level directory (dirB/) - cross-directory co-change, the exact
   // shape BL-268 found silently dropped when scoped to dirA/'s subtree.
@@ -212,9 +209,7 @@ test('the CLI exits non-zero with a usage message when no changed files are give
 // in-process tests above, never the only cover for the real logic.
 test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   commitFiles(root, { 'a.ts': '1', 'b.ts': '1' });
   commitFiles(root, { 'a.ts': '2', 'b.ts': '2' });
   commitFiles(root, { 'a.ts': '3', 'b.ts': '3' });

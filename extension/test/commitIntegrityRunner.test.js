@@ -4,6 +4,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { runCommitIntegrity, commitIntegrityCliPath, commitApprovalWrites } = require('../out/util/commitIntegrityRunner');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // runCommitIntegrity is the exec+parse shared by commitExpediteWrites
 // (telegram-front-desk-bot.ts, BL-490/BL-538) and commitEpicReorderWrites
@@ -61,10 +62,11 @@ test('runCommitIntegrity: a missing commit_integrity_cli.bb degrades to false, n
 
 function gitFixture() {
   const root = mkTmpDir('sfvc-commit-approval-writes-');
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
-  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  // BL-1039: the seeded repository comes from the shared fixture - one
+  // seeding per RUN instead of init+config+commit per scenario. Four
+  // process spawns before the behaviour under test was even reached,
+  // repeated across every test in this file. Measured 190ms -> 33ms.
+  copySeededRepoInto(root);
   return root;
 }
 

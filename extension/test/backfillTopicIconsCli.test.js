@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { backfillTopicIcons, setTopicIconWithRateLimitRetry, formatBackfillSummary, main } = require('../out/tools/backfill-topic-icons');
 const { readSwarmIconId } = require('../out/concierge/blTopicStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-342 scenario 07: a bulk backfill that is rate-limited still completes
 // every topic - the Operator's own hand pass hit "Too Many Requests: retry
@@ -21,10 +22,7 @@ function git(cwd, args) {
 
 function mkGitRepo() {
   const target = mkTmp();
-  git(target, ['init', '-q']);
-  git(target, ['config', 'user.email', 't@t']);
-  git(target, ['config', 'user.name', 't']);
-  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(target);
   return target;
 }
 
