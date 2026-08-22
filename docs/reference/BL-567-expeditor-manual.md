@@ -147,7 +147,7 @@ One artifact does **not** live under the run directory:
 per line, appended.
 
 ```
-{"at":"2026-08-22T00:12:00Z","ticket":"BL-1021","stage":"QA","verdict":"pass","commit":"44ef693d9c"}
+{"at":"2026-08-22T00:12:00Z","ticket":"BL-1021","stage":"QA","approval":true,"verdict":"pass","commit":"44ef693d9c"}
 ```
 
 | key | meaning |
@@ -155,8 +155,20 @@ per line, appended.
 | `at` | when the QA hat ruled (ISO-8601; also picks the month file) |
 | `ticket` | the BL id the run walked |
 | `stage` | always `QA` — no other stage writes here |
-| `verdict` | the QA hat's own verdict, e.g. `pass` or `bounce` |
+| `approval` | **the load-bearing field**: the already-classified decision |
+| `verdict` | the QA hat's own verdict token, for a human reading the store |
 | `commit` | the run worktree's tip at that instant, 10 hex |
+
+`approval` is what `is_qa_ancestor.sh` keys on, and `verdict` is not. That
+split is deliberate: the advance vocabulary (`expedite_lib.bb`'s
+`advance-verdicts` — currently `pass`, `forward`, `approved`, and designed to
+grow again) lives in Babashka, and the predicate is bash with no import across
+that boundary. Having the reader re-derive the token list by hand is the drift
+hazard the Guardrails article names after BL-897; recording the classification
+instead means the vocabulary has exactly one spelling and a fourth token needs
+no second edit. `test_is_qa_ancestor_expedite_store.sh` gates it both ways —
+the predicate must name no verdict token, and every token in `advance-verdicts`
+must round-trip through the real writer to an approved verdict.
 
 **Why it exists.** An expedite run never advances the `swarmforge-QA` ref — with
 the swarm stopped there is no live QA worktree to merge into. Article 4.2's
@@ -174,9 +186,9 @@ an unrecognised verdict writes nothing either (a run that fell over approved
 nothing). A commit whose *message* claims an expedite run buys exactly nothing:
 the predicate never reads commit subjects (BL-972).
 
-A **bouncing** verdict is recorded too, deliberately. "A verdict on file that
-says no" and "no verdict at all" are different states, and only a record can
-tell them apart. Neither approves.
+A **bouncing** verdict is recorded too, deliberately (`approval:false`). "A
+verdict on file that says no" and "no verdict at all" are different states, and
+only a record can tell them apart. Neither approves.
 
 The store is machine-local under `.swarmforge/` (gitignored), so it does not
 travel with the repo — it is a fact about approvals on *this* checkout, read by
