@@ -43,12 +43,18 @@ ancillary_provider_family_for_pack() {
     openrouter-*|*-openrouter*) printf '%s\n' openrouter ;;
     gemini-*) printf '%s\n' gemini ;;
     codex-*) printf '%s\n' codex ;;
+    # BEFORE the qwen-* arm below (BL-1052). qwen-code drives the `qwen`
+    # binary and never touches aider, so the openai_aider family - which
+    # hard-requires aider on PATH and hands out aider-shaped model defaults -
+    # would make this pack demand an agent it does not use.
+    qwen-code-*) printf '%s\n' qwen_code ;;
     perplexity-*|qwen-*|cerebras-*|vibe-*) printf '%s\n' openai_aider ;;
     mono-router) printf '%s\n' claude_direct ;;
     *)
       if [[ "$pack" == *gemini* ]]; then printf '%s\n' gemini
       elif [[ "$pack" == *codex* ]]; then printf '%s\n' codex
       elif [[ "$pack" == *openrouter* ]]; then printf '%s\n' openrouter
+      elif [[ "$pack" == *qwen-code* ]]; then printf '%s\n' qwen_code
       elif [[ "$pack" == *perplexity* || "$pack" == *qwen* || "$pack" == *cerebras* || "$pack" == *vibe* ]]; then
         printf '%s\n' openai_aider
       else
@@ -104,6 +110,19 @@ ancillary_provider_load() {
         cerebras-*) export SWARMFORGE_USE_CEREBRAS=1 ;;
       esac
       ;;
+    qwen_code)
+      # The SAME credential mapping the openai_aider family already performs
+      # for a Qwen pack - not a second path. qwen-code reads the mapped
+      # OPENAI_* from its environment; only the launching binary differs.
+      ancillary_provider_source_env_file "$root/.swarmforge/qwen.env"
+      if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_TOKEN_PLAN_API_KEY:-}" ]]; then
+        export QWEN_API_KEY="$BAILIAN_TOKEN_PLAN_API_KEY"
+      fi
+      if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then
+        export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"
+      fi
+      export SWARMFORGE_USE_QWEN=1
+      ;;
     claude_direct)
       : # direct Claude subscription — no third-party routing keys
       ;;
@@ -122,6 +141,9 @@ ancillary_provider_load() {
     openai_aider)
       unset OPENROUTER_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN GEMINI_API_KEY || true
       ;;
+    qwen_code)
+      unset OPENROUTER_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN GEMINI_API_KEY || true
+      ;;
     claude_direct)
       unset OPENROUTER_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN GEMINI_API_KEY || true
       ;;
@@ -136,6 +158,12 @@ ancillary_provider_load() {
         qwen-*) export SWARMFORGE_USE_QWEN=1 ;;
         cerebras-*) export SWARMFORGE_USE_CEREBRAS=1 ;;
       esac
+      ;;
+    qwen_code)
+      # The blanket unset above cleared this; re-assert it, because the
+      # generated per-role launch script's own qwen guard reads it. No pack
+      # name test: this family IS Qwen, however the pack came to be named.
+      export SWARMFORGE_USE_QWEN=1
       ;;
   esac
 
@@ -210,6 +238,18 @@ ancillary_provider_require_credentials() {
         return 1
       }
       ;;
+    qwen_code)
+      [[ -n "${QWEN_API_KEY:-}" ]] || {
+        echo "ancillary_provider: pack $(ancillary_provider_pack) requires QWEN_API_KEY" >&2
+        return 1
+      }
+      # `qwen`, never `aider`: this pack's whole point is that it launches an
+      # agent that can execute, and aider need not be installed at all.
+      command -v qwen >/dev/null 2>&1 || {
+        echo "ancillary_provider: qwen CLI required for pack $(ancillary_provider_pack)" >&2
+        return 1
+      }
+      ;;
     claude_direct)
       command -v claude >/dev/null 2>&1 || {
         echo "ancillary_provider: claude CLI required" >&2
@@ -247,6 +287,15 @@ ancillary_provider_default_model() {
       cm="$(ancillary_provider_coordinator_model)"
       if [[ -n "$cm" ]]; then printf '%s\n' "$cm"
       else printf '%s\n' "openai/sonar"
+      fi
+      ;;
+    qwen_code)
+      local qcm
+      qcm="$(ancillary_provider_coordinator_model)"
+      # A bare Token Plan model id. The aider family's "openai/sonar" default
+      # is aider's provider-prefixed form and means nothing to `qwen --model`.
+      if [[ -n "$qcm" ]]; then printf '%s\n' "$qcm"
+      else printf '%s\n' "qwen3.7-plus"
       fi
       ;;
     claude_direct)
@@ -297,6 +346,18 @@ ancillary_provider_pane_exports() {
       fi
       printf '%s\n' 'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL OPENROUTER_API_KEY GEMINI_API_KEY'
       ;;
+    qwen_code)
+      # No SWARMFORGE_USE_QWEN test: the family already decided this is Qwen,
+      # so there is no branch here to fall out of and leave the pane pointed
+      # at whatever OPENAI_BASE_URL the shell happened to carry. The key is
+      # referenced BY NAME, never interpolated - its value must not reach a
+      # generated file (BL-130).
+      printf '%s\n' \
+        'export OPENAI_API_KEY="$QWEN_API_KEY"' \
+        "export OPENAI_API_BASE='https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'" \
+        "export OPENAI_BASE_URL='https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'" \
+        'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL OPENROUTER_API_KEY GEMINI_API_KEY'
+      ;;
     claude_direct)
       printf '%s\n' 'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL OPENROUTER_API_KEY GEMINI_API_KEY'
       ;;
@@ -322,6 +383,7 @@ ancillary_provider_fill_tmux_env() {
         ANCILLARY_TMUX_ENV=(-e "OPENAI_API_KEY=${OPENAI_API_KEY}")
       fi
       ;;
+    qwen_code) ANCILLARY_TMUX_ENV=(-e "QWEN_API_KEY=${QWEN_API_KEY}") ;;
     claude_direct)
       if [[ -n "${FRONT_DESK_OPERATOR_MODEL:-}" ]]; then
         ANCILLARY_TMUX_ENV+=(-e "FRONT_DESK_OPERATOR_MODEL=${FRONT_DESK_OPERATOR_MODEL}")
