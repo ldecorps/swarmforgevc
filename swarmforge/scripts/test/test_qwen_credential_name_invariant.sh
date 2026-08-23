@@ -38,4 +38,18 @@ if ! grep -q 'qwen_launch_guard_lib.sh' "$ROOT/swarmforge/scripts/swarmforge.sh"
   exit 1
 fi
 echo "ok: swarmforge.sh delegates to the shared lib"
+
+# QA bounce 20260823: broken $'…\''"$SCRIPT_DIR"'/…\'…' nesting made zsh fail to
+# parse swarmforge.sh at the next elif. Sourcing must succeed (BL-089: sourced,
+# not executed as toplevel).
+SWARMFORGE_SH="$ROOT/swarmforge/scripts/swarmforge.sh"
+set +e
+zsh_err="$(zsh -c "source '$SWARMFORGE_SH'" 2>&1 >/dev/null)"
+zsh_status=$?
+set -e
+if [[ "$zsh_status" -ne 0 ]]; then
+  echo "FAIL: zsh cannot source swarmforge.sh (exit $zsh_status): $zsh_err" >&2
+  exit 1
+fi
+echo "ok: zsh sources swarmforge.sh (qwen_guard quoting parses)"
 echo "BL-1077 invariant: all entry points agree"
