@@ -122,7 +122,9 @@
     (assert-true (str "P2: age >= threshold must yield :stale-suspect, never :silent "
                        "(claim=" claim-ms " now=" now-ms " staleness=" staleness-ms " stale?=" stale? ")")
                  (= (if stale? :stale-suspect :silent)
-                    (batch-claim-progress-lib/decide-batch-claim-observation progress now-ms staleness-ms)))))
+                    ;; BL-1076: a clean worktree - the condition BL-678's
+                    ;; whole generator always meant, now stated.
+                    (batch-claim-progress-lib/decide-batch-claim-observation progress now-ms staleness-ms false)))))
 
 (assert-true "P2 generator reached both a fresh case and a stale case"
              (and (contains? @p2-branches-hit :stale)
@@ -137,7 +139,7 @@
 (assert-true "P2: :silent is never returned for an already-stale age (the gate is not bypassable)"
              (not= :silent
                    (batch-claim-progress-lib/decide-batch-claim-observation
-                    {:lastProgressAtMs 1000} 999999999 1000)))
+                    {:lastProgressAtMs 1000} 999999999 1000 false)))
 
 ;; Non-vacuousness: a broken decide fn that ignores staleness-threshold-ms
 ;; entirely (always :silent) must fail P2's core assertion for the stale
@@ -150,7 +152,7 @@
                (= :silent (broken-decide-always-silent progress now-ms staleness-ms)))
   (assert-true "P2 non-vacuousness: the REAL implementation correctly surfaces :stale-suspect for the same input"
                (= :stale-suspect
-                  (batch-claim-progress-lib/decide-batch-claim-observation progress now-ms staleness-ms))))
+                  (batch-claim-progress-lib/decide-batch-claim-observation progress now-ms staleness-ms false))))
 
 (when (seq @failures)
   (binding [*out* *err*]
