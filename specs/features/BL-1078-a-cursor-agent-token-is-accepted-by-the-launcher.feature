@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=9a126b46b4416d7a4a70e72897700cf66555778dbc9b44f40426342bc1b54701
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T05:43:40.780718433Z","feature_name":"a pack window line naming cursor staffs a real seat","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1078-a-cursor-agent-token-is-accepted-by-the-launcher.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the launcher's allow-list verdict for an agent token","scenario_hash":"cb70d3c4d0af3fc66501e5148e262d6813269072f1ff3530a60d56f762cce532","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-23T05:43:40.780718433Z"},{"index":3,"name":"a cursor seat boots its own role in its own worktree","scenario_hash":"1a23bbb47cc089b38210c727dd972079cab0fc7421ec7c343201b3b69bb47463","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-23T05:43:40.780718433Z"},{"index":5,"name":"an uncertified cursor identity needs a deliberate escape","scenario_hash":"42cc42c3a28322c7693b2707ed85113089b16d4229aba2bbd69eff21d1c2a6e8","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-23T05:43:40.780718433Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a pack window line naming cursor staffs a real seat
 
   BL-1078: the launcher's agent allow-list is
