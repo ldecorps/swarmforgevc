@@ -219,30 +219,40 @@ mid-run (BL-637).
 ## Order of operations
 
 1. Probe liveness.
-2. Park every other ticket in `backlog/active/` to `backlog/hold/`; write the park record.
-3. Run the stop command.
-4. **Re-probe and verify.** The stop's exit code is not trusted.
-5. Refuse if not clean (unless `--override`).
-6. Create `expedite/<BL-id>` and its worktree.
-7. Walk the stage chain.
-8. Move the ticket yaml to `backlog/done/` on success.
-9. Restart — reported, never blocking.
+2. **Check the configured stop command** (BL-1030): tokenize `EXPEDITE_STOP_CMD`
+   (or the `./stop-swarm.sh` default) the way `bash -lc` would, and refuse if any
+   whole token is a forbidden flag or the command cannot be tokenized with
+   confidence. Decided before anything else moves, so a refusal here costs
+   nothing — see [Refusals](#refusals).
+3. Park every other ticket in `backlog/active/` to `backlog/hold/`; write the park record.
+4. Run the stop command — the same line just checked, handed in rather than re-read.
+5. **Re-probe and verify.** The stop's exit code is not trusted.
+6. Refuse if not clean (unless `--override`).
+7. Create `expedite/<BL-id>` and its worktree.
+8. Walk the stage chain.
+9. Move the ticket yaml to `backlog/done/` on success.
+10. Restart — reported, never blocking.
 
 ## Refusals
 
 | message | cause | remedy |
 |---|---|---|
+| `REFUSE stop command carries a forbidden flag: <flag> (in: <command>)` | `--sweep-inbox`, `--reset-worktrees` or `--full` present as a whole token of the configured stop command | never pass these: they archive the parcels a parked ticket needs to resume |
+| `REFUSE stop command could not be read as a command line, so it is refused rather than admitted: <command>` | `EXPEDITE_STOP_CMD` can't be tokenized with confidence — an unterminated quote, a dangling escape, a parameter expansion (`$var`), or a command substitution (`` `cmd` ``/`$(cmd)`) | simplify the configured stop command to a plain line the guard can read; it fails **closed** on anything it cannot read (BL-1030) rather than admitting it |
 | `REFUSE teardown did not reach a clean slate: <names>` | the swarm is live and the stop could not clear it | stop the named processes by hand; `./stop-swarm.sh` misses `babysitterd` and the Operator agent |
-| `REFUSE stop command carries a forbidden flag` | `--sweep-inbox`, `--reset-worktrees` or `--full` | never pass these: they archive the parcels a parked ticket needs to resume |
 | `REFUSE could not create the run worktree` | branch or directory conflict | remove the stale worktree, or delete the branch |
 | `EXHAUSTED {...:probable-spec-defect...}` | the bounce bound was reached on one repeating class | route to the specifier with the named class; do not re-run the coder |
 | `stage-timeout` | a stage exceeded its budget | the stage and its whole process group were killed; read that stage's `transcript.jsonl` |
 
-All three `REFUSE` rows above fire **after** `park-others!` has already staged
-sibling tickets into `backlog/hold/` (BL-1024) — so each one also prints the
-`OUTSTANDING` block and writes `run.json`'s `outstanding` array before the
-process exits. Read it: a refusal is exactly when a parked ticket is most
-likely to sit forgotten. See [the closing summary](#the-closing-summary-bl-1024).
+The two stop-command rows fire **before** `park-others!` (BL-1030) — nothing
+has been parked and the stop command has not run, so that refusal costs
+nothing and the closing summary reports `no tickets are held`. The teardown
+and worktree-creation rows still fire **after** `park-others!` has already
+staged sibling tickets into `backlog/hold/` (BL-1024) — so each of those also
+prints the `OUTSTANDING` block and writes `run.json`'s `outstanding` array
+before the process exits. Read it: a refusal there is exactly when a parked
+ticket is most likely to sit forgotten. See
+[the closing summary](#the-closing-summary-bl-1024).
 
 `--override` covers the liveness refusal **and** the teardown refusal, because both
 express the same decision: run despite a live swarm. Gating only the first would leave
@@ -303,10 +313,12 @@ A deferral nobody is told about is a drop.
 
 Every run ends by printing an `OUTSTANDING` block naming what it left and who
 picks each item up — on **every** ending, including a failed restart, a bounce
-bound exhausted, a stage that overran its timeout, and each of the three
-pre-flight [Refusals](#refusals) (forbidden stop flag, teardown not clean,
-worktree creation failed), all of which fire after `park-others!` has already
-staged real moves. Those three exit through the same single `exit!` call site
+bound exhausted, a stage that overran its timeout, and each of the four
+pre-flight [Refusals](#refusals) (forbidden stop flag, unreadable stop
+command, teardown not clean, worktree creation failed). The stop-command pair
+fire *before* `park-others!` and report nothing held; the other two fire
+after `park-others!` has already staged real moves. All four exit through the
+same single `exit!` call site
 as every other ending, so there is exactly one place in `expedite_cli.bb` that
 terminates the process (`grep -c '(System/exit' expedite_cli.bb` is `1`,
 inside `exit!` alone) and no ending can bypass the summary. A run that parked
