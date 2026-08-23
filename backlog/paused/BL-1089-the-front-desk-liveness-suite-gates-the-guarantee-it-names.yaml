@@ -18,8 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1089-the-front-desk-liveness-suite-gates-the-guarantee-it-names.feature
-human_approval: pending
-
+human_approval: approved
 invariants:
   - "The repaired suite must go RED again if BL-1035's own-heartbeat guard or BL-370's stall detection regresses. A fixture made green by widening the grace, zeroing `FRONT_DESK_HEARTBEAT_STARTUP_GRACE_MS`, or asserting less is a worse outcome than the current red."
   - "Every heartbeat the fixture writes to mean 'this child has served' is timestamped after that same child's own spawn - the fixture models a real child, never a timestamp that could only belong to a predecessor."
