@@ -162,3 +162,13 @@ notes: >
   of this kind in two days (BL-1087/BL-1090 was the first); the guard gap that
   allows two sessions to mint one id is not ticketed and is not this ticket's
   scope.
+
+  DOWNSTREAM CONSUMER, cross-referenced not merged (added 2026-08-23 after a
+  second live instance): BL-1097 is "the router hands a role a parcel whose
+  commit already contains that ticket's finished, QA-approved work". The
+  router can only do that while the finished ticket is still in `active/`,
+  which is exactly the state this ticket detects - so this one shrinks
+  BL-1097's input. It does not replace it: a parcel can also outlive a
+  correctly-closed ticket, which is what happened to BL-1063 on 2026-08-23.
+  BL-1030 is one ticket in both states at once - landed, never closed, and
+  `assigned_to` backfilled to `coder` as though it were unstarted.
