@@ -134,6 +134,7 @@ expects them, and are not migrated or rewritten here.
 - [Boy Scout Run (BL-1015)](reference/BL-1015-boy-scout-run.md) — the acting half: applies an already-written proposal for the scan's top-ranked item inside a declared size envelope, verified against the repository's existing gate set and committed, or refuses the whole thing and states why; slice 2 of the `boy-scout` epic.
 - [Pinned-Repo Fixture and the Live-Derivation Guard (BL-1038)](reference/BL-1038-pinned-repo-fixture-and-live-derivation-guard.md) — the dependency-closure fixture that replaces whole-directory copies of the live `swarmforge/scripts/`, the guard that catches both direct and indirect (escapes-into-production) live-repository reads, and its six scoped exemptions.
 - [Shared Git-Repo Fixture and Its Guard (BL-1039)](reference/BL-1039-shared-git-repo-fixture.md) — the seed-once template that replaces per-test `git init`/`config`/`commit` in the unit lane, its structural isolation, the by-inspection creation guard and its three scoped exemptions.
+- [ACP-Hosted Seat Snapshot (BL-1081)](reference/BL-1081-acp-hosted-seat-snapshot.md) — the `.swarmforge/acp/<role>.json` schema an ACP host writes and the babysitter reads, the provider-table `:acp` dimension, which checks change for a hosted seat, and what is not wired into production yet.
 
 ## Explanation
 

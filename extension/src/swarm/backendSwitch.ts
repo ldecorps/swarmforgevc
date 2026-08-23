@@ -63,34 +63,72 @@ function readLaunchScriptModel(
   }
 }
 
-function readConfiguredModelFromConf(targetPath: string, role: string): string | undefined {
+function resolveEffectivePackConfPath(targetPath: string): string | undefined {
   try {
-    const conf = fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8');
-    for (const line of conf.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('window ')) {
-        continue;
+    const identity = fs.readFileSync(path.join(targetPath, '.swarmforge', 'swarm-identity'), 'utf8');
+    for (const line of identity.split('\n')) {
+      const [key, value] = line.split('\t');
+      if (key === 'active_backlog_max_depth_conf_path' && value?.trim()) {
+        return value.trim();
       }
-      const parts = trimmed.split(/\s+/);
-      if (parts[1] !== role) {
-        continue;
+      if (key === 'launch_pack' && value?.trim()) {
+        const packPath = path.join(targetPath, 'swarmforge', 'packs', `${value.trim()}.conf`);
+        if (fs.existsSync(packPath)) {
+          return packPath;
+        }
       }
-      const match = trimmed.match(/--model\s+(\S+)/);
-      return match?.[1];
     }
   } catch {
-    // no conf or unreadable
+    // no identity or unreadable
+  }
+  return undefined;
+}
+
+function readConfiguredModelFromConf(targetPath: string, role: string): string | undefined {
+  const confPaths = [
+    resolveEffectivePackConfPath(targetPath),
+    path.join(targetPath, 'swarmforge', 'swarmforge.conf'),
+  ].filter((p): p is string => !!p);
+
+  for (const confPath of confPaths) {
+    try {
+      const conf = fs.readFileSync(confPath, 'utf8');
+      for (const line of conf.split('\n')) {
+        const trimmed = line.trim();
+        if (role === 'coordinator' && trimmed.startsWith('config coordinator_model ')) {
+          const model = trimmed.slice('config coordinator_model '.length).trim();
+          if (model) {
+            return model;
+          }
+        }
+        if (!trimmed.startsWith('window ')) {
+          continue;
+        }
+        const parts = trimmed.split(/\s+/);
+        if (parts[1] !== role) {
+          continue;
+        }
+        const match = trimmed.match(/--model\s+(\S+)/);
+        if (match?.[1]) {
+          return match[1];
+        }
+      }
+    } catch {
+      // try next conf path
+    }
   }
   return undefined;
 }
 
 // Non-Claude launch script first (ignores stale claude settings from prior
 // backends), then live claude settings file, then launch script --model for
-// other agents, then swarmforge.conf's window line as a last-resort fallback.
+// other agents, then pack/swarmforge.conf as a last-resort fallback.
 export function readRoleModelId(targetPath: string, role: string): string | undefined {
   const launch = readLaunchScriptModel(targetPath, role);
-  if (launch.prefersLaunchOverClaudeSettings && launch.model) {
-    return launch.model;
+  // Cursor/aider seats must never inherit a leftover Claude settings model —
+  // even when the launch script omitted --model (coordinator historically did).
+  if (launch.prefersLaunchOverClaudeSettings) {
+    return launch.model ?? readConfiguredModelFromConf(targetPath, role);
   }
   return (
     readCurrentModel(targetPath, role) ??
