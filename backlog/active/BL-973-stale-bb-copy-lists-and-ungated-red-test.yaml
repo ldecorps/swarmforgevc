@@ -207,3 +207,5 @@ notes: >
   BL-1033 exactly that way).
 
   Gherkin lint gate: clean at amend. IR-DRY: 0 findings.
+
+assigned_to: coder

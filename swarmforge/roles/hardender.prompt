@@ -1715,3 +1715,26 @@ You are the hardender.
   precondition, and the `79cc04b29` provenance of `concurrency: 1` before
   accepting; the Ignored-accounting duty and the load-rule scoping are the
   specifier's additions.
+
+## A red OUTSIDE your parcel is already ticketed until you have grepped and proved otherwise (BL-1063, five reports)
+- A shared lane — `test:properties`, the unit suite, a repo-wide script — carries
+  the repository's standing debt, not only your parcel's. When one goes red on
+  something your own diff did not touch, that red is presumed ALREADY TICKETED
+  until a grep says otherwise.
+- Before reporting it — and especially before calling it "new", "unticketed", or
+  asking the specifier to "please ticket" it — run `grep -rl <failing-test-file-basename> backlog/`
+  from the master checkout or your own worktree (both carry the backlog). Name
+  the ticket you found in your note. Report it as untracked only when that grep
+  is genuinely empty.
+- **Say "deterministic" or "flaky" only from evidence.** Both words route the
+  reader: "flaky" invites a retry, "deterministic" invites a fix. A red you saw
+  once is neither until you have run it twice or read the assertion.
+- The incident: `extension/test/bl796NvmNodePathFollowUpAdoptInvariants.property.test.js`
+  invariant 1 is deterministically red on any host carrying a system `node`
+  (it asserts `node` resolved from a fake nvm tree, which contradicts BL-796's
+  own no-shadow invariant). It has been tracked as **BL-1063** since 2026-08-22
+  and was reported five times by four roles across five unrelated parcels — two
+  of those reports asked for a ticket that already existed, one grep away. Each
+  costs a triage detour here and a specifier turn to re-refuse a duplicate.
+- This is about your REPORT, not your verdict: a red your parcel actually caused
+  is still yours to own, unchanged.
