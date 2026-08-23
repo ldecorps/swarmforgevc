@@ -103,38 +103,31 @@ type GateVerdict =
   | { kind: 'not-found' }
   | { kind: 'refuse'; gate: string; reason: string };
 
-function consultPromotionGates(targetPath: string, itemId: string): GateVerdict {
-  const cli = promotionGatesCliPath(targetPath);
-  // Named explicitly rather than discovered by a failed exec: "the gate CLI is
-  // not here" and "the gate refused" are different facts, and an operator
-  // shown the second when the first is true would go looking for a dependency
-  // that is not the problem.
-  if (!fs.existsSync(cli)) {
-    return {
-      kind: 'refuse',
-      gate: 'promotion_gates',
-      reason: `the promotion gates could not be consulted (${cli} is missing); refusing rather than promoting ungated`,
-    };
-  }
-  let stdout: string;
+// The CLI's raw stdout, or a signal that it could not be reached at all
+// (bb missing, the script crashing, any exit code other than the two the
+// CLI documents as real verdicts). Split from consultPromotionGates so each
+// half - "did we hear back" vs. "what did it say" - carries its own small
+// complexity instead of one function carrying both.
+type GateCliOutcome = { stdout: string } | { crashed: true };
+
+function runGateCli(cli: string, targetPath: string, itemId: string): GateCliOutcome {
   try {
-    stdout = execFileSync('bb', [cli, 'gate-promotion', targetPath, itemId], { encoding: 'utf8' });
+    return { stdout: execFileSync('bb', [cli, 'gate-promotion', targetPath, itemId], { encoding: 'utf8' }) };
   } catch (err) {
     const e = err as { status?: number; stdout?: string };
     // exit 1 = NOT_FOUND, exit 2 = REFUSE: both are real verdicts the CLI
-    // prints on stdout before exiting non-zero.
-    stdout = typeof e.stdout === 'string' ? e.stdout : '';
-    if (e.status !== 1 && e.status !== 2) {
-      // Anything else - bb absent, the CLI missing, a crash - is NOT an
-      // allowance. A gate that fails open is not a gate, and this one exists
-      // because a bypass promoted BL-1078 onto an unlanded dependency.
-      return {
-        kind: 'refuse',
-        gate: 'promotion_gates',
-        reason: `the promotion gates could not be consulted (${cli}); refusing rather than promoting ungated`,
-      };
+    // prints on stdout before exiting non-zero. Anything else - bb absent,
+    // the CLI missing, a crash - is NOT an allowance: a gate that fails open
+    // is not a gate, and this one exists because a bypass promoted BL-1078
+    // onto an unlanded dependency.
+    if (e.status === 1 || e.status === 2) {
+      return { stdout: typeof e.stdout === 'string' ? e.stdout : '' };
     }
+    return { crashed: true };
   }
+}
+
+function parseGateVerdict(stdout: string, cli: string): GateVerdict {
   const line = stdout.split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
   if (line.startsWith('ALLOW')) {
     return { kind: 'allow' };
@@ -151,6 +144,30 @@ function consultPromotionGates(targetPath: string, itemId: string): GateVerdict 
     gate: 'promotion_gates',
     reason: `unrecognised verdict from ${path.basename(cli)}: ${line || '(no output)'}`,
   };
+}
+
+function consultPromotionGates(targetPath: string, itemId: string): GateVerdict {
+  const cli = promotionGatesCliPath(targetPath);
+  // Named explicitly rather than discovered by a failed exec: "the gate CLI is
+  // not here" and "the gate refused" are different facts, and an operator
+  // shown the second when the first is true would go looking for a dependency
+  // that is not the problem.
+  if (!fs.existsSync(cli)) {
+    return {
+      kind: 'refuse',
+      gate: 'promotion_gates',
+      reason: `the promotion gates could not be consulted (${cli} is missing); refusing rather than promoting ungated`,
+    };
+  }
+  const outcome = runGateCli(cli, targetPath, itemId);
+  if ('crashed' in outcome) {
+    return {
+      kind: 'refuse',
+      gate: 'promotion_gates',
+      reason: `the promotion gates could not be consulted (${cli}); refusing rather than promoting ungated`,
+    };
+  }
+  return parseGateVerdict(outcome.stdout, cli);
 }
 
 // BL-490: the Expedite verb's promote step - no paused->active mover existed
