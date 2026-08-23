@@ -11,7 +11,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1108-cursor-seat-readiness-hotfix.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   This is a BL-848 hotfix stamp-off. The human decision requested is whether
   the already-landed commit f02f6ae5b4 is certified or waived after the normal
