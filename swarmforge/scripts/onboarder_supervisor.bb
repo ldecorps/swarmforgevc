@@ -40,6 +40,9 @@
 ;;   ONBOARDER_HEALTHY_RESET_MS continuous-uptime attempt reset (default 600000)
 ;;   ONBOARDER_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
 ;;   ONBOARDER_STALL_MS         heartbeat staleness window (default 120000)
+;;   ONBOARDER_HEARTBEAT_STARTUP_GRACE_MS  how long a freshly spawned child
+;;                              may go without a heartbeat before the stall
+;;                              window applies to it (default 90000)
 ;;   ONBOARDER_KILL_GRACE_MS    SIGTERM->SIGKILL grace period, ms (default 2000)
 
 (ns onboarder-supervisor
@@ -90,6 +93,20 @@
 ;; loop's own 60s interval even accounting for one missed tick.
 (def stall-ms (env-long "ONBOARDER_STALL_MS" 120000))
 
+;; BL-1043: how long a freshly spawned child may stay silent before the stall
+;; window above applies to it at all. This supervisor had no such window: it
+;; called poll-heartbeat-stale?'s grace-less arity, so a child with no
+;; heartbeat yet was stale on the first tick. Measured in
+;; .swarmforge/operator/onboarder-supervisor.log: 39 starts, 27 stalls, and 7
+;; of the 14 adjacent started->stalled pairs under ten seconds - the fastest
+;; 2.00s against the 120000ms window declared just above.
+;;
+;; 90s, matching cursor_bridge_supervisor.bb (the reference that already had
+;; both halves right) and the library default, rather than a third number.
+(def heartbeat-startup-grace-ms
+  (env-long "ONBOARDER_HEARTBEAT_STARTUP_GRACE_MS"
+            front-desk-supervisor-lib/default-startup-grace-ms))
+
 (def kill-grace-ms (env-long "ONBOARDER_KILL_GRACE_MS" 2000))
 (def kill-pid! (front-desk-supervisor-lib/make-kill-pid! kill-grace-ms))
 
@@ -136,7 +153,18 @@
     (try (:lastHeartbeatMs (json/parse-string (slurp (str poll-heartbeat-file)) true))
          (catch Exception _ nil))))
 
+;; BL-1043: the heartbeat is a FILE that outlives the process that wrote it,
+;; and nothing here reset it - so a replacement could be judged against its
+;; dead predecessor's timestamp. poll-heartbeat-stale? already refuses a
+;; pre-spawn heartbeat on timestamps alone, which is what makes this correct
+;; when the file is missing or unreadable; clearing at spawn is the second
+;; half cursor_bridge_supervisor.bb already does, and it keeps the file from
+;; reading as this child's own once the clocks happen to line up.
+(defn clear-poll-heartbeat! []
+  (fs/delete-if-exists poll-heartbeat-file))
+
 (defn spawn-reconcile! []
+  (clear-poll-heartbeat!)
   (process/process {:out :inherit :err :inherit
                      :extra-env {"TELEGRAM_BOT_TOKEN" (:bot-token resolved-telegram-creds)
                                  "TELEGRAM_CHAT_ID" (:chat-id resolved-telegram-creds)}}
@@ -144,7 +172,13 @@
 
 (def process-specs
   [{:key :onboarder :spawn-pid! (fn [] (.pid (:proc (spawn-reconcile!))))
-    :heartbeat-stale? (fn [now] (front-desk-supervisor-lib/poll-heartbeat-stale? (read-poll-heartbeat-ms) now stall-ms))}])
+    ;; BL-1043: takes the entry, because the grace is measured from THIS
+    ;; child's spawn time - the same (now entry) shape front_desk,
+    ;; cursor_bridge and bridge_headless already use.
+    :heartbeat-stale? (fn [now entry]
+                        (front-desk-supervisor-lib/poll-heartbeat-stale?
+                          (read-poll-heartbeat-ms) now stall-ms
+                          (:started-at-ms entry) heartbeat-startup-grace-ms))}])
 
 (defn read-state []
   (if (fs/exists? status-file)
@@ -170,7 +204,7 @@
         next-state (into {}
                           (map (fn [spec]
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
-                                       heartbeat-stale? ((:heartbeat-stale? spec) now)
+                                       heartbeat-stale? ((:heartbeat-stale? spec) now entry)
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
                                                                entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!)]
                                    (log-event! (:key spec) event entry)
