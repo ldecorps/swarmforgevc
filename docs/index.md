@@ -101,6 +101,7 @@ expects them, and are not migrated or rewritten here.
 - [Driving one pipeline seat with a Cursor agent (the spike CLI)](how-to/BL-713-cursor-seat-driver-spike.md) — `cursor-seat-spike`'s flags and exit codes, the spike-only certification escape that admits an uncertified identity for one run, and the boundary against BL-712's still-to-come launcher token and steward certification.
 - [Barge-in: stopping Bubble's speech when the human talks over it](how-to/BL-777-barge-in-detector-and-playback-abort.md) — the pure `BargeInDetector` state machine's onset/self-output/session-count invariants, its tuning constants, the `TalkEngine`/`ReplyAudioPlayer` device wiring, and the manual device procedure that verifies it.
 - [The hands-free session state machine: wake once, talk, then go quiet](how-to/BL-844-hands-free-session-state-machine.md) — the `PassiveWake`/`ActiveListen`/`Thinking`/`Speaking` states, the 10-second silence window, why a soft closer doesn't restart it while a hard end phrase skips it, the barge-in/push-to-talk interactions, and the manual device procedure.
+- ["Hey Bubble" — offline, on-device wake spotting](how-to/BL-845-offline-hey-bubble-wake.md) — why the stock cloud-backed `SpeechRecognizer` is unusable for this path, the injected-and-not-yet-chosen spotter engine, the phrase-never-travels and network-silent-passive invariants, the derived-not-hand-assigned colour table, and the manual device procedure.
 
 ## Reference
 
