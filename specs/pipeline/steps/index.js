@@ -596,7 +596,8 @@ const DOMAINS = [
   require('./bl1050CursorRunFailureLogSteps'),
   require('./bl777BargeInDetectorSteps'),
   require('./bl844HandsFreeSessionSteps'),
-  require('./bl845OfflineWakeSteps')
+  require('./bl845OfflineWakeSteps'),
+  require('./bl1045HeldTicketsOnBoardSteps')
 ];
 
 function registerSteps(registry) {
