@@ -53,6 +53,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile, execFileSync } from 'child_process';
+import { readHeldSinceMsFor } from '../concierge/heldSince';
 import { promisify } from 'util';
 import {
   getTelegramUpdates,
@@ -2673,7 +2674,14 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       filename: item.filename,
       priority: item.priority,
     }));
-  return { active: pick(folders.active), paused: pick(folders.paused), done: pick(folders.done) };
+  // BL-1045: hold/ was read by readBacklogFolders (BL-672) and dropped right
+  // here, which is the other half of why held tickets fell off the board.
+  return {
+    active: pick(folders.active),
+    paused: pick(folders.paused),
+    hold: pick(folders.hold),
+    done: pick(folders.done),
+  };
 }
 
 // BL-301: resolveRoleWorktrees is file-local in bridge/bridgeState.ts -
@@ -2922,6 +2930,14 @@ export async function readLiveRoleHeldTickets(targetPath: string): Promise<Recor
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
   return {
     readFolders: () => toFoldersSnapshot(targetPath),
+    // BL-1045: how long a held ticket has been in backlog/hold/, from git
+    // history rather than file mtime (which clones and worktree operations
+    // rewrite). Best effort: an unresolvable date renders as "age unknown",
+    // never as a ticket omitted from the board.
+    readHeldSinceMs: (filename: string) =>
+      readHeldSinceMsFor(filename, (args) =>
+        execFileSync('git', args, { cwd: targetPath, encoding: 'utf8' })
+      ),
     readGates: () => readGates(targetPath),
     readRoleTicket: () => readRoleTicket(targetPath),
     readTickState: () => readTickState(targetPath),
