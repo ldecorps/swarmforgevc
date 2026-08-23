@@ -65,6 +65,12 @@ export interface BacklogFolderItem {
 export interface BacklogFoldersSnapshot {
   active: BacklogFolderItem[];
   paused: BacklogFolderItem[];
+  // BL-1045: backlog/hold/ - human-held items (Article 3.1: they sit until a
+  // human moves them). backlogReader.ts has returned this folder since BL-672;
+  // this snapshot never carried it, which is half of why held tickets fell off
+  // the board. OPTIONAL, so every existing fixture that builds a snapshot from
+  // three folders keeps compiling and reads as "nothing held".
+  hold?: BacklogFolderItem[];
   done: BacklogFolderItem[];
 }
 
@@ -204,6 +210,11 @@ export interface ConciergeTickAdapters {
   // the LIVE Telegram surface). Optional (defaults to no root-intake
   // section), same posture as boardAdapters above.
   readRootIntakeFiles?: () => { id: string; title?: string; filename: string }[];
+  // BL-1045: how long a held ticket has been in backlog/hold/, derived from
+  // git history rather than file mtime. Absent (or returning undefined) keeps
+  // the section rendering with "age unknown" rather than omitting the ticket -
+  // an unresolvable date must never make a held ticket invisible again.
+  readHeldSinceMs?: (filename: string) => number | undefined;
   // BL-465: the repo's GitHub base URL (e.g.
   // "https://github.com/ldecorps/swarmforgevc"), derived from the origin
   // remote - undefined when unresolvable (e.g. no git remote), in which
@@ -529,6 +540,22 @@ function logBoardSyncFailure(result: PipelineBoardSyncResult): void {
   }
 }
 
+// BL-1045: backlog/hold/ as the board's held section wants it. The age comes
+// from the injected git reader; an adapter that is absent, or that cannot
+// resolve a date, still yields the ticket - invisibility is the defect being
+// fixed, so a missing age degrades to "age unknown" rather than to omission.
+function heldItems(
+  folders: BacklogFoldersSnapshot,
+  readHeldSinceMs: ((filename: string) => number | undefined) | undefined
+): { id: string; title?: string; filename: string; heldSinceMs?: number }[] {
+  return (folders.hold ?? []).map((item: BacklogFolderItem) => ({
+    id: item.id,
+    title: item.title,
+    filename: item.filename ?? '',
+    heldSinceMs: item.filename ? readHeldSinceMs?.(item.filename) : undefined,
+  }));
+}
+
 async function syncBoardIfWired(
   folders: BacklogFoldersSnapshot,
   prevBoard: PipelineBoardState | undefined,
@@ -537,7 +564,8 @@ async function syncBoardIfWired(
   readRootIntakeFiles: (() => { id: string; title?: string; filename: string }[]) | undefined,
   readRepoBaseUrl: (() => string | undefined) | undefined,
   nowMs: number,
-  doneClosedAtMs: Record<string, number>
+  doneClosedAtMs: Record<string, number>,
+  readHeldSinceMs?: (filename: string) => number | undefined
 ): Promise<{ state?: PipelineBoardState; outcome?: PipelineBoardSyncResult['outcome'] }> {
   if (!boardAdapters || !readRoleHeldTickets) {
     return { state: prevBoard };
@@ -573,6 +601,10 @@ async function syncBoardIfWired(
     recentlyClosed: recentlyClosedItems(folders, doneClosedAtMs),
     repoBaseUrl,
     activeIds: activeMembershipIds(folders),
+    // BL-1045: backlog/hold/, which the reader has returned since BL-672 and
+    // the board could not represent until now.
+    held: heldItems(folders, readHeldSinceMs),
+    nowMs,
   });
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   logBoardSyncFailure(result);
@@ -1218,7 +1250,8 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     adapters.readRootIntakeFiles,
     adapters.readRepoBaseUrl,
     nowMs,
-    doneClosedAtMs
+    doneClosedAtMs,
+    adapters.readHeldSinceMs
   );
   const pipelineBoard = await syncBoardPinIfWired(boardSync.state, adapters.boardPinAdapters);
 
