@@ -136,6 +136,15 @@ notes: |
   scope, and the architect should read the slice against the property rather
   than against the two named sites.
 
+  COORDINATOR 2026-08-23T04:15Z (3rd starvation report today): not promoted
+  because active_backlog_max_depth cap (6) is full at this instant - BL-1031
+  just took the one open slot this turn (expedited high-severity defect,
+  Article 3.2.4). This ticket is severity: medium, priority: 173, not
+  expedited, so it ranks behind every expedited candidate and most
+  non-expedited ones by priority number regardless of slot availability. Not
+  a hold, not an approval gap - purely capacity plus its own priority
+  ranking. Will be reconsidered on the next open-slot recheck.
+
   --- specifier re-scope, 2026-08-23 (BL-730 has LANDED) ---
 
   Triggered by the standing instruction in the 2026-08-13 cross-reference
