@@ -603,7 +603,8 @@ const DOMAINS = [
   require('./bl973CopyListsClosureDerivedSteps'),
   require('./bl1083PromotionGateSteps'),
   require('./bl1086BabysitterCacheBatchSteps'),
-  require('./bl1088GiveUpCooldownSteps')
+  require('./bl1088GiveUpCooldownSteps'),
+  require('./bl1081AcpHostDrivesOneSeatSteps')
 ];
 
 function registerSteps(registry) {
