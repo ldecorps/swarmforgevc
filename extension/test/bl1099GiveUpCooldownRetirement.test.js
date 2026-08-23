@@ -92,6 +92,21 @@ Feature: x
 `;
   assert.equal(findScenarioCoveringCase([noDecision], 'has not elapsed', 'dead'), null);
 
+  // Decision gate must stay load-bearing: cooldown + process state without a
+  // supervisor decision must NOT count as coverage (hand-authored mutants that
+  // drop bodyAssertsSupervisorDecision / the scenarioCoversCase decision guard
+  // otherwise survive).
+  const noDecisionButComplete = `
+Feature: x
+  Scenario: cooldown chatter without a decision
+    Given the give-up cooldown has not yet elapsed
+    And the given-up child's recorded process is dead
+`;
+  assert.equal(
+    findScenarioCoveringCase([noDecisionButComplete], 'has not elapsed', 'dead'),
+    null
+  );
+
   const notElapsedOnly = `
 Feature: x
   Scenario: not-elapsed without process state

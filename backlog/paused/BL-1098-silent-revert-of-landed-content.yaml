@@ -188,6 +188,15 @@ qa_e2e: >
   working tree; the verdict must not move.
 
 notes: |
+  2026-08-23 coordinator (5th open-slot nudge): cannot promote — effective
+  depth cap is 2 and both slots are filled by BL-1087 (coder) and BL-1099
+  (coder). `promote_and_route_next.sh BL-1098` exited:
+  "active_backlog_max_depth gate: active count 2 >= cap 2 — no open slot".
+  Onboarding contract allow; ambulance inactive; human_approval approved;
+  this remains the top named candidate. Reconsider on next close that
+  frees a slot. Prior prose-grep false-positive (4th note; BL-1100 still
+  in backlog/hold/) may still refuse a named promote once a slot opens.
+
   2026-08-23 coordinator (4th note, promotion blocked by a live bug, not a
   decision): `human_approval: approved` now stands, `depends_on: []`, no
   active-epic file conflict — this ticket SHOULD be the top eligible
