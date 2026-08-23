@@ -211,3 +211,5 @@ notes: |
   before this second nudge was actioned. Same cause as above - a timing
   race between the sweep and this coordinator's own promote actions, not
   starvation. Remains top-ranked paused candidate for the next opened slot.
+
+assigned_to: coder
