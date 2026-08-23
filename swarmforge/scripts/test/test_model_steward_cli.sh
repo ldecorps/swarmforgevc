@@ -76,7 +76,15 @@ SCORECARD_REL="scorecards/bl547test__smoke-model.json"
 mkdir -p "$STATE_DIR/scorecards"
 printf '%s\n' '{"model":"smoke-model","entries":[{"competency":"receive","status":"pass"}],"overall":"swarm-compliant"}' \
   > "$STATE_DIR/$SCORECARD_REL"
-CERTIFY_OUT="$(bb "$CLI" certify bl547test/smoke-model)"
+# Capture exit explicitly: under `set -e`, a refuse-exit from bb would abort
+# this script before an explicit FAIL line — and a store mutant that always
+# returns nil looks exactly like that (BL-1079 hardener surgical sweep).
+set +e
+CERTIFY_OUT="$(bb "$CLI" certify bl547test/smoke-model 2>&1)"
+CERTIFY_EC=$?
+set -e
+[[ "$CERTIFY_EC" -eq 0 ]] \
+  || fail "05: certify exited $CERTIFY_EC with a planted scorecard: $CERTIFY_OUT"
 [[ "$CERTIFY_OUT" == *"certified"* ]] \
   || fail "05: certify output does not report certified"
 [[ "$CERTIFY_OUT" == *"scorecard=$SCORECARD_REL"* ]] \

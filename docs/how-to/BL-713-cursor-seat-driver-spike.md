@@ -45,9 +45,11 @@ session without it.
 
 An identity not certified in the Model Steward registry
 (`.swarmforge/model-steward/registry.json`) cannot staff a **production**
-pack. This slice runs an uncertified `cursor/auto` identity by design —
-certification and registration are BL-712 slice C, deliberately not folded in
-here — so a real run needs the spike-only escape:
+pack. This spike still runs an uncertified `cursor/auto` identity by design —
+registration and scorecard-backed `certify` for that identity landed as
+BL-1079 (see [Certifying a Cursor identity](./BL-1079-cursor-identity-steward-certify-and-residuals.md));
+the spike deliberately does not certify — so a real run of *this* CLI needs
+the spike-only escape:
 
 ```sh
 SWARMFORGE_CURSOR_SEAT_SPIKE=1 node extension/out/tools/cursor-seat-spike.js --role documenter
