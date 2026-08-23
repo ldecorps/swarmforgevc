@@ -40,7 +40,6 @@ expects them, and are not migrated or rewritten here.
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)
 - [Model Steward: Onboarding, Certification, and Role Recommendations](how-to/BL-547-model-steward-overview.md)
 - [ModelFactory: Assigning and Applying Agent Models](how-to/BL-525-model-factory-assign-and-apply.md)
-- [Pull and serve a named model on this host](how-to/BL-1082-pull-and-serve-a-named-model.md) — Ollama-backed `named-model` CLI: pull by id into `~/.swarmforge/models/ollama`, serve/reuse a loopback OpenAI-compatible endpoint, status that names the URL; Linux/WSL2 v1; seat staffing and routing stay BL-1052/BL-1053.
 - [Handling Pre-QA Gate Handoff Refusals](how-to/BL-531-handoff-refusal-remedies.md)
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)

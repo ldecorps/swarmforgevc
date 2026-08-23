@@ -112,12 +112,6 @@
 %% acp-host-pane.js (agent CLI as ACP subprocess). The host writes
 %% .swarmforge/acp/<role>.json; babysitter_check.bb's gather-role reads it
 %% via acp_session_lib.bb. Other seats stay pane-driven.
-%% BL-1082 (2026-08-23): operator-facing named-model CLI
-%% (extension/out/tools/named-model.js) composes Ollama pull/serve plans;
-%% weights live under ~/.swarmforge/models/ollama (outside the tracked
-%% worktree) and serve on a loopback OpenAI-compatible endpoint (default
-%% http://127.0.0.1:11434). Not a pane spawn path — human-initiated tooling
-%% the pack can consume; seat staffing is BL-1052, routing BL-1053.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -141,7 +135,6 @@ flowchart TB
     BRIDGE["bridgeServer.ts\n(localhost REST+SSE, in-memory token;\nread routes + a small control-scoped\nwrite surface: gate-answer, telegram-inbound,\nreply-ack)"]
     COMPANIONMANIFEST["companionManifest.ts\n(BL-866: companion-manifest +\npackage catalog, versioned JSON\nby content-hash generation)"]
     PANEL["swarmPanel.ts / workTreePanel.ts\n(webview controller)"]
-    NAMEDMODEL["named-model.js + modelServing.ts\n(BL-1082: compose/execute Ollama\npull|serve|status; operator CLI)"]
   end
 
   subgraph WEBVIEW["Webview (browser context, presentation only)"]
@@ -168,11 +161,6 @@ flowchart TB
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
-  subgraph LOCALINFER["Local inference (BL-1082, host-side)"]
-    MODELSTORE["~/.swarmforge/models/ollama\n(OLLAMA_MODELS; outside worktree)"]
-    OLLAMA["ollama pull / ollama serve\n(loopback OpenAI-compatible API)"]
-  end
-
   subgraph GITHUB["git / GitHub"]
     TARGETREPO["target repo: dev branch + main"]
     GH["GitHub PR via git + gh CLI"]
@@ -182,8 +170,6 @@ flowchart TB
   EXT -->|registers commands| PANEL
   LAUNCHER -->|shells out: ./swarm| SUBSTRATE
   LAUNCHER -->|reads| SOCKET
-  NAMEDMODEL -->|composes / optional --execute| OLLAMA
-  OLLAMA -->|weights + manifests| MODELSTORE
 
   TMUXCLIENT -->|tmux CLI over socket:\nsend-keys, capture-pane,\nrespawn-pane| SOCKET
   TAILER --> TMUXCLIENT
@@ -242,9 +228,8 @@ flowchart TB
   classDef substrate fill:#8250df,color:#fff,stroke:#4c2889;
   classDef state fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef gh fill:#57606a,color:#fff,stroke:#32383f;
-  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL,NAMEDMODEL host;
+  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
   class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR state;
   class TARGETREPO,GH gh;
-  class MODELSTORE,OLLAMA state;
