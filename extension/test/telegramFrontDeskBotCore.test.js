@@ -3071,6 +3071,12 @@ function expediteFixtureAdapters(overrides = {}) {
     commitExpediteWrites: overrides.commitExpediteWrites ?? (async () => true),
     checkExpediteFileCollision: overrides.checkExpediteFileCollision ?? (async () => undefined),
     dispatchExpediteBuild: overrides.dispatchExpediteBuild ?? (async () => true),
+    // BL-1083: threaded so a refusal test can observe the operator being
+    // told which gate refused and why - an unthreaded override here would
+    // silently no-op (the `?.()` call site swallows a missing adapter),
+    // which is exactly the shape a caller passing this override would not
+    // expect.
+    notifyApprovalsTopic: overrides.notifyApprovalsTopic ?? (async () => true),
     readApprovalAskMessage: overrides.readApprovalAskMessage,
     editApprovalAskMessage:
       overrides.editApprovalAskMessage ??
@@ -3195,6 +3201,61 @@ test('recordExpediteDecisionAndClose: no real transition (recordApprovalReply re
 test('recordExpediteDecisionAndClose: every optional adapter absent degrades to record-and-close only, never crashes', async () => {
   const result = await recordExpediteDecisionAndClose({ recordApprovalReply: async () => true }, 'BL-490', 0);
   assert.equal(result.changed, true);
+});
+
+// ── BL-1083: a gate-refused promotion - never a silent no-op ────────────
+
+test('BL-1083: recordExpediteDecisionAndClose reports a gate refusal, tells the Approvals topic which gate and why, still commits and closes, dispatches no build', async () => {
+  const dispatched = [];
+  const notified = [];
+  const adapters = expediteFixtureAdapters({
+    promoteTicketIfPaused: async () => ({ moved: false, refusal: { gate: 'depends_on', reason: 'depends_on not yet landed in backlog/done/: BL-713' } }),
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatched.push(backlogId);
+      return true;
+    },
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...' }),
+  });
+
+  const result = await recordExpediteDecisionAndClose(adapters, 'BL-490', 0);
+
+  assert.deepEqual(result, {
+    changed: true,
+    refusal: { gate: 'depends_on', reason: 'depends_on not yet landed in backlog/done/: BL-713' },
+  });
+  // Invariant 2: the operator is told in the topic, never only in a log they
+  // will never open - and no build is dispatched, because the ticket is
+  // still paused.
+  assert.deepEqual(notified, [
+    { topicId: undefined, text: 'BL-490: Expedite refused by the depends_on gate — depends_on not yet landed in backlog/done/: BL-713. The ticket is unchanged; your approval was recorded.' },
+  ]);
+  assert.deepEqual(dispatched, []);
+  // The approval itself is a real human decision that landed on disk - a
+  // refusal must not leave it uncommitted (BL-490-VIOLATION's durability
+  // hazard).
+  assert.equal(adapters.editCalls.length, 1, 'expected the ask to still close on a refusal, same as any other decided outcome');
+});
+
+test('BL-1083: recordExpediteDecisionAndClose commits the approval BEFORE a refused promotion, never skips the durable write', async () => {
+  const calls = [];
+  const adapters = expediteFixtureAdapters({
+    promoteTicketIfPaused: async (backlogId) => {
+      calls.push(`promote:${backlogId}`);
+      return { moved: false, refusal: { gate: 'hold marker', reason: 'ticket is parked in backlog/hold/, never auto-promoted' } };
+    },
+    commitExpediteWrites: async (backlogId) => {
+      calls.push(`commit:${backlogId}`);
+      return true;
+    },
+  });
+
+  await recordExpediteDecisionAndClose(adapters, 'BL-490', 0);
+
+  assert.deepEqual(calls, ['promote:BL-490', 'commit:BL-490']);
 });
 
 // ── BL-509: recordAmendDecisionAndClose - the Amend verb's own

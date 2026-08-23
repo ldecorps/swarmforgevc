@@ -33,15 +33,34 @@
 ;;
 ;;   promotion_gates_cli.bb route-target <root> <ticket-file>
 ;;     -> "<role> REWRITE" or "<role> NOREWRITE" on stdout, exit 0
+;;
+;;   promotion_gates_cli.bb gate-promotion <root> <BL-id>
+;;     -> "ALLOW|<file>" on stdout, exit 0
+;;     -> "REFUSE|<gate>|<reason>" on stdout, exit 2
+;;     -> "NOT_FOUND" on stdout, exit 1 (not in paused/ or hold/)
+;;     BL-1083: `locate` + cap resolution + `evaluate` in ONE call, for a
+;;     caller that cannot compose them. The extension host's promoteToActive
+;;     moves a ticket into backlog/active from TypeScript, across a boundary no
+;;     import crosses; the two paths that reach it (the Telegram Expedite verb
+;;     and the paused-pager endpoint) bypassed every gate, and on 2026-08-22
+;;     promoted BL-1078 onto an unlanded BL-713.
+;;
+;;     It exists so that caller takes a VERDICT rather than recomputing one.
+;;     Restating "which gates, in what order, against which cap" in TypeScript
+;;     would pass a feature file and drift within weeks - the BL-897 shape this
+;;     ticket is a case of. Every rule below stays here.
 
 (ns promotion-gates-cli
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [babashka.process :as process]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "promotion_gates_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 
 (defn- usage! []
   (binding [*out* *err*]
-    (println "Usage: promotion_gates_cli.bb locate|evaluate|select|route-target ..."))
+    (println "Usage: promotion_gates_cli.bb locate|evaluate|select|route-target|gate-promotion ..."))
   (System/exit 1))
 
 (defn- find-in [dir bl-id]
@@ -78,6 +97,62 @@
     (if (:ok result)
       (do (println "ALLOW") (System/exit 0))
       (do (println (str "REFUSE|" (:gate result) "|" (:reason result))) (System/exit 2)))))
+
+(defn- resolve-max-depth
+  "The cap this evaluation runs against, in promote_and_route_next.sh's own
+   order: the throttle-aware effective cap when it can be had, else the
+   configured one.
+
+   The configured half is read through backlog-depth-lib DIRECTLY - its
+   conf-file-path and parse-max-depth, both already inside this CLI's
+   load-file closure - rather than by shelling to its sibling CLIs. That is
+   BL-973's lesson applied to this file the day it was learned: a sibling
+   script reached by name is invisible to the closure walk, so any fixture
+   copying this CLI's real dependencies would still be silently missing it,
+   and the cap would quietly fall back to the default instead of refusing.
+   The one remaining shell-out, effective_backlog_depth_cli.bb, can only make
+   the cap TIGHTER (it is min(configured, throttle recommendation)), so its
+   absence in a fixture degrades to the configured cap and never to a looser
+   one - Article 3.2.4's rule that expedite never overrides the circuit
+   breaker holds wherever that CLI is actually present.
+
+   This file parses no config and invents no default of its own: the last
+   resort is backlog-depth-lib's own constant, so there is one literal."
+  [root]
+  (let [effective-cli (fs/path (fs/parent (fs/canonicalize *file*)) "effective_backlog_depth_cli.bb")
+        effective (when (fs/exists? effective-cli)
+                    (let [r (try (process/sh ["bb" (str effective-cli) (str root)])
+                                 (catch Exception _ nil))]
+                      (when (and r (zero? (:exit r)))
+                        (let [t (str/trim (str (:out r)))]
+                          (when (re-matches #"-?\d+" t) (parse-long t))))))
+        configured (let [conf (try (backlog-depth-lib/conf-file-path root) (catch Exception _ nil))]
+                     (if (and conf (fs/exists? conf))
+                       (backlog-depth-lib/parse-max-depth (slurp (str conf)))
+                       backlog-depth-lib/default-max-depth))]
+    (or effective configured)))
+
+(defn- cmd-gate-promotion [[root bl-id]]
+  (when (or (nil? root) (nil? bl-id)) (usage!))
+  (let [paused (find-in (fs/path root "backlog" "paused") bl-id)
+        held-file (when-not paused (find-in (fs/path root "backlog" "hold") bl-id))
+        file (or paused held-file)]
+    (when (nil? file)
+      ;; Not a promotion candidate at all - already active, already done, or
+      ;; never minted. The caller's own no-op contract, not a refusal.
+      (println "NOT_FOUND")
+      (System/exit 1))
+    (let [result (promotion-gates-lib/evaluate
+                  {:content (slurp file)
+                   :held? (some? held-file)
+                   :active-count (promotion-gates-lib/active-count root)
+                   :max-depth (resolve-max-depth root)
+                   :active-epics (promotion-gates-lib/active-epics root)
+                   :done-ids (promotion-gates-lib/done-ids root)})]
+      (print-advisory! (:advisory result))
+      (if (:ok result)
+        (do (println (str "ALLOW|" file)) (System/exit 0))
+        (do (println (str "REFUSE|" (:gate result) "|" (:reason result))) (System/exit 2))))))
 
 (defn- cmd-select [[root max-depth-str & files]]
   (when (or (nil? root) (nil? max-depth-str) (empty? files)) (usage!))
@@ -117,6 +192,7 @@
       "evaluate" (cmd-evaluate rest-args)
       "select" (cmd-select rest-args)
       "route-target" (cmd-route-target rest-args)
+      "gate-promotion" (cmd-gate-promotion rest-args)
       (usage!))))
 
 (apply -main *command-line-args*)
