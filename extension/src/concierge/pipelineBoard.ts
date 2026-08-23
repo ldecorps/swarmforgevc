@@ -53,6 +53,24 @@ export interface PipelineBoardParkedEntry extends PipelineBoardListEntry {
   status: 'parked' | 'awaiting-approval';
 }
 
+// BL-1045: one ticket in backlog/hold/. Hold is the only backlog state with
+// no automatic mover - Article 3.1 is explicit that held items sit until a
+// human moves them - so HOW LONG it has been held is the fact that matters,
+// and it is the caller's job to derive that from git rather than file mtime
+// (mtime is rewritten by clones, worktree operations and checkouts).
+export interface PipelineBoardHeldSourceItem {
+  id: string;
+  title?: string;
+  filename: string;
+  /** When the ticket entered hold/, from history. Absent = not derivable. */
+  heldSinceMs?: number;
+}
+
+export interface PipelineBoardHeldEntry extends PipelineBoardListEntry {
+  /** A glance-readable age: "12d", "5h", "age unknown". */
+  heldFor: string;
+}
+
 // BL-465: one link-list line - a ticket/intake id resolved to its
 // repo-relative backlog path, for the tappable GitHub link list below the
 // grid (the grid/lists themselves carry no inline links - Telegram does
@@ -79,6 +97,12 @@ export interface PipelineBoardData {
   // Rendered as "+N more epics" under the PARKED section — same
   // never-a-silent-cap posture as parkedOmittedCount above.
   collapsedEpicsOmittedCount?: number;
+  // BL-1045: backlog/hold/, in its own section - never a role column and
+  // never not-started, because no role holds a held ticket.
+  held?: PipelineBoardHeldEntry[];
+  // Held tickets omitted by PIPELINE_BOARD_HELD_MAX, rendered as
+  // "+N more held" - same never-a-silent-cap posture as the counts above.
+  heldOmittedCount?: number;
 }
 
 export interface PipelineBoardCollapsedEpicEntry {
@@ -113,7 +137,10 @@ export interface PipelineBoardTicketMeta {
   type?: string;
   title?: string;
   filename?: string;
-  location?: 'active' | 'paused' | 'done' | 'root';
+  // BL-1045: 'hold' was missing, which is the whole defect - backlogReader.ts
+  // has returned backlog/hold/ since BL-672, but a state the board cannot
+  // represent is a state it silently drops.
+  location?: 'active' | 'paused' | 'hold' | 'done' | 'root';
 }
 
 // BL-465: recently-closed/root-intake items feed in as raw {id, title,
@@ -132,6 +159,11 @@ export interface PipelineBoardListSourceItem {
 // plus the pre-BL-465 unit/acceptance fixtures) keeps working completely
 // unchanged; only a caller that wants the new sections/links passes this.
 export interface PipelineBoardExtras {
+  // BL-1045: backlog/hold/ contents, with the instant each entered hold.
+  held?: PipelineBoardHeldSourceItem[];
+  // BL-1045: the instant held ages are measured against. Injected, never a
+  // bare Date.now() (engineering no-real-clock rule).
+  nowMs?: number;
   rootIntake?: PipelineBoardListSourceItem[];
   recentlyClosed?: PipelineBoardListSourceItem[];
   // The repo's GitHub base URL (e.g. "https://github.com/ldecorps/swarmforgevc")
@@ -192,6 +224,7 @@ const NO_EPIC_LABEL = '(no epic)';
 // grid from rendering as a blank block between pipeline clears.
 const NO_ACTIVE_TICKETS_LABEL = '(no active tickets)';
 const PARKED_SECTION_HEADER = 'PARKED:';
+const HELD_SECTION_HEADER = 'HELD:';
 const AWAITING_APPROVAL_SECTION_HEADER = 'AWAITING APPROVAL:';
 const ROOT_INTAKE_SECTION_HEADER = 'ROOT INTAKE:';
 const RECENTLY_CLOSED_SECTION_HEADER = 'RECENTLY CLOSED:';
@@ -615,6 +648,23 @@ function linksFromCollapsedEpics(
   return links;
 }
 
+function linksFromHeld(
+  extras: PipelineBoardExtras,
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardLinkEntry[] {
+  const links: PipelineBoardLinkEntry[] = [];
+  for (const item of extras.held ?? []) {
+    // The item carries its own filename; location is 'hold' by definition of
+    // being in this list, so a stale ticketMeta cannot point the link at the
+    // folder the ticket just left.
+    const path = linkPathFor({ ...ticketMeta[item.id], filename: item.filename, location: 'hold' });
+    if (path) {
+      links.push({ id: item.id, path });
+    }
+  }
+  return links;
+}
+
 function buildLinks(
   rows: PipelineBoardRow[],
   parked: PipelineBoardParkedEntry[],
@@ -629,6 +679,10 @@ function buildLinks(
     ...linksFromCollapsedEpics(collapsedEpics, ticketMeta),
     ...linksFromRecentlyClosed(extras, ticketMeta),
     ...linksFromRootIntake(extras, ticketMeta),
+    // BL-1045: a held ticket is reachable from the link list like any other -
+    // the whole point is that it stops being invisible, and a section with no
+    // way to open the ticket is only half of that.
+    ...linksFromHeld(extras, ticketMeta),
   ]) {
     if (!linksById.has(link.id)) {
       linksById.set(link.id, link);
@@ -639,14 +693,37 @@ function buildLinks(
   return links;
 }
 
+/**
+ * BL-1045: omitted entirely when nothing is held, so a board with an empty
+ * hold/ renders byte-identically to one built before this ticket.
+ */
+function heldResultFields(
+  held: PipelineBoardHeldEntry[],
+  heldOmittedCount: number | undefined
+): Pick<PipelineBoardData, 'held' | 'heldOmittedCount'> {
+  return {
+    ...(held.length > 0 || heldOmittedCount ? { held } : {}),
+    ...(heldOmittedCount ? { heldOmittedCount } : {}),
+  };
+}
+
 export function computePipelineBoard(
   roleHeldTickets: Record<string, string[]>,
   paused: PipelineBoardPausedItem[],
   ticketMeta: Record<string, PipelineBoardTicketMeta>,
   extras: PipelineBoardExtras = {}
 ): PipelineBoardData {
-  const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds);
-  const { parked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount } = buildParkedEntries(paused, ticketMeta);
+  // BL-1045 invariant 1: a held ticket is never rendered as in-flight. The
+  // exclusion is applied HERE, before the grid is built, so there is no
+  // ordering in which a held id reaches a role column or the not-started
+  // column - not even one that is somehow also role-held mid-transition.
+  const heldSource = extras.held ?? [];
+  const heldIds = new Set(heldSource.map((item) => item.id));
+  const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds).filter((row) => !heldIds.has(row.id));
+  const { parked: allParked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount } =
+    buildParkedEntries(paused, ticketMeta);
+  const parked = allParked.filter((entry) => !heldIds.has(entry.id));
+  const { held, heldOmittedCount } = buildHeldEntries(heldSource, extras.nowMs ?? 0);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
   // BL-465 bounce (architect review): unlike rootIntake/parked above,
   // recently-closed order IS the whole point of the section - re-sorting
@@ -659,7 +736,17 @@ export function computePipelineBoard(
   const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
   const links = extras.repoBaseUrl ? buildLinks(rows, parked, collapsedEpics, extras, ticketMeta) : [];
 
-  return { rows, parked, collapsedEpics, rootIntake, recentlyClosed, links, parkedOmittedCount, collapsedEpicsOmittedCount };
+  return {
+    rows,
+    parked,
+    collapsedEpics,
+    rootIntake,
+    recentlyClosed,
+    links,
+    parkedOmittedCount,
+    collapsedEpicsOmittedCount,
+    ...heldResultFields(held, heldOmittedCount),
+  };
 }
 
 // BL-585: caption/overflow lines sit outside the matrix proper and may use
@@ -812,6 +899,87 @@ function renderGridLines(rows: PipelineBoardRow[]): string[] {
   return lines;
 }
 
+// BL-1045: the cap on the held section. Held tickets are ordered
+// LONGEST-HELD FIRST, so the cap can only ever drop the newest - the
+// twelve-day ticket this feature exists for is never the one hidden.
+export const PIPELINE_BOARD_HELD_MAX = 8;
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * BL-1045: how long a ticket has been held, in the coarsest unit that still
+ * separates "yesterday" from "twelve days ago" at a glance. A pure function
+ * of two injected instants - never a bare Date.now().
+ *
+ * An unknown hold date says so rather than rendering as zero: "just now" for
+ * a ticket parked twelve days ago would be worse than no age at all.
+ */
+export function formatHeldForLabel(heldSinceMs: number | undefined, nowMs: number): string {
+  if (heldSinceMs === undefined) {
+    return 'age unknown';
+  }
+  const elapsed = nowMs - heldSinceMs;
+  if (elapsed >= DAY_MS) {
+    return `${Math.floor(elapsed / DAY_MS)}d`;
+  }
+  if (elapsed >= HOUR_MS) {
+    return `${Math.floor(elapsed / HOUR_MS)}h`;
+  }
+  if (elapsed >= MINUTE_MS) {
+    return `${Math.floor(elapsed / MINUTE_MS)}m`;
+  }
+  return 'just now';
+}
+
+function heldEntryFor(item: PipelineBoardHeldSourceItem, nowMs: number): PipelineBoardHeldEntry {
+  return {
+    id: item.id,
+    slug: deriveListEntryText(item.title),
+    heldFor: formatHeldForLabel(item.heldSinceMs, nowMs),
+  };
+}
+
+// Longest-held first. An item with no derivable date sorts last rather than
+// first: an unknown age is not evidence of a long one.
+function byHeldLongestFirst(a: PipelineBoardHeldSourceItem, b: PipelineBoardHeldSourceItem): number {
+  const aHeld = a.heldSinceMs ?? Number.POSITIVE_INFINITY;
+  const bHeld = b.heldSinceMs ?? Number.POSITIVE_INFINITY;
+  return aHeld !== bHeld ? aHeld - bHeld : a.id.localeCompare(b.id);
+}
+
+function buildHeldEntries(
+  held: PipelineBoardHeldSourceItem[],
+  nowMs: number
+): { held: PipelineBoardHeldEntry[]; heldOmittedCount?: number } {
+  const ordered = [...held].sort(byHeldLongestFirst);
+  const shown = ordered.slice(0, PIPELINE_BOARD_HELD_MAX);
+  const omitted = ordered.length - shown.length;
+  return {
+    held: shown.map((item) => heldEntryFor(item, nowMs)),
+    ...(omitted > 0 ? { heldOmittedCount: omitted } : {}),
+  };
+}
+
+function pipelineBoardHeldOverflowLine(omittedCount: number): string {
+  return `+${omittedCount} more held`;
+}
+
+function renderHeldSection(held: PipelineBoardHeldEntry[], omittedCount: number | undefined): string[] {
+  if (held.length === 0 && !omittedCount) {
+    return [];
+  }
+  const lines: string[] = ['', HELD_SECTION_HEADER];
+  for (const entry of held) {
+    lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug} (${entry.heldFor})`.replace(/\s+\(/, ' ('));
+  }
+  if (omittedCount) {
+    lines.push(`  ${pipelineBoardHeldOverflowLine(omittedCount)}`);
+  }
+  return lines;
+}
+
 function pipelineBoardParkedOverflowLine(omittedCount: number): string {
   return `+${omittedCount} more parked`;
 }
@@ -914,6 +1082,10 @@ function renderBodySections(data: PipelineBoardData): string[] {
   return [
     ...renderGridOnlySections(data),
     ...renderParkedSection(data.collapsedEpics ?? [], parked, parkedOverflow, epicsOverflow),
+    // BL-1045: its own section, immediately after PARKED. Hold is the one
+    // backlog state nothing will ever move on its own, so it sits where a
+    // reader already looks for work that is not in flight.
+    ...renderHeldSection(data.held ?? [], data.heldOmittedCount),
     ...renderListSection(
       AWAITING_APPROVAL_SECTION_HEADER,
       parked.filter((p) => p.status === 'awaiting-approval')
