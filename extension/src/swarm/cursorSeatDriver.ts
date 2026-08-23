@@ -121,6 +121,83 @@ function transcriptPathFor(repoRoot: string, role: string, stamp: string): strin
   return path.join(repoRoot, '.swarmforge', 'cursor-seat', `${role}-${stamp}.transcript.md`);
 }
 
+/** Everything a forward needs, resolved from the task result — or the one reason it cannot be sent. */
+function resolveForwardTarget(
+  result: SeatTaskResult,
+  parsedTaskName: string | undefined,
+  role: string
+): { ok: true; task: string; commit: string; to: string } | { ok: false; reason: string } {
+  const task = result.work?.task ?? parsedTaskName;
+  const commit = result.work?.commit;
+  if (!commit || !task) {
+    return {
+      ok: false,
+      reason: 'the session reported the stage work finished but named no commit and task to forward; nothing was sent',
+    };
+  }
+  const to = nextActiveRole([...PIPELINE_CHAIN], role);
+  if (!to) {
+    return { ok: false, reason: `${role} is the end of the forward chain; there is no next role to hand off to` };
+  }
+  return { ok: true, task, commit, to };
+}
+
+/**
+ * The single ready_for_next call and everything that can end the run before
+ * a real task is in hand — a failed helper call (via `finish`, so its abort
+ * is transcripted same as any other) or an empty mailbox (reported directly;
+ * invariant "no second poll" means this is not itself a transcripted abort).
+ */
+async function resolveReadyTask(
+  deps: SeatDeps,
+  decisions: SeatDecision[],
+  finish: (outcome: SeatOutcomeKind, reason: string, extra?: Partial<SeatRunOutcome>) => SeatRunOutcome,
+  role: string,
+  posture: PackPosture,
+  worktree: string
+): Promise<{ parsed: ReadyForNextTask } | SeatRunOutcome> {
+  const ready = await deps.runHelper('ready_for_next', []);
+  if (ready.exitCode !== 0) {
+    const decision = decideNextStep({ kind: 'helper_exit', helper: 'ready_for_next', exitCode: ready.exitCode });
+    decisions.push(decision);
+    return finish('aborted', decision.reason);
+  }
+  const parsed = parseReadyForNextOutput(ready.stdout);
+  if (parsed.status !== 'task') {
+    // Report and stop. No second poll, ever — the wake is the only trigger.
+    return {
+      outcome: 'no_task',
+      reason: `ready_for_next reported ${parsed.status}; the seat waits for its next wake and does not poll again`,
+      role,
+      posture,
+      worktree,
+      decisions,
+      readyForNextCalls: 1,
+    };
+  }
+  return { parsed };
+}
+
+async function sendHandoffAndDecide(
+  deps: SeatDeps,
+  worktree: string,
+  priority: string | undefined,
+  target: { task: string; commit: string; to: string }
+): Promise<SeatDecision> {
+  const draftPath = path.join(worktree, 'tmp', 'handoff.txt');
+  deps.writeFile(
+    draftPath,
+    buildSeatHandoffDraft({ to: target.to, priority: priority ?? '50', task: target.task, commit: target.commit })
+  );
+  const sent = await deps.runHelper('swarm_handoff', [draftPath]);
+  return decideNextStep({
+    kind: 'helper_exit',
+    helper: 'swarm_handoff',
+    exitCode: sent.exitCode,
+    forwarded: sent.exitCode === 0,
+  });
+}
+
 /**
  * One wake, one parcel. The seat NEVER loops here: an empty mailbox reports
  * `no_task` after exactly one helper call and returns, because a role that
@@ -171,25 +248,11 @@ export async function runSeatOnce(deps: SeatDeps, opts: SeatRunOptions): Promise
   const promptBundle = await deps.composePromptBundle(opts.role);
   const session = await deps.openSession({ role: opts.role, cwd: worktree, promptBundle, identity: opts.identity });
 
-  const ready = await deps.runHelper('ready_for_next', []);
-  if (ready.exitCode !== 0) {
-    const decision = decideNextStep({ kind: 'helper_exit', helper: 'ready_for_next', exitCode: ready.exitCode });
-    decisions.push(decision);
-    return finish('aborted', decision.reason);
+  const readyTask = await resolveReadyTask(deps, decisions, finish, opts.role, posture, worktree);
+  if (!('parsed' in readyTask)) {
+    return readyTask;
   }
-  const parsed = parseReadyForNextOutput(ready.stdout);
-  if (parsed.status !== 'task') {
-    // Report and stop. No second poll, ever — the wake is the only trigger.
-    return {
-      outcome: 'no_task',
-      reason: `ready_for_next reported ${parsed.status}; the seat waits for its next wake and does not poll again`,
-      role: opts.role,
-      posture,
-      worktree,
-      decisions,
-      readyForNextCalls: 1,
-    };
-  }
+  const parsed = readyTask.parsed;
 
   const result = await deps.sendTask(session, parsed);
   transcriptLines.push(...result.transcript);
@@ -199,29 +262,13 @@ export async function runSeatOnce(deps: SeatDeps, opts: SeatRunOptions): Promise
     return finish('aborted', decision.reason);
   }
 
-  const task = result.work?.task ?? parsed.taskName;
-  const commit = result.work?.commit;
-  if (!commit || !task) {
-    return finish(
-      'aborted',
-      'the session reported the stage work finished but named no commit and task to forward; nothing was sent'
-    );
+  const target = resolveForwardTarget(result, parsed.taskName, opts.role);
+  if (!target.ok) {
+    return finish('aborted', target.reason);
   }
+  const { task, commit, to } = target;
 
-  const to = nextActiveRole([...PIPELINE_CHAIN], opts.role);
-  if (!to) {
-    return finish('aborted', `${opts.role} is the end of the forward chain; there is no next role to hand off to`);
-  }
-
-  const draftPath = path.join(worktree, 'tmp', 'handoff.txt');
-  deps.writeFile(draftPath, buildSeatHandoffDraft({ to, priority: opts.priority ?? '50', task, commit }));
-  const sent = await deps.runHelper('swarm_handoff', [draftPath]);
-  const sentDecision = decideNextStep({
-    kind: 'helper_exit',
-    helper: 'swarm_handoff',
-    exitCode: sent.exitCode,
-    forwarded: sent.exitCode === 0,
-  });
+  const sentDecision = await sendHandoffAndDecide(deps, worktree, opts.priority, target);
   decisions.push(sentDecision);
   if (sentDecision.step !== 'await_wake') {
     return finish('aborted', sentDecision.reason);
