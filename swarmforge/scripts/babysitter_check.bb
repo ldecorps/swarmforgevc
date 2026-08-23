@@ -293,6 +293,107 @@
    (process/sh {:continue true :dir (str project-root)} "bash" (qa-ancestor-sh) sha)
    :ancestor?))
 
+;; ── batched-qa-ancestry (BL-1086) ────────────────────────────────────────
+;; The gather asked qa-ancestor? once per SHA, one bash process each, and each
+;; of those re-scanned the whole bounce store and grepped the entire backlog
+;; tree. On a `main` ~23 commits ahead that overran babysitterd's 600s
+;; freshness threshold - and since the daemon writes its heartbeat only AFTER
+;; the check returns, a slow gather is indistinguishable from a dead one, so it
+;; got RESTARTED mid-sweep (age_secs=1146, 2026-08-22).
+;;
+;; This is the SAME predicate answering for many SHAs in one process, which is
+;; the only shape BL-925 invariant 2 allows: is_qa_ancestor.sh remains the one
+;; place that decides approval, and this never computes ancestry for itself.
+;; The seam (BABYSITTER_QA_ANCESTOR_SCRIPT) still substitutes the whole
+;; predicate, so a test stub controls batch and single alike.
+;;
+;; Returns {sha {:ok? :ancestor?}} for every requested sha, or nil when the
+;; batch itself could not be run - the caller fails the WHOLE sweep closed on
+;; nil, never a partial map (invariant 3).
+(defn batched-qa-ancestry
+  [shas]
+  (if (empty? shas)
+    {}
+    (let [r (apply process/sh {:continue true :dir (str project-root)}
+                   "bash" (qa-ancestor-sh) "--batch" shas)]
+      (when (zero? (:exit r))
+        (let [rows (->> (str/split-lines (str (:out r)))
+                        (remove str/blank?)
+                        (map #(str/split (str/trim %) #"\s+")))
+              answered (into {} (keep (fn [[sha code]]
+                                        (when (and sha code)
+                                          [sha (case code
+                                                 "0" {:ok? true :ancestor? true}
+                                                 "1" {:ok? true :ancestor? false}
+                                                 {:ok? false :ancestor? false})]))
+                                      rows))]
+          ;; A sha the batch did not answer for is not a "no" - it is an
+          ;; unanswered question, and reading it as anything else would be the
+          ;; partial result invariant 3 forbids.
+          (when (every? #(contains? answered %) shas)
+            answered))))))
+
+;; ── pipeline-code-on-main-cache (BL-1086) ────────────────────────────────
+;; The gather re-derived the same answer every 300s tick with nothing keyed on
+;; the refs it depends on. Keyed on all three tips - main, origin/main where it
+;; exists, and swarmforge-QA - because any of them moving changes the answer.
+;;
+;; ON DISK, not in memory - and that is a deliberate departure from the
+;; ticket's "How (direction, not mandate)", which suggested an in-memory cache
+;; for the daemon's lifetime. It cannot work here: babysitterd.sh's tick shells
+;; `babysitter_check.sh`, which `exec bb`s this file, so EVERY tick is a fresh
+;; process and an atom would never survive one. An in-memory cache would have
+;; been a cache that never hits, passing review and saving nothing.
+;;
+;; The ticket's own acceptance settles it the same way: scenario 02 runs two
+;; checks and requires the second to invoke no predicate, and the QA procedure
+;; spells that out as two `babysitter_check.sh` runs. Both are statements about
+;; separate processes.
+;;
+;; Keyed on all three tips, so any of them moving invalidates. A gather that
+;; returned :ancestry-unavailable? true is NEVER written. A fail-closed hole
+;; frozen as clean is strictly worse than the cost this removes, and it is the
+;; one way a cache here could do real harm.
+(def pipeline-code-on-main-cache
+  (fs/path state-dir "babysitter" "pipeline-code-on-main-cache.json"))
+
+(defn read-pipeline-code-on-main-cache
+  "The cached {:tips :result}, or nil when absent or unreadable. Unreadable is
+   treated as absent on purpose: a corrupt cache must cost a re-gather, never a
+   sweep."
+  []
+  (try
+    (when (fs/exists? pipeline-code-on-main-cache)
+      (let [m (json/parse-string (slurp (str pipeline-code-on-main-cache)) true)]
+        (when (map? m) m)))
+    (catch Exception _ nil)))
+
+(defn write-pipeline-code-on-main-cache!
+  "Written through a temp file and an atomic move: the daemon can be restarted
+   mid-write (that is the very failure this ticket is about), and a half-written
+   cache read back as a hit would be worse than no cache."
+  [entry]
+  (try
+    (fs/create-dirs (fs/parent pipeline-code-on-main-cache))
+    (let [tmp (fs/path (fs/parent pipeline-code-on-main-cache)
+                       (str "." (fs/file-name pipeline-code-on-main-cache) ".tmp"))]
+      (spit (str tmp) (json/generate-string entry))
+      (fs/move tmp pipeline-code-on-main-cache {:replace-existing true :atomic-move true}))
+    (catch Exception _ nil)))
+
+(defn- ref-tip [ref]
+  (let [r (sh! "git" "-C" project-root "rev-parse" "-q" "--verify" ref)]
+    (when (zero? (:exit r)) (str/trim (:out r)))))
+
+(defn pipeline-code-on-main-tips
+  "The three tips the answer depends on. An absent origin/main is a legitimate
+   state (no configured remote), recorded as nil rather than treated as a
+   failure - the same posture the gather itself takes."
+  []
+  {:main (ref-tip "main")
+   :origin-main (ref-tip "origin/main")
+   :qa (ref-tip "swarmforge-QA")})
+
 (defn ref-resolves? [ref]
   (zero? (:exit (sh! "git" "-C" project-root "rev-parse" "-q" "--verify" ref))))
 
@@ -441,15 +542,41 @@
             per-ref (map shas-ahead-of-qa existing-refs)]
         (if (some nil? per-ref)
           {:offending-commits [] :ancestry-unavailable? true}
-          (let [all-shas (distinct (apply concat per-ref))
-                confirmations (mapv (fn [sha] [sha (qa-ancestor? sha)]) all-shas)]
-            (if (some (fn [[_ {:keys [ok?]}]] (not ok?)) confirmations)
+          (let [all-shas (vec (distinct (apply concat per-ref)))
+                ;; BL-1086: one process for the whole candidate set. nil means
+                ;; the batch could not answer for every sha, which fails the
+                ;; WHOLE sweep closed exactly as a single unanswerable sha did
+                ;; before (invariant 3) - never a partial result.
+                answers (batched-qa-ancestry all-shas)]
+            (if (or (nil? answers)
+                    (some (fn [sha] (not (:ok? (get answers sha)))) all-shas))
               {:offending-commits [] :ancestry-unavailable? true}
-              (let [non-ancestor-shas (->> confirmations
-                                            (remove (fn [[_ {:keys [ancestor?]}]] ancestor?))
-                                            (map first))
+              (let [non-ancestor-shas (remove #(:ancestor? (get answers %)) all-shas)
                     rows (mapv #(offender-row % qa-paths) non-ancestor-shas)]
                 (assemble-offending-commits rows)))))))))
+
+(defn gather-pipeline-code-on-main-cached
+  "BL-1086: gather-pipeline-code-on-main, memoised on the three tips.
+
+   The live path goes through HERE - a cache that exists while the gather still
+   walks unconditionally would be this ticket's own failure mode repeated."
+  []
+  (let [tips (pipeline-code-on-main-tips)
+        cached (read-pipeline-code-on-main-cache)]
+    (if (and cached (= tips (:tips cached)) (some? (:result cached)))
+      ;; The cached result is reconstructed rather than trusted as-is: JSON
+      ;; round-trips :offending-commits' keys as keywords but loses nothing
+      ;; else, and stating the two fields explicitly means a cache written by
+      ;; an older shape can never widen what a caller sees.
+      {:offending-commits (vec (get-in cached [:result :offending-commits]))
+       :ancestry-unavailable? (boolean (get-in cached [:result :ancestry-unavailable?]))}
+      (let [result (gather-pipeline-code-on-main)]
+        ;; Only a SUCCESSFUL gather is cached. An :ancestry-unavailable? result
+        ;; is a hole, and a hole cached as clean would outlive the condition
+        ;; that caused it.
+        (when-not (:ancestry-unavailable? result)
+          (write-pipeline-code-on-main-cache! {:tips tips :result result}))
+        result))))
 
 ;; ── handoffd / dead-letters / stuck parcels ──────────────────────────────
 
@@ -807,7 +934,10 @@
         ;; (e.g. bash/git genuinely missing) fails closed to unavailable,
         ;; same posture as every explicit git-failure branch inside the
         ;; gatherer itself - never a silent [] that would read as clean.
-        pipeline-code-on-main (try (gather-pipeline-code-on-main)
+        ;; BL-1086: the CACHED gather - the required_wiring anchor's own
+        ;; warning is that a cache which exists while this line still calls the
+        ;; uncached walk is the defect repeated with extra code.
+        pipeline-code-on-main (try (gather-pipeline-code-on-main-cached)
                                     (catch Exception _ {:offending-commits [] :ancestry-unavailable? true}))
         ;; BL-804: resolve topology ONCE per sweep, then stamp each role's
         ;; :should-stand? — the sweep lib's check-live-session only ever sees
