@@ -121,3 +121,12 @@ notes: >
   the coder" is the somebody/nobody contrast that scenario 02 exists to draw.
   "claimed by both" vs "claimed by neither" are the paired halves of the
   disjointness invariant and mean opposite things.
+
+  CROSS-REFERENCE added after minting, before approval: BL-1087 is the second,
+  larger cause of the same 0-successes symptom - the auto-route cites HEAD and
+  the BL-953 coherence gate refuses it because HEAD's subject names a different
+  ticket. The two are independent and BOTH must land: this ticket's recipient
+  validation fires first (BL-777/BL-844/BL-845 never reach coherence), while
+  BL-1079/BL-1080 have a valid recipient and are stopped only by BL-1087.
+  Fixing either alone leaves the other's tickets stranded. This ticket's
+  severity and scope are unchanged by that discovery.
