@@ -89,6 +89,11 @@ The owner gets exactly one deterministic action — recover when launch scripts
 exist to respawn from, otherwise escalate once carrying the reason and the
 next action. Never repeated silent degradation.
 
+For the daemon-side mechanics of that automatic recovery — the attempt/cooldown
+bound, the wall-clock timeout on `./swarm ensure` itself, and the `REPAIR
+[repaired|failed|unfinished] control-plane` log line — see
+[the babysitterd runbook](BL-611-babysitterd-runbook.md#control-plane-auto-heal-bounded-in-time-bl-958bl-1071).
+
 ## Verify
 
 ```
