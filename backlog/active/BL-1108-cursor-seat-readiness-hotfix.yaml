@@ -90,3 +90,5 @@ source: |
   Coordinator note 00_20260823T132221Z_001148: "Mint review ticket for hotfix
   f02f6ae5b4; ledger entry is pending." The landed commit was re-read by the
   specifier before minting.
+
+assigned_to: coder
