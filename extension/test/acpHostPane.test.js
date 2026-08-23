@@ -8,8 +8,8 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const {
   runAcpHostPane,
@@ -18,7 +18,7 @@ const {
 } = require('../out/tools/acp-host-pane');
 
 function mkRepo() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'bl1081-acp-host-'));
+  return mkTmpDir('bl1081-acp-host-');
 }
 
 function fakeChild(stdoutLines = [], exitCode = 0, stderrLines = []) {
