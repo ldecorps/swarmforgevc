@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=4bd31f22a32d8915ccf54d4fe5b289016788694102380dd6a2b9526afcb8e148
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T03:14:10.422447309Z","feature_name":"BL-1063 an assertion about a backgrounded child waits for that child","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1063-assertion-races-a-backgrounded-daemon.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":3,"name":"invariant 1 is satisfied wherever node legitimately resolves","scenario_hash":"54a419e4977279806787ffa2141a1f4090ed7960ab1844d1cd86cc2f86d0f053","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-23T03:14:10.422447309Z"},{"index":5,"name":"the file's verdict does not depend on what the host happens to have installed","scenario_hash":"9c52b3bf81d778c4c47c21428dd6c91442afcb762f07a8519bf5de6c2664640e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-23T03:14:10.422447309Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1063 an assertion about a backgrounded child waits for that child
   `start_handoff_daemon.sh` backgrounds the daemon and returns immediately. The
   property test reads a marker file that backgrounded child writes, with no wait
