@@ -47,6 +47,8 @@
 ;; pane. Deliberately this lib and NOT swarm_ensure.bb itself, which runs a
 ;; full ensure sweep + System/exit as a side effect of being load-file'd.
 (load-file (str (fs/path script-dir "provider_respawn_env_lib.bb")))
+;; BL-1108: shared token→argv needles (also loaded by swarm_ensure.bb).
+(load-file (str (fs/path script-dir "agent_process_marker_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -115,7 +117,13 @@
            (remove str/blank?)
            (map (fn [line]
                   (let [cols (str/split line #"\t" -1)]
-                    {:role (get cols 0) :session (get cols 3)})))
+                    ;; col0 role, col3 session, col5 agent token (claude/cursor/…).
+                    ;; Absent agent column defaults to claude — pre-agent-column
+                    ;; fixtures and classic packs stay unchanged.
+                    {:role (get cols 0)
+                     :session (get cols 3)
+                     :agent (let [a (get cols 5)]
+                              (if (str/blank? a) "claude" a))})))
            (remove #(str/blank? (:session %)))
            vec)
       [])))
@@ -176,14 +184,34 @@
   (let [r (sh! "ps" "-eo" "pid=,ppid=,args=")]
     (when (zero? (:exit r)) (:out r))))
 
-(defn claude-process-line [pane-pid ps-output]
+;; Re-export shared map/lookup so existing callers
+;; (babysitter-check/agent-process-markers, acceptance runners) keep working.
+(def agent-process-markers agent-process-marker-lib/agent-process-markers)
+
+(defn agent-process-marker
+  "Substring to look for in a child process argv for this agent token.
+   Unknown tokens fall back to the token itself (still better than always
+   looking for claude)."
+  [agent]
+  (agent-process-marker-lib/agent-process-marker agent))
+
+(defn agent-process-line
+  "First child of pane-pid whose args match the expected agent marker, or nil.
+   Formerly claude-only (`claude `); Cursor seats run `cursor-agent` and were
+   false half-launch CRITs under the old needle."
+  [pane-pid ps-output agent]
   (when (and pane-pid ps-output)
-    (->> (str/split-lines ps-output)
-         (keep (fn [line]
-                 (when-let [[_ _pid ppid args] (re-find ps-line-pattern line)]
-                   (when (= (str pane-pid) ppid) args))))
-         (filter #(str/includes? % "claude "))
-         first)))
+    (let [marker (agent-process-marker agent)]
+      (->> (str/split-lines ps-output)
+           (keep (fn [line]
+                   (when-let [[_ _pid ppid args] (re-find ps-line-pattern line)]
+                     (when (= (str pane-pid) ppid) args))))
+           (filter #(str/includes? % marker))
+           first))))
+
+;; Back-compat alias — older callers/tests still name the claude helper.
+(defn claude-process-line [pane-pid ps-output]
+  (agent-process-line pane-pid ps-output "claude"))
 
 (defn capture-pane [socket session]
   (when (and socket (pane-exists? socket session))
@@ -216,15 +244,21 @@
     (spit (str f) (str (str/join "\n" trimmed) "\n"))
     trimmed))
 
-(defn gather-role [socket ps-output {:keys [role session]}]
+(defn gather-role [socket ps-output {:keys [role session agent]}]
   (let [exists? (pane-exists? socket session)
         pid (when exists? (pane-pid socket session))
         ;; A pane whose pid we need but whose ps snapshot failed to gather at
-        ;; all is a tooling failure, not evidence the claude process is gone.
+        ;; all is a tooling failure, not evidence the agent process is gone.
         gather-failed? (boolean (and pid (nil? ps-output)))
-        claude-line (claude-process-line pid ps-output)
-        has-claude? (boolean claude-line)
-        has-rc? (boolean (and claude-line (str/includes? claude-line "--remote-control")))
+        agent-token (or agent "claude")
+        agent-line (agent-process-line pid ps-output agent-token)
+        has-agent? (boolean agent-line)
+        ;; Claude /rc only applies to Claude seats. Cursor (and other
+        ;; non-Claude agents) have no --remote-control flag by design — do
+        ;; not WARN "RC degraded" when their agent is correctly alive.
+        rc-applicable? (= agent-token "claude")
+        has-rc? (boolean (and rc-applicable? agent-line
+                              (str/includes? agent-line "--remote-control")))
         pane-text (or (capture-pane socket session) "")
         menu? (boolean (re-find menu-pattern pane-text))
         busy? (babysitterd-sweep-lib/classify-pane-busy? pane-text)
@@ -250,8 +284,14 @@
         ;; check-acp-seat raises the routable finding in its place.
         menu-blocked? (and menu? (acp-session-lib/menu-check-applies? acp-snapshot))]
     (acp-session-lib/apply-acp-facts
-     {:role role :pane-exists? exists? :has-claude-process? has-claude?
+     ;; Key kept as has-claude-process? for sweep-lib API compat; value is
+     ;; "expected agent process present" (claude OR cursor-agent OR …).
+     {:role role :pane-exists? exists?
+      :has-claude-process? has-agent?
+      :expected-agent agent-token
+      :expected-process (agent-process-marker agent-token)
       :process-gather-failed? gather-failed?
+      :rc-applicable? rc-applicable?
       :has-remote-control? has-rc? :menu-blocked? menu-blocked? :busy? busy?
       :hash-history history :pane-text pane-text}
      acp-snapshot

@@ -47,7 +47,7 @@
 ;; only a provider whose wording is genuinely novel (like aider's) also needs
 ;; a new text-builder, since capability flags alone can route to prose, not
 ;; invent it. agent_runtime_lib.bb delegates here for backward compatibility.
-(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "cursor" "mock"})
+(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "cursor" "local-model" "mock"})
 
 (defn normalize-agent
   "Unknown agents fall back to claude chat-style wake."
@@ -110,6 +110,13 @@
               :bootstrap-style :embedded
               :bootstrap-text-style :generic
               :startup-delay-ms 3000}
+   ;; BL-1052: on-host seat against a downloaded model served on loopback
+   ;; (BL-1082). Same execute-capable shape as vibe/gemini — never aider's
+   ;; file-editor shape, even when the model catalog overlaps.
+   "local-model" {:wake-style :chat-message
+                  :bootstrap-style :embedded
+                  :bootstrap-text-style :generic
+                  :startup-delay-ms 3000}
    "mock"    {:wake-style :mock
               :bootstrap-style :mock
               :bootstrap-text-style :mock}})
@@ -284,6 +291,7 @@
    "grok" "generic"
    "vibe" "generic"
    "gemini" "generic"
+   "local-model" "generic"
    "mock" "generic"
    "aider" "aider-editor"})
 

@@ -117,6 +117,7 @@ qa_e2e_procedure: >
      with the evidence - that is a completed spike, not a bounce.
 
 notes: |
+  Human 2026-08-23T17:55Z (Cursor): PARKED to hold — operator focus shifted to Qwen-enabling chain (BL-1082→1052→1053; BL-1077). Resume ACP spike after that chain or on explicit ask.
   Human 2026-08-23 (Cursor): PAUSED — finish BL-1078 first (Cursor launcher token). Resume 1081 after 1078 lands; ACP spike stays parallel-capable but must not compete for active slots while 1078 is in flight.
   Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   Source: archived

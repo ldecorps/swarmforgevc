@@ -111,6 +111,12 @@ Limits that follow from that shape:
   pay full first-message cost every respawn; there is no Anthropic-style
   prompt-cache hit on the stable constitution/PIPELINE prefix for a Cursor
   seat.
+- **Operator hotfix 2026-08-23:** Cursor launch now passes a short "read and
+  obey `$prompt_file`" wake (gemini-style path reference) instead of
+  embedding `$(cat prompt)` in argv — cuts ARG_MAX risk on full-forge and
+  avoids paying the prompt twice in the process command line. The seat still
+  loads the prompt into context once by reading the file; there is still no
+  Claude-style prompt cache.
 - The seat must be woken by chatting into the pane (`:wake-style
   :chat-message`). There is no separate "paste prompt file" bootstrap like
   grok.
@@ -134,11 +140,17 @@ Claude seat that lost that flag or whose claude.ai/code session died.
   Telegram **Cursor Remote** bridge (BL-698) and Cursor's own product remote
   features — not `rc:coder` / `rc:documenter` on the swarm socket.
 
-Practical consequence (also why BL-1081 refused to force every seat through
-ACP): staffing a role with Cursor **drops** the daily Claude `/rc` affordance
-the human uses to watch and steer that pane from a phone. Prefer Cursor on
-roles where that loss is acceptable, or keep Claude on the seats you remote
-daily.
+**Operator hotfix 2026-08-23 (Cursor heal path):**
+
+- `rc:<role>` for seats whose launch script has no `--remote-control` reports
+  **OFF** (with an action string), not a misleading HEALTHY.
+- Half-launch heal (pane up, agent gone) is owned by **`agent:<role>`**:
+  `./swarm ensure` treats the seat unhealthy unless the expected binary
+  (`cursor-agent`, …) is a descendant of the pane, then respawns from the
+  launch script — the same repair Claude `/rc` was never going to do for
+  Cursor.
+- Babysitter live-session check matches the roles.tsv agent token (not only
+  `claude `), so Cursor panes no longer false-CRIT as half-launches.
 
 ## Residual: cost attribution
 
