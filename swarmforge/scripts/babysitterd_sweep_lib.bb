@@ -522,12 +522,20 @@
            resident-mailbox-empty? dispatch-note-pending?
            resident-stranded-grace-min
            control-plane-classification launch-scripts-present?
-           control-plane-repair-allowed? socket-path]}]
+           control-plane-repair-allowed? socket-path control-plane-error]}]
   (let [paused? (boolean (:active? pause))
         control-plane-finding (check-control-plane
                                {:control-plane-classification control-plane-classification
                                 :launch-scripts-present? launch-scripts-present?
                                 :control-plane-repair-allowed? control-plane-repair-allowed?
+                                ;; BL-1071 scenario 06: the REASON the
+                                ;; observation failed. The gatherer captures it
+                                ;; and check-control-plane renders it, but this
+                                ;; destructuring is the one place between them -
+                                ;; a key absent here is dropped silently, and
+                                ;; the finding degrades to "unavailable" with
+                                ;; nowhere for a human to start.
+                                :control-plane-error control-plane-error
                                 :socket-path socket-path})
         control-plane-ensure? (= :ensure-control-plane
                                  (get-in control-plane-finding [:repair :action]))
