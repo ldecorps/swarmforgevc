@@ -6,77 +6,58 @@
 #   source "$SCRIPT_DIR/lib/operator_runtime_sandbox.sh"
 #   copy_operator_runtime_sandbox "$SRC" "$dest/swarmforge/scripts"
 #
-# Adding a new load-file in operator_runtime.bb: update OPERATOR_RUNTIME_SANDBOX_LIBS
-# here once — every fixture picks it up without a per-fixture edit.
+# BL-973: the file list is DERIVED from the real transitive load-file closure
+# of the entry points below, never hand-maintained. Adding a new load-file
+# anywhere upstream now needs no edit here at all - which is the point, because
+# the hand list this replaces went stale three times (BL-911's
+# prompt_engine_lib.bb, BL-967's daemon_cycle_guard_lib.bb, BL-1029's
+# shell_quote_lib.bb) with nothing gating it.
+#
+# What DOES need an edit here is a new sibling ENTRY POINT - a script a fixture
+# shells to that operator_runtime.bb does not itself load-file. Those are named
+# below with their reasons, and each one's own closure is walked too. That is a
+# far smaller and far more meaningful surface than 45 filenames: an entry point
+# is a decision, a transitive dependency is a consequence.
+#
+# Shell fixtures cannot require the JS closure helper
+# (specs/pipeline/steps/lib/operatorRuntimeBbClosure.js), so this uses its
+# Babashka twin, bb_load_closure_lib.bb. The two are held to the same answer by
+# swarmforge/scripts/test/bb_load_closure_agreement_test_runner.bb (BL-897: a
+# rule mirrored across a language boundary needs a test asserting both agree -
+# a "kept in sync" comment is not a gate).
+
+# shellcheck source=swarmforge/scripts/test/lib/bb_closure_copy.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/bb_closure_copy.sh"
 
 copy_operator_runtime_sandbox() {
   local src="${1:?copy_operator_runtime_sandbox: src dir}"
   local dest="${2:?copy_operator_runtime_sandbox: dest dir}"
   mkdir -p "$dest"
 
-  # Keep in sync with (load-file ...) forms in operator_runtime.bb, plus
-  # helpers fixtures historically copied alongside (operator_ask, *reaper_lib,
-  # ambulance_lib) so ticks that touch those paths keep working.
-  local libs=(
+  # operator_runtime.bb is the subject. The rest are siblings its ticks SHELL
+  # to rather than load-file, so no closure walk from operator_runtime.bb alone
+  # would reach them - each is here because a fixture broke without it:
+  #   operator_ask.bb            - the ask/await path (BL-306)
+  #   swarm_handoff.bb           - hotfix-certification-sweep! shells to it (BL-848)
+  #   chase_sweep_lib.bb         - the chase/dropped-parcel sweeps
+  #   pre_qa_gate_lib.bb         - the pre-QA gate a tick can run
+  #   salvage_lib.bb             - salvage of an abandoned parcel
+  #   ticket_close_guard_lib.bb  - the close guard
+  #   duplicate_chain_guard_lib.bb - the duplicate-forward guard
+  #   coordinator_config_lib.bb  - coordinator config a tick reads
+  local entry_points=(
     operator_runtime.bb
-    operator_lib.bb
-    llm_cost_ledger_lib.bb
-    telegram_topic_lib.bb
-    support_lib.bb
-    support_thread_store.bb
-    operator_memory_lib.bb
-    operator_memory_store.bb
-    ticket_status_lib.bb
-    handoff_lib.bb
-    swarm_identity_lib.bb
-    daemon_alarm_lib.bb
-    disk_space_lib.bb
-    sandbox_sweep_lib.bb
-    bounded_delete_sweep_lib.bb
-    proc_fd_scan_lib.bb
-    fixture_reaper_sweep_lib.bb
-    fixture_reaper_lib.bb
-    orphan_agent_reaper_sweep_lib.bb
-    orphan_agent_reaper_lib.bb
-    orphan_janitor_sweep_lib.bb
-    orphan_janitor_lib.bb
-    # BL-849 (Darwin orphan-janitor) added this dependency to orphan_agent_
-    # reaper_sweep_lib.bb/orphan_janitor_lib.bb without updating this shared
-    # list - every sandboxed operator_runtime test was failing to load
-    # before this fix, unrelated to whatever that test is actually about.
-    process_table_lib.bb
     operator_ask.bb
-    ambulance_lib.bb
-    hotfix_certification_lib.bb
-    babysitterd_freshness_lib.bb
-    # BL-848: hotfix-certification-sweep! shells to swarm_handoff.bb (never
-    # hand-writes an inbox file, per the coordinator-nudge constraint) - its
-    # full load-file transitive closure, so a sandboxed --tick-once can
-    # exercise that real send path end to end.
     swarm_handoff.bb
-    handoff_inject_lib.bb
-    agent_runtime_lib.bb
-    agent_runtime_inject.bb
-    prompt_engine_lib.bb
     chase_sweep_lib.bb
-    claim_progress_lib.bb
-    backlog_depth_lib.bb
-    pipeline_stage_lib.bb
-    salvage_lib.bb
-    duplicate_chain_guard_lib.bb
     pre_qa_gate_lib.bb
-    acceptance_contract_gate_lib.bb
-    pre_qa_gate_gather_lib.bb
-    coordinator_config_lib.bb
-    required_stages_lib.bb
+    salvage_lib.bb
     ticket_close_guard_lib.bb
-    mono_router_lib.bb
+    duplicate_chain_guard_lib.bb
+    coordinator_config_lib.bb
   )
 
-  local f
-  for f in "${libs[@]}"; do
-    if [[ -f "$src/$f" ]]; then
-      cp "$src/$f" "$dest/"
-    fi
-  done
+  # ${arr[@]+"${arr[@]}"}: stock macOS /bin/bash 3.2 raises "unbound variable"
+  # expanding an EMPTY array under set -u (BL-801).
+  copy_bb_closure "$src" "$dest" ${entry_points[@]+"${entry_points[@]}"}
 }
