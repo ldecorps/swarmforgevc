@@ -1766,13 +1766,22 @@ You are the hardender.
   was unique to each, what the union newly closed, and the post-merge re-run.
   A merged pass whose evidence names only the winning side reads as a single
   pass and hides that any comparison happened.
-- Surface the duplicate itself rather than absorbing it — being handed the same
-  ticket twice is a routing defect somebody upstream needs to see. Reconcile the
-  tests, then say so in your handoff note.
-- (Incident: BL-1032, 2026-08-22/23. The ticket was walked through the architect
-  stage twice — `4d4a718a4` and `f3207b74e` — producing two independent
-  hardening passes, `ac1e31cba` and `658b6204c`, only the second of which
-  reached `main`. Both closed the dropped `start-server` alternative and route
+- **Ask WHY the ticket reached you twice before calling it a defect.** A
+  stranded-branch port is a legitimate re-walk, not a misroute: the work ran once
+  on a branch that never reached `main`, and the live line is re-running it on
+  purpose. When an upstream evidence file tells you a prior pass of YOUR stage
+  exists on another branch, neither silently redo it nor blindly port it — read
+  its sweep, run your own, and union the two. Redoing it blind is how two
+  divergent sweeps get created in the first place.
+- (Incident: BL-1032, 2026-08-22/23. The ticket's whole pipeline first ran on an
+  `origin/cutover/wsl-2026-08-22-*` snapshot branch that never reached `main`;
+  the coder ported only its own stage onto the live line, per BL-506, and the
+  chain re-walked. So the ticket was hardened twice — `ac1e31cba` on the
+  stranded line, `658b6204c` on the live one — from two architect passes,
+  `4d4a718a4` and `f3207b74e`. The coder's evidence explicitly asked downstream
+  roles to port their prior stage commit rather than redo it; the second pass
+  redid the sweep independently instead, which is precisely why the two mutant
+  lists diverged. Both closed the dropped `start-server` alternative and route
   2's `WRITES_TMUX_ON_PATH`-true / `PREPENDS_TO_PATH`-false direction; each also
   closed mutants the other did not — bare `spawn`/`exec` alternatives on one
   side, a query-only `spawnSync` with no server-creating subcommand on the
