@@ -37,22 +37,29 @@ export function readCurrentModel(targetPath: string, role: string): string | und
   return typeof model === 'string' ? model : undefined;
 }
 
-// Aider-backed roles (Qwen, etc.) encode the live model in the launch script's
-// --model flag; that is ground truth for what tmux is actually running.
-// Stale *.claude-settings.json files may remain from prior Claude-backed launches.
-function readLaunchScriptModel(targetPath: string, role: string): { model?: string; isAider: boolean } {
+// Non-Claude seats (aider / cursor-agent / …) encode the live model in the
+// launch script's --model flag; that is ground truth for what tmux is actually
+// running. Stale *.claude-settings.json files may remain from prior
+// Claude-backed launches and must not win the header label.
+function readLaunchScriptModel(
+  targetPath: string,
+  role: string
+): { model?: string; prefersLaunchOverClaudeSettings: boolean } {
   try {
     const script = fs.readFileSync(
       path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`),
       'utf8'
     );
     const isAider = /\baider\b/.test(script);
+    const isCursor = /\bcursor-agent\b/.test(script);
+    const prefersLaunchOverClaudeSettings = isAider || isCursor;
     const match =
       script.match(/\baider\b[^\n]*--model\s+(\S+)/) ??
-      (isAider ? script.match(/--model\s+(\S+)/) : null);
-    return { model: match?.[1], isAider };
+      script.match(/\bcursor-agent\b[^\n]*--model\s+(\S+)/) ??
+      (prefersLaunchOverClaudeSettings ? script.match(/--model\s+(\S+)/) : null);
+    return { model: match?.[1], prefersLaunchOverClaudeSettings };
   } catch {
-    return { isAider: false };
+    return { prefersLaunchOverClaudeSettings: false };
   }
 }
 
@@ -77,12 +84,12 @@ function readConfiguredModelFromConf(targetPath: string, role: string): string |
   return undefined;
 }
 
-// Aider launch script first (ignores stale claude settings from prior backends),
-// then live claude settings file, then launch script --model for other agents,
-// then swarmforge.conf's window line as a last-resort fallback.
+// Non-Claude launch script first (ignores stale claude settings from prior
+// backends), then live claude settings file, then launch script --model for
+// other agents, then swarmforge.conf's window line as a last-resort fallback.
 export function readRoleModelId(targetPath: string, role: string): string | undefined {
   const launch = readLaunchScriptModel(targetPath, role);
-  if (launch.isAider && launch.model) {
+  if (launch.prefersLaunchOverClaudeSettings && launch.model) {
     return launch.model;
   }
   return (

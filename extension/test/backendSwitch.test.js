@@ -94,6 +94,16 @@ test('readRoleModelId prefers aider launch script over stale claude settings fil
   assert.equal(readRoleModelId(tmp, 'coder'), 'openai/qwen3.7-plus');
 });
 
+test('readRoleModelId prefers cursor-agent launch script over stale claude settings file', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder', { model: 'claude-opus-5' });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    "#!/bin/bash\ncursor-agent --model auto --force --trust --workspace '/tmp/wt'\n"
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'auto');
+});
+
 test('switchRoleModel rewrites the model field, preserving every other field unchanged', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5', effortLevel: 'high', permissions: { defaultMode: 'bypassPermissions' } });

@@ -31,6 +31,12 @@ required_wiring:
   - 'swarmforge/model-steward/seed/models.seed.json::"cursor"::the Cursor identity must live in the committed seed - an entry written only into gitignored .swarmforge runtime state does not travel, is not reviewable, and leaves production routing unchanged on every other host'
   - "specs/pipeline/steps/index.js::bl1079::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler"
 
+# Original coder tip SHAs superseded by cherry-picks onto swarmforge-cleaner
+# when Claude seats were weekly-capped (content landed as f1e5c731b /
+# c23ba315e / 06bffc38c / af84f81c9). Gate ancestry wants either the coder
+# SHAs or this deliberate-drop list (BL-531).
+abandoned_commits: ["05bf3dc776", "9bba33f7ce", "80e44d374c", "0436e720c6"]
+
 invariants:
   - "Before ordinary pack routing or ModelFactory assignment, a Cursor identity is registered as candidate, runs the steward compliance battery, produces an evidence artifact, then certify — never a fabricated Anthropic id."
   - "Pack apply refuses a candidate Cursor unless certify has succeeded or an explicit spike-only escape is set."
