@@ -180,6 +180,16 @@
   [{:keys [merge? tree-equals-parent1? offered-paths]}]
   (boolean (and merge? tree-equals-parent1? (seq offered-paths))))
 
+(defn- gate-hits-decision
+  "Shared refuse/clean shape for sibling push-sweep path gates (BL-855 /
+   BL-1098): incomplete facts fail closed; otherwise map hits into
+   :offending under the given reason keyword."
+  [facts-complete? hits reason map-hit]
+  (cond
+    (not facts-complete?) {:refuse? true :reason :gather-failed :offending []}
+    (seq hits) {:refuse? true :reason reason :offending (mapv map-hit hits)}
+    :else {:refuse? false :reason nil :offending []}))
+
 (defn noop-merge-decision
   "Pure decision, sibling of qa-gate-decision: does any commit about to be
    pushed silently discard content its second parent offered? Consulted
@@ -197,16 +207,13 @@
    Returns {:refuse? bool :reason (:gather-failed/:noop-landing-merge/nil)
             :offending (seq of {:sha :second-parent-sha :dropped-count})}."
   [{:keys [ahead-commits facts-complete?] :or {facts-complete? true}}]
-  (if-not facts-complete?
-    {:refuse? true :reason :gather-failed :offending []}
-    (let [hits (filter noop-landing-merge? ahead-commits)]
-      (if (seq hits)
-        {:refuse? true :reason :noop-landing-merge
-         :offending (mapv (fn [h] {:sha (:sha h)
-                                    :second-parent-sha (:second-parent-sha h)
-                                    :dropped-count (count (:offered-paths h))})
-                           hits)}
-        {:refuse? false :reason nil :offending []}))))
+  (gate-hits-decision
+   facts-complete?
+   (filter noop-landing-merge? ahead-commits)
+   :noop-landing-merge
+   (fn [h] {:sha (:sha h)
+            :second-parent-sha (:second-parent-sha h)
+            :dropped-count (count (:offered-paths h))})))
 
 ;; ── BL-1098: silent-revert detector, SIBLING of noop-landing-merge above.
 ;;    BL-855 pinned the merge that takes NOTHING. This pins the merge that
@@ -242,16 +249,13 @@
             :offending (seq of {:path :newest-authoring-sha
                                 :divergence-merge-sha})}."
   [{:keys [candidate-paths facts-complete?] :or {facts-complete? true}}]
-  (if-not facts-complete?
-    {:refuse? true :reason :gather-failed :offending []}
-    (let [hits (filterv silent-revert-path? candidate-paths)]
-      (if (seq hits)
-        {:refuse? true :reason :silent-revert
-         :offending (mapv (fn [h] {:path (:path h)
-                                   :newest-authoring-sha (:newest-authoring-sha h)
-                                   :divergence-merge-sha (:divergence-merge-sha h)})
-                          hits)}
-        {:refuse? false :reason nil :offending []}))))
+  (gate-hits-decision
+   facts-complete?
+   (filterv silent-revert-path? candidate-paths)
+   :silent-revert
+   (fn [h] {:path (:path h)
+            :newest-authoring-sha (:newest-authoring-sha h)
+            :divergence-merge-sha (:divergence-merge-sha h)})))
 
 (defn silent-revert-candidate-paths
   "Union of merge-touched path sets only - never invents paths from a
@@ -373,18 +377,21 @@
 ;; stuck_escalation_email_lib.bb's own sweep! uses for role recovery.
 ;; ── should-push body helpers (keep sweep! / each helper CC ≤ 6) ───────────
 
-(defn- log-noop-merge-refusal! [adapters gate]
-  ((:log! adapters) "push-sweep" "noop-merge-refused"
+(defn- log-gate-refusal! [adapters tag gate offending-fmt]
+  ((:log! adapters) "push-sweep" tag
    (name (:reason gate))
-   (str/join ";" (map (fn [o] (str (:sha o) "<-" (:second-parent-sha o) " dropped=" (:dropped-count o)))
-                       (:offending gate)))))
+   (str/join ";" (map offending-fmt (:offending gate)))))
+
+(defn- log-noop-merge-refusal! [adapters gate]
+  (log-gate-refusal!
+   adapters "noop-merge-refused" gate
+   (fn [o] (str (:sha o) "<-" (:second-parent-sha o) " dropped=" (:dropped-count o)))))
 
 (defn- log-silent-revert-refusal! [adapters gate]
-  ((:log! adapters) "push-sweep" "silent-revert-refused"
-   (name (:reason gate))
-   (str/join ";" (map (fn [o] (str (:path o) "<-" (:newest-authoring-sha o)
-                                   "@" (:divergence-merge-sha o)))
-                       (:offending gate)))))
+  (log-gate-refusal!
+   adapters "silent-revert-refused" gate
+   (fn [o] (str (:path o) "<-" (:newest-authoring-sha o)
+                "@" (:divergence-merge-sha o)))))
 
 (defn- log-qa-refusal! [adapters gate]
   ((:log! adapters) "push-sweep" "qa-refused"
@@ -423,24 +430,31 @@
                       (attempt-push-this-tick adapters push-state retry-config now-ms))]
     (persist-push-or-alarm! daemon-dir state adapters push-state' retry-config now-ms)))
 
+(defn- refuse-gate-or! [adapters state daemon-dir gate log-refusal! then!]
+  (if (:refuse? gate)
+    (do (log-refusal! adapters gate)
+        (write-state! daemon-dir state))
+    (then!)))
+
 (defn- continue-after-noop-gate! [now-ms daemon-dir retry-config adapters state]
-  (let [silent-gate (silent-revert-decision ((:silent-revert-gate-facts! adapters)))]
-    (if (:refuse? silent-gate)
-      (do (log-silent-revert-refusal! adapters silent-gate)
-          (write-state! daemon-dir state))
-      (let [qa-gate (qa-gate-decision ((:qa-gate-facts! adapters)))]
-        (if (:refuse? qa-gate)
-          (do (log-qa-refusal! adapters qa-gate)
-              (write-state! daemon-dir state))
-          (run-push-attempt-cadence! now-ms daemon-dir retry-config adapters state))))))
+  (refuse-gate-or!
+   adapters state daemon-dir
+   (silent-revert-decision ((:silent-revert-gate-facts! adapters)))
+   log-silent-revert-refusal!
+   (fn []
+     (refuse-gate-or!
+      adapters state daemon-dir
+      (qa-gate-decision ((:qa-gate-facts! adapters)))
+      log-qa-refusal!
+      (fn [] (run-push-attempt-cadence! now-ms daemon-dir retry-config adapters state))))))
 
 (defn- run-should-push! [now-ms daemon-dir retry-config adapters state]
-  (let [state (if (seq (:divergence state)) (assoc state :divergence {}) state)
-        noop-gate (noop-merge-decision ((:noop-merge-gate-facts! adapters)))]
-    (if (:refuse? noop-gate)
-      (do (log-noop-merge-refusal! adapters noop-gate)
-          (write-state! daemon-dir state))
-      (continue-after-noop-gate! now-ms daemon-dir retry-config adapters state))))
+  (let [state (if (seq (:divergence state)) (assoc state :divergence {}) state)]
+    (refuse-gate-or!
+     adapters state daemon-dir
+     (noop-merge-decision ((:noop-merge-gate-facts! adapters)))
+     log-noop-merge-refusal!
+     (fn [] (continue-after-noop-gate! now-ms daemon-dir retry-config adapters state)))))
 
 (defn sweep!
   [now-ms daemon-dir retry-config adapters]
