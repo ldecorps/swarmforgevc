@@ -121,3 +121,34 @@ test('buildNamedModelServePlan starts ollama serve when the endpoint is missing'
   assert.match(plan.command, /ollama serve/);
   assert.equal(plan.ready, false);
 });
+
+test('buildNamedModelPullPlan refuses a blank model id', () => {
+  assert.throws(() => buildNamedModelPullPlan('   '), /must not be blank/);
+});
+
+test('isNamedModelHealthy prefers an explicit probe reason for unhealthy', () => {
+  const health = isNamedModelHealthy({
+    endpointStatus: 'unhealthy',
+    endpointUrl: 'http://127.0.0.1:11434',
+    reason: 'bad status',
+  });
+  assert.equal(health.ready, false);
+  assert.equal(health.reason, 'bad status');
+});
+
+test('isNamedModelHealthy defaults the unhealthy reason when none is given', () => {
+  const health = isNamedModelHealthy({
+    endpointStatus: 'unhealthy',
+    endpointUrl: 'http://127.0.0.1:11434',
+  });
+  assert.match(health.reason, /not healthy/);
+});
+
+test('buildNamedModelServePlan quotes a non-URL endpoint host as-is', () => {
+  const plan = buildNamedModelServePlan(
+    'qwen2.5-coder:7b-instruct',
+    { endpointStatus: 'missing', endpointUrl: 'not a url' },
+    { endpointUrl: 'not a url' }
+  );
+  assert.match(plan.command, /OLLAMA_HOST='not a url'/);
+});
