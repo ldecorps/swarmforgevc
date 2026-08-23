@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-priority: 0
+priority: 2
 direction: queue-jump
 depends_on: [BL-1079]
 mutation_cost: low
@@ -84,6 +84,7 @@ qa_e2e_procedure: >
      passes, proving the wording was appended to and not rewritten.
 
 notes: |
+  Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   BL-712 remaining slice D. Depends on BL-1079. Parent epic BL-712.
 
   Sequencing flag (specifier, 2026-08-23): BL-1080 is active while BL-1079 and
@@ -92,6 +93,13 @@ notes: |
   promoted BL-1078..BL-1081 did not run that gate. The chain is real - this
   slice documents and packages what those two build - so depends_on is left
   intact. Coordinator's call, not fixed here.
+
+  Coordinator's call (2026-08-23): demoted back to paused. STEERING.md's
+  standing directive (2026-08-23 ~02:20 BST) pins the chain strictly serial —
+  BL-1078 -> BL-1079 -> BL-1080 — and BL-1079 has not even been promoted yet.
+  No handoff activity had touched this ticket (assigned_to: specifier, absent
+  from the pipeline stage map), so nothing in flight is disrupted. Re-promote
+  once BL-1079 lands in backlog/done/.
 
   Invariant 2 has no example scenario on purpose (specifier, 2026-08-23):
   whether the how-to actually answers "Cursor seat versus /pilot versus
