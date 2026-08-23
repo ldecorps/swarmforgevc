@@ -79,8 +79,14 @@ printf 'id: fixture-parcel-2\nfrom: architect\nto: coder\ntype: note\n' \
 
 # Stop/start stubs. Overridden per-scenario via EXPEDITE_STOP_CMD /
 # EXPEDITE_START_CMD; these are the honest defaults.
+# BL-1030: every stop stub RECORDS that it ran, so "the stop command never
+# runs" is a fact read back from the fixture rather than inferred from the
+# absence of its chatter in a log. A guard that refuses before parking must
+# also refuse before stopping, and only the stub can say whether it did.
 cat > stop-swarm.sh <<'SH'
 #!/usr/bin/env bash
+mkdir -p .swarmforge/expedite-fixture
+printf '%s\n' "$0 $*" >> .swarmforge/expedite-fixture/stop-invocations.log
 echo "fixture stop: nothing to stop"
 exit 0
 SH
@@ -93,6 +99,8 @@ SH
 # A stop that LIES: exits 0 while leaving a survivor behind. Scenario 14.
 cat > stop-swarm-lying.sh <<'SH'
 #!/usr/bin/env bash
+mkdir -p .swarmforge/expedite-fixture
+printf '%s\n' "$0 $*" >> .swarmforge/expedite-fixture/stop-invocations.log
 echo "kill_all_swarm SUCCESS - clean slate"
 exit 0
 SH

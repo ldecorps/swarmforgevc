@@ -158,3 +158,19 @@ notes: >
   parameterized - that scenario pins one specific state (finished but not yet
   closed) with one possible outcome, and a one-valued Examples column is what
   the prune rule says to remove.
+
+  RESOLVED, the BL-1063 entanglement only (2026-08-23, specifier, on the
+  coder's note "BL-973 dups already out at 335455b4c4"). Verified by content,
+  not by ancestry (BL-490/BL-495): at `335455b4c4` all fourteen files the two
+  duplicate commits added are absent, and every file the landed
+  implementation added is present, with the five shared-modified files
+  byte-identical to the restore at `cd165925b`. `specs/pipeline/steps/index.js`
+  differs only by two unrelated registrations (BL-1063, BL-1086); it still
+  requires `bl973CopyListsClosureDerivedSteps` and never required the
+  duplicate's step file. Both `main` and `origin/main` are clean of the
+  duplicate too. So BL-1063 is unblocked and the BL-506 out-of-scope-diff
+  problem is closed. This does NOT change the defect, its severity, or its
+  scope: the router still originates the parcel, and the cost recorded above
+  was paid in full - a coder pass, a cleaner refusal, a specifier escalation
+  and a removal pass. It is recorded only so a later reader does not chase a
+  blocker that no longer exists.
