@@ -40,13 +40,12 @@ Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
 the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
 and `..._property_runner.bb` drive it with fixtures.
 
-**The daemon does not fix anything — with two bounded exceptions.** No menu
+**The daemon does not fix anything — with one bounded exception.** No menu
 picks, no parcel moves; apart from typing the nudge line into the
 coordinator's pane it is read-only, *except* that a vanished standing role's
-tmux session can be recreated (BL-1017, below) and a missing tmux control
-plane can be recovered via `./swarm ensure` (BL-958/BL-1071, below) — both
-bounded and neither ever silencing the CRIT that reports it. Everything else
-stays judgment for the coordinator/human.
+tmux session can be recreated (BL-1017, below), bounded and never silencing
+the CRIT that reports it. Everything else stays judgment for the
+coordinator/human.
 
 ## What a nudge looks like
 
@@ -270,76 +269,6 @@ other session was touched, (c) `handoffd` is still alive, and (d)
 
 Acceptance feature:
 [`specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature`](../../specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature).
-
-## Control-plane auto-heal, bounded in time (BL-958/BL-1071)
-
-Separate from the numbered checks above: each sweep also observes the tmux
-control plane itself (via `control_plane_lib/observe!`), not just individual
-role sessions. This is the daemon-side half of
-[BL-958's recovery](BL-958-control-plane-loss-recovery.md) — `./swarm ensure`
-run automatically instead of waiting for a human to notice the swarm went
-dark. A WSL host-specific bug (a seeking `slurp` on `/proc/meminfo`, plus a
-macOS-only `vm_stat` fallback that threw instead of degrading) made every
-sweep abort before this recovery could ever run; BL-1071 stamped off the
-human hotfix that fixed that and hardened the recovery path itself.
-
-**Finding.** `key: "control-plane"`, three possible severities:
-
-- `CRIT` — the plane is missing. If `.swarmforge/launch/` has persisted
-  launch scripts, the message says `running ./swarm ensure`, and a repair is
-  queued. If not, it says `relaunch the swarm (./start-swarm.sh) and inspect
-  .swarmforge/incidents/control-plane.json` and queues nothing — recreating
-  eight sessions from nothing is not this daemon's call.
-- `UNAVAILABLE` — the observer itself threw (BL-1071 invariant 3). Before this
-  fix a throwing observer produced `{:classification :unknown}`, which no
-  check fired on, so the sweep printed `OK all checks green` while knowing
-  nothing about the plane — the incident's own silent-blackout shape one
-  layer up, inside the mechanism meant to catch it. Now it is its own
-  severity: never a healthy reading, never an absence.
-- (nothing) — the plane observed `:up`.
-
-**Bounded in attempts**, the same shape as BL-1017's session repair:
-`session-repair-allowed?`'s cooldown/attempt-cap
-(`default-repair-cooldown-ms` / `default-max-repair-attempts` in
-`babysitterd_sweep_lib.bb`), state persisted in
-`.swarmforge/babysitterd/control-plane-ensure.json`. Per-role `:ensure-session`
-repairs are suppressed while a plane-wide ensure is queued — one coordinated
-recovery, not eight racing ones — but each role's own CRIT still stands.
-
-**Bounded in wall-clock, not just attempts (BL-1071 invariant 2).**
-`bash ./swarm ensure` used to run with no deadline: a hang held the sweep
-open so the next tick never happened — a babysitter that is stuck being
-indistinguishable from one that is not running. `run-bounded!` now wraps it
-in `setsid` and kills the whole process group (`kill -KILL -- -<pgid>`) after
-`BABYSITTER_ENSURE_TIMEOUT_MS` (default 5 minutes) — the env seam
-engineering.prompt sanctions for daemon wiring tests; it moves the deadline,
-it cannot disable the recovery. Output is captured to
-`control-plane-ensure.{out,err}` rather than deref'd, since a surviving
-grandchild can hold the stdout pipe open past the kill.
-
-**The REPAIR line has three outcomes, not two:**
-`REPAIR [repaired|failed|unfinished] control-plane — ./swarm ensure`, followed
-by a short tail of the command's own output. `unfinished` is the timeout
-case — nothing said no, so it is not a failure, and it emphatically is not a
-repair; reporting it as either would claim knowledge the sweep does not have.
-
-**No force-result seam in production (BL-1071 review goal 1).** An earlier
-version of this recovery checked `BABYSITTER_FAKE_ENSURE_RESULT` first and
-fabricated a result when it was set — the exact `*_FORCE_RESULT` env-bypass
-anti-pattern engineering.prompt names, sitting on a recovery path where it
-would silently disable the auto-heal in any real environment that happened to
-have the variable set. Removed; the wiring test now points
-`EXPEDITE_STOP_CMD`-style at a fixture `./swarm` script in its own project
-root instead, so the real spawn, the real bound, and the real exit handling
-all run for real.
-
-Not covered by the unit suite for the same reason as BL-1017's session
-repair: driving a genuinely dead tmux server end-to-end is outside the
-testability boundary. Confirm by hand after a change here the same way BL-958's
-runbook describes.
-
-Acceptance feature:
-[`specs/features/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.feature`](../../specs/features/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.feature).
 
 ## Claim-risk stall detection restored (BL-809)
 

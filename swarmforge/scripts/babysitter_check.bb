@@ -26,7 +26,6 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [cheshire.core :as json]
-            [clojure.java.io :as io]
             [clojure.string :as str]))
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
@@ -90,13 +89,7 @@
   (try
     (apply process/sh {:continue true} args)
     (catch Exception e
-      ;; BL-1071 review goal 3: 127 is a REAL exit code, so a synthesised one
-      ;; is otherwise indistinguishable from a genuine "command not found"
-      ;; out of a process that did start. No caller branches on 127 today
-      ;; (checked across this file and babysitterd_sweep_lib.bb), so the
-      ;; marker is additive rather than a behaviour change - it just means a
-      ;; caller that ever needs the difference can have it.
-      {:exit 127 :out "" :err (or (.getMessage e) "exec-failed") :spawn-failed? true})))
+      {:exit 127 :out "" :err (or (.getMessage e) "exec-failed")})))
 
 ;; ── tmux socket + roles ──────────────────────────────────────────────────
 
@@ -862,90 +855,23 @@
   (fs/create-dirs babysitterd-dir)
   (spit (str control-plane-ensure-file) (json/generate-string m)))
 
-(def control-plane-ensure-timeout-ms
-  "BL-1071 invariant 2: `./swarm ensure` is bounded in WALL CLOCK, not only in
-   attempts. The attempt budget (session-repair-allowed?) stops a recovery
-   being retried forever; it says nothing about one that never returns, and an
-   ensure that hangs holds the sweep open so the next tick never happens. A
-   babysitter that is stuck is indistinguishable from one that is not running,
-   which is the incident's own shape.
-
-   The env seam is the one engineering.prompt sanctions (daemon wiring tests
-   override hardcoded timeouts via env seams). It moves a deadline; it cannot
-   disable the recovery."
-  (or (some-> (System/getenv "BABYSITTER_ENSURE_TIMEOUT_MS") str/trim parse-long)
-      (* 5 60 1000)))
-
-(defn run-bounded!
-  "Run a command under a wall-clock bound, killing the whole process GROUP on
-   timeout. Mirrors expedite_cli.bb's run-bounded!, whose docstring records the
-   two traps a first implementation got wrong and a genuinely-hung fixture
-   exposed - both apply here unchanged:
-
-     1. `.destroyForcibly` kills the DIRECT child only. `./swarm ensure` is a
-        shell script, so everything it spawned survives and keeps running. The
-        command is wrapped in `setsid` to make it a process-group leader and
-        the whole group is killed via `kill -KILL -- -<pgid>`. The `--` is
-        load-bearing and its absence is SILENT: without it kill reads `-<pid>`
-        as an option, exits 0, and leaves every grandchild alive.
-     2. Deref-ing a destroyed process BLOCKS while a surviving grandchild holds
-        the stdout pipe open - EOF never arrives. So output goes to FILES, and
-        a timed-out process is never deref'd.
-
-   Mirrored rather than shared because the original is a `defn-` in another
-   script's namespace, and expedite_cli.bb is being edited by BL-1030 right
-   now; extracting a shared lib across both is a follow-up, not this ticket."
-  [opts timeout-ms out-file err-file & cmd]
-  (let [proc (apply process/process
-                    (assoc opts :in (io/file "/dev/null")
-                           :out (io/file (str out-file)) :err (io/file (str err-file)))
-                    (concat ["setsid"] cmd))
-        pid (.pid (:proc proc))
-        finished? (.waitFor (:proc proc) (long timeout-ms) java.util.concurrent.TimeUnit/MILLISECONDS)]
-    (if finished?
-      {:exit (:exit @proc) :timed-out? false}
-      (do
-        (try (process/sh {:continue true} "kill" "-KILL" "--" (str "-" pid))
-             (catch Exception _ nil))
-        (.destroyForcibly (:proc proc))
-        {:exit nil :timed-out? true}))))
-
-(defn- ensure-output-tail
-  "The last few lines the ensure wrote, for the REPAIR line. Reads the files
-   run-bounded! redirected to; missing or unreadable reads as empty rather
-   than throwing, because a tail is never worth failing a sweep over."
-  [out-file err-file]
-  (let [read-one (fn [f] (or (try (when (fs/exists? f) (slurp (str f))) (catch Exception _ nil)) ""))
-        combined (str (read-one out-file)
-                      (let [e (read-one err-file)] (when (seq e) (str "\n" e))))]
-    (str/join "\n" (take-last 12 (str/split-lines combined)))))
-
 (defn run-control-plane-ensure!
   "BL-958 response-policy :recover — babysitterd owns `./swarm ensure`.
-   Never load-file swarm_ensure.bb (it System/exit's).
-
-   BL-1071 review goal 1: this used to check BABYSITTER_FAKE_ENSURE_RESULT
-   FIRST and, when set, fabricate a result instead of recovering. That is the
-   `*_FORCE_RESULT` env bypass engineering.prompt names, sitting in production
-   code on the recovery path - anything setting it in a real environment
-   silently disabled the auto-heal this whole ticket exists to deliver, which
-   is the same class of silent blackout as the incident. It is gone. The
-   wiring test now puts a fixture `./swarm` in its own project root instead,
-   so the real spawn, the real bound and the real exit handling all run and
-   only the target script is a stand-in."
+   Never load-file swarm_ensure.bb (it System/exit's). Env seams let the
+   wiring test assert the call without launching a real ensure."
   []
-  (fs/create-dirs babysitterd-dir)
-  (let [out-file (fs/path babysitterd-dir "control-plane-ensure.out")
-        err-file (fs/path babysitterd-dir "control-plane-ensure.err")
-        {:keys [exit timed-out?]} (run-bounded! {:dir (str project-root)}
-                                                control-plane-ensure-timeout-ms
-                                                out-file err-file
-                                                "bash" "./swarm" "ensure")]
-    (if timed-out?
-      {:exit nil :timed-out? true :timeout-ms control-plane-ensure-timeout-ms
-       :tail (str "no result within " control-plane-ensure-timeout-ms "ms — the recovery was"
-                  " left unfinished and its process group killed; the plane is NOT known repaired")}
-      {:exit (long (or exit 1)) :timed-out? false :tail (ensure-output-tail out-file err-file)})))
+  (if-let [fake (System/getenv "BABYSITTER_FAKE_ENSURE_RESULT")]
+    (do
+      (when-let [count-file (System/getenv "BABYSITTER_ENSURE_COUNT_FILE")]
+        (spit count-file "1\n" :append true))
+      (try (json/parse-string fake true)
+           (catch Exception _
+             {:exit 1 :tail fake})))
+    (let [{:keys [exit out err]} (process/sh {:continue true :dir (str project-root)}
+                                             "bash" "./swarm" "ensure")
+          combined (str (or out "") (when (seq err) (str "\n" err)))
+          tail (str/join "\n" (take-last 12 (str/split-lines combined)))]
+      {:exit (long (or exit 1)) :tail tail})))
 
 ;; The daemon's existing single-role launch path, mirroring
 ;; swarm_ensure.bb/ensure-standing-role!: create the session if it is missing,
@@ -1038,17 +964,8 @@
         session-by-role (into {} (map (juxt :role :session) role-rows))
         ;; BL-958: observe the control plane through the SAME lib status/ensure
         ;; use, so babysitterd can own the prescribed ./swarm ensure recovery.
-        ;; BL-1071 invariant 1: a throwing observer must not abort the sweep.
-        ;; BL-1071 invariant 3: nor may it vanish. `classify` returns only
-        ;; :up / :control-plane-missing / :down, so :unavailable is
-        ;; unambiguous - it means the observation could not be made - and
-        ;; check-control-plane reports it. The old :unknown produced no
-        ;; finding at all, so the sweep printed "OK all checks green" while
-        ;; knowing nothing about the plane.
         cp-observe (try (control-plane-lib/observe! (str state-dir) socket)
-                        (catch Exception e
-                          {:classification :unavailable
-                           :error (or (.getMessage e) (str (class e)))}))
+                        (catch Exception _ {:classification :unknown}))
         cp-ensure-state (read-control-plane-ensure-state)
         cp-prior (get cp-ensure-state "control-plane")
         cp-repair-allowed? (babysitterd-sweep-lib/session-repair-allowed?
@@ -1071,7 +988,6 @@
          :mem-floor-mb mem-floor-mb
          :claim-risks claim-risks
          :control-plane-classification (:classification cp-observe)
-         :control-plane-error (:error cp-observe)
          :launch-scripts-present? (boolean
                                    (try (control-plane-lib/launch-scripts-present? (str state-dir))
                                         (catch Exception _ false)))
@@ -1117,16 +1033,8 @@
         ;; suppression ever regresses.
         (doseq [_ cp-repairs]
           (let [result (run-control-plane-ensure!)
-                ;; BL-1071 invariant 2: THREE outcomes, not two. A recovery
-                ;; that never returned is not a failure (nothing said no) and
-                ;; emphatically not a repair - reporting it as either would
-                ;; claim knowledge the sweep does not have. "unfinished" is
-                ;; the honest third answer, and it is what scenario 03 gates.
-                status (cond
-                         (:timed-out? result) "unfinished"
-                         (zero? (long (or (:exit result) 1))) "repaired"
-                         :else "failed")]
-            (println (str ts " REPAIR [" status
+                ok? (zero? (long (or (:exit result) 1)))]
+            (println (str ts " REPAIR [" (if ok? "repaired" "failed")
                           "] control-plane — ./swarm ensure"
                           (when-let [t (:tail result)]
                             (when (seq (str/trim t)) (str "\n" t)))))

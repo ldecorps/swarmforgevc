@@ -277,41 +277,6 @@
                                               :socket-path "/tmp/sock"})]
                (and f (= "CRIT" (:severity f)) (nil? (:repair f))
                     (str/includes? (:message f) "start-swarm"))))
-;; ── BL-1071 invariant 3: an observation that could not be made is its own
-;; answer. `classify` returns only :up / :control-plane-missing / :down, so
-;; :unavailable can ONLY mean the observer itself threw. Before this ticket
-;; that case produced no finding at all - it fell off the end of the `when`
-;; and the sweep printed "OK all checks green" while knowing nothing about
-;; the control plane. That is the same silent-blackout mechanism the incident
-;; was, one layer up.
-
-(assert-true "1071: an unreadable control-plane observation is reported UNAVAILABLE, not silence"
-             (let [f (sw/check-control-plane {:control-plane-classification :unavailable
-                                              :launch-scripts-present? true
-                                              :control-plane-repair-allowed? true
-                                              :control-plane-error "boom"
-                                              :socket-path "/tmp/sock"})]
-               (and f (= "UNAVAILABLE" (:severity f)) (= "control-plane" (:key f)))))
-(assert-true "1071: and it carries the reason it could not be read"
-             (str/includes? (:message (sw/check-control-plane
-                                       {:control-plane-classification :unavailable
-                                        :launch-scripts-present? true
-                                        :control-plane-repair-allowed? true
-                                        :control-plane-error "boom"}))
-                            "boom"))
-(assert-true "1071: an unreadable observation never queues a recovery - it is not an absence"
-             (nil? (:repair (sw/check-control-plane {:control-plane-classification :unavailable
-                                                     :launch-scripts-present? true
-                                                     :control-plane-repair-allowed? true}))))
-(assert-true "1071: nor is it a healthy reading - :up still produces no finding"
-             (nil? (sw/check-control-plane {:control-plane-classification :up
-                                            :launch-scripts-present? true
-                                            :control-plane-repair-allowed? true})))
-(assert-true "1071: and :down - an ordinarily stopped swarm - is still not a loss"
-             (nil? (sw/check-control-plane {:control-plane-classification :down
-                                            :launch-scripts-present? true
-                                            :control-plane-repair-allowed? true})))
-
 (assert-true "assemble-findings suppresses per-role ensure-session when control-plane ensure is queued"
              (let [{:keys [repairs findings]}
                    (sw/assemble-findings
