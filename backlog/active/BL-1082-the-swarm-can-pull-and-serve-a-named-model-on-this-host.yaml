@@ -10,7 +10,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1082-the-swarm-can-pull-and-serve-a-named-model-on-this-host.feature
-assigned_to: coordinator
+assigned_to: coder
 human_approval: approved
 approval_context: >
   Sliced out of the 2026-08-22 operator intake

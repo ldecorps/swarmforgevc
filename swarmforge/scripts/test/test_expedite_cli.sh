@@ -212,19 +212,66 @@ assert_named_the_leavings() {
   contains "$label: and who must commit it" "$summary" "whoever next commits in the master checkout"
 }
 
-# (a) stop-stack!: the stop invocation carries a forbidden flag
+# (a) initiate!: the stop invocation carries a forbidden flag.
+#
+# BL-1030 changed what this case asserts, and the change IS the ticket. It used
+# to pass STOP_CMD="--sweep-inbox" - a bare flag, not a runnable command, and
+# the ONE input the old guard could catch - and then assert the sibling really
+# was parked, because the guard sat downstream of park-others!. Both halves
+# were the defect: the realistic `./stop-swarm.sh --sweep-inbox` sailed
+# straight through, and a refusal that only had to read an env var still left
+# half the backlog moved to hold/.
+#
+# So: the realistic command, and the opposite residue assertion. BL-1024's own
+# contract is untouched and still checked below - a refused run reports its
+# leavings honestly - it is just that an honest report of THIS refusal is now
+# "nothing outstanding", because nothing was parked.
 RA="$(mkfix ta --active BL-567 --active BL-590)"
-OUTA="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-stopped.json" STOP_CMD="--sweep-inbox" \
+OUTA="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-stopped.json" STOP_CMD="./stop-swarm.sh --sweep-inbox" \
         run "$RA" BL-567 --no-restart)"; EXITA=$?
 check "BL-1024a: a forbidden stop flag still refuses" "$EXITA" "1"
 contains "BL-1024a: naming the refusal" "$OUTA" "REFUSE stop command carries a forbidden flag"
-check "BL-1024a: and the sibling really is parked, so the leavings are real" \
-  "$(ls "$RA/backlog/hold/" | tr -d '\n')" "BL-590-fixture.yaml"
-assert_named_the_leavings "BL-1024a" "$OUTA"
-contains "BL-1024a: a refused run leaves the leavings structured too" \
-  "$(cat "$RA/.swarmforge/expedite/BL-567/run.json" 2>&1)" '"outstanding"'
-contains "BL-1024a: and says it was refused rather than finished" \
-  "$(cat "$RA/.swarmforge/expedite/BL-567/run.json" 2>&1)" '"outcome" : "refused"'
+contains "BL-1030a: and naming the flag itself, not just the command" "$OUTA" "--sweep-inbox"
+check "BL-1030a: the sibling was never parked - the refusal is decided first" \
+  "$(ls "$RA/backlog/hold/" | wc -l | tr -d ' ')" "0"
+check "BL-1030a: and it is still active" \
+  "$(ls "$RA/backlog/active/" | tr -d '\n')" "BL-567-fixture.yamlBL-590-fixture.yaml"
+check "BL-1030a: the stop command never ran" \
+  "$(cat "$RA/.swarmforge/expedite-fixture/stop-invocations.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
+check "BL-1030a: and the parcels a parked ticket would need are all still there" \
+  "$(find "$RA/.swarmforge/handoffs" -name '*.handoff' | wc -l | tr -d ' ')" "2"
+# BL-1024's register is untouched by this ticket, and this is that register's
+# OWN rule reaching a new case: `leavings` is "nil until something is actually
+# left, so a run that exits before parking reports nothing rather than an empty
+# handover". Before BL-1030 this refusal had parked a sibling, so it had a real
+# handover to report. Now it has none, so it reports none - which is the same
+# rule, not a weaker one. What the operator needs is on the terminal above:
+# the refusal, and the flag that caused it.
+absent "BL-1030a: a run that left nothing hands over nothing" "$OUTA" "OUTSTANDING"
+check "BL-1030a: and writes no refused-run record, because no run happened" \
+  "$(test -e "$RA/.swarmforge/expedite/BL-567/run.json" && echo present || echo absent)" "absent"
+
+# (a2) BL-1030: the look-alike must NOT be refused. A target path that merely
+#      spells a forbidden flag is a path, and a guard that refused it would be
+#      a guard an operator learns to work around.
+RA2="$(mkfix ta2 --active BL-567)"
+OUTA2="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-stopped.json" \
+         STOP_CMD="./stop-swarm.sh /repos/full-sweep-inbox-fix" \
+         run "$RA2" BL-567 --no-restart)"
+absent "BL-1030a2: a substring look-alike is not a forbidden flag" "$OUTA2" "REFUSE stop command"
+check "BL-1030a2: and the stop command really did run" \
+  "$(cat "$RA2/.swarmforge/expedite-fixture/stop-invocations.log" 2>/dev/null | wc -l | tr -d ' ')" "1"
+
+# (a3) BL-1030: a command the guard cannot read is refused, not admitted.
+RA3="$(mkfix ta3 --active BL-567 --active BL-590)"
+OUTA3="$(EXPEDITE_PROBE_FILE="$TMPROOT/bl1024-probe-stopped.json" \
+         STOP_CMD="./stop-swarm.sh '--sweep-inbox" \
+         run "$RA3" BL-567 --no-restart)"; EXITA3=$?
+check "BL-1030a3: an unreadable stop command refuses" "$EXITA3" "1"
+contains "BL-1030a3: naming the command it could not read" "$OUTA3" "could not be read as a command line"
+check "BL-1030a3: nothing was parked" "$(ls "$RA3/backlog/hold/" | wc -l | tr -d ' ')" "0"
+check "BL-1030a3: and the stop command never ran" \
+  "$(cat "$RA3/.swarmforge/expedite-fixture/stop-invocations.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
 
 # (b) initiate!: the teardown did not reach a clean slate (the common path)
 RB="$(mkfix tb --active BL-567 --active BL-590)"

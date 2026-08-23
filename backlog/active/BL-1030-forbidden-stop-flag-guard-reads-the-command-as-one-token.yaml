@@ -11,6 +11,7 @@ severity: high
 # pending handoffs, which is unrecoverable parcel loss, and it happens during
 # a run whose whole premise is that parked work resumes afterwards.
 status: todo
+assigned_to: coder
 epic: swarm-reliability
 priority: 55
 direction: swarm-reported
