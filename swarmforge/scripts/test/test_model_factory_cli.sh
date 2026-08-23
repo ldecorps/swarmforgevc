@@ -35,6 +35,12 @@ bb "$SCRIPT_DIR/bl1079_provider_agent_allowlist_property_runner.bb" | grep -q "^
 
 pass "01b: BL-1079 cursor agent token appears in launcher allow-list"
 
+# ── 1c: BL-1079 invariant 2 — Cursor gate over status×override / escape ───
+bb "$SCRIPT_DIR/bl1079_cursor_certification_gate_property_runner.bb" | grep -q "^ALL PASS$" \
+  || fail "01c: bl1079_cursor_certification_gate_property_runner.bb did not report ALL PASS"
+
+pass "01c: BL-1079 Cursor certification gate property (status×override / escape)"
+
 # ── 2: assign-returns-role-map-01 — quality mode against the committed seed ─
 ASSIGN_OUT="$(bb "$CLI" assign --mode quality)"
 for role in architect coder cleaner QA hardender documenter specifier; do
