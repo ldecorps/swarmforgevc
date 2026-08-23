@@ -20,8 +20,7 @@
 //
 // Runs ONLY via `npm run test:properties` (vitest.properties.config.mjs).
 //
-// Non-vacuity (staged-first restore, run 2026-08-23, recorded in the parcel
-// commit):
+// Non-vacuity (staged-first restore; sync gate re-proved after shared-lib extract):
 //   break 1 - agent-process-marker forced to always return "claude ": RED on
 //     the first non-claude draw, "used Claude's marker for agent=<token>".
 //   break 2 - check-remote-control ignoring :rc-applicable?: RED on every
@@ -30,7 +29,9 @@
 //   break 3 - agent-process-line ignoring the agent arg (always "claude "):
 //     RED on cursor draws that plant only cursor-agent in ps, "process
 //     result absent while the expected marker was present".
-// All three restored byte-for-byte, ALL PROPERTIES HOLD.
+//   break 4 - swarm_ensure.bb load-file of agent_process_marker_lib removed:
+//     RED on "swarm_ensure.bb must load agent_process_marker_lib.bb".
+// All restored byte-for-byte, ALL PROPERTIES HOLD.
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -47,6 +48,12 @@ const RUNNER = path.join(
 );
 const BABYSITTER_CHECK = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'babysitter_check.bb');
 const SWARM_ENSURE = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_ensure.bb');
+const MARKER_LIB = path.join(
+  REPO_ROOT,
+  'swarmforge',
+  'scripts',
+  'agent_process_marker_lib.bb'
+);
 
 function runBb(subcommand, payload) {
   const out = execFileSync('bb', [RUNNER, subcommand, JSON.stringify(payload || {})], {
@@ -70,6 +77,19 @@ function extractMarkerMap(sourcePath) {
   const out = {};
   for (const [, k, v] of pairs) out[k] = v;
   return out;
+}
+
+/** Both live-seat callers must load the ONE map lib — no private duplicate. */
+function assertConsumesSharedMarkerLib(sourcePath) {
+  const src = fs.readFileSync(sourcePath, 'utf8');
+  assert.ok(
+    /agent_process_marker_lib\.bb/.test(src),
+    `${path.basename(sourcePath)} must load agent_process_marker_lib.bb`
+  );
+  assert.ok(
+    !/def\s+(?:\^:private\s+)?agent-process-markers\s*\{/.test(src),
+    `${path.basename(sourcePath)} must not redefine agent-process-markers inline`
+  );
 }
 
 test('BL-1108/BL-654 invariant 1: every configured agent token uses its own process marker, never Claude by default', () => {
@@ -125,16 +145,16 @@ test('BL-1108/BL-654 invariant 1: every configured agent token uses its own proc
     'every non-Claude agent must reject a Claude-only argv'
   );
 
-  // Cross-language mirror (BL-897): babysitter_check and swarm_ensure keep
-  // the same token→needle map by hand — a "kept in sync" comment is not a gate.
-  const ensureMap = extractMarkerMap(SWARM_ENSURE);
-  const checkMap = extractMarkerMap(BABYSITTER_CHECK);
+  // Single shared map (BL-897 / cleaner extract): one lib owns the table;
+  // babysitter_check and swarm_ensure must load it, not keep private copies.
+  const libMap = extractMarkerMap(MARKER_LIB);
+  assertConsumesSharedMarkerLib(BABYSITTER_CHECK);
+  assertConsumesSharedMarkerLib(SWARM_ENSURE);
   assert.deepEqual(
-    ensureMap,
-    checkMap,
-    'swarm_ensure.bb and babysitter_check.bb agent-process-markers drifted'
+    markers,
+    libMap,
+    'runner markers must match agent_process_marker_lib.bb'
   );
-  assert.deepEqual(checkMap, markers, 'runner markers must match the babysitter_check source map');
 });
 
 test('BL-1108/BL-654 invariant 2: non-Claude seats report remote-control OFF; agent health stays independently checkable', () => {
