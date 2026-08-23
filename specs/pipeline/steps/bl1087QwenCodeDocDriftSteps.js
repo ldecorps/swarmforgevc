@@ -17,10 +17,6 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const DOCS_DIR = path.join(REPO_ROOT, 'docs');
 const INDEX_PATH = path.join(DOCS_DIR, 'index.md');
 const SPEC_PATH = path.join(DOCS_DIR, 'reference', 'Specification.MD');
-const DISPOSITION =
-  'backlog/evidence/BL-1052-BL-1053-supersede-disposition-20260823.md';
-const RUNBOOK_REL = 'docs/how-to/BL-1052-qwen-code-mono-router-launch.md';
-const INDEX_LINK = 'how-to/BL-1052-qwen-code-mono-router-launch.md';
 
 const FEATURE = 'Documentation stops describing the withdrawn qwen-code seat';
 

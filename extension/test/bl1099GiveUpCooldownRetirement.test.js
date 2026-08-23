@@ -6,10 +6,28 @@ const {
   findScenarioCoveringCase,
   missingCoverageCases,
   extractDefinePatternSources,
+  expandAlternationFragments,
   orphanedRegistrations,
   hasScenarioNamed,
+  knownElapsed,
+  knownProcessState,
   COVERAGE_CASES,
 } = require('../../specs/pipeline/scripts/bl1099GiveUpCooldownRetirement');
+
+test('knownElapsed and knownProcessState reject unknown labels', () => {
+  assert.throws(() => knownElapsed('maybe'), /unrecognized <elapsed>/);
+  assert.throws(() => knownProcessState('zombie'), /unrecognized <process state>/);
+  assert.equal(knownElapsed('has elapsed'), 'has elapsed');
+  assert.equal(knownProcessState('dead'), 'dead');
+});
+
+test('expandAlternationFragments expands a single (a|b) group', () => {
+  assert.deepEqual(expandAlternationFragments('the cooldown (has elapsed|has not elapsed yet)'), [
+    'the cooldown has elapsed',
+    'the cooldown has not elapsed yet',
+  ]);
+  assert.deepEqual(expandAlternationFragments('plain step'), ['plain step']);
+});
 
 test('listScenarios names Scenario and Scenario Outline titles', () => {
   const text = `
@@ -64,6 +82,31 @@ Feature: cooldown
     findScenarioCoveringCase([feature], 'has elapsed', 'still alive'),
     're-arms after cooldown'
   );
+});
+
+test('findScenarioCoveringCase rejects decision-less or mismatched bodies', () => {
+  const noDecision = `
+Feature: x
+  Scenario: mentions cooldown only
+    Given the give-up cooldown has not yet elapsed
+`;
+  assert.equal(findScenarioCoveringCase([noDecision], 'has not elapsed', 'dead'), null);
+
+  const notElapsedOnly = `
+Feature: x
+  Scenario: not-elapsed without process state
+    Given the give-up cooldown has not yet elapsed
+    Then the child is still given up
+`;
+  assert.equal(findScenarioCoveringCase([notElapsedOnly], 'has not elapsed', 'dead'), null);
+
+  const elapsedWithoutRearm = `
+Feature: x
+  Scenario: elapsed without re-arm wording
+    Given the give-up cooldown has elapsed
+    Then the child is still given up
+`;
+  assert.equal(findScenarioCoveringCase([elapsedWithoutRearm], 'has elapsed', 'dead'), null);
 });
 
 test('missingCoverageCases reports every uncovered matrix cell', () => {

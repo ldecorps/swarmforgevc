@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   extractNamedPackConfs,
   isIllustrativePackPlaceholder,
+  isShippedWorkLog,
   findAbsentNamedPackConfs,
 } = require('../out/docs/namedPackConfDrift');
 
@@ -13,6 +14,14 @@ test('isIllustrativePackPlaceholder recognises ALL-CAPS stems only', () => {
   assert.equal(isIllustrativePackPlaceholder('qwen-mono-router'), false);
   assert.equal(isIllustrativePackPlaceholder('qwen-code-mono-router'), false);
   assert.equal(isIllustrativePackPlaceholder('Name'), false);
+});
+
+test('isShippedWorkLog matches the Specification.MD path only', () => {
+  assert.equal(isShippedWorkLog(undefined), false);
+  assert.equal(isShippedWorkLog('docs/reference/Specification.MD'), true);
+  assert.equal(isShippedWorkLog('prefix/docs/reference/Specification.MD'), true);
+  assert.equal(isShippedWorkLog('docs\\reference\\Specification.MD'), true);
+  assert.equal(isShippedWorkLog('docs/index.md'), false);
 });
 
 test('extractNamedPackConfs dedupes and keeps stem', () => {
@@ -35,6 +44,16 @@ test('findAbsentNamedPackConfs skips placeholders and existing packs', () => {
   assert.deepEqual(findAbsentNamedPackConfs(docs, existing), [
     'swarmforge/packs/qwen-code-mono-router.conf',
   ]);
+});
+
+test('findAbsentNamedPackConfs accepts an array of existing pack paths', () => {
+  assert.deepEqual(
+    findAbsentNamedPackConfs(
+      ['see swarmforge/packs/gone.conf'],
+      ['swarmforge/packs/still-here.conf']
+    ),
+    ['swarmforge/packs/gone.conf']
+  );
 });
 
 test('findAbsentNamedPackConfs skips the shipped-work log by path', () => {

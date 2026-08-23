@@ -7,7 +7,6 @@
 // run_acceptance.sh (BL-112) so the surviving suites still pass.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
@@ -41,7 +40,9 @@ function readAllFeatureTexts() {
 }
 
 function runAcceptance(featurePath) {
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1099-accept-'));
+  const scratchRoot = path.join(REPO_ROOT, 'tmp');
+  fs.mkdirSync(scratchRoot, { recursive: true });
+  const outDir = fs.mkdtempSync(path.join(scratchRoot, 'bl1099-accept-'));
   try {
     const result = spawnSync('bash', [RUN_ACCEPTANCE, featurePath, outDir], {
       cwd: REPO_ROOT,
