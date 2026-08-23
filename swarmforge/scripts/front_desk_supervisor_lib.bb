@@ -293,9 +293,32 @@
            {:entry (assoc entry :status "gave-up" :gave-up-at-ms now-ms) :event :gave-up})))
 
      "gave-up"
-     (if (or (cooldown-elapsed? (:gave-up-at-ms entry) now-ms giveup-config)
-             (and (:pid entry) (not (pid-alive? (:pid entry)))))
+     ;; BL-1088: the cooldown, and ONLY the cooldown, decides. This used to read
+     ;; `(or cooldown-elapsed? (and pid (not (pid-alive? pid))))`, and the
+     ;; second disjunct made the first unreachable for the one case give-up
+     ;; exists to bound: a child reaches gave-up by crash-looping until its
+     ;; budget is spent, so its recorded process is ALWAYS dead. The `or`
+     ;; short-circuited true on the very next tick, :attempts reset to 0, and
+     ;; the declared 900000ms bound became front_desk_supervisor.bb's 2000ms
+     ;; tick - a factor of 450, and no bound at all for a child that can never
+     ;; start. Six supervisors share this decision; all six were affected.
+     ;;
+     ;; Liveness of the corpse is not new information here - it is the
+     ;; DEFINITION of the state. A supervisor that must recover sooner lowers
+     ;; its own *_GIVEUP_COOLDOWN_MS, which all six already read; that shortens
+     ;; one supervisor's outage without removing the bound for the other five.
+     ;;
+     ;; BL-303's guarantee is untouched: this is still a TIMED state, not a
+     ;; terminal one - once the cooldown elapses the child re-arms with a fresh
+     ;; budget, so a crash burst is still a bounded outage and never a
+     ;; permanent one.
+     (if (cooldown-elapsed? (:gave-up-at-ms entry) now-ms giveup-config)
        (do
+         ;; BL-403: a gave-up entry's pid can still be ALIVE ("stalled" is
+         ;; entered from "running" without ever checking pid-alive?), so the
+         ;; re-arm still terminates whatever is recorded before spawning a
+         ;; replacement. Removing the dead-pid disjunct above does not remove
+         ;; this guard - exactly one process per supervisor stays the rule.
          (when (:pid entry) (kill-pid! (:pid entry)))
          {:entry (started-entry (assoc entry :attempts 0) now-ms (spawn!)) :event :re-armed})
        {:entry entry :event nil})
