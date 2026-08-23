@@ -8,6 +8,8 @@
 ;;     (gitignored; initialised from the seed on first read)
 ;;   - certification report artifacts under
 ;;     .swarmforge/model-steward/certification-reports/
+;;   - compliance-battery scorecard evidence under
+;;     .swarmforge/model-steward/scorecards/ (BL-1079: certify requires one)
 ;;
 ;; JSON keys that carry a "provider/model" composite (capabilities, adapters)
 ;; must never be keywordized with plain `true` — Clojure's `keyword` splits
@@ -45,6 +47,9 @@
 
 (defn certification-reports-dir [state-dir]
   (fs/path state-dir "certification-reports"))
+
+(defn scorecards-dir [state-dir]
+  (fs/path state-dir "scorecards"))
 
 (defn atomic-spit! [path content]
   (fs/create-dirs (fs/parent path))
@@ -91,6 +96,15 @@
     (str "certification-reports/" file-name)))
 
 (defn read-certification-report! [state-dir relative-path]
+  (let [p (fs/path state-dir relative-path)]
+    (when (fs/exists? p)
+      (parse-json (slurp (str p))))))
+
+(defn read-scorecard!
+  "Reads a compliance-battery scorecard artifact relative to state-dir
+   (BL-1079). Returns nil when the file is absent — certify treats that as
+   refuse, not as an empty report."
+  [state-dir relative-path]
   (let [p (fs/path state-dir relative-path)]
     (when (fs/exists? p)
       (parse-json (slurp (str p))))))
