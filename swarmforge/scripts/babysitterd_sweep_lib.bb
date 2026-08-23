@@ -92,7 +92,8 @@
   ;;     session, whatever state its process is in, so the half-launch CRIT and
   ;;     the UNAVAILABLE gather report below stay repair-free — recreating a
   ;;     session that is already there would kill a live pane.
-  [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?]
+  [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?
+           expected-process]
     :as opts
     :or {should-stand? true}}]
   (cond
@@ -113,16 +114,22 @@
      :message (str "swarmforge-" role ": pane process gather unavailable this sweep (ps failed) — live-process check skipped")}
 
     (not has-claude-process?)
-    {:key (str "proc-" role) :severity "CRIT"
-     :message (str "swarmforge-" role ": pane alive but NO claude process under it (half-launch/exit)")}
+    (let [proc-name (or expected-process "agent")]
+      {:key (str "proc-" role) :severity "CRIT"
+       :message (str "swarmforge-" role ": pane alive but NO " proc-name
+                     " process under it (half-launch/exit)")})
 
     :else nil))
 
 ;; ── check 2: remote-control-flag ─────────────────────────────────────────────
 
 (defn check-remote-control
-  [{:keys [role pane-exists? has-claude-process? has-remote-control?]}]
-  (when (and pane-exists? has-claude-process? (not has-remote-control?))
+  "Claude /rc only. Non-Claude seats (Cursor, gemini, …) set :rc-applicable?
+   false in the gatherer — they never carry --remote-control and must not
+   WARN as RC-degraded when their agent is correctly alive."
+  [{:keys [role pane-exists? has-claude-process? has-remote-control? rc-applicable?]
+    :or {rc-applicable? true}}]
+  (when (and pane-exists? has-claude-process? rc-applicable? (not has-remote-control?))
     {:key (str "rc-" role) :severity "WARN"
      :message (str "swarmforge-" role ": claude alive but --remote-control flag missing (RC degraded)")}))
 
