@@ -23,11 +23,26 @@ test('an unknown stop reason is not invented as a turn ending', () => {
   assert.equal(parseAcpLine(JSON.stringify({ id: 1, result: { stopReason: 'vibes' } })), null);
 });
 
+test('a null result does not crash the parser - it is absent, not malformed', () => {
+  // A JSON-RPC response can legitimately carry a null result. The host must
+  // survive it exactly like any other message with nothing to say.
+  assert.equal(parseAcpLine(JSON.stringify({ id: 1, result: null })), null);
+});
+
 test('a permission request parses with its id and tool', () => {
   const e = parseAcpLine(
     JSON.stringify({ id: 7, method: 'session/request_permission', params: { sessionId: 's1', toolName: 'write_file' } })
   );
   assert.deepEqual(e, { kind: 'permission_requested', requestId: 7, tool: 'write_file', sessionId: 's1' });
+});
+
+test('a permission request id may be a string, not only a number', () => {
+  // The protocol allows either; a parser that only recognised a number would
+  // silently drop every request from a CLI that mints string ids.
+  const e = parseAcpLine(
+    JSON.stringify({ id: 's1', method: 'session/request_permission', params: { toolName: 'write_file' } })
+  );
+  assert.deepEqual(e, { kind: 'permission_requested', requestId: 's1', tool: 'write_file', sessionId: undefined });
 });
 
 test('a permission request with no id is not actionable and is dropped', () => {
@@ -153,6 +168,32 @@ test('tool status maps the protocol vocabulary onto started/completed/failed', (
     assert.equal(e.kind, 'tool_status', `${wire} must parse`);
     assert.equal(e.status, expected, `${wire} -> ${expected}`);
   }
+});
+
+test('tool_call_update is recognised as tool status on its own, not only alongside tool_call', () => {
+  // The two sessionUpdate types are checked by an OR; a test that only ever
+  // exercises tool_call cannot tell that branch apart from one that dropped
+  // tool_call_update entirely.
+  const e = parseAcpLine(
+    JSON.stringify({
+      method: 'session/update',
+      params: { update: { sessionUpdate: 'tool_call_update', toolName: 'bash', status: 'completed' } },
+    })
+  );
+  assert.deepEqual(e, { kind: 'tool_status', tool: 'bash', status: 'completed', sessionId: undefined });
+});
+
+test('an unrecognised method is dropped even when its params happen to carry an update-shaped payload', () => {
+  // The method gate must be checked before the payload is trusted - a parser
+  // that fell through to the update handler for ANY method would parse
+  // traffic from a message this host does not model at all.
+  const e = parseAcpLine(
+    JSON.stringify({
+      method: 'session/cancel',
+      params: { update: { sessionUpdate: 'agent_message_chunk', content: 'hi' } },
+    })
+  );
+  assert.equal(e, null);
 });
 
 test('a tool name is read from each of its fallback keys, in order', () => {

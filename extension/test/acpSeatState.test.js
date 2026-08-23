@@ -62,6 +62,7 @@ test('a permission block is reported structurally, with the id needed to answer 
   assert.equal(v.blocked, true);
   assert.equal(v.tool, 'write_file');
   assert.equal(v.requestId, 42);
+  assert.equal(v.from, 'permission_requested:write_file', 'the decision trail must name the actual tool, not a blank fact');
 });
 
 test('no request means not blocked', () => {
@@ -77,6 +78,21 @@ test('a turn ending clears a pending permission - one moment cannot mute the sea
 test('a tool resolving clears the permission that was gating it', () => {
   const state = foldAcpEvents([permission('bash'), toolStatus('bash', 'completed')]);
   assert.equal(decidePermission(state).blocked, false);
+});
+
+test('a tool STARTING again does not clear a pending permission for that tool - only completing/failing resolves it', () => {
+  // Distinct from the test above: 'started' must take the OTHER branch of the
+  // resolution check, not merely share its outcome by coincidence.
+  const state = foldAcpEvents([permission('bash'), toolStatus('bash', 'started')]);
+  assert.equal(decidePermission(state).blocked, true, 'permission must still be pending while the tool is only starting');
+});
+
+test('a completed tool is removed from the running set, leaving a DIFFERENT concurrently-running tool untouched', () => {
+  // A single-tool scenario cannot tell "remove only this tool" apart from
+  // "remove everything" or "remove nothing" - both convergently empty the
+  // list. Two tools running at once is what makes the distinction real.
+  const state = foldAcpEvents([toolStatus('bash', 'started'), toolStatus('grep', 'started'), toolStatus('bash', 'completed')]);
+  assert.deepEqual(state.runningTools, ['grep']);
 });
 
 test("a DIFFERENT tool resolving does not clear another tool's pending permission", () => {

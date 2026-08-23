@@ -97,6 +97,30 @@ test('every event kind renders something for the pane', () => {
   }
 });
 
+test('a tool_status event renders its own content, not a different kind\'s', () => {
+  // Non-emptiness alone cannot tell a correct render apart from one that fell
+  // through into the wrong switch case with the wrong fields.
+  assert.equal(renderEventForPane({ kind: 'tool_status', tool: 'bash', status: 'started' }), '[tool] bash: started');
+});
+
+test('a non-agent speaker is prefixed in the pane - the agent alone is not', () => {
+  // Every existing test drives transcript through the `chunk()` helper, which
+  // is always role:'agent'. The bracket prefix for user/tool speakers is a
+  // branch nothing else exercises.
+  assert.equal(renderEventForPane({ kind: 'transcript', role: 'user', text: 'hi' }), '[user] hi');
+  assert.equal(renderEventForPane({ kind: 'transcript', role: 'tool', text: 'out' }), '[tool] out');
+  assert.equal(renderEventForPane({ kind: 'transcript', role: 'agent', text: 'hi' }), 'hi');
+});
+
+test('currentState exposes the raw fold, distinct from the flattened snapshot', () => {
+  const h = harness();
+  h.session.ingestAll([chunk('a'), perm('bash', 3)]);
+  const state = h.session.currentState();
+  assert.equal(state.pendingPermission.tool, 'bash');
+  assert.equal(state.pendingPermission.requestId, 3);
+  assert.deepEqual(state.transcript, ['agent: a']);
+});
+
 test('the snapshot path is one file per seat under .swarmforge/acp/', () => {
   assert.equal(acpSnapshotRelPath('coder'), '.swarmforge/acp/coder.json');
   assert.notEqual(acpSnapshotRelPath('coder'), acpSnapshotRelPath('cleaner'));
@@ -119,6 +143,18 @@ test('an agent-supplied tool title is rendered as a name, not as prose', () => {
   const long = paneToolLabel('x'.repeat(200));
   assert.equal(long.length, 49, 'a runaway title is bounded before it reaches the pane');
   assert.ok(long.endsWith('…'), 'and is marked as truncated rather than silently cut');
+  assert.equal(paneToolLabel('x'.repeat(48)), 'x'.repeat(48), 'exactly 48 characters is the boundary and must NOT be truncated - only strictly longer is');
+});
+
+test('boundary underscores are stripped in full, not just one at a time', () => {
+  // The two-stage transform (collapse punctuation to "_", then strip leading
+  // and trailing "_" runs) makes ordinary punctuation-derived underscores
+  // indistinguishable from real ones already in the tool name - so this can
+  // only be exercised with LITERAL underscore characters at the boundary,
+  // which nothing else in this file uses.
+  assert.equal(paneToolLabel('__internal_tool__'), 'internal_tool');
+  assert.equal(paneToolLabel('___tool'), 'tool');
+  assert.equal(paneToolLabel('tool___'), 'tool');
 });
 
 test("the host's status lines never reproduce an interactive menu", () => {
