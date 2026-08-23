@@ -1,6 +1,6 @@
 # Model Steward: Onboarding, Certification, and Role Recommendations
 
-Last Updated: 2026-07-22
+Last Updated: 2026-08-23
 
 SwarmForge's **Model Steward** maintains the Model Registry, Capability Registry, Role Recommendation Matrix, and Prompt Adapter catalogue — the permanent home for knowledge about each language model the swarm uses.
 
@@ -29,9 +29,11 @@ bb swarmforge/scripts/model_steward_cli.bb register anthropic/claude-opus-4-8 \
 
 ### 2. Certify the model
 
-Once you have benchmarked the model and confirmed it meets SwarmForge quality standards:
+Once you have benchmarked the model and confirmed it meets SwarmForge quality standards, plant a compliance-battery scorecard at the well-known path under the steward state dir, then certify:
 
 ```bash
+STATE="${MODEL_STEWARD_STATE_DIR:-.swarmforge/model-steward}"
+# scorecards/<provider>__<model>.json — required evidence (BL-1079)
 bb swarmforge/scripts/model_steward_cli.bb certify <provider>/<model>
 ```
 
@@ -40,13 +42,22 @@ Example:
 bb swarmforge/scripts/model_steward_cli.bb certify anthropic/claude-opus-4-8
 ```
 
-The CLI outputs the path to the certification report artifact, which it creates automatically.
+Absent that scorecard, `certify` refuses, names the path it wanted, leaves the
+status unchanged, and writes no certification report. When evidence is
+present, the CLI outputs the certification report path and the scorecard path
+it read. For the Cursor identity specifically, see
+[Certifying a Cursor identity](./BL-1079-cursor-identity-steward-certify-and-residuals.md).
 
 ## Certification Workflow
 
 ### Certifying a model
 
-- **`certify <provider>/<model>`** — Records a model as production-ready. Creates a certification report with an ISO timestamp; the model's status changes to `certified` and the report path is stored in its registry entry.
+- **`certify <provider>/<model>`** — Records a model as production-ready **only
+  when** a compliance-battery scorecard exists at
+  `scorecards/<provider>__<model>.json` under the steward state dir (BL-1079).
+  Creates a certification report with an ISO timestamp that names that
+  scorecard; the model's status changes to `certified` and the report path is
+  stored in its registry entry.
 
 ### Decertifying a model
 
