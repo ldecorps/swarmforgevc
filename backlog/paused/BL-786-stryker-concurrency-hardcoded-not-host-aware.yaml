@@ -1,5 +1,5 @@
 id: BL-786
-title: "Stryker concurrency is three hand-tuned constants (8, 12, 12) that no host ever checks: BL-427 measured the number and built the recommender, but nothing calls it"
+title: "Stryker concurrency is a hand-set constant that no host ever checks — all three configs now pinned to 1 by a Mac-only hotfix; BL-427 measured the number and built the recommender, but nothing calls it"
 milestone: M8
 type: defect
 status: todo
@@ -84,6 +84,60 @@ source: |
   wired into zero of the places it was built to serve — and this time the
   ticket that built it said so in its own report.
 
+  ---
+
+  ## Re-baseline, 2026-08-23 (operator ruling; corrects points 1 and 5 above)
+
+  Operator ruling, delivered as a coordinator note to the specifier
+  2026-08-23T00:12Z, in full: "Ticket re-baselining it - 1 was Mac-only".
+
+  This answers the question BL-789 left open and closes it in favour of
+  re-baselining. It does NOT change this ticket's deliverable — the fix is
+  still "resolve the number from the host at launch", not "hand-set a better
+  constant". What it changes is the starting state the fix is measured
+  against, which points 1 and 5 above now describe wrongly:
+
+  6. **The three constants are no longer 8, 12 and 12 — all three are `1`.**
+     `79cc04b29` (BL-789, 2026-08-10) dropped
+     `extension/stryker.config.json` 8→1 and both
+     `extension/stryker.letsTalkCore.config.json` and
+     `extension/stryker.letsTalkCursorBridge.config.json` 12→1, adopting the
+     operator's 2026-08-02 **Mac** host-switch hotfix. Verified on `main`
+     2026-08-23: all three read `"concurrency": 1`. The title and points 1
+     and 5 above describe the pre-2026-08-10 tree and must not be read as
+     current.
+
+  7. **That `1` was explicitly provisional, and the confirmation never came.**
+     `79cc04b29`'s own commit message flags the drop as "provisional pending
+     operator confirmation of whether it's this host's steady state". No
+     confirmation arrived between 2026-08-10 and 2026-08-23. The ruling above
+     is that confirmation, and it is negative: the value belongs to a Mac
+     host this swarm no longer runs on.
+
+  8. **The harm has flipped direction, and is now larger, not smaller.** The
+     original filing was over-subscription — 8 and 12 asking for more workers
+     than the box could hold, risking the orphaned-vitest OOM spiral. Pinned
+     at `1` on this 20-core Linux host the fault is the mirror image:
+     every mutation run leaves 19 cores idle. Measured cost, from
+     `backlog/evidence/BL-1015-hardener-pass-20260822.md` (2026-08-22): a run
+     carrying 60 static mutants was estimated at "~2–7h at concurrency 1", and
+     "raising concurrency to 6 brought it back to a real ~20–30 min". Both
+     directions are the same defect — a number nobody derived from the host —
+     which is why the deliverable is unchanged.
+
+  9. **The idle-core cost is being paid by the hardening gate, not just by
+     wall clock.** `git grep 'concurrency=1' backlog/evidence/` returns a long
+     run of hardener passes deferring or skipping Stryker outright, citing the
+     load rules and the documented dry-run timeout. A gate that is routinely
+     skipped because it is too slow is a gate that is not running.
+
+  10. **Host readings on 2026-08-23, for the record.** 20 cores; 19904 MB
+      total RAM, 10282 MB available. Against BL-427's measured ~783 MB
+      per-worker peak and 2048 MB reserve, `recommendMutationConcurrency`
+      would return 10 at that moment — versus the 1 that is pinned. The
+      recommender is still at `extension/src/metrics/mutationWorkerRss.ts`
+      and still has no production caller, exactly as point 3 describes.
+
 description: |
   Resolve mutation concurrency from the launching host at run time instead of
   reading a frozen constant out of each Stryker config, using the recommender
@@ -143,10 +197,17 @@ acceptance: |
   3. On a host whose RAM headroom would allow more workers than it has cores,
      the resolved value is the core count.
 
-  4. Each of the three mutation entry points (`mutation`,
-     `mutation:lets-talk-core`, `mutation:lets-talk-cursor-bridge`) resolves
-     its own concurrency the same way, proven per entry point — a scenario that
-     covers only the default config must not be able to pass this.
+  4. Every mutation entry point that actually exists resolves its own
+     concurrency the same way, proven per entry point — a scenario that covers
+     only the default config must not be able to pass this. As of 2026-08-23
+     that is TWO npm scripts, not three: `mutation` and
+     `mutation:lets-talk-cursor-bridge`. There is no `mutation:lets-talk-core`
+     script; `stryker.letsTalkCore.config.json` is an orphan config with no
+     invoker anywhere in the tree (see the 2026-08-23 re-baseline in `source:`).
+     Enumerate the entry points from `extension/package.json` at implementation
+     time and cover each one found — do not write an example row for a script
+     that does not exist, and do not treat the orphan config as an entry point
+     unless a script for it is added.
 
   5. An explicit pin is honoured exactly, even when it is far above or far
      below what the host would have been sized to, and the output says the
@@ -167,8 +228,10 @@ out_of_scope: |
     enough to matter; not a prerequisite here.
   - Vitest's own worker pool sizing, and the unit suite's concurrency. Related
     RAM pressure, different knob, different ticket.
-  - The BL-714 defects currently blocking mutation runs repo-wide. Independent
-    fault, already ticketed and in flight; this ticket assumes they clear.
+  - The BL-714 defects that were blocking mutation runs repo-wide. Cleared —
+    BL-714 is in `backlog/done/` as of the 2026-08-23 re-baseline, so the
+    "cannot be verified end to end" caveat in `approval_context` no longer
+    holds. Independent fault either way.
   - Auto-adjusting concurrency mid-run as RAM fluctuates. Sizing once at launch
     is the whole scope — the report's own framing is "compute this
     recommendation live at launch time".
@@ -185,3 +248,40 @@ notes: |
   that follow-up has an id. A sentence in a doc is not a ticket, and the
   measurement harness's own comment naming the fixed value it was going to
   replace has been stale since the value moved from 4 to 8.
+
+  ---
+
+  ## Amendment record, 2026-08-23 (specifier)
+
+  Factual correction only — **no scope change, so no re-approval is needed
+  and `human_approval: approved` is deliberately left standing.** The
+  deliverable, the two invariants, `required_wiring`, and the `description`
+  are all untouched. What changed: the title and `source:` now say the
+  constants are `1` rather than 8/12/12 (they were re-pinned by `79cc04b29`
+  two days after this ticket was filed); acceptance item 4 no longer names
+  `mutation:lets-talk-core`, which is not a real npm script; and the
+  `out_of_scope` BL-714 caveat is marked cleared.
+
+  `severity: medium` and `priority: 166` are deliberately UNCHANGED. The
+  operator ruling settles which value is correct, not how urgent the fix is,
+  and the medium call in `approval_context` was made deliberately and
+  approved. Raising it would put this into the expedite lane, which is
+  already crowded enough that the human has twice asked to unblock the
+  JumpQ batch — the wrong trade for a slow-gate defect with a working
+  one-line operator workaround.
+
+  Note for whoever implements: that workaround is the CLI override
+  (`stryker run --concurrency <N>`), which is also the standing rule in
+  `swarmforge/roles/hardender.prompt` as of `f547db77a` — never a config
+  edit, because the config is a repo-wide default every worktree picks up at
+  once. This ticket is what makes that override unnecessary; it does not
+  retire the rule, since an operator sizing a run by hand must still win
+  (invariant 2).
+
+  Gherkin: drafted at
+  `specs/features/BL-786-mutation-concurrency-host-resolved.feature.draft`
+  ahead of promotion. It is a `.draft` on purpose — no step handlers exist
+  yet, and a live `.feature` would hard-fail the acceptance runner repo-wide
+  (BL-233). Whoever implements materializes it to `.feature` in the same
+  parcel as the step handlers, and `acceptance:` above stays prose until
+  then so it never names a path that is not on disk (BL-441/BL-480).

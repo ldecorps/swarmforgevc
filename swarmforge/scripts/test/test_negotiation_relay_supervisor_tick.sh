@@ -109,7 +109,12 @@ F="$(make_fixture)"
 cat > "$F/swarm/extension/out/tools/relay-onboarding-negotiation-telegram.js" <<'EOF'
 setInterval(() => {}, 1000);
 EOF
-export NEGOTIATION_RELAY_MAX_ATTEMPTS=3 NEGOTIATION_RELAY_BACKOFF_BASE_MS=10 NEGOTIATION_RELAY_BACKOFF_MAX_MS=20 NEGOTIATION_RELAY_STALL_MS=100
+# BL-1043: the relay now has a real startup grace (90s by default), so a
+# freshly spawned child with no heartbeat is deliberately NOT stalled for
+# the first minute and a half. This block is about what happens AFTER that
+# window, so it shortens the grace along with the stall window rather than
+# waiting for it - the grace being real is the fix, not an obstacle.
+export NEGOTIATION_RELAY_MAX_ATTEMPTS=3 NEGOTIATION_RELAY_BACKOFF_BASE_MS=10 NEGOTIATION_RELAY_BACKOFF_MAX_MS=20 NEGOTIATION_RELAY_STALL_MS=100 NEGOTIATION_RELAY_HEARTBEAT_STARTUP_GRACE_MS=100
 check_once "$F" > /dev/null
 check "setup: the relay starts running with no heartbeat yet" \
   '[[ "$(jget "$(STATUS "$F")" "[:relay :status]")" == running ]]'
@@ -135,7 +140,7 @@ check "BL-411: the prior relay pid is confirmed dead, not left as an orphaned se
   '! kill -0 "$OLD_PID" 2>/dev/null'
 check "BL-411: the replacement relay pid is alive" \
   'kill -0 "$NEW_PID" 2>/dev/null'
-unset NEGOTIATION_RELAY_MAX_ATTEMPTS NEGOTIATION_RELAY_BACKOFF_BASE_MS NEGOTIATION_RELAY_BACKOFF_MAX_MS NEGOTIATION_RELAY_STALL_MS
+unset NEGOTIATION_RELAY_MAX_ATTEMPTS NEGOTIATION_RELAY_BACKOFF_BASE_MS NEGOTIATION_RELAY_BACKOFF_MAX_MS NEGOTIATION_RELAY_STALL_MS NEGOTIATION_RELAY_HEARTBEAT_STARTUP_GRACE_MS
 cleanup_children "$F"
 rm -rf "$F"
 
