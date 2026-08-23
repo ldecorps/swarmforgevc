@@ -4,8 +4,8 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-priority: 5
-direction: human-cursor
+priority: 0
+direction: queue-jump
 depends_on: [BL-1082]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -86,6 +86,7 @@ description: |
   every possible runtime backend in one go.
 
 notes: |
+  Human 2026-08-23T21:32Z (Cursor): Q jump BL-1052 (+ BL-1053 next). priority 0, direction queue-jump; already active — dispatch preferred ahead of BL-1108.
   Human 2026-08-23T17:55Z (Cursor): RESERVATION LIFTED. Operator directed focus onto the Qwen-enabling chain on cursor-mono-router (no specifier). Promote/dispatch 1082→1052→1053 in that order; BL-1077 may run in parallel as credential hygiene.
   Coordinator 2026-08-23: bounced coder→cleaner BL-1082 and re-parked BL-1082/1052/1053 to hold — human reservation still in force (archive/INTAKE-cursor-seats-then-sleep); unauthorized active promote reversed.
   Human 2026-08-23 (Cursor): RESERVED for human/Cursor implementation after Cursor seat chain (1078→1079→1080[+1081]) lands. Swarm must NOT promote or dispatch these — operator will build 1082→1052→1053 in Cursor.
