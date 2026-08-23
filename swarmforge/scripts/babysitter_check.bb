@@ -34,8 +34,6 @@
 ;; BL-1018: the ONE definition of what a single-role repair may resolve to.
 (load-file (str (fs/path script-dir "single_role_repair_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
-;; BL-1081: the deterministic layer's view of an ACP-hosted seat.
-(load-file (str (fs/path script-dir "acp_session_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
 ;; BL-958: shared control-plane classify / response-policy — babysitterd is
@@ -229,33 +227,11 @@
         menu? (boolean (re-find menu-pattern pane-text))
         busy? (babysitterd-sweep-lib/classify-pane-busy? pane-text)
         stable-hash (sha1-hex (strip-spinner pane-text))
-        history (append-hash-history! role stable-hash)
-        ;; BL-1081 (architect bounce D1). THIS is where a seat's idle, stuck
-        ;; and menu-blocked state is actually decided in the running swarm -
-        ;; gather-role has real callers, and every one of the three facts
-        ;; above it is inferred from `pane-text`. A truncated tail, a ghost
-        ;; suggestion and a lying pane_current_command each defeat that
-        ;; inference differently.
-        ;;
-        ;; For a seat behind the ACP host the same facts are on disk. The
-        ;; pane capture stays exactly as it was regardless - the host renders
-        ;; the transcript into it, so the pane checks and a human keep
-        ;; working from it (invariant 2). A seat with no host reads back nil
-        ;; here and nothing about the old path moves.
-        acp-snapshot (acp-session-lib/read-snapshot project-root role)
-        stop-reason (acp-session-lib/stop-reason acp-snapshot)
-        ;; The interactive-menu CRIT exists because a permission moment is
-        ;; only visible as pane text. For an ACP seat it is a structured
-        ;; message instead, so the pattern match must not decide - and
-        ;; check-acp-seat raises the routable finding in its place.
-        menu-blocked? (and menu? (acp-session-lib/menu-check-applies? acp-snapshot))]
-    (acp-session-lib/apply-acp-facts
-     {:role role :pane-exists? exists? :has-claude-process? has-claude?
-      :process-gather-failed? gather-failed?
-      :has-remote-control? has-rc? :menu-blocked? menu-blocked? :busy? busy?
-      :hash-history history :pane-text pane-text}
-     acp-snapshot
-     stop-reason)))
+        history (append-hash-history! role stable-hash)]
+    {:role role :pane-exists? exists? :has-claude-process? has-claude?
+     :process-gather-failed? gather-failed?
+     :has-remote-control? has-rc? :menu-blocked? menu? :busy? busy?
+     :hash-history history :pane-text pane-text}))
 
 ;; ── pipeline-code-on-main gathering (BL-631) ─────────────────────────────
 ;; The QA-exclusive path set is read from BL-632's own single source at
