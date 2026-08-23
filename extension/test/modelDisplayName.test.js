@@ -7,6 +7,11 @@ test('formatModelDisplayName maps known claude model ids to friendly labels', ()
   assert.equal(formatModelDisplayName('claude-haiku-4-5-20251001'), 'Haiku 4.5');
 });
 
+test('formatModelDisplayName maps Cursor auto to a friendly label', () => {
+  assert.equal(formatModelDisplayName('auto'), 'Cursor Auto');
+  assert.equal(formatModelDisplayName('cursor/auto'), 'Cursor Auto');
+});
+
 test('formatModelDisplayName falls back to the raw id for unknown models', () => {
   assert.equal(formatModelDisplayName('some-custom-model'), 'some-custom-model');
 });
