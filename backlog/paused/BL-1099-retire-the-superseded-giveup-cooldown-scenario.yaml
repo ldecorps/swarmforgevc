@@ -18,7 +18,7 @@ invariants:
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1099::the acceptance runner throws on any scenario lacking a step handler, so this ticket's handlers must be registered in the same parcel as the change (BL-233). Substring anchor only - the handler file's exact name is the implementer's call."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One judgement call: retire BL-303's scenario 02, or keep it as a
   cross-checking regression guard.

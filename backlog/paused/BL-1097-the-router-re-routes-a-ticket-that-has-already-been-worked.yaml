@@ -1,13 +1,23 @@
 id: BL-1097
 title: "The coordinator's router hands a role a parcel whose commit already contains that ticket's finished, QA-approved work - nothing advances `status:` past `todo`, so an active ticket looks unstarted until bookkeeping closes it"
 type: defect
-severity: medium
-# medium: real but CONTAINED. Nothing is lost or corrupted and no signal is
-# falsified - the receiving role opens the parcel, correctly finds nothing to
-# do, and completes it. What it costs is a hop on the most expensive seat in
-# the pack, four times in one hour on 2026-08-23. The frequency is carried by
-# priority: 6, not by severity - Article 3.2.4's "two priority scales, never
-# conflate".
+severity: high
+# RAISED medium -> high 2026-08-23 (specifier), on the BL-973 incident below.
+# The original medium rationale is preserved verbatim, and its two load-bearing
+# claims are what the new evidence falsifies:
+#   "medium: real but CONTAINED. Nothing is lost or corrupted and no signal is
+#   falsified - the receiving role opens the parcel, correctly finds nothing to
+#   do, and completes it. What it costs is a hop on the most expensive seat in
+#   the pack, four times in one hour on 2026-08-23. The frequency is carried by
+#   priority: 6, not by severity - Article 3.2.4's "two priority scales, never
+#   conflate"."
+# The receiving role does NOT reliably find nothing to do: on BL-973 the coder
+# did not recognise the ticket as finished and built a second, complete, rival
+# implementation, which then rode into an unrelated ticket's parcel. That is a
+# live fault degrading behaviour - Article 3.2.4's `high` predicate - not a
+# wasted hop. Frequency is still carried by priority: 6, unchanged; this raise
+# is about blast radius only, and the ticket is still `human_approval: pending`
+# so the operator can veto it with the same tap.
 status: todo
 epic: swarm-reliability
 assigned_to: coder
@@ -17,7 +27,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1097-the-router-re-routes-a-ticket-that-has-already-been-worked.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: a role must not be handed a parcel whose commit already contains that
   ticket's finished work. Article 1.9 forbids FORWARDING a no-op parcel; this
@@ -101,6 +111,29 @@ qa_e2e_procedure: >
      state all four evidence tickets were in, and a fix that only checks
      `backlog/done/` membership will still fail it.
 notes: >
+  ESCALATING EVIDENCE — BL-973, 2026-08-23 (specifier). The worst observed
+  instance of this defect, and the reason severity was raised to `high`. The
+  same routable window described above handed the coder BL-973 while it was
+  finished but not yet moved to `backlog/done/`. Unlike the four cases in the
+  table, the coder did not open the parcel and find nothing to do: it built a
+  SECOND, complete, independently-named implementation of both of BL-973's
+  invariants (`8e9dbb95d` + `0ccf107134`, ~1800 lines across 20 files) an hour
+  after the ticket closed at `a5c184f8e`.
+
+  What it cost, beyond the wasted coder hop the medium rationale predicted:
+  a cleaner pass spent refusing it (`6259a8007`); a specifier escalation to
+  pick which implementation survives; and - the part that makes this not
+  contained - both duplicate commits became ancestors of `bfe5394591`, the
+  BL-1063 parcel, so rejected work for one ticket is riding inside another
+  ticket's parcel and must be removed before BL-1063 can advance (BL-506).
+  Disposition recorded on BL-973: landed implementation stands, duplicate
+  discarded in full.
+
+  This strengthens invariant 4 rather than adding a new one: BL-973 was in
+  exactly the "finished but not yet in backlog/done/" state that invariant
+  already names. It also shows the cost of a miss is unbounded, because
+  nothing downstream of the router assumes the receiving role will notice.
+
   Reported by the coder, twice. The first note - "4 misroutes: active tickets
   keep mint status:todo assigned_to:coder forever" - was accurate, and the
   specifier's first investigation did not confirm it: it checked the daemon's
@@ -125,3 +158,49 @@ notes: >
   parameterized - that scenario pins one specific state (finished but not yet
   closed) with one possible outcome, and a one-valued Examples column is what
   the prune rule says to remove.
+
+  RESOLVED, the BL-1063 entanglement only (2026-08-23, specifier, on the
+  coder's note "BL-973 dups already out at 335455b4c4"). Verified by content,
+  not by ancestry (BL-490/BL-495): at `335455b4c4` all fourteen files the two
+  duplicate commits added are absent, and every file the landed
+  implementation added is present, with the five shared-modified files
+  byte-identical to the restore at `cd165925b`. `specs/pipeline/steps/index.js`
+  differs only by two unrelated registrations (BL-1063, BL-1086); it still
+  requires `bl973CopyListsClosureDerivedSteps` and never required the
+  duplicate's step file. Both `main` and `origin/main` are clean of the
+  duplicate too. So BL-1063 is unblocked and the BL-506 out-of-scope-diff
+  problem is closed. This does NOT change the defect, its severity, or its
+  scope: the router still originates the parcel, and the cost recorded above
+  was paid in full - a coder pass, a cleaner refusal, a specifier escalation
+  and a removal pass. It is recorded only so a later reader does not chase a
+  blocker that no longer exists.
+
+  SECOND LIVE INSTANCE, and a correction to the note above (2026-08-23,
+  specifier, on an architect note "BL-1063 already in backlog/done/ on main;
+  cleaner's parcel is a duplicate"). The entanglement was resolved, but the
+  PARCEL was not: BL-1063 closed at `d4b62f063` (03:52Z) and a parcel
+  bearing its name kept moving, reaching the architect at 04:59Z, who
+  correctly refused to forward it under the No-Op Rule. This is the defect
+  in this ticket reproducing end to end, on the very ticket whose
+  entanglement the previous paragraph declared resolved.
+
+  MY OWN CONTRIBUTION, recorded because nobody else can see it: the
+  specifier notes to coder and cleaner at 04:14Z ("BL-1063 parcel
+  bfe5394591 carries it", "get dups out of BL-1063 branch") were sent 21
+  minutes AFTER BL-1063 closed. The duplicate-removal work they asked for
+  was real, but naming it as BL-1063's parcel attached live work to a closed
+  ticket, which is what kept the parcel moving. The removal work belonged
+  under THIS ticket, which exists for exactly it. Lesson for the scope
+  below: check the ticket's folder on a main ref before naming its parcel in
+  a note - the same check the architect ran, one stage earlier. No bounce
+  was charged to the cleaner or coder for this, so no BL-990 correction is
+  owed; recorded here so the cost is not silently attributed to them.
+
+  UPSTREAM CAUSE, cross-referenced not merged: BL-1100 (paused) specs a
+  detector for a ticket QA has landed but never closed, which sits in
+  `active/` looking like unstarted work. That state is a direct feeder for
+  this one - the router can only re-route a finished ticket while the
+  ticket is still in `active/`. BL-1030 is a measured example of both at
+  once: landed, never closed, and `assigned_to` backfilled to `coder`.
+  Fixing BL-1100 shrinks this ticket's input; it does not replace it, since
+  a parcel can also outlive a correctly-closed ticket, as it did here.

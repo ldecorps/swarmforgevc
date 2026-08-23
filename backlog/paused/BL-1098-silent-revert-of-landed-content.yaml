@@ -27,7 +27,7 @@ required_wiring:
   - "swarmforge/scripts/push_sweep_lib.bb::silent-revert::the sweep's per-commit decision path is the ONLY live chokepoint between a landed merge and origin. A predicate that is fully unit-tested but never consulted here leaves e9c592cc79's exact path open and the ticket's value at zero. BL-855's :noop-merge-gate-facts! adapter is the precedent shape to follow; the reason keyword must be distinguishable from :noop-landing-merge in the sweep's own log line."
   - "specs/pipeline/steps/index.js::bl1098::the acceptance runner throws on any scenario lacking a step handler, so this ticket's handlers must be registered in the same parcel as the behaviour (BL-233). Substring anchor only - the handler file's exact name is the implementer's call."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One genuine ruling is needed and it is not the predicate: should a detected
   silent revert REFUSE the push, or only alarm and let it through?
@@ -200,6 +200,15 @@ notes: |
   BL-1082 instead (non-expedited feature, priority 4, approved, advisory-only
   orthogonality vs BL-1078/BL-1081, no unmet deps). Still awaiting the
   refuse-vs-alarm-only answer.
+
+  2026-08-23 coordinator (3rd nudge, same candidate, still pending): status
+  unchanged. Note the BL-1082 promotion above was itself reverted this shift
+  (it was under an explicit human/Cursor do-not-promote directive that had
+  only been recorded as prose - moved to backlog/hold/ so it can't recur).
+  By the time this nudge was actioned both open active slots had already
+  been filled by BL-1077 and BL-1056 (cap reached, 6/6). Still awaiting the
+  refuse-vs-alarm-only human answer; will be reconsidered at the next open
+  slot.
 
   Live findings from the probe, recorded so nobody re-derives them:
 

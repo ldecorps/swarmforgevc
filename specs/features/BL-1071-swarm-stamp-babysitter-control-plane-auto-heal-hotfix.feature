@@ -61,3 +61,15 @@ Feature: BL-1071 one failing probe never takes the babysitter's whole sweep down
     When the babysitter runs its sweep
     Then the live-process check is reported unavailable
     And no half-launch alert is raised for any role
+
+  # BL-1071 unreadable-is-not-absent-06
+  # Sibling of 05, for the one probe 05 does not cover. Scenario 01 already
+  # lists the control-plane observation, but asserts only that the SWEEP
+  # survives it (invariant 1) - a silently dropped observation passes 01
+  # unchanged. This gates invariant 3 for that probe: unavailable, not silence.
+  Scenario: an observation that throws is reported unavailable, never silence
+    Given the control-plane observation throws this sweep
+    When the babysitter runs its sweep
+    Then the control-plane check is reported unavailable
+    And the reason the observation failed is carried in that finding
+    And no control-plane recovery is started
