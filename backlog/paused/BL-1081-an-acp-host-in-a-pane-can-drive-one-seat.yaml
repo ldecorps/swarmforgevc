@@ -209,6 +209,7 @@ notes: |
   untouched.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-23, by: architect, blamed: coder, class: behavior, commit: 8d6a8c12e7, evidence: backlog/evidence/BL-1081-architect-bounce-20260823.md }
+  - { at: 2026-08-23, by: QA, blamed: coder, class: behavior, commit: f52ed3a84e, evidence: backlog/evidence/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat-bounce-20260823.md }
