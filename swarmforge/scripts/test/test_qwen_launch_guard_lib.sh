@@ -47,10 +47,14 @@ err="$(qwen_guard_require_token_plan_endpoint 2>&1)"
 status=$?
 set -e
 assert_eq 'missing credential refuses' '1' "$status"
+expected_names="$(qwen_guard_accepted_credential_names)"
 case "$err" in
-  *QWEN_API_KEY*BAILIAN_TOKEN_PLAN_API_KEY*BAILIAN_CODING_PLAN_API_KEY*) echo "ok: refusal names every accepted variable" ;;
+  *"$expected_names"*) echo "ok: refusal names every accepted variable" ;;
   *) echo "FAIL: refusal message incomplete: $err" >&2; FAILS=$((FAILS + 1)) ;;
 esac
+assert_eq 'accepted-name helper lists token-plan preferred alias' \
+  'QWEN_API_KEY (or BAILIAN_TOKEN_PLAN_API_KEY or BAILIAN_CODING_PLAN_API_KEY)' \
+  "$expected_names"
 
 scrub
 export SWARMFORGE_USE_QWEN=1
