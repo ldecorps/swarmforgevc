@@ -336,15 +336,23 @@
                          :park plan})
     plan))
 
-(defn stop-stack! [{:keys [project-root dry-run?]}]
-  (let [cmd (or (System/getenv "EXPEDITE_STOP_CMD") "./stop-swarm.sh")]
-    (when-not (expedite-lib/stop-invocation-ok? [cmd])
-      (log! "REFUSE stop command carries a forbidden flag:" cmd)
-      (exit! 1))
-    (if dry-run?
-      {:exit-code 0 :dry-run true}
-      (let [{:keys [exit out err]} (sh {:dir (str project-root)} "bash" "-lc" cmd)]
-        {:exit-code exit :out (str out) :err (str err)}))))
+(defn configured-stop-command
+  "What initiation would run to stop the stack. One source, read by the guard
+   and by the runner, so the line that is CHECKED is the line that RUNS."
+  []
+  (or (System/getenv "EXPEDITE_STOP_CMD") "./stop-swarm.sh"))
+
+(defn stop-stack! [{:keys [project-root dry-run?]} cmd]
+  ;; No guard here any more. BL-1030 moved it into initiate!, ahead of
+  ;; park-others!, because a check that only has to read an env var has no
+  ;; reason to have parked half the backlog first — and because a guard
+  ;; downstream of the parking is a guard whose refusal is never free.
+  ;; The command is handed IN, already checked, so this cannot run a line the
+  ;; guard did not see.
+  (if dry-run?
+    {:exit-code 0 :dry-run true}
+    (let [{:keys [exit out err]} (sh {:dir (str project-root)} "bash" "-lc" cmd)]
+      {:exit-code exit :out (str out) :err (str err)})))
 
 ;; ONE gate, in order: probe -> stop (initiation's job) -> re-probe -> refuse.
 ;;
@@ -368,33 +376,44 @@
     (log! "liveness" (pr-str live0))
     (when-not (:stopped? live0)
       (log! "swarm is live:" (str/join "," (:alive live0)) "- initiation will stop it"))
-    (let [plan (park-others! opts run-dir)
-          stop (stop-stack! opts)
-          ;; Re-probe unconditionally. In dry-run the verdict is computed and
-          ;; logged but not enforced, so a dry-run still TELLS you the teardown
-          ;; would not have reached a clean slate instead of hiding it.
-          probe1 (probe-liveness project-root)
-          verdict (expedite-lib/teardown-verdict stop probe1)]
-      (log! "teardown" (pr-str verdict))
-      (when (:exit-code-lied? verdict)
-        (log! "the stop command exited 0 but these survived:" (str/join "," (:alive verdict))))
-      ;; --override is ONE decision - "run despite a live swarm" - so it covers
-      ;; this gate too. Gating only the start check would leave the teardown
-      ;; check refusing every overridden run, which makes the override dead and
-      ;; is worse than not having it: an operator who cannot override reaches for
-      ;; something cruder.
-      (when-not (or dry-run? override? (:clean? verdict))
-        (log! "REFUSE teardown did not reach a clean slate:" (str/join "," (:alive verdict)))
-        (log! "remedy: stop the named processes by hand, or pass --override")
+    ;; BL-1030: decided FIRST, before anything is parked. The old order left a
+    ;; refusal exiting with every other active ticket already moved to
+    ;; backlog/hold/ — residue from a check that needed nothing but an env var
+    ;; to reach its verdict. A refusal now costs nothing: nothing has moved,
+    ;; and the stop command has not run.
+    (let [stop-cmd (configured-stop-command)
+          stop-check (expedite-lib/stop-invocation-verdict stop-cmd)]
+      (when-not (:ok? stop-check)
+        (log! "REFUSE" (expedite-lib/stop-refusal-message stop-check))
         (exit! 1))
-      (when (and override? (not (:clean? verdict)))
-        (log! "WARNING override in force; proceeding with these alive:"
-              (str/join "," (:alive verdict))))
-      {:gate {:override-used? (boolean (and override? (not (:clean? verdict))))
-              :was-live? (not (:stopped? live0))
-              :alive-before (:alive live0)}
-       :park plan
-       :teardown verdict})))
+      ;; One binding, so the line that was CHECKED is the line that RUNS.
+      (let [plan (park-others! opts run-dir)
+            stop (stop-stack! opts stop-cmd)
+            ;; Re-probe unconditionally. In dry-run the verdict is computed and
+            ;; logged but not enforced, so a dry-run still TELLS you the teardown
+            ;; would not have reached a clean slate instead of hiding it.
+            probe1 (probe-liveness project-root)
+            verdict (expedite-lib/teardown-verdict stop probe1)]
+        (log! "teardown" (pr-str verdict))
+        (when (:exit-code-lied? verdict)
+          (log! "the stop command exited 0 but these survived:" (str/join "," (:alive verdict))))
+        ;; --override is ONE decision - "run despite a live swarm" - so it covers
+        ;; this gate too. Gating only the start check would leave the teardown
+        ;; check refusing every overridden run, which makes the override dead and
+        ;; is worse than not having it: an operator who cannot override reaches for
+        ;; something cruder.
+        (when-not (or dry-run? override? (:clean? verdict))
+          (log! "REFUSE teardown did not reach a clean slate:" (str/join "," (:alive verdict)))
+          (log! "remedy: stop the named processes by hand, or pass --override")
+          (exit! 1))
+        (when (and override? (not (:clean? verdict)))
+          (log! "WARNING override in force; proceeding with these alive:"
+                (str/join "," (:alive verdict))))
+        {:gate {:override-used? (boolean (and override? (not (:clean? verdict))))
+                :was-live? (not (:stopped? live0))
+                :alive-before (:alive live0)}
+         :park plan
+         :teardown verdict}))))
 
 ;; ── worktree ──────────────────────────────────────────────────────────────
 
