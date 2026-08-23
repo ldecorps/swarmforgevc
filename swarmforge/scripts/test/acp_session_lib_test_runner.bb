@@ -133,6 +133,32 @@
                   (catch Exception _ true))]
   (assert= "a caller whose stop reason disagrees with the snapshot is rejected" true threw?))
 
+;; ── mutation killers: present-but-wrong shapes the file reader never yields ──
+;; read-snapshot only returns maps with :acp true, so the predicates below must
+;; also be probed with hand-built maps or their true?/blank? guards go untested.
+
+(assert= "acp-hosted? rejects :acp false (some? would accept it)"
+         false (acp-session-lib/acp-hosted? {:acp false :idle true}))
+(assert= "acp-hosted? rejects a truthy non-true :acp (some? would accept it)"
+         false (acp-session-lib/acp-hosted? {:acp 1 :idle true}))
+
+(assert= "a blank stopReason is absent, not an empty string"
+         nil (acp-session-lib/stop-reason {:acp true :stopReason ""}))
+(assert= "a whitespace-only stopReason is absent"
+         nil (acp-session-lib/stop-reason {:acp true :stopReason "   "}))
+
+(let [d (acp-session-lib/idle-decision {:acp true :idle "yes" :idleFrom "stop_reason:end_turn"})]
+  (assert= "idle? demands true, not a truthy string (boolean would pass)"
+           false (:idle? d)))
+(let [d (acp-session-lib/idle-decision {:acp true :idle true})]
+  (assert= "missing idleFrom defaults to unknown, never pane"
+           "unknown" (:from d)))
+
+(assert= "permission-pending? is false when the seat is not ACP-hosted"
+         false (acp-session-lib/permission-pending? {:permissionPending true}))
+(assert= "permission-pending? demands true, not a truthy string"
+         false (acp-session-lib/permission-pending? {:acp true :permissionPending "yes"}))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))

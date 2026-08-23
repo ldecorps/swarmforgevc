@@ -45,15 +45,28 @@ function parseTranscriptUpdate(
   return { kind: 'transcript', role, text, sessionId };
 }
 
+function sessionUpdateType(update: Record<string, unknown>): string | null {
+  return typeof update.sessionUpdate === 'string' ? update.sessionUpdate : null;
+}
+
+function malformedSessionUpdate(update: Record<string, unknown>, type: string | null): boolean {
+  // Present-but-malformed sessionUpdate must not fall through as a transcript
+  // with a default role — that collapses "absent type" and "unreadable type".
+  return update.sessionUpdate != null && type === null;
+}
+
+function isToolStatusType(type: string | null): boolean {
+  return type === 'tool_call' || type === 'tool_call_update';
+}
+
 function parseSessionUpdate(
   params: Record<string, unknown>,
   sessionId: string | undefined
 ): AcpEvent | null {
   const update = (params.update as Record<string, unknown> | undefined) ?? {};
-  const type = typeof update.sessionUpdate === 'string' ? update.sessionUpdate : null;
-  if (type === 'tool_call' || type === 'tool_call_update') {
-    return parseToolStatusUpdate(update, params, sessionId);
-  }
+  const type = sessionUpdateType(update);
+  if (malformedSessionUpdate(update, type)) return null;
+  if (isToolStatusType(type)) return parseToolStatusUpdate(update, params, sessionId);
   return parseTranscriptUpdate(update, type, sessionId);
 }
 
