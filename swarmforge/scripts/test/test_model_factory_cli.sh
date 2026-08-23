@@ -29,6 +29,12 @@ bb "$SCRIPT_DIR/model_factory_test_runner.bb" | grep -q "^ALL PASS$" \
 
 pass "01: model_factory_lib pure tests"
 
+# ── 1b: BL-1079 provider→agent token vs launcher allow-list (literals) ─────
+bb "$SCRIPT_DIR/bl1079_provider_agent_allowlist_property_runner.bb" | grep -q "^ALL PASS$" \
+  || fail "01b: bl1079_provider_agent_allowlist_property_runner.bb did not report ALL PASS"
+
+pass "01b: BL-1079 cursor agent token appears in launcher allow-list"
+
 # ── 2: assign-returns-role-map-01 — quality mode against the committed seed ─
 ASSIGN_OUT="$(bb "$CLI" assign --mode quality)"
 for role in architect coder cleaner QA hardender documenter specifier; do
