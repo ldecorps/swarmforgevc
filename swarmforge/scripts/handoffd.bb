@@ -2717,10 +2717,24 @@
 ;; having taken none of that parent's content, so skipping ahead-commit
 ;; enumeration whenever the tip already reads as approved would leave
 ;; f28a84ad's exact path open again.
+;; Shared git-sh helpers for push-sweep gatherers (BL-855 / BL-1098): one
+;; project-root dir, exit-0-or-nil, never consult the working tree.
+(defn- git-sh [{:keys [exit out]}]
+  (when (zero? exit) out))
+
+(defn- git-sh-trim [args]
+  (some-> (git-sh (daemon-cycle-guard-lib/sh! args {:dir (str project-root)}))
+          str/trim
+          not-empty))
+
+(defn- git-sh-lines [args]
+  ;; Empty successful stdout must be [], not nil - callers treat nil as
+  ;; gather failure (git-diff-name-only / merge-touched-path-set).
+  (when-let [out (git-sh (daemon-cycle-guard-lib/sh! args {:dir (str project-root)}))]
+    (->> (str/split-lines (str/trim out)) (remove str/blank?))))
+
 (defn- git-diff-name-only [rev-a rev-b]
-  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["git" "diff" "--name-only" rev-a rev-b] {:dir (str project-root)})]
-    (when (zero? exit)
-      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+  (git-sh-lines ["git" "diff" "--name-only" rev-a rev-b]))
 
 ;; Both revs are explicit git refs (never omitted), so this is a tree-to-
 ;; tree diff purely against git objects - the shared, chronically-dirty,
@@ -2760,6 +2774,99 @@
       (log! "push-sweep-noop-merge-gate-error" (.getMessage e))
       {:facts-complete? false})))
 
+;; BL-1098: real git wiring for push_sweep_lib.bb/silent-revert-decision.
+;; Pure decision stays in the lib; this gatherer shells to git objects only
+;; (never the working tree - every rev is an explicit ref:path). Candidate
+;; paths are ONLY those merges in the ahead range touched (offered ∪ taken),
+;; so cost is one authoring-commit lookup per candidate path, never a full
+;; tree walk (invariant 3 / BL-1086).
+(defn- git-blob-at [rev path]
+  (git-sh-trim ["git" "rev-parse" (str rev ":" path)]))
+
+(defn- git-newest-authoring-sha [ref path]
+  (git-sh-trim ["git" "log" "-1" "--format=%H" "--no-merges" "--full-history" ref "--" path]))
+
+(defn- git-authoring-shas [ref path]
+  (git-sh-lines ["git" "log" "--format=%H" "--no-merges" "--full-history" ref "--" path]))
+
+(defn- git-merges-after [older-sha ref path]
+  (git-sh-lines ["git" "log" "--merges" "--full-history" "--reverse" "--format=%H"
+                 (str older-sha ".." ref) "--" path]))
+
+(defn- tip-holds-earlier-authored-blob? [ref path tip-blob newest-sha]
+  (boolean (some (fn [sha]
+                   (and (not= sha newest-sha)
+                        (= tip-blob (git-blob-at sha path))))
+                 (or (git-authoring-shas ref path) []))))
+
+(defn- first-divergence-merge [ref path newest-sha newest-blob]
+  (some (fn [merge-sha]
+          (when (not= newest-blob (git-blob-at merge-sha path))
+            merge-sha))
+        (or (git-merges-after newest-sha ref path) [])))
+
+(defn- silent-revert-no-author-facts [path]
+  {:ok? true :path path :tip-matches-newest-authoring? true
+   :tip-is-superseded-resurrection? false :tip-absent-without-delete? false
+   :newest-authoring-sha nil :divergence-merge-sha nil})
+
+(defn- silent-revert-authored-path-facts [ref path newest-sha]
+  (let [tip-blob (git-blob-at ref path)
+        newest-blob (git-blob-at newest-sha path)
+        matches? (and (some? tip-blob) (= tip-blob newest-blob))
+        absent-no-delete? (and (nil? tip-blob) (some? newest-blob))
+        resurrection? (and (some? tip-blob) (not matches?)
+                           (tip-holds-earlier-authored-blob? ref path tip-blob newest-sha))
+        divergence (when (or resurrection? absent-no-delete?)
+                     (first-divergence-merge ref path newest-sha newest-blob))]
+    {:ok? true :path path
+     :tip-matches-newest-authoring? (boolean matches?)
+     :tip-is-superseded-resurrection? (boolean resurrection?)
+     :tip-absent-without-delete? (boolean absent-no-delete?)
+     :newest-authoring-sha newest-sha
+     :divergence-merge-sha divergence}))
+
+(defn- silent-revert-path-facts [ref path]
+  (if-let [newest-sha (git-newest-authoring-sha ref path)]
+    (silent-revert-authored-path-facts ref path newest-sha)
+    (silent-revert-no-author-facts path)))
+
+(defn- merge-touched-path-set [sha]
+  (let [offered (git-diff-name-only (str sha "^1") (str sha "^2"))
+        taken (git-diff-name-only (str sha "^1") sha)]
+    (if (and (some? offered) (some? taken))
+      {:ok? true :paths (set (concat offered taken))}
+      {:ok? false})))
+
+(def ^:private silent-revert-candidate-keys
+  [:path :tip-matches-newest-authoring? :tip-is-superseded-resurrection?
+   :tip-absent-without-delete? :newest-authoring-sha :divergence-merge-sha])
+
+(defn- silent-revert-facts-from-paths [paths]
+  (let [facts (mapv #(silent-revert-path-facts "main" %) paths)]
+    (if (some (complement :ok?) facts)
+      {:facts-complete? false}
+      {:facts-complete? true
+       :candidate-paths (mapv #(select-keys % silent-revert-candidate-keys) facts)})))
+
+(defn- silent-revert-facts-from-merges [merge-shas]
+  (let [path-sets (mapv merge-touched-path-set merge-shas)]
+    (if (some (complement :ok?) path-sets)
+      {:facts-complete? false}
+      (-> path-sets
+          push-sweep-lib/silent-revert-candidate-paths
+          silent-revert-facts-from-paths))))
+
+(defn push-sweep-silent-revert-gate-facts! []
+  (try
+    (let [shas (git-ahead-shas)]
+      (if (nil? shas)
+        {:facts-complete? false}
+        (silent-revert-facts-from-merges (filterv git-merge-commit? shas))))
+    (catch Exception e
+      (log! "push-sweep-silent-revert-gate-error" (.getMessage e))
+      {:facts-complete? false})))
+
 (defn push-sweep! []
   (try
     (push-sweep-lib/sweep!
@@ -2768,6 +2875,7 @@
       :push! push-sweep-push!
       :qa-gate-facts! push-sweep-qa-gate-facts!
       :noop-merge-gate-facts! push-sweep-noop-merge-gate-facts!
+      :silent-revert-gate-facts! push-sweep-silent-revert-gate-facts!
       :send-push-alarm!
       (fn [attempts reason]
         (send-push-alarm-email!
