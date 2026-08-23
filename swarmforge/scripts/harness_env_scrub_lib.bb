@@ -118,13 +118,6 @@
    "codex"      #{"OPENAI_API_KEY"}
    "gemini"     #{"GEMINI_API_KEY"}
    "vibe"       #{"MISTRAL_API_KEY"}
-   ;; qwen-code talks OpenAI-compat to the Token Plan endpoint: it reads the
-   ;; MAPPED OPENAI_API_KEY the launcher exports, plus the source key it is
-   ;; mapped FROM (QWEN_API_KEY, or either BAILIAN plan key it falls back to).
-   ;; Not aider's set - it never reaches Cerebras/Perplexity/Mistral/DeepSeek
-   ;; (BL-1052).
-   "qwen-code"  #{"OPENAI_API_KEY" "QWEN_API_KEY"
-                  "BAILIAN_CODING_PLAN_API_KEY" "BAILIAN_TOKEN_PLAN_API_KEY"}
    "openrouter" #{"OPENROUTER_API_KEY"}
    "aider"      #{"OPENAI_API_KEY" "MISTRAL_API_KEY" "CEREBRAS_API_KEY"
                   "PERPLEXITY_API_KEY" "QWEN_API_KEY" "DASHSCOPE_API_KEY"

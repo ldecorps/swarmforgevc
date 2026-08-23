@@ -123,6 +123,24 @@ class ReplyAudioPlayer(
         return fallback
     }
 
+    /**
+     * BL-777: prompt abort for a barge-in. Deliberately NOT [stopNow] plus
+     * [complete]: the human has already started speaking, so [TalkEngine] owns
+     * the transition into their turn. Firing [onDone] here would ALSO run the
+     * ordinary post-speech re-arm, and the two would race for the mic - the
+     * second listening session invariant 2 forbids.
+     *
+     * Returns whether anything was actually stopped, so a caller can tell an
+     * abort that cut speech short from one that arrived after playback had
+     * already ended on its own.
+     */
+    fun abort(reason: String): Boolean {
+        val wasActive = isAudioActive()
+        Log.i(TAG, "playback abort: $reason (audio was active: $wasActive)")
+        stopNow()
+        return wasActive
+    }
+
     fun stopNow() {
         clearWatchdogs()
         finished.set(true)
