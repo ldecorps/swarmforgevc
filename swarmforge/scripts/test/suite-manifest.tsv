@@ -17,7 +17,6 @@
 # noticed they existed.
 acceptance_contract_gate_lib_test_runner.bb	standing		
 acceptance_pointer_gate_lib_test_runner.bb	standing		
-acp_session_lib_test_runner.bb	standing		
 actively_processing_test_runner.bb	standing		
 agent_runtime_test_runner.bb	standing		
 ambulance_lib_test_runner.bb	standing		
@@ -36,7 +35,6 @@ batch_claim_progress_lib_test_runner.bb	standing
 batch_claim_progress_sweep_test_runner.bb	standing		
 bb_load_closure_agreement_test_runner.bb	standing		
 bl1049_provider_env_scrub_test_runner.bb	standing		
-bl1081_acp_snapshot_agreement_test_runner.bb	standing		
 bl911_rotation_recompose_test_runner.bb	standing		
 bl931_rotate_pack_router_gate_test_runner.bb	standing		
 bl962_merge_adjudication_test_runner.bb	standing		
