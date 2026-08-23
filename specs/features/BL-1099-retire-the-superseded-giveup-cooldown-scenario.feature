@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f02b90c18b2396ce9d61b08ead2b295eee6b5c7eb594d84de2adea1c596471d8
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T11:28:30.805893619Z","feature_name":"One executable contract over the give-up cooldown decision, not two","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1099-retire-the-superseded-giveup-cooldown-scenario.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the cases the retired scenario covered are still asserted somewhere","scenario_hash":"eb2729b37edb5238cee5e2688d97dc90c4659c16d8eb1fb709ae8350884273d4","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-23T11:28:30.805893619Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: One executable contract over the give-up cooldown decision, not two
 
   BL-303's scenario 02 reads as though it guards what a supervisor does with a
