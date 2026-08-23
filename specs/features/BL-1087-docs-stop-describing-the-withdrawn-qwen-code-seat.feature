@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=b492dde8f674eda9de7c6beea26847c8b0887000593a2f12edfcadbe3c233209
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T11:43:00.292118428Z","feature_name":"Documentation stops describing the withdrawn qwen-code seat","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1087-docs-stop-describing-the-withdrawn-qwen-code-seat.feature","background_hash":"5b992248a20a2e167d634ca53912e5a31829c505970bd4fae011973861ebaea1","implementation_hash":"unknown","scenarios":[{"index":2,"name":"A removed artifact survives only in the shipped-work log","scenario_hash":"97e881f90b1729689a8ac6bfbe49488bb21e735ade7c67f976011a1b20991333","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-23T11:37:16.221111625Z"},{"index":5,"name":"The pre-existing aider-based qwen seat is left untouched","scenario_hash":"e20cf4131366ac125c8c21995a841f312ac61319403618d93aa8959b3c776635","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-23T11:37:16.221111625Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Documentation stops describing the withdrawn qwen-code seat
 
   The BL-1052/BL-1053 supersede removed the qwen-code mono-router seat from the

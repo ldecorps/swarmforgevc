@@ -1,6 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1086: babysitterd's
+**Last Updated:** August 23, 2026 (BL-1087: documentation still described the
+qwen-code mono-router seat after the BL-1052/BL-1053 supersede removed it
+from the tree. The dead runbook
+`docs/how-to/BL-1052-qwen-code-mono-router-launch.md` and its `docs/index.md`
+link are gone; the BL-1052 and BL-1053 shipped-work entries below are
+re-tensed as history and point at
+`backlog/evidence/BL-1052-BL-1053-supersede-disposition-20260823.md`; a
+`docs/` pack-conf drift check
+(`extension/src/docs/namedPackConfDrift.ts`) reports a named
+`swarmforge/packs/*.conf` that is absent from the tree while leaving the
+illustrative `swarmforge/packs/NAME.conf` placeholder alone. The
+aider-based `qwen-mono-router` path is untouched. No extension command,
+setting, or UI change.)
+Prior entry —
+BL-1086: babysitterd's
 `pipeline-code-on-main` gather (check 13, BL-631) re-derived its answer from
 scratch every 300s tick, spawning `is_qa_ancestor.sh` once per SHA ahead of
 `swarmforge-QA`. On a `main` ~23 commits ahead this overran the daemon's 600s
