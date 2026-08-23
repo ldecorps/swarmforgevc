@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: bubble-voice-barge-in
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: [BL-826]
