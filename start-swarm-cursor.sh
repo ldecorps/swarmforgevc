@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# start-swarm-cursor.sh — headless mono-router with Cursor seats + Opus specifier.
+# start-swarm-cursor.sh — headless mono-router with Cursor seats, no specifier.
 #
-# Pack: cursor-mono-router (pipeline Cursor/auto, specifier Claude Opus,
-# coordinator Cursor/auto). Thin wrapper around ./start-swarm.sh.
+# Pack: cursor-mono-router (pipeline + coordinator Cursor/auto; specifier
+# absent). Thin wrapper around ./start-swarm.sh.
 #
 # Usage:
 #   ./start-swarm-cursor.sh [options] [target-path]   # same flags as start-swarm.sh
@@ -24,10 +24,6 @@ if [[ -z "${CURSOR_API_KEY:-}" ]]; then
 fi
 if ! command -v cursor-agent >/dev/null 2>&1; then
   echo "ERROR: cursor-agent not on PATH" >&2
-  exit 1
-fi
-if ! command -v claude >/dev/null 2>&1; then
-  echo "ERROR: claude not on PATH (specifier seat is Claude Opus)" >&2
   exit 1
 fi
 

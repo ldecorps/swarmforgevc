@@ -1,4 +1,4 @@
-# cursor-mono-router overlay: Cursor resident + Opus specifier (verification pack)
+# cursor-mono-router overlay: Cursor resident mono-router, no specifier
 
 Read this when your swarm was launched with the `cursor-mono-router` pack. It
 applies no matter which role you are currently playing — you are always the
@@ -9,20 +9,24 @@ one resident process, except the coordinator is a SEPARATE Cursor process.
 | Role | Agent | Model |
 |------|--------|--------|
 | coder, cleaner, architect, hardender, documenter, QA | `cursor` (`cursor-agent`) | `auto` |
-| specifier (bounce / defect only) | `claude` | `claude-opus-5` / xhigh |
 | coordinator (separate process) | `cursor` | `auto` |
+| specifier | **absent** — not a rotate target |
 
-Rotation is a **respawn** onto that role's launch script. Crossing from a
-Cursor seat to specifier (or back) changes the agent binary — that is
-intentional. Do not try to stay in-process across that boundary.
+Rotation is a **respawn** onto that role's launch script. All pipeline seats
+and the coordinator stay on Cursor/`auto`.
 
 ## Pipeline shape
 
 - Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
   → hardender → documenter → QA**. **coder is your "home" identity** — the only
   standing session, and where already-specced `backlog/active/` work enters.
+- **No specifier.** Coordinator promotes from `backlog/paused/` into
+  `backlog/active/` (respect `active_backlog_max_depth`) and routes
+  **directly to coder** — never wait for a specifier hop.
 - **This pack is for already-specced work.** Do not mint or cold-specify new
-  intake here. Specifier exists for **downstream spec-defect bounces only**.
+  intake here. Leave raw `backlog/*.yaml` intakes for a specifier-capable pack.
+  Spec-defect bounces that truly need a specifier: surface to the human /
+  leave a durable note — do not invent a specifier rotation.
 - Every gate still runs unabridged.
 - You do not play coordinator.
 
@@ -45,15 +49,12 @@ work that parcel before rotating — rotate only with a drained inbox.
 3. You come back up AS that role. Launch says `RESUME-ON-START`: run
    `ready_for_next.sh` first and pick up the parcel.
 
+Never `rotate_to_role.sh specifier` — that seat does not exist on this pack.
+
 ## After a parcel finishes (QA done) — go home
 
 When the parcel ends (QA approved; coordinator does bookkeeping — you do not
 merge), rotate **home**: `rotate_to_role.sh coder`.
-
-Do **not** rotate to specifier to drain root intake on this pack. Leave raw
-`backlog/*.yaml` intakes for a full-forge / Claude specifier swarm. If you
-see root intake while idle as coder, send **one** note to the coordinator
-naming it, then idle — do not self-spec.
 
 ## Idle at home (coder) with no parcel
 
