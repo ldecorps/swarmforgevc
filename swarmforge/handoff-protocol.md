@@ -1827,17 +1827,47 @@ commit:
 
 - **Commit advanced** — the sidecar's last-progress instant refreshes; the
   item is healthy.
-- **No advance, under `batch_claim_progress_stale_threshold_minutes`**
-  (default 20 minutes) — normal mid-task quiet time; nothing happens.
-- **No advance past the threshold** — the item is a suspect. The sweep
-  sends a `note` (priority `00`) **to the coordinator only** —
-  `"<id> batch claim stale <N>m since progress, not re-delivered."` — past
-  `batch_claim_progress_cooldown_minutes` (default 30 minutes) since the
-  last suspect note for that same item.
+- **No advance, under that role's threshold** — normal mid-task quiet time;
+  nothing happens.
+- **No advance past the threshold, owner worktree DIRTY** (BL-1076) — the
+  claim is progressing by the other signal available, so nothing is sent.
+  The observation is **logged** as
+  `batch-claim-progress-suppressed <id> worktree-dirty <N>m`, never merely
+  dropped: a worktree that stays dirty forever must read as a suppressed
+  signal in the record rather than as an absent one.
+- **No advance past the threshold, owner worktree clean** — the item is a
+  suspect. The sweep sends a `note` (priority `00`) **to the coordinator
+  only** — `"<id> batch claim stale <N>m since progress, not re-delivered."`
+  — past `batch_claim_progress_cooldown_minutes` (default 30 minutes) since
+  the last suspect note for that same item.
+
+**The threshold is per role** (BL-1076). One flat 20 minutes judged every
+batch role, and HEAD movement was the only progress signal — so a hardener
+mid-Stryker, an hour of real work before the first commit with the edits
+sitting uncommitted, was surfaced as suspect. Measured 2026-08-22: three
+parcels surfaced at 20:40:46Z and again at 21:10:48Z, six coordinator notes
+in fifty minutes, none describing anything wrong. Resolution order, highest
+first:
+
+1. `config batch_claim_progress_role_stale_threshold_minutes <role> <n>` —
+   an operator override for that one role. An unusable value (zero,
+   negative, missing) is dropped, degrading to the built-in below rather
+   than to the base.
+2. `batch-claim-progress-lib/role-stale-threshold-ms` — the built-in map.
+   `hardender` gets 90 minutes.
+3. `config batch_claim_progress_stale_threshold_minutes` (default 20
+   minutes) — the base, for every role with no entry above.
+
+BL-528's task-mode ladder grants `hardender` the same 90 minutes from its
+own literal. The two are deliberately **not** shared: they answer different
+questions ("is the owner alive and working" there, "is this claim
+progressing" here) and may legitimately diverge.
 
 Same posture as the dropped-parcel sweep: the sweep never routes, assigns,
 promotes, re-forwards, or re-delivers the parcel itself — it only ever
-surfaces a named, aged suspect to the coordinator. It is deliberately
+surfaces a named, aged suspect to the coordinator — and BL-1076's third
+label widened what the sweep can SAY without widening what it can DO, since
+a suppressed observation sends nothing at all. It is deliberately
 separate from BL-528's task-mode claim-idle escalation ladder
 (nudge → bounce → halt): this mechanism assumes a live owner throughout and
 only ever answers "is it progressing", never "is it alive". The sidecar is
