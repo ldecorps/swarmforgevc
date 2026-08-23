@@ -8,7 +8,10 @@
 ;; approximation of it. Mirrors dropped_parcel_sweep_harness.bb's role
 ;; exactly for BL-678.
 ;;
-;; Usage: batch_claim_progress_sweep_harness.bb <project-root> [staleness-ms] [cooldown-ms]
+;; Usage: batch_claim_progress_sweep_harness.bb <project-root> [staleness-ms] [cooldown-ms] [clean|dirty]
+;; Pass "-" for staleness-ms or cooldown-ms to take the default. BL-1076 needs
+;; the fourth argument without pinning the first two, and "-" says "default"
+;; without inventing a flag parser in a test harness.
 (ns batch-claim-progress-sweep-harness
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
@@ -19,14 +22,26 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "chase_sweep_lib.bb")))
 
 (def project-root (first *command-line-args*))
+
+(defn- arg-at [i]
+  (let [a (nth *command-line-args* i nil)]
+    (when-not (or (nil? a) (= "-" a)) a)))
+
+;; An explicit staleness pins the window for every role, as it did before
+;; BL-1076. Absent (or "-"), each role resolves its own - which is the whole
+;; point of the ticket, so the harness must be able to exercise both.
+(def explicit-staleness-ms (some-> (arg-at 1) parse-long))
 (def staleness-ms
-  (if-let [a (second *command-line-args*)]
-    (parse-long a)
-    chase-sweep-lib/batch-claim-progress-stale-default-threshold-ms))
+  (or explicit-staleness-ms chase-sweep-lib/batch-claim-progress-stale-default-threshold-ms))
 (def cooldown-ms
-  (if-let [a (nth *command-line-args* 2 nil)]
-    (parse-long a)
-    chase-sweep-lib/batch-claim-progress-cooldown-default-ms))
+  (or (some-> (arg-at 2) parse-long) chase-sweep-lib/batch-claim-progress-cooldown-default-ms))
+;; BL-1076: the owner's worktree dirtiness, the second progress signal beside
+;; HEAD. The daemon reads it with `git status --porcelain` in the role's
+;; worktree; the fixture roots this harness runs against are not real
+;; worktrees, so it is passed in - the point is to mirror the daemon's CALL
+;; SHAPE, not to re-derive its adapter. Absent means clean, which is what
+;; every pre-BL-1076 caller of this harness meant.
+(def worktree-dirty? (= "dirty" (arg-at 3)))
 (def swarm-handoff-script (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "swarm_handoff.bb")))
 (def cooldown-file (fs/path project-root ".swarmforge" "daemon" "batch-claim-progress-suspect-cooldown.json"))
 
@@ -75,19 +90,33 @@
 
 (defn -main []
   (let [roles (load-roles)
-        now-ms (System/currentTimeMillis)]
+        now-ms (System/currentTimeMillis)
+        role-overrides (chase-sweep-lib/parse-batch-claim-progress-role-stale-threshold-ms
+                        (try (slurp (str (fs/path project-root "swarmforge" "swarmforge.conf")))
+                             (catch Exception _ nil)))]
     (doseq [[role role-info] roles
             :when (= "batch" (:receive-mode role-info))]
       (let [in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))
             items (chase-sweep-lib/scan-in-process in-process-dir)
             current-commit (head-commit-10 role-info)
-            suspects (chase-sweep-lib/apply-batch-claim-progress-check!
-                      items now-ms staleness-ms current-commit)]
+            ;; BL-1076: resolved per role, exactly as batch-claim-progress-
+            ;; sweep! does. An explicit staleness-ms argument still wins, so
+            ;; the pre-BL-1076 callers of this harness are unaffected.
+            role-stale-ms (or explicit-staleness-ms
+                             (batch-claim-progress-lib/resolve-stale-threshold-ms
+                              role staleness-ms role-overrides))
+            {:keys [suspects suppressed]}
+            (chase-sweep-lib/apply-batch-claim-progress-check!
+             items now-ms role-stale-ms current-commit worktree-dirty?)]
         (doseq [suspect suspects]
           (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
                      (last-sent-ms (:file-path suspect)) now-ms cooldown-ms)
             (nudge! suspect)
             (write-last-sent! (:file-path suspect) now-ms)))
+        ;; Mirrors the daemon's own log! line: a suppression is never silent.
+        (doseq [item suppressed]
+          (println "SUPPRESSED" (:item-id item) (:reason item)
+                   (str (quot (:age-ms item) 60000) "m")))
         (println "SUSPECTS" role ":" (pr-str (mapv :item-id suspects)))))))
 
 (-main)
