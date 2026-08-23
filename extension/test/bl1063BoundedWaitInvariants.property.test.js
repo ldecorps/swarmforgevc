@@ -239,6 +239,22 @@ function nodelessPath() {
   return dir;
 }
 
+// BL-1063 (architect bounce D1): the mirror farm. P5 used to write
+// `/usr/bin:/bin` for the "caller resolves" row and assert its premise, which
+// caught a host without a system node but did not PREVENT it - the property
+// still failed there, binding the opposite host fact into the very test that
+// exists to stop that. The caller's node is now a stub we place.
+let callerNodeCache = null;
+function callerNodePath() {
+  if (callerNodeCache) return callerNodeCache;
+  const dir = mkTmpDir('bl1063-callernode-');
+  const stub = path.join(dir, 'node');
+  fs.writeFileSync(stub, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(stub, 0o755);
+  callerNodeCache = { callerPath: `${dir}:${nodelessPath()}`, stub };
+  return callerNodeCache;
+}
+
 function fakeNvmHome() {
   const home = mkTmpDir('bl1063-home-');
   for (const v of ['v9.11.2', 'v22.1.0']) {
@@ -255,15 +271,17 @@ test('P5 (invariant 2): node resolves under every host shape, and the fallback i
     fc.property(fc.boolean(), (callerResolvesNode) => {
       const home = fakeNvmHome();
       const nvmTree = path.join(home, '.nvm', 'versions', 'node');
-      const callerPath = callerResolvesNode ? '/usr/bin:/bin' : nodelessPath();
+      const caller = callerResolvesNode ? callerNodePath() : null;
+      const callerPath = caller ? caller.callerPath : nodelessPath();
 
+      // Both rows are now CONSTRUCTED rather than assumed, so this is a
+      // self-check on the farms rather than a premise that could fail on
+      // someone else's machine.
       const probe = spawnSync('sh', ['-c', 'command -v node'], { encoding: 'utf8', env: { PATH: callerPath } });
-      // The premise, asserted rather than assumed - otherwise a host without a
-      // system node would silently make both rows the same case.
       assert.equal(
         probe.status === 0,
         callerResolvesNode,
-        `the caller PATH must ${callerResolvesNode ? '' : 'not '}resolve node for this row to mean anything`
+        `the ${callerResolvesNode ? 'caller-resolves' : 'node-less'} farm is not built correctly`
       );
 
       const result = spawnSync('sh', ['-c', `. "${LIB}"; swarmforge_prepend_operator_bins; command -v node`], {
@@ -284,7 +302,13 @@ test('P5 (invariant 2): node resolves under every host shape, and the fallback i
           !resolved.startsWith(nvmTree),
           `the nvm fallback must never shadow a node the caller already resolves, got: ${resolved}`
         );
-        assert.equal(resolved, probe.stdout.trim(), "the caller's own node must be what survives");
+        assert.equal(resolved, caller.stub, "the caller's own node must be what survives");
+        // Made permanent (architect bounce D1): the caller's node is this
+        // test's own stub, never one the host happens to carry.
+        assert.ok(
+          !resolved.startsWith('/usr/'),
+          `the caller's node must be constructed, not found on the host: ${resolved}`
+        );
       } else {
         // And the fallback is genuinely reachable - otherwise "we no longer
         // assert it" would just mean the branch is dead.
