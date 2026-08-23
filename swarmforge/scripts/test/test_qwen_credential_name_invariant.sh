@@ -33,16 +33,24 @@ for f in "${FILES[@]}"; do
 done
 
 # Generated guard site must source the shared lib (not a third copy of the names).
-if ! grep -q 'qwen_launch_guard_lib.sh' "$ROOT/swarmforge/scripts/swarmforge.sh"; then
+SWARMFORGE_SH="$ROOT/swarmforge/scripts/swarmforge.sh"
+if ! grep -q 'qwen_launch_guard_lib.sh' "$SWARMFORGE_SH"; then
   echo "FAIL: swarmforge.sh does not source qwen_launch_guard_lib.sh" >&2
   exit 1
 fi
 echo "ok: swarmforge.sh delegates to the shared lib"
 
+# Both guard branches share one source-prefix variable (avoids re-stating the
+# fragile quote shape twice).
+if ! grep -q 'qwen_lib_source=' "$SWARMFORGE_SH"; then
+  echo "FAIL: swarmforge.sh missing shared qwen_lib_source prefix" >&2
+  exit 1
+fi
+echo "ok: swarmforge.sh uses one shared qwen_lib_source prefix"
+
 # QA bounce 20260823: broken $'…\''"$SCRIPT_DIR"'/…\'…' nesting made zsh fail to
 # parse swarmforge.sh at the next elif. Sourcing must succeed (BL-089: sourced,
 # not executed as toplevel).
-SWARMFORGE_SH="$ROOT/swarmforge/scripts/swarmforge.sh"
 set +e
 zsh_err="$(zsh -c "source '$SWARMFORGE_SH'" 2>&1 >/dev/null)"
 zsh_status=$?
