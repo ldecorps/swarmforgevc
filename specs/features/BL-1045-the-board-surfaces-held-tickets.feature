@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T00:12:20.417043402Z","feature_name":"The board surfaces held tickets","feature_path":"/home/carillon/swarmforgevc/.worktrees/architect/specs/features/BL-1045-the-board-surfaces-held-tickets.feature","background_hash":"2671601f2ee212b51da6d2bfe583acb56feea57e98e71731bfabc2956ae61b91","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: The board surfaces held tickets
 
   The backlog reader has returned `backlog/hold/` since BL-672, but the
