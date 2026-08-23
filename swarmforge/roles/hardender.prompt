@@ -1830,3 +1830,42 @@ You are the hardender.
   survived both suites independently. That gap surfaced only when the two sweeps
   were compared during conflict resolution; the union plus one new `path-only`
   test closed it, 18/18.)
+
+## A hand-authored sweep's `skipped` count is as load-bearing as `survived=0` — a stale anchor is an UNRUN mutant, not a passing one (rule_proposal 2026-08-23, accepted)
+- Proposer's rule, verbatim: "A hand-authored mutation sweep's skipped count
+  matters as much as survived=0 - a stale anchor after a rewrite skips silently
+  while the summary still reads ALL MUTANTS KILLED."
+- **The mechanism.** A hand-authored sweep applies each mutant by replacing a
+  LITERAL fragment of the file under test (`mutate <label> <from> <to>`). When
+  `<from>` is no longer present, `swarmforge/scripts/test/expedite_mutation_sweep.sh`
+  prints `skip <label> (anchor not found)`, increments `skipped`, and carries
+  on (line 55). The run's only failure branch reads the survivor list
+  (`if [[ "${#SURVIVORS[@]}" -gt 0 ]]`, line 181) — `skipped` reaches no
+  conditional — so a run with skipped mutants still prints `ALL MUTANTS KILLED`
+  and exits 0.
+- **A skip is the WORST of the three outcomes, not the mildest.** A survivor
+  tells you a gap exists; a kill tells you it does not; a skip tells you
+  NOTHING and prints as though it told you the second. Read the
+  `mutants: killed= survived= skipped=` line BEFORE the summary line —
+  `ALL MUTANTS KILLED` is a claim only about the mutants that actually ran.
+- **Your own parcel is the likeliest cause.** The anchors are literal fragments
+  of the code under test, so the pass that REWRITES a guard is exactly the pass
+  whose covering mutants go stale — precisely when the sweep matters most.
+  Re-anchor to the rewritten text. Never delete the mutant and never accept the
+  skip because "that line is gone now": the BEHAVIOR it probed almost always
+  still exists in new wording, and dropping it silently shrinks the gate to fit
+  the change it was supposed to check.
+- This binds any sweep you hand-author fresh under the BL-638 / no-wired-tool
+  fallback, not only the two committed scripts. Whatever you write, make an
+  unmatched anchor LOUD: the sibling `expedite_prove_nonvacuity.sh` already
+  does it right — its anchor miss returns 1, increments `bad`, and exits
+  non-zero (lines 30-33, 98-101).
+- Evidence (proposed by the hardender, 2026-08-23, BL-1030): BL-1030 rewrote
+  `expedite_lib.bb`'s forbidden-stop-flag guard — the one behavior that sweep's
+  `forbidden-command` / `forbidden-path` mutants cover. One mutant still
+  anchored to the deleted line and skipped, while the run printed
+  `ALL MUTANTS KILLED`. Re-anchored three mutants: 43 killed, 0 skipped.
+  Specifier confirmed the exit path before accepting (survivor list is the only
+  failure branch; `skipped` is printed and then ignored) and filed **BL-1101**
+  to make the tool itself fail on `skipped>0`. The rule is the discipline; the
+  ticket is the gate — a prompt line is not a gate, which is why both exist.

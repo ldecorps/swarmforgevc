@@ -500,7 +500,7 @@ worktree_path_for_name() {
 validate_agent() {
   local agent="$1" role="$2"
   case "$agent" in
-    claude|codex|copilot|grok|aider|vibe|gemini) ;;
+    claude|codex|copilot|grok|aider|vibe|gemini|cursor) ;;
     *)
       error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -1122,6 +1122,25 @@ sync_worktree_scripts() {
   done
 }
 
+# BL-1078: a Cursor IDENTITY is not certified by this slice. Until BL-1079
+# lands steward certification, an uncertified one needs a deliberate escape,
+# and the refusal names the escape that would admit it - a guard that refuses
+# without saying how to proceed is one an operator routes around with
+# something cruder.
+#
+# Runs beside the dependency check, i.e. BEFORE any window is opened, so a
+# refusal costs nothing. The decision itself is pure and lives in
+# cursor_seat_guard_lib.bb; this only calls it once per cursor seat.
+check_cursor_seat_admission() {
+  local i
+  for (( i = 1; i <= ${#AGENTS[@]}; i++ )); do
+    if [[ "${AGENTS[$i]}" == "cursor" ]]; then
+      bb "$SCRIPT_DIR/cursor_seat_guard.bb" check \
+          "$WORKING_DIR" "${ROLES[$i]}" "${EXTRA_CLI_ARGS[$i]:-}" || exit 1
+    fi
+  done
+}
+
 check_backend_dependencies() {
   local i
   for (( i = 1; i <= ${#AGENTS[@]}; i++ )); do
@@ -1133,6 +1152,11 @@ check_backend_dependencies() {
       aider) check_dependency aider ;;
       vibe) check_dependency vibe ;;
       gemini) check_dependency gemini ;;
+      # BL-1078: the agent TOKEN is `cursor`, the BINARY is `cursor-agent`.
+      # Checking the token would look like a dependency check while verifying
+      # nothing, and a token accepted with no real check leaves a half-launched
+      # pack with an empty window instead of a loud refusal.
+      cursor) check_dependency cursor-agent ;;
     esac
   done
 }
@@ -1624,6 +1648,26 @@ RESUMECHECK
       fi
       launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
+    cursor)
+      # Cursor's terminal-native agent CLI (`cursor-agent`), the same family as
+      # vibe/gemini/grok: it runs interactively in a pane, so a Cursor seat is
+      # an ordinary tmux-resident agent and the substrate stays tmux (two-layer
+      # architecture rule) - nothing is spawned outside it.
+      #
+      # --workspace, NOT -w/--worktree. cursor-agent's --worktree creates its
+      # OWN git worktree under ~/.cursor/worktrees/<repo>/<name>, on a branch it
+      # names, fighting the worktree SwarmForge already provisioned for this
+      # role. That is the identical trap the vibe case above documents, and it
+      # is one letter away in the flag name.
+      # --force: a role's worktree is ours and its commands are the role loop's;
+      # --trust: the same worktree needs no per-launch human re-confirmation.
+      # CURSOR_API_KEY arrives via tmux -e (BL-130) and is never written here.
+      local cursor_dirs=""
+      if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
+        cursor_dirs=" --add-dir '$WORKING_DIR'"
+      fi
+      launch_body="cursor-agent${extra_cli:+ $extra_cli} --force --trust --workspace '$role_worktree'${cursor_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      ;;
     gemini)
       # Google Gemini CLI (`npm i -g @google/gemini-cli` or similar). -y/--yolo
       # auto-approves tools (Claude's --dangerously-skip-permissions equivalent).
@@ -1996,6 +2040,7 @@ check_launch_pack_guard
 parse_config
 check_primacy
 check_backend_dependencies
+check_cursor_seat_admission
 prepare_workspace
 prepare_worktrees
 prepare_handoff_dirs

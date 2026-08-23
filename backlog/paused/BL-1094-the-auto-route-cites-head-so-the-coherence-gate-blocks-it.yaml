@@ -109,3 +109,8 @@ notes: >
   BL-1078's feature file, which briefly made HEAD's subject name BL-1078. A
   reader scanning the log for "does auto-route ever work" would find that line
   and conclude it does.
+
+  2026-08-23 coordinator, open-slot nudge: not promoted - human_approval is
+  still pending on this ticket, and by the time this nudge was actioned both
+  open slots had already been filled (BL-1071, BL-1030) from other eligible
+  candidates. Not a starvation case: still top-ranked once approved.

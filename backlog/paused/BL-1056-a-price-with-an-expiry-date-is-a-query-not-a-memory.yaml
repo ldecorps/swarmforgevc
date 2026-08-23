@@ -153,3 +153,5 @@ qa_e2e_procedure: |
      unpriced model does today.
   6. Confirm nothing moved on its own: every running seat is on the model and
      effort it was launched with.
+
+assigned_to: coder

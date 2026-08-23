@@ -497,12 +497,15 @@ function registerSteps(registry) {
   });
 
   define(/^every existing entry still resolves the wake style it resolved before$/, (ctx) => {
-    const agents = Object.keys(ctx.table).sort();
-    assert.deepEqual(
-      agents,
-      Object.keys(WAKE_STYLE_BEFORE_ACP).sort(),
-      'the table gained or lost an agent; this ticket adds a dimension, not a row'
-    );
+    // Every agent that EXISTED before the ACP dimension must still be here and
+    // still resolve what it resolved. A later ticket adding a NEW agent is not
+    // a fork and must not fail this - BL-1078 added `cursor` and did exactly
+    // that, which is how this over-tight equality was found. What "not
+    // forking" actually means is checked below: one capability table, and the
+    // dimension living on the entry that already carried the wake style.
+    const agents = Object.keys(WAKE_STYLE_BEFORE_ACP).sort();
+    const missing = agents.filter((agent) => !ctx.table[agent]);
+    assert.deepEqual(missing, [], `the table lost ${missing.join(', ')}; this ticket adds a dimension, not a row`);
     for (const agent of agents) {
       assert.equal(
         ctx.table[agent].wakeStyle,

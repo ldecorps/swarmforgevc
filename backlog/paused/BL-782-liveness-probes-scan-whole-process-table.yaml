@@ -1,5 +1,5 @@
 id: BL-782
-title: "two teardown/liveness probes scan the whole process table, so BL-637's and BL-567's own suites fail on any host running a swarm — red that means nothing"
+title: "expedite_cli.bb's liveness probe scans the whole process table, so BL-567's own suite fails on any host running a swarm — red that means nothing"
 milestone: M8
 type: defect
 status: todo
@@ -135,6 +135,74 @@ notes: |
   these two — if a third unscoped probe turns up during the pass, it is in
   scope, and the architect should read the slice against the property rather
   than against the two named sites.
+
+  COORDINATOR 2026-08-23T04:15Z (3rd starvation report today): not promoted
+  because active_backlog_max_depth cap (6) is full at this instant - BL-1031
+  just took the one open slot this turn (expedited high-severity defect,
+  Article 3.2.4). This ticket is severity: medium, priority: 173, not
+  expedited, so it ranks behind every expedited candidate and most
+  non-expedited ones by priority number regardless of slot availability. Not
+  a hold, not an approval gap - purely capacity plus its own priority
+  ranking. Will be reconsidered on the next open-slot recheck.
+
+  --- specifier re-scope, 2026-08-23 (BL-730 has LANDED) ---
+
+  Triggered by the standing instruction in the 2026-08-13 cross-reference
+  below: BL-730 is now in `backlog/done/`, so the kill_pipeline_swarm.sh half
+  of this ticket is DELIVERED. Verified against main this date: the unscoped
+  survivor check is gone, and the only surviving `pgrep -fl` in that file is
+  the already-scoped one:
+
+      swarmforge/scripts/kill_pipeline_swarm.sh:243
+        pgrep -fl "handoffd\.bb.*$ROOT" | grep -v handoffd_supervisor
+
+  WHAT REMAINS is the expedite_cli.bb half ONLY, still unfixed on main. The
+  call sites have not moved except by line number — `pids-matching` is now at
+  :233 and the probe map at :262-266, where 262-265 still pass bare needles
+  and 266 is still the correctly-scoped example to copy:
+
+      262  :handoffd            (seq (pids-matching "handoffd.bb"))
+      263  :handoffd-supervisor (seq (pids-matching "handoffd_supervisor.bb"))
+      264  :babysitterd         (seq (pids-matching "babysitterd.sh"))
+      265  :operator            (seq (pids-matching "--remote-control Operator"))
+      266  :role-agents         (count (pids-matching (str project-root "/.swarmforge/launch/")))
+
+  Acceptance items 1 and 4 below belong to the landed BL-730 half. Treat them
+  as regression guards, not as work: they must still hold, but nothing in this
+  slice should need to change them. Items 2, 3 and 5 are this slice's work,
+  and item 3 (the genuine-survivor scenario) remains the one that proves the
+  fix is a narrowing and not a defeat.
+
+  Gherkin is still owed at promotion, per the acceptance block. Note when
+  writing it that the behavioural bar — "passes on a host with a live swarm" —
+  needs a decoy process belonging to a DIFFERENT root alive during the run;
+  the `EXPEDITE_PROBE_FILE` seam must NOT be used to satisfy it, since that
+  seam is exactly what the passing cases already use to dodge the defect.
+
+  --- third report, 2026-08-23: this ticket is being re-discovered, not found ---
+
+  Re-reported by the cleaner as a `note` during BL-1030 ("test_expedite_cli.sh:
+  28 pre-existing fails unrelated to BL-1030 - triage"). Specifier triaged and
+  reproduced the same date. This is the THIRD independent report of one already
+  approved ticket:
+
+    1. 2026-08-01 — coder, `backlog/evidence/BL-611-coder-findings.md` finding 5
+    2. 2026-08-22 — QA, `backlog/evidence/BL-1024-qa-approval-20260822.md`
+                    ("29 pre-existing")
+    3. 2026-08-23 — cleaner, during BL-1030 (28 pre-existing)
+
+  Proof it is this defect and not a regression, captured 2026-08-23: every
+  failing case is one that does NOT set `EXPEDITE_PROBE_FILE` and so falls
+  through to the real process table; every case that DOES set it passes. Case
+  01 re-run by hand with a stopped probe file and nothing else changed exits 0,
+  lands the ticket in `done/`, and logs all seven stages in chain order. The
+  count drifting 29 -> 28 is unrelated churn in the suite, not partial repair.
+
+  The cost of leaving it paused is now measurable: three roles have each spent
+  a triage cycle on it, and the standing advice each time is "ignore this red",
+  which is precisely the habit the approval_context above warns against. This
+  needs a SLOT, not another approval — it has been `human_approval: approved`
+  since it was written.
 
   --- specifier cross-reference, 2026-08-13 ---
 

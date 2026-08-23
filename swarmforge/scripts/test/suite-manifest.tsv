@@ -61,6 +61,7 @@ context_telemetry_test_runner.bb	standing
 control_plane_lib_test_runner.bb	standing		
 coordinator_config_test_runner.bb	standing		
 cursor_bridge_supervisor_test_runner.bb	standing		
+cursor_seat_guard_lib_test_runner.bb	standing		
 daemon_alarm_test_runner.bb	standing		
 daemon_cycle_guard_lib_test_runner.bb	standing		
 disk_space_lib_test_runner.bb	standing		
