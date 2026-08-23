@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: prose must never decide promotion. A sentence a human wrote to
   EXPLAIN an ordering constraint cannot be indistinguishable from one that
