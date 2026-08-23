@@ -1690,21 +1690,11 @@ RESUMECHECK
       # its own --worktree sessions).
       # MISTRAL_API_KEY is supplied at respawn-pane time via `-e` (BL-130) and
       # is never written into this launch script.
-      #
-      # BL-1081 (QA bounce D1): this spike's ONE seat runs behind the ACP host
-      # in the pane. The host (extension/out/tools/acp-host-pane.js) is the
-      # pane process; vibe is its ACP subprocess. A launch that named vibe
-      # directly left the host a dark module — greppable from nothing live.
-      local acp_add_dir=""
+      local vibe_dirs=""
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
-        acp_add_dir=" --add-dir '$WORKING_DIR'"
+        vibe_dirs=" --add-dir '$WORKING_DIR'"
       fi
-      local acp_host_js="$WORKING_DIR/extension/out/tools/acp-host-pane.js"
-      local acp_extra=""
-      if [[ -n "$extra_cli" ]]; then
-        acp_extra=" --extra-cli '$extra_cli'"
-      fi
-      launch_body="node '$acp_host_js' --role '$role' --agent vibe --workdir '$role_worktree' --prompt-file '$prompt_file' --repo '$WORKING_DIR'${acp_add_dir}${acp_extra} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     cursor)
       # Cursor's terminal-native agent CLI (`cursor-agent`), the same family as

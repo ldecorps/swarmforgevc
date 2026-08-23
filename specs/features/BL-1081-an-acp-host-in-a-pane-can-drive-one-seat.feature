@@ -1,7 +1,3 @@
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-23T15:43:42.432518142Z","feature_name":"one seat is driven by structured session events instead of pane text","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
-# acceptance-mutation-manifest-end
-
 Feature: one seat is driven by structured session events instead of pane text
 
   BL-1081: pane text is the control channel for every seat, and two expensive

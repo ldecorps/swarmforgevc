@@ -243,6 +243,13 @@
                {:path "x.js" :tip-matches-newest-authoring? true
                 :tip-is-superseded-resurrection? false :tip-absent-without-delete? false
                 :newest-authoring-sha "new001" :divergence-merge-sha nil}))
+;; The (not tip-matches-newest-authoring?) gate is load-bearing: a tip that
+;; matches newest must stay clean even if a stale resurrection flag is also set.
+(assert-false "silent-revert-path?: tip matching newest wins over a stale superseded flag"
+              (push-sweep-lib/silent-revert-path?
+               {:path "x.js" :tip-matches-newest-authoring? true
+                :tip-is-superseded-resurrection? true :tip-absent-without-delete? true
+                :newest-authoring-sha "new001b" :divergence-merge-sha "merge001b"}))
 (assert-true "silent-revert-path?: tip holds a superseded earlier-authored blob -> flagged"
              (push-sweep-lib/silent-revert-path?
               {:path "x.js" :tip-matches-newest-authoring? false
@@ -274,6 +281,16 @@
                               :tip-absent-without-delete? false
                               :newest-authoring-sha "auth000001"
                               :divergence-merge-sha "merge00001"}]}))
+(assert-true "silent-revert-decision: reason keyword is :silent-revert, never :noop-landing-merge"
+             (= :silent-revert
+                (:reason (push-sweep-lib/silent-revert-decision
+                          {:facts-complete? true
+                           :candidate-paths [{:path "y.js"
+                                              :tip-matches-newest-authoring? false
+                                              :tip-is-superseded-resurrection? true
+                                              :tip-absent-without-delete? false
+                                              :newest-authoring-sha "y1"
+                                              :divergence-merge-sha "ym1"}]}))))
 
 ;; Gherkin BL-1098 -03: discarding a superseded blob while tip matches newest is clean.
 
@@ -293,6 +310,14 @@
 (assert= "silent-revert-decision: facts-complete? false fails closed"
          {:refuse? true :reason :gather-failed :offending []}
          (push-sweep-lib/silent-revert-decision {:facts-complete? false :candidate-paths []}))
+(assert= "silent-revert-decision: facts-complete? false fails closed even with a clean candidate"
+         {:refuse? true :reason :gather-failed :offending []}
+         (push-sweep-lib/silent-revert-decision
+          {:facts-complete? false
+           :candidate-paths [{:path "clean.js" :tip-matches-newest-authoring? true
+                              :tip-is-superseded-resurrection? false
+                              :tip-absent-without-delete? false
+                              :newest-authoring-sha "c1" :divergence-merge-sha nil}]}))
 
 ;; Gherkin BL-1098 -05: a dirty-working-tree stand-in fact cannot move the verdict
 ;; (the decision signature has nowhere to read it - structural).
@@ -318,6 +343,12 @@
 (assert= "silent-revert-candidate-paths: empty input yields empty candidates (no tree walk)"
          []
          (push-sweep-lib/silent-revert-candidate-paths []))
+
+(assert= "silent-revert-candidate-paths: overlapping merge sets are deduped, not concatenated"
+         ["a.js" "b.js"]
+         (push-sweep-lib/silent-revert-candidate-paths
+          [{:ok? true :paths #{"a.js" "b.js"}}
+           {:ok? true :paths #{"a.js"}}]))
 
 ;; ── due? ──────────────────────────────────────────────────────────────────
 
