@@ -83,6 +83,9 @@ notes: |
   remote-control verdicts, `swarm_ensure.bb` calls the expected-agent health
   predicate for both normal and mono-router repair, and `swarmforge.sh` builds
   the Cursor launch command.
+
+  2026-08-23 coordinator: promotion held. `human_approval` remains `pending`
+  and the active backlog has 3 tickets against an effective depth cap of 2.
 source: |
   Coordinator note 00_20260823T132221Z_001148: "Mint review ticket for hotfix
   f02f6ae5b4; ledger entry is pending." The landed commit was re-read by the
