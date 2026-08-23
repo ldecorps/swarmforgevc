@@ -14,6 +14,10 @@ test('isIllustrativePackPlaceholder recognises ALL-CAPS stems only', () => {
   assert.equal(isIllustrativePackPlaceholder('qwen-mono-router'), false);
   assert.equal(isIllustrativePackPlaceholder('qwen-code-mono-router'), false);
   assert.equal(isIllustrativePackPlaceholder('Name'), false);
+  // Anchored at start: a lowercase prefix must not make an ALL-CAPS suffix a placeholder
+  // (kills /^[A-Z]/ -> /[A-Z]/ Regex survivors that still match at end-of-string).
+  assert.equal(isIllustrativePackPlaceholder('xNAME'), false);
+  assert.equal(isIllustrativePackPlaceholder('aPACK'), false);
 });
 
 test('isShippedWorkLog matches the Specification.MD path only', () => {
@@ -43,6 +47,18 @@ test('findAbsentNamedPackConfs skips placeholders and existing packs', () => {
   const existing = new Set(['swarmforge/packs/qwen-mono-router.conf']);
   assert.deepEqual(findAbsentNamedPackConfs(docs, existing), [
     'swarmforge/packs/qwen-code-mono-router.conf',
+  ]);
+});
+
+test('findAbsentNamedPackConfs returns absent packs in sorted order', () => {
+  // Discovery order is z then a; the API contract is lexicographic sort
+  // (kills [...absent].sort() -> [...absent] MethodExpression survivors).
+  const docs = [
+    'see swarmforge/packs/z-gone.conf then swarmforge/packs/a-gone.conf',
+  ];
+  assert.deepEqual(findAbsentNamedPackConfs(docs, []), [
+    'swarmforge/packs/a-gone.conf',
+    'swarmforge/packs/z-gone.conf',
   ]);
 });
 
