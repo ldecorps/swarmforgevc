@@ -172,4 +172,4 @@ notes: |
   different agent events and must stay distinct steps. Judged correct as
   written, not drift. 20 unique steps of 20 otherwise.
 
-assigned_to: specifier
+assigned_to: coder
