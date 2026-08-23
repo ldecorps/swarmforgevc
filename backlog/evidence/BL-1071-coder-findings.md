@@ -132,3 +132,62 @@ ticket's scope.
 nothing here contradicts it. The tmux segfault root cause (BL-1069), the memory
 floor's choice of facility, and handoffd chase-respawn are all out of scope and
 untouched.
+
+---
+
+# Re-fix after the QA bounce of 2026-08-23 (`unit: ps-scope`)
+
+The bounce is correct and the defect is mine. `strayHangs()` in
+`bl1071RecoveryBoundedInTime.property.test.js` asked "did anything survive the
+kill?" of the WHOLE HOST (`pgrep -f '[s]leep 3600'`), which is the pattern
+engineering.prompt's Guardrails name outright — "never diff shared globals
+(/tmp, broad ps patterns, live runtime paths)". QA's reading of why that
+matters is the part worth keeping: a host-wide diff cannot tell "our
+grandchild is not reaped yet" from "the group kill genuinely missed it", and
+that distinction IS invariant 2.
+
+**Fixed** by scoping the question to the sweep's own process group. Each hang
+stub records its real PGID (`ps -o pgid= -p $$`), and the assertion asks
+`pgrep -g <that group>` with a bounded settle window for reaping, rather than
+an instant read of the whole process table.
+
+**Worth recording, because the first fix was wrong in an instructive way.**
+It recorded `$$` as the group id. That is only the group id WHEN `setsid`
+worked — the very thing under test. Re-running the setsid-removed break
+against it: the test PASSED while genuinely orphaning two `sleep` processes,
+because it looked in a group that had nothing in it. Measured, not reasoned
+about. So the pgid is now read from `ps`, and a second assertion checks the
+recovery ran in a group of its own at all, which is what makes a group kill
+possible in the first place.
+
+**Verified under the gate's real conditions**, since that is where the bounce
+came from: one full `npm run test:properties` (161 files, 476 tests) with both
+BL-1071 property files green, plus five consecutive targeted runs, each
+followed by a process-table check confirming ZERO new survivors.
+
+## Also surfaced, NOT fixed: `tempDirTrapGuard.property.test.js` is not a flake
+
+QA recorded this file as "an unrelated pre-existing flake". It is unrelated
+and pre-existing, but it is not a flake — it is deterministic given state that
+happens to be present:
+
+```
++ '<worktree>/tmp/bl508-clean/specs/pipeline/steps/lib/tempDirTrapGuard.js'
++ '<worktree>/tmp/bl520-clean-head-6nwqo5/specs/.../tempDirTrapGuard.js'
++ '<worktree>/tmp/bl538-clean/...'   (six such copies in total)
+```
+
+Six stale whole-repo scratch copies under `tmp/`, dated 2026-07-19, left by
+earlier sessions. The guard asserts its own module is defined in exactly one
+file repo-wide and scans `tmp/` while doing it — but `tmp/` is gitignored
+(`.gitignore:7`), so nothing in it is repo content and none of those copies is
+a reimplementation of anything.
+
+Not fixed here for two reasons: the directories are not mine to delete
+(Clean Up After Yourself — never delete what you did not create), and the real
+repair is in the guard's scan scope, which is BL-872's file and outside this
+ticket. Worth a narrow ticket: exclude gitignored paths from the repo-wide
+scan, so the gate stops depending on whose scratch is lying around. Until then
+it will keep reading as an intermittent failure to whoever runs the lane on a
+worktree that has such copies, and as a pass to whoever does not — which is
+exactly why it looked like a flake.
