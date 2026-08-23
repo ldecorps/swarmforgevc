@@ -9,11 +9,13 @@ alternative for agents that speak the Agent Client Protocol (ACP) natively:
 read the fact instead of guessing it from text.
 
 This is a spike, and it is falsifiable — see `approval_context` and
-`qa_e2e_procedure` on `backlog/active/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml`
+`qa_e2e_procedure` on
+`backlog/paused/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml`
 for the verdict criteria. What is documented here is what is built: the
 snapshot file, the deterministic-layer read side, the provider-table
-dimension, and the production launcher wiring that puts the spike seat
-behind the ACP host (see [Production launcher wiring](#production-launcher-wiring-bl-1081-qa-bounce-d1)).
+dimension, the pane-host CLI, and the production launcher wiring that puts
+the spike seat behind the ACP host (see
+[Production launcher wiring](#production-launcher-wiring-bl-1081-qa-bounce-d1)).
 
 ## The provider table gains a dimension, not a fork
 
@@ -90,6 +92,25 @@ specifically:
   (`menu-check-applies?` returns `false`), so the two checks never both fire
   for the same permission moment.
 
+## Pane-host CLI (`acp-host-pane`)
+
+The compiled entry point is `extension/out/tools/acp-host-pane.js`
+(source: `extension/src/tools/acp-host-pane.ts`). Production launch scripts
+invoke it; operators can also run it by hand for a single seat. Required
+flags:
+
+| Flag | Meaning |
+|---|---|
+| `--role <role>` | pipeline role whose snapshot path is `.swarmforge/acp/<role>.json` |
+| `--agent <token>` | must be the spike seat (`vibe`); any other token is refused |
+| `--workdir <path>` | agent working directory (the role worktree) |
+| `--prompt-file <path>` | role prompt file fed as the first turn |
+
+Optional: `--add-dir <path>`, `--extra-cli <args>`, `--repo <path>`, and a
+trailing first-message positional (or `--help` / `-h` for usage). Argv
+parsing is pure (`acpHostPaneArgs.ts`); spawn plan and snapshot path
+helpers live in `acpHostPanePlan.ts`.
+
 ## Production launcher wiring (BL-1081 QA bounce D1)
 
 `write_role_launch_script` in `swarmforge/scripts/swarmforge.sh` puts the
@@ -111,4 +132,4 @@ model".
 ## See also
 
 - [Non-Pipeline Agents — Reference Table (BL-643)](BL-643-non-pipeline-agents-reference-table.md) — the wider agent/launcher landscape this table sits beside.
-- `backlog/active/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml` — the ticket, its falsifiable criteria, and the acceptance scenarios.
+- `backlog/paused/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.yaml` — the ticket, its falsifiable criteria, and the acceptance scenarios.
