@@ -11,7 +11,7 @@ severity: high
 # except by reading the script - which is how it was found.
 status: todo
 epic: swarm-reliability
-assigned_to: coder
+assigned_to:
 priority: 8
 direction: swarm-reported
 depends_on: []
@@ -178,3 +178,5 @@ notes: >
   candidates" with "the ticket is not among the candidates". The two differ
   by the negation, and that negation is the entire contrast the feature
   exists to draw - collapsing them would erase the behaviour under test.
+notes: |
+  Human 2026-08-23 (Cursor): HELD — finish BL-1078 only. Promotion frozen; reinstate after Cursor launcher token lands.

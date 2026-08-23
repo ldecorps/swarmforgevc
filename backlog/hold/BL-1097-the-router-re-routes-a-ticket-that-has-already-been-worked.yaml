@@ -20,7 +20,7 @@ severity: high
 # so the operator can veto it with the same tap.
 status: todo
 epic: swarm-reliability
-assigned_to: coder
+assigned_to:
 priority: 6
 direction: swarm-reported
 depends_on: []
@@ -204,3 +204,5 @@ notes: >
   once: landed, never closed, and `assigned_to` backfilled to `coder`.
   Fixing BL-1100 shrinks this ticket's input; it does not replace it, since
   a parcel can also outlive a correctly-closed ticket, as it did here.
+notes: |
+  Human 2026-08-23 (Cursor): HELD — finish BL-1078 only. Promotion frozen; reinstate after Cursor launcher token lands.
