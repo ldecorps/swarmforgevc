@@ -47,7 +47,7 @@
 ;; only a provider whose wording is genuinely novel (like aider's) also needs
 ;; a new text-builder, since capability flags alone can route to prose, not
 ;; invent it. agent_runtime_lib.bb delegates here for backward compatibility.
-(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "mock"})
+(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "qwen-code" "mock"})
 
 (defn normalize-agent
   "Unknown agents fall back to claude chat-style wake."
@@ -90,6 +90,20 @@
               :bootstrap-style :embedded
               :bootstrap-text-style :generic
               :startup-delay-ms 3000}
+   ;; qwen-code (npm @qwen-code/qwen-code, binary `qwen`): Alibaba's own
+   ;; agentic CLI, Gemini-CLI-derived, with real shell tools - so it takes
+   ;; the SAME shape as vibe/gemini/claude. Operator smoke test: with
+   ;; `--auth-type openai -y` it ACTUALLY EXECUTED a shell command and
+   ;; returned the real result (and without `-y` it refused and said so).
+   ;; It is NOT the "qwen" of packs/qwen-mono-router.conf: that pack drives
+   ;; the same MODELS, the same endpoint and the same key through `aider`,
+   ;; which cannot execute at all. Two agents, two entries - per this map's
+   ;; own rule above, a capability entry describes the AGENT, not the model,
+   ;; and this pair is the sharpest case of it in the whole map (BL-1052).
+   "qwen-code" {:wake-style :chat-message
+                :bootstrap-style :embedded
+                :bootstrap-text-style :generic
+                :startup-delay-ms 3000}
    "mock"    {:wake-style :mock
               :bootstrap-style :mock
               :bootstrap-text-style :mock}})
