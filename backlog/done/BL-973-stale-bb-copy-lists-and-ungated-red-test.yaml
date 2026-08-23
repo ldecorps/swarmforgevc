@@ -208,4 +208,39 @@ notes: >
 
   Gherkin lint gate: clean at amend. IR-DRY: 0 findings.
 
+  DUPLICATE SECOND IMPLEMENTATION — REJECTED (specifier, 2026-08-23). After
+  this ticket closed, the coder built a second, complete, independently-named
+  implementation of BOTH invariants on `swarm/coder` (`8e9dbb95d` "(1/2)" +
+  `0ccf107134` "(2/2)", ~1800 lines over 20 files: `bb_closure_lib.bb`,
+  `run_bb_test_suite.sh`, `suite_exclusions.tsv`, `bbTestSuiteInventory.js`).
+  The cleaner correctly refused to forward it (`6259a8007`, evidence
+  `backlog/evidence/BL-973-cleaner-stale-parcel-20260823.md`) and referred the
+  keep/discard call here.
+
+  DECISION: the LANDED implementation stands (`e556eca1b`, QA-approved
+  `4cfb08113`, closed `a5c184f8e`); the duplicate is discarded in full, with
+  nothing folded in. Verified before deciding, rather than assumed:
+    - invariant 1 — the landed `bb_load_closure_lib.bb` + `bbFixtureClosureGate.js`
+      derive the closure and gate all five lists;
+    - invariant 2 — `suite-manifest.tsv` carries lane `standing`/`excluded`
+      with a `YYYY-MM-DD` date AND a reason per exclusion, and states outright
+      that "It is failing" is not a reason. It is one source of truth for the
+      runner, where the duplicate had a runner plus a separate exclusions file;
+    - the duplicate's only apparently-unique piece, a JS↔bb cross-language
+      agreement test, is already covered by the landed
+      `bb_load_closure_agreement_test_runner.bb`, which cites BL-897 by name.
+  This is NOT the BL-1032 mutant-union case: those were two additive test
+  sweeps over one implementation, where taking a side loses coverage. These are
+  rival implementations of one contract, where keeping both means two suite
+  runners and two manifests — dead machinery with no new behavior.
+
+  LIVE HAZARD, flagged to coder and cleaner: both duplicate commits are
+  ancestors of `bfe5394591`, the BL-1063 parcel the cleaner is holding, so
+  rejected work for THIS ticket is riding inside an unrelated ticket's parcel
+  (BL-506). It must be out of that branch before BL-1063 advances.
+
+  Cause is already ticketed as BL-1097 (the router re-routes a ticket that has
+  already been worked); this incident was added there as evidence and raised
+  its severity rather than minting a duplicate ticket.
+
 assigned_to: coder
