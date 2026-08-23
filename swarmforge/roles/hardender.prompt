@@ -1648,3 +1648,70 @@ You are the hardender.
   this class until ruled out; check it before blaming the ticket's own diff.
   (Proposed by the hardender, accepted 2026-08-22; fix `findExtensionRoot` in
   `extension/test/helpers/materializedRegistryGuard.js` at b53875b71.)
+
+## `--ignoreStatic` buys its speed by EXCLUDING mutants from the score — read the Ignored count, never the score alone (rule_proposal 2026-08-23, accepted with its scope amended)
+- **The technique, and it is a real win.** On a QUIET multi-core host, a
+  perTest run can spend most of its wall clock on static mutants — those
+  executed only while a file loads (a module-level `const`, top-level code),
+  which force Stryker to reload the environment and run the ENTIRE test
+  selection for each one. `stryker run --ignoreStatic --concurrency <N>`
+  (CLI flags override the config file) collapses that. Stryker itself warns
+  when it detects the condition: "Detected N static mutants (X% of total)
+  that are estimated to take Y% of the time running the tests" — treat that
+  warning as the signal to reach for this, not as noise.
+- **`--ignoreStatic` is two different things at once, and only one is free.**
+  `mutant-test-planner.js` splits the mutants three ways:
+  - **Non-static** — unaffected. Runs exactly as before.
+  - **Hybrid** (static AND carrying perTest coverage) — still RUN, but
+    against its covered tests instead of the whole suite. Pure speedup, no
+    coverage lost. This is where most of the saving comes from.
+  - **Pure static** (no perTest coverage at all) — **not run at all**.
+    Recorded `Ignored`, `statusReason: 'Static mutant (and "ignoreStatic"
+    was enabled)'`. These mutants were never tested.
+  Requires `coverageAnalysis: "perTest"` (ours is); with anything else
+  Stryker refuses to start rather than degrading quietly.
+- **The score will not tell you.** `mutationScore = totalDetected /
+  totalValid`, and `ignored` is NOT in `totalValid` — it is added only into
+  `totalMutants` (`mutation-testing-metrics/calculateMetrics.js`). So the
+  skipped pure-static mutants leave the denominator with them, and a run
+  that tested 30% fewer mutants reports the SAME clean score as one that
+  tested them all. Nothing goes red. This is the same silent-degradation
+  shape as the Babashka/Kotlin and inline-`<script>` fallbacks above, one
+  flag over.
+- **So account for the Ignored set explicitly, every time you use the flag.**
+  Read the Ignored count and its statusReason out of the report; state the
+  number in your hardening notes alongside the score; and either re-run the
+  affected files WITHOUT the flag once the host is quiet enough to afford
+  it, or hand-reason each ignored mutant and record the degraded fallback.
+  Never let an `--ignoreStatic` pass be reported, in a commit message or a
+  handoff, as a full mutation pass — the same rule that binds every other
+  degraded fallback you take.
+- **The `--concurrency` half: the config's `1` is a provisional Mac value,
+  not a considered default for this host.** `stryker.config.json` shipped
+  `concurrency: 8` from BL-048 and was dropped to `1` (and 12→1 for the two
+  Let's Talk configs) in `79cc04b29`, which adopted the 2026-08-02 Mac
+  host-switch hotfix and says so in its own message: *"flagged as
+  provisional pending operator confirmation of whether it's this host's
+  steady state."* That confirmation never came. On a 20-core Linux host it
+  is leaving cores idle for no reason. Overriding it per-run on the CLI is
+  the standing remedy; do NOT edit the config to fix it, because that value
+  is a repo-wide default every worktree picks up simultaneously — which is
+  precisely the contention the load rules above exist for.
+- **This does not loosen the load rules — it sits downstream of them.** The
+  BL-149 cooldown gate, the `uptime` 2x-cores check and the office-hours
+  bypass all run FIRST and are unchanged. Raise concurrency only once those
+  say the host is quiet, size `<N>` against free cores rather than total
+  ones (other worktrees' runs are invisible to `nproc`), and drop back to
+  the configured `1` the moment the load signal turns. A raised concurrency
+  under load does not fail slowly — it is how load 100–250 on 4 cores got
+  made in the first place.
+- Evidence (proposed by the hardender, BL-713 pass 2026-08-23): a 6-file,
+  1019-mutant run stalled 3+ minutes on a single static mutant with every
+  worker busy; `--ignoreStatic --concurrency 8` finished the 706 dynamic
+  mutants in under 2 minutes. Note what that arithmetic means and what the
+  proposal did not say: 313 mutants — 31% of the run — were Ignored, not
+  killed, and the score would not have shown it. The specifier re-confirmed
+  the planner's three-way split, the metrics denominator, the perTest
+  precondition, and the `79cc04b29` provenance of `concurrency: 1` before
+  accepting; the Ignored-accounting duty and the load-rule scoping are the
+  specifier's additions.
