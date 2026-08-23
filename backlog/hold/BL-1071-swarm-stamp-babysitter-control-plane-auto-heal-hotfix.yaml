@@ -243,3 +243,6 @@ source: |
   highest-risk.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-23, by: QA, blamed: coder, class: unit, commit: 45d3712154, evidence: backlog/evidence/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix-bounce-20260823.md }
