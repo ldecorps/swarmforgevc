@@ -1,6 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1043: the onboarder and
+**Last Updated:** August 23, 2026 (BL-1076: the batch-claim-progress
+sweep (BL-678) judged every batch role by one flat 20-minute HEAD clock
+with HEAD movement as its only progress signal, so a hardener mid-Stryker
+— routinely an hour of real work before its first commit, with the edits
+sitting uncommitted in its worktree — was surfaced to the coordinator as a
+suspect claim: measured 2026-08-22, three parcels surfaced twice each in
+fifty minutes while the hardener was demonstrably working, six false notes
+total. Fix, applied to `batch_claim_progress_lib.bb` /
+`chase_sweep_lib.bb` / `handoffd.bb`: a per-role tolerance map
+(`hardener` gets 90 minutes, mirroring BL-528's task-mode ladder without
+sharing its literal — the two answer different questions and may
+legitimately diverge) resolved operator-override-first via a new conf key
+`batch_claim_progress_role_stale_threshold_minutes <role> <n>`; and a
+visible-work gate that adds a third label, `:suppressed-visible-work`,
+for a stale-by-clock claim whose owner worktree is still dirty — sent
+nowhere but logged (`batch-claim-progress-suppressed`), so a permanently
+dirty worktree reads as a suppressed signal, never a silent one. The
+observer's own invariant — no label it returns re-forwards, re-delivers,
+moves, copies, or deletes a handoff — is unchanged and property-tested
+alongside the two new ones (3 invariant classes, 240 runs,
+`bl1076_visible_work_gate_property_runner.bb`), non-vacuity proven by four
+deliberate breaks. BL-678 itself stays green throughout. See the updated
+"Batch-claim-progress suspect sweep" section in
+`swarmforge/handoff-protocol.md` and
+`docs/how-to/BL-678-batch-claim-progress-sidecar.md`. No new extension
+command or setting.)
+Prior entry —
+BL-1043: the onboarder and
 negotiation-relay supervisors get a real startup grace, closing a hole
 worse than BL-1035's — `front_desk_supervisor_lib.bb`'s
 `poll-heartbeat-stale?` has a 3-arity convenience form that passes
