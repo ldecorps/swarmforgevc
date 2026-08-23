@@ -27,16 +27,25 @@ half: a claim whose owner is still alive and working, mid-run.
 2. **Sweep time.** `handoffd`'s `batch-claim-progress-sweep!`
    (`chase_sweep_lib.bb` / `handoffd.bb`) periodically compares each held
    batch item's owning-worktree `HEAD` against the sidecar's last-recorded
-   commit:
+   commit, judging staleness against that owner **role's own threshold**
+   (see [Per-Role Thresholds](#per-role-thresholds-bl-1076) below):
    - **Commit advanced** → the sidecar's `lastProgressAtMs` refreshes. The
      item is healthy; nothing else happens.
-   - **No advance, but still under `batch_claim_progress_stale_threshold_minutes`**
-     → nothing happens; this is normal mid-task quiet time.
-   - **No advance past the threshold** → the item is a **suspect**. The
-     sweep surfaces a `note` (priority `00`) to the coordinator naming the
-     item and its age — it never re-forwards or re-delivers the parcel
-     itself. A repeat-stale item is re-surfaced at most once per
-     `batch_claim_progress_cooldown_minutes`, not on every sweep tick.
+   - **No advance, but still under the role's threshold** → nothing
+     happens; this is normal mid-task quiet time.
+   - **No advance past the threshold, owner worktree DIRTY** (BL-1076) →
+     the claim is progressing by the other signal available — uncommitted
+     edits sitting in the worktree — so nothing is sent to the
+     coordinator. The observation is **logged**, never merely dropped:
+     `batch-claim-progress-suppressed <id> worktree-dirty <N>m`. A
+     hardener an hour into a mutation run with nothing committed yet is
+     exactly this case.
+   - **No advance past the threshold, owner worktree clean** → the item is
+     a **suspect**. The sweep surfaces a `note` (priority `00`) to the
+     coordinator naming the item and its age — it never re-forwards or
+     re-delivers the parcel itself. A repeat-stale item is re-surfaced at
+     most once per `batch_claim_progress_cooldown_minutes`, not on every
+     sweep tick.
 
 The suspect note reads like:
 ```
@@ -58,19 +67,48 @@ The suspect note reads like:
 
 ## Configuration
 
-Both are in `swarmforge.conf`, commented out by default (absent, malformed,
-zero, or negative all degrade to the built-in default):
+All three are in `swarmforge.conf`, commented out by default (absent,
+malformed, zero, or negative all degrade rather than error):
 
 ```
 # config batch_claim_progress_stale_threshold_minutes 20
 # config batch_claim_progress_cooldown_minutes 30
+# config batch_claim_progress_role_stale_threshold_minutes hardener 90
 ```
 
-- `batch_claim_progress_stale_threshold_minutes` — how long a batch item's
-  sidecar can show no progress before it's surfaced as suspect. Default 20
+- `batch_claim_progress_stale_threshold_minutes` — the base: how long a
+  batch item's sidecar can show no progress before it's surfaced as
+  suspect, for any role with no more specific tolerance. Default 20
   minutes.
 - `batch_claim_progress_cooldown_minutes` — the minimum gap between repeat
   suspect notes for the *same* still-stale item. Default 30 minutes.
+- `batch_claim_progress_role_stale_threshold_minutes <role> <n>` (BL-1076)
+  — an operator override of the threshold for one role, repeatable (one
+  line per role). A malformed or non-positive value is dropped, degrading
+  to the role's own built-in tolerance below, never to the tighter base.
+
+### Per-Role Thresholds (BL-1076)
+
+One flat 20-minute clock judged every batch role, but a hardener mid
+mutation run routinely goes an hour before its first commit — measured
+2026-08-22, three parcels surfaced as suspect at 20:40:46Z and again at
+21:10:48Z while the hardener worktree showed uncommitted edits the whole
+time. Six false coordinator notes in fifty minutes, none describing
+anything wrong.
+
+Resolution order, highest first:
+
+1. The operator override above, for that one role.
+2. The built-in per-role map (`batch-claim-progress-lib/role-stale-threshold-ms`)
+   — `hardener` gets 90 minutes.
+3. The base (`batch_claim_progress_stale_threshold_minutes`, default 20)
+   — for every role with no entry above.
+
+**BL-528**'s task-mode claim-idle ladder grants `hardener` the same 90
+minutes from its own literal. The two are
+deliberately **not** shared — they answer different questions ("is the
+owner alive and working" there, "is this claim progressing" here) and may
+legitimately diverge.
 
 ## Verifying On A Live Batch
 
@@ -84,6 +122,18 @@ zero, or negative all degrade to the built-in default):
 4. Freeze the batch role past the staleness threshold: confirm the
    coordinator receives a named suspect note, and the parcel is still not
    re-delivered.
+5. **(BL-1076)** Add `config batch_claim_progress_role_stale_threshold_minutes hardener 2`
+   to `swarmforge.conf` so the per-role path can be exercised in minutes
+   rather than a 90-minute soak. With the hardener holding a batch claim
+   and HEAD unmoved past 2 minutes:
+   - **clean worktree** → confirm the usual suspect note fires at ~2
+     minutes, not the base 20.
+   - **dirty worktree** (`touch` a tracked file) → confirm NO suspect note
+     and NO handoffd chase for that parcel, but a
+     `batch-claim-progress-suppressed` line naming the parcel id appears
+     in `.swarmforge/daemon/handoffd.log`.
+   Remove the key afterward and confirm the daemon returns to the
+   built-in tolerances.
 
 ## Scope
 
@@ -98,6 +148,9 @@ zero, or negative all degrade to the built-in default):
   relaunch time.
 - **BL-528** — task-mode claim-idle escalation ladder (nudge → bounce →
   halt), deliberately untouched by this ticket.
+- **BL-1076** — per-role thresholds and the visible-work suppression gate,
+  so a hardener mid mutation run is no longer surfaced as a false suspect;
+  see [Per-Role Thresholds](#per-role-thresholds-bl-1076) above.
 - `swarmforge/scripts/batch_claim_progress_lib.bb` — sidecar shape and
   decision logic (`decide-batch-claim-observation`).
 - `swarmforge/scripts/chase_sweep_lib.bb` / `handoffd.bb` — the sweep and
