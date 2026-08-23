@@ -9,7 +9,7 @@ Feature: A backlog promotion is committed as both of its paths
   The two callers that edit a ticket in place still commit exactly one path;
   that narrowing is correct for them and must survive this change.
 
-  # BL-1084 promotion-commit-both-paths-01
+  # BL-1091 promotion-commit-both-paths-01
   Scenario: Expediting a paused ticket commits both ends of the rename
     Given a ticket in backlog/paused/ awaiting approval
     When the operator expedites the ticket
@@ -18,14 +18,14 @@ Feature: A backlog promotion is committed as both of its paths
     And no uncommitted change for that ticket remains in the working tree
     And the ticket id appears in exactly one backlog folder
 
-  # BL-1084 promotion-commit-both-paths-02
+  # BL-1091 promotion-commit-both-paths-02
   Scenario: Expediting an already-active ticket still commits cleanly
     Given a ticket already in backlog/active/ awaiting approval
     When the operator expedites the ticket
     Then the resulting commit records the approval on the active path
     And no uncommitted change for that ticket remains in the working tree
 
-  # BL-1084 promotion-commit-both-paths-03
+  # BL-1091 promotion-commit-both-paths-03
   Scenario Outline: An in-place approval writer still commits exactly one path
     Given a ticket awaiting approval in whichever folder it already occupies
     When the operator records <verb> through the <writer> writer

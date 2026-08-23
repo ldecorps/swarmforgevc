@@ -80,15 +80,94 @@
 
 ;; ── decide-batch-claim-observation ───────────────────────────────────────────
 
+;; BL-1076 retired the dirt-blind arity these three called, so they now say
+;; "clean worktree" out loud - which is the condition they always meant.
 (assert= "decide: fresh progress -> :silent"
          :silent
-         (batch-claim-progress-lib/decide-batch-claim-observation {:lastProgressAtMs 1000} 1500 1000))
+         (batch-claim-progress-lib/decide-batch-claim-observation {:lastProgressAtMs 1000} 1500 1000 false))
 (assert= "decide: stale progress -> :stale-suspect"
          :stale-suspect
-         (batch-claim-progress-lib/decide-batch-claim-observation {:lastProgressAtMs 1000} 5000 1000))
+         (batch-claim-progress-lib/decide-batch-claim-observation {:lastProgressAtMs 1000} 5000 1000 false))
 (assert= "decide: nil progress (no sidecar) -> :silent, never surfaced as suspect"
          :silent
-         (batch-claim-progress-lib/decide-batch-claim-observation nil 5000 1000))
+         (batch-claim-progress-lib/decide-batch-claim-observation nil 5000 1000 false))
+
+;; ── BL-1076: per-role tolerance and the visible-work gate ───────────────────
+;; One flat 20-minute clock judged every batch role, and HEAD movement was the
+;; only progress signal. A hardener mid-Stryker breaks both at once: mutation
+;; passes routinely run an hour before the first commit, with the work sitting
+;; uncommitted in the worktree. Measured 2026-08-22 - three parcels surfaced as
+;; suspect at 20:40:46Z and again at 21:10:48Z while the owner was demonstrably
+;; working (`M extension/test/boyScoutRun.test.js`).
+
+(assert= "bl1076: the built-in role map grants hardender 90 minutes"
+         (* 90 60 1000)
+         (get batch-claim-progress-lib/role-stale-threshold-ms "hardender"))
+
+(assert= "bl1076: a role with no entry falls back to the configured base"
+         (* 20 60 1000)
+         (batch-claim-progress-lib/resolve-stale-threshold-ms "cleaner" (* 20 60 1000) nil))
+
+(assert= "bl1076: the built-in role entry beats the base for that role"
+         (* 90 60 1000)
+         (batch-claim-progress-lib/resolve-stale-threshold-ms "hardender" (* 20 60 1000) nil))
+
+(assert= "bl1076: an operator override beats the built-in role entry"
+         (* 2 60 1000)
+         (batch-claim-progress-lib/resolve-stale-threshold-ms
+          "hardender" (* 20 60 1000) {"hardender" (* 2 60 1000)}))
+
+(assert= "bl1076: an override for a DIFFERENT role does not leak onto this one"
+         (* 20 60 1000)
+         (batch-claim-progress-lib/resolve-stale-threshold-ms
+          "cleaner" (* 20 60 1000) {"hardender" (* 2 60 1000)}))
+
+(assert= "bl1076: an override for a role with a built-in entry still degrades to that entry when absent"
+         (* 90 60 1000)
+         (batch-claim-progress-lib/resolve-stale-threshold-ms
+          "hardender" (* 20 60 1000) {"cleaner" (* 2 60 1000)}))
+
+;; ── the third label ─────────────────────────────────────────────────────────
+;; Suppression is only reachable where a suspect note WOULD have gone out.
+;; Fresh progress has nothing to suppress, so it stays :silent - invariant 2
+;; ("no suppression is silent") is about observations the sweep DECLINES to
+;; surface, not about ones it never had.
+
+(assert= "bl1076-01: stale progress with a dirty worktree is suppressed, not surfaced"
+         :suppressed-visible-work
+         (batch-claim-progress-lib/decide-batch-claim-observation
+          {:lastProgressAtMs 1000} 5000 1000 true))
+
+(assert= "bl1076-01: stale progress with a clean worktree is still surfaced"
+         :stale-suspect
+         (batch-claim-progress-lib/decide-batch-claim-observation
+          {:lastProgressAtMs 1000} 5000 1000 false))
+
+(assert= "bl1076: fresh progress with a dirty worktree is silent, never 'suppressed'"
+         :silent
+         (batch-claim-progress-lib/decide-batch-claim-observation
+          {:lastProgressAtMs 1000} 1500 1000 true))
+
+(assert= "bl1076: no sidecar with a dirty worktree is silent, never 'suppressed'"
+         :silent
+         (batch-claim-progress-lib/decide-batch-claim-observation nil 5000 1000 true))
+
+;; The dirt-blind arity is RETIRED rather than left defaulting to false: a call
+;; site that forgot the flag would silently lose the suppression gate, which is
+;; this defect over again in a new place (same reasoning as BL-1043's retired
+;; grace-less arity).
+(assert-true "bl1076: the dirt-blind 3-arity no longer resolves"
+             (try (batch-claim-progress-lib/decide-batch-claim-observation
+                   {:lastProgressAtMs 1000} 5000 1000)
+                  false
+                  ;; The message differs between a single-arity fn ("Wrong
+                  ;; number of args (3)") and a multi-arity one ("with 3
+                  ;; arguments"), so both spellings count - but it is pinned
+                  ;; either way, so an unrelated throw cannot read as the
+                  ;; arity being gone.
+                  (catch Exception e
+                    (boolean (re-find #"with 3 arguments|Wrong number of args \(3\)"
+                                      (str (.getMessage e)))))))
 
 (when (seq @failures)
   (binding [*out* *err*]

@@ -1,36 +1,39 @@
-Feature: An operator can choose a cursor seat on purpose
+Feature: an operator can choose a Cursor seat on purpose
 
-  With a launcher token (BL-1078) and a certified identity (BL-1079), a
-  Cursor seat is reachable but not choosable: no pack line names cursor, no
-  how-to says when to prefer it, and the whitelist rejection does not point
-  at the Cursor path.
+  BL-1080: with BL-1078's launcher token and BL-1079's certified identity in
+  place, a Cursor seat is possible but not choosable. No committed pack names
+  `cursor` on a window line, so an operator has nothing to pass to `--pack`;
+  and the launcher's unsupported-agent refusal — emitted from two separate
+  sites, the allow-list check and the launch-command builder — says only that
+  the agent is unsupported. An operator who guesses `cursor` on an older
+  checkout, or misspells it on this one, is told no and given nowhere to go.
 
-  This slice is the operator-facing half only. It does not replace any
-  Claude seat and does not change /pilot.
+  This slice ships the pack line, the how-to that says when a Cursor seat is
+  the right choice against `/pilot` and against Claude, and makes every
+  unsupported-agent refusal name that how-to by path. The refusal keeps its
+  existing wording ahead of the pointer, so the checks that already assert on
+  it are unaffected.
 
-  # BL-1080 cursor-pack-line-01
-  Scenario: A pack line staffs a role with a certified cursor seat
-    Given a certified Cursor identity
-    And a pack window line naming cursor for a role
-    When the operator launches the pack
-    Then that role is staffed by a cursor seat
+  The pointer is swept across refusal sites rather than fixed at one of them:
+  BL-1018 repaired one member of a seven-site family and left the rest, and
+  the same family shape is here.
 
-  # BL-1080 cursor-pack-line-02
-  Scenario: Naming cursor without certification fails honestly
-    Given a Cursor identity that is not certified
-    And a pack window line naming cursor for a role
-    When the operator launches the pack
-    Then the launch is refused
-    And the refusal points at the steward certification path
+  # BL-1080 pack-can-name-cursor-on-a-window-line-01
+  Scenario: a committed pack staffs a role with a Cursor seat
+    Given the committed packs directory
+    When the Cursor seat pack is parsed
+    Then it names at least one role whose agent is cursor
+    And that pack is selectable by name at launch
 
-  # BL-1080 cursor-pack-line-03
-  Scenario: The unsupported-agent error points at the cursor seat path
-    Given a pack window line naming an agent the launcher does not support
-    When the operator launches the pack
-    Then the error points at the documented cursor seat path
+  # BL-1080 pack-can-name-cursor-on-a-window-line-02
+  Scenario: every unsupported-agent refusal names the Cursor-seat how-to
+    Given the launcher source
+    When every unsupported-agent refusal it can emit is enumerated
+    Then each one names the Cursor-seat how-to by path
+    And more than one refusal site is found
 
-  # BL-1080 cursor-pack-line-04
-  Scenario: The how-to says when to prefer a cursor seat
-    Given the operator documentation
-    When an operator looks up how to choose a seat agent
-    Then the documentation states when to prefer cursor over the alternatives
+  # BL-1080 pack-can-name-cursor-on-a-window-line-03
+  Scenario: the how-to a refusal names is committed, not a dead end
+    Given a refusal emitted for an unsupported agent
+    When the how-to path it names is resolved against the repository
+    Then a committed file is found at that path

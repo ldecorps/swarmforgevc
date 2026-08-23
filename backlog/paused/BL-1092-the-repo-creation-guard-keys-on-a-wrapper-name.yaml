@@ -1,4 +1,4 @@
-id: BL-1085
+id: BL-1092
 title: "BL-1039's repo-creation guard keys on the wrapper's NAME (`git(`), not on what the wrapper does, so a test whose helper is spelled anything else creates repositories invisibly"
 type: defect
 severity: low
@@ -18,7 +18,7 @@ direction: swarm-reported
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1085-the-repo-creation-guard-keys-on-a-wrapper-name.feature
+acceptance: specs/features/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.feature
 human_approval: pending
 approval_context: >
   This one genuinely needs your steer on WHETHER, not just how - I can argue it

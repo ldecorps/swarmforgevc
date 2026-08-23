@@ -1,4 +1,4 @@
-id: BL-1084
+id: BL-1091
 title: "The Telegram Expedite button commits only half of its promotion: promoteToActive renames paused/ -> active/, but the commit is pathspec-scoped to the destination alone, so the paused/ deletion is never committed and the ticket ends up live in BOTH folders"
 type: defect
 severity: high
@@ -17,7 +17,7 @@ direction: swarm-surfaced
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1084-expedite-commits-only-half-of-the-promotion-move.feature
+acceptance: specs/features/BL-1091-expedite-commits-only-half-of-the-promotion-move.feature
 human_approval: pending
 approval_context: >
   No judgement call in the fix itself - a rename must be committed as both of

@@ -9,7 +9,7 @@ Feature: The repo-creation guard recognises a creation by what it does
   is one everybody learns to wave through. So the guard must get MORE
   precise, not merely more permissive.
 
-  # BL-1085 repo-creation-by-behaviour-01
+  # BL-1092 repo-creation-by-behaviour-01
   Scenario Outline: A creation is recognised by what the helper spawns, never by its name
     Given a test file defining a local helper named <helper> that spawns <spawns>
     And that file calls <helper> with an init argument
@@ -23,7 +23,7 @@ Feature: The repo-creation guard recognises a creation by what it does
       | g      | git    | flagged    |
       | runTar | tar    | not flagged |
 
-  # BL-1085 repo-creation-by-behaviour-02
+  # BL-1092 repo-creation-by-behaviour-02
   Scenario Outline: Correct code stays unflagged
     Given a test file whose init call is <situation>
     When the repo-creation guard scans the file
@@ -35,7 +35,7 @@ Feature: The repo-creation guard recognises a creation by what it does
       | the shared fixture helper's own internal spawn      |
       | accompanied by a recorded exemption reason          |
 
-  # BL-1085 repo-creation-by-behaviour-03
+  # BL-1092 repo-creation-by-behaviour-03
   Scenario: The live corpus gains no new violations
     Given the unit-lane test corpus as it stands
     When the repo-creation guard scans every test file

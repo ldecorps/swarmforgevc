@@ -1,6 +1,77 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1053: slice (b) of the qwen-code
+**Last Updated:** August 23, 2026 (BL-1076: the batch-claim-progress
+sweep (BL-678) judged every batch role by one flat 20-minute HEAD clock
+with HEAD movement as its only progress signal, so a hardener mid-Stryker
+— routinely an hour of real work before its first commit, with the edits
+sitting uncommitted in its worktree — was surfaced to the coordinator as a
+suspect claim: measured 2026-08-22, three parcels surfaced twice each in
+fifty minutes while the hardener was demonstrably working, six false notes
+total. Fix, applied to `batch_claim_progress_lib.bb` /
+`chase_sweep_lib.bb` / `handoffd.bb`: a per-role tolerance map
+(`hardener` gets 90 minutes, mirroring BL-528's task-mode ladder without
+sharing its literal — the two answer different questions and may
+legitimately diverge) resolved operator-override-first via a new conf key
+`batch_claim_progress_role_stale_threshold_minutes <role> <n>`; and a
+visible-work gate that adds a third label, `:suppressed-visible-work`,
+for a stale-by-clock claim whose owner worktree is still dirty — sent
+nowhere but logged (`batch-claim-progress-suppressed`), so a permanently
+dirty worktree reads as a suppressed signal, never a silent one. The
+observer's own invariant — no label it returns re-forwards, re-delivers,
+moves, copies, or deletes a handoff — is unchanged and property-tested
+alongside the two new ones (3 invariant classes, 240 runs,
+`bl1076_visible_work_gate_property_runner.bb`), non-vacuity proven by four
+deliberate breaks. BL-678 itself stays green throughout. See the updated
+"Batch-claim-progress suspect sweep" section in
+`swarmforge/handoff-protocol.md` and
+`docs/how-to/BL-678-batch-claim-progress-sidecar.md`. No new extension
+command or setting.)
+Prior entry —
+BL-1043: the onboarder and
+negotiation-relay supervisors get a real startup grace, closing a hole
+worse than BL-1035's — `front_desk_supervisor_lib.bb`'s
+`poll-heartbeat-stale?` has a 3-arity convenience form that passes
+`started-at-ms` as `nil`; the grace clause opens with
+`(and started-at-ms ...)`, so with `nil` it can never fire, and the arity
+even passes `stall-ms` into the grace slot, which reads to a reviewer like
+a deliberate generous grace and is dead code. `onboarder_supervisor.bb:147`
+and `negotiation_relay_supervisor.bb:145` both called exactly that arity,
+so a freshly spawned child with no heartbeat file at all was declared
+stalled on its first tick, not after any real grace. Measured live in
+`.swarmforge/operator/onboarder-supervisor.log`: 39 starts, 27 stalls, 7
+of 14 adjacent started→stalled pairs under ten seconds, the fastest 2.00s
+against a declared 120000ms window — burning the bounded restart budget on
+a fault that was never there. `cursor_bridge_supervisor.bb` already got
+both halves right (a real grace plus clearing the heartbeat file at spawn)
+and was the reference, not a subject — byte-for-byte unchanged. The
+grace-less 3-arity is retired rather than repaired, since it has no spawn
+time to measure a grace from and a reachable grace-less form under any
+spelling keeps the trap open for the next supervisor: calling it now is an
+arity error. A new defaulting 4-arity fills the gap it leaves — a call
+site that passes `started-at-ms` without an explicit grace length gets
+`default-startup-grace-ms` (90000, the same value `cursor_bridge` already
+used, not a third number); the explicit 5-arity is unchanged. Both
+supervisors now pass `(:started-at-ms entry)` through an env-tunable grace
+of their own (`ONBOARDER_HEARTBEAT_STARTUP_GRACE_MS`,
+`NEGOTIATION_RELAY_HEARTBEAT_STARTUP_GRACE_MS`, both defaulting to the
+library value) and clear their heartbeat file at spawn, matching
+`cursor_bridge`'s shape. Declared invariants — no child is judged stalled
+before one full startup grace, and no child is judged on a heartbeat
+written by a process no longer running — are property-tested 400 runs
+across 8 declared classes (`bl1043_startup_grace_property_runner.bb`),
+non-vacuity proven by four deliberate breaks including restoring the
+shipped grace-less-3-arity defect itself. Out of scope, deliberately: the
+front-desk supervisor (BL-1035's own subject) and two unrelated
+pre-existing red tests on `main` (one confirmed live and independent of
+this session), both surfaced to the specifier by `note` rather than fixed
+here. Degraded gate: Babashka/shell only, no mutation/CRAP/DRY tooling
+wired for this surface; gated by the property runner above plus
+`front_desk_supervisor_lib_test_runner.bb`,
+`test_onboarder_supervisor_ignores_old_heartbeat.sh`,
+`test_negotiation_relay_supervisor_tick.sh`, and 5/5 acceptance scenarios.
+No new extension command or setting.)
+Prior entry —
+BL-1053: slice (b) of the qwen-code
 onboarding, depending on BL-1052 (above) and inert without it — the
 ModelFactory `provider->agent` map (`swarmforge/scripts/model_factory_lib.bb`)
 knew exactly three providers (`anthropic`→`claude`, `openai`→`codex`,
