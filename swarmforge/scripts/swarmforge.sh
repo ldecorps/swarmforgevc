@@ -500,7 +500,7 @@ worktree_path_for_name() {
 validate_agent() {
   local agent="$1" role="$2"
   case "$agent" in
-    claude|codex|copilot|grok|aider|vibe|gemini|qwen-code) ;;
+    claude|codex|copilot|grok|aider|vibe|gemini) ;;
     *)
       error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -847,11 +847,6 @@ provision_coordinator() {
     extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "gemini" ]]; then
     extra_cli="--model $COORDINATOR_MODEL"
-  elif [[ "$COORDINATOR_AGENT" == "qwen-code" ]]; then
-    # Pack must set coordinator_model to a Token Plan catalog id (e.g.
-    # qwen3.6-flash); the Claude-only default would be meaningless spliced
-    # into `qwen --model` (BL-530's launch-contract failure class).
-    extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
@@ -1138,9 +1133,6 @@ check_backend_dependencies() {
       aider) check_dependency aider ;;
       vibe) check_dependency vibe ;;
       gemini) check_dependency gemini ;;
-      # npm i -g @qwen-code/qwen-code installs the binary as `qwen`, not
-      # `qwen-code` - the agent name and its executable differ here (BL-1052).
-      qwen-code) check_dependency qwen ;;
     esac
   done
 }
@@ -1640,25 +1632,6 @@ RESUMECHECK
       # MAX_ARG_STRLEN the same way Codex does.
       launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
-    qwen-code)
-      # qwen-code (npm i -g @qwen-code/qwen-code): Alibaba's own agentic CLI,
-      # Gemini-CLI-derived, so it takes gemini's launch shape rather than
-      # aider's. --auth-type openai points it at the OpenAI-compatible Token
-      # Plan endpoint the qwen_guard below exports; -y is the YOLO/auto-approve
-      # flag (Claude's --dangerously-skip-permissions equivalent) and is what
-      # makes it EXECUTE a shell command instead of refusing - the operator's
-      # smoke test confirmed both halves of that. The window line supplies
-      # --model; QWEN_API_KEY arrives via tmux -e (BL-130), never written here.
-      #
-      # Prompt by PATH, not $(cat ...): the composed role artifacts run
-      # 51KB-155KB (hardender.md is 155KB today), and a single argv entry is
-      # capped at MAX_ARG_STRLEN (128KiB on Linux), so slurping the file into
-      # the argument would hard-fail the biggest roles exactly the way it does
-      # for codex and gemini. The prompt is still delivered AT LAUNCH, in the
-      # agent's first message - :bootstrap-style :embedded, no post-launch
-      # paste step - which is what the seat actually needs.
-      launch_body="qwen --auth-type openai -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
-      ;;
     *)
       error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -1685,13 +1658,7 @@ RESUMECHECK
     perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
   fi
   # Qwen Token Plan (SEA) — same zshenv-override posture as Cerebras.
-  # The agent name is the third force trigger and, for qwen-code, the ONLY
-  # possible one: aider packs declare the endpoint with --openai-api-base on
-  # the window line, but the qwen CLI has no such flag and reads OPENAI_*
-  # from its environment, so a qwen-code seat matching on extra_cli alone
-  # would fall to the opt-in branch and silently talk to whatever
-  # OPENAI_BASE_URL ~/.zshenv last re-exported (BL-1052).
-  if [[ "$agent" == "qwen-code" || "$extra_cli" == *token-plan.ap-southeast-1.maas.aliyuncs.com* || "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
+  if [[ "$extra_cli" == *token-plan.ap-southeast-1.maas.aliyuncs.com* || "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
     qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ -n "${QWEN_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_QWEN=1\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\n  export OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\nelse\n  echo "SwarmForge: QWEN_API_KEY required (launch CLI targets token-plan.ap-southeast-1.maas.aliyuncs.com)" >&2\n  exit 1\nfi\n'
   else
     qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\nfi\n'
@@ -1881,14 +1848,6 @@ launch_role() {
       use_qwen=1
     fi
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *dashscope.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
-      use_qwen=1
-    fi
-    # A qwen-code seat is Token Plan by construction: the CLI takes its
-    # endpoint from OPENAI_BASE_URL, never a window-line flag, so the agent
-    # name is the only signal there is - and without this the pane would get
-    # the host's real OPENAI_API_KEY forwarded instead of the mapped one
-    # (BL-1052).
-    if [[ "$agent" == "qwen-code" && -n "${QWEN_API_KEY:-}" ]]; then
       use_qwen=1
     fi
     for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY QWEN_API_KEY; do
