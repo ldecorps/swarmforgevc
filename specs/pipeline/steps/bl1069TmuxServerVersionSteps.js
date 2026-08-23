@@ -50,6 +50,22 @@ const KNOWN_OBSTACLES = new Set([
 // there at all, not a version string.
 const ABSENT = new Set(['none', 'absent']);
 
+// Every real version string either Scenario Outline's Examples actually
+// declares. QA bounce #1: the verdict/chosen columns were pinned but the
+// client/server/local/path VALUES themselves were not, so a mutated value
+// that happened to land on the same side of the real comparison (e.g.
+// "3.4" -> "2.06", both older than "3.7b") survived unnoticed. Pinning the
+// value itself, before the real comparison ever runs, catches that no
+// matter which side of the comparison the mutant happens to land on.
+const KNOWN_VERSIONS = new Set(['3.4', '3.7b']);
+
+function assertKnownVersion(value, label) {
+  assert.ok(
+    KNOWN_VERSIONS.has(value) || ABSENT.has(value),
+    `unknown ${label} version "${value}" - the handlers know ${[...KNOWN_VERSIONS, ...ABSENT].join(', ')}`
+  );
+}
+
 let trackedPaths = [];
 afterEach(() => {
   while (trackedPaths.length) {
@@ -128,12 +144,14 @@ function registerSteps(registry) {
 
   scoped(/^the tmux client on PATH reports "(.+)"$/, (ctx, client) => {
     assert.ok(fs.existsSync(SWARMFORGE_SH), `the launcher under test is missing: ${SWARMFORGE_SH}`);
+    assertKnownVersion(client, 'client');
     ctx.root = newRoot();
     ctx.clientVersion = client;
   });
 
   scoped(/^the control-plane server on the swarm socket reports "(.+)"$/, (ctx, server) => {
     assert.ok(ctx.root, 'no client was established before the server');
+    assertKnownVersion(server, 'server');
     ctx.serverVersion = server;
     writeFakeTmux(path.join(ctx.root, 'bin', 'tmux'), ctx.clientVersion, server);
   });
@@ -169,6 +187,7 @@ function registerSteps(registry) {
   // ── scenario 02: preference never lowers the version ────────────────────
 
   scoped(/^a tmux at "~\/\.local\/bin\/tmux" reporting "(.+)"$/, (ctx, local) => {
+    assertKnownVersion(local, 'local');
     ctx.root = newRoot();
     ctx.home = path.join(ctx.root, 'home');
     ctx.pathBin = path.join(ctx.root, 'path-bin');
@@ -188,6 +207,7 @@ function registerSteps(registry) {
 
   scoped(/^a tmux earlier on PATH reporting "(.+)"$/, (ctx, onPath) => {
     assert.ok(ctx.root, 'no local tmux was established first');
+    assertKnownVersion(onPath, 'path');
     ctx.pathTmux = path.join(ctx.pathBin, 'tmux');
     if (!ABSENT.has(onPath)) {
       writeFakeTmux(ctx.pathTmux, onPath, 'none');
