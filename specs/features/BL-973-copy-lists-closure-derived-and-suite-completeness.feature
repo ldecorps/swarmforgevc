@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=41dd8cf33bb49cdda62fd742b0bf95412a5095fae266369a8b9bde0c9cad8070
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T01:51:30.046309752Z","feature_name":"BL-973 bb fixture copy-lists follow the real load-file closure, and no test sits unrun","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-973-copy-lists-closure-derived-and-suite-completeness.feature","background_hash":"d4947a066d6e3dbeaef866657a00e786c004fe425a4ab0461f1b62ea622321c7","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a fixture copy-list carries its own entry point's full closure","scenario_hash":"c8195fdfb870f91c3f63ef7465ecddca4ec018dc55c4d6be80fbc8a42eb3cdab","mutation_count":10,"result":{"Total":10,"Killed":10,"Survived":0,"Errors":0},"tested_at":"2026-08-23T01:51:30.046309752Z"},{"index":2,"name":"a new load-file edge upstream fails every guarded list loudly","scenario_hash":"52d7c67369fd70945f8ba8fb1df98e99d0a35d23d6357860f85522e39a9e4b09","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-08-23T01:51:30.046309752Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-973 bb fixture copy-lists follow the real load-file closure, and no test sits unrun
 
   Five hand-maintained fixture copy-lists name a bb script's dependencies by
