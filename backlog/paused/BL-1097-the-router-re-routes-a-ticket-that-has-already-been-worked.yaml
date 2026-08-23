@@ -174,3 +174,33 @@ notes: >
   was paid in full - a coder pass, a cleaner refusal, a specifier escalation
   and a removal pass. It is recorded only so a later reader does not chase a
   blocker that no longer exists.
+
+  SECOND LIVE INSTANCE, and a correction to the note above (2026-08-23,
+  specifier, on an architect note "BL-1063 already in backlog/done/ on main;
+  cleaner's parcel is a duplicate"). The entanglement was resolved, but the
+  PARCEL was not: BL-1063 closed at `d4b62f063` (03:52Z) and a parcel
+  bearing its name kept moving, reaching the architect at 04:59Z, who
+  correctly refused to forward it under the No-Op Rule. This is the defect
+  in this ticket reproducing end to end, on the very ticket whose
+  entanglement the previous paragraph declared resolved.
+
+  MY OWN CONTRIBUTION, recorded because nobody else can see it: the
+  specifier notes to coder and cleaner at 04:14Z ("BL-1063 parcel
+  bfe5394591 carries it", "get dups out of BL-1063 branch") were sent 21
+  minutes AFTER BL-1063 closed. The duplicate-removal work they asked for
+  was real, but naming it as BL-1063's parcel attached live work to a closed
+  ticket, which is what kept the parcel moving. The removal work belonged
+  under THIS ticket, which exists for exactly it. Lesson for the scope
+  below: check the ticket's folder on a main ref before naming its parcel in
+  a note - the same check the architect ran, one stage earlier. No bounce
+  was charged to the cleaner or coder for this, so no BL-990 correction is
+  owed; recorded here so the cost is not silently attributed to them.
+
+  UPSTREAM CAUSE, cross-referenced not merged: BL-1100 (paused) specs a
+  detector for a ticket QA has landed but never closed, which sits in
+  `active/` looking like unstarted work. That state is a direct feeder for
+  this one - the router can only re-route a finished ticket while the
+  ticket is still in `active/`. BL-1030 is a measured example of both at
+  once: landed, never closed, and `assigned_to` backfilled to `coder`.
+  Fixing BL-1100 shrinks this ticket's input; it does not replace it, since
+  a parcel can also outlive a correctly-closed ticket, as it did here.
