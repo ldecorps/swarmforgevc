@@ -10,8 +10,7 @@ direction: swarm-reported
 depends_on: []
 assigned_to: unassigned
 mutation_cost: low
-human_approval: pending
-
+human_approval: approved
 invariants:
   - "A supersede recorded for a task name is durable and stage-independent: every stage that later starts a turn on a parcel for that task sees it, no matter which stage held the parcel when it was recorded, and no matter how many stages the work had already been forwarded through."
   - "The guard refuses only when it can positively name a recorded supersede. An absent marker store means 'nothing superseded' and must pass; a store that exists but cannot be read must refuse rather than read as empty - absence and unreadability are different answers."
