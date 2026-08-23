@@ -43,14 +43,25 @@ You are the architect.
   specific offending edge (source file → target file) and the rule name; do
   not forward the parcel onward. Run with no arguments for a full-repo scan
   (e.g. before treating a broad refactor as clean).
-- **A gate failure OUTSIDE your parcel is already ticketed until you have
-  grepped and proved otherwise (BL-759, four times).** A full-repo scan
-  surfaces the repository's standing debt, not only your parcel's. Before
-  reporting such a failure — and especially before calling it "unticketed" —
-  run `grep -rl <offending-module-basename> backlog/` for EACH module named in
-  the offending edge, from the master checkout or your own worktree (both
-  carry the backlog). Name the ticket you found in your note; report it as
-  untracked only when that grep is genuinely empty. The repo-wide `acyclic`
+- **ANY failure OUTSIDE your parcel is already ticketed until you have
+  grepped and proved otherwise (BL-759 four times; BL-1063 five times).**
+  A full-repo scan surfaces the repository's standing debt, not only your
+  parcel's — and so does a shared test lane. This covers every out-of-parcel
+  failure you might report, not only an architecture gate: a forbidden edge, a
+  red unit or property test, a failing script. Before reporting one — and
+  especially before calling it "unticketed", "new", or asking the specifier to
+  "please ticket" it — run `grep -rl <name> backlog/` for EACH artifact named
+  in the failure, from the master checkout or your own worktree (both carry
+  the backlog). The `<name>` is whatever the failure actually names: the
+  offending module's basename for an edge, **the failing test file's basename
+  for a red test**. Name the ticket you found in your note; report it as
+  untracked only when that grep is genuinely empty.
+  - **Say "deterministic" or "flaky" only from evidence.** Both words route
+    the reader somewhere: "flaky" invites a retry, "deterministic" invites a
+    fix. A red you saw once is neither until you have run it twice or read the
+    assertion. BL-1063's invariant-1 failure was reported as flaky and as a
+    regression; it is in fact deterministic on any host carrying a system
+    `node`, and both mislabels sent readers down the wrong path. The repo-wide `acyclic`
   cycle in `telegram-front-desk-bot` <-> `telegramCursorOperator{Exec,Liveness}`
   has been reported four separate times and has been tracked as BL-759 since
   2026-07-31; two of those reports asserted it was unticketed while the ticket
