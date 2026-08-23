@@ -740,6 +740,11 @@
        :action (str "agent still busy after " rc-session-dead-wait-seconds
                     "s wait budget - respawn skipped, not killed (never mid-turn)")})))
 
+(def ^:private rc-non-claude-off-action
+  "Shared OFF action for seats that never carry Claude /rc — heal via
+   agent:<role>; phone via Cursor Remote / Telegram, not rc:<role>."
+  "no Claude /rc; heal via agent:; phone via Cursor Remote")
+
 (defn- rc-absent-report
   "Launch script has no --remote-control. Claude seats with RC off by
    config are satisfied (BL-514 RC-6 → :healthy, no probe). Non-Claude
@@ -748,7 +753,7 @@
   (if (= (role-agent-token role) "claude")
     {:component component :status :healthy}
     {:component component :status :off
-     :action "no Claude /rc; heal via agent:; phone via Cursor Remote"}))
+     :action rc-non-claude-off-action}))
 
 (defn ensure-rc-role!
   "role is the roles.tsv identity (used only for the reported component
@@ -775,8 +780,7 @@
           ;; job, so anything actionable? refuses is left alone here.
           (not (remote-control-health/actionable? status))
           {:component component :status (if (= status :off) :off :healthy)
-           :action (when (= status :off)
-                     "no Claude /rc; heal via agent:; phone via Cursor Remote")}
+           :action (when (= status :off) rc-non-claude-off-action)}
 
           (= status :session-dead)
           (repair-session-dead! socket launch-role role session (:expected check))
