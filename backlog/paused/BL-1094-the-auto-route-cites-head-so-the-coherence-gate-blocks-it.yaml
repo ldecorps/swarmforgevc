@@ -114,3 +114,11 @@ notes: >
   still pending on this ticket, and by the time this nudge was actioned both
   open slots had already been filled (BL-1071, BL-1030) from other eligible
   candidates. Not a starvation case: still top-ranked once approved.
+
+  2026-08-23T17:57Z coordinator, open-slot nudge (BL-1094 awaiting approval):
+  not promoted - human_approval still pending; active slots filled by
+  BL-1082 + BL-1077 (human Qwen-enabling focus, reservation lifted).
+
+  2026-08-23T20:22Z coordinator, open-slot nudge (BL-1094 awaiting approval):
+  not promoted - human_approval still pending; slots filled by BL-1108 +
+  BL-1052 after BL-1077/BL-1082 close.

@@ -215,6 +215,44 @@
     (and (zero? (:exit result))
          (not (str/includes? (:out result) "1")))))
 
+;; Agent-token → argv needle for the live seat process. Shared intent with
+;; babysitter_check.bb's agent-process-markers (Cursor seats run
+;; cursor-agent, not claude).
+(def ^:private agent-process-markers
+  {"claude"  "claude "
+   "cursor"  "cursor-agent"
+   "gemini"  "gemini"
+   "codex"   "codex"
+   "vibe"    "vibe"
+   "aider"   "aider"
+   "copilot" "copilot"
+   "grok"    "grok"})
+
+(defn role-agent-token
+  "Agent token for role from roles.tsv column 6 (index 5). Defaults to
+   claude when the column is blank or the row is missing."
+  [role]
+  (or (some (fn [line]
+              (let [cols (str/split line #"\t" -1)]
+                (when (= (get cols 0) role)
+                  (let [a (get cols 5)]
+                    (when-not (str/blank? a) a)))))
+            (when (fs/exists? roles-file)
+              (str/split-lines (slurp (str roles-file)))))
+      "claude"))
+
+(defn seat-healthy?
+  "Pane up AND the expected seat binary is running under it. Half-launch
+   (zsh alive, cursor-agent/claude gone) must read unhealthy so ensure
+   respawns from the launch script — the Cursor heal path that replaces
+   Claude /rc for non-Claude seats."
+  [socket session role]
+  (and (pane-alive? socket session)
+       (let [agent (role-agent-token role)
+             marker (get agent-process-markers agent (str agent " "))]
+         (boolean (remote-control-health/cmdline-in-pane-matching
+                   socket session marker)))))
+
 (defn provider-respawn-env-args
   "BL-536: delegates to provider_respawn_env_lib.bb (extracted so
    handoffd.bb's auth-observe respawn path can reuse this SAME machinery
@@ -538,7 +576,7 @@
                  :action "respawn refused: launch contract broken - fix the pack conf, then rerun ensure"}]
     (case action
       :ok
-      (if (pane-alive? socket session)
+      (if (seat-healthy? socket session launch-role)
         {:component component :status :healthy
          :action (str "mono-router " class-name
                       (when (and (= class :resident) (not= launch-role role))
@@ -546,7 +584,7 @@
         (if contract-broken?
           refused
           (ensure-component! component
-                             #(pane-alive? socket session)
+                             #(seat-healthy? socket session launch-role)
                              #(ensure-standing-role! socket launch-role session)
                              (str "respawned dead mono-router " class-name " pane"
                                   (when (not= launch-role role)
@@ -573,7 +611,7 @@
       (if contract-broken?
         refused
         (ensure-component! component
-                           #(pane-alive? socket session)
+                           #(seat-healthy? socket session launch-role)
                            #(ensure-standing-role! socket launch-role session)
                            (str "restored mono-router " class-name " pane"
                                 (when (not= launch-role role)
@@ -728,7 +766,12 @@
   (let [launch-role (rc-launch-role ordered role)
         component (str "rc:" role)]
     (if (nil? (remote-control-health/expected-rc-name state-dir launch-role))
-      {:component component :status :healthy}
+      ;; Cursor and other non-Claude seats: no Claude /rc by design. Do not
+      ;; report HEALTHY (that implied a live /rc session). Heal path is
+      ;; agent:<role> (seat-healthy? + launch-script respawn); phone is
+      ;; Cursor Remote / Telegram bridge, not rc:<role>.
+      {:component component :status :off
+       :action "no Claude /rc; heal via agent:; phone via Cursor Remote"}
       (let [footer-streak (remote-control-health/advance-footer-streak!
                             state-dir launch-role
                             (remote-control-health/footer-status (rc-capture-pane socket session)))
@@ -740,7 +783,9 @@
           ;; :healthy/:off need nothing and :down is the agent:<role> check's
           ;; job, so anything actionable? refuses is left alone here.
           (not (remote-control-health/actionable? status))
-          {:component component :status :healthy}
+          {:component component :status (if (= status :off) :off :healthy)
+           :action (when (= status :off)
+                     "no Claude /rc; heal via agent:; phone via Cursor Remote")}
 
           (= status :session-dead)
           (repair-session-dead! socket launch-role role session (:expected check))
@@ -754,6 +799,7 @@
 (defn report-line [{:keys [component status action category]}]
   (case status
     :healthy (str component ": HEALTHY")
+    :off (str component ": OFF" (when action (str " (" action ")")))
     :dormant (str component ": DORMANT" (when action (str " (" action ")")))
     :fixed (str component ": FIXED (" action ")")
     ;; BL-207: names the stable Forge error category alongside the raw
@@ -892,7 +938,7 @@
                                               ;; recover it; create-if-missing also restarts the tmux
                                               ;; server itself on the first recreated session.
                                               (ensure-role! (str "agent:" role)
-                                                            #(pane-alive? socket session)
+                                                            #(seat-healthy? socket session role)
                                                             #(ensure-standing-role! socket role session)
                                                             contract-broken?))
                                             rc-result (ensure-rc-role! socket ordered role session)]

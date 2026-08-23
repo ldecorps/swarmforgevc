@@ -106,6 +106,21 @@
                          (str/includes? % "--dangerously-skip-permissions")))
            first))))
 
+(defn cmdline-in-pane-matching
+  "First descendant cmdline under the pane that contains `marker`, or nil.
+   Used by ensure's Cursor/non-Claude seat heal (babysitter's half-launch
+   counterpart) — Claude RC health still uses claude-cmdline-in-pane above."
+  [socket session marker]
+  (when (and marker (not (str/blank? marker)))
+    (let [pane-pid (-> (process/sh {:continue true} "tmux" "-S" socket
+                                   "list-panes" "-t" session "-F" "#{pane_pid}")
+                      :out str/split-lines first (some-> str/trim))]
+      (when (and pane-pid (not (str/blank? pane-pid)))
+        (->> (descendant-pids pane-pid)
+             (keep proc-cmdline)
+             (filter #(str/includes? % marker))
+             first)))))
+
 (defn classify
   "Pure decision. `expected` is the name the launch script wants (nil = RC off);
    `actual` is the RC name on the live claude process (nil = flag absent);
