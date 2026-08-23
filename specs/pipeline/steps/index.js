@@ -353,6 +353,7 @@ const DOMAINS = [
   require('./bl1098SilentRevertSteps'),
   require('./bl1081AcpHostDrivesOneSeatSteps'),
   require('./bl1082NamedModelServingSteps'),
+  require('./bl1052LocalModelSeatSteps'),
   require('./bl714HardeningGatesBlockedSteps'),
   require('./bl723PilotReviewSteps'),
   require('./bl727PilotAcceptanceGateSteps'),
