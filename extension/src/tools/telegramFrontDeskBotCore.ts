@@ -562,6 +562,34 @@ export function decidePollAnswerAction(pollAnswer: TelegramPollAnswer, principal
   return { kind: 'answer', pollId: pollAnswer.poll_id, optionIndex };
 }
 
+/**
+ * BL-1083: a promotion the shared gates refused, in the gate's own words.
+ * There is deliberately no list of gate names here - this side takes the
+ * verdict, it does not know what the gates are.
+ */
+export interface PromotionRefusal {
+  gate: string;
+  reason: string;
+}
+
+export interface PromotionOutcome {
+  moved: boolean;
+  refusal?: PromotionRefusal;
+}
+
+/**
+ * BL-1083: reconciles the two shapes promoteTicketIfPaused may answer with.
+ * A bare boolean is every pre-BL-1083 wiring, and means "moved, or a plain
+ * no-op" - never a refusal, because before this ticket no promotion could be
+ * refused at all.
+ */
+export function normalizePromotionOutcome(result: boolean | PromotionOutcome | undefined): PromotionOutcome {
+  if (typeof result === 'boolean') {
+    return { moved: result };
+  }
+  return result ?? { moved: false };
+}
+
 export interface PollAdapters {
   // BL-379: the bot's own configured chat id - decideUpdateAction's new
   // guard against getUpdates' bot-wide (not chat-scoped) result set. Lives
@@ -666,7 +694,14 @@ export interface PollAdapters {
   // (backlogWriter.ts's promoteToActive) - a no-op (returns false) when the
   // ticket is already active, satisfying "no redundant promotion" (scenario
   // 05) with no separate active/paused check of its own.
-  promoteTicketIfPaused?: (backlogId: string) => Promise<boolean>;
+  //
+  // BL-1083: it may answer with the richer PromotionRefusal shape instead of a
+  // bare boolean, because a promotion can now be REFUSED by the shared
+  // promotion gates and a refusal is not a no-op - the operator has to be told
+  // which gate refused and why. The union keeps every existing boolean-
+  // returning wiring working unchanged; normalizePromotionOutcome below is the
+  // one place that reconciles them.
+  promoteTicketIfPaused?: (backlogId: string) => Promise<boolean | PromotionOutcome>;
   // BL-490-VIOLATION (architect bounce, 2026-07-17): the approve+promote
   // writes above are plain fs.writeFileSync/fs.renameSync against the
   // shared master checkout's OWN working tree - uncommitted, exactly the
@@ -1271,16 +1306,34 @@ export async function recordExpediteDecisionAndClose(
   adapters: PollAdapters,
   backlogId: string,
   nowMs: number = Date.now()
-): Promise<{ changed: boolean; collision?: string }> {
+): Promise<{ changed: boolean; collision?: string; refusal?: PromotionRefusal }> {
+  // The approval is recorded FIRST and the gates are consulted after, so
+  // Expedite satisfies the human_approval gate rather than skipping it
+  // (BL-1083 scenario 03). A human tap may reorder work; it may not promote
+  // onto an unlanded dependency or out of a hold.
   const changed = await adapters.recordApprovalReply(backlogId);
   if (!changed) {
     return { changed: false };
   }
-  await adapters.promoteTicketIfPaused?.(backlogId);
+  const promotion = normalizePromotionOutcome(await adapters.promoteTicketIfPaused?.(backlogId));
   // BL-490-VIOLATION: durably commits the approve+promote writes BEFORE any
   // dispatch can fire - see this adapter's own doc comment (PollAdapters)
-  // for why an uncommitted mutation here is unsafe.
+  // for why an uncommitted mutation here is unsafe. Still runs on a refusal:
+  // the approval itself is a real human decision that landed on disk, and
+  // leaving it uncommitted is the hazard that comment describes.
   await adapters.commitExpediteWrites?.(backlogId);
+  if (promotion.refusal) {
+    // BL-1083 invariant 2: never a silent no-op. The operator is told in the
+    // topic they tapped in, not only in a log they will never open - and NO
+    // build is dispatched, because the ticket is still paused.
+    await adapters.notifyApprovalsTopic?.(
+      undefined,
+      `${backlogId}: Expedite refused by the ${promotion.refusal.gate} gate — ${promotion.refusal.reason}. The ticket is unchanged; your approval was recorded.`
+    );
+    await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'expedited' }, nowMs);
+    await notifyHumanDecisionRecorded(adapters);
+    return { changed: true, refusal: promotion.refusal };
+  }
   const collision = await adapters.checkExpediteFileCollision?.(backlogId);
   if (!collision) {
     await adapters.dispatchExpediteBuild?.(backlogId);
