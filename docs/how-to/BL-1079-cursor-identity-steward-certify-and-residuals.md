@@ -142,8 +142,11 @@ Claude seat that lost that flag or whose claude.ai/code session died.
 
 **Cursor heal path (hotfix `f02f6ae5b4`, stamped BL-1108):**
 
-- `rc:<role>` for seats whose launch script has no `--remote-control` reports
-  **OFF** (with an action string), not a misleading HEALTHY.
+- `rc:<role>` for **non-Claude** seats whose launch script has no
+  `--remote-control` reports **OFF** (with an action string), not a
+  misleading HEALTHY. A Claude seat with RC deliberately omitted stays
+  HEALTHY (BL-514 RC-6); see
+  [BL-514 ensure wiring](./BL-514-remote-control-health-and-ensure-wiring.md).
 - Half-launch heal (pane up, agent gone) is owned by **`agent:<role>`**:
   `./swarm ensure` treats the seat unhealthy unless the expected binary
   (`cursor-agent`, …) is a descendant of the pane, then respawns from the
@@ -182,7 +185,7 @@ uncertified identity. Cost attribution stays on `cursor/…` either way.
 | [BL-547 Model Steward overview](./BL-547-model-steward-overview.md) | Generic register / certify / role-matrix CLI |
 | [BL-525 ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md) | Assign, cold-apply, `--override-uncertified` |
 | [BL-713 Cursor seat spike](./BL-713-cursor-seat-driver-spike.md) | One-shot `cursor-seat-spike.js` (not the pack launcher) |
-| [BL-514 Remote-control health](./BL-514-remote-control-health-and-ensure-wiring.md) | Claude `/rc` ensure path; Cursor/`local-model` report `rc:` **OFF** |
+| [BL-514 Remote-control health](./BL-514-remote-control-health-and-ensure-wiring.md) | Claude `/rc` ensure path; absent-flag Claude → HEALTHY, Cursor/`local-model` → `rc:` **OFF** |
 | [babysitterd runbook](./BL-611-babysitterd-runbook.md) | Live-session check uses per-agent process markers (BL-1108) |
 | [BL-848 Certify an operator hotfix](./BL-848-certify-an-operator-hotfix.md) | Ledger / stamp-ticket path; BL-1108 is the stamp for `f02f6ae5b4` |
 | BL-1078 | Launcher token + seat-admission guard |

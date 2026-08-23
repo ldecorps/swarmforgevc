@@ -125,7 +125,8 @@
 %% BL-1108 (2026-08-23): stamp-off of hotfix f02f6ae5b4 — shared
 %% agent_process_marker_lib.bb (roles.tsv token → argv needle) for
 %% babysitter live-session CRIT and ./swarm ensure agent:<role> heal;
-%% non-Claude rc:<role> reports OFF; Cursor launch argv names a prompt file.
+%% absent-flag rc:<role> is agent-aware (Claude HEALTHY, non-Claude OFF);
+%% Cursor launch argv names a prompt file.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

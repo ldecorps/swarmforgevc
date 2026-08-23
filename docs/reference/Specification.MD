@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1052: a role seat can be staffed by a
+**Last Updated:** August 23, 2026 (BL-1108 QA bounce re-fix: `./swarm ensure`
+absent-flag `rc:<role>` is **agent-aware**. A Claude seat whose launch script
+omits `--remote-control` stays **HEALTHY** (BL-514 RC-6, no probe). Cursor /
+`local-model` / other non-Claude seats with no flag stay **OFF** with
+heal/phone action (never a misleading HEALTHY). Docs:
+`docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md`,
+`docs/how-to/BL-611-babysitterd-runbook.md` (check 2 footnote),
+`docs/index.md`. No new extension command, setting, or UI change.)
+Prior entry —
+August 23, 2026 (BL-1052: a role seat can be staffed by a
 downloaded local model. Agent key `local-model` (chat-message/embedded,
 never folded into `aider` or `codex`); pack
 `swarmforge/packs/local-model-mono-router.conf` points every window and the
@@ -21,15 +30,16 @@ August 23, 2026 (BL-1108: stamp-off of operator hotfix
 recognised a `claude` child (false CRIT on healthy Cursor panes),
 `./swarm ensure` could treat a shell-only Cursor pane as healthy, and Cursor
 launch embedded the full composed prompt in argv. The landed contract, now
-pipeline-reviewed: one shared `agent_process_marker_lib.bb` map
-(`cursor`→`cursor-agent`, `local-model`→`qwen`, …) for babysitter and ensure;
-`rc:<role>` reports **OFF** (with heal/phone action) for seats with no Claude
-`--remote-control`, never a misleading HEALTHY; half-launch repair is
+pipeline-reviewed (including the QA bounce re-fix above): one shared
+`agent_process_marker_lib.bb` map (`cursor`→`cursor-agent`,
+`local-model`→`qwen`, …) for babysitter and ensure; absent-flag `rc:<role>`
+is agent-aware (Claude HEALTHY, non-Claude OFF); half-launch repair is
 `agent:<role>` respawn from the persisted launch script; Cursor argv names the
 prompt file instead of slurping it. Human certification/waiver of the hotfix
 ledger row remains the BL-848 path after this stamp reaches `done`. Docs:
 `docs/how-to/BL-611-babysitterd-runbook.md` (check 1),
-`docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md` (`rc:` OFF),
+`docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md` (agent-aware
+`rc:`),
 `docs/how-to/BL-1079-cursor-identity-steward-certify-and-residuals.md` (prompt-file
 wake + heal path). No new extension command, setting, or UI change.)
 Prior entry —

@@ -75,20 +75,25 @@ agent:documenter: HEALTHY
 rc:documenter: OFF (no Claude /rc; heal via agent:; phone via Cursor Remote)
 ```
 
+(In the example, `coder`/`hardender` are Claude seats with RC in the launch
+script; `documenter` is a non-Claude seat with no `--remote-control`. A
+Claude seat whose launch script deliberately omits the flag still prints
+`rc:<role>: HEALTHY` — see absent-flag short-circuit below.)
+
 Behavior per role, driven by `remote-control-health/check-role` (and the
 ensure short-circuit when the launch script has no RC flag):
 
 - **`:healthy`** → `rc:<role>: HEALTHY`, no action.
-- **`:off`** (launch script declares no `--remote-control` at all) →
-  `rc:<role>: OFF` with an action string (BL-1108 / hotfix `f02f6ae5b4` —
-  never report `HEALTHY` for a seat that has no Claude `/rc` by design).
-  Short-circuit on `expected-rc-name` being `nil`: the live process is
-  **never probed**. Skipping the probe is load-bearing, not cosmetic —
-  probing walks the pane's whole descendant process tree, which hangs every
-  ensure fixture that doesn't declare the flag if the short-circuit is ever
-  lost. Covered by the RC-6 case in `test_swarm_ensure.sh` (probe marker
-  never created) plus the Cursor / non-Claude OFF contract in the BL-1108
-  acceptance feature.
+- **Absent `--remote-control` on the launch script** (`expected-rc-name`
+  nil) → **agent-aware**, never probed (BL-514 RC-6 + BL-1108 re-fix of
+  hotfix `f02f6ae5b4`). Skipping the probe is load-bearing: probing walks
+  the pane's whole descendant process tree and hangs every ensure fixture
+  that doesn't declare the flag if the short-circuit is ever lost.
+  - **Claude** agent token → `rc:<role>: HEALTHY` (RC off by config is
+    satisfied; covered by RC-6 in `test_swarm_ensure.sh`).
+  - **Non-Claude** (`cursor`, `local-model`, …) → `rc:<role>: OFF` with
+    heal/phone action (never a misleading HEALTHY; RC-6b / RC-6c + BL-1108
+    acceptance).
 - **`:degraded`** → repaired by respawning the pane from its persisted
   launch script, then reclassified: `FIXED` if the flag came back,
   `FAILED` if it didn't.
