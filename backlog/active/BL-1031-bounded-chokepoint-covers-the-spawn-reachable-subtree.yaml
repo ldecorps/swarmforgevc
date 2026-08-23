@@ -11,6 +11,7 @@ depends_on: [BL-1022]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1031-bounded-chokepoint-covers-the-spawn-reachable-subtree.feature
+assigned_to: coder
 
 human_approval: approved
 approval_context: >
