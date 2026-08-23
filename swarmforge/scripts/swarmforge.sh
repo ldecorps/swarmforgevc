@@ -1713,9 +1713,9 @@ RESUMECHECK
   fi
   # Qwen Token Plan (SEA) — same zshenv-override posture as Cerebras.
   if [[ "$extra_cli" == *token-plan.ap-southeast-1.maas.aliyuncs.com* || "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
-    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ -n "${QWEN_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_QWEN=1\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\n  export OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\nelse\n  echo "SwarmForge: QWEN_API_KEY required (launch CLI targets token-plan.ap-southeast-1.maas.aliyuncs.com)" >&2\n  exit 1\nfi\n'
+    qwen_guard=$'source \''"$SCRIPT_DIR"'/qwen_launch_guard_lib.sh\'\nqwen_guard_require_token_plan_endpoint || exit 1\n'
   else
-    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\nfi\n'
+    qwen_guard=$'source \''"$SCRIPT_DIR"'/qwen_launch_guard_lib.sh\'\nqwen_guard_map_if_flagged\n'
   fi
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
@@ -1881,9 +1881,11 @@ launch_role() {
     if [[ -z "${GEMINI_API_KEY:-}" && -n "${SWARMFORGE_GEMINI_API_KEY:-}" ]]; then
       export GEMINI_API_KEY="$SWARMFORGE_GEMINI_API_KEY"
     fi
-    if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then
-      export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"
-    fi
+    # BL-1077: same accepted-name set as start-swarm-qwen.sh / ancillary_provider_lib.sh
+    # and the generated qwen_guard (via qwen_launch_guard_lib.sh).
+    # shellcheck source=qwen_launch_guard_lib.sh
+    source "$SCRIPT_DIR/qwen_launch_guard_lib.sh"
+    qwen_guard_apply_credential_fallbacks
     if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
       use_cerebras=1
     fi
