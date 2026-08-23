@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=95a8608b5a17238b22c467f110191f9b4453fe2d7d97b32dba21f6a841c14a7d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T19:47:05.772530518Z","feature_name":"A documented Qwen credential name is honored by the launch guard","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1077-a-documented-qwen-credential-name-is-honored.feature","background_hash":"874bf08cd26830362eb257929ce744a4c3c6e81d7fe22e8530b9dc9bbeff8837","implementation_hash":"unknown","scenarios":[{"index":0,"name":"every accepted credential name reaches the pane","scenario_hash":"298df9c7856ba5c9ef56db118acae07f9bda7b745dc6f9250195e203f9cc5ace","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-23T18:53:10.531989818Z"},{"index":3,"name":"the branch for a pack carrying no endpoint accepts the same names","scenario_hash":"0c6edea5b2f062807dc3ca631d16f2ebbea9eb2bc505b4c5c4539bb732249062","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-23T18:53:10.531989818Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A documented Qwen credential name is honored by the launch guard
 
   The Qwen packs tell the operator to export BAILIAN_TOKEN_PLAN_API_KEY as the

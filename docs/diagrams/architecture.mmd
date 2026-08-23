@@ -108,6 +108,16 @@
 %% computation and indexes every ticket's arrival out of that shared index,
 %% instead of one walk per file - one git subprocess per computation
 %% regardless of corpus size, no change in reported values.
+%% BL-1081 (2026-08-23): the vibe spike seat's pane process is
+%% acp-host-pane.js (agent CLI as ACP subprocess). The host writes
+%% .swarmforge/acp/<role>.json; babysitter_check.bb's gather-role reads it
+%% via acp_session_lib.bb. Other seats stay pane-driven.
+%% BL-1082 (2026-08-23): operator-facing named-model CLI
+%% (extension/out/tools/named-model.js) composes Ollama pull/serve plans;
+%% weights live under ~/.swarmforge/models/ollama (outside the tracked
+%% worktree) and serve on a loopback OpenAI-compatible endpoint (default
+%% http://127.0.0.1:11434). Not a pane spawn path — human-initiated tooling
+%% the pack can consume; seat staffing is BL-1052, routing BL-1053.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -131,6 +141,7 @@ flowchart TB
     BRIDGE["bridgeServer.ts\n(localhost REST+SSE, in-memory token;\nread routes + a small control-scoped\nwrite surface: gate-answer, telegram-inbound,\nreply-ack)"]
     COMPANIONMANIFEST["companionManifest.ts\n(BL-866: companion-manifest +\npackage catalog, versioned JSON\nby content-hash generation)"]
     PANEL["swarmPanel.ts / workTreePanel.ts\n(webview controller)"]
+    NAMEDMODEL["named-model.js + modelServing.ts\n(BL-1082: compose/execute Ollama\npull|serve|status; operator CLI)"]
   end
 
   subgraph WEBVIEW["Webview (browser context, presentation only)"]
@@ -153,7 +164,13 @@ flowchart TB
     CEREMONYDIR["lean/ceremony/ (BL-820: closing-ceremony\nrun records, one JSON per shift)"]
     INCIDENTDIR["incidents/control-plane.json (BL-958: control-plane-loss\nincidents, at most one open at a time)"]
     IDENTITY["swarm-identity (BL-313: the conf this launch\nactually loaded; BL-966: read at the master checkout\nfrom any worktree via git rev-parse --git-common-dir)"]
+    ACPDIR["acp/<role>.json (BL-1081: structured seat\nsnapshot — stop reason, idle, permission;\nvibe spike seat only today)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
+  end
+
+  subgraph LOCALINFER["Local inference (BL-1082, host-side)"]
+    MODELSTORE["~/.swarmforge/models/ollama\n(OLLAMA_MODELS; outside worktree)"]
+    OLLAMA["ollama pull / ollama serve\n(loopback OpenAI-compatible API)"]
   end
 
   subgraph GITHUB["git / GitHub"]
@@ -165,6 +182,8 @@ flowchart TB
   EXT -->|registers commands| PANEL
   LAUNCHER -->|shells out: ./swarm| SUBSTRATE
   LAUNCHER -->|reads| SOCKET
+  NAMEDMODEL -->|composes / optional --execute| OLLAMA
+  OLLAMA -->|weights + manifests| MODELSTORE
 
   TMUXCLIENT -->|tmux CLI over socket:\nsend-keys, capture-pane,\nrespawn-pane| SOCKET
   TAILER --> TMUXCLIENT
@@ -202,6 +221,7 @@ flowchart TB
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
+  PANES -->|vibe seat: acp-host-pane writes\nsnapshot; babysitter reads (BL-1081)| ACPDIR
   PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nlifecycle-snapshot sweep (BL-897),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
   PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
@@ -222,8 +242,9 @@ flowchart TB
   classDef substrate fill:#8250df,color:#fff,stroke:#4c2889;
   classDef state fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef gh fill:#57606a,color:#fff,stroke:#32383f;
-  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL host;
+  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL,NAMEDMODEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
-  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR state;
+  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR state;
   class TARGETREPO,GH gh;
+  class MODELSTORE,OLLAMA state;

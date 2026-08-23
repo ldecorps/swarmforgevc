@@ -286,6 +286,45 @@
                                               :socket-path "/tmp/sock"})]
                (and f (= "CRIT" (:severity f)) (nil? (:repair f))
                     (str/includes? (:message f) "start-swarm"))))
+;; ── BL-1081 (architect bounce D1): the LIVE decision site ─────────────────
+(assert-true "1081: a pane-driven seat still raises the interactive-menu CRIT"
+             (let [f (sw/check-menu-blocked {:role "coder" :menu-blocked? true})]
+               (and f (= "CRIT" (:severity f)))))
+(assert-true "1081: and an ACP seat's menu-blocked? is already suppressed upstream"
+             (nil? (sw/check-menu-blocked {:role "coder" :menu-blocked? false :acp? true})))
+(assert-true "1081: a pane-driven seat still gets the frozen-pane WARN"
+             (let [f (sw/check-busy-frozen {:role "coder" :busy? true
+                                            :hash-history ["a" "a" "a"]})]
+               (and f (= "WARN" (:severity f)))))
+(assert-true "1081: an ACP seat whose turn ENDED is idle, not frozen - the stop reason says so"
+             (nil? (sw/check-busy-frozen {:role "coder" :busy? true :hash-history ["a" "a" "a"]
+                                          :acp? true :acp-idle? true
+                                          :idle-from "stop_reason:end_turn"})))
+(assert-true "1081: and an ACP seat mid-turn is not frozen either - an unchanged pane is not evidence"
+             (nil? (sw/check-busy-frozen {:role "coder" :busy? true :hash-history ["a" "a" "a"]
+                                          :acp? true :acp-idle? false
+                                          :idle-from "tool_running:shell"})))
+(assert-true "1081: a blocked ACP seat is surfaced from its structured request"
+             (let [f (sw/check-acp-seat {:role "coder" :acp? true :acp-idle? false
+                                         :permission-pending? true
+                                         :permission-tool "write_file"
+                                         :idle-from "permission_requested:write_file"})]
+               (and f (= "CRIT" (:severity f)) (= "acp-permission-coder" (:key f))
+                    (str/includes? (:message f) "write_file"))))
+(assert-true "1081: and it says it is NOT a menu block, because the response differs"
+             (str/includes? (:message (sw/check-acp-seat {:role "coder" :acp? true
+                                                          :permission-pending? true
+                                                          :permission-tool "write_file"}))
+                            "not a menu block"))
+(assert-true "1081: an idle ACP seat needs no finding at all"
+             (nil? (sw/check-acp-seat {:role "coder" :acp? true :acp-idle? true
+                                       :idle-from "stop_reason:end_turn"})))
+(assert-true "1081: nor does a working one"
+             (nil? (sw/check-acp-seat {:role "coder" :acp? true :acp-idle? false
+                                       :idle-from "tool_running:shell"})))
+(assert-true "1081: and a pane-driven seat is never touched by it - this widens no other path"
+             (nil? (sw/check-acp-seat {:role "coder" :acp? false :permission-pending? true})))
+
 ;; ── BL-1071 invariant 3: an observation that could not be made is its own
 ;; answer. `classify` returns only :up / :control-plane-missing / :down, so
 ;; :unavailable can ONLY mean the observer itself threw. Before this ticket
