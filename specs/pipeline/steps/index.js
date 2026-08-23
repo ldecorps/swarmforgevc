@@ -601,7 +601,8 @@ const DOMAINS = [
   require('./bl1043StartupGraceSteps'),
   require('./bl1076BatchClaimVisibleWorkSteps'),
   require('./bl973CopyListsClosureDerivedSteps'),
-  require('./bl1083PromotionGateSteps')
+  require('./bl1083PromotionGateSteps'),
+  require('./bl1086BabysitterCacheBatchSteps')
 ];
 
 function registerSteps(registry) {
