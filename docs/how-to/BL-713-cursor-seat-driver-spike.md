@@ -45,9 +45,11 @@ session without it.
 
 An identity not certified in the Model Steward registry
 (`.swarmforge/model-steward/registry.json`) cannot staff a **production**
-pack. This slice runs an uncertified `cursor/auto` identity by design —
-certification and registration are BL-712 slice C, deliberately not folded in
-here — so a real run needs the spike-only escape:
+pack. This spike still runs an uncertified `cursor/auto` identity by design —
+registration and scorecard-backed `certify` for that identity landed as
+BL-1079 (see [Certifying a Cursor identity](./BL-1079-cursor-identity-steward-certify-and-residuals.md));
+the spike deliberately does not certify — so a real run of *this* CLI needs
+the spike-only escape:
 
 ```sh
 SWARMFORGE_CURSOR_SEAT_SPIKE=1 node extension/out/tools/cursor-seat-spike.js --role documenter
@@ -110,9 +112,11 @@ A refusal prints the same shape with `outcome: refused_uncertified` and no
   admission rule, not two). This spike CLI (`cursor-seat-spike.js`) is
   unaffected and remains its own entry point; pack-line usage and how-tos for
   the launcher path itself are BL-1080, not written here.
-- **Not certification.** Registering a Cursor identity and running it through
-  the compliance battery is BL-712 slice C (tracked as BL-1079). This slice's
-  only path to running at all is the spike-only escape above.
+- **Not certification — that landed separately as BL-1079.** The committed
+  `cursor/auto` candidate and scorecard-backed `certify` are documented in
+  [BL-1079 Cursor certify and residuals](./BL-1079-cursor-identity-steward-certify-and-residuals.md).
+  This spike CLI's only path to running an **uncertified** identity remains
+  the spike-only escape above; a certified identity needs no escape.
 - **Never a private side channel.** The seat reaches the swarm only through
   `ready_for_next.sh` and `swarm_handoff.sh` — the same two helpers every
   other role uses — and only ever writes its own worktree's `tmp/handoff.txt`

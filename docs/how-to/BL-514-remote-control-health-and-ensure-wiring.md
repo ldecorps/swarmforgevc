@@ -14,6 +14,11 @@ The trustworthy remote-control (RC) signal is the pane's live `claude`
 process still carrying its `--remote-control <name>` flag — **not** pane
 scrollback, which scrolls the session banner out of view and false-negatives.
 
+Cursor-staffed seats (agent token `cursor`, binary `cursor-agent`) are out of
+scope for this tooling: they have no SwarmForge-wired `--remote-control` flag
+and no `/rc` footer. See
+[BL-1079 Cursor residuals — remote-control](./BL-1079-cursor-identity-steward-certify-and-residuals.md#residual-remote-control-vs-claude-rc).
+
 ## The three standalone scripts (unchanged by this ticket)
 
 ### `remote_control_health.bb <project-root> [--fix]`

@@ -40,12 +40,13 @@ Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
 the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
 and `..._property_runner.bb` drive it with fixtures.
 
-**The daemon does not fix anything — with one bounded exception.** No menu
+**The daemon does not fix anything — with two bounded exceptions.** No menu
 picks, no parcel moves; apart from typing the nudge line into the
 coordinator's pane it is read-only, *except* that a vanished standing role's
-tmux session can be recreated (BL-1017, below), bounded and never silencing
-the CRIT that reports it. Everything else stays judgment for the
-coordinator/human.
+tmux session can be recreated (BL-1017, below) and a missing tmux control
+plane can be auto-recovered via `./swarm ensure` (BL-958/BL-1071, below) —
+both bounded and never silencing the CRIT that reports them. Everything else
+stays judgment for the coordinator/human.
 
 ## What a nudge looks like
 
@@ -269,6 +270,65 @@ other session was touched, (c) `handoffd` is still alive, and (d)
 
 Acceptance feature:
 [`specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature`](../../specs/features/BL-1017-babysitterd-recreates-vanished-standing-session.feature).
+
+## Control-plane auto-heal, bounded in time (BL-958/BL-1071)
+
+Before this fix, a missing tmux control plane (`control-plane-missing`, see
+[BL-958](BL-958-control-plane-loss-recovery.md)) opened an incident and
+CRIT'd, but nothing ever ran `./swarm ensure` — the response-policy names
+`babysitterd` as owner, yet the live owner never acted. Check `control-plane`
+now does, gated by the same attempt/cooldown budget as the BL-1017 session
+repair above (`session-repairs.json`, keyed `"control-plane"`), and per-role
+`ensure-session` repairs are suppressed while a control-plane ensure is
+queued — the coordinated whole-plane recovery is the only recovery in
+flight, never racing eight individual per-role ones.
+
+**Three finding severities, not two.** `control-plane-missing` with
+persisted launch scripts present CRITs and queues the repair;
+`control-plane-missing` with no launch scripts CRITs and escalates for a
+human relaunch, queuing nothing (recreation is impossible, so it does not
+churn through per-role repairs that cannot work). An observer that itself
+throws — the tmux probe erroring rather than answering `up`/missing — now
+reports `UNAVAILABLE [control-plane]` and carries the observation's own
+error text, rather than producing no finding at all. That third case matters
+because a throw producing nothing is the exact silent-blackout mechanism
+this ticket's incident was, one layer up: the sweep printing "OK all checks
+green" while it in fact knows nothing about the plane. `UNAVAILABLE` is
+never nudge-eligible, same as every other unavailable-gather case in this
+doc (memory floor, pane process), but it is never silence either.
+
+**Bounded in wall-clock, not only in attempts.** `./swarm ensure` is shelled
+under a wall-clock deadline (`BABYSITTER_ENSURE_TIMEOUT_MS`, default 5
+minutes) via a `run-bounded!` mirroring `expedite_cli.bb`'s own — `setsid` so
+the whole process group can be killed on timeout, output redirected to files
+rather than deref'd (a killed process's stdout pipe can stay open on a
+surviving grandchild). The attempt-budget bound alone stops a recovery being
+retried forever; it says nothing about one that never returns, and an
+ensure that hangs would otherwise hold the sweep open so the next tick never
+happens — a babysitter that is stuck reads no differently from one that is
+not running, which is the incident's own shape.
+
+**The REPAIR line carries three outcomes, not two:**
+`REPAIR [repaired|failed|unfinished] control-plane — ./swarm ensure`.
+`unfinished` is the timeout case — nothing said no, so it is not a failure,
+and nothing came back OK, so it is not a repair either; reporting it as
+either would claim knowledge the sweep does not have. As with BL-1017, the
+CRIT itself is never swallowed by a repair attempt.
+
+**The force-result seam is gone.** `run-control-plane-ensure!` used to check
+`BABYSITTER_FAKE_ENSURE_RESULT` first and, when set, fabricate a result
+instead of recovering — a `*_FORCE_RESULT` env bypass sitting in production
+code on the recovery path, and not reachable in a real environment by
+accident: anything setting it would silently disable this auto-heal, the
+same class of silent blackout as the incident it exists to fix. Removed; the
+wiring test now puts a fixture `./swarm` in its own project root instead, so
+the real spawn, the real bound and the real exit handling all run and only
+the target script is a stand-in.
+
+Verify: `bash swarmforge/scripts/test/test_babysitter_check.sh` (cases M/M2)
+and `bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`.
+Acceptance feature:
+[`specs/features/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.feature`](../../specs/features/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.feature).
 
 ## Claim-risk stall detection restored (BL-809)
 
