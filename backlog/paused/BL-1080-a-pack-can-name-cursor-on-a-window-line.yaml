@@ -94,6 +94,13 @@ notes: |
   slice documents and packages what those two build - so depends_on is left
   intact. Coordinator's call, not fixed here.
 
+  Coordinator's call (2026-08-23): demoted back to paused. STEERING.md's
+  standing directive (2026-08-23 ~02:20 BST) pins the chain strictly serial —
+  BL-1078 -> BL-1079 -> BL-1080 — and BL-1079 has not even been promoted yet.
+  No handoff activity had touched this ticket (assigned_to: specifier, absent
+  from the pipeline stage map), so nothing in flight is disrupted. Re-promote
+  once BL-1079 lands in backlog/done/.
+
   Invariant 2 has no example scenario on purpose (specifier, 2026-08-23):
   whether the how-to actually answers "Cursor seat versus /pilot versus
   Claude" is prose, and a three-word grep would read green on a doc that
