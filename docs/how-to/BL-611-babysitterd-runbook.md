@@ -412,6 +412,43 @@ permanently masking every later one.
 Acceptance feature:
 [`specs/features/BL-631-babysitter-detects-pipeline-work-on-main.feature`](../../specs/features/BL-631-babysitter-detects-pipeline-work-on-main.feature).
 
+## Cached, batched pipeline-code-on-main gather (BL-1086)
+
+Check 13's gather (BL-631, above) used to re-derive its answer from scratch
+every 300s tick, spawning `is_qa_ancestor.sh` once per candidate SHA. On a
+`main` sitting ~23 commits ahead of `swarmforge-QA`, that overran
+babysitterd's 600s freshness threshold — and since the daemon writes its
+heartbeat only *after* the check returns, a slow gather read as a dead daemon
+and triggered a mid-sweep restart (`age_secs=1146`, 2026-08-22).
+
+**The cache is on disk, not in memory.** Each tick's `babysitterd.sh` shells a
+fresh `babysitter_check.sh` process, so an in-memory cache would never survive
+between ticks and would hit nothing. `gather-pipeline-code-on-main-cached`
+(`babysitter_check.bb`) instead reads/writes
+`.swarmforge/babysitterd/pipeline-code-on-main-cache.json` (atomic
+temp-file-then-move), keyed on all three tips the answer depends on: `main`,
+`origin/main` (nil when unconfigured — not a failure), and `swarmforge-QA`.
+Any of the three moving invalidates the cache. A gather that returns
+`:ancestry-unavailable? true` is **never** cached — freezing a fail-closed
+hole as clean would be worse than the cost this removes.
+
+**The ancestry check is batched, not reimplemented.** `is_qa_ancestor.sh`
+gained a `--batch <sha>...` mode (also accepting SHAs on stdin) that answers
+"is this SHA QA-approved" for the whole candidate set in one process instead
+of one process per SHA — reading the bounce-verdict stores once instead of
+once per SHA. `is_qa_ancestor.sh` remains the single predicate (BL-925
+invariant 2): batch mode is a batch of one sharing the same code path as
+single-SHA mode, never a second `git merge-base` walk. `batched-qa-ancestry`
+in `babysitter_check.bb` calls it and requires every requested SHA to come
+back answered; if the batch call fails or a SHA is left unanswered, the whole
+sweep fails closed to `:ancestry-unavailable? true` — never a partial
+offending-commit list.
+
+Verify with `bash swarmforge/scripts/test/test_babysitter_check.sh` and
+`bb swarmforge/scripts/test/bl1086_cache_and_batch_property_runner.bb`.
+Acceptance feature:
+[`specs/features/BL-1086-babysitterd-caches-and-batches-its-qa-ancestry-gather.feature`](../../specs/features/BL-1086-babysitterd-caches-and-batches-its-qa-ancestry-gather.feature).
+
 ## Verify
 
 ```bash

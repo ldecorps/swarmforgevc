@@ -1,6 +1,45 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-973: five hand-maintained bb fixture
+**Last Updated:** August 23, 2026 (BL-1086: babysitterd's
+`pipeline-code-on-main` gather (check 13, BL-631) re-derived its answer from
+scratch every 300s tick, spawning `is_qa_ancestor.sh` once per SHA ahead of
+`swarmforge-QA`. On a `main` ~23 commits ahead this overran the daemon's 600s
+freshness threshold — the heartbeat writes only after the check returns, so
+a slow gather read as a dead daemon and triggered a mid-sweep restart
+(`age_secs=1146`, 2026-08-22). Fix, two halves: (1) an on-disk cache
+(`.swarmforge/babysitterd/pipeline-code-on-main-cache.json`, not in-memory —
+each tick is a fresh process) keyed on the `main`/`origin/main`/
+`swarmforge-QA` tips, invalidated the moment any moves, never populated from
+an `:ancestry-unavailable? true` result; (2) `is_qa_ancestor.sh` gained a
+`--batch` mode answering the whole candidate set in one process instead of
+one process per SHA, remaining the single approval predicate (BL-925
+invariant 2) rather than a second ancestry implementation — an unanswered or
+failed batch still fails the whole sweep closed, never a partial result. No
+extension command, setting, or UI change. See the new "Cached, batched
+pipeline-code-on-main gather" section in
+`docs/how-to/BL-611-babysitterd-runbook.md`.)
+Prior entry —
+BL-1083: `promoteToActive`
+(`extension/src/panel/backlogWriter.ts`) was a bare paused→active file move
+with no reference to the promotion gates, so both live callers — the
+Telegram Expedite verb and the paused-pager Expedite endpoint, the operator's
+phone path — walked past `depends_on`, a `backlog/hold/` marker, and
+`active_backlog_max_depth`. On 2026-08-22 this promoted BL-1078 (declaring
+`depends_on: [BL-713]` with BL-713 still active) alongside three siblings in
+one pass; the coordinator parked three back by hand the same evening. Fix:
+`promoteToActive` itself now consults `promotion_gates_cli.bb`'s
+`gate-promotion` verdict — the same chokepoint `promote_and_route_next.sh`
+already used — and refuses a blocked promotion, leaving the ticket
+untouched and returning the gate's own name and reason (409 from the pager
+endpoint; a chat reply naming the gate from the Telegram verb), never a
+silent no-op. The verdict is taken from the existing Babashka CLI, never
+recomputed in TypeScript, so the rules stay in one place. Expedite still
+records the human's approval before the gates run, so `human_approval` is
+satisfied rather than blocking the verb itself; `promote_and_route_next.sh`
+is unchanged. See the updated "Expedite a Ticket" section in
+`docs/how-to/BL-538-console-paused-ticket-pager.md`.)
+Prior entry —
+BL-973: five hand-maintained bb fixture
 copy-lists drifted from the real transitive `load-file` closure of the entry
 point each actually drives, three times over (BL-911, BL-967, BL-1029),
 leaving two acceptance features (BL-487, BL-814) and
