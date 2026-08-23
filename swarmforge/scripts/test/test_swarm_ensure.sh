@@ -1277,6 +1277,27 @@ echo "$OUT" | grep -qE '^rc:coder: OFF \(no Claude /rc; heal via agent:; phone v
 cleanup_daemon
 pass "RC-6b (BL-1108): Cursor seat with no --remote-control reports OFF without probing"
 
+# ── RC-6c (BL-1108 harden): local-model seat, same absent-flag path -> OFF ──
+# Second non-Claude token so the branch is "not claude", not "is cursor".
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tlocal-model\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+printf 'exec qwen\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC6C_PROBED="$ROOT/rc6c-probed"
+cat > "$FAKE_BIN/rc_cmdline_6c.sh" <<EOF
+#!/usr/bin/env bash
+touch "$RC6C_PROBED"
+echo "qwen --remote-control should-never-run"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_6c.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_6c.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -qE '^rc:coder: OFF \(no Claude /rc; heal via agent:; phone via Cursor Remote\)$' \
+  || fail "RC-6c: local-model seat without --remote-control was not reported OFF; got: $OUT"
+[[ -e "$RC6C_PROBED" ]] \
+  && fail "RC-6c: the live process was probed for a local-model absent-flag short-circuit"
+cleanup_daemon
+pass "RC-6c (BL-1108): local-model seat with no --remote-control reports OFF without probing"
+
 # ---------------------------------------------------------------------------
 # RC-7 (BL-514): mono-router resident rotated onto a different role's launch
 # script must not be misclassified as RC-degraded and forcibly respawned back
