@@ -29,8 +29,6 @@ import {
 } from '../swarm/acpHostPanePlan';
 
 export type { AcpHostPaneArgs } from '../swarm/acpHostPaneArgs';
-export { parseAcpHostPaneArgs, usageText } from '../swarm/acpHostPaneArgs';
-export { buildAgentArgv, snapshotAbsPath } from '../swarm/acpHostPanePlan';
 
 export interface SpawnedAgent {
   stdout: NodeJS.ReadableStream;
@@ -92,14 +90,14 @@ export async function runAcpHostPane(args: AcpHostPaneArgs, deps: AcpHostPaneDep
   });
 }
 
-export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
-  const deps: AcpHostPaneDeps = {
+export function createDefaultAcpHostPaneDeps(): AcpHostPaneDeps {
+  return {
     writeLine: (line) => {
       process.stdout.write(`${line}\n`);
     },
     writeSnapshotFile: (absPath, body) => {
       fs.mkdirSync(path.dirname(absPath), { recursive: true });
-      fs.writeFileSync(absPath, body, 'utf8');
+      fs.writeFileSync(absPath, body);
     },
     spawnAgent: (agentArgv, opts) => {
       const [cmd, ...rest] = agentArgv;
@@ -111,6 +109,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     },
     resolveRepoRoot: () => process.cwd(),
   };
+}
+
+export async function main(
+  argv: string[] = process.argv.slice(2),
+  deps: AcpHostPaneDeps = createDefaultAcpHostPaneDeps()
+): Promise<number> {
   try {
     const args = parseAcpHostPaneArgs(argv, deps.resolveRepoRoot);
     return await runAcpHostPane(args, deps);
@@ -121,7 +125,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 }
 
-if (typeof require !== 'undefined' && require.main === module) {
+if (require.main === module) {
   main().then((code) => {
     process.exitCode = code;
   });

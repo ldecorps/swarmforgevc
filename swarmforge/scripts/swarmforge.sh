@@ -500,12 +500,47 @@ worktree_path_for_name() {
 validate_agent() {
   local agent="$1" role="$2"
   case "$agent" in
-    claude|codex|copilot|grok|aider|vibe|gemini|cursor) ;;
+    claude|codex|copilot|grok|aider|vibe|gemini|cursor|local-model) ;;
     *)
       error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
       ;;
   esac
+}
+
+# BL-1052 / BL-1082: OpenAI-compatible base URL for a seat staffed by a
+# downloaded model on this host. Overridable; never a cloud vendor host.
+DEFAULT_LOCAL_MODEL_ENDPOINT_URL="http://127.0.0.1:11434/v1"
+
+local_model_endpoint_url() {
+  printf '%s\n' "${SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL:-$DEFAULT_LOCAL_MODEL_ENDPOINT_URL}"
+}
+
+# Returns 0 when the loopback inference endpoint is ready. The status seam
+# SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS={healthy|missing|unhealthy} lets
+# tests drive refusal without a live server (BL-089); production probes.
+local_model_endpoint_ready() {
+  local probe_status="${SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS:-}"
+  local url
+  url="$(local_model_endpoint_url)"
+  case "$probe_status" in
+    healthy) return 0 ;;
+    missing|unhealthy) return 1 ;;
+  esac
+  # Prefer Ollama's native tags endpoint, then the OpenAI /models path.
+  local probe_root="${url%/v1}"
+  curl -sf --max-time 2 "${probe_root}/api/tags" >/dev/null 2>&1 \
+    || curl -sf --max-time 2 "${url}/models" >/dev/null 2>&1
+}
+
+require_local_model_endpoint_ready() {
+  local url
+  url="$(local_model_endpoint_url)"
+  if local_model_endpoint_ready; then
+    return 0
+  fi
+  error_msg "local-model launch refused: endpoint not ready ($url)"
+  exit 1
 }
 
 
@@ -852,6 +887,10 @@ provision_coordinator() {
     # shape as gemini/codex; without it the launch script has no model flag and
     # the Resident Spy header falls back to a stale *.claude-settings.json.
     extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "local-model" ]]; then
+    # BL-1052: pack sets coordinator_model to a downloaded model id (e.g.
+    # qwen2.5-coder:7b-instruct). Endpoint comes from the local-model guard.
+    extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
@@ -1162,6 +1201,10 @@ check_backend_dependencies() {
       # nothing, and a token accepted with no real check leaves a half-launched
       # pack with an empty window instead of a loud refusal.
       cursor) check_dependency cursor-agent ;;
+      # BL-1052: agent TOKEN is `local-model`; first-quest binary is `qwen`
+      # (@qwen-code/qwen-code) speaking OpenAI-compat against the loopback
+      # endpoint BL-1082 serves. Token and executable differ deliberately.
+      local-model) check_dependency qwen ;;
     esac
   done
 }
@@ -1691,6 +1734,17 @@ RESUMECHECK
       # MAX_ARG_STRLEN the same way Codex does.
       launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
+    local-model)
+      # BL-1052: seat against a downloaded model on loopback (BL-1082). First
+      # quest uses the qwen agentic CLI (`qwen`) with --auth-type openai so it
+      # speaks the OpenAI-compatible base URL the local server exposes. -y is
+      # what makes it EXECUTE shell commands unattended. Model id comes from
+      # the window line; OPENAI_* endpoint/key arrive via the local_model_guard
+      # / tmux -e (BL-130), never written as secret values here.
+      #
+      # Prompt by PATH, not $(cat ...): same MAX_ARG_STRLEN trap as codex/gemini.
+      launch_body="qwen --auth-type openai -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      ;;
     *)
       error_msg "Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -1702,6 +1756,7 @@ RESUMECHECK
   local cerebras_guard=""
   local perplexity_guard=""
   local qwen_guard=""
+  local local_model_guard=""
   # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
   # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
   # override the tmux -e mapping (Wrong API Key against api.cerebras.ai).
@@ -1721,6 +1776,17 @@ RESUMECHECK
     qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ -n "${QWEN_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_QWEN=1\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\n  export OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\nelse\n  echo "SwarmForge: QWEN_API_KEY required (launch CLI targets token-plan.ap-southeast-1.maas.aliyuncs.com)" >&2\n  exit 1\nfi\n'
   else
     qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\nfi\n'
+  fi
+  # BL-1052: force the pane at the loopback OpenAI-compat endpoint. Never the
+  # Token Plan cloud host — that is the aider/qwen Token Plan path. URL is
+  # configuration (env), never a hard-coded vendor cloud. Key value is not
+  # written here; OPENAI_API_KEY arrives via tmux -e when the operator set one.
+  if [[ "$agent" == "local-model" ]]; then
+    local lm_url
+    lm_url="$(local_model_endpoint_url)"
+    local_model_guard="export OPENAI_API_BASE='${lm_url}'
+export OPENAI_BASE_URL='${lm_url}'
+"
   fi
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
@@ -1773,7 +1839,7 @@ export SWARMFORGE_ROLE_WORKTREE='$role_worktree'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}
-${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${qwen_guard}${launch_body}
+${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${qwen_guard}${local_model_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -1861,6 +1927,12 @@ launch_role() {
   local launch_script=""
   local resolved_model
 
+  # BL-1052: refuse a local-model seat against an endpoint that is not ready
+  # before composing or respawning — name the endpoint in the refusal.
+  if [[ "$agent" == "local-model" ]]; then
+    require_local_model_endpoint_ready
+  fi
+
   # BL-563 Slice 2: the SAME overlay-or-pack model slice 1 resolves for the
   # settings file, passed into compose too - write_role_launch_script (below)
   # runs write_claude_settings_file inside a $(...) subshell, so its own
@@ -1909,6 +1981,11 @@ launch_role() {
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *dashscope.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
       use_qwen=1
     fi
+    # BL-1052: a local-model seat never rides the Token Plan qwen remap —
+    # its endpoint is loopback, not the cloud Token Plan host.
+    if [[ "$agent" == "local-model" ]]; then
+      use_qwen=0
+    fi
     for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY QWEN_API_KEY; do
       # When Cerebras/Perplexity/Qwen OpenAI-compat mode is on, do NOT forward the host
       # OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
@@ -1942,6 +2019,12 @@ launch_role() {
       provider_env_flags+=(-e "OPENAI_API_KEY=${QWEN_API_KEY}")
       provider_env_flags+=(-e "OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
       provider_env_flags+=(-e "OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+    fi
+    if [[ "$agent" == "local-model" ]]; then
+      local lm_url
+      lm_url="$(local_model_endpoint_url)"
+      provider_env_flags+=(-e "OPENAI_API_BASE=${lm_url}")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=${lm_url}")
     fi
   elif role_uses_openrouter "$role"; then
     # OpenRouter-backed claude role: same ephemeral -e injection - the key

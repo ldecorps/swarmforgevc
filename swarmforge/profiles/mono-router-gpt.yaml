@@ -1,0 +1,19 @@
+# Swarm profile: mono-router on OpenAI Codex (GPT).
+# A profile = pack topology + backend + per-role model/effort tier (see docs/reference/Specification.MD §Cost-aware backend selection).
+id: mono-router-gpt
+name: Mono-router GPT
+description: >
+  BL-518 mono-router topology on OpenAI Codex: one resident pipeline agent
+  rotating coder→cleaner→architect→hardender→documenter→QA (plus specifier
+  for bounces/intake), with a separate cheap coordinator. Pipeline roles on
+  gpt-5.5; coordinator on gpt-5.4-mini (bookkeeping only; has Codex model
+  metadata, unlike gpt-4.1-mini). Requires
+  OPENAI_API_KEY in ~/.zshenv and `codex login --with-api-key`.
+pack: mono-router
+backend: codex
+tier: standard
+config: mono-router-gpt.conf
+prerequisites:
+  - codex CLI installed (npm i -g @openai/codex)
+  - OPENAI_API_KEY in ~/.zshenv (BL-130); `printenv OPENAI_API_KEY | codex login --with-api-key`
+  - PATH includes npm-global / nvm bin so panes find `codex`
