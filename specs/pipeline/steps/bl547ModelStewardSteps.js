@@ -244,13 +244,31 @@ function registerSteps(registry) {
     ctx.provider = 'bl547test';
     ctx.model = 'candidate-model';
     cli(ctx.stateDir, ['register', `${ctx.provider}/${ctx.model}`, '--status', 'candidate']);
+    // BL-1079: certify requires a compliance-battery scorecard at the
+    // well-known path. "Passed all certification gates" means that
+    // evidence is already on disk — plant a minimal swarm-compliant card.
+    const scorecardRel = `scorecards/${ctx.provider}__${ctx.model}.json`;
+    const scorecardDir = path.join(ctx.stateDir, 'scorecards');
+    fs.mkdirSync(scorecardDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ctx.stateDir, scorecardRel),
+      JSON.stringify({
+        model: ctx.model,
+        entries: [{ competency: 'receive', status: 'pass' }],
+        overall: 'swarm-compliant'
+      })
+    );
+    ctx.scorecardPath = scorecardRel;
   });
 
   registry.define(/^an operator certifies the model$/, (ctx) => {
     const out = cli(ctx.stateDir, ['certify', `${ctx.provider}/${ctx.model}`]).trim();
-    const match = out.match(/\(([^)]+)\)$/);
+    const match = out.match(/\((certification-reports\/[^)]+)\)/);
     if (!match) {
       throw new Error(`expected certify output to carry a report path in parentheses, got: ${out}`);
+    }
+    if (!out.includes(`scorecard=${ctx.scorecardPath}`)) {
+      throw new Error(`expected certify output to name the scorecard it read (${ctx.scorecardPath}), got: ${out}`);
     }
     ctx.reportPath = match[1];
   });
@@ -277,6 +295,16 @@ function registerSteps(registry) {
     ctx.provider = 'bl547test';
     ctx.model = 'regressing-model';
     cli(ctx.stateDir, ['register', `${ctx.provider}/${ctx.model}`, '--status', 'candidate']);
+    const scorecardRel = `scorecards/${ctx.provider}__${ctx.model}.json`;
+    fs.mkdirSync(path.join(ctx.stateDir, 'scorecards'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ctx.stateDir, scorecardRel),
+      JSON.stringify({
+        model: ctx.model,
+        entries: [{ competency: 'receive', status: 'pass' }],
+        overall: 'swarm-compliant'
+      })
+    );
     cli(ctx.stateDir, ['certify', `${ctx.provider}/${ctx.model}`]);
   });
 

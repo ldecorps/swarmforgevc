@@ -150,6 +150,12 @@
 (assert= "a non-map overlay (e.g. malformed JSON that parsed to a scalar/array) degrades to pack model"
          "sonnet" (model-factory-lib/resolve-role-model "not-a-map" "coder" "sonnet"))
 
+;; ── BL-1079: provider→agent for cursor is the launcher allow-list token ──
+(assert= "BL-1079: ModelFactory derives agent token cursor for provider cursor"
+         "cursor" (model-factory-lib/agent-for-provider "cursor"))
+(assert-true "BL-1079: cursor is an explicit provider->agent entry, not only the fallback"
+             (contains? model-factory-lib/provider->agent "cursor"))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

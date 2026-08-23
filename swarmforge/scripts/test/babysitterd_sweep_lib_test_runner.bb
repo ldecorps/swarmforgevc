@@ -284,6 +284,9 @@
 ;; and the sweep printed "OK all checks green" while knowing nothing about
 ;; the control plane. That is the same silent-blackout mechanism the incident
 ;; was, one layer up.
+;;
+;; BL-1081 ACP babysitter tests that lived here were dropped with the
+;; BL-1081 bounce (QA tip 28e78f38c); keep only the BL-1071 coverage.
 
 (assert-true "1071: an unreadable control-plane observation is reported UNAVAILABLE, not silence"
              (let [f (sw/check-control-plane {:control-plane-classification :unavailable

@@ -129,16 +129,33 @@
     (save-registry! updated)
     (println (str provider "/" model " " (:status (model-steward-lib/model-entry updated provider model))))))
 
-(defn run-certify [rest-args]
+(defn run-certify
+  "BL-1079: certify requires a compliance-battery scorecard artifact at the
+   well-known path under the state dir. Absent → refuse, name the path,
+   leave status untouched, write no certification report. Present → flip
+   status and record a report that names the scorecard it read."
+  [rest-args]
   (when (empty? rest-args) (usage))
   (let [[provider model] (parse-provider-model (first rest-args))
         registry (load-registry)
-        timestamp (now-iso)
-        report (model-steward-lib/build-certification-report provider model [] timestamp)
-        report-path (model-steward-store/write-certification-report! (state-dir) provider model timestamp report)
-        updated (model-steward-lib/certify registry provider model report-path)]
-    (save-registry! updated)
-    (println (str provider "/" model " certified (" report-path ")"))))
+        scorecard-rel (model-steward-lib/scorecard-relative-path provider model)
+        scorecard (model-steward-store/read-scorecard! (state-dir) scorecard-rel)]
+    (when-not scorecard
+      (binding [*out* *err*]
+        (println (str "certify refused: missing compliance-battery scorecard at " scorecard-rel)))
+      (System/exit 1))
+    (let [timestamp (now-iso)
+          report (model-steward-lib/build-certification-report
+                  provider model
+                  (vec (or (:entries scorecard) []))
+                  timestamp
+                  {:scorecard-path scorecard-rel
+                   :overall (:overall scorecard)})
+          report-path (model-steward-store/write-certification-report!
+                       (state-dir) provider model timestamp report)
+          updated (model-steward-lib/certify registry provider model report-path)]
+      (save-registry! updated)
+      (println (str provider "/" model " certified (" report-path ") scorecard=" scorecard-rel)))))
 
 (defn run-decertify [rest-args]
   (when (empty? rest-args) (usage))
