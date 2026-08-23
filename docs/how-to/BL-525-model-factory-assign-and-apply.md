@@ -150,6 +150,7 @@ For now, use cold-apply for model changes.
 ModelFactory consumes the **Model Steward** registry and certification status. If you need to:
 
 - **Add or update certified models**: see [Model Steward: Onboarding, Certification, and Role Recommendations](./BL-547-model-steward-overview.md)
+- **Certify the Cursor identity on scorecard evidence**: see [Certifying a Cursor identity](./BL-1079-cursor-identity-steward-certify-and-residuals.md) (provider `cursor`, never a borrowed Anthropic id)
 - **Understand role-specific models and cost tiers**: check the Steward registry at `.swarmforge/model-steward/registry.json` (populated from `swarmforge/model-steward/seed/models.seed.json`)
 - **Override certification for testing**: use the `--override-uncertified` flag with explicit caution, as it bypasses quality gates
 
