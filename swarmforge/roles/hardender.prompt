@@ -1738,3 +1738,44 @@ You are the hardender.
   costs a triage detour here and a specifier turn to re-refuse a duplicate.
 - This is about your REPORT, not your verdict: a red your parcel actually caused
   is still yours to own, unchanged.
+
+## A mutant on a union tag NO consumer checks is EQUIVALENT — grep every checked-tag site before forcing a kill (rule_proposal 2026-08-23, accepted)
+- Proposer's rule, verbatim: "A mutant on a discriminated-union field the
+  consumer never explicitly checks (an implicit fallthrough branch) is
+  equivalent - grep every checked-tag site before forcing a test to kill it."
+- The failure shape: a producer returns `{ kind: 'allow' }`, Stryker mutates
+  that literal to `''`, and the mutant SURVIVES. It survives because every
+  consumer of the union tests only the OTHER tags and reaches the same code by
+  falling through — the mutated value and the original are indistinguishable at
+  every observation point, so no assertion could ever separate them. This is the
+  BL-234 exception's shape (equivalence demonstrable FROM THE CODE) in the
+  Stryker/TypeScript lane rather than the Gherkin `Examples:` one. Writing a test
+  that pins the literal kills the mutant and asserts implementation trivia — the
+  producer's private encoding, not behavior.
+- Mechanics, and the grep is the whole rule: before recording ANY tag mutant as
+  equivalent, grep every site that reads the tag (`git grep -n "\.kind ===\|\.kind !==\|\.action ===" -- <src> <test>`,
+  plus any `switch` on it) and confirm the mutated tag appears in NONE of them.
+  One checked site anywhere — including in a sibling module or a test helper —
+  and the equivalence claim is dead.
+- **Same shape, opposite verdict, and this is the trap: a mutant on a tag that IS
+  checked is a REAL gap.** In the same union, `'not-found'` → `''` looks
+  byte-for-byte like the `'allow'` case and is nothing like it: the consumer
+  branches on `not-found`, so the mutant changes behavior and only a missing test
+  let it live. Shape never decides; the grep decides. Judging by resemblance to a
+  survivor you already accepted is how a real gap gets filed as settled.
+- Fragility is the reason to record, not to skip: the equivalence holds only
+  while no consumer checks that tag, and the day one does, the untested literal
+  becomes a live gap with no mutant left to announce it. Record the accepted
+  equivalent WITH the grep evidence — the tag, the sites you checked, and the
+  date — the same way BL-234 demands the code-level reason and BL-927 forbids
+  filing an open question as settled.
+- Evidence (proposed by the hardender, 2026-08-23, BL-1083): `GateVerdict` in
+  `extension/src/panel/backlogWriter.ts` is
+  `{kind:'allow'} | {kind:'not-found'} | {kind:'refuse'; gate; reason}`, and
+  `promoteToActive` branches on `not-found` and `refuse` only — `allow` is the
+  implicit fallthrough. The specifier verified at `b405878ce` that no site in
+  `extension/src` or `extension/test` reads `verdict.kind === 'allow'` (the four
+  other `verdict.kind` sites belong to unrelated unions), so the `allow` mutants
+  are equivalent on that commit and the `not-found` ones are not. The grep
+  requirement, the checked-tag counter-case, and the recording duty are the
+  specifier's additions.
