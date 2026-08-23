@@ -174,14 +174,126 @@
 (assert-true "12: an empty active/ is a no-op, not an error"
              (:nothing-to-park? (expedite-lib/park-plan {:active-tickets [] :run-ticket "BL-567"})))
 
+
+;; BL-1030. These four assertions used to pass PRE-SPLIT vectors - a shape the
+;; only call site cannot produce. It wrapped the whole configured command in a
+;; one-element vector, so the single element ever tested was the entire command
+;; line, and every real invocation carrying a forbidden flag was admitted. Four
+;; assertions passed while the flag they name sailed through in production.
+;;
+;; The fix that makes it un-repeatable is that there is now ONE shape: the
+;; predicate takes the configured command LINE, exactly what EXPEDITE_STOP_CMD
+;; holds and exactly what `bash -lc` is handed, and does its own tokenizing. A
+;; caller cannot pass the wrong shape because there is no other shape to pass.
+
 (assert-true "13: a bare stop invocation is safe"
-             (expedite-lib/stop-invocation-ok? ["./stop-swarm.sh"]))
+             (expedite-lib/stop-invocation-ok? "./stop-swarm.sh"))
 (assert-false "13: --sweep-inbox would archive the parcels a parked ticket needs"
-              (expedite-lib/stop-invocation-ok? ["./stop-swarm.sh" "--sweep-inbox"]))
+              (expedite-lib/stop-invocation-ok? "./stop-swarm.sh --sweep-inbox"))
 (assert-false "13: --reset-worktrees would revert role worktrees"
-              (expedite-lib/stop-invocation-ok? ["./stop-swarm.sh" "--reset-worktrees"]))
+              (expedite-lib/stop-invocation-ok? "./stop-swarm.sh --reset-worktrees"))
 (assert-false "13: --full is both and is equally forbidden"
-              (expedite-lib/stop-invocation-ok? ["./stop-swarm.sh" "--full"]))
+              (expedite-lib/stop-invocation-ok? "./stop-swarm.sh --full"))
+
+;; ── BL-1030: the tokenizer ────────────────────────────────────────────────
+;; What `bash -lc` would actually produce, or nil when that cannot be known
+;; without running it.
+
+(assert= "1030: a bare command is one token"
+         ["./stop-swarm.sh"] (expedite-lib/tokenize-command "./stop-swarm.sh"))
+(assert= "1030: a flag is its own token, never part of the command"
+         ["./stop-swarm.sh" "--sweep-inbox"]
+         (expedite-lib/tokenize-command "./stop-swarm.sh --sweep-inbox"))
+(assert= "1030: runs of whitespace collapse the way the shell collapses them"
+         ["a" "b"] (expedite-lib/tokenize-command "  a \t b  "))
+(assert= "1030: a shell operator is its own token, so a flag against one is still a flag"
+         ["./stop-swarm.sh" "&" "&" "./stop-swarm.sh" "--full"]
+         (expedite-lib/tokenize-command "./stop-swarm.sh && ./stop-swarm.sh --full"))
+(assert= "1030: and a trailing separator does not fuse onto the flag before it"
+         ["./stop-swarm.sh" "--full" ";"]
+         (expedite-lib/tokenize-command "./stop-swarm.sh --full;"))
+(assert= "1030: single quotes hold a token together and are not part of it"
+         ["./my stop.sh" "--full"] (expedite-lib/tokenize-command "'./my stop.sh' --full"))
+(assert= "1030: double quotes do the same"
+         ["./my stop.sh"] (expedite-lib/tokenize-command "\"./my stop.sh\""))
+(assert= "1030: a backslash escapes the character after it"
+         ["./my stop.sh"] (expedite-lib/tokenize-command "./my\\ stop.sh"))
+(assert= "1030: an empty quoted string is a real, empty token"
+         ["./stop-swarm.sh" ""] (expedite-lib/tokenize-command "./stop-swarm.sh ''"))
+(assert-nil "1030: an unterminated single quote cannot be read"
+            (expedite-lib/tokenize-command "./stop-swarm.sh '--sweep-inbox"))
+(assert-nil "1030: nor can an unterminated double quote"
+            (expedite-lib/tokenize-command "./stop-swarm.sh \"--sweep-inbox"))
+(assert-nil "1030: nor a line ending in a dangling escape"
+            (expedite-lib/tokenize-command "./stop-swarm.sh \\"))
+(assert-nil "1030: an expansion's tokens are not knowable without running it"
+            (expedite-lib/tokenize-command "./stop-swarm.sh $FLAGS"))
+(assert-nil "1030: nor a command substitution's"
+            (expedite-lib/tokenize-command "./stop-swarm.sh $(cat flags)"))
+(assert-nil "1030: nor a backquoted one"
+            (expedite-lib/tokenize-command "./stop-swarm.sh `cat flags`"))
+(assert= "1030: but a dollar inside single quotes is a literal, not an expansion"
+         ["./stop-swarm.sh" "$FLAGS"] (expedite-lib/tokenize-command "./stop-swarm.sh '$FLAGS'"))
+
+;; ── BL-1030: the verdict, on the caller's own input ───────────────────────
+
+(assert= "1030: the default configured command is admitted"
+         {:ok? true} (select-keys (expedite-lib/stop-invocation-verdict "./stop-swarm.sh") [:ok?]))
+(assert= "1030: a forbidden flag is refused, and the verdict NAMES it"
+         {:ok? false :reason :forbidden-flag :flag "--sweep-inbox"}
+         (select-keys (expedite-lib/stop-invocation-verdict "./stop-swarm.sh --sweep-inbox")
+                      [:ok? :reason :flag]))
+(assert= "1030: a flag buried in a compound command is still found"
+         {:ok? false :reason :forbidden-flag :flag "--full"}
+         (select-keys (expedite-lib/stop-invocation-verdict "./stop-swarm.sh && ./stop-swarm.sh --full")
+                      [:ok? :reason :flag]))
+(assert= "1030: a flag before a target path is found, and the path is not the reason"
+         {:ok? false :reason :forbidden-flag :flag "--full"}
+         (select-keys (expedite-lib/stop-invocation-verdict "./stop-swarm.sh --full /repos/fixture-target")
+                      [:ok? :reason :flag]))
+(assert-true "1030: a target path that merely SPELLS a flag is not a flag"
+             (expedite-lib/stop-invocation-ok? "./stop-swarm.sh /repos/full-sweep-inbox-fix"))
+(assert-true "1030: nor is one that ends in a forbidden spelling"
+             (expedite-lib/stop-invocation-ok? "./stop-swarm.sh /repos/target--full"))
+(assert-true "1030: nor a quoted path containing the spelling and a space"
+             (expedite-lib/stop-invocation-ok? "./stop-swarm.sh '/repos/my --full target'"))
+(assert= "1030: a command that cannot be read is REFUSED, never admitted"
+         {:ok? false :reason :unreadable}
+         (select-keys (expedite-lib/stop-invocation-verdict "./stop-swarm.sh '--sweep-inbox")
+                      [:ok? :reason]))
+(assert= "1030: and the verdict carries the command, so the refusal can name it"
+         "./stop-swarm.sh '--sweep-inbox"
+         (:command (expedite-lib/stop-invocation-verdict "./stop-swarm.sh '--sweep-inbox")))
+
+;; The reproduction table from the ticket's own `source:` block, run through
+;; the predicate in the CALLER'S shape. Before this ticket every line read
+;; true; the bare command is the only one that may.
+(assert= "1030: the ticket's reproduction table, in the caller's shape"
+         {"./stop-swarm.sh" true
+          "./stop-swarm.sh --full" false
+          "./stop-swarm.sh --sweep-inbox" false
+          "./stop-swarm.sh --reset-worktrees" false}
+         (into {} (for [c ["./stop-swarm.sh" "./stop-swarm.sh --full"
+                           "./stop-swarm.sh --sweep-inbox" "./stop-swarm.sh --reset-worktrees"]]
+                    [c (expedite-lib/stop-invocation-ok? c)])))
+
+;; A caller handing over the OLD pre-split shape must be loud, not quietly
+;; wrong. Silently stringifying a vector is how one shape became two.
+(assert-true "1030: the pre-split shape that hid this defect now throws"
+             (try (expedite-lib/stop-invocation-ok? ["./stop-swarm.sh" "--sweep-inbox"])
+                  false
+                  (catch Exception _ true)))
+
+;; The refusal line the CLI logs comes from the verdict, so the message and the
+;; decision cannot drift apart.
+(assert-true "1030: a flag refusal's message names the flag"
+             (str/includes? (expedite-lib/stop-refusal-message
+                             (expedite-lib/stop-invocation-verdict "./stop-swarm.sh --sweep-inbox"))
+                            "--sweep-inbox"))
+(assert-true "1030: an unreadable refusal's message names the command"
+             (str/includes? (expedite-lib/stop-refusal-message
+                             (expedite-lib/stop-invocation-verdict "./stop-swarm.sh '--sweep-inbox"))
+                            "./stop-swarm.sh '--sweep-inbox"))
 
 ;; ── bounces (05/05b/05c) ──────────────────────────────────────────────────
 
