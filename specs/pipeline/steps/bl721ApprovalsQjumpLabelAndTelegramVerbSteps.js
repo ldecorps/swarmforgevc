@@ -35,6 +35,7 @@ const { decideTopicAction } = require(path.join(EXT_DIR, 'out', 'concierge', 'to
 const { pollAndForward, APPROVALS_SUBJECT_ID } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramFrontDeskBotCore'));
 const { recordApprovalReply } = require(path.join(EXT_DIR, 'out', 'concierge', 'pendingApprovalReply'));
 const { promoteToActive } = require(path.join(EXT_DIR, 'out', 'panel', 'backlogWriter'));
+const { installPromotionGates } = require('./lib/promotionGatesFixture');
 const { parseExpediteTicket } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramCursorBridgeExpedite'));
 
 const FEATURE = 'Approvals queue-jump is labeled Q jump and reachable by a /qjump front-desk verb';
@@ -169,7 +170,9 @@ function sendApprovalsTopicText(ctx, text) {
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.defineScoped(/^an approval ask was posted in a ticket's Telegram topic$/, (ctx) => {
-    ctx.targetPath = mkTmp();
+    // BL-1083: promoteToActive now consults the real promotion gates and fails
+    // closed, so a fixture that expects a qjump to promote must carry them.
+    ctx.targetPath = installPromotionGates(mkTmp());
     writeTicket(ctx.targetPath, 'active', `id: ${TICKET_ID}\ntitle: qjump fixture\nhuman_approval: pending\n`);
     ctx.approvals = [];
     ctx.promotions = [];
