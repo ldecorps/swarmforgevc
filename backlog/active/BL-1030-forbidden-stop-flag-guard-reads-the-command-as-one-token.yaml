@@ -157,7 +157,6 @@ qa_e2e_procedure: |
      three flagged commands and `true` for the bare command.
 
 notes: |
-  Human 2026-08-23 (Cursor): HELD — focus swarm on Cursor-as-swarm-agent chain (1078→1079→1080[+1081]). Reinstate when that lands.
   2026-08-22 11:00 coordinator: open-slot nudge named this candidate a 3rd
   time. Same pattern: slot filled before I acted, this time by BL-1039
   (priority 9, ordinary ranking, no expedite involved) which simply beats

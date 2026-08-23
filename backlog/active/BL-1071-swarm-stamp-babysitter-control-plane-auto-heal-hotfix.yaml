@@ -155,7 +155,6 @@ qa_e2e_procedure: >
   `babysitterd_sweep_lib_test_runner.bb` and these acceptance scenarios.
 
 notes: |
-  Human 2026-08-23 (Cursor): HELD — focus swarm on Cursor-as-swarm-agent chain (1078→1079→1080[+1081]). Reinstate when that lands.
   ## Locked human decisions, carried verbatim from the intake
 
   1. "Specifier mints a **high** defect / swarm-review ticket (BL-849 shape):
