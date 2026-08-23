@@ -37,6 +37,17 @@ approval_context: >
   catches a collision within one session - but it would not have caught either
   of the two real ones, which is most of the value.
 
+  Second decision, added 2026-08-23 after a third live collision (BL-1101, see
+  notes): this ticket's severity. Its own stated escalation criterion has now
+  fired - the collision landed with no topic-record conflict, and the duplicate
+  silently consumed the approval-ask dedup key of the ticket it collided with,
+  so a `human_approval: pending` ticket was left unapprovable and therefore
+  permanently unpromotable. By the criterion beside the `severity:` field that
+  makes this a `high`. I have left it at `medium` rather than grade it up
+  myself, because the standing Cursor-seat directive forbids severity
+  grade-ups that jump its pin. Say the word and it goes to `high`; say nothing
+  and it stays `medium` and waits its turn.
+
 invariants:
   - "The gate is read-only over the backlog: it reports and refuses, never renames, moves, or rewrites a ticket."
   - "Every corpus the check consults is either fully read or the check fails - an unreadable or partially-read source is never treated as containing no ids."
@@ -139,3 +150,33 @@ notes: |
   Severity is argued in the comment beside the field rather than left implicit,
   because this is exactly the judgement the expedite lane keys on and a silent
   `medium` reads as an untriaged guess.
+
+  THIRD live collision, 2026-08-23 - and the first that this ticket's own
+  detector story does NOT cover. BL-1101 was minted twice: the hand-authored
+  mutation-sweep gate at 05:35 (e618ab086) and the property-lane load
+  sensitivity at 06:31 (3e00569f8). There was no add/add conflict this time,
+  because the topic-record bot ran on only ONE side - so the incidental
+  detector described above never fired. It was found by eye, during an
+  unrelated directory listing, roughly an hour later.
+
+  It also demonstrates the silent harm this ticket predicts, not just the
+  bookkeeping cost. The concierge had already emitted
+  `ApprovalRequested:BL-1101` for the sweep ticket. The second BL-1101 carried
+  `human_approval: pending`, so its ask was deduped away against that key: it
+  would never have appeared in the Approvals topic, and a ticket that cannot be
+  approved cannot be promoted. Nothing would have reported it as stuck - it
+  would simply have sat in `backlog/paused/` forever.
+
+  Repaired in d1b86ad56 by renumbering the later ticket to BL-1107 (the id went
+  to the side carrying the recorded human-facing decision, per the repair rule
+  above). A repo-wide id audit after the repair is clean.
+
+  Severity deliberately NOT raised. This instance matches the escalation
+  criterion written beside the `severity:` field word for word - a collision
+  landing with no topic-record conflict to expose it - so the honest reading is
+  that this ticket is now a `high`. It is left at `medium` because the standing
+  human directive of 2026-08-23 pins the Cursor-seat chain and says in terms
+  that no ticket should be graded up in severity to get around that pin; a
+  grade-up here would enter the Article 3.2.4 expedite lane and do exactly
+  that, however well-founded. The grade-up is therefore surfaced as part of
+  what is being approved rather than taken unilaterally - see approval_context.

@@ -266,6 +266,59 @@ function registerSteps(registry) {
     );
   });
 
+  // ── unreadable-is-not-absent-06 ───────────────────────────────────────
+  // The sibling of 05 for the one probe 05 does not cover. Scenario 01 already
+  // breaks the control-plane observation, but only asserts the SWEEP survives
+  // it - a silently dropped observation passes 01 unchanged, which is exactly
+  // the state this ticket found and fixed. This gates invariant 3 for it.
+  define(/^the control-plane observation throws this sweep$/, (ctx) => {
+    sweepStale();
+    // Launch scripts PRESENT on purpose. A recovery is withheld below because
+    // the plane's state is UNKNOWN, not because there is nothing to recover
+    // with - and only a fixture that could have recovered proves that.
+    ctx.fixture = breakProbes(makeSweepFixture(mkdir), ['control-plane']);
+  });
+
+  define(/^the control-plane check is reported unavailable$/, (ctx) => {
+    assert.ok(!died(ctx.output), `the sweep died instead of degrading the probe:\n${ctx.output}`);
+    assert.match(
+      ctx.output,
+      /UNAVAILABLE \[control-plane\]/,
+      `a throwing observation left no finding at all - the plane reads healthy by omission:\n${ctx.output}`
+    );
+    // Never a healthy reading, never an absence: the two other things it
+    // could have been reported as.
+    assert.ok(
+      !/OK all checks green/.test(ctx.output),
+      `an unread observation was folded into the all-clear:\n${ctx.output}`
+    );
+    assert.ok(
+      !/CRIT \[control-plane\]/.test(ctx.output),
+      `an unreadable observation was reported as the plane being missing:\n${ctx.output}`
+    );
+  });
+
+  define(/^the reason the observation failed is carried in that finding$/, (ctx) => {
+    const line = ctx.output.split('\n').find((l) => /UNAVAILABLE \[control-plane\]/.test(l));
+    assert.ok(line, 'no control-plane UNAVAILABLE finding to carry a reason');
+    // The fixture breaks the probe by removing tmux from every PATH entry, so
+    // the exception the observer threw names it. A finding that said only
+    // "unavailable" would leave a human with nowhere to start.
+    assert.match(
+      line,
+      /tmux/,
+      `the finding does not carry why the observation failed - the exception was dropped:\n${line}`
+    );
+  });
+
+  define(/^no control-plane recovery is started$/, (ctx) => {
+    assert.deepEqual(
+      ensureCalls(ctx.fixture),
+      [],
+      'a recovery was started off an observation that could not be made - unreadable is not the same as missing'
+    );
+  });
+
   // ── unreadable-is-not-absent-05 ───────────────────────────────────────
   define(/^the process table cannot be gathered this sweep$/, (ctx) => {
     sweepStale();
