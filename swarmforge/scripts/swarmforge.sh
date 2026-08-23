@@ -847,6 +847,11 @@ provision_coordinator() {
     extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "gemini" ]]; then
     extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "cursor" ]]; then
+    # Cursor coordinator: pack sets coordinator_model (e.g. auto). Same --model
+    # shape as gemini/codex; without it the launch script has no model flag and
+    # the Resident Spy header falls back to a stale *.claude-settings.json.
+    extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
