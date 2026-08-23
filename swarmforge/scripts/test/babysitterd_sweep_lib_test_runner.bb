@@ -174,6 +174,15 @@
 (assert-true "live process missing --remote-control is WARN rc-<role>"
              (let [f (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true :has-remote-control? false})]
                (and f (= "WARN" (:severity f)) (= "rc-coder" (:key f)))))
+(assert-true "half-launch CRIT names the expected process when provided"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? true
+                                             :has-claude-process? false
+                                             :expected-process "cursor-agent"})]
+               (and f (= "CRIT" (:severity f))
+                    (str/includes? (:message f) "cursor-agent"))))
+(assert-nil "Cursor seat alive without --remote-control is not RC-degraded"
+            (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true
+                                      :has-remote-control? false :rc-applicable? false}))
 
 ;; ── check 3: handoffd-supervisor-fresh ──────────────────────────────────────
 (assert-nil "green handoffd/supervisor/log produces no finding"

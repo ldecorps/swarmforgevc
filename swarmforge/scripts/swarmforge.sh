@@ -847,6 +847,11 @@ provision_coordinator() {
     extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "gemini" ]]; then
     extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "cursor" ]]; then
+    # Cursor coordinator: pack sets coordinator_model (e.g. auto). Same --model
+    # shape as gemini/codex; without it the launch script has no model flag and
+    # the Resident Spy header falls back to a stale *.claude-settings.json.
+    extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
@@ -1666,7 +1671,7 @@ RESUMECHECK
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
         cursor_dirs=" --add-dir '$WORKING_DIR'"
       fi
-      launch_body="cursor-agent${extra_cli:+ $extra_cli} --force --trust --workspace '$role_worktree'${cursor_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      launch_body="cursor-agent${extra_cli:+ $extra_cli} --force --trust --workspace '$role_worktree'${cursor_dirs} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     gemini)
       # Google Gemini CLI (`npm i -g @google/gemini-cli` or similar). -y/--yolo
