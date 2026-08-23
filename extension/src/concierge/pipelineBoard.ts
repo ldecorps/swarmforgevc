@@ -693,6 +693,20 @@ function buildLinks(
   return links;
 }
 
+/**
+ * BL-1045: omitted entirely when nothing is held, so a board with an empty
+ * hold/ renders byte-identically to one built before this ticket.
+ */
+function heldResultFields(
+  held: PipelineBoardHeldEntry[],
+  heldOmittedCount: number | undefined
+): Pick<PipelineBoardData, 'held' | 'heldOmittedCount'> {
+  return {
+    ...(held.length > 0 || heldOmittedCount ? { held } : {}),
+    ...(heldOmittedCount ? { heldOmittedCount } : {}),
+  };
+}
+
 export function computePipelineBoard(
   roleHeldTickets: Record<string, string[]>,
   paused: PipelineBoardPausedItem[],
@@ -731,10 +745,7 @@ export function computePipelineBoard(
     links,
     parkedOmittedCount,
     collapsedEpicsOmittedCount,
-    // BL-1045: omitted entirely when nothing is held, so a board with an
-    // empty hold/ renders byte-identically to one built before this ticket.
-    ...(held.length > 0 || heldOmittedCount ? { held } : {}),
-    ...(heldOmittedCount ? { heldOmittedCount } : {}),
+    ...heldResultFields(held, heldOmittedCount),
   };
 }
 

@@ -56,6 +56,11 @@ test('an unknown or future hold date is stated as unknown, never as zero', () =>
   assert.equal(formatHeldForLabel(NOW + DAY_MS, NOW), 'just now');
 });
 
+test('exactly one hour and exactly one minute are the boundaries themselves, not one tick short', () => {
+  assert.equal(formatHeldForLabel(NOW - 60 * 60 * 1000, NOW), '1h');
+  assert.equal(formatHeldForLabel(NOW - 60 * 1000, NOW), '1m');
+});
+
 // ── the-board-surfaces-held-tickets-01 ────────────────────────────────────
 
 test('a held ticket appears in its own section with its id and how long it has been held', () => {
@@ -75,6 +80,15 @@ test('a held ticket appears in its own section with its id and how long it has b
 test('held tickets are listed longest-held first, because duration is the harm', () => {
   const data = board({ held: [heldItem('BL-1043', 1), heldItem('BL-844', 12), heldItem('BL-845', 12)] });
   assert.deepEqual(data.held.map((h) => h.id), ['BL-844', 'BL-845', 'BL-1043']);
+});
+
+test('a tie in held duration breaks by id, not by whatever order the caller happened to supply', () => {
+  // Input order is deliberately the REVERSE of id order - if the tie-break
+  // were ever skipped (e.g. treating equal ages as "no comparison needed"),
+  // Array.sort would just preserve this input order instead of re-sorting
+  // by id, and this would still pass by accident with matching input order.
+  const data = board({ held: [heldItem('BL-845', 12), heldItem('BL-844', 12)] });
+  assert.deepEqual(data.held.map((h) => h.id), ['BL-844', 'BL-845']);
 });
 
 // ── the-board-surfaces-held-tickets-02 ────────────────────────────────────
@@ -162,4 +176,59 @@ test('a held ticket links into backlog/hold/, the folder it is actually in', () 
   const link = data.links.find((l) => l.id === 'BL-844');
   assert.ok(link, 'a held ticket must be reachable from the link list');
   assert.equal(link.path, 'backlog/hold/BL-844-thing.yaml');
+});
+
+test('no held tickets at all (the extras field itself absent, not just empty) links nothing bogus', () => {
+  const data = computePipelineBoard({}, [], {}, { nowMs: NOW, repoBaseUrl: 'https://github.com/x/y' });
+  assert.ok(!data.links.some((l) => l.id === undefined), 'the fallback default must never itself become a fake link entry');
+});
+
+test('a held ticket with no filename to link is left out of the link list, not linked with a broken path', () => {
+  const data = computePipelineBoard(
+    {},
+    [],
+    {},
+    {
+      nowMs: NOW,
+      held: [{ id: 'BL-1', title: 'x', filename: '', heldSinceMs: NOW - DAY_MS }],
+      repoBaseUrl: 'https://github.com/x/y',
+    }
+  );
+  assert.ok(!data.links.some((l) => l.id === 'BL-1'), 'an unresolvable path must never become a broken link entry');
+});
+
+test('a link already found from an earlier source keeps its FIRST path when the same id also appears held', () => {
+  const data = computePipelineBoard(
+    {},
+    [],
+    { 'BL-1': { filename: 'BL-1-thing.yaml', location: 'root' } },
+    {
+      nowMs: NOW,
+      rootIntake: [{ id: 'BL-1', title: 'x' }],
+      held: [{ id: 'BL-1', title: 'x', filename: 'BL-1-thing.yaml', heldSinceMs: NOW - DAY_MS }],
+      repoBaseUrl: 'https://github.com/x/y',
+    }
+  );
+  const link = data.links.find((l) => l.id === 'BL-1');
+  assert.equal(link.path, 'backlog/BL-1-thing.yaml', 'root-intake is found first in the link sources; it must win, not the later held entry');
+});
+
+// ── rendering ─────────────────────────────────────────────────────────────
+
+test('the held section is preceded by a genuinely blank line, not some other separator text', () => {
+  const data = board({ held: [heldItem('BL-844', 12)] });
+  const lines = renderPipelineBoardBody(data).split('\n');
+  const headerIndex = lines.indexOf('HELD:');
+  assert.ok(headerIndex > 0, 'the header must actually be present');
+  assert.equal(lines[headerIndex - 1], '', 'the line right before HELD: must be empty, not placeholder text');
+});
+
+test('an item with no title collapses the double space before the parenthesis to one', () => {
+  const data = computePipelineBoard(
+    {},
+    [],
+    {},
+    { nowMs: NOW, held: [{ id: 'BL-1', title: '', filename: 'x.yaml', heldSinceMs: NOW - DAY_MS }] }
+  );
+  assert.match(renderPipelineBoardBody(data), /^ {2}1 \(1d\)$/m);
 });
