@@ -195,6 +195,12 @@ notes: |
   deps/orthogonality) per Article 3.2.4 priority ordering. Awaiting human
   approval; will be reconsidered at the next open slot.
 
+  2026-08-23 coordinator (2nd nudge, same candidate, still pending): status
+  unchanged - still blocked on the same human decision. This slot filled by
+  BL-1082 instead (non-expedited feature, priority 4, approved, advisory-only
+  orthogonality vs BL-1078/BL-1081, no unmet deps). Still awaiting the
+  refuse-vs-alarm-only answer.
+
   Live findings from the probe, recorded so nobody re-derives them:
 
   - Local `main` is 10 commits ahead of `origin/main` and holds the CORRECT
