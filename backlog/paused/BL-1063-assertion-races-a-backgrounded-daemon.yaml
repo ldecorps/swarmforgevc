@@ -235,3 +235,26 @@ source: >
   failure this ticket exists to end. `mutation_cost` is `low` — two assertions
   in one file — so the honest fix is cheaper than the machinery to tolerate
   it. The answer is a slot.
+
+  FIFTH REPORT, 2026-08-23, three minutes after the fourth. Architect `note`
+  50_20260823T001920Z_000659: "BL-796 property test flakes on hosts with a
+  real /usr/bin/node - please ticket". Correct about the host condition,
+  wrong about "flakes" — this is deterministic, not intermittent, which is
+  the second time that mislabel has been applied (the third report called it
+  a regression). The word matters: "flaky" invites a retry, "deterministic"
+  invites a fix.
+
+  ACTED ON THE LOOP, not just the report. Five reports from four roles across
+  five unrelated parcels is no longer a property of this ticket; it is a gap
+  in how a role decides whether an out-of-parcel red is already tracked. The
+  architect prompt already carried exactly the right rule — grep the backlog
+  before reporting — but scoped it to architecture GATE failures (forbidden
+  edges from the acyclic scan), so a red property test did not read as
+  covered, and QA and the hardender had no such rule at all. Amended
+  2026-08-23 (specifier, landed on `main` per BL-798): the architect rule now
+  generalizes to ANY out-of-parcel failure and names the failing test file's
+  basename as the grep key, and the equivalent rule is added to
+  `swarmforge/roles/QA.prompt` and `swarmforge/roles/hardender.prompt`. All
+  three also now require evidence before the words "flaky" or
+  "deterministic". No ticket minted for this: it is prompt prose, which has
+  no executable gate and is the specifier's to land directly.
