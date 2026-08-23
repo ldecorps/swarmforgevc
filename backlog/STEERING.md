@@ -444,12 +444,11 @@ The human's own words, verbatim:
   was deliberately kept at `medium` for exactly this reason.
 - **Do not finish-shift early.** The cron watcher owns the sleep decision; the
   swarm neither pre-empts it nor fights it.
-- **Promotion freeze (2026-08-23 ~05:26 BST):** human engaged
-  `.swarmforge/operator/control-pause.json` (`active: true`, no timer) so
-  effective `active_backlog_max_depth` is **0**. Auto-pick, by-name
-  `promote_and_route_next`, and open-slot nudges all refuse. In-flight
-  BL-1078 / BL-1081 continue. To promote BL-1079 (or anything else), the
-  human must **resume** first (`resume` / clear the pause marker).
+- **Promotion freeze re-engaged (2026-08-23 ~09:51 BST):** human set
+  `.swarmforge/operator/control-pause.json` (`active: true`) again — effective
+  depth **0**. In-flight BL-1078 (QA) continues; nothing else promotes.
+  **BL-1081 stays paused.** Clear the pause (resume) only after 1078 is in
+  `done/` and you want BL-1079 pulled.
 - **Expiry:** this directive is spent the moment all four tickets are in
   `backlog/done/` and the watcher has fired. An expired directive is not a
   policy — retire this section then, do not leave it silently vetoing work.

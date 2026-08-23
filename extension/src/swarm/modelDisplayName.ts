@@ -8,6 +8,9 @@ export const MODEL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   'claude-opus-5': 'Opus 5',
   'claude-haiku-4-5-20251001': 'Haiku 4.5',
   'claude-fable-5': 'Fable 5',
+  // Cursor seat (cursor-agent --model auto); steward identity cursor/auto.
+  auto: 'Cursor Auto',
+  'cursor/auto': 'Cursor Auto',
   'openai/qwen3.7-plus': 'Qwen 3.7 Plus',
   'openai/qwen3.7-max': 'Qwen 3.7 Max',
   'openai/qwen3.6-flash': 'Qwen 3.6 Flash',

@@ -1936,3 +1936,29 @@ You are the hardender.
   requirement, the throws-vs-primitive counter-case, the compiled-artifact
   point, the one-writer interaction, and the recording duty are the specifier's
   additions.
+
+## Probing a multi-provider resolver: scrub the FULL secret list, print booleans (rule_proposal 2026-08-23, accepted)
+- Before printing anything derived from a resolver that reads MORE THAN ONE
+  provider's credentials (`provider_respawn_env_lib.bb` and any sibling),
+  unset EVERY name in `HARNESS_ENV_PROVIDER_SECRET_VARS`
+  (`swarmforge/scripts/harness_env_scrub.sh`) — not only the family under
+  test — and print BOOLEANS (set/unset, present/absent), never a raw value.
+- Why: BL-1077 hardening, 2026-08-23. A probe of `provider_respawn_env_lib.bb`
+  scrubbed only the Qwen names it was exercising. The resolver reads every
+  provider it knows about, so five unrelated REAL keys — OpenRouter, Mistral,
+  Cerebras, Perplexity, Gemini — were printed into the transcript. Note the
+  shape: the family under test is the one family guaranteed not to leak,
+  because it is the only one you scrubbed. The exposure is entirely in the
+  providers you were not thinking about, which is why the list, not your
+  mental model of the test, has to drive the scrub.
+- Do NOT reach for `harness_env_provider_scrub_vars` to do this. That helper
+  serves the LAUNCHER and deliberately KEEPS the configured backend's own key
+  so the running backend still works (its invariant 2 even keeps everything
+  for an unknown backend). For a probe that is exactly backwards. Iterate
+  `HARNESS_ENV_PROVIDER_SECRET_VARS` directly and unset all of it.
+- Read the list at probe time rather than copying today's names into your
+  script: it is the single source of truth and it grows as providers are
+  added, so a hand-copied subset silently rots into the same defect.
+- A booleans-only print is not merely safer, it is usually the better probe:
+  what a resolver test asserts is which credential was CHOSEN, never what it
+  contained.

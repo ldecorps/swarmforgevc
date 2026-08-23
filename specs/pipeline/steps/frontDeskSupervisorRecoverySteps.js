@@ -7,6 +7,10 @@
 // entry + injected clock, no real process spawn, no real timer) - mirrors
 // frontDeskAutoOpenSubjectSteps.js's own execFileSync-a-real-bb-CLI
 // pattern.
+//
+// BL-1099 retired supervisor-recovery-02 (the give-up cooldown outline).
+// Its unscoped cooldown step registrations went with it — BL-1088 owns
+// that matrix with defineScoped handlers.
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
@@ -45,42 +49,6 @@ function registerSteps(registry) {
     }
     if (ctx.result.event !== 'healthy-reset') {
       throw new Error(`expected a healthy-reset event, got ${ctx.result.event}`);
-    }
-  });
-
-  // ── supervisor-recovery-02 ───────────────────────────────────────────
-  registry.define(/^a child the supervisor has given up on$/, (ctx) => {
-    ctx.entry = { pid: null, attempts: 5, status: 'gave-up', crashedAtMs: 5000, startedAtMs: 1000, gaveUpAtMs: 1000000 };
-    ctx.pidAlive = false;
-  });
-
-  registry.define(/^the give-up cooldown (has elapsed|has not elapsed yet)$/, (ctx, elapsed) => {
-    const boundary = ctx.entry.gaveUpAtMs + GIVEUP_CONFIG.giveupCooldownMs;
-    ctx.nowMs = elapsed === 'has elapsed' ? boundary + 1 : boundary - 1;
-    ctx.result = checkOne(ctx.entry, ctx.nowMs, ctx.pidAlive);
-  });
-
-  registry.define(/^the supervisor (resets its attempt count and starts the child again|leaves the child down without restarting it)$/, (ctx, action) => {
-    if (action === 'resets its attempt count and starts the child again') {
-      if (ctx.result.entry.status !== 'running') {
-        throw new Error(`expected the child to be re-armed to running, got ${ctx.result.entry.status}`);
-      }
-      if (ctx.result.entry.attempts !== 1) {
-        throw new Error(`expected a fresh attempt budget (1, not stuck at/past the old cap), got ${ctx.result.entry.attempts}`);
-      }
-      if (ctx.result.event !== 're-armed') {
-        throw new Error(`expected a re-armed event, got ${ctx.result.event}`);
-      }
-    } else {
-      if (ctx.result.entry.status !== 'gave-up') {
-        throw new Error(`expected the child to stay gave-up, got ${ctx.result.entry.status}`);
-      }
-      if (ctx.result.entry.attempts !== 5) {
-        throw new Error(`expected attempts untouched (5), got ${ctx.result.entry.attempts}`);
-      }
-      if (ctx.result.event !== null) {
-        throw new Error(`expected no event (no spawn, no state change), got ${ctx.result.event}`);
-      }
     }
   });
 }
