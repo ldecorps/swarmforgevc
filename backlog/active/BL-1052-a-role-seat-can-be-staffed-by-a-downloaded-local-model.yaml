@@ -142,4 +142,4 @@ qa_e2e_procedure: |
   6. Confirm the existing cloud packs, and qwen-mono-router.conf in particular,
      are untouched.
 
-assigned_to: coordinator
+assigned_to: coder
