@@ -208,6 +208,58 @@
                            hits)}
         {:refuse? false :reason nil :offending []}))))
 
+;; ── BL-1098: silent-revert detector, SIBLING of noop-landing-merge above.
+;;    BL-855 pinned the merge that takes NOTHING. This pins the merge that
+;;    takes MOST of what it merges and quietly puts a handful of paths back
+;;    to a superseded blob no commit authored the change back to. Signature:
+;;    tip holds content that is not what the newest non-merge authoring
+;;    commit wrote, AND that tip content equals a blob an EARLIER commit
+;;    authored (or the path is absent with no delete commit). A tip that
+;;    matches its newest authoring commit is never flagged - that is the
+;;    correct-reconcile shape (discarding a stale one-sided change). A tip
+;;    that matches NO authored blob (hand-blend) is also never flagged. ────
+(defn silent-revert-path?
+  "True when a candidate path's tip content is a silent revert of landed
+   work: either a superseded earlier-authored blob, or absent with no
+   delete commit. Never true when tip matches the newest authoring commit."
+  [{:keys [tip-matches-newest-authoring?
+           tip-is-superseded-resurrection?
+           tip-absent-without-delete?]}]
+  (boolean (and (not tip-matches-newest-authoring?)
+                (or tip-is-superseded-resurrection?
+                    tip-absent-without-delete?))))
+
+(defn silent-revert-decision
+  "Pure decision, sibling of noop-merge-decision: does any merge-touched
+   path about to be pushed hold content no commit authored back to?
+   facts:
+     :candidate-paths  seq of {:path :tip-matches-newest-authoring?
+                       :tip-is-superseded-resurrection?
+                       :tip-absent-without-delete?
+                       :newest-authoring-sha :divergence-merge-sha}
+     :facts-complete?  bool, default true - false fails closed.
+   Returns {:refuse? bool :reason (:gather-failed/:silent-revert/nil)
+            :offending (seq of {:path :newest-authoring-sha
+                                :divergence-merge-sha})}."
+  [{:keys [candidate-paths facts-complete?] :or {facts-complete? true}}]
+  (if-not facts-complete?
+    {:refuse? true :reason :gather-failed :offending []}
+    (let [hits (filterv silent-revert-path? candidate-paths)]
+      (if (seq hits)
+        {:refuse? true :reason :silent-revert
+         :offending (mapv (fn [h] {:path (:path h)
+                                   :newest-authoring-sha (:newest-authoring-sha h)
+                                   :divergence-merge-sha (:divergence-merge-sha h)})
+                          hits)}
+        {:refuse? false :reason nil :offending []}))))
+
+(defn silent-revert-candidate-paths
+  "Union of merge-touched path sets only - never invents paths from a
+   full-tree walk. Bound = one authoring lookup per returned path
+   (BL-1098 invariant 3 / BL-1086)."
+  [merge-path-sets]
+  (vec (sort (into #{} (mapcat (fn [ps] (or (:paths ps) [])) merge-path-sets)))))
+
 ;; ── pure: bounded exponential backoff, shared by both state machines below
 ;;    (own small copy, not required from stuck_escalation_email_lib.bb/
 ;;    operator_lib.bb - this project's established small-duplication-over-
@@ -301,6 +353,11 @@
 ;;                                    tip-is-ancestor fast path, since a no-op merge can itself
 ;;                                    be a QA-ref ancestor while having taken none of its
 ;;                                    second parent's content (authorization is not effect)
+;;            :silent-revert-gate-facts! (fn [] -> silent-revert-decision's own facts map, BL-1098) -
+;;                                    called ONLY when push-decision is :should-push, AFTER
+;;                                    the noop-merge gate and BEFORE :qa-gate-facts! - same
+;;                                    sibling posture; reason keyword :silent-revert is
+;;                                    deliberately distinct from :noop-landing-merge
 ;;            :log!                   (fn [& parts])}
 ;;
 ;; Fully self-healing across every transition, not only the two terminal
@@ -314,6 +371,77 @@
 ;; OTHER kind. A LATER failure episode always starts fresh and alarms
 ;; again, the same "recovers and gets stuck again is escalated again" shape
 ;; stuck_escalation_email_lib.bb's own sweep! uses for role recovery.
+;; ── should-push body helpers (keep sweep! / each helper CC ≤ 6) ───────────
+
+(defn- log-noop-merge-refusal! [adapters gate]
+  ((:log! adapters) "push-sweep" "noop-merge-refused"
+   (name (:reason gate))
+   (str/join ";" (map (fn [o] (str (:sha o) "<-" (:second-parent-sha o) " dropped=" (:dropped-count o)))
+                       (:offending gate)))))
+
+(defn- log-silent-revert-refusal! [adapters gate]
+  ((:log! adapters) "push-sweep" "silent-revert-refused"
+   (name (:reason gate))
+   (str/join ";" (map (fn [o] (str (:path o) "<-" (:newest-authoring-sha o)
+                                   "@" (:divergence-merge-sha o)))
+                       (:offending gate)))))
+
+(defn- log-qa-refusal! [adapters gate]
+  ((:log! adapters) "push-sweep" "qa-refused"
+   (name (:reason gate))
+   (str/join "," (:offending-shas gate))))
+
+(defn- attempt-push-this-tick [adapters push-state retry-config now-ms]
+  (let [result ((:push! adapters))]
+    (if (:success result)
+      (do ((:log! adapters) "push-sweep" "pushed") nil)
+      (let [next-push (next-push-state :transient-failure push-state retry-config now-ms (:error result))]
+        ((:log! adapters) "push-sweep" "push-failed"
+         (str "attempts=" (:attempts next-push)
+              (when-let [err (:last-error next-push)] (str " error=\"" err "\""))))
+        next-push))))
+
+(defn- persist-push-or-alarm! [daemon-dir state adapters push-state' retry-config now-ms]
+  (if (nil? push-state')
+    (write-state! daemon-dir {})
+    (let [alarm-state (or (:alarm state) {})]
+      (if (and (:exhausted? push-state') (alarm-due? alarm-state now-ms retry-config))
+        (let [alarm-result ((:send-push-alarm! adapters) (:attempts push-state') (:last-error push-state'))
+              alarm-outcome (classify-send-result alarm-result)
+              next-alarm (next-alarm-state alarm-outcome alarm-state retry-config now-ms)]
+          ((:log! adapters) "push-sweep" "push-alarm" (name alarm-outcome))
+          (write-state! daemon-dir (assoc state :push push-state' :alarm next-alarm)))
+        (write-state! daemon-dir (assoc state :push push-state'))))))
+
+(defn- run-push-attempt-cadence! [now-ms daemon-dir retry-config adapters state]
+  (let [push-state (or (:push state) {})
+        push-due? (due? {:attempts (:attempts push-state)
+                         :last-attempt-at-ms (:last-attempt-at-ms push-state)
+                         :now-ms now-ms :retry-config retry-config})
+        push-state' (if-not push-due?
+                      (do ((:log! adapters) "push-sweep" "push-backoff-wait") push-state)
+                      (attempt-push-this-tick adapters push-state retry-config now-ms))]
+    (persist-push-or-alarm! daemon-dir state adapters push-state' retry-config now-ms)))
+
+(defn- continue-after-noop-gate! [now-ms daemon-dir retry-config adapters state]
+  (let [silent-gate (silent-revert-decision ((:silent-revert-gate-facts! adapters)))]
+    (if (:refuse? silent-gate)
+      (do (log-silent-revert-refusal! adapters silent-gate)
+          (write-state! daemon-dir state))
+      (let [qa-gate (qa-gate-decision ((:qa-gate-facts! adapters)))]
+        (if (:refuse? qa-gate)
+          (do (log-qa-refusal! adapters qa-gate)
+              (write-state! daemon-dir state))
+          (run-push-attempt-cadence! now-ms daemon-dir retry-config adapters state))))))
+
+(defn- run-should-push! [now-ms daemon-dir retry-config adapters state]
+  (let [state (if (seq (:divergence state)) (assoc state :divergence {}) state)
+        noop-gate (noop-merge-decision ((:noop-merge-gate-facts! adapters)))]
+    (if (:refuse? noop-gate)
+      (do (log-noop-merge-refusal! adapters noop-gate)
+          (write-state! daemon-dir state))
+      (continue-after-noop-gate! now-ms daemon-dir retry-config adapters state))))
+
 (defn sweep!
   [now-ms daemon-dir retry-config adapters]
   (let [state (read-state daemon-dir)
@@ -351,74 +479,8 @@
             ((:log! adapters) "push-sweep" "diverged-already-alarmed")
             (write-state! daemon-dir state))))
 
+      ;; BL-855 noop-merge + BL-1098 silent-revert + BL-630 qa-gate, then
+      ;; push/alarm cadence. Body lives in run-should-push! so each helper
+      ;; stays under the cyclomatic-complexity budget.
       :should-push
-      ;; Two independent cadences, checked on every tick: whether it's time
-      ;; to retry the PUSH itself (push-state's own backoff), and - fully
-      ;; decoupled from that - whether it's time to (re)send the ALARM once
-      ;; the push retry budget is exhausted (alarm-state's own backoff). A
-      ;; tick where the push is still backing off must still be free to
-      ;; retry a not-yet-delivered alarm, and vice versa.
-      ;;
-      ;; BL-356 architect bounce: a stale ARMED :divergence flag must not
-      ;; survive a return from :diverged back to :should-push - it belongs
-      ;; to a resolved (or unrelated) divergence episode and must not
-      ;; silently suppress a NEW divergence alarm later. Cleared
-      ;; unconditionally here; every write below persists this cleared
-      ;; value along with whatever :push/:alarm updates this tick makes.
-      (let [state (if (seq (:divergence state)) (assoc state :divergence {}) state)
-            ;; BL-855: the no-op-landing-merge check is a SIBLING of
-            ;; qa-gate-decision, consulted here BEFORE it - a merge that
-            ;; discarded everything its second parent offered can still
-            ;; leave the tip reading as a QA ancestor (its second parent IS
-            ;; genuinely approved), so this check must never be skipped by
-            ;; qa-gate-decision's own tip-is-qa-ancestor fast path.
-            ;; Authorization is not effect.
-            noop-gate (noop-merge-decision ((:noop-merge-gate-facts! adapters)))]
-        (if (:refuse? noop-gate)
-          (do
-            ((:log! adapters) "push-sweep" "noop-merge-refused"
-             (name (:reason noop-gate))
-             (str/join ";" (map (fn [o] (str (:sha o) "<-" (:second-parent-sha o) " dropped=" (:dropped-count o)))
-                                 (:offending noop-gate))))
-            (write-state! daemon-dir state))
-          ;; BL-630: the QA-ancestry gate runs BEFORE the push-attempt
-          ;; backoff/alarm machinery below ever sees this tick - a
-          ;; refusal here is its own outcome, never absorbed into
-          ;; push-failed's transient-retry counting nor into the
-          ;; divergence alarm (this branch is ahead>0/behind=0, so
-          ;; divergence was never in play regardless).
-          (let [qa-gate (qa-gate-decision ((:qa-gate-facts! adapters)))]
-            (if (:refuse? qa-gate)
-              (do
-                ((:log! adapters) "push-sweep" "qa-refused"
-                 (name (:reason qa-gate))
-                 (str/join "," (:offending-shas qa-gate)))
-                (write-state! daemon-dir state))
-              (let [push-state (or (:push state) {})
-                    push-due? (due? {:attempts (:attempts push-state)
-                                     :last-attempt-at-ms (:last-attempt-at-ms push-state)
-                                     :now-ms now-ms :retry-config retry-config})
-                    push-state' (if-not push-due?
-                                  (do ((:log! adapters) "push-sweep" "push-backoff-wait") push-state)
-                                  (let [result ((:push! adapters))]
-                                    (if (:success result)
-                                      (do ((:log! adapters) "push-sweep" "pushed") nil)
-                                      ;; BL-903: the underlying git error travels into push-state
-                                      ;; as :last-error (already single-lined by next-push-state)
-                                      ;; and into this same tick's log record, so a failure streak
-                                      ;; is diagnosable without waiting for the alarm.
-                                      (let [next-push (next-push-state :transient-failure push-state retry-config now-ms (:error result))]
-                                        ((:log! adapters) "push-sweep" "push-failed"
-                                         (str "attempts=" (:attempts next-push)
-                                              (when-let [err (:last-error next-push)] (str " error=\"" err "\""))))
-                                        next-push))))]
-                (if (nil? push-state')
-                  (write-state! daemon-dir {})
-                  (let [alarm-state (or (:alarm state) {})]
-                    (if (and (:exhausted? push-state') (alarm-due? alarm-state now-ms retry-config))
-                      (let [alarm-result ((:send-push-alarm! adapters) (:attempts push-state') (:last-error push-state'))
-                            alarm-outcome (classify-send-result alarm-result)
-                            next-alarm (next-alarm-state alarm-outcome alarm-state retry-config now-ms)]
-                        ((:log! adapters) "push-sweep" "push-alarm" (name alarm-outcome))
-                        (write-state! daemon-dir (assoc state :push push-state' :alarm next-alarm)))
-                      (write-state! daemon-dir (assoc state :push push-state')))))))))))))
+      (run-should-push! now-ms daemon-dir retry-config adapters state))))

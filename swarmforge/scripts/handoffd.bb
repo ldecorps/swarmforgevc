@@ -2760,6 +2760,106 @@
       (log! "push-sweep-noop-merge-gate-error" (.getMessage e))
       {:facts-complete? false})))
 
+;; BL-1098: real git wiring for push_sweep_lib.bb/silent-revert-decision.
+;; Pure decision stays in the lib; this gatherer shells to git objects only
+;; (never the working tree - every rev is an explicit ref:path). Candidate
+;; paths are ONLY those merges in the ahead range touched (offered ∪ taken),
+;; so cost is one authoring-commit lookup per candidate path, never a full
+;; tree walk (invariant 3 / BL-1086).
+(defn- git-blob-at [rev path]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                            ["git" "rev-parse" (str rev ":" path)]
+                            {:dir (str project-root)})]
+    (when (zero? exit) (str/trim out))))
+
+(defn- git-newest-authoring-sha [ref path]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                            ["git" "log" "-1" "--format=%H" "--no-merges" "--full-history" ref "--" path]
+                            {:dir (str project-root)})]
+    (when (zero? exit)
+      (let [sha (str/trim out)]
+        (when-not (str/blank? sha) sha)))))
+
+(defn- git-authoring-shas [ref path]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                            ["git" "log" "--format=%H" "--no-merges" "--full-history" ref "--" path]
+                            {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+(defn- git-merges-after [older-sha ref path]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                            ["git" "log" "--merges" "--full-history" "--reverse" "--format=%H"
+                             (str older-sha ".." ref) "--" path]
+                            {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+(defn- tip-holds-earlier-authored-blob? [ref path tip-blob newest-sha]
+  (let [shas (git-authoring-shas ref path)]
+    (boolean (some (fn [sha]
+                     (and (not= sha newest-sha)
+                          (= tip-blob (git-blob-at sha path))))
+                   shas))))
+
+(defn- first-divergence-merge [ref path newest-sha newest-blob]
+  (some (fn [merge-sha]
+          (when (not= newest-blob (git-blob-at merge-sha path))
+            merge-sha))
+        (or (git-merges-after newest-sha ref path) [])))
+
+(defn- silent-revert-path-facts [ref path]
+  (let [tip-blob (git-blob-at ref path)
+        newest-sha (git-newest-authoring-sha ref path)]
+    (if (nil? newest-sha)
+      {:ok? true :path path :tip-matches-newest-authoring? true
+       :tip-is-superseded-resurrection? false :tip-absent-without-delete? false
+       :newest-authoring-sha nil :divergence-merge-sha nil}
+      (let [newest-blob (git-blob-at newest-sha path)
+            matches? (and (some? tip-blob) (= tip-blob newest-blob))
+            absent-no-delete? (and (nil? tip-blob) (some? newest-blob))
+            resurrection? (and (some? tip-blob) (not matches?)
+                               (tip-holds-earlier-authored-blob? ref path tip-blob newest-sha))
+            divergence (when (or resurrection? absent-no-delete?)
+                         (first-divergence-merge ref path newest-sha newest-blob))]
+        {:ok? true :path path
+         :tip-matches-newest-authoring? (boolean matches?)
+         :tip-is-superseded-resurrection? (boolean resurrection?)
+         :tip-absent-without-delete? (boolean absent-no-delete?)
+         :newest-authoring-sha newest-sha
+         :divergence-merge-sha divergence}))))
+
+(defn- merge-touched-path-set [sha]
+  (let [offered (git-diff-name-only (str sha "^1") (str sha "^2"))
+        taken (git-diff-name-only (str sha "^1") sha)]
+    (if (and (some? offered) (some? taken))
+      {:ok? true :paths (set (concat offered taken))}
+      {:ok? false})))
+
+(defn push-sweep-silent-revert-gate-facts! []
+  (try
+    (let [shas (git-ahead-shas)]
+      (if (nil? shas)
+        {:facts-complete? false}
+        (let [merge-shas (filterv git-merge-commit? shas)
+              path-sets (mapv merge-touched-path-set merge-shas)]
+          (if (some (complement :ok?) path-sets)
+            {:facts-complete? false}
+            (let [paths (push-sweep-lib/silent-revert-candidate-paths path-sets)
+                  facts (mapv #(silent-revert-path-facts "main" %) paths)]
+              (if (some (complement :ok?) facts)
+                {:facts-complete? false}
+                {:facts-complete? true
+                 :candidate-paths
+                 (mapv #(select-keys % [:path :tip-matches-newest-authoring?
+                                        :tip-is-superseded-resurrection?
+                                        :tip-absent-without-delete?
+                                        :newest-authoring-sha :divergence-merge-sha])
+                       facts)}))))))
+    (catch Exception e
+      (log! "push-sweep-silent-revert-gate-error" (.getMessage e))
+      {:facts-complete? false})))
+
 (defn push-sweep! []
   (try
     (push-sweep-lib/sweep!
@@ -2768,6 +2868,7 @@
       :push! push-sweep-push!
       :qa-gate-facts! push-sweep-qa-gate-facts!
       :noop-merge-gate-facts! push-sweep-noop-merge-gate-facts!
+      :silent-revert-gate-facts! push-sweep-silent-revert-gate-facts!
       :send-push-alarm!
       (fn [attempts reason]
         (send-push-alarm-email!
