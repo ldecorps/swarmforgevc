@@ -48,6 +48,37 @@ test('the newest of several add commits is taken, since a re-park is the current
   assert.equal(parseHeldSinceMs('1755820800\n1600000000\n'), 1755820800000);
 });
 
+test('surrounding whitespace on the line is trimmed before parsing', () => {
+  assert.equal(parseHeldSinceMs('  1755820800  \n'), 1755820800000);
+});
+
+test('a leading blank line is skipped, not mistaken for "no output"', () => {
+  assert.equal(parseHeldSinceMs('\n1755820800\n'), 1755820800000);
+});
+
+test('a leading numeric prefix followed by garbage is not a timestamp', () => {
+  assert.equal(parseHeldSinceMs('123abc\n'), undefined);
+});
+
+test('a trailing numeric suffix on a non-numeric line is not a timestamp', () => {
+  assert.equal(parseHeldSinceMs('abc123\n'), undefined);
+});
+
+test('digits at both ends with garbage in the middle is not a timestamp, not the leading digit run', () => {
+  // parseInt('123abc456', 10) would happily parse the leading "123" alone -
+  // the full-match regex, not parseInt's own leniency, is what must reject
+  // this line outright.
+  assert.equal(parseHeldSinceMs('123abc456\n'), undefined);
+});
+
+test('epoch zero is treated as unknown, not as a real (1970) hold date', () => {
+  assert.equal(parseHeldSinceMs('0\n'), undefined);
+});
+
+test('an unrealistically huge digit string overflows to a non-finite value and is treated as unknown', () => {
+  assert.equal(parseHeldSinceMs(`${'9'.repeat(400)}\n`), undefined);
+});
+
 test('a held ticket resolves through the injected git runner, never a real subprocess here', () => {
   const seen = [];
   const ms = readHeldSinceMsFor('BL-844-thing.yaml', (args) => {
