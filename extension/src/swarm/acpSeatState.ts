@@ -39,39 +39,56 @@ export const EMPTY_SEAT_STATE: AcpSeatState = {
   turnsEnded: 0,
 };
 
+function applyTurnEnded(state: AcpSeatState, event: Extract<AcpEvent, { kind: 'turn_ended' }>): AcpSeatState {
+  return {
+    ...state,
+    lastStopReason: event.stopReason,
+    turnsEnded: state.turnsEnded + 1,
+    // A turn that has ended cannot still be waiting on permission: the
+    // agent returned. Leaving a stale request here would let one
+    // permission moment mute the seat forever.
+    pendingPermission: null,
+    runningTools: [],
+  };
+}
+
+function applyPermissionRequested(
+  state: AcpSeatState,
+  event: Extract<AcpEvent, { kind: 'permission_requested' }>
+): AcpSeatState {
+  return {
+    ...state,
+    pendingPermission: { requestId: event.requestId, tool: event.tool },
+  };
+}
+
+function applyToolStatus(state: AcpSeatState, event: Extract<AcpEvent, { kind: 'tool_status' }>): AcpSeatState {
+  const running = state.runningTools.filter((t) => t !== event.tool);
+  // A tool that resolved is a permission moment that resolved with it.
+  const permissionResolvedByThisTool =
+    event.status !== 'started' && state.pendingPermission?.tool === event.tool;
+  return {
+    ...state,
+    runningTools: event.status === 'started' ? [...running, event.tool] : running,
+    pendingPermission: permissionResolvedByThisTool ? null : state.pendingPermission,
+  };
+}
+
+function applyTranscript(state: AcpSeatState, event: Extract<AcpEvent, { kind: 'transcript' }>): AcpSeatState {
+  return { ...state, transcript: [...state.transcript, `${event.role}: ${event.text}`] };
+}
+
 /** Fold one fact into the state. Never mutates its argument. */
 export function applyAcpEvent(state: AcpSeatState, event: AcpEvent): AcpSeatState {
   switch (event.kind) {
     case 'turn_ended':
-      return {
-        ...state,
-        lastStopReason: event.stopReason,
-        turnsEnded: state.turnsEnded + 1,
-        // A turn that has ended cannot still be waiting on permission: the
-        // agent returned. Leaving a stale request here would let one
-        // permission moment mute the seat forever.
-        pendingPermission: null,
-        runningTools: [],
-      };
+      return applyTurnEnded(state, event);
     case 'permission_requested':
-      return {
-        ...state,
-        pendingPermission: { requestId: event.requestId, tool: event.tool },
-      };
-    case 'tool_status': {
-      const running = state.runningTools.filter((t) => t !== event.tool);
-      return {
-        ...state,
-        runningTools: event.status === 'started' ? [...running, event.tool] : running,
-        // A tool that resolved is a permission moment that resolved with it.
-        pendingPermission:
-          event.status !== 'started' && state.pendingPermission?.tool === event.tool
-            ? null
-            : state.pendingPermission,
-      };
-    }
+      return applyPermissionRequested(state, event);
+    case 'tool_status':
+      return applyToolStatus(state, event);
     case 'transcript':
-      return { ...state, transcript: [...state.transcript, `${event.role}: ${event.text}`] };
+      return applyTranscript(state, event);
   }
 }
 
