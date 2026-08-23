@@ -267,13 +267,15 @@ answer_one() {
 collect_verdict_stores
 
 if [[ "$BATCH_MODE" == "yes" ]]; then
-  status=0
+  # Per-sha verdicts ride the printed lines, not this exit code: a
+  # STORE-level problem already exited 2 inside collect_verdict_stores
+  # above, and a per-sha 1/2 is a real answer, not a run failure.
   for sha in ${BATCH_SHAS[@]+"${BATCH_SHAS[@]}"}; do
     rc=0
     answer_one "$sha" || rc=$?
     printf '%s %s\n' "$sha" "$rc"
   done
-  exit "$status"
+  exit 0
 fi
 
 rc=0

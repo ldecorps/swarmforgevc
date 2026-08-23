@@ -145,7 +145,28 @@ function registerSteps(registry) {
     ctx.predicateOverride = saved;
   });
 
+  // BL-113: scenario 03's downstream assertion ("the approval predicate is
+  // invoked once") is shape-only - true for any of the three tips moving, so
+  // it cannot tell a mutated Examples value (e.g. "main" -> "maiN") from the
+  // real one; a mutant that falls through to the WRONG branch below still
+  // makes some tip move and the gather still re-runs. Pinned here instead,
+  // the same KNOWN_VALUES discipline as engineering.prompt's Acceptance
+  // Pipeline rule: this step asserts the NAMED ref actually moved and the
+  // other two did not, which only the correct branch can satisfy.
+  const TIP_REFS = { main: 'main', 'origin/main': 'refs/remotes/origin/main', 'swarmforge-QA': 'swarmforge-QA' };
+
+  function readTip(root, gitRef) {
+    try {
+      return git(root, ['rev-parse', gitRef]).trim();
+    } catch {
+      return null;
+    }
+  }
+
   scoped(/^the "([^"]+)" tip moves$/, (ctx, ref) => {
+    assert.ok(ref in TIP_REFS, `unrecognised tip "${ref}" - expected one of ${Object.keys(TIP_REFS).join(', ')}`);
+    const before = Object.fromEntries(Object.entries(TIP_REFS).map(([name, gitRef]) => [name, readTip(ctx.root, gitRef)]));
+
     if (ref === 'main') {
       git(ctx.root, ['commit', '-q', '--allow-empty', '-m', 'main moves']);
     } else if (ref === 'swarmforge-QA') {
@@ -154,6 +175,19 @@ function registerSteps(registry) {
       // origin/main is a remote-tracking ref; create/advance it the way a
       // fetch would, so the gather sees the same shape it sees in production.
       git(ctx.root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    }
+
+    const after = Object.fromEntries(Object.entries(TIP_REFS).map(([name, gitRef]) => [name, readTip(ctx.root, gitRef)]));
+    for (const name of Object.keys(TIP_REFS)) {
+      if (name === ref) {
+        assert.notEqual(after[name], before[name], `expected the "${ref}" tip to actually move`);
+      } else {
+        assert.equal(
+          after[name],
+          before[name],
+          `expected only the "${ref}" tip to move, but "${name}" changed too (before=${before[name]}, after=${after[name]})`
+        );
+      }
     }
   });
 
@@ -223,6 +257,12 @@ function registerSteps(registry) {
       1,
       `expected exactly one predicate process for the whole candidate set, got ${ctx.run.calls}`
     );
+    // This is the ONLY Then step in scenarios 03 (all three Outline rows) and
+    // 04 - without calling cleanup() here too, their fixture dirs are never
+    // removed. Idempotent alongside the scenarios (01) that clean up again in
+    // a later step: cleanup()'s own `while (roots.length)` is a no-op once
+    // already emptied.
+    cleanup();
   });
 
   scoped(/^the approval predicate is not invoked$/, (ctx) => {

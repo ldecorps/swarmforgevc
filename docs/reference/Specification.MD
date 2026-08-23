@@ -1,6 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1083: `promoteToActive`
+**Last Updated:** August 23, 2026 (BL-1086: babysitterd's
+`pipeline-code-on-main` gather (check 13, BL-631) re-derived its answer from
+scratch every 300s tick, spawning `is_qa_ancestor.sh` once per SHA ahead of
+`swarmforge-QA`. On a `main` ~23 commits ahead this overran the daemon's 600s
+freshness threshold — the heartbeat writes only after the check returns, so
+a slow gather read as a dead daemon and triggered a mid-sweep restart
+(`age_secs=1146`, 2026-08-22). Fix, two halves: (1) an on-disk cache
+(`.swarmforge/babysitterd/pipeline-code-on-main-cache.json`, not in-memory —
+each tick is a fresh process) keyed on the `main`/`origin/main`/
+`swarmforge-QA` tips, invalidated the moment any moves, never populated from
+an `:ancestry-unavailable? true` result; (2) `is_qa_ancestor.sh` gained a
+`--batch` mode answering the whole candidate set in one process instead of
+one process per SHA, remaining the single approval predicate (BL-925
+invariant 2) rather than a second ancestry implementation — an unanswered or
+failed batch still fails the whole sweep closed, never a partial result. No
+extension command, setting, or UI change. See the new "Cached, batched
+pipeline-code-on-main gather" section in
+`docs/how-to/BL-611-babysitterd-runbook.md`.)
+Prior entry —
+BL-1083: `promoteToActive`
 (`extension/src/panel/backlogWriter.ts`) was a bare paused→active file move
 with no reference to the promotion gates, so both live callers — the
 Telegram Expedite verb and the paused-pager Expedite endpoint, the operator's
