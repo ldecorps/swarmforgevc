@@ -97,6 +97,7 @@ qa_e2e_procedure: >
      allow-list message, so the token was widened and not the check loosened.
 
 notes: |
+  Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   BL-712 remaining slice B. Parent epic BL-712.
 
   Original approval_context, preserved verbatim (Article 5.3):
