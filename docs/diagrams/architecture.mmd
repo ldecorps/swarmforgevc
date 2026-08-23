@@ -23,6 +23,10 @@
 %% per-commit check to the same push-sweep chokepoint: a merge commit whose
 %% tree took none of its second parent's differing content is refused before
 %% it reaches origin, however correct its ancestry and message look.
+%% BL-1098 added another sibling on the same chokepoint: a path whose tip
+%% holds a superseded blob (or is absent with no delete commit) — content no
+%% commit authored the change back to — is refused before push, with the
+%% reason keyword :silent-revert distinct from BL-855's :noop-landing-merge.
 %% BL-820 added the closing-ceremony lean pass: ./finish-shift runs
 %% closing-ceremony-run.js before it stops the pipeline, folding the BL-819
 %% ledger into a shift packet stored under lean/ceremony/ and delivered to
@@ -204,7 +208,7 @@ flowchart TB
   PANES -->|closing-ceremony-run.js at\n./finish-shift, before pipeline stop (BL-820):\nreads LEANDIR, writes a run| CEREMONYDIR
   PANES -->|closing-ceremony-adjustment.js /\n-outcome.js record coordinator/specifier\ndecisions against the run (BL-820)| CEREMONYDIR
   CEREMONYDIR -->|note to specifier via\nswarm_handoff.sh (BL-820)| HANDOFFS
-  DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip;\nBL-855 refuses a no-op landing merge)| TARGETREPO
+  DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip;\nBL-855 refuses a no-op landing merge;\nBL-1098 refuses a silent path revert)| TARGETREPO
   TARGETREPO -->|handoffd.bb master-main-reconcile-sweep!:\ngit merge origin/main into the master\ncheckout local main (BL-891); never\nreset/rebase/stash/force; blocks only\non real dirty-path/merge overlap\n(BL-919), else a conflict; surfaces\na note naming the path instead| PANES
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES

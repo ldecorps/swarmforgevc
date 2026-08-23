@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=dc8e8fa17b4d895ed002cb98b7c095dcd430322b34ead79048277b29b3a748a5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T15:44:51.116651699Z","feature_name":"Content that no commit authored never reaches origin","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1098-silent-revert-of-landed-content.feature","background_hash":"59a57aa130c6e1c3ed46d543c65bbbea1609ef518a0a4856af08b7cae05f5785","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The verdict turns on whether a commit authored the content the tip holds","scenario_hash":"8b9e881ac9eeac473b3f2c0d008a1fba9c5ebebac5d3f7116faae5fa4438a5e7","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-23T15:44:51.116651699Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Content that no commit authored never reaches origin
 
   BL-855 pinned the merge that takes NOTHING. This pins its harder sibling:
