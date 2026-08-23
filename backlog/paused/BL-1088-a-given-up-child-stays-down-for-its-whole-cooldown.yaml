@@ -17,8 +17,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1088-a-given-up-child-stays-down-for-its-whole-cooldown.feature
-human_approval: pending
-
+human_approval: approved
 invariants:
   - "A declared cooldown is the delivered cooldown: a child that has reached give-up is not respawned until its configured `giveup-cooldown-ms` has elapsed, whatever the liveness of the process recorded against it."
   - "Give-up stays a TIMED state, never terminal: once the cooldown DOES elapse the child re-arms with a fresh budget. Restoring the bound must not restore BL-303's sticky give-up."
