@@ -49,6 +49,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * driver understands all report `unknown`, which admission refuses exactly
  * like a candidate. Absence must never buy certification.
  */
+const KNOWN_IDENTITY_STATUSES = new Set(['certified', 'candidate', 'retired']);
+
+function isKnownIdentityStatus(status: unknown): status is 'certified' | 'candidate' | 'retired' {
+  return typeof status === 'string' && KNOWN_IDENTITY_STATUSES.has(status);
+}
+
 export function readIdentityStatus(registry: unknown, identity: CursorIdentity): IdentityStatus {
   if (!isRecord(registry)) {
     return 'unknown';
@@ -62,10 +68,7 @@ export function readIdentityStatus(registry: unknown, identity: CursorIdentity):
     return 'unknown';
   }
   const status = entry.status;
-  if (status === 'certified' || status === 'candidate' || status === 'retired') {
-    return status;
-  }
-  return 'unknown';
+  return isKnownIdentityStatus(status) ? status : 'unknown';
 }
 
 /**
