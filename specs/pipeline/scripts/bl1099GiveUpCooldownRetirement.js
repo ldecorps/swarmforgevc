@@ -54,35 +54,39 @@ function listScenarios(featureText) {
   return scenarios;
 }
 
+const NOT_ELAPSED_RE = /has not yet elapsed|has not elapsed yet/;
+const ELAPSED_RE = /give-up cooldown has elapsed|cooldown has elapsed|has elapsed/;
+const DECISION_RE =
+  /still given up|no replacement is spawned|respawned with a fresh restart budget|re-arm|leaves the child down|resets its attempt count and starts/;
+const ELAPSED_REARM_RE =
+  /respawned with a fresh restart budget|re-arm|resets its attempt count and starts/;
+
 function bodyMentionsNotElapsed(body) {
-  return /has not yet elapsed|has not elapsed yet/.test(body);
+  return NOT_ELAPSED_RE.test(body);
 }
 
 function bodyMentionsElapsed(body) {
   // "has elapsed" alone also matches "has not elapsed" — exclude those.
-  if (bodyMentionsNotElapsed(body)) return false;
-  return /give-up cooldown has elapsed|cooldown has elapsed|has elapsed/.test(body);
+  return !bodyMentionsNotElapsed(body) && ELAPSED_RE.test(body);
 }
 
 function bodyMentionsProcessState(body, processState) {
-  if (processState === 'dead') return /\bdead\b/.test(body);
-  return /still alive/.test(body);
+  return processState === 'dead' ? /\bdead\b/.test(body) : /still alive/.test(body);
 }
 
 function bodyHasProcessStateExample(body, processState) {
   // Scenario Outline Examples column whose cells include the state token.
   const examples = body.match(/Examples:[\s\S]*?(?=\n\s*#|\n\s*Scenario|\s*$)/);
   if (!examples) return false;
-  if (processState === 'dead') {
-    return /^\s*\|\s*dead\s*\|/m.test(examples[0]) || /\|\s*dead\s*\|/.test(examples[0]);
-  }
-  return /still alive/.test(examples[0]);
+  return processState === 'dead' ? /\|\s*dead\s*\|/.test(examples[0]) : /still alive/.test(examples[0]);
+}
+
+function bodyCitesProcessState(body, processState) {
+  return bodyMentionsProcessState(body, processState) || bodyHasProcessStateExample(body, processState);
 }
 
 function bodyAssertsSupervisorDecision(body) {
-  return /still given up|no replacement is spawned|respawned with a fresh restart budget|re-arm|leaves the child down|resets its attempt count and starts/.test(
-    body
-  );
+  return DECISION_RE.test(body);
 }
 
 /**
@@ -94,16 +98,12 @@ function scenarioCoversCase(scenario, elapsed, processState) {
   const { body } = scenario;
   if (!bodyAssertsSupervisorDecision(body)) return false;
   if (elapsed === 'has not elapsed') {
-    if (!bodyMentionsNotElapsed(body)) return false;
-    return bodyMentionsProcessState(body, processState) || bodyHasProcessStateExample(body, processState);
+    return bodyMentionsNotElapsed(body) && bodyCitesProcessState(body, processState);
   }
   if (!bodyMentionsElapsed(body)) return false;
   // Elapsed: process state is orthogonal to the re-arm decision. An explicit
   // process-state mention still matches; otherwise any elapsed re-arm covers.
-  if (bodyMentionsProcessState(body, processState) || bodyHasProcessStateExample(body, processState)) {
-    return true;
-  }
-  return /respawned with a fresh restart budget|re-arm|resets its attempt count and starts/.test(body);
+  return bodyCitesProcessState(body, processState) || ELAPSED_REARM_RE.test(body);
 }
 
 function findScenarioCoveringCase(featureTexts, elapsed, processState) {

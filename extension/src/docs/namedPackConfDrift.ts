@@ -56,6 +56,26 @@ function asDocSources(docs: readonly DocSource[] | readonly string[]): DocSource
   return docs.map((d) => (typeof d === 'string' ? { text: d } : d));
 }
 
+function toPathSet(paths: ReadonlySet<string> | readonly string[]): ReadonlySet<string> {
+  return paths instanceof Set ? paths : new Set(paths);
+}
+
+/** True when the named pack is a real (non-placeholder) path missing from the tree. */
+function isMissingRealPack(ref: NamedPackRef, existing: ReadonlySet<string>): boolean {
+  return !isIllustrativePackPlaceholder(ref.stem) && !existing.has(ref.namedPath);
+}
+
+function collectAbsentPacks(
+  doc: DocSource,
+  existing: ReadonlySet<string>,
+  absent: Set<string>
+): void {
+  if (isShippedWorkLog(doc.relativePath)) return;
+  for (const ref of extractNamedPackConfs(doc.text)) {
+    if (isMissingRealPack(ref, existing)) absent.add(ref.namedPath);
+  }
+}
+
 /**
  * Among pack confs named in docs, return those absent from the tree and
  * not illustrative placeholders. Skips the shipped-work log by path.
@@ -64,17 +84,10 @@ export function findAbsentNamedPackConfs(
   docs: readonly DocSource[] | readonly string[],
   existingPackPaths: ReadonlySet<string> | readonly string[]
 ): string[] {
-  const existing =
-    existingPackPaths instanceof Set
-      ? existingPackPaths
-      : new Set(existingPackPaths);
+  const existing = toPathSet(existingPackPaths);
   const absent = new Set<string>();
   for (const doc of asDocSources(docs)) {
-    if (isShippedWorkLog(doc.relativePath)) continue;
-    for (const ref of extractNamedPackConfs(doc.text)) {
-      if (isIllustrativePackPlaceholder(ref.stem)) continue;
-      if (!existing.has(ref.namedPath)) absent.add(ref.namedPath);
-    }
+    collectAbsentPacks(doc, existing, absent);
   }
   return [...absent].sort();
 }
