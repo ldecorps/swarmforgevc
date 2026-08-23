@@ -27,7 +27,7 @@ required_wiring:
   - "swarmforge/scripts/push_sweep_lib.bb::silent-revert::the sweep's per-commit decision path is the ONLY live chokepoint between a landed merge and origin. A predicate that is fully unit-tested but never consulted here leaves e9c592cc79's exact path open and the ticket's value at zero. BL-855's :noop-merge-gate-facts! adapter is the precedent shape to follow; the reason keyword must be distinguishable from :noop-landing-merge in the sweep's own log line."
   - "specs/pipeline/steps/index.js::bl1098::the acceptance runner throws on any scenario lacking a step handler, so this ticket's handlers must be registered in the same parcel as the behaviour (BL-233). Substring anchor only - the handler file's exact name is the implementer's call."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One genuine ruling is needed and it is not the predicate: should a detected
   silent revert REFUSE the push, or only alarm and let it through?
