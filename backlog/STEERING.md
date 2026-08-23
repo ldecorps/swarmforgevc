@@ -403,3 +403,47 @@ see the omission, which is the one thing it is needed for.
 candidates remain cost-control and human-in-the-loop/front-desk-trust — and this
 batch is heavy with the latter, because the human kept asking and nobody heard.
 BL-101 still holds pending that choice.
+
+## Standing human directive (2026-08-23 ~02:20 BST) — Cursor seats, then sleep
+
+Raw intake: `backlog/archive/INTAKE-cursor-seats-then-sleep.md` (verbatim, with
+the specifier's disposition appended). Recorded here because its substance is
+**pull order and shift timing** — a coordinator constraint, not a ticket.
+
+The human's own words, verbatim:
+
+> Tomorrow the human wants **Cursor in the coder and QA seats**. Keep the
+> swarm working the Cursor seat chain overnight. **Sleep (finish-shift) only
+> after that chain has landed** — do not take the Sunday day-shift skip.
+
+> 1. Keep working BL-1078 (active, pri 0) → then promote BL-1079 → BL-1080.
+> 2. BL-1081 may proceed in parallel (no depends_on on 1078).
+> 3. Do **not** promote local-LLM tickets ahead of this chain.
+> 4. Do **not** run day-shift-end / finish-shift early for "Sunday quiet".
+
+> A cron watcher (`.swarmforge/operator/sleep-when-cursor-landed.sh`) will
+> `./finish-shift` once all four are in `backlog/done/`. Do not fight that.
+
+> BL-1082 / BL-1052 / BL-1053 (local-LLM) were **parked** — resume after Cursor
+> coder/QA seats are usable.
+
+> Human will staff coder + QA with Cursor via the BL-1080 pack. Swarm may stay
+> bedtime until the human brings it back.
+
+### Effect on the pull policy while this directive stands
+
+- **Pull order is pinned:** BL-1078 → BL-1079 → BL-1080 (strictly serial —
+  BL-1080 declares `depends_on: [BL-1079]`), with BL-1081 available in
+  parallel at any time. Nothing outside this chain is promoted ahead of it.
+- **The local-LLM cluster is parked, by name:** BL-1082, BL-1052, BL-1053.
+  Not cancelled — resumed once the Cursor coder/QA seats are usable.
+- **Expedite is not a loophole.** Article 3.2.4 still reorders the queue for a
+  `critical`/`high` defect, and this directive does not repeal it. But a defect
+  minted at `medium` or below cannot jump this chain, and no ticket should be
+  graded up in severity to get around the pin. BL-1090, minted the same night,
+  was deliberately kept at `medium` for exactly this reason.
+- **Do not finish-shift early.** The cron watcher owns the sleep decision; the
+  swarm neither pre-empts it nor fights it.
+- **Expiry:** this directive is spent the moment all four tickets are in
+  `backlog/done/` and the watcher has fired. An expired directive is not a
+  policy — retire this section then, do not leave it silently vetoing work.

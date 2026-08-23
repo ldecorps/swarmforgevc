@@ -21,14 +21,6 @@ const REAL_SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
 const { readLiveRoleHeldTickets } = require(path.join(EXT_OUT, 'tools', 'telegram-front-desk-bot'));
 const { render } = require('./bl465PipelineBoardRenderRound2Steps');
-const { computeClosure } = require(path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'lib', 'operatorRuntimeBbClosure.js'));
-
-// The entry point is per-fixture and is NOT handoff_lib.bb: this one drives
-// pipeline_stage_cli.bb, which pulls pipeline_stage_lib.bb on top of
-// handoff_lib.bb's own set. A guard pinned to the wrong script would green a
-// fixture missing its own CLI's direct dependency.
-const CLI_ENTRY_POINT = 'pipeline_stage_cli.bb';
-const REQUIRED_SCRIPT_FILES = [...computeClosure(REAL_SCRIPTS_DIR, CLI_ENTRY_POINT)].sort();
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -38,14 +30,17 @@ function mkFixtureRoot() {
   const root = mkTmp('bl487-fixture-');
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  // BL-973: DERIVED from the CLI's real transitive load-file closure. Omitting
-  // a dependency here never throws at fixture build time - it makes the real
-  // `bb` subprocess fail, so the list going stale reads as this feature being
-  // broken. It went stale three times exactly that way (BL-911's
-  // prompt_engine_lib.bb, BL-967's daemon_cycle_guard_lib.bb, BL-1029's
-  // shell_quote_lib.bb), which is why the names are now computed rather than
-  // kept in sync by comment.
-  for (const name of REQUIRED_SCRIPT_FILES) {
+  // BL-655: handoff_lib.bb load-files ambulance_lib.bb; BL-805: it also
+  // load-files mono_router_lib.bb. Omitting either here does not throw
+  // loudly at fixture build time - it makes the real `bb` subprocess fail
+  // and (pre-BL-814) the CLI wrapper this feature drives would silently
+  // degrade instead. This exact list going stale twice, in this exact
+  // technique, is BL-814's own root cause - keep it in sync with the
+  // sibling fixture in extension/test/readLiveRoleHeldTicketsCli.test.js.
+  // BL-1029: handoff_lib.bb now also load-files shell_quote_lib.bb (the one
+  // place a launch path becomes a shell word) - the THIRD time this hand
+  // list has gone stale, in the technique BL-814 was filed about.
+  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'shell_quote_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb']) {
     fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, name), path.join(scriptsDir, name));
   }
   return root;
@@ -120,6 +115,4 @@ function registerSteps(registry) {
   });
 }
 
-// BL-973: the effective copy set, exported so the closure gate can read what
-// this fixture ACTUALLY copies rather than parsing the source for a literal.
-module.exports = { registerSteps, BB_FIXTURE_CLOSURE: { entry: CLI_ENTRY_POINT, files: REQUIRED_SCRIPT_FILES } };
+module.exports = { registerSteps };

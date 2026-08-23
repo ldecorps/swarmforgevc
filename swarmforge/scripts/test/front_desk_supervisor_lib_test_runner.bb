@@ -156,12 +156,48 @@
   (assert= "supervisor-recovery-02 [elapsed]: gave-up-at-ms is cleared" nil (:gave-up-at-ms entry))
   (assert= "gave-up -> running (re-arm) emits :re-armed" :re-armed event))
 
-;; supervisor-recovery-02 [dead pid]: gave-up with a dead recorded pid re-arms immediately
+;; ── BL-1088: the declared cooldown is the delivered cooldown ─────────────
+;; RETIRED, not reworded: the three assertions that stood here demanded a
+;; gave-up child with a dead recorded pid re-arm IMMEDIATELY, "without waiting
+;; for cooldown". That is the defect. A child reaches gave-up by crash-looping
+;; until it exhausts its budget, so its process is ALWAYS dead - the dead-pid
+;; disjunct short-circuited true on the very next tick and the cooldown every
+;; one of six supervisors declares (900000ms) never applied to the one case it
+;; was written for. Delivered bound: front_desk_supervisor.bb's 2000ms tick.
+;;
+;; The contract they encoded also contradicted
+;; test_front_desk_supervisor_tick.sh's own "[not elapsed]: still gave-up, not
+;; restarted", which has been failing on main ever since - two executable
+;; assertions demanding opposite results from one function. Whichever way that
+;; is resolved, one had to be retired; the cooldown is the declared design, so
+;; these are the ones that go.
+
 (let [gave-up-entry {:pid 1881442 :attempts 5 :status "gave-up" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms 1000000}
       {:keys [entry event]} (front-desk-supervisor-lib/check-one! gave-up-entry 1005000 dead? fixed-pid! healthy-cfg giveup-cfg)]
-  (assert= "gave-up with dead pid: re-arms to running without waiting for cooldown" "running" (:status entry))
-  (assert= "gave-up with dead pid: attempts reset to a fresh budget" 1 (:attempts entry))
-  (assert= "gave-up with dead pid: emits :re-armed" :re-armed event))
+  (assert= "bl1088-01: gave-up with a DEAD pid stays given up inside the cooldown" "gave-up" (:status entry))
+  (assert= "bl1088-01: no re-arm event inside the cooldown" nil event)
+  (assert= "bl1088-01: the exhausted budget is not reset inside the cooldown" 5 (:attempts entry)))
+
+(let [gave-up-entry {:pid 1881442 :attempts 5 :status "gave-up" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms 1000000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! gave-up-entry 1005000 alive? fixed-pid! healthy-cfg giveup-cfg)]
+  (assert= "bl1088-01: gave-up with a LIVE pid also stays given up inside the cooldown" "gave-up" (:status entry))
+  (assert= "bl1088-01: no re-arm event for a live pid either" nil event))
+
+;; BL-303's timed-state guarantee, unchanged: restoring the bound must not
+;; restore the sticky give-up BL-303 removed.
+(let [gave-up-entry {:pid 1881442 :attempts 5 :status "gave-up" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms 1000000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! gave-up-entry 1900000 dead? fixed-pid! healthy-cfg giveup-cfg)]
+  (assert= "bl1088-02: once the cooldown HAS elapsed the child re-arms" "running" (:status entry))
+  (assert= "bl1088-02: and with a fresh budget" 1 (:attempts entry))
+  (assert= "bl1088-02: emitting :re-armed" :re-armed event))
+
+;; The boundary itself: exactly AT the cooldown counts as elapsed, matching
+;; cooldown-elapsed?'s own >= and every other window in this file.
+(let [gave-up-entry {:pid 1881442 :attempts 5 :status "gave-up" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms 1000000}
+      at (front-desk-supervisor-lib/check-one! gave-up-entry 1900000 dead? fixed-pid! healthy-cfg giveup-cfg)
+      just-before (front-desk-supervisor-lib/check-one! gave-up-entry 1899999 dead? fixed-pid! healthy-cfg giveup-cfg)]
+  (assert= "bl1088-02: exactly at the cooldown boundary re-arms" :re-armed (:event at))
+  (assert= "bl1088-02: one millisecond before it does not" nil (:event just-before)))
 
 ;; ── BL-370: poll-heartbeat-stale? (pure) ─────────────────────────────────
 
