@@ -42,9 +42,49 @@
 # in wherever this script happens to live.
 #
 # Usage: is_qa_ancestor.sh <sha>
+#        is_qa_ancestor.sh --batch <sha>...      (BL-1086)
+#        is_qa_ancestor.sh --batch               (shas on stdin, one per line)
+#
+# BL-1086 batch mode. babysitterd's pipeline-code-on-main gather asked this
+# question once per SHA, one bash process each, and every one of those
+# processes re-scanned the whole bounce store and grepped the entire backlog
+# tree. On a `main` sitting ~23 commits ahead that check overran babysitterd's
+# 600s freshness threshold - and because the daemon writes its heartbeat only
+# AFTER the check returns, a slow gather is indistinguishable from a dead
+# daemon, so it got RESTARTED mid-sweep (age_secs=1146, 2026-08-22).
+#
+# Batch mode answers the same question for many SHAs in ONE process: the
+# verdict stores are read once and every SHA is answered against them. This is
+# the same predicate, not a second one - BL-925 invariant 2 holds literally,
+# because there is still exactly one place in the tree that decides approval.
+# Single-SHA mode is a batch of one and shares the same code path, so the two
+# cannot drift.
+#
+# Batch output: one `<sha-as-given> <code>` line per input SHA on stdout, in
+# input order, where code is the same 0/1/2 vocabulary a single run exits
+# with. Batch mode itself exits 0 when every SHA got an answer; a STORE-level
+# problem (unreadable, corrupt, obstructed) still fails the whole run with
+# exit 2 and no output, because that is undeterminable for every SHA at once.
 set -euo pipefail
 
-SHA="${1:?Usage: is_qa_ancestor.sh <sha>}"
+BATCH_MODE="no"
+BATCH_SHAS=()
+if [[ "${1:-}" == "--batch" ]]; then
+  BATCH_MODE="yes"
+  shift
+  if [[ $# -gt 0 ]]; then
+    BATCH_SHAS=("$@")
+  else
+    # ${arr[@]+"${arr[@]}"} throughout: stock macOS /bin/bash 3.2 raises
+    # "unbound variable" expanding an EMPTY array under set -u (BL-801).
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      BATCH_SHAS+=("$line")
+    done
+  fi
+else
+  SHA="${1:?Usage: is_qa_ancestor.sh <sha> | is_qa_ancestor.sh --batch <sha>...}"
+fi
 
 # Shared by both bounce-store checks below: a token is a verdict on FULL_SHA
 # exactly when the full sha starts with it (records abbreviate to whatever
@@ -54,138 +94,188 @@ match_bounce_token() {
   case "$FULL_SHA" in
     "$token"*)
       echo "bounced: $SHORT_SHA $message (recorded as $token) - a bounced parcel never reads as approved (BL-952)" >&2
-      exit 1
+      return 1
       ;;
   esac
+  return 0
 }
 
-# ── the sha itself must resolve (invariant 3: an unresolvable commit is an
-#    undeterminable verdict, never a clean "no") ──────────────────────────
-if ! FULL_SHA="$(git rev-parse --verify -q "${SHA}^{commit}" 2>/dev/null)"; then
-  echo "is_qa_ancestor.sh: undeterminable - commit '$SHA' does not resolve" >&2
-  exit 2
-fi
-SHORT_SHA="$(printf '%s' "$FULL_SHA" | cut -c1-10)"
+# ── verdict stores, read ONCE (BL-1086) ───────────────────────────────────
+# Every check below used to run per invocation, which meant per SHA: a full
+# scan of the bounce JSONL store and a recursive grep of the whole backlog
+# tree. Reading them once and matching every SHA against the result is the
+# whole of this ticket's part 2. The CHECKS are unchanged, including every
+# fail-closed exit and every message - only how often they run.
+BOUNCE_TOKENS=""
+EXPEDITE_TOKENS=""
+YAML_TOKENS=""
+# Set when the expedite store cannot be consulted. Raised per sha, AFTER the
+# bounce checks, so the original ordering survives batching (see below).
+EXPEDITE_PROBLEM=""
 
-# ── bounce verdict: the JSONL store record-bounce.js appends ──────────────
-BOUNCES_DIR=".swarmforge/bounces"
-if [[ -e "$BOUNCES_DIR" && ! -d "$BOUNCES_DIR" ]]; then
-  echo "is_qa_ancestor.sh: undeterminable - verdict store $BOUNCES_DIR exists but is not a directory (missing/obstructed record store)" >&2
-  exit 2
-fi
-if [[ -d "$BOUNCES_DIR" ]]; then
-  for f in "$BOUNCES_DIR"/*.jsonl; do
-    [[ -e "$f" ]] || continue  # bash 3.2: unmatched glob stays literal
-    if [[ ! -r "$f" ]]; then
-      echo "is_qa_ancestor.sh: undeterminable - verdict store $f is unreadable" >&2
-      exit 2
-    fi
-    # Every non-empty line must carry the record shape; a line that does
-    # not is a corrupt record and the verdict cannot be trusted either way.
-    # The commit field is 7-40 hex chars: the LIVE store holds abbreviated
-    # records (a real 9-char row measured 2026-08-19), so demanding exactly
-    # 10 would read the whole store as corrupt and freeze every publish -
-    # the gate-that-strands-a-legitimate-send failure invariant 1 warns
-    # against.
-    if grep -v -E '^\{.*"commit":"[0-9a-fA-F]{7,40}".*\}$' "$f" | grep -q -E '.'; then
-      echo "is_qa_ancestor.sh: undeterminable - verdict store $f holds a corrupt record line" >&2
-      exit 2
-    fi
-    while IFS= read -r token; do
-      [[ -n "$token" ]] || continue
-      match_bounce_token "$token" "has a QA bounce verdict on file ($f)"
-    done < <(grep -oE '"commit":"[0-9a-fA-F]{7,40}"' "$f" | sed -E 's/"commit":"([0-9a-fA-F]+)"/\1/')
-  done
-fi
+collect_verdict_stores() {
+  # ── bounce verdict: the JSONL store record-bounce.js appends ────────────
+  BOUNCES_DIR=".swarmforge/bounces"
+  if [[ -e "$BOUNCES_DIR" && ! -d "$BOUNCES_DIR" ]]; then
+    echo "is_qa_ancestor.sh: undeterminable - verdict store $BOUNCES_DIR exists but is not a directory (missing/obstructed record store)" >&2
+    exit 2
+  fi
+  if [[ -d "$BOUNCES_DIR" ]]; then
+    for f in "$BOUNCES_DIR"/*.jsonl; do
+      [[ -e "$f" ]] || continue  # bash 3.2: unmatched glob stays literal
+      if [[ ! -r "$f" ]]; then
+        echo "is_qa_ancestor.sh: undeterminable - verdict store $f is unreadable" >&2
+        exit 2
+      fi
+      # Every non-empty line must carry the record shape; a line that does
+      # not is a corrupt record and the verdict cannot be trusted either way.
+      # The commit field is 7-40 hex chars: the LIVE store holds abbreviated
+      # records (a real 9-char row measured 2026-08-19), so demanding exactly
+      # 10 would read the whole store as corrupt and freeze every publish -
+      # the gate-that-strands-a-legitimate-send failure invariant 1 warns
+      # against.
+      if grep -v -E '^\{.*"commit":"[0-9a-fA-F]{7,40}".*\}$' "$f" | grep -q -E '.'; then
+        echo "is_qa_ancestor.sh: undeterminable - verdict store $f holds a corrupt record line" >&2
+        exit 2
+      fi
+      # awk appends the store path rather than sed embedding it: $f is a path
+      # and contains '/', which is sed's own delimiter here.
+      # `|| true`: a store with no matching lines makes grep exit 1, and under
+      # `set -e` an assignment whose command substitution fails aborts the
+      # whole script. That is not hypothetical - it silently turned an
+      # APPROVED ancestor into a clean "no" the first time this was written.
+      BOUNCE_TOKENS="$BOUNCE_TOKENS$(grep -oE '"commit":"[0-9a-fA-F]{7,40}"' "$f" \
+                 | sed -E 's/"commit":"([0-9a-fA-F]+)"/\1/' \
+                 | awk -v store="$f" '{print $0" "store}' || true)
+"
+    done
+  fi
 
-# ── bounce verdict: tracked ticket-YAML bounce_history entries ────────────
-# The inline-map shape record-bounce writes:
-#   - { at: ..., by: <role>, ..., commit: <10-hex>, evidence: ... }
-# Matched with the by:/commit: pair on one line so ordinary prose that
-# happens to say "commit:" never false-positives.
-if [[ -d backlog ]]; then
-  # Same prefix tolerance as the JSONL store: extract each entry's recorded
-  # commit field (the inline-map "by: ... commit: <hex>" shape record-bounce
-  # writes) and prefix-match it against the full sha.
-  while IFS= read -r token; do
+  # ── bounce verdict: tracked ticket-YAML bounce_history entries ──────────
+  # The inline-map shape record-bounce writes:
+  #   - { at: ..., by: <role>, ..., commit: <10-hex>, evidence: ... }
+  # Matched with the by:/commit: pair on one line so ordinary prose that
+  # happens to say "commit:" never false-positives.
+  if [[ -d backlog ]]; then
+    # Same prefix tolerance as the JSONL store: extract each entry's recorded
+    # commit field and prefix-match it against the full sha.
+    YAML_TOKENS="$(grep -rh -E 'by: [a-zA-Z]+.*commit: [0-9a-fA-F]{7,40}' backlog --include='*.yaml' 2>/dev/null \
+                     | sed -E 's/.*commit: ([0-9a-fA-F]+).*/\1/' || true)"
+  fi
+
+  # ── approval: an expedite run's own QA-hat verdict (BL-1025) ────────────
+  # BL-1086: a problem HERE is recorded rather than raised, because the
+  # original order matters and is load-bearing - the expedite store was only
+  # ever consulted AFTER the bounce stores had failed to veto, so a sha with a
+  # bounce on file answers a clean "no" even when this store is unreadable.
+  # Reading every store up front is what makes batching cheap; raising up front
+  # would quietly change that verdict. answer_one raises it in the right place.
+  EXPEDITE_DIR=".swarmforge/expedite-approvals"
+  if [[ -e "$EXPEDITE_DIR" && ! -d "$EXPEDITE_DIR" ]]; then
+    EXPEDITE_PROBLEM="is_qa_ancestor.sh: undeterminable - expedite verdict store $EXPEDITE_DIR exists but is not a directory (missing/obstructed record store)"
+    return 0
+  fi
+  if [[ -d "$EXPEDITE_DIR" ]]; then
+    for f in "$EXPEDITE_DIR"/*.jsonl; do
+      [[ -e "$f" ]] || continue  # bash 3.2: unmatched glob stays literal
+      if [[ ! -r "$f" ]]; then
+        EXPEDITE_PROBLEM="is_qa_ancestor.sh: undeterminable - expedite verdict store $f is unreadable"
+        return 0
+      fi
+      # Every non-empty line must carry BOTH fields the verdict is made of. A
+      # line missing either is a corrupt record and the store cannot be
+      # trusted either way - the same prefix tolerance on the commit field as
+      # the bounce stores, for the same reason (recorders abbreviate).
+      if grep -v -E '^\{.*"commit":"[0-9a-fA-F]{7,40}".*\}$' "$f" | grep -q -E '.'; then
+        EXPEDITE_PROBLEM="is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no commit field"
+        return 0
+      fi
+      if grep -v -E '^\{.*"approval":(true|false).*\}$' "$f" | grep -q -E '.'; then
+        EXPEDITE_PROBLEM="is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no approval field"
+        return 0
+      fi
+      # This side deliberately knows NOTHING about the verdict vocabulary.
+      # `approval` is the already-classified decision expedite_lib.bb's own
+      # `classify-verdict` computed, so `advance-verdicts` has exactly one
+      # spelling in this codebase and a fourth token added to it needs no
+      # second edit here. A hand-copied token list across this
+      # Babashka/bash boundary - which no import can bridge - is the hazard
+      # the Guardrails article names after BL-897. The record's `verdict`
+      # string is for a human reading the store; nothing below reads it.
+      # `|| true` for the same reason as the bounce store above: a store
+      # holding only bouncing records matches nothing here, and an aborted
+      # collection would answer the wrong thing rather than nothing.
+      EXPEDITE_TOKENS="$EXPEDITE_TOKENS$(grep -E '"approval":true' "$f" \
+                 | grep -oE '"commit":"[0-9a-fA-F]{7,40}"' \
+                 | sed -E 's/"commit":"([0-9a-fA-F]+)"/\1/' \
+                 | awk -v store="$f" '{print $0" "store}' || true)
+"
+    done
+  fi
+}
+
+# One SHA's verdict against the already-collected stores. Echoes the same
+# stderr lines a single run always did; returns the same 0/1/2 code a single
+# run exits with.
+answer_one() {
+  local sha="$1"
+  local token f rc
+
+  # ── the sha itself must resolve (invariant 3: an unresolvable commit is an
+  #    undeterminable verdict, never a clean "no") ────────────────────────
+  if ! FULL_SHA="$(git rev-parse --verify -q "${sha}^{commit}" 2>/dev/null)"; then
+    echo "is_qa_ancestor.sh: undeterminable - commit '$sha' does not resolve" >&2
+    return 2
+  fi
+  SHORT_SHA="$(printf '%s' "$FULL_SHA" | cut -c1-10)"
+
+  while read -r token f; do
     [[ -n "$token" ]] || continue
-    match_bounce_token "$token" "appears in a ticket's bounce_history"
-  done < <(grep -rh -E 'by: [a-zA-Z]+.*commit: [0-9a-fA-F]{7,40}' backlog --include='*.yaml' 2>/dev/null \
-             | sed -E 's/.*commit: ([0-9a-fA-F]+).*/\1/')
-fi
+    match_bounce_token "$token" "has a QA bounce verdict on file ($f)" || return 1
+  done <<< "$BOUNCE_TOKENS"
 
-# ── approval: an expedite run's own QA-hat verdict (BL-1025) ──────────────
-# The SECOND constitutionally sanctioned way pipeline code reaches main
-# ("Same gates, no machinery", BL-567). An expedite run walks the same role
-# hats - its QA hat gives a real advance-or-bounce verdict - but with the
-# swarm stopped there is no live QA worktree, so swarmforge-QA never moves
-# and the ancestry test below can only ever answer "no". Three commits from
-# BL-1021's run tripped the Article 4.2 CRIT on 2026-08-21 for exactly that
-# reason.
-#
-# Read here, alongside ancestry, rather than by teaching each caller a second
-# rule (BL-925 invariant 2: ONE approval predicate). Checked AFTER the bounce
-# stores above, so a bounce still vetoes both approval routes.
-#
-# Only an APPROVING verdict approves. A record whose verdict is a bounce is a
-# verdict on file that says no - it must not read as approval, and it must
-# not read as absence either. And nothing weaker than a record counts: this
-# never looks at the commit MESSAGE, so a subject claiming an expedite run
-# buys exactly nothing (BL-972 - commit-subject matching standing in for a
-# real gate is a failure this repo has already had once).
-#
-# Same fail-closed discipline as the bounce stores: absent means "no expedite
-# run ever approved this" and falls through to ancestry, but a store that
-# EXISTS and cannot be consulted is undeterminable (invariant 3).
-EXPEDITE_DIR=".swarmforge/expedite-approvals"
-if [[ -e "$EXPEDITE_DIR" && ! -d "$EXPEDITE_DIR" ]]; then
-  echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $EXPEDITE_DIR exists but is not a directory (missing/obstructed record store)" >&2
-  exit 2
-fi
-if [[ -d "$EXPEDITE_DIR" ]]; then
-  for f in "$EXPEDITE_DIR"/*.jsonl; do
-    [[ -e "$f" ]] || continue  # bash 3.2: unmatched glob stays literal
-    if [[ ! -r "$f" ]]; then
-      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f is unreadable" >&2
-      exit 2
-    fi
-    # Every non-empty line must carry BOTH fields the verdict is made of. A
-    # line missing either is a corrupt record and the store cannot be
-    # trusted either way - the same prefix tolerance on the commit field as
-    # the bounce stores, for the same reason (recorders abbreviate).
-    if grep -v -E '^\{.*"commit":"[0-9a-fA-F]{7,40}".*\}$' "$f" | grep -q -E '.'; then
-      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no commit field" >&2
-      exit 2
-    fi
-    if grep -v -E '^\{.*"approval":(true|false).*\}$' "$f" | grep -q -E '.'; then
-      echo "is_qa_ancestor.sh: undeterminable - expedite verdict store $f holds a record line with no approval field" >&2
-      exit 2
-    fi
-    # This side deliberately knows NOTHING about the verdict vocabulary.
-    # `approval` is the already-classified decision expedite_lib.bb's own
-    # `classify-verdict` computed, so `advance-verdicts` has exactly one
-    # spelling in this codebase and a fourth token added to it needs no
-    # second edit here. A hand-copied token list across this
-    # Babashka/bash boundary - which no import can bridge - is the hazard
-    # the Guardrails article names after BL-897, and the "kept in sync"
-    # comment that used to sit on this line is precisely what that rule
-    # says is not a gate. The record's `verdict` string is for a human
-    # reading the store; nothing below reads it.
-    while IFS= read -r token; do
-      [[ -n "$token" ]] || continue
-      case "$FULL_SHA" in
-        "$token"*)
-          echo "approved: $SHORT_SHA has an expedite QA-hat approval on file ($f, recorded as $token) - BL-1025" >&2
-          exit 0
-          ;;
-      esac
-    done < <(grep -E '"approval":true' "$f" \
-               | grep -oE '"commit":"[0-9a-fA-F]{7,40}"' \
-               | sed -E 's/"commit":"([0-9a-fA-F]+)"/\1/')
+  while read -r token; do
+    [[ -n "$token" ]] || continue
+    match_bounce_token "$token" "appears in a ticket's bounce_history" || return 1
+  done <<< "$YAML_TOKENS"
+
+  # The bounce stores have had their say; only now does an unconsultable
+  # expedite store make this sha undeterminable.
+  if [[ -n "$EXPEDITE_PROBLEM" ]]; then
+    echo "$EXPEDITE_PROBLEM" >&2
+    return 2
+  fi
+
+  while read -r token f; do
+    [[ -n "$token" ]] || continue
+    case "$FULL_SHA" in
+      "$token"*)
+        echo "approved: $SHORT_SHA has an expedite QA-hat approval on file ($f, recorded as $token) - BL-1025" >&2
+        return 0
+        ;;
+    esac
+  done <<< "$EXPEDITE_TOKENS"
+
+  # ── ancestry (unchanged from BL-925): git's own exit code passes through -
+  #    0 ancestor, 1 clean no, anything else a real failure callers must
+  #    fail closed on ─────────────────────────────────────────────────────
+  rc=0
+  git merge-base --is-ancestor "$FULL_SHA" swarmforge-QA || rc=$?
+  return "$rc"
+}
+
+collect_verdict_stores
+
+if [[ "$BATCH_MODE" == "yes" ]]; then
+  status=0
+  for sha in ${BATCH_SHAS[@]+"${BATCH_SHAS[@]}"}; do
+    rc=0
+    answer_one "$sha" || rc=$?
+    printf '%s %s\n' "$sha" "$rc"
   done
+  exit "$status"
 fi
 
-# ── ancestry (unchanged from BL-925): git's own exit code passes through -
-#    0 ancestor, 1 clean no, anything else a real failure callers must
-#    fail closed on ──────────────────────────────────────────────────────
-exec git merge-base --is-ancestor "$FULL_SHA" swarmforge-QA
+rc=0
+answer_one "$SHA" || rc=$?
+exit "$rc"
