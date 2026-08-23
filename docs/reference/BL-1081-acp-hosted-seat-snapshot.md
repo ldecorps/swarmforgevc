@@ -22,13 +22,17 @@ gained an `:acp` field, read via `acp-native?`. Absence of the key reads as
 `false` (pane-driven), never as unknown — adding a new agent needs no edit
 here to stay safe. Per the source intake, the ACP-native agents are
 `copilot`, `vibe` (Mistral Vibe), and `gemini`; `claude`, `codex`, `grok`,
-and `mock` are unmarked. `:acp true` on the table means only "this CLI speaks
-ACP" — it does not by itself mean any running seat is currently ACP-hosted;
-that is answered per-seat by whether a snapshot file exists (below).
+`cursor`, and `mock` are unmarked. `:acp true` on the table means only "this
+CLI speaks ACP" — it does not by itself mean any running seat is currently
+ACP-hosted; that is answered per-seat by whether a snapshot file exists
+(below).
 
-Cursor is deliberately absent from this table: BL-1078 found `cursor-agent`
-is terminal-native and needs no ACP host to staff a seat, so it is a
-different question from this ticket's.
+`cursor` (added to the same provider table by BL-1078, landed after this
+ticket started) is deliberately unmarked: BL-1078 found `cursor-agent` is
+terminal-native and needs no ACP host to staff a seat, so it is a different
+question from this ticket's — see
+[BL-713's how-to](../how-to/BL-713-cursor-seat-driver-spike.md) for the
+Cursor seat itself.
 
 ## The snapshot file
 

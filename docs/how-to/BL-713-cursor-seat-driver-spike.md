@@ -23,7 +23,7 @@ node extension/out/tools/cursor-seat-spike.js --role documenter
 | `--repo <path>` | current working directory | Repo root the seat's worktree is resolved under |
 | `--provider <name>` | `cursor` | Identity provider recorded for certification lookup |
 | `--model <id>` | `auto` | Model id recorded for certification lookup, and passed to the live Cursor session |
-| `--agent <token>` | `claude` | Which already-registered agent's prompt bundle to compose the role under — the `cursor` launcher token itself doesn't exist yet (BL-712 slice B) |
+| `--agent <token>` | `claude` | Which already-registered agent's prompt bundle to compose the role under. The `cursor` launcher token itself now exists (BL-1078, BL-712 slice B) but is a separate path from this spike CLI — see the boundary section below |
 | `--priority <nn>` | `50` | Handoff priority used when forwarding |
 
 `--help`/`-h` prints usage and exits 0. An unknown flag, a flag with no value,
@@ -99,12 +99,20 @@ A refusal prints the same shape with `outcome: refused_uncertified` and no
 
 ## Boundary: what this slice is not
 
-- **Not the launcher.** `./swarm` still only knows the existing agent tokens
-  (`claude|codex|copilot|grok|aider|vibe|gemini`); adding `cursor` there is
-  BL-712 slice B.
+- **Not the launcher — though the launcher now exists, as a separate path.**
+  BL-1078 (BL-712 slice B) landed `cursor` as a first-class agent token in
+  `./swarm`'s allow-list, dependency check, and launch-command builder, plus
+  a `prompt_engine_lib.bb` provider-table entry — an ordinary tmux-resident
+  pane agent (same shape as `vibe`/`gemini`/`grok`), not a spike-CLI-driven
+  seat. That launcher path admits an uncertified Cursor identity only behind
+  its own escape, `SWARMFORGE_CURSOR_SEAT_SPIKE=1` (same env var and value
+  this doc's certification gate uses — the two paths deliberately mirror one
+  admission rule, not two). This spike CLI (`cursor-seat-spike.js`) is
+  unaffected and remains its own entry point; pack-line usage and how-tos for
+  the launcher path itself are BL-1080, not written here.
 - **Not certification.** Registering a Cursor identity and running it through
-  the compliance battery is BL-712 slice C. This slice's only path to running
-  at all is the spike-only escape above.
+  the compliance battery is BL-712 slice C (tracked as BL-1079). This slice's
+  only path to running at all is the spike-only escape above.
 - **Never a private side channel.** The seat reaches the swarm only through
   `ready_for_next.sh` and `swarm_handoff.sh` — the same two helpers every
   other role uses — and only ever writes its own worktree's `tmp/handoff.txt`
