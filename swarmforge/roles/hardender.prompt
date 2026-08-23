@@ -1779,3 +1779,54 @@ You are the hardender.
   are equivalent on that commit and the `not-found` ones are not. The grep
   requirement, the checked-tag counter-case, and the recording duty are the
   specifier's additions.
+
+## Two independent hardening passes on one ticket merge as a UNION OF MUTANTS — and laying the two sweeps side by side finds mutants NEITHER pass caught (rule_proposal 2026-08-23, accepted)
+- A ticket can reach you twice: a stage forwarded twice, a refix meeting an
+  already-landed pass, a QA merge-up carrying another session's tests. The two
+  test trees then meet as add/add and content conflicts across the test files,
+  the property file, the evidence file, and `specs/pipeline/steps/index.js`.
+- **Resolving by taking one side is wrong even when that side has strictly more
+  tests.** "More tests" is not "superset of mutants": each pass hand-authors its
+  own sweep, so each closes gaps the other never tried. Take-mine discards
+  main's unique coverage; take-theirs discards yours, and neither shows up as a
+  conflict once the merge is committed.
+- Rule: resolve at the level of MUTANTS, not files or test counts. Write out
+  each side's sweep as a mutant list, keep every test that is the only thing
+  killing some mutant, and re-run BOTH sides' mutants against the merged tree to
+  confirm each is still killed. `specs/pipeline/steps/index.js` and other
+  registries take the true superset of both sides' registrations.
+- **The comparison is diagnostic, not bookkeeping.** Two passes can agree on one
+  direction of a conjunction and both miss the other — each side's suite then
+  kills the `&&`→`||` mutant in its own imagination and neither actually does.
+  Once both lists are on the page, ask explicitly what appears in NEITHER: that
+  intersection of blind spots is where the surviving mutant lives, and it is
+  invisible to either pass alone. This is the merge-time face of the isolating-
+  test rule above (2026-08-13) — an AND needs a test in EACH direction, and a
+  duplicate pass is the moment you can finally see which direction nobody wrote.
+- Record the reconciliation in the evidence file: what both sides covered, what
+  was unique to each, what the union newly closed, and the post-merge re-run.
+  A merged pass whose evidence names only the winning side reads as a single
+  pass and hides that any comparison happened.
+- **Ask WHY the ticket reached you twice before calling it a defect.** A
+  stranded-branch port is a legitimate re-walk, not a misroute: the work ran once
+  on a branch that never reached `main`, and the live line is re-running it on
+  purpose. When an upstream evidence file tells you a prior pass of YOUR stage
+  exists on another branch, neither silently redo it nor blindly port it — read
+  its sweep, run your own, and union the two. Redoing it blind is how two
+  divergent sweeps get created in the first place.
+- (Incident: BL-1032, 2026-08-22/23. The ticket's whole pipeline first ran on an
+  `origin/cutover/wsl-2026-08-22-*` snapshot branch that never reached `main`;
+  the coder ported only its own stage onto the live line, per BL-506, and the
+  chain re-walked. So the ticket was hardened twice — `ac1e31cba` on the
+  stranded line, `658b6204c` on the live one — from two architect passes,
+  `4d4a718a4` and `f3207b74e`. The coder's evidence explicitly asked downstream
+  roles to port their prior stage commit rather than redo it; the second pass
+  redid the sweep independently instead, which is precisely why the two mutant
+  lists diverged. Both closed the dropped `start-server` alternative and route
+  2's `WRITES_TMUX_ON_PATH`-true / `PREPENDS_TO_PATH`-false direction; each also
+  closed mutants the other did not — bare `spawn`/`exec` alternatives on one
+  side, a query-only `spawnSync` with no server-creating subcommand on the
+  other. NEITHER closed route 2's other direction: flipping its `&&` to `||`
+  survived both suites independently. That gap surfaced only when the two sweeps
+  were compared during conflict resolution; the union plus one new `path-only`
+  test closed it, 18/18.)
