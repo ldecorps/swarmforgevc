@@ -104,6 +104,27 @@ test('readRoleModelId prefers cursor-agent launch script over stale claude setti
   assert.equal(readRoleModelId(tmp, 'coder'), 'auto');
 });
 
+test('readRoleModelId for cursor coordinator ignores stale claude settings when launch omits --model', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coordinator', { model: 'claude-sonnet-5' });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coordinator.sh'),
+    "#!/bin/bash\ncursor-agent --force --trust --workspace '/tmp'\n"
+  );
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'swarm-identity'),
+    'launch_pack\tcursor-mono-router\nactive_backlog_max_depth_conf_path\t' +
+      path.join(tmp, 'swarmforge', 'packs', 'cursor-mono-router.conf') +
+      '\n'
+  );
+  fs.mkdirSync(path.join(tmp, 'swarmforge', 'packs'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'swarmforge', 'packs', 'cursor-mono-router.conf'),
+    'config coordinator_agent cursor\nconfig coordinator_model auto\nwindow coder cursor coder --model auto\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coordinator'), 'auto');
+});
+
 test('switchRoleModel rewrites the model field, preserving every other field unchanged', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5', effortLevel: 'high', permissions: { defaultMode: 'bypassPermissions' } });

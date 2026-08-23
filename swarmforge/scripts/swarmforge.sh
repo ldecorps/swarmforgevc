@@ -847,6 +847,11 @@ provision_coordinator() {
     extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "gemini" ]]; then
     extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "cursor" ]]; then
+    # Cursor coordinator: pack sets coordinator_model (e.g. auto). Same --model
+    # shape as gemini/codex; without it the launch script has no model flag and
+    # the Resident Spy header falls back to a stale *.claude-settings.json.
+    extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
@@ -1642,11 +1647,21 @@ RESUMECHECK
       # its own --worktree sessions).
       # MISTRAL_API_KEY is supplied at respawn-pane time via `-e` (BL-130) and
       # is never written into this launch script.
-      local vibe_dirs=""
+      #
+      # BL-1081 (QA bounce D1): this spike's ONE seat runs behind the ACP host
+      # in the pane. The host (extension/out/tools/acp-host-pane.js) is the
+      # pane process; vibe is its ACP subprocess. A launch that named vibe
+      # directly left the host a dark module — greppable from nothing live.
+      local acp_add_dir=""
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
-        vibe_dirs=" --add-dir '$WORKING_DIR'"
+        acp_add_dir=" --add-dir '$WORKING_DIR'"
       fi
-      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      local acp_host_js="$WORKING_DIR/extension/out/tools/acp-host-pane.js"
+      local acp_extra=""
+      if [[ -n "$extra_cli" ]]; then
+        acp_extra=" --extra-cli '$extra_cli'"
+      fi
+      launch_body="node '$acp_host_js' --role '$role' --agent vibe --workdir '$role_worktree' --prompt-file '$prompt_file' --repo '$WORKING_DIR'${acp_add_dir}${acp_extra} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     cursor)
       # Cursor's terminal-native agent CLI (`cursor-agent`), the same family as
