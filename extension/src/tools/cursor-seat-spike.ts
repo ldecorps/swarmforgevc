@@ -82,24 +82,26 @@ export function usageText(): string {
   ].join('\n');
 }
 
-export function parseCursorSeatSpikeArgs(argv: string[], cwd: string): CursorSeatSpikeArgs {
-  if (argv.includes('--help') || argv.includes('-h')) {
-    return { help: true, role: '', repoRoot: cwd, identity: DEFAULT_IDENTITY, agent: DEFAULT_COMPOSE_AGENT, priority: DEFAULT_PRIORITY };
-  }
+const KNOWN_FLAGS = new Set(['--role', '--repo', '--model', '--provider', '--agent', '--priority']);
+
+function parseFlagValues(argv: string[]): Map<string, string> {
   const values = new Map<string, string>();
-  const known = new Set(['--role', '--repo', '--model', '--provider', '--agent', '--priority']);
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
-    if (!known.has(flag)) {
+    if (!KNOWN_FLAGS.has(flag)) {
       throw new Error(`unknown argument "${flag}"\n\n${usageText()}`);
     }
     const value = argv[i + 1];
-    if (value === undefined || known.has(value)) {
+    if (value === undefined || KNOWN_FLAGS.has(value)) {
       throw new Error(`${flag} needs a value\n\n${usageText()}`);
     }
     values.set(flag, value);
     i++;
   }
+  return values;
+}
+
+function resolveRole(values: Map<string, string>): string {
   const role = values.get('--role');
   if (!role) {
     throw new Error(`--role is required\n\n${usageText()}`);
@@ -107,6 +109,10 @@ export function parseCursorSeatSpikeArgs(argv: string[], cwd: string): CursorSea
   if (!PIPELINE_CHAIN.includes(role)) {
     throw new Error(`--role "${role}" is not a pipeline role (${PIPELINE_CHAIN.join(', ')})`);
   }
+  return role;
+}
+
+function buildParsedArgs(role: string, values: Map<string, string>, cwd: string): CursorSeatSpikeArgs {
   return {
     help: false,
     role,
@@ -118,6 +124,15 @@ export function parseCursorSeatSpikeArgs(argv: string[], cwd: string): CursorSea
     agent: values.get('--agent') ?? DEFAULT_COMPOSE_AGENT,
     priority: values.get('--priority') ?? DEFAULT_PRIORITY,
   };
+}
+
+export function parseCursorSeatSpikeArgs(argv: string[], cwd: string): CursorSeatSpikeArgs {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    return { help: true, role: '', repoRoot: cwd, identity: DEFAULT_IDENTITY, agent: DEFAULT_COMPOSE_AGENT, priority: DEFAULT_PRIORITY };
+  }
+  const values = parseFlagValues(argv);
+  const role = resolveRole(values);
+  return buildParsedArgs(role, values, cwd);
 }
 
 export function seatHelperPath(worktree: string, helper: string): string {

@@ -21,6 +21,7 @@ const {
   readModelStewardRegistry,
   usageText,
   main,
+  createLiveSeatDeps,
 } = require('../out/tools/cursor-seat-spike');
 
 // ── argument parsing ──────────────────────────────────────────────────────
@@ -67,6 +68,28 @@ test('--help is recognised and the usage text names the spike-only escape', () =
   assert.equal(parseCursorSeatSpikeArgs(['--help'], '/repo').help, true);
   assert.match(usageText(), /SWARMFORGE_CURSOR_SEAT_SPIKE/);
   assert.match(usageText(), /--role/);
+});
+
+test('the usage text is exactly this, line for line - a loose .match() cannot catch an emptied line', () => {
+  assert.equal(
+    usageText(),
+    [
+      'Usage: cursor-seat-spike --role <role> [--repo <path>] [--model <id>]',
+      '                        [--provider <name>] [--agent <token>] [--priority <nn>]',
+      '',
+      'Drives ONE role seat over a Cursor agent session through ONE parcel:',
+      'boot with the role prompt bundle, run ready_for_next.sh, do the stage',
+      'work, forward through swarm_handoff.sh.',
+      '',
+      'Roles: specifier, coder, cleaner, architect, hardender, documenter, QA',
+      '',
+      'A Cursor identity that is not certified in the model steward registry is',
+      'refused for a production pack. To run the spike with an uncertified',
+      'candidate, set SWARMFORGE_CURSOR_SEAT_SPIKE=1.',
+      '',
+      'Exit codes: 0 forwarded or empty mailbox, 1 aborted, 2 refused, 64 bad arguments.',
+    ].join('\n')
+  );
 });
 
 // ── helper path resolution ────────────────────────────────────────────────
@@ -246,4 +269,37 @@ test('an argument error is reported on its own exit code, with the usage text', 
   });
   assert.equal(code, 64);
   assert.match(io.out.join('\n'), /janitor/);
+});
+
+// ── createLiveSeatDeps's runHelper (a real subprocess adapter) ─────────────
+//
+// Against a FIXTURE worktree with its own fake helper script — never the
+// real ready_for_next.sh/swarm_handoff.sh, so this never touches a live
+// swarm mailbox (the exact hazard the hardener's own standing lesson on
+// bare sweep-harness invocations warns about).
+
+function writeFixtureHelper(repoRoot, role, script, body) {
+  const scriptsDir = path.join(repoRoot, '.worktrees', role, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  const target = path.join(scriptsDir, script);
+  fs.writeFileSync(target, body, { mode: 0o755 });
+  return target;
+}
+
+test('runHelper reports exit 0 and the real stdout on a successful helper', async () => {
+  const repoRoot = mkTmpDir('sfvc-bl713-runhelper-');
+  writeFixtureHelper(repoRoot, 'documenter', 'ready_for_next.sh', '#!/bin/sh\necho NO_TASK\nexit 0\n');
+  const deps = createLiveSeatDeps({ role: 'documenter', repoRoot, identity: { provider: 'cursor', model: 'auto' }, agent: 'claude', priority: '50' }, {});
+  const result = await deps.runHelper('ready_for_next', []);
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /NO_TASK/);
+});
+
+test('runHelper maps a non-zero helper exit to that exact code, with whatever it printed to stdout', async () => {
+  const repoRoot = mkTmpDir('sfvc-bl713-runhelper-fail-');
+  writeFixtureHelper(repoRoot, 'documenter', 'swarm_handoff.sh', '#!/bin/sh\necho "refused: quarantined"\nexit 3\n');
+  const deps = createLiveSeatDeps({ role: 'documenter', repoRoot, identity: { provider: 'cursor', model: 'auto' }, agent: 'claude', priority: '50' }, {});
+  const result = await deps.runHelper('swarm_handoff', ['./tmp/draft.txt']);
+  assert.equal(result.exitCode, 3);
+  assert.match(result.stdout, /refused: quarantined/);
 });
