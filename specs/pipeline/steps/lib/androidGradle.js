@@ -41,10 +41,19 @@ function isJdk17Plus(home) {
 function portableJdk17Candidates(repoRoot) {
   const macosHomeSuffix = ['Contents', 'Home'];
   const roots = [repoRoot, resolveMainCheckout(repoRoot)];
+  // BL-777: `.swarmforge/tooling/jdk-17` is the second provisioned location
+  // in the wild - this host's BL-707 setup put the portable JDK there,
+  // alongside gradle-8.7 and the sysroot, and only `.swarmforge/jdk-17` was
+  // ever checked. The symptom is every Bubble acceptance feature failing with
+  // "no JDK 17+ found" on a host that HAS one, unless JAVA_HOME happens to be
+  // exported by hand.
+  const bases = [['.swarmforge', 'jdk-17'], ['.swarmforge', 'tooling', 'jdk-17']];
   const candidates = [];
   for (const root of roots) {
-    const base = path.join(root, '.swarmforge', 'jdk-17');
-    candidates.push(base, path.join(base, ...macosHomeSuffix));
+    for (const base of bases) {
+      const dir = path.join(root, ...base);
+      candidates.push(dir, path.join(dir, ...macosHomeSuffix));
+    }
   }
   return candidates;
 }
@@ -108,7 +117,7 @@ function runGradle(repoRoot, args, opts = {}) {
   const jdkHome = findJdk17Home(repoRoot);
   if (!jdkHome) {
     throw new Error(
-      'no JDK 17+ found (checked JAVA_HOME, .swarmforge/jdk-17, Homebrew openjdk, and ' +
+      'no JDK 17+ found (checked JAVA_HOME, .swarmforge/jdk-17, .swarmforge/tooling/jdk-17, Homebrew openjdk, and ' +
         '/usr/libexec/java_home) — install one to run the Android JVM unit suite'
     );
   }
