@@ -93,7 +93,7 @@
 - commit: 61c62f5794
   subject: "Land Cursor hotfix: prefer tmux >=3.7 on WSL to stop control-plane segfaults."
   detected_at: 2026-08-22
-  state: pending
+  state: awaiting-human
   stamp_ticket: BL-1069
   human_decision: null
   decided_at: null
