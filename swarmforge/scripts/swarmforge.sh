@@ -1697,6 +1697,7 @@ RESUMECHECK
   local cerebras_guard=""
   local perplexity_guard=""
   local qwen_guard=""
+  local qwen_lib_source=""
   # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
   # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
   # override the tmux -e mapping (Wrong API Key against api.cerebras.ai).
@@ -1712,10 +1713,15 @@ RESUMECHECK
     perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
   fi
   # Qwen Token Plan (SEA) — same zshenv-override posture as Cerebras.
+  # One shared source prefix (double-quoted path concat). Never
+  # $'…\''"$VAR"'/…\'…' — that nesting ends the ANSI-C quote early and leaves
+  # a bare POSIX single-quoted segment where \' is not an escape; zsh then
+  # fails to parse the following elif (QA bounce BL-1077 20260823).
+  qwen_lib_source="source '${SCRIPT_DIR}/qwen_launch_guard_lib.sh'"
   if [[ "$extra_cli" == *token-plan.ap-southeast-1.maas.aliyuncs.com* || "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
-    qwen_guard=$'source \''"$SCRIPT_DIR"'/qwen_launch_guard_lib.sh\'\nqwen_guard_require_token_plan_endpoint || exit 1\n'
+    qwen_guard="${qwen_lib_source}"$'\nqwen_guard_require_token_plan_endpoint || exit 1\n'
   else
-    qwen_guard=$'source \''"$SCRIPT_DIR"'/qwen_launch_guard_lib.sh\'\nqwen_guard_map_if_flagged\n'
+    qwen_guard="${qwen_lib_source}"$'\nqwen_guard_map_if_flagged\n'
   fi
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
