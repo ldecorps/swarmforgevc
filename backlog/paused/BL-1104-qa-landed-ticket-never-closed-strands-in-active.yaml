@@ -1,4 +1,4 @@
-id: BL-1100
+id: BL-1104
 title: "A ticket QA has already landed on origin/main but never notified the coordinator about stays in backlog/active/ forever - both existing active-ticket sweeps key on an ABSENT dispatch trail, and this ticket's trail is complete, so nothing looks at it"
 type: defect
 severity: high
@@ -18,7 +18,7 @@ direction: swarm-surfaced
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1100-qa-landed-ticket-never-closed-strands-in-active.feature
+acceptance: specs/features/BL-1104-qa-landed-ticket-never-closed-strands-in-active.feature
 required_wiring:
   - 'swarmforge/scripts/handoffd.bb::landed-but-open::the sweep must be CALLED from the daemon, not merely defined in the lib - a detector nobody runs is the BL-419 shape. `landed-but-open` is the sweep/log name this ticket fixes so the gate has a literal to match.'
 human_approval: pending
@@ -144,3 +144,21 @@ notes: >
   "whose QA approval is reachable" and "no QA approval is reachable" are
   flagged as synonyms but mean opposite things, as do "the sweep runs" and
   "the sweep runs again", which is the whole point of the idempotence case.
+
+  RENUMBERED BL-1100 -> BL-1104 (specifier, 2026-08-23). Two distinct tickets
+  were minted as BL-1100 in parallel and collided when the coordinator merged
+  origin/main into main (51c7547e1, which flagged it and left the renumber to
+  the specifier). The other BL-1100 - "promotion candidacy is decided by
+  structured fields, never prose" - keeps the id because a human had already
+  APPROVED it via Telegram (94887b9af) and that recorded decision must not be
+  invalidated by bookkeeping; this ticket was still `human_approval: pending`,
+  so no human decision is disturbed by moving it. Renamed: the YAML, its
+  feature file, the `acceptance:` path, and all six scenario-name comments.
+  `backlog/topics/BL-1104.json` now carries this thread and
+  `backlog/topics/BL-1100.json` was restored to the approved ticket's thread,
+  which the merge had overwritten - neither id had an entry in
+  `.swarmforge/operator/backlog-topic-map.json`, so no live Telegram topic
+  binding was moved. Nothing in the spec's substance changed. Second collision
+  of this kind in two days (BL-1087/BL-1090 was the first); the guard gap that
+  allows two sessions to mint one id is not ticketed and is not this ticket's
+  scope.
