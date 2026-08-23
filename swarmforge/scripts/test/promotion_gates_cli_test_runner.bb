@@ -170,6 +170,54 @@
       {:keys [out]} (run "route-target" root f)]
   (assert= "route-target already assigned_to: coder performs no rewrite" "coder NOREWRITE" out))
 
+;; ── gate-promotion (BL-1083) ────────────────────────────────────────────
+;; The new subcommand backlogWriter.ts's promoteToActive shells to. Its own
+;; output contract ("ALLOW|<file>", distinct from evaluate's bare "ALLOW")
+;; is exercised end-to-end via the TypeScript suite (backlogWriter.test.js,
+;; pausedPagerBridge.test.js) already - these lock the CLI's own
+;; dispatch/format contract down at this level too, same as every other
+;; subcommand in this file, so a drift here cannot hide behind a fixture
+;; that happens to still parse it.
+
+(let [root (mk-root)
+      {:keys [out exit]} (run "gate-promotion" root "BL-404")]
+  (assert= "gate-promotion on a candidate not in paused/ or hold/ prints NOT_FOUND" "NOT_FOUND" out)
+  (assert= "gate-promotion NOT_FOUND exits 1" 1 exit))
+
+(let [root (mk-root)
+      f (write! root "paused" "BL-40" "id: BL-40\nhuman_approval: approved\n")
+      {:keys [out exit]} (run "gate-promotion" root "BL-40")]
+  (assert= "gate-promotion on a compliant paused candidate prints ALLOW|<file>" (str "ALLOW|" f) out)
+  (assert= "gate-promotion ALLOW exits 0" 0 exit))
+
+(let [root (mk-root)
+      _ (write! root "hold" "BL-41" "id: BL-41\nhuman_approval: approved\n")
+      {:keys [out exit]} (run "gate-promotion" root "BL-41")]
+  (assert= "gate-promotion on a held-only candidate refuses via the hold gate, before human_approval is even read"
+           "REFUSE|hold marker|ticket is parked in backlog/hold/, never auto-promoted" out)
+  (assert= "gate-promotion REFUSE exits 2" 2 exit))
+
+(let [root (mk-root)
+      _ (write! root "paused" "BL-42" "id: BL-42\nhuman_approval: pending\n")
+      {:keys [out]} (run "gate-promotion" root "BL-42")]
+  (assert= "gate-promotion refuses pending human_approval"
+           "REFUSE|human_approval|human_approval is pending, not approved" out))
+
+(let [root (mk-root)
+      _ (write! root "paused" "BL-43" "id: BL-43\nhuman_approval: approved\ndepends_on: [BL-9999]\n")
+      {:keys [out]} (run "gate-promotion" root "BL-43")]
+  (assert= "gate-promotion refuses an unlanded depends_on, naming the id"
+           "REFUSE|depends_on|depends_on not yet landed in backlog/done/: BL-9999" out))
+
+(let [root (mk-root)
+      _ (write! root "active" "BL-900" "id: BL-900\n")
+      _ (write! root "paused" "BL-44" "id: BL-44\nhuman_approval: approved\n")
+      _ (fs/create-dirs (fs/path root "swarmforge"))
+      _ (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 1\n")
+      {:keys [out]} (run "gate-promotion" root "BL-44")]
+  (assert= "gate-promotion resolves the configured depth cap from the fixture's own swarmforge.conf and refuses at the cap"
+           "REFUSE|active_backlog_max_depth|active count 1 >= cap 1 - no open slot" out))
+
 ;; ── dispatch: unknown command ────────────────────────────────────────────
 
 (let [{:keys [exit err]} (run "bogus-command")]
