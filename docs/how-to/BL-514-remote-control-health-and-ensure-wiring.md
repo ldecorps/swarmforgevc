@@ -14,15 +14,9 @@ The trustworthy remote-control (RC) signal is the pane's live `claude`
 process still carrying its `--remote-control <name>` flag — **not** pane
 scrollback, which scrolls the session banner out of view and false-negatives.
 
-Cursor-staffed seats (agent token `cursor`, binary `cursor-agent`) and other
-non-Claude agents are out of scope for **Claude `/rc` repair**: they have no
-SwarmForge-wired `--remote-control` flag and no `/rc` footer. `./swarm ensure`
-still emits an `rc:<role>` line for them — as **`OFF`** with an action string
-(heal via `agent:<role>`; phone via Cursor Remote / Telegram), never a
-misleading `HEALTHY`. Half-launch recovery (pane up, expected agent gone) is
-owned by the `agent:<role>` check, which uses the same
-`agent_process_marker_lib.bb` map as babysitter (BL-1108 stamp-off of hotfix
-`f02f6ae5b4`). See
+Cursor-staffed seats (agent token `cursor`, binary `cursor-agent`) are out of
+scope for this tooling: they have no SwarmForge-wired `--remote-control` flag
+and no `/rc` footer. See
 [BL-1079 Cursor residuals — remote-control](./BL-1079-cursor-identity-steward-certify-and-residuals.md#residual-remote-control-vs-claude-rc).
 
 ## The three standalone scripts (unchanged by this ticket)
@@ -71,24 +65,19 @@ agent:coder: HEALTHY
 rc:coder: HEALTHY
 agent:hardender: HEALTHY
 rc:hardender: FIXED (respawned pane to restore --remote-control flag)
-agent:documenter: HEALTHY
-rc:documenter: OFF (no Claude /rc; heal via agent:; phone via Cursor Remote)
 ```
 
-Behavior per role, driven by `remote-control-health/check-role` (and the
-ensure short-circuit when the launch script has no RC flag):
+Behavior per role, driven by `remote-control-health/check-role`:
 
-- **`:healthy`** → `rc:<role>: HEALTHY`, no action.
-- **`:off`** (launch script declares no `--remote-control` at all) →
-  `rc:<role>: OFF` with an action string (BL-1108 / hotfix `f02f6ae5b4` —
-  never report `HEALTHY` for a seat that has no Claude `/rc` by design).
-  Short-circuit on `expected-rc-name` being `nil`: the live process is
-  **never probed**. Skipping the probe is load-bearing, not cosmetic —
-  probing walks the pane's whole descendant process tree, which hangs every
-  ensure fixture that doesn't declare the flag if the short-circuit is ever
-  lost. Covered by the RC-6 case in `test_swarm_ensure.sh` (probe marker
-  never created) plus the Cursor / non-Claude OFF contract in the BL-1108
-  acceptance feature.
+- **`:healthy` or `:off`** → `rc:<role>: HEALTHY`, no action. For `:off`
+  (the role's launch script declares no `--remote-control` flag at all),
+  this is a short-circuit on `expected-rc-name` being `nil`: the live
+  process is **never probed**. Skipping the probe is load-bearing, not
+  cosmetic — probing walks the pane's whole descendant process tree, which
+  hangs every ensure fixture that doesn't declare the flag if the
+  short-circuit is ever lost. Covered by the RC-6 case in
+  `test_swarm_ensure.sh`, which asserts both the `HEALTHY` status and that
+  the probe's marker file was never created.
 - **`:degraded`** → repaired by respawning the pane from its persisted
   launch script, then reclassified: `FIXED` if the flag came back,
   `FAILED` if it didn't.
