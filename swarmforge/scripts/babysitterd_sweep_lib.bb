@@ -182,53 +182,13 @@
 ;; ── check 7: busy-but-frozen ──────────────────────────────────────────────────
 
 (defn check-busy-frozen
-  [{:keys [role busy? hash-history acp?]}]
-  ;; BL-1081: this check is two pane-text heuristics stacked - a "busy" footer
-  ;; and a pane hash unchanged across three sweeps - and each is defeated in a
-  ;; different way by exactly the traps this ticket exists to remove: a
-  ;; truncated tail, a ghost suggestion, a render that froze while the agent
-  ;; kept working.
-  ;;
-  ;; For an ACP-hosted seat the turn's state is a FACT, not an inference: the
-  ;; stop reason says whether it ended. So the pane comparison is not consulted
-  ;; for such a seat at all - an ended turn is idle rather than frozen, and a
-  ;; turn still running is working rather than hung. Whether a long-running
-  ;; turn is hung is a question the pane hash never answered any better, and
-  ;; answering it from ACP would need a duration this snapshot does not carry;
-  ;; that is deliberately not smuggled in here.
-  ;;
-  ;; Every pane-driven seat keeps this check exactly as it was.
-  (when-not acp?
-    (let [history (or hash-history [])]
-      (when (and busy?
-                 (>= (count history) 3)
-                 (apply = (take-last 3 history)))
-        {:key (str "frozen-" role) :severity "WARN"
-         :message (str "swarmforge-" role ": busy footer shown but pane content unchanged for 3 sweeps — possible hung turn")}))))
-
-;; ── check 7b: an ACP seat's own control state (BL-1081) ───────────────────
-
-(defn check-acp-seat
-  "The structured facts, given a voice.
-
-   Suppressing the pane checks for an ACP seat is only half a wiring: it makes
-   the old inference stop lying without making the new fact say anything. A
-   permission moment in particular NEEDS to reach a human - that is the whole
-   point of handling it structurally instead of as a blocking menu - so it is
-   surfaced here, from the request itself.
-
-   Deliberately a different key and a different message from the menu CRIT.
-   They are different conditions with different responses: a menu block means
-   the agent is frozen waiting for a keystroke nobody may auto-press, while a
-   structured request means the agent is waiting on a decision that CAN be
-   routed. Conflating them is how a permission moment used to read as a stall."
-  [{:keys [role acp? permission-pending? permission-tool]}]
-  (when (and acp? permission-pending?)
-    {:key (str "acp-permission-" role) :severity "CRIT"
-     :message (str "swarmforge-" role ": blocked on a structured permission request"
-                   (when (seq (str permission-tool)) (str " (" permission-tool ")"))
-                   " — route or approve it; this is not a menu block and no pane"
-                   " keystroke will clear it")}))
+  [{:keys [role busy? hash-history]}]
+  (let [history (or hash-history [])]
+    (when (and busy?
+               (>= (count history) 3)
+               (apply = (take-last 3 history)))
+      {:key (str "frozen-" role) :severity "WARN"
+       :message (str "swarmforge-" role ": busy footer shown but pane content unchanged for 3 sweeps — possible hung turn")})))
 
 ;; ── check 8: memory-floor ─────────────────────────────────────────────────────
 
@@ -549,13 +509,7 @@
                                               (dissoc :repair)))
                                           (check-remote-control role)
                                           (check-menu-blocked role)
-                                          (check-busy-frozen role)
-                                          ;; BL-1081: the structured facts are
-                                          ;; CONSUMED here, in the same list as
-                                          ;; the pane checks they replace. A
-                                          ;; check nobody calls is the BL-419
-                                          ;; shape this ticket bounced for.
-                                          (check-acp-seat role)]))
+                                          (check-busy-frozen role)]))
                                (or roles []))
         handoffd-finding (check-handoffd-supervisor-fresh
                           {:handoffd-alive? handoffd-alive?

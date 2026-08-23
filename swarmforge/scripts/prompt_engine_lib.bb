@@ -55,11 +55,6 @@
   (let [a (some-> agent str/lower-case str/trim)]
     (if (contains? supported-agents a) a "claude")))
 
-;; BL-1081: :acp is a DIMENSION on this table, never a second table. The
-;; intake is explicit - "the spike should ADD a dimension, not fork the
-;; table". Absence of :acp means "not ACP-native" (acp-native? → false).
-;; Cursor is deliberately unmarked (BL-1078: terminal-native, no ACP host).
-;; The spike hosts EXACTLY ONE seat (vibe) — see acp-hosted-spike-seat?.
 (def provider-capabilities
   {"claude"  {:wake-style :chat-message
               :bootstrap-style :embedded
@@ -69,8 +64,7 @@
               :bootstrap-text-style :generic}
    "copilot" {:wake-style :chat-message
               :bootstrap-style :embedded
-              :bootstrap-text-style :generic
-              :acp true}
+              :bootstrap-text-style :generic}
    "grok"    {:wake-style :chat-message
               :bootstrap-style :paste-prompt-file
               :bootstrap-text-style :generic
@@ -88,16 +82,14 @@
    "vibe"    {:wake-style :chat-message
               :bootstrap-style :embedded
               :bootstrap-text-style :generic
-              :startup-delay-ms 3000
-              :acp true}
+              :startup-delay-ms 3000}
    ;; Google Gemini CLI (`gemini`): interactive coding agent with YOLO mode
    ;; (-y). Same wake/bootstrap shape as vibe/codex — prompt path in the
    ;; first message; woken by chatting. Auth via GEMINI_API_KEY (tmux -e).
    "gemini"  {:wake-style :chat-message
               :bootstrap-style :embedded
               :bootstrap-text-style :generic
-              :startup-delay-ms 3000
-              :acp true}
+              :startup-delay-ms 3000}
    ;; BL-1078: Cursor's terminal-native agent CLI (`cursor-agent`). Same shape
    ;; as vibe/gemini - the prompt path rides the first message and the seat is
    ;; woken by chatting into its pane.
@@ -116,23 +108,6 @@
 
 (defn capabilities [agent]
   (get provider-capabilities (normalize-agent agent)))
-
-(defn acp-native?
-  "BL-1081: does this agent speak Agent Client Protocol natively? A missing
-   :acp key reads as false - absence means pane-driven, never unknown."
-  [agent]
-  (boolean (:acp (capabilities agent))))
-
-;; The ONE seat this spike hosts behind the ACP host in production
-;; (approval_context: Mistral Vibe). Other :acp agents stay pane-driven.
-(def acp-spike-seat-agent "vibe")
-
-(defn acp-hosted-spike-seat?
-  "True only for the single seat write_role_launch_script puts behind the
-   ACP host. Distinct from acp-native?: the dimension marks who CAN be
-   hosted; this predicate marks who IS hosted in this spike."
-  [agent]
-  (= acp-spike-seat-agent (normalize-agent agent)))
 
 (defn handoff-draft-path
   "Writable by all runtimes (not under .swarmforge/ or repo-root tmp/)."

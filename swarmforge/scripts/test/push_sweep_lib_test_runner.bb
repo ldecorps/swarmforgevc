@@ -235,90 +235,6 @@
                             {:sha "bad0000001" :merge? true :second-parent-sha "p2bad00001"
                              :tree-equals-parent1? true :offered-paths (vec (repeat 28 "y"))}]}))
 
-;; ── BL-1098: silent-revert-path? / silent-revert-decision ─────────────────
-;; Gherkin BL-1098 silent-revert-of-landed-content-01 (Scenario Outline)
-
-(assert-false "silent-revert-path?: tip matches newest authoring commit -> never flagged"
-              (push-sweep-lib/silent-revert-path?
-               {:path "x.js" :tip-matches-newest-authoring? true
-                :tip-is-superseded-resurrection? false :tip-absent-without-delete? false
-                :newest-authoring-sha "new001" :divergence-merge-sha nil}))
-(assert-true "silent-revert-path?: tip holds a superseded earlier-authored blob -> flagged"
-             (push-sweep-lib/silent-revert-path?
-              {:path "x.js" :tip-matches-newest-authoring? false
-               :tip-is-superseded-resurrection? true :tip-absent-without-delete? false
-               :newest-authoring-sha "new002" :divergence-merge-sha "merge002"}))
-(assert-true "silent-revert-path?: tip absent with no delete commit -> flagged"
-             (push-sweep-lib/silent-revert-path?
-              {:path "x.js" :tip-matches-newest-authoring? false
-               :tip-is-superseded-resurrection? false :tip-absent-without-delete? true
-               :newest-authoring-sha "new003" :divergence-merge-sha "merge003"}))
-(assert-false "silent-revert-path?: hand-blend (matches no authored blob) -> never flagged"
-              (push-sweep-lib/silent-revert-path?
-               {:path "x.js" :tip-matches-newest-authoring? false
-                :tip-is-superseded-resurrection? false :tip-absent-without-delete? false
-                :newest-authoring-sha "new004" :divergence-merge-sha nil}))
-
-;; Gherkin BL-1098 -02: refusal names path, newest authoring sha, divergence merge.
-
-(assert= "silent-revert-decision: names path, newest authoring sha, and divergence merge"
-         {:refuse? true :reason :silent-revert
-          :offending [{:path "specs/pipeline/steps/x.js"
-                       :newest-authoring-sha "auth000001"
-                       :divergence-merge-sha "merge00001"}]}
-         (push-sweep-lib/silent-revert-decision
-          {:facts-complete? true
-           :candidate-paths [{:path "specs/pipeline/steps/x.js"
-                              :tip-matches-newest-authoring? false
-                              :tip-is-superseded-resurrection? true
-                              :tip-absent-without-delete? false
-                              :newest-authoring-sha "auth000001"
-                              :divergence-merge-sha "merge00001"}]}))
-
-;; Gherkin BL-1098 -03: discarding a superseded blob while tip matches newest is clean.
-
-(assert= "silent-revert-decision: tip matching newest authoring is never refused (correct reconcile)"
-         {:refuse? false :reason nil :offending []}
-         (push-sweep-lib/silent-revert-decision
-          {:facts-complete? true
-           :candidate-paths [{:path "a.js" :tip-matches-newest-authoring? true
-                              :tip-is-superseded-resurrection? false
-                              :tip-absent-without-delete? false
-                              :newest-authoring-sha "a1" :divergence-merge-sha nil}
-                             {:path "b.js" :tip-matches-newest-authoring? true
-                              :tip-is-superseded-resurrection? false
-                              :tip-absent-without-delete? false
-                              :newest-authoring-sha "b1" :divergence-merge-sha nil}]}))
-
-(assert= "silent-revert-decision: facts-complete? false fails closed"
-         {:refuse? true :reason :gather-failed :offending []}
-         (push-sweep-lib/silent-revert-decision {:facts-complete? false :candidate-paths []}))
-
-;; Gherkin BL-1098 -05: a dirty-working-tree stand-in fact cannot move the verdict
-;; (the decision signature has nowhere to read it - structural).
-
-(assert= "silent-revert-decision: dirty-working-tree? stand-in on a path never moves the verdict"
-         {:refuse? true :reason :silent-revert
-          :offending [{:path "dirty.js" :newest-authoring-sha "d1" :divergence-merge-sha "dm1"}]}
-         (push-sweep-lib/silent-revert-decision
-          {:facts-complete? true
-           :candidate-paths [{:path "dirty.js" :tip-matches-newest-authoring? false
-                              :tip-is-superseded-resurrection? true
-                              :tip-absent-without-delete? false
-                              :newest-authoring-sha "d1" :divergence-merge-sha "dm1"
-                              :dirty-working-tree? true}]}))
-
-(assert= "silent-revert-candidate-paths: union of merge-touched sets only, never invents paths"
-         ["a.js" "b.js" "c.js"]
-         (push-sweep-lib/silent-revert-candidate-paths
-          [{:ok? true :paths #{"b.js" "a.js"}}
-           {:ok? true :paths #{"c.js" "a.js"}}
-           {:ok? true :paths #{}}]))
-
-(assert= "silent-revert-candidate-paths: empty input yields empty candidates (no tree walk)"
-         []
-         (push-sweep-lib/silent-revert-candidate-paths []))
-
 ;; ── due? ──────────────────────────────────────────────────────────────────
 
 (assert-true "due?: never attempted is always due"
@@ -418,11 +334,8 @@
 ;; anything", the harmless case, so none of them have to know the gate
 ;; exists. Tests of the gate ITSELF pass their own :noop-merge-gate-facts.
 (def harmless-noop-merge-gate-facts {:facts-complete? true :ahead-commits []})
-;; BL-1098: same posture - empty candidate-paths is the clean default.
-(def harmless-silent-revert-gate-facts {:facts-complete? true :candidate-paths []})
 
-(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results qa-gate-facts
-                             noop-merge-gate-facts silent-revert-gate-facts]}]
+(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results qa-gate-facts noop-merge-gate-facts]}]
   (let [counts-atom (atom counts)
         push-calls (atom 0)
         alarm-calls (atom 0)
@@ -455,7 +368,6 @@
                                    r))
       :qa-gate-facts! (fn [] (or qa-gate-facts approved-qa-gate-facts))
       :noop-merge-gate-facts! (fn [] (or noop-merge-gate-facts harmless-noop-merge-gate-facts))
-      :silent-revert-gate-facts! (fn [] (or silent-revert-gate-facts harmless-silent-revert-gate-facts))
       :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}}))
 
 ;; BL-356 swarm-pushes-main-to-origin-01: committed work reaches origin
@@ -745,48 +657,6 @@
                                          :tree-equals-parent1? true :offered-paths []}]}})]
   (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
   (assert= "BL-855 sweep!: a merge with nothing to take still publishes" 1 @(:push calls)))
-
-;; ── BL-1098: sweep!-level wiring - silent-revert gate refuses after
-;;    noop-merge passes, with a distinct reason keyword ────────────────────
-
-(let [dir (mk-fixture-dir)
-      {:keys [calls adapters]}
-      (fake-adapters {:counts {:ahead 1 :behind 0}
-                      :qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? true}
-                      :silent-revert-gate-facts
-                      {:facts-complete? true
-                       :candidate-paths [{:path "specs/x.js"
-                                          :tip-matches-newest-authoring? false
-                                          :tip-is-superseded-resurrection? true
-                                          :tip-absent-without-delete? false
-                                          :newest-authoring-sha "auth1098001"
-                                          :divergence-merge-sha "merge1098001"}]}})]
-  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
-  (assert= "BL-1098 sweep!: a silent revert is never pushed" 0 @(:push calls))
-  (assert-true "BL-1098 sweep!: refusal is tagged silent-revert-refused (distinct from noop-landing-merge)"
-               (some #(and (clojure.string/includes? % "silent-revert-refused")
-                            (clojure.string/includes? % "silent-revert")
-                            (clojure.string/includes? % "specs/x.js")
-                            (clojure.string/includes? % "auth1098001")
-                            (clojure.string/includes? % "merge1098001"))
-                     @(:logs calls)))
-  (assert-false "BL-1098 sweep!: refusal is never tagged noop-merge-refused"
-                (some #(clojure.string/includes? % "noop-merge-refused") @(:logs calls))))
-
-(let [dir (mk-fixture-dir)
-      {:keys [calls adapters]}
-      (fake-adapters {:counts {:ahead 1 :behind 0}
-                      :push-results [{:success true}]
-                      :silent-revert-gate-facts
-                      {:facts-complete? true
-                       :candidate-paths [{:path "clean.js"
-                                          :tip-matches-newest-authoring? true
-                                          :tip-is-superseded-resurrection? false
-                                          :tip-absent-without-delete? false
-                                          :newest-authoring-sha "clean1"
-                                          :divergence-merge-sha nil}]}})]
-  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
-  (assert= "BL-1098 sweep!: tip matching newest authoring still publishes" 1 @(:push calls)))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

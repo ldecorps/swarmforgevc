@@ -41,17 +41,6 @@
 ;;                                whenever ahead>0 and the sweep actually
 ;;                                reaches :should-push this call - consulted
 ;;                                BEFORE PUSH_SWEEP_QA_GATE_FACTS)
-;;   PUSH_SWEEP_SILENT_REVERT_GATE_FACTS  BL-1098. JSON silent-revert-decision
-;;                                facts, e.g. {"facts-complete?": true,
-;;                                "candidate-paths": []} or with path entries
-;;                                carrying tip-matches-newest-authoring? /
-;;                                tip-is-superseded-resurrection? /
-;;                                tip-absent-without-delete? /
-;;                                newest-authoring-sha / divergence-merge-sha
-;;                                (required whenever ahead>0 reaches
-;;                                :should-push - consulted AFTER noop-merge
-;;                                and BEFORE qa-gate; reason :silent-revert
-;;                                is distinct from :noop-landing-merge)
 ;;   PUSH_TEST_MAX_PUSH_ATTEMPTS / _MAX_ALARM_ATTEMPTS / _BACKOFF_BASE_MS /
 ;;   _BACKOFF_MAX_MS              override the retry-config (test-friendly
 ;;                                small defaults)
@@ -123,10 +112,6 @@
   (or (env-json "PUSH_SWEEP_NOOP_MERGE_GATE_FACTS")
       (throw (ex-info "PUSH_SWEEP_NOOP_MERGE_GATE_FACTS not set - no real git process is ever allowed here" {}))))
 
-(defn silent-revert-gate-facts! []
-  (or (env-json "PUSH_SWEEP_SILENT_REVERT_GATE_FACTS")
-      (throw (ex-info "PUSH_SWEEP_SILENT_REVERT_GATE_FACTS not set - no real git process is ever allowed here" {}))))
-
 (fs/create-dirs daemon-dir)
 (push-sweep-lib/sweep!
  now-ms daemon-dir retry-config
@@ -136,7 +121,6 @@
   :send-divergence-alarm! send-divergence-alarm!
   :qa-gate-facts! qa-gate-facts!
   :noop-merge-gate-facts! noop-merge-gate-facts!
-  :silent-revert-gate-facts! silent-revert-gate-facts!
   :log! (fn [& parts] (swap! log-lines conj (str/join " " parts)))})
 
 (println

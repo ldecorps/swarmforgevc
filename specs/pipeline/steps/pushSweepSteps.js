@@ -27,23 +27,14 @@ function mkDaemonDir() {
 // (:nothing-to-push) never call :qa-gate-facts! at all, so this default
 // is harmless dead weight for them.
 const APPROVED_QA_GATE_FACTS = { 'qa-ref-exists?': true, 'tip-is-qa-ancestor?': true };
-// BL-855 / BL-1098: pre-existing scenarios expect publish once :should-push
-// is reached - empty ahead / empty candidate-paths are the harmless defaults.
-const HARMLESS_NOOP_MERGE_GATE_FACTS = { 'facts-complete?': true, 'ahead-commits': [] };
-const HARMLESS_SILENT_REVERT_GATE_FACTS = { 'facts-complete?': true, 'candidate-paths': [] };
 
-function runSweep(daemonDir, nowMs, {
-  revCounts, pushResult, alarmResult, divergenceResult, qaGateFacts,
-  noopMergeGateFacts, silentRevertGateFacts,
-}) {
+function runSweep(daemonDir, nowMs, { revCounts, pushResult, alarmResult, divergenceResult, qaGateFacts }) {
   const env = { PATH: process.env.PATH, HOME: process.env.HOME };
   if (revCounts) env.PUSH_SWEEP_REV_COUNTS = JSON.stringify(revCounts);
   if (pushResult) env.PUSH_SWEEP_PUSH_RESULT = JSON.stringify(pushResult);
   if (alarmResult) env.PUSH_SWEEP_ALARM_RESULT = JSON.stringify(alarmResult);
   if (divergenceResult) env.PUSH_SWEEP_DIVERGENCE_RESULT = JSON.stringify(divergenceResult);
   env.PUSH_SWEEP_QA_GATE_FACTS = JSON.stringify(qaGateFacts || APPROVED_QA_GATE_FACTS);
-  env.PUSH_SWEEP_NOOP_MERGE_GATE_FACTS = JSON.stringify(noopMergeGateFacts || HARMLESS_NOOP_MERGE_GATE_FACTS);
-  env.PUSH_SWEEP_SILENT_REVERT_GATE_FACTS = JSON.stringify(silentRevertGateFacts || HARMLESS_SILENT_REVERT_GATE_FACTS);
   const out = execFileSync('bb', [CLI, daemonDir, String(nowMs)], { encoding: 'utf8', env });
   return JSON.parse(out);
 }
@@ -68,8 +59,6 @@ function registerSteps(registry) {
       alarmResult: ctx.alarmResult,
       divergenceResult: ctx.divergenceResult,
       qaGateFacts: ctx.qaGateFacts,
-      noopMergeGateFacts: ctx.noopMergeGateFacts,
-      silentRevertGateFacts: ctx.silentRevertGateFacts,
     });
   });
 

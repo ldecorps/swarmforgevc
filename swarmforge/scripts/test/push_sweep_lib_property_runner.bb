@@ -163,7 +163,6 @@
                     ;; of the way, mirroring approved-qa-gate-facts' own
                     ;; role for the pre-existing sweep! tests.
                     :noop-merge-gate-facts! (fn [] {:facts-complete? true :ahead-commits []})
-                    :silent-revert-gate-facts! (fn [] {:facts-complete? true :candidate-paths []})
                     :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}
           _ (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
           expected-refuse? (oracle-lacks-qa-approval? scenario)
@@ -204,7 +203,6 @@
                           ;; whole ticket exists to prevent
                           :qa-gate-facts! (fn [] {:qa-ref-exists? true :tip-is-qa-ancestor? true})
                           :noop-merge-gate-facts! (fn [] {:facts-complete? true :ahead-commits []})
-                    :silent-revert-gate-facts! (fn [] {:facts-complete? true :candidate-paths []})
                           :log! (fn [& _parts] nil)}
         lacking-approval-scenario {:qa-ref-exists? true :facts-complete? true :tip-is-qa-ancestor? false
                                     :ahead-commits [{:sha "shaX" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}]
@@ -477,7 +475,6 @@
                     :send-divergence-alarm! (fn [_ _] {:success true})
                     :qa-gate-facts! (fn [] {:qa-ref-exists? true :tip-is-qa-ancestor? true})
                     :noop-merge-gate-facts! (fn [] {:facts-complete? true :ahead-commits []})
-                    :silent-revert-gate-facts! (fn [] {:facts-complete? true :candidate-paths []})
                     :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}
           _ (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
           recorded-error (get-in (push-sweep-lib/read-state dir) [:push :last-error])
@@ -534,219 +531,6 @@
           (System/exit 1)))))
 
 (non-vacuity-check-multiline-not-collapsed)
-
-;; ── BL-1098: PROPERTY test over push_sweep_lib.bb, covering the ticket's
-;;    own 3 declared invariants (coder-authored first, per BL-654):
-;;
-;;   1. The verdict is computed from git objects alone - never from a
-;;      working-tree stand-in fact (silent-revert-decision's signature has
-;;      nowhere to read :dirty-working-tree?).
-;;   2. A path whose tip matches its newest authoring commit is never
-;;      flagged, whatever other flags ride along (correct reconcile).
-;;   3. Candidate paths are bounded by the union of merge-touched path
-;;      sets - never by inventing paths outside those sets (BL-1086).
-;;
-;; Independent oracles, never calling silent-revert-path?/decision/
-;; candidate-paths themselves. ───────────────────────────────────────────
-
-(def silent-path-pool ["specs/a.js" "extension/b.ts" "swarmforge/c.bb"])
-
-(defn gen-silent-path-entry [s idx]
-  ;; BL-654 generator-reach: construct the four tip shapes on equal footing
-  ;; (match / resurrection / absent / hand-blend), not a rare corner of an
-  ;; independent boolean draw that almost never hits resurrection.
-  (let [[shape-n s1] (gen-int s 4) ; 0..3
-        shape (nth [:match :resurrection :absent :hand-blend] shape-n)
-        [dirty? s2] (gen-bool s1)
-        [path s3] (gen-pick s2 silent-path-pool)
-        base {:path (str path "-" idx)
-              :newest-authoring-sha (str "auth" idx)
-              :divergence-merge-sha (str "div" idx)
-              :dirty-working-tree? dirty?}]
-    [(case shape
-       :match (assoc base :tip-matches-newest-authoring? true
-                     :tip-is-superseded-resurrection? false
-                     :tip-absent-without-delete? false
-                     :divergence-merge-sha nil)
-       :resurrection (assoc base :tip-matches-newest-authoring? false
-                            :tip-is-superseded-resurrection? true
-                            :tip-absent-without-delete? false)
-       :absent (assoc base :tip-matches-newest-authoring? false
-                      :tip-is-superseded-resurrection? false
-                      :tip-absent-without-delete? true)
-       :hand-blend (assoc base :tip-matches-newest-authoring? false
-                          :tip-is-superseded-resurrection? false
-                          :tip-absent-without-delete? false
-                          :divergence-merge-sha nil))
-     s3]))
-
-(defn gen-silent-scenario [s]
-  (let [[facts-complete? s1] (gen-bool s)
-        [n s2] (gen-int s1 4) ; 0..3 paths
-        [paths s3] (reduce (fn [[acc sx] i]
-                             (let [[p sy] (gen-silent-path-entry sx i)]
-                               [(conj acc p) sy]))
-                           [[] s2] (range n))]
-    [{:facts-complete? facts-complete? :candidate-paths paths} s3]))
-
-(defn- oracle-silent-hit?
-  "Fresh restatement of the silent-revert rule - deliberately ignores
-   :dirty-working-tree? (invariant 1)."
-  [{:keys [tip-matches-newest-authoring?
-           tip-is-superseded-resurrection?
-           tip-absent-without-delete?]}]
-  (and (not tip-matches-newest-authoring?)
-       (or tip-is-superseded-resurrection? tip-absent-without-delete?)))
-
-(defn oracle-silent-refuse? [{:keys [facts-complete? candidate-paths]}]
-  (or (not facts-complete?)
-      (boolean (some oracle-silent-hit? candidate-paths))))
-
-(check-all "push_sweep_lib silent-revert invariant: resurrection/absent refuse, tip-match never flags, dirty-tree stand-in never moves the verdict"
-  gen-silent-scenario
-  (fn [scenario]
-    (let [decision (push-sweep-lib/silent-revert-decision scenario)
-          expected-refuse? (oracle-silent-refuse? scenario)
-          tip-match-hit? (some (fn [p] (and (:tip-matches-newest-authoring? p)
-                                             (some #(= (:path %) (:path p))
-                                                   (:offending decision))))
-                               (:candidate-paths scenario))]
-      (cond
-        (and expected-refuse? (not (:refuse? decision)))
-        (str "INVARIANT 1/2 VIOLATION: oracle says refuse but silent-revert-decision did not; decision=" (pr-str decision))
-
-        (and (not expected-refuse?) (:refuse? decision))
-        (str "INVARIANT 2 VIOLATION: tip-match/hand-blend clean but refused (cries wolf); decision=" (pr-str decision))
-
-        tip-match-hit?
-        (str "INVARIANT 2 VIOLATION: a tip-matching path was named in :offending; decision=" (pr-str decision))
-
-        :else true))))
-
-;; ── invariant 3: candidate-paths union never invents outside merge sets ──
-(defn gen-merge-path-set [s idx]
-  (let [[n s1] (gen-int s 3)
-        [paths s2] (reduce (fn [[acc sx] _]
-                             (let [[p sy] (gen-pick sx silent-path-pool)]
-                               [(conj acc (str p "-m" idx)) sy]))
-                           [#{} s1] (range n))]
-    [{:ok? true :paths paths} s2]))
-
-(defn gen-merge-path-sets [s]
-  (let [[n s1] (gen-int s 4)]
-    (reduce (fn [[acc sx] i]
-              (let [[ps sy] (gen-merge-path-set sx i)]
-                [(conj acc ps) sy]))
-            [[] s1] (range n))))
-
-(defn- oracle-candidate-paths [merge-path-sets]
-  (vec (sort (into #{} (mapcat :paths merge-path-sets)))))
-
-(check-all "push_sweep_lib silent-revert invariant 3: candidates equal the union of merge-touched paths, inventing nothing"
-  gen-merge-path-sets
-  (fn [merge-path-sets]
-    (let [got (push-sweep-lib/silent-revert-candidate-paths merge-path-sets)
-          expected (oracle-candidate-paths merge-path-sets)
-          invented (remove (set expected) got)]
-      (cond
-        (not= got expected)
-        (str "INVARIANT 3 VIOLATION: candidate-paths " (pr-str got) " != oracle union " (pr-str expected))
-
-        (seq invented)
-        (str "INVARIANT 3 VIOLATION: invented paths outside merge-touched sets: " (pr-str invented))
-
-        :else true))))
-
-(defn- bug-shaped-silent-revert-decision
-  "Pre-fix mutant: never refuses a silent revert (wave everything through)."
-  [{:keys [facts-complete?] :or {facts-complete? true}}]
-  (if-not facts-complete?
-    {:refuse? true :reason :gather-failed :offending []}
-    {:refuse? false :reason nil :offending []}))
-
-(defn- cry-wolf-silent-revert-decision
-  "Mutant that flags tip-matching paths (the naive one-sided drop rule's
-   false-positive shape this ticket measured at 22/60)."
-  [{:keys [candidate-paths facts-complete?] :or {facts-complete? true}}]
-  (if-not facts-complete?
-    {:refuse? true :reason :gather-failed :offending []}
-    (let [hits (filterv :tip-matches-newest-authoring? candidate-paths)]
-      (if (seq hits)
-        {:refuse? true :reason :silent-revert
-         :offending (mapv (fn [h] {:path (:path h)
-                                   :newest-authoring-sha (:newest-authoring-sha h)
-                                   :divergence-merge-sha (:divergence-merge-sha h)})
-                          hits)}
-        {:refuse? false :reason nil :offending []}))))
-
-(defn- dirty-tree-swayed-silent-revert-decision
-  "Mutant that lets a working-tree stand-in suppress a real silent revert."
-  [{:keys [candidate-paths facts-complete?] :or {facts-complete? true}}]
-  (if-not facts-complete?
-    {:refuse? true :reason :gather-failed :offending []}
-    (let [hits (filterv (fn [p] (and (oracle-silent-hit? p)
-                                      (not (:dirty-working-tree? p))))
-                         candidate-paths)]
-      (if (seq hits)
-        {:refuse? true :reason :silent-revert
-         :offending (mapv (fn [h] {:path (:path h)
-                                   :newest-authoring-sha (:newest-authoring-sha h)
-                                   :divergence-merge-sha (:divergence-merge-sha h)})
-                          hits)}
-        {:refuse? false :reason nil :offending []}))))
-
-(defn- non-vacuity-check-silent-revert []
-  (let [resurrection
-        {:facts-complete? true
-         :candidate-paths [{:path "x.js" :tip-matches-newest-authoring? false
-                            :tip-is-superseded-resurrection? true
-                            :tip-absent-without-delete? false
-                            :newest-authoring-sha "new1" :divergence-merge-sha "m1"
-                            :dirty-working-tree? true}]}
-        tip-match
-        {:facts-complete? true
-         :candidate-paths [{:path "y.js" :tip-matches-newest-authoring? true
-                            :tip-is-superseded-resurrection? false
-                            :tip-absent-without-delete? false
-                            :newest-authoring-sha "new2" :divergence-merge-sha nil}]}
-        real-r (push-sweep-lib/silent-revert-decision resurrection)
-        buggy-r (bug-shaped-silent-revert-decision resurrection)
-        real-m (push-sweep-lib/silent-revert-decision tip-match)
-        wolf-m (cry-wolf-silent-revert-decision tip-match)
-        dirty-mutant (dirty-tree-swayed-silent-revert-decision resurrection)]
-    (cond
-      (not (and (:refuse? real-r) (not (:refuse? buggy-r))))
-      (do (println (str "NON-VACUITY FAILURE (BL-1098 wave-through mutant): real=" (pr-str real-r) " buggy=" (pr-str buggy-r)))
-          (System/exit 1))
-
-      (not (and (not (:refuse? real-m)) (:refuse? wolf-m)))
-      (do (println (str "NON-VACUITY FAILURE (BL-1098 cry-wolf mutant): real=" (pr-str real-m) " wolf=" (pr-str wolf-m)))
-          (System/exit 1))
-
-      (not (and (:refuse? real-r) (not (:refuse? dirty-mutant))))
-      (do (println (str "NON-VACUITY FAILURE (BL-1098 dirty-tree mutant): real=" (pr-str real-r) " mutant=" (pr-str dirty-mutant)))
-          (System/exit 1))
-
-      :else
-      (println "non-vacuity confirmed: silent-revert-decision refuses resurrection (even dirty), never flags tip-match, unlike wave-through / cry-wolf / dirty-tree mutants"))))
-
-(non-vacuity-check-silent-revert)
-
-(defn- inventing-candidate-paths
-  "Mutant that walks a hard-coded full-tree stand-in instead of merge sets."
-  [_merge-path-sets]
-  ["invented/full-tree.js"])
-
-(defn- non-vacuity-check-candidate-bound []
-  (let [sets [{:ok? true :paths #{"real/a.js"}}]
-        real (push-sweep-lib/silent-revert-candidate-paths sets)
-        buggy (inventing-candidate-paths sets)]
-    (if (and (= real ["real/a.js"]) (not= buggy real))
-      (println "non-vacuity confirmed: silent-revert-candidate-paths stays inside merge-touched sets, unlike a full-tree-walk mutant")
-      (do (println (str "NON-VACUITY FAILURE (BL-1098 candidate-bound mutant): real=" (pr-str real) " buggy=" (pr-str buggy)))
-          (System/exit 1)))))
-
-(non-vacuity-check-candidate-bound)
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "push_sweep_lib qa-gate property: " runs " runs"))

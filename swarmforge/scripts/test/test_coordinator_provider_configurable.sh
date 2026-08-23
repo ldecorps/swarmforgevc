@@ -135,24 +135,4 @@ COORDINATOR_AGENT_COL="$(echo "$COORDINATOR_ROW" | cut -f6)"
 pass "coordinator-provider-configurable-04: the configured provider reaches roles.tsv, the same file handoffd.bb reads to pick a role's wake-steps"
 rm -rf "$ROOT4"
 
-# ── coordinator-provider-configurable-05: a Cursor coordinator carries
-#      --model from coordinator_model (same shape as gemini/codex), so the
-#      launch script is the ground truth for the seat header ───────────────
-ROOT5="$(mk_fixture_root)"
-cat > "$ROOT5/swarmforge/swarmforge.conf" <<'CONF'
-config coordinator_agent cursor
-config coordinator_model auto
-window coder cursor coder --model auto
-CONF
-OUT5="$(run_fixture "$ROOT5")"
-AGENT5="$(coordinator_agent "$OUT5")"
-CLI5="$(coordinator_extra_cli "$OUT5")"
-[[ "$AGENT5" == "cursor" ]] || fail "05: expected the coordinator provisioned with the cursor provider, got: $AGENT5"
-[[ "$CLI5" == *"--model auto"* ]] \
-  || fail "05: expected a Cursor coordinator's extra_cli to carry --model from coordinator_model, got: $CLI5"
-[[ "$CLI5" != *"--dangerously-skip-permissions"* && "$CLI5" != *"--effort"* ]] \
-  || fail "05: expected no Claude-only flags in a Cursor coordinator's extra_cli, got: $CLI5"
-pass "coordinator-provider-configurable-05: a Cursor coordinator gets --model from coordinator_model"
-rm -rf "$ROOT5"
-
 echo "ALL PASS"
