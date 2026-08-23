@@ -10,7 +10,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1082-the-swarm-can-pull-and-serve-a-named-model-on-this-host.feature
-assigned_to: coder
+assigned_to: coordinator
 human_approval: approved
 approval_context: >
   Sliced out of the 2026-08-22 operator intake
@@ -87,6 +87,7 @@ description: |
   model at once; GPU offload tuning; any second runtime backend.
 
 notes: |
+  Coordinator 2026-08-23: bounced coder→cleaner BL-1082 and re-parked BL-1082/1052/1053 to hold — human reservation still in force (archive/INTAKE-cursor-seats-then-sleep); unauthorized active promote reversed.
   Human 2026-08-23 (Cursor): RESERVED for human/Cursor implementation after Cursor seat chain (1078→1079→1080[+1081]) lands. Swarm must NOT promote or dispatch these — operator will build 1082→1052→1053 in Cursor.
   Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   Drained from the operator intake

@@ -76,6 +76,7 @@ description: |
   every future local model.
 
 notes: |
+  Coordinator 2026-08-23: bounced coder→cleaner BL-1082 and re-parked BL-1082/1052/1053 to hold — human reservation still in force (archive/INTAKE-cursor-seats-then-sleep); unauthorized active promote reversed.
   Human 2026-08-23 (Cursor): RESERVED for human/Cursor implementation after Cursor seat chain (1078→1079→1080[+1081]) lands. Swarm must NOT promote or dispatch these — operator will build 1082→1052→1053 in Cursor.
   Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   Operator reframing, 2026-08-22 Let's Talk: Qwen is the first routing proof,
