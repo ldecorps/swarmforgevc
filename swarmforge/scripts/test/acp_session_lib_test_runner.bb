@@ -77,10 +77,15 @@
          (str (acp-session-lib/snapshot-path tmp "coder")))
 
 ;; ── the babysitter's decision site: ACP facts fold into the assess input ──
-;; BL-1081 required_wiring: babysitter_assess.bb takes the idle/stuck decision
-;; for an ACP seat from the structured stop reason. That merge is pure and
-;; lives here so it is testable, because babysitter_assess.bb itself is a
-;; top-level script that exits.
+;; BL-1081: babysitter_check.bb's gather-role takes the idle/stuck/menu
+;; decision for a seat, and for an ACP-hosted one it takes it from the
+;; structured stop reason. That merge is pure and lives here so it is testable
+;; without a tmux server; the LIVE consumption is gated by the feature file's
+;; own scenarios, which run the real sweep.
+;;
+;; The first pass wired this into babysitter_assess.bb instead, which BL-781
+;; documents as dead with zero live callers - the architect bounce that sent
+;; this parcel back. gather-role is the site with real callers.
 
 (def pane-input
   {:role "coder" :class :standing :alive? true

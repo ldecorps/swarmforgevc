@@ -17,7 +17,7 @@
 //   - no pane line is protocol traffic, so what a human sees is a transcript
 //     and not a wire dump;
 //   - the real babysitter pane classifier (loop_detect_lib.bb, the same
-//     function babysitter_assess.bb calls on a captured pane) still returns
+//     function babysitter_check.bb's own sweep calls on a captured pane) still returns
 //     one of its four declared verdicts for that pane, and the real
 //     interactive-menu CRIT pattern (babysitter_check.bb's own menu-pattern)
 //     never fires on what the host itself rendered.

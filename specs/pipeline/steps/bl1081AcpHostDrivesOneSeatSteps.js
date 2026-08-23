@@ -21,6 +21,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -39,6 +40,22 @@ const HANDOFF_HELPER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_hand
 // handler matched, turning another feature's honest "no step handler matched"
 // into a silent wrong pass. Scoping to this feature makes that impossible.
 const FEATURE = 'one seat is driven by structured session events instead of pane text';
+
+// BL-1081 architect bounce D1: the first pass asserted only against the pure
+// lib, so it could not tell that the wiring pointed at a dead file. Scenarios
+// 01 and 02 now also drive the REAL sweep - the same fixture BL-1071's
+// scenarios use - so "the deterministic layer decides" means the layer that
+// actually runs in the swarm, and a verdict wired somewhere nothing calls
+// fails here.
+const {
+  LIVE_ROLE,
+  makeSweepFixture,
+  breakProbes,
+  writeStub,
+  runSweep,
+} = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'bl1071SweepFixture'));
+
+const SWEEP_PREFIX = 'bl1081-live-';
 
 const { parseAcpStream } = require(path.join(OUT, 'acpSessionEvents'));
 const { foldAcpEvents, snapshotForSeat } = require(path.join(OUT, 'acpSeatState'));
@@ -174,6 +191,65 @@ function readSource(file) {
   return fs.readFileSync(file, 'utf8');
 }
 
+// A pane that reads BUSY and never changes: exactly the shape check 7's
+// frozen-pane WARN is built to catch, and exactly the shape a truncated tail
+// or a frozen render produces while the agent is working fine.
+const BUSY_FROZEN_PANE = "✻ Thinking… (42s · esc to interrupt)";
+
+// A pane carrying the interactive-menu CRIT's own vocabulary, so check 6 has
+// every reason to fire and only the ACP fact stops it.
+const MENU_LOOKING_PANE = "Do you want to proceed? ❯ 1. Yes";
+
+function tmuxWithPane(paneText) {
+  return [
+    '#!/usr/bin/env bash',
+    'args="$*"',
+    'case "$args" in',
+    '  *has-session*) exit 0 ;;',
+    '  *list-panes*) echo 222; exit 0 ;;',
+    `  *capture-pane*) printf '%s\\n' ${JSON.stringify(paneText)}; exit 0 ;;`,
+    '  *list-sessions*) echo "swarmforge-coder"; exit 0 ;;',
+    'esac',
+    'exit 0',
+  ].join('\n') + '\n';
+}
+
+function sweepStaleLive() {
+  for (const entry of fs.readdirSync(os.tmpdir())) {
+    if (entry.startsWith(SWEEP_PREFIX)) fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
+  }
+}
+
+const liveMkdir = () => fs.mkdtempSync(path.join(os.tmpdir(), SWEEP_PREFIX));
+
+// Runs the REAL sweep with the seat's ACP snapshot on disk. Three times, so
+// the pane-hash history reaches the three-identical-sweeps the frozen check
+// needs - otherwise a suppressed WARN is indistinguishable from one that was
+// never going to fire.
+function liveSweepWithSnapshot(snapshot, paneText) {
+  sweepStaleLive();
+  const fixture = breakProbes(makeSweepFixture(liveMkdir, { launchScripts: false }), []);
+  writeStub(fixture, 'tmux', tmuxWithPane(paneText));
+  const acpDir = path.join(fixture.root, '.swarmforge', 'acp');
+  fs.mkdirSync(acpDir, { recursive: true });
+  fs.writeFileSync(path.join(acpDir, `${LIVE_ROLE}.json`), JSON.stringify(snapshot));
+  let last = null;
+  for (let i = 0; i < 3; i += 1) last = runSweep(fixture);
+  return { fixture, ...last };
+}
+
+// The same three sweeps with NO snapshot, proving the pane path still fires
+// for an ordinary seat. Without this, a suppressed finding could just as well
+// be a finding that never fires for anyone.
+function liveSweepPaneDriven(paneText) {
+  sweepStaleLive();
+  const fixture = breakProbes(makeSweepFixture(liveMkdir, { launchScripts: false }), []);
+  writeStub(fixture, 'tmux', tmuxWithPane(paneText));
+  let last = null;
+  for (let i = 0; i < 3; i += 1) last = runSweep(fixture);
+  return { fixture, ...last };
+}
+
 function registerSteps(registry) {
   const define = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE);
 
@@ -204,6 +280,27 @@ function registerSteps(registry) {
     assert.equal(ctx.seat.assess['idle-from'], `stop_reason:${ctx.host.snapshot.stopReason}`);
     assert.equal(ctx.seat.assess['acp-idle?'], true);
     assert.equal(ctx.seat.assess['stop-reason'], 'end_turn');
+
+    // The LIVE half (architect bounce D1). gather-role is where a seat's
+    // stuck/idle state is actually decided in the running swarm, and check 7
+    // decides it by comparing pane hashes across three sweeps. Give it a pane
+    // that is busy and never changes - the exact shape it fires on, and the
+    // exact shape a frozen render produces while the agent works fine - and
+    // the ACP seat must not be called frozen, because its stop reason says
+    // the turn ended.
+    const live = liveSweepWithSnapshot(ctx.host.snapshot, BUSY_FROZEN_PANE);
+    assert.ok(
+      !new RegExp(`WARN \\[frozen-${LIVE_ROLE}\\]`).test(live.output),
+      `the live sweep called an ACP seat frozen from its pane hash:\n${live.output}`
+    );
+    // And the same pane, with no ACP snapshot, DOES fire - so the line above
+    // is a suppression that happened, not a check that never fires.
+    const paneDriven = liveSweepPaneDriven(BUSY_FROZEN_PANE);
+    assert.match(
+      paneDriven.output,
+      new RegExp(`WARN \\[frozen-${LIVE_ROLE}\\]`),
+      `the frozen-pane check never fires at all, so suppressing it proves nothing:\n${paneDriven.output}`
+    );
   });
 
   define(/^no pane text is read to reach it$/, (ctx) => {
@@ -269,6 +366,33 @@ function registerSteps(registry) {
     assert.ok(
       !new RegExp(menuPattern[1]).test(rendered),
       `the ACP seat's pane matched the interactive-menu CRIT pattern:\n${rendered}`
+    );
+
+    // The LIVE half (architect bounce D1). check 6 fires off menu-pattern
+    // against captured pane text, in gather-role. Give the seat a pane that
+    // DOES match - the agent may legitimately have printed those words - and
+    // the CRIT must still not fire, because the permission moment is a fact
+    // on disk instead. In its place the routable finding must appear, or the
+    // structured request has been silenced rather than handled.
+    const live = liveSweepWithSnapshot(ctx.host.snapshot, MENU_LOOKING_PANE);
+    assert.ok(
+      !new RegExp(`CRIT \\[menu-${LIVE_ROLE}\\]`).test(live.output),
+      `the interactive-menu CRIT fired for an ACP seat in the live sweep:\n${live.output}`
+    );
+    assert.match(
+      live.output,
+      new RegExp(`CRIT \\[acp-permission-${LIVE_ROLE}\\]`),
+      `the structured permission request reached no live finding - it was suppressed, not handled:\n${live.output}`
+    );
+    assert.match(live.output, /write_file/, `the finding must name the tool waiting on a decision:\n${live.output}`);
+
+    // And the same pane with no ACP snapshot DOES raise the menu CRIT, so the
+    // suppression above is real rather than a check that never fires.
+    const paneDriven = liveSweepPaneDriven(MENU_LOOKING_PANE);
+    assert.match(
+      paneDriven.output,
+      new RegExp(`CRIT \\[menu-${LIVE_ROLE}\\]`),
+      `the interactive-menu check never fires at all, so suppressing it proves nothing:\n${paneDriven.output}`
     );
   });
 

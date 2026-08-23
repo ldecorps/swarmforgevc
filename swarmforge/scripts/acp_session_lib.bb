@@ -98,6 +98,9 @@
         idle (idle-decision snapshot)]
     {:acp? hosted?
      :acp-idle? (when hosted? (:idle? idle))
+     ;; Named so the finding can say WHICH decision is waiting - a request the
+     ;; human cannot identify is one they cannot route.
+     :permission-tool (when hosted? (:permissionTool snapshot))
      ;; Names the fact the verdict came from, so the decision trail QA step 2
      ;; asks for can be read back. "pane" for every non-ACP seat, which is the
      ;; honest label for what those decisions still rest on.
@@ -115,8 +118,8 @@
    check and quietly cost the observability the swarm is watched through.
 
    `reason` is passed IN by the caller rather than re-derived, because the
-   caller is the place the idle/stuck decision is actually taken and the wiring
-   has to be visible there (BL-1081 required_wiring). It must be what
+   caller is the place the idle/stuck decision is actually taken -
+   babysitter_check.bb's gather-role - and the wiring has to be visible there. It must be what
    `stop-reason` returns for this same snapshot: a caller naming a different
    one is deciding from a stale fact, and this throws rather than silently
    preferring either side."

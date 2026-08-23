@@ -19,7 +19,7 @@
 // invariant names is taken on both sides: the TypeScript seat state produces
 // the verdict, and the real Babashka deterministic layer
 // (acp_session_lib.bb's idle-decision / apply-acp-facts, the same functions
-// babysitter_assess.bb calls at its decision site) reaches it again from the
+// babysitter_check.bb's gather-role calls at the live decision site) reaches it again from the
 // snapshot on disk. All draws go to Babashka in ONE batched call - load-file
 // dominates a bb invocation's cost, so a call per draw would be minutes of
 // subprocess time for no extra coverage.
