@@ -260,3 +260,6 @@ source: >
   no executable gate and is the specifier's to land directly.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-23, by: architect, blamed: coder, class: behavior, commit: c2317497ea, evidence: backlog/evidence/BL-1063-architect-bounce-20260823.md }
