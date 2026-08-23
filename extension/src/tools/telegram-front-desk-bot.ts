@@ -2197,7 +2197,10 @@ function buildPollAdapters(
     // promoteToActive, a no-op for an already-active ticket), the file-level
     // safety check, and the dispatch bridge (shells to the existing
     // route_backlog_to_coder.sh injector).
-    promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId).moved),
+    // BL-1083: hands back the WHOLE result, refusal included - the gates can
+    // now refuse this promotion, and a refusal the operator is not told about
+    // is the silent no-op invariant 2 forbids.
+    promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId)),
     commitExpediteWrites: (backlogId) => commitExpediteWrites(targetPath, backlogId),
     // BL-892: every other automated human_approval writer's own commit
     // step - shares commitApprovalWrites (util/commitIntegrityRunner.ts)

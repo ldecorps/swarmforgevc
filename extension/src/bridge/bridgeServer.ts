@@ -775,11 +775,38 @@ function handlePausedPagerExpediteRoute(
     }
     const backlogId = value.id;
     try {
-      // BL-538: Expedite from paused-pager — reuse BL-490's force-promote
-      // semantics (promote paused->active if present) and set priority 0
-      // in the ticket YAML. commitExpediteWrites/dispatch are owned by
+      // BL-538: Expedite from paused-pager — reuse BL-490's promote step
+      // (promote paused->active if present) and set priority 0 in the ticket
+      // YAML. commitExpediteWrites/dispatch are owned by
       // telegramFrontDeskBotCore; here we only mutate YAML and folders.
-      promoteToActive(targetPath, backlogId);
+      //
+      // BL-1083: this comment used to say "force-promote", and it meant it -
+      // this endpoint walked past depends_on, hold and the depth cap exactly
+      // as the Telegram verb did. It is the SECOND caller of promoteToActive,
+      // which is why the gate lives in the mover rather than here: a check
+      // added to one caller would have left this one open, and this is the
+      // path the operator uses from a phone.
+      // BL-1083: the human's approval is recorded BEFORE the gates are
+      // consulted, exactly as the Telegram Expedite verb does - so Expedite
+      // SATISFIES the human_approval gate rather than being blocked by it. A
+      // fix that let approval refuse an expedite would leave the verb dead,
+      // which is the over-correction this ticket explicitly warns against. A
+      // ticket that was not pending approval is already approved (or has no
+      // ask at all), so `false` here is not an error.
+      recordApprovalReply(targetPath, backlogId);
+      const promotion = promoteToActive(targetPath, backlogId);
+      if (promotion.refusal) {
+        // 409, not 500: the request was well formed and the system is healthy;
+        // a rule said no. The pager shows the gate's own words rather than a
+        // bare status, so the operator learns WHICH gate and why (BL-572/662).
+        respondJson(res, 409, {
+          success: false,
+          id: backlogId,
+          gate: promotion.refusal.gate,
+          reason: promotion.refusal.reason,
+        });
+        return;
+      }
       const filePath = findBacklogFilePath(targetPath, backlogId);
       if (!filePath) {
         respondJson(res, 404, { success: false, reason: 'ticket not found in active/paused' });
