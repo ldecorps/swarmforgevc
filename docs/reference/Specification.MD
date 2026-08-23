@@ -1,6 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-973: five hand-maintained bb fixture
+**Last Updated:** August 23, 2026 (BL-1083: `promoteToActive`
+(`extension/src/panel/backlogWriter.ts`) was a bare paused→active file move
+with no reference to the promotion gates, so both live callers — the
+Telegram Expedite verb and the paused-pager Expedite endpoint, the operator's
+phone path — walked past `depends_on`, a `backlog/hold/` marker, and
+`active_backlog_max_depth`. On 2026-08-22 this promoted BL-1078 (declaring
+`depends_on: [BL-713]` with BL-713 still active) alongside three siblings in
+one pass; the coordinator parked three back by hand the same evening. Fix:
+`promoteToActive` itself now consults `promotion_gates_cli.bb`'s
+`gate-promotion` verdict — the same chokepoint `promote_and_route_next.sh`
+already used — and refuses a blocked promotion, leaving the ticket
+untouched and returning the gate's own name and reason (409 from the pager
+endpoint; a chat reply naming the gate from the Telegram verb), never a
+silent no-op. The verdict is taken from the existing Babashka CLI, never
+recomputed in TypeScript, so the rules stay in one place. Expedite still
+records the human's approval before the gates run, so `human_approval` is
+satisfied rather than blocking the verb itself; `promote_and_route_next.sh`
+is unchanged. See the updated "Expedite a Ticket" section in
+`docs/how-to/BL-538-console-paused-ticket-pager.md`.)
+Prior entry —
+BL-973: five hand-maintained bb fixture
 copy-lists drifted from the real transitive `load-file` closure of the entry
 point each actually drives, three times over (BL-911, BL-967, BL-1029),
 leaving two acceptance features (BL-487, BL-814) and

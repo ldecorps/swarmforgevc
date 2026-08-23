@@ -326,6 +326,41 @@ test('paused-pager Expedite route promotes a paused ticket to active and sets pr
   });
 });
 
+// BL-1083: the paused-pager Expedite route is the SECOND caller of
+// promoteToActive - a fix that only covered the Telegram verb (exercised via
+// bl1083PromotionGateSteps.js) would be this defect again with one caller
+// fewer (the ticket's own qa_e2e_procedure step 3). Flagged as a zero-coverage
+// gap in the architect's pass evidence (BL-1083-architect-pass-20260823.md):
+// pausedPagerBridge.test.js's Expedite tests all drove the ALLOW path only.
+test('paused-pager Expedite route refuses (409) and leaves the ticket in paused/ when a gate says no', async () => {
+  const target = mkGitTmpWithCli();
+  const original = 'id: BL-022\ntitle: unlanded dependency\nstatus: paused\ndepends_on: [BL-9999]\n';
+  writeBacklogTicket(target, 'paused', 'BL-022', original);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/expedite`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-022' }),
+    });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.deepEqual(body, {
+      success: false,
+      id: 'BL-022',
+      gate: 'depends_on',
+      reason: 'depends_on not yet landed in backlog/done/: BL-9999',
+    });
+
+    const pausedPath = path.join(target, 'backlog', 'paused', 'BL-022.yaml');
+    const activePath = path.join(target, 'backlog', 'active', 'BL-022.yaml');
+    // Invariant 2: a refusal leaves the ticket exactly where it was - never a
+    // silent no-op that still shuffles files.
+    assert.equal(fs.existsSync(activePath), false);
+    assert.equal(fs.readFileSync(pausedPath, 'utf8'), original);
+  });
+});
+
 test('paused-pager Expedite route sets priority: 0 when the YAML has no existing priority line', async () => {
   // BL-1083: the Expedite route now consults the real promotion gates and
   // fails closed, so its fixture has to carry them.

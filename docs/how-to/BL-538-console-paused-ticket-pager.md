@@ -33,11 +33,24 @@ front of the swarm queue. The control uses the same two-tap discipline as the
 operator console's destructive actions: the first tap asks for confirmation and
 does not change the ticket.
 
-After confirmation, the bridge reuses the existing promote path:
+After confirmation, the bridge reuses the existing promote path
+(`promoteToActive` in `extension/src/panel/backlogWriter.ts`), which
+(BL-1083) consults the same promotion-gates chokepoint
+`promote_and_route_next.sh` uses — `depends_on`, a `backlog/hold/` marker, and
+`active_backlog_max_depth` — before moving anything. Expedite records the
+human's tap as the ticket's approval BEFORE the gates run, so
+`human_approval` is satisfied rather than skipped; it does not bypass
+`depends_on`, hold, or the depth cap.
 
-- sets the ticket priority to `0`;
-- moves the ticket from `backlog/paused/` to `backlog/active/`;
-- leaves the pager on the next remaining paused ticket, or the empty state.
+- **Allowed**: sets the ticket priority to `0`, moves the ticket from
+  `backlog/paused/` to `backlog/active/`, and leaves the pager on the next
+  remaining paused ticket, or the empty state.
+- **Refused**: the ticket is left exactly where it was (still in
+  `backlog/paused/`, priority unchanged) and the pager shows the gate's own
+  name and reason — e.g. an unlanded `depends_on` id, or the ticket being
+  held — as a 409 response rather than a bare failure ([BL-572/BL-662](BL-662-paused-pager-shows-server-failure-reason.md)).
+  The same gate consultation guards the Telegram Expedite verb; a ticket
+  refused here is refused there too, since both call the one mover.
 
 The pager is not a general YAML editor. It only supports reviewing paused
 tickets and expediting one ticket at a time.

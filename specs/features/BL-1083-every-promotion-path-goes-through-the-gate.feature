@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2e89744dde5c007bf0ab9b6d153be3f7bda5e1cd84af282c4439c1e51d3cda69
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T02:32:03.709638573Z","feature_name":"a ticket reaches backlog/active only through the promotion gates","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1083-every-promotion-path-goes-through-the-gate.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a blocking gate refuses an expedited promotion","scenario_hash":"0d8b842e61d924af91513cd64faf71d55586a3ce2745fd10cafc95fda018818e","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-23T02:32:03.709638573Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a ticket reaches backlog/active only through the promotion gates
 
   BL-1083: `promotion_gates_lib.bb` is described as the one chokepoint every

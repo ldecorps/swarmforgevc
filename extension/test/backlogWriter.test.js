@@ -362,6 +362,83 @@ test('BL-1083: the gate CLI exiting with an unexpected code refuses rather than 
   assert.equal(fs.existsSync(path.join(target, 'backlog', 'paused', 'BL-332-crash.yaml')), true);
 });
 
+test('BL-1083: an ALLOW verdict is recognised even when the CLI pads its line with whitespace', () => {
+  // parseGateVerdict trims each stdout line before matching ALLOW/NOT_FOUND/
+  // REFUSE| - a robustness property the fixture's own clean output never
+  // otherwise exercises.
+  const target = installPromotionGates(mkTmp());
+  writePausedItem(target, 'BL-342-padded.yaml', CLEARED('BL-342'));
+  const cliPath = path.join(target, 'swarmforge', 'scripts', 'promotion_gates_cli.bb');
+  fs.writeFileSync(cliPath, '(println "  ALLOW  ")\n(System/exit 0)\n');
+
+  const result = promoteToActive(target, 'BL-342');
+
+  assert.equal(result.moved, true, 'a padded ALLOW line must still be recognised as ALLOW, not fall through to unrecognised');
+});
+
+test('BL-1083: a REFUSE reason containing its own pipe character survives verbatim', () => {
+  // REFUSE|<gate>|<reason> is split on '|' and the reason half rejoined the
+  // same way - a reason that itself contains a literal '|' must come back
+  // whole, not truncated at the first embedded pipe.
+  const target = installPromotionGates(mkTmp());
+  writePausedItem(target, 'BL-343-pipe-reason.yaml', CLEARED('BL-343'));
+  const cliPath = path.join(target, 'swarmforge', 'scripts', 'promotion_gates_cli.bb');
+  fs.writeFileSync(cliPath, '(println "REFUSE|some_gate|reason with a | pipe inside")\n(System/exit 2)\n');
+
+  const result = promoteToActive(target, 'BL-343');
+
+  assert.equal(result.refusal.gate, 'some_gate');
+  assert.equal(result.refusal.reason, 'reason with a | pipe inside');
+});
+
+test('BL-1083: a CLI that exits cleanly with no stdout at all names it "(no output)", not an empty reason', () => {
+  const target = installPromotionGates(mkTmp());
+  writePausedItem(target, 'BL-344-blank.yaml', CLEARED('BL-344'));
+  const cliPath = path.join(target, 'swarmforge', 'scripts', 'promotion_gates_cli.bb');
+  fs.writeFileSync(cliPath, '(System/exit 0)\n');
+
+  const result = promoteToActive(target, 'BL-344');
+
+  assert.equal(result.moved, false);
+  assert.equal(result.refusal.gate, 'promotion_gates');
+  assert.match(result.refusal.reason, /\(no output\)/);
+});
+
+test('BL-1083: a NOT_FOUND verdict from the gate CLI is a hard stop, never overridden by a paused file that happens to exist', () => {
+  // If the NOT_FOUND branch (parseGateVerdict's own, or promoteToActive's
+  // check of it) were ever disabled, this would fall through to the ALLOW
+  // path and promote the very file the gate just said did not exist. The
+  // gate's verdict must win regardless of what the filesystem shows.
+  const target = installPromotionGates(mkTmp());
+  const filePath = writePausedItem(target, 'BL-345-notfound-verdict.yaml', CLEARED('BL-345'));
+  const cliPath = path.join(target, 'swarmforge', 'scripts', 'promotion_gates_cli.bb');
+  fs.writeFileSync(cliPath, '(println "NOT_FOUND")\n(System/exit 1)\n');
+
+  const result = promoteToActive(target, 'BL-345');
+
+  assert.equal(result.moved, false);
+  assert.equal(fs.existsSync(filePath), true, 'the ticket must stay exactly where it was');
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'active', 'BL-345-notfound-verdict.yaml')), false);
+});
+
+test('BL-1083: an ALLOW verdict for a file the mover cannot itself re-locate by id promotes nothing, and never crashes', () => {
+  // The gate CLI locates its candidate by FILENAME glob; the mover
+  // independently re-locates by the YAML's own parsed id before it will move
+  // anything. A file named for one id but whose own `id:` field names
+  // another is exactly the gap between those two lookups - the gate can
+  // still evaluate and ALLOW it (evaluate never reads the requested id), but
+  // the mover's own re-lookup must refuse to promote a file it cannot
+  // confirm by content, not fall back to "the gate found it, so move it".
+  const target = installPromotionGates(mkTmp());
+  const filePath = writePausedItem(target, 'BL-346-mismatch.yaml', CLEARED('BL-999'));
+
+  const result = promoteToActive(target, 'BL-346');
+
+  assert.equal(result.moved, false);
+  assert.equal(fs.existsSync(filePath), true);
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'active', 'BL-346-mismatch.yaml')), false);
+});
+
 test('promoteToActive skips promotion when the item is already active (scenario 05: no redundant promotion)', () => {
   const target = installPromotionGates(mkTmp());
   writeActiveItem(target, 'BL-203-already-active.yaml', 'id: BL-203\ntitle: t\nstatus: active\n');
