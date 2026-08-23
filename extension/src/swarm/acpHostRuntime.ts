@@ -13,8 +13,8 @@
 // is testable without a process, a pane, or a filesystem - the same seam
 // shape cursorSeatDriver.ts already uses.
 
-import type { AcpEvent } from './acpSessionEvents';
 import { parseAcpLine } from './acpSessionEvents';
+import type { AcpEvent } from './acpSessionTypes';
 import type { AcpSeatSnapshot, AcpSeatState } from './acpSeatState';
 import { EMPTY_SEAT_STATE, applyAcpEvent, snapshotForSeat } from './acpSeatState';
 

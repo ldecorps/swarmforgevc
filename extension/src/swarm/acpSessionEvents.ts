@@ -9,20 +9,14 @@
 // Agent Client Protocol makes both of those FACTS. `session/prompt` returns a
 // stop reason; `session/request_permission` is a structured message. This file
 // turns the wire into those facts and nothing else - no decisions, no I/O, so
-// every branch is reachable from a string. Field-level wire variance (which
-// key a tool name or a chunk's text arrives under) is owned by
-// ./acpWireFields, so this file stays about MESSAGE shape, not FIELD shape.
+// every branch is reachable from a string. Method/update shapes live in
+// ./acpSessionMethods; field-level wire variance in ./acpWireFields.
 
-import { readSessionId, readText, readToolName, readToolStatus } from './acpWireFields';
+import { parseAcpMethodEvent } from './acpSessionMethods';
+import type { AcpEvent, AcpStopReason } from './acpSessionTypes';
+import { readSessionId } from './acpWireFields';
 
-/** A stop reason as ACP spells it, plus the ones a host must survive. */
-export type AcpStopReason = 'end_turn' | 'max_tokens' | 'refusal' | 'cancelled' | 'error';
-
-export type AcpEvent =
-  | { kind: 'turn_ended'; stopReason: AcpStopReason; sessionId?: string }
-  | { kind: 'permission_requested'; requestId: string | number; tool: string; sessionId?: string }
-  | { kind: 'transcript'; role: 'agent' | 'user' | 'tool'; text: string; sessionId?: string }
-  | { kind: 'tool_status'; tool: string; status: 'started' | 'completed' | 'failed'; sessionId?: string };
+export type { AcpEvent, AcpStopReason } from './acpSessionTypes';
 
 const STOP_REASONS: ReadonlySet<string> = new Set([
   'end_turn',
@@ -68,71 +62,6 @@ function parseStopReason(msg: Record<string, unknown>): AcpEvent | null {
   return null;
 }
 
-function parsePermissionRequest(
-  msg: Record<string, unknown>,
-  params: Record<string, unknown>,
-  sessionId: string | undefined
-): AcpEvent | null {
-  const id = msg.id;
-  const tool = readToolName(params);
-  if ((typeof id === 'string' || typeof id === 'number') && tool) {
-    return { kind: 'permission_requested', requestId: id, tool, sessionId };
-  }
-  return null;
-}
-
-function parseToolStatusUpdate(
-  update: Record<string, unknown>,
-  params: Record<string, unknown>,
-  sessionId: string | undefined
-): AcpEvent | null {
-  const tool = readToolName(update) ?? readToolName(params);
-  const status = readToolStatus(update);
-  if (tool && status) {
-    return { kind: 'tool_status', tool, status, sessionId };
-  }
-  return null;
-}
-
-function parseTranscriptUpdate(
-  update: Record<string, unknown>,
-  type: string | null,
-  sessionId: string | undefined
-): AcpEvent | null {
-  const text = readText(update);
-  if (text === null) return null;
-  const role: 'agent' | 'user' | 'tool' =
-    type === 'user_message_chunk' ? 'user' : type === 'tool_call_output' ? 'tool' : 'agent';
-  return { kind: 'transcript', role, text, sessionId };
-}
-
-function parseSessionUpdate(
-  params: Record<string, unknown>,
-  sessionId: string | undefined
-): AcpEvent | null {
-  const update = (params.update as Record<string, unknown> | undefined) ?? {};
-  const type = typeof update.sessionUpdate === 'string' ? update.sessionUpdate : null;
-  if (type === 'tool_call' || type === 'tool_call_update') {
-    return parseToolStatusUpdate(update, params, sessionId);
-  }
-  return parseTranscriptUpdate(update, type, sessionId);
-}
-
-function parseByMethod(
-  method: string,
-  msg: Record<string, unknown>,
-  sessionId: string | undefined
-): AcpEvent | null {
-  const params = (msg.params as Record<string, unknown> | undefined) ?? {};
-  if (method === 'session/request_permission') {
-    return parsePermissionRequest(msg, params, sessionId);
-  }
-  if (method === 'session/update') {
-    return parseSessionUpdate(params, sessionId);
-  }
-  return null;
-}
-
 export function parseAcpLine(line: string): AcpEvent | null {
   const msg = parseMessage(line);
   if (!msg) return null;
@@ -143,7 +72,7 @@ export function parseAcpLine(line: string): AcpEvent | null {
   const method = typeof msg.method === 'string' ? msg.method : null;
   if (!method) return null;
 
-  return parseByMethod(method, msg, readSessionId(msg));
+  return parseAcpMethodEvent(method, msg, readSessionId(msg));
 }
 
 /** Every fact in a stream of lines, in order. */

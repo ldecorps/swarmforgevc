@@ -11,7 +11,7 @@
 // Pure: a fold over events, with no clock, no filesystem and no process. The
 // host writes the state out; nothing here reads anything.
 
-import type { AcpEvent, AcpStopReason } from './acpSessionEvents';
+import type { AcpEvent, AcpStopReason } from './acpSessionTypes';
 
 export interface PendingPermission {
   requestId: string | number;
