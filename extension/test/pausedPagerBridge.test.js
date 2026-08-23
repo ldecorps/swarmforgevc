@@ -28,7 +28,20 @@ function mkGitTmpWithCli() {
   copySeededRepoInto(root);
   // BL-1038: copies commit_integrity_cli.bb's load-file CLOSURE (11 files),
   // not the whole live scripts directory - see pinnedRepoFixture.js for why.
-  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['commit_integrity_cli.bb']);
+  // BL-1083: promotion_gates_cli.bb joins it as a second entry point - the
+  // Expedite route's promoteToActive now takes its verdict from the shared
+  // promotion gates and fails CLOSED, so a fixture without them refuses every
+  // promotion. Its dependencies come from the same closure walk, never a
+  // hand-written list.
+  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), [
+    'commit_integrity_cli.bb',
+    'promotion_gates_cli.bb',
+  ]);
+  // A cap generous enough that no test here trips it by accident; the depth
+  // gate has its own coverage in backlogWriter.test.js.
+  fs.writeFileSync(path.join(root, 'swarmforge', 'swarmforge.conf'), 'config active_backlog_max_depth 50\n');
+  mkdirp(path.join(root, 'backlog', 'done'));
+  mkdirp(path.join(root, 'backlog', 'active'));
   return root;
 }
 
@@ -259,7 +272,9 @@ test('paused-pager Approve route is a no-op for tickets not pending approval', a
 });
 
 test('paused-pager Expedite route requires control auth (bearer + x-control-token)', async () => {
-  const target = mkTmp();
+  // BL-1083: the Expedite route now consults the real promotion gates and
+  // fails closed, so its fixture has to carry them.
+  const target = mkGitTmpWithCli();
   writeBacklogTicket(target, 'paused', 'BL-010', 'id: BL-010\ntitle: needs expedite\nstatus: paused\npriority: 3\n');
 
   await withBridge(target, {}, async (handle) => {
@@ -289,7 +304,7 @@ test('paused-pager Expedite route requires control auth (bearer + x-control-toke
 });
 
 test('paused-pager Expedite route promotes a paused ticket to active and sets priority: 0 in YAML', async () => {
-  const target = mkTmp();
+  const target = mkGitTmpWithCli();
   writeBacklogTicket(target, 'paused', 'BL-020', 'id: BL-020\ntitle: paused\nstatus: paused\npriority: 2\n');
 
   await withBridge(target, {}, async (handle) => {
@@ -311,8 +326,45 @@ test('paused-pager Expedite route promotes a paused ticket to active and sets pr
   });
 });
 
+// BL-1083: the paused-pager Expedite route is the SECOND caller of
+// promoteToActive - a fix that only covered the Telegram verb (exercised via
+// bl1083PromotionGateSteps.js) would be this defect again with one caller
+// fewer (the ticket's own qa_e2e_procedure step 3). Flagged as a zero-coverage
+// gap in the architect's pass evidence (BL-1083-architect-pass-20260823.md):
+// pausedPagerBridge.test.js's Expedite tests all drove the ALLOW path only.
+test('paused-pager Expedite route refuses (409) and leaves the ticket in paused/ when a gate says no', async () => {
+  const target = mkGitTmpWithCli();
+  const original = 'id: BL-022\ntitle: unlanded dependency\nstatus: paused\ndepends_on: [BL-9999]\n';
+  writeBacklogTicket(target, 'paused', 'BL-022', original);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/expedite`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-022' }),
+    });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.deepEqual(body, {
+      success: false,
+      id: 'BL-022',
+      gate: 'depends_on',
+      reason: 'depends_on not yet landed in backlog/done/: BL-9999',
+    });
+
+    const pausedPath = path.join(target, 'backlog', 'paused', 'BL-022.yaml');
+    const activePath = path.join(target, 'backlog', 'active', 'BL-022.yaml');
+    // Invariant 2: a refusal leaves the ticket exactly where it was - never a
+    // silent no-op that still shuffles files.
+    assert.equal(fs.existsSync(activePath), false);
+    assert.equal(fs.readFileSync(pausedPath, 'utf8'), original);
+  });
+});
+
 test('paused-pager Expedite route sets priority: 0 when the YAML has no existing priority line', async () => {
-  const target = mkTmp();
+  // BL-1083: the Expedite route now consults the real promotion gates and
+  // fails closed, so its fixture has to carry them.
+  const target = mkGitTmpWithCli();
   writeBacklogTicket(target, 'paused', 'BL-021', 'id: BL-021\ntitle: paused no priority\nstatus: paused\n');
 
   await withBridge(target, {}, async (handle) => {
@@ -330,7 +382,9 @@ test('paused-pager Expedite route sets priority: 0 when the YAML has no existing
 });
 
 test('paused-pager Expedite route returns 404 when the ticket cannot be found in active/paused', async () => {
-  const target = mkTmp();
+  // BL-1083: the Expedite route now consults the real promotion gates and
+  // fails closed, so its fixture has to carry them.
+  const target = mkGitTmpWithCli();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/expedite`, {
       method: 'POST',

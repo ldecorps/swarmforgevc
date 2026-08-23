@@ -597,7 +597,11 @@ const DOMAINS = [
   require('./bl777BargeInDetectorSteps'),
   require('./bl844HandsFreeSessionSteps'),
   require('./bl845OfflineWakeSteps'),
-  require('./bl1045HeldTicketsOnBoardSteps')
+  require('./bl1045HeldTicketsOnBoardSteps'),
+  require('./bl1043StartupGraceSteps'),
+  require('./bl1076BatchClaimVisibleWorkSteps'),
+  require('./bl973CopyListsClosureDerivedSteps'),
+  require('./bl1083PromotionGateSteps')
 ];
 
 function registerSteps(registry) {
