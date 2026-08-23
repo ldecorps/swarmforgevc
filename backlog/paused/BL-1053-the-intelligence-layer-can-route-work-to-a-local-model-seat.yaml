@@ -4,13 +4,13 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-priority: 0
-direction: queue-jump
+priority: 6
+direction: human-cursor
 depends_on: [BL-1052]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1053-the-intelligence-layer-can-route-work-to-a-local-model-seat.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Operator reframed the pair on 2026-08-22 via Let's Talk. BL-1082 now pulls
   and serves a named model on the host, BL-1052 staffs a seat against it, and
@@ -76,6 +76,8 @@ description: |
   every future local model.
 
 notes: |
+  Human 2026-08-23 (Cursor): RESERVED for human/Cursor implementation after Cursor seat chain (1078→1079→1080[+1081]) lands. Swarm must NOT promote or dispatch these — operator will build 1082→1052→1053 in Cursor.
+  Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   Operator reframing, 2026-08-22 Let's Talk: Qwen is the first routing proof,
   not the only model this provider key will ever serve. Drained from the active
   intake
