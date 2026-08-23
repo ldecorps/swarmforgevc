@@ -1234,10 +1234,10 @@ RC_LINE="$(echo "$OUT" | grep -n '^rc:coder:' | head -1 | cut -d: -f1)"
 cleanup_daemon
 pass "RC-5 (BL-514): rc:<role> is reported immediately after its own agent:<role> pane check"
 
-# ── RC-6: launch script declares no --remote-control flag at all -> HEALTHY,
+# ── RC-6: Claude seat, launch script declares no --remote-control -> HEALTHY,
 #          and the live process is never probed (ensure-rc-role!'s
 #          expected-rc-name nil short-circuit, checked BEFORE rc-status is
-#          ever called) ────────────────────────────────────────────────────
+#          ever called). BL-1108 QA bounce: hotfix must NOT report OFF here. ─
 make_fixture
 printf 'exec claude --dangerously-skip-permissions\n' > "$ROOT/.swarmforge/launch/coder.sh"
 RC6_PROBED="$ROOT/rc6-probed"
@@ -1254,7 +1254,28 @@ echo "$OUT" | grep -q "^rc:coder: HEALTHY$" \
   && fail "RC-6: the live process was probed despite the launch script declaring no --remote-control flag"
 [[ "$RC" -eq 0 ]] || fail "RC-6: exit status was $RC, expected 0"
 cleanup_daemon
-pass "RC-6 (BL-514): a launch script declaring no --remote-control flag reports HEALTHY without ever probing the live process"
+pass "RC-6 (BL-514): Claude seat with no --remote-control reports HEALTHY without probing"
+
+# ── RC-6b (BL-1108): Cursor seat, same absent-flag short-circuit -> OFF ─────
+# Ticket invariant 2: non-Claude never reports Claude /rc as healthy.
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tcursor\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+printf 'exec cursor-agent\n' > "$ROOT/.swarmforge/launch/coder.sh"
+RC6B_PROBED="$ROOT/rc6b-probed"
+cat > "$FAKE_BIN/rc_cmdline_6b.sh" <<EOF
+#!/usr/bin/env bash
+touch "$RC6B_PROBED"
+echo "cursor-agent --remote-control should-never-run"
+EOF
+chmod +x "$FAKE_BIN/rc_cmdline_6b.sh"
+if OUT="$(SWARM_ENSURE_RC_CMDLINE_CMD="$FAKE_BIN/rc_cmdline_6b.sh" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -qE '^rc:coder: OFF \(no Claude /rc; heal via agent:; phone via Cursor Remote\)$' \
+  || fail "RC-6b: Cursor seat without --remote-control was not reported OFF; got: $OUT"
+[[ -e "$RC6B_PROBED" ]] \
+  && fail "RC-6b: the live process was probed for a Cursor absent-flag short-circuit"
+cleanup_daemon
+pass "RC-6b (BL-1108): Cursor seat with no --remote-control reports OFF without probing"
 
 # ---------------------------------------------------------------------------
 # RC-7 (BL-514): mono-router resident rotated onto a different role's launch

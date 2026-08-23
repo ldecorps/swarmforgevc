@@ -21,7 +21,16 @@
 (def scripts-dir
   (str (fs/parent (fs/parent (fs/canonicalize *file*)))))
 
-(binding [*command-line-args* [(str (fs/create-temp-dir {:prefix "bl1108-bb-root-"}))]]
+;; babysitter_check.bb needs a project-root argv at load time. The temp root
+;; is only scaffolding — track + shutdown-hook delete so a mutant/throw path
+;; cannot leave it behind (tempDirTrapGuard / BL-921 sibling).
+(def ^:private fixture-root
+  (str (fs/create-temp-dir {:prefix "bl1108-bb-root-"})))
+(.addShutdownHook
+ (Runtime/getRuntime)
+ (Thread. (fn [] (try (fs/delete-tree fixture-root) (catch Exception _ nil)))))
+
+(binding [*command-line-args* [fixture-root]]
   (load-file (str (fs/path scripts-dir "babysitter_check.bb"))))
 
 (def subcommand (first *command-line-args*))
