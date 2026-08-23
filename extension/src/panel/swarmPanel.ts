@@ -213,7 +213,6 @@ export class SwarmPanel {
     if (this.dogfoodShown) {
       return;
     }
-
     this.dogfoodShown = true;
     vscode.window.showInformationMessage(
       'DOGFOOD CHECKPOINT REACHED — launch and live tiles are functional. ' +

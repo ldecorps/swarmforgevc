@@ -118,7 +118,6 @@
    "codex"      #{"OPENAI_API_KEY"}
    "gemini"     #{"GEMINI_API_KEY"}
    "vibe"       #{"MISTRAL_API_KEY"}
-   "local-model" #{"OPENAI_API_KEY"}
    "openrouter" #{"OPENROUTER_API_KEY"}
    "aider"      #{"OPENAI_API_KEY" "MISTRAL_API_KEY" "CEREBRAS_API_KEY"
                   "PERPLEXITY_API_KEY" "QWEN_API_KEY" "DASHSCOPE_API_KEY"

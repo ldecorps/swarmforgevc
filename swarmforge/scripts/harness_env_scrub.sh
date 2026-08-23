@@ -85,7 +85,6 @@ harness_env_backend_provider_vars() {
     codex) printf '%s\n' OPENAI_API_KEY ;;
     gemini) printf '%s\n' GEMINI_API_KEY ;;
     vibe) printf '%s\n' MISTRAL_API_KEY ;;
-    local-model) printf '%s\n' OPENAI_API_KEY ;;
     openrouter) printf '%s\n' OPENROUTER_API_KEY ;;
     aider) printf '%s\n' OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY QWEN_API_KEY DASHSCOPE_API_KEY DEEPSEEK_API_KEY BAILIAN_API_KEY BAILIAN_CODING_PLAN_API_KEY BAILIAN_TOKEN_PLAN_API_KEY ;;
     *) return 1 ;;

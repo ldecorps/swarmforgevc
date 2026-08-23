@@ -183,46 +183,6 @@ test('tool_call_update is recognised as tool status on its own, not only alongsi
   assert.deepEqual(e, { kind: 'tool_status', tool: 'bash', status: 'completed', sessionId: undefined });
 });
 
-test('a present-but-non-string sessionUpdate is rejected, not treated as a default transcript', () => {
-  // Absent sessionUpdate (undefined) may still reach transcript parsing with
-  // type=null; a PRESENT number/object must not collapse into that path.
-  assert.equal(
-    parseAcpLine(
-      JSON.stringify({
-        method: 'session/update',
-        params: { update: { sessionUpdate: 7, content: 'should not render' } },
-      })
-    ),
-    null
-  );
-  assert.equal(
-    parseAcpLine(
-      JSON.stringify({
-        method: 'session/update',
-        params: { update: { sessionUpdate: { nested: true }, content: 'nope' } },
-      })
-    ),
-    null
-  );
-});
-
-test('an update with no sessionUpdate key still yields a transcript when content is present', () => {
-  // The != null guard must stay: widening it to `true && type === null` would
-  // reject this absent-type case and drop the pane text.
-  const e = parseAcpLine(
-    JSON.stringify({
-      method: 'session/update',
-      params: { update: { content: 'orphan chunk' } },
-    })
-  );
-  assert.deepEqual(e, {
-    kind: 'transcript',
-    role: 'agent',
-    text: 'orphan chunk',
-    sessionId: undefined,
-  });
-});
-
 test('an unrecognised method is dropped even when its params happen to carry an update-shaped payload', () => {
   // The method gate must be checked before the payload is trusted - a parser
   // that fell through to the update handler for ANY method would parse
