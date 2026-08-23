@@ -159,14 +159,17 @@ parked. Both are yours — see the OUTSTANDING block above.
 
 | message | what to do |
 |---|---|
+| `REFUSE stop command carries a forbidden flag: <flag> (in: <command>)` | never pass `--sweep-inbox`, `--reset-worktrees` or `--full`: they archive the very parcels a parked ticket needs to resume |
+| `REFUSE stop command could not be read as a command line, so it is refused rather than admitted: <command>` | simplify the configured stop command (`EXPEDITE_STOP_CMD`) to a plain line the guard can read — it refuses anything it cannot tokenize with confidence (an unbalanced quote, a `$var`/`` `cmd` `` expansion) rather than risk admitting a flag it missed |
 | `REFUSE teardown did not reach a clean slate: <names>` | stop the named processes by hand, then re-run. `./stop-swarm.sh` misses `babysitterd` and the Operator agent — see BL-637 |
-| `REFUSE stop command carries a forbidden flag` | never pass `--sweep-inbox`, `--reset-worktrees` or `--full`: they archive the very parcels a parked ticket needs to resume |
 | `REFUSE could not create the run worktree` | remove the stale worktree, or delete the branch, then re-run |
 | `EXHAUSTED … probable-spec-defect` | route the ticket to the specifier with the named defect class; do not re-run the coder |
 
-Every `REFUSE` row above prints the OUTSTANDING block too — check it before you
-fix the refusal and re-run, since a sibling ticket may already be parked and
-staged from before the refusal fired.
+The two stop-command `REFUSE` rows above fire before anything is parked
+(BL-1030), so there is nothing staged to check — the OUTSTANDING block says
+`no tickets are held`. The teardown and worktree-creation rows still fire
+after siblings are already parked: check OUTSTANDING before you fix the
+refusal and re-run, since one may already be staged from before it fired.
 | `stage-timeout` | the stage was killed at its budget, along with everything it spawned. Read that stage's `transcript.jsonl` |
 
 ## Why a stage timeout is not optional
