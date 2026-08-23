@@ -168,7 +168,10 @@ notes: >
   row at all. That is a specifier-owned prose deliverable per the BL-798
   rule, not the coder's, and it is deliberately out of this ticket's scope
   so that no gate here depends on a `main` commit the parcel branch may not
-  carry. It will be landed separately on `main` and recorded here.
+  carry. LANDED on `main` as bdf04fe62 (2026-08-23), which documents both
+  `status:` and the equally-undocumented `severity:`. Nothing the coder
+  builds changes because of it - it is the prose half, recorded here so
+  this ticket does not read as carrying an undelivered deliverable.
 
   IR-DRY disposition (checker run): one `near-duplicate` finding, medium
   confidence, reviewed and KEPT. It pairs "the ticket is among the
