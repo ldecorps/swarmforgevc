@@ -42,6 +42,18 @@ class OverlayService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var talkEngine: TalkEngine? = null
 
+    /**
+     * BL-845 required_wiring: the wake spotter runs INSIDE this existing
+     * foreground service rather than starting a second one - two always-on
+     * services for one always-on feature is a battery and permissions cost
+     * with nothing to show for it. [WakeSpotter] owns every decision; this
+     * class owns only the android.* half (the service that keeps it alive and
+     * the bubble colour it drives).
+     */
+    private var wakeSpotterEngine: WakeSpotter.Engine? = null
+    /** True while the spotter is armed and listening only for the phrase. */
+    private var passiveWake = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -75,6 +87,7 @@ class OverlayService : Service() {
             talkEngine?.syncUiBundle()
             // Resume last mode: hands-free cold-start greets then opens the mic.
             talkEngine?.greetAndResumeHandsFreeIfNeeded()
+            startWakeSpotter()
         } catch (e: Exception) {
             Log.e(TAG, "onCreate failed", e)
             Toast.makeText(this, "overlay failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -98,6 +111,7 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        stopWakeSpotter()
         talkEngine?.shutdown()
         talkEngine = null
         if (instance === this) instance = null
@@ -362,19 +376,80 @@ class OverlayService : Service() {
         return bubbleBottom >= dismissTop
     }
 
+    // ── BL-845: the wake spotter, inside this service ───────────────────
+
+    /**
+     * Starts on-device spotting. The ENGINE is deliberately not chosen by this
+     * slice - picking one brings a licence and a model file into the APK, and
+     * that is the human's call. Until one is configured the spotter is inert
+     * and SAYS SO, rather than looking armed while hearing nothing.
+     */
+    private fun startWakeSpotter() {
+        val engine = wakeSpotterEngine
+        if (engine == null) {
+            passiveWake = false
+            Log.i(TAG, "wake spotter: no on-device engine configured; \"${WakeSpotter.WAKE_PHRASE}\" will not wake the phone")
+            return
+        }
+        passiveWake = true
+        engine.start { heard -> mainHandler.post { onWakeSpotterHeard(heard) } }
+        Log.i(TAG, "wake spotter: armed for \"${WakeSpotter.WAKE_PHRASE}\" inside the overlay foreground service")
+    }
+
+    private fun stopWakeSpotter() {
+        passiveWake = false
+    }
+
+    /**
+     * Everything the spotter hears, decided by [WakeSpotter] and nowhere else.
+     * An ignore ends here: nothing about the utterance travels, not to the
+     * bridge and not into a log line.
+     */
+    private fun onWakeSpotterHeard(heard: String) {
+        when (val decision = WakeSpotter.onHeard(heard)) {
+            is WakeSpotter.Decision.Ignore -> Unit
+            is WakeSpotter.Decision.Wake -> {
+                passiveWake = false
+                val engine = talkEngine ?: return
+                // The wake is acknowledged on this phone first - with the
+                // network off the phrase must still wake Bubble, and only the
+                // follow-on turn fails, loudly and with its reason.
+                if (decision.submitsTurn) {
+                    engine.sendTextTurn(decision.request)
+                } else {
+                    engine.ensureListeningIfHandsFree()
+                }
+            }
+        }
+    }
+
+    /** The state the bubble's colour is derived from, in [WakeSpotter]'s terms. */
+    private fun bubbleStateFor(phase: TalkEngine.Phase, paused: Boolean): WakeSpotter.BubbleState = when {
+        paused -> WakeSpotter.BubbleState.Paused
+        phase == TalkEngine.Phase.RECORDING -> WakeSpotter.BubbleState.ActiveListen
+        phase == TalkEngine.Phase.THINKING -> WakeSpotter.BubbleState.Thinking
+        phase == TalkEngine.Phase.SPEAKING -> WakeSpotter.BubbleState.Speaking
+        phase == TalkEngine.Phase.ERROR -> WakeSpotter.BubbleState.Error
+        passiveWake -> WakeSpotter.BubbleState.PassiveWake
+        else -> WakeSpotter.BubbleState.Ready
+    }
+
+    private fun colourResourceFor(colour: WakeSpotter.BubbleColour): Int = when (colour) {
+        WakeSpotter.BubbleColour.Green -> R.color.sf_bubble
+        WakeSpotter.BubbleColour.SoftTeal -> R.color.sf_bubble_passive
+        WakeSpotter.BubbleColour.Red -> R.color.sf_bubble_recording
+        WakeSpotter.BubbleColour.Amber -> R.color.sf_bubble_thinking
+        WakeSpotter.BubbleColour.Blue -> R.color.sf_bubble_speaking
+        WakeSpotter.BubbleColour.Gray -> R.color.sf_bubble_paused
+    }
+
     private fun applyBubbleAppearance(phase: TalkEngine.Phase, paused: Boolean) {
         val view = bubbleView ?: return
+        // BL-845: which colour is WakeSpotter's decision, not a second table
+        // here - red follows from whether the mic is hot to the model.
         val color = ContextCompat.getColor(
             this,
-            when {
-                paused -> R.color.sf_bubble_paused
-                phase == TalkEngine.Phase.READY -> R.color.sf_bubble
-                phase == TalkEngine.Phase.RECORDING -> R.color.sf_bubble_recording
-                phase == TalkEngine.Phase.THINKING -> R.color.sf_bubble_thinking
-                phase == TalkEngine.Phase.SPEAKING -> R.color.sf_bubble_speaking
-                phase == TalkEngine.Phase.ERROR -> R.color.sf_bubble_error
-                else -> R.color.sf_bubble
-            }
+            colourResourceFor(WakeSpotter.colourFor(bubbleStateFor(phase, paused)))
         )
         val bg = view.background?.mutate()
         if (bg is GradientDrawable) {
