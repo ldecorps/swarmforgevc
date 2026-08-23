@@ -876,20 +876,12 @@ provision_coordinator() {
   local extra_cli=""
   if [[ "$COORDINATOR_AGENT" == "claude" ]]; then
     extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
-  elif [[ "$COORDINATOR_AGENT" == "codex" ]]; then
-    # Pack must set coordinator_model to a Codex catalog id (e.g. gpt-5.4-mini);
-    # otherwise the Claude Sonnet default would be meaningless here.
-    extra_cli="--model $COORDINATOR_MODEL"
-  elif [[ "$COORDINATOR_AGENT" == "gemini" ]]; then
-    extra_cli="--model $COORDINATOR_MODEL"
-  elif [[ "$COORDINATOR_AGENT" == "cursor" ]]; then
-    # Cursor coordinator: pack sets coordinator_model (e.g. auto). Same --model
-    # shape as gemini/codex; without it the launch script has no model flag and
-    # the Resident Spy header falls back to a stale *.claude-settings.json.
-    extra_cli="--model $COORDINATOR_MODEL"
-  elif [[ "$COORDINATOR_AGENT" == "local-model" ]]; then
-    # BL-1052: pack sets coordinator_model to a downloaded model id (e.g.
-    # qwen2.5-coder:7b-instruct). Endpoint comes from the local-model guard.
+  elif [[ "$COORDINATOR_AGENT" == "codex" || "$COORDINATOR_AGENT" == "gemini"
+       || "$COORDINATOR_AGENT" == "cursor" || "$COORDINATOR_AGENT" == "local-model" ]]; then
+    # Same --model shape: pack sets coordinator_model (codex catalog id,
+    # gemini model, cursor auto, or a downloaded local-model id). Cursor
+    # without it leaves Resident Spy on a stale *.claude-settings.json;
+    # local-model endpoint comes from the local-model guard, not flags.
     extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat

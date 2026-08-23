@@ -61,6 +61,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "single_role_repair_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_process_marker_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
@@ -215,19 +216,6 @@
     (and (zero? (:exit result))
          (not (str/includes? (:out result) "1")))))
 
-;; Agent-token → argv needle for the live seat process. Shared intent with
-;; babysitter_check.bb's agent-process-markers (Cursor seats run
-;; cursor-agent, not claude).
-(def ^:private agent-process-markers
-  {"claude"  "claude "
-   "cursor"  "cursor-agent"
-   "gemini"  "gemini"
-   "codex"   "codex"
-   "vibe"    "vibe"
-   "aider"   "aider"
-   "copilot" "copilot"
-   "grok"    "grok"})
-
 (defn role-agent-token
   "Agent token for role from roles.tsv column 6 (index 5). Defaults to
    claude when the column is blank or the row is missing."
@@ -249,7 +237,7 @@
   [socket session role]
   (and (pane-alive? socket session)
        (let [agent (role-agent-token role)
-             marker (get agent-process-markers agent (str agent " "))]
+             marker (agent-process-marker-lib/agent-process-marker agent)]
          (boolean (remote-control-health/cmdline-in-pane-matching
                    socket session marker)))))
 
