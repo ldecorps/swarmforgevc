@@ -57,6 +57,12 @@ function readPidIfPresent(file) {
 // node resolve, however minimal the caller's PATH was."
 //
 // Generator reach: crosses several "minimal cron-like" caller PATH shapes
+// BL-1063: these shapes are now APPENDED to a constructed farm rather than
+// used as the caller PATH outright, so they still vary the hostile-noise
+// dimension they were written for while no longer deciding whether node
+// resolves. They are not appended to the node-less half, for the obvious
+// reason: every one of them contains /usr/bin, which is exactly what must not
+// be there.
 // (never missing /usr/bin:/bin - the pre-existing POSIX-sh bootstrap floor
 // any invoker, cron included, actually has - a totally empty PATH would
 // make even dirname/cd/pwd unresolvable before any PATH-fixing code could
@@ -124,15 +130,47 @@ function nodelessCallerPath() {
   return dir;
 }
 
+// BL-1063 (architect bounce D1): the MIRROR of the farm above, and the reason
+// it has to exist.
+//
+// The first pass built a deterministic farm for the "does not resolve" half
+// and then wrote `/usr/bin:/bin` for the "resolves" half, as though that
+// literal deterministically carries node. Whether it does is itself a HOST
+// FACT - true here, false on the nvm-only box the original test was written
+// on - so the fix bound the opposite host fact into the assertion and
+// reintroduced this ticket's own defect, inverted. On a host with no system
+// node it fails with a wrong-looking assertion rather than a clear one.
+//
+// So the caller's node is a STUB WE PLACE, on top of the node-less farm so
+// every other command still resolves. The assertion can then compare against a
+// known path instead of querying a literal that may or may not answer, and no
+// premise check is needed at all - there is nothing left to assume.
+let callerNodeCache = null;
+function callerNodePath() {
+  if (callerNodeCache) return callerNodeCache;
+  const dir = mkTmpDir('bl796-prop-callernode-');
+  const stub = path.join(dir, 'node');
+  fs.writeFileSync(stub, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(stub, 0o755);
+  const callerPath = `${dir}:${nodelessCallerPath()}`;
+  const probe = spawnSync('sh', ['-c', 'command -v node'], { encoding: 'utf8', env: { PATH: callerPath } });
+  assert.equal(probe.stdout.trim(), stub, 'the caller-resolves farm must resolve node to its own stub');
+  callerNodeCache = { callerPath, stub };
+  return callerNodeCache;
+}
+
 test(
   'property (invariant 1): the launched daemon inherits a PATH on which both bb and node resolve, however minimal the caller PATH',
   () => {
     fc.assert(
       fc.property(callerPathArb, aliasArb, callerResolvesNodeArb, (generatedPath, useAlias, callerResolvesNode) => {
-        // BL-1063: when the caller must NOT resolve node, the generated PATH is
-        // replaced wholesale rather than appended to - /usr/bin is exactly what
-        // would put node back.
-        const callerPath = callerResolvesNode ? generatedPath : nodelessCallerPath();
+        // BL-1063: BOTH halves are deterministic farms now. The generated
+        // "minimal caller PATH" shapes still vary the hostile-noise dimension
+        // the property was written for - they are appended to the farm rather
+        // than used raw, so the noise is exercised without the host deciding
+        // whether node resolves.
+        const caller = callerResolvesNode ? callerNodePath() : null;
+        const callerPath = caller ? `${caller.callerPath}:${generatedPath}` : nodelessCallerPath();
         const root = mkTmpDir('bl796-prop-root-');
         fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
         const home = makeFakeNvmHome();
@@ -213,19 +251,26 @@ test(
             `expected node to resolve to a real path (caller PATH="${callerPath}"), got: ${lines[1]}`
           );
           if (callerResolvesNode) {
-            // The caller had one, so the caller's own must have won.
-            const callerNode = spawnSync('sh', ['-c', 'command -v node'], {
-              encoding: 'utf8',
-              env: { PATH: callerPath },
-            }).stdout.trim();
+            // The caller had one, so the caller's own must have won - compared
+            // against the stub we PLACED, not against a live `command -v node`
+            // query whose answer is a fact about the host (architect bounce D1).
             assert.equal(
               lines[1],
-              callerNode,
-              `expected the caller's own node ("${callerNode}") to be used unshadowed (caller PATH="${callerPath}"), got: ${lines[1]}`
+              caller.stub,
+              `expected the caller's own node ("${caller.stub}") to be used unshadowed (caller PATH="${callerPath}"), got: ${lines[1]}`
             );
             assert.ok(
               !lines[1].startsWith(nvmTree),
               `the nvm fallback must never shadow a node the caller already resolves, got: ${lines[1]}`
+            );
+            // BL-1063 (architect bounce D1), made permanent: the caller's node
+            // is the stub this test PLACED, never one the host happens to
+            // carry. Before the mirror farm existed this row resolved
+            // /usr/bin/node on hosts that have it and failed outright on hosts
+            // that do not - the host fact this ticket exists to unbind.
+            assert.ok(
+              !lines[1].startsWith('/usr/'),
+              `the caller's node must be this test's own stub, not a host installation: ${lines[1]}`
             );
           } else {
             // The caller had none, so the fallback must have supplied one.

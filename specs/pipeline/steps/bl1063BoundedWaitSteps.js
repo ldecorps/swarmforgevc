@@ -43,6 +43,7 @@ const SCENARIO_TIMEOUT_MS = 2000;
 
 const tmpDirs = [];
 let nodelessCache = null;
+let callerNodeCache = null;
 function mkTmp(prefix) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   tmpDirs.push(d);
@@ -52,11 +53,12 @@ function cleanup() {
   while (tmpDirs.length) {
     fs.rmSync(tmpDirs.pop(), { recursive: true, force: true });
   }
-  // The node-less symlink farm is created through mkTmp, so this sweep deletes
-  // it too - the cache must go with it, or the next scenario points at a path
-  // that no longer exists and the launcher fails for a reason that has nothing
-  // to do with the scenario.
+  // Both farms are created through mkTmp, so this sweep deletes them too - the
+  // caches must go with them, or the next scenario points at a path that no
+  // longer exists and the launcher fails for a reason that has nothing to do
+  // with the scenario.
   nodelessCache = null;
+  callerNodeCache = null;
 }
 
 function makeFakeNvmHome() {
@@ -99,6 +101,31 @@ function nodelessPath() {
   assert.notEqual(probe.status, 0, 'the node-less PATH still resolves node - the scenario would be vacuous');
   nodelessCache = dir;
   return dir;
+}
+
+// BL-1063 (architect bounce D1): the mirror of the farm above.
+//
+// The first pass wrote `/usr/bin:/bin` for every "caller resolves node" row,
+// as though that literal deterministically carries node. Whether it does is a
+// HOST FACT - and binding a host fact into an assertion about resolvability is
+// this ticket's own defect, which the first pass reintroduced inverted. On a
+// host with no system node, scenario 04's "resolves" row failed outright
+// (verified by the architect by routing it through the node-less farm).
+//
+// The caller's node is now a stub we PLACE, on top of the node-less farm so
+// every other command still resolves. Assertions compare against that known
+// path, so there is nothing left to assume and no premise left to check.
+function callerNodePath() {
+  if (callerNodeCache) return callerNodeCache;
+  const dir = mkTmp('bl1063-callernode-');
+  const stub = path.join(dir, 'node');
+  fs.writeFileSync(stub, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(stub, 0o755);
+  const callerPath = `${dir}:${nodelessPath()}`;
+  const probe = spawnSync('sh', ['-c', 'command -v node'], { encoding: 'utf8', env: { PATH: callerPath } });
+  assert.equal(probe.stdout.trim(), stub, 'the caller-resolves farm must resolve node to its own stub');
+  callerNodeCache = { callerPath, stub };
+  return callerNodeCache;
 }
 
 function killPid(file) {
@@ -181,13 +208,16 @@ function registerSteps(registry) {
 
   // ── 01 ───────────────────────────────────────────────────────────────────
   scoped(/^a launcher that backgrounds a daemon which writes a marker file$/, (ctx) => {
-    ctx.launch = launchDaemon({ callerPath: '/usr/bin:/bin' });
+    // The wait scenarios assert nothing about node's origin, but they still
+    // launch a daemon - so they use the constructed farm too rather than the
+    // host's PATH. No literal in this file now depends on what is installed.
+    ctx.launch = launchDaemon({ callerPath: callerNodePath().callerPath });
     assert.equal(ctx.launch.result.status, 0, `the launcher failed: ${ctx.launch.result.stderr}`);
     ctx.writesMarker = true;
   });
 
   scoped(/^a backgrounded daemon that never writes its marker$/, (ctx) => {
-    ctx.launch = launchDaemon({ callerPath: '/usr/bin:/bin', writesMarker: false });
+    ctx.launch = launchDaemon({ callerPath: callerNodePath().callerPath, writesMarker: false });
     assert.equal(ctx.launch.result.status, 0, `the launcher failed: ${ctx.launch.result.stderr}`);
     ctx.writesMarker = false;
   });
@@ -295,17 +325,19 @@ function registerSteps(registry) {
   // ── 04 / 05 / 06 ─────────────────────────────────────────────────────────
   scoped(/^a caller PATH on which node "(resolves|does not resolve)"$/, (ctx, shape) => {
     ctx.callerResolvesNode = shape === 'resolves';
-    ctx.callerPath = ctx.callerResolvesNode ? '/usr/bin:/bin' : nodelessPath();
+    const caller = ctx.callerResolvesNode ? callerNodePath() : null;
+    ctx.callerNode = caller ? caller.stub : null;
+    ctx.callerPath = caller ? caller.callerPath : nodelessPath();
   });
 
   scoped(/^a caller PATH that already resolves node$/, (ctx) => {
+    // Constructed, not found: the scenario no longer requires anything of the
+    // host, so there is no premise to check and no host on which it fails for
+    // a reason that is not about the code.
+    const caller = callerNodePath();
     ctx.callerResolvesNode = true;
-    ctx.callerPath = '/usr/bin:/bin';
-    // The premise, asserted rather than assumed: this scenario means nothing on
-    // a host with no system node.
-    const probe = spawnSync('sh', ['-c', 'command -v node'], { encoding: 'utf8', env: { PATH: ctx.callerPath } });
-    assert.equal(probe.status, 0, 'this scenario requires a host whose ordinary PATH resolves node');
-    ctx.callerNode = probe.stdout.trim();
+    ctx.callerPath = caller.callerPath;
+    ctx.callerNode = caller.stub;
   });
 
   scoped(/^a host that "(carries|lacks)" a system node$/, (ctx, host) => {
@@ -313,7 +345,9 @@ function registerSteps(registry) {
     // reproduced exactly: whether the caller PATH the daemon inherits resolves
     // node. That IS what "the host carries a system node" means to this code.
     ctx.callerResolvesNode = host === 'carries';
-    ctx.callerPath = ctx.callerResolvesNode ? '/usr/bin:/bin' : nodelessPath();
+    const caller = ctx.callerResolvesNode ? callerNodePath() : null;
+    ctx.callerNode = caller ? caller.stub : null;
+    ctx.callerPath = caller ? caller.callerPath : nodelessPath();
   });
 
   const checkInvariantOne = (ctx) => {
