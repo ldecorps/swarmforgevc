@@ -1,4 +1,4 @@
-id: BL-1101
+id: BL-1107
 title: "bl796 property 3 spends a 20s per-test budget on 12 random draws over a 6-point space, so under host load the property lane goes red on correct code - BL-1063 gave invariant 1 a 120000 override and left its two siblings on the lane default"
 milestone: M8
 type: defect
@@ -19,7 +19,7 @@ direction: swarm-surfaced
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1101-property-lane-verdict-turns-on-host-load-not-code.feature
+acceptance: specs/features/BL-1107-property-lane-verdict-turns-on-host-load-not-code.feature
 human_approval: pending
 approval_context: >
   Firm: the lane must not go red on correct code. The coder hit this live -
@@ -138,3 +138,13 @@ notes: >
   exists to draw (determinism ACROSS runs, not within one), and "runs it" vs
   "runs the bl796 file" is one property against the whole file, which is
   what separates scenario 01 from the rest.
+
+  Renumbered 2026-08-23: this ticket was committed as BL-1101 in 3e00569f8,
+  but BL-1101 was already taken (e618ab086, 05:35 - the hand-authored
+  mutation sweep gate, announced to the coordinator and given a topic
+  record). The collision was not cosmetic: the concierge had already
+  emitted ApprovalRequested:BL-1101 for the sweep ticket, so this one -
+  human_approval: pending - would have been deduped away and never reached
+  the Approvals topic, leaving it permanently unapprovable and therefore
+  unpromotable. Filed as second live evidence on BL-1105 (mint-time
+  duplicate-id refusal). Nothing about the defect below changed.

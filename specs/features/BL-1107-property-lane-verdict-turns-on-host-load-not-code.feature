@@ -14,14 +14,14 @@ Feature: A property lane verdict turns on the code, not on host load
   Background:
     Given the property lane's per-test budget is 20 seconds
 
-  # BL-1101 verdict-not-load-01
+  # BL-1107 verdict-not-load-01
   Scenario: The file passes on a loaded host
     Given the host is under the load of a normal shift
     When the property lane runs the bl796 file
     Then every property in it passes
     And none of them ends by exceeding the per-test budget
 
-  # BL-1101 verdict-not-load-02
+  # BL-1107 verdict-not-load-02
   Scenario Outline: A property spawns no more subprocesses than its space has points
     Given property "<property>" whose input space holds <points> points
     When the property lane runs it
@@ -32,14 +32,14 @@ Feature: A property lane verdict turns on the code, not on host load
       | 2        | 4      |
       | 3        | 6      |
 
-  # BL-1101 verdict-not-load-03
+  # BL-1107 verdict-not-load-03
   Scenario: Coverage of a small finite space is by construction, not by draw
     Given property 3 whose space is every binary paired with every position
     When the property lane runs it repeatedly
     Then every pair is exercised on every run
     And which pairs were exercised does not differ between runs
 
-  # BL-1101 verdict-not-load-04
+  # BL-1107 verdict-not-load-04
   Scenario: The property still fails when the behaviour it proves is broken
     Given property 3 and a caller binary shadowed by a discovered installation
     When the property lane runs it
