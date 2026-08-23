@@ -18,6 +18,7 @@
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
 (load-file (str (fs/path script-dir "loop_detect_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
+(load-file (str (fs/path script-dir "acp_session_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -107,15 +108,32 @@
            pane (or (capture-pane-tail sock sess 20) "")
            loop-signal (loop-detect-lib/classify-pane-loop-signal pane)
            in-proc (count-in-process role)
-           idle-ms (when alive? (- now (last-activity-ms role)))]
+           idle-ms (when alive? (- now (last-activity-ms role)))
+           ;; BL-1081: this is where a seat's idle/stuck decision is taken, so
+           ;; this is where an ACP-hosted seat's structured facts have to be
+           ;; consulted. For such a seat the turn ending is a stop-reason on
+           ;; disk, not something inferred from the frozen pane captured above
+           ;; - a truncated tail, a ghost suggestion and a lying
+           ;; pane_current_command each defeat that inference differently, and
+           ;; none of them can touch this.
+           ;;
+           ;; The pane capture stays exactly as it was regardless: the host
+           ;; renders the transcript into the pane, so the pane checks below
+           ;; keep working and a human keeps seeing the turn (invariant 2).
+           ;; A seat with no host reads back nil here and nothing moves.
+           acp-snapshot (acp-session-lib/read-snapshot project-root role)
+           stop-reason (acp-session-lib/stop-reason acp-snapshot)]
        (babysitter-assess-lib/assess-agent
-        {:role role
-         :class (mono-router-lib/classify-role ordered role)
-         :alive? alive?
-         :pane-tail pane
-         :in-process-count in-proc
-         :loop-signal loop-signal
-         :idle-ms idle-ms})))
+        (acp-session-lib/apply-acp-facts
+         {:role role
+          :class (mono-router-lib/classify-role ordered role)
+          :alive? alive?
+          :pane-tail pane
+          :in-process-count in-proc
+          :loop-signal loop-signal
+          :idle-ms idle-ms}
+         acp-snapshot
+         stop-reason))))
    standing)))
 
 (defn notify-issues! [summary]
