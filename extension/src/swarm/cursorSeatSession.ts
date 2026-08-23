@@ -42,17 +42,17 @@ export function signalFromRunResult(result: { status?: string; error?: { message
  * point. `running` is still in flight; assistant/thinking/status/task events
  * are prose and yield nothing.
  */
+const TOOL_CALL_PERMISSIONS: Record<string, 'granted' | 'denied'> = { completed: 'granted', error: 'denied' };
+
 export function signalFromStreamEvent(event: { type?: string; name?: string; status?: string }): SessionSignal | undefined {
   if (!event || event.type !== 'tool_call') {
     return undefined;
   }
-  if (event.status === 'completed') {
-    return { kind: 'tool_event', tool: event.name ?? 'unknown', permission: 'granted' };
+  const permission = TOOL_CALL_PERMISSIONS[event.status ?? ''];
+  if (!permission) {
+    return undefined;
   }
-  if (event.status === 'error') {
-    return { kind: 'tool_event', tool: event.name ?? 'unknown', permission: 'denied' };
-  }
-  return undefined;
+  return { kind: 'tool_event', tool: event.name ?? 'unknown', permission };
 }
 
 function collapse(text: string, limit = 200): string {
@@ -60,7 +60,29 @@ function collapse(text: string, limit = 200): string {
   return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
 }
 
+function assistantTranscriptLine(message: { content?: unknown[] } | undefined): string | undefined {
+  const text = (message?.content ?? [])
+    .map((part) => (typeof (part as { text?: unknown }).text === 'string' ? (part as { text: string }).text : ''))
+    .join(' ')
+    .trim();
+  return text ? `assistant: ${collapse(text)}` : undefined;
+}
+
 /** A human-readable line for the transcript artifact. Never an input. */
+function toolCallTranscriptLine(event: { name?: string; status?: string }): string | undefined {
+  if (!event.status) {
+    return undefined;
+  }
+  return `tool ${event.name ?? 'unknown'}: ${event.status}`;
+}
+
+function thinkingTranscriptLine(text: string | undefined): string | undefined {
+  if (!text?.trim()) {
+    return undefined;
+  }
+  return `thinking: ${collapse(text)}`;
+}
+
 export function transcriptLineFromStreamEvent(event: {
   type?: string;
   name?: string;
@@ -71,18 +93,14 @@ export function transcriptLineFromStreamEvent(event: {
   if (!event) {
     return undefined;
   }
-  if (event.type === 'tool_call' && event.status) {
-    return `tool ${event.name ?? 'unknown'}: ${event.status}`;
+  if (event.type === 'tool_call') {
+    return toolCallTranscriptLine(event);
   }
-  if (event.type === 'thinking' && event.text?.trim()) {
-    return `thinking: ${collapse(event.text)}`;
+  if (event.type === 'thinking') {
+    return thinkingTranscriptLine(event.text);
   }
   if (event.type === 'assistant') {
-    const text = (event.message?.content ?? [])
-      .map((part) => (typeof (part as { text?: unknown }).text === 'string' ? ((part as { text: string }).text) : ''))
-      .join(' ')
-      .trim();
-    return text ? `assistant: ${collapse(text)}` : undefined;
+    return assistantTranscriptLine(event.message);
   }
   return undefined;
 }
@@ -153,17 +171,12 @@ export async function openLiveCursorSeatSession(
   return { sessionId: agent.agentId, agent, cwd: opts.cwd };
 }
 
-export async function sendTaskToLiveSession(
-  session: LiveSeatSession,
-  role: string,
-  task: ReadyForNextTask,
-  readHeadCommit: (cwd: string) => string | undefined = readHeadShortCommit
-): Promise<SeatTaskResult> {
-  const before = readHeadCommit(session.cwd);
-  const run = await session.agent.send({ text: seatTaskPrompt(role, task) });
+async function consumeRunStream(
+  stream: AsyncIterable<unknown>
+): Promise<{ transcript: string[]; lastToolSignal: SessionSignal | undefined }> {
   const transcript: string[] = [];
   let lastToolSignal: SessionSignal | undefined;
-  for await (const event of run.stream()) {
+  for await (const event of stream) {
     const line = transcriptLineFromStreamEvent(event as unknown as Parameters<typeof transcriptLineFromStreamEvent>[0]);
     if (line) {
       transcript.push(line);
@@ -173,19 +186,40 @@ export async function sendTaskToLiveSession(
       lastToolSignal = signal;
     }
   }
+  return { transcript, lastToolSignal };
+}
+
+/**
+ * A denied tool event is a decision point even when the run itself then
+ * reports "completed": the seat must stop, not forward work a permission
+ * gate blocked.
+ */
+function selectSignal(lastToolSignal: SessionSignal | undefined, stopSignal: SessionSignal): SessionSignal {
+  return lastToolSignal && lastToolSignal.kind === 'tool_event' && lastToolSignal.permission === 'denied'
+    ? lastToolSignal
+    : stopSignal;
+}
+
+function resolveCommitWork(
+  taskName: string | undefined,
+  before: string | undefined,
+  after: string | undefined
+): SeatTaskResult['work'] {
+  return { task: taskName, commit: after && after !== before ? after : undefined };
+}
+
+export async function sendTaskToLiveSession(
+  session: LiveSeatSession,
+  role: string,
+  task: ReadyForNextTask,
+  readHeadCommit: (cwd: string) => string | undefined = readHeadShortCommit
+): Promise<SeatTaskResult> {
+  const before = readHeadCommit(session.cwd);
+  const run = await session.agent.send({ text: seatTaskPrompt(role, task) });
+  const { transcript, lastToolSignal } = await consumeRunStream(run.stream());
   const result = await run.wait();
   const stopSignal = signalFromRunResult(result as { status?: string; error?: { message?: string } });
-  // A denied tool event is a decision point even when the run itself then
-  // reports "completed": the seat must stop, not forward work a permission
-  // gate blocked.
-  const signal =
-    lastToolSignal && lastToolSignal.kind === 'tool_event' && lastToolSignal.permission === 'denied'
-      ? lastToolSignal
-      : stopSignal;
+  const signal = selectSignal(lastToolSignal, stopSignal);
   const after = readHeadCommit(session.cwd);
-  return {
-    signal,
-    transcript,
-    work: { task: task.taskName, commit: after && after !== before ? after : undefined },
-  };
+  return { signal, transcript, work: resolveCommitWork(task.taskName, before, after) };
 }
