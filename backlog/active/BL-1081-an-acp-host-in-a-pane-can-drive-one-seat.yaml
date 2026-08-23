@@ -41,7 +41,7 @@ approval_context: >
   for you.
 
 required_wiring:
-  - "swarmforge/scripts/babysitter_assess.bb::stop-reason::the idle and stuck decision for an ACP seat must consult the structured stop reason at the place that decision is actually taken - a host that emits events nothing reads leaves every seat still inferring idleness from a frozen pane, which is the BL-419 shape this ticket exists to avoid. Verified absent from the file at spec time, so the anchor cannot pass before the work is done"
+  - "swarmforge/scripts/babysitter_check.bb::acp_session_lib::the idle and stuck decision for an ACP seat must consult the structured stop reason at the place that decision is actually taken - a host that emits events nothing reads leaves every seat still inferring idleness from a frozen pane, which is the BL-419 shape this ticket exists to avoid. The live per-role decision site is gather-role in babysitter_check.bb (menu? by regex over captured pane text, idle by pane-hash history), reached in production through babysitterd.sh and babysitter_check.sh; swarmforge/scripts/babysitter_assess.bb, which this entry named until 2026-08-23, is dead code with zero live callers and is slated for deletion by BL-781 - see notes. The anchor is the sibling-lib load-file line rather than a function name the implementer has not chosen yet: the lib filename is already fixed, so the pattern is a literal that can actually match (BL-874)"
   - "specs/pipeline/steps/index.js::bl1081::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler. Verified absent at spec time"
 
 invariants:
@@ -96,8 +96,10 @@ description: |
 qa_e2e_procedure: >
   1. Launch a pack with the spiked seat behind the ACP host. Watch the pane:
      the transcript must be readable there exactly as it is for an ordinary
-     seat, and babysitter_assess must still return a verdict for that session.
-     A blank or machine-only pane fails invariant 2 whatever else passes.
+     seat, and the babysitter must still return a pane verdict for that session
+     (babysitter_check.bb, the live gatherer - NOT babysitter_assess.bb, which
+     is dead code awaiting deletion under BL-781). A blank or machine-only pane
+     fails invariant 2 whatever else passes.
   2. Let the seat finish a turn. Confirm the deterministic layer marked it idle
      from the stop reason - check the decision trail, do not infer it from the
      seat happening to be picked up. Then reproduce a pane-reading trap that
@@ -171,6 +173,39 @@ notes: |
   Givens of scenarios 01 and 02 - a stop reason and a permission request are
   different agent events and must stay distinct steps. Judged correct as
   written, not drift. 20 unique steps of 20 otherwise.
+
+  AMENDED IN FLIGHT 2026-08-23 (specifier), bookkeeping only - nothing built
+  changes. `required_wiring` named
+  `swarmforge/scripts/babysitter_assess.bb::stop-reason` as "the place that
+  decision is actually taken". It is not: that file has zero live callers and
+  five calls into symbols absent from its own lib, documented three weeks
+  before this ticket was written (BL-781, paused, "resist" repairing it -
+  slated for deletion). Verified at amendment time: `git grep "defn
+  assess-agent" swarmforge/` returns nothing anywhere, and the only
+  non-backlog/non-docs references to the filename are the script itself and
+  one step-handler allowlist. The live per-role decision site is `gather-role`
+  in `swarmforge/scripts/babysitter_check.bb`, reached in production via
+  babysitterd.sh / babysitter_check.sh.
+
+  The architect found this at review (evidence
+  `backlog/evidence/BL-1081-architect-bounce-20260823.md`, D1) and flagged it
+  to specifier+coordinator by note rather than letting the coder silently
+  reinterpret the spec - correct routing under Article 4.4. The coder had
+  already re-wired to the live site by then: at parcel commit `2914677516`,
+  babysitter_check.bb line 38 loads `acp_session_lib.bb` and gather-role
+  consults `stop-reason`, `menu-check-applies?` and `apply-acp-facts`. So the
+  amendment moves the anchor onto work that already exists; no rebuild, and no
+  new scenarios (so no new step handlers - BL-233 is not in play).
+
+  It is not cosmetic. `stop-reason` is absent from babysitter_assess.bb at
+  `2914677516`, so the stale anchor would have failed `pre_qa_gate_lib.bb` and
+  refused the documenter's forward to QA with a misleading wiring-absent
+  message - the BL-874 shape, caught one hop before it fired.
+
+  BOUNCE CORRECTION: the D1 bounce (`8d6a8c12e7`) is charged to the coder in
+  the bounce store, but the coder wired to the file this spec named. Corrected
+  under BL-990; the original line stands and the parcel disposition is
+  untouched.
 
 assigned_to: coder
 bounce_count: 2

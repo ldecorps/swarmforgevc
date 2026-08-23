@@ -11,6 +11,7 @@ depends_on: [BL-1022]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1031-bounded-chokepoint-covers-the-spawn-reachable-subtree.feature
+assigned_to: coder
 
 human_approval: approved
 approval_context: >
@@ -177,6 +178,7 @@ qa_e2e_procedure: >
      handler.
 
 notes: |
+  Human 2026-08-23 (Cursor): HELD — focus swarm on Cursor-as-swarm-agent chain (1078→1079→1080[+1081]). Reinstate when that lands.
   ORTHOGONALITY - read before promoting. This ticket edits
   `swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb`, which is the
   file BL-1022 is currently rewriting, and the ratchet block it retires does

@@ -277,6 +277,59 @@
                                               :socket-path "/tmp/sock"})]
                (and f (= "CRIT" (:severity f)) (nil? (:repair f))
                     (str/includes? (:message f) "start-swarm"))))
+;; ── BL-1081 (architect bounce D1): the LIVE decision site ─────────────────
+;; The first pass wired ACP facts into babysitter_assess.bb, which BL-781
+;; documents as dead with zero live callers. These are the two checks that
+;; actually decide a seat's idle/stuck/menu state in the running swarm, both
+;; of them from pane text, and both of which an ACP seat must now bypass.
+
+;; check 6, the interactive-menu CRIT. For a pane-driven seat it stands
+;; exactly as before.
+(assert-true "1081: a pane-driven seat still raises the interactive-menu CRIT"
+             (let [f (sw/check-menu-blocked {:role "coder" :menu-blocked? true})]
+               (and f (= "CRIT" (:severity f)))))
+(assert-true "1081: and an ACP seat's menu-blocked? is already suppressed upstream"
+             (nil? (sw/check-menu-blocked {:role "coder" :menu-blocked? false :acp? true})))
+
+;; check 7, busy-but-frozen: two pane-text heuristics stacked. A truncated
+;; tail, a ghost suggestion and a frozen render each defeat it differently,
+;; which is the whole reason this ticket exists.
+(assert-true "1081: a pane-driven seat still gets the frozen-pane WARN"
+             (let [f (sw/check-busy-frozen {:role "coder" :busy? true
+                                            :hash-history ["a" "a" "a"]})]
+               (and f (= "WARN" (:severity f)))))
+(assert-true "1081: an ACP seat whose turn ENDED is idle, not frozen - the stop reason says so"
+             (nil? (sw/check-busy-frozen {:role "coder" :busy? true :hash-history ["a" "a" "a"]
+                                          :acp? true :acp-idle? true
+                                          :idle-from "stop_reason:end_turn"})))
+(assert-true "1081: and an ACP seat mid-turn is not frozen either - an unchanged pane is not evidence"
+             (nil? (sw/check-busy-frozen {:role "coder" :busy? true :hash-history ["a" "a" "a"]
+                                          :acp? true :acp-idle? false
+                                          :idle-from "tool_running:shell"})))
+
+;; The structured facts get a LIVE voice, not just a suppression. Before this,
+;; permissionPending was read only inside BL-1081's own files and tests.
+(assert-true "1081: a blocked ACP seat is surfaced from its structured request"
+             (let [f (sw/check-acp-seat {:role "coder" :acp? true :acp-idle? false
+                                         :permission-pending? true
+                                         :permission-tool "write_file"
+                                         :idle-from "permission_requested:write_file"})]
+               (and f (= "CRIT" (:severity f)) (= "acp-permission-coder" (:key f))
+                    (str/includes? (:message f) "write_file"))))
+(assert-true "1081: and it says it is NOT a menu block, because the response differs"
+             (str/includes? (:message (sw/check-acp-seat {:role "coder" :acp? true
+                                                          :permission-pending? true
+                                                          :permission-tool "write_file"}))
+                            "not a menu block"))
+(assert-true "1081: an idle ACP seat needs no finding at all"
+             (nil? (sw/check-acp-seat {:role "coder" :acp? true :acp-idle? true
+                                       :idle-from "stop_reason:end_turn"})))
+(assert-true "1081: nor does a working one"
+             (nil? (sw/check-acp-seat {:role "coder" :acp? true :acp-idle? false
+                                       :idle-from "tool_running:shell"})))
+(assert-true "1081: and a pane-driven seat is never touched by it - this widens no other path"
+             (nil? (sw/check-acp-seat {:role "coder" :acp? false :permission-pending? true})))
+
 (assert-true "assemble-findings suppresses per-role ensure-session when control-plane ensure is queued"
              (let [{:keys [repairs findings]}
                    (sw/assemble-findings
