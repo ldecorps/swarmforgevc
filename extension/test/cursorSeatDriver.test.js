@@ -272,6 +272,18 @@ test('a draft with no recipient is refused', () => {
   assert.throws(() => buildSeatHandoffDraft({ to: '', priority: '50', task: 't', commit: 'abcdef0123' }), /to/);
 });
 
+test('a recipient that is only whitespace is refused too, not treated as a real name', () => {
+  assert.throws(() => buildSeatHandoffDraft({ to: '   ', priority: '50', task: 't', commit: 'abcdef0123' }), /to/);
+});
+
+test('a draft with no task name is refused', () => {
+  assert.throws(() => buildSeatHandoffDraft({ to: 'QA', priority: '50', task: '', commit: 'abcdef0123' }), /task/);
+});
+
+test('a task name that is only whitespace is refused too, not treated as a real name', () => {
+  assert.throws(() => buildSeatHandoffDraft({ to: 'QA', priority: '50', task: '   ', commit: 'abcdef0123' }), /task/);
+});
+
 // ── parseReadyForNextOutput ───────────────────────────────────────────────
 
 test('a task returned by the helper is parsed into its structured fields', () => {
@@ -373,6 +385,25 @@ test('a session that finishes without naming a commit aborts instead of forwardi
   assert.equal(outcome.outcome, 'aborted');
   assert.match(outcome.reason, /commit/);
   assert.ok(!calls.helpers.includes('swarm_handoff'), 'nothing may be forwarded without a commit');
+});
+
+test('a session that finishes with NO work field at all aborts, rather than throwing on the missing object', async () => {
+  // `work` is declared optional on SeatTaskResult - a completed session that
+  // never did any task/commit work can legitimately omit it entirely, not
+  // just leave individual fields empty. resolveForwardTarget must reach
+  // through `result.work` safely (optional chaining) rather than assuming
+  // the object is present.
+  const { deps, calls } = makeDeps({
+    sendTask: async () => ({
+      signal: { kind: 'stop_reason', value: 'completed' },
+      transcript: [],
+      // work omitted entirely - not `work: undefined`, not present at all
+    }),
+  });
+  const outcome = await runSeatOnce(deps, RUN_OPTS);
+  assert.equal(outcome.outcome, 'aborted');
+  assert.match(outcome.reason, /commit/);
+  assert.ok(!calls.helpers.includes('swarm_handoff'));
 });
 
 test('a non-zero handoff helper exit is an aborted run, never reported as forwarded', async () => {

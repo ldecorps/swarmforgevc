@@ -71,6 +71,19 @@ function headerValue(lines: string[], name: string): string | undefined {
   return line === undefined ? undefined : line.slice(prefix.length).trim();
 }
 
+function buildTaskResult(lines: string[], file: string): ReadyForNextResult {
+  const payloadIndex = lines.indexOf('PAYLOAD:');
+  return {
+    status: 'task',
+    file,
+    from: headerValue(lines, 'FROM') ?? 'unknown',
+    type: headerValue(lines, 'TYPE') ?? 'unknown',
+    priority: headerValue(lines, 'PRIORITY') ?? '50',
+    taskName: headerValue(lines, 'TASK_NAME'),
+    payload: payloadIndex === -1 ? '' : lines.slice(payloadIndex + 1).join('\n'),
+  };
+}
+
 export function parseReadyForNextOutput(stdout: string): ReadyForNextResult {
   const lines = stdout.split('\n');
   const first = (lines[0] ?? '').trim();
@@ -87,16 +100,7 @@ export function parseReadyForNextOutput(stdout: string): ReadyForNextResult {
   if (file === undefined) {
     return { status: 'no_task' };
   }
-  const payloadIndex = lines.indexOf('PAYLOAD:');
-  return {
-    status: 'task',
-    file,
-    from: headerValue(lines, 'FROM') ?? 'unknown',
-    type: headerValue(lines, 'TYPE') ?? 'unknown',
-    priority: headerValue(lines, 'PRIORITY') ?? '50',
-    taskName: headerValue(lines, 'TASK_NAME'),
-    payload: payloadIndex === -1 ? '' : lines.slice(payloadIndex + 1).join('\n'),
-  };
+  return buildTaskResult(lines, file);
 }
 
 // ── the transcript (an OUTPUT, never an input) ────────────────────────────
