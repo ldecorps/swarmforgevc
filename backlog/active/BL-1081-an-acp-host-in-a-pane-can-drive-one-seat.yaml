@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-priority: 0
+priority: 3
 direction: queue-jump
 depends_on: []
 mutation_cost: high
@@ -115,6 +115,7 @@ qa_e2e_procedure: >
      with the evidence - that is a completed spike, not a bounce.
 
 notes: |
+  Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   Source: archived
   `.swarmforge/operator/archive/INTAKE-acp-spike-one-seat-structured-driving.md`
   (filed 2026-07-27). Operator Let's Talk 2026-08-22 asked to mint enabling
@@ -171,4 +172,4 @@ notes: |
   different agent events and must stay distinct steps. Judged correct as
   written, not drift. 20 unique steps of 20 otherwise.
 
-assigned_to: specifier
+assigned_to: coder
