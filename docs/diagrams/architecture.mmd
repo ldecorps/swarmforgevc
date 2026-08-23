@@ -108,6 +108,10 @@
 %% computation and indexes every ticket's arrival out of that shared index,
 %% instead of one walk per file - one git subprocess per computation
 %% regardless of corpus size, no change in reported values.
+%% BL-1081 (2026-08-23): the vibe spike seat's pane process is
+%% acp-host-pane.js (agent CLI as ACP subprocess). The host writes
+%% .swarmforge/acp/<role>.json; babysitter_check.bb's gather-role reads it
+%% via acp_session_lib.bb. Other seats stay pane-driven.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -153,6 +157,7 @@ flowchart TB
     CEREMONYDIR["lean/ceremony/ (BL-820: closing-ceremony\nrun records, one JSON per shift)"]
     INCIDENTDIR["incidents/control-plane.json (BL-958: control-plane-loss\nincidents, at most one open at a time)"]
     IDENTITY["swarm-identity (BL-313: the conf this launch\nactually loaded; BL-966: read at the master checkout\nfrom any worktree via git rev-parse --git-common-dir)"]
+    ACPDIR["acp/<role>.json (BL-1081: structured seat\nsnapshot — stop reason, idle, permission;\nvibe spike seat only today)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
@@ -202,6 +207,7 @@ flowchart TB
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
+  PANES -->|vibe seat: acp-host-pane writes\nsnapshot; babysitter reads (BL-1081)| ACPDIR
   PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nlifecycle-snapshot sweep (BL-897),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
   PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
@@ -225,5 +231,5 @@ flowchart TB
   class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
-  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR state;
+  class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR,ACPDIR state;
   class TARGETREPO,GH gh;

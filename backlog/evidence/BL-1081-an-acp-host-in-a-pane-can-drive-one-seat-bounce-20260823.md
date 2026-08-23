@@ -1,126 +1,116 @@
 # BL-1081-an-acp-host-in-a-pane-can-drive-one-seat — QA bounce — 20260823
 
-Full Article 4.4 pass. Every gate below was actually run or is recorded
-BLOCKED BY the item that stops it; this is the complete inventory, one
-bounce.
+Full Article 4.4 pass after documenter re-forward `05ba98d54a` (QA merge
+`5e59e71fe2`). Every gate below was actually run or is recorded with its
+blocker; this is the complete inventory, one bounce.
 
-## Gates run — all PASS except D1
+## Prior bounce D1 (launch wiring) — CLEARED
 
+Previous QA bounce (`f52ed3a84e`, earlier evidence under this basename today)
+said nothing in production spawned the ACP host. That gap is closed on this tip:
+
+- `swarmforge/scripts/swarmforge.sh` `write_role_launch_script` vibe branch
+  launches `extension/out/tools/acp-host-pane.js` (comment cites the prior QA
+  bounce D1; pane process is the host, vibe is its ACP subprocess).
+- TS decision surface: `shouldLaunchViaAcpHost` in
+  `extension/src/swarm/acpSeatLaunch.ts`; babashka twin:
+  `acp-hosted-spike-seat?` in `swarmforge/scripts/prompt_engine_lib.bb`.
+- Acceptance scenario 05 embeds a live-source grep that the vibe branch
+  names `acp-host-pane.js` (passes).
+
+## Gates run
+
+- Sibling check: `node extension/out/tools/qa-sibling-check.js status
+  --ticket BL-1081` → `VERIFY BL-1081` (exit 0).
 - `cd extension && npm run compile`: clean.
-- `cd extension && node scripts/recordTestDuration.js` (full unit suite):
-  481 files / 8635 tests, all green (after restoring
-  `extension/test/helpers/bl1071SweepFixture.js` during merge conflict
-  resolution — see "Merge note" below; without it the suite fails 1 file on
-  a missing-module load error, not a BL-1081 defect in itself, fixed before
-  this pass).
-- `cd extension && npm run test:properties`: 467/468 green. The one failure
-  (`test/bl1012FreshnessSelfInflictedIncidents.property.test.js`, "generator
-  reached only 4 uncapped states") is confirmed pre-existing and unrelated:
-  `git diff fa2b43401..38baa603d7 -- extension/test/bl1012...` is empty (no
-  commit in this parcel touches the file), and it passed cleanly re-run in
-  isolation (`npx vitest run --config vitest.properties.config.mjs
-  test/bl1012FreshnessSelfInflictedIncidents.property.test.js` — 3/3 green).
-  Same shape as the BL-1071 bounce's own precedent for an unrelated flake —
-  not raised as a defect here. Two `[vitest-worker]: Timeout calling
-  "onTaskUpdate"` unhandled errors also appeared; exact match to the known
-  benign artifact (engineering.prompt), allowlisted.
+- Unit (`cd extension && set -a && . /home/carillon/swarmforgevc/.swarmforge/swarm.env
+  && set +a && node scripts/recordTestDuration.js`):
+  **3 files / 8 tests red** (see D1 and Outside parcel). Without swarm.env,
+  bridge suites also red on missing `CURSOR_API_KEY` — environment, not
+  parcel; the env-sourced run is the unit gate of record.
+- Properties (`cd extension && npm run test:properties`): 164 files / 480
+  tests green. Two unhandled `[vitest-worker]: Timeout calling
+  "onTaskUpdate"` errors — exact known benign artifact
+  (engineering.prompt), allowlisted.
 - Acceptance: `bash specs/pipeline/scripts/run_acceptance.sh
-  specs/features/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.feature` —
-  5/5 scenarios pass.
-- `pgrep -fl 'node --test|stryker'` before and after every run: clean, no
-  orphans.
-- `required_wiring` anchor `specs/pipeline/steps/index.js::bl1081`:
-  satisfied, registered and exercised by the acceptance run above.
-- `required_wiring` anchor
-  `swarmforge/scripts/babysitter_assess.bb::stop-reason`: the literal path
-  is dead code (BL-781); the architect's own D1 bounce
-  (`backlog/evidence/BL-1081-architect-bounce-20260823.md`) already caught
-  this and the coder's fix correctly rewired the intent to the LIVE decision
-  site instead — confirmed by reading the code:
-  `swarmforge/scripts/babysitter_check.bb`'s `gather-role` (line ~238) calls
-  `acp-session-lib/read-snapshot` and folds the result via
-  `acp-session-lib/apply-acp-facts` into the per-role map passed to
-  `babysitterd_sweep_lib.bb`'s `assemble-findings`, which calls
-  `check-menu-blocked` / `check-busy-frozen` / `check-acp-seat` (all three
-  confirmed present and wired at lines 526-533 of that file). Anchor intent
-  satisfied at the correct site; no defect here.
+  specs/features/BL-1081-an-acp-host-in-a-pane-can-drive-one-seat.feature`
+  — 5/5 scenarios pass.
+- `pgrep -af 'node --test|stryker'` before/after: no orphan test/mutation
+  procs left by this pass.
+- `required_wiring` `specs/pipeline/steps/index.js` →
+  `bl1081AcpHostDrivesOneSeatSteps`: registered; exercised by acceptance.
+- `required_wiring` live babysitter site: `swarmforge/scripts/babysitter_check.bb`
+  load-files `acp_session_lib.bb`; `gather-role` uses
+  `acp-session-lib/read-snapshot`, `menu-check-applies?`,
+  `apply-acp-facts`. Intent satisfied at the live site.
+- Ticket ancestry of tip: hardener `e2a96cb7bc`, coder launch
+  `1fe9f295ec`, documenter `05ba98d54a` are all ancestors of `5e59e71fe2`.
+- Live pack `qa_e2e_procedure` steps 1–4 (tmux seat behind host): not
+  separately launched this pass; BL-112 executable form is the acceptance
+  run above, which now also locks the production launcher naming the host.
+  Not recorded as a defect: prior D1 was the blocker for attempting live
+  control-channel falsification, and it is cleared in code.
 
-## D1 — nothing in production ever spawns the ACP host for any seat; qa_e2e_procedure step 1 cannot be attempted (behavior, blame: coder)
+## D1 — new ACP host unit test uses raw `mkdtemp`, failing the repo-wide temp-dir migration guard (unit, blame: coder)
 
-The ticket's core ask is "Wire exactly one seat" — an actual running seat
-(proposed: Mistral Vibe) driven through the ACP host in its own tmux pane.
-`qa_e2e_procedure` step 1 requires launching a pack with that seat behind
-the host and confirming the pane still renders a readable transcript.
+`extension/test/acpHostPane.test.js` (this parcel) allocates fixtures with
+raw `fs.mkdtempSync(path.join(os.tmpdir(), ...))` instead of the shared
+`extension/test/helpers/tmpDir.js` `mkTmpDir` helper (BL-420). That trips
+the standing guard:
 
-Grepped for every production entry point that could construct or run the
-host:
+```
+FAIL  test/tmpDirMigrationGuard.test.js > the real extension/test/ tree
+  has zero raw mkdtemp call sites outside the shared helper
+AssertionError: expected zero raw mkdtemp call sites, found:
+  .../extension/test/acpHostPane.test.js:21
+```
 
-    grep -rn "acpHostRuntime\|AcpHostSession\|acp-native\|acpNative" \
-      extension/src/swarm/swarmLauncher.ts extension/src/extension.ts
-    # no hits
+Sibling ACP tests in this parcel do not show the same raw call; only this
+file. Fix: route `mkRepo()` through `mkTmpDir('bl1081-acp-host-')` (or
+equivalent shared helper), keep the guard green.
 
-    grep -rln "AcpHostRuntime" extension/src/  # only the module's own file
-    grep -rn "acp-native?" swarmforge/scripts/*.bb | grep -v /test/
-    # only the defining file (prompt_engine_lib.bb) — zero callers anywhere
-    # that would use the predicate to decide a launch
+### Five fields
 
-    find . -iname "*acp*cli*" -o -iname "*acp-host*"
-    # only docs/spec/ticket files — no CLI entry point exists
+1. **Failing command:**
+   `cd extension && set -a && . /home/carillon/swarmforgevc/.swarmforge/swarm.env && set +a && node scripts/recordTestDuration.js`
+   (single-file repro:
+   `cd extension && npx vitest run test/tmpDirMigrationGuard.test.js`)
+2. **Commit hash:** `5e59e71fe2` (QA merge of documenter `05ba98d54a` onto
+   swarmforge-QA).
+3. **First error excerpt:** see assertion block above
+   (`acpHostPane.test.js:21`).
+4. **Failure class:** `unit`
+5. **Expected vs observed:** Expected zero raw mkdtemp call sites under
+   `extension/test/` outside the shared helper. Observed one at
+   `acpHostPane.test.js:21`, introduced by this parcel's host CLI coverage.
 
-The documenter's own pass (`backlog/evidence/BL-1081-documenter-pass-20260823.md`)
-already states this plainly: "No production code spawns the host yet ...
-This is a spike, still building toward its falsifiable E2E criteria
-(qa_e2e_procedure on the ticket), not a completed feature" — and forwarded
-it to QA anyway rather than back.
+### Remediation pointer
 
-Every individual piece is real and independently correct (TS host/seat-state
-modules, the babashka reader, the babysitter's live-site consumption, the
-provider-table `:acp` dimension, the acceptance scenarios exercising the
-decision logic via the shared sweep fixture) — but the piece that actually
-launches a real seat behind the host does not exist anywhere. This is the
-BL-149 shape named in the QA role prompt: correct and green in isolation,
-invoked by nothing in the live swarm. Consequence: invariant 1 ("Seat
-control decisions for the spiked seat consume structured session signals...
-never pane-tail heuristics alone") does not hold for any real seat today —
-`read-snapshot` will always return nil for a live role because no process
-ever writes `.swarmforge/acp/<role>.json`. qa_e2e_procedure steps 1-4 (which
-all depend on a live launch) cannot be attempted at all, so this cannot be
-recorded as the falsifiable spike's "reject for our control model" verdict
-either — that verdict requires actually trying the live control channel and
-having it fail; here it was never tried.
+`extension/test/acpHostPane.test.js` line 21 — replace raw
+`fs.mkdtempSync(path.join(os.tmpdir(), 'bl1081-acp-host-'))` with
+`require('./helpers/tmpDir').mkTmpDir('bl1081-acp-host-')` (same pattern as
+other extension tests). Owning role: **coder** (introduced the test).
 
-## Failing command / commit / class (fields 1-2 for D1; no single command reproduces an absence)
+## Outside parcel (not bounce items — BL-1063)
 
-1. Failing check: `grep -rn "acpHostRuntime\|AcpHostSession" extension/src/swarm/swarmLauncher.ts extension/src/extension.ts` (expect a construction site, found none) plus `grep -rn "acp-native?" swarmforge/scripts/*.bb | grep -v /test/` (expect a launch-deciding caller, found none).
-2. Commit hash: `1f31cff91` (this QA worktree's merge of documenter's `38baa603d7` into swarmforge-QA).
-3. First error excerpt: N/A — this is an absence, not a stack trace. The greps above return no matches outside the module's own file and its tests.
-4. Failure class: `behavior` (the shipped code does not do what the ticket requires: drive a real seat through the host).
-5. Expected vs observed: Expected a real launch-time decision site (in `swarmLauncher.ts` or an equivalent bb launcher) that, for the one wired seat, spawns `AcpHostSession`/runs the compiled host instead of the ordinary pane command. Observed: no such site exists; `AcpHostRuntime`/`acp-native?` have zero production callers.
+Same unit run, after swarm.env:
 
-## Remediation pointer
+- `test/sampleResourcesCli.test.js` — 3 deterministic fails (`SAMPLED 0
+  role(s)` / line-count). Diff `HEAD^1..HEAD` does not touch this file.
+- `test/strykerSandboxSiblingsLib.test.js` — 4 deterministic fails
+  (`EEXIST` on stale-symlink replace). Diff does not touch this file.
 
-`extension/src/swarm/swarmLauncher.ts` (or wherever the pane launch command
-is actually assembled for a role) needs a branch, gated on
-`prompt_engine_lib.bb`'s new `:acp` capability (or its TS-side equivalent) for
-the one chosen seat, that runs the compiled ACP host
-(`extension/out/swarm/acpHostRuntime.js`) as the pane's process instead of the
-ordinary agent CLI invocation — and an acceptance/property scenario that
-actually exercises that launch decision, not only the deterministic-layer
-logic given an already-written snapshot file.
+`grep -rl 'sampleResourcesCli\|strykerSandboxSiblingsLib'
+backlog/{active,paused,hold}` is **empty** (noted again in BL-1099 QA
+evidence the same day). Surfacing to coordinator as untracked standing
+debt; not charged to BL-1081.
 
-## Merge note (not a defect — process record)
+## Inventory summary
 
-This parcel's merge into QA also touched files shared with BL-1071 (already
-QA-bounced 20260823, evidence
-`backlog/evidence/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix-bounce-20260823.md`,
-now correctly parked in `backlog/hold/` by a separate human decision).
-Conflict resolution kept only BL-1081's own additions in
-`specs/pipeline/steps/index.js` and
-`swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`, excluding
-BL-1071's still-bounced feature content. `extension/test/helpers/bl1071SweepFixture.js`
-was restored from the incoming commit despite its name, because BL-1081's
-own step handler (`specs/pipeline/steps/bl1081AcpHostDrivesOneSeatSteps.js:56`)
-requires it as shared, ticket-agnostic sweep-testing infrastructure — it
-carries none of BL-1071's disputed `strayHangs()`/`:unavailable` logic
-(confirmed by reading the file). Recorded here so a future re-verification
-of this ticket does not need to re-derive it.
+| Item | Class | Blamed role | Disposition |
+|------|-------|-------------|-------------|
+| D1 raw mkdtemp in `acpHostPane.test.js` | unit | coder | bounce |
+| Prior launch-wiring D1 | behavior | — | cleared |
+| sampleResources / strykerSandbox | unit | — | outside parcel; untracked |
+
+By QA.
