@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/token-burn-section');
 const { appendUsageAnchor } = require('../out/metrics/usageAnchorStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-619: the token-burn-section CLI wires burnProjection.ts (decision) +
 // usageAnchorStore.ts (anchors) + burnRate.ts (local rate) +
@@ -22,10 +23,7 @@ function git(cwd, args) {
 }
 function mkFixture({ confLines } = {}) {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  copySeededRepoInto(root);
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tmaster\t${root}\tswarmforge-coder\tcoder\tclaude\ttask\n`);

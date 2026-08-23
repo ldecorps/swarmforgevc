@@ -7,6 +7,11 @@
 # happens is if read-poll-heartbeat-ms never consulted the old file. A
 # mocked heartbeat read could not catch a supervisor that quietly fell
 # back to the old path; this drives the real onboarder_supervisor.bb.
+#
+# BL-1043 note: the supervisor now has a real startup grace, so check_once
+# below shortens it alongside the stall window. Left at the 90s default,
+# the stalled assertion would wait a minute and a half for a fact this
+# test otherwise establishes in half a second.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
@@ -37,6 +42,7 @@ jget() { bb -e "(require '[cheshire.core :as j]) (println (get-in (j/parse-strin
 check_once() {
   SWARMFORGE_FLEET_HOME="$1/fleet-home" TELEGRAM_BOT_TOKEN=fake-token TELEGRAM_CHAT_ID=fake-chat \
     ONBOARDER_STALL_MS="${ONBOARDER_STALL_MS:-200}" \
+    ONBOARDER_HEARTBEAT_STARTUP_GRACE_MS="${ONBOARDER_HEARTBEAT_STARTUP_GRACE_MS:-200}" \
     bb "$1/swarm/onboarder_supervisor.bb" "$1/swarm" --check-once
 }
 

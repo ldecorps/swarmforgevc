@@ -14,6 +14,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
@@ -900,7 +901,7 @@
         (log! "chase-respawn" role (str launch-script))
         (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
                              env-args
-                             ["-t" session (str "zsh '" launch-script "'")]))))))
+                             ["-t" session (shell-quote-lib/launch-command launch-script)]))))))
 
 (defn write-chase-status! [now-ms]
   (fs/create-dirs daemon-dir)
@@ -1169,7 +1170,7 @@
         (log! "auth-respawn" role (str launch-script))
         (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
                              env-args
-                             ["-t" session (str "zsh '" launch-script "'")]))))))
+                             ["-t" session (shell-quote-lib/launch-command launch-script)]))))))
 
 (defn send-auth-persist-alert!
   "BL-536: reuses the same operator alert channel the endless-loop breaker
@@ -2012,6 +2013,11 @@
   (chase-sweep-lib/parse-batch-claim-progress-stale-threshold-ms
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
 
+;; BL-1076: operator per-role overrides, read alongside the base above.
+(defn- batch-claim-progress-role-stale-thresholds-ms []
+  (chase-sweep-lib/parse-batch-claim-progress-role-stale-threshold-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
+
 (defn- batch-claim-progress-cooldown-ms []
   (chase-sweep-lib/parse-batch-claim-progress-cooldown-ms
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root))) (catch Exception _ nil))))
@@ -2019,20 +2025,35 @@
 (defn batch-claim-progress-sweep! [roles]
   (try
     (let [now-ms (System/currentTimeMillis)
-          stale-ms (batch-claim-progress-stale-threshold-ms)
+          base-stale-ms (batch-claim-progress-stale-threshold-ms)
+          role-overrides (batch-claim-progress-role-stale-thresholds-ms)
           cooldown-ms (batch-claim-progress-cooldown-ms)]
       (doseq [[role role-info] roles
               :when (= "batch" (:receive-mode role-info))]
         (try
+          ;; BL-1076: the threshold is resolved PER ROLE, and the owner's
+          ;; uncommitted work is a second progress signal beside HEAD. A
+          ;; hardener mid-Stryker moves neither HEAD nor the clock for an hour
+          ;; and is working the whole time.
           (let [in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))
                 items (chase-sweep-lib/scan-in-process in-process-dir)
                 current-commit (worktree-head-commit-10 roles role)
-                suspects (chase-sweep-lib/apply-batch-claim-progress-check!
-                          items now-ms stale-ms current-commit)]
+                stale-ms (batch-claim-progress-lib/resolve-stale-threshold-ms
+                          role base-stale-ms role-overrides)
+                dirty? (role-worktree-dirty? roles role)
+                {:keys [suspects suppressed]}
+                (chase-sweep-lib/apply-batch-claim-progress-check!
+                 items now-ms stale-ms current-commit dirty?)]
             (doseq [suspect suspects]
               (when-not (chase-sweep-lib/within-dropped-parcel-cooldown?
                          (read-batch-claim-progress-last-sent-ms (:file-path suspect)) now-ms cooldown-ms)
-                (nudge-coordinator-batch-claim-suspect! suspect))))
+                (nudge-coordinator-batch-claim-suspect! suspect)))
+            ;; Invariant 2: no suppression is silent. Logged unconditionally,
+            ;; with no cooldown - a worktree that stays dirty forever must read
+            ;; as a SUPPRESSED signal in the record, never as an absent one.
+            (doseq [item suppressed]
+              (log! "batch-claim-progress-suppressed" (:item-id item) (:reason item)
+                    (str (quot (:age-ms item) 60000) "m"))))
           (catch Exception e
             (log! "batch-claim-progress-sweep-role-error" role (.getMessage e))))))
     (catch Exception e

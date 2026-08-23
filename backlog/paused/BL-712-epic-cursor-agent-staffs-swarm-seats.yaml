@@ -4,16 +4,18 @@ milestone: M8
 type: epic
 status: todo
 epic: swarm-intelligence-layer
-priority: 31
-direction: human-requested
+priority: 0
+direction: queue-jump
 depends_on: [BL-545]
-decomposes_into: [BL-713]
+decomposes_into: [BL-713, BL-1078, BL-1079, BL-1080, BL-1081]
 mutation_cost: high
 
 remaining_slices:
-  - "B. Launcher + agent runtime — a cursor agent token accepted by swarmforge.sh's agent whitelist, ensure, and the poke/wake path; the ACP or SDK host process that backs it."
-  - "C. Model Steward registration + certify path — register the Cursor identity as candidate, run the existing compliance battery, produce an evidence artifact, then certify; pack apply refuses a candidate Cursor unless an explicit spike-only escape is set."
-  - "D. Pack + docs — how-to on when to use a Cursor seat vs /pilot vs Claude; the unsupported-agent error points here."
+  - "A. Spike — BL-713 (Q-jumped 2026-08-22)."
+  - "B. Launcher + agent runtime — BL-1078 (minted 2026-08-22; pending feature approval)."
+  - "C. Model Steward registration + certify — BL-1079 (minted 2026-08-22; pending feature approval)."
+  - "D. Pack + docs — BL-1080 (minted 2026-08-22; pending feature approval)."
+  - "Adjacent enabling: ACP-host-in-a-pane — BL-1081 (minted 2026-08-22 from archived ACP spike intake; pending feature approval)."
 
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"

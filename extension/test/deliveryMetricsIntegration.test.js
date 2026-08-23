@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { computeDeliveryMetrics } = require('../out/metrics/deliveryMetrics');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-096: computeDeliveryMetrics is the one impure entry point (shells to
 // git, reads the backlog/ folder state) - exercised here end-to-end over a
@@ -30,9 +31,7 @@ function git(cwd, args, dateIso) {
 }
 
 function initRepo(dir) {
-  git(dir, ['init', '-q']);
-  git(dir, ['config', 'user.email', 't@t']);
-  git(dir, ['config', 'user.name', 't']);
+  copySeededRepoInto(dir);
 }
 
 test('computeDeliveryMetrics wires git history + current backlog state into every metric (metrics-01/02/03/08/09)', () => {

@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/record-bounce-correction');
 const { readBounceRecords, readRawBounceRecords, bouncesDir } = require('../out/metrics/bounceStore');
 const { USAGE } = require('../out/tools/recordBounceCorrectionArgs');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-990: main() itself (the makeArgsGuardedMain wiring: stamp `at`, build
 // the BounceCorrection, call appendBounceCorrectionIfNew, print JSON) was
@@ -21,9 +22,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {

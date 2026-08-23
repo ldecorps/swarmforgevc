@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseSwarmCostRankArgs, resolveNowMs } = require('../out/tools/swarm-cost-rank');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-551: CLI over the unified LLM cost ledger - prints ranked/rolled-up JSON for a
 // named horizon.
@@ -27,9 +28,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {

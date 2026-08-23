@@ -1,6 +1,744 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 22, 2026 (BL-1041: a new CLI,
+**Last Updated:** August 23, 2026 (BL-973: five hand-maintained bb fixture
+copy-lists drifted from the real transitive `load-file` closure of the entry
+point each actually drives, three times over (BL-911, BL-967, BL-1029),
+leaving two acceptance features (BL-487, BL-814) and
+`test_lean_ledger_bb_wiring.sh` red on `main` with no standing gate running
+the shell test to notice. Fix, two halves: (1)
+`specs/pipeline/steps/lib/bbFixtureClosureGate.js` pairs each of the five
+fixtures with the entry point it drives and reads its effective copy-list
+behaviorally (export or actual copy, never a source grep) against the
+closure BL-944's `operatorRuntimeBbClosure.js` computes, closing all five —
+including `operator_runtime_sandbox.sh`'s previously-unguarded list — the
+same way BL-944 closed the first; (2) `run_bb_suite.sh` /
+`suite-manifest.tsv` is now the standing entry point for
+`swarmforge/scripts/test/`, with an inventory gate that fails on any test
+file named in neither the standing nor a dated-and-reasoned excluded lane.
+15/15 Gherkin mutations killed; bb suite green (`test_lean_ledger_bb_wiring.sh`
+6/6); BL-487 2/2 and BL-814 6/6 now green. No extension command, setting, or
+UI change — test-infrastructure only. See
+`docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`.)
+Prior entry —
+BL-1076: the batch-claim-progress
+sweep (BL-678) judged every batch role by one flat 20-minute HEAD clock
+with HEAD movement as its only progress signal, so a hardener mid-Stryker
+— routinely an hour of real work before its first commit, with the edits
+sitting uncommitted in its worktree — was surfaced to the coordinator as a
+suspect claim: measured 2026-08-22, three parcels surfaced twice each in
+fifty minutes while the hardener was demonstrably working, six false notes
+total. Fix, applied to `batch_claim_progress_lib.bb` /
+`chase_sweep_lib.bb` / `handoffd.bb`: a per-role tolerance map
+(`hardener` gets 90 minutes, mirroring BL-528's task-mode ladder without
+sharing its literal — the two answer different questions and may
+legitimately diverge) resolved operator-override-first via a new conf key
+`batch_claim_progress_role_stale_threshold_minutes <role> <n>`; and a
+visible-work gate that adds a third label, `:suppressed-visible-work`,
+for a stale-by-clock claim whose owner worktree is still dirty — sent
+nowhere but logged (`batch-claim-progress-suppressed`), so a permanently
+dirty worktree reads as a suppressed signal, never a silent one. The
+observer's own invariant — no label it returns re-forwards, re-delivers,
+moves, copies, or deletes a handoff — is unchanged and property-tested
+alongside the two new ones (3 invariant classes, 240 runs,
+`bl1076_visible_work_gate_property_runner.bb`), non-vacuity proven by four
+deliberate breaks. BL-678 itself stays green throughout. See the updated
+"Batch-claim-progress suspect sweep" section in
+`swarmforge/handoff-protocol.md` and
+`docs/how-to/BL-678-batch-claim-progress-sidecar.md`. No new extension
+command or setting.)
+Prior entry —
+BL-1043: the onboarder and
+negotiation-relay supervisors get a real startup grace, closing a hole
+worse than BL-1035's — `front_desk_supervisor_lib.bb`'s
+`poll-heartbeat-stale?` has a 3-arity convenience form that passes
+`started-at-ms` as `nil`; the grace clause opens with
+`(and started-at-ms ...)`, so with `nil` it can never fire, and the arity
+even passes `stall-ms` into the grace slot, which reads to a reviewer like
+a deliberate generous grace and is dead code. `onboarder_supervisor.bb:147`
+and `negotiation_relay_supervisor.bb:145` both called exactly that arity,
+so a freshly spawned child with no heartbeat file at all was declared
+stalled on its first tick, not after any real grace. Measured live in
+`.swarmforge/operator/onboarder-supervisor.log`: 39 starts, 27 stalls, 7
+of 14 adjacent started→stalled pairs under ten seconds, the fastest 2.00s
+against a declared 120000ms window — burning the bounded restart budget on
+a fault that was never there. `cursor_bridge_supervisor.bb` already got
+both halves right (a real grace plus clearing the heartbeat file at spawn)
+and was the reference, not a subject — byte-for-byte unchanged. The
+grace-less 3-arity is retired rather than repaired, since it has no spawn
+time to measure a grace from and a reachable grace-less form under any
+spelling keeps the trap open for the next supervisor: calling it now is an
+arity error. A new defaulting 4-arity fills the gap it leaves — a call
+site that passes `started-at-ms` without an explicit grace length gets
+`default-startup-grace-ms` (90000, the same value `cursor_bridge` already
+used, not a third number); the explicit 5-arity is unchanged. Both
+supervisors now pass `(:started-at-ms entry)` through an env-tunable grace
+of their own (`ONBOARDER_HEARTBEAT_STARTUP_GRACE_MS`,
+`NEGOTIATION_RELAY_HEARTBEAT_STARTUP_GRACE_MS`, both defaulting to the
+library value) and clear their heartbeat file at spawn, matching
+`cursor_bridge`'s shape. Declared invariants — no child is judged stalled
+before one full startup grace, and no child is judged on a heartbeat
+written by a process no longer running — are property-tested 400 runs
+across 8 declared classes (`bl1043_startup_grace_property_runner.bb`),
+non-vacuity proven by four deliberate breaks including restoring the
+shipped grace-less-3-arity defect itself. Out of scope, deliberately: the
+front-desk supervisor (BL-1035's own subject) and two unrelated
+pre-existing red tests on `main` (one confirmed live and independent of
+this session), both surfaced to the specifier by `note` rather than fixed
+here. Degraded gate: Babashka/shell only, no mutation/CRAP/DRY tooling
+wired for this surface; gated by the property runner above plus
+`front_desk_supervisor_lib_test_runner.bb`,
+`test_onboarder_supervisor_ignores_old_heartbeat.sh`,
+`test_negotiation_relay_supervisor_tick.sh`, and 5/5 acceptance scenarios.
+No new extension command or setting.)
+Prior entry —
+BL-1053: slice (b) of the qwen-code
+onboarding, depending on BL-1052 (above) and inert without it — the
+ModelFactory `provider->agent` map (`swarmforge/scripts/model_factory_lib.bb`)
+knew exactly three providers (`anthropic`→`claude`, `openai`→`codex`,
+`cerebras`→`aider`), so a qwen model had no provider key that reached the
+right CLI. The trap was a plausible shortcut that would have made it
+worse, not better: qwen-code authenticates with `--auth-type openai`
+because the wire protocol is OpenAI-compatible, so registering qwen models
+under the existing `"openai"` provider key looks right — and would have
+resolved to `"codex"`, launching qwen models through the wrong CLI
+entirely, a confusing failure rather than a loud one. Fixed with a new,
+distinct `"qwen"` provider key (`"qwen" "qwen-code"`) rather than reusing
+`"openai"`. Four Token Plan models registered as ModelFactory candidates
+with an honest, deliberate cost class — `qwen3.7-plus`/`qwen3.6-flash` at
+`low`, `qwen3.7-max`/`qwen3.8-max-preview` at `medium`
+(`swarmforge/model-steward/seed/models.seed.json`) — since a cost class is
+the cost-reduction option this whole onboarding exists to create, not a
+default nobody chose. Declared invariant: every provider key in the
+registry resolves to exactly one launch agent, and no two provider keys
+resolve to an agent that cannot serve them — a provider added without its
+own `provider->agent` entry falls through to another provider's binary
+rather than failing, which is exactly the confusing failure this ticket
+closes. Registration alone changes no live seat — it makes a model
+SELECTABLE for ModelFactory's cheap/quality routing and cold-apply, it
+never mutates a running pane on its own. Model Steward's existing
+`register`/`certify`/`eligible` CLI workflow
+(`docs/how-to/BL-547-model-steward-overview.md`) is unchanged and already
+covers registering/certifying a `qwen/<model>` the same way as any other
+provider — no new command. Degraded gate: Babashka only, no
+mutation/CRAP/DRY tooling wired; gated by
+`bl1053_qwen_provider_routing_test_runner.bb` and
+`bl1053_provider_routing_property_runner.bb` (300 runs) plus 7 acceptance
+scenarios. No new extension command or setting.)
+Prior entry —
+BL-1052: a role seat can now be staffed
+by **qwen-code** (`@qwen-code/qwen-code`, binary `qwen`), Alibaba's own
+agentic CLI — the swarm's only prior Qwen path drove the same Token Plan
+models through `aider`, a file editor with no autonomous shell execution,
+the same structural failure already proven live with Mistral: a role
+staffed that way narrates `ready_for_next.sh` instead of running it. The
+operator smoke-tested qwen-code outside any production path first and
+confirmed the thing that matters — with `--auth-type openai -y` it
+actually executed a shell command and returned the real result, and
+without `-y` it refused and said so rather than pretending. Slice (a) of
+an accepted ordering: this ticket is the agent shape, launch adapter, and
+base pack only; the ModelFactory `provider->agent` entry and Model Steward
+cost-class registration are BL-1053 (below), deliberately separate since
+registering a provider with nothing to launch would be inert bookkeeping.
+`qwen-code` is registered in `prompt_engine_lib.bb`'s
+`provider-capabilities` as `chat-message`/`embedded`, mirroring `vibe` and
+`gemini` — declared invariant 1: a capability entry describes the AGENT,
+never the model, so qwen-code and the aider-based `qwen-mono-router` pack
+share a model catalog, endpoint and key but get distinct capability
+shapes, the one difference that is the whole reason one works as a swarm
+role and the other does not. `swarmforge.sh` gained a `qwen-code` launch
+composer (`qwen --auth-type openai -y`, taking gemini's launch shape since
+qwen-code is Gemini-CLI-derived; prompt delivered by path, not a slurped
+argv, since composed role prompts run 51-155KB and would hard-fail
+`MAX_ARG_STRLEN`) and its own `qwen_guard`, reusing the same
+`QWEN_API_KEY`/`BAILIAN_CODING_PLAN_API_KEY` credential mapping
+`qwen-mono-router` already established rather than adding a second
+credential path — declared invariant 2: the key reaches the pane only
+through the launching environment and tmux `-e`, never written into a
+pack file, a generated launch script, a prompt, or a commit; verified via
+`git show` on the landed diff (zero literal key values) and a property
+test proving the key actually arrives via `respawn-pane -e`, not merely
+that the property is satisfiable by a launcher that silently drops it. New
+pack `swarmforge/packs/qwen-code-mono-router.conf` (mono-router topology,
+BL-518), beside the untouched aider-based `qwen-mono-router.conf`;
+naming the agent `qwen-code` had to be given its OWN routing arm in
+`ancillary_provider_lib.sh` ahead of the existing catch-all `qwen-*` arm,
+which otherwise routed any qwen-named pack into the `openai_aider` family
+and its hard `aider`-on-PATH requirement — a pack that refuses to launch
+without a dependency it never uses is not a pack. The Personal-plan ToS
+caution is carried verbatim into the pack file's own comment ("headless
+swarm may risk key revocation — prefer Team Edition for automation, or
+verify eligibility in console first") and pinned by its own acceptance
+scenario, so building the capability does not quietly decide that running
+it headless is allowed — that call is the operator's, per launch. New
+runbook `docs/how-to/BL-1052-qwen-code-mono-router-launch.md`, linked
+from `docs/index.md`. Degraded gate: shell + Babashka only, no
+mutation/CRAP/DRY tooling wired; gated by `test_qwen_code_seat.sh` and
+`bl1052_qwen_code_seat_property_runner.bb` (200 map runs, 40 launch runs)
+plus 8 acceptance scenarios. No `extension/**` file touched at all — no
+new extension command or setting.)
+Prior entry —
+BL-1075: found during BL-1069's own
+review (goal 4) and minted as its narrow follow-up rather than folded in.
+The swarm's hardening step set `window-size largest` as a stability
+mitigation on the control-plane server — and named it as one in the ops
+runbook — but tmux(1) is explicit that `resize-window` "will automatically
+set window-size to manual **in the window options**", and a window option
+beats the server global. The extension's `paneTailer.ts` calls
+`resizeWindow` on every role window it tiles, so `largest` was unreachable
+on every window the panel manages, by construction — not a race, not an
+ordering bug, and not fixable by changing which writer runs last. Stopped
+applying and stopped claiming a mitigation that cannot hold, on both call
+paths that set it (`swarmforge/scripts/swarmforge.sh`'s
+`harden_tmux_server`, `swarmforge/scripts/control_plane_lib.bb`'s
+`harden-server!`) — nothing else changes: `focus-events off` is untouched
+and still applied on every path that applied it before, since it is not
+overridden by anything and remains the mitigation that actually holds.
+`docs/how-to/BL-tmux-wsl-segfault-upgrade.md` now names only
+`focus-events off` among the soft mitigations, states plainly that the
+tmux ≥ 3.7 version upgrade is what actually protects the host, and adds a
+sentence on why the window-size line was dropped rather than silently
+disappearing. Severity `medium`, deliberately: the knob was inert and the
+runbook overstated it, but nobody was actually less protected than they
+would be with the knob absent — the tmux ≥ 3.7 preference (BL-1069) is the
+defence that carries the load, landed and live. Explicitly deferred to a
+successor ticket: what the swarm should do when the panel is about to tile
+a control plane running tmux older than 3.7 — where `resize-window` arms
+the exact WINDOW_SIZE_MANUAL segfault trigger per window — needs the
+server-version fact BL-1069 was still building at mint time, so folding it
+in here would have made this slice depend on unlanded sibling work.
+`extension/src/panel/paneTailer.ts` was not modified by this parcel — the
+panel is the thing the swarm-side fix stopped fighting, not itself a party
+to the fix. Degraded gate on the swarm-side half only: shell + Babashka,
+no mutation/CRAP/DRY tooling wired, gated by
+`bl1075_window_size_ownership_property_runner.bb` (which re-measures the
+window-option-beats-global mechanism every run, so a future tmux changing
+that scope rule fails the test rather than silently enforcing a decision
+whose premise had gone) plus the acceptance scenarios. No new extension
+command or setting.)
+Prior entry —
+BL-1029: the family sweep BL-1018 left
+undone. tmux hands a `respawn-pane` command's trailing argument straight to
+`$SHELL -c`, so that argument must itself be valid POSIX shell; five
+remaining repair sites (`remote_control_health_lib.bb`, both
+`handoff_lib.bb` sites, both `handoffd.bb` sites — two of the ticket's
+original seven, in `swarm_ensure.bb`/`babysitter_check.bb`, had already
+been converted by BL-1018 landing on `main` between mint and this pass)
+still built that argument as a bare `(str "zsh '" launch-script "'")`, with
+no escaping, which stops being valid shell the instant the wrapped launch
+path contains an apostrophe — on such a host every one of these repair
+paths would fail to restart the role it was invoked to save. All five now
+route through one new shared constructor,
+`swarmforge/scripts/shell_quote_lib.bb`'s `launch-command` (deliberately a
+command builder, not just the quoting primitive — the `zsh ` prefix and
+the quoting are one decision, and splitting them is how a site ends up
+with the prefix right and the quoting wrong); BL-1018's own private
+`shell-quote-single` in `single_role_repair_lib.bb` is removed, not
+duplicated, and that lib now loads the shared one. The verification shape
+was itself part of the ask: this defect already survived BL-1018's own
+property runner behind a `str/includes?` substring check on the raw path,
+which passes whether the escaping is correct or broken, so every assertion
+that matters here hands the constructed argument to a REAL shell and
+compares what comes back, byte for byte, to what went in — eight path
+shapes (apostrophe, spaces, `$`, backslash, `;&|`, backticks, double
+quotes, an embedded newline) round-tripped, with the pre-fix construction
+kept as a negative control proven to actually fail in a shell. The
+enumeration proving no site quotes a launch path on its own derives its
+site list from the tree (`swarmforge/scripts/*.bb`, excluding the test
+tree) rather than a hand-maintained list, so an eighth site written later
+cannot go unrouted unnoticed — proven non-vacuous by renaming the helper
+and confirming the check catches the unrouted files (which itself
+surfaced and fixed a substring-match bug in the check's own site-detector
+during authoring). Degraded gate: shell + Babashka only, no
+mutation/CRAP/DRY tooling wired; gated by
+`shell_quote_lib_test_runner.bb` and
+`bl1029_respawn_quoting_property_runner.bb` (200 generated paths) plus the
+acceptance scenarios; three Gherkin mutation survivors on this feature
+were confirmed genuine equivalent mutants (BL-234), not a coverage gap.
+No new extension command or setting — swarm-substrate repair tooling
+under `swarmforge/scripts/`.)
+Prior entry —
+BL-991: the operator ruling
+("make required_stages binding so a declared stage cannot be jumped")
+enforced. Before this, `route-required-stages` treated a ticket's declared
+`required_stages` set as a PRUNING list only — membership was permission:
+a coder addressing QA directly on a ticket declaring the full chain was
+delivered straight to QA, jumping cleaner/architect/hardender/documenter.
+BL-951 (2026-08-19, above) made that jump visible with a `routing_skipped`
+record; this ticket is the enforcement half BL-951 deliberately left
+undone. Now, on any forward hop, the router computes `next` — the first
+declared stage strictly after the sender — and whenever the literal `to:`
+is later than `next` in canonical order, the handoff is redirected to
+`next` instead, regardless of whether the literal target is itself a
+declared stage. The same rule closes an easy-to-miss twin on the
+non-member branch: declaring `[coder, cleaner, qa]`, a coder addressing
+`architect` used to rewrite forward to QA (jumping the declared `cleaner`);
+it now redirects to `cleaner`. A redirected hop is not a skip — the stage
+it lands on still runs — so it must never appear in the envelope's
+`routing_skipped=` or a `routing-skips.jsonl` line the way a genuinely
+pruned undeclared stage does; conflating the two would assert a stage was
+bypassed when it is precisely what will still run. Two boundaries were
+deliberately preserved: an UNDECLARED stage is still pruned exactly as
+BL-606 always pruned it (declaring `[coder, qa]` still lets coder address
+QA directly, skipping the undeclared middle stages) — the rule binds only
+what a ticket actually declares, so a docs-only ticket declaring
+`[documenter, qa]` is unaffected; and sender judgement over WHERE a
+bounce-fix should return to is untouched — the operator ruled that out, so
+this adds no default and no coder/QA-prompt routing rule. The rewrite
+REDIRECTS rather than REFUSES: a jump lands on the next declared stage
+instead of erroring the sender back to re-address it, reusing the
+mechanism the non-member branch already had rather than dead-ending a
+committed parcel. Enforcement reaches exactly as far as routing already
+reaches and no further: a backward bounce, a `rejection_reason`/
+`reroute_reason` detour, the `required_stages_routing_enabled` kill switch,
+and an unusable (absent/invalid/not-yet-merged) declaration all behave
+exactly as they did before this ticket. Sibling contract amended in the
+same parcel, not separately: BL-951's own feature file's `full-chain`
+Scenario Outline row (asserting a coder→QA hop skips four stages) became
+false the moment this landed — a genuine acceptance red, not a stale
+assertion — and was removed, with this ticket's own scenario 01 now
+carrying that case in its binding, redirected form. Degraded gate: shell +
+Babashka only, no mutation/CRAP/DRY tooling wired; gated by
+`bl991_binding_stages_property_runner.bb` plus the acceptance scenarios.
+The coder's own reach floors on that runner caught a generator defect in
+its OWN first draft — a per-run reseeded RNG pinned the declaration to
+`no-cleaner` in 40 of 40 runs, leaving the entire non-member branch (the
+second hole this ticket exists to close) untested — fixed by advancing one
+generator across every run instead of reseeding per run; the coder
+separately flagged the identical defect class in BL-1057's own in-flight
+runner by note, which the specifier recorded and the hardener fixed hours
+later on both BL-1057 and, independently, BL-1069's runner during this
+same batch pass — three occurrences of the same class in one day. Updated
+the "Dynamic Routing via Specifier-Declared
+required_stages" section and added a "declared stage is binding" guardrail
+to `swarmforge/handoff-protocol.md`, and cross-referenced the binding rule
+from `docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md` (whose
+own worked examples all use an undeclared-middle-stage shape and remain
+accurate unchanged). No new extension command or setting — swarm-substrate
+handoff-routing tooling under `swarmforge/scripts/`.)
+Prior entry —
+BL-1069: swarm review/stamp-off of an
+operator hotfix already live on `main` (`61c62f579`, landed by hand via
+Cursor the same day) for a WSL control-plane crash loop — Ubuntu's packaged
+tmux 3.4 SIGSEGVs (`resize.c` NULL-window deref, fault at 0x208) whenever
+`WINDOW_SIZE_MANUAL` is set, fixed upstream in tmux >= 3.7 (commit
+`6234d79`) but absent from Ubuntu's 3.4 package; `./swarm ensure` restores
+the agents but the server crashes again within minutes. Three of the
+landed hotfix's five review goals were confirmed real defects and fixed
+narrowly in place, not reimplemented. The most load-bearing: the version
+warning read `tmux -V`, the CLIENT on PATH, while the incident's own
+signature is a client that is already fine (3.7b) in front of a SERVER
+that predates the install (3.4) — so the landed warning was silent in
+exactly the state the crash loop lives in. The judgement now reads `tmux
+-S <socket> display-message -p '#{version}'`, the server the swarm is
+actually talking to, falling back to the client only when no server
+answers. Second: `prefer_local_tmux_bin` prepended `~/.local/bin`
+whenever a tmux existed there with no version comparison at all, so a
+host whose local build was OLDER than the one already on PATH was
+silently downgraded by the function meant to upgrade it — it now compares
+before preferring, on both macOS and Linux, since the prepend fired on
+both. Third: `install_tmux_wsl.sh`'s guard
+`[[ -z "$SRC" || ! -x "$SRC" && ! -f "$SRC" ]]` didn't mean what it read
+as (`&&` binds tighter inside `[[ ]]`, so it reduced to `-z "$SRC"` alone)
+and the installer downloaded an unpinned, unverified, x86_64-only build;
+it now resolves against a table of architectures that actually have a
+published build (refusing by name otherwise) and verifies a sha256 digest
+before installing anything — with `KNOWN_SHA256` deliberately empty (a
+digest is a pin, and pinning is a human commit, never an agent action), a
+caller passes `TMUX_INSTALL_SHA256=<digest>` until a human adds a row. The
+soft-hardening knobs (`focus-events off` on both the shell and Babashka
+paths) were confirmed to never fail an `ensure`/launch/restore even when
+the running tmux rejects them; `window-size largest` was investigated
+(goal 4) and ultimately removed entirely by a same-day follow-up, BL-1075 — it
+contended with the extension's own tiling panel, which
+periodically puts the same server back into `window-size manual` (the
+exact tmux 3.4 crash trigger) on every role-set change. Degraded gate,
+recorded explicitly: the whole diff is shell + Babashka, so no
+mutation/CRAP/DRY tooling applies; the gate is the runners under
+`swarmforge/scripts/test/` plus the acceptance scenarios. Runbook
+`docs/how-to/BL-tmux-wsl-segfault-upgrade.md` (already existed from the
+hand-landed hotfix, updated in place for the digest requirement and the
+`window-size largest` removal) was missing from `docs/index.md` — added.
+No new extension command or setting; this is swarm/ops tooling only.)
+Prior entry —
+BL-1057: a host move (this swarm's own
+Mac → WSL2 move on 2026-08-22) silently leaves host-pinned config behind —
+local editor settings, `$HOME`-rooted credential/registry directories,
+machine-local env files — and nothing in any daemon's restart path ever
+reports it; two real casualties were found only by hand (a stale
+`extension/.vscode/settings.json` target path, and a live Cloudflare Error
+1033 because the Bubble named tunnel was never registered on the new
+host). `bb swarmforge/scripts/host_switchover_doctor.bb [<repo-root>]
+[--json | --inventory]` is the command that would have reported both in
+one run: it walks a declared inventory of host-pinned locations (both
+`.vscode/settings.json` files, the named-tunnel operator-root registry,
+`~/.cloudflared/`'s cert/config/credentials, and
+`.swarmforge/operator/named-tunnel.env`) and gives each exactly one
+verdict — `OK`, `STALE` (quoting the stale value it found), `MISSING`, or
+`BLOCKED` (the check itself could not run — never omitted, never counted
+as OK). Every non-OK finding names both the concrete location and its
+remediation step; the tunnel findings point at the existing named-tunnel
+runbook, since registering it is a deliberate interactive human step the
+doctor deliberately does not perform. The doctor is permanently read-only
+— a durable property, not a slice boundary a future repair capability may
+relax; repair is out of scope and would be a separate command, never a
+`--fix` flag here. Run from any per-role worktree, it resolves through the
+worktree's `.git` file to the forge's own main-checkout root rather than
+reporting that worktree's own paths as false-STALE. `--inventory` prints
+the declared inventory as JSON so the acceptance step handlers build their
+fixture host from the one declared definition rather than a second copy.
+Babashka lane, per this project's Startup Tools fallback: no
+mutation/CRAP/DRY tooling wired there, gated by its own unit + property
+suite instead (60 generated host states against an independent oracle,
+reach asserted per verdict class). New runbook:
+`docs/how-to/BL-1057-host-switchover-doctor.md`, linked from
+`docs/index.md` (`required_wiring`, confirmed present through hardener).)
+Prior entry —
+BL-1015: the acting half of the
+`boy-scout` epic. `node extension/out/tools/boyScoutRun.js [path-to-root]`
+takes BL-1014's scan, reads an already-written cleanup proposal for the
+top-ranked item from `.swarmforge/boy-scout/proposal.json` (whole new file
+content per path, `after: null` to delete — no patch/diff format), and
+either commits it or refuses the whole thing and states why. This run does
+not generate the cleanup itself; it bounds and verifies one someone else
+already wrote, because a generator that invented its own edits would have
+no bound on it at all. The size envelope (3 files, 120 changed lines) is
+derived from BL-634's recorded 65-insertion slice median, not chosen by
+taste — a proposal at or under both limits is eligible, over either one is
+refused whole and never partially applied. Every check that can refuse or
+abandon runs before the first write, in order: nothing ranked; no proposal
+or an empty one; the proposal names the wrong item or trespasses onto a
+different ranked item's files; the diff, applied, changes nothing
+measurable; the envelope is exceeded; an existing test assertion would have
+to change to reach green (invariant 2 — checked verbatim as a multiset
+across every language this repo tests in, so a cleanup can never smuggle in
+a behaviour change wearing a refactor's clothes); the repository's existing
+gate set (`npm test` in `extension/`, the same gate every pipeline role
+already runs — this ticket adds no gate and weakens none) fails on the
+written result, restoring the tree from a pre-write snapshot. A run that
+clears every check commits exactly the paths it edited and nothing else —
+never `git add -A`, which would sweep in unrelated dirt and would commit
+the proposal file itself since it lives under `.swarmforge/` — staging only
+the paths git does not already track and unstaging them again on a failed
+add/commit, so a failure never leaves a partial commit sitting in the
+index. Invariant 3: a run that cleans nothing always states which of the
+six declared reasons applied (`nothing-ranked`, `no-cleanup-proposed`,
+`wrong-item`, `envelope-exceeded`, `assertion-would-change`,
+`gate-failed`) — a quiet no-op is otherwise indistinguishable from a clean
+repository. New reference doc: `docs/reference/BL-1015-boy-scout-run.md`,
+cross-linked from BL-1014's own doc and `docs/index.md`.)
+Prior entry —
+BL-1066: the panel's mean-ticket-time
+metric recomputed on the 2-second stage-poll tick, and one computation
+walked `git log --follow` once per closed ticket — 794 `.yaml` files under
+`backlog/done/` on this host (the lister recurses into milestone
+subdirectories, so the corpus is larger than what sits flat in the
+directory), at ~0.128s per walk, about 102 seconds of git per computation
+scheduled every 2 seconds. The measured host effect was sustained
+multi-core git saturation and `[git] <defunct>` zombies. The corrected
+diagnosis (recorded because it changes the fix): `gitFollowHistory` uses
+`execFileSync`, so one call's 794 walks always ran strictly sequentially —
+the concurrency was between overlapping/repeated invocations of a call that
+was simply far too slow for its own timer, not a fan-out within one call. A
+new pure, `vscode`-free module, `extension/src/metrics/metricsTickGate.ts`,
+is now owned by `swarmPanel.ts` as a persistent private field: a tick may
+never re-enter a computation for the same target path that is still
+running, and may not start a new one until the standing value has aged
+past a 5-minute refresh interval — every tick still republishes a complete
+metrics object, it is simply not recomputed on every one. Re-pointing the
+panel at a different target (`updateTarget`) takes effect immediately
+because the gate is keyed by subject, so a switch never serves the
+previous repo's stale mean for the rest of the interval.
+`computeMeanTicketTime` (`swarmMetrics.ts`) itself no longer shells one
+`git log --follow` per file: it runs a single
+`git log --full-history -M --name-status -- backlog`, indexes every
+arrival (rename or add) by the path arrived at, and reads each ticket's
+activation time out of that shared index by walking its rename chain —
+one git subprocess per computation regardless of corpus size
+(`MEAN_TICKET_TIME_GIT_SUBPROCESS_BOUND = 1`, exported and asserted).
+`--full-history` and `-M` are both load-bearing for correctness, not
+performance flags: default git history simplification silently prunes a
+side branch whose net effect on `backlog/` was nothing — exactly the shape
+of a reopen-then-reclose merged back in — and was measured to drop real
+commits on the live repo without them. Checked against a deterministic
+101-ticket sample of the live `backlog/done/` corpus: 98 identical
+durations between the old and new algorithm, 0 that differ, 0 lost, 3
+tickets the old per-file `--follow` could not measure that the new walk
+can. One pre-existing, deliberately-unchanged semantic: a ticket's
+measured duration ends at its file's LATEST arrival at its current path,
+so a ticket re-filed after close still reports a duration inflated by the
+time until the re-file — unchanged from pre-BL-1066 behavior and pinned by
+a named test; flagged for the specifier as a possible separate ticket, not
+addressed here. Measured on this host: git processes per computation 801 →
+1, wall clock ~89s → ~815ms, on a schedule of every 2s → every 300s. No
+new extension command or setting; the panel's mean-ticket-time tile still
+updates and refreshes, now on its slower cadence, with correctness
+unchanged and the per-tick git-subprocess storm gone. Architecture diagram
+(`docs/diagrams/architecture.mmd`) updated with the new `metricsTickGate.ts`
+node and its edge into `swarmMetrics.ts`.)
+Prior entry —
+BL-1058: the entire shell test lane was
+dark on a GNU/Linux host. `swarmforge/scripts/test/lib/tmp_cleanup.sh`
+created its registry with `mktemp -t swarmforge-tmp-cleanup-registry` —
+BSD/macOS syntax, where the operand is a prefix; GNU coreutils reads the
+operand as a TEMPLATE and requires three trailing X's, so the call was a
+hard error (`mktemp: too few X's in template ...`). Every one of the 83
+shell test files that source this helper does so at the top under
+`set -euo pipefail`, so the failed command substitution killed the script
+before a single test body ran — including the helper's own suite, which is
+why nothing caught this until the host moved from macOS to WSL2/Linux on
+2026-08-22. The call is now `mktemp "${TMPDIR:-/tmp}/swarmforge-tmp-cleanup-registry.XXXXXX"`:
+an explicit path template with six X's and no dialect-specific flag,
+accepted identically by both userlands; TMPDIR is still honoured so
+dropping `-t` does not silently relocate anyone's fixtures. A registry that
+still cannot be created now fails loud and by name (naming the tmp-cleanup
+registry and the directory), rather than propagating mktemp's own message
+and leaving `set -u` to surface an unbound-variable error at some later,
+unrelated `register_tmp_dir` call. BL-801's design — the registry as a FILE
+keyed per top-level process, swept by a `while read` EXIT trap that touches
+no array index — is untouched; only the creation call changed. The seam
+that makes either dialect's exclusive syntax catchable on either host going
+forward is a new mktemp shim on PATH modelling exactly one userland at a
+time (`swarmforge/scripts/test/lib/mktemp_dialect_shim.sh`), with one
+implementation and three consumers (the shell suite sources it, the
+acceptance handlers exec it as a CLI, the property test drives it through
+the same CLI) so no lane can end up modelling a userland the others do not.
+Hardener verification, same ticket: `test_tmp_cleanup_lib.sh` 17/17
+(scenarios 07-09 cover init under both dialects, the sweep across every
+dialect × registration-site × ending combination, and the fail-loud path),
+the property test 3/3 against both declared invariants, acceptance 9/9,
+the full standing guard sweep 13/13, BL-113 Gherkin mutation 20/20 killed.
+Non-vacuity was proven by hand-reverting the fix and reproducing the
+original "too few X's" failure verbatim, then restoring it and reconfirming
+green. TOOLING FALLBACK: shell-only, no `.ts`/`src` touched, so
+Stryker/CRAP/DRY do not apply — the shell lane's only gate is its own unit
+suite, and the hardener compensated with the hand-mutation above rather
+than reporting a mutation/CRAP result that was never run. No extension
+command, setting, or UI changed — pure test infrastructure, and the class
+of failure this ticket exists to close (a bare mktemp dialect error at
+source time, silencing every test in the file) is now caught by the
+helper's own suite instead of only discoverable by a host migration.)
+Prior entry —
+BL-1061: two coupled defects in
+`swarmforge/scripts/tunnel_ownership_lib.sh`'s orphan reap, landed together
+because fixing one alone would have been worse than fixing neither. (1) The
+reap had never worked on a GNU/Linux host: candidate enumeration used
+`pgrep -fl -- "run $name"` — `-f` matches on the full command line
+correctly, but `-l` decides what is *printed*, and BSD/macOS prints the full
+argument list while procps-ng (Linux) prints only the process name, so
+`tunnel_decide_orphans` — which looks for a `run <name>` token pair — was
+handed lines shaped `12345 bash` and matched nothing. `pgrep -f` still
+narrows the pids; the listing now goes through `ps -o pid= -o args=`, POSIX
+on both userlands, and the word-boundary decision itself is untouched. (2)
+`extension/test/bl787NamedTunnelInvariants.property.test.js` bound the
+operator's real production tunnel name, `swarmforge-bubble`, at three fixture
+sites — not `bl857TunnelOwnershipInvariants.property.test.js`, which the
+ticket originally (and, per a same-day specifier amendment recorded in the
+ticket, wrongly) named; bl857 mentions the production name once, in a
+comment forbidding it, and routes every fixture through `uniqueName()`.
+Every fixture name now comes from a new shared helper,
+`extension/test/helpers/fixtureTunnelName.js`, which refuses the production
+name outright. The coupling: while the reap silently no-opped, the
+production-name binding was inert — nothing was ever selected, so nothing
+was ever signalled; repairing the enumeration is exactly what arms a reap
+scoped to `swarmforge-bubble` to reach the operator's live tunnel, so
+shipping the enumeration fix without the fixture-name fix would have been
+strictly worse than shipping neither. bl857's suite also now sweeps leaked
+fixture tunnels before its first process-table assertion, selecting by the
+fixture's own throwaway temp path rather than by tunnel name — a
+name-matched sweep would itself select the operator's tunnel, the exact
+hazard under test. New coverage: a real-process shell integration test
+(`test_bl1061_tunnel_reap_enumerates_full_command_lines.sh`) driving the
+actual reap against real fixture processes, and a property suite
+(`bl1061TunnelFixtureIsolation.property.test.js`, 5/5 acceptance scenarios
+registered in `specs/pipeline/steps/index.js`) proving the two declared
+invariants — a fixture can never bind a name any outside process could be
+serving, and a run's reap can never select a pid it did not create — against
+the lib's pure decision seam, with the operator's real tunnel present only
+as a fabricated candidate line, never as a live target. Verification: bl857
+3/3 (was 1/3), bl787 3/3, bl1061 5/5, full acceptance 5/5, BL-113 Gherkin
+mutation 2/2 killed, default unit lane green throughout, the operator's real
+tunnel alive and untouched at every check. No `.ts`/`src` production files
+touched outside the shell lib, so CRAP/DRY/Stryker do not apply; no
+extension command, setting, or UI changed. Documented in
+`docs/how-to/named-tunnel-bubble-musicalsifu.md`'s "Tunnel ownership and
+orphan reaping" section and troubleshooting table.
+Prior entry —
+BL-1033:
+`bl1025_expedite_approval_property_runner.bb` created its fixture temp root
+at the top of the file and removed it with `fs/delete-tree` at the bottom,
+at top level, in no `try`/`finally` and behind no shutdown hook — reached
+only when every preceding form completes. The runner's own `g` git helper
+throws `ex-info` on any non-zero git exit, so a throw during fixture setup
+exited before that last form and left a `bl1025-prop-*` directory behind
+permanently, the exact BL-971 trap
+(`extension/test/tempDirTrapGuard.test.js`, in the default unit lane) two
+sibling runners in the same directory had already been bounced under and
+fixed. The runner now adds a JVM shutdown hook that deletes the root if it
+still exists, keeping the happy-path `delete-tree` as the fast path — the
+hook is an abnormal-exit backstop, not a replacement, and covers a throw, a
+mid-run `System/exit`, and SIGTERM; SIGKILL is named as uncovered rather
+than silently claimed. Writing the tests surfaced three findings that would
+otherwise have shipped fake coverage: the property's own leak detector used
+`fs/glob`, which does not match directories, so it passed vacuously with the
+fix removed until switched to listing the directory and filtering by name;
+the acceptance handler's forced-throw call was floored at 17 (the deepest
+call that genuinely exits the run before the happy-path delete), replacing
+call 20, which proved nothing because failure past call 17 is recorded as
+an ordinary property failure that still reaches the happy path; and the
+throw-propagation property is scoped to git calls that actually throw
+out of the run, since one of them (`is_qa_ancestor.sh`) is a predicate whose
+non-zero exit is a legitimate "no", not a failure. The runner's own
+assertions and its 32-case exhaustive sweep are untouched — this ticket is
+about cleanup, not about making the runner stop failing on legitimate
+throws. No extension command, setting, or UI change — pure test
+infrastructure, and it clears `tempDirTrapGuard.test.js`, which had been
+red at HEAD for every pipeline role to baseline. Hardener pass, same
+ticket: runner 32/32, new property runner 30 runs / 20 distinct throw
+points all floors met, shell integration suite 4/4 (including a real
+SIGTERM kill mid-run), BL-113 Gherkin mutation 2/2 killed, and the standing
+`tempDirTrapGuard` guard now clean over the whole `swarmforge/scripts`
+tree — the BL-1028 hardening pass had ruled this same violation out of its
+own scope and pointed at this ticket to fix it; it is now closed.
+Prior entry —
+BL-1028: `promote_and_route_next.sh`
+staged its `paused → active` rename with `git mv` and then asked
+`commit_integrity_cli.bb` to commit it, but answered every non-zero exit —
+`:no-git-dir`, `:lock-timeout`, `:add-failed`, `:commit-failed`,
+`:verify-mismatch`, and a close-guard rejection alike — with a raw, unlocked
+`git add`/`git commit` fallback. That `||` fires only when the CLI is
+present and refused (the CLI-absent case already has its own `else`
+branch), so the fallback's entire job was to override refusals, including
+the two shapes — `:lock-timeout` and `:verify-mismatch` — that mean a
+concurrent writer is live in the shared master checkout, exactly the case
+the lock exists to serialise; commit_integrity's own header says callers
+must never answer with a hand-rolled commit that races the roles committing
+to `main`, and this caller did precisely that. When the fallback itself
+failed, the staged `git mv` was left in the shared index with nothing to
+unwind it. A refusal is now obeyed: the two paths this script staged
+(`backlog/paused/<ticket>`, `backlog/active/<ticket>`) are snapshotted with
+`ls-files --stage` before the `mv` and replayed with `update-index
+--index-info` on refusal — never a blanket `git reset`, which on this
+shared checkout would also discard another role's staged work — restoring
+the ticket to `backlog/paused/` and exiting non-zero naming the refusal
+reason. Reason extraction reads both refusal shapes: a `:success false`
+refusal prints its JSON on stdout plus a `FAILED (reason)` line on stderr,
+while a close-guard rejection exits before the JSON is ever produced and
+prints only a `CLOSE BLOCKED` line — reading just one shape reported
+`unknown` for the other. The CLI-absent `else` branch (a target repo that
+never had the integrity guard) is deliberate degradation and stays
+unchanged, now logging out loud that it committed without the guard so
+that path is never mistaken for a guarded one. No extension command,
+setting, or UI change — this is a swarm-machinery correctness fix to an
+existing promotion call site, not user-visible behavior. Hardener pass,
+same ticket: shell suite 8/8, property runner 30/30 across 5 refusal
+shapes plus novel/unknown reason names, acceptance 10/10, BL-113 Gherkin
+mutation 8/8 killed; independently re-derived one non-vacuity break beyond
+the coder's own authoring-time proofs (keying the refusal guard on
+`INTEGRITY_RC == 1` instead of `!= 0` survives the shell suite, which only
+ever exits 1, but is killed by the property runner's non-1 exit codes); a
+pre-existing, separately-ticketed guard failure (BL-1033) was confirmed an
+ancestor of both `main` and `origin/main` before this merge, and left
+alone as not this parcel's fix.
+Prior entry —
+BL-1032: `tmuxReaperGuard.js` (BL-817) now
+scopes by the HAZARD — can this file cause a real tmux server to run —
+instead of by the presence of a quoted `'new-session'` token anywhere in the
+file. The token-only check was RED on
+`bl1018SingleRoleRepairNeverKillsServerSteps.js` precisely because that file
+is correct: it spawns only `bb -e` to evaluate resolved tmux command vectors
+as data, asserting `'new-session'`/`'kill-server'` inside `filter`/`assert`
+expressions, and never spawns tmux itself — the only ways to green the old
+check were to add a `track()` call guarding nothing or to obfuscate the
+string. `startsTmuxServer(text)` now requires a server-creating subcommand
+(`CREATES_A_SERVER`: `new-session` or `start-server`) plus either of two
+hazard routes — the file spawns `tmux` itself (`SPAWNS_TMUX`), or it writes
+its own `tmux` onto `PATH` (`WRITES_TMUX_ON_PATH` + `PREPENDS_TO_PATH`), the
+shape `bl958ControlPlaneLossSteps.js` uses and the one a naive
+literal-spawn-only fix would have silently exempted. The
+server-creating-subcommand requirement on both routes is what keeps
+query-only files (`bl458`, `bl571`, `bl952`, `tmuxDoubleAnswers` — `tmux
+list-sessions`/`has-session`, which fail rather than start a server) and
+PATH-stub no-ops (`bl571`, `bl952`'s `exit 0` stubs) out of scope, so the fix
+does not demand reaper calls in the opposite, equally-wrong direction.
+Hardener pass, same ticket: a hand-authored mutation sweep (Stryker/CRAP/DRY
+do not reach this plain-JS file outside `extension/src`) found two
+mutation-uncovered gaps in the new logic — dropping `start-server` from
+`CREATES_A_SERVER`, and dropping the `PREPENDS_TO_PATH` conjunct from route
+2 — both survived because no existing fixture isolated them; closed with new
+unit tests plus a new property-generator kind (`stubber-unreachable`, a
+PATH-write with no PATH-prepend). Verified: `tmuxReaperGuard.test.js`
+15/15, property suite 2/2 invariants across 5 generated kinds, Gherkin
+acceptance mutation 2/2 killed, full default unit lane 8220/8221 (the one
+failure is the pre-existing, separately-tracked BL-1033 defect named in this
+ticket's own scope, confirmed still an ancestor of both `main` and
+`origin/main`). No extension command, setting, or UI change — this is a
+test-infrastructure gate correcting its own false-positive/false-negative
+scoping, not user-visible behavior. See
+[BL-817: Fixture Tmux-Server Reaper Adoption](BL-817-fixture-tmux-server-reaper-adoption.md#the-standing-gate-tmuxreaperguard).
+Prior entry —
+BL-1048: the Pipeline Board's live stage
+scan (`pipeline_stage_cli.bb`) resolved a ticket's role from only a role's
+`in_process/` mailbox — the OPENED state. A `git_handoff` that had been
+routed, delivered and woken, but whose recipient had not yet run
+`ready_for_next.sh`, named its ticket only in `inbox/new/`, a directory the
+scan never opened; the ticket reached no `{ticket -> role}` pair,
+`filter-active` dropped it, and the board's BL-473 not-started sentinel
+rendered it NS. That made a successful handoff read as a regression: the
+moment a parcel left one role's `in_process/` for the next role's `new/`,
+the ticket fell off the stage map and moved backwards to not-started — and
+blinded the board to exactly the state Article 2.4 puts a ten-minute chase
+clock on. `role-ticket-pairs-for` now scans `[:new :in_process]` through the
+same `mailbox-dir` resolver and `batch_*` enumeration the `in_process` scan
+already used — a source widening only: `ticket-id-from-headers`,
+`reconcile-stage-map` and `filter-active` are untouched, and
+reconciliation's existing most-downstream-wins collapse absorbs the wider
+transition window without reopening BL-464's double row. Live before/after
+against the project root, with all four active tickets' parcels sitting at
+the coder's door: `{}` → `{"BL-1032":"coder","BL-1039":"coder",
+"BL-1048":"coder","BL-1038":"coder"}` — 4 of 4 active tickets were rendering
+not-started, worse than the 2 of 4 originally reported. Hardener pass, same
+ticket: closed an unrelated cross-step fixture leak in the acceptance steps
+(`cleanupFixture(ctx)` now runs before each validating `Given` throw, not
+only in the `When` step's own `finally`) — the same leak shape already
+documented against `bl931RotatePackGateSteps.js`. Verified: shell suite
+20/20 (8 new checks), `pipeline_stage_lib` runner all pass, acceptance 6/6,
+property test 1/1 encoding both declared invariants, consumer sweep
+exhaustive — BL-464 5/5, BL-488 4/4, BL-489 3/3, BL-503 8/8, `conciergeTick`
++ `readLiveRoleHeldTicketsCli` 119/119. BL-487 and BL-814 remain red,
+confirmed pre-existing and already ticketed as BL-973 (stale bb fixture
+copy-list, unrelated to this parcel). No extension command, setting, or UI
+change beyond the board now rendering delivered-but-unopened parcels in
+their holding role's column instead of NS — a distinct glyph for
+delivered-vs-opened was deliberately left unscoped, per the ticket's
+`approval_context`, pending a human ruling. Prior entry —
+BL-1037: the build-freshness watchdog
+now restarts a healthy front desk only once it has served the build it was
+moved to, instead of once per commit-plus-grace. This swarm lands commits
+faster than one grace-plus-recompile-plus-respawn cycle completes: 24
+`build-stale-detected` events and 12 respawns in 105 minutes on
+2026-08-22, staleness re-detected 33 seconds to 14 minutes after the
+previous restart finished paying for itself — each restart also costing a
+Telegram conflict window (BL-1036) and, if it followed a stall, a tight
+loop (BL-1035). The bound: a child restarted onto a fresh build must
+complete one poll cycle on it before the watchdog may restart it again,
+reusing the same "heartbeat at or after this child's own spawn" fact
+BL-1035 already uses to judge staleness. The staleness debt is **carried,
+not cleared** while deferred — `build-stale-since-ms` is left exactly as
+it was, so the restart already owed fires the moment the child serves and
+lands on `main`'s newest build; clearing it instead would forget a
+staleness already seen and reopen the 2h23m stale-serving window BL-582
+exists to close. Defaults `true` for callers that cannot observe serving
+(the bridge has no poll heartbeat, so it keeps BL-582's original behavior
+rather than being silently exempted from the watchdog by a fact it can't
+check). Deferrals log as `build-stale-deferred`, naming the build and that
+a restart is still owed, so a pause is visible rather than inferred from a
+restart that didn't happen. Full detail in the BL-582 entry below, amended
+in place rather than duplicated. Hardener pass, same ticket: extracted the
+served/not-served comparison into a pure `build-served-fact?` (mirroring
+BL-1035's own `own-heartbeat-ms` shape) so its `>=` boundary is directly
+testable rather than only reachable through an already-resolved boolean —
+behavior-preserving, no observable change. Prior entry —
+BL-1041: a new CLI,
 `swarmforge/scripts/rescue_orphaned_work.bb`, rescues work sitting outside
 any branch (a stash entry with no worktree, most often) without the rescue
 itself becoming the way the work gets lost. On 2026-08-22 a reviewed-sound
@@ -20,13 +758,7 @@ brand-new untracked file. The role whose worktree is touched is now told: a
 capped (80-char) `note` names the file count and the commit sha, trimming
 the reason before ever trimming the sha, since the sha is what makes the
 note actionable. See
-[the rescue how-to](../how-to/BL-1041-rescue-orphaned-work.md). Sibling
-landing, same session — **BL-1037**: the build-freshness watchdog now
-restarts a healthy front desk only once it has served the build it was
-moved to, bounding restarts to fewer than commits under a fast-moving
-`main` while still carrying the staleness debt forward rather than
-dropping it; see the BL-582 entry below, amended in place, for the full
-detail. Prior entry —
+[the rescue how-to](../how-to/BL-1041-rescue-orphaned-work.md). Prior entry —
 BL-1036: a front-desk restart now releases
 its Telegram `getUpdates` slot instead of leaving the replacement to poll
 straight into a 409 conflict, and the supervisor log now closes every

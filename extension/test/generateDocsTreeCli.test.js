@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/generate-docs-tree');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkTmp() {
   return fs.realpathSync(mkTmpDir('sfvc-docs-tree-cli-'));
@@ -68,9 +69,7 @@ async function runCli(root, envOverrides = {}) {
 // empty, since nothing was actually translated).
 test('bilingual-05: with no MT_API_KEY configured, the CLI still publishes successfully with fields flagged untranslated', async () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 
   mkdirp(path.join(root, 'backlog', 'active'));
   fs.writeFileSync(
@@ -102,9 +101,7 @@ test('bilingual-05: with no MT_API_KEY configured, the CLI still publishes succe
 // undefined leaking through.
 test('the compiled CLI runs standalone as a subprocess and prints a valid, schema-versioned docs-tree.json to stdout', () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 
   mkdirp(path.join(root, 'backlog', 'active'));
   mkdirp(path.join(root, 'docs', 'diagrams'));

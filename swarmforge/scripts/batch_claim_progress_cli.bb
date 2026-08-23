@@ -10,10 +10,17 @@
 ;;     Refreshes last-progress instant when commit differs from the
 ;;     sidecar's own last-recorded commit; no-ops otherwise. Requires an
 ;;     existing sidecar (written at claim time by ready_for_next_batch.bb).
-;;   observe <in-process-file> <now-ms> <staleness-ms>
-;;     Prints "SILENT" or "STALE_SUSPECT <parcel-id> <age-ms>" - never
+;;   observe <in-process-file> <now-ms> <staleness-ms> [role] [clean|dirty]
+;;     Prints "SILENT", "STALE_SUSPECT <parcel-id> <age-ms>" or (BL-1076)
+;;     "SUPPRESSED_VISIBLE_WORK <parcel-id> <age-ms> worktree-dirty" - never
 ;;     moves, deletes, or re-delivers the handoff file itself (invariant 2:
 ;;     this subcommand has no code path that touches the handoff file).
+;;     BL-1076: `role` resolves that role's own tolerance from the built-in
+;;     map (hardender gets 90 minutes), with <staleness-ms> as the base for
+;;     every other role; the last argument supplies the owner's worktree
+;;     dirtiness, the second progress signal beside HEAD. Both are optional
+;;     and default to "no role override" and "clean", which is what every
+;;     pre-BL-1076 caller of this subcommand meant.
 ;;   retire <in-process-file>
 ;;     Calls the REAL handoff_lib.bb/remove-sidecars-of! (the exact function
 ;;     done_with_current_batch.bb runs on every completing batch item) -
@@ -55,16 +62,24 @@
           (println (if advanced? "PROGRESSED" "UNCHANGED"))))
 
       "observe"
-      (let [[fp now-ms staleness-ms] rest-args
+      (let [[fp now-ms staleness-ms role dirt] rest-args
             progress (read-progress fp)
             now-ms'  (parse-long now-ms)
+            base-ms  (parse-long staleness-ms)
+            ;; BL-1076: an absent role resolves to the base, so the
+            ;; three-argument form behaves exactly as it did before.
+            stale-ms (batch-claim-progress-lib/resolve-stale-threshold-ms role base-ms nil)
+            dirty?   (= "dirty" dirt)
+            age-ms   (batch-claim-progress-lib/progress-age-ms progress now-ms')
             decision (batch-claim-progress-lib/decide-batch-claim-observation
-                      progress now-ms' (parse-long staleness-ms))]
+                      progress now-ms' stale-ms dirty?)]
         (case decision
           :silent (println "SILENT")
           :stale-suspect
-          (println (str "STALE_SUSPECT " (:parcelId progress) " "
-                         (batch-claim-progress-lib/progress-age-ms progress now-ms')))))
+          (println (str "STALE_SUSPECT " (:parcelId progress) " " age-ms))
+          :suppressed-visible-work
+          (println (str "SUPPRESSED_VISIBLE_WORK " (:parcelId progress) " " age-ms
+                         " worktree-dirty"))))
 
       "retire"
       (let [[fp] rest-args]

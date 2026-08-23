@@ -90,6 +90,20 @@
 %% one open incident to .swarmforge/incidents/control-plane.json, and
 %% swarm_ensure.bb decides recovery (relaunch roles from the persisted
 %% launch scripts, or halt loudly when none exist) through the same lib.
+%% BL-1066 (2026-08-22): swarmMetrics.ts's mean-ticket-time computation was
+%% one `git log --follow` per closed ticket (794 on this host, ~102s of git
+%% total) driven straight off the panel's 2-second stage-poll tick - a
+%% ~102s job on a 2s timer. metricsTickGate.ts is a new, pure, vscode-free
+%% module owned by PANEL (one instance, a private field surviving across
+%% ticks) that decides whether a tick may recompute: never while a
+%% computation for the same subject (target path) is still running, and not
+%% again until the standing value has aged past a 5-minute refresh
+%% interval; every tick still republishes a complete metrics object, only
+%% recomputing on the slower cadence. swarmMetrics.ts itself now walks
+%% `git log --full-history -M --name-status -- backlog` ONCE per
+%% computation and indexes every ticket's arrival out of that shared index,
+%% instead of one walk per file - one git subprocess per computation
+%% regardless of corpus size, no change in reported values.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -102,6 +116,7 @@ flowchart TB
     TRANSPORTHEALTH["transportHealth.ts\n(delivery-level health:\ndead-letters, stalls, canary)"]
     CANARY["canaryInjector.ts\n(schedules synthetic\ncanary round-trips)"]
     METRICS["swarmMetrics.ts"]
+    METRICSGATE["metricsTickGate.ts\n(BL-1066: re-entrancy + refresh-interval\ngate, pure/vscode-free, owned by PANEL)"]
     DELIVERYMETRICS["deliveryMetrics.ts\n(velocity/burndown/cycle-time/\nforecasts, git-history-derived)"]
     COSTMETRICS["costTelemetry.ts / resourceTelemetry.ts\n(token cost from transcripts,\nRSS/CPU trends)"]
     HOLISTICUI["holisticProjections.ts / holisticUiHtml.ts\n(self-contained dev-state page,\nserved at bridge root)"]
@@ -155,7 +170,8 @@ flowchart TB
   PANEL --> DAEMONHEALTH
   PANEL --> TRANSPORTHEALTH
   PANEL --> CANARY
-  PANEL --> METRICS
+  PANEL --> METRICSGATE
+  METRICSGATE -->|gate.run() decides:\ncompute now or\nrepublish standing value| METRICS
   PANEL --> BACKLOGRW
   PANEL --> BOUNCE
   PANEL --> PRCREATOR
@@ -202,7 +218,7 @@ flowchart TB
   classDef substrate fill:#8250df,color:#fff,stroke:#4c2889;
   classDef state fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef gh fill:#57606a,color:#fff,stroke:#32383f;
-  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL host;
+  class EXT,LAUNCHER,TMUXCLIENT,TAILER,DISCOVERY,STATE,DAEMONHEALTH,TRANSPORTHEALTH,CANARY,METRICS,METRICSGATE,DELIVERYMETRICS,COSTMETRICS,HOLISTICUI,BACKLOGRW,BOUNCE,MSGBUS,PRCREATOR,BRIDGE,COMPANIONMANIFEST,PANEL host;
   class TILES webview;
   class SOCKET,PANES substrate;
   class ROLESTSV,HANDOFFS,DAEMONDIR,LEANDIR,CEREMONYDIR,BACKLOGDIR state;

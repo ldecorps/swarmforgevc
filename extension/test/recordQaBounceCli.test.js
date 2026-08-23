@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/record-qa-bounce');
 const { readQaBounceRecords } = require('../out/metrics/qaBounceStore');
 const { USAGE } = require('../out/tools/recordQaBounceArgs');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // BL-454: the go-forward writer CLI QA runs at bounce time. Flag contract
 // (--ticket/--role/--type/--class/--commit, plus BL-608's --by/--evidence)
@@ -22,9 +23,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {

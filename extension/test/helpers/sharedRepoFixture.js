@@ -24,6 +24,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { mkTmpDir, mkProcessTmpDir } = require('./tmpDir');
 const { execFileSync } = require('child_process');
 
 let templateDir = null;
@@ -39,8 +40,18 @@ function gitIn(dir, args) {
  */
 function seedTemplateOnce() {
   if (templateDir && fs.existsSync(templateDir)) return templateDir;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1039-seed-template-'));
-  gitIn(dir, ['init', '-q']);
+  // mkProcessTmpDir, not mkTmpDir: BL-420's helper sweeps per TEST and its
+  // shared sibling per FILE, and the template must outlive both or the saving
+  // evaporates - it is seeded once and reused across files. Allocated through
+  // the shared helper all the same, so this file carries no raw mkdtemp.
+  const dir = mkProcessTmpDir('bl1039-seed-template-');
+  // `-b main` deliberately, not bare `init`: the template's branch name is part
+  // of the contract callers see. Without it the branch is whatever the host's
+  // `init.defaultBranch` happens to be, so a caller doing `git checkout main`
+  // passes or fails by machine configuration rather than by its own subject -
+  // and several callers do exactly that (bounceRevertCheck's `initRepo` seeded
+  // `init -q -b main` for this reason before it was converted).
+  gitIn(dir, ['init', '-q', '-b', 'main']);
   gitIn(dir, ['config', 'user.email', 't@t']);
   gitIn(dir, ['config', 'user.name', 't']);
   gitIn(dir, ['commit', '-q', '-m', 'init', '--allow-empty']);
@@ -60,7 +71,7 @@ function seedTemplateOnce() {
  */
 function checkoutSeededRepo(prefix = 'bl1039-repo-', register = null) {
   const template = seedTemplateOnce();
-  const dest = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dest = mkTmpDir(prefix);
   fs.cpSync(template, dest, { recursive: true });
   if (typeof register === 'function') register(dest);
   return dest;

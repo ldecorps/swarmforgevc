@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatSuboptimalityVerdictLine, main } = require('../out/tools/suboptimality-verdict-line');
 const { persistReworkSignal } = require('../out/metrics/reworkObservatoryStore');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'suboptimality-verdict-line.js');
 
@@ -18,10 +19,7 @@ function git(cwd, args) {
 
 function mkCliFixture() {
   const repo = mkTmp();
-  git(repo, ['init', '-q']);
-  git(repo, ['config', 'user.email', 't@t']);
-  git(repo, ['config', 'user.name', 't']);
-  git(repo, ['checkout', '-q', '-b', 'main']);
+  copySeededRepoInto(repo);
   fs.mkdirSync(path.join(repo, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(repo, '.swarmforge', 'roles.tsv'), `specifier\tmaster\t${repo}\tswarmforge-specifier\tSpecifier\tclaude\ttask\n`);
   return repo;

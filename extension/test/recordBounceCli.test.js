@@ -24,9 +24,7 @@ function git(cwd, args) {
 }
 
 function initRepo(root) {
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
 }
 
 function writeRolesTsv(root) {
@@ -472,6 +470,7 @@ for (const [items, reason] of [
 // ── BL-954: the recording is never contingent on the revert check ──────────
 
 const { revertCheckSeam } = require('../out/tools/record-bounce');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 test('BL-954: the output carries a revertCheck verdict alongside the record', async () => {
   const root = mkRepo();

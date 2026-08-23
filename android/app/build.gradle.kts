@@ -49,6 +49,19 @@ android {
     }
 }
 
+// BL-845: WakeSpotterTest reads src/main/res/values/themes.xml directly, to
+// assert the bubble colours it declares in Kotlin agree with the resource
+// values mirrored there by hand (no import bridges that boundary). Gradle
+// cannot infer that dependency from a runtime File read, so without this the
+// test task stays UP-TO-DATE after a lone themes.xml edit and the drift guard
+// silently does not run - which is exactly the failure it exists to catch.
+tasks.withType<Test>().configureEach {
+    inputs
+        .file("src/main/res/values/themes.xml")
+        .withPropertyName("bubbleColourResources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")

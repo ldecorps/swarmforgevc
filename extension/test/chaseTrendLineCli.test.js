@@ -6,6 +6,11 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { computeChaseTrend, formatChaseTrendLine, CHASE_TREND_WINDOW_DAYS, main } = require('../out/tools/chase-trend-line');
 
+// BL-1038-EXEMPT: one test, running the compiled CLI against the real repo to
+// prove it prints its line at all - the wiring check that a fixture root cannot
+// make. The trend computation itself is covered by this file's fixture-driven
+// tests above.
+
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'chase-trend-line.js');
 
 function mkFixtureRoot() {

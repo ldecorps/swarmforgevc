@@ -1170,9 +1170,20 @@ changes, config tweaks, pure refactors with existing coverage).
      declaration the coordinator promoted is visible even when the sender's
      own worktree has not yet merged it; the sender's working tree is the
      fallback for a root with no resolvable ref (BL-992)
-   - If the flag is ON and required_stages is valid, computes the next required
-     stage after the current one
-   - Rewrites the handoff `to:` field to skip directly to that stage
+   - If the flag is ON and required_stages is valid, computes the first
+     declared stage strictly after the sender (`next-required-stage`)
+   - **A declared stage can never be jumped, even by the sender's own literal
+     `to:` field (BL-991).** If the literal recipient is later in canonical
+     order than that next declared stage, the handoff `to:` field is
+     rewritten to the next declared stage instead — this is true whether or
+     not the literal recipient is itself a declared stage; membership is no
+     longer permission to skip an earlier declared stage. Otherwise (the
+     literal recipient is not later than the next declared stage, or no
+     further stage is declared after the sender) delivery proceeds exactly
+     as addressed, which is what still lets BL-606's pruning of an
+     *undeclared* stage through unchanged. A binding rewrite is recorded
+     separately from a skip (below) — the stage it redirects to is not
+     bypassed, it still runs, so it is never named as skipped.
    - Records the skipped stages in the handoff envelope and in a durable log
      — **recording runs for every forward hop regardless of declaration
      state** (absent, invalid, or the sender's worktree simply lacking the
@@ -1204,6 +1215,17 @@ never be silent.
 **Per-ticket visibility** — for any completed ticket, `git log` + the routing-skips
 log answer which stages actually ran. Skip recording is not a nice-to-have; it is
 load-bearing for post-hoc audit and debugging.
+
+**A declared stage is binding, not just visible (BL-991)** — a coder
+addressing QA directly on a ticket that declares the full chain is
+redirected to the next declared stage (cleaner), not delivered to QA;
+BL-951 made the jump visible, BL-991 stops it happening at all. This only
+constrains stages the ticket actually *declares* — an undeclared stage is
+still pruned exactly as BL-606 always pruned it, and sender judgement over
+where a bounce-fix returns to is untouched. Enforcement reaches only as far
+as routing already reaches: a backward bounce, a rejection/reroute detour,
+the kill switch below, and an unusable declaration all behave exactly as
+they did before this ticket.
 
 ### Kill-Switch Recovery
 
@@ -1805,17 +1827,47 @@ commit:
 
 - **Commit advanced** — the sidecar's last-progress instant refreshes; the
   item is healthy.
-- **No advance, under `batch_claim_progress_stale_threshold_minutes`**
-  (default 20 minutes) — normal mid-task quiet time; nothing happens.
-- **No advance past the threshold** — the item is a suspect. The sweep
-  sends a `note` (priority `00`) **to the coordinator only** —
-  `"<id> batch claim stale <N>m since progress, not re-delivered."` — past
-  `batch_claim_progress_cooldown_minutes` (default 30 minutes) since the
-  last suspect note for that same item.
+- **No advance, under that role's threshold** — normal mid-task quiet time;
+  nothing happens.
+- **No advance past the threshold, owner worktree DIRTY** (BL-1076) — the
+  claim is progressing by the other signal available, so nothing is sent.
+  The observation is **logged** as
+  `batch-claim-progress-suppressed <id> worktree-dirty <N>m`, never merely
+  dropped: a worktree that stays dirty forever must read as a suppressed
+  signal in the record rather than as an absent one.
+- **No advance past the threshold, owner worktree clean** — the item is a
+  suspect. The sweep sends a `note` (priority `00`) **to the coordinator
+  only** — `"<id> batch claim stale <N>m since progress, not re-delivered."`
+  — past `batch_claim_progress_cooldown_minutes` (default 30 minutes) since
+  the last suspect note for that same item.
+
+**The threshold is per role** (BL-1076). One flat 20 minutes judged every
+batch role, and HEAD movement was the only progress signal — so a hardener
+mid-Stryker, an hour of real work before the first commit with the edits
+sitting uncommitted, was surfaced as suspect. Measured 2026-08-22: three
+parcels surfaced at 20:40:46Z and again at 21:10:48Z, six coordinator notes
+in fifty minutes, none describing anything wrong. Resolution order, highest
+first:
+
+1. `config batch_claim_progress_role_stale_threshold_minutes <role> <n>` —
+   an operator override for that one role. An unusable value (zero,
+   negative, missing) is dropped, degrading to the built-in below rather
+   than to the base.
+2. `batch-claim-progress-lib/role-stale-threshold-ms` — the built-in map.
+   `hardender` gets 90 minutes.
+3. `config batch_claim_progress_stale_threshold_minutes` (default 20
+   minutes) — the base, for every role with no entry above.
+
+BL-528's task-mode ladder grants `hardender` the same 90 minutes from its
+own literal. The two are deliberately **not** shared: they answer different
+questions ("is the owner alive and working" there, "is this claim
+progressing" here) and may legitimately diverge.
 
 Same posture as the dropped-parcel sweep: the sweep never routes, assigns,
 promotes, re-forwards, or re-delivers the parcel itself — it only ever
-surfaces a named, aged suspect to the coordinator. It is deliberately
+surfaces a named, aged suspect to the coordinator — and BL-1076's third
+label widened what the sweep can SAY without widening what it can DO, since
+a suppressed observation sends nothing at all. It is deliberately
 separate from BL-528's task-mode claim-idle escalation ladder
 (nudge → bounce → halt): this mechanism assumes a live owner throughout and
 only ever answers "is it progressing", never "is it alive". The sidecar is

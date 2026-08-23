@@ -97,3 +97,18 @@ test('BL-1039: two in-place seedings are still isolated from each other', () => 
   execFileSync('git', ['-C', a, 'commit', '-q', '-m', 'in-a']);
   assert.equal(log(b), 'init', 'the other caller must observe the seeded history only');
 });
+
+// The template's branch name is part of the contract callers see, not an
+// incidental of the host. Before this was pinned, a converted caller running
+// `git checkout main` passed or failed by the machine's `init.defaultBranch`
+// rather than by its own subject - bounceRevertCheck.test.js seeded
+// `init -q -b main` itself for exactly that reason.
+test('BL-1039: the seeded repository is on `main`, whatever the host default branch is', () => {
+  const dir = checkoutSeededRepo('bl1039-branch-');
+  try {
+    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    assert.equal(branch, 'main');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

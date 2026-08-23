@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatEmitResult, main } = require('../out/tools/emit-cost-health-sidecar');
 const { lifecycleSnapshotPath, serializeLifecycleSnapshot } = require('../out/metrics/lifecycleSnapshot');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 // ── formatEmitResult ─────────────────────────────────────────────────────
 
@@ -31,9 +32,7 @@ function git(cwd, args) {
 
 function initFixture() {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
+  copySeededRepoInto(root);
   mkdirp(path.join(root, 'backlog', 'active'));
   mkdirp(path.join(root, 'docs', 'briefings'));
   git(root, ['add', '-A']);
@@ -117,10 +116,7 @@ test('running the CLI twice for an unchanged day does not create a duplicate com
 
 test('a missing .swarmforge/roles.tsv (no resolvable project root) exits non-zero rather than emitting nothing silently', async () => {
   const root = mkTmp();
-  git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 't@t']);
-  git(root, ['config', 'user.name', 't']);
-  git(root, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  copySeededRepoInto(root);
 
   await assert.rejects(() => runCli(root));
 });

@@ -21,11 +21,18 @@ const { readLiveRoleHeldTickets, RoleHeldTicketsComputationFailedError } = requi
 
 const FEATURE = 'a live role-held computation that did not run is distinguishable from one that found nothing';
 
-// The full, minimal set of load-file dependencies pipeline_stage_cli.bb's
-// `report` actually needs to run - kept in sync with the sibling fixtures
-// in extension/test/readLiveRoleHeldTicketsCli.test.js and
-// bl487BoardFreshnessWithoutCoordinatorSyncSteps.js.
-const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb'];
+// BL-973: DERIVED from pipeline_stage_cli.bb's real transitive load-file
+// closure, never hand-maintained. The hand-written list this replaces went
+// stale three times in three months - BL-911 added prompt_engine_lib.bb,
+// BL-967 added daemon_cycle_guard_lib.bb, BL-1029 added shell_quote_lib.bb -
+// and each time this feature went red with a bb stack trace naming a file no
+// scenario mentions. The entry point matters and is not handoff_lib.bb: this
+// fixture drives the CLI, which pulls pipeline_stage_lib.bb on top of
+// handoff_lib.bb's own set, so a guard pinned to the wrong script would green
+// a fixture missing its own CLI's direct dependency.
+const { computeClosure } = require(path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'lib', 'operatorRuntimeBbClosure.js'));
+const CLI_ENTRY_POINT = 'pipeline_stage_cli.bb';
+const REQUIRED_SCRIPT_FILES = [...computeClosure(REAL_SCRIPTS_DIR, CLI_ENTRY_POINT)].sort();
 
 function scoped(registry, pattern, handler) {
   registry.defineScoped(pattern, handler, FEATURE);
@@ -141,4 +148,6 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// BL-973: the effective copy set, exported so the closure gate can read what
+// this fixture ACTUALLY copies rather than parsing the source for a literal.
+module.exports = { registerSteps, BB_FIXTURE_CLOSURE: { entry: CLI_ENTRY_POINT, files: REQUIRED_SCRIPT_FILES } };

@@ -96,9 +96,37 @@
 ;; it. "No completed poll within the stall window" means genuinely stuck,
 ;; never merely quiet - EXCEPT during startup-grace-ms after started-at-ms,
 ;; when a nil heartbeat is expected (first long-poll cycle not done yet).
+;; BL-1043: the length of the grace a caller gets when it names a spawn time
+;; but no window. 90s, the same value cursor_bridge_supervisor.bb had already
+;; chosen for the only correctly-wired call site - a default that matches the
+;; reference rather than inventing a third number.
+(def default-startup-grace-ms 90000)
+
 (defn poll-heartbeat-stale?
-  ([last-heartbeat-ms now-ms stall-ms]
-   (poll-heartbeat-stale? last-heartbeat-ms now-ms stall-ms nil stall-ms))
+  ;; BL-1043: this used to be a 3-arity that dropped started-at-ms on the
+  ;; floor as nil. The grace clause below opens with (and started-at-ms ...),
+  ;; so with nil it could never fire: every caller of that arity had NO
+  ;; startup grace at all. It even passed stall-ms into the grace slot, which
+  ;; read like a deliberate, generous grace and was dead code never reached.
+  ;; Two supervisors (onboarder, negotiation_relay) called exactly it;
+  ;; onboarder-supervisor.log has a child declared stalled 2.00s after spawn
+  ;; against its declared 120000ms window, 7 times in 14 adjacent
+  ;; started->stalled pairs.
+  ;;
+  ;; So the grace-less arity is RETIRED rather than fixed in place. A caller
+  ;; may omit the grace LENGTH - that defaults - but omitting the spawn time
+  ;; is now an arity error at the call site instead of a silent loss of
+  ;; protection that reads as correct.
+  ([last-heartbeat-ms now-ms stall-ms started-at-ms]
+   ;; The one remaining accidental door: (:started-at-ms entry) reads nil on
+   ;; an entry that has not started yet, and supervisors compute this eagerly
+   ;; for every entry each tick. There is no grace to measure from a spawn
+   ;; time that does not exist, so this refuses to call the child stalled
+   ;; rather than degrading back to the immediate stall that was the defect.
+   ;; A caller that genuinely has no spawn time says so with the 5-arity.
+   (if (nil? started-at-ms)
+     false
+     (poll-heartbeat-stale? last-heartbeat-ms now-ms stall-ms started-at-ms default-startup-grace-ms)))
   ([last-heartbeat-ms now-ms stall-ms started-at-ms startup-grace-ms]
    ;; BL-1035: the heartbeat is a FILE
    ;; (.swarmforge/operator/front-desk-poll-heartbeat.json), rewritten by the
@@ -131,6 +159,19 @@
        false
        (boolean (or (nil? own-heartbeat-ms)
                     (>= (- now-ms own-heartbeat-ms) stall-ms)))))))
+
+;; BL-1037: the same "is this heartbeat THIS child's own" fact as
+;; poll-heartbeat-stale?'s own-heartbeat-ms above (a heartbeat file the bot
+;; rewrites per completed poll cycle and nobody resets at spawn, so a
+;; leftover heartbeat from the predecessor a fresh child was restarted onto
+;; must not be read as proof this child has served) - pulled out to its own
+;; pure, testable function rather than re-inlined at the one caller
+;; (front_desk_supervisor.bb's child-build-served?, which only supplies the
+;; two live values), so the >= boundary this shares with BL-1035's own guard
+;; is exercised directly rather than only reachable through check-one!'s
+;; already-resolved boolean parameter.
+(defn build-served-fact? [heartbeat-ms started-at-ms]
+  (boolean (and heartbeat-ms started-at-ms (>= heartbeat-ms started-at-ms))))
 
 ;; BL-582: the healthy-tick build-freshness clause, split out so the
 ;; "running" cond above stays readable and this decision carries its own

@@ -11,6 +11,14 @@ Feature: A forward hop that jumps stages is recorded whatever the ticket declare
     And the ticket "BL-951-probe" is active
 
   # BL-951 skip-recorded-regardless-of-declaration-01
+  # BL-991 removed the `full-chain` row. This outline is about a coder-to-QA
+  # hop being RECORDED whatever the declaration says; under BL-991's ruling a
+  # full-chain declaration no longer lets that hop happen at all - it is
+  # redirected to cleaner and skips nothing, so the row asserted a jump the
+  # declaration now forbids. `absent` and `invalid` both resolve to
+  # default-full, where sender judgement still stands, so both rows are
+  # untouched and this outline still covers exactly what BL-951 was for. The
+  # full-chain case now lives in BL-991's own scenario 01, in its binding form.
   Scenario Outline: A coder-to-QA hop records the skipped stages for every declaration state
     Given the ticket's required_stages declaration is <declaration>
     When the coder sends a git_handoff addressed to QA
@@ -21,7 +29,6 @@ Feature: A forward hop that jumps stages is recorded whatever the ticket declare
       | declaration |
       | absent      |
       | invalid     |
-      | full-chain  |
 
   # BL-951 adjacent-hop-records-nothing-02
   Scenario: An adjacent forward hop skips nothing and records nothing

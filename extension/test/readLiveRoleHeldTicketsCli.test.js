@@ -14,16 +14,29 @@ const { readLiveRoleHeldTickets, RoleHeldTicketsComputationFailedError } = requi
 // instead of this actual repo's own live, ever-changing swarm state).
 const REAL_SCRIPTS_DIR = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
 
-// BL-814: the full, minimal set of load-file dependencies
-// pipeline_stage_cli.bb's `report` actually needs to run. Deleting any one
-// of these must still break the fixture (proves this list was not widened
-// to "everything in the directory" - it is exactly what is depended on).
+// BL-973: DERIVED from pipeline_stage_cli.bb's real transitive load-file
+// closure. Deleting any one of these must still break the fixture, which is
+// what proves the set was not widened to "everything in the directory" - it is
+// exactly what is depended on, because it is computed from what is depended on.
+//
+// This list was COMPLETE when BL-973 was minted, and it was in scope anyway.
 // Recurrence history: BL-655 added ambulance_lib.bb, BL-805 added
 // mono_router_lib.bb, BL-911 added prompt_engine_lib.bb, BL-967 added
-// daemon_cycle_guard_lib.bb - each time this copy list went stale and the
-// fixture missed it, because the failure it produced was a passing-shaped
-// {} rather than an error (see BL-814).
-const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb', 'prompt_engine_lib.bb', 'daemon_cycle_guard_lib.bb'];
+// daemon_cycle_guard_lib.bb, BL-1029 added shell_quote_lib.bb - five
+// staleness events, each producing a passing-shaped {} rather than an error
+// (BL-814). It was complete only because BL-967's cleaner had just
+// hand-patched it, which made it first in line to rot on the next edge. A
+// check that only looks for missing names would have called it clean and left
+// it hand-maintained; the deliverable is the derivation, not the names.
+const { computeClosure } = require(path.join(__dirname, '..', '..', 'specs', 'pipeline', 'steps', 'lib', 'operatorRuntimeBbClosure.js'));
+const CLI_ENTRY_POINT = 'pipeline_stage_cli.bb';
+const REQUIRED_SCRIPT_FILES = [...computeClosure(REAL_SCRIPTS_DIR, CLI_ENTRY_POINT)].sort();
+
+// BL-973: exported so the closure gate can read what this fixture ACTUALLY
+// copies, rather than parsing the source for a literal. The gate stubs the
+// vitest globals to require this file outside a vitest run; nothing else here
+// executes at module load.
+module.exports = { BB_FIXTURE_CLOSURE: { entry: CLI_ENTRY_POINT, files: REQUIRED_SCRIPT_FILES } };
 
 function mkFixtureRoot(omit) {
   const root = mkTmpDir('bl487-live-role-held-');

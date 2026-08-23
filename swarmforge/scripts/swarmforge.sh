@@ -24,6 +24,98 @@ error_msg() {
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ── tmux version judgement (BL-1069) ──────────────────────────────────────
+# Ubuntu's tmux 3.4 SIGSEGVs in resize.c on a NULL window (fault at offset
+# 0x208) whenever WINDOW_SIZE_MANUAL is set. The upstream guard (6234d79,
+# "Do not set manual size if no window") lands in 3.7, so the fix is the
+# VERSION - no combination of options substitutes for it.
+# See docs/how-to/BL-tmux-wsl-segfault-upgrade.md.
+TMUX_MIN_SAFE_VERSION="3.7"
+
+# A sortable key for "tmux 3.7b", "3.7b" or "3.4" -> "003.007.b" / "003.004.".
+# Fails (non-zero, no output) on anything it cannot parse, so a caller can
+# tell "older" apart from "unknown" rather than treating them alike.
+tmux_version_key() {
+  local raw major minor suffix
+  raw="${1:-}"
+  raw="${raw#tmux }"
+  major="$(printf '%s' "$raw" | sed -n 's/^\([0-9][0-9]*\)\..*/\1/p')"
+  minor="$(printf '%s' "$raw" | sed -n 's/^[0-9][0-9]*\.\([0-9][0-9]*\).*/\1/p')"
+  suffix="$(printf '%s' "$raw" | sed -n 's/^[0-9][0-9]*\.[0-9][0-9]*\([a-z]*\).*/\1/p')"
+  if [[ -z "$major" || -z "$minor" ]]; then
+    return 1
+  fi
+  printf '%03d.%03d.%s\n' "$major" "$minor" "$suffix"
+}
+
+# Whether version $1 is strictly older than $2. An unparseable version is
+# never reported as older - "I could not read it" and "it is too old" are
+# different answers, and collapsing them is how a warning fires on a healthy
+# host or stays silent on a doomed one.
+tmux_version_lt() {
+  local a b
+  a="$(tmux_version_key "${1:-}")" || return 1
+  b="$(tmux_version_key "${2:-}")" || return 1
+  [[ "$a" < "$b" ]]
+}
+
+# BL-1069 invariant 1: the version of the tmux the CONTROL PLANE is actually
+# running, read off the swarm socket. Never `tmux -V`, which reports whatever
+# client happens to be first on PATH - and the incident state is precisely a
+# client that is already fine (3.7b) in front of a server that is not (3.4),
+# because the server predated the install. Empty when no server answers.
+tmux_server_version() {
+  local socket="${1:-}"
+  [[ -n "$socket" ]] || return 0
+  tmux -S "$socket" display-message -p '#{version}' 2>/dev/null || true
+}
+
+# BL-1069 invariant 2: preferring a user-local tmux must never LOWER the
+# version the swarm would otherwise have used. The original hotfix prepended
+# ~/.local/bin whenever a tmux existed there, with no comparison at all, so a
+# host whose local build was older than the one on PATH was silently
+# downgraded by the function written to upgrade it.
+prefer_local_tmux_bin() {
+  local local_tmux path_tmux local_ver path_ver
+  local_tmux="${HOME:-}/.local/bin/tmux"
+  [[ -n "${HOME:-}" && -x "$local_tmux" ]] || return 0
+  path_tmux="$(command -v tmux 2>/dev/null || true)"
+  if [[ -n "$path_tmux" && "$path_tmux" != "$local_tmux" ]]; then
+    local_ver="$("$local_tmux" -V 2>/dev/null || true)"
+    path_ver="$("$path_tmux" -V 2>/dev/null || true)"
+    # A local build whose version cannot be read is not evidence of an
+    # upgrade, so it does not earn the front of PATH.
+    if [[ -z "$local_ver" ]] || tmux_version_lt "$local_ver" "$path_ver"; then
+      return 0
+    fi
+  fi
+  case ":${PATH}:" in
+    *":${HOME}/.local/bin:"*) ;;
+    *) export PATH="${HOME}/.local/bin:${PATH}" ;;
+  esac
+}
+
+# Warns when the plane the swarm is talking to is below TMUX_MIN_SAFE_VERSION.
+# Takes the swarm socket so the judgement can read the SERVER; with no server
+# answering there is nothing to measure but the client, which is the binary
+# the next server will be started from - so that is what it reports, and it
+# says which of the two it measured.
+warn_if_tmux_too_old() {
+  local socket measured measured_from
+  socket="${1:-}"
+  measured="$(tmux_server_version "$socket")"
+  if [[ -n "$measured" ]]; then
+    measured_from="the control-plane server on $socket"
+  else
+    measured="$(tmux -V 2>/dev/null || true)"
+    measured_from="the tmux client on PATH (no control-plane server is answering yet)"
+  fi
+  tmux_version_key "$measured" >/dev/null 2>&1 || return 0
+  if tmux_version_lt "$measured" "$TMUX_MIN_SAFE_VERSION"; then
+    echo -e "${YELLOW}WARN: ${measured_from} reports tmux ${measured#tmux }, below ${TMUX_MIN_SAFE_VERSION} - WSL control-plane segfaults (resize.c NULL window, fault at 0x208) are unfixed there. Install tmux >= ${TMUX_MIN_SAFE_VERSION} and bounce the control plane (docs/how-to/BL-tmux-wsl-segfault-upgrade.md).${RESET}" >&2
+  fi
+}
+
 # BL-657: harness scrub helpers available to create_role_session / launch path.
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/harness_env_scrub.sh"
@@ -78,6 +170,17 @@ if [[ "${1:-}" == "ensure" ]]; then
   if [[ -f "$ENSURE_WORKING_DIR/.swarmforge/swarm.env" ]]; then
     source "$ENSURE_WORKING_DIR/.swarmforge/swarm.env"
   fi
+  # Prefer a user-local tmux >= 3.7 on PATH before bb spawns any client
+  # (Ubuntu 3.4 segfaults on WSL; see docs/how-to/BL-tmux-wsl-segfault-upgrade.md).
+  prefer_local_tmux_bin
+  # BL-1069: this branch execs before the file-scope socket resolution below,
+  # so it resolves the socket itself - without one the warning would fall back
+  # to the client, which is exactly the blind spot on the path the incident
+  # lives on (`./swarm ensure` against a still-3.4 server).
+  source "$SCRIPT_DIR/project_socket_id_lib.sh"
+  ENSURE_TMUX_SOCKET="$(bb "$SCRIPT_DIR/resolve_swarm_socket.bb" "$ENSURE_WORKING_DIR" \
+      "$(project_socket_id "$ENSURE_WORKING_DIR")" 2>/dev/null || true)"
+  warn_if_tmux_too_old "$ENSURE_TMUX_SOCKET"
   exec bb "$SCRIPT_DIR/swarm_ensure.bb" "$ENSURE_WORKING_DIR"
 fi
 
@@ -245,6 +348,30 @@ detect_tmux_base_indexes() {
   if [[ -n "$probe_session" ]]; then
     tmux -S "$TMUX_SOCKET" kill-session -t "$probe_session" >/dev/null 2>&1 || true
   fi
+
+  # Apply WSL/stability knobs every time we touch a live server (including
+  # the probe path above that just created one).
+  harden_tmux_server
+}
+
+# BL-1075: `window-size largest` used to be set here as a second soft
+# mitigation. It could never take effect on any window the extension tiles:
+# `resize-window -x/-y` "will automatically set window-size to manual in the
+# window options" (tmux(1)), and a WINDOW option beats the server global.
+# Measured on this host - after the panel resizes a window, the global still
+# answers `largest` while that window answers `manual`. There is no ordering
+# in which the global wins, so it was a mitigation the swarm applied and
+# advertised without ever holding it. The tiling cannot stop either: a
+# headless tmux snaps every pane to 80x24, which caps a tile at 24 lines.
+#
+# `focus-events off` is a different matter and stays: nothing overrides it,
+# and dropping the whole function to remove the inert half would take a live
+# knob with it (BL-1075 invariant 2).
+harden_tmux_server() {
+  if ! tmux -S "$TMUX_SOCKET" list-sessions >/dev/null 2>&1; then
+    return 0
+  fi
+  tmux -S "$TMUX_SOCKET" set-option -g focus-events off >/dev/null 2>&1 || true
 }
 
 tmux_agent_target() {
@@ -1855,9 +1982,11 @@ if [[ "$ZSH_EVAL_CONTEXT" == "toplevel" ]]; then
 source "$SCRIPT_DIR/harness_env_scrub.sh"
 scrub_harness_env
 
+prefer_local_tmux_bin
 check_dependency tmux
 check_dependency git
 check_dependency bb
+warn_if_tmux_too_old "$TMUX_SOCKET"
 detect_tmux_base_indexes
 scrub_tmux_harness_env "$TMUX_SOCKET"
 initialize_git_repo

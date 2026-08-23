@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readCooldownWindowMarker } = require('../out/tools/cooldownWindowState');
-const { copyScriptClosure } = require('./helpers/pinnedRepoFixture');
+const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const {
   parseCliArgs,
@@ -328,21 +328,17 @@ function gitFixture() {
   return root;
 }
 
+// BL-551 wanted the CLI's FULL Babashka dependency chain, and copying the
+// whole directory was how it got one. BL-1038: the closure gives the same
+// chain - transitively, by construction - without the 208-file, 2.16MB copy
+// that grew with every script added to the repo. The dependency chain is
+// still complete; it is now bounded by the CLI's own dependencies rather
+// than by the size of swarmforge/scripts.
 function copyCommitIntegrityScripts(root) {
-  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
-  fs.mkdirSync(scriptsDir, { recursive: true });
-  // BL-551 wanted the CLI's FULL Babashka dependency chain, and copying the
-  // whole directory was how it got one. BL-1038: the closure gives the same
-  // chain - transitively, by construction - without the 208-file, 2.16MB copy
-  // that grew with every script added to the repo. The dependency chain is
-  // still complete; it is now bounded by the CLI's own dependencies rather
-  // than by the size of swarmforge/scripts.
-  copyScriptClosure(
-    path.join(__dirname, '..', '..', 'swarmforge', 'scripts'),
-    scriptsDir,
-    ['commit_integrity_cli.bb', 'swarm_handoff.bb', 'ambulance_cli.bb',
-     'operator_ask.bb', 'role_ask.bb', 'support_thread.bb']
-  );
+  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), [
+    'commit_integrity_cli.bb', 'swarm_handoff.bb', 'ambulance_cli.bb',
+    'operator_ask.bb', 'role_ask.bb', 'support_thread.bb'
+  ]);
 }
 
 test('commitExpediteWrites commits the ticket file at its CURRENT (post-promote) path through the real commit-integrity helper', async () => {
@@ -3120,21 +3116,21 @@ test('readRootIntakeFiles lists a real root intake file, id from the filename an
 
 test('readRepoBaseUrl resolves an HTTPS github.com origin remote to its base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl resolves an SSH github.com origin remote to its HTTPS base URL', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:ldecorps/swarmforgevc.git'], { cwd: root });
   assert.equal(readRepoBaseUrl(root), 'https://github.com/ldecorps/swarmforgevc');
 });
 
 test('readRepoBaseUrl degrades to undefined (never throws) when there is no git remote at all', () => {
   const root = mkTmpRoot();
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  copySeededRepoInto(root);
   assert.equal(readRepoBaseUrl(root), undefined);
 });
 

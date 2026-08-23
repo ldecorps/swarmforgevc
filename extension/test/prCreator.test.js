@@ -7,11 +7,11 @@ const cp = require('node:child_process');
 const { installExecutable } = require('./helpers/sharedBin');
 
 const { getCurrentBranch, buildPrArgs, openPullRequest } = require('../out/swarm/prCreator');
+const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 
 function mkTmpGitRepo(branchName) {
   const tmp = mkTmpDir('sfvc-pr-');
-  cp.execSync('git init', { cwd: tmp, stdio: 'ignore' });
-  cp.execSync('git commit --allow-empty -m init', { cwd: tmp, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' } });
+  copySeededRepoInto(tmp);
   if (branchName) {
     cp.execSync(`git checkout -b ${branchName}`, { cwd: tmp, stdio: 'ignore' });
   }
