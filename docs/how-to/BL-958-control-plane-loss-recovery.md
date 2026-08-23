@@ -89,6 +89,14 @@ The owner gets exactly one deterministic action — recover when launch scripts
 exist to respawn from, otherwise escalate once carrying the reason and the
 next action. Never repeated silent degradation.
 
+Since BL-1071, that action runs automatically as part of every sweep,
+bounded in both attempts and wall-clock time — see
+[Control-plane auto-heal, bounded in time](BL-611-babysitterd-runbook.md#control-plane-auto-heal-bounded-in-time-bl-958bl-1071)
+in the babysitterd runbook for the attempt/cooldown budget, the timeout, and
+the three-outcome `REPAIR` line. This section stays the task-oriented manual
+recovery path (`./swarm ensure` by hand); that section is reference detail
+on the daemon's own automatic path.
+
 ## Verify
 
 ```

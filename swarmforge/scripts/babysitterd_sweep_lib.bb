@@ -425,8 +425,25 @@
 
 (defn check-control-plane
   [{:keys [control-plane-classification launch-scripts-present?
-           control-plane-repair-allowed? socket-path]}]
-  (when (= :control-plane-missing control-plane-classification)
+           control-plane-repair-allowed? socket-path control-plane-error]}]
+  ;; BL-1071 invariant 3. control_plane_lib/classify returns only :up,
+  ;; :control-plane-missing or :down, so :unavailable can ONLY mean the
+  ;; observation itself could not be made - the observer threw. Reporting that
+  ;; as nothing let the sweep print "OK all checks green" while knowing
+  ;; nothing about the plane, which is the incident's own silent-blackout
+  ;; mechanism one layer up. An unreadable probe is its own answer: never a
+  ;; healthy reading (:up), never an absence (:down, or a queued recovery).
+  (cond
+    (= :unavailable control-plane-classification)
+    {:key "control-plane" :severity "UNAVAILABLE"
+     :message (str "control-plane observation unavailable this sweep"
+                   (when socket-path (str " at " socket-path))
+                   " — the observer could not complete"
+                   (when (seq (str control-plane-error))
+                     (str ": " control-plane-error))
+                   "; the plane's state is unknown, not healthy and not missing")}
+
+    (= :control-plane-missing control-plane-classification)
     (if launch-scripts-present?
       (cond-> {:key "control-plane" :severity "CRIT"
                :message (str "tmux control plane missing"
@@ -465,12 +482,20 @@
            resident-mailbox-empty? dispatch-note-pending?
            resident-stranded-grace-min
            control-plane-classification launch-scripts-present?
-           control-plane-repair-allowed? socket-path]}]
+           control-plane-repair-allowed? socket-path control-plane-error]}]
   (let [paused? (boolean (:active? pause))
         control-plane-finding (check-control-plane
                                {:control-plane-classification control-plane-classification
                                 :launch-scripts-present? launch-scripts-present?
                                 :control-plane-repair-allowed? control-plane-repair-allowed?
+                                ;; BL-1071 scenario 06: the REASON the
+                                ;; observation failed. The gatherer captures it
+                                ;; and check-control-plane renders it, but this
+                                ;; destructuring is the one place between them -
+                                ;; a key absent here is dropped silently, and
+                                ;; the finding degrades to "unavailable" with
+                                ;; nowhere for a human to start.
+                                :control-plane-error control-plane-error
                                 :socket-path socket-path})
         control-plane-ensure? (= :ensure-control-plane
                                  (get-in control-plane-finding [:repair :action]))

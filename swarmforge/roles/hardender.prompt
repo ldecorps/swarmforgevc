@@ -1869,3 +1869,70 @@ You are the hardender.
   failure branch; `skipped` is printed and then ignored) and filed **BL-1101**
   to make the tool itself fail on `skipped>0`. The rule is the discipline; the
   ticket is the gate — a prompt line is not a gate, which is why both exist.
+
+## A `!x`/typeof-guard survivor is proved EQUIVALENT by patch-and-diff over a corpus that REACHES null — never by shape, never by argument (rule_proposal 2026-08-23, accepted)
+- Proposer's rule, verbatim: "Before chasing a "!x"/typeof-guard survivor,
+  patch compiled JS + diff vs orig over a fuzz corpus. Safe primitive prop
+  access + downstream nullish checks often make it equivalent; uncaught null is
+  real."
+- **Why the class exists.** JS property access on a non-null PRIMITIVE returns
+  `undefined` rather than throwing (`(5).foo`, `"s".foo`, `true.foo`). Combine
+  that with a downstream nullish/type-coalescing check (`?? `, `||`, a later
+  `typeof`) and an ahead-of-time `!x` / `typeof x !== 'object'` guard is dead
+  weight: removing it is unobservable at every observation point, so no
+  assertion could ever separate the mutant from the original. That is the
+  BL-234 exception's shape in the Stryker/TypeScript lane — the sibling of the
+  union-tag rule above, but demonstrated EMPIRICALLY rather than by grep,
+  because for this class the diff is both cheaper and more trustworthy than the
+  argument.
+- **Mechanics: patch the COMPILED JS, not the TS.** `--mutate` is scoped to
+  `out/**/*.js`, never `src/**/*.ts` (Engineering Rules, Verification), so the
+  compiled file is the exact artifact Stryker mutated. Hand-editing the TS and
+  recompiling diffs a different artifact and proves nothing about the mutant you
+  hold. Apply the mutant's own patch, run both builds over the corpus, diff the
+  outputs.
+- **The corpus must REACH the guard's own input domain — this is the whole
+  rule.** A corpus that never feeds `null`/`undefined`/a primitive to that exact
+  parameter yields a byte-identical diff for a mutant that is entirely REAL, and
+  the equivalence is then proved VACUOUSLY. Before believing a clean diff,
+  confirm the corpus actually produces the value the guard exists to reject, at
+  that site, and name that reaching input in the record. An unreached branch
+  agreeing with itself is not evidence — the same vacuity that let BL-966's
+  worktree fixture assert equality in a dimension it never populated.
+- **Same shape, opposite verdict, and this is the trap.** Removal is a REAL gap
+  whenever the unguarded value can reach something that throws or branches: a
+  property read on `null`/`undefined` ITSELF (safe access saves you from a
+  primitive, never from null), a method call, a spread, a `for…of`, a
+  `JSON.parse`, or any downstream site with no `??`/`||`/`typeof` absorption.
+  "Uncaught null is real," in the proposer's words. Shape never decides; the
+  diff over a reaching corpus decides. Judging one guard by its resemblance to a
+  guard you already accepted is how a real gap gets filed as settled.
+- **This rule institutionalizes hand-patching a live file, so "Never hand-mutate
+  a source file a detached suite is still reading" (above) now binds hard, not
+  incidentally.** Patch a COPY under your worktree's `./tmp/` and point the probe
+  at that, or run the probe in the FOREGROUND with no detached job outstanding —
+  never in place while a detached suite still has read points open. A patch-diff
+  that races a detached run produces a phantom failure with nothing in it to say
+  you caused it.
+- **Recording duty, and why it is not bookkeeping.** Record each accepted
+  equivalent WITH the mutant, the reaching input that failed to differentiate,
+  and the date — the same evidence BL-234 demands and BL-927 forbids omitting.
+  The equivalence is COMMIT-LOCAL: it holds only while the downstream nullish
+  check survives, and the day someone removes that check the untested guard
+  becomes a live gap with no mutant left to announce it. An accepted equivalent
+  still counts as a survivor for the manifest (BL-234) — accepting one never
+  writes a clean `scenarios:` line.
+- Evidence (proposed by the hardender, 2026-08-23, BL-1081, commit
+  `ae1f49596`): a scoped Stryker run on the four new ACP files
+  (`acpSeatState`, `acpSessionEvents`, `acpWireFields`, `acpHostRuntime`) found
+  46 survivors. Patch-and-diff split them 30 REAL — closed with tests that
+  genuinely distinguish, including a two-concurrent-tool case, a string-typed
+  permission id, and an all-empty-string content list whose first test asserted
+  the JOINED result and so could not tell `null` from `''` — against 16
+  EQUIVALENT of exactly this guard class. Final scoped scores: `acpSeatState`
+  100%, `acpHostRuntime` 96.61%, `acpWireFields` 96.51%, `acpSessionEvents`
+  91.06%, every non-equivalent mutant killed. Conflating the two halves would
+  have cost a wasted pass or 16 trivia assertions. The reaching-corpus
+  requirement, the throws-vs-primitive counter-case, the compiled-artifact
+  point, the one-writer interaction, and the recording duty are the specifier's
+  additions.
