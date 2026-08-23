@@ -188,6 +188,13 @@ qa_e2e: >
   working tree; the verdict must not move.
 
 notes: |
+  2026-08-23 coordinator: handoffd open-slot nudge named this ticket as top
+  candidate, but human_approval is pending (the refuse-vs-alarm-only call in
+  approval_context is unanswered) so it cannot promote. The open slot was
+  filled instead by BL-1071 (expedited defect/high, approved, no unmet
+  deps/orthogonality) per Article 3.2.4 priority ordering. Awaiting human
+  approval; will be reconsidered at the next open slot.
+
   Live findings from the probe, recorded so nobody re-derives them:
 
   - Local `main` is 10 commits ahead of `origin/main` and holds the CORRECT
