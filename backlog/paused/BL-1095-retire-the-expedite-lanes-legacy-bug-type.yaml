@@ -1,4 +1,4 @@
-id: BL-1090
+id: BL-1095
 title: "Article 3.2.4's `bug` transition clause has discharged but nobody owns the discharge: the predicate never sees a done ticket, so its `bug` member is vacuous by construction, and ~350 spent chars sit in a boot-inlined article at 44000/44000"
 type: chore
 status: todo
@@ -9,7 +9,7 @@ direction: swarm-surfaced
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1090-retire-the-expedite-lanes-legacy-bug-type.feature
+acceptance: specs/features/BL-1095-retire-the-expedite-lanes-legacy-bug-type.feature
 required_wiring:
   - 'swarmforge/scripts/backlog_hygiene_lib.bb::bug::the mint gate must actually REFUSE the retired type - violations-for-text is the live checker the shell gate delegates to, so a helper defined anywhere else arms nothing'
 human_approval: pending

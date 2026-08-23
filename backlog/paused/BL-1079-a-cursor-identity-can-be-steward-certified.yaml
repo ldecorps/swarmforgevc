@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-priority: 0
+priority: 1
 direction: queue-jump
 depends_on: [BL-1078]
 mutation_cost: medium
@@ -94,6 +94,7 @@ qa_e2e_procedure: >
   6. Decertify with a reason and confirm routing reverts to refusing Cursor.
 
 notes: |
+  Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   BL-712 remaining slice C. Depends on BL-1078. Parent epic BL-712.
 
   Sequencing flag (specifier, 2026-08-23): BL-1079 sits in backlog/active/
