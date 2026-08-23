@@ -609,6 +609,7 @@ const DOMAINS = [
   require('./bl1071BabysitterSweepSurvivalSteps'),
   require('./bl1078CursorAgentTokenSteps'),
   require('./bl1079CursorStewardCertifySteps'),
+  require('./bl1087QwenCodeDocDriftSteps'),
   require('./bl1099GiveUpCooldownRetirementSteps')
 ];
 
