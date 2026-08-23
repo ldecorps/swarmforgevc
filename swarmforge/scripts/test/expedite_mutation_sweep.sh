@@ -123,9 +123,22 @@ mutate "park: keeps the run ticket" \
   '(vec (remove #{run-ticket} active-tickets))' '(vec active-tickets)'
 mutate "stop-flags: --sweep-inbox allowed" \
   '#{"--sweep-inbox" "--reset-worktrees" "--full"}' '#{"--reset-worktrees" "--full"}'
-mutate "stop-flags: gate inverted" \
-  '(empty? (filter forbidden-stop-flags (map str args)))' \
-  '(seq (filter forbidden-stop-flags (map str args)))'
+
+# BL-1030: the guard was rewritten to read the configured command as a command
+# LINE (tokenize-command + stop-invocation-verdict) rather than a pre-split
+# arg vector. The old "gate inverted" mutant above anchored to code this
+# rewrite deleted, so it silently skipped (anchor not found) - which is
+# exactly the shape of vacuous coverage this ticket's own source: block warns
+# about. Replaced with mutants against the new decision site.
+mutate "stop-invocation: forbidden-flag check never fires" \
+  '(if-let [flag (first (filter forbidden-stop-flags tokens))]' \
+  '(if-let [flag (first (filter forbidden-stop-flags nil))]'
+mutate "stop-invocation: unreadable command admitted instead of refused" \
+  '{:ok? false :reason :unreadable :command cmd}' \
+  '{:ok? true :reason :unreadable :command cmd}'
+mutate "stop-invocation: forbidden match becomes substring, not whole-token" \
+  '(first (filter forbidden-stop-flags tokens))' \
+  '(first (filter (fn [t] (some #(str/includes? t %) forbidden-stop-flags)) tokens))'
 
 # ── restart ─────────────────────────────────────────────────────────────────
 mutate "run-result: restart retracts the ticket" \
