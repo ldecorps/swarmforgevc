@@ -15,9 +15,10 @@ export function buildAgentArgv(args: AcpHostPaneArgs): string[] {
   const argv = ['vibe', '--yolo', '--trust', '--workdir', args.workdir];
   if (args.addDir) argv.push('--add-dir', args.addDir);
   if (args.extraCli) {
-    // Split on whitespace only for the spike; write_role_launch_script already
-    // shell-quoted the block as a single --extra-cli value when needed.
-    argv.push(...args.extraCli.split(/\s+/).filter(Boolean));
+    // trim + /\s+/ (not /\s/) so multi-space runs stay one split and no empty
+    // tokens reach vibe argv — filter(Boolean) alone cannot tell those apart.
+    const trimmed = args.extraCli.trim();
+    if (trimmed) argv.push(...trimmed.split(/\s+/));
   }
   if (args.firstMessage) argv.push(args.firstMessage);
   return argv;

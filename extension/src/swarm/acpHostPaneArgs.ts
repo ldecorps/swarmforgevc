@@ -56,43 +56,66 @@ function emptyHelpArgs(resolveRepoRoot: () => string): AcpHostPaneArgs {
   };
 }
 
-function collectFlagValues(argv: string[]): { values: Map<string, string>; positionals: string[] } {
+function isHelpToken(tok: string): boolean {
+  return tok === '--help' || tok === '-h';
+}
+
+function flagValueMissing(value: string | undefined): boolean {
+  return value === undefined || KNOWN_FLAGS.has(value);
+}
+
+function collectFlagValues(argv: string[]): {
+  values: Map<string, string>;
+  positionals: string[];
+  sawHelp: boolean;
+} {
   const values = new Map<string, string>();
   const positionals: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
+    if (isHelpToken(tok)) return { values, positionals, sawHelp: true };
     if (!KNOWN_FLAGS.has(tok)) {
       positionals.push(tok);
       continue;
     }
-    if (tok === '--help' || tok === '-h') continue;
     const value = argv[i + 1];
-    if (value === undefined || KNOWN_FLAGS.has(value)) {
+    if (flagValueMissing(value)) {
       throw new Error(`${tok} needs a value\n\n${usageText()}`);
     }
-    values.set(tok, value);
+    values.set(tok, value!);
     i++;
   }
-  return { values, positionals };
+  return { values, positionals, sawHelp: false };
 }
 
-export function parseAcpHostPaneArgs(argv: string[], resolveRepoRoot: () => string): AcpHostPaneArgs {
-  if (argv.includes('--help') || argv.includes('-h')) {
-    return emptyHelpArgs(resolveRepoRoot);
-  }
-  const { values, positionals } = collectFlagValues(argv);
+function requireHostFields(values: Map<string, string>): {
+  role: string;
+  workdir: string;
+  promptFile: string;
+} {
   const role = values.get('--role');
-  const agent = values.get('--agent') || ACP_SPIKE_SEAT_AGENT;
   const workdir = values.get('--workdir');
   const promptFile = values.get('--prompt-file');
   if (!role || !workdir || !promptFile) {
     throw new Error(`--role, --workdir, and --prompt-file are required\n\n${usageText()}`);
   }
+  return { role, workdir, promptFile };
+}
+
+function requireSpikeAgent(agent: string): void {
   if (!shouldLaunchViaAcpHost(agent)) {
     throw new Error(
       `refusing to host agent "${agent}" — this spike only hosts ${ACP_SPIKE_SEAT_AGENT}`
     );
   }
+}
+
+export function parseAcpHostPaneArgs(argv: string[], resolveRepoRoot: () => string): AcpHostPaneArgs {
+  const { values, positionals, sawHelp } = collectFlagValues(argv);
+  if (sawHelp) return emptyHelpArgs(resolveRepoRoot);
+  const { role, workdir, promptFile } = requireHostFields(values);
+  const agent = values.get('--agent') || ACP_SPIKE_SEAT_AGENT;
+  requireSpikeAgent(agent);
   return {
     help: false,
     role,
