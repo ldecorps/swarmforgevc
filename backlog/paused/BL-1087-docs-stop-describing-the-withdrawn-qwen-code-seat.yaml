@@ -10,8 +10,7 @@ direction: swarm-reported
 depends_on: []
 assigned_to: unassigned
 mutation_cost: low
-human_approval: pending
-
+human_approval: approved
 invariants:
   - "No file under docs/ names a swarmforge/packs/*.conf that is not present in the tree, other than a placeholder that is illustrating pack naming rather than naming a real pack."
 
