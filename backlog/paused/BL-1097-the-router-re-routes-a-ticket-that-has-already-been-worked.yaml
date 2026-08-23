@@ -1,4 +1,4 @@
-id: BL-1096
+id: BL-1097
 title: "The coordinator's router hands a role a parcel whose commit already contains that ticket's finished, QA-approved work - nothing advances `status:` past `todo`, so an active ticket looks unstarted until bookkeeping closes it"
 type: defect
 severity: medium
@@ -16,7 +16,7 @@ direction: swarm-reported
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1096-the-router-re-routes-a-ticket-that-has-already-been-worked.feature
+acceptance: specs/features/BL-1097-the-router-re-routes-a-ticket-that-has-already-been-worked.feature
 human_approval: pending
 approval_context: >
   Firm: a role must not be handed a parcel whose commit already contains that

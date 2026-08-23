@@ -8,7 +8,7 @@ Feature: The router never originates a parcel for work already finished
   Article 1.9 forbids FORWARDING a parcel whose commit produces no functional
   change. The same rule has to bind the router that originates one.
 
-  # BL-1096 no-reroute-worked-01
+  # BL-1097 no-reroute-worked-01
   Scenario Outline: Routing follows whether the ticket has been dispatched
     Given an active ticket assigned to a role
     And the ticket <trail>
@@ -20,14 +20,14 @@ Feature: The router never originates a parcel for work already finished
       | has never been dispatched    | emitted      |
       | already has a dispatch trail | not emitted  |
 
-  # BL-1096 no-reroute-worked-02
+  # BL-1097 no-reroute-worked-02
   Scenario: Work finished but not yet closed is not routable
     Given an active ticket whose work is complete and QA-approved
     And the ticket has not yet been moved to backlog/done/
     When the coordinator routes the backlog
     Then no parcel is emitted for that ticket
 
-  # BL-1096 no-reroute-worked-03
+  # BL-1097 no-reroute-worked-03
   Scenario: The router and the dispatch-gap sweep agree
     Given a set of active tickets in mixed dispatch states
     When the router and the dispatch-gap sweep are each asked which are undispatched
