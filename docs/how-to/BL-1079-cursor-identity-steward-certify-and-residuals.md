@@ -111,12 +111,12 @@ Limits that follow from that shape:
   pay full first-message cost every respawn; there is no Anthropic-style
   prompt-cache hit on the stable constitution/PIPELINE prefix for a Cursor
   seat.
-- **Operator hotfix 2026-08-23:** Cursor launch now passes a short "read and
-  obey `$prompt_file`" wake (gemini-style path reference) instead of
-  embedding `$(cat prompt)` in argv — cuts ARG_MAX risk on full-forge and
-  avoids paying the prompt twice in the process command line. The seat still
-  loads the prompt into context once by reading the file; there is still no
-  Claude-style prompt cache.
+- **Cursor prompt-file wake (hotfix `f02f6ae5b4`, stamped BL-1108):** Cursor
+  launch passes a short "read and obey `$prompt_file`" wake (gemini-style
+  path reference) instead of embedding `$(cat prompt)` in argv — cuts
+  ARG_MAX risk on full-forge and avoids paying the prompt twice in the
+  process command line. The seat still loads the prompt into context once by
+  reading the file; there is still no Claude-style prompt cache.
 - The seat must be woken by chatting into the pane (`:wake-style
   :chat-message`). There is no separate "paste prompt file" bootstrap like
   grok.
@@ -140,7 +140,7 @@ Claude seat that lost that flag or whose claude.ai/code session died.
   Telegram **Cursor Remote** bridge (BL-698) and Cursor's own product remote
   features — not `rc:coder` / `rc:documenter` on the swarm socket.
 
-**Operator hotfix 2026-08-23 (Cursor heal path):**
+**Cursor heal path (hotfix `f02f6ae5b4`, stamped BL-1108):**
 
 - `rc:<role>` for seats whose launch script has no `--remote-control` reports
   **OFF** (with an action string), not a misleading HEALTHY.
@@ -148,7 +148,8 @@ Claude seat that lost that flag or whose claude.ai/code session died.
   `./swarm ensure` treats the seat unhealthy unless the expected binary
   (`cursor-agent`, …) is a descendant of the pane, then respawns from the
   launch script — the same repair Claude `/rc` was never going to do for
-  Cursor.
+  Cursor. Marker needles are shared with babysitter via
+  `agent_process_marker_lib.bb`.
 - Babysitter live-session check matches the roles.tsv agent token (not only
   `claude `), so Cursor panes no longer false-CRIT as half-launches.
 
@@ -181,8 +182,11 @@ uncertified identity. Cost attribution stays on `cursor/…` either way.
 | [BL-547 Model Steward overview](./BL-547-model-steward-overview.md) | Generic register / certify / role-matrix CLI |
 | [BL-525 ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md) | Assign, cold-apply, `--override-uncertified` |
 | [BL-713 Cursor seat spike](./BL-713-cursor-seat-driver-spike.md) | One-shot `cursor-seat-spike.js` (not the pack launcher) |
-| [BL-514 Remote-control health](./BL-514-remote-control-health-and-ensure-wiring.md) | Claude `/rc` ensure path Cursor seats do **not** use |
+| [BL-514 Remote-control health](./BL-514-remote-control-health-and-ensure-wiring.md) | Claude `/rc` ensure path; Cursor/`local-model` report `rc:` **OFF** |
+| [babysitterd runbook](./BL-611-babysitterd-runbook.md) | Live-session check uses per-agent process markers (BL-1108) |
+| [BL-848 Certify an operator hotfix](./BL-848-certify-an-operator-hotfix.md) | Ledger / stamp-ticket path; BL-1108 is the stamp for `f02f6ae5b4` |
 | BL-1078 | Launcher token + seat-admission guard |
 | BL-1080 | Pack lines that name `cursor` (deferred how-to) |
+| BL-1108 | Stamp-off ticket confirming the Cursor readiness hotfix |
 
 Acceptance: `specs/features/BL-1079-a-cursor-identity-can-be-steward-certified.feature`.

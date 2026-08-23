@@ -740,26 +740,29 @@
        :action (str "agent still busy after " rc-session-dead-wait-seconds
                     "s wait budget - respawn skipped, not killed (never mid-turn)")})))
 
+(defn- rc-absent-report
+  "Launch script has no --remote-control. Claude seats with RC off by
+   config are satisfied (BL-514 RC-6 → :healthy, no probe). Non-Claude
+   seats never have Claude /rc (BL-1108 → :off; heal via agent:)."
+  [component role]
+  (if (= (role-agent-token role) "claude")
+    {:component component :status :healthy}
+    {:component component :status :off
+     :action "no Claude /rc; heal via agent:; phone via Cursor Remote"}))
+
 (defn ensure-rc-role!
   "role is the roles.tsv identity (used only for the reported component
    name); launch-role (rc-launch-role) is what is actually checked/repaired.
    Never probes the live process when the launch script carries no
-   --remote-control flag at all - remote-control-health/classify checks
-   `expected` before `actual`/`alive?`, so the result is unconditionally
-   :off in that case regardless of what the probe would find. Skipping the
-   probe there isn't just an optimization: the real probe walks the pane's
-   full descendant process tree, and is worth avoiding whenever its result
-   cannot change the outcome."
+   --remote-control flag at all. Skipping the probe isn't just an
+   optimization: the real probe walks the pane's full descendant process
+   tree, and is worth avoiding whenever its result cannot change the
+   outcome. Absent-flag reporting is agent-aware (rc-absent-report)."
   [socket ordered role session]
   (let [launch-role (rc-launch-role ordered role)
         component (str "rc:" role)]
     (if (nil? (remote-control-health/expected-rc-name state-dir launch-role))
-      ;; Cursor and other non-Claude seats: no Claude /rc by design. Do not
-      ;; report HEALTHY (that implied a live /rc session). Heal path is
-      ;; agent:<role> (seat-healthy? + launch-script respawn); phone is
-      ;; Cursor Remote / Telegram bridge, not rc:<role>.
-      {:component component :status :off
-       :action "no Claude /rc; heal via agent:; phone via Cursor Remote"}
+      (rc-absent-report component role)
       (let [footer-streak (remote-control-health/advance-footer-streak!
                             state-dir launch-role
                             (remote-control-health/footer-status (rc-capture-pane socket session)))

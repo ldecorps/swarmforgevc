@@ -92,3 +92,6 @@ source: |
   specifier before minting.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-23, by: QA, blamed: coder, class: unit, commit: cb7c39eff9, evidence: backlog/evidence/BL-1108-cursor-seat-readiness-hotfix-bounce-20260823.md }

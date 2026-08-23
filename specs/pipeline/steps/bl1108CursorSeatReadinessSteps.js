@@ -10,10 +10,9 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { mkSocketFixtureRoot, releaseSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const RUNNER = path.join(
@@ -244,27 +243,44 @@ function registerSteps(registry) {
   });
 
   define(/^it reports the agent repair instead of a healthy seat$/, (ctx) => {
-    assert.match(
-      ctx.ensureOut,
-      /^agent:coder: FIXED/m,
-      `expected agent:coder FIXED (repair), got:\n${ctx.ensureOut}`
-    );
-    assert.doesNotMatch(
-      ctx.ensureOut,
-      /^agent:coder: HEALTHY/m,
-      `half-launch Cursor seat must not report HEALTHY:\n${ctx.ensureOut}`
-    );
-    // Non-Claude seats: Claude /rc is OFF, not HEALTHY.
-    assert.match(
-      ctx.ensureOut,
-      /^rc:coder: OFF/m,
-      `Cursor seat must report rc: OFF, got:\n${ctx.ensureOut}`
-    );
+    try {
+      assert.match(
+        ctx.ensureOut,
+        /^agent:coder: FIXED/m,
+        `expected agent:coder FIXED (repair), got:\n${ctx.ensureOut}`
+      );
+      assert.doesNotMatch(
+        ctx.ensureOut,
+        /^agent:coder: HEALTHY/m,
+        `half-launch Cursor seat must not report HEALTHY:\n${ctx.ensureOut}`
+      );
+      // Non-Claude seats: Claude /rc is OFF, not HEALTHY.
+      assert.match(
+        ctx.ensureOut,
+        /^rc:coder: OFF/m,
+        `Cursor seat must report rc: OFF, got:\n${ctx.ensureOut}`
+      );
+    } finally {
+      killTracked();
+      if (ctx.ensureRoot) {
+        try {
+          fs.rmSync(ctx.ensureRoot, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+        releaseSocketFixtureRoot(ctx.ensureRoot);
+        ctx.ensureRoot = undefined;
+      }
+    }
   });
 
   // ── cursor-seat-readiness-hotfix-03 ───────────────────────────────────
   define(/^a Cursor role with a composed prompt bundle$/, (ctx) => {
-    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bl1108-launch-')));
+    // Short /tmp root via shared helper (socketFixtureShortRootGuard): this
+    // file also builds control-socket fixtures in scenario-02, so an
+    // os.tmpdir() mkdtemp here fails the whole-tree scan. Exit-hook reap is
+    // built into mkSocketFixtureRoot (BL-921 sibling).
+    const root = mkSocketFixtureRoot('bl1108-launch-');
     fs.mkdirSync(path.join(root, 'swarmforge', 'roles'), { recursive: true });
     fs.mkdirSync(path.join(root, '.swarmforge', 'launch'), { recursive: true });
     fs.mkdirSync(path.join(root, '.swarmforge', 'prompts'), { recursive: true });
@@ -319,15 +335,27 @@ function registerSteps(registry) {
   });
 
   define(/^the command does not embed the prompt bundle in its arguments$/, (ctx) => {
-    assert.ok(
-      !ctx.launchText.includes(ctx.bundleMarker),
-      `launch argv embeds the prompt bundle marker:\n${ctx.launchText}`
-    );
-    assert.doesNotMatch(
-      ctx.launchText,
-      /\$\(cat ['"]?\$prompt_file/,
-      `launch body still cat-slurps the prompt into argv:\n${ctx.launchText}`
-    );
+    try {
+      assert.ok(
+        !ctx.launchText.includes(ctx.bundleMarker),
+        `launch argv embeds the prompt bundle marker:\n${ctx.launchText}`
+      );
+      assert.doesNotMatch(
+        ctx.launchText,
+        /\$\(cat ['"]?\$prompt_file/,
+        `launch body still cat-slurps the prompt into argv:\n${ctx.launchText}`
+      );
+    } finally {
+      if (ctx.launchRoot) {
+        try {
+          fs.rmSync(ctx.launchRoot, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+        releaseSocketFixtureRoot(ctx.launchRoot);
+        ctx.launchRoot = undefined;
+      }
+    }
   });
 }
 
