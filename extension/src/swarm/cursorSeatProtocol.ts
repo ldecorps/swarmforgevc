@@ -31,6 +31,51 @@ export interface SeatDecision {
   reason: string;
 }
 
+function decideFromStopReason(stop: Extract<SessionSignal, { kind: 'stop_reason' }>): SeatDecision {
+  if (stop.value === 'completed') {
+    return {
+      step: 'forward_handoff',
+      fromSignal: 'stop_reason:completed',
+      reason: 'the session reported the stage work finished',
+    };
+  }
+  return {
+    step: 'abort',
+    fromSignal: `stop_reason:${stop.value}`,
+    reason: `the session stopped with reason "${stop.value}"${stop.detail ? `: ${stop.detail}` : ''}`,
+  };
+}
+
+function decideFromToolEvent(tool: Extract<SessionSignal, { kind: 'tool_event' }>): SeatDecision {
+  if (tool.permission === 'granted') {
+    return {
+      step: 'continue_session',
+      fromSignal: `tool_event:${tool.tool}:granted`,
+      reason: `the session was granted "${tool.tool}"`,
+    };
+  }
+  return {
+    step: 'abort',
+    fromSignal: `tool_event:${tool.tool}:denied`,
+    reason: `the session was denied "${tool.tool}"; a human decides what happens next`,
+  };
+}
+
+function decideFromHelperExit(helper: Extract<SessionSignal, { kind: 'helper_exit' }>): SeatDecision {
+  const from = `helper_exit:${helper.helper}:${helper.exitCode}`;
+  if (helper.exitCode !== 0) {
+    return { step: 'abort', fromSignal: from, reason: `${helper.helper} exited ${helper.exitCode}` };
+  }
+  if (helper.forwarded) {
+    return {
+      step: 'await_wake',
+      fromSignal: from,
+      reason: `${helper.helper} delivered the parcel; the seat waits for its next wake and never polls on its own`,
+    };
+  }
+  return { step: 'continue_session', fromSignal: from, reason: `${helper.helper} exited 0` };
+}
+
 /**
  * The whole decision surface, and a PURE function of the signal — no deps, no
  * environment, no rendered text. Two signals that a pane scraper would render
@@ -39,61 +84,13 @@ export interface SeatDecision {
  * the words, is what is read.
  */
 export function decideNextStep(signal: SessionSignal | { kind: string }): SeatDecision {
-  if (signal && (signal as SessionSignal).kind === 'stop_reason') {
-    const stop = signal as Extract<SessionSignal, { kind: 'stop_reason' }>;
-    if (stop.value === 'completed') {
-      return {
-        step: 'forward_handoff',
-        fromSignal: 'stop_reason:completed',
-        reason: 'the session reported the stage work finished',
-      };
-    }
-    return {
-      step: 'abort',
-      fromSignal: `stop_reason:${stop.value}`,
-      reason: `the session stopped with reason "${stop.value}"${stop.detail ? `: ${stop.detail}` : ''}`,
-    };
-  }
-
-  if (signal && (signal as SessionSignal).kind === 'tool_event') {
-    const tool = signal as Extract<SessionSignal, { kind: 'tool_event' }>;
-    if (tool.permission === 'granted') {
-      return {
-        step: 'continue_session',
-        fromSignal: `tool_event:${tool.tool}:granted`,
-        reason: `the session was granted "${tool.tool}"`,
-      };
-    }
-    return {
-      step: 'abort',
-      fromSignal: `tool_event:${tool.tool}:denied`,
-      reason: `the session was denied "${tool.tool}"; a human decides what happens next`,
-    };
-  }
-
-  if (signal && (signal as SessionSignal).kind === 'helper_exit') {
-    const helper = signal as Extract<SessionSignal, { kind: 'helper_exit' }>;
-    const from = `helper_exit:${helper.helper}:${helper.exitCode}`;
-    if (helper.exitCode !== 0) {
-      return {
-        step: 'abort',
-        fromSignal: from,
-        reason: `${helper.helper} exited ${helper.exitCode}`,
-      };
-    }
-    if (helper.forwarded) {
-      return {
-        step: 'await_wake',
-        fromSignal: from,
-        reason: `${helper.helper} delivered the parcel; the seat waits for its next wake and never polls on its own`,
-      };
-    }
-    return { step: 'continue_session', fromSignal: from, reason: `${helper.helper} exited 0` };
-  }
-
+  const kind = signal?.kind;
+  if (kind === 'stop_reason') return decideFromStopReason(signal as Extract<SessionSignal, { kind: 'stop_reason' }>);
+  if (kind === 'tool_event') return decideFromToolEvent(signal as Extract<SessionSignal, { kind: 'tool_event' }>);
+  if (kind === 'helper_exit') return decideFromHelperExit(signal as Extract<SessionSignal, { kind: 'helper_exit' }>);
   return {
     step: 'abort',
-    fromSignal: `unrecognised:${signal && typeof signal.kind === 'string' ? signal.kind : 'none'}`,
+    fromSignal: `unrecognised:${typeof kind === 'string' ? kind : 'none'}`,
     reason: 'unrecognised session signal; the driver refuses to guess a next step from it',
   };
 }
