@@ -87,6 +87,7 @@ description: |
   model at once; GPU offload tuning; any second runtime backend.
 
 notes: |
+  Human 2026-08-23 (Cursor): parked behind Cursor seat chain (1078→1079→1080[+1081]); resume after Cursor coder/QA seats work.
   Human Q-jump 2026-08-23 (Cursor): Cursor seat chain ahead of local-LLM chain.
   Drained from the operator intake
   `.swarmforge/operator/INTAKE-download-any-local-model-as-swarm-member.md`
