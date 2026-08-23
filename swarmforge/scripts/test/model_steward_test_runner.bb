@@ -116,6 +116,23 @@
   (assert= "a certification report names its model" "llama-3.3-70b" (:model report))
   (assert= "a certification report names its provider" "cerebras" (:provider report)))
 
+(assert= "BL-1079: scorecard path is provider__model under scorecards/"
+         "scorecards/cursor__auto.json"
+         (model-steward-lib/scorecard-relative-path "cursor" "auto"))
+
+(let [report (model-steward-lib/build-certification-report
+              "cursor" "auto"
+              [{:competency "receive" :status "pass"}]
+              "2026-08-23T00:00:00Z"
+              {:scorecard-path "scorecards/cursor__auto.json"
+               :overall "swarm-compliant"})]
+  (assert= "BL-1079: certification report names the scorecard it read"
+           "scorecards/cursor__auto.json" (:scorecard_path report))
+  (assert= "BL-1079: certification report carries the scorecard overall"
+           "swarm-compliant" (:overall report))
+  (assert= "BL-1079: certification report gates are the scorecard entries"
+           1 (count (:gates report))))
+
 ;; ── decertify-on-regression-07: regression drops status, records the reason ─
 (let [reg (-> empty-registry
               (model-steward-lib/register-model "anthropic" "claude-sonnet-5" {:status "certified" :context_window 200000 :cost_class "medium"})

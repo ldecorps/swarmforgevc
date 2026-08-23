@@ -42,10 +42,16 @@
 ;; openrouter-anthropic-mono-router.conf uses claude). ModelFactory's
 ;; assignment descriptor names an agent alongside provider+model so a cold
 ;; apply plan can select a launch pack without the caller re-deriving it.
+;; BL-1079: cursor maps to the same agent token the shell launcher's
+;; validate_agent allow-list accepts (swarmforge.sh). The fallback
+;; (provider name) would also yield "cursor", but the explicit entry is
+;; the cross-boundary agreement the acceptance scenario compares — not a
+;; comment restating the token beside an unmapped provider.
 (def provider->agent
   {"anthropic" "claude"
    "openai" "codex"
-   "cerebras" "aider"})
+   "cerebras" "aider"
+   "cursor" "cursor"})
 
 (defn agent-for-provider [provider]
   (get provider->agent provider provider))
