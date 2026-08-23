@@ -1499,6 +1499,28 @@
                     parse-long)]
     (if (and n (pos? n)) (* n 60 1000) batch-claim-progress-stale-default-threshold-ms)))
 
+(defn parse-batch-claim-progress-role-stale-threshold-ms
+  "BL-1076. Pure: every
+   `config batch_claim_progress_role_stale_threshold_minutes <role> <n>` line
+   from conf text, as a {role ms} map. Same degrade-to-default posture as the
+   two parsers beside it, applied per line: a line whose minutes are missing,
+   unparseable or non-positive is simply DROPPED from the map, so the role
+   falls back to its built-in tolerance rather than to something tighter.
+   A repeated role takes the last line, matching how the single-value parsers
+   above would behave if they scanned rather than took `first`."
+  [conf-text]
+  (reduce
+   (fn [acc line]
+     (let [[_ role mins] (re-matches
+                          #"config\s+batch_claim_progress_role_stale_threshold_minutes\s+(\S+)\s+(-?\d+)\s*"
+                          line)
+           n (some-> mins parse-long)]
+       (if (and role n (pos? n))
+         (assoc acc role (* n 60 1000))
+         acc)))
+   {}
+   (str/split-lines (or conf-text ""))))
+
 (def batch-claim-progress-cooldown-default-ms
   "Default cooldown between repeated suspect nudges for the SAME still-stale
    batch item: one nudge per window, not every sweep tick."
@@ -1534,25 +1556,45 @@
 
 (defn apply-batch-claim-progress-check!
   "Refreshes (impure) each held batch item's sidecar from current-commit,
-   then classifies it via the pure decide-batch-claim-observation. Returns
-   the seq of {:file-path :item-id :age-ms} suspects this tick - the caller
-   (handoffd.bb) is responsible for actually sending the note, respecting
-   its own per-item cooldown. Never moves, deletes, or otherwise touches the
-   handoff file itself - the only side effect here is the sidecar write."
-  [held now-ms staleness-threshold-ms current-commit]
-  (vec
-   (keep
-    (fn [item]
-      (let [fp (:filePath item)
-            progress (read-batch-claim-progress fp)]
-        (when progress
-          (let [progress' (if (batch-claim-progress-lib/advanced? progress current-commit)
-                             (batch-claim-progress-lib/mark-progress progress current-commit now-ms)
-                             progress)]
-            (write-batch-claim-progress! fp progress')
-            (when (= :stale-suspect
-                     (batch-claim-progress-lib/decide-batch-claim-observation progress' now-ms staleness-threshold-ms))
-              {:file-path fp
-               :item-id (or (extract-ticket-id (dispatch-ticket-ref fp)) (handoff-id fp))
-               :age-ms (batch-claim-progress-lib/progress-age-ms progress' now-ms)})))))
-    held)))
+   then classifies it via the pure decide-batch-claim-observation.
+
+   BL-1076: returns {:suspects [...] :suppressed [...]} rather than a bare
+   seq. Both entries carry {:file-path :item-id :age-ms}; :suppressed adds
+   :reason. The caller (handoffd.bb) sends a note for each suspect, respecting
+   its own per-item cooldown, and LOGS each suppression - a suppression that
+   went unrecorded would let a permanently dirty worktree silence the signal
+   with nothing to show for it (invariant 2).
+
+   staleness-threshold-ms is already resolved FOR THIS ROLE by the caller (see
+   batch-claim-progress-lib/resolve-stale-threshold-ms) - this function is
+   role-agnostic and simply applies the number it is given.
+
+   The sidecar's progress instant still moves ONLY when HEAD actually advances
+   (invariant 3): neither gate defers a decision by rewriting it, so a reported
+   age is always the true age since real progress.
+
+   Never moves, deletes, or otherwise touches the handoff file itself - the
+   only side effect here is the sidecar write."
+  [held now-ms staleness-threshold-ms current-commit worktree-dirty?]
+  (reduce
+   (fn [acc item]
+     (let [fp (:filePath item)
+           progress (read-batch-claim-progress fp)]
+       (if-not progress
+         acc
+         (let [progress' (if (batch-claim-progress-lib/advanced? progress current-commit)
+                           (batch-claim-progress-lib/mark-progress progress current-commit now-ms)
+                           progress)
+               _ (write-batch-claim-progress! fp progress')
+               observation (batch-claim-progress-lib/decide-batch-claim-observation
+                            progress' now-ms staleness-threshold-ms worktree-dirty?)
+               entry {:file-path fp
+                      :item-id (or (extract-ticket-id (dispatch-ticket-ref fp)) (handoff-id fp))
+                      :age-ms (batch-claim-progress-lib/progress-age-ms progress' now-ms)}]
+           (case observation
+             :stale-suspect (update acc :suspects conj entry)
+             :suppressed-visible-work (update acc :suppressed conj
+                                              (assoc entry :reason "worktree-dirty"))
+             acc)))))
+   {:suspects [] :suppressed []}
+   held))

@@ -14,6 +14,13 @@
 ;; parcel (BL-678 invariant 2): the only observable action past this
 ;; namespace is a coordinator-facing SURFACE note when progress goes stale.
 ;;
+;; BL-1076 widened the label set from two to three without widening what the
+;; observer can DO - :suppressed-visible-work sends nothing at all, so
+;; invariant 2 is preserved in substance even though the old wording ("only
+;; ever returns one of two labels") is no longer literally true. Every label
+;; this namespace can return is still inert; the caller's only escalation
+;; remains that one coordinator-facing note.
+;;
 ;; Sidecar shape: {:ownerRole str :parcelId str :claimAtMs long
 ;;                  :lastProgressAtMs long :lastCommit str}
 ;; Written the INSTANT a batch item is claimed (never lazily initialised by
@@ -35,6 +42,33 @@
    suspect. Amendable via swarmforge.conf (see chase_sweep_lib.bb's
    parse-batch-claim-progress-stale-threshold-ms)."
   (* 20 60 1000))
+
+;; BL-1076: roles whose work legitimately runs far longer than the base clock
+;; before the first commit. The flat 20 minutes above surfaced a hardener
+;; mid-Stryker as suspect six times in fifty minutes on 2026-08-22, while
+;; `git status --porcelain` in its worktree showed live edits.
+;;
+;; DELIBERATELY NOT SHARED with BL-528's claim_progress_lib.bb, which grants
+;; hardender the same 90 minutes from its own literal. The two answer different
+;; questions - "is the owner alive and working" there, "is this claim
+;; progressing" here - and may legitimately diverge. The obvious boy-scout
+;; cleanup is to DRY them into one constant; that would couple a liveness
+;; escalation ladder to a progress observer, so it is refused on purpose.
+(def role-stale-threshold-ms
+  {"hardender" (* 90 60 1000)})
+
+(defn resolve-stale-threshold-ms
+  "BL-1076. Precedence, highest first: an operator override for this role
+   (`config batch_claim_progress_role_stale_threshold_minutes <role> <n>`,
+   parsed by chase_sweep_lib.bb), then this namespace's built-in role entry,
+   then the configured base that applies to every other role. An override the
+   parser rejected is simply absent from `overrides`, so an unusable setting
+   degrades to the role's own built-in tolerance rather than to the base -
+   never to something tighter than the role had before."
+  [role base-threshold-ms overrides]
+  (or (get overrides role)
+      (get role-stale-threshold-ms role)
+      base-threshold-ms))
 
 (defn make-batch-claim-progress
   "Sidecar written the instant a batch item is claimed (invariant 1) - not
@@ -84,13 +118,33 @@
 (defn decide-batch-claim-observation
   "Pure. This function is not capable of re-forwarding or re-delivering
    anything (invariant 2 is satisfied structurally, not by a runtime check):
-   it only ever returns one of two labels for the caller to act on.
-   :silent        - fresh progress, or no sidecar at all (nothing to say).
-   :stale-suspect - progress has gone stale past the threshold; the caller
-                    surfaces a named note to the coordinator and nothing
-                    else - the parcel itself is never touched here."
-  [progress now-ms staleness-threshold-ms]
-  (if (or (nil? progress) (fresh? progress now-ms staleness-threshold-ms))
-    :silent
-    :stale-suspect))
+   every label it can return is inert, and the caller's only escalation is a
+   coordinator-facing note.
+   :silent                  - fresh progress, or no sidecar at all (nothing to
+                              say). Sends nothing, records nothing.
+   :stale-suspect           - progress has gone stale past this role's
+                              threshold AND the owner shows no uncommitted
+                              work; the caller surfaces a named note to the
+                              coordinator and nothing else - the parcel itself
+                              is never touched here.
+   :suppressed-visible-work - BL-1076. Would have been :stale-suspect, but the
+                              owner's worktree holds uncommitted work, so the
+                              claim IS progressing by the other signal
+                              available. Sends nothing; the caller LOGS it
+                              (invariant 2: no suppression is silent, or a
+                              permanently dirty worktree would hide the signal
+                              with nothing to show for it).
+
+   Suppression is reachable only where a note would otherwise have gone out.
+   Fresh progress and a missing sidecar stay :silent even with a dirty
+   worktree - there was nothing to decline to surface.
+
+   BL-1076 retired the dirt-blind 3-arity rather than defaulting
+   worktree-dirty? to false: a call site that forgot the flag would silently
+   lose the gate, which is this very defect in a new place."
+  [progress now-ms staleness-threshold-ms worktree-dirty?]
+  (cond
+    (or (nil? progress) (fresh? progress now-ms staleness-threshold-ms)) :silent
+    worktree-dirty? :suppressed-visible-work
+    :else :stale-suspect))
 
