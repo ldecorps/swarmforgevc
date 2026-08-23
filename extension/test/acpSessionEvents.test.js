@@ -39,6 +39,18 @@ test('a permission request with no id is not actionable and is dropped', () => {
   );
 });
 
+test('a permission request naming no tool at all, and no toolCall to recurse into, is dropped', () => {
+  assert.equal(
+    parseAcpLine(JSON.stringify({ id: 7, method: 'session/request_permission', params: {} })),
+    null
+  );
+});
+
+test('a session id carried in the RESULT (not params) is still read', () => {
+  const e = parseAcpLine(JSON.stringify({ id: 1, result: { stopReason: 'end_turn', sessionId: 's-from-result' } }));
+  assert.equal(e.sessionId, 's-from-result');
+});
+
 test('an agent message chunk becomes transcript', () => {
   const e = parseAcpLine(
     JSON.stringify({
@@ -59,6 +71,50 @@ test('a content LIST is joined rather than dropped', () => {
   assert.equal(e.text, 'ab');
 });
 
+test('a content LIST mixing raw strings and text blocks joins both', () => {
+  const e = parseAcpLine(
+    JSON.stringify({
+      method: 'session/update',
+      params: { update: { sessionUpdate: 'agent_message_chunk', content: ['a', { type: 'text', text: 'b' }] } },
+    })
+  );
+  assert.equal(e.text, 'ab');
+});
+
+test('an update with neither content nor text is not a transcript event', () => {
+  const e = parseAcpLine(
+    JSON.stringify({ method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk' } } })
+  );
+  assert.equal(e, null);
+});
+
+test('text arriving under the "text" key (no "content") is read as a fallback', () => {
+  const e = parseAcpLine(
+    JSON.stringify({ method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', text: 'hello' } } })
+  );
+  assert.equal(e.text, 'hello');
+});
+
+test('a content list whose blocks carry no text is dropped, not emitted empty', () => {
+  const e = parseAcpLine(
+    JSON.stringify({
+      method: 'session/update',
+      params: { update: { sessionUpdate: 'agent_message_chunk', content: [{ type: 'image' }] } },
+    })
+  );
+  assert.equal(e, null);
+});
+
+test('a content block with no text field is not a transcript event', () => {
+  const e = parseAcpLine(
+    JSON.stringify({
+      method: 'session/update',
+      params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'image' } } },
+    })
+  );
+  assert.equal(e, null);
+});
+
 test('a user chunk and a tool output are attributed to their own speakers', () => {
   const u = parseAcpLine(
     JSON.stringify({ method: 'session/update', params: { update: { sessionUpdate: 'user_message_chunk', content: 'hi' } } })
@@ -68,6 +124,17 @@ test('a user chunk and a tool output are attributed to their own speakers', () =
     JSON.stringify({ method: 'session/update', params: { update: { sessionUpdate: 'tool_call_output', content: 'out' } } })
   );
   assert.equal(t.role, 'tool');
+});
+
+test('an unrecognised or missing tool status is not modelled as a fact', () => {
+  const unrecognised = parseAcpLine(
+    JSON.stringify({ method: 'session/update', params: { update: { sessionUpdate: 'tool_call', toolName: 'bash', status: 'vibes' } } })
+  );
+  assert.equal(unrecognised, null);
+  const nonString = parseAcpLine(
+    JSON.stringify({ method: 'session/update', params: { update: { sessionUpdate: 'tool_call', toolName: 'bash', status: 5 } } })
+  );
+  assert.equal(nonString, null);
 });
 
 test('tool status maps the protocol vocabulary onto started/completed/failed', () => {
@@ -86,6 +153,35 @@ test('tool status maps the protocol vocabulary onto started/completed/failed', (
     assert.equal(e.kind, 'tool_status', `${wire} must parse`);
     assert.equal(e.status, expected, `${wire} -> ${expected}`);
   }
+});
+
+test('a tool name is read from each of its fallback keys, in order', () => {
+  // toolName is the primary key; title/kind/name are the fallbacks the wire
+  // format's own variants use.
+  for (const key of ['title', 'kind', 'name']) {
+    const e = parseAcpLine(
+      JSON.stringify({ id: 7, method: 'session/request_permission', params: { [key]: 'write_file' } })
+    );
+    assert.deepEqual(
+      e,
+      { kind: 'permission_requested', requestId: 7, tool: 'write_file', sessionId: undefined },
+      `key "${key}" must be read as the tool name`
+    );
+  }
+});
+
+test('a tool name nested under toolCall is found by recursing into it', () => {
+  const e = parseAcpLine(
+    JSON.stringify({ id: 7, method: 'session/request_permission', params: { toolCall: { toolName: 'write_file' } } })
+  );
+  assert.deepEqual(e, { kind: 'permission_requested', requestId: 7, tool: 'write_file', sessionId: undefined });
+});
+
+test('a blank tool name is skipped in favour of the next fallback key', () => {
+  const e = parseAcpLine(
+    JSON.stringify({ id: 7, method: 'session/request_permission', params: { toolName: '   ', title: 'write_file' } })
+  );
+  assert.deepEqual(e, { kind: 'permission_requested', requestId: 7, tool: 'write_file', sessionId: undefined });
 });
 
 test('an unmodelled message is ignored rather than fatal', () => {
