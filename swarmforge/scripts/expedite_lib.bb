@@ -291,10 +291,113 @@
    --reset-worktrees reverts role worktrees. Scenario 13."
   #{"--sweep-inbox" "--reset-worktrees" "--full"})
 
+;; ── BL-1030: reading the configured command as a command line ─────────────
+;;
+;; This guard was vacuous in production for one reason: it took a SEQ of
+;; arguments and the only call site had none — it wrapped the whole configured
+;; command string in a one-element vector, so the single element ever tested
+;; for set membership was the entire command line. `./stop-swarm.sh
+;; --sweep-inbox` is not equal to `--sweep-inbox`, so it was admitted, and
+;; EXPEDITE_STOP_CMD is documented as a free-form knob whose natural value
+;; carries flags. Four tests passed the whole time, because they were written
+;; in a shape (`["./stop-swarm.sh" "--sweep-inbox"]`) the caller could not
+;; produce.
+;;
+;; So there is now exactly ONE shape. The predicate takes the command LINE —
+;; what EXPEDITE_STOP_CMD holds, and what `bash -lc` is handed — and tokenizes
+;; it itself. A caller cannot pass the wrong shape because there is no other
+;; shape to pass, and passing the old one throws rather than being coerced.
+
+(def ^:private shell-operator-chars #{\; \& \| \( \) \< \>})
+(def ^:private shell-space-chars #{\space \tab \newline \return})
+
+(defn tokenize-command
+  "The tokens `bash -lc` would produce for this command line, or nil when they
+   cannot be known without running it.
+
+   nil is a verdict, not a failure: an unterminated quote, a dangling escape,
+   a parameter expansion or a command substitution all mean the words this line
+   becomes depend on something not present here. The guard's whole job is to
+   prevent one unrecoverable act, so it must not admit input it cannot read
+   (BL-1030 invariant 2, approved 2026-08-22 — fail CLOSED).
+
+   Operators are their own tokens, so `--full;` is a forbidden flag followed by
+   a separator rather than a token that merely starts with one; a flag in the
+   second half of a compound command is found the same way."
+  [cmd]
+  (when (string? cmd)
+    (loop [cs (seq cmd), state :bare, cur nil, tokens []]
+      (let [c (first cs)
+            flush (fn [ts] (if (nil? cur) ts (conj ts cur)))]
+        (cond
+          (nil? c)
+          (when (= :bare state) (flush tokens))
+
+          (= :single state)
+          (if (= \' c)
+            (recur (next cs) :bare cur tokens)
+            (recur (next cs) :single (str cur c) tokens))
+
+          (= :double state)
+          (cond
+            (= \" c) (recur (next cs) :bare cur tokens)
+            ;; Only a `$` or a backtick the shell would ACT on is unreadable;
+            ;; one the backslash below has already defused is a literal.
+            (or (= \$ c) (= \` c)) nil
+            (= \\ c) (let [n (second cs)]
+                       (cond
+                         (nil? n) nil
+                         ;; Inside double quotes bash unescapes exactly these
+                         ;; four and leaves the backslash in place otherwise.
+                         (#{\" \\ \$ \`} n) (recur (nnext cs) :double (str cur n) tokens)
+                         :else (recur (nnext cs) :double (str cur c n) tokens)))
+            :else (recur (next cs) :double (str cur c) tokens))
+
+          ;; ── bare ──
+          (or (= \$ c) (= \` c)) nil
+          (= \\ c) (let [n (second cs)]
+                     (if (nil? n) nil (recur (nnext cs) :bare (str cur n) tokens)))
+          (= \' c) (recur (next cs) :single (or cur "") tokens)
+          (= \" c) (recur (next cs) :double (or cur "") tokens)
+          (shell-space-chars c) (recur (next cs) :bare nil (flush tokens))
+          (shell-operator-chars c) (recur (next cs) :bare nil (conj (flush tokens) (str c)))
+          :else (recur (next cs) :bare (str cur c) tokens))))))
+
+(defn stop-invocation-verdict
+  "Pure: may initiation run this configured stop command?
+
+   Takes the command LINE. Returns {:ok? true :tokens [...]}, or a refusal
+   carrying the reason and enough to name it:
+     :forbidden-flag — a token IS one of forbidden-stop-flags. Whole tokens
+                       only, so a target path spelling a flag is unaffected.
+     :unreadable     — tokenize-command could not say what words it becomes."
+  [cmd]
+  (when-not (string? cmd)
+    (throw (ex-info (str "BL-1030: stop-invocation-verdict takes the configured command LINE, "
+                         "not a pre-split argument list - passing the wrong shape is the defect "
+                         "this signature exists to prevent")
+                    {:got (type cmd) :value cmd})))
+  (if-let [tokens (tokenize-command cmd)]
+    (if-let [flag (first (filter forbidden-stop-flags tokens))]
+      {:ok? false :reason :forbidden-flag :flag flag :command cmd :tokens tokens}
+      {:ok? true :command cmd :tokens tokens})
+    {:ok? false :reason :unreadable :command cmd}))
+
 (defn stop-invocation-ok?
   "Pure: is this stop invocation safe for a resumable park?"
-  [args]
-  (empty? (filter forbidden-stop-flags (map str args))))
+  [cmd]
+  (:ok? (stop-invocation-verdict cmd)))
+
+(defn stop-refusal-message
+  "The refusal line, derived from the verdict so the message and the decision
+   cannot drift apart. nil for a verdict that admits."
+  [{:keys [ok? reason flag command]}]
+  (when-not ok?
+    (case reason
+      :forbidden-flag (str "stop command carries a forbidden flag: " flag " (in: " command ")")
+      :unreadable (str "stop command could not be read as a command line, so it is refused"
+                       " rather than admitted: " command)
+      (str "stop command refused: " command))))
 
 ;; ── bounces ────────────────────────────────────────────────────────────────
 ;; Scenarios 05/05b/05c. Operator ruling 2026-07-25: the bound is 3, NOT 8.
