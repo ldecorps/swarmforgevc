@@ -13,7 +13,7 @@ Feature: A ticket QA landed but never notified the coordinator about is detected
   Background:
     Given the landed-but-open sweep runs over the active backlog and the main ref
 
-  # BL-1100 landed-but-open-01
+  # BL-1104 landed-but-open-01
   Scenario: A ticket QA landed but never closed is flagged for a QA re-notify
     Given active ticket "BL-2001" whose QA approval is reachable from the main ref
     And no close commit for "BL-2001" on the main ref
@@ -22,14 +22,14 @@ Feature: A ticket QA landed but never notified the coordinator about is detected
     And QA is nudged to resend the coordinator notify for "BL-2001"
     And the nudge names the approval commit that flagged it
 
-  # BL-1100 landed-but-open-02
+  # BL-1104 landed-but-open-02
   Scenario: A ticket still under QA review is not flagged
     Given active ticket "BL-2002" whose parcel has reached QA
     And no QA approval for "BL-2002" is reachable from the main ref
     When the sweep runs
     Then "BL-2002" is not flagged
 
-  # BL-1100 landed-but-open-03
+  # BL-1104 landed-but-open-03
   Scenario Outline: A ticket an existing sweep already owns is left to that sweep
     Given active ticket "<ticket>" with <condition> and no QA approval on the main ref
     When the sweep runs
@@ -41,7 +41,7 @@ Feature: A ticket QA landed but never notified the coordinator about is detected
       | BL-2003 | no dispatch trail  | dispatch-gap      |
       | BL-2004 | no assignee        | unassigned-active |
 
-  # BL-1100 landed-but-open-04
+  # BL-1104 landed-but-open-04
   # Trap (a), measured live: git log --grep matches the commit BODY, so
   # grepping origin/main for BL-1078 returns BL-1086's landing commit.
   Scenario: A ticket named only in another ticket's commit body is not flagged
@@ -50,14 +50,14 @@ Feature: A ticket QA landed but never notified the coordinator about is detected
     When the sweep runs
     Then "BL-2005" is not flagged
 
-  # BL-1100 landed-but-open-05
+  # BL-1104 landed-but-open-05
   Scenario: A ticket already nudged is not nudged again by the next sweep
     Given active ticket "BL-2007" flagged as landed-but-open
     And a QA re-notify nudge for "BL-2007" is already on record
     When the sweep runs again
     Then no second nudge for "BL-2007" is sent
 
-  # BL-1100 landed-but-open-06
+  # BL-1104 landed-but-open-06
   Scenario: The sweep never closes or moves the ticket itself
     Given active ticket "BL-2008" whose QA approval is reachable from the main ref
     When the sweep runs
