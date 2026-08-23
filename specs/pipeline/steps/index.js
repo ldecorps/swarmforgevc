@@ -593,7 +593,9 @@ const DOMAINS = [
   require('./bl1029RespawnLaunchQuotingSteps'),
   require('./bl1075WindowSizeOwnershipSteps'),
   require('./bl713CursorSeatDriverSteps'),
-  require('./bl777BargeInDetectorSteps')
+  require('./bl1050CursorRunFailureLogSteps'),
+  require('./bl777BargeInDetectorSteps'),
+  require('./bl844HandsFreeSessionSteps')
 ];
 
 function registerSteps(registry) {
