@@ -62,6 +62,9 @@ out_of_scope: |
   - ACP-host operation (BL-1081).
   - Reimplementing the hotfix rather than reviewing its landed diff.
 notes: |
+  2026-08-23T21:45Z coordinator: QA bounced to coder (3f4df83a07) — unit:
+  Claude RC-off reports OFF. BL-1052 deferred at QA until this clears.
+
   ## Hotfix ledger
 
   Commit under review: f02f6ae5b4 on main, "Hotfix Cursor full-forge
