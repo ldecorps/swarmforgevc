@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a783e365b8ef4767624b21f1c30f5b6c008c289e5c76b323efc998f475a53d2c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T21:21:11.243120168Z","feature_name":"A role seat can be staffed by a downloaded local model","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the launch command names the local endpoint and the chosen model","scenario_hash":"ec683b0a5476842d58a3f0eefc76ccd6c25e277017fb7be979704bdc1bcc34b5","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-23T21:21:11.243120168Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A role seat can be staffed by a downloaded local model
 
   A seat staffed by a downloaded model runs its completions on this host through
