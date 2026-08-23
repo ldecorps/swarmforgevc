@@ -1,6 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1108: stamp-off of operator hotfix
+**Last Updated:** August 23, 2026 (BL-1052: a role seat can be staffed by a
+downloaded local model. Agent key `local-model` (chat-message/embedded,
+never folded into `aider` or `codex`); pack
+`swarmforge/packs/local-model-mono-router.conf` points every window and the
+coordinator at that agent with the model id on the window line; launch
+adapter runs `qwen --auth-type openai -y` against the BL-1082 loopback
+OpenAI-compat base URL (default `http://127.0.0.1:11434/v1`, override
+`SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL`) and refuses launch when the endpoint
+is not ready, naming the URL; secrets reach the pane only via tmux `-e`.
+The aider-based `qwen-mono-router` pack is untouched. The earlier
+qwen-code / Token Plan cloud seat under this same ticket id was superseded
+and removed — see
+`backlog/evidence/BL-1052-BL-1053-supersede-disposition-20260823.md`.
+How-to: `docs/how-to/BL-1052-local-model-seat-launch.md`. No new extension
+command, setting, or UI change.)
+Prior entry —
+August 23, 2026 (BL-1108: stamp-off of operator hotfix
 `f02f6ae5b4` — Cursor full-forge readiness. Before the hotfix, babysitter only
 recognised a `claude` child (false CRIT on healthy Cursor panes),
 `./swarm ensure` could treat a shell-only Cursor pane as healthy, and Cursor
