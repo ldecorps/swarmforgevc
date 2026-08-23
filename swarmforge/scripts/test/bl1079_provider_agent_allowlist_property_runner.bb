@@ -32,7 +32,7 @@
   (let [src (slurp (str (fs/path scripts-dir "swarmforge.sh")))
         fn-body (second (re-find #"(?m)^(validate_agent\(\) \{[\s\S]*?^\})" src))
         alts (when fn-body
-               (second (re-find #"(?m)^\s+([a-z0-9_|]+)\)\s*;;\s*$" fn-body)))]
+               (second (re-find #"(?m)^\s+([a-z0-9_|-]+)\)\s*;;\s*$" fn-body)))]
     (when-not fn-body
       (swap! failures conj "FAIL: validate_agent could not be located in swarmforge.sh"))
     (when (and fn-body (str/blank? alts))
