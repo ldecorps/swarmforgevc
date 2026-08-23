@@ -167,19 +167,19 @@
 
 (assert= "front-desk-liveness-01: a heartbeat older than the stall window is stale"
          true
-         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000))
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000 nil 90000))
 
 (assert= "front-desk-liveness-01: exactly AT the stall window boundary is stale (inclusive)"
          true
-         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 91000 90000))
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 91000 90000 nil 90000))
 
 (assert= "front-desk-liveness-02: a heartbeat just inside the stall window is NOT stale"
          false
-         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000))
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000 nil 90000))
 
 (assert= "a bot that never wrote a heartbeat at all is stale (nil counts as stale)"
          true
-         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 90000 90000))
+         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 90000 90000 nil 90000))
 
 (assert= "a freshly spawned bot with no heartbeat yet is NOT stale during startup grace"
          false
@@ -229,13 +229,16 @@
 ;; The six supervisors sharing this predicate include callers that pass no
 ;; spawn time at all. Their behaviour must be byte-for-byte unchanged: with no
 ;; started-at-ms there is no "before this child" to speak of.
-(assert= "bl1035: the 3-arity form is unchanged - a stale heartbeat is still stale with no spawn time"
+;; BL-1043 retired the grace-less 3-arity these two named. What they were
+;; really pinning is the no-spawn-time SEMANTICS, which the explicit 5-arity
+;; still carries verbatim - so they follow it there rather than being deleted.
+(assert= "bl1035: no spawn time is unchanged - a stale heartbeat is still stale"
          true
-         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000))
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000 nil 90000))
 
-(assert= "bl1035: the 3-arity form is unchanged - a fresh heartbeat is still fresh"
+(assert= "bl1035: no spawn time is unchanged - a fresh heartbeat is still fresh"
          false
-         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000))
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000 nil 90000))
 
 (assert= "bl1035: a pre-spawn heartbeat AFTER the grace is stale, not silently waived forever"
          true
@@ -263,6 +266,79 @@
          ;; 1000ms (already over by now=501500) but stall is 90000ms (heartbeat
          ;; is only 1500ms old) - if `>=` were `>`, this would wrongly be stale.
          (front-desk-supervisor-lib/poll-heartbeat-stale? 500000 501500 90000 500000 1000))
+
+;; ── BL-1043: a call site that does not ask for a grace still GETS one ────
+;; BL-1035 fixed the 5-arity, but the convenience arity below it passed
+;; started-at-ms as nil - and the grace clause opens with (and started-at-ms
+;; ...), so it could never fire. It even passed stall-ms in the grace slot,
+;; which read to a reviewer like a deliberate, generous grace and was dead
+;; code. Two supervisors called exactly that arity and had NO startup grace
+;; at all: onboarder-supervisor.log has a child declared stalled 2.00s after
+;; spawn against a declared 120000ms window.
+;;
+;; So the no-grace arity is retired. A caller now names the spawn time and
+;; may omit only the grace LENGTH, which defaults; omitting the spawn time is
+;; an arity error rather than a silent loss of protection.
+
+(assert= "bl1043-05: the grace-less arity is GONE - omitting the spawn time no longer resolves"
+         true
+         (try (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000)
+              false
+              ;; babashka reports this as a plain java.lang.Exception, so the
+              ;; message is pinned too - otherwise any unrelated throw here
+              ;; would read as the arity being gone.
+              (catch Exception e
+                (boolean (re-find #"with 3 arguments" (.getMessage e))))))
+
+(assert= "bl1043-01: a caller that names no grace still gets the default one"
+         false
+         ;; No heartbeat at all, 2s into the default grace - the live shape.
+         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 502000 120000 500000))
+
+(assert= "bl1043-02: the defaulted grace still EXPIRES - the guard stays armed"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale?
+           nil (+ 500000 front-desk-supervisor-lib/default-startup-grace-ms) 120000 500000))
+
+(assert= "bl1043-03: a predecessor's stale heartbeat does not condemn a replacement under the defaulted grace"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 502000 120000 500000))
+
+(assert= "bl1043-04: the child's own heartbeat inside the defaulted grace clears the concern"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500100 502000 120000 500000))
+
+(assert= "bl1043: past the defaulted grace, the child's own stale heartbeat is still stale"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 500100 700000 120000 500000))
+
+;; The remaining accidental door: (:started-at-ms entry) on an entry that has
+;; not started yet reads nil. Under the old 3-arity that meant "no grace, so a
+;; missing heartbeat is stale immediately" - the defect. The defaulting arity
+;; cannot measure a grace from a spawn time it does not have, so it refuses to
+;; call the child stalled rather than degrading back to that.
+(assert= "bl1043: a nil spawn time under the defaulting arity is never stalled, never the old immediate stall"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 502000 120000 nil))
+
+(assert= "bl1043: a nil spawn time is not stalled even with a long-stale heartbeat present"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 999999 120000 nil))
+
+;; The explicit 5-arity keeps its BL-370 meaning: a caller that passes nil
+;; spawn time AND names a grace has said, in as many words, that it has no
+;; spawn time to measure from. That is a statement, not an accident.
+(assert= "bl1043: the explicit 5-arity with a nil spawn time is unchanged - a stale heartbeat is still stale"
+         true
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 92000 90000 nil 90000))
+
+(assert= "bl1043: the explicit 5-arity with a nil spawn time is unchanged - a fresh heartbeat is still fresh"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? 1000 90999 90000 nil 90000))
+
+(assert= "bl1043: the default grace is the same 90s the reference supervisor already used"
+         90000
+         front-desk-supervisor-lib/default-startup-grace-ms)
 
 ;; ── BL-1037 (hardener): build-served-fact? directly, not only through
 ;; check-one!'s already-resolved boolean ────────────────────────────────

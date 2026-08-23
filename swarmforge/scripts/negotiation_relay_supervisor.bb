@@ -38,6 +38,9 @@
 ;;   NEGOTIATION_RELAY_HEALTHY_RESET_MS   continuous-uptime attempt reset (default 600000)
 ;;   NEGOTIATION_RELAY_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
 ;;   NEGOTIATION_RELAY_STALL_MS           poll-heartbeat staleness window (default 90000)
+;;   NEGOTIATION_RELAY_HEARTBEAT_STARTUP_GRACE_MS  how long a freshly spawned
+;;                                         child may go without a heartbeat
+;;                                         before that window applies (default 90000)
 ;;   NEGOTIATION_RELAY_ESCALATION_MAX_ATTEMPTS bounded retry cap on the give-up
 ;;                                         escalation email (default 5)
 ;;   NEGOTIATION_RELAY_ESCALATION_BACKOFF_BASE_MS / NEGOTIATION_RELAY_ESCALATION_BACKOFF_MAX_MS
@@ -95,6 +98,18 @@
 ;; long-poll timeout even accounting for network latency.
 (def stall-ms (env-long "NEGOTIATION_RELAY_STALL_MS" 90000))
 
+;; BL-1043: how long a freshly spawned child may stay silent before the stall
+;; window above applies to it at all. This supervisor had no such window - it
+;; called poll-heartbeat-stale?'s grace-less arity, exactly as the onboarder
+;; supervisor did. The defect here is LATENT rather than observed: this host
+;; has no negotiation-relay-supervisor.log at all, so it is fixed on the
+;; strength of the shared code shape, not of its own incident.
+;;
+;; 90s, matching cursor_bridge_supervisor.bb and the library default.
+(def heartbeat-startup-grace-ms
+  (env-long "NEGOTIATION_RELAY_HEARTBEAT_STARTUP_GRACE_MS"
+            front-desk-supervisor-lib/default-startup-grace-ms))
+
 (def escalation-retry-config
   {:max-attempts (env-long "NEGOTIATION_RELAY_ESCALATION_MAX_ATTEMPTS" 5)
    :backoff-base-ms (env-long "NEGOTIATION_RELAY_ESCALATION_BACKOFF_BASE_MS" 60000)
@@ -135,14 +150,26 @@
     (try (:lastHeartbeatMs (json/parse-string (slurp (str poll-heartbeat-file)) true))
          (catch Exception _ nil))))
 
+;; BL-1043: the second half of the fix, as cursor_bridge_supervisor.bb does -
+;; the heartbeat file outlives the process that wrote it, so a replacement
+;; starts against a clean slate rather than its predecessor's timestamp.
+(defn clear-poll-heartbeat! []
+  (fs/delete-if-exists poll-heartbeat-file))
+
 (defn spawn-relay! []
+  (clear-poll-heartbeat!)
   (process/process {:out :inherit :err :inherit
                      :extra-env {"TELEGRAM_PRINCIPAL_USER_ID" (System/getenv "TELEGRAM_PRINCIPAL_USER_ID")}}
                     "node" (str relay-entrypoint) target-repo-path host-secrets-file-path "poll-loop"))
 
 (def process-specs
   [{:key :relay :spawn-pid! (fn [] (.pid (:proc (spawn-relay!))))
-    :heartbeat-stale? (fn [now] (front-desk-supervisor-lib/poll-heartbeat-stale? (read-poll-heartbeat-ms) now stall-ms))}])
+    ;; BL-1043: takes the entry - the grace is measured from THIS child's
+    ;; spawn time, the same (now entry) shape the other supervisors use.
+    :heartbeat-stale? (fn [now entry]
+                        (front-desk-supervisor-lib/poll-heartbeat-stale?
+                          (read-poll-heartbeat-ms) now stall-ms
+                          (:started-at-ms entry) heartbeat-startup-grace-ms))}])
 
 (defn read-state []
   (if (fs/exists? status-file)
@@ -225,7 +252,7 @@
         next-state (into {}
                           (map (fn [spec]
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
-                                       heartbeat-stale? ((:heartbeat-stale? spec) now)
+                                       heartbeat-stale? ((:heartbeat-stale? spec) now entry)
                                        ;; BL-411: kill-pid! (the 9th arg) is
                                        ;; the fix - without it, check-one!'s
                                        ;; own bounded-restart clause defaults

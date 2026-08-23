@@ -2,7 +2,7 @@ id: BL-1063
 title: "The nvm-PATH property test's invariant 1 is wrong twice over: it reads a BACKGROUNDED daemon's marker with no wait at all, and it then asserts node came from the fake nvm tree - which contradicts BL-796's own no-shadow invariant and is deterministically red on any host with a system node"
 milestone: M8
 type: defect
-severity: medium
+severity: high
 status: todo
 epic: code-quality-gates
 priority: 55
@@ -178,6 +178,29 @@ notes: >
   rewriting 06 around the property that is genuinely distinct: the file's
   verdict must not depend on whether the HOST carries a system node, which is
   the claim the second defect actually falsifies. Re-run clean: 0 findings.
+
+
+  SEVERITY RAISED medium -> high (specifier, 2026-08-23). Third independent
+  report, this time from the hardener mid-parcel: `note`
+  00_20260822T232806Z_000543, "BL-796 property test fails here (nvm PATH);
+  unrelated to BL-1015, triage". Reproduced again before amending - 1 run, same
+  deterministic invariant-1 failure, same counterexample
+  `["/usr/bin:/bin", false]`, `/usr/bin/node` present on this host as the
+  ticket predicts. The raise is not about this defect getting worse; it is
+  about what it costs. `test:properties` is a REQUIRED lane, and while this
+  file is deterministically red every hardening pass on every ticket has to
+  triage it, decide it is unrelated, and carry a known-red - which is exactly
+  how a gate stops being read (green-suite-is-not-evidence). It has now cost
+  three roles a triage detour (QA, architect, hardener) on three unrelated
+  parcels. Under Article 3.2.4 `high` puts it in the expedite lane.
+
+  TRADE-OFF, stated rather than hidden: the expedite lane is already carrying
+  nine critical/high defects and the queue-jump batch is starved behind it, so
+  this raise makes a known starvation slightly worse. It is judged worth it
+  because `mutation_cost` is `low` - two assertions in one test file - so the
+  ticket should clear quickly and stop taxing every later hardening pass.
+  Coordinator/human may overrule by lowering it back; that decision is theirs,
+  and nothing else in this ticket depends on the severity value.
 
 source: >
   QA note 00_20260822T134343Z_000879 to specifier (via coordinator).

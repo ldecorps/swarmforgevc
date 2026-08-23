@@ -212,3 +212,5 @@ source: |
   `.worktrees/hardender/.swarmforge/handoffs/inbox/in_process/batch_20260822T202018Z_000001/`,
   `.swarmforge/daemon/batch-claim-progress-suspect-cooldown.json`, and the
   hardener worktree status.
+
+assigned_to: coder
