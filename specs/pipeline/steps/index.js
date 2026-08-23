@@ -607,7 +607,8 @@ const DOMAINS = [
   require('./bl1088GiveUpCooldownSteps'),
   require('./bl1030ForbiddenStopFlagSteps'),
   require('./bl1071BabysitterSweepSurvivalSteps'),
-  require('./bl1078CursorAgentTokenSteps')
+  require('./bl1078CursorAgentTokenSteps'),
+  require('./bl1079CursorStewardCertifySteps')
 ];
 
 function registerSteps(registry) {

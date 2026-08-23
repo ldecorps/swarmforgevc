@@ -109,12 +109,21 @@
     (throw (ex-info "no registry entry for provider/model — register-model first"
                      {:provider provider :model model}))))
 
+(defn scorecard-relative-path
+  "Well-known relative path under the steward state dir for the compliance-
+   battery scorecard certify requires (BL-1079). Same convention the CLI
+   names when refusing an absent scorecard."
+  [provider model]
+  (str "scorecards/" provider "__" model ".json"))
+
 (defn certify
   "Flips a model to certified and records where its certification report
    artifact was written (the caller/store persists the report file itself;
    this only records the path on the registry entry). Requires the model to
    already have a registry entry — update-in's nil-merge would otherwise
-   silently create one missing :provider/:model."
+   silently create one missing :provider/:model. The CLI gate that requires
+   a compliance-battery scorecard lives in model_steward_cli.bb — this
+   pure flip stays callable from tests that already planted evidence."
   [registry provider model report-path]
   (require-registered registry provider model)
   (-> registry
@@ -142,15 +151,20 @@
              :certification_report_path report-path))
 
 (defn build-certification-report
-  "A Slice 1 manual-certification report: no automated benchmark ingestion
-   yet (that is Slice 2's `evaluate`), so gate-results may be empty — the
-   operator vouches for the model by invoking certify."
-  [provider model gate-results timestamp]
-  {:provider provider
-   :model model
-   :timestamp timestamp
-   :result certified-status
-   :gates (vec gate-results)})
+  "Certification report. When scorecard-path is supplied (BL-1079), the
+   report names that compliance-battery evidence and gate-results are the
+   scorecard entries. The empty-gates / no-scorecard-path shape is kept for
+   pure unit tests of the report builder — the CLI never writes it."
+  ([provider model gate-results timestamp]
+   (build-certification-report provider model gate-results timestamp nil))
+  ([provider model gate-results timestamp {:keys [scorecard-path overall]}]
+   (cond-> {:provider provider
+            :model model
+            :timestamp timestamp
+            :result certified-status
+            :gates (vec gate-results)}
+     scorecard-path (assoc :scorecard_path scorecard-path)
+     overall (assoc :overall overall))))
 
 (defn build-regression-report
   "A decertification report referencing the certification it regressed

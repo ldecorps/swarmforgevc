@@ -1,13 +1,17 @@
 #!/usr/bin/env bb
-;; TDD runner for model_steward_lib.bb — BL-547 Slice 1. Pure assertions, no
-;; tmux, no disk IO (model_steward_store.bb's fs adapter is covered by
-;; test_model_steward_cli.sh instead). Model Steward owns the Model Registry,
+;; TDD runner for model_steward_lib.bb — BL-547 Slice 1. Pure assertions for
+;; the lib; BL-1079 also pins model_steward_store.bb's read-scorecard! against
+;; a temp dir (the rest of the fs adapter remains covered by
+;; test_model_steward_cli.sh). Model Steward owns the Model Registry,
 ;; Capability Registry, Role Recommendation Matrix, and Prompt Adapter
 ;; catalogue described in specs/features/BL-547-model-steward-infrastructure-agent.feature.
 (ns model-steward-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [cheshire.core :as json]))
 
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "model_steward_lib.bb")))
+(def scripts-dir (str (fs/path (fs/parent (fs/canonicalize *file*)) "..")))
+(load-file (str (fs/path scripts-dir "model_steward_lib.bb")))
+(load-file (str (fs/path scripts-dir "model_steward_store.bb")))
 
 (def failures (atom []))
 
@@ -116,6 +120,23 @@
   (assert= "a certification report names its model" "llama-3.3-70b" (:model report))
   (assert= "a certification report names its provider" "cerebras" (:provider report)))
 
+(assert= "BL-1079: scorecard path is provider__model under scorecards/"
+         "scorecards/cursor__auto.json"
+         (model-steward-lib/scorecard-relative-path "cursor" "auto"))
+
+(let [report (model-steward-lib/build-certification-report
+              "cursor" "auto"
+              [{:competency "receive" :status "pass"}]
+              "2026-08-23T00:00:00Z"
+              {:scorecard-path "scorecards/cursor__auto.json"
+               :overall "swarm-compliant"})]
+  (assert= "BL-1079: certification report names the scorecard it read"
+           "scorecards/cursor__auto.json" (:scorecard_path report))
+  (assert= "BL-1079: certification report carries the scorecard overall"
+           "swarm-compliant" (:overall report))
+  (assert= "BL-1079: certification report gates are the scorecard entries"
+           1 (count (:gates report))))
+
 ;; ── decertify-on-regression-07: regression drops status, records the reason ─
 (let [reg (-> empty-registry
               (model-steward-lib/register-model "anthropic" "claude-sonnet-5" {:status "certified" :context_window 200000 :cost_class "medium"})
@@ -194,6 +215,33 @@
                (seq (model-steward-lib/role-recommendations reg "coder")))
   (assert= "seed transform carries adapter catalogue entries"
            "generic" (:adapter_id (model-steward-lib/adapter-for reg "anthropic" "claude-sonnet-5"))))
+
+;; ── BL-1079: read-scorecard! is the evidence certify requires ──────────────
+;; A mutant that makes read-scorecard! always return nil (e.g. replacing the
+;; exists? guard with `false`) must fail here — the CLI suite alone can miss
+;; it when set -e aborts before an explicit FAIL line, and a naïve surgical
+;; replace of `(when (fs/exists? p)` hits read-certification-report! first.
+(let [state-dir (str (fs/create-temp-dir {:prefix "model-steward-scorecard-"}))
+      rel "scorecards/cursor__auto.json"
+      abs (str (fs/path state-dir rel))]
+  (try
+    (assert= "BL-1079: read-scorecard! is nil when the artifact is absent"
+             nil
+             (model-steward-store/read-scorecard! state-dir rel))
+    (fs/create-dirs (fs/parent abs))
+    (spit abs (json/generate-string
+               {:model "auto"
+                :entries [{:competency "receive" :status "pass"}]
+                :overall "swarm-compliant"}))
+    (let [sc (model-steward-store/read-scorecard! state-dir rel)]
+      (assert-true "BL-1079: read-scorecard! returns a map when the artifact is present"
+                   (map? sc))
+      (assert= "BL-1079: read-scorecard! carries the scorecard overall"
+               "swarm-compliant" (:overall sc))
+      (assert= "BL-1079: read-scorecard! carries the scorecard entries"
+               1 (count (:entries sc))))
+    (finally
+      (fs/delete-tree state-dir))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

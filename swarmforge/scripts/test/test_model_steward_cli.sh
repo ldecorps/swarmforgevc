@@ -68,19 +68,55 @@ rm -f /tmp/model-steward-capability-missing.out
 pass "04b: capability errors loudly on unknown models"
 
 # ── 5: register + certify writes a certification report artifact ───────────
+# BL-1079: certify requires a compliance-battery scorecard at the well-known
+# path; plant a minimal one before the flip (same contract the acceptance
+# steps use for "passed all certification gates").
 bb "$CLI" register bl547test/smoke-model --status candidate --context-window 8000 --cost-class low >/dev/null
-CERTIFY_OUT="$(bb "$CLI" certify bl547test/smoke-model)"
+SCORECARD_REL="scorecards/bl547test__smoke-model.json"
+mkdir -p "$STATE_DIR/scorecards"
+printf '%s\n' '{"model":"smoke-model","entries":[{"competency":"receive","status":"pass"}],"overall":"swarm-compliant"}' \
+  > "$STATE_DIR/$SCORECARD_REL"
+# Capture exit explicitly: under `set -e`, a refuse-exit from bb would abort
+# this script before an explicit FAIL line — and a store mutant that always
+# returns nil looks exactly like that (BL-1079 hardener surgical sweep).
+set +e
+CERTIFY_OUT="$(bb "$CLI" certify bl547test/smoke-model 2>&1)"
+CERTIFY_EC=$?
+set -e
+[[ "$CERTIFY_EC" -eq 0 ]] \
+  || fail "05: certify exited $CERTIFY_EC with a planted scorecard: $CERTIFY_OUT"
 [[ "$CERTIFY_OUT" == *"certified"* ]] \
   || fail "05: certify output does not report certified"
+[[ "$CERTIFY_OUT" == *"scorecard=$SCORECARD_REL"* ]] \
+  || fail "05: certify output does not name the scorecard it read"
 REPORT_REL="$(echo "$CERTIFY_OUT" | sed -n 's/.*(\(certification-reports\/[^)]*\)).*/\1/p')"
 [[ -n "$REPORT_REL" ]] \
   || fail "05: could not parse a certification report path from certify output"
 [[ -f "$STATE_DIR/$REPORT_REL" ]] \
   || fail "05: certification report artifact was not written to disk at $REPORT_REL"
+grep -q "\"scorecard_path\":\"$SCORECARD_REL\"" "$STATE_DIR/$REPORT_REL" \
+  || fail "05: certification report does not name the scorecard path"
 bb "$CLI" show bl547test/smoke-model | grep -q '"status":"certified"' \
   || fail "05: registry entry was not flipped to certified"
 
 pass "05: certify writes a certification report artifact and flips status"
+
+# ── 5b: BL-1079 certify refuses when the scorecard artifact is absent ──────
+bb "$CLI" register bl547test/no-scorecard --status candidate --context-window 8000 --cost-class low >/dev/null
+WANTED_SCORECARD="scorecards/bl547test__no-scorecard.json"
+bb "$CLI" certify bl547test/no-scorecard >/tmp/model-steward-certify-noscorecard.out 2>&1 \
+  && fail "05b: certify should exit non-zero when the scorecard is absent" || true
+grep -q "certify refused: missing compliance-battery scorecard at $WANTED_SCORECARD" \
+  /tmp/model-steward-certify-noscorecard.out \
+  || fail "05b: certify did not name the scorecard path it wanted"
+bb "$CLI" show bl547test/no-scorecard | grep -q '"status":"candidate"' \
+  || fail "05b: refuse must leave status at candidate"
+[[ -d "$STATE_DIR/certification-reports" ]] && \
+  find "$STATE_DIR/certification-reports" -name 'bl547test__no-scorecard__*' | grep -q . \
+  && fail "05b: refuse must not write a certification report" || true
+rm -f /tmp/model-steward-certify-noscorecard.out
+
+pass "05b: certify refuses without a compliance-battery scorecard"
 
 # ── 6: decertify on regression records the reason and a fresh report ───────
 DECERTIFY_OUT="$(bb "$CLI" decertify bl547test/smoke-model --reason "coding_quality regressed below floor")"
