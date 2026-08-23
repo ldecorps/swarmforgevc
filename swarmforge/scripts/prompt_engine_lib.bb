@@ -47,7 +47,7 @@
 ;; only a provider whose wording is genuinely novel (like aider's) also needs
 ;; a new text-builder, since capability flags alone can route to prose, not
 ;; invent it. agent_runtime_lib.bb delegates here for backward compatibility.
-(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "mock"})
+(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "cursor" "mock"})
 
 (defn normalize-agent
   "Unknown agents fall back to claude chat-style wake."
@@ -106,6 +106,21 @@
               :bootstrap-text-style :generic
               :startup-delay-ms 3000
               :acp true}
+   ;; BL-1078: Cursor's terminal-native agent CLI (`cursor-agent`). Same shape
+   ;; as vibe/gemini - the prompt path rides the first message and the seat is
+   ;; woken by chatting into its pane.
+   ;;
+   ;; The entry is load-bearing beyond its contents: normalize-agent falls back
+   ;; to "claude" for any agent NOT in supported-agents, so without this a
+   ;; cursor seat would be woken with claude's wake style while every check
+   ;; read green - a wrong answer that looks exactly like a right one.
+   ;;
+   ;; Not :acp. cursor-agent is terminal-native (BL-1078's own premise
+   ;; correction, and BL-1081's reason for not spiking ACP on it).
+   "cursor"  {:wake-style :chat-message
+              :bootstrap-style :embedded
+              :bootstrap-text-style :generic
+              :startup-delay-ms 3000}
    "mock"    {:wake-style :mock
               :bootstrap-style :mock
               :bootstrap-text-style :mock}})
