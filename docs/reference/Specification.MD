@@ -1,6 +1,26 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1076: the batch-claim-progress
+**Last Updated:** August 23, 2026 (BL-973: five hand-maintained bb fixture
+copy-lists drifted from the real transitive `load-file` closure of the entry
+point each actually drives, three times over (BL-911, BL-967, BL-1029),
+leaving two acceptance features (BL-487, BL-814) and
+`test_lean_ledger_bb_wiring.sh` red on `main` with no standing gate running
+the shell test to notice. Fix, two halves: (1)
+`specs/pipeline/steps/lib/bbFixtureClosureGate.js` pairs each of the five
+fixtures with the entry point it drives and reads its effective copy-list
+behaviorally (export or actual copy, never a source grep) against the
+closure BL-944's `operatorRuntimeBbClosure.js` computes, closing all five —
+including `operator_runtime_sandbox.sh`'s previously-unguarded list — the
+same way BL-944 closed the first; (2) `run_bb_suite.sh` /
+`suite-manifest.tsv` is now the standing entry point for
+`swarmforge/scripts/test/`, with an inventory gate that fails on any test
+file named in neither the standing nor a dated-and-reasoned excluded lane.
+15/15 Gherkin mutations killed; bb suite green (`test_lean_ledger_bb_wiring.sh`
+6/6); BL-487 2/2 and BL-814 6/6 now green. No extension command, setting, or
+UI change — test-infrastructure only. See
+`docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`.)
+Prior entry —
+BL-1076: the batch-claim-progress
 sweep (BL-678) judged every batch role by one flat 20-minute HEAD clock
 with HEAD movement as its only progress signal, so a hardener mid-Stryker
 — routinely an hour of real work before its first commit, with the edits

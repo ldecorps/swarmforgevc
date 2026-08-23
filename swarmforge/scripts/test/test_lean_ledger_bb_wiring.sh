@@ -10,6 +10,7 @@
 
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/bb_closure_copy.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMMIT_CLI="$SCRIPT_DIR/../commit_integrity_cli.bb"
@@ -93,11 +94,13 @@ TMUX
   # dependency at the process boundary" posture as $fake_bin/tmux above.
   local fixture_scripts="$root/scripts"
   mkdir -p "$fixture_scripts"
-  cp "$SCRIPT_DIR/../done_with_current_task.bb" "$fixture_scripts/"
-  cp "$SCRIPT_DIR/../handoff_lib.bb" "$fixture_scripts/"
-  cp "$SCRIPT_DIR/../pipeline_stage_lib.bb" "$fixture_scripts/"
-  cp "$SCRIPT_DIR/../ambulance_lib.bb" "$fixture_scripts/"
-  cp "$SCRIPT_DIR/../mono_router_lib.bb" "$fixture_scripts/"
+  # BL-973: DERIVED from done_with_current_task.bb's real transitive load-file
+  # closure, never a hand-written cp list. The hand list this replaces went
+  # stale three times (BL-911's prompt_engine_lib.bb, BL-967's
+  # daemon_cycle_guard_lib.bb, BL-1029's shell_quote_lib.bb) and this test sat
+  # red on main for days each time, unnoticed because no standing gate ran it.
+  copy_bb_closure "$SCRIPT_DIR/.." "$fixture_scripts" done_with_current_task.bb \
+    || fail "could not derive done_with_current_task.bb's load-file closure"
   cat > "$fixture_scripts/ready_for_next_task.sh" <<'STUB'
 #!/usr/bin/env bash
 echo NO_TASK
