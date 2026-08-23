@@ -285,9 +285,21 @@ mkdir -p "$ROOT/.worktrees/coder" "$ROOT/.swarmforge/launch"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
   > "$ROOT/.swarmforge/roles.tsv"
 printf '#!/usr/bin/env zsh\necho fake-launch\n' > "$ROOT/.swarmforge/launch/coder.sh"
+# BL-1071 review goal 1: this used to fake the RESULT through
+# BABYSITTER_FAKE_ENSURE_RESULT - a `*_FORCE_RESULT` env bypass sitting in
+# production code on the recovery path, where anything that set it silently
+# disabled auto-heal. Both env vars are gone. What stands in is the ./swarm
+# SCRIPT itself, in this fixture's own project root: the real spawn, the real
+# wall-clock bound and the real exit handling all run, and only the target is
+# a stand-in - the same shape as the expeditor's stop-command fixture.
 ENSURE_COUNT="$ROOT/ensure-count"
-export BABYSITTER_FAKE_ENSURE_RESULT='{"exit":0,"tail":"control-plane: FIXED"}'
-export BABYSITTER_ENSURE_COUNT_FILE="$ENSURE_COUNT"
+cat > "$ROOT/swarm" <<'SWARM'
+#!/usr/bin/env bash
+echo "1" >> "$(dirname "$0")/ensure-count"
+echo "control-plane: FIXED"
+exit 0
+SWARM
+chmod +x "$ROOT/swarm"
 CALL_LOG="$ROOT/tmux-calls.log"
 export CALL_LOG
 cat > "$FAKE_BIN/tmux" <<'TMUX'
@@ -300,12 +312,62 @@ chmod +x "$FAKE_BIN/tmux"
 M_OUT="$(run_check "$ROOT")"
 grep -q "CRIT \[control-plane\]" <<< "$M_OUT" || fail "M: expected control-plane CRIT; got: $M_OUT"
 grep -q "REPAIR \[repaired\] control-plane" <<< "$M_OUT" || fail "M: expected control-plane ensure REPAIR; got: $M_OUT"
-[[ -f "$ENSURE_COUNT" ]] || fail "M: expected BABYSITTER_ENSURE_COUNT_FILE to record the ensure call"
+[[ -f "$ENSURE_COUNT" ]] || fail "M: expected the fixture ./swarm to record the ensure call"
+[[ "$(wc -l < "$ENSURE_COUNT" | tr -d ' ')" == "1" ]] || fail "M: expected exactly one ensure, got $(cat "$ENSURE_COUNT")"
 grep -q "REPAIR \[.*\] swarmforge-coder" <<< "$M_OUT" && fail "M: per-role ensure-session must be suppressed when control-plane ensure runs; got: $M_OUT"
 grep -q -- 'new-session' <<< "$(cat "$CALL_LOG" 2>/dev/null || true)" && fail "M: expected no per-role new-session when ensure owns recovery; log: $(cat "$CALL_LOG" 2>/dev/null || true)"
 [[ -f "$ROOT/.swarmforge/babysitterd/control-plane-ensure.json" ]] || fail "M: expected control-plane ensure budget persisted"
-unset BABYSITTER_FAKE_ENSURE_RESULT BABYSITTER_ENSURE_COUNT_FILE
 pass "M: control-plane-missing triggers bounded ./swarm ensure (babysitterd ownership wired)"
+# Matches the getenv CALL, not the word: the docstring above the fixed
+# function names the bypass it removed, and a check that tripped on its own
+# explanation would have to be deleted the first time someone documented it.
+grep -q 'getenv "BABYSITTER_FAKE_ENSURE_RESULT"' "$SCRIPT_DIR/../babysitter_check.bb" \
+  && fail "M: the *_FORCE_RESULT env bypass is back in production code"
+pass "M: and the recovery path carries no *_FORCE_RESULT env bypass"
+rm -rf "$ROOT"
+
+# ── M2: BL-1071 invariant 2 — a recovery that never returns must not hold the
+# sweep open. The fixture ./swarm hangs and spawns a grandchild, so this also
+# proves the whole process GROUP is killed rather than just the direct child.
+ROOT="$(make_root)"
+SOCK="$ROOT/fake.sock"; touch "$SOCK"
+echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
+mkdir -p "$ROOT/.worktrees/coder" "$ROOT/.swarmforge/launch"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+printf '#!/usr/bin/env zsh\necho fake-launch\n' > "$ROOT/.swarmforge/launch/coder.sh"
+cat > "$ROOT/swarm" <<'SWARM'
+#!/usr/bin/env bash
+sleep 3600 &
+sleep 3600
+SWARM
+chmod +x "$ROOT/swarm"
+CALL_LOG="$ROOT/tmux-calls.log"
+export CALL_LOG
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+echo "$*" >> "$CALL_LOG"
+exit 1
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+# `|| true`: pgrep exits 1 when nothing matches, which under this file's
+# `set -euo pipefail` would kill the run with no message at all. The bracketed
+# pattern stops pgrep matching its own command line.
+before_orphans="$(pgrep -f '[s]leep 3600' | wc -l | tr -d ' ' || true)"
+M2_START=$SECONDS
+# run_check inlined rather than called: `timeout` execs a binary and cannot
+# run a shell function, and the outer timeout is the backstop that makes a
+# regression here a FAILURE rather than a hung suite.
+M2_OUT="$(PATH="$FAKE_BIN:$PATH" BABYSITTER_MEMINFO_PATH="$ROOT/meminfo" \
+          BABYSITTER_ENSURE_TIMEOUT_MS=1500 timeout 60 bash "$CHECK_SH" "$ROOT" 2>&1 || true)"
+M2_ELAPSED=$((SECONDS - M2_START))
+grep -q "REPAIR \[unfinished\] control-plane" <<< "$M2_OUT" || fail "M2: a hung ensure must report unfinished, not repaired/failed; got: $M2_OUT"
+grep -q "REPAIR \[repaired\] control-plane" <<< "$M2_OUT" && fail "M2: a hung ensure must never be reported as repaired; got: $M2_OUT"
+(( M2_ELAPSED < 30 )) || fail "M2: the sweep did not end within its own bound (took ${M2_ELAPSED}s)"
+sleep 1
+after_orphans="$(pgrep -f '[s]leep 3600' | wc -l | tr -d ' ' || true)"
+[[ "$after_orphans" == "$before_orphans" ]] || fail "M2: a grandchild survived the kill (process GROUP, not just the child): before=$before_orphans after=$after_orphans"
+pass "M2: a recovery that never returns is bounded in wall clock, reported unfinished, and leaves no orphan"
 rm -rf "$ROOT"
 
 # ── J: BL-1017 wiring — a standing role's vanished session is recreated,
