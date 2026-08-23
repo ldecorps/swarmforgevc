@@ -340,10 +340,6 @@
                                  :launch-scripts-present? true
                                  :control-plane-repair-allowed? true
                                  :now-ms 1000}))))
-<<<<<<< HEAD
-=======
-
->>>>>>> 39c2c065ea
 (assert-true "assemble-findings suppresses per-role ensure-session when control-plane ensure is queued"
              (let [{:keys [repairs findings]}
                    (sw/assemble-findings
