@@ -168,6 +168,7 @@ const DOMAINS = [
   require('./roleBenchmarkHarnessSteps'),
   require('./replyReturnsToAskingThreadSteps'),
   require('./pushSweepSteps'),
+  require('./bl1098SilentRevertSteps'),
   require('./devHostLauncherSteps'),
   require('./hotTestFilesStopWaitingSteps'),
   require('./systemdUnitsCanStartSteps'),
