@@ -73,7 +73,7 @@ export function parseNamedModelArgs(argv: string[]): NamedModelCliArgs {
   for (let i = 0; i < argv.length; i += 1) {
     i += consumeArgToken(args, argv, i, positional);
   }
-  args.command = resolveCommand(positional[0] || 'help');
+  args.command = resolveCommand(positional[0]);
   args.modelId = positional[1] || '';
   requireModelIdWhenNeeded(args.command, args.modelId);
   return args;

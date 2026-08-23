@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=85cf151df835b763b184c031f2d1795c72609dd856d6cd95dfee6e9de614495b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-23T18:53:52.568561945Z","feature_name":"The swarm can pull and serve a named model on this host","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1082-the-swarm-can-pull-and-serve-a-named-model-on-this-host.feature","background_hash":"c7b3d1e719b0a13ecc000ccd4756bd27d1fa4a4cb2b25784518d3ee410e56582","implementation_hash":"unknown","scenarios":[{"index":0,"name":"pulling a named model composes a pull for that model id","scenario_hash":"bd3abfeefd4d9496eb4465bbc86a63344aa901588e63890c4f1ae55eebf13123","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-23T18:53:52.568561945Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The swarm can pull and serve a named model on this host
 
   The operator names a model; the swarm pulls it onto this host and serves it
