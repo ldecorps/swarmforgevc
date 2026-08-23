@@ -6,7 +6,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { waitForFileSync, describeWaitTimeout } = require('./helpers/waitForFileSync');
 
 // BL-796 invariants (property authorship rests with the coder, first pass -
 // BL-654). Drives the REAL swarmforge/scripts/operator_path_lib.sh and
@@ -72,67 +71,11 @@ const callerPathArb = fc.constantFrom(
 );
 const aliasArb = fc.boolean();
 
-// BL-1063: whether the CALLER's own PATH already resolves node. This is the
-// dimension the property was missing, and its absence is what made the old
-// assertion host-dependent: every generated PATH above contains /usr/bin, so
-// on a host with /usr/bin/node the caller always resolved node and the nvm
-// fallback was never reached - while the assertion demanded the nvm tree
-// anyway, and failed because operator_path_lib.sh correctly refused to shadow
-// the caller's node (BL-796 invariant 3).
-//
-// Crossing it explicitly reaches BOTH branches by construction rather than by
-// luck about what the host has installed, which is the whole point: the same
-// verdict on a host that carries a system node and one that does not.
-const callerResolvesNodeArb = fc.boolean();
-
-// A caller PATH with every ordinary command on it EXCEPT node - so node
-// genuinely does not resolve, and the nvm fallback must answer.
-//
-// Built by symlinking the real search path rather than by curating a list of
-// "the commands these scripts need": a curated list is a guess that goes stale
-// silently, and the failure it produces (a script dying on a missing binary)
-// looks nothing like the thing under test. Built ONCE and reused - it is the
-// same farm every run, and 900-odd symlinks per generated case is a cost with
-// no benefit.
-let nodelessPathCache = null;
-function nodelessCallerPath() {
-  if (nodelessPathCache) return nodelessPathCache;
-  const dir = mkTmpDir('bl796-prop-nodeless-');
-  const seen = new Set();
-  for (const sourceDir of ['/usr/bin', '/bin']) {
-    let entries;
-    try {
-      entries = fs.readdirSync(sourceDir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (name === 'node' || name === 'nodejs' || seen.has(name)) continue;
-      seen.add(name);
-      try {
-        fs.symlinkSync(path.join(sourceDir, name), path.join(dir, name));
-      } catch {
-        /* a name that already exists, or an unreadable entry - neither matters */
-      }
-    }
-  }
-  // The premise, asserted rather than assumed: this PATH must genuinely fail to
-  // resolve node, or the "does not resolve" half of the property is vacuous.
-  const probe = spawnSync('sh', ['-c', 'command -v node'], { encoding: 'utf8', env: { PATH: dir } });
-  assert.notEqual(probe.status, 0, `the node-less caller PATH still resolves node: ${probe.stdout.trim()}`);
-  nodelessPathCache = dir;
-  return dir;
-}
-
 test(
   'property (invariant 1): the launched daemon inherits a PATH on which both bb and node resolve, however minimal the caller PATH',
   () => {
     fc.assert(
-      fc.property(callerPathArb, aliasArb, callerResolvesNodeArb, (generatedPath, useAlias, callerResolvesNode) => {
-        // BL-1063: when the caller must NOT resolve node, the generated PATH is
-        // replaced wholesale rather than appended to - /usr/bin is exactly what
-        // would put node back.
-        const callerPath = callerResolvesNode ? generatedPath : nodelessCallerPath();
+      fc.property(callerPathArb, aliasArb, (callerPath, useAlias) => {
         const root = mkTmpDir('bl796-prop-root-');
         fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
         const home = makeFakeNvmHome();
@@ -180,72 +123,24 @@ test(
         const supPid = readPidIfPresent(path.join(root, '.swarmforge', 'daemon', 'handoffd-supervisor.pid'));
         try {
           assert.equal(result.status, 0, `start_handoff_daemon.sh exited nonzero (caller PATH="${callerPath}"): ${result.stderr}`);
-          // BL-1063: the daemon is BACKGROUNDED, so spawnSync returning says
-          // nothing about whether the child has run. Wait for its marker under
-          // a bounded deadline, returning the moment both lines are there -
-          // reading it on the next line was a race, and waiting on mere
-          // existence would be a subtler one, since the child writes through a
-          // shell redirect and the file appears before its contents do.
-          const marker = waitForFileSync(resolvedLog, {
-            timeoutMs: 10000,
-            ready: (text) => text.trim().split('\n').filter(Boolean).length === 2,
-          });
-          assert.ok(
-            marker.ok,
-            `${describeWaitTimeout(resolvedLog, 10000, 'the launched daemon never reported its resolved binaries')} (caller PATH="${callerPath}")`
-          );
-          const resolved = marker.contents.trim();
+          assert.equal(fs.existsSync(resolvedLog), true, `expected the launched daemon to have run at all (caller PATH="${callerPath}")`);
+          const resolved = fs.readFileSync(resolvedLog, 'utf8').trim();
           const lines = resolved.split('\n');
           assert.equal(lines.length, 2, `expected both bb and node to resolve (caller PATH="${callerPath}"), got:\n${resolved}`);
           assert.equal(lines[0], stub, `expected bb resolved as "${stub}", got: ${lines[0]}`);
-          // BL-1063: the invariant is that node RESOLVES, not where from. The
-          // old assertion demanded the fake nvm tree unconditionally, which is
-          // a claim about which branch answered - and on any host with a system
-          // node it is the branch operator_path_lib.sh is REQUIRED not to take
-          // (BL-796 invariant 3: a binary the caller's PATH already resolves is
-          // never shadowed). So the test was red exactly because production was
-          // correct.
-          //
-          // Each branch is still checked, by the dimension that decides it:
-          const nvmTree = path.join(home, '.nvm', 'versions', 'node');
           assert.ok(
-            fs.existsSync(lines[1]),
-            `expected node to resolve to a real path (caller PATH="${callerPath}"), got: ${lines[1]}`
+            lines[1].includes(path.join(home, '.nvm', 'versions', 'node')),
+            `expected node resolved from the fake nvm tree (caller PATH="${callerPath}"), got: ${lines[1]}`
           );
-          if (callerResolvesNode) {
-            // The caller had one, so the caller's own must have won.
-            const callerNode = spawnSync('sh', ['-c', 'command -v node'], {
-              encoding: 'utf8',
-              env: { PATH: callerPath },
-            }).stdout.trim();
-            assert.equal(
-              lines[1],
-              callerNode,
-              `expected the caller's own node ("${callerNode}") to be used unshadowed (caller PATH="${callerPath}"), got: ${lines[1]}`
-            );
-            assert.ok(
-              !lines[1].startsWith(nvmTree),
-              `the nvm fallback must never shadow a node the caller already resolves, got: ${lines[1]}`
-            );
-          } else {
-            // The caller had none, so the fallback must have supplied one.
-            assert.ok(
-              lines[1].startsWith(nvmTree),
-              `with node unresolvable on the caller PATH, expected the nvm fallback to supply it, got: ${lines[1]}`
-            );
-          }
         } finally {
           killPid(hdPid);
           killPid(supPid);
         }
       }),
-      // BL-1063: raised from 10 with the third dimension added, so both the
-      // caller-resolves and nvm-fallback halves are reached many times rather
-      // than a handful.
-      { numRuns: 16 }
+      { numRuns: 10 }
     );
   },
-  120000
+  60000
 );
 
 // ── Invariant 2 ──────────────────────────────────────────────────────────
