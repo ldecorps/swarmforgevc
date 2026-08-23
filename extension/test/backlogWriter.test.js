@@ -329,6 +329,39 @@ test('BL-1083: the gates failing closed - an unreachable CLI refuses rather than
   assert.equal(fs.existsSync(path.join(target, 'backlog', 'paused', 'BL-330-ungated.yaml')), true);
 });
 
+test('BL-1083: an unrecognised verdict from the gate CLI refuses rather than guessing', () => {
+  // The CLI is reached and exits cleanly, but prints something that is
+  // neither ALLOW, NOT_FOUND, nor REFUSE|... - a contract break the mover
+  // cannot interpret, so it refuses rather than treating unknown as allow.
+  const target = installPromotionGates(mkTmp());
+  writePausedItem(target, 'BL-331-garbage.yaml', CLEARED('BL-331'));
+  const cliPath = path.join(target, 'swarmforge', 'scripts', 'promotion_gates_cli.bb');
+  fs.writeFileSync(cliPath, '(println "GARBAGE")\n(System/exit 0)\n');
+
+  const result = promoteToActive(target, 'BL-331');
+
+  assert.equal(result.moved, false);
+  assert.equal(result.refusal.gate, 'promotion_gates');
+  assert.match(result.refusal.reason, /unrecognised verdict/);
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'paused', 'BL-331-garbage.yaml')), true);
+});
+
+test('BL-1083: the gate CLI exiting with an unexpected code refuses rather than promoting ungated', () => {
+  // Neither exit 1 (NOT_FOUND) nor exit 2 (REFUSE) - a crash. A gate that
+  // fails open on a crash is not a gate.
+  const target = installPromotionGates(mkTmp());
+  writePausedItem(target, 'BL-332-crash.yaml', CLEARED('BL-332'));
+  const cliPath = path.join(target, 'swarmforge', 'scripts', 'promotion_gates_cli.bb');
+  fs.writeFileSync(cliPath, '(System/exit 42)\n');
+
+  const result = promoteToActive(target, 'BL-332');
+
+  assert.equal(result.moved, false);
+  assert.equal(result.refusal.gate, 'promotion_gates');
+  assert.match(result.refusal.reason, /could not be consulted/);
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'paused', 'BL-332-crash.yaml')), true);
+});
+
 test('promoteToActive skips promotion when the item is already active (scenario 05: no redundant promotion)', () => {
   const target = installPromotionGates(mkTmp());
   writeActiveItem(target, 'BL-203-already-active.yaml', 'id: BL-203\ntitle: t\nstatus: active\n');

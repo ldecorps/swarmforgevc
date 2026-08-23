@@ -102,7 +102,7 @@
   "The cap this evaluation runs against, in promote_and_route_next.sh's own
    order: the throttle-aware effective cap when it can be had, else the
    configured one.
-;;
+
    The configured half is read through backlog-depth-lib DIRECTLY - its
    conf-file-path and parse-max-depth, both already inside this CLI's
    load-file closure - rather than by shelling to its sibling CLIs. That is
