@@ -444,10 +444,11 @@ The human's own words, verbatim:
   was deliberately kept at `medium` for exactly this reason.
 - **Do not finish-shift early.** The cron watcher owns the sleep decision; the
   swarm neither pre-empts it nor fights it.
-- **Promotion freeze lifted (2026-08-23 ~09:50 BST):** human cleared
-  `.swarmforge/operator/control-pause.json` so QA can finish BL-1078 and
-  the chain can promote BL-1079 next. **BL-1081 stays paused** until 1078
-  lands; do not pull it ahead of the Cursor launcher chain.
+- **Promotion freeze re-engaged (2026-08-23 ~09:51 BST):** human set
+  `.swarmforge/operator/control-pause.json` (`active: true`) again — effective
+  depth **0**. In-flight BL-1078 (QA) continues; nothing else promotes.
+  **BL-1081 stays paused.** Clear the pause (resume) only after 1078 is in
+  `done/` and you want BL-1079 pulled.
 - **Expiry:** this directive is spent the moment all four tickets are in
   `backlog/done/` and the watcher has fired. An expired directive is not a
   policy — retire this section then, do not leave it silently vetoing work.
