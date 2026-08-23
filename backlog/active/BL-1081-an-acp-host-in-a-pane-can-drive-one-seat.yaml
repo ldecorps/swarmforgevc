@@ -173,3 +173,6 @@ notes: |
   written, not drift. 20 unique steps of 20 otherwise.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-23, by: architect, blamed: coder, class: behavior, commit: 8d6a8c12e7, evidence: backlog/evidence/BL-1081-architect-bounce-20260823.md }
