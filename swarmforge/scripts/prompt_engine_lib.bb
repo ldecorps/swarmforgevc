@@ -55,19 +55,6 @@
   (let [a (some-> agent str/lower-case str/trim)]
     (if (contains? supported-agents a) a "claude")))
 
-;; BL-1081: :acp is a DIMENSION on this table, never a second table. The
-;; intake is explicit - "the spike should ADD a dimension, not fork the
-;; table" - so an ACP-native agent is one more field on the entry it already
-;; had, and every wake style below resolves exactly as it did before. A seat
-;; can be driven over ACP or over the pane; that is a property of the agent,
-;; alongside how it is woken and how it is bootstrapped.
-;;
-;; ACP-native per the source intake: Gemini CLI, Qwen Code, Mistral Vibe,
-;; Copilot CLI. Cursor is deliberately absent - BL-1078 found cursor-agent is
-;; terminal-native and needs no ACP host to staff a seat, so hosting it over
-;; ACP would prove nothing about either. Absence of :acp means "not ACP-native"
-;; rather than "unknown": acp-native? below reads a missing key as false, so a
-;; new agent is pane-driven until someone says otherwise.
 (def provider-capabilities
   {"claude"  {:wake-style :chat-message
               :bootstrap-style :embedded
@@ -77,8 +64,7 @@
               :bootstrap-text-style :generic}
    "copilot" {:wake-style :chat-message
               :bootstrap-style :embedded
-              :bootstrap-text-style :generic
-              :acp true}
+              :bootstrap-text-style :generic}
    "grok"    {:wake-style :chat-message
               :bootstrap-style :paste-prompt-file
               :bootstrap-text-style :generic
@@ -96,29 +82,20 @@
    "vibe"    {:wake-style :chat-message
               :bootstrap-style :embedded
               :bootstrap-text-style :generic
-              :startup-delay-ms 3000
-              :acp true}
+              :startup-delay-ms 3000}
    ;; Google Gemini CLI (`gemini`): interactive coding agent with YOLO mode
    ;; (-y). Same wake/bootstrap shape as vibe/codex — prompt path in the
    ;; first message; woken by chatting. Auth via GEMINI_API_KEY (tmux -e).
    "gemini"  {:wake-style :chat-message
               :bootstrap-style :embedded
               :bootstrap-text-style :generic
-              :startup-delay-ms 3000
-              :acp true}
+              :startup-delay-ms 3000}
    "mock"    {:wake-style :mock
               :bootstrap-style :mock
               :bootstrap-text-style :mock}})
 
 (defn capabilities [agent]
   (get provider-capabilities (normalize-agent agent)))
-
-(defn acp-native?
-  "BL-1081: does this agent speak Agent Client Protocol natively? A missing
-   :acp key reads as false - absence means pane-driven, never unknown - so
-   adding an agent needs no edit here to stay safe."
-  [agent]
-  (boolean (:acp (capabilities agent))))
 
 (defn handoff-draft-path
   "Writable by all runtimes (not under .swarmforge/ or repo-root tmp/)."

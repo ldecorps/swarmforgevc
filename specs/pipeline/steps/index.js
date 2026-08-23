@@ -604,8 +604,7 @@ const DOMAINS = [
   require('./bl1083PromotionGateSteps'),
   require('./bl1063BoundedWaitSteps'),
   require('./bl1086BabysitterCacheBatchSteps'),
-  require('./bl1088GiveUpCooldownSteps'),
-  require('./bl1081AcpHostDrivesOneSeatSteps')
+  require('./bl1088GiveUpCooldownSteps')
 ];
 
 function registerSteps(registry) {
