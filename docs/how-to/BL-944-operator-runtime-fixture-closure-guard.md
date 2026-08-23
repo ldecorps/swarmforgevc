@@ -16,6 +16,11 @@ This is a **different** mechanism from
 the same `.bb` files into a fixture root for the same underlying reason, but
 they are two independent lists — updating one does not update the other.
 
+[BL-973](BL-973-bb-fixture-closure-guards-and-suite-inventory.md) extends
+this same closure-derived discipline to four more fixture copy-lists
+(including `operator_runtime_sandbox.sh`'s own list, previously unguarded)
+and adds a standing inventory gate over `swarmforge/scripts/test/` itself.
+
 ## The list
 
 `specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js` exports:
