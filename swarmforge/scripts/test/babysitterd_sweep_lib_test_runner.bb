@@ -365,6 +365,32 @@
                                             :launch-scripts-present? true
                                             :control-plane-repair-allowed? true})))
 
+;; BL-1071 scenario 06: the reason has to survive assemble-findings' own
+;; destructuring. check-control-plane renders it and the gatherer captures it,
+;; but the :keys list between them is a third place the key has to be named -
+;; and it was not. The finding degraded to "unavailable" with nowhere for a
+;; human to start, while both ends looked correct in isolation.
+(assert-true "1071: assemble-findings carries the observation's failure reason into the finding"
+             (let [{:keys [findings]}
+                   (sw/assemble-findings
+                    {:roles []
+                     :control-plane-classification :unavailable
+                     :control-plane-error "Cannot run program \"tmux\""
+                     :launch-scripts-present? true
+                     :control-plane-repair-allowed? true
+                     :now-ms 1000})
+                   f (first (filter #(= "control-plane" (:key %)) findings))]
+               (and f (= "UNAVAILABLE" (:severity f))
+                    (str/includes? (:message f) "Cannot run program"))))
+(assert-true "1071: and an unreadable observation queues no recovery, scripts or no scripts"
+             (empty? (:repairs (sw/assemble-findings
+                                {:roles []
+                                 :control-plane-classification :unavailable
+                                 :control-plane-error "boom"
+                                 :launch-scripts-present? true
+                                 :control-plane-repair-allowed? true
+                                 :now-ms 1000}))))
+
 (assert-true "assemble-findings suppresses per-role ensure-session when control-plane ensure is queued"
              (let [{:keys [repairs findings]}
                    (sw/assemble-findings

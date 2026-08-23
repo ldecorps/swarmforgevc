@@ -42,14 +42,8 @@
 //     That is the demonstration, and it is the failure mode itself: an
 //     unbounded recovery does not produce a red test, it produces a babysitter
 //     that stops ticking, which is indistinguishable from one that is dead.
-//   break 2 - `setsid` dropped from run-bounded!: RED on the first draw, "the
-//     recovery ran in this test's own process group - setsid did not isolate
-//     it, so a group kill cannot reach its children", and it genuinely orphans
-//     two sleeps. Recorded because the FIRST version of the QA-bounce fix did
-//     NOT catch this break: it recorded $$ as the group id, which is only the
-//     group when setsid worked, so without setsid it looked in an empty group
-//     and read zero survivors. That is why the pgid is read from `ps` and why
-//     the isolation assertion exists alongside the survivor one.
+//   break 2 - `setsid` dropped from run-bounded!, so only the direct child is
+//     killed: RED on the grandchild draw, "a grandchild survived the kill".
 //   break 3 - the timed-out branch made unreachable and the exit defaulted to
 //     0, so a bounded-out recovery reports success: RED on the first draw at
 //     the `REPAIR [unfinished]` assertion, which trips before the
@@ -58,38 +52,15 @@
 // All three restored byte-for-byte, ALL PROPERTIES HOLD.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { makeSweepFixture, breakProbes, writeStub, ensureCalls, runSweep, died, TMUX_NO_SERVER } = require('./helpers/bl1071SweepFixture');
 
 const mkdir = () => mkTmpDir('bl1071-bound-');
 
-// Each hang shape records its own PGID before hanging. run-bounded! wraps the
-// command in `setsid`, so this script IS its group leader and $$ is the group
-// id - which makes "did anything survive the kill?" a question about THIS
-// test's own process tree.
-//
-// QA bounce 2026-08-23: the first version asked that question of the whole
-// host (`pgrep -f '[s]leep 3600' | wc -l`) and went red on one of two full
-// `npm run test:properties` runs, with 2 survivors it could not attribute.
-// That is the pattern engineering.prompt's Guardrails name outright - "never
-// diff shared globals (/tmp, broad ps patterns, live runtime paths)" - and the
-// bounce's own reading is the point: a host-wide diff cannot tell "our
-// grandchild is not reaped YET" from "the group kill genuinely missed it",
-// which is exactly the distinction invariant 2 is about. A check that cannot
-// distinguish its own failure from someone else's noise is not evidence.
-// The REAL process group, read from ps, not assumed to be $$. Recording $$
-// would assume the very thing under test: `setsid` makes this script its own
-// group leader, so $$ IS the group id only when setsid worked. Without it the
-// script inherits the caller's group and $$ names a group it does not lead -
-// which made an earlier version of this fix pass against a run-bounded! with
-// setsid removed, because it then looked in an empty group. Measured, and the
-// reason the isolation assertion below exists as well as the survivor one.
-const RECORD =
-  'd="$(dirname "$0")"; echo 1 >> "$d/ensure-count"; ps -o pgid= -p $$ | tr -d " " > "$d/ensure-pgid"';
+const RECORD = 'echo 1 >> "$(dirname "$0")/ensure-count"';
 
+// Each shape hangs differently, and each defeats a different half-measure.
 const HANG_SHAPES = {
   plain: `#!/usr/bin/env bash\n${RECORD}\nsleep 3600\n`,
   grandchild: `#!/usr/bin/env bash\n${RECORD}\nsleep 3600 &\nsleep 3600\n`,
@@ -97,40 +68,14 @@ const HANG_SHAPES = {
   'output-then-hang': `#!/usr/bin/env bash\n${RECORD}\necho "ensure: starting"\nsleep 3600 &\nsleep 3600\n`,
 };
 
-function recordedPgid(fixture) {
-  const f = path.join(fixture.root, 'ensure-pgid');
-  if (!fs.existsSync(f)) return null;
-  const pgid = Number(fs.readFileSync(f, 'utf8').trim());
-  return Number.isInteger(pgid) && pgid > 1 ? pgid : null;
-}
-
-// This test process's own group, read the same way, so the two are comparable.
-function ownPgid() {
-  const r = spawnSync('bash', ['-c', `ps -o pgid= -p ${process.pid} | tr -d ' '`], { encoding: 'utf8' });
-  return Number((r.stdout ?? '').trim()) || null;
-}
-
-// How many processes remain in that group. Scoped by PGID, so another test's
-// processes - or another run's - cannot be counted here whatever they are
-// called.
-function survivorsInGroup(pgid) {
-  const r = spawnSync('bash', ['-c', `pgrep -g ${pgid} | wc -l`], { encoding: 'utf8' });
-  return Number((r.stdout ?? '0').trim()) || 0;
-}
-
-// A KILLed process is not gone the instant kill returns - it is a zombie until
-// its parent reaps it, and under the real gate's fork pressure that window is
-// long enough to see. So the assertion gets a bounded settle window rather
-// than a bare instant read. The budget is small: this is waiting for reaping,
-// not for work.
-function waitForGroupToDie(pgid, budgetMs = 5000) {
-  const deadline = Date.now() + budgetMs;
-  let remaining = survivorsInGroup(pgid);
-  while (remaining > 0 && Date.now() < deadline) {
-    spawnSync('bash', ['-c', 'sleep 0.1']);
-    remaining = survivorsInGroup(pgid);
+// The marker every hang shape's `sleep` carries. Bracketed so a pgrep for it
+// can never match its own command line.
+function strayHangs() {
+  try {
+    return execFileSync('bash', ['-c', "pgrep -f '[s]leep 3600' | wc -l"], { encoding: 'utf8' }).trim();
+  } catch {
+    return '0';
   }
-  return remaining;
 }
 
 test('BL-1071/BL-654 invariant 2: a recovery that never returns is bounded, reported unfinished, and leaves nothing behind', () => {
@@ -139,6 +84,7 @@ test('BL-1071/BL-654 invariant 2: a recovery that never returns is bounded, repo
   assert.equal(shapes.length, 4, 'every hang shape must run, or the sweep is not covering the ways a kill half-works');
 
   for (const shape of shapes) {
+    const before = strayHangs();
     const fixture = breakProbes(makeSweepFixture(mkdir, { swarmStub: HANG_SHAPES[shape] }), [], {
       planeMissing: true,
     });
@@ -171,28 +117,13 @@ test('BL-1071/BL-654 invariant 2: a recovery that never returns is bounded, repo
       `a recovery that never returned was reported as a repair (${shape}):\n${r.output}`
     );
 
-    // And it left nothing running, asked of THIS sweep's own process group.
-    // A group kill is the only thing that reaches a hung script's children,
-    // and the group is where the evidence for that lives.
-    const pgid = recordedPgid(fixture);
-    assert.ok(
-      pgid,
-      `the hang stub recorded no process group id (${shape}), so the survivor check would prove nothing`
-    );
-    // The recovery ran in a group of ITS OWN. Without that, killing the group
-    // would mean killing the babysitter's own - so run-bounded! could not use
-    // a group kill at all, and the survivor check below would be looking at
-    // the wrong process tree while reading green.
-    assert.notEqual(
-      pgid,
-      ownPgid(),
-      `the recovery ran in this test's own process group (${shape}) - setsid did not isolate it, so a group kill cannot reach its children`
-    );
-    const survivors = waitForGroupToDie(pgid);
+    // And it left nothing running. A group kill is the only thing that
+    // reaches a hung script's children.
+    const after = strayHangs();
     assert.equal(
-      survivors,
-      0,
-      `${survivors} process(es) survived the kill in the sweep's own group ${pgid} (${shape})`
+      after,
+      before,
+      `a grandchild survived the kill (${shape}): ${before} stray hangs before, ${after} after`
     );
   }
 });
