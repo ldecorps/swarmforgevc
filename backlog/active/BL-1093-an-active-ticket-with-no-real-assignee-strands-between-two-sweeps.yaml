@@ -130,3 +130,6 @@ notes: >
   BL-1079/BL-1080 have a valid recipient and are stopped only by BL-1087.
   Fixing either alone leaves the other's tickets stranded. This ticket's
   severity and scope are unchanged by that discovery.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-24, by: architect, blamed: coder, class: acceptance, commit: 2209360cf2, evidence: backlog/evidence/BL-1093-architect-bounce-20260824.md }

@@ -882,27 +882,19 @@
       (str/blank? assigned-to)
       (contains? nobody-assignee-spellings (str/lower-case (str/trim assigned-to)))))
 
-(defn- list-active-yaml-items
-  "Every backlog/active/*.yaml parsed as {:id :assigned-to}. Empty when the
-   dir is missing. Shared by the complementary read-active-items /
-   read-unassigned-active-items filters and read-active-ticket-ids."
-  [active-dir]
-  (if-not (fs/exists? active-dir)
-    []
-    (->> (fs/list-dir active-dir)
-         (filter #(str/ends-with? (fs/file-name %) ".yaml"))
-         (map read-active-item)
-         vec)))
-
 (defn read-active-items
   "Every backlog/active/*.yaml item with an id and a REAL assignee —
    items missing an id, or whose assigned_to names nobody (absent/blank/
    none/unassigned), are not dispatch-gap candidates (BL-1093: those belong
    to the unassigned-active nudge, never auto-route)."
   [active-dir]
-  (->> (list-active-yaml-items active-dir)
-       (filter #(and (:id %) (not (nobody-assigned? (:assigned-to %)))))
-       vec))
+  (if-not (fs/exists? active-dir)
+    []
+    (->> (fs/list-dir active-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".yaml"))
+         (map read-active-item)
+         (filter #(and (:id %) (not (nobody-assigned? (:assigned-to %)))))
+         vec)))
 
 (defn dispatch-gap-items
   "Full pipeline for one evaluation: reads active items from active-dir and
@@ -959,9 +951,13 @@
    (absent, blank, none, unassigned). These need a coordinator nudge, not
    an assignee auto-route (BL-1093)."
   [active-dir]
-  (->> (list-active-yaml-items active-dir)
-       (filter #(and (:id %) (nobody-assigned? (:assigned-to %))))
-       vec))
+  (if-not (fs/exists? active-dir)
+    []
+    (->> (fs/list-dir active-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".yaml"))
+         (map read-active-item)
+         (filter #(and (:id %) (nobody-assigned? (:assigned-to %))))
+         vec)))
 
 (defn unassigned-active-items
   "Unassigned actives that still have no handoff trail anywhere — same
@@ -1736,9 +1732,13 @@
 (defn read-active-ticket-ids
   "Every backlog/active/*.yaml id (assigned or not). Missing id skipped."
   [active-dir]
-  (->> (list-active-yaml-items active-dir)
-       (keep :id)
-       set))
+  (if-not (fs/exists? active-dir)
+    #{}
+    (->> (fs/list-dir active-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".yaml"))
+         (map read-active-item)
+         (keep :id)
+         set)))
 
 (defn collect-landed-but-open-nudged-ids
   "Ticket ids that already have a landed-but-open nudge on record in any
