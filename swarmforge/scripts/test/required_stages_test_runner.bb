@@ -292,6 +292,13 @@
          (required-stages-lib/read-stage-skip-reasons
           "id: BL-1\nstage_skip_reasons: { cleaner: no test }\n"))
 
+;; Boundary comma before the next `stage:` must stay accepted (locks the
+;; next-pair branch in take-flow-reason-unquoted — not just "no comma at all").
+(assert= "BL-754: unquoted simple reason then next stage still parses"
+         {:reasons {"cleaner" "no test" "architect" "covered"} :malformed nil}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-1\nstage_skip_reasons: { cleaner: no test, architect: covered }\n"))
+
 ;; ── ran-and-skipped (acceptance scenario 08) ──────────────────────────────
 
 (let [content (str "id: BL-606\nrequired_stages: [coder, qa]\nstatus: done\n")
