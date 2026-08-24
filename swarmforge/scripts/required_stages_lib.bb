@@ -101,6 +101,16 @@
       [nil nil (str "unquoted stage_skip_reasons reason contains a comma; unparseable remainder: "
                     (str/trim after))])))
 
+(defn- take-flow-reason-quoted
+  "Quote char is \" or '. Unclosed quote keeps the rest as the reason (best-effort)."
+  [after quote-char]
+  (let [end (.indexOf after (str quote-char) 1)]
+    (if (neg? end)
+      [(subs after 1) "" nil]
+      (let [tail (str/trim (subs after (inc end)))
+            tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
+        [(subs after 1 end) tail nil]))))
+
 (defn- take-flow-reason
   "Split the value after `stage:` into [reason rest malformed?].
    Quoted forms keep commas inside the reason. Unquoted forms may only
@@ -108,22 +118,15 @@
    any other comma is present-but-malformed (BL-754), never a silent drop."
   [after]
   (cond
-    (str/starts-with? after "\"")
-    (let [end (.indexOf after "\"" 1)]
-      (if (neg? end)
-        [(subs after 1) "" nil]
-        (let [tail (str/trim (subs after (inc end)))
-              tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
-          [(subs after 1 end) tail nil])))
-    (str/starts-with? after "'")
-    (let [end (.indexOf after "'" 1)]
-      (if (neg? end)
-        [(subs after 1) "" nil]
-        (let [tail (str/trim (subs after (inc end)))
-              tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
-          [(subs after 1 end) tail nil])))
-    :else
-    (take-flow-reason-unquoted after)))
+    (str/starts-with? after "\"") (take-flow-reason-quoted after \")
+    (str/starts-with? after "'") (take-flow-reason-quoted after \')
+    :else (take-flow-reason-unquoted after)))
+
+(defn- flow-ok [pairs]
+  {:pairs pairs :malformed nil})
+
+(defn- flow-malformed [pairs msg]
+  {:pairs pairs :malformed msg})
 
 (defn- parse-flow-skip-reasons
   "Parse `{ stage: reason, ... }` into {:pairs [[stage reason]...] :malformed nil-or-string}.
@@ -135,24 +138,24 @@
                (str/ends-with? s "}"))
       (let [inner (str/trim (subs s 1 (dec (count s))))]
         (if (str/blank? inner)
-          {:pairs [] :malformed nil}
+          (flow-ok [])
           (loop [remaining inner
                  pairs []]
             (let [remaining (str/trim remaining)]
               (cond
                 (str/blank? remaining)
-                {:pairs pairs :malformed nil}
+                (flow-ok pairs)
 
                 :else
                 (let [m (re-matches #"^([A-Za-z]+)\s*:\s*(.*)$" remaining)]
                   (if (nil? m)
-                    {:pairs pairs
-                     :malformed (str "unparseable stage_skip_reasons remainder: " remaining)}
+                    (flow-malformed pairs
+                                    (str "unparseable stage_skip_reasons remainder: " remaining))
                     (let [stage (nth m 1)
                           after (nth m 2)
                           [reason rest-after malformed] (take-flow-reason after)]
                       (if malformed
-                        {:pairs pairs :malformed malformed}
+                        (flow-malformed pairs malformed)
                         (recur rest-after (conj pairs [stage reason]))))))))))))))
 
 (defn read-stage-skip-reasons
