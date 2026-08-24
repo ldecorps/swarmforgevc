@@ -51,10 +51,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the unit lane completes a run$/, (ctx) => {
-    // Drive a tiny vitest invocation that loads the setup file.
+    // Probe file carries an explicit timeout literal so setup wraps and
+    // records loadNormalizedDurationMs (architect bounce: no all-null tests[]).
     const res = spawnSync(
       'npx',
-      ['vitest', 'run', '--config', 'vitest.config.mjs', 'test/resourceTelemetry.test.js'],
+      ['vitest', 'run', '--config', 'vitest.config.mjs', 'test/bl1007BudgetProbe.test.js'],
       {
         cwd: path.join(REPO_ROOT, 'extension'),
         encoding: 'utf8',
@@ -63,12 +64,15 @@ function registerSteps(registry) {
       }
     );
     ctx.unitLaneOut = `${res.stdout || ''}${res.stderr || ''}`;
-    ctx.evidencePath = process.env.SWARMFORGE_UNIT_LANE_BUDGET_EVIDENCE;
-    // Evidence is written inside the child; locate via /tmp pattern.
+    assert.equal(res.status, 0, `probe vitest failed:\n${ctx.unitLaneOut}`);
     const tmp = require('node:os').tmpdir();
-    const files = fs.readdirSync(tmp).filter((f) => f.startsWith('sfvc-unit-lane-budget-'));
+    const files = fs
+      .readdirSync(tmp)
+      .filter((f) => f.startsWith('sfvc-unit-lane-budget-'))
+      .map((f) => ({ f, m: fs.statSync(path.join(tmp, f)).mtimeMs }))
+      .sort((a, b) => b.m - a.m);
     assert.ok(files.length > 0, 'expected budget evidence file');
-    ctx.evidence = JSON.parse(fs.readFileSync(path.join(tmp, files.sort().at(-1)), 'utf8'));
+    ctx.evidence = JSON.parse(fs.readFileSync(path.join(tmp, files[0].f), 'utf8'));
   });
 
   scoped(/^the run's evidence names the contention factor it applied$/, (ctx) => {
@@ -76,10 +80,17 @@ function registerSteps(registry) {
   });
 
   scoped(/^the run's evidence names each budgeted test's load-normalized duration$/, (ctx) => {
-    // Suite-level evidence always present; per-test list may be empty when
-    // no explicit timeout literal was scaled — still record the field.
     assert.ok(Array.isArray(ctx.evidence.tests));
+    assert.ok(ctx.evidence.tests.length > 0, 'expected at least one budgeted test');
     assert.ok('suiteEffectiveMs' in ctx.evidence);
+    for (const t of ctx.evidence.tests) {
+      assert.equal(
+        typeof t.loadNormalizedDurationMs,
+        'number',
+        `expected non-null loadNormalizedDurationMs for ${t.name}`
+      );
+      assert.ok(Number.isFinite(t.loadNormalizedDurationMs));
+    }
   });
 
   scoped(/^a unit-lane test file whose source declares an explicit base budget$/, (ctx) => {
