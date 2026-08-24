@@ -730,7 +730,10 @@
        (keep (fn [p]
                (when-let [age-min (file-age-min p)]
                  (let [role (owning-role-for-path p)]
-                   {:age-min age-min
+                   ;; :name mirrors stuck-parcels so starved gather assertions
+                   ;; can name the claim without a second glob (BL-1109 harden).
+                   {:name (fs/file-name p)
+                    :age-min age-min
                     :abandoned? false
                     :owner-busy? (boolean (get busy-by-role role false))}))))
        vec))
