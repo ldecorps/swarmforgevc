@@ -145,4 +145,6 @@ notes: |
   for the config read, would pass before any work was done (BL-874's vacuous
   anchor).
 
+  2026-08-24 coordinator: open-slot nudge for BL-1106 cleared — already in active/; slot filled by promote+route BL-1104 (cap 3/3). Duplicate also present in paused/ (hygiene).
+
 assigned_to: coder
