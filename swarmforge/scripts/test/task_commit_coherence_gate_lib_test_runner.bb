@@ -75,6 +75,20 @@
   (assert-includes "warning names the check" line "coherence")
   (assert-includes "warning names the commit" line "896e1d5cb2"))
 
+;; ── BL-1094: dispatch-gap auto-route exemption + operator log naming ─────
+
+(assert-true "hand-authored path keeps the coherence check enabled"
+             (task-commit-coherence-gate-lib/check-enabled?
+              {:dispatch-gap-autoroute? false}))
+(assert-false "daemon auto-route path disables the coherence check"
+              (task-commit-coherence-gate-lib/check-enabled?
+               {:dispatch-gap-autoroute? true}))
+
+(let [line (task-commit-coherence-gate-lib/operator-refusal-log-line
+            "Cannot send git_handoff for BL-1094: commit x belongs to BL-999, not to the task's ticket BL-1094 (BL-953).")]
+  (assert-includes "log names the coherence gate" line "gate=task-commit-coherence (BL-953)")
+  (assert-includes "log carries a reason=" line "reason="))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))
