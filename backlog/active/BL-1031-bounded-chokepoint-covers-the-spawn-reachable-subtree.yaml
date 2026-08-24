@@ -200,3 +200,6 @@ notes: |
   this is the debt that becoming visible revealed. It is the third ticket in
   one chain, and each was found only because the previous one looked one hop
   further than the last.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-24, by: QA, blamed: coder, class: unit, commit: 4fc1c6fb9a, evidence: backlog/evidence/BL-1031-qa-bounce-20260824.md }
