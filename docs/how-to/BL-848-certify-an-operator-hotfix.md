@@ -179,3 +179,6 @@ it up from the trailer) and `--link` it to its ticket.
 - `backlog/done/BL-811-swarm-review-host-queue-starvation-hotfix.yaml` — the
   pattern this ticket generalizes (review ticket + human ruling before
   `satisfied-by-hotfix`).
+- BL-1113 — stamp-off ticket for Cursor hotfix `27273f2b0a` (main-sync
+  deadlock, `cursor-forge`, Pipeline Board UX, CreatePlan confirm); human
+  ledger certify/waive still happens after the stamp reaches `done`.
