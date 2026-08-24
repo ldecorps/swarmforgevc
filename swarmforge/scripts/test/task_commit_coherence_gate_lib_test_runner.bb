@@ -89,6 +89,19 @@
   (assert-includes "log names the coherence gate" line "gate=task-commit-coherence (BL-953)")
   (assert-includes "log carries a reason=" line "reason="))
 
+(let [line (task-commit-coherence-gate-lib/operator-refusal-log-line
+            "HANDOFF INVALID: to: none is not a role")]
+  (assert-includes "validation refusal names handoff-validation" line "gate=handoff-validation")
+  (assert-includes "validation refusal carries reason=" line "reason=HANDOFF INVALID"))
+
+(let [line (task-commit-coherence-gate-lib/operator-refusal-log-line
+            "bb exploded: unrelated stderr")]
+  (assert-includes "unclassified refusal names unknown" line "gate=unknown")
+  (assert-includes "unclassified refusal carries reason=" line "reason=bb exploded"))
+
+(assert-true "missing auto-route flag keeps the check enabled"
+             (task-commit-coherence-gate-lib/check-enabled? {}))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))

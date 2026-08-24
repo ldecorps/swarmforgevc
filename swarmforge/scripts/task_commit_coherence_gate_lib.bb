@@ -81,18 +81,23 @@
   [{:keys [dispatch-gap-autoroute?]}]
   (not dispatch-gap-autoroute?))
 
+(defn- coherence-refusal-stderr?
+  [s]
+  (or (str/includes? s "BL-953")
+      (str/includes? s "task-commit coherence")
+      (str/includes? s "stale field in a reused draft")))
+
+(defn- refusal-gate-name
+  "Classify stderr into the operator-facing gate= label (BL-1094)."
+  [s]
+  (cond
+    (coherence-refusal-stderr? s) "task-commit-coherence (BL-953)"
+    (str/includes? s "HANDOFF INVALID") "handoff-validation"
+    :else "unknown"))
+
 (defn operator-refusal-log-line
   "Names the refusing gate in the operator-facing log (BL-1094 invariant 2)."
   [stderr]
-  (let [s (str stderr)]
-    (cond
-      (or (str/includes? s "BL-953")
-          (str/includes? s "task-commit coherence")
-          (str/includes? s "stale field in a reused draft"))
-      (str "gate=task-commit-coherence (BL-953) reason=" (str/trim s))
-
-      (str/includes? s "HANDOFF INVALID")
-      (str "gate=handoff-validation reason=" (str/trim s))
-
-      :else
-      (str "gate=unknown reason=" (str/trim s)))))
+  (let [s (str stderr)
+        reason (str/trim s)]
+    (str "gate=" (refusal-gate-name s) " reason=" reason)))
