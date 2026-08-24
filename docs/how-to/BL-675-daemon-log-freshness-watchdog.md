@@ -279,6 +279,12 @@ bash swarmforge/scripts/test/test_freshness_stop_marker_lib.sh
 bash swarmforge/scripts/test/test_bl785_freshness_deliberate_stop.sh
 ```
 
+The freshness shell suites bind `CONF` to the tracked fixture
+`swarmforge/scripts/test/fixtures/daemon_log_freshness.fixture.conf`, **not**
+the live `daemon_log_freshness.conf` (BL-1000) — so an ops raise of handoffd's
+threshold cannot redden stale-heartbeat asserts. See
+`docs/how-to/BL-1000-freshness-tests-read-a-pinned-fixture.md`.
+
 The first covers the checker itself; the second (BL-783) runs the real
 `start_ancillary_services.sh` against fixture roots with a fake `crontab` on
 PATH and reads back the installed line — proving the auto-install wiring
