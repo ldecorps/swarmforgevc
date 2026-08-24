@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1008: the BL-933 bounded `fs.watch`
+**Last Updated:** August 24, 2026 (BL-1092: the unit-lane repo-creation
+guard recognises `git init` by what a same-file helper spawns, not only by a
+literal `git(` name. Inline/string/`git(` shapes and exemptions stay; string
+literals and the shared fixture remain unflagged. Complements BL-1039.
+Acceptance:
+`specs/features/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.feature`.
+How-to: `docs/how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md`.
+Reference: `docs/reference/BL-1039-shared-git-repo-fixture.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1008: the BL-933 bounded `fs.watch`
 deadline scales with BL-1007’s recorded contention factor from a 10000ms quiet
 base, always clamped strictly below the test’s effective budget. Missing-event
 diagnostics still name event + path. Complements BL-933/BL-1007. Acceptance:

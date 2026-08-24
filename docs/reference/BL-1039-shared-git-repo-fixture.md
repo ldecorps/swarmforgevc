@@ -57,14 +57,16 @@ fresh seeding.
 
 `findRepoCreations(testDir)` scans every `*.test.js` file (skipping
 `*.property.test.js`, which runs in a separate lane) for a repository
-creation call, in any of four shapes: an array-argument spawn
+creation call. Inline shapes still match: an array-argument spawn
 (`execFileSync('git', ['init', ...])`), a quoted command string
 (`'git init'`), a `--bare` init anywhere on the line, or a call through a
-local `git(dir, ['init', ...])` wrapper function — the dominant shape in
-this corpus, and the one a prior architect bounce (D1) had to add: the
-guard keys on the literal `git(` call site rather than resolving the
-wrapper's binding, so it works regardless of where the wrapper is defined
-or imported from.
+local `git(dir, ['init', ...])` wrapper — the dominant corpus convention.
+
+**BL-1092:** the guard also discovers same-file helpers whose *bodies* spawn
+`git` (any name: `runGit`, `g`, …) and matches `<name>(…, ['init'`. Recognition
+is by what the helper does, not by spelling. Bare `git(` stays matched without
+a same-file definition (many files import it). Non-git spawners stay unflagged.
+See `docs/how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md`.
 
 A line that is wholly a string literal is treated as test data describing
 a file's contents, not an executing call, and is stripped before scanning
