@@ -623,6 +623,7 @@ const DOMAINS = [
   require('./bl1108CursorSeatReadinessSteps'),
   require('./bl1113CursorHotfixStampOffSteps'),
   require('./bl1094DispatchGapAutorouteSteps'),
+  require('./bl1097RouterNoOpOriginationSteps');
   require('./bl1106PauseVisibleEverywhereSteps'),
   require('./bl1104LandedButOpenSteps'),
   require('./bl1093NobodyAssigneeSteps'),
