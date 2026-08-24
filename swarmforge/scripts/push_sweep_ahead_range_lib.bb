@@ -46,6 +46,13 @@
   (reset! tick-memo-atom payload)
   payload)
 
+(defn- incomplete-no-walk-payload
+  []
+  {:complete? false :enumerated? false
+   :qa-facts {:facts-complete? false}
+   :noop-facts {:facts-complete? false}
+   :ahead-shas nil :main-tip nil})
+
 (defn- replay-cached [cache-entry tick-memo-atom]
   (let [payload (assoc (:payload cache-entry) :enumerated? false)]
     (store-tick-memo! tick-memo-atom payload)))
@@ -56,6 +63,12 @@
         entry (next-cache-entry key payload)]
     (reset! cache-atom entry)
     (store-tick-memo! tick-memo-atom payload)))
+
+(defn- resolve-fresh! [deps key]
+  (let [cached @(:cache-atom deps)]
+    (if (cache-hit? cached key)
+      (replay-cached cached (:tick-memo-atom deps))
+      (gather-and-maybe-cache! deps key))))
 
 (defn resolve-ahead-range-facts!
   "Single chokepoint for ahead-range facts.
@@ -69,17 +82,9 @@
 
    Returns the payload. On read-key failure returns an incomplete payload
    with :enumerated? false (no walk was possible)."
-  [{:keys [cache-atom tick-memo-atom read-key! enumerate!] :as deps}]
+  [{:keys [tick-memo-atom read-key!] :as deps}]
   (if-let [memo @tick-memo-atom]
     memo
     (if-let [key (read-key!)]
-      (let [cached @cache-atom]
-        (if (cache-hit? cached key)
-          (replay-cached cached tick-memo-atom)
-          (gather-and-maybe-cache! deps key)))
-      (store-tick-memo!
-       tick-memo-atom
-       {:complete? false :enumerated? false
-        :qa-facts {:facts-complete? false}
-        :noop-facts {:facts-complete? false}
-        :ahead-shas nil :main-tip nil}))))
+      (resolve-fresh! deps key)
+      (store-tick-memo! tick-memo-atom (incomplete-no-walk-payload)))))
