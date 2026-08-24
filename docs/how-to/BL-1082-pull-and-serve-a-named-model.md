@@ -1,6 +1,6 @@
 # Pull and serve a named model on this host
 
-Last Updated: 2026-08-23
+Last Updated: 2026-08-24
 
 The operator names a model; SwarmForge composes (and optionally runs) an
 Ollama pull into a host store **outside** the tracked worktree, then serves
@@ -105,5 +105,6 @@ or modified under the forge worktree. The default store is under
 
 - Installing or configuring a role pack that *staffs* a seat on this endpoint
   ([BL-1052](./BL-1052-local-model-seat-launch.md)).
-- Intelligence-layer routing to a local-model seat (BL-1053).
+- Intelligence-layer routing to a local-model seat
+  ([BL-1053](./BL-1053-route-work-to-a-local-model-seat.md)).
 - GPU offload, multi-model concurrent serve, or a second runtime backend.

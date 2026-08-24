@@ -1,8 +1,14 @@
 # ModelFactory: Assigning and Applying Agent Models
 
-Last Updated: 2026-07-24
+Last Updated: 2026-08-24
 
 SwarmForge's **ModelFactory** assigns language models to swarm roles based on steering policies and provider availability. It consumes the Model Steward registry and applies your choice of budget rules: run cheap, run quality, or override with explicit models.
+
+**Provider → launch agent (BL-1053).** The map includes `local` → `local-model`
+for on-host models (do not register them under `openai`, which still resolves
+to `codex`). Unknown providers report as unknown rather than echoing their
+name as an agent. How-to:
+[Route work to a local-model seat](./BL-1053-route-work-to-a-local-model-seat.md).
 
 ## Quick Start: Assign Models to a Swarm Role Set
 
@@ -151,6 +157,7 @@ ModelFactory consumes the **Model Steward** registry and certification status. I
 
 - **Add or update certified models**: see [Model Steward: Onboarding, Certification, and Role Recommendations](./BL-547-model-steward-overview.md)
 - **Certify the Cursor identity on scorecard evidence**: see [Certifying a Cursor identity](./BL-1079-cursor-identity-steward-certify-and-residuals.md) (provider `cursor`, never a borrowed Anthropic id)
+- **Register an on-host model for routing**: see [Route work to a local-model seat](./BL-1053-route-work-to-a-local-model-seat.md) (provider `local`, cost class `low`)
 - **Understand role-specific models and cost tiers**: check the Steward registry at `.swarmforge/model-steward/registry.json` (populated from `swarmforge/model-steward/seed/models.seed.json`)
 - **Override certification for testing**: use the `--override-uncertified` flag with explicit caution, as it bypasses quality gates
 

@@ -153,7 +153,7 @@
 ;; ── BL-1079: provider→agent for cursor is the launcher allow-list token ──
 (assert= "BL-1079: ModelFactory derives agent token cursor for provider cursor"
          "cursor" (model-factory-lib/agent-for-provider "cursor"))
-(assert-true "BL-1079: cursor is an explicit provider->agent entry, not only the fallback"
+(assert-true "BL-1079: cursor is an explicit provider->agent entry (unknown providers no longer fall back)"
              (contains? model-factory-lib/provider->agent "cursor"))
 
 ;; ── report ────────────────────────────────────────────────────────────────

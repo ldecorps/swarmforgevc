@@ -43,18 +43,60 @@
 ;; assignment descriptor names an agent alongside provider+model so a cold
 ;; apply plan can select a launch pack without the caller re-deriving it.
 ;; BL-1079: cursor maps to the same agent token the shell launcher's
-;; validate_agent allow-list accepts (swarmforge.sh). The fallback
-;; (provider name) would also yield "cursor", but the explicit entry is
+;; validate_agent allow-list accepts (swarmforge.sh). The explicit entry is
 ;; the cross-boundary agreement the acceptance scenario compares — not a
 ;; comment restating the token beside an unmapped provider.
+;; BL-1053: on-host models get their OWN key (`local` -> `local-model`) rather
+;; than reusing `openai`, even though a local endpoint speaks the
+;; OpenAI-compatible protocol. Under `openai` a downloaded model resolves to
+;; `codex` and would launch through a cloud CLI — failing confusingly rather
+;; than loudly. The provider key names WHICH CLI LAUNCHES THE MODEL, not which
+;; protocol it speaks. Adding a second on-host model is Steward registration
+;; only — never a new map entry.
 (def provider->agent
   {"anthropic" "claude"
    "openai" "codex"
    "cerebras" "aider"
-   "cursor" "cursor"})
+   "cursor" "cursor"
+   "local" "local-model"})
 
-(defn agent-for-provider [provider]
-  (get provider->agent provider provider))
+(defn agent-for-provider
+  "The launch agent for `provider`, or nil when the map has never heard of
+   it. nil, and deliberately NOT the provider's own name: falling back to
+   `provider` reads downstream as a perfectly ordinary agent string and
+   travels all the way into an assignment descriptor before anything notices
+   it names no real runtime (BL-1053)."
+  [provider]
+  (get provider->agent provider))
+
+(defn- unknown-provider-reason
+  "Names the missing provider and every registered key so the fix is
+   always 'add the missing entry' (BL-1053)."
+  [provider]
+  (str "unknown provider " (pr-str provider)
+       " - no launch agent is registered for it. Known providers: "
+       (clojure.string/join ", " (sort (keys provider->agent)))))
+
+(defn resolve-launch-agent
+  "Provider -> launch agent as a REPORT rather than a bare value, so an
+   unknown provider is impossible to mistake for a resolved one (BL-1053)."
+  [provider]
+  (if-let [agent (agent-for-provider provider)]
+    {:provider provider :agent agent :known? true}
+    {:provider provider
+     :agent nil
+     :known? false
+     :reason (unknown-provider-reason provider)}))
+
+(defn- require-launch-agent!
+  "Returns the launch agent for `provider`, or throws by name so assign-role
+   never hands downstream a descriptor with :agent nil (BL-1053)."
+  [role provider model]
+  (let [{:keys [known? reason agent]} (resolve-launch-agent provider)]
+    (when-not known?
+      (throw (ex-info (str "cannot assign role " role ": " reason)
+                      {:role role :provider provider :model model})))
+    agent))
 
 (defn eligible-candidates
   "Role-recommendation entries for `role`, filtered to the certification gate
@@ -144,8 +186,13 @@
                  cheap? (pick-cheap steward-registry survivors)
                  :else (pick-quality survivors))]
     (when chosen
+      ;; An assignment naming no launch agent is worse than no assignment:
+      ;; every consumer downstream reads the descriptor as ordinary, and
+      ;; nothing between here and the pane checks that :agent names a runtime
+      ;; that exists. A candidate whose provider has no entry is a
+      ;; registry/config error, so it stops here, by name (BL-1053).
       {:role role
-       :agent (agent-for-provider (:provider chosen))
+       :agent (require-launch-agent! role (:provider chosen) (:model chosen))
        :provider (:provider chosen)
        :model (:model chosen)
        :policy mode

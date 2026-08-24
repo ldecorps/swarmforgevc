@@ -1,11 +1,11 @@
 # Staff a role seat with a downloaded local model
 
-Last Updated: 2026-08-23
+Last Updated: 2026-08-24
 
 Pull and serve the model first ([BL-1082](./BL-1082-pull-and-serve-a-named-model.md)).
 This guide staffs every mono-router window with the **`local-model`** agent
 against that loopback OpenAI-compatible endpoint. Routing work to the seat
-is **BL-1053** (not covered here).
+is [BL-1053](./BL-1053-route-work-to-a-local-model-seat.md).
 
 ## What this is (and is not)
 
@@ -69,6 +69,6 @@ before relaunch.
 | [BL-1082 pull and serve](./BL-1082-pull-and-serve-a-named-model.md) | Ollama store + loopback endpoint |
 | [BL-514 remote-control / ensure](./BL-514-remote-control-health-and-ensure-wiring.md) | `rc:` OFF + `agent:` heal |
 | [babysitterd runbook](./BL-611-babysitterd-runbook.md) | Process marker for `local-model` → `qwen` |
-| BL-1053 | Intelligence-layer routing to a local-model seat |
+| [BL-1053 route to local-model seat](./BL-1053-route-work-to-a-local-model-seat.md) | Intelligence-layer routing (`local`→`local-model`) |
 
 Acceptance: `specs/features/BL-1052-a-role-seat-can-be-staffed-by-a-downloaded-local-model.feature`.
