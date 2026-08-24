@@ -256,12 +256,53 @@
        vec))
 
 (defn- move-ticket! [project-root ticket from to]
-  (when-let [src (ticket-file project-root from ticket)]
+  ;; BL-1023: never silent-no-op. Callers need :ok? false when the source is
+  ;; missing — discarding nil used to let a paused run ticket "pass" unmoved.
+  (if-let [src (ticket-file project-root from ticket)]
     (let [dst (fs/path (backlog-dir project-root to) (fs/file-name src))]
       (fs/create-dirs (backlog-dir project-root to))
       (sh {:dir (str project-root)} "git" "mv"
           (str (fs/relativize project-root src)) (str (fs/relativize project-root dst)))
-      (str dst))))
+      {:ok? true :path (str dst) :ticket ticket :from from :to to})
+    {:ok? false :ticket ticket :from from :to to}))
+
+(defn- must-move-ticket!
+  "Move or refuse loudly. Replaces the pre-BL-1023 silent when-let no-op."
+  [project-root ticket from to & fail-parts]
+  (let [moved (move-ticket! project-root ticket from to)]
+    (when-not (expedite-lib/bookkeep-move-ok? moved)
+      (apply log! fail-parts)
+      (exit! 1))
+    moved))
+
+(defn- locate-run-ticket-folder [project-root ticket]
+  (some (fn [sub] (when (ticket-file project-root sub ticket) sub))
+        expedite-lib/run-ticket-folders))
+
+(defn- apply-bookkeep-plan!
+  [{:keys [project-root ticket dry-run?]} plan]
+  (case (:action plan)
+    :refuse (do (log! (:message plan)) (exit! 1))
+    :adopt
+    (do (log! (:message plan))
+        (when-not dry-run?
+          (must-move-ticket!
+           project-root ticket (:from plan) "active"
+           "REFUSE could not adopt run ticket" ticket
+           "from backlog/" (:from plan) "/")))
+    :ready nil
+    (do (log! "REFUSE unrecognized bookkeep action" (pr-str (:action plan)))
+        (exit! 1))))
+
+(defn- ensure-run-ticket-bookkeepable!
+  "BL-1023: decide at initiation whether teardown can close the run ticket.
+   Adopt from paused/hold into active when needed; refuse when missing."
+  [{:keys [project-root ticket] :as opts}]
+  (let [folder (locate-run-ticket-folder project-root ticket)
+        plan (expedite-lib/bookkeep-plan {:folder folder :ticket ticket})]
+    (log! "bookkeep" (pr-str (select-keys plan [:action :ticket :folder])))
+    (apply-bookkeep-plan! opts plan)
+    plan))
 
 (defn- role-branch-tips [project-root]
   (let [{:keys [out]} (sh {:dir (str project-root)} "git" "branch" "--format=%(refname:short) %(objectname:short)")]
@@ -283,7 +324,10 @@
                     :why (str "parked by the expeditor to free the pipeline for " ticket)}]
         (doseq [t (:park plan)]
           (log! "park" t "->" (str "backlog/" (:destination plan) "/"))
-          (when-not dry-run? (move-ticket! project-root t "active" (:destination plan))))
+          (when-not dry-run?
+            (must-move-ticket!
+             project-root t "active" (:destination plan)
+             "REFUSE could not park" t "from backlog/active/")))
         (when-not dry-run? (write-json! (fs/path run-dir "park-record.json") record))))
     ;; BL-1024: registered AFTER the moves, so the register records what was
     ;; actually done rather than what was planned. Everything downstream of
@@ -348,7 +392,11 @@
         (log! "REFUSE" (expedite-lib/stop-refusal-message stop-check))
         (exit! 1))
       ;; One binding, so the line that was CHECKED is the line that RUNS.
-      (let [plan (park-others! opts run-dir)
+      ;; BL-1023: adopt (or refuse) the run ticket BEFORE parking siblings, so
+      ;; teardown's active→done move has a source and the operator hears any
+      ;; refusal before seven stages spend.
+      (let [bookkeep (ensure-run-ticket-bookkeepable! opts)
+            plan (park-others! opts run-dir)
             stop (stop-stack! opts stop-cmd)
             ;; Re-probe unconditionally. In dry-run the verdict is computed and
             ;; logged but not enforced, so a dry-run still TELLS you the teardown
@@ -373,6 +421,7 @@
         {:gate {:override-used? (boolean (and override? (not (:clean? verdict))))
                 :was-live? (not (:stopped? live0))
                 :alive-before (:alive live0)}
+         :bookkeep bookkeep
          :park plan
          :teardown verdict}))))
 
@@ -563,9 +612,18 @@
           worktree (ensure-worktree! opts)
           stages (expedite-lib/stages-for {})
           staged (drive-stages! opts worktree run-dir stages)
-          ticket-moved? (boolean (and (= :done (:ticket staged)) (not (:dry-run? opts))))
-          _ (when ticket-moved?
-              (move-ticket! root ticket "active" "done"))
+          ;; BL-1023: ticket-moved? tracks the MOVE RESULT, never stages :done
+          ;; alone — a when-let no-op used to leave this true while the file
+          ;; sat unmoved in paused/.
+          ticket-moved?
+          (boolean
+           (when (and (= :done (:ticket staged)) (not (:dry-run? opts)))
+             (must-move-ticket!
+              root ticket "active" "done"
+              "REFUSE could not move run ticket" ticket
+              "from backlog/active/ to backlog/done/"
+              "- stages passed but bookkeeping failed")
+             true))
           _ (note-ticket-moved! ticket-moved?)
           restart (restart-stack! opts)
           _ (when (not (:dry-run? opts))
@@ -586,6 +644,7 @@
                              :history (:history staged)
                              :exhaustion (:exhaustion staged)
                              :park (:park init)
+                             :bookkeep (:bookkeep init)
                              :parked-report (expedite-lib/parked-report
                                              (map (fn [t] {:ticket t}) (get-in init [:park :park])))
                              :teardown (:teardown init)
