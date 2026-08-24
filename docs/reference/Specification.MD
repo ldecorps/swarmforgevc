@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1070: babysitter pane liveness matches
+**Last Updated:** August 24, 2026 (BL-1070 FF-only rematch: hitchhike-clean
+tip recreated on architect; pane-tree descendant liveness and RC UNAVAILABLE
+locks reconfirmed. Downstream roles must recreate on this tip — do not merge
+into contaminated ancestry. Complements BL-1019/BL-1108/BL-514. Acceptance:
+`specs/features/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.feature`.
+How-to: `docs/how-to/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.md`.
+Runbook: `docs/how-to/BL-611-babysitterd-runbook.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command, setting, or UI
+change.)
+Prior entry —
+August 24, 2026 (BL-1070: babysitter pane liveness matches
 the agent marker anywhere under the pane’s process tree (not only a direct
 child), so wrapper-launched `claude` is alive; a foreign pane’s agent never
 stands in. Remote-control check emits UNAVAILABLE when the liveness gate is

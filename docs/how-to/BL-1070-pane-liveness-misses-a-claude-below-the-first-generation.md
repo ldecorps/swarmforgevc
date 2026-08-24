@@ -34,6 +34,18 @@ after this lands. A real missing agent still CRITs half-launch; a foreign
 pane’s `claude` still cannot stand in. See the babysitterd runbook check
 table for the updated wording.
 
+## FF-only rematch
+
+QA bounced tips that re-merged into hitchhiked ancestry. Downstream roles
+must **recreate** on the clean tip (`git checkout -B … <tip>`), not
+`git merge` into a dirty branch. Hitchhike gate:
+
+```bash
+git diff --name-only origin/main...HEAD \
+  | rg 'acpHostClient|hotfix-ledger|^backlog/INTAKE-|done/M8' \
+  && echo FAIL || echo CLEAN
+```
+
 Acceptance:
 `specs/features/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.feature`
 
