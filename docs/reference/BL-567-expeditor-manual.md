@@ -365,7 +365,7 @@ schedule, if it runs at all.
 | `bb swarmforge/scripts/test/expedite_lib_test_runner.bb` | 110 assertions over the pure decisions |
 | `bb swarmforge/scripts/test/expedite_lib_property_runner.bb` | 8 properties × 500 seeded runs, with generator coverage asserted |
 | `bash swarmforge/scripts/test/expedite_prove_nonvacuity.sh` | breaks each invariant; confirms the suite rejects it |
-| `bash swarmforge/scripts/test/expedite_mutation_sweep.sh` | 41 mutants; Stryker and the Gherkin mutator cannot see `.bb` |
+| `bash swarmforge/scripts/test/expedite_mutation_sweep.sh` | Hand-authored mutants over `expedite_lib.bb` (Stryker/Gherkin cannot see `.bb`). **BL-1101:** a skipped anchor (fragment absent) fails the run and names the labels — never `ALL MUTANTS KILLED` / exit 0 without evidence. |
 | `bash swarmforge/scripts/test/test_expedite_cli.sh` | 58 assertions end to end against a real fixture |
 | `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-567-*.feature <out> specs/pipeline/steps/expeditorOfflineSingleTicketPipelineSteps.js` | 21 scenarios |
 | `bash swarmforge/scripts/test/test_expedite_qa_verdict_store.sh` | BL-1025: the run writes its QA-hat verdict; `--dry-run` writes none |

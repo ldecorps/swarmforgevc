@@ -192,6 +192,10 @@
 %% re-post when ask store already has Approvals topic ask; remint still posts.
 %% BL-972 (2026-08-24): pre-QA ancestry blocks on path overlap with parcel;
 %% subject-only stranded commits warn, never refuse; abandoned_commits exempts.
+%% BL-1019 (2026-08-24): swarm status — session + agent-child under pane (not
+%% pane_current_command); gather fail → unknown, never DOWN.
+%% BL-1101 (2026-08-24): expedite_mutation_sweep — skipped anchors fail the
+%% run (never ALL MUTANTS KILLED / exit 0 without evidence).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

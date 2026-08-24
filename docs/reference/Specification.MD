@@ -1,6 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-972: the pre-QA ancestry gate blocks
+**Last Updated:** August 24, 2026 (BL-1101: the hand-authored
+`expedite_mutation_sweep.sh` never reports success while a mutant went
+unrun. A skipped anchor (fragment absent after a rewrite) used to increment
+`skipped` and still print `ALL MUTANTS KILLED` / exit 0 — no evidence, false
+green. Skipped labels are now listed like survivors and fail the run
+(non-zero); restore via EXIT trap is unchanged. Complements BL-567.
+Acceptance:
+`specs/features/BL-1101-hand-authored-sweep-reports-success-with-skipped-mutants.feature`.
+How-to / manual: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`,
+`docs/reference/BL-567-expeditor-manual.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command, setting, or UI
+change.)
+Prior entry —
+August 24, 2026 (BL-1019: `./swarm status` agent rows key
+off session presence plus an agent process under the pane — not
+`pane_current_command`. A shell pane (zsh/bash) with a live Claude/Cursor
+child reports UP; missing session reports DOWN (agrees with attach);
+process-gather failure reports **unknown**, never DOWN (BL-802 posture).
+Aligns status with babysitter's three-state check. Acceptance:
+`specs/features/BL-1019-swarm-status-agrees-with-has-session.feature`.
+How-to: `docs/how-to/BL-1019-swarm-status-agrees-with-has-session.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-972: the pre-QA ancestry gate blocks
 only on dropped-work **path evidence**, not on a ticket id merely named in a
 commit subject. Subject-token recall stays; a stranded name-only match is a
 `PRE_QA_GATE WARNING` and does not refuse the send. Path overlap with the
