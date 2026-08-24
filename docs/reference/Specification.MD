@@ -1,6 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1111: the front-desk reply-relay
+**Last Updated:** August 24, 2026 (BL-1091: Telegram Expedite's paused→active
+promotion is committed as both ends of the rename. Pathspec-scoped commits
+(BL-419/BL-490) correctly protect concurrent writers, but Expedite named only
+the post-move `backlog/active/` path — the `backlog/paused/` deletion stayed
+uncommitted in the shared checkout, so tickets appeared in both folders and
+inflated active depth. `BacklogMoveResult` now carries `source`; Expedite
+passes it through `commitApprovalWrites` as an extra pathspec. In-place
+Approve/Reject/Amend stay single-path. Existing duplicates are coordinator
+bookkeeping (out of scope). Acceptance:
+`specs/features/BL-1091-expedite-commits-only-half-of-the-promotion-move.feature`.
+How-to: `docs/how-to/BL-538-console-paused-ticket-pager.md` (Expedite).
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1111: the front-desk reply-relay
 recovers from bridge-drop transport faults before burning the sustained-
 outage window. After BL-621's alert correctly fired, a live episode sat on
 `terminated` / intermittent `fetch failed` for ~31 minutes while reconnect
