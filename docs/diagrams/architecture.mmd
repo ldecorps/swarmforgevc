@@ -188,6 +188,8 @@
 %% docs/reference/model-compatibility.md.
 %% BL-1105 (2026-08-24): mint hygiene refuses duplicate ticket id: (local +
 %% origin/main corpora; fail-closed unreadable; key on id not slug).
+%% BL-1090 (2026-08-24): concierge — shared live-ask predicate suppresses edge
+%% re-post when ask store already has Approvals topic ask; remint still posts.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
