@@ -865,17 +865,35 @@
     {:id (read-yaml-field content "id")
      :assigned-to (read-yaml-field content "assigned_to")}))
 
+;; BL-1093: shared "names nobody" predicate — must sit above read-active-items
+;; / dispatch-gap-draft-lines (SCI resolves symbols at analysis time).
+(def nobody-assignee-spellings
+  "Live-corpus spellings of 'names nobody' (BL-1047 measured; BL-1093
+   normalises). Absent/nil and blank are handled separately by
+   nobody-assigned? — these are the present-but-nobody string forms."
+  #{"none" "unassigned"})
+
+(defn nobody-assigned?
+  "True when assigned_to is absent, blank, or a known nobody spelling
+   (case-insensitive). Shared by read-active-items and
+   read-unassigned-active-items so exactly one sweep claims each ticket."
+  [assigned-to]
+  (or (nil? assigned-to)
+      (str/blank? assigned-to)
+      (contains? nobody-assignee-spellings (str/lower-case (str/trim assigned-to)))))
+
 (defn read-active-items
-  "Every backlog/active/*.yaml item with both an id and an assigned_to -
-   items missing either are not dispatch-gap candidates (nothing to route,
-   or nowhere to route it)."
+  "Every backlog/active/*.yaml item with an id and a REAL assignee —
+   items missing an id, or whose assigned_to names nobody (absent/blank/
+   none/unassigned), are not dispatch-gap candidates (BL-1093: those belong
+   to the unassigned-active nudge, never auto-route)."
   [active-dir]
   (if-not (fs/exists? active-dir)
     []
     (->> (fs/list-dir active-dir)
          (filter #(str/ends-with? (fs/file-name %) ".yaml"))
          (map read-active-item)
-         (filter #(and (:id %) (:assigned-to %)))
+         (filter #(and (:id %) (not (nobody-assigned? (:assigned-to %)))))
          vec)))
 
 (defn dispatch-gap-items
@@ -901,19 +919,22 @@
    can narrate and idle on. `commit` must already be the 10-char HEAD
    abbreviation swarm_handoff.bb validates. handoffd.bb's auto-route!
    supplies HEAD. Without a commit, falls back to the legacy soft note so a
-   dispatch trail still lands rather than silently dropping."
+   dispatch trail still lands rather than silently dropping.
+   BL-1093 belt-and-braces: never emit a draft whose recipient names nobody
+   (read-active-items already excludes these; empty return if called anyway)."
   ([item] (dispatch-gap-draft-lines item nil))
   ([item commit]
-   (if (str/blank? commit)
-     ["type: note"
-      (str "to: " (:assigned-to item))
-      "priority: 00"
-      (str "message: " (dispatch-gap-note-message (:id item)))]
-     ["type: git_handoff"
-      (str "to: " (:assigned-to item))
-      "priority: 00"
-      (str "task: " (:id item))
-      (str "commit: " commit)])))
+   (when-not (nobody-assigned? (:assigned-to item))
+     (if (str/blank? commit)
+       ["type: note"
+        (str "to: " (:assigned-to item))
+        "priority: 00"
+        (str "message: " (dispatch-gap-note-message (:id item)))]
+       ["type: git_handoff"
+        (str "to: " (:assigned-to item))
+        "priority: 00"
+        (str "task: " (:id item))
+        (str "commit: " commit)]))))
 
 ;; ── Unassigned-active coordinator nudge ─────────────────────────────────────
 ;; Sibling of BL-222 dispatch-gap: an active/*.yaml with an id but NO
@@ -925,19 +946,17 @@
 ;; never inventing assigned_to here (constitution: intake/routing is the
 ;; coordinator's exclusive duty).
 
-(defn- blank-assigned? [assigned-to]
-  (or (nil? assigned-to) (str/blank? assigned-to)))
-
 (defn read-unassigned-active-items
-  "Every backlog/active/*.yaml with an id and a missing/blank assigned_to.
-   These need a coordinator nudge, not an assignee auto-route."
+  "Every backlog/active/*.yaml with an id whose assigned_to names nobody
+   (absent, blank, none, unassigned). These need a coordinator nudge, not
+   an assignee auto-route (BL-1093)."
   [active-dir]
   (if-not (fs/exists? active-dir)
     []
     (->> (fs/list-dir active-dir)
          (filter #(str/ends-with? (fs/file-name %) ".yaml"))
          (map read-active-item)
-         (filter #(and (:id %) (blank-assigned? (:assigned-to %))))
+         (filter #(and (:id %) (nobody-assigned? (:assigned-to %))))
          vec)))
 
 (defn unassigned-active-items
