@@ -2486,7 +2486,7 @@ async function connectAndRelayReplies(
   // BL-1111: empty/non-OK used to return as success and reset the outage
   // episode without delivering. Fail loudly so reconnect backoff runs.
   assertReplyRelayEventsResponse(res);
-  const reader = res.body!.getReader();
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   try {
     await relaySseReplies(

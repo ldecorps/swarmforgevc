@@ -3095,10 +3095,12 @@ export interface ReplyRelayCycleResult {
 // bridge does not burn the whole sustained-outage window waiting.
 export const REPLY_RELAY_TRANSPORT_BACKOFF_MAX_MS = 5_000;
 
+const REPLY_RELAY_TRANSPORT_ERROR_MARKERS = ['terminated', 'fetch failed'] as const;
+
 export function isReplyRelayTransportError(errorMessage: string | undefined): boolean {
   if (!errorMessage) return false;
   const lower = errorMessage.toLowerCase();
-  return lower.includes('terminated') || lower.includes('fetch failed');
+  return REPLY_RELAY_TRANSPORT_ERROR_MARKERS.some((marker) => lower.includes(marker));
 }
 
 export function replyRelayReconnectBackoffMs(
@@ -3120,7 +3122,9 @@ export function isReplyRelayHealthy(report: { consecutiveFailures: number; lastE
 
 // BL-1111: /events must be an OK streaming body. An empty body used to
 // return as success and reset the outage episode without delivering.
-export function assertReplyRelayEventsResponse(res: { ok: boolean; status: number; body: unknown }): void {
+export function assertReplyRelayEventsResponse(
+  res: { ok: boolean; status: number; body: unknown }
+): asserts res is { ok: true; status: number; body: NonNullable<unknown> } {
   if (!res.ok) {
     throw new Error(`reply-relay /events failed with status ${res.status}`);
   }
@@ -3146,6 +3150,7 @@ export function computeReplyRelayCycleResult(
 ): ReplyRelayCycleResult {
   const outage = decideSustainedOutage(state.sustainedOutage, ok, nowMs, config.sustainedOutageThresholdMs);
   if (ok) {
+    // Omit lastError so a recovered episode cannot keep a sticky transport fault.
     return {
       state: { consecutiveFailures: 0, sustainedOutage: outage.state },
       delayMs: config.backoffBaseMs,
