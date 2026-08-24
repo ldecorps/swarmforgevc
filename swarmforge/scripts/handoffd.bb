@@ -44,6 +44,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_outage_evidence_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "wake_attribution_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -1749,7 +1750,12 @@
 (defn auto-route! [item]
   (let [commit (or (head-commit-10) "")
         draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item commit))
-        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        ;; BL-1094: SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1 exempts this one
+        ;; machine-generated git_handoff from the BL-953 coherence gate
+        ;; (HEAD is tip, not ticket work). Hand-authored drafts never set it.
+        env (merge (into {} (System/getenv))
+                   {"SWARMFORGE_ROLE" "coordinator"
+                    task-commit-coherence-gate-lib/dispatch-gap-autoroute-env "1"})
         ;; process/sh's varargs form (cmd arg1 arg2 opts-map) silently drops
         ;; :dir/:env overrides - only the [cmd & args] vector form applies
         ;; them (confirmed empirically). Must use the vector form here:
@@ -1759,7 +1765,8 @@
     (if (zero? (:exit result))
       (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item)
             (if (str/blank? commit) "note-fallback" "git_handoff"))
-      (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (str (:err result))))))
+      (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item)
+            (task-commit-coherence-gate-lib/operator-refusal-log-line (:err result))))))
 
 (defn dispatch-gap-sweep! [roles]
   (doseq [item (chase-sweep-lib/dispatch-gap-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
