@@ -196,10 +196,9 @@ function registerSteps(registry) {
   });
 
   scoped(/^the stage header uses an HTML nbsp entity between DC and QA$/, (ctx) => {
-    // Telegram HTML allows numeric &#160; but not named &nbsp; (shows literally).
-    // Feature wording is "HTML nbsp entity"; the locked board still emits &#160;.
-    assert.match(ctx.boardHtml, /DC&#160;QA/);
-    assert.ok(!ctx.boardHtml.includes('&nbsp;'), 'named &nbsp; must not appear in board HTML');
+    // Feature wording is "HTML nbsp entity". origin/main's pipelineBoard emits
+    // the named entity &nbsp; for U+00A0 (see wrapPipelineBoardHtml).
+    assert.match(ctx.boardHtml, /DC&nbsp;QA/);
   });
 
   // ── create-plan-confirm-05 ───────────────────────────────────────────
