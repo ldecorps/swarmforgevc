@@ -359,6 +359,7 @@ const DOMAINS = [
   require('./bl686EpicDrilldownSlugMatchSteps'),
   require('./bl1000FreshnessPinnedFixtureSteps'),
   require('./bl1001DifficultyAwareSeatRoutingSteps'),
+  require('./bl1007ContentionBudgetSteps'),
   require('./bl675DaemonLogFreshnessSteps'),
   require('./bl630PushSweepQaGateSteps'),
   require('./bl1081AcpHostDrivesOneSeatSteps'),
