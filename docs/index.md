@@ -56,6 +56,7 @@ expects them, and are not migrated or rewritten here.
 - [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Bounded fs.watch deadline follows recorded contention](how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md) — BL-933 helper scales 10s base with BL-1007 factor; stays under test budget (BL-1008).
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
+- [Mint-time hygiene refuses a dangling acceptance pointer](how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md) — `DANGLING-ACCEPTANCE` at specifier hygiene; shared `applicable?` with BL-880 (BL-1027).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)

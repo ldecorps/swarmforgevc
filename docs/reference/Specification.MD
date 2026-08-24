@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1092: the unit-lane repo-creation
+**Last Updated:** August 24, 2026 (BL-1027: the specifier mint-time hygiene
+gate refuses a single-line `acceptance:` pointer whose path is absent from
+the working tree (`DANGLING-ACCEPTANCE`), using BL-880’s `applicable?`
+predicate so mint and pre-QA never disagree. Absent / epic prose / block
+scalars without a path still pass; BL-922 unreadable block-scalar check
+unchanged. Complements BL-626/BL-880/BL-922. Acceptance:
+`specs/features/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.feature`.
+How-to: `docs/how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1092: the unit-lane repo-creation
 guard recognises `git init` by what a same-file helper spawns, not only by a
 literal `git(` name. Inline/string/`git(` shapes and exemptions stay; string
 literals and the shared fixture remain unflagged. Complements BL-1039.

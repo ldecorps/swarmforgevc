@@ -265,6 +265,13 @@ never parses the feature file or resolves steps, so a legitimately parked
 `.feature.draft` (BL-233) sails through as long as it exists at the cited
 commit.
 
+**Mint-time sibling (BL-1027):** the same checkability predicate
+(`applicable?`) also runs in the specifier’s backlog hygiene gate against
+the **working tree**, so a dangling pointer is refused as
+`DANGLING-ACCEPTANCE` when the YAML is minted — before promotion and before
+any handoff. See
+`docs/how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md`.
+
 **Example output:**
 ```
 PRE_QA_GATE_FAIL acceptance-pointer BL-880 declared acceptance: path "specs/features/BL-880-....feature" does not exist at cited commit a1b2c3d9e8

@@ -226,6 +226,8 @@
 %% contention factor; always strictly below test effective budget.
 %% BL-1092 (2026-08-24): repo-creation guard keys on git-spawning helper
 %% behaviour, not only a literal git( wrapper name.
+%% BL-1027 (2026-08-24): mint-time hygiene refuses dangling acceptance:
+%% pointers via shared applicable? + working-tree exists probe.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
