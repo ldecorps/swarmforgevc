@@ -2,15 +2,15 @@
 
 // BL-1007: scale per-test numeric timeout literals at runtime while leaving
 // the source text's trailing number intact for BL-969/BL-999 guards.
-// Records load-normalized wall time (wall ÷ max(1, factor)) for attribution.
+// Records each budgeted test's load-normalized duration (wall ÷ factor).
 
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const {
   resolveUnitLaneTimeout,
-  loadNormalizedDurationMs,
   UNIT_LANE_BUDGET_CEILING_MS,
+  loadNormalizedDurationMs,
 } = require('../../../specs/pipeline/steps/lib/contentionBudget');
 
 const decision = resolveUnitLaneTimeout(20000);
@@ -40,12 +40,12 @@ function scaleTimeout(ms) {
   return resolveUnitLaneTimeout(ms, { factor: decision.factor }).effectiveMs;
 }
 
-function wrapTimedFn(fn, entry) {
-  return function contentionTimed(...args) {
-    const t0 = Date.now();
+function instrumentFn(fn, entry) {
+  return function contentionBudgetInstrumented(...args) {
+    const t0 = performance.now();
     const finish = () => {
       entry.loadNormalizedDurationMs = loadNormalizedDurationMs(
-        Date.now() - t0,
+        performance.now() - t0,
         decision.factor
       );
       persistEvidence();
@@ -79,7 +79,7 @@ function wrapTest(original) {
     };
     evidence.tests.push(entry);
     persistEvidence();
-    return original(name, wrapTimedFn(fn, entry), effective);
+    return original(name, instrumentFn(fn, entry), effective);
   };
   for (const key of Object.keys(original)) {
     wrapped[key] = original[key];

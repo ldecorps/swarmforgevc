@@ -72,7 +72,10 @@ function resolveUnitLaneTimeout(baseMs, opts = {}) {
 function evidenceTestsAreAttributable(tests) {
   if (!Array.isArray(tests) || tests.length === 0) return false;
   return tests.every(
-    (t) => t != null && typeof t.loadNormalizedDurationMs === 'number' && Number.isFinite(t.loadNormalizedDurationMs)
+    (t) =>
+      t != null &&
+      typeof t.loadNormalizedDurationMs === 'number' &&
+      Number.isFinite(t.loadNormalizedDurationMs)
   );
 }
 
