@@ -39,6 +39,10 @@ export interface PipelineBoardRow {
   // PipelineBoardListEntry's own `slug` below, which carries MORE text.
   slug: string;
   title?: string;
+  // BL-1009: resolved owner swarm (wire name). Optional so pre-BL-1009
+  // callers/fixtures keep their row shape byte-identical when they do not
+  // pass localSwarmName.
+  swarm?: string;
 }
 
 // BL-465: shared shape for every below-grid list line (parked, root-intake,
@@ -141,6 +145,9 @@ export interface PipelineBoardTicketMeta {
   // has returned backlog/hold/ since BL-672, but a state the board cannot
   // represent is a state it silently drops.
   location?: 'active' | 'paused' | 'hold' | 'done' | 'root';
+  // BL-1009: optional wire swarm name from ticket YAML (BL-090). Absent
+  // means "default to the local swarm" at render time.
+  swarm?: string;
 }
 
 // BL-465: recently-closed/root-intake items feed in as raw {id, title,
@@ -182,6 +189,10 @@ export interface PipelineBoardExtras {
   // a caller that wants a ticket physically active-but-unheld to still
   // render (conciergeTick.ts's real wiring) passes this.
   activeIds?: string[];
+  // BL-1009: this host's swarm wire name (via readSwarmName). When set,
+  // absent ticket swarm: defaults to it, remote rows never show a live
+  // held-by-role marker, and captions badge only when >1 swarm is visible.
+  localSwarmName?: string;
 }
 
 // BL-473: the not-started sentinel column - a distinct state for an active
@@ -192,6 +203,18 @@ export interface PipelineBoardExtras {
 // every NS assertion locates the column by name via indexOf, never a fixed
 // position, so this reorder breaks no existing test).
 export const PIPELINE_BOARD_NOT_STARTED_COLUMN = 'not-started';
+
+/** BL-1009: wire swarm_name → short badge text for captions. */
+export function swarmDisplayBadge(wireName: string): string {
+  if (wireName === 'primary') return 's1';
+  if (wireName === 'second') return 's2';
+  return wireName;
+}
+
+function resolveRowSwarm(meta: PipelineBoardTicketMeta | undefined, localSwarmName: string | undefined): string | undefined {
+  if (localSwarmName === undefined) return undefined;
+  return meta?.swarm ?? localSwarmName;
+}
 
 // BL-507: built from the forward PIPELINE_CHAIN (specifier..QA), NOT
 // ALL_SWARM_ROLES - the coordinator does post-QA backlog bookkeeping only
@@ -434,20 +457,27 @@ function heldRoleByTicketId(roleHeldTickets: Record<string, string[]>): Map<stri
 function buildGridRows(
   roleHeldTickets: Record<string, string[]>,
   ticketMeta: Record<string, PipelineBoardTicketMeta>,
-  activeIds?: string[]
+  activeIds?: string[],
+  localSwarmName?: string
 ): PipelineBoardRow[] {
   const heldRoleById = heldRoleByTicketId(roleHeldTickets);
   const ids = activeIds ?? [...heldRoleById.keys()];
   const rowsById = new Map<string, PipelineBoardRow>();
   for (const id of ids) {
     const meta = ticketMeta[id];
+    const swarm = resolveRowSwarm(meta, localSwarmName);
     const heldRole = heldRoleById.get(id) ?? PIPELINE_BOARD_NOT_STARTED_COLUMN;
+    // BL-1009 invariant 1: remote swarm live stage is unobservable — never
+    // render a held-by-role mark for a non-local row, even if a fixture
+    // accidentally seeds roleHeld for it.
+    const remote = swarm !== undefined && localSwarmName !== undefined && swarm !== localSwarmName;
+    const rawRole = remote ? PIPELINE_BOARD_NOT_STARTED_COLUMN : heldRole;
     // BL-507: heldRoleById still resolves a coordinator-held ticket to
     // 'coordinator' (heldRoleByTicketId iterates ALL_SWARM_ROLES, unchanged)
     // but the grid has no coordinator column any more - remap it to 'QA' so
     // it renders at the end-of-line stage instead of matching no column at
     // all (an all-dots row) or falling through to not-started.
-    const column = heldRole === 'coordinator' ? 'QA' : heldRole;
+    const column = rawRole === 'coordinator' ? 'QA' : rawRole;
     rowsById.set(id, {
       id,
       column,
@@ -456,6 +486,7 @@ function buildGridRows(
       // BL-956: only set when the backlog meta actually carries one - a
       // meta-less row keeps its pre-BL-956 shape exactly.
       ...(meta?.title !== undefined ? { title: meta.title } : {}),
+      ...(swarm !== undefined ? { swarm } : {}),
     });
   }
   return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
@@ -719,7 +750,9 @@ export function computePipelineBoard(
   // column - not even one that is somehow also role-held mid-transition.
   const heldSource = extras.held ?? [];
   const heldIds = new Set(heldSource.map((item) => item.id));
-  const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds).filter((row) => !heldIds.has(row.id));
+  const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds, extras.localSwarmName).filter(
+    (row) => !heldIds.has(row.id)
+  );
   const { parked: allParked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount } =
     buildParkedEntries(paused, ticketMeta);
   const parked = allParked.filter((entry) => !heldIds.has(entry.id));
@@ -803,10 +836,18 @@ function truncateCaptionDescription(text: string): string {
   return `${text.slice(0, PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX - 1)}…`;
 }
 
-function gridCaptionLine(row: PipelineBoardRow): string {
+function gridCaptionLine(row: PipelineBoardRow, showSwarmBadge: boolean): string {
   const displayId = deriveDisplayTicketId(row.id);
   const description = (row.title ?? '').trim() || row.slug.trim() || NO_BACKLOG_ENTRY_LABEL;
+  if (showSwarmBadge && row.swarm) {
+    return `${displayId} [${swarmDisplayBadge(row.swarm)}] ${truncateCaptionDescription(description)}`;
+  }
   return `${displayId} ${truncateCaptionDescription(description)}`;
+}
+
+function captionsNeedSwarmBadges(visibleRows: PipelineBoardRow[]): boolean {
+  const names = new Set(visibleRows.map((r) => r.swarm).filter((s): s is string => s !== undefined));
+  return names.size > 1;
 }
 
 // Split out of renderGridLines below for the same CRAP-budget reason as
@@ -849,6 +890,7 @@ function epicSeparatorLine(epic: string | undefined): string {
 
 function renderGridCaptionLines(visibleRows: PipelineBoardRow[]): string[] {
   const withSeparators = visibleRows.some((row) => row.epic !== undefined);
+  const showBadges = captionsNeedSwarmBadges(visibleRows);
   const lines: string[] = [];
   let prevEpic: string | undefined;
   let started = false;
@@ -860,7 +902,7 @@ function renderGridCaptionLines(visibleRows: PipelineBoardRow[]): string[] {
       lines.push(epicSeparatorLine(row.epic));
     }
     lines.push('');
-    lines.push(gridCaptionLine(row));
+    lines.push(gridCaptionLine(row, showBadges));
     prevEpic = row.epic;
     started = true;
   }
