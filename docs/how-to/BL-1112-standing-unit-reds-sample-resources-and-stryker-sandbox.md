@@ -36,5 +36,21 @@ npx vitest run test/sampleResourcesCli.test.js test/strykerSandboxSiblingsLib.te
 Both suites should be green. Complements BL-847 (measure the agent, not the
 shell) and the Stryker sandbox sibling-link helper for mutation runs.
 
+## FF-only rematch
+
+QA bounced tips that re-merged into hitchhiked ancestry (ACP / hotfix-ledger /
+INTAKE / done-moves vs `origin/main`). Downstream roles must **recreate** on
+the clean tip (`git checkout -B … <tip>`), not `git merge` into a dirty
+branch. Hitchhike gate:
+
+```bash
+git diff --name-only origin/main...HEAD \
+  | rg 'acpHostClient|hotfix-ledger|^backlog/INTAKE-|done/M8' \
+  && echo FAIL || echo CLEAN
+```
+
+Stamp-off for the Pipeline Board DC/QA spacer matches live `escapeHtml`
+(`&nbsp;` on `origin/main`). Feature wording remains “HTML nbsp entity”.
+
 Acceptance:
 `specs/features/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.feature`

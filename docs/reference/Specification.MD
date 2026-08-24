@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1112: standing unit reds cleared —
+**Last Updated:** August 24, 2026 (BL-1112 FF-only rematch: hitchhike-clean
+tip recreated on architect; standing-red locks reconfirmed (`ps args=` /
+sibling unlink). Downstream roles must recreate on this tip — do not merge
+into contaminated ancestry. Stamp-off matches live `&nbsp;` on
+`origin/main`. Complements BL-847. Acceptance:
+`specs/features/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.feature`.
+How-to: `docs/how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1112: standing unit reds cleared —
 `listProcessTree` matches agents via `ps` `args=` basename (Node 24
 `comm=`/`MainThread` no longer hides `claude`), and Stryker sandbox sibling
 replace unlinks a dangling symlink before recreate so `EEXIST` is gone.
