@@ -614,6 +614,7 @@ const DOMAINS = [
   require('./bl973CopyListsClosureDerivedSteps'),
   require('./bl1083PromotionGateSteps'),
   require('./bl1063BoundedWaitSteps'),
+  require('./bl1107PropertyLaneVerdictNotLoadSteps'),
   require('./bl1086BabysitterCacheBatchSteps'),
   require('./bl1088GiveUpCooldownSteps'),
   require('./bl1030ForbiddenStopFlagSteps'),

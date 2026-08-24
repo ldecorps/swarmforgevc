@@ -19,6 +19,15 @@ const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const LIB = path.join(SWARMFORGE_SCRIPTS, 'operator_path_lib.sh');
 const START_SCRIPT = path.join(SWARMFORGE_SCRIPTS, 'start_handoff_daemon.sh');
 
+// BL-1107: small finite spaces are enumerated by construction (not sampled).
+function cartesianCases(left, right, combine) {
+  const out = [];
+  for (const a of left) {
+    for (const b of right) out.push(combine(a, b));
+  }
+  return out;
+}
+
 function makeFakeNvmHome() {
   const home = mkTmpDir('bl796-prop-home-');
   const versionsDir = path.join(home, '.nvm', 'versions', 'node');
@@ -298,17 +307,20 @@ test(
 // shell-option, or other environment mutation leaks into the sourcing
 // script."
 //
-// Generator reach: crosses whether an nvm default alias exists AND whether
-// a decoy bb sits on the search path - different combinations drive
-// swarmforge_prepend_operator_bins through different internal branches
-// (direct command -v hit vs the nvm fallback; bb found vs not) while the
-// "only PATH changes" guarantee must hold across all of them, not just the
-// simplest no-op case.
-const invariant2Arb = fc.record({ useAlias: fc.boolean(), addDecoyBb: fc.boolean() });
+// BL-1107: input space is two booleans = FOUR points. Enumerate them by
+// construction (never sample with replacement via fast-check) so coverage
+// is complete every run and spawn work stays ≤ 4 under host load.
+const INVARIANT2_CASES = cartesianCases([false, true], [false, true], (useAlias, addDecoyBb) => ({
+  useAlias,
+  addDecoyBb,
+}));
 
-test('property (invariant 2): sourcing operator_path_lib.sh and prepending mutates only PATH', () => {
-  fc.assert(
-    fc.property(invariant2Arb, ({ useAlias, addDecoyBb }) => {
+test(
+  'property (invariant 2): sourcing operator_path_lib.sh and prepending mutates only PATH',
+  () => {
+    let spawnCount = 0;
+    const libPath = process.env.BL1107_LIB_OVERRIDE || LIB;
+    for (const { useAlias, addDecoyBb } of INVARIANT2_CASES) {
       const home = makeFakeNvmHome();
       if (useAlias) {
         fs.mkdirSync(path.join(home, '.nvm', 'alias'), { recursive: true });
@@ -333,13 +345,14 @@ test('property (invariant 2): sourcing operator_path_lib.sh and prepending mutat
         `env | sort | grep -v '^PATH=' > "${beforeEnv}"`,
         `pwd > "${beforePwd}"`,
         `set -o > "${beforeOpts}"`,
-        `. "${LIB}"`,
+        `. "${libPath}"`,
         'swarmforge_prepend_operator_bins',
         `env | sort | grep -v '^PATH=' > "${afterEnv}"`,
         `pwd > "${afterPwd}"`,
         `set -o > "${afterOpts}"`,
       ].join('\n');
 
+      spawnCount += 1;
       const result = spawnSync('sh', ['-c', script], {
         encoding: 'utf8',
         timeout: 10000,
@@ -362,28 +375,38 @@ test('property (invariant 2): sourcing operator_path_lib.sh and prepending mutat
         fs.readFileSync(afterOpts, 'utf8'),
         `expected shell options to be unchanged (useAlias=${useAlias}, addDecoyBb=${addDecoyBb})`
       );
-    }),
-    { numRuns: 10 }
-  );
-});
+    }
+    assert.ok(spawnCount <= INVARIANT2_CASES.length, `invariant 2 spawned ${spawnCount}, space is ${INVARIANT2_CASES.length}`);
+    if (process.env.BL1107_SPAWN_LOG) {
+      fs.appendFileSync(process.env.BL1107_SPAWN_LOG, `2 ${spawnCount}\n`);
+    }
+  },
+  120000
+);
 
 // ── Invariant 3 ──────────────────────────────────────────────────────────
 // "A binary the caller's PATH already resolves is never shadowed by a
 // different installation the helpers discover."
 //
-// Generator reach: crosses BOTH binaries the lib resolves (bb via a direct
-// command -v hit; node via the same direct hit OR the nvm fallback - the
-// property holds either way) AND the caller-resolvable copy's position
-// within a multi-dir caller PATH (front/middle/back), while a decoy of the
-// SAME binary name sits in a curated fallback dir (~/.local/bin) and, for
-// node, the fake nvm tree ALSO has a real answer - two independent shadow
-// sources the caller's own resolution must still win over.
-const binaryArb = fc.constantFrom('bb', 'node');
-const positionArb = fc.constantFrom('front', 'middle', 'back');
+// BL-1107: space is binary × position = SIX points. Enumerate by construction
+// so every pair is exercised every run (not by lucky draw) and spawn work
+// stays ≤ 6 under host load — the sibling of BL-1063's timeout fix that was
+// left on the 20s lane default while still sampling 12× over a 6-point space.
+const INVARIANT3_BINARIES = ['bb', 'node'];
+const INVARIANT3_POSITIONS = ['front', 'middle', 'back'];
+const INVARIANT3_CASES = cartesianCases(INVARIANT3_BINARIES, INVARIANT3_POSITIONS, (binary, position) => ({
+  binary,
+  position,
+}));
 
-test('property (invariant 3): a binary already resolvable on the caller PATH is never shadowed by a different discovered installation', () => {
-  fc.assert(
-    fc.property(binaryArb, positionArb, (binary, position) => {
+test(
+  'property (invariant 3): a binary already resolvable on the caller PATH is never shadowed by a different discovered installation',
+  () => {
+    let spawnCount = 0;
+    const exercised = new Set();
+    const libPath = process.env.BL1107_LIB_OVERRIDE || LIB;
+    for (const { binary, position } of INVARIANT3_CASES) {
+      exercised.add(`${binary}:${position}`);
       const home = makeFakeNvmHome(); // a second, independent shadow source for "node"
       makeStubNamed(path.join(home, '.local', 'bin'), binary); // curated-fallback-dir shadow source, for either binary
 
@@ -399,7 +422,8 @@ test('property (invariant 3): a binary already resolvable on the caller PATH is 
       };
       const callerPath = `${dirsByPosition[position].join(':')}:/usr/bin:/bin`;
 
-      const result = spawnSync('sh', ['-c', `. "${LIB}"; swarmforge_prepend_operator_bins; command -v ${binary}`], {
+      spawnCount += 1;
+      const result = spawnSync('sh', ['-c', `. "${libPath}"; swarmforge_prepend_operator_bins; command -v ${binary}`], {
         encoding: 'utf8',
         timeout: 10000,
         env: { PATH: callerPath, HOME: home },
@@ -410,7 +434,15 @@ test('property (invariant 3): a binary already resolvable on the caller PATH is 
         callerStub,
         `expected the caller's own ${binary} ("${callerStub}") to win at position=${position}, got: ${result.stdout.trim()}`
       );
-    }),
-    { numRuns: 12 }
-  );
-});
+    }
+    assert.equal(exercised.size, INVARIANT3_CASES.length, `expected all ${INVARIANT3_CASES.length} pairs, got ${[...exercised].join(',')}`);
+    assert.ok(spawnCount <= INVARIANT3_CASES.length, `invariant 3 spawned ${spawnCount}, space is ${INVARIANT3_CASES.length}`);
+    if (process.env.BL1107_SPAWN_LOG) {
+      fs.appendFileSync(process.env.BL1107_SPAWN_LOG, `3 ${spawnCount}\n`);
+    }
+    if (process.env.BL1107_COVERAGE_LOG) {
+      fs.writeFileSync(process.env.BL1107_COVERAGE_LOG, `${[...exercised].sort().join('\n')}\n`);
+    }
+  },
+  120000
+);
