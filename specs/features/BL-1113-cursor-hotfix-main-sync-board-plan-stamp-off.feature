@@ -7,7 +7,7 @@ Feature: BL-1113 stamp-off of Cursor hotfix 27273f2b0a
   Commit 27273f2b0a is a human-landed hotfix already on local main with
   Hotfix-Certification: pending. It bundles four landed behaviours: the
   coordinator step-0 main-sync gate and trip-once deadlock breaker, the
-  standing cursor-forge pack, Pipeline Board HTML &nbsp; plus 3-word slugs,
+  standing cursor-forge pack, Pipeline Board HTML &#160; plus 3-word slugs,
   and Telegram Cursor Remote CreatePlan Confirm/Reject.
 
   This ticket stamps that landed work off — confirm or refute, do not
@@ -50,7 +50,7 @@ Feature: BL-1113 stamp-off of Cursor hotfix 27273f2b0a
     Given a ticket titled "<title>"
     When the Pipeline Board HTML body is rendered
     Then the kebab slug is "<slug>"
-    And the stage header uses an HTML nbsp entity between DC and QA
+    And the stage header uses an HTML numeric nbsp entity between DC and QA
 
     Examples:
       | title                              | slug                 |
