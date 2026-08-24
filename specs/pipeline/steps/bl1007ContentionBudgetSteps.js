@@ -15,6 +15,20 @@ const {
 const FEATURE = 'A unit-lane test budget is relative to recorded contention';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 
+/** Case-exact Outline cells (BL-113 soft lock). */
+const KNOWN_BASES = new Set(['20000', '45000']);
+const KNOWN_FACTORS = new Set(['0.25', '1', '2', '3', '1000', 'unusable']);
+const KNOWN_EFFECTIVES = new Set(['20000', '40000', '60000', '90000', 'ceiling']);
+const KNOWN_ROWS = new Set([
+  '20000|0.25|20000',
+  '20000|1|20000',
+  '20000|2|40000',
+  '20000|3|60000',
+  '45000|2|90000',
+  '20000|1000|ceiling',
+  '20000|unusable|20000',
+]);
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -27,16 +41,24 @@ function registerSteps(registry) {
   });
 
   scoped(/^a unit-lane test whose base budget is (\d+) ms$/, (ctx, base) => {
+    assert.ok(KNOWN_BASES.has(base), `unknown Outline base cell: ${base}`);
     ctx.baseMs = Number(base);
+    ctx.baseRaw = base;
   });
 
   scoped(/^the recorded contention factor is (.+)$/, (ctx, raw) => {
-    ctx.factor = raw.trim() === 'unusable' ? 'unusable' : Number(raw);
+    const cell = raw.trim();
+    assert.ok(KNOWN_FACTORS.has(cell), `unknown Outline factor cell: ${cell}`);
+    ctx.factorRaw = cell;
+    ctx.factor = cell === 'unusable' ? 'unusable' : Number(cell);
   });
 
   scoped(/^its effective budget is (.+)$/, (ctx, raw) => {
-    const expected =
-      raw.trim() === 'ceiling' ? ctx.ceilingMs : Number(raw);
+    const cell = raw.trim();
+    assert.ok(KNOWN_EFFECTIVES.has(cell), `unknown Outline effective cell: ${cell}`);
+    const rowKey = `${ctx.baseRaw}|${ctx.factorRaw}|${cell}`;
+    assert.ok(KNOWN_ROWS.has(rowKey), `unknown Outline row: ${rowKey}`);
+    const expected = cell === 'ceiling' ? ctx.ceilingMs : Number(cell);
     const actual = effectiveBudgetMs(ctx.baseMs, ctx.factor, ctx.ceilingMs);
     assert.equal(actual, expected);
   });
