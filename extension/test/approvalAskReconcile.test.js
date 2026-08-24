@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const {
   approvalAsksNeedingRepost,
+  approvalAskRecordedOnLiveTopic,
   approvalRequestedEmittedKey,
 } = require('../out/concierge/approvalAskReconcile');
 
@@ -34,4 +35,11 @@ test('approvalAsksNeedingRepost: recorded ask on a STALE topic id is re-posted o
 
 test('approvalAsksNeedingRepost: sorts ids deterministically', () => {
   assert.deepEqual(approvalAsksNeedingRepost(['BL-9', 'BL-2', 'BL-10'], {}, 1), ['BL-10', 'BL-2', 'BL-9']);
+});
+
+test('approvalAskRecordedOnLiveTopic: true only when ask topicId matches live Approvals id', () => {
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857 } }, 3857), true);
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 100 } }, 3857), false);
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', {}, 3857), false);
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857 } }, undefined), false);
 });
