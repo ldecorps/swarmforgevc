@@ -22,6 +22,13 @@ function sampleContentionFactor(loadavg1mFn, cpuCountFn) {
   }
 }
 
+function usableFactor(factor) {
+  if (factor === null || factor === undefined || factor === 'unusable') return null;
+  const f = Number(factor);
+  if (!Number.isFinite(f) || f <= 0) return null;
+  return f;
+}
+
 /**
  * Effective wall-clock budget from a statically parseable base.
  * factor < 1 or unusable → base; else min(ceiling, base * factor) with factor
@@ -32,11 +39,9 @@ function effectiveBudgetMs(baseMs, factor, ceilingMs = UNIT_LANE_BUDGET_CEILING_
   const ceil = Number(ceilingMs);
   if (!Number.isFinite(base) || base <= 0) return baseMs;
   if (!Number.isFinite(ceil) || ceil <= 0) return base;
-  if (factor === null || factor === undefined || factor === 'unusable') return base;
-  const f = Number(factor);
-  if (!Number.isFinite(f) || f <= 0) return base;
-  const scaled = base * Math.max(1, f);
-  return Math.min(ceil, Math.round(scaled));
+  const f = usableFactor(factor);
+  if (f === null) return base;
+  return Math.min(ceil, Math.round(base * Math.max(1, f)));
 }
 
 function resolveUnitLaneTimeout(baseMs, opts = {}) {
@@ -54,6 +59,7 @@ function resolveUnitLaneTimeout(baseMs, opts = {}) {
 module.exports = {
   UNIT_LANE_BUDGET_CEILING_MS,
   sampleContentionFactor,
+  usableFactor,
   effectiveBudgetMs,
   resolveUnitLaneTimeout,
 };

@@ -22,35 +22,38 @@ const evidence = {
   tests: [],
 };
 
-fs.writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));
+function persistEvidence() {
+  try {
+    fs.writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));
+  } catch {
+    /* observational */
+  }
+}
+
+persistEvidence();
 process.env.SWARMFORGE_UNIT_LANE_BUDGET_EVIDENCE = evidencePath;
 
 function scaleTimeout(ms) {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return ms;
-  const d = resolveUnitLaneTimeout(ms, { factor: decision.factor });
-  return d.effectiveMs;
+  return resolveUnitLaneTimeout(ms, { factor: decision.factor }).effectiveMs;
 }
 
 function wrapTest(original) {
   if (typeof original !== 'function') return original;
   const wrapped = function contentionBudgetTest(name, fn, timeout) {
-    if (typeof timeout === 'number') {
-      const effective = scaleTimeout(timeout);
-      evidence.tests.push({
-        name: String(name),
-        baseMs: timeout,
-        effectiveMs: effective,
-        // load-normalized duration filled by reporter hook when available
-        loadNormalizedDurationMs: null,
-      });
-      try {
-        fs.writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));
-      } catch {
-        /* observational */
-      }
-      return original(name, fn, effective);
+    if (typeof timeout !== 'number') {
+      return original(name, fn, timeout);
     }
-    return original(name, fn, timeout);
+    const effective = scaleTimeout(timeout);
+    evidence.tests.push({
+      name: String(name),
+      baseMs: timeout,
+      effectiveMs: effective,
+      // Placeholder until a reporter records wall time / factor.
+      loadNormalizedDurationMs: null,
+    });
+    persistEvidence();
+    return original(name, fn, effective);
   };
   for (const key of Object.keys(original)) {
     wrapped[key] = original[key];
