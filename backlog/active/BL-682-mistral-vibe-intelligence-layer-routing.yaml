@@ -133,5 +133,5 @@ notes: |
   file EDITOR and cannot drive the swarm). Do not confuse them, and do not
   "fix" the old ones back into use.
 
-  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it to
-  `.feature` and wires its step handlers in the same commit.
+  Gherkin promoted from `.feature.draft` to `.feature` in the same commit as
+  the step handlers and acceptance: pointer flip (BL-233).
