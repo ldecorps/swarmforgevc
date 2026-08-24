@@ -7,8 +7,10 @@ Ollama pull into a host store **outside** the tracked worktree, then serves
 it behind a loopback OpenAI-compatible endpoint. Model identity is always a
 parameter — the next model is a different id, never a second adapter.
 
-Staffing a role seat against that endpoint is **BL-1052**. Routing work to a
-local-model seat is **BL-1053**. Neither is covered here.
+Staffing a role seat against that endpoint is
+**[BL-1052](./BL-1052-local-model-seat-launch.md)** (`local-model` agent +
+`local-model-mono-router` pack). Routing work to a local-model seat is
+**BL-1053**. Neither is covered here.
 
 ## Proven host (v1)
 
@@ -102,6 +104,6 @@ or modified under the forge worktree. The default store is under
 ## Out of scope here
 
 - Installing or configuring a role pack that *staffs* a seat on this endpoint
-  (BL-1052).
+  ([BL-1052](./BL-1052-local-model-seat-launch.md)).
 - Intelligence-layer routing to a local-model seat (BL-1053).
 - GPU offload, multi-model concurrent serve, or a second runtime backend.

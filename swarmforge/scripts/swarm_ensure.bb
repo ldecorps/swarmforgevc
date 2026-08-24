@@ -61,6 +61,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "single_role_repair_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_process_marker_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_telegram_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "control_plane_lib.bb")))
@@ -215,19 +216,6 @@
     (and (zero? (:exit result))
          (not (str/includes? (:out result) "1")))))
 
-;; Agent-token → argv needle for the live seat process. Shared intent with
-;; babysitter_check.bb's agent-process-markers (Cursor seats run
-;; cursor-agent, not claude).
-(def ^:private agent-process-markers
-  {"claude"  "claude "
-   "cursor"  "cursor-agent"
-   "gemini"  "gemini"
-   "codex"   "codex"
-   "vibe"    "vibe"
-   "aider"   "aider"
-   "copilot" "copilot"
-   "grok"    "grok"})
-
 (defn role-agent-token
   "Agent token for role from roles.tsv column 6 (index 5). Defaults to
    claude when the column is blank or the row is missing."
@@ -249,7 +237,7 @@
   [socket session role]
   (and (pane-alive? socket session)
        (let [agent (role-agent-token role)
-             marker (get agent-process-markers agent (str agent " "))]
+             marker (agent-process-marker-lib/agent-process-marker agent)]
          (boolean (remote-control-health/cmdline-in-pane-matching
                    socket session marker)))))
 
@@ -752,26 +740,34 @@
        :action (str "agent still busy after " rc-session-dead-wait-seconds
                     "s wait budget - respawn skipped, not killed (never mid-turn)")})))
 
+(def ^:private rc-non-claude-off-action
+  "Shared OFF action for seats that never carry Claude /rc — heal via
+   agent:<role>; phone via Cursor Remote / Telegram, not rc:<role>."
+  "no Claude /rc; heal via agent:; phone via Cursor Remote")
+
+(defn- rc-absent-report
+  "Launch script has no --remote-control. Claude seats with RC off by
+   config are satisfied (BL-514 RC-6 → :healthy, no probe). Non-Claude
+   seats never have Claude /rc (BL-1108 → :off; heal via agent:)."
+  [component role]
+  (if (= (role-agent-token role) "claude")
+    {:component component :status :healthy}
+    {:component component :status :off
+     :action rc-non-claude-off-action}))
+
 (defn ensure-rc-role!
   "role is the roles.tsv identity (used only for the reported component
    name); launch-role (rc-launch-role) is what is actually checked/repaired.
    Never probes the live process when the launch script carries no
-   --remote-control flag at all - remote-control-health/classify checks
-   `expected` before `actual`/`alive?`, so the result is unconditionally
-   :off in that case regardless of what the probe would find. Skipping the
-   probe there isn't just an optimization: the real probe walks the pane's
-   full descendant process tree, and is worth avoiding whenever its result
-   cannot change the outcome."
+   --remote-control flag at all. Skipping the probe isn't just an
+   optimization: the real probe walks the pane's full descendant process
+   tree, and is worth avoiding whenever its result cannot change the
+   outcome. Absent-flag reporting is agent-aware (rc-absent-report)."
   [socket ordered role session]
   (let [launch-role (rc-launch-role ordered role)
         component (str "rc:" role)]
     (if (nil? (remote-control-health/expected-rc-name state-dir launch-role))
-      ;; Cursor and other non-Claude seats: no Claude /rc by design. Do not
-      ;; report HEALTHY (that implied a live /rc session). Heal path is
-      ;; agent:<role> (seat-healthy? + launch-script respawn); phone is
-      ;; Cursor Remote / Telegram bridge, not rc:<role>.
-      {:component component :status :off
-       :action "no Claude /rc; heal via agent:; phone via Cursor Remote"}
+      (rc-absent-report component role)
       (let [footer-streak (remote-control-health/advance-footer-streak!
                             state-dir launch-role
                             (remote-control-health/footer-status (rc-capture-pane socket session)))
@@ -784,8 +780,7 @@
           ;; job, so anything actionable? refuses is left alone here.
           (not (remote-control-health/actionable? status))
           {:component component :status (if (= status :off) :off :healthy)
-           :action (when (= status :off)
-                     "no Claude /rc; heal via agent:; phone via Cursor Remote")}
+           :action (when (= status :off) rc-non-claude-off-action)}
 
           (= status :session-dead)
           (repair-session-dead! socket launch-role role session (:expected check))

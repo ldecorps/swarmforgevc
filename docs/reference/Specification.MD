@@ -1,6 +1,49 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1098: push-sweep now refuses a silent path revert — tip content that no commit authored the change back to — as a sibling of BL-855's noop-landing-merge gate on the same chokepoint; see the new push-sweep entry after BL-855 below. Previously August 23, 2026 (BL-1087: documentation still described the
+**Last Updated:** August 23, 2026 (BL-1108 QA bounce re-fix: `./swarm ensure`
+absent-flag `rc:<role>` is **agent-aware**. A Claude seat whose launch script
+omits `--remote-control` stays **HEALTHY** (BL-514 RC-6, no probe). Cursor /
+`local-model` / other non-Claude seats with no flag stay **OFF** with
+heal/phone action (never a misleading HEALTHY). Docs:
+`docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md`,
+`docs/how-to/BL-611-babysitterd-runbook.md` (check 2 footnote),
+`docs/index.md`. No new extension command, setting, or UI change.)
+Prior entry —
+August 23, 2026 (BL-1052: a role seat can be staffed by a
+downloaded local model. Agent key `local-model` (chat-message/embedded,
+never folded into `aider` or `codex`); pack
+`swarmforge/packs/local-model-mono-router.conf` points every window and the
+coordinator at that agent with the model id on the window line; launch
+adapter runs `qwen --auth-type openai -y` against the BL-1082 loopback
+OpenAI-compat base URL (default `http://127.0.0.1:11434/v1`, override
+`SWARMFORGE_LOCAL_MODEL_ENDPOINT_URL`) and refuses launch when the endpoint
+is not ready, naming the URL; secrets reach the pane only via tmux `-e`.
+The aider-based `qwen-mono-router` pack is untouched. The earlier
+qwen-code / Token Plan cloud seat under this same ticket id was superseded
+and removed — see
+`backlog/evidence/BL-1052-BL-1053-supersede-disposition-20260823.md`.
+How-to: `docs/how-to/BL-1052-local-model-seat-launch.md`. No new extension
+command, setting, or UI change.)
+Prior entry —
+August 23, 2026 (BL-1108: stamp-off of operator hotfix
+`f02f6ae5b4` — Cursor full-forge readiness. Before the hotfix, babysitter only
+recognised a `claude` child (false CRIT on healthy Cursor panes),
+`./swarm ensure` could treat a shell-only Cursor pane as healthy, and Cursor
+launch embedded the full composed prompt in argv. The landed contract, now
+pipeline-reviewed (including the QA bounce re-fix above): one shared
+`agent_process_marker_lib.bb` map (`cursor`→`cursor-agent`,
+`local-model`→`qwen`, …) for babysitter and ensure; absent-flag `rc:<role>`
+is agent-aware (Claude HEALTHY, non-Claude OFF); half-launch repair is
+`agent:<role>` respawn from the persisted launch script; Cursor argv names the
+prompt file instead of slurping it. Human certification/waiver of the hotfix
+ledger row remains the BL-848 path after this stamp reaches `done`. Docs:
+`docs/how-to/BL-611-babysitterd-runbook.md` (check 1),
+`docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md` (agent-aware
+`rc:`),
+`docs/how-to/BL-1079-cursor-identity-steward-certify-and-residuals.md` (prompt-file
+wake + heal path). No new extension command, setting, or UI change.)
+Prior entry —
+August 23, 2026 (BL-1098: push-sweep now refuses a silent path revert — tip content that no commit authored the change back to — as a sibling of BL-855's noop-landing-merge gate on the same chokepoint; see the new push-sweep entry after BL-855 below. Previously August 23, 2026 (BL-1087: documentation still described the
 qwen-code mono-router seat after the BL-1052/BL-1053 supersede removed it
 from the tree. The dead runbook
 `docs/how-to/BL-1052-qwen-code-mono-router-launch.md` and its `docs/index.md`

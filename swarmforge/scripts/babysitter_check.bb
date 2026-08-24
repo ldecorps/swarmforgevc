@@ -47,6 +47,8 @@
 ;; pane. Deliberately this lib and NOT swarm_ensure.bb itself, which runs a
 ;; full ensure sweep + System/exit as a side effect of being load-file'd.
 (load-file (str (fs/path script-dir "provider_respawn_env_lib.bb")))
+;; BL-1108: shared token→argv needles (also loaded by swarm_ensure.bb).
+(load-file (str (fs/path script-dir "agent_process_marker_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -182,24 +184,16 @@
   (let [r (sh! "ps" "-eo" "pid=,ppid=,args=")]
     (when (zero? (:exit r)) (:out r))))
 
-;; Marker substring that identifies the live agent process under a pane.
-;; Token → argv needle. Keep in sync with swarmforge.sh launch binaries.
-(def agent-process-markers
-  {"claude"  "claude "
-   "cursor"  "cursor-agent"
-   "gemini"  "gemini"
-   "codex"   "codex"
-   "vibe"    "vibe"
-   "aider"   "aider"
-   "copilot" "copilot"
-   "grok"    "grok"})
+;; Re-export shared map/lookup so existing callers
+;; (babysitter-check/agent-process-markers, acceptance runners) keep working.
+(def agent-process-markers agent-process-marker-lib/agent-process-markers)
 
 (defn agent-process-marker
   "Substring to look for in a child process argv for this agent token.
    Unknown tokens fall back to the token itself (still better than always
    looking for claude)."
   [agent]
-  (get agent-process-markers (or agent "claude") (str (or agent "claude") " ")))
+  (agent-process-marker-lib/agent-process-marker agent))
 
 (defn agent-process-line
   "First child of pane-pid whose args match the expected agent marker, or nil.
