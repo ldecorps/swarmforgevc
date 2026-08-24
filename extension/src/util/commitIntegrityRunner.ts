@@ -37,18 +37,32 @@ export async function runCommitIntegrity(targetPath: string, relPaths: string[],
   }
 }
 
-// BL-892: shared by every automated human_approval writer (Expedite,
-// paused-pager Approve, Telegram Approve/Reject/Amend) - resolves the
-// SINGLE ticket file's current on-disk location (post-any-promote, so a
-// promoted ticket commits from its FINAL path) and pathspec-commits it
-// through the same locked commit_integrity_cli.bb every other writer here
-// uses. A ticket that no longer resolves (moved/deleted mid-flight) is
-// reported as a commit failure, never a silent no-op success.
-export async function commitApprovalWrites(targetPath: string, backlogId: string, message: string): Promise<boolean> {
+// BL-892 / BL-1091: shared by every automated human_approval writer (Expedite,
+// paused-pager Approve, Telegram Approve/Reject/Amend). Resolves the ticket's
+// current on-disk location (post-any-promote) and pathspec-commits it — plus
+// any extra abs paths (e.g. the rename source) — through the locked
+// commit_integrity_cli.bb. A ticket that no longer resolves is a commit
+// failure, never a silent no-op success.
+function uniqueRelPaths(targetPath: string, absPaths: string[]): string[] {
+  const relPaths: string[] = [];
+  for (const abs of absPaths) {
+    const rel = path.relative(targetPath, abs);
+    if (rel && !relPaths.includes(rel)) {
+      relPaths.push(rel);
+    }
+  }
+  return relPaths;
+}
+
+export async function commitApprovalWrites(
+  targetPath: string,
+  backlogId: string,
+  message: string,
+  extraAbsPaths: string[] = []
+): Promise<boolean> {
   const filePath = findBacklogFilePath(targetPath, backlogId);
   if (!filePath) {
     return false;
   }
-  const relPath = path.relative(targetPath, filePath);
-  return runCommitIntegrity(targetPath, [relPath], message);
+  return runCommitIntegrity(targetPath, uniqueRelPaths(targetPath, [filePath, ...extraAbsPaths]), message);
 }

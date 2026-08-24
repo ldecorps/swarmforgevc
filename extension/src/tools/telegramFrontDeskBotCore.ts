@@ -575,6 +575,9 @@ export interface PromotionRefusal {
 export interface PromotionOutcome {
   moved: boolean;
   refusal?: PromotionRefusal;
+  // BL-1091: absolute source path when a rename happened, so the commit can
+  // name both ends of the move.
+  source?: string;
 }
 
 /**
@@ -714,12 +717,14 @@ export interface PollAdapters {
   // shared, LOCKED commit-integrity helper (commit_integrity_cli.bb,
   // BL-419) - never a hand-typed git add/commit, which is exactly the
   // unmitigated path that produced BL-419's own documented incidents.
+  // BL-1091: when a rename happened, `sourcePath` is the absolute pre-move
+  // path so BOTH ends of the rename are pathspec-committed.
   // Consulted AFTER promote (the file is at its FINAL location by then)
   // and BEFORE dispatch, so a build never starts against an uncommitted
   // promotion. Optional: absent degrades to the pre-fix uncommitted
   // behavior, the same "new capability defaults to a no-op" posture every
   // other optional adapter in this file already has - never a crash.
-  commitExpediteWrites?: (backlogId: string) => Promise<boolean>;
+  commitExpediteWrites?: (backlogId: string, sourcePath?: string) => Promise<boolean>;
   // BL-892: durably commits a plain Approve/Reject/Amend's own
   // human_approval write (recordApprovalDecisionAndClose/
   // recordAmendDecisionAndClose below) through the same shared,
@@ -1321,7 +1326,7 @@ export async function recordExpediteDecisionAndClose(
   // for why an uncommitted mutation here is unsafe. Still runs on a refusal:
   // the approval itself is a real human decision that landed on disk, and
   // leaving it uncommitted is the hazard that comment describes.
-  await adapters.commitExpediteWrites?.(backlogId);
+  await adapters.commitExpediteWrites?.(backlogId, promotion.source);
   if (promotion.refusal) {
     // BL-1083 invariant 2: never a silent no-op. The operator is told in the
     // topic they tapped in, not only in a log they will never open - and NO
