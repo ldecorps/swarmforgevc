@@ -79,3 +79,6 @@ notes: >
 source: |
   Operator intake INTAKE-stamp-off-hotfix-27273f2b0a.md; babysitter health
   sweep (BL-631 / pipeline-code-on-main) + coordinator triage.
+
+notes: |
+  2026-08-24 coordinator: stamp-off acknowledged; ledger linked 27273f2b0a. Holding in paused — human_approval pending; active cap full (BL-556/BL-682/BL-1089). Promote after approval (expedited high defect).
