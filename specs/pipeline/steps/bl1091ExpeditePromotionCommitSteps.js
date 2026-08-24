@@ -137,15 +137,26 @@ function registerSteps(registry) {
   });
 
   scoped(/^the operator records (.+) through the (.+) writer$/, async (ctx, verb, writer) => {
+    // Case-sensitive allow-lists: Gherkin Outline cells must stay load-bearing
+    // (BL-113). Both writers share commitApprovalWrites today — the writer
+    // column still names which surface must remain single-path.
+    const VERBS = new Set(['Approve', 'Reject', 'Amend']);
+    const WRITERS = new Set(['bridge', 'front-desk']);
+    if (!VERBS.has(verb)) {
+      throw new Error(`unknown verb ${JSON.stringify(verb)}; expected one of ${[...VERBS].join('|')}`);
+    }
+    if (!WRITERS.has(writer)) {
+      throw new Error(`unknown writer ${JSON.stringify(writer)}; expected one of ${[...WRITERS].join('|')}`);
+    }
     ctx.writer = writer;
     ctx.verb = verb;
     approveOnDisk(ctx.ticketFile);
     const message = `${verb} ${TICKET}: record human_approval\n\nBy coder.`;
-    // Both writers share commitApprovalWrites — single path. The "writer"
-    // column locks that neither bridge nor front-desk grows a second path.
     const ok = await commitApprovalWrites(ctx.root, TICKET, message);
     assert.equal(ok, true);
     ctx.headName = git(ctx.root, 'show', '--name-status', '--format=', 'HEAD');
+    ctx.headMessage = git(ctx.root, 'log', '-1', '--format=%B');
+    assert.ok(ctx.headMessage.startsWith(`${verb} ${TICKET}:`), 'commit subject must carry the exact verb');
   });
 
   scoped(/^the resulting commit names exactly one path$/, (ctx) => {

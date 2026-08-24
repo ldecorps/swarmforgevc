@@ -44,7 +44,10 @@ human's tap as the ticket's approval BEFORE the gates run, so
 
 - **Allowed**: sets the ticket priority to `0`, moves the ticket from
   `backlog/paused/` to `backlog/active/`, and leaves the pager on the next
-  remaining paused ticket, or the empty state.
+  remaining paused ticket, or the empty state. The durable commit names
+  **both** ends of that rename (paused deletion + active addition) so the
+  ticket never sits in two folders at once (BL-1091); plain Approve/Reject/
+  Amend still commit exactly one path.
 - **Refused**: the ticket is left exactly where it was (still in
   `backlog/paused/`, priority unchanged) and the pager shows the gate's own
   name and reason — e.g. an unlanded `depends_on` id, or the ticket being
