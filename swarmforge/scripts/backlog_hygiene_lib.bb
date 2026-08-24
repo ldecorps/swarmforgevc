@@ -102,10 +102,16 @@
       (swap! out conj v))
     @out))
 
-(defn violations-for-file [f]
-  (let [text (slurp (str f))
-        id (or (field text "id") (last (str/split (str f) #"/")))]
-    (violations-for-text text {:id id :path (str f)})))
+(defn violations-for-file
+  "Slurp a ticket path and collect hygiene violations. Optional repo-root
+   is the working-tree root for BL-1027 dangling-acceptance probes."
+  ([f] (violations-for-file f nil))
+  ([f repo-root]
+   (let [text (slurp (str f))
+         id (or (field text "id") (last (str/split (str f) #"/")))
+         opts (cond-> {:id id :path (str f)}
+                repo-root (assoc :repo-root repo-root))]
+     (violations-for-text text opts))))
 
 (defn format-violation [{:keys [kind id path feature-path others message]}]
   (case kind

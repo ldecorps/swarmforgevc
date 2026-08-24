@@ -25,9 +25,7 @@
 
 (defn -main []
   (let [files (open-ticket-files project-root)
-        violations (mapcat #(backlog-hygiene-lib/violations-for-text
-                             (slurp (str %))
-                             {:path (str %) :repo-root project-root})
+        violations (mapcat #(backlog-hygiene-lib/violations-for-file % project-root)
                            files)
         missing-epic (filter #(#{:missing-epic :missing-epic-on-epic} (:kind %)) violations)
         missing-ms (filter #(= :missing-milestone (:kind %)) violations)

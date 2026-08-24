@@ -14,16 +14,6 @@ const FEATURE =
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const GATE_BB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'specifier_backlog_hygiene_gate.bb');
 
-const KNOWN_DECLARATIONS = new Set([
-  'names a feature file that is present',
-  'names a feature file that is not present',
-  'names a parked draft file that is present',
-  'is absent altogether',
-  'is a block scalar naming no feature file',
-  'is a glob-shaped mention of a file not yet named',
-  "is an epic tracker's prose standing in for a path",
-]);
-
 function ensureState(ctx) {
   if (!ctx.bl1027) {
     ctx.bl1027 = { tmpDir: fs.mkdtempSync(path.join(os.tmpdir(), 'bl1027-hygiene-')), tickets: [] };
@@ -57,30 +47,39 @@ function runGate(paths) {
   });
 }
 
+const PRESENT_FEATURE =
+  'specs/features/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.feature';
+const PRESENT_DRAFT =
+  'specs/features/BL-235-per-tile-backend-model-switch.cross-backend.feature.draft';
+
+const DECLARATION_LINES = {
+  'names a feature file that is present': () => [`acceptance: ${PRESENT_FEATURE}`],
+  'names a feature file that is not present': (id) => [
+    `acceptance: specs/features/${id}-missing-on-purpose.feature`,
+  ],
+  'names a parked draft file that is present': () => [`acceptance: ${PRESENT_DRAFT}`],
+  'is absent altogether': () => [],
+  'is a block scalar naming no feature file': () => [
+    'acceptance: |',
+    '  Specifier writes the scenarios later.',
+    '  Happy path only.',
+  ],
+  'is a glob-shaped mention of a file not yet named': () => [
+    'acceptance: |',
+    '  Not yet drafted. Once ruled, write specs/features/BL-1027-*.feature.',
+  ],
+  "is an epic tracker's prose standing in for a path": () => [
+    'acceptance:',
+    '  none: "tracker only — see decomposes_into children for acceptance"',
+  ],
+};
+
+const KNOWN_DECLARATIONS = new Set(Object.keys(DECLARATION_LINES));
+
 function acceptanceLinesFor(declaration, id) {
-  const present = 'specs/features/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.feature';
-  const draft = 'specs/features/BL-235-per-tile-backend-model-switch.cross-backend.feature.draft';
-  switch (declaration) {
-    case 'names a feature file that is present':
-      return [`acceptance: ${present}`];
-    case 'names a feature file that is not present':
-      return [`acceptance: specs/features/${id}-missing-on-purpose.feature`];
-    case 'names a parked draft file that is present':
-      return [`acceptance: ${draft}`];
-    case 'is absent altogether':
-      return [];
-    case 'is a block scalar naming no feature file':
-      return ['acceptance: |', '  Specifier writes the scenarios later.', '  Happy path only.'];
-    case 'is a glob-shaped mention of a file not yet named':
-      return [
-        'acceptance: |',
-        '  Not yet drafted. Once ruled, write specs/features/BL-1027-*.feature.',
-      ];
-    case "is an epic tracker's prose standing in for a path":
-      return ['acceptance:', '  none: "tracker only — see decomposes_into children for acceptance"'];
-    default:
-      throw new Error(`unknown declaration: ${declaration}`);
-  }
+  const build = DECLARATION_LINES[declaration];
+  if (!build) throw new Error(`unknown declaration: ${declaration}`);
+  return build(id);
 }
 
 function registerSteps(registry) {
