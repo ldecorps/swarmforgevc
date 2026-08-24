@@ -20,11 +20,13 @@ import { resolveProjectRoot, printJsonToStdout, runCliMain } from './swarm-metri
 // The diagrams this project maintains for the morning briefing
 // (local-engineering.prompt's Diagrams section) - not a directory scan, so a
 // stray/experimental .mmd dropped under docs/diagrams/ is never silently
-// emailed out. BL-579 adds the handoff-mechanism activity diagram.
+// emailed out. BL-579 adds the handoff-mechanism activity diagram; BL-580
+// adds the front-desk mechanism (Telegram in → answer out).
 export const DIAGRAM_FILES = [
   { name: 'architecture', file: 'architecture.mmd' },
   { name: 'swarm-flow', file: 'swarm-flow.mmd' },
   { name: 'handoff-mechanism', file: 'handoff-flow.mmd' },
+  { name: 'front-desk', file: 'front-desk-flow.mmd' },
 ];
 
 export interface RenderedDiagram {
