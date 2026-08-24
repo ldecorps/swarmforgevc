@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1001: multi-seat claim filters by
+**Last Updated:** August 24, 2026 (BL-1007: unit-lane Vitest budgets scale
+with a recorded host contention factor (`loadavg1m/cores`), floored at the
+statically parseable base on quiet/unusable hosts and clamped by a finite
+ceiling (120s). Run evidence names the factor and load-normalized durations.
+Property lane unchanged. Complements BL-815/BL-969/BL-999. Acceptance:
+`specs/features/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.feature`.
+How-to: `docs/how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1001: multi-seat claim filters by
 ticket `mutation_cost` against each seat's declared `--seat-tier`
 (`easy`=`low` only; `hard`=`low`/`medium`/`high`). Above-tier never spills
 down; easy may spill up; prefer least-capable idle eligible seat. Undeclared
