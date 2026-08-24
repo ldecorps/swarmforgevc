@@ -2,7 +2,7 @@ id: BL-553
 title: "QuotaManager Slice 1 — read-only role/provider availability check over existing rate-limit cooldown + BL-551 cost ledger"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: quota-budget-manager
 human_approval: approved
 severity: low

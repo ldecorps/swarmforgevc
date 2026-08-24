@@ -6,8 +6,8 @@
 #   promote_and_route_next.sh [BL-id] [project-root]
 #
 # Gates:
-#   - never promotes epics tagged do-not-promote in notes, blocked-status, or
-#     epic-type items
+#   - never promotes epics (type: epic), blocked-status, or tickets refused by
+#     promotion_gates_cli.bb. Free prose never decides candidacy (BL-1100).
 #   - prefers buildable paused (acceptance: or matching feature file) in
 #     priority/id order, but see promotion_gates below for the real ranking
 #   - promotion_gates (BL-663; promotion_gates_cli.bb / promotion_gates_lib.bb)
@@ -33,13 +33,24 @@ usage() {
   cat <<'EOF'
 Usage: promote_and_route_next.sh [BL-id] [project-root]
        promote_and_route_next.sh [project-root]
+       promote_and_route_next.sh --list-candidates [project-root]
 
 Promotes one eligible backlog/paused/*.yaml into backlog/active/, subject to
 every promotion_gates gate (human_approval, expedite lane, depth,
 orthogonality, hold marker), then routes via route_backlog_to_coder.sh —
 to the specifier when assigned_to: specifier, to coder otherwise.
+
+--list-candidates prints ticket ids that pass the structured epic/blocked
+pre-filter (BL-1100), writing one "skip <id> gate=<gate>" line to stderr per
+disqualified paused ticket. Does not promote.
 EOF
 }
+
+LIST_CANDIDATES=0
+if [[ "${1:-}" == "--list-candidates" ]]; then
+  LIST_CANDIDATES=1
+  shift
+fi
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
@@ -104,15 +115,10 @@ if [[ -z "$CAP" || ! "$CAP" =~ ^-?[0-9]+$ ]]; then
 fi
 
 ACTIVE_COUNT="$(find "$ACTIVE_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
-if (( CAP >= 0 )) && (( ACTIVE_COUNT >= CAP )); then
+if [[ "$LIST_CANDIDATES" -eq 0 ]] && (( CAP >= 0 )) && (( ACTIVE_COUNT >= CAP )); then
   echo "Error: active_backlog_max_depth gate: active count $ACTIVE_COUNT >= cap $CAP — no open slot" >&2
   exit 2
 fi
-
-is_do_not_promote() {
-  local f="$1"
-  grep -qiE 'do-not-promote|do not promote|DO NOT PROMOTE' "$f" 2>/dev/null
-}
 
 is_epic_type() {
   local f="$1"
@@ -124,10 +130,25 @@ is_blocked_status() {
   grep -qE '^status:[[:space:]]*blocked[[:space:]]*$' "$f" 2>/dev/null
 }
 
+# BL-1100: every auto-pick skip speaks — ticket id + which structured gate.
+# Prose is never a gate (is_do_not_promote deleted).
+ticket_id_of() {
+  local f="$1"
+  grep -E '^id:' "$f" | head -1 | awk '{print $2}' | tr -d '\r'
+}
+
+announce_skip() {
+  local f="$1" gate="$2"
+  local id
+  id="$(ticket_id_of "$f")"
+  [[ -n "$id" ]] || id="$(basename "$f")"
+  echo "skip $id gate=$gate" >&2
+}
+
 is_buildable() {
   local f="$1"
   local id
-  id="$(grep -E '^id:' "$f" | head -1 | awk '{print $2}' | tr -d '\r')"
+  id="$(ticket_id_of "$f")"
   if grep -qE '^acceptance:' "$f"; then
     # acceptance may be a path on the next line or inline
     local acc
@@ -175,8 +196,8 @@ pick_candidate() {
     }
     f="${located%%$'\t'*}"
     held="${located##*$'\t'}"
-    if is_do_not_promote "$f" || is_epic_type "$f" || is_blocked_status "$f"; then
-      echo "Error: $ITEM is do-not-promote, epic, or blocked" >&2
+    if is_epic_type "$f" || is_blocked_status "$f"; then
+      echo "Error: $ITEM is epic or blocked" >&2
       return 1
     fi
     local held_bool="false"
@@ -194,16 +215,29 @@ pick_candidate() {
 
   while IFS= read -r f; do
     [[ -f "$f" ]] || continue
-    is_do_not_promote "$f" && continue
-    is_epic_type "$f" && continue
-    is_blocked_status "$f" && continue
+    if is_epic_type "$f"; then
+      announce_skip "$f" "epic"
+      continue
+    fi
+    if is_blocked_status "$f"; then
+      announce_skip "$f" "blocked"
+      continue
+    fi
     # Never promote out of hold/ (hold is a sibling folder, not under paused)
+    if [[ "$LIST_CANDIDATES" -eq 1 ]]; then
+      ticket_id_of "$f"
+      continue
+    fi
     if is_buildable "$f"; then
       buildable+=("$f")
     else
       other+=("$f")
     fi
   done < <(find "$PAUSED_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | sort)
+
+  if [[ "$LIST_CANDIDATES" -eq 1 ]]; then
+    return 0
+  fi
 
   local picked
   if ((${#buildable[@]} > 0)); then
@@ -221,6 +255,11 @@ pick_candidate() {
   echo "Error: no eligible paused ticket" >&2
   return 1
 }
+
+if [[ "$LIST_CANDIDATES" -eq 1 ]]; then
+  pick_candidate || exit 1
+  exit 0
+fi
 
 SRC="$(pick_candidate)" || exit 1
 BASE="$(basename "$SRC")"
