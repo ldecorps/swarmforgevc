@@ -17,12 +17,14 @@ import * as path from 'path';
 import { renderMermaidToPng } from '../diagrams/mermaidRender';
 import { resolveProjectRoot, printJsonToStdout, runCliMain } from './swarm-metrics';
 
-// The two diagrams this project maintains (local-engineering.prompt's
-// Diagrams section) - not a directory scan, so a stray/experimental .mmd
-// dropped under docs/diagrams/ is never silently emailed out.
-const DIAGRAM_FILES = [
+// The diagrams this project maintains for the morning briefing
+// (local-engineering.prompt's Diagrams section) - not a directory scan, so a
+// stray/experimental .mmd dropped under docs/diagrams/ is never silently
+// emailed out. BL-579 adds the handoff-mechanism activity diagram.
+export const DIAGRAM_FILES = [
   { name: 'architecture', file: 'architecture.mmd' },
   { name: 'swarm-flow', file: 'swarm-flow.mmd' },
+  { name: 'handoff-mechanism', file: 'handoff-flow.mmd' },
 ];
 
 export interface RenderedDiagram {
