@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T12:49:11.164798335Z","feature_name":"one shared bounded runner, sourced by both callers that hand-copied it","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1103-one-shared-bounded-runner.feature","background_hash":"caae7354ddb1b993fb92a0a6e710cfbefd7a1e448e3a873bddfa51181e1cb1a4","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: one shared bounded runner, sourced by both callers that hand-copied it
 
   Two files carry their own wall-clock-bounded subprocess runner with the same

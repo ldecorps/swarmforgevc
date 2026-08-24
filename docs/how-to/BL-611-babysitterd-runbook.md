@@ -305,14 +305,15 @@ plane-missing recovery.
 
 **Bounded in wall-clock, not only in attempts.** `./swarm ensure` is shelled
 under a wall-clock deadline (`BABYSITTER_ENSURE_TIMEOUT_MS`, default 5
-minutes) via a `run-bounded!` mirroring `expedite_cli.bb`'s own — `setsid` so
-the whole process group can be killed on timeout, output redirected to files
-rather than deref'd (a killed process's stdout pipe can stay open on a
-surviving grandchild). The attempt-budget bound alone stops a recovery being
-retried forever; it says nothing about one that never returns, and an
-ensure that hangs would otherwise hold the sweep open so the next tick never
-happens — a babysitter that is stuck reads no differently from one that is
-not running, which is the incident's own shape.
+minutes) via `run-bounded!` from shared `bounded_run_lib.bb` (BL-1103 — same
+runner as the expeditor; no longer a hand-copy). That lib uses `setsid` so
+the whole process group can be killed on timeout (`kill -KILL -- -<pgid>`),
+and redirects output to files rather than deref'ing (a killed process's
+stdout pipe can stay open on a surviving grandchild). The attempt-budget bound
+alone stops a recovery being retried forever; it says nothing about one that
+never returns, and an ensure that hangs would otherwise hold the sweep open so
+the next tick never happens — a babysitter that is stuck reads no differently
+from one that is not running, which is the incident's own shape.
 
 **The REPAIR line carries three outcomes, not two:**
 `REPAIR [repaired|failed|unfinished] control-plane — ./swarm ensure`.
