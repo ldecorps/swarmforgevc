@@ -84,7 +84,8 @@ export function installTerminalRecoveryNote(
   attempts: number
 ): string {
   const deadBase = path.basename(deadPath);
-  const stamp = new Date().toISOString().replace(/[-:.]/g, '').replace(/Z$/, 'Z');
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
   const dest = path.join(inboxNewDir, `00_${stamp}_from_recovery_to_${role}_for_${role}.handoff`);
   const message = truncateMessage(
     `TERMINAL dead-letter ${deadBase} after ${attempts} recovery attempts — needs human`,
@@ -98,7 +99,7 @@ export function installTerminalRecoveryNote(
     'priority: 00',
     'type: note',
     `message: ${message}`,
-    `created_at: ${new Date().toISOString()}`,
+    `created_at: ${now.toISOString()}`,
     '',
     `Recovery exhausted for ${deadBase} (${attempts} attempts).`,
     'The .dead parcel was moved to handoffs/failed/. Needs human.',
