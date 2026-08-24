@@ -108,18 +108,16 @@ function placeHandoff(root, shape) {
   throw new Error(`BL-1109: unhandled path shape key "${shape}"`);
 }
 
-function gatherInProcessPaths(root) {
-  // Load the real gatherer with argv project-root (same binding -main uses).
-  // Print paths from glob-handoffs + stuck-in-process-glob — identical to
-  // what in-process-claims walks before attaching age/owner metadata.
-  // ns-resolve (not a hard babysitter-check/… call) so SCI can analyse the
-  // probe before load-file creates the namespace.
+function gatherInProcessClaims(root) {
+  // Call the real starved gatherer (in-process-claims), not a parallel
+  // glob of stuck-in-process-glob — that second path let a flat-only
+  // in-process-claims mutant survive while batch_/nested fixtures still
+  // appeared via the glob probe (BL-1109 harden).
   const probe = [
     `(binding [*command-line-args* [${JSON.stringify(root)}]]`,
     `  (load-file ${JSON.stringify(CHECK_BB)})`,
-    '  (let [g (ns-resolve \'babysitter-check \'glob-handoffs)',
-    '        glob @(ns-resolve \'babysitter-check \'stuck-in-process-glob)]',
-    '    (doseq [p (g glob)] (println p))))',
+    '  (let [f (ns-resolve \'babysitter-check \'in-process-claims)]',
+    '    (doseq [c (f {})] (println (pr-str c)))))',
     '',
   ].join('\n');
   const tmp = path.join(os.tmpdir(), `bl1109-gather-${process.pid}-${Date.now()}.bb`);
@@ -242,15 +240,24 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^babysitterd gathers in-process claims for the starved check$/, (ctx) => {
     const st = ensureState(ctx);
-    st.gathered = gatherInProcessPaths(st.root);
+    st.gathered = gatherInProcessClaims(st.root);
   }, FEATURE);
 
   registry.defineScoped(/^that handoff is among the claims$/, (ctx) => {
     const st = ensureState(ctx);
-    const hit = st.gathered.some((p) => path.resolve(p) === path.resolve(st.handoffPath));
+    const wantName = path.basename(st.handoffPath);
+    const hit = st.gathered.some((line) => line.includes(`:name "${wantName}"`) || line.includes(`:name ${wantName}`));
     if (!hit) {
       throw new Error(
-        `expected ${st.handoffPath} in starved gather; got:\n${st.gathered.join('\n') || '(empty)'}`
+        `expected name ${wantName} in starved in-process-claims; got:\n${st.gathered.join('\n') || '(empty)'}`
+      );
+    }
+    // Gather hardcodes :abandoned? false (starved-only rule); omitting the
+    // key is not equivalent for the contract even when nil is live motion.
+    const missingAbandoned = st.gathered.filter((line) => !line.includes(':abandoned? false'));
+    if (missingAbandoned.length) {
+      throw new Error(
+        `every starved claim must include :abandoned? false; offending:\n${missingAbandoned.join('\n')}`
       );
     }
   }, FEATURE);
