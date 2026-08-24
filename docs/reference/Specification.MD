@@ -1,6 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1074: mean ticket time ends at the
+**Last Updated:** August 24, 2026 (BL-584: stale Approvals-topic asks escalate
+by email digest. Front-desk concierge tick sweeps live tickets still
+`pending`/`amending`; clock is topic outbound ask `ts` reset only by inbound
+human activity (missing clock → not-stale). One digest, oldest-first, each row
+a Telegram deep link to that ask. Defaults: stale after 2h, global cooldown 4h
+(`approval_ask_stale_after_ms` / `approval_ask_email_cooldown_ms` commented in
+`swarmforge.conf`). Cooldown file written before send. Module:
+`extension/src/notify/staleApprovalEscalation.ts`. Complements BL-582/BL-434.
+Acceptance: `specs/features/BL-584-stale-approval-ask-email-escalation.feature`.
+How-to: `docs/how-to/BL-584-stale-approval-ask-email-escalation.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command or
+setting UI — conf keys only.)
+Prior entry —
+August 24, 2026 (BL-1074: mean ticket time ends at the
 close, not a later done/→done/ re-file. `lastCycleBoundsMs` in
 `swarmMetrics.ts` walks rename arrivals from today's done path; the close is
 the hop whose `fromPath` is under `backlog/active/` (or the Add after walking

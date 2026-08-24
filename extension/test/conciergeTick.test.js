@@ -230,6 +230,18 @@ test('runConciergeTick: reconcileDecidedApprovalAskCloses runs before folder dif
   assert.deepEqual(calls, [999]);
 });
 
+test('runConciergeTick: sweepStaleApprovalAsks runs before folder diff when wired', async () => {
+  const calls = [];
+  const { adapters, setFolders } = fakeAdapters({
+    sweepStaleApprovalAsks: async (nowMs) => {
+      calls.push(nowMs);
+    },
+  });
+  setFolders(folders());
+  await runConciergeTick(adapters, 4242);
+  assert.deepEqual(calls, [4242]);
+});
+
 // ── concierge-wiring-01 [started being worked] ────────────────────────────
 
 test('concierge-wiring-01: a newly-active item posts its status message into the standing Backlog topic (epic-less) and persists the message identity', async () => {

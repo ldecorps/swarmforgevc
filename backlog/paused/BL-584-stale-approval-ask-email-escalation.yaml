@@ -164,6 +164,9 @@ description: |
     recipient configured at all is an ordinary disabled state and warns nothing.
 
 acceptance: specs/features/BL-584-stale-approval-ask-email-escalation.feature
+# FF-only rematch: hitchhiked coder tip deliberately dropped.
+abandoned_commits:
+  - "75d10dee4"
 
 qa_e2e_procedure: |
   QA end-to-end procedure (live swarm, real Telegram, real Resend):

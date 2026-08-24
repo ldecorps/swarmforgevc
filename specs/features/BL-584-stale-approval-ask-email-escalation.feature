@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=eefd29c5edc22bfd8649c5bdd5657b347fb3c49f50cf0a9b55eba91f90f3c543
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T16:02:29.515063951Z","feature_name":"An unanswered approval ask escalates to email with a link into the Approvals topic","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-584-stale-approval-ask-email-escalation.feature","background_hash":"b2d4cfd5048b35fbeb755db6d512f3eed5dfab3274caac339f40738d2f2762d4","implementation_hash":"unknown","scenarios":[{"index":4,"name":"each listed ask carries a deep link to that exact Telegram message","scenario_hash":"92596f1f35c984396e3f33447d79f2739113ccdeb0db8ba6a635c5623897ae5c","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-24T16:02:29.515063951Z"},{"index":1,"name":"only a ticket still awaiting a human decision escalates","scenario_hash":"4ccb6306c5870a65fa6af849c776b39f3820295a20e7c06b3059189fa2259627","mutation_count":10,"result":{"Total":10,"Killed":10,"Survived":0,"Errors":0},"tested_at":"2026-08-24T16:01:43.306088116Z"},{"index":0,"name":"an ask escalates only once it has gone unanswered for longer than the threshold","scenario_hash":"7fe156d87ae9fe5586ddc7600c8469e610664888b3f7328569a73170c3dd08dd","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T15:58:59.154174005Z"},{"index":2,"name":"only human activity resets the clock, never the swarm's own posts","scenario_hash":"f3cdbe66907ae50b3449c25e00059a9f242f359d2d6166329f6cb4290915344a","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T15:58:59.154174005Z"},{"index":5,"name":"a still-unanswered ask re-escalates only after the cooldown","scenario_hash":"fd796ac2e04a126023117fa63805099f231fe1a2ef2e577ef57295c86ba8611e","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T15:58:59.154174005Z"},{"index":6,"name":"the sweep fails closed rather than guessing","scenario_hash":"05d10b6f1eb0b4ee82836048ba6bd3e4ee008a63d5f038aa32f9ae95b343d1ce","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-24T15:58:59.154174005Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: An unanswered approval ask escalates to email with a link into the Approvals topic
 
   An ApprovalRequested ask posts into the standing Telegram Approvals topic and waits
@@ -80,7 +85,7 @@ Feature: An unanswered approval ask escalates to email with a link into the Appr
       | -1004415865297 | 6719       | https://t.me/c/4415865297/1785/6719 |
       | -1004415865297 | absent     | https://t.me/c/4415865297/1785      |
       | 4415865297     | 6719       | https://t.me/c/4415865297/1785/6719 |
-      | not-a-number   | 6719       | (no link)                          |
+      | not-a-number   | absent     | (no link)                          |
 
   # BL-584 stale-approval-escalation-06
   Scenario Outline: a still-unanswered ask re-escalates only after the cooldown
