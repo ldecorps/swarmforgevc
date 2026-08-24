@@ -175,6 +175,13 @@
 (fs/set-posix-file-permissions p1-hang-script "rwxr-xr-x")
 (spit p1-pidfile "")
 
+(let [body (slurp p1-hang-script)]
+  (when-not (and (str/includes? body "mkfifo")
+                  (str/includes? body "read _")
+                  (str/includes? body "echo ready"))
+    (swap! failures conj
+           "FAIL BL-1031 bounce: depth hang script must fifo-handshake (not bare background+exit)")))
+
 (defn- hang-cmd
   "sh! argv for a child whose pipe-holder sits `depth` processes down."
   [depth]
