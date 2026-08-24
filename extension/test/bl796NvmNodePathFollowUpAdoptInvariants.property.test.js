@@ -19,6 +19,15 @@ const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const LIB = path.join(SWARMFORGE_SCRIPTS, 'operator_path_lib.sh');
 const START_SCRIPT = path.join(SWARMFORGE_SCRIPTS, 'start_handoff_daemon.sh');
 
+// BL-1107: small finite spaces are enumerated by construction (not sampled).
+function cartesianCases(left, right, combine) {
+  const out = [];
+  for (const a of left) {
+    for (const b of right) out.push(combine(a, b));
+  }
+  return out;
+}
+
 function makeFakeNvmHome() {
   const home = mkTmpDir('bl796-prop-home-');
   const versionsDir = path.join(home, '.nvm', 'versions', 'node');
@@ -301,12 +310,10 @@ test(
 // BL-1107: input space is two booleans = FOUR points. Enumerate them by
 // construction (never sample with replacement via fast-check) so coverage
 // is complete every run and spawn work stays ≤ 4 under host load.
-const INVARIANT2_CASES = [];
-for (const useAlias of [false, true]) {
-  for (const addDecoyBb of [false, true]) {
-    INVARIANT2_CASES.push({ useAlias, addDecoyBb });
-  }
-}
+const INVARIANT2_CASES = cartesianCases([false, true], [false, true], (useAlias, addDecoyBb) => ({
+  useAlias,
+  addDecoyBb,
+}));
 
 test(
   'property (invariant 2): sourcing operator_path_lib.sh and prepending mutates only PATH',
@@ -387,12 +394,10 @@ test(
 // left on the 20s lane default while still sampling 12× over a 6-point space.
 const INVARIANT3_BINARIES = ['bb', 'node'];
 const INVARIANT3_POSITIONS = ['front', 'middle', 'back'];
-const INVARIANT3_CASES = [];
-for (const binary of INVARIANT3_BINARIES) {
-  for (const position of INVARIANT3_POSITIONS) {
-    INVARIANT3_CASES.push({ binary, position });
-  }
-}
+const INVARIANT3_CASES = cartesianCases(INVARIANT3_BINARIES, INVARIANT3_POSITIONS, (binary, position) => ({
+  binary,
+  position,
+}));
 
 test(
   'property (invariant 3): a binary already resolvable on the caller PATH is never shadowed by a different discovered installation',
