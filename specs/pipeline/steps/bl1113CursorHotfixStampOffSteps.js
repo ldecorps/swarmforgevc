@@ -195,8 +195,10 @@ function registerSteps(registry) {
     assert.equal(ctx.slug, slug);
   });
 
-  scoped(/^the stage header uses an HTML nbsp entity between DC and QA$/, (ctx) => {
-    assert.match(ctx.boardHtml, /DC&nbsp;QA/);
+  scoped(/^the stage header uses an HTML numeric nbsp entity between DC and QA$/, (ctx) => {
+    // Telegram HTML allows numeric &#160; but not named &nbsp; (shows literally).
+    assert.match(ctx.boardHtml, /DC&#160;QA/);
+    assert.ok(!ctx.boardHtml.includes('&nbsp;'), 'named &nbsp; must not appear in board HTML');
   });
 
   // ── create-plan-confirm-05 ───────────────────────────────────────────
