@@ -52,9 +52,9 @@ function raiseLiveHandoffdThreshold(secs) {
   fs.writeFileSync(LIVE_CONF, raised);
 }
 
-function runShellTest(absPath) {
+function runShellTest(absPath, cwd = REPO_ROOT) {
   const res = spawnSync('bash', [absPath], {
-    cwd: REPO_ROOT,
+    cwd,
     encoding: 'utf8',
     timeout: 180000,
     env: { ...process.env },
@@ -63,6 +63,18 @@ function runShellTest(absPath) {
     status: res.status,
     out: `${res.stdout || ''}${res.stderr || ''}`,
   };
+}
+
+function assertPinnedRestartPathGreen(out, label) {
+  // BL-796 nvm-resolution checks can fail on hosts without a usable nvm tree
+  // in PATH; they are out of this ticket's scope. The coupling under test is
+  // the stale-heartbeat restart path (02a / BL-785 ALL CHECKS).
+  assert.match(
+    out,
+    /PASS: 02a: stale handoffd restarts through start_handoff_daemon\.sh/,
+    label
+  );
+  assert.doesNotMatch(out, /FAIL - 02a:/, label);
 }
 
 function registerSteps(registry) {
@@ -78,6 +90,9 @@ function registerSteps(registry) {
   scoped(/^the operator has raised handoffd's live threshold above the staged staleness$/, () => {
     // Staged ages are 200s; 300s is strictly above that (qa_e2e step 1).
     raiseLiveHandoffdThreshold(300);
+    // Non-vacuity: the live file must actually show the raise (soft/surgical lock).
+    // Suites still pass only because they read the pinned fixture, not this file.
+    assert.match(fs.readFileSync(LIVE_CONF, 'utf8'), /^handoffd\|300\|/m);
   });
 
   scoped(/^(test_daemon_log_freshness\.sh|test_bl785_freshness_deliberate_stop\.sh) runs$/, (ctx, testFile) => {
@@ -90,16 +105,14 @@ function registerSteps(registry) {
   });
 
   scoped(/^it passes$/, (ctx) => {
+    // Outline 01 non-vacuity: live conf must still show the ops raise.
+    assert.match(fs.readFileSync(LIVE_CONF, 'utf8'), /^handoffd\|300\|/m);
     const out = ctx.lastRun.out || '';
-    // BL-796 nvm-resolution checks can fail on hosts without a usable nvm tree
-    // in PATH; they are out of this ticket's scope. The coupling under test is
-    // the stale-heartbeat restart path (02a / BL-785 ALL CHECKS).
     if (ctx.lastTestFile === 'test_bl785_freshness_deliberate_stop.sh') {
       assert.equal(ctx.lastRun.status, 0, `expected suite green:\n${out}`);
       return;
     }
-    assert.match(out, /PASS: 02a: stale handoffd restarts through start_handoff_daemon\.sh/);
-    assert.doesNotMatch(out, /FAIL - 02a:/);
+    assertPinnedRestartPathGreen(out, `expected pinned restart path green:\n${out}`);
   });
 
   scoped(/^the freshness suite runs$/, (ctx) => {
@@ -111,24 +124,12 @@ function registerSteps(registry) {
       'test',
       'test_daemon_log_freshness.sh'
     );
-    const res = spawnSync('bash', [script], {
-      cwd,
-      encoding: 'utf8',
-      timeout: 180000,
-      env: { ...process.env },
-    });
-    ctx.lastRun = {
-      status: res.status,
-      out: `${res.stdout || ''}${res.stderr || ''}`,
-    };
+    ctx.lastRun = runShellTest(script, cwd);
     if (!ctx.cloneDir) {
-      // Same BL-796 host caveat as scenario 01 — require the pinned-threshold
-      // restart path green, not a full-suite exit 0.
-      assert.match(
+      assertPinnedRestartPathGreen(
         ctx.lastRun.out,
-        /PASS: 02a: stale handoffd restarts through start_handoff_daemon\.sh/
+        `expected pinned restart path green:\n${ctx.lastRun.out}`
       );
-      assert.doesNotMatch(ctx.lastRun.out, /FAIL - 02a:/);
     }
   });
 
