@@ -1,5 +1,11 @@
 const assert = require('node:assert/strict');
-const { awaitRealWatchEvent, describeWatchWaitTimeout, DEFAULT_TIMEOUT_MS } = require('./boundedWatchWait');
+const {
+  awaitRealWatchEvent,
+  describeWatchWaitTimeout,
+  DEFAULT_TIMEOUT_MS,
+  resolveBoundedWatchDeadlineMs,
+} = require('./boundedWatchWait');
+const { resolveUnitLaneTimeout } = require('../../../specs/pipeline/steps/lib/contentionBudget');
 
 // BL-933: this helper's own tests. Never a real fs.watch or a real elapsed
 // wait - vi's fake timers drive the deadline race deterministically, same
@@ -76,26 +82,30 @@ test('awaitRealWatchEvent does not reject before its own deadline elapses', asyn
   }
 });
 
-test('awaitRealWatchEvent defaults its timeout well below the 20000ms lane budget', () => {
-  assert.ok(DEFAULT_TIMEOUT_MS > 0);
+test('BL-1008: quiet-host deadline base stays below the quiet-host lane budget', () => {
+  assert.equal(resolveBoundedWatchDeadlineMs({ factor: 1 }), DEFAULT_TIMEOUT_MS);
   assert.ok(DEFAULT_TIMEOUT_MS < 20000);
 });
 
-// BL-933 hardening: the test above only bounds the EXPORTED constant's
-// value - it never proves the function's own default parameter actually
-// uses that constant. A default hardcoded to a different literal (e.g. the
-// coder's own commit message documents 10000ms as a specifically
-// load-tested value, tuned up from an initial 4000ms) would pass every
-// existing test unnoticed, including the property test, which always
-// supplies an explicit timeoutMs and never exercises the omitted-argument
-// default path at all.
-test('awaitRealWatchEvent, when timeoutMs is omitted, actually times out at DEFAULT_TIMEOUT_MS - not merely a value near it', async () => {
+test('BL-1008: deadline stays strictly below the test effective budget at any factor', () => {
+  for (const factor of [1, 3, 1000, 'unusable']) {
+    const deadline = resolveBoundedWatchDeadlineMs({ factor });
+    const testBudget = resolveUnitLaneTimeout(20000, { factor }).effectiveMs;
+    assert.ok(deadline < testBudget, `factor=${factor}: ${deadline} < ${testBudget}`);
+  }
+});
+
+// BL-933 hardening (BL-1008): omitted timeoutMs uses the contention-scaled
+// deadline for a pinned quiet factor, still naming event/path in the message.
+test('awaitRealWatchEvent, when timeoutMs is omitted, times out at the resolved quiet-host deadline', async () => {
   vi.useFakeTimers();
   try {
+    const expected = resolveBoundedWatchDeadlineMs({ factor: 1 });
     const neverResolves = new Promise(() => {});
     const pending = awaitRealWatchEvent(neverResolves, {
       eventLabel: 'bounce file creation',
       watchedPath: '/tmp/example/bounce',
+      factor: 1,
     });
     let settled = false;
     let caught = null;
@@ -109,13 +119,13 @@ test('awaitRealWatchEvent, when timeoutMs is omitted, actually times out at DEFA
       }
     );
 
-    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS - 1);
-    assert.equal(settled, false, 'must not settle even 1ms before DEFAULT_TIMEOUT_MS');
+    await vi.advanceTimersByTimeAsync(expected - 1);
+    assert.equal(settled, false, 'must not settle even 1ms before the resolved deadline');
 
     await vi.advanceTimersByTimeAsync(1);
-    assert.equal(settled, true, 'must settle once DEFAULT_TIMEOUT_MS has fully elapsed');
+    assert.equal(settled, true, 'must settle once the resolved deadline has fully elapsed');
     assert.ok(caught, 'expected the omitted-timeoutMs default to reject, not resolve');
-    assert.match(caught.message, new RegExp(`${DEFAULT_TIMEOUT_MS}ms`));
+    assert.match(caught.message, new RegExp(`${expected}ms`));
   } finally {
     vi.useRealTimers();
   }
