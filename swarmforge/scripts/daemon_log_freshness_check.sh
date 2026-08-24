@@ -26,6 +26,12 @@
 #                            absent/heartbeat-less log is not a violation,
 #                            because our own restart rotated it away
 #                            (default: 300)
+#   FRESHNESS_IN_SWEEP_BUDGET_MS  BL-1110: when handoffd.sweep-marker shows
+#                            an in-flight (non-idle) sweep younger than this
+#                            budget (default 225000 ms = supervisor BL-977),
+#                            a log-heartbeat age past the 120s threshold is
+#                            NOT a restart — the loop is progressing mid-cycle
+#                            between start/end pulses.
 #   FRESHNESS_ANNOUNCE_CMD   override announce; receives message as $1
 #   FRESHNESS_KILL_CMD       override kill; receives pid as $1
 #   FRESHNESS_START_CMD      override restart; receives start-script + root as $1 $2
@@ -68,6 +74,8 @@ NOW=${FRESHNESS_NOW_EPOCH:-$(date +%s)}
 COOL_OFF=${FRESHNESS_COOL_OFF_SECS:-300}
 MAX_THRESHOLD=${FRESHNESS_MAX_THRESHOLD_SECS:-600}
 RESTART_GRACE=${FRESHNESS_RESTART_GRACE:-300}
+# BL-1110 / BL-977: same default as handoffd_supervisor's in-sweep budget.
+IN_SWEEP_BUDGET_MS=${FRESHNESS_IN_SWEEP_BUDGET_MS:-225000}
 INCIDENT_FILE=${FRESHNESS_INCIDENT_FILE:-"$ROOT/.swarmforge/daemon/freshness-incidents.log"}
 
 mkdir -p "$(dirname -- "$INCIDENT_FILE")"
@@ -184,6 +192,27 @@ heartbeat_age_secs() {
     return
   fi
   printf '%s %s\n' $((NOW - epoch)) "stale-heartbeat"
+}
+
+# BL-1110: handoffd only logs heartbeat at cycle start/end; a heavy in-flight
+# sweep (BL-977 measured ~143s) ages the log past 120s while the loop is
+# healthy. Supervisor already trusts handoffd.sweep-marker — cron must too.
+# Returns 0 when marker names a non-idle sweep whose started_at_ms age is
+# within IN_SWEEP_BUDGET_MS. POSIX-only parse (no bb/jq — cron runs when
+# those are dead).
+in_flight_sweep_under_budget() {
+  marker_path=$1
+  [ -f "$marker_path" ] || return 1
+  raw=$(cat "$marker_path" 2>/dev/null || true)
+  [ -n "$raw" ] || return 1
+  # Compact or spaced JSON idle forms (POSIX case — no jq).
+  case "$raw" in
+    *'"sweep":"idle"'*|*'"sweep": "idle"'*) return 1 ;;
+  esac
+  started=$(printf '%s' "$raw" | sed -n 's/.*"started_at_ms"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)
+  [ -n "$started" ] || return 1
+  age_ms=$((NOW * 1000 - started))
+  [ "$age_ms" -ge 0 ] && [ "$age_ms" -le "$IN_SWEEP_BUDGET_MS" ]
 }
 
 # BL-1011: a value that is not an age never renders as a number. This is the
@@ -331,6 +360,14 @@ process_daemon() {
   effective=$(effective_threshold "$threshold" "$factor")
 
   if [ "$age" -le "$effective" ]; then
+    return 0
+  fi
+
+  # BL-1110: progressing mid-cycle work refreshes the sweep-marker, not the
+  # log heartbeat. Do not restart a healthy in-flight handoffd for that.
+  if [ "$name" = "handoffd" ] && in_flight_sweep_under_budget "$ROOT/.swarmforge/daemon/handoffd.sweep-marker"; then
+    record="epoch=${NOW} swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=in-sweep-progress threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=suppress-in-sweep"
+    append_incident "$record"
     return 0
   fi
 
