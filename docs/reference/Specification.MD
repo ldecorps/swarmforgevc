@@ -1,6 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1110: the freshness cron no longer
+**Last Updated:** August 24, 2026 (BL-1111: the front-desk reply-relay
+recovers from bridge-drop transport faults before burning the sustained-
+outage window. After BL-621's alert correctly fired, a live episode sat on
+`terminated` / intermittent `fetch failed` for ~31 minutes while reconnect
+used the ordinary 60s-capped backoff. Transport errors now cap reconnect
+backoff at 5s; `/events` must return an OK streaming body (empty body no
+longer resets the outage as success); the prior SSE reader is cancelled on
+exit so the next reconnect is not fighting a half-open undici stream; sticky
+`lastError` keeps relay health unhealthy until a clean success. Sustained
+escalation stays exactly once per episode (BL-621 unchanged). Complements
+BL-320 (at-least-once egress) and BL-1110 (co-occurring handoffd flap —
+separate root cause). Acceptance:
+`specs/features/BL-1111-reply-relay-terminated-sustained-outage.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1110: the freshness cron no longer
 restarts a healthy handoffd mid-cycle for a stale heartbeat alone.
 `handoffd` writes heartbeat only at cycle start/end; a heavy in-flight sweep
 can age the heartbeat past the 120s base budget while work is still
