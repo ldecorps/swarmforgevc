@@ -197,6 +197,20 @@ priority: 5
   {:ok {}}
   {:ok {}}))
 
+;; Two subjects in one gate run, neither yet in the corpus indexes — peer
+;; scan must refuse (dropping subject-peer-duplicates would silently pass).
+(assert=
+ "two subjects claiming the same id in one run are refused even with empty corpora"
+ [{:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-a.yaml"
+   :others [{:path "paused/BL-4242-b.yaml"}]}
+  {:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-b.yaml"
+   :others [{:path "paused/BL-4242-a.yaml"}]}]
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-a.yaml"}
+   {:id "BL-4242" :path "paused/BL-4242-b.yaml"}]
+  {:ok {}}
+  {:ok {}}))
+
 (assert=
  "format-violation for duplicate-id names both files"
  true
