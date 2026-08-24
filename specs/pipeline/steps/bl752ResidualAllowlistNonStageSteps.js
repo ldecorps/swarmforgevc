@@ -39,46 +39,66 @@ function extractDefinePatterns(source) {
   return patterns;
 }
 
+function stepTextFromLine(line) {
+  const m = line.match(/^\s+(?:Given|When|Then|And) (.+)$/);
+  return m ? m[1].trim() : null;
+}
+
+function parseExampleTable(block) {
+  const exampleMatch = block.match(/Examples:\s*\n((?:\s*\|[^\n]+\n)+)/);
+  if (!exampleMatch) return null;
+  const rows = exampleMatch[1]
+    .trim()
+    .split('\n')
+    .map((r) =>
+      r
+        .split('|')
+        .slice(1, -1)
+        .map((c) => c.trim())
+    );
+  return { headers: rows[0], dataRows: rows.slice(1) };
+}
+
+function outlineStepTemplates(block) {
+  const templates = [];
+  for (const line of block.split('\n')) {
+    const text = stepTextFromLine(line);
+    if (text && !text.includes('Examples')) templates.push(text);
+  }
+  return templates;
+}
+
+function expandOutlineBlock(block) {
+  const table = parseExampleTable(block);
+  if (!table) return [];
+  const templates = outlineStepTemplates(block);
+  const steps = [];
+  for (const row of table.dataRows) {
+    const vars = Object.fromEntries(table.headers.map((h, i) => [h, row[i]]));
+    for (const tpl of templates) {
+      let s = tpl;
+      for (const [k, v] of Object.entries(vars)) {
+        s = s.replace(new RegExp(`<${k}>`, 'g'), v);
+      }
+      if (!s.includes('<')) steps.push(s);
+    }
+  }
+  return steps;
+}
+
 function renderFeatureSteps(featureText) {
   // Expand Scenario Outline Examples into concrete step lines (naive but
   // sufficient for BL-694's single-placeholder outlines).
   const steps = [];
   const blocks = featureText.split(/\n(?=  (?:Scenario(?: Outline)?:|#))/);
   for (const block of blocks) {
-    if (!/Scenario Outline:/.test(block)) {
-      for (const line of block.split('\n')) {
-        const m = line.match(/^\s+(?:Given|When|Then|And) (.+)$/);
-        if (m) steps.push(m[1].trim());
-      }
+    if (/Scenario Outline:/.test(block)) {
+      steps.push(...expandOutlineBlock(block));
       continue;
     }
-    const exampleMatch = block.match(/Examples:\s*\n((?:\s*\|[^\n]+\n)+)/);
-    if (!exampleMatch) continue;
-    const rows = exampleMatch[1]
-      .trim()
-      .split('\n')
-      .map((r) =>
-        r
-          .split('|')
-          .slice(1, -1)
-          .map((c) => c.trim())
-      );
-    const headers = rows[0];
-    const dataRows = rows.slice(1);
-    const outlineSteps = [];
     for (const line of block.split('\n')) {
-      const m = line.match(/^\s+(?:Given|When|Then|And) (.+)$/);
-      if (m && !m[1].includes('Examples')) outlineSteps.push(m[1].trim());
-    }
-    for (const row of dataRows) {
-      const vars = Object.fromEntries(headers.map((h, i) => [h, row[i]]));
-      for (const tpl of outlineSteps) {
-        let s = tpl;
-        for (const [k, v] of Object.entries(vars)) {
-          s = s.replace(new RegExp(`<${k}>`, 'g'), v);
-        }
-        if (!s.includes('<')) steps.push(s);
-      }
+      const text = stepTextFromLine(line);
+      if (text) steps.push(text);
     }
   }
   return steps;
