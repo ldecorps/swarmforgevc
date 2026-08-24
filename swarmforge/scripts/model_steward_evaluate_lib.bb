@@ -23,23 +23,23 @@
   [entry]
   (contains? passing-statuses (str (:status entry))))
 
-(defn require-scorecard-id
-  "Capture wrapper contract: scorecard_id is mandatory. Missing → refuse;
-   never invent a recruiter-scorecard:… pointer."
-  [artifact]
-  (let [id (:scorecard_id artifact)]
+(defn- require-artifact-id
+  "Capture wrapper contract: `id-key` is mandatory. Missing → refuse;
+   never invent a recruiter-scorecard:… / bakeoff-run:… pointer."
+  [artifact id-key label]
+  (let [id (get artifact id-key)]
     (when (or (nil? id) (str/blank? (str id)))
-      (throw (ex-info "evaluate refused: captured scorecard missing scorecard_id"
+      (throw (ex-info (str "evaluate refused: captured " label " missing " (name id-key))
                        {:keys (keys artifact)})))
     (str id)))
 
+(defn require-scorecard-id
+  [artifact]
+  (require-artifact-id artifact :scorecard_id "scorecard"))
+
 (defn require-bakeoff-run-id
   [artifact]
-  (let [id (:bakeoff_run_id artifact)]
-    (when (or (nil? id) (str/blank? (str id)))
-      (throw (ex-info "evaluate refused: captured bake-off missing bakeoff_run_id"
-                       {:keys (keys artifact)})))
-    (str id)))
+  (require-artifact-id artifact :bakeoff_run_id "bake-off"))
 
 (defn scorecard-body
   "BatteryScorecard fields may sit at the top level of the capture wrapper
@@ -167,7 +167,7 @@
         gates (gates-from-scorecard scorecard)
         caps (-> (capabilities-from-scorecard scorecard)
                  (merge-bakeoff-into-capabilities
-                  (when bakeoff (bakeoff-capability-for-model bakeoff (:model scorecard)))) )
+                  (when bakeoff (bakeoff-capability-for-model bakeoff (:model scorecard)))))
         regressions (regression-diff prior-report gates)
         evidence (evidence-pointer scorecard-id bakeoff-id)
         score (overall-score-from-capabilities caps)
