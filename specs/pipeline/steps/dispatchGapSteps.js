@@ -287,6 +287,13 @@ function registerSteps(registry) {
       ctx.droppedParcelSweepRunner();
       return;
     }
+    // BL-1104: same extension point — Background sets
+    // ctx.landedButOpenSweepRunner so shared "the sweep runs" text drives
+    // the real landed-but-open harness.
+    if (ctx.landedButOpenSweepRunner) {
+      ctx.landedButOpenSweepRunner();
+      return;
+    }
     const targetPath = ensureTargetPath(ctx);
     ctx.sweepOutput = execFileSync('bb', [SWEEP_HARNESS, targetPath], { encoding: 'utf8' });
   });
