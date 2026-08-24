@@ -285,9 +285,9 @@ function matrixLine(gutter, cells, cellWidth) {
 const STAGE_GLYPHS = ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA'];
 const STAGE_CELL_WIDTH = 2;
 const stageHeader = (gutterWidth) => matrixLine(NBSP.repeat(gutterWidth), STAGE_GLYPHS, STAGE_CELL_WIDTH);
-const stageHeaderHtml = (gutterWidth) => stageHeader(gutterWidth).replace(/\u00a0/g, '&#160;');
+const stageHeaderHtml = (gutterWidth) => stageHeader(gutterWidth).replace(/\u00a0/g, '&nbsp;');
 const ticketRowHtml = (displayId, gutterWidth, heldGlyph) =>
-  ticketRow(displayId, gutterWidth, heldGlyph).replace(/\u00a0/g, '&#160;');
+  ticketRow(displayId, gutterWidth, heldGlyph).replace(/\u00a0/g, '&nbsp;');
 const ticketRow = (displayId, gutterWidth, heldGlyph) =>
   matrixLine(
     displayId.padStart(gutterWidth, NBSP),
@@ -427,12 +427,11 @@ test('wrapPipelineBoardHtml: wraps the grid text in a <pre> block', () => {
   assert.equal(wrapPipelineBoardHtml('TICKET SP\nBL-1    X'), '<pre>TICKET SP\nBL-1    X</pre>');
 });
 
-test('wrapPipelineBoardHtml: emits &#160; for Unicode NBSP so Telegram keeps the stage header on one line', () => {
+test('wrapPipelineBoardHtml: emits &nbsp; for Unicode NBSP so Telegram keeps the stage header on one line', () => {
   const NBSP = '\u00a0';
   const header = `${NBSP.repeat(4)}${NBSP}NS${NBSP}SP${NBSP}CO${NBSP}CL${NBSP}AR${NBSP}HD${NBSP}DC${NBSP}QA`;
   const html = wrapPipelineBoardHtml(header);
-  assert.ok(html.includes('DC&#160;QA'), `expected &#160; before QA, got: ${html}`);
-  assert.ok(!html.includes('&nbsp;'), 'named &nbsp; is not a Telegram HTML entity — would show literally');
+  assert.ok(html.includes('DC&nbsp;QA'), `expected &nbsp; before QA, got: ${html}`);
   assert.ok(!html.includes('DC QA'), 'must not use ASCII space between DC and QA');
 });
 
