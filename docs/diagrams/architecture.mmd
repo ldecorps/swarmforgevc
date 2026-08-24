@@ -42,6 +42,12 @@
 %% then dropped mid-pipeline (BL-714) has a trail but no live mail anywhere,
 %% which the dispatch-gap sweep alone can never detect (any trail at all
 %% marks it dispatched forever). Report-only, to the coordinator's inbox.
+%% BL-1094: dispatch-gap auto-route cites HEAD as tip; handoffd sets
+%% SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1 so BL-953 coherence does not refuse
+%% that one machine-generated parcel (hand-authored stale drafts still blocked).
+%% BL-1106: effective-depth pause + throttle paths resolve at master via
+%% resolve-identity-root (same as BL-966 conf), so a worktree cannot miss
+%% control-pause.json and promote past a human hold.
 %% BL-891 added a master-main-reconcile sweep to the same handoffd.bb
 %% cadence, mirroring BL-356's push-sweep! in the opposite direction:
 %% origin/main's landed commits never reached the master checkout's own

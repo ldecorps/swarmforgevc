@@ -1,6 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1113: stamp-off of Cursor hotfix
+**Last Updated:** August 24, 2026 (BL-1106: a control pause is visible from
+every checkout. BL-966 fixed effective-depth's *config* read at the master
+checkout, but `pause-marker-path` (and the throttle recommendation path)
+still used the caller's own root. `.swarmforge/operator/control-pause.json`
+is gitignored master-only state, so a worktree saw no marker (`not paused`)
+and both promotion entry points — which `rev-parse --show-toplevel` to the
+worktree — promoted past a human hold (measured 0 vs 6 with a live pause).
+Fix: reuse memoized `resolve-identity-root` for pause and throttle paths so
+every effective-depth input agrees across checkouts; non-git scratch roots
+keep BL-966's stdout/exit. How-to:
+`docs/how-to/BL-617-nightly-cooldown-window.md` (Checking Cooldown State).
+Acceptance:
+`specs/features/BL-1106-a-pause-is-visible-from-every-checkout.feature`.
+No new extension command, setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1094: the dispatch-gap auto-route can
+deliver again. `dispatch-gap-draft-lines` cites HEAD as tip (not ticket work),
+so the BL-953 task/commit coherence gate refused almost every auto-route when
+HEAD's subject named a different ticket — 28 errors to 1 live success, and
+that success was coincidence. Fix (approval lean a): handoffd's `auto-route!`
+sets `SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1` for that one machine-generated
+`swarm_handoff` invocation; `check-enabled?` skips the coherence gate only
+then. Hand-authored stale-draft refusal is unchanged. A refused auto-route
+logs `gate=<name> reason=…` so operators can see which gate blocked it.
+Protocol: `swarmforge/handoff-protocol.md` (Task/Commit Coherence Gate).
+Acceptance:
+`specs/features/BL-1094-the-auto-route-cites-head-so-the-coherence-gate-blocks-it.feature`.
+No new extension command, setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1113: stamp-off of Cursor hotfix
 `27273f2b0a` — main-sync deadlock breaker, standing `cursor-forge` pack,
 Pipeline Board HTML spacing/slugs, CreatePlan confirm. Before the hotfix,
 coordinator bookkeeping could keep waking while local `main` stayed behind
