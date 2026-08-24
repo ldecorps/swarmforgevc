@@ -103,18 +103,30 @@
 ;; BL-2005 but read-ref-subject-commits never supplies body — so the index
 ;; built from subject-only commits cannot flag BL-2005.
 
-(let [tmp (str (fs/create-temp-dir {:prefix "lbo-body-"}))
-      _ (fs/create-dirs (fs/path tmp "backlog" "active"))
-      _ (spit (str (fs/path tmp "backlog" "active" "BL-2005.yaml"))
-              "id: BL-2005\ntitle: x\nstatus: todo\nassigned_to: coder\n")
-      commits [{:sha "dddddddddddddddddddddddddddddddddddddddd"
-                :subject "Merge origin/main into QA-approved BL-2006 (dddddddddd) for landing"}]
-      items (chase-sweep-lib/landed-but-open-items
-             (str (fs/path tmp "backlog" "active")) commits [])]
-  (assert= "trap (a): body-only ticket never flagged from subject-only commits"
-           []
-           items)
-  (fs/delete-tree tmp))
+(let [tmp (str (fs/create-temp-dir {:prefix "lbo-body-"}))]
+  (try
+    (fs/create-dirs (fs/path tmp "backlog" "active"))
+    (spit (str (fs/path tmp "backlog" "active" "BL-2005.yaml"))
+          "id: BL-2005\ntitle: x\nstatus: todo\nassigned_to: coder\n")
+    (let [commits [{:sha "dddddddddddddddddddddddddddddddddddddddd"
+                    :subject "Merge origin/main into QA-approved BL-2006 (dddddddddd) for landing"}]
+          items (chase-sweep-lib/landed-but-open-items
+                 (str (fs/path tmp "backlog" "active")) commits [])]
+      (assert= "trap (a): body-only ticket never flagged from subject-only commits"
+               []
+               items))
+    (finally
+      (fs/delete-tree tmp))))
+
+;; BL-1104 required_wiring: the sweep must be CALLED from handoffd, not merely
+;; defined. Acceptance drives the harness; without this check, deleting the
+;; run-sweep! call leaves every suite green (BL-419 shape).
+(let [handoffd (slurp (str (fs/path (fs/parent (fs/canonicalize *file*))
+                                    ".." "handoffd.bb")))]
+  (assert-true "handoffd cycle calls run-sweep! landed-but-open"
+               (boolean (re-find #"run-sweep!\s+\"landed-but-open\"" handoffd)))
+  (assert-true "handoffd defines landed-but-open-sweep!"
+               (str/includes? handoffd "landed-but-open-sweep!")))
 
 (when (seq @failures)
   (doseq [f @failures] (println f))

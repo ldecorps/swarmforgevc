@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d90adf949b38bb6c1a9b4b2821d1e827fbb27e21ee5a74f56a84e82bdfdd6276
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T08:29:36.577782117Z","feature_name":"A ticket QA landed but never notified the coordinator about is detected","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1104-qa-landed-ticket-never-closed-strands-in-active.feature","background_hash":"7da8ff058362267cfdffba63d27177f4393957c13949f6c041ccf195c0b1fcd9","implementation_hash":"unknown","scenarios":[{"index":2,"name":"A ticket an existing sweep already owns is left to that sweep","scenario_hash":"235bc83de50b374c38149afb69df5f15efbea7c0b7bb10941aa7b3764e87ff05","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-24T08:29:36.577782117Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A ticket QA landed but never notified the coordinator about is detected
 
   QA's landing sequence has four separable steps, and a session can stop after
