@@ -35,13 +35,14 @@
   [conf-text]
   (into {}
         (keep (fn [line]
-                (when (str/starts-with? (str/trim line) "window ")
-                  (let [parts (str/split (str/trim line) #"\s+")
-                        seat (nth parts 1 nil)
-                        flag-idx (.indexOf parts "--seat-tier")]
-                    (when (and seat (>= flag-idx 0) (< (inc flag-idx) (count parts)))
-                      (when-let [tier (normalize-tier (nth parts (inc flag-idx)))]
-                        [seat tier])))))
+                (let [trimmed (str/trim line)]
+                  (when (str/starts-with? trimmed "window ")
+                    (let [parts (str/split trimmed #"\s+")
+                          seat (nth parts 1 nil)
+                          flag-idx (.indexOf parts "--seat-tier")]
+                      (when (and seat (>= flag-idx 0) (< (inc flag-idx) (count parts)))
+                        (when-let [tier (normalize-tier (nth parts (inc flag-idx)))]
+                          [seat tier]))))))
               (str/split-lines (or conf-text "")))))
 
 (defn parse-mutation-cost
@@ -70,10 +71,28 @@
                    (= stage (first (str/split seat #"@" 2))))
                  tiers)))
 
+(defn- tier-ceil [tier]
+  (get tier-ceiling (normalize-tier tier) 2))
+
+(defn- idle-better-fit-sibling?
+  "True when an idle sibling with a declared, strictly lower ceiling also
+   accepts cost. Undeclared siblings never count as a better fit."
+  [me my-ceil cost sibling-states]
+  (boolean
+   (some (fn [{:keys [role tier busy?]}]
+           (and (not busy?)
+                (not= role me)
+                (some? (normalize-tier tier))
+                (seat-accepts? tier cost)
+                (< (tier-ceil tier) my-ceil)))
+         sibling-states)))
+
 (defn difficulty-claim-decision
   "Pure: may THIS seat claim this candidate now?
      :claim              - take it
-     :skip-ineligible    - cost above my tier (leave in queue)
+     :skip-ineligible    - cost above my tier, or I have no declared tier on a
+                           stage that uses tiers (declaration is mandatory to
+                           participate — BL-1001 architect bounce)
      :defer-better-fit   - an idle sibling with a lower ceiling also accepts
                            (prefer easy for low when both idle)
    When the stage has no declared tiers at all, always :claim (BL-983 path).
@@ -83,15 +102,15 @@
     (not (stage-tiers-active? tiers stage))
     :claim
 
+    ;; Tier-active stage: undeclared seats do not participate (never infer open).
+    (nil? (normalize-tier my-tier))
+    :skip-ineligible
+
     (not (seat-accepts? my-tier cost))
     :skip-ineligible
 
+    (idle-better-fit-sibling? me (tier-ceil my-tier) cost sibling-states)
+    :defer-better-fit
+
     :else
-    (let [my-ceil (get tier-ceiling (normalize-tier my-tier) 2)
-          better (some (fn [{:keys [role tier busy?]}]
-                         (and (not busy?)
-                              (not= role me)
-                              (seat-accepts? tier cost)
-                              (< (get tier-ceiling (normalize-tier tier) 2) my-ceil)))
-                       sibling-states)]
-      (if better :defer-better-fit :claim))))
+    :claim))
