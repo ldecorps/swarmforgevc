@@ -357,6 +357,7 @@ const DOMAINS = [
   require('./bl688RecordableSpecFailureClassesSteps'),
   require('./bl690EnsureDaemonRepairStartsNotHaltsSteps'),
   require('./bl686EpicDrilldownSlugMatchSteps'),
+  require('./bl1000FreshnessPinnedFixtureSteps'),
   require('./bl675DaemonLogFreshnessSteps'),
   require('./bl630PushSweepQaGateSteps'),
   require('./bl1081AcpHostDrivesOneSeatSteps'),

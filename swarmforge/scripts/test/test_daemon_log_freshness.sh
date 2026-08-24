@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHECKER="$SRC/daemon_log_freshness_check.sh"
 INSTALLER="$SRC/install_freshness_cron.sh"
-CONF="$SRC/daemon_log_freshness.conf"
+CONF="$SCRIPT_DIR/fixtures/daemon_log_freshness.fixture.conf"
 BABYSITTERD_SH="$SRC/babysitterd.sh"
 LIB="$SRC/operator_path_lib.sh"
 START_SCRIPT="$SRC/start_handoff_daemon.sh"
@@ -100,7 +100,7 @@ pass "01: babysitterd heartbeats every tick with no work"
 # ── 02a: stale handoffd heartbeat → kill + restart via start script + record + announce ─
 ROOT="$(make_root)"
 NOW=1700000000
-# Heartbeat 200s old (>120 threshold)
+# Heartbeat 200s old (> pinned fixture handoffd|120; not the live ops conf)
 STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
