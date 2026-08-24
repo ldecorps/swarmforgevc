@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2b1e329fb05c003be70fcfcbe3e6626b2ffdc70a63317c2840799ed5d452d55b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T11:11:07.678929781Z","feature_name":"BL-1114 a dead-lettered handoff cannot sit invisible after quarantine or exhausted recovery","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1114-dead-letter-quarantine-must-not-be-silent.feature","background_hash":"425fccd6e235d318a90d3fd19c6d8c094f0b9ee60b0caaff3fc3ae8916d33ed1","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a newly dead-lettered handoff is announced or the refusal is named","scenario_hash":"5879d4097c107343d92788500c2153851ee4ed2ba576a728432e5dc8aebd9f92","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T11:11:07.678929781Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1114 a dead-lettered handoff cannot sit invisible after quarantine or exhausted recovery
   A parcel renamed to *.handoff.dead (chase max-chases or corrupt quarantine)
   must surface to a human and must not leave the owning role with no
