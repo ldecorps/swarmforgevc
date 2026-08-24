@@ -40,13 +40,17 @@ ancillary_provider_resolve_pack() {
 ancillary_provider_family_for_pack() {
   local pack="$1"
   case "$pack" in
+    copilot-*|*-copilot*) printf '%s\n' copilot ;;
+    cursor-*|*-cursor*) printf '%s\n' cursor ;;
     openrouter-*|*-openrouter*) printf '%s\n' openrouter ;;
     gemini-*) printf '%s\n' gemini ;;
     codex-*) printf '%s\n' codex ;;
     perplexity-*|qwen-*|cerebras-*|vibe-*) printf '%s\n' openai_aider ;;
     mono-router) printf '%s\n' claude_direct ;;
     *)
-      if [[ "$pack" == *gemini* ]]; then printf '%s\n' gemini
+      if [[ "$pack" == *copilot* ]]; then printf '%s\n' copilot
+      elif [[ "$pack" == *cursor* ]]; then printf '%s\n' cursor
+      elif [[ "$pack" == *gemini* ]]; then printf '%s\n' gemini
       elif [[ "$pack" == *codex* ]]; then printf '%s\n' codex
       elif [[ "$pack" == *openrouter* ]]; then printf '%s\n' openrouter
       elif [[ "$pack" == *perplexity* || "$pack" == *qwen* || "$pack" == *cerebras* || "$pack" == *vibe* ]]; then
@@ -71,9 +75,14 @@ ancillary_provider_load() {
   # shellcheck disable=SC1090
   source "$HOME/.zshenv" 2>/dev/null || true
 
+  ANCILLARY_PROVIDER_CONF_PATH=""
   ANCILLARY_PROVIDER_PACK="$(ancillary_provider_resolve_pack "$root")"
   if [[ -z "$ANCILLARY_PROVIDER_CONF_PATH" && -f "$root/.swarmforge/swarm-identity" ]]; then
     ANCILLARY_PROVIDER_CONF_PATH="$(awk -F'\t' '$1=="active_backlog_max_depth_conf_path"{print $2; exit}' "$root/.swarmforge/swarm-identity")"
+  fi
+  # Prefer launch_pack when conf basename did not resolve (missing file).
+  if [[ -z "$ANCILLARY_PROVIDER_PACK" && -f "$root/.swarmforge/swarm-identity" ]]; then
+    ANCILLARY_PROVIDER_PACK="$(awk -F'\t' '$1=="launch_pack"{print $2; exit}' "$root/.swarmforge/swarm-identity")"
   fi
   ANCILLARY_PROVIDER_FAMILY="$(ancillary_provider_family_for_pack "${ANCILLARY_PROVIDER_PACK:-}")"
 
@@ -107,6 +116,12 @@ ancillary_provider_load() {
     claude_direct)
       : # direct Claude subscription — no third-party routing keys
       ;;
+    copilot)
+      : # copilot CLI auth comes from prior copilot login and/or token env vars
+      ;;
+    cursor)
+      : # CURSOR_API_KEY from zshenv / tmux -e (BL-130)
+      ;;
   esac
 
   # Never let a stale cross-vendor key from the shell hijack a different pack.
@@ -124,6 +139,14 @@ ancillary_provider_load() {
       ;;
     claude_direct)
       unset OPENROUTER_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN GEMINI_API_KEY || true
+      ;;
+    copilot)
+      unset OPENROUTER_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN GEMINI_API_KEY \
+        OPENAI_API_BASE OPENAI_BASE_URL || true
+      ;;
+    cursor)
+      unset OPENROUTER_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN GEMINI_API_KEY \
+        OPENAI_API_BASE OPENAI_BASE_URL || true
       ;;
   esac
 
@@ -216,6 +239,22 @@ ancillary_provider_require_credentials() {
         return 1
       }
       ;;
+    copilot)
+      command -v copilot >/dev/null 2>&1 || {
+        echo "ancillary_provider: copilot CLI required for Copilot pack" >&2
+        return 1
+      }
+      ;;
+    cursor)
+      [[ -n "${CURSOR_API_KEY:-}" ]] || {
+        echo "ancillary_provider: pack $(ancillary_provider_pack) requires CURSOR_API_KEY" >&2
+        return 1
+      }
+      command -v cursor-agent >/dev/null 2>&1 || {
+        echo "ancillary_provider: cursor-agent CLI required for Cursor pack" >&2
+        return 1
+      }
+      ;;
   esac
 }
 
@@ -254,6 +293,13 @@ ancillary_provider_default_model() {
       elif [[ "$role" == front_desk ]]; then printf '%s\n' "claude-haiku-4-5-20251001"
       else printf '%s\n' "claude-sonnet-5"
       fi
+      ;;
+    copilot)
+      printf '%s\n' "auto"
+      ;;
+    cursor)
+      # Match cursor-forge / cursor-mono-router seat default.
+      printf '%s\n' "auto"
       ;;
   esac
 }
@@ -300,6 +346,15 @@ ancillary_provider_pane_exports() {
     claude_direct)
       printf '%s\n' 'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL OPENROUTER_API_KEY GEMINI_API_KEY'
       ;;
+    copilot)
+      printf '%s\n' \
+        'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL OPENROUTER_API_KEY GEMINI_API_KEY'
+      ;;
+    cursor)
+      printf '%s\n' \
+        'export CURSOR_API_KEY="$CURSOR_API_KEY"' \
+        'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL OPENROUTER_API_KEY GEMINI_API_KEY'
+      ;;
   esac
 }
 
@@ -328,6 +383,26 @@ ancillary_provider_fill_tmux_env() {
       fi
       if [[ -n "${FRONT_DESK_OPERATOR_EFFORT:-}" ]]; then
         ANCILLARY_TMUX_ENV+=(-e "FRONT_DESK_OPERATOR_EFFORT=${FRONT_DESK_OPERATOR_EFFORT}")
+      fi
+      ;;
+    copilot)
+      if [[ -n "${COPILOT_GITHUB_TOKEN:-}" ]]; then
+        ANCILLARY_TMUX_ENV+=(-e "COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}")
+      fi
+      if [[ -n "${GH_TOKEN:-}" ]]; then
+        ANCILLARY_TMUX_ENV+=(-e "GH_TOKEN=${GH_TOKEN}")
+      fi
+      if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        ANCILLARY_TMUX_ENV+=(-e "GITHUB_TOKEN=${GITHUB_TOKEN}")
+      fi
+      if [[ -n "${FRONT_DESK_OPERATOR_MODEL:-}" ]]; then
+        ANCILLARY_TMUX_ENV+=(-e "FRONT_DESK_OPERATOR_MODEL=${FRONT_DESK_OPERATOR_MODEL}")
+      fi
+      ;;
+    cursor)
+      ANCILLARY_TMUX_ENV=(-e "CURSOR_API_KEY=${CURSOR_API_KEY}")
+      if [[ -n "${FRONT_DESK_OPERATOR_MODEL:-}" ]]; then
+        ANCILLARY_TMUX_ENV+=(-e "FRONT_DESK_OPERATOR_MODEL=${FRONT_DESK_OPERATOR_MODEL}")
       fi
       ;;
   esac
