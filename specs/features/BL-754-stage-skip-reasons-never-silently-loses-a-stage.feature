@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d2a7a6c805f7aabb32852670fd8cfdf602801cbf9842f687f24b41b72270d55d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T13:46:17.067575026Z","feature_name":"a malformed stage_skip_reasons declaration is surfaced, never silently truncated","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-754-stage-skip-reasons-never-silently-loses-a-stage.feature","background_hash":"a5d2f84434852a12f7ae97152af6188f1b39f6fd078d2ee0aeaf4be07244aca5","implementation_hash":"unknown","scenarios":[{"index":0,"name":"either quote style keeps a comma inside the reason and the next stage still parses","scenario_hash":"02d598fcb1cd48a10f21b4988a4b946880bc9d564282d08b2fa79308f196948c","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-24T13:46:17.067575026Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a malformed stage_skip_reasons declaration is surfaced, never silently truncated
 
   take-flow-reason (required_stages_lib.bb:87-108) has three branches. The
