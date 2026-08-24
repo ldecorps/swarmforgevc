@@ -15,41 +15,33 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const MARKER_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'agent_process_marker_lib.bb');
 const SWEEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'babysitterd_sweep_lib.bb');
 
-const KNOWN_DEPTHS = new Set([
-  'one generation below the pane',
-  'two generations below the pane',
-  'three generations below the pane',
-  'nowhere under the pane',
-]);
-const KNOWN_VERDICTS = new Set(['alive', 'absent', 'unavailable']);
-const KNOWN_TOLD = new Set(['remote control is degraded', 'the check could not be run']);
-
 const PANE = 1000;
 const OTHER_PANE = 2000;
 
+const DEPTH_ROWS = {
+  'one generation below the pane': [[1001, PANE, 'claude --model opus']],
+  'two generations below the pane': [
+    [1001, PANE, 'zsh /home/x/.swarmforge/launch/coder.sh'],
+    [1002, 1001, 'claude --model opus'],
+  ],
+  'three generations below the pane': [
+    [1001, PANE, 'sh'],
+    [1002, 1001, 'zsh /home/x/.swarmforge/launch/coder.sh'],
+    [1003, 1002, 'claude --model opus'],
+  ],
+  'nowhere under the pane': [
+    [1001, PANE, 'zsh /home/x/.swarmforge/launch/coder.sh'],
+    [1002, 1001, 'sleep 999'],
+  ],
+};
+const KNOWN_DEPTHS = new Set(Object.keys(DEPTH_ROWS));
+const KNOWN_VERDICTS = new Set(['alive', 'absent', 'unavailable']);
+const KNOWN_TOLD = new Set(['remote control is degraded', 'the check could not be run']);
+
 function depthRows(depth) {
-  switch (depth) {
-    case 'one generation below the pane':
-      return [[1001, PANE, 'claude --model opus']];
-    case 'two generations below the pane':
-      return [
-        [1001, PANE, 'zsh /home/x/.swarmforge/launch/coder.sh'],
-        [1002, 1001, 'claude --model opus'],
-      ];
-    case 'three generations below the pane':
-      return [
-        [1001, PANE, 'sh'],
-        [1002, 1001, 'zsh /home/x/.swarmforge/launch/coder.sh'],
-        [1003, 1002, 'claude --model opus'],
-      ];
-    case 'nowhere under the pane':
-      return [
-        [1001, PANE, 'zsh /home/x/.swarmforge/launch/coder.sh'],
-        [1002, 1001, 'sleep 999'],
-      ];
-    default:
-      throw new Error(`unknown depth: ${depth}`);
-  }
+  const rows = DEPTH_ROWS[depth];
+  if (!rows) throw new Error(`unknown depth: ${depth}`);
+  return rows;
 }
 
 function psText(rows) {
