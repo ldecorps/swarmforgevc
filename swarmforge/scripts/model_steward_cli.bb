@@ -12,6 +12,7 @@
 ;;   model_steward_cli.bb register <provider>/<model> [--status candidate|certified|deprecated] [--context-window N] [--cost-class low|medium|high]
 ;;   model_steward_cli.bb certify <provider>/<model>
 ;;   model_steward_cli.bb decertify <provider>/<model> --reason <text> [--status candidate|deprecated]
+;;   model_steward_cli.bb evaluate <provider>/<model> --role <role> --scorecard <path> [--bakeoff <path>] [--decertify-on-regression]
 ;;   model_steward_cli.bb role-matrix <role> [--include-uncertified]
 ;;   model_steward_cli.bb capability <provider>/<model>
 ;;   model_steward_cli.bb adapter <provider>/<model>
@@ -24,6 +25,7 @@
 (def scripts-dir (fs/path (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path scripts-dir "model_steward_store.bb")))
 (load-file (str (fs/path scripts-dir "model_steward_lib.bb")))
+(load-file (str (fs/path scripts-dir "model_steward_evaluate_lib.bb")))
 
 (defn cli-args []
   (let [raw (vec *command-line-args*)]
@@ -95,6 +97,7 @@
   (println "  capability <provider>/<model>")
   (println "  adapter <provider>/<model>")
   (println "  eligible <provider>/<model> --role <role> [--override-uncertified]")
+  (println "  evaluate <provider>/<model> --role <role> --scorecard <path> [--bakeoff <path>] [--decertify-on-regression]")
   (System/exit 1))
 
 (defn run-status []
@@ -206,6 +209,78 @@
     (println (if eligible? "eligible" "ineligible"))
     (when-not eligible? (System/exit 1))))
 
+(defn run-evaluate
+  "BL-556: pure ingest of a captured recruiter scorecard (+ optional bake-off).
+   Never spawns the battery/recruiter. --scorecard path is absolute or relative
+   to MODEL_STEWARD_STATE_DIR."
+  [rest-args]
+  (when (empty? rest-args) (usage))
+  (let [[provider model] (parse-provider-model (first rest-args))
+        flags (vec (rest rest-args))
+        role (opt-value flags "--role")
+        scorecard-path (opt-value flags "--scorecard")
+        bakeoff-path (opt-value flags "--bakeoff")
+        decertify? (has-flag? flags "--decertify-on-regression")]
+    (when (or (str/blank? role) (str/blank? scorecard-path))
+      (binding [*out* *err*]
+        (println "evaluate requires --role <role> and --scorecard <path>"))
+      (System/exit 1))
+    (let [scorecard-art (model-steward-store/read-evidence-json! (state-dir) scorecard-path)
+          bakeoff-art (when bakeoff-path
+                        (model-steward-store/read-evidence-json! (state-dir) bakeoff-path))]
+      (when-not scorecard-art
+        (binding [*out* *err*]
+          (println (str "evaluate refused: scorecard not found at " scorecard-path)))
+        (System/exit 1))
+      (when (and bakeoff-path (nil? bakeoff-art))
+        (binding [*out* *err*]
+          (println (str "evaluate refused: bake-off not found at " bakeoff-path)))
+        (System/exit 1))
+      (let [registry (load-registry)
+            _ (when-not (model-steward-lib/model-entry registry provider model)
+                (binding [*out* *err*]
+                  (println (str "evaluate refused: register " provider "/" model " first")))
+                (System/exit 1))
+            entry (model-steward-lib/model-entry registry provider model)
+            prior (when (:certification_report_path entry)
+                    (model-steward-store/read-certification-report!
+                     (state-dir) (:certification_report_path entry)))
+            timestamp (now-iso)
+            result (model-steward-evaluate-lib/apply-evaluate
+                    registry provider model role scorecard-art bakeoff-art prior timestamp)
+            report-path (model-steward-store/write-certification-report!
+                         (state-dir) provider model timestamp (:report result))
+            key (model-steward-lib/model-key provider model)
+            with-report (assoc-in (:registry result) [:models key :certification_report_path] report-path)
+            registry'' (cond
+                         (and decertify? (seq (:regressions result)))
+                         (let [reason (str "evaluate regression: "
+                                           (str/join ", " (map :gate (:regressions result))))
+                               reg-report (model-steward-lib/build-regression-report
+                                           provider model (:report result) reason timestamp)
+                               reg-path (model-steward-store/write-certification-report!
+                                         (state-dir) provider model
+                                         (str timestamp "-regression") reg-report)]
+                           (model-steward-lib/decertify with-report provider model reg-path
+                                                         {:reason reason
+                                                          :new-status model-steward-lib/candidate-status}))
+                         (empty? (:regressions result))
+                         (model-steward-lib/certify with-report provider model report-path)
+                         :else with-report)]
+        (save-registry! registry'')
+        (when (seq (:regressions result))
+          (binding [*out* *err*]
+            (doseq [r (:regressions result)]
+              (println (str "REGRESSION " (:gate r) " pass->fail")))))
+        (println (str provider "/" model
+                      " evaluated role=" role
+                      " report=" report-path
+                      " evidence=" (:evidence result)
+                      (when (seq (:regressions result))
+                        (str " regressions=" (count (:regressions result))))
+                      (when (and decertify? (seq (:regressions result)))
+                        " decertified")))))))
+
 (let [args (cli-args)
       cmd (first args)
       rest-args (vec (rest args))]
@@ -215,6 +290,7 @@
     "register" (run-register rest-args)
     "certify" (run-certify rest-args)
     "decertify" (run-decertify rest-args)
+    "evaluate" (run-evaluate rest-args)
     "role-matrix" (run-role-matrix rest-args)
     "capability" (run-capability rest-args)
     "adapter" (run-adapter rest-args)

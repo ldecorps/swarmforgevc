@@ -28,15 +28,19 @@
 ;; ── Model Registry ───────────────────────────────────────────────────────
 (defn register-model
   "Adds or replaces a Model Registry entry. Status defaults to \"candidate\"
-   when omitted — a newly-discovered model is never certified by default."
-  [registry provider model {:keys [status context_window cost_class]}]
+   when omitted — a newly-discovered model is never certified by default.
+   Optional :underlying_name / :trace (BL-682) record the tool-reported name
+   a stable alias was chosen over, without inventing a registry id."
+  [registry provider model {:keys [status context_window cost_class underlying_name trace]}]
   (assoc-in registry [:models (model-key provider model)]
-            {:provider provider
-             :model model
-             :status (or status candidate-status)
-             :context_window context_window
-             :cost_class cost_class
-             :certification_report_path nil}))
+            (cond-> {:provider provider
+                     :model model
+                     :status (or status candidate-status)
+                     :context_window context_window
+                     :cost_class cost_class
+                     :certification_report_path nil}
+              underlying_name (assoc :underlying_name underlying_name)
+              trace (assoc :trace trace))))
 
 (defn model-entry [registry provider model]
   (get-in registry [:models (model-key provider model)]))
@@ -189,9 +193,13 @@
    reading the seed file off disk; this only interprets the parsed data."
   [{:keys [models capabilities role_matrix adapters]}]
   (reduce
-   (fn [registry {:keys [provider model status context_window cost_class]}]
+   (fn [registry {:keys [provider model status context_window cost_class underlying_name trace]}]
      (register-model registry provider model
-                      {:status status :context_window context_window :cost_class cost_class}))
+                      {:status status
+                       :context_window context_window
+                       :cost_class cost_class
+                       :underlying_name underlying_name
+                       :trace trace}))
    (assoc empty-registry
           :capabilities (into {} (map (fn [[k v]] [(name k) v]) capabilities))
           :role_matrix (into {} (map (fn [[k v]] [(name k) (vec v)]) role_matrix))

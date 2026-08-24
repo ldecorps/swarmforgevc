@@ -58,7 +58,10 @@
    "openai" "codex"
    "cerebras" "aider"
    "cursor" "cursor"
-   "local" "local-model"})
+   "local" "local-model"
+   ;; BL-682: Mistral Vibe is already a live agent (`vibe`); the Intelligence
+   ;; Layer could not route to it until this key existed.
+   "mistral" "vibe"})
 
 (defn agent-for-provider
   "The launch agent for `provider`, or nil when the map has never heard of
