@@ -8,7 +8,7 @@ human_approval: approved
 priority: 162
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 
 invariants:
@@ -111,7 +111,7 @@ description: |
   system actually reports — a fabricated fourth entry would make the registry
   lie.
 
-acceptance: specs/features/BL-682-mistral-vibe-intelligence-layer-routing.feature.draft
+acceptance: specs/features/BL-682-mistral-vibe-intelligence-layer-routing.feature
 
 out_of_scope: |
   - The packs, the launcher, and the `"vibe"` agent shape. All three exist and

@@ -35,10 +35,13 @@ Feature: Mistral Vibe is reachable through the Intelligence Layer
       | cerebras  | aider  |
 
   # BL-682 vibe-routing-03
-  Scenario: an unknown provider still falls through to itself
+  # BL-1053 retired the old "fall through to the provider's own name" path —
+  # unknown providers report known?=false with agent nil. This scenario pins
+  # that existing contract so adding mistral cannot quietly restore fallthrough.
+  Scenario: an unknown provider does not resolve to a launch agent
     Given the model factory's provider-to-agent map
     When a provider with no mapping is resolved
-    Then it resolves to its own name
+    Then resolution reports the provider as unknown
 
   # BL-682 vibe-routing-04
   Scenario: the Model Steward carries a registered Mistral model
