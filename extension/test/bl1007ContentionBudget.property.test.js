@@ -7,6 +7,8 @@ const {
   effectiveBudgetMs,
   UNIT_LANE_BUDGET_CEILING_MS,
   resolveUnitLaneTimeout,
+  loadNormalizedDurationMs,
+  evidenceTestsAreAttributable,
 } = require('../../specs/pipeline/steps/lib/contentionBudget');
 
 test('BL-1007 invariant 2: effective budget never exceeds the finite ceiling', () => {
@@ -27,6 +29,30 @@ test('BL-1007 invariant 1: resolveUnitLaneTimeout records factor and effective',
   assert.equal(d.factor, 2);
   assert.equal(d.effectiveMs, 40000);
   assert.equal(d.baseMs, 20000);
+});
+
+test('BL-1007 invariant 1: all-null loadNormalizedDurationMs is not attributable after a completed run', () => {
+  assert.equal(evidenceTestsAreAttributable([]), false);
+  assert.equal(
+    evidenceTestsAreAttributable([{ name: 'a', baseMs: 1, effectiveMs: 1, loadNormalizedDurationMs: null }]),
+    false
+  );
+  assert.equal(
+    evidenceTestsAreAttributable([{ name: 'a', baseMs: 1, effectiveMs: 1, loadNormalizedDurationMs: 12.5 }]),
+    true
+  );
+});
+
+test('BL-1007 invariant 1: loadNormalizedDurationMs is wall÷max(1,factor)', () => {
+  fc.assert(
+    fc.property(fc.double({ min: 0, max: 1e5, noNaN: true }), fc.double({ min: 0.01, max: 40, noNaN: true }), (wall, factor) => {
+      const n = loadNormalizedDurationMs(wall, factor);
+      assert.equal(typeof n, 'number');
+      assert.ok(Number.isFinite(n));
+      assert.equal(n, wall / Math.max(1, factor));
+    }),
+    { numRuns: 40 }
+  );
 });
 
 test('BL-1007 invariant 3: unusable factor leaves the base unchanged', () => {

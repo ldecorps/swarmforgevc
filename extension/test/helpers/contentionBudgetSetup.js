@@ -2,6 +2,7 @@
 
 // BL-1007: scale per-test numeric timeout literals at runtime while leaving
 // the source text's trailing number intact for BL-969/BL-999 guards.
+// Records each budgeted test's load-normalized duration (wall ÷ factor).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,6 +10,7 @@ const os = require('node:os');
 const {
   resolveUnitLaneTimeout,
   UNIT_LANE_BUDGET_CEILING_MS,
+  loadNormalizedDurationMs,
 } = require('../../../specs/pipeline/steps/lib/contentionBudget');
 
 const decision = resolveUnitLaneTimeout(20000);
@@ -38,6 +40,27 @@ function scaleTimeout(ms) {
   return resolveUnitLaneTimeout(ms, { factor: decision.factor }).effectiveMs;
 }
 
+function instrumentFn(fn, entry) {
+  return function contentionBudgetInstrumented(...args) {
+    const t0 = performance.now();
+    const finish = () => {
+      entry.loadNormalizedDurationMs = loadNormalizedDurationMs(performance.now() - t0, decision.factor);
+      persistEvidence();
+    };
+    try {
+      const result = fn.apply(this, args);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).finally(finish);
+      }
+      finish();
+      return result;
+    } catch (err) {
+      finish();
+      throw err;
+    }
+  };
+}
+
 function wrapTest(original) {
   if (typeof original !== 'function') return original;
   const wrapped = function contentionBudgetTest(name, fn, timeout) {
@@ -45,15 +68,15 @@ function wrapTest(original) {
       return original(name, fn, timeout);
     }
     const effective = scaleTimeout(timeout);
-    evidence.tests.push({
+    const entry = {
       name: String(name),
       baseMs: timeout,
       effectiveMs: effective,
-      // Placeholder until a reporter records wall time / factor.
       loadNormalizedDurationMs: null,
-    });
+    };
+    evidence.tests.push(entry);
     persistEvidence();
-    return original(name, fn, effective);
+    return original(name, instrumentFn(fn, entry), effective);
   };
   for (const key of Object.keys(original)) {
     wrapped[key] = original[key];

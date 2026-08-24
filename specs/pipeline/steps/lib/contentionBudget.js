@@ -56,10 +56,29 @@ function resolveUnitLaneTimeout(baseMs, opts = {}) {
   };
 }
 
+/** Wall clock ÷ applied factor (≥1), for attributable red classification. */
+function loadNormalizedDurationMs(wallMs, factor) {
+  const wall = Number(wallMs);
+  if (!Number.isFinite(wall) || wall < 0) return null;
+  const f = usableFactor(factor);
+  const denom = f === null ? 1 : Math.max(1, f);
+  return wall / denom;
+}
+
+/** True iff every budgeted test entry carries a finite load-normalized duration. */
+function evidenceTestsAreAttributable(tests) {
+  if (!Array.isArray(tests) || tests.length === 0) return false;
+  return tests.every(
+    (t) => t != null && typeof t.loadNormalizedDurationMs === 'number' && Number.isFinite(t.loadNormalizedDurationMs)
+  );
+}
+
 module.exports = {
   UNIT_LANE_BUDGET_CEILING_MS,
   sampleContentionFactor,
   usableFactor,
   effectiveBudgetMs,
   resolveUnitLaneTimeout,
+  loadNormalizedDurationMs,
+  evidenceTestsAreAttributable,
 };
