@@ -25,6 +25,7 @@ const {
   formatCollapsedEpicLine,
   PIPELINE_BOARD_COLLAPSED_EPICS_MAX,
   PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX,
+  swarmDisplayBadge,
 } = require('../out/concierge/pipelineBoard');
 
 const NBSP = '\u00a0';
@@ -1388,4 +1389,113 @@ test('BL-956 D1: the live HTML still carries the +N more parked line alongside t
   const { html } = composePipelineBoardHtml(data, 0, 'https://github.com/x/y');
   assert.match(html, /\+2 more parked/);
   assert.match(html, /\+2 more epics/);
+});
+
+// ── BL-1009: unified swarm grid badges + honest remote stage ──────────────
+
+test('BL-1009: swarmDisplayBadge maps primary/second and passes other wire names through', () => {
+  assert.equal(swarmDisplayBadge('primary'), 's1');
+  assert.equal(swarmDisplayBadge('second'), 's2');
+  assert.equal(swarmDisplayBadge('third'), 'third');
+});
+
+test('BL-1009: tickets from two swarms share one grid', () => {
+  const { rows } = computePipelineBoard(
+    {},
+    [],
+    {
+      'BL-801': { title: 'one', swarm: 'primary' },
+      'BL-802': { title: 'two', swarm: 'second' },
+    },
+    { activeIds: ['BL-801', 'BL-802'], localSwarmName: 'primary' }
+  );
+  assert.deepEqual(
+    rows.map((r) => r.id).sort(),
+    ['BL-801', 'BL-802']
+  );
+});
+
+test('BL-1009: captions badge only when more than one swarm is visible', () => {
+  const mixed = computePipelineBoard(
+    {},
+    [],
+    {
+      'BL-801': { title: 'one', swarm: 'primary' },
+      'BL-802': { title: 'two', swarm: 'second' },
+      'BL-803': { title: 'three', swarm: 'primary' },
+      'BL-804': { title: 'four', swarm: 'second' },
+      'BL-805': { title: 'five', swarm: 'third' },
+    },
+    { activeIds: ['BL-801', 'BL-802', 'BL-803', 'BL-804', 'BL-805'], localSwarmName: 'primary' }
+  );
+  const mixedBody = renderPipelineBoardBody(mixed);
+  assert.match(mixedBody, /^803 \[s1\] /m);
+  assert.match(mixedBody, /^804 \[s2\] /m);
+  assert.match(mixedBody, /^805 \[third\] /m);
+});
+
+test('BL-1009: absent swarm: defaults to the local swarm badge when mixed', () => {
+  const data = computePipelineBoard(
+    {},
+    [],
+    {
+      'BL-801': { title: 'local-default' },
+      'BL-802': { title: 'remote', swarm: 'second' },
+    },
+    { activeIds: ['BL-801', 'BL-802'], localSwarmName: 'primary' }
+  );
+  assert.match(renderPipelineBoardBody(data), /^801 \[s1\] /m);
+});
+
+test('BL-1009: mono-swarm board renders no swarm badge (parity with pre-BL-1009 text)', () => {
+  const meta = {
+    'BL-801': { title: 'alpha', swarm: 'primary' },
+    'BL-802': { title: 'beta' },
+  };
+  const withLocal = computePipelineBoard({}, [], meta, {
+    activeIds: ['BL-801', 'BL-802'],
+    localSwarmName: 'primary',
+  });
+  const legacy = computePipelineBoard({}, [], meta, { activeIds: ['BL-801', 'BL-802'] });
+  assert.equal(renderPipelineBoardBody(withLocal), renderPipelineBoardBody(legacy));
+  assert.doesNotMatch(renderPipelineBoardBody(withLocal), /\[s1\]|\[s2\]/);
+});
+
+test('BL-1009: a remote swarm row never shows a live held-by-role stage', () => {
+  const { rows } = computePipelineBoard(
+    { coder: ['BL-801', 'BL-802'] },
+    [],
+    {
+      'BL-801': { title: 'local', swarm: 'primary' },
+      'BL-802': { title: 'remote', swarm: 'second' },
+    },
+    { activeIds: ['BL-801', 'BL-802'], localSwarmName: 'primary' }
+  );
+  assert.equal(rows.find((r) => r.id === 'BL-801').column, 'coder');
+  assert.equal(rows.find((r) => r.id === 'BL-802').column, PIPELINE_BOARD_NOT_STARTED_COLUMN);
+});
+
+test('BL-1009: badges never add a grid stage column', () => {
+  const mixed = computePipelineBoard(
+    {},
+    [],
+    {
+      'BL-801': { title: 'one', swarm: 'primary' },
+      'BL-802': { title: 'two', swarm: 'second' },
+    },
+    { activeIds: ['BL-801', 'BL-802'], localSwarmName: 'primary' }
+  );
+  const mono = computePipelineBoard(
+    {},
+    [],
+    {
+      'BL-801': { title: 'one', swarm: 'primary' },
+      'BL-802': { title: 'two', swarm: 'primary' },
+    },
+    { activeIds: ['BL-801', 'BL-802'], localSwarmName: 'primary' }
+  );
+  const mixedGrid = renderPipelineBoardGridOnly(mixed).split('\n')[0];
+  const monoGrid = renderPipelineBoardGridOnly(mono).split('\n')[0];
+  assert.equal(mixedGrid.length, monoGrid.length);
+  assert.ok(mixedGrid.length <= PIPELINE_BOARD_GRID_MAX_WIDTH);
 });

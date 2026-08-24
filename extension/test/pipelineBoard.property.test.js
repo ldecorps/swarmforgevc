@@ -7,9 +7,14 @@ const {
   compareLinksMostRecentFirst,
   computePipelineBoard,
   renderPipelineBoardGridOnly,
+  renderPipelineBoard,
+  renderPipelineBoardBody,
   PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_GRID_MAX_WIDTH,
   PIPELINE_BOARD_GRID_MAX_ROWS,
+  PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
+  PIPELINE_BOARD_NOT_STARTED_COLUMN,
+  swarmDisplayBadge,
 } = require('../out/concierge/pipelineBoard');
 const { ALL_SWARM_ROLES } = require('../out/concierge/roleTopicMapStore');
 
@@ -328,4 +333,96 @@ test('property (BL-979 invariants 1 and 2): every active ticket is a captioned r
   for (const [m, n] of Object.entries(reachedMix)) {
     assert.ok(n >= 30, `reachability floor: epic mix "${m}" generated only ${n} times`);
   }
+});
+
+// ── BL-1009 declared invariants ───────────────────────────────────────────
+const SWARM_WIRES = ['primary', 'second', 'third', 'alpha', 'omega'];
+
+const bl1009CaseArb = fc.record({
+  ticketCount: fc.integer({ min: 1, max: 6 }),
+  local: fc.constantFrom(...SWARM_WIRES),
+  forceMono: fc.boolean(),
+});
+
+function bl1009Build({ ticketCount, local, forceMono }) {
+  const ids = Array.from({ length: ticketCount }, (_, i) => `BL-${800 + i}`);
+  const ticketMeta = {};
+  const roleHeldTickets = { coder: [] };
+  ids.forEach((id, i) => {
+    const swarm = forceMono ? local : SWARM_WIRES[i % SWARM_WIRES.length];
+    ticketMeta[id] = { title: `t${i}`, swarm };
+    roleHeldTickets.coder.push(id);
+  });
+  return { ids, ticketMeta, roleHeldTickets, local };
+}
+
+test('property (BL-1009 invariant 1): remote swarm rows never render a live held-by-role stage', () => {
+  fc.assert(
+    fc.property(bl1009CaseArb, (spec) => {
+      const { ids, ticketMeta, roleHeldTickets, local } = bl1009Build(spec);
+      const { rows } = computePipelineBoard(roleHeldTickets, [], ticketMeta, {
+        activeIds: ids,
+        localSwarmName: local,
+      });
+      for (const row of rows) {
+        if (row.swarm !== undefined && row.swarm !== local) {
+          assert.equal(
+            row.column,
+            PIPELINE_BOARD_NOT_STARTED_COLUMN,
+            `remote ${row.id} (${row.swarm}) must not be held-marked`
+          );
+        }
+      }
+    }),
+    { numRuns: 200 }
+  );
+});
+
+test('property (BL-1009 invariant 2): badges never cost a grid column or overflow message budgets', () => {
+  fc.assert(
+    fc.property(bl1009CaseArb, (spec) => {
+      const { ids, ticketMeta, roleHeldTickets, local } = bl1009Build({ ...spec, forceMono: false });
+      const mixed = computePipelineBoard(roleHeldTickets, [], ticketMeta, {
+        activeIds: ids,
+        localSwarmName: local,
+      });
+      const noBadge = computePipelineBoard(roleHeldTickets, [], ticketMeta, { activeIds: ids });
+      const mixedHeader = renderPipelineBoardGridOnly(mixed).split('\n')[0] ?? '';
+      const plainHeader = renderPipelineBoardGridOnly(noBadge).split('\n')[0] ?? '';
+      assert.equal(mixedHeader.length, plainHeader.length, 'badges must not widen the matrix');
+      assert.ok(mixedHeader.length <= PIPELINE_BOARD_GRID_MAX_WIDTH);
+      assert.equal(PIPELINE_BOARD_COLUMN_ORDER.length > 0, true);
+      assert.ok(renderPipelineBoard(mixed, 0).length <= PIPELINE_BOARD_MESSAGE_MAX_LENGTH);
+    }),
+    { numRuns: 200 }
+  );
+});
+
+test('property (BL-1009 invariant 3): mono-swarm boards are byte-identical to pre-BL-1009 (no badges)', () => {
+  fc.assert(
+    fc.property(bl1009CaseArb, (spec) => {
+      const { ids, ticketMeta, roleHeldTickets, local } = bl1009Build({ ...spec, forceMono: true });
+      const withLocal = computePipelineBoard(roleHeldTickets, [], ticketMeta, {
+        activeIds: ids,
+        localSwarmName: local,
+      });
+      const legacy = computePipelineBoard(roleHeldTickets, [], ticketMeta, { activeIds: ids });
+      assert.equal(renderPipelineBoard(withLocal, 0), renderPipelineBoard(legacy, 0));
+      assert.doesNotMatch(renderPipelineBoardBody(withLocal), / \[[^\]]+\] /);
+    }),
+    { numRuns: 200 }
+  );
+});
+
+test('property (BL-1009): swarmDisplayBadge is total over arbitrary wire names', () => {
+  fc.assert(
+    fc.property(fc.string({ minLength: 1, maxLength: 24 }), (name) => {
+      const badge = swarmDisplayBadge(name);
+      assert.equal(typeof badge, 'string');
+      assert.ok(badge.length > 0);
+      if (name === 'primary') assert.equal(badge, 's1');
+      if (name === 'second') assert.equal(badge, 's2');
+    }),
+    { numRuns: 100 }
+  );
 });
