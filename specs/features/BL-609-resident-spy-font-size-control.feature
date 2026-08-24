@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=9f5250e46bf192df7fe2faf4bdfbb623cdf603d8deb3a8ac12782742daf16634
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T16:05:10.599426105Z","feature_name":"The Resident Spy live screen offers a compact font size control in its header","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-609-resident-spy-font-size-control.feature","background_hash":"88b386a863c164d627e7e016a79245fbbeb290f7e68e0f8bf64d6000029f0dc3","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The control refuses to move past its <bound> bound","scenario_hash":"b0b6f44c473134987848ef4f47475d4987f9b85b24136b89cf03a490fa6d4a22","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T16:05:10.599426105Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The Resident Spy live screen offers a compact font size control in its header
 
   Background:

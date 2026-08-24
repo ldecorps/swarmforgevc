@@ -1,6 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-584: stale Approvals-topic asks escalate
+**Last Updated:** August 24, 2026 (BL-609: Resident Spy live screen gains a
+compact +/- pane font-size control. Default pane text 13px (was 11px) via
+`--pane-font-size`; shared `pre` rule covers grid tiles and fullscreen.
+Crowded 7–8 pane grids use `calc(var(--pane-font-size) - 2px)`. Control mounts
+outside `#fs-head` so refresh cannot wipe it; header required fields
+(BL-564) stay. Range 9–20px, 1px steps; bound buttons show unavailable. Size
+is session memory only — no `localStorage`/`sessionStorage` (Architecture
+Rule 3). Module: `residentSpyPaneFontSize.ts` + `residentSpyUiHtml.ts`.
+Acceptance: `specs/features/BL-609-resident-spy-font-size-control.feature`.
+How-to: `docs/how-to/BL-609-resident-spy-font-size-control.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command or
+setting.)
+Prior entry —
+August 24, 2026 (BL-584: stale Approvals-topic asks escalate
 by email digest. Front-desk concierge tick sweeps live tickets still
 `pending`/`amending`; clock is topic outbound ask `ts` reset only by inbound
 human activity (missing clock → not-stale). One digest, oldest-first, each row

@@ -73,6 +73,9 @@ description: |
     control must not lose its state or vanish on refresh).
 
 acceptance: specs/features/BL-609-resident-spy-font-size-control.feature
+# FF-only rematch: hitchhiked coder tip deliberately dropped.
+abandoned_commits:
+  - "dab4a59a8"
 
 qa_e2e_procedure: |
   QA end-to-end procedure (live swarm):

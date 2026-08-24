@@ -3,6 +3,13 @@
 // /resident-pane?token=... on the same origin.
 
 import { SWARM_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
+import {
+  PANE_FONT_CROWDED_DELTA_PX,
+  PANE_FONT_DEFAULT_PX,
+  PANE_FONT_MAX_PX,
+  PANE_FONT_MIN_PX,
+  PANE_FONT_STEP_PX,
+} from './residentSpyPaneFontSize';
 
 export function getResidentSpyUiHtml(): string {
   return `<!DOCTYPE html>
@@ -27,6 +34,7 @@ export function getResidentSpyUiHtml(): string {
     --safe-right: env(safe-area-inset-right, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --safe-left: env(safe-area-inset-left, 0px);
+    --pane-font-size: ${PANE_FONT_DEFAULT_PX}px;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -222,11 +230,16 @@ export function getResidentSpyUiHtml(): string {
     overscroll-behavior: contain;
     white-space: pre-wrap;
     word-break: break-word;
-    font-size: 11px;
+    font-size: var(--pane-font-size);
     line-height: 1.35;
     min-height: 0;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
+  }
+  /* BL-609: crowded grids pack a fixed step tighter than the chosen size. */
+  .split.pane-count-7 pre,
+  .split.pane-count-8 pre {
+    font-size: calc(var(--pane-font-size) - ${PANE_FONT_CROWDED_DELTA_PX}px);
   }
   .pane-fullscreen {
     display: none;
@@ -259,6 +272,42 @@ export function getResidentSpyUiHtml(): string {
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
     background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 92%, #000);
   }
+  .fs-top-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  #fs-head {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* BL-609: compact +/- sits beside the protected header content, not inside
+     #fs-head, so syncFullscreenContent repaints never wipe the control. */
+  .fs-font-ctrl {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 2px;
+    align-items: center;
+  }
+  .fs-font-ctrl button {
+    margin: 0;
+    padding: 1px 5px;
+    min-width: 18px;
+    line-height: 1.2;
+    font-size: 9px;
+    font-family: inherit;
+    border-radius: 3px;
+    border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 40%, transparent);
+    background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 80%, #000);
+    color: var(--tg-theme-text-color, #e6edf3);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .fs-font-ctrl button.is-unavailable,
+  .fs-font-ctrl button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
   #fs-pre {
     flex: 1 1 auto;
     min-height: 0;
@@ -278,7 +327,13 @@ export function getResidentSpyUiHtml(): string {
 </div>
 <div id="pane-fullscreen" class="pane-fullscreen" hidden>
   <div class="fs-top" id="fs-top">
-    <div id="fs-head"></div>
+    <div class="fs-top-row">
+      <div id="fs-head"></div>
+      <div id="fs-font-ctrl" class="fs-font-ctrl" aria-label="Pane text size">
+        <button type="button" id="fs-font-dec" aria-label="Decrease pane text size">−</button>
+        <button type="button" id="fs-font-inc" aria-label="Increase pane text size">+</button>
+      </div>
+    </div>
   </div>
   <pre id="fs-pre"></pre>
 </div>
@@ -298,6 +353,14 @@ export function getResidentSpyUiHtml(): string {
   var fsTopEl = document.getElementById('fs-top');
   var fsHeadEl = document.getElementById('fs-head');
   var fsPreEl = document.getElementById('fs-pre');
+  var fsFontDecEl = document.getElementById('fs-font-dec');
+  var fsFontIncEl = document.getElementById('fs-font-inc');
+  var fsFontCtrlEl = document.getElementById('fs-font-ctrl');
+  // BL-609: in-memory only — Architecture Rule 3 forbids browser storage here.
+  var paneFontSizePx = ${PANE_FONT_DEFAULT_PX};
+  var PANE_FONT_MIN = ${PANE_FONT_MIN_PX};
+  var PANE_FONT_MAX = ${PANE_FONT_MAX_PX};
+  var PANE_FONT_STEP = ${PANE_FONT_STEP_PX};
   var focusPane = null;
   var lastOk = 0;
   var claimEnteredByPaneId = {};
@@ -312,6 +375,28 @@ export function getResidentSpyUiHtml(): string {
   // closed toward the layout that has no strip, not toward the one that
   // does).
   var lastMonoRouterLayout = false;
+
+  function clampPaneFontSizePx(px) {
+    if (!isFinite(px)) return ${PANE_FONT_DEFAULT_PX};
+    if (px < PANE_FONT_MIN) return PANE_FONT_MIN;
+    if (px > PANE_FONT_MAX) return PANE_FONT_MAX;
+    return Math.round(px);
+  }
+
+  function stepPaneFontSizePx(current, direction) {
+    return clampPaneFontSizePx(clampPaneFontSizePx(current) + direction * PANE_FONT_STEP);
+  }
+
+  function applyPaneFontSize() {
+    paneFontSizePx = clampPaneFontSizePx(paneFontSizePx);
+    document.documentElement.style.setProperty('--pane-font-size', paneFontSizePx + 'px');
+    var atMin = paneFontSizePx <= PANE_FONT_MIN;
+    var atMax = paneFontSizePx >= PANE_FONT_MAX;
+    fsFontDecEl.disabled = atMin;
+    fsFontIncEl.disabled = atMax;
+    fsFontDecEl.classList.toggle('is-unavailable', atMin);
+    fsFontIncEl.classList.toggle('is-unavailable', atMax);
+  }
 
   function inTelegram() {
     return !!(tg && tg.initData);
@@ -592,6 +677,22 @@ export function getResidentSpyUiHtml(): string {
     exitFullscreen();
   });
 
+  // BL-609: stopPropagation so +/- never triggers the fullscreen tap-to-exit.
+  fsFontCtrlEl.addEventListener('click', function (e) {
+    e.stopPropagation();
+    e.preventDefault();
+    var target = e.target;
+    if (target === fsFontIncEl) {
+      paneFontSizePx = stepPaneFontSizePx(paneFontSizePx, 1);
+      applyPaneFontSize();
+      return;
+    }
+    if (target === fsFontDecEl) {
+      paneFontSizePx = stepPaneFontSizePx(paneFontSizePx, -1);
+      applyPaneFontSize();
+    }
+  });
+
   function setStatus(kind) {
     dotEl.hidden = false;
     dotEl.className = 'dot' + (kind === 'ok' ? '' : ' ' + kind);
@@ -784,6 +885,7 @@ export function getResidentSpyUiHtml(): string {
       });
   }
 
+  applyPaneFontSize();
   refresh();
   // BL-881: paired with RESIDENT_PANE_CACHE_TTL_MS (residentPaneLive.ts) —
   // polling faster than the walk can finish piled overlapping captures onto
