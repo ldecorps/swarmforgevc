@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0e493d7e90e8488cb279f706513af5ff2659df445628b41b3a513903ff0daaf8
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T11:55:17.178766319Z","feature_name":"Model Steward is a coordinator-assignable role with generated compatibility docs","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature","background_hash":"785d6c36ead5d4f22a777264a70d85d626c5ce2aed43cfb06059c6ed89c275af","implementation_hash":"unknown","scenarios":[{"index":4,"name":"compatibility documentation reflects the current registry status","scenario_hash":"9dc86faeb02dedf7f89c851ffa984d26459323d50e2b5607950e28cf773d0b93","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-24T11:55:17.178766319Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Model Steward is a coordinator-assignable role with generated compatibility docs
 
   # BL-557 (BL-547 Slice 3, drained from
