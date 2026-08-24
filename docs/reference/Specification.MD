@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1000: freshness shell tests bind
+**Last Updated:** August 24, 2026 (BL-1001: multi-seat claim filters by
+ticket `mutation_cost` against each seat's declared `--seat-tier`
+(`easy`=`low` only; `hard`=`low`/`medium`/`high`). Above-tier never spills
+down; easy may spill up; prefer least-capable idle eligible seat. Undeclared
+seats skip when the stage has any declared tier; stages with no tiers stay
+BL-983-identical. Pure `seat_difficulty_lib.bb`; applied in
+`ready_for_next_task.bb`. Complements BL-983/BL-1004. Acceptance:
+`specs/features/BL-1001-difficulty-aware-coder-seat-routing.feature`.
+How-to: `docs/how-to/BL-1001-difficulty-aware-coder-seat-routing.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1000: freshness shell tests bind
 `CONF` to tracked `daemon_log_freshness.fixture.conf`, not the operator-tunable
 live `daemon_log_freshness.conf`. An ops raise of handoffd's threshold no longer
 reddens stale-heartbeat asserts; restart behaviour still holds against pinned

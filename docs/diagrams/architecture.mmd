@@ -216,6 +216,8 @@
 %% surfaces :malformed / skip_reasons_malformed=; never silent stage drop.
 %% BL-1000 (2026-08-24): freshness shell suites pin CONF to tracked fixture,
 %% not live daemon_log_freshness.conf (ops raise cannot redden suite).
+%% BL-1001 (2026-08-24): multi-seat claim filters by mutation_cost vs
+%% declared --seat-tier (asymmetric spill; prefer least-capable fit).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
