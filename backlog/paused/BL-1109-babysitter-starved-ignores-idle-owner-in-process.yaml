@@ -13,7 +13,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1109-babysitter-starved-ignores-idle-owner-in-process.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: a non-abandoned in_process claim is motion for check 10 even when the
   owner pane is momentarily idle, and the CRIT copy must never claim zero

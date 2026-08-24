@@ -21,7 +21,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1104-qa-landed-ticket-never-closed-strands-in-active.feature
 required_wiring:
   - 'swarmforge/scripts/handoffd.bb::landed-but-open::the sweep must be CALLED from the daemon, not merely defined in the lib - a detector nobody runs is the BL-419 shape. `landed-but-open` is the sweep/log name this ticket fixes so the gate has a literal to match.'
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: the state is real and currently unobserved. Five tickets have reached
   it, and BL-1030 is sitting in it right now - QA landed it (fd5da2686

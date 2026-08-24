@@ -20,7 +20,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1107-property-lane-verdict-turns-on-host-load-not-code.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: the lane must not go red on correct code. The coder hit this live -
   "BL-1063 is closed but its P3 property times out at 20s here; lane red on

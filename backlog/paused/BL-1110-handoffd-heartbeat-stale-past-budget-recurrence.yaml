@@ -14,7 +14,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1110-handoffd-heartbeat-stale-past-budget-recurrence.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: do not resolve this by raising the 120s threshold alone. A threshold
   bump is allowed only alongside a named root-cause fix in the same parcel.

@@ -13,7 +13,7 @@ depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1111-reply-relay-terminated-sustained-outage.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: this is a recurrence / new cause after BL-621's sustained escalation
   alert — do not re-spec the alert itself as the fix. Firm: co-occurrence
