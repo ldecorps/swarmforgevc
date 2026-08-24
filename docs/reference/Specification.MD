@@ -1,6 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-682: wire Mistral Vibe into the
+**Last Updated:** August 24, 2026 (BL-1113: stamp-off of Cursor hotfix
+`27273f2b0a` — main-sync deadlock breaker, standing `cursor-forge` pack,
+Pipeline Board HTML spacing/slugs, CreatePlan confirm. Before the hotfix,
+coordinator bookkeeping could keep waking while local `main` stayed behind
+`origin/main`, drop-nudges kept firing through a stuck reconcile, Pipeline
+Board stage headers lost NBSP spacing under Telegram HTML parse_mode, grid
+slugs were capped at two words (BL-505), and a Cursor CreatePlan progress
+event had no Confirm/Reject path on Telegram. The landed contract, now
+pipeline-reviewed: `main_sync_status_cli.bb` names the only allowed step-0
+action (`proceed` | `ff-only` | `wait-reconcile` | `deadlock-tripped`); a
+trip-once main-sync deadlock in `master_main_reconcile_lib.bb` suppresses
+dropped-parcel nudges and raises at most one alert until `behind=0` (BL-891
+still owns non-ff joins); pack `swarmforge/packs/cursor-forge.conf` is
+standing full-forge at `active_backlog_max_depth` 3 with `remote_control`
+off and every pipeline window on the `cursor` agent token; Pipeline Board
+`escapeHtml` emits `&nbsp;` for U+00A0 and `deriveKebabSlug` defaults to
+three words again; Telegram Cursor Remote surfaces CreatePlan with
+**Confirm plan** / **Reject plan** buttons plus a pending plan-confirm
+record. Human certification/waiver of the hotfix ledger row remains the
+BL-848 path after this stamp reaches `done`. Docs:
+`docs/how-to/BL-891-master-main-reconcile-sweep.md` (step-0 gate +
+deadlock),
+`docs/how-to/BL-698-telegram-cursor-operator-commands.md` (CreatePlan
+confirm), `docs/how-to/BL-848-certify-an-operator-hotfix.md`,
+`docs/index.md`. Diagram note: `docs/diagrams/architecture.mmd`. No new
+extension command or setting; user-visible surfaces are Pipeline Board HTML
+and Cursor Remote plan-confirm buttons.)
+Prior entry —
+August 24, 2026 (BL-682: wire Mistral Vibe into the
 Intelligence Layer. ModelFactory's `provider->agent` map adds
 `mistral` → `vibe`. Model Steward seeds `mistral/mistral-medium-3.5` from the
 live `~/.vibe/config.toml` alias (never the rolling `mistral-vibe-cli-latest`

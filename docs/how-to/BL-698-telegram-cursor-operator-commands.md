@@ -45,6 +45,16 @@ Durable state lives only under `.swarmforge/operator/` (gitignored).
 
 `/restart`, `/bounce`, and `/redeploy` re-merge `.swarmforge/swarm.env` into child launch env. `/syncenv` reports key presence only (never values).
 
+## CreatePlan confirm (BL-1113 stamp-off)
+
+When the Cursor bridge posts a progress event that carries a **CreatePlan**
+body, the Cursor Remote live path posts a plan-confirm prompt with inline
+**Confirm plan** and **Reject plan** buttons and writes a pending
+plan-confirm record for that plan (hotfix `27273f2b0a`, stamped by BL-1113;
+ledger certification still follows [BL-848](BL-848-certify-an-operator-hotfix.md)).
+This is progress-driven UI, not a slash verb — if the buttons fail to attach,
+the fallback text still names the same Confirm plan / Reject plan replies.
+
 ## Lifecycle leftovers (BL-698 close-out)
 
 Hard confirm on Cursor Remote (two-step), then:

@@ -12,7 +12,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1095-retire-the-expedite-lanes-legacy-bug-type.feature
 required_wiring:
   - 'swarmforge/scripts/backlog_hygiene_lib.bb::bug::the mint gate must actually REFUSE the retired type - violations-for-text is the live checker the shell gate delegates to, so a helper defined anywhere else arms nothing'
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm, and I believe uncontroversial: Article 3.2.4 contains a self-described
   transition clause that instructs a future reader to "Drop `bug` from the
