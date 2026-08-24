@@ -37,18 +37,23 @@ export async function runCommitIntegrity(targetPath: string, relPaths: string[],
   }
 }
 
-// BL-892: shared by every automated human_approval writer (Expedite,
-// paused-pager Approve, Telegram Approve/Reject/Amend) - resolves the
-// SINGLE ticket file's current on-disk location (post-any-promote, so a
-// promoted ticket commits from its FINAL path) and pathspec-commits it
-// through the same locked commit_integrity_cli.bb every other writer here
-// uses. A ticket that no longer resolves (moved/deleted mid-flight) is
-// reported as a commit failure, never a silent no-op success.
-// BL-892 / BL-1091: shared by every automated human_approval writer. Resolves
-// the ticket's current on-disk location (post-any-promote) and pathspec-commits
-// it — plus any extra paths (e.g. the rename source) — through the locked
+// BL-892 / BL-1091: shared by every automated human_approval writer (Expedite,
+// paused-pager Approve, Telegram Approve/Reject/Amend). Resolves the ticket's
+// current on-disk location (post-any-promote) and pathspec-commits it — plus
+// any extra abs paths (e.g. the rename source) — through the locked
 // commit_integrity_cli.bb. A ticket that no longer resolves is a commit
 // failure, never a silent no-op success.
+function uniqueRelPaths(targetPath: string, absPaths: string[]): string[] {
+  const relPaths: string[] = [];
+  for (const abs of absPaths) {
+    const rel = path.relative(targetPath, abs);
+    if (rel && !relPaths.includes(rel)) {
+      relPaths.push(rel);
+    }
+  }
+  return relPaths;
+}
+
 export async function commitApprovalWrites(
   targetPath: string,
   backlogId: string,
@@ -59,12 +64,5 @@ export async function commitApprovalWrites(
   if (!filePath) {
     return false;
   }
-  const relPaths = [path.relative(targetPath, filePath)];
-  for (const abs of extraAbsPaths) {
-    const rel = path.relative(targetPath, abs);
-    if (rel && !relPaths.includes(rel)) {
-      relPaths.push(rel);
-    }
-  }
-  return runCommitIntegrity(targetPath, relPaths, message);
+  return runCommitIntegrity(targetPath, uniqueRelPaths(targetPath, [filePath, ...extraAbsPaths]), message);
 }
