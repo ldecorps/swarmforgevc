@@ -17,6 +17,7 @@
 (load-file (str (fs/path script-dir "swarm_status_lib.bb")))
 (load-file (str (fs/path script-dir "mono_router_lib.bb")))
 (load-file (str (fs/path script-dir "process_table_lib.bb")))
+(load-file (str (fs/path script-dir "agent_process_marker_lib.bb")))
 (load-file (str (fs/path script-dir "babysitterd_freshness_lib.bb")))
 (load-file (str (fs/path script-dir "control_plane_lib.bb")))
 ;; BL-993 architect bounce (backlog/evidence/BL-993-bounce-20260820.md): the
@@ -132,6 +133,34 @@
      (or (mono-router-lib/rotation-router-from-identity? identity-text)
          (mono-router-lib/conf-rotation-router? conf-text)))))
 
+(defn- session-present?
+  [sock session]
+  (boolean
+   (and sock session
+        (zero? (:exit (process/sh "tmux" "-S" sock "has-session" "-t" session))))))
+
+(defn- pane-pid
+  [sock session]
+  (when (session-present? sock session)
+    (let [r (process/sh "tmux" "-S" sock "list-panes" "-t" (str session ":0.0")
+                        "-F" "#{pane_pid}")]
+      (when (zero? (:exit r))
+        (parse-long (str/trim (first (str/split-lines (:out r)))))))))
+
+(defn- role-liveness-facts
+  "BL-1019: session presence + agent child under pane (not pane_current_command).
+   Agent-child probe is agent_process_marker_lib (same ONE babysitter uses)."
+  [sock session agent ps-output]
+  (let [present? (session-present? sock session)
+        pid (when present? (pane-pid sock session))
+        gather-failed? (boolean (and pid (nil? ps-output)))
+        has-agent? (boolean (and (not gather-failed?)
+                                 (agent-process-marker-lib/agent-process-line
+                                  pid ps-output (or agent "claude"))))]
+    {:session-present? present?
+     :has-agent-process? has-agent?
+     :process-gather-failed? gather-failed?}))
+
 (defn gather-agents [now]
   (let [sock (resolve-swarm-socket)
         sessions (tmux-sessions sock)
@@ -139,33 +168,41 @@
         roles (or (parse-roles) [])
         ordered (mapv :role roles)
         router? (rotation-router-mode?)
+        ps-out (agent-process-marker-lib/ps-snapshot)
         ;; If roles.tsv missing, fall back to live sessions only.
         rows (if (seq roles)
                (map (fn [r]
                       (let [sess (:session r)
                             live (get by-name sess)
-                            alive? (boolean live)
+                            facts (role-liveness-facts sock sess (:agent r) ps-out)
                             class (when router?
                                     (mono-router-lib/classify-role ordered (:role r)))
-                            illicit? (and (= :dormant class) alive?)
-                            dormant? (and (= :dormant class) (not alive?))]
+                            illicit? (and (= :dormant class) (:session-present? facts))
+                            dormant? (and (= :dormant class) (not (:session-present? facts)))]
                         (swarm-status-lib/agent-status-row
-                         {:role (:role r)
-                          :session sess
-                          :agent (cond
-                                   illicit? (str (:agent r) " ILLICIT-standing")
-                                   (= :resident class) (str (:agent r) " resident")
-                                   :else (:agent r))
-                          :alive? (and alive? (not illicit?))
-                          :dormant? dormant?
-                          :created-epoch-sec (:created-epoch-sec live)
-                          :now-ms now})))
+                         (merge
+                          {:role (:role r)
+                           :session sess
+                           :agent (cond
+                                    illicit? (str (:agent r) " ILLICIT-standing")
+                                    (= :resident class) (str (:agent r) " resident")
+                                    :else (:agent r))
+                           :dormant? dormant?
+                           :created-epoch-sec (:created-epoch-sec live)
+                           :now-ms now}
+                          (if illicit?
+                            {:session-present? false
+                             :has-agent-process? false
+                             :process-gather-failed? false}
+                            facts)))))
                     roles)
                (map (fn [s]
                       (swarm-status-lib/agent-status-row
                        {:role (:name s)
                         :session (:name s)
-                        :alive? true
+                        :session-present? true
+                        :has-agent-process? true
+                        :process-gather-failed? false
                         :created-epoch-sec (:created-epoch-sec s)
                         :now-ms now}))
                     sessions))]
