@@ -54,6 +54,22 @@ stamp_own_heartbeat_then_age_past_stall() {
   sleep "$(awk -v s="$stall_ms" 'BEGIN { printf "%.3f", (s + 300) / 1000 }')"
 }
 
+# Drive stall→restart until gave-up (or 15 tries). Sets gave_up=0|1.
+drive_until_gave_up() {
+  local root="$1"
+  gave_up=0
+  local _
+  for _ in $(seq 1 15); do
+    stamp_own_heartbeat_then_age_past_stall "$root"
+    check_once "$root" > /dev/null
+    sleep 0.2
+    if [[ "$(jget "$root/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
+      gave_up=1
+      break
+    fi
+  done
+}
+
 check_once() {
   BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=y TELEGRAM_PRINCIPAL_USER_ID=1 \
     FRONT_DESK_MAX_ATTEMPTS="${FRONT_DESK_MAX_ATTEMPTS:-3}" \
@@ -128,16 +144,7 @@ rm -rf "$F"
 F="$(make_fixture)"
 export FRONT_DESK_STALL_MS=1000 FRONT_DESK_MAX_ATTEMPTS=1 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=20
 check_once "$F" > /dev/null
-gave_up=0
-for _ in $(seq 1 15); do
-  stamp_own_heartbeat_then_age_past_stall "$F"
-  check_once "$F" > /dev/null
-  sleep 0.2
-  if [[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
-    gave_up=1
-    break
-  fi
-done
+drive_until_gave_up "$F"
 check "front-desk-liveness-04: repeated stalls stop restarting at the cap (gives up)" \
   '[[ "$gave_up" -eq 1 ]]'
 check "front-desk-liveness-04: the failure is escalated to the human (logged loudly)" \
@@ -153,16 +160,7 @@ export FRONT_DESK_STALL_MS=1000 FRONT_DESK_MAX_ATTEMPTS=1 FRONT_DESK_BACKOFF_BAS
        FRONT_DESK_ESCALATION_BACKOFF_BASE_MS=1 FRONT_DESK_ESCALATION_BACKOFF_MAX_MS=1 \
        FRONT_DESK_ESCALATION_FORCE_RESULT='{"success":false}'
 check_once "$F" > /dev/null
-gave_up=0
-for _ in $(seq 1 15); do
-  stamp_own_heartbeat_then_age_past_stall "$F"
-  check_once "$F" > /dev/null
-  sleep 0.2
-  if [[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
-    gave_up=1
-    break
-  fi
-done
+drive_until_gave_up "$F"
 check "front-desk-liveness-05 setup: the bot gives up" '[[ "$gave_up" -eq 1 ]]'
 attempts_1="$(jget "$F/.swarmforge/operator/front-desk-escalation-alarm.json" "[:bot :delivery-attempts]")"
 check "front-desk-liveness-05: a failed escalation send is NOT armed (never silenced on a mere attempt)" \

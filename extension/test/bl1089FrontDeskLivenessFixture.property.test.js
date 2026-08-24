@@ -36,10 +36,9 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { pollHeartbeatStale } = require('../../specs/pipeline/steps/lib/pollHeartbeatStale');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
-const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'front_desk_supervisor_lib.bb');
 const FIXTURE = path.join(
   REPO_ROOT,
   'swarmforge',
@@ -48,19 +47,8 @@ const FIXTURE = path.join(
   'test_front_desk_supervisor_liveness.sh'
 );
 
-function stale({ heartbeat, now, stall, spawn, grace }) {
-  const hb = heartbeat === null ? 'nil' : String(heartbeat);
-  const out = execFileSync(
-    'bb',
-    [
-      '-e',
-      `(require '[babashka.fs :as fs])
-(load-file "${LIB}")
-(println (front-desk-supervisor-lib/poll-heartbeat-stale? ${hb} ${now} ${stall} ${spawn} ${grace}))`,
-    ],
-    { encoding: 'utf8' }
-  );
-  return out.trim() === 'true';
+function stale(args) {
+  return pollHeartbeatStale(args);
 }
 
 /** What a broken BL-1035 would do: ignore spawn and treat any heartbeat as own. */
