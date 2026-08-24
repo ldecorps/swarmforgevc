@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c3c91baf4855ea54a441e808d333becb341a5c3a8b578607ec3fc5ac590791e2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T11:21:43.739227694Z","feature_name":"every subprocess the handoff daemon can reach runs under the bounded chokepoint","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1031-bounded-chokepoint-covers-the-spawn-reachable-subtree.feature","background_hash":"dd08f3c58e3b7cce8810fec51b3de37bbdf288d3d5676115200e43cd25706c9f","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a converted call site returns when its child never exits","scenario_hash":"ffbd99e7ceed012ab2b12acffa20aae55a92e31444ad5d496982800286761243","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-24T11:21:43.739227694Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: every subprocess the handoff daemon can reach runs under the bounded chokepoint
 
   # BL-1031. BL-1022 widened the daemon's subprocess-API gate to follow spawn
