@@ -230,6 +230,8 @@
 %% pointers via shared applicable? + working-tree exists probe.
 %% BL-1095 (2026-08-24): Article 3.2.4 expedite lane is type: defect only;
 %% mint refuses retired type: bug (RETIRED-TICKET-TYPE).
+%% BL-1112 (2026-08-24): listProcessTree uses ps args=; Stryker sandbox
+%% sibling replace unlinks dangling symlink before recreate.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
