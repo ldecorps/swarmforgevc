@@ -700,13 +700,11 @@
     (or (second (re-find worktree-owner-pattern s))
         (second (re-find master-owner-pattern s)))))
 
-;; BL-807 R4: match the in_process directory at any depth beneath a mailbox
-;; root — "{,**/}" is the zero-or-more-segments alternation, covering both
-;; the flat worktree shape and the role-nested master shape with one rule,
-;; each real file matched exactly once (verified: babashka.fs's "**" alone
-;; requires at least one segment, so the empty alternative is what makes the
-;; flat/zero-segment case match too — union, not double-count).
-(def stuck-in-process-glob "{,**/}inbox/in_process/*.handoff")
+;; BL-807 R4 / BL-1109: match in_process at any depth beneath a mailbox root
+;; — "{,**/}" covers flat worktree and nested master shapes. The
+;; `{*.handoff,*/*.handoff}` alternation also sees batch_* subdirectory
+;; parcels (stuck and starved must gather the same set).
+(def stuck-in-process-glob "{,**/}inbox/in_process/{*.handoff,*/*.handoff}")
 
 (defn stuck-parcels [busy-by-role]
   (->> (glob-handoffs stuck-in-process-glob)
@@ -725,14 +723,15 @@
                  {:abandoned? false :age-min age-min})))
        vec))
 
-;; ── in-process claims for check 10, owner-busy? aware (6d-10) ────────────
+;; ── in-process claims for check 10 (BL-1109: same glob as stuck-in-process) ─
 
 (defn in-process-claims [busy-by-role]
-  (->> (glob-handoffs "inbox/in_process/*.handoff")
+  (->> (glob-handoffs stuck-in-process-glob)
        (keep (fn [p]
                (when-let [age-min (file-age-min p)]
                  (let [role (owning-role-for-path p)]
                    {:age-min age-min
+                    :abandoned? false
                     :owner-busy? (boolean (get busy-by-role role false))}))))
        vec))
 
