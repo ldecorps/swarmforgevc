@@ -15,8 +15,9 @@ const FEATURE = 'topology comes from the pack configuration, never from a leftov
 
 function evalResolve(opts) {
   const script = `
+(require '[cheshire.core :as json])
 (load-file "${LIB.replace(/\\/g, '/')}")
-(println (pr-str (mono-router-lib/resolve-resident-role
+(println (json/generate-string (mono-router-lib/resolve-resident-role
   {:rotation-router? ${opts.router}
    :recorded-role ${opts.recorded == null ? 'nil' : JSON.stringify(opts.recorded)}
    :home-role ${JSON.stringify(opts.home)}})))
@@ -25,22 +26,14 @@ function evalResolve(opts) {
   if (res.status !== 0) {
     throw new Error(`resolve-resident-role failed: ${res.stdout}\n${res.stderr}`);
   }
-  return (res.stdout || '').trim().split('\n').pop();
-}
-
-function parseEdn(edn) {
+  const line = (res.stdout || '').trim().split('\n').pop();
+  const parsed = JSON.parse(line);
   return {
-    raw: edn,
-    honour: /:honour-marker\? true/.test(edn),
-    stale: /:stale\? true/.test(edn),
-    role: (() => {
-      const m = edn.match(/:role "([^"]+)"/);
-      return m ? m[1] : null;
-    })(),
-    recorded: (() => {
-      const m = edn.match(/:recorded (?:"([^"]+)"|nil)/);
-      return m ? (m[1] === undefined ? null : m[1]) : null;
-    })(),
+    raw: line,
+    honour: Boolean(parsed['honour-marker?']),
+    stale: Boolean(parsed['stale?']),
+    role: parsed.role ?? null,
+    recorded: parsed.recorded ?? null,
   };
 }
 
@@ -60,13 +53,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the resident role is resolved$/, (ctx) => {
-    ctx.bl1020.result = parseEdn(
-      evalResolve({
-        router: ctx.bl1020.router,
-        recorded: ctx.bl1020.recorded,
-        home: ctx.bl1020.home,
-      })
-    );
+    ctx.bl1020.result = evalResolve({
+      router: ctx.bl1020.router,
+      recorded: ctx.bl1020.recorded,
+      home: ctx.bl1020.home,
+    });
     // Also exercise the CLI attach uses, so a pure-lib-only fix cannot drift.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1020-'));
     const state = path.join(dir, '.swarmforge');

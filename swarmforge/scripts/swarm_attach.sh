@@ -70,8 +70,8 @@ resolve_topology_resident() {
     cat "$errf" >&2
   fi
   rm -f "$errf"
-  [[ "$line" == *honour=1* ]] && HONOUR_MARKER=1
-  [[ "$line" == *stale=1* ]] && STALE_MARKER=1
+  [[ "$line" =~ honour=([01]) ]] && HONOUR_MARKER="${BASH_REMATCH[1]}"
+  [[ "$line" =~ stale=([01]) ]] && STALE_MARKER="${BASH_REMATCH[1]}"
   if [[ "$line" =~ recorded=([^[:space:]]*) ]]; then
     MARKER_ROLE="${BASH_REMATCH[1]}"
   fi
