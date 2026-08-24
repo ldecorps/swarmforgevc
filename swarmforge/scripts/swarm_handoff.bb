@@ -692,9 +692,18 @@
          (str " rejected=\"" rejection-reason "\""))))
 
 (defn- log-routing-skip! [root entry]
-  (let [path (fs/path root ".swarmforge" "routing-skips.jsonl")]
-    (fs/create-dirs (fs/parent path))
-    (spit (str path) (str (json/generate-string entry) "\n") :append true)))
+  ;; BL-748: recording is observational. Mirror try-sync-deliver!'s posture —
+  ;; catch, report on stderr, keep going — so a journal I/O failure never
+  ;; skips try-sync-deliver! or draft cleanup in -main's ordered let.
+  (try
+    (let [path (fs/path root ".swarmforge" "routing-skips.jsonl")]
+      (fs/create-dirs (fs/parent path))
+      (spit (str path) (str (json/generate-string entry) "\n") :append true)
+      :ok)
+    (catch Exception e
+      (binding [*out* *err*]
+        (println "ROUTING-SKIP RECORD FAILED:" (.getMessage e)))
+      :failed)))
 
 (defn body [type sender canonical-commit note-message scope proposal-body rationale recipients]
   (let [lead (handoff-lib/handoff-body-lead recipients)]

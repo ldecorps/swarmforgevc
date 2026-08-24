@@ -321,6 +321,7 @@ const DOMAINS = [
   require('./bl972PreQaGateEvidenceNotSubjectSteps'),
   require('./bl606RequiredStagesRoutingSteps'),
   require('./bl623RoutingSkipTrailSteps'),
+  require('./bl748RoutingSkipRecordingSteps'),
   require('./bl671OperatorRuntimeFixtureSandboxSteps'),
   require('./bl694ResidualAllowlistSteps'),
   require('./bl607RoleClarifyingPollSteps'),
