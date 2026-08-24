@@ -86,3 +86,6 @@ notes: |
   IR-DRY findings on the feature file are all polarity contrasts - UP vs DOWN vs
   unknown, claude-present vs claude-absent. Those contrasts ARE the behaviour
   under test; collapsing them would delete the point of the scenarios.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-24, by: QA, blamed: coder, class: behavior, commit: d9f305dc2b, evidence: backlog/evidence/BL-1019-qa-bounce-20260824.md }
