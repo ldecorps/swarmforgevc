@@ -152,6 +152,36 @@ test('a copy-close re-filed inside done/ still measures to the Add close, not th
   assert.equal(result.meanMs, 5 * HOUR_MS);
 });
 
+test('a post-close reopen before a done/ re-file does not steal the closed cycle activation', () => {
+  // Activation lookup must use the Add close time, not the re-file tip —
+  // otherwise a reopen between close and re-file becomes the activation and
+  // the closed cycle shrinks or vanishes.
+  const repo = newRepo();
+  writeTicket(repo, 'active', 'BL-029.yaml');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-029'], '2026-07-01T08:00:00');
+
+  writeTicket(repo, 'done', 'BL-029.yaml');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'copy BL-029 into done'], '2026-07-01T13:00:00');
+
+  fs.rmSync(path.join(repo, 'backlog', 'active', 'BL-029.yaml'));
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'drop the active copy'], '2026-07-01T14:00:00');
+
+  writeTicket(repo, 'active', 'BL-029.yaml');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'reopen BL-029'], '2026-07-02T10:00:00');
+
+  move(repo, 'done', 'done/M3', 'BL-029.yaml');
+  git(repo, ['commit', '-q', '-m', 'refile BL-029 under M3'], '2026-07-03T09:00:00');
+
+  const result = computeMeanTicketTime(repo);
+
+  assert.equal(result.sampleCount, 1);
+  assert.equal(result.meanMs, 5 * HOUR_MS);
+});
+
 test('a whole refresh interval of ticks walks git once, and the metric is published on every one of them', () => {
   const repo = buildClosedTicketCorpus(3);
   let nowMs = 1_000_000;

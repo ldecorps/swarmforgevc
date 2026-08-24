@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d834fb099598623f67ac2a5a589dad62f9e72d6c1d7120140b5f86880b7483a7
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T15:45:07.411329248Z","feature_name":"A closed ticket's measured duration ends at its close, not at a later re-file","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1074-post-close-refile-inflates-measured-ticket-duration.feature","background_hash":"c360b42ff68e514139cbbcc21067bf1cec3ddf931f118543f1cb058351b0041a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a ticket re-filed inside done/ after its close still measures to the close","scenario_hash":"881bf1deeb2a5042f04e7649f273f9b22d8b32ed1011edeaf741531de83aa560","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-24T15:45:07.411329248Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A closed ticket's measured duration ends at its close, not at a later re-file
   Mean ticket time is derived from the backlog file's own path history in git.
   A ticket's END is read as the newest arrival at the path the file sits at
