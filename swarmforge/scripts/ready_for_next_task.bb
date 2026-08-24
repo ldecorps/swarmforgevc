@@ -281,8 +281,8 @@
                 my-tasks             (when (seq sibling-tasks)
                                        (into (handoff-lib/worked-task-names-in completed-dir)
                                              (handoff-lib/worked-task-names-in in-process-dir)))
-                deadline-ms          (seat-affinity-lib/parse-cross-seat-claim-deadline-ms
-                                      (mono-router-conf-text))
+                pack-conf            (mono-router-conf-text)
+                deadline-ms          (seat-affinity-lib/parse-cross-seat-claim-deadline-ms pack-conf)
                 now-ms               (System/currentTimeMillis)
                 decided              (mapv (fn [f]
                                              [f (seat-affinity-lib/rework-claim-decision
@@ -299,7 +299,7 @@
                 deferred             (filterv #(= :defer (:action (second %))) decided)
                 ;; BL-1001: drop candidates this seat must not take (tier /
                 ;; prefer-fit). They stay in the stage queue for a peer.
-                tiers                (seat-difficulty-lib/parse-seat-tiers (mono-router-conf-text))
+                tiers                (seat-difficulty-lib/parse-seat-tiers pack-conf)
                 claimable            (->> decided
                                           (remove #(= :defer (:action (second %))))
                                           (filter (fn [[f _]] (difficulty-allows-claim? f tiers)))
