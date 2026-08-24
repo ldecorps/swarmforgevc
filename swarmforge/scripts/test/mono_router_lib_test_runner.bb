@@ -253,6 +253,38 @@
           {:home-role "coder" :recorded-role "QA"
            :known-roles bl648-known-roles :rotation-mode "sequential"}))
 
+;; ── BL-1020: resolve-resident-role (topology from pack config, not leftover) ─
+
+(assert= "BL-1020-01: standing pack ignores leftover marker; role from pack config"
+         {:role "coder" :honour-marker? false :stale? true :recorded "specifier"}
+         (mono-router-lib/resolve-resident-role
+          {:rotation-router? false :recorded-role "specifier" :home-role "coder"}))
+
+(assert= "BL-1020-02: router pack still honours the marker"
+         {:role "specifier" :honour-marker? true :stale? false :recorded "specifier"}
+         (mono-router-lib/resolve-resident-role
+          {:rotation-router? true :recorded-role "specifier" :home-role "coder"}))
+
+(assert= "BL-1020-03: standing pack with leftover reports stale"
+         true
+         (:stale? (mono-router-lib/resolve-resident-role
+                   {:rotation-router? false :recorded-role "specifier" :home-role "coder"})))
+
+(assert= "BL-1020: standing pack with no marker is not stale"
+         {:role "coder" :honour-marker? false :stale? false :recorded nil}
+         (mono-router-lib/resolve-resident-role
+          {:rotation-router? false :recorded-role nil :home-role "coder"}))
+
+(assert= "BL-1020: blank marker on standing pack is not stale"
+         {:role "coder" :honour-marker? false :stale? false :recorded nil}
+         (mono-router-lib/resolve-resident-role
+          {:rotation-router? false :recorded-role "  " :home-role "coder"}))
+
+(assert= "BL-1020: router with no marker falls back to home without stale"
+         {:role "coder" :honour-marker? false :stale? false :recorded nil}
+         (mono-router-lib/resolve-resident-role
+          {:rotation-router? true :recorded-role nil :home-role "coder"}))
+
 (assert-true "clearing stuck email always ok"
              (mono-router-lib/should-send-stuck-escalation-email?
               {:escalated? false :session-exists? false}))
