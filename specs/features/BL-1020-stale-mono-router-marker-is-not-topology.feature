@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T13:09:25.732345134Z","feature_name":"topology comes from the pack configuration, never from a leftover marker","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1020-stale-mono-router-marker-is-not-topology.feature","background_hash":"80b3c8b94b020597cfd4382b26fd000297ca441f6494b32691116116274c93d9","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: topology comes from the pack configuration, never from a leftover marker
 
   BL-1020: `.swarmforge/mono-router-active-role` still contained "specifier"
