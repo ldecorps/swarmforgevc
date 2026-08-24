@@ -1,6 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1102: the daemon's bounded shell-out
+**Last Updated:** August 24, 2026 (BL-1110: the freshness cron no longer
+restarts a healthy handoffd mid-cycle for a stale heartbeat alone.
+`handoffd` writes heartbeat only at cycle start/end; a heavy in-flight sweep
+can age the heartbeat past the 120s base budget while work is still
+progressing. The supervisor already trusted `handoffd.sweep-marker`;
+`daemon_log_freshness_check.sh` now does too — when the marker shows an
+in-flight sweep younger than the in-sweep budget (BL-977 default 225s), the
+checker records `action=suppress-in-sweep` / `reason=in-sweep-progress`
+instead of `stale-heartbeat` restart. Conf stays `handoffd|120` (no
+threshold-only fix). Complements BL-967/BL-1021 (cycle stalls) and BL-1012
+(contention / grace). Acceptance:
+`specs/features/BL-1110-handoffd-heartbeat-stale-past-budget-recurrence.feature`.
+Runbook: `docs/how-to/BL-675-daemon-log-freshness-watchdog.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1102: the daemon's bounded shell-out
 returns a spawn failure instead of throwing it. `daemon_cycle_guard_lib.bb`'s
 `sh!` already survived wait-bound hits as `{:exit 124}` (BL-967 / BL-1021),
 but an unspawnable binary — missing from PATH, absent path, or not executable —
