@@ -169,7 +169,11 @@
 (defn probe-server!
   "Does a tmux server answer on this socket? Uses list-sessions so the same
    probe distinguishes 'server up' from 'no server running' (a dead server
-   fails with that exact stderr); output is kept for incident evidence."
+   fails with that exact stderr); output is kept for incident evidence.
+
+   BL-1071 × BL-1102: a spawn that never happened (tmux absent from PATH)
+   is marked :spawn-failed? so observe! can report :unavailable instead of
+   mistaking it for a missing plane and queuing ./swarm ensure."
   [socket]
   (if (str/blank? (str socket))
     {:responds? false :output "no socket path resolved"}
@@ -177,7 +181,8 @@
                              "tmux" "-S" (str socket) "list-sessions"
                              "-F" "#{session_name}")]
       {:responds? (zero? (:exit result))
-       :output (str/trim (str (:out result) " " (:err result)))})))
+       :output (str/trim (str (:out result) " " (:err result)))
+       :spawn-failed? (boolean (:spawn-failed? result))})))
 
 (defn harden-server!
   "The soft WSL stability knob (focus-events). Never fails the caller — older
@@ -227,12 +232,22 @@
 (defn observe!
   "Probe the control plane and classify it in one step — the single route
    status, ensure and the chase hook all take. Returns the probe result too,
-   since every caller needs it (evidence, or a FIXED/FAILED verdict)."
+   since every caller needs it (evidence, or a FIXED/FAILED verdict).
+
+   BL-1071 × BL-1102: when the probe binary cannot be spawned, return
+   :unavailable (with :error) — never :control-plane-missing. A missing
+   plane queues recovery; an unmakeable observation must not."
   [state-dir socket]
   (let [probe (probe-server! socket)]
-    {:socket socket
-     :probe probe
-     :classification (classify (control-plane-facts state-dir (:responds? probe)))}))
+    (if (:spawn-failed? probe)
+      {:socket socket
+       :probe probe
+       :classification :unavailable
+       :error (let [o (:output probe)]
+                (if (str/blank? o) "tmux spawn failed" o))}
+      {:socket socket
+       :probe probe
+       :classification (classify (control-plane-facts state-dir (:responds? probe)))})))
 
 ;; ── IO edge: persistence ─────────────────────────────────────────────────────
 
