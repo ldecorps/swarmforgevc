@@ -620,7 +620,8 @@ const DOMAINS = [
   require('./bl1053LocalProviderRoutingSteps'),
   require('./bl1087QwenCodeDocDriftSteps'),
   require('./bl1099GiveUpCooldownRetirementSteps'),
-  require('./bl1108CursorSeatReadinessSteps')
+  require('./bl1108CursorSeatReadinessSteps'),
+  require('./bl1113CursorHotfixStampOffSteps')
 ];
 
 function registerSteps(registry) {
