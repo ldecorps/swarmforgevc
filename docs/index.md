@@ -58,6 +58,7 @@ expects them, and are not migrated or rewritten here.
 - [Repo-creation guard keys on behaviour, not wrapper name](how-to/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.md) — same-file git-spawning helpers flagged on `init`; rename no longer hides (BL-1092 / BL-1039).
 - [Mint-time hygiene refuses a dangling acceptance pointer](how-to/BL-1027-mint-time-gate-refuses-a-dangling-acceptance-pointer.md) — `DANGLING-ACCEPTANCE` at specifier hygiene; shared `applicable?` with BL-880 (BL-1027).
 - [Expedite lane is defect-only; type bug retired](how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md) — predicate + mint `RETIRED-TICKET-TYPE`; use `type: defect` (BL-1095).
+- [Pane liveness walks the whole tree under the pane](how-to/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.md) — babysitter finds wrapper-launched agents; RC UNAVAILABLE when gate unmet (BL-1070).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
