@@ -58,17 +58,12 @@ test('BL-1000 invariant 1: scoped freshness tests never bind CONF to the live op
       const src = fs.readFileSync(abs, 'utf8');
       const assigns = pathConfAssignments(src);
       assert.ok(assigns.length > 0, `${name}: expected at least one CONF= path assignment`);
+      const fixtureAbs = path.resolve(path.join(REPO_ROOT, FIXTURE_REL));
       for (const raw of assigns) {
-        const resolved = resolveConfPath(raw);
-        assert.notEqual(
-          path.resolve(resolved),
-          path.resolve(LIVE_CONF_ABS),
-          `${name} binds to live conf via ${raw}`
-        );
-        assert.ok(
-          raw.includes('fixture') || raw.includes('fixtures'),
-          `${name}: CONF must name a fixture path, got ${raw}`
-        );
+        const resolved = path.resolve(resolveConfPath(raw));
+        // Exact pin — kills live rebinds and non-fixture alternate paths alike.
+        assert.equal(resolved, fixtureAbs, `${name} CONF must resolve to pinned fixture, got ${raw} -> ${resolved}`);
+        assert.notEqual(resolved, path.resolve(LIVE_CONF_ABS), `${name} binds to live conf via ${raw}`);
       }
     }),
     { numRuns: SCOPED_TESTS.length * 4 }
@@ -87,6 +82,11 @@ test('BL-1000 invariant 2: every conf path a scoped freshness test reads is git-
         const resolved = resolveConfPath(raw);
         assert.ok(fs.existsSync(resolved), `${name}: missing conf ${resolved}`);
         const rel = path.relative(REPO_ROOT, resolved).replace(/\\/g, '/');
+        assert.equal(
+          path.resolve(resolved),
+          path.resolve(path.join(REPO_ROOT, FIXTURE_REL)),
+          `${name}: must read pinned fixture, got ${rel}`
+        );
         const tracked = execFileSync('git', ['-C', REPO_ROOT, 'ls-files', '--', rel], {
           encoding: 'utf8',
         }).trim();

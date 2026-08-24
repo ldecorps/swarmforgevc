@@ -90,6 +90,9 @@ function registerSteps(registry) {
   scoped(/^the operator has raised handoffd's live threshold above the staged staleness$/, () => {
     // Staged ages are 200s; 300s is strictly above that (qa_e2e step 1).
     raiseLiveHandoffdThreshold(300);
+    // Non-vacuity: the live file must actually show the raise (soft/surgical lock).
+    // Suites still pass only because they read the pinned fixture, not this file.
+    assert.match(fs.readFileSync(LIVE_CONF, 'utf8'), /^handoffd\|300\|/m);
   });
 
   scoped(/^(test_daemon_log_freshness\.sh|test_bl785_freshness_deliberate_stop\.sh) runs$/, (ctx, testFile) => {
@@ -102,6 +105,8 @@ function registerSteps(registry) {
   });
 
   scoped(/^it passes$/, (ctx) => {
+    // Outline 01 non-vacuity: live conf must still show the ops raise.
+    assert.match(fs.readFileSync(LIVE_CONF, 'utf8'), /^handoffd\|300\|/m);
     const out = ctx.lastRun.out || '';
     if (ctx.lastTestFile === 'test_bl785_freshness_deliberate_stop.sh') {
       assert.equal(ctx.lastRun.status, 0, `expected suite green:\n${out}`);
