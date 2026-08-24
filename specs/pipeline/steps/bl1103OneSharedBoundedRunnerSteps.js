@@ -19,6 +19,7 @@ function runBounded(timeoutMs, cmdBash) {
   const out = path.join(dir, 'out');
   const err = path.join(dir, 'err');
   const script = `
+(require '[cheshire.core :as json])
 (load-file "${LIB.replace(/\\/g, '/')}")
 (let [t0 (System/currentTimeMillis)
       r (bounded-run-lib/run-bounded! {} ${timeoutMs} "${out.replace(/\\/g, '/')}" "${err.replace(/\\/g, '/')}"
@@ -26,11 +27,11 @@ function runBounded(timeoutMs, cmdBash) {
       elapsed (- (System/currentTimeMillis) t0)
       out-txt (try (slurp "${out.replace(/\\/g, '/')}") (catch Exception _ ""))
       err-txt (try (slurp "${err.replace(/\\/g, '/')}") (catch Exception _ ""))]
-  (println (pr-str {:timed-out? (:timed-out? r)
-                    :exit (:exit r)
-                    :elapsed elapsed
-                    :out out-txt
-                    :err err-txt})))
+  (println (json/generate-string {:timed-out? (:timed-out? r)
+                                  :exit (:exit r)
+                                  :elapsed elapsed
+                                  :out out-txt
+                                  :err err-txt})))
 `;
   const res = spawnSync('bb', ['-e', script], {
     encoding: 'utf8',
@@ -45,22 +46,13 @@ function runBounded(timeoutMs, cmdBash) {
     throw new Error(`run-bounded! failed: ${res.stdout}\n${res.stderr}`);
   }
   const line = (res.stdout || '').trim().split('\n').pop();
-  // edn-ish map from pr-str — parse the fields we need with regexes.
+  const parsed = JSON.parse(line);
   return {
     raw: line,
-    timedOut: /:timed-out\? true/.test(line),
-    exit: (() => {
-      const m = line.match(/:exit (nil|\d+)/);
-      return m ? (m[1] === 'nil' ? null : Number(m[1])) : undefined;
-    })(),
-    elapsed: (() => {
-      const m = line.match(/:elapsed (\d+)/);
-      return m ? Number(m[1]) : null;
-    })(),
-    out: (() => {
-      const m = line.match(/:out "(.*?)"(?= :err|,|\})/s);
-      return m ? m[1].replace(/\\n/g, '\n') : '';
-    })(),
+    timedOut: Boolean(parsed['timed-out?']),
+    exit: parsed.exit === undefined ? undefined : parsed.exit,
+    elapsed: parsed.elapsed ?? null,
+    out: parsed.out || '',
   };
 }
 
