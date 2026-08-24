@@ -184,7 +184,8 @@
   [".swarmforge" "coordinator" "throttle-recommendation.json"])
 
 (defn throttle-recommendation-path [project-root]
-  (apply fs/path project-root throttle-recommendation-relpath))
+  ;; BL-1106 invariant 1: same master-checkout resolution as conf / pause.
+  (apply fs/path (resolve-identity-root project-root) throttle-recommendation-relpath))
 
 (defn read-recommended-cap
   "The impure fs-reading half of the recommendation: nil (no throttle
@@ -243,7 +244,10 @@
   [".swarmforge" "operator" "control-pause.json"])
 
 (defn pause-marker-path [project-root]
-  (apply fs/path project-root pause-marker-relpath))
+  ;; BL-1106: control-pause.json lives only on the master checkout (gitignored
+  ;; runtime state). Resolving at the caller's own root made worktrees see
+  ;; "not paused" and promote past a human hold. Reuse resolve-identity-root.
+  (apply fs/path (resolve-identity-root project-root) pause-marker-relpath))
 
 (defn read-pause-state
   "The impure fs-reading half: {:active false} for a missing/unreadable/
