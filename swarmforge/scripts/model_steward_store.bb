@@ -108,3 +108,16 @@
   (let [p (fs/path state-dir relative-path)]
     (when (fs/exists? p)
       (parse-json (slurp (str p))))))
+
+(defn evidence-dir [state-dir]
+  (fs/path state-dir "evidence"))
+
+(defn read-evidence-json!
+  "BL-556: read a captured evidence artifact. `path` may be absolute, or
+   relative to state-dir (typically under evidence/). Returns nil when absent."
+  [state-dir path]
+  (let [p (if (fs/absolute? path)
+            (fs/path path)
+            (fs/path state-dir path))]
+    (when (fs/exists? p)
+      (parse-json (slurp (str p))))))
