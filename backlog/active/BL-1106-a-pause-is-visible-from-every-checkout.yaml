@@ -144,3 +144,5 @@ notes: |
   anchor; and an anchor on `resolve-identity-root`, already present in the file
   for the config read, would pass before any work was done (BL-874's vacuous
   anchor).
+
+assigned_to: coder
