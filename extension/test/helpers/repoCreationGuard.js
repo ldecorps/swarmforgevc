@@ -15,56 +15,27 @@
 // that keyed on "reads a live path" would fire on BL-1038's work, and one
 // written to own a file list would collide outright. Keying on the creation
 // keeps the two guards disjoint by construction.
+//
+// BL-1092: also recognise local helpers that SPAWN git under any name
+// (runGit, g, …). Bare `git(` stays matched as the corpus convention; other
+// wrappers are discovered from same-file definitions whose bodies spawn git.
 const fs = require('fs');
 const path = require('path');
 
-// `git init` however it is spawned: execFileSync('git', ['init'...]),
-// spawnSync('git', ['init'...]), or a command string.
-//
-// D1 (architect SEND BACK #1) - THE SECOND ALTERNATION IS LOAD-BEARING, and
-// leaving it out is what sent this parcel back. Every pattern above requires
-// `git` to appear as a quoted STRING argument. The DOMINANT shape in this
-// corpus is not that: it is a local wrapper function literally named `git`,
-//
-//     function git(cwd, args) { execFileSync('git', args, { cwd }); }
-//     git(dir, ['init', '-q']);          // <- `git` is an identifier, not a string
-//
-// used by 43 files, of which the guard saw exactly zero - measured, and with
-// zero overlap against its own violation list. The guard reported 16
-// violations against a real 59.
-//
-// It keys on the CALL SITE rather than resolving the wrapper's binding. That
-// is the same shortcut the inline case already takes, and it is the cheaper
-// and more robust of the two: a file may import its wrapper or define it far
-// from the call, and neither costs this pattern anything.
-//
-// `\bgit\(` deliberately requires the paren immediately after `git`, so
-// `gitIn(dir, ['init'...])` - the shared fixture helper's OWN internal spawn,
-// whose whole purpose is to create the template - is not matched by it. Widen
-// this and the guard goes red precisely because the code is correct, which is
-// the BL-1032 defect repeated one guard over.
-const CREATES_A_REPO = /['"]git['"]\s*,\s*\[\s*['"]init['"]|['"]git\s+init\b|\binit\b[^\n]*--bare|\bgit\(\s*[^,()]+,\s*\[\s*['"]init['"]/;
+// Inline / string spawn shapes, plus the corpus convention of a bare `git(`
+// identifier call (still matched without a same-file definition - many files
+// import the helper). Other wrapper names need a same-file definition that
+// actually spawns git (see gitSpawningWrapperNames).
+const INLINE_CREATES_A_REPO =
+  /['"]git['"]\s*,\s*\[\s*['"]init['"]|['"]git\s+init\b|\binit\b[^\n]*--bare|\bgit\(\s*[^,()]+,\s*\[\s*['"]init['"]/;
 
-// An exemption must RECORD A REASON - the relation is checked, not the
-// marker's presence, the same rule BL-1038's guard applies one concern over.
-// [ \t]* not \s*: \s crosses a newline and would capture the next line's first
-// word as the "reason", so every bare marker would read as justified.
 const EXEMPTION_RE = /BL-1039-EXEMPT:[ \t]*(\S[^\n]*)/;
 
-// EXECUTING vs ASSERTING - the same distinction BL-1032 had to draw for the
-// tmux guard, and the reason that ticket existed. A guard test builds fixture
-// strings that CONTAIN a call:
-//
-//     "execFileSync('git', ['init', '-q'], { cwd: root });",
-//
-// That is test DATA describing a file's contents; it spawns nothing. A guard
-// that cannot tell the two apart flags files for being correct, and its
-// cheapest satisfying move is to obfuscate the string - which BL-1032 named as
-// "a lie the next reader has to disbelieve".
-//
-// A line that is WHOLLY a string literal is data. Stripping those before
-// scanning is a rule, not a hand-maintained exemption list - a list gets
-// patched one filename at a time and re-drifts.
+const SPAWN_GIT = /(?:execFileSync|spawnSync|execFile|spawn|execSync)\s*\(\s*['"]git['"]/;
+
+// EXECUTING vs ASSERTING (BL-1032): a whole-line string literal that CONTAINS
+// a spawn is test DATA, not a spawn. Strip those before scanning so the guard
+// never goes red because a guard test quotes the needle correctly.
 function stripWholeLineStringLiterals(text) {
   return text
     .split('\n')
@@ -76,8 +47,50 @@ function stripWholeLineStringLiterals(text) {
     .join('\n');
 }
 
+function sliceBalancedBlock(text, openBraceIndex) {
+  let depth = 0;
+  for (let i = openBraceIndex; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(openBraceIndex + 1, i);
+    }
+  }
+  return text.slice(openBraceIndex + 1);
+}
+
+function gitSpawningWrapperNames(text) {
+  const names = new Set();
+  const defRe =
+    /(?:function\s+(\w+)\s*\([^)]*\)\s*\{|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:function\s*)?\([^)]*\)\s*(?:=>)?\s*\{)/g;
+  let match;
+  while ((match = defRe.exec(text)) !== null) {
+    const name = match[1] || match[2];
+    const openIdx = match.index + match[0].length - 1;
+    const body = sliceBalancedBlock(text, openIdx);
+    if (SPAWN_GIT.test(body)) names.add(name);
+  }
+  return names;
+}
+
+function wrapperInitCallRe(name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\(\\s*[^,()]+,\\s*\\[\\s*['"]init['"]`);
+}
+
+function createsViaNamedWrapper(text) {
+  for (const name of gitSpawningWrapperNames(text)) {
+    if (name === 'git') continue; // already covered by INLINE_CREATES_A_REPO
+    if (wrapperInitCallRe(name).test(text)) return true;
+  }
+  return false;
+}
+
 function createsRepository(text) {
-  return CREATES_A_REPO.test(stripWholeLineStringLiterals(text));
+  const cleaned = stripWholeLineStringLiterals(text);
+  if (INLINE_CREATES_A_REPO.test(cleaned)) return true;
+  return createsViaNamedWrapper(cleaned);
 }
 
 function exemptionReason(text) {
@@ -90,12 +103,16 @@ function exemptionReason(text) {
 function violationFor(relativePath, text) {
   if (!createsRepository(text)) return null;
   if (exemptionReason(text)) return null;
-  return { file: relativePath, reason: 'creates a git repository directly (`git init`) instead of taking one from the shared seeded fixture' };
+  return {
+    file: relativePath,
+    reason:
+      'creates a git repository directly (`git init`) instead of taking one from the shared seeded fixture',
+  };
 }
 
-// The shared fixture helper creates a repository AS ITS WHOLE PURPOSE, and
-// this guard's own source and test carry the needle as data. Excluded
-// explicitly, or the guard goes red precisely because the code is correct.
+// Shared fixture creates a repo AS ITS PURPOSE; this guard's own source/test
+// carry the needle as data. Exclude explicitly or the gate fails open on
+// correct code (BL-1032 repeated).
 const SELF_EXEMPT = [
   'helpers/sharedRepoFixture.js',
   'helpers/repoCreationGuard.js',
@@ -121,4 +138,12 @@ function findRepoCreations(testDir) {
   return out;
 }
 
-module.exports = { createsRepository, exemptionReason, violationFor, findRepoCreations, isSelfExempt, SELF_EXEMPT };
+module.exports = {
+  createsRepository,
+  exemptionReason,
+  violationFor,
+  findRepoCreations,
+  isSelfExempt,
+  SELF_EXEMPT,
+  gitSpawningWrapperNames,
+};
