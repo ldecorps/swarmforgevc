@@ -348,6 +348,11 @@
 ;;                                    :last-error, already single-lined; nil
 ;;                                    when the last failure carried no text
 ;;            :send-divergence-alarm! (fn [ahead behind] -> {:success bool :reason kw? :error str?})
+;;            :ahead-range-facts!     (fn [] -> shared ahead-range payload, BL-1085) -
+;;                                    optional for unit tests; handoffd wires the
+;;                                    real gatherer here AND has the QA/noop gate
+;;                                    adapters project from it so both gates share
+;;                                    one walk (and the refusal cache) per tick
 ;;            :qa-gate-facts!         (fn [] -> qa-gate-decision's own facts map, BL-630) -
 ;;                                    called ONLY when push-decision is :should-push, never
 ;;                                    on :nothing-to-push/:diverged ticks

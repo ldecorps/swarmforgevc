@@ -36,6 +36,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_ahead_range_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
@@ -2714,49 +2715,6 @@
           {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? verdict)
            :bounced? (:bounced? verdict) :changed-paths (or paths [])})))))
 
-(defn push-sweep-qa-gate-facts! []
-  (try
-    (if-not (git-ref-exists? "swarmforge-QA")
-      {:qa-ref-exists? false :facts-complete? true}
-      (let [main-tip (git-rev-parse "main")
-            tip-check (when main-tip (qa-ancestor? main-tip))]
-        (cond
-          (or (nil? main-tip) (nil? tip-check) (not (:ok? tip-check)))
-          {:qa-ref-exists? true :facts-complete? false}
-
-          ;; BL-952: the tip-is-ancestor fast path is GONE from this
-          ;; gatherer - it skipped ahead-commit enumeration entirely, so a
-          ;; BOUNCED commit riding under an approved tip published with
-          ;; zero scrutiny (BL-945's own landing shape: QA lands BL-943,
-          ;; the tip reads approved, the bounced parcel rides along). The
-          ;; same authorization-is-not-effect reasoning BL-855's sibling
-          ;; gate already documents for never having a fast path.
-          ;; qa-gate-decision's own :tip-is-qa-ancestor? contract is
-          ;; unchanged (pure lib, other tests) - this gatherer just never
-          ;; asserts it, so every range is enumerated per commit through
-          ;; the ONE shared verdict predicate.
-          :else
-          (let [shas (git-ahead-shas)]
-            (if (nil? shas)
-              {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
-              (let [commit-facts (mapv ahead-commit-facts shas)]
-                (if (some (complement :ok?) commit-facts)
-                  {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
-                  {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? true
-                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :bounced? :changed-paths :merge?]) commit-facts)})))))))
-    (catch Exception e
-      (log! "push-sweep-qa-gate-error" (.getMessage e))
-      {:facts-complete? false})))
-
-;; BL-855: the real git/CLI-specific wiring for push_sweep_lib.bb's own
-;; noop-merge-decision - pure decision logic stays there, this is only the
-;; git-shelling adapter (mirrors push-sweep-qa-gate-facts! above). Unlike
-;; that gate, this one has NO tip-is-ancestor fast path and always
-;; enumerates the ahead range: a no-op landing merge can itself be a
-;; swarmforge-QA ancestor (its second parent IS genuinely approved) while
-;; having taken none of that parent's content, so skipping ahead-commit
-;; enumeration whenever the tip already reads as approved would leave
-;; f28a84ad's exact path open again.
 ;; Shared git-sh helpers for push-sweep gatherers (BL-855 / BL-1098): one
 ;; project-root dir, exit-0-or-nil, never consult the working tree.
 (defn- git-sh [{:keys [exit out]}]
@@ -2799,21 +2757,89 @@
        :tree-equals-parent1? (= tree-diff [])})
     {:sha sha :ok? true :merge? false}))
 
+;; ── BL-1085: one ahead-range walk per tick + refusal cache ───────────────
+;; Cache keyed on tip SHA + ordered ahead-SHA set. Replays a COMPLETE gather
+;; only; never infers from tip alone (BL-952). Both gate adapters project
+;; from ahead-range-facts! so a shared gatherer that is not wired into the
+;; adapters map cannot silently leave both original walks running.
+(def ^:private ahead-range-cache (atom nil))
+(def ^:private ahead-range-tick-memo (atom nil))
+
+(defn- qa-facts-from-ahead-shas [shas]
+  ;; BL-952: the tip-is-ancestor fast path is GONE - every range is
+  ;; enumerated per commit through the ONE shared verdict predicate.
+  (if-not (git-ref-exists? "swarmforge-QA")
+    {:qa-ref-exists? false :facts-complete? true}
+    (let [commit-facts (mapv ahead-commit-facts shas)]
+      (if (some (complement :ok?) commit-facts)
+        {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
+        {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? true
+         :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :bounced? :changed-paths :merge?])
+                              commit-facts)}))))
+
+(defn- noop-facts-from-ahead-shas [shas]
+  (let [commit-facts (mapv noop-merge-commit-facts shas)]
+    (if (some (complement :ok?) commit-facts)
+      {:facts-complete? false}
+      {:facts-complete? true
+       :ahead-commits (mapv #(select-keys % [:sha :merge? :second-parent-sha :offered-paths :tree-equals-parent1?])
+                            commit-facts)})))
+
+(defn- read-ahead-range-key! []
+  (let [main-tip (git-rev-parse "main")
+        tip-check (when (and main-tip (git-ref-exists? "swarmforge-QA"))
+                    (qa-ancestor? main-tip))
+        shas (git-ahead-shas)]
+    (cond
+      (nil? main-tip) nil
+      (nil? shas) nil
+      ;; Tip ancestry unreadable with QA present => cannot form a stable key
+      ;; for a complete gather; force a miss so the tick fails closed.
+      (and (git-ref-exists? "swarmforge-QA")
+           (or (nil? tip-check) (not (:ok? tip-check))))
+      nil
+      :else (push-sweep-ahead-range-lib/cache-key main-tip shas))))
+
+(defn- enumerate-ahead-range! [{:keys [main-tip ahead-shas]}]
+  (try
+    (let [qa (qa-facts-from-ahead-shas ahead-shas)
+          noop (noop-facts-from-ahead-shas ahead-shas)]
+      {:complete? (and (true? (:facts-complete? qa)) (true? (:facts-complete? noop)))
+       :qa-facts qa
+       :noop-facts noop
+       :ahead-shas (vec ahead-shas)
+       :main-tip main-tip})
+    (catch Exception e
+      (log! "push-sweep-ahead-range-error" (.getMessage e))
+      {:complete? false
+       :qa-facts {:facts-complete? false}
+       :noop-facts {:facts-complete? false}
+       :ahead-shas (vec ahead-shas)
+       :main-tip main-tip})))
+
+(defn ahead-range-facts!
+  "BL-1085 required_wiring anchor: single shared ahead-range gather (+ cache).
+   Wired into the adapters map push_sweep_lib/sweep! is called with."
+  []
+  (push-sweep-ahead-range-lib/resolve-ahead-range-facts!
+   {:cache-atom ahead-range-cache
+    :tick-memo-atom ahead-range-tick-memo
+    :read-key! read-ahead-range-key!
+    :enumerate! enumerate-ahead-range!}))
+
+(defn push-sweep-qa-gate-facts! []
+  (try
+    (:qa-facts (ahead-range-facts!))
+    (catch Exception e
+      (log! "push-sweep-qa-gate-error" (.getMessage e))
+      {:facts-complete? false})))
+
 (defn push-sweep-noop-merge-gate-facts! []
   (try
-    (let [shas (git-ahead-shas)]
-      (if (nil? shas)
-        {:facts-complete? false}
-        (let [commit-facts (mapv noop-merge-commit-facts shas)]
-          (if (some (complement :ok?) commit-facts)
-            {:facts-complete? false}
-            {:facts-complete? true
-             :ahead-commits (mapv #(select-keys % [:sha :merge? :second-parent-sha :offered-paths :tree-equals-parent1?])
-                                   commit-facts)}))))
+    (:noop-facts (ahead-range-facts!))
     (catch Exception e
       (log! "push-sweep-noop-merge-gate-error" (.getMessage e))
       {:facts-complete? false})))
-
 ;; BL-1098: real git wiring for push_sweep_lib.bb/silent-revert-decision.
 ;; Pure decision stays in the lib; this gatherer shells to git objects only
 ;; (never the working tree - every rev is an explicit ref:path). Candidate
@@ -2899,7 +2925,9 @@
 
 (defn push-sweep-silent-revert-gate-facts! []
   (try
-    (let [shas (git-ahead-shas)]
+    ;; BL-1085: reuse the shared ahead-sha list from ahead-range-facts! so
+    ;; the ahead range is not walked a third time this tick.
+    (let [shas (:ahead-shas (ahead-range-facts!))]
       (if (nil? shas)
         {:facts-complete? false}
         (silent-revert-facts-from-merges (filterv git-merge-commit? shas))))
@@ -2909,10 +2937,14 @@
 
 (defn push-sweep! []
   (try
+    ;; BL-1085: clear per-tick memo so each push-sweep! starts clean; the
+    ;; cross-tick refusal cache is left intact.
+    (push-sweep-ahead-range-lib/begin-tick! ahead-range-tick-memo)
     (push-sweep-lib/sweep!
      (System/currentTimeMillis) (str daemon-dir) push-sweep-retry-config
      {:rev-counts! push-sweep-rev-counts!
       :push! push-sweep-push!
+      :ahead-range-facts! ahead-range-facts!
       :qa-gate-facts! push-sweep-qa-gate-facts!
       :noop-merge-gate-facts! push-sweep-noop-merge-gate-facts!
       :silent-revert-gate-facts! push-sweep-silent-revert-gate-facts!
