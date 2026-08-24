@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=678853959f244ab8e86a5e8f0d65851459d0ae0f2c68a8c513c2f6f1e96e6a04
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T12:44:27.176794872Z","feature_name":"a hand-authored mutation sweep never reports success while a mutant went unrun","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1101-hand-authored-sweep-reports-success-with-skipped-mutants.feature","background_hash":"849ca3ea2ede4edee49166f41af737facd67726ae3575b88f6ad8fe4da8017ec","implementation_hash":"unknown","scenarios":[{"index":1,"name":"any mutant that did not die fails the run","scenario_hash":"21348b14a82cc30789a709ae19d69ba8b6b200b9eae9435cc94069f718629fab","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-24T12:44:27.176794872Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a hand-authored mutation sweep never reports success while a mutant went unrun
 
   swarmforge/scripts/test/expedite_mutation_sweep.sh is the hardening gate for
