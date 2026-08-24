@@ -335,7 +335,22 @@ else
 fi
 
 echo "Promoted $BASE → backlog/active/ (assigned_to: ${ROUTE_ROLE})"
-"$SCRIPT_DIR/route_backlog_to_coder.sh" "$ID" "$ROOT"
+
+# BL-1097: the router now refuses to originate a parcel for a ticket that
+# already has a dispatch trail (exit 3). Under set -e that would abort here
+# with no explanation, right after a promotion that DID land - and "promote
+# without route strands the resident on NO_TASK" (PIPELINE.md step 6), so the
+# coordinator has to be told exactly what state it is in. A freshly promoted
+# ticket has no trail and is unaffected; the case that reaches this branch is a
+# re-promotion of work that was already dispatched once.
+ROUTE_RC=0
+"$SCRIPT_DIR/route_backlog_to_coder.sh" "$ID" "$ROOT" || ROUTE_RC=$?
+if (( ROUTE_RC == 3 )); then
+  echo "promote_and_route_next: ${ID} was promoted into backlog/active/ but the router REFUSED to route it — it already has a dispatch trail (BL-1097). The promotion stands; nothing was sent. Either close ${ID} (move it to backlog/done/) or re-route deliberately with: route_backlog_to_coder.sh --force ${ID}" >&2
+  exit 3
+elif (( ROUTE_RC != 0 )); then
+  exit "$ROUTE_RC"
+fi
 
 # Best-effort BL-464 stage sync
 if [[ -f "$SCRIPT_DIR/pipeline_stage_cli.bb" ]]; then
