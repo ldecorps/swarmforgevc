@@ -179,6 +179,10 @@ processes that would otherwise notice it wedging. **It has deliberately killed i
 own watchdog**, so it observes itself: each stage is bounded and the whole process
 group is killed on overrun, not just the direct child.
 
+The runner itself lives in `swarmforge/scripts/bounded_run_lib.bb` (BL-1103),
+shared with babysitter's ensure path — `setsid` + group kill and file-backed
+stdio so a timeout never blocks on a surviving grandchild's pipe.
+
 ## Verifying it still works
 
 ```bash
@@ -186,6 +190,7 @@ bb  swarmforge/scripts/test/expedite_lib_test_runner.bb       # 100 assertions
 bb  swarmforge/scripts/test/expedite_lib_property_runner.bb   # 8 properties x 500
 bash swarmforge/scripts/test/expedite_prove_nonvacuity.sh     # the properties can fail
 bash swarmforge/scripts/test/expedite_mutation_sweep.sh       # mutants; skipped anchors fail (BL-1101)
+bb  swarmforge/scripts/test/bounded_run_lib_test_runner.bb    # shared wall-clock runner (BL-1103)
 bash swarmforge/scripts/test/test_expedite_cli.sh             # 53 assertions, real fixture
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature \
