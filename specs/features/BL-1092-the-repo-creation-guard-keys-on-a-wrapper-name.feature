@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=d2d535f2bbd6f9f8ea676b3590dc8ca3f637332424fa1c74f2867749a69041bf
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T14:22:24.467091806Z","feature_name":"The repo-creation guard recognises a creation by what it does","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1092-the-repo-creation-guard-keys-on-a-wrapper-name.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A creation is recognised by what the helper spawns, never by its name","scenario_hash":"2a7bf5bde25b784732306fedc8378565d01bb92e8d1acc23b90fb5035e7b79c6","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-24T14:22:24.467091806Z"},{"index":1,"name":"Correct code stays unflagged","scenario_hash":"56dcd893d8829dd39f59292f0a42291abb907b2ae90b712da6189149e1cd1ea1","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-24T14:22:24.467091806Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The repo-creation guard recognises a creation by what it does
 
   BL-1039's guard keeps unit-lane tests off real `git init` by scanning the
