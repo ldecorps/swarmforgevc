@@ -580,6 +580,7 @@ const DOMAINS = [
   require('./bl1025ExpediteApprovalSatisfiesGateSteps'),
   require('./bl1018SingleRoleRepairNeverKillsServerSteps'),
   require('./bl1024ExpediteNamesWhatItLeavesSteps'),
+  require('./bl1023ExpediteBookkeepSteps'),
   require('./bl984SweepStaleFixturesSteps'),
   require('./bl979PipelineBoardTicketRowsSteps'),
   require('./bl990BounceAttributionCorrectableSteps'),
