@@ -158,15 +158,13 @@
 ;; ── gate: Article 3.2.4 expedite lane ──────────────────────────────────────
 
 (def ^:private expedited-types
-  "type: bug is the retired legacy label (Article 3.2.4's own transition
-   clause) - matched only because some already-done tickets still carry it;
-   never write it on a new ticket."
-  #{"defect" "bug"})
+  "Article 3.2.4 expedite lane: type: defect only (legacy type: bug retired)."
+  #{"defect"})
 
 (def ^:private expedited-severities #{"critical" "high"})
 
 (defn expedited?
-  "Article 3.2.4: a defect/bug whose severity is critical or high. Missing
+  "Article 3.2.4: a defect whose severity is critical or high. Missing
    severity: fails CLOSED - never expedited, never guessed."
   [content]
   (boolean

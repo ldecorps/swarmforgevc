@@ -249,7 +249,7 @@
 ;; see the header). rank-candidates returns the original candidate map
 ;; unchanged (sort-by + first never reconstructs it), so the winner carries
 ;; these fields straight through for the property to read.
-(def candidate-type-alphabet ["defect" "bug" "feature" "chore"])
+(def candidate-type-alphabet ["defect" "feature" "chore"])
 (def candidate-severity-alphabet ["critical" "high" "medium" nil])
 (def candidate-priority-alphabet [1 5 5 20])
 (def candidate-id-alphabet ["BL-1" "BL-2" "BL-3" "BL-9" "BL-10"])
@@ -258,7 +258,7 @@
   "This file's OWN restatement of Article 3.2.4 - independent of, and never
    calling, promotion-gates-lib/expedited?. See the non-vacuity note above."
   [type severity]
-  (boolean (and (contains? #{"defect" "bug"} type)
+  (boolean (and (= "defect" type)
                 (contains? #{"critical" "high"} severity))))
 
 (defn gen-candidate [s]
@@ -276,14 +276,14 @@
       :id id}
      s4]))
 
-;; Guaranteed-expedited candidate: type defect/bug + severity critical/high.
+;; Guaranteed-expedited candidate: type defect + severity critical/high.
 ;; Used to force at least one expedited candidate into a fraction of the
 ;; generated sets - per the "uniform draw passed hundreds of runs against a
 ;; live defect" lesson (this file's own header), an independently-drawn
 ;; type/severity pair makes "expedited AND present in a small random set"
 ;; a rare conjunction on its own.
 (defn gen-forced-expedited-candidate [s]
-  (let [[type s1] (gen-pick s ["defect" "bug"])
+  (let [[type s1] (gen-pick s ["defect"])
         [severity s2] (gen-pick s1 ["critical" "high"])
         [priority s3] (gen-pick s2 candidate-priority-alphabet)
         [id s4] (gen-pick s3 candidate-id-alphabet)]
