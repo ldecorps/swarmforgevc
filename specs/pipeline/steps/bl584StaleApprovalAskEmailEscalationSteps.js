@@ -166,6 +166,14 @@ function registerSteps(registry) {
   });
 
   scoped(/^BL-(\d+) has human_approval (\S+) and its ask was posted (.+) ago$/, (ctx, num, state, age) => {
+    assert.ok(
+      state === 'pending' ||
+        state === 'amending' ||
+        state === 'approved' ||
+        state === 'rejected' ||
+        state === 'absent',
+      `unknown human_approval example: ${state}`
+    );
     const id = `BL-${num}`;
     upsertTicket(ctx, id, {
       state: state === 'absent' ? 'absent' : state,
@@ -193,12 +201,20 @@ function registerSteps(registry) {
   });
 
   scoped(/^the Telegram chat id is (\S+)$/, (ctx, chatId) => {
+    assert.ok(
+      chatId === '-1004415865297' || chatId === '4415865297' || chatId === 'not-a-number',
+      `unknown chat_id example: ${chatId}`
+    );
     ensureWorld(ctx).chatId = chatId;
   });
 
   scoped(
     /^BL-(\d+) is awaiting approval for (.+) with recorded ask message id (\S+)$/,
     (ctx, num, age, messageId) => {
+      assert.ok(
+        messageId === 'absent' || /^\d+$/.test(messageId),
+        `unknown message_id example: ${messageId}`
+      );
       const world = ensureWorld(ctx);
       const id = `BL-${num}`;
       upsertTicket(ctx, id, {
@@ -243,7 +259,11 @@ function registerSteps(registry) {
     await runSweep(ctx);
   });
 
-  scoped(/^an escalation email is (sent|not sent)$/, (ctx, outcome) => {
+  scoped(/^an escalation email is (.+)$/, (ctx, outcome) => {
+    assert.ok(
+      outcome === 'sent' || outcome === 'not sent',
+      `unknown escalation outcome example: ${outcome}`
+    );
     const world = ensureWorld(ctx);
     if (outcome === 'sent') {
       assert.equal(world.lastOutcome, 'sent');

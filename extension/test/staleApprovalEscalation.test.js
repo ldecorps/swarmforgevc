@@ -256,6 +256,29 @@ test('sweepStaleApprovalAsks sends one digest past threshold and respects cooldo
   assert.equal(sent.length, 1);
 });
 
+test('sweepStaleApprovalAsks writes cooldown before send (anti-storm)', async () => {
+  resetStaleApprovalMissingKeyWarningForTests();
+  let lastSent = null;
+  let writeCount = 0;
+  const { adapters } = mkSweepAdapters({
+    candidates: [candidate({ postedAt: NOW - 5 * HOUR, askTopicId: 1785, askMessageId: 10 })],
+    adapterOverrides: {
+      readLastSentMs: () => lastSent,
+      writeLastSentMs: (ms) => {
+        writeCount += 1;
+        lastSent = ms;
+      },
+      sendEmail: async () => {
+        assert.equal(writeCount, 1, 'cooldown must be written before sendEmail');
+        throw new Error('resend down');
+      },
+    },
+  });
+  await assert.rejects(() => sweepStaleApprovalAsks(mkConfig(), adapters), /resend down/);
+  assert.equal(writeCount, 1);
+  assert.equal(lastSent, NOW);
+});
+
 test('sweepStaleApprovalAsks does not send inside the threshold', async () => {
   const { sent, adapters } = mkSweepAdapters({
     candidates: [candidate({ postedAt: NOW - 30 * 60 * 1000 })],
