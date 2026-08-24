@@ -216,7 +216,12 @@
           (assert= "spawn-failed observe! is :unavailable, never :control-plane-missing"
                    :unavailable (:classification obs))
           (assert-true "spawn-failed observe! carries :error for the UNAVAILABLE line"
-                       (seq (str (:error obs)))))))
+                       (seq (str (:error obs))))))
+      (with-redefs [control-plane-lib/probe-server!
+                    (fn [_] {:responds? false :output "" :spawn-failed? true})]
+        (assert= "blank spawn-failed output falls back to a named error"
+                 "tmux spawn failed"
+                 (:error (control-plane-lib/observe! state-dir (str (fs/path state-dir "tmux-socket")))))))
     (finally
       (fs/delete-tree dir))))
 

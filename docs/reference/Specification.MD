@@ -1,6 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1109: babysitter swarm-starved (check 10)
+**Last Updated:** August 24, 2026 (BL-1071 re-pass × BL-1102: control-plane
+`observe!` maps a tmux spawn that never happened to `:unavailable`, not
+`:control-plane-missing`. After BL-1102's non-throwing `sh!`, a missing
+`tmux` returned a result instead of throwing, so the probe looked like a
+dead plane and queued `./swarm ensure` — the wrong recovery for "cannot
+observe". Stamp-off invariant 3 restored: unreadable/unspawnable probe →
+unavailable with `:error`, never absence/missing-plane. Complements the
+2026-08-23 BL-1071 stamp-off and BL-958 auto-heal. Acceptance:
+`specs/features/BL-1071-swarm-stamp-babysitter-control-plane-auto-heal-hotfix.feature`.
+Runbook: `docs/how-to/BL-611-babysitterd-runbook.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command, setting, or UI
+change.)
+Prior entry —
+August 24, 2026 (BL-1114: exhausted dead-letter recovery is no longer a
+silent `.handoff.dead` in the holder's `inbox/new`. After max recovery
+attempts, `handoffRecovery.ts` installs a terminal note the role can
+dequeue, wakes the holder, and moves the `.dead` (+ recovery sidecar) into
+`handoffs/failed/` (the same box babysitterd's dead-letter-nonempty CRIT
+reads). Corrupt quarantine keeps the shared `*.handoff.dead` announce
+surface. Complements BL-353 notify and the existing needs-human tile.
+Acceptance:
+`specs/features/BL-1114-dead-letter-quarantine-must-not-be-silent.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1109: babysitter swarm-starved (check 10)
 treats a non-abandoned `in_process` claim as motion even when the owning pane
 is idle this sweep. Before the fix, a Cursor Thinking pause / rotate gap /
 follow-up bar made the owner look idle for two sweeps while parcels were

@@ -229,6 +229,10 @@
    :role-metadata-present? (or (fs/exists? (fs/path state-dir "roles.tsv"))
                                (fs/exists? (fs/path state-dir "sessions.tsv")))})
 
+(defn- probe-spawn-error [probe]
+  (let [o (:output probe)]
+    (if (str/blank? o) "tmux spawn failed" o)))
+
 (defn observe!
   "Probe the control plane and classify it in one step — the single route
    status, ensure and the chase hook all take. Returns the probe result too,
@@ -238,16 +242,11 @@
    :unavailable (with :error) — never :control-plane-missing. A missing
    plane queues recovery; an unmakeable observation must not."
   [state-dir socket]
-  (let [probe (probe-server! socket)]
+  (let [probe (probe-server! socket)
+        base {:socket socket :probe probe}]
     (if (:spawn-failed? probe)
-      {:socket socket
-       :probe probe
-       :classification :unavailable
-       :error (let [o (:output probe)]
-                (if (str/blank? o) "tmux spawn failed" o))}
-      {:socket socket
-       :probe probe
-       :classification (classify (control-plane-facts state-dir (:responds? probe)))})))
+      (assoc base :classification :unavailable :error (probe-spawn-error probe))
+      (assoc base :classification (classify (control-plane-facts state-dir (:responds? probe)))))))
 
 ;; ── IO edge: persistence ─────────────────────────────────────────────────────
 
