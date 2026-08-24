@@ -16,7 +16,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1093-an-active-ticket-with-no-real-assignee-strands-between-two-sweeps.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: an active ticket whose `assigned_to` names nobody must reach the
   coordinator. That path already exists and was built for exactly this case -
