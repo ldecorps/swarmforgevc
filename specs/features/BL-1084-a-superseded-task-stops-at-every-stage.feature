@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a0861d05ef02f74574c278f944dbc787a7c4ca8758c44a35691010f62ee91b2f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T13:18:13.114990695Z","feature_name":"A superseded task stops at every stage, not only the one a note reached","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1084-a-superseded-task-stops-at-every-stage.feature","background_hash":"06e8404fe5745a73325cd1fbdf2fd821939e7eaa6bfe8d068d96206ac2ca4130","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Every stage refuses a parcel for a superseded task","scenario_hash":"dc0451a4ee0fdf5949ad29df14ba6dfa80f84a9946de406ec39db34e0d86bee4","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-24T13:18:13.114990695Z"},{"index":4,"name":"Absence passes, unreadability refuses — they are different answers","scenario_hash":"8eb83bc49e385f56cab44938290921c1c9b01f7cf9b486547b59b7e45f3b2a3a","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T13:18:13.114990695Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A superseded task stops at every stage, not only the one a note reached
   Superseding a ticket mid-flight is a note to one role today. A ticket whose
   commits have already been forwarded is not held by one role, so the note stops

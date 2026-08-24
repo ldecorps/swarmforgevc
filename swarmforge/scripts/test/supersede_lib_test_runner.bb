@@ -56,6 +56,10 @@
           {:status :ok :entries {"BL-1052-qwen-code-seat" "x"}}
           []))
 
+(assert= "unknown store status fails closed"
+         :refused
+         (:status (supersede-lib/turn-verdict {:status :weird} [])))
+
 (assert= "entries-from-files ok"
          {:status :ok :entries {"BL-1052-qwen-code-seat" "reframed to local-model"}}
          (supersede-lib/entries-from-files

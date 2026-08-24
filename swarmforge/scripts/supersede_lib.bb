@@ -49,6 +49,29 @@
                           :when (and name (not (str/blank? name)))]
                       [name (str/trim (or (first (str/split-lines (or body ""))) ""))]))}))
 
+(defn- refuse-unreadable
+  [detail]
+  {:status :refused
+   :kind :store-unreadable
+   :task nil
+   :reason nil
+   :message (str "SUPERSEDE_STORE_UNREADABLE: the supersede marker store exists but cannot be read"
+                 (when detail (str " (" detail ")"))
+                 " — refusing the turn rather than treating an unreadable store as empty."
+                 " Fix permissions or restore .swarmforge/superseded/, then retry.")})
+
+(defn- refuse-superseded
+  [task reason]
+  {:status :refused
+   :kind :superseded
+   :task task
+   :reason reason
+   :message (str "SUPERSEDED: task " task " is recorded as superseded"
+                 (when (seq reason) (str " — " reason))
+                 ". Leaving the parcel in place; this is not a bounce."
+                 " Clear .swarmforge/superseded/" task
+                 " by hand only if the supersede was recorded in error.")})
+
 (defn turn-verdict
   "Decide whether a turn may proceed.
 
@@ -65,35 +88,14 @@
   [store candidate-tasks]
   (case (:status store)
     :absent :ok
-    :unreadable
-    {:status :refused
-     :kind :store-unreadable
-     :task nil
-     :reason nil
-     :message (str "SUPERSEDE_STORE_UNREADABLE: the supersede marker store exists but cannot be read"
-                   (when-let [d (:detail store)] (str " (" d ")"))
-                   " — refusing the turn rather than treating an unreadable store as empty."
-                   " Fix permissions or restore .swarmforge/superseded/, then retry.")}
+    :unreadable (refuse-unreadable (:detail store))
     :ok
     (if-let [task (some (fn [t] (when (contains? (:entries store) t) t))
                         candidate-tasks)]
-      (let [reason (get (:entries store) task)]
-        {:status :refused
-         :kind :superseded
-         :task task
-         :reason reason
-         :message (str "SUPERSEDED: task " task " is recorded as superseded"
-                       (when (seq reason) (str " — " reason))
-                       ". Leaving the parcel in place; this is not a bounce."
-                       " Clear .swarmforge/superseded/" task
-                       " by hand only if the supersede was recorded in error.")})
+      (refuse-superseded task (get (:entries store) task))
       :ok)
     ;; Unknown status — fail closed.
-    {:status :refused
-     :kind :store-unreadable
-     :task nil
-     :reason nil
-     :message "SUPERSEDE_STORE_UNREADABLE: unrecognized supersede store status — refusing."}))
+    (refuse-unreadable "unrecognized supersede store status")))
 
 (defn refusal-exit-message [verdict]
   (:message verdict))
