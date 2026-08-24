@@ -236,6 +236,8 @@
 %% BL-1112 (2026-08-24): listProcessTree uses ps args=; Stryker sandbox
 %% sibling replace unlinks dangling symlink before recreate.
 %% BL-1112 FF-only rematch: hitchhike-clean tip; recreate not merge.
+%% BL-570 (2026-08-24): pre-commit property-suite drift guard
+%% (check_property_suite_drift.sh); fail-open + override.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1070 FF-only rematch: hitchhike-clean
+**Last Updated:** August 24, 2026 (BL-570: shared pre-commit property-suite
+drift guard runs `npm run test:properties` when staged paths can invalidate a
+property (`extension/src/*` or `*.property.test.js`); fails open if the
+toolchain is unavailable; `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` overrides
+with a warning. Complements BL-105/BL-479. Acceptance:
+`specs/features/BL-570-property-suite-drift-guard.feature`.
+How-to: `docs/how-to/BL-570-property-suite-drift-guard.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1070 FF-only rematch: hitchhike-clean
 tip recreated on architect; pane-tree descendant liveness and RC UNAVAILABLE
 locks reconfirmed. Downstream roles must recreate on this tip — do not merge
 into contaminated ancestry. Complements BL-1019/BL-1108/BL-514. Acceptance:

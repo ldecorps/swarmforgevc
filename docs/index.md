@@ -60,6 +60,7 @@ expects them, and are not migrated or rewritten here.
 - [Expedite lane is defect-only; type bug retired](how-to/BL-1095-retire-the-expedite-lanes-legacy-bug-type.md) — predicate + mint `RETIRED-TICKET-TYPE`; use `type: defect` (BL-1095).
 - [Pane liveness walks the whole tree under the pane](how-to/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.md) — babysitter finds wrapper-launched agents; RC UNAVAILABLE when gate unmet (BL-1070).
 - [Standing unit reds: sampleResources and Stryker sandbox](how-to/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.md) — `ps args=` agent match; unlink dangling sibling before recreate (BL-1112).
+- [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
