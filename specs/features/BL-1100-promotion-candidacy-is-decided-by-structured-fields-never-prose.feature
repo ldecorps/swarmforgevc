@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T10:48:33.380913109Z","feature_name":"Promotion candidacy is decided by structured fields, never by prose","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature","background_hash":"bde2ad235f0e8cb3f5e8264c76c2a480a20186f7ab1e6dd092f0d3e657e13f3f","implementation_hash":"unknown","scenarios":[{"index":3,"name":"A ticket a human parked in prose is still refused after the change","scenario_hash":"4c154e1bbdb26b895b8390f61cde63109a8b562964ab91de63b9346e2daacff1","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-24T10:48:33.380913109Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Promotion candidacy is decided by structured fields, never by prose
 
   The promotion scan disqualifies a candidate by grepping the whole ticket

@@ -12,9 +12,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const PROMOTE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'promote_and_route_next.sh');
@@ -26,7 +26,7 @@ function git(root, ...args) {
 }
 
 function mkRoot() {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bl1100-prop-')));
+  const root = fs.realpathSync(mkTmpDir('bl1100-prop-'));
   installPromotionGates(root, { maxDepth: 50 });
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
