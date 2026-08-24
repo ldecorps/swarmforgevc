@@ -1,6 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1107: a property-lane verdict turns on
+**Last Updated:** August 24, 2026 (BL-557: Model Steward Slice 3 — graduate
+the steward to a coordinator-assignable infrastructure role and generate
+compatibility docs from the registry. The Slice 1 stub prompt becomes a real
+role the coordinator MAY assign discrete tasks to (onboard / re-certify /
+investigate); output is certification/registry knowledge only — never
+ModelFactory routing. No always-on pane, mailbox, worktree, or standing
+loop. `model-steward compat-docs` projects each model's status and
+`known_limitations` plus the certified role-recommendation matrix into
+`docs/reference/model-compatibility.md` (regenerate; do not hand-edit).
+Complements BL-547/BL-556. Acceptance:
+`specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature`.
+How-to: `docs/how-to/BL-547-model-steward-overview.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command, setting, or UI
+change.)
+Prior entry —
+August 24, 2026 (BL-1107: a property-lane verdict turns on
 the code under test, not host load. bl796 invariants 2–3 oversampled tiny
 finite spaces (10/12 fast-check draws over 4/6 points) with real
 `spawnSync` work inside the lane's 20s default — under continuous shift
