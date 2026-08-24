@@ -24,6 +24,7 @@ evidence. Doc surfaces updated:
 ## Forward
 
 Commit this documentation pass and `git_handoff` to QA, priority `00`, same
-task name, naming this commit.
+task name, naming this commit. Index link landed in the follow-up commit on
+the same task if the first handoff raced the index edit.
 
 By documenter.
