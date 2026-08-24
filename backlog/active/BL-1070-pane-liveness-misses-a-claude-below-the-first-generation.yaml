@@ -11,7 +11,14 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1070-pane-liveness-misses-a-claude-below-the-first-generation.feature
-
+# FF-only rematch: hitchhiked tips deliberately dropped (do not merge back).
+abandoned_commits:
+  - "b80eb8fad2"
+  - "05011dd016"
+  - "04425df970"
+  - "b8baafbdbc"
+  - "849cb3204c"
+  - "342107cc4b"
 required_wiring:
   - "specs/pipeline/steps/index.js::bl1070PaneLivenessDepthSteps::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done"
 
