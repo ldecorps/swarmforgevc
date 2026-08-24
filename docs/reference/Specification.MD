@@ -1,6 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1104: `landed-but-open` — third sibling
+**Last Updated:** August 24, 2026 (BL-1093: an active ticket whose
+`assigned_to` names nobody — absent, blank, `none`, or `unassigned` — reaches
+the coordinator instead of stranding between two sweeps. Before the fix,
+`dispatch-gap` auto-routed `to: none` (handoff refused) while
+`unassigned-active` only matched a *missing* field, so present-but-nobody
+tickets were invisible to both and `dispatch-gap-autoroute-error` retried
+forever. Shared `nobody-assigned?` at the read boundary: those tickets go
+only to the unassigned-active coordinator nudge; real assignees still
+auto-route; drafts never name a nobody recipient; failed auto-routes log the
+validator reason (not only a draft path). Complements BL-1094 (coherence
+exemption for machine drafts) and BL-1104 (`landed-but-open`). Acceptance:
+`specs/features/BL-1093-an-active-ticket-with-no-real-assignee-strands-between-two-sweeps.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1104: `landed-but-open` — third sibling
 of the active-ticket sweeps. A ticket QA already landed on `origin/main`
 (subject-anchored approval) but never notified the coordinator about stays in
 `backlog/active/` forever: `dispatch-gap` and `unassigned-active` both key on
@@ -5874,7 +5889,7 @@ The flow watchdog is a pure decision core (`swarmforge/scripts/flow_watchdog_lib
 
 2. **Telegram bridge or front desk is parked** — alarms are durably queued in the outbox (`.swarmforge/operator/telegram-reply-outbox.jsonl`) but undelivered until the bridge recovers. The daily briefing stays the backstop narrative layer for undelivered alarms.
 
-3. **Work never enqueued as a parcel** — a dispatch gap (work that exists but never became a handoff in any mailbox). The dispatch-gap sweep (BL-222) owns that detection.
+3. **Work never enqueued as a parcel** — a dispatch gap (work that exists but never became a handoff in any mailbox). The dispatch-gap sweep (BL-222) owns that detection. An active ticket whose `assigned_to` is absent/blank/`none`/`unassigned` is *not* a dispatch-gap candidate — BL-1093 routes those to the unassigned-active coordinator nudge so they are not auto-routed as `to: none`.
 
 4. **QA landed on origin/main but never notified the coordinator** — the ticket stays in `backlog/active/` with a *complete* dispatch trail, so dispatch-gap and unassigned-active both stay silent. The `landed-but-open` sweep (BL-1104) owns that detection: subject-anchored QA approval on the main ref, no Close, one nudge to QA to resend the coordinator notify (observe only).
 
