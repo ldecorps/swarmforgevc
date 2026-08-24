@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1007 rematch: unit-lane contention
+**Last Updated:** August 24, 2026 (BL-1008: the BL-933 bounded `fs.watch`
+deadline scales with BL-1007’s recorded contention factor from a 10000ms quiet
+base, always clamped strictly below the test’s effective budget. Missing-event
+diagnostics still name event + path. Complements BL-933/BL-1007. Acceptance:
+`specs/features/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.feature`.
+How-to: `docs/how-to/BL-1008-the-bounded-watch-deadline-is-itself-an-absolute-constant.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1007 rematch: unit-lane contention
 budgets record a finite load-normalized duration per budgeted test
 (`wall÷max(1,factor)`); all-null evidence is rejected. Scaling, quiet-host
 base equality, and the 120s ceiling are unchanged; property lane still
