@@ -233,6 +233,34 @@
            []
            (chase-sweep-lib/read-unassigned-active-items active-dir)))
 
+;; BL-1093: nobody spellings are unassigned, never dispatch-gap recipients.
+(doseq [spelling ["none" "unassigned" "NONE" "Unassigned"]]
+  (let [tmp (mk-tmp)
+        active-dir (str (fs/path tmp "active"))]
+    (write-active-item! active-dir "BL-777" spelling)
+    (assert= (str "BL-1093: assigned_to=" spelling " is unassigned, not a gap")
+             [{:id "BL-777" :assigned-to spelling}]
+             (chase-sweep-lib/read-unassigned-active-items active-dir))
+    (assert= (str "BL-1093: assigned_to=" spelling " skipped by read-active-items")
+             []
+             (chase-sweep-lib/read-active-items active-dir))
+    (assert= (str "BL-1093: draft-lines emit nothing for assigned_to=" spelling)
+             nil
+             (chase-sweep-lib/dispatch-gap-draft-lines
+              {:id "BL-777" :assigned-to spelling} "aaaaaaaaaa"))))
+
+(let [tmp (mk-tmp)
+      active-dir (str (fs/path tmp "active"))]
+  (fs/create-dirs active-dir)
+  (spit (str (fs/path active-dir "BL-blank.yaml"))
+        "id: BL-blank\ntitle: \"demo\"\nstatus: todo\nassigned_to: \n")
+  (assert= "BL-1093: blank assigned_to is unassigned only (not both)"
+           [{:id "BL-blank" :assigned-to ""}]
+           (chase-sweep-lib/read-unassigned-active-items active-dir))
+  (assert= "BL-1093: blank assigned_to is not a dispatch-gap item"
+           []
+           (chase-sweep-lib/read-active-items active-dir)))
+
 (let [tmp (mk-tmp)
       active-dir (str (fs/path tmp "active"))
       scan (str (fs/path tmp "empty-mail"))]

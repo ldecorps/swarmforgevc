@@ -59,7 +59,8 @@ dropped-parcel nudges and raises at most one alert until `behind=0` (BL-891
 still owns non-ff joins); pack `swarmforge/packs/cursor-forge.conf` is
 standing full-forge at `active_backlog_max_depth` 3 with `remote_control`
 off and every pipeline window on the `cursor` agent token; Pipeline Board
-`escapeHtml` emits `&nbsp;` for U+00A0 and `deriveKebabSlug` defaults to
+`escapeHtml` emits `&#160;` for U+00A0 (named `&nbsp;` is not a Telegram
+HTML entity and shows literally) and `deriveKebabSlug` defaults to
 three words again; Telegram Cursor Remote surfaces CreatePlan with
 **Confirm plan** / **Reject plan** buttons plus a pending plan-confirm
 record. Human certification/waiver of the hotfix ledger row remains the

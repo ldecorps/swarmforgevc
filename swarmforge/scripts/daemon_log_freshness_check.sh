@@ -49,6 +49,8 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/freshness_announce_normalize_lib.sh"
 FRESHNESS_EXTRA_PATH_DIRS=${FRESHNESS_EXTRA_PATH_DIRS:-"/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin"}
 PATH="${FRESHNESS_EXTRA_PATH_DIRS}:${PATH:-/usr/bin:/bin}"
 export PATH
@@ -235,7 +237,11 @@ default_announce() {
 }
 
 do_announce() {
-  msg=$1
+  raw=$1
+  msg=$(normalize_telegram_plain_text "$raw")
+  if [ "$msg" != "$raw" ]; then
+    printf '%s\n' "freshness_check: normalized non-ASCII whitespace in announce" >&2
+  fi
   if [ -n "${FRESHNESS_ANNOUNCE_CMD:-}" ]; then
     # shellcheck disable=SC2086
     sh -c "$FRESHNESS_ANNOUNCE_CMD" _ "$msg" || true

@@ -1,19 +1,10 @@
 #!/usr/bin/env bb
-;; Test-only harness: runs one dispatch-gap sweep pass against a fixture
-;; project root, mirroring handoffd.bb's dispatch-gap-sweep!/auto-route!
-;; exactly (same chase_sweep_lib.bb functions, same real swarm_handoff.bb
-;; send path via the vector-form process/sh call) - used by the JS
-;; acceptance step handlers (specs/pipeline/steps/dispatchGapSteps.js) so
-;; "the sweep runs" exercises the real mechanism, not a re-derived
-;; approximation of it. Mirrors chase_sweep_test_runner.bb's role as a
-;; companion test harness for chase_sweep_lib.bb.
+;; Test-only harness: one pass of BOTH active-backlog sweeps (dispatch-gap
+;; + unassigned-active), mirroring handoffd.bb's same-tick wiring. Used by
+;; specs/pipeline/steps/bl1093NobodyAssigneeSteps.js (BL-1093).
 ;;
-;; BL-1094: supplies HEAD (10-char) and SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1
-;; exactly as production auto-route! does — the prior note-only path never
-;; exercised the coherence-gate collision this ticket fixes.
-;;
-;; Usage: dispatch_gap_sweep_harness.bb <project-root>
-(ns dispatch-gap-sweep-harness
+;; Usage: nobody_assignee_sweeps_harness.bb <project-root>
+(ns nobody-assignee-sweeps-harness
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.string :as str]))
@@ -40,7 +31,7 @@
          (str (handoff-lib/mailbox-dir role-info state)))))
 
 (defn write-scratch-draft! [lines]
-  (let [tmp-dir (fs/path project-root ".swarmforge" "dispatch-gap-drafts-test")]
+  (let [tmp-dir (fs/path project-root ".swarmforge" "nobody-assignee-drafts-test")]
     (fs/create-dirs tmp-dir)
     (let [draft (fs/path tmp-dir (str "draft-" (System/nanoTime) ".txt"))]
       (spit (str draft) (str (str/join "\n" lines) "\n"))
@@ -51,10 +42,6 @@
     (when (zero? (:exit result))
       (str/trim (:out result)))))
 
-;; SWARMFORGE_SKIP_SYNC_INJECT=1: the harness fixture has no live tmux
-;; session, and real delivery (the tmux-dependent half of swarm_handoff.bb)
-;; is already covered by that script's own test suite - this harness scopes
-;; to what BL-222/BL-1094 add, same posture as test_dispatch_gap_autoroute.sh.
 (defn auto-route! [item]
   (let [commit (or (head-commit-10) "")
         lines (chase-sweep-lib/dispatch-gap-draft-lines item commit)]
@@ -69,10 +56,23 @@
                  (when-not (zero? (:exit result))
                    (task-commit-coherence-gate-lib/operator-refusal-log-line (:err result))))))))
 
+(defn nudge-unassigned! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/unassigned-active-draft-lines item))
+        env (merge (into {} (System/getenv))
+                   {"SWARMFORGE_ROLE" "coordinator"
+                    "SWARMFORGE_SKIP_SYNC_INJECT" "1"})
+        result (process/sh ["bb" swarm-handoff-script (str draft)] {:dir project-root :env env})]
+    (println "UNASSIGNED-NUDGED" (:id item) "exit=" (:exit result))))
+
 (defn -main []
   (let [roles (load-roles)
-        gaps (chase-sweep-lib/dispatch-gap-items (str (fs/path project-root "backlog" "active")) (scan-dirs roles))]
+        active (str (fs/path project-root "backlog" "active"))
+        dirs (scan-dirs roles)
+        gaps (chase-sweep-lib/dispatch-gap-items active dirs)
+        unassigned (chase-sweep-lib/unassigned-active-items active dirs)]
     (doseq [item gaps] (auto-route! item))
-    (println "GAPS:" (pr-str (mapv :id gaps)))))
+    (doseq [item unassigned] (nudge-unassigned! item))
+    (println "GAPS:" (pr-str (mapv :id gaps)))
+    (println "UNASSIGNED:" (pr-str (mapv :id unassigned)))))
 
 (-main)

@@ -624,7 +624,8 @@ const DOMAINS = [
   require('./bl1113CursorHotfixStampOffSteps'),
   require('./bl1094DispatchGapAutorouteSteps'),
   require('./bl1106PauseVisibleEverywhereSteps'),
-  require('./bl1104LandedButOpenSteps')
+  require('./bl1104LandedButOpenSteps'),
+  require('./bl1093NobodyAssigneeSteps')
 ];
 
 function registerSteps(registry) {
