@@ -206,7 +206,17 @@
                :control-plane-missing
                (:classification (control-plane-lib/observe! state-dir "")))
       (assert-true "observe! returns the probe result its callers need for evidence"
-                   (some? (:probe (control-plane-lib/observe! state-dir "")))))
+                   (some? (:probe (control-plane-lib/observe! state-dir ""))))
+      ;; BL-1071 × BL-1102: spawn-failed probe must not classify as missing plane.
+      (with-redefs [control-plane-lib/probe-server!
+                    (fn [_] {:responds? false
+                             :output "Cannot run program \"tmux\""
+                             :spawn-failed? true})]
+        (let [obs (control-plane-lib/observe! state-dir (str (fs/path state-dir "tmux-socket")))]
+          (assert= "spawn-failed observe! is :unavailable, never :control-plane-missing"
+                   :unavailable (:classification obs))
+          (assert-true "spawn-failed observe! carries :error for the UNAVAILABLE line"
+                       (seq (str (:error obs)))))))
     (finally
       (fs/delete-tree dir))))
 
