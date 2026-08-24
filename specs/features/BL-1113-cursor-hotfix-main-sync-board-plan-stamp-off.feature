@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=3b55e1667cc47e1f0ff2ac45408796ca8393520b41d2d233159357f23c49f7d3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T07:31:04.908228342Z","feature_name":"BL-1113 stamp-off of Cursor hotfix 27273f2b0a","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1113-cursor-hotfix-main-sync-board-plan-stamp-off.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"main_sync_status_cli names the only allowed coordinator action","scenario_hash":"99a1fe20273ac92e861bc7b26730d75ab705bb37ca3ea01a4a10b169da2f2798","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-08-24T07:31:04.908228342Z"},{"index":3,"name":"Pipeline Board HTML keeps stage spacing and uses three-word slugs","scenario_hash":"21030954539d402b8b1cbeb72098e6424a44db1c75e81bdd667a4100ca1b0e77","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T07:31:04.908228342Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1113 stamp-off of Cursor hotfix 27273f2b0a
   Commit 27273f2b0a is a human-landed hotfix already on local main with
   Hotfix-Certification: pending. It bundles four landed behaviours: the
