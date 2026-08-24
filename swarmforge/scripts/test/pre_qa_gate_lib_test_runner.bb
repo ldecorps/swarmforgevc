@@ -261,6 +261,11 @@
                   (not (pre-qa-gate-lib/paths-overlap? [] ["b.ts"]))
                   (not (pre-qa-gate-lib/paths-overlap? ["a.ts"] []))))
 
+(assert-true "paths-overlap? is case-sensitive (subject-only vs block)"
+             (not (pre-qa-gate-lib/paths-overlap?
+                   ["Extension/src/swarm/foo.ts"]
+                   ["extension/src/swarm/foo.ts"])))
+
 ;; hardener: with 2+ candidate branches, both stranded WITH path evidence
 (let [result (pre-qa-gate-lib/evaluate
               {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"

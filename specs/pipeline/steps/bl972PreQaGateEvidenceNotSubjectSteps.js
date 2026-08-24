@@ -12,6 +12,9 @@ const FEATURE = 'BL-972 pre-QA gate blocks on dropped-work evidence, not subject
 const TICKET = 'BL-900';
 const SHA = 'aaaaaaaaaa';
 const PARCEL_PATHS = ['extension/src/swarm/foo.ts', 'specs/features/BL-900-x.feature'];
+// Warning-row fixture: case-near-miss of a parcel path (exact string locked
+// against soft path mutants that stay non-overlapping).
+const WARNING_TOUCHED = 'Extension/src/swarm/foo.ts';
 const BRANCH = 'swarmforge-coder';
 
 function evaluateFacts({ touched, abandoned }) {
@@ -84,6 +87,19 @@ function registerSteps(registry) {
   });
 
   scoped(/^the pre-QA gate evaluates the forward for "BL-900"$/, (ctx) => {
+    // Soft-mutation locks on example cells that would otherwise be equivalent.
+    if (ctx.bl972.abandoned === 'present') {
+      assert.ok(
+        PARCEL_PATHS.includes(ctx.bl972.touched),
+        `exempt example requires exact parcel path overlap; got ${ctx.bl972.touched}`
+      );
+    } else if (!PARCEL_PATHS.includes(ctx.bl972.touched)) {
+      assert.equal(
+        ctx.bl972.touched,
+        WARNING_TOUCHED,
+        'warning example requires the exact case-near-miss parcel path'
+      );
+    }
     ctx.bl972.verdict = evaluateFacts({
       touched: ctx.bl972.touched,
       abandoned: ctx.bl972.abandoned,
