@@ -314,6 +314,7 @@ const INVARIANT2_CASES = cartesianCases([false, true], [false, true], (useAlias,
   useAlias,
   addDecoyBb,
 }));
+assert.equal(INVARIANT2_CASES.length, 4, 'invariant 2 space must be exactly 4 points by construction');
 
 test(
   'property (invariant 2): sourcing operator_path_lib.sh and prepending mutates only PATH',
@@ -398,6 +399,7 @@ const INVARIANT3_CASES = cartesianCases(INVARIANT3_BINARIES, INVARIANT3_POSITION
   binary,
   position,
 }));
+assert.equal(INVARIANT3_CASES.length, 6, 'invariant 3 space must be exactly 6 points by construction');
 
 test(
   'property (invariant 3): a binary already resolvable on the caller PATH is never shadowed by a different discovered installation',
