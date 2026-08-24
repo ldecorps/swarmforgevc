@@ -24,6 +24,12 @@ const {
   runContainedLoop,
   computeReplyRelayCycleResult,
   applyReplyRelayCycleResult,
+  isReplyRelayTransportError,
+  replyRelayReconnectBackoffMs,
+  isReplyRelayHealthy,
+  assertReplyRelayEventsResponse,
+  REPLY_RELAY_TRANSPORT_BACKOFF_MAX_MS,
+  DEFAULT_SUSTAINED_OUTAGE_THRESHOLD_MS,
   decideEnsureOperatorTopicAction,
   OPERATOR_SUBJECT_ID,
   decideEnsureApprovalsTopicAction,
@@ -5594,6 +5600,83 @@ test('computeReplyRelayCycleResult keeps retrying past the degraded threshold an
   assert.equal(state.consecutiveFailures, 10);
   const cycle = computeReplyRelayCycleResult(state, true, BACKOFF_CONFIG, FIXTURE_NOW);
   assert.equal(cycle.state.consecutiveFailures, 0, 'reconnects must still be able to recover after a sustained outage');
+});
+
+// ── BL-1111: terminated / fetch-failed transport reconnect ───────────────
+
+test('isReplyRelayTransportError names undici terminated and fetch failed only', () => {
+  assert.equal(isReplyRelayTransportError('terminated'), true);
+  assert.equal(isReplyRelayTransportError('TypeError: fetch failed'), true);
+  assert.equal(isReplyRelayTransportError('reply-ack failed with status 502'), false);
+  assert.equal(isReplyRelayTransportError(undefined), false);
+});
+
+test('BL-1111: terminated reconnect backoff caps below the ordinary 60s max', () => {
+  const config = { ...BACKOFF_CONFIG, backoffBaseMs: 2000, backoffMaxMs: 60_000 };
+  const delay = replyRelayReconnectBackoffMs(20, config, 'terminated');
+  assert.ok(delay <= REPLY_RELAY_TRANSPORT_BACKOFF_MAX_MS, `transport backoff ${delay} must stay ≤ ${REPLY_RELAY_TRANSPORT_BACKOFF_MAX_MS}`);
+  const ordinary = replyRelayReconnectBackoffMs(20, config, 'reply-ack failed with status 502');
+  assert.equal(ordinary, 60_000);
+});
+
+test('BL-1111: a terminated streak recovers under a healthy network before the sustained threshold', () => {
+  const config = {
+    backoffBaseMs: 2000,
+    backoffMaxMs: 60_000,
+    degradedThreshold: 5,
+    stuckRetryLimit: 5,
+    sustainedOutageThresholdMs: DEFAULT_SUSTAINED_OUTAGE_THRESHOLD_MS,
+  };
+  let state = { consecutiveFailures: 0, sustainedOutage: { escalated: false } };
+  let now = FIXTURE_NOW;
+  let escalated = false;
+  // ~25 minutes of transport failures at the short cap — still under 30m.
+  for (let i = 0; i < 40; i++) {
+    const cycle = computeReplyRelayCycleResult(state, false, config, now, 'terminated');
+    escalated = escalated || cycle.escalateSustainedOutage;
+    state = cycle.state;
+    now += cycle.delayMs;
+  }
+  assert.equal(escalated, false, 'must still be inside the sustained window');
+  assert.ok(now - FIXTURE_NOW < config.sustainedOutageThresholdMs);
+  const recovered = computeReplyRelayCycleResult(state, true, config, now);
+  assert.equal(recovered.state.consecutiveFailures, 0);
+  assert.equal(isReplyRelayHealthy(recovered.state), true);
+  assert.equal(recovered.escalateSustainedOutage, false);
+});
+
+test('BL-1111: sustained terminated failures escalate exactly once and name the error', async () => {
+  const config = {
+    backoffBaseMs: 2000,
+    backoffMaxMs: 60_000,
+    degradedThreshold: 5,
+    stuckRetryLimit: 5,
+    sustainedOutageThresholdMs: DEFAULT_SUSTAINED_OUTAGE_THRESHOLD_MS,
+  };
+  let state = { consecutiveFailures: 0, sustainedOutage: { escalated: false } };
+  const past = FIXTURE_NOW + config.sustainedOutageThresholdMs + 60_000;
+  state = computeReplyRelayCycleResult(state, false, config, FIXTURE_NOW, 'terminated').state;
+  const cycle = computeReplyRelayCycleResult(state, false, config, past, 'terminated');
+  assert.equal(cycle.escalateSustainedOutage, true);
+  const escalations = [];
+  await applyReplyRelayCycleResult(cycle, 'terminated', () => {}, async () => {}, async (m) => escalations.push(m));
+  assert.equal(escalations.length, 1);
+  assert.match(escalations[0], /reply-relay/);
+  assert.match(escalations[0], /terminated/);
+  const again = computeReplyRelayCycleResult(cycle.state, false, config, past + 60_000, 'terminated');
+  assert.equal(again.escalateSustainedOutage, false);
+});
+
+test('BL-1111: last error fetch failed is never reported healthy', () => {
+  assert.equal(isReplyRelayHealthy({ consecutiveFailures: 0, lastError: 'fetch failed' }), false);
+  assert.equal(isReplyRelayHealthy({ consecutiveFailures: 3, lastError: 'fetch failed' }), false);
+  assert.equal(isReplyRelayHealthy({ consecutiveFailures: 0 }), true);
+});
+
+test('BL-1111: assertReplyRelayEventsResponse rejects empty or non-OK /events', () => {
+  assert.throws(() => assertReplyRelayEventsResponse({ ok: false, status: 502, body: {} }), /status 502/);
+  assert.throws(() => assertReplyRelayEventsResponse({ ok: true, status: 200, body: null }), /no body/);
+  assert.doesNotThrow(() => assertReplyRelayEventsResponse({ ok: true, status: 200, body: {} }));
 });
 
 test('applyReplyRelayCycleResult writes the warning (with the error message) and waits when both are present', async () => {

@@ -3071,6 +3071,10 @@ export interface ReplyRelayLoopState {
   // BL-621: this loop's own sustained-outage episode - the exact mirror of
   // PollLoopState.sustainedOutage, decided by the same pure function.
   sustainedOutage: SustainedOutageState;
+  // BL-1111: last reconnect error (cleared on success). Supervisor health
+  // and transport-aware backoff both read this; "fetch failed" must never
+  // read as a clean relay.
+  lastError?: string;
 }
 
 export interface ReplyRelayCycleResult {
@@ -3085,6 +3089,50 @@ export interface ReplyRelayCycleResult {
   sustainedOutageMs: number;
 }
 
+// BL-1111: undici/"fetch failed" and bare "terminated" are bridge-drop
+// transport faults - recoverable the moment the bridge is healthy again.
+// Cap their reconnect backoff far below the ordinary 60s max so a flapping
+// bridge does not burn the whole sustained-outage window waiting.
+export const REPLY_RELAY_TRANSPORT_BACKOFF_MAX_MS = 5_000;
+
+const REPLY_RELAY_TRANSPORT_ERROR_MARKERS = ['terminated', 'fetch failed'] as const;
+
+export function isReplyRelayTransportError(errorMessage: string | undefined): boolean {
+  if (!errorMessage) return false;
+  const lower = errorMessage.toLowerCase();
+  return REPLY_RELAY_TRANSPORT_ERROR_MARKERS.some((marker) => lower.includes(marker));
+}
+
+export function replyRelayReconnectBackoffMs(
+  consecutiveFailures: number,
+  config: PollBackoffConfig,
+  errorMessage?: string
+): number {
+  const backoffMaxMs = isReplyRelayTransportError(errorMessage)
+    ? Math.min(config.backoffMaxMs, REPLY_RELAY_TRANSPORT_BACKOFF_MAX_MS)
+    : config.backoffMaxMs;
+  return computePollBackoffMs(consecutiveFailures, { ...config, backoffMaxMs });
+}
+
+// BL-1111 scenario 03: a sticky transport lastError is never "healthy",
+// even if a caller forgot to keep consecutiveFailures in step.
+export function isReplyRelayHealthy(report: { consecutiveFailures: number; lastError?: string }): boolean {
+  return report.consecutiveFailures === 0 && !isReplyRelayTransportError(report.lastError);
+}
+
+// BL-1111: /events must be an OK streaming body. An empty body used to
+// return as success and reset the outage episode without delivering.
+export function assertReplyRelayEventsResponse(
+  res: { ok: boolean; status: number; body: unknown }
+): asserts res is { ok: true; status: number; body: NonNullable<unknown> } {
+  if (!res.ok) {
+    throw new Error(`reply-relay /events failed with status ${res.status}`);
+  }
+  if (!res.body) {
+    throw new Error('reply-relay /events returned no body');
+  }
+}
+
 // BL-320: same pure decision/adapter-sequencing split as runPollCycle/
 // applyPollCycleResult above, for subscribeReplies's own reconnect-with-
 // backoff loop. ok=true covers BOTH a real successful relay AND the SSE
@@ -3092,14 +3140,17 @@ export interface ReplyRelayCycleResult {
 // a brief pause (backoffBaseMs) before resubscribing is still worth it
 // over a hot reconnect loop, mirrored below by returning that same delay
 // on success rather than 0.
+// BL-1111: errorMessage drives transport-aware backoff and lastError.
 export function computeReplyRelayCycleResult(
   state: ReplyRelayLoopState,
   ok: boolean,
   config: PollBackoffConfig,
-  nowMs: number
+  nowMs: number,
+  errorMessage?: string
 ): ReplyRelayCycleResult {
   const outage = decideSustainedOutage(state.sustainedOutage, ok, nowMs, config.sustainedOutageThresholdMs);
   if (ok) {
+    // Omit lastError so a recovered episode cannot keep a sticky transport fault.
     return {
       state: { consecutiveFailures: 0, sustainedOutage: outage.state },
       delayMs: config.backoffBaseMs,
@@ -3110,8 +3161,8 @@ export function computeReplyRelayCycleResult(
   }
   const consecutiveFailures = state.consecutiveFailures + 1;
   return {
-    state: { consecutiveFailures, sustainedOutage: outage.state },
-    delayMs: computePollBackoffMs(consecutiveFailures, config),
+    state: { consecutiveFailures, sustainedOutage: outage.state, lastError: errorMessage },
+    delayMs: replyRelayReconnectBackoffMs(consecutiveFailures, config, errorMessage),
     degradedWarning: shouldRaiseDegradedWarning(consecutiveFailures, config),
     escalateSustainedOutage: outage.escalate,
     sustainedOutageMs: outage.outageMs,
