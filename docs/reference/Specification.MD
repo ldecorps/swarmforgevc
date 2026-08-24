@@ -1,6 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1106: a control pause is visible from
+**Last Updated:** August 24, 2026 (BL-1104: `landed-but-open` — third sibling
+of the active-ticket sweeps. A ticket QA already landed on `origin/main`
+(subject-anchored approval) but never notified the coordinator about stays in
+`backlog/active/` forever: `dispatch-gap` and `unassigned-active` both key on
+an *absent* trail, so a complete trail reads healthy. New
+`landed-but-open-sweep!` on the same `handoffd.bb` cadence flags only when
+QA's own approval for that ticket is reachable from the main ref and no Close
+subject exists; sends **one** note to QA asking it to resend the coordinator
+notify (never closes, never moves backlog, never notifies on QA's behalf).
+Subject-only match (never `git log --grep` body; never `*-qa-pass-*.md`).
+Log boundary `landed-but-open` every cycle. Acceptance:
+`specs/features/BL-1104-qa-landed-ticket-never-closed-strands-in-active.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1106: a control pause is visible from
 every checkout. BL-966 fixed effective-depth's *config* read at the master
 checkout, but `pause-marker-path` (and the throttle recommendation path)
 still used the caller's own root. `.swarmforge/operator/control-pause.json`
@@ -5861,6 +5876,8 @@ The flow watchdog is a pure decision core (`swarmforge/scripts/flow_watchdog_lib
 2. **Telegram bridge or front desk is parked** — alarms are durably queued in the outbox (`.swarmforge/operator/telegram-reply-outbox.jsonl`) but undelivered until the bridge recovers. The daily briefing stays the backstop narrative layer for undelivered alarms.
 
 3. **Work never enqueued as a parcel** — a dispatch gap (work that exists but never became a handoff in any mailbox). The dispatch-gap sweep (BL-222) owns that detection.
+
+4. **QA landed on origin/main but never notified the coordinator** — the ticket stays in `backlog/active/` with a *complete* dispatch trail, so dispatch-gap and unassigned-active both stay silent. The `landed-but-open` sweep (BL-1104) owns that detection: subject-anchored QA approval on the main ref, no Close, one nudge to QA to resend the coordinator notify (observe only).
 
 ### Operator workflow
 

@@ -67,6 +67,7 @@ daemon_cycle_guard_lib_test_runner.bb	standing
 disk_space_lib_test_runner.bb	standing		
 dispatch_gap_test_runner.bb	standing		
 dropped_parcel_test_runner.bb	standing		
+landed_but_open_test_runner.bb	standing		
 duplicate_chain_guard_lib_test_runner.bb	standing		
 expedite_lib_test_runner.bb	standing		
 fixture_reaper_lib_test_runner.bb	standing		
