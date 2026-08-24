@@ -2053,6 +2053,32 @@ hot-synced script copies that can block one — that gap is BL-924's scope
 outcome never depends on a merge succeeding. Run `ready_for_next.sh` again
 after merging `main` in.
 
+### Supersede pre-turn guard (BL-1084)
+
+`ready_for_next.bb` also runs a supersede check before task/batch dispatch
+(same posture as BL-640: one entry point every role uses to start a turn).
+
+A supersede note alone only reaches one role; parcels already forwarded keep
+moving. Recording a supersede therefore writes a durable marker under
+`.swarmforge/superseded/<task-name>` (first line = reason) on the **shared
+project root**. Every stage that next starts a turn peeks task names on its
+`in_process/` and `new/` parcels and consults that store via
+`supersede_lib.bb`.
+
+- **Absent store** (no directory): nothing superseded — pass.
+- **Task marked**: turn refused (exit 2) with `SUPERSEDED: task …`; the
+  parcel stays where it is; **not** a bounce.
+- **Store unreadable**: refuse with `SUPERSEDE_STORE_UNREADABLE` — never
+  treat an unreadable store as empty.
+
+Clear a mistaken marker by deleting
+`.swarmforge/superseded/<task-name>` by hand, then run `ready_for_next.sh`
+again.
+
+How-to: `docs/how-to/BL-1084-a-superseded-task-stops-at-every-stage.md`.
+Acceptance:
+`specs/features/BL-1084-a-superseded-task-stops-at-every-stage.feature`.
+
 ### `done_with_current.sh`
 
 Responsibilities:

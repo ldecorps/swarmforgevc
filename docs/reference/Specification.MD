@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1020: a leftover
+**Last Updated:** August 24, 2026 (BL-1084: a superseded task stops at every
+stage. Durable `.swarmforge/superseded/<task>` markers + a pre-dispatch guard
+in `ready_for_next.bb` (beside BL-640) refuse a turn when any candidate parcel
+names a recorded task — exit 2, parcel left in place, not a bounce. Absent
+store passes; unreadable store refuses. Complements mid-flight supersede notes
+that only reached one role. Acceptance:
+`specs/features/BL-1084-a-superseded-task-stops-at-every-stage.feature`.
+How-to: `docs/how-to/BL-1084-a-superseded-task-stops-at-every-stage.md`.
+See `swarmforge/handoff-protocol.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command, setting, or UI
+change.)
+Prior entry —
+August 24, 2026 (BL-1020: a leftover
 `.swarmforge/mono-router-active-role` on a **standing** (non-router) pack is
 not topology. `resolve-resident-role` honours the marker only on rotation-router
 packs; elsewhere pack config / home role wins and a present leftover is reported
