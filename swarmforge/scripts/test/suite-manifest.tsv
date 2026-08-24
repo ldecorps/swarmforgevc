@@ -42,6 +42,7 @@ bl931_rotate_pack_router_gate_test_runner.bb	standing
 bl962_merge_adjudication_test_runner.bb	standing		
 boot_prefix_budget_gate_lib_test_runner.bb	standing		
 bounded_delete_sweep_lib_test_runner.bb	standing		
+bounded_run_lib_test_runner.bb	standing		
 branch_claim_guard_test_runner.bb	standing		
 branch_naming_test_runner.bb	standing		
 bridge_headless_supervisor_test_runner.bb	standing		
