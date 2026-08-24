@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1009: one Telegram pipeline-board grid
+**Last Updated:** August 24, 2026 (BL-1007 rematch: unit-lane contention
+budgets record a finite load-normalized duration per budgeted test
+(`wall÷max(1,factor)`); all-null evidence is rejected. Scaling, quiet-host
+base equality, and the 120s ceiling are unchanged; property lane still
+untouched. Complements BL-815/BL-969/BL-999. Acceptance:
+`specs/features/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.feature`.
+How-to: `docs/how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1009: one Telegram pipeline-board grid
 covers every swarm’s active tickets. Caption badges (`primary`→`s1`,
 `second`→`s2`) only when multiple swarms are visible; mono-swarm boards stay
 byte-identical with no badges. Absent `swarm:` defaults to local via
