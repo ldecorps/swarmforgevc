@@ -495,6 +495,7 @@ const DOMAINS = [
   require('./bl1105DuplicateTicketIdSteps'),
   require('./bl1101HandAuthoredSweepSkipFailsSteps'),
   require('./bl1019SwarmStatusAgreesWithHasSessionSteps'),
+  require('./bl1020StaleMonoRouterMarkerSteps'),
   require('./bl930OrphanJanitorTmpOnboarderSteps'),
   require('./bl929LiveScreenPackLayoutSteps'),
   require('./bl931RotatePackGateSteps'),

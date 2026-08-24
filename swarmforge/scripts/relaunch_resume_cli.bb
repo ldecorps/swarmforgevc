@@ -43,6 +43,7 @@
 (defn- usage! []
   (binding [*out* *err*]
     (println "Usage: relaunch_resume_cli.bb resolve-boot-role <project-root>")
+    (println "   or: relaunch_resume_cli.bb resolve-resident-role <project-root>")
     (println "   or: relaunch_resume_cli.bb sweep <project-root> [resumed-role]"))
   (System/exit 2))
 
@@ -106,6 +107,35 @@
         (println (str "BL-648 LOUD: resolve-boot-role failed unexpectedly (" (.getMessage e)
                       ") - printing nothing; caller must not write this to the active-role marker."))))))
 
+(defn cmd-resolve-resident-role
+  "BL-1020: print a single machine line for attach/topology callers:
+   honour=<0|1> stale=<0|1> role=<name> recorded=<name-or-empty>
+   Loud stale notice goes to stderr when a leftover marker is ignored."
+  [root]
+  (try
+    (let [home (home-role-at root)
+          recorded (raw-active-role-marker-at root)
+          router? (= "router" (rotation-mode-at root))
+          {:keys [role honour-marker? stale? recorded]}
+          (mono-router-lib/resolve-resident-role
+           {:rotation-router? router?
+            :recorded-role recorded
+            :home-role home})]
+      (when stale?
+        (binding [*out* *err*]
+          (println (str "BL-1020 STALE: mono-router-active-role names '" recorded
+                        "' on a non-router pack — ignored as topology; pack config resolves to '"
+                        role "'."))))
+      (println (str "honour=" (if honour-marker? "1" "0")
+                    " stale=" (if stale? "1" "0")
+                    " role=" (or role "")
+                    " recorded=" (or recorded ""))))
+    (catch Exception e
+      (binding [*out* *err*]
+        (println (str "BL-1020 LOUD: resolve-resident-role failed (" (.getMessage e)
+                      ") - treating marker as non-authoritative.")))
+      (println "honour=0 stale=0 role= recorded="))))
+
 (defn cmd-sweep
   "Never lets an unexpected exception escape to a non-zero exit: sweep!
    already isolates per-role and per-file failures internally (they are
@@ -131,6 +161,11 @@
     "resolve-boot-role"
     (if-let [root (first args)]
       (cmd-resolve-boot-role root)
+      (usage!))
+
+    "resolve-resident-role"
+    (if-let [root (first args)]
+      (cmd-resolve-resident-role root)
       (usage!))
 
     "sweep"

@@ -8,9 +8,13 @@
 #
 # Roles may be bare (coordinator), display names (Coordinator), full session
 # names (swarmforge-coordinator), or `resident` (mono-router: reads
-# .swarmforge/mono-router-active-role). With no role and multiple sessions, lists them.
+# .swarmforge/mono-router-active-role only on a rotation-router pack —
+# BL-1020: a leftover marker on a standing pack is ignored and reported stale).
+# With no role and multiple sessions, lists them.
 #
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'EOF'
@@ -51,22 +55,40 @@ looks_like_path() {
   [[ -n "${1:-}" && ( "$1" == . || "$1" == .. || "$1" == /* || -d "$1" ) ]]
 }
 
-read_mono_router_resident() {
+# BL-1020: topology from pack config via resolve-resident-role. Sets
+# HONOUR_MARKER (0|1), STALE_MARKER (0|1), MARKER_ROLE (may be empty).
+resolve_topology_resident() {
   local root="$1"
-  local marker="$root/.swarmforge/mono-router-active-role"
-  if [[ -f "$marker" ]]; then
-    tr -d '[:space:]' < "$marker"
+  local line errf
+  HONOUR_MARKER=0
+  STALE_MARKER=0
+  MARKER_ROLE=""
+  errf="$(mktemp)"
+  line="$(bb "$SCRIPT_DIR/relaunch_resume_cli.bb" resolve-resident-role "$root" 2>"$errf" | tail -n1 || true)"
+  # Surface STALE / LOUD notices without mixing them into the machine line.
+  if [[ -s "$errf" ]]; then
+    cat "$errf" >&2
+  fi
+  rm -f "$errf"
+  [[ "$line" =~ honour=([01]) ]] && HONOUR_MARKER="${BASH_REMATCH[1]}"
+  [[ "$line" =~ stale=([01]) ]] && STALE_MARKER="${BASH_REMATCH[1]}"
+  if [[ "$line" =~ recorded=([^[:space:]]*) ]]; then
+    MARKER_ROLE="${BASH_REMATCH[1]}"
   fi
 }
 
 ROLE=""
 TARGET=""
 RESIDENT_ATTACH=0
+HONOUR_MARKER=0
+STALE_MARKER=0
+MARKER_ROLE=""
 
 case $# in
   0)
     TARGET="$(resolve_root "")"
-    if [[ -n "$(read_mono_router_resident "$TARGET")" ]]; then
+    resolve_topology_resident "$TARGET"
+    if [[ "$HONOUR_MARKER" -eq 1 ]]; then
       RESIDENT_ATTACH=1
     else
       ROLE="coordinator"
@@ -75,7 +97,8 @@ case $# in
   1)
     if looks_like_path "$1"; then
       TARGET="$(resolve_root "$1")"
-      if [[ -n "$(read_mono_router_resident "$TARGET")" ]]; then
+      resolve_topology_resident "$TARGET"
+      if [[ "$HONOUR_MARKER" -eq 1 ]]; then
         RESIDENT_ATTACH=1
       else
         ROLE="coordinator"
@@ -203,7 +226,15 @@ list_sessions() {
 
 SESSION=""
 if [[ "$RESIDENT_ATTACH" -eq 1 ]]; then
-  ROLE="$(resolve_live_resident "$(read_mono_router_resident "$TARGET")")" || {
+  # Explicit `resident` / no-arg honour path: only feed the marker when the
+  # pack is a router (BL-1020). On a standing pack, leave marked empty so
+  # resolve_live_resident picks from live sessions / pack config alone.
+  resolve_topology_resident "$TARGET"
+  marked=""
+  if [[ "$HONOUR_MARKER" -eq 1 ]]; then
+    marked="$MARKER_ROLE"
+  fi
+  ROLE="$(resolve_live_resident "$marked")" || {
     echo "No live mono-router resident session found." >&2
     list_sessions
     exit 1
