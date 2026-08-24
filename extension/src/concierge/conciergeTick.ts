@@ -257,6 +257,8 @@ export interface ConciergeTickAdapters {
   // BL-561: retries closing ApprovalRequested asks whose ticket is already
   // decided on disk but whose Telegram edit failed during a burst approve.
   reconcileDecidedApprovalAskCloses?: (nowMs: number) => Promise<void>;
+  // BL-584: email digest for Approvals-topic asks unanswered past threshold.
+  sweepStaleApprovalAsks?: (nowMs: number) => Promise<void>;
 }
 
 export interface TickResult {
@@ -1216,6 +1218,7 @@ async function processConciergeEvent(
 // completely unaffected by this default.
 export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: number = Date.now()): Promise<TickResult> {
   await adapters.reconcileDecidedApprovalAskCloses?.(nowMs);
+  await adapters.sweepStaleApprovalAsks?.(nowMs);
   const folders = adapters.readFolders();
   const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
   const epicDefinitions = epicDefinitionsFor(folders);

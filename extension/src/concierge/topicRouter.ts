@@ -142,13 +142,19 @@ function taskStartedText(event: SwarmEvent): string {
 // BL-480: this sentence is now the FROZEN tail of a richer ask, not the
 // whole text - reply-grammar clause and "needs your approval" substring both
 // preserved byte-for-byte (the reply grammar per BL-357/434's own frozen
-// contract; the "needs your approval" phrase because five sibling step
-// files - bl408/409/410/434, pendingApprovalAsksInTopicSteps.js - locate the
-// posted ask by that exact substring). Kept as its own function so the
-// frozen string has one definition, read both when composing the enriched
-// text below and when a summary-less ticket falls back to it verbatim.
+// contract; the locator phrase because five sibling step files -
+// bl408/409/410/434, pendingApprovalAsksInTopicSteps.js - locate the posted
+// ask by that exact substring).
+//
+// BL-584: single definition of the Approvals-ask locator substring —
+// composition and stale-escalation clock readers share it so they cannot drift.
+export const APPROVAL_ASK_LOCATOR = 'needs your approval';
+
+// Kept as its own function so the frozen string has one definition, read both
+// when composing the enriched text below and when a summary-less ticket falls
+// back to it verbatim.
 function frozenApprovalAskLine(id: string): string {
-  return `${id} needs your approval before it can proceed. Reply here with "approve ${id}" (or "reject ${id} <reason>") to act.`;
+  return `${id} ${APPROVAL_ASK_LOCATOR} before it can proceed. Reply here with "approve ${id}" (or "reject ${id} <reason>") to act.`;
 }
 
 // BL-480: the Approvals-topic ask used to carry ONLY the frozen line above -

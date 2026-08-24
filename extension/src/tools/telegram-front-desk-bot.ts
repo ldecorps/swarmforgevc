@@ -149,6 +149,16 @@ import {
   explainApprovalRecordNoOp,
 } from '../concierge/pendingApprovalReply';
 import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
+import {
+  DEFAULT_COOLDOWN_MS,
+  DEFAULT_STALE_AFTER_MS,
+  listLiveApprovalAskCandidates,
+  readLastStaleApprovalEmailMs,
+  resolvePositiveMs,
+  sweepStaleApprovalAsks,
+  writeLastStaleApprovalEmailMs,
+} from '../notify/staleApprovalEscalation';
+import { sendResendEmail } from '../notify/resendClient';
 import { ConciergeTickScheduler, DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS } from '../concierge/conciergeTickScheduler';
 import { consumeConciergeTickRequest } from '../concierge/conciergeTickRequest';
 import {
@@ -206,7 +216,7 @@ import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
 import { commitApprovalWrites } from '../util/commitIntegrityRunner';
-import { readConfigValue } from '../util/swarmforgeConfig';
+import { readConfigValue, readEffectiveConfigValue } from '../util/swarmforgeConfig';
 
 const execFileAsync = promisify(execFile);
 
@@ -3139,6 +3149,46 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
           waitBetweenCloses: (ms) => sleep(ms),
         },
         nowMs
+      );
+    },
+    sweepStaleApprovalAsks: async (nowMs) => {
+      const to = readEffectiveConfigValue(targetPath, 'notify_email_to');
+      const from =
+        readEffectiveConfigValue(targetPath, 'notify_email_from') ?? 'onboarding@resend.dev';
+      await sweepStaleApprovalAsks(
+        {
+          to,
+          from,
+          chatId,
+          staleAfterMs: resolvePositiveMs(
+            readEffectiveConfigValue(targetPath, 'approval_ask_stale_after_ms'),
+            DEFAULT_STALE_AFTER_MS
+          ),
+          cooldownMs: resolvePositiveMs(
+            readEffectiveConfigValue(targetPath, 'approval_ask_email_cooldown_ms'),
+            DEFAULT_COOLDOWN_MS
+          ),
+        },
+        {
+          nowMs: () => nowMs,
+          listCandidates: () =>
+            listLiveApprovalAskCandidates(targetPath, {
+              readTopicRecord: (id) => {
+                const record = readRecord(targetPath, id);
+                return record.messages.length === 0 ? undefined : record;
+              },
+              readAskMessages: () => readApprovalAskMessages(targetPath),
+            }),
+          sendEmail: (message) => sendResendEmail(process.env.RESEND_API_KEY || '', message),
+          readLastSentMs: () => readLastStaleApprovalEmailMs(targetPath),
+          writeLastSentMs: (ms) => writeLastStaleApprovalEmailMs(targetPath, ms),
+          readApiKey: () => process.env.RESEND_API_KEY,
+          warnMissingApiKey: () => {
+            console.error(
+              'BL-584: notify_email_to is set but RESEND_API_KEY is absent; stale approval escalation cannot send'
+            );
+          },
+        }
       );
     },
   };
