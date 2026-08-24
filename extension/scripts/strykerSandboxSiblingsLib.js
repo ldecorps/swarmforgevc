@@ -41,9 +41,26 @@ function ensureStrykerSandboxSiblingLink(extensionDir, tempDirName, siblingName)
     return { created: false, linkPath, siblingName };
   }
 
-  fs.rmSync(linkPath, { recursive: true, force: true });
+  // BL-1112: Node's fs.rmSync can leave a dangling symlink in place (existsSync
+  // follows the missing target and reports false while the link inode remains),
+  // so the next symlinkSync throws EEXIST. Unlink the link itself first;
+  // fall back to rmSync only for a real directory left at the path.
+  removeStaleSiblingPath(linkPath);
   fs.symlinkSync(relativeTarget, linkPath, 'dir');
   return { created: true, linkPath, siblingName };
+}
+
+function removeStaleSiblingPath(linkPath) {
+  try {
+    fs.lstatSync(linkPath);
+  } catch {
+    return;
+  }
+  try {
+    fs.unlinkSync(linkPath);
+  } catch {
+    fs.rmSync(linkPath, { recursive: true, force: true });
+  }
 }
 
 // Trivially extensible: the next repo-root sibling a test/CLI reaches into

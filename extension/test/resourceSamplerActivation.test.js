@@ -187,6 +187,22 @@ test('listProcessTree finds the current process among the real OS process list',
   assert.equal(self.ppid, process.ppid);
 });
 
+// BL-1112: Node 24+ Linux reports MainThread in comm=; args= first token must
+// still surface the invoked name so headless sampling is not silently empty.
+test('listProcessTree names a PATH-spawned claude child by argv0, not MainThread', () => {
+  const { spawnFakeAgentTree } = require('./helpers/fakeAgentTree');
+  const agentTree = spawnFakeAgentTree();
+  try {
+    const kids = listProcessTree().filter((p) => p.ppid === agentTree.shellPid);
+    assert.ok(
+      kids.some((k) => k.command === 'claude'),
+      `expected a claude-named child of ${agentTree.shellPid}, got: ${JSON.stringify(kids)}`
+    );
+  } finally {
+    agentTree.kill();
+  }
+});
+
 // ── resolveAgentPid (composes resolvePanePid + listProcessTree) ─────────
 
 test('resolveAgentPid resolves the agent descendant beneath the discovered pane pid', () => {

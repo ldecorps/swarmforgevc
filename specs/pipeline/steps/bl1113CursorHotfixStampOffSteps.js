@@ -196,6 +196,8 @@ function registerSteps(registry) {
   });
 
   scoped(/^the stage header uses an HTML nbsp entity between DC and QA$/, (ctx) => {
+    // Feature wording is "HTML nbsp entity". origin/main's pipelineBoard emits
+    // the named entity &nbsp; for U+00A0 (see wrapPipelineBoardHtml).
     assert.match(ctx.boardHtml, /DC&nbsp;QA/);
   });
 

@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import * as path from 'path';
 import { SwarmRole, readTmuxSocket, getPaneBaseIndex, resolveAgentPaneTarget, getPanePid } from './tmuxClient';
 import { SampledRole } from '../metrics/resourceTelemetry';
 
@@ -42,24 +43,36 @@ export interface ProcessTreeEntry {
 // by Linux procps as a synonym for `-e`) lists every process regardless of
 // controlling terminal - the target macOS/Linux-only surface this project
 // already commits to (local-engineering.prompt).
+//
+// BL-1112: use `args=` (first token, basename) rather than `comm=`. Node 24+
+// on Linux reports thread names such as MainThread in /proc/*/comm, so a
+// child invoked as `claude` never matched DEFAULT_AGENT_COMMAND_NAME and
+// every headless sample silently recorded zero roles.
 export function listProcessTree(): ProcessTreeEntry[] {
   try {
-    const output = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,comm='], { encoding: 'utf8' });
+    const output = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,args='], { encoding: 'utf8' });
     return output
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
-      .map((line) => {
-        const match = line.match(/^(\d+)\s+(\d+)\s+(.+)$/);
-        if (!match) {
-          return null;
-        }
-        return { pid: Number(match[1]), ppid: Number(match[2]), command: match[3] };
-      })
+      .map(parseProcessTreeLine)
       .filter((entry): entry is ProcessTreeEntry => entry !== null);
   } catch {
     return [];
   }
+}
+
+function parseProcessTreeLine(line: string): ProcessTreeEntry | null {
+  const match = line.match(/^(\d+)\s+(\d+)\s+(.+)$/);
+  if (!match) {
+    return null;
+  }
+  const firstArg = match[3].trim().split(/\s+/)[0] || '';
+  return {
+    pid: Number(match[1]),
+    ppid: Number(match[2]),
+    command: path.basename(firstArg),
+  };
 }
 
 export const DEFAULT_AGENT_COMMAND_NAME = 'claude';

@@ -233,6 +233,9 @@
 %% BL-1070 (2026-08-24): babysitter pane liveness walks descendant tree;
 %% RC check UNAVAILABLE when liveness gate unmet.
 %% BL-1070 FF-only rematch: hitchhike-clean tip; recreate not merge.
+%% BL-1112 (2026-08-24): listProcessTree uses ps args=; Stryker sandbox
+%% sibling replace unlinks dangling symlink before recreate.
+%% BL-1112 FF-only rematch: hitchhike-clean tip; recreate not merge.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

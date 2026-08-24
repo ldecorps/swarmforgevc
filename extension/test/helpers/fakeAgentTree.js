@@ -14,17 +14,18 @@ const { mkTmpDir } = require('./tmpDir');
 // genuine child is named "claude" in `ps`, not a single bare process
 // standing in directly for the agent the way pre-BL-847 fixtures did.
 //
-// comm-name portability: on Darwin, `ps -o comm=` reflects argv[0]; Linux's
-// /proc/[pid]/comm instead reflects the executed file's own basename,
-// ignoring argv[0]. Spawning the child via the bare, PATH-resolved name
-// "claude" (never an absolute path) keeps argv[0] short on Darwin AND makes
-// the resolved executable file itself named "claude" for Linux - satisfying
-// both without a platform branch.
+// Invoked-name portability (BL-1112): listProcessTree matches on the first
+// token of `ps -o args=` (basename), not `comm=`. Node 24+ on Linux puts
+// thread names like MainThread in /proc/*/comm, so a PATH-resolved spawn of
+// the bare name "claude" is what both Darwin and Linux must see in args=.
 
 function shellScriptSource(binDir) {
+  const claudeAbs = path.join(binDir, 'claude');
   return [
     "const { spawn } = require('child_process');",
-    `spawn('claude', ['-e', 'setTimeout(() => {}, 30000)'], { env: { ...process.env, PATH: ${JSON.stringify(binDir)} + ':' + process.env.PATH } });`,
+    // Absolute argv0: listProcessTree must basename the first args= token
+    // (BL-1112); a bare PATH name would make basename a no-op soft survivor.
+    `spawn(${JSON.stringify(claudeAbs)}, ['-e', 'setTimeout(() => {}, 30000)'], { env: process.env });`,
     'setInterval(() => {}, 60000);',
   ].join('\n');
 }
@@ -36,7 +37,7 @@ function shellScriptSource(binDir) {
 function waitForChildPid(shellPid, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const table = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,comm='], { encoding: 'utf8' });
+    const table = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,args='], { encoding: 'utf8' });
     const hasChild = table
       .split('\n')
       .some((line) => {
