@@ -127,6 +127,31 @@ test('a ticket COPIED into done and only later deleted from active is still meas
   assert.equal(result.meanMs, 3 * HOUR_MS);
 });
 
+test('a copy-close re-filed inside done/ still measures to the Add close, not the re-file', () => {
+  // Architect bounce D1: lastCycleBoundsMs walked back to the Add but then
+  // used newestAtDone.timeMs (the re-file) as closedAtMs.
+  const repo = newRepo();
+  writeTicket(repo, 'active', 'BL-028.yaml');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'promote BL-028'], '2026-07-01T08:00:00');
+
+  writeTicket(repo, 'done', 'BL-028.yaml');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'copy BL-028 into done'], '2026-07-01T13:00:00');
+
+  fs.rmSync(path.join(repo, 'backlog', 'active', 'BL-028.yaml'));
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'drop the active copy'], '2026-07-01T14:00:00');
+
+  move(repo, 'done', 'done/M3', 'BL-028.yaml');
+  git(repo, ['commit', '-q', '-m', 'refile BL-028 under M3'], '2026-07-03T09:00:00');
+
+  const result = computeMeanTicketTime(repo);
+
+  assert.equal(result.sampleCount, 1);
+  assert.equal(result.meanMs, 5 * HOUR_MS);
+});
+
 test('a whole refresh interval of ticks walks git once, and the metric is published on every one of them', () => {
   const repo = buildClosedTicketCorpus(3);
   let nowMs = 1_000_000;

@@ -39,20 +39,50 @@ function closedThenRefiled(refileCount) {
   return repo;
 }
 
+function copyClosedThenRefiled(refileCount) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const repo = newRepo('sfvc-bl1074-copy-');
+  writeTicket(repo, 'active', 'BL-019.yaml');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'promote'], PROMOTE);
+  writeTicket(repo, 'done', 'BL-019.yaml');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'copy-close'], CLOSE);
+  fs.rmSync(path.join(repo, 'backlog', 'active', 'BL-019.yaml'));
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'drop active'], '2026-07-01T14:00:00');
+  let from = 'done';
+  for (let i = 1; i <= refileCount; i += 1) {
+    const to = `done/M${i}`;
+    move(repo, from, to, 'BL-019.yaml');
+    git(repo, ['commit', '-q', '-m', `refile ${i}`], `2026-07-0${2 + i}T09:00:00`);
+    from = to;
+  }
+  return repo;
+}
+
 test('property (invariant 1): post-close re-files leave the measured duration at the close', () => {
   // Non-vacuity: include the refileCount=0 arm so a broken impl that always
   // returns null fails, and refileCount≥1 so the defect this ticket fixes
-  // is reached by construction.
+  // is reached by construction. Also include a copy-close arm (architect
+  // bounce D1) so the Add-fallback path is generated, not only rename closes.
   let casesWithRefile = 0;
-  const numRuns = 10;
+  let casesWithCopyClose = 0;
+  const numRuns = 12;
   fc.assert(
-    fc.property(fc.integer({ min: 0, max: 3 }), (refileCount) => {
-      const repo = closedThenRefiled(refileCount);
+    fc.property(fc.integer({ min: 0, max: 3 }), fc.boolean(), (refileCount, copyClose) => {
+      const repo = copyClose
+        ? copyClosedThenRefiled(refileCount)
+        : closedThenRefiled(refileCount);
       const result = computeMeanTicketTime(repo);
       assert.equal(result.sampleCount, 1);
       assert.equal(result.meanMs, EXPECTED_MS);
       if (refileCount > 0) {
         casesWithRefile += 1;
+      }
+      if (copyClose) {
+        casesWithCopyClose += 1;
       }
     }),
     { numRuns }
@@ -60,6 +90,10 @@ test('property (invariant 1): post-close re-files leave the measured duration at
   assert.ok(
     casesWithRefile >= 2,
     `generator reached a post-close re-file in only ${casesWithRefile} of ${numRuns} cases`
+  );
+  assert.ok(
+    casesWithCopyClose >= 2,
+    `generator reached a copy-close in only ${casesWithCopyClose} of ${numRuns} cases`
   );
 });
 

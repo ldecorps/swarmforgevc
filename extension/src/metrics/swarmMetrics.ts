@@ -252,13 +252,14 @@ function lastCycleBoundsMs(
   }
   // A close recorded as a COPY rather than a move (the active file deleted in
   // a separate, later commit) leaves git no rename to follow back, so the
-  // lineage above dead-ends on an Add. The ticket's own file name under
-  // backlog/active/ is what `--follow` was effectively falling back on; the
-  // Add at donePath is itself the close.
+  // lineage above dead-ends on an Add under done/. `step` is that Add after
+  // walking back through any done/→done/ re-files — use ITS time as the
+  // close, never newestAtDone (which may be a later re-file tip). Activation
+  // is looked up strictly before that close.
+  const closedAtMs = step.timeMs;
   const activatedAtMs =
-    arrivalBefore(byPath, ACTIVE_PREFIX + path.posix.basename(donePath), newestAtDone.timeMs)?.timeMs ??
-    null;
-  return activatedAtMs === null ? null : { activatedAtMs, closedAtMs: newestAtDone.timeMs };
+    arrivalBefore(byPath, ACTIVE_PREFIX + path.posix.basename(donePath), closedAtMs)?.timeMs ?? null;
+  return activatedAtMs === null ? null : { activatedAtMs, closedAtMs };
 }
 
 function ticketDurationMs(byPath: Map<string, PathArrival[]>, donePath: string): number | null {
