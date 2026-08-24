@@ -46,7 +46,7 @@ function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^the project's Mermaid architecture diagrams under docs\/diagrams\/$/, () => {
     const diagramsDir = path.join(__dirname, '..', '..', '..', 'docs', 'diagrams');
-    for (const file of ['architecture.mmd', 'swarm-flow.mmd']) {
+    for (const file of ['architecture.mmd', 'swarm-flow.mmd', 'handoff-flow.mmd']) {
       if (!fs.existsSync(path.join(diagramsDir, file))) {
         throw new Error(`expected docs/diagrams/${file} to exist`);
       }

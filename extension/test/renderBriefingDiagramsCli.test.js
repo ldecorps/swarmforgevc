@@ -25,6 +25,7 @@ function mkFixtureProjectRoot() {
   fs.mkdirSync(diagramsDir, { recursive: true });
   fs.writeFileSync(path.join(diagramsDir, 'architecture.mmd'), FIXTURE_MMD);
   fs.writeFileSync(path.join(diagramsDir, 'swarm-flow.mmd'), FIXTURE_MMD);
+  fs.writeFileSync(path.join(diagramsDir, 'handoff-flow.mmd'), FIXTURE_MMD);
   return root;
 }
 
@@ -41,13 +42,13 @@ const REAL_PROJECT_ROOT = path.join(__dirname, '..', '..');
 // even in isolation (BL-815 evidence). A per-test override buys headroom
 // without touching the suite-wide default every other test still relies on.
 test(
-  'renders exactly the two maintained diagrams, named and base64-encoded',
+  'renders exactly the maintained diagrams, named and base64-encoded',
   async () => {
     const diagrams = await renderBriefingDiagrams(mkFixtureProjectRoot());
 
     assert.deepEqual(
       diagrams.map((d) => d.name),
-      ['architecture', 'swarm-flow']
+      ['architecture', 'swarm-flow', 'handoff-mechanism']
     );
     for (const { base64 } of diagrams) {
       const png = Buffer.from(base64, 'base64');
@@ -69,7 +70,8 @@ test('a missing diagram source file rejects rather than silently omitting it (ha
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'render-briefing-diagrams.js');
 
 function runCliSubprocess(cwd) {
-  return execFileSync('node', [CLI], { cwd, encoding: 'utf8' });
+  // Three diagram PNGs as base64 exceed Node's default 1 MiB maxBuffer.
+  return execFileSync('node', [CLI], { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 }
 
 // Runs the REAL main() in-process against the real repo, so in-process
@@ -99,13 +101,13 @@ async function runCli(cwd) {
 // BL-914: same real render path as above, in-process this time - same
 // headroom rationale.
 test(
-  "main() runs in-process against the real repo and prints the two maintained diagrams as JSON",
+  "main() runs in-process against the real repo and prints the maintained diagrams as JSON",
   async () => {
     const diagrams = await runCli(REAL_PROJECT_ROOT);
 
     assert.deepEqual(
       diagrams.map((d) => d.name),
-      ['architecture', 'swarm-flow']
+      ['architecture', 'swarm-flow', 'handoff-mechanism']
     );
     for (const { base64 } of diagrams) {
       assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));
@@ -127,7 +129,7 @@ test(
 
     assert.deepEqual(
       diagrams.map((d) => d.name),
-      ['architecture', 'swarm-flow']
+      ['architecture', 'swarm-flow', 'handoff-mechanism']
     );
     for (const { base64 } of diagrams) {
       assert.ok(Buffer.from(base64, 'base64').subarray(0, 8).equals(PNG_MAGIC));

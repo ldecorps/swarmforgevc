@@ -1,6 +1,15 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-570: shared pre-commit property-suite
+**Last Updated:** August 24, 2026 (BL-579: morning briefing diagram allowlist
+adds `handoff-mechanism` → `docs/diagrams/handoff-flow.mmd` (HOW a parcel
+travels; `swarm-flow` remains WHO). Allowlist stays explicit, not a directory
+scan. Complements BL-260/BL-286. Acceptance:
+`specs/features/BL-579-handoff-mechanism-briefing-diagram.feature`.
+How-to: `docs/how-to/BL-579-handoff-mechanism-briefing-diagram.md`.
+Diagram: `docs/diagrams/handoff-flow.mmd`. No new extension command, setting,
+or UI change beyond the briefing email.)
+Prior entry —
+August 24, 2026 (BL-570: shared pre-commit property-suite
 drift guard runs `npm run test:properties` when staged paths can invalidate a
 property (`extension/src/*` or `*.property.test.js`); fails open if the
 toolchain is unavailable; `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` overrides
