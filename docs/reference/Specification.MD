@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1023: the expeditor never finishes a
+**Last Updated:** August 24, 2026 (BL-748: a failure appending
+`.swarmforge/routing-skips.jsonl` never aborts a handoff send.
+`log-routing-skip!` catches, reports `ROUTING-SKIP RECORD FAILED:` on stderr
+via shared `report-nonfatal!`, and returns — so `try-sync-deliver!` and draft
+consume still run. Recording stays observational; the guard is scoped to the
+journal call. Complements BL-623. Acceptance:
+`specs/features/BL-748-routing-skip-recording-failure-never-withholds-delivery.feature`.
+How-to: `docs/how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1023: the expeditor never finishes a
 passing run with its ticket's backlog state unchanged. Initiation adopts a run
 ticket from `paused/` or `hold/` into `active/` (or refuses when missing) before
 stages spend; `move-ticket!` returns `{:ok? …}` and callers fail loud — the old

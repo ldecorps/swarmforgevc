@@ -691,10 +691,25 @@
        (when rejection-reason
          (str " rejected=\"" rejection-reason "\""))))
 
+(defn- report-nonfatal!
+  "Observational failure posture: stderr line + :failed sentinel. Used by
+   try-sync-deliver! and log-routing-skip! so neither can abort -main's let."
+  [label e]
+  (binding [*out* *err*]
+    (println label (.getMessage e)))
+  :failed)
+
 (defn- log-routing-skip! [root entry]
-  (let [path (fs/path root ".swarmforge" "routing-skips.jsonl")]
-    (fs/create-dirs (fs/parent path))
-    (spit (str path) (str (json/generate-string entry) "\n") :append true)))
+  ;; BL-748: recording is observational. Same catch/report/keep-going posture
+  ;; as try-sync-deliver! so a journal I/O failure never skips sync inject or
+  ;; draft cleanup in -main's ordered let.
+  (try
+    (let [path (fs/path root ".swarmforge" "routing-skips.jsonl")]
+      (fs/create-dirs (fs/parent path))
+      (spit (str path) (str (json/generate-string entry) "\n") :append true)
+      :ok)
+    (catch Exception e
+      (report-nonfatal! "ROUTING-SKIP RECORD FAILED:" e))))
 
 (defn body [type sender canonical-commit note-message scope proposal-body rationale recipients]
   (let [lead (handoff-lib/handoff-body-lead recipients)]
@@ -788,9 +803,7 @@
     (deliver-sync! outbox-file sender)
     :delivered
     (catch Exception e
-      (binding [*out* *err*]
-        (println "HANDOFF SYNC INJECT FAILED:" (.getMessage e)))
-      :failed)))
+      (report-nonfatal! "HANDOFF SYNC INJECT FAILED:" e))))
 
 (defn -main [& args]
   (when (not= 1 (count args))
