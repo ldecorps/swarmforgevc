@@ -83,3 +83,5 @@ source: |
 notes: |
   2026-08-24 coordinator: babysitter CRIT resurfaced for 27273f2b0a — expected until this stamp-off lands under swarmforge-QA. human_approval now approved; promotion blocked by active_backlog_max_depth (3/3: BL-556, BL-682, BL-1089). Will promote+route on next open slot (expedited high).
   2026-08-24 coordinator: stamp-off acknowledged; ledger linked 27273f2b0a. Holding in paused — human_approval pending; active cap full (BL-556/BL-682/BL-1089). Promote after approval (expedited high defect).
+
+assigned_to: coder
