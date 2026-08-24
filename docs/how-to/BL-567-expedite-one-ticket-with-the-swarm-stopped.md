@@ -40,9 +40,18 @@ verifies**. It does not trust the stop command's exit code, because that code li
 `./stop-swarm.sh` has been observed printing `SUCCESS — clean slate` with
 `babysitterd` and the Operator agent still running.
 
-Any ticket sitting in `backlog/active/` is parked to **`backlog/hold/`** — never
-`paused/`, which is the promotion queue and would auto-promote an approved ticket
-straight back on the next boot. A park record lands in
+**Run-ticket bookkeeping is decided here** (BL-1023), before siblings are
+parked and before any stage spends. If the run ticket is already in
+`backlog/active/`, initiation is ready. If it sits in `paused/` or `hold/` —
+the usual specifier output, with no coordinator on an expedited run — it is
+**adopted into `active/`** so teardown's `active/` → `done/` move has a source.
+If the yaml is missing from `{active,paused,hold}/`, initiation **refuses** and
+names the ticket. A dry run plans that decision and writes nothing. See
+`docs/how-to/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.md`.
+
+Any *other* ticket sitting in `backlog/active/` is parked to **`backlog/hold/`**
+— never `paused/`, which is the promotion queue and would auto-promote an
+approved ticket straight back on the next boot. A park record lands in
 `.swarmforge/expedite/<BL-id>/park-record.json` with the per-role branch tips, so
 whoever resumes that ticket knows exactly where it stood.
 
@@ -147,7 +156,9 @@ owner of the two that leave state behind.
 
 It does not push. Publishing local `main` is your call on the next boot.
 
-It does not promote a next ticket. One ticket, one run.
+It does not promote a *next* ticket (one ticket, one run). It **does** adopt
+the run ticket itself from `paused/`/`hold/` into `active/` when needed
+(BL-1023) — that is run bookkeeping, not queue promotion.
 
 It does not write a BL topic record or touch the briefing. Those need the front-desk
 machinery it exists to work without.
@@ -161,6 +172,7 @@ parked. Both are yours — see the OUTSTANDING block above.
 |---|---|
 | `REFUSE stop command carries a forbidden flag: <flag> (in: <command>)` | never pass `--sweep-inbox`, `--reset-worktrees` or `--full`: they archive the very parcels a parked ticket needs to resume |
 | `REFUSE stop command could not be read as a command line, so it is refused rather than admitted: <command>` | simplify the configured stop command (`EXPEDITE_STOP_CMD`) to a plain line the guard can read — it refuses anything it cannot tokenize with confidence (an unbalanced quote, a `$var`/`` `cmd` `` expansion) rather than risk admitting a flag it missed |
+| `REFUSE run ticket <id> was not found in backlog/{active,paused,hold}/` (or is in a folder it cannot adopt) | file or restore the yaml under one of those folders, then re-run — decided before stages spend (BL-1023) |
 | `REFUSE teardown did not reach a clean slate: <names>` | stop the named processes by hand, then re-run. `./stop-swarm.sh` misses `babysitterd` and the Operator agent — see BL-637 |
 | `REFUSE could not create the run worktree` | remove the stale worktree, or delete the branch, then re-run |
 | `EXHAUSTED … probable-spec-defect` | route the ticket to the specifier with the named defect class; do not re-run the coder |
@@ -186,15 +198,20 @@ stdio so a timeout never blocks on a surviving grandchild's pipe.
 ## Verifying it still works
 
 ```bash
-bb  swarmforge/scripts/test/expedite_lib_test_runner.bb       # 100 assertions
+bb  swarmforge/scripts/test/expedite_lib_test_runner.bb       # pure decisions (incl. BL-1023 bookkeep-plan)
 bb  swarmforge/scripts/test/expedite_lib_property_runner.bb   # 8 properties x 500
+bb  swarmforge/scripts/test/bl1023_bookkeep_property_runner.bb  # BL-1023 bookkeep properties
+bash swarmforge/scripts/test/test_bl1023_expedite_bookkeep.sh # BL-1023 shell fixtures
 bash swarmforge/scripts/test/expedite_prove_nonvacuity.sh     # the properties can fail
 bash swarmforge/scripts/test/expedite_mutation_sweep.sh       # mutants; skipped anchors fail (BL-1101)
 bb  swarmforge/scripts/test/bounded_run_lib_test_runner.bb    # shared wall-clock runner (BL-1103)
-bash swarmforge/scripts/test/test_expedite_cli.sh             # 53 assertions, real fixture
+bash swarmforge/scripts/test/test_expedite_cli.sh             # end-to-end fixture
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature \
   /tmp/aps-out specs/pipeline/steps/expeditorOfflineSingleTicketPipelineSteps.js
+bash specs/pipeline/scripts/run_acceptance.sh \
+  specs/features/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.feature \
+  /tmp/aps-out specs/pipeline/steps/bl1023ExpediteBookkeepSteps.js
 ```
 
 `expedite_prove_nonvacuity.sh` is worth running whenever you change the lib: it
