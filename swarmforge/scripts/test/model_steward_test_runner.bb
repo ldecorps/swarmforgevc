@@ -7,7 +7,8 @@
 ;; catalogue described in specs/features/BL-547-model-steward-infrastructure-agent.feature.
 (ns model-steward-test-runner
   (:require [babashka.fs :as fs]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (def scripts-dir (str (fs/path (fs/parent (fs/canonicalize *file*)) "..")))
 (load-file (str (fs/path scripts-dir "model_steward_lib.bb")))
@@ -242,6 +243,35 @@
                1 (count (:entries sc))))
     (finally
       (fs/delete-tree state-dir))))
+
+;; ── BL-557: compat-docs projection ─────────────────────────────────────────
+(let [reg (-> empty-registry
+              (model-steward-lib/register-model "anthropic" "claude-sonnet-5"
+                                                {:status "certified"
+                                                 :known_limitations ["prefers tools"]})
+              (model-steward-lib/register-model "cerebras" "llama-3.3-70b"
+                                                {:status "candidate"})
+              (model-steward-lib/register-model "acme" "old-model"
+                                                {:status "deprecated"
+                                                 :known_limitations ["retired"]})
+              (model-steward-lib/add-role-ranking "coder" "anthropic" "claude-sonnet-5" 0.9 "seed"))
+      doc (model-steward-lib/render-compat-docs reg)]
+  (assert-true "compat-docs names each registered model"
+               (and (str/includes? doc "anthropic/claude-sonnet-5")
+                    (str/includes? doc "cerebras/llama-3.3-70b")
+                    (str/includes? doc "acme/old-model")))
+  (assert-true "compat-docs carries each model's status"
+               (and (str/includes? doc "**Status:** certified")
+                    (str/includes? doc "**Status:** candidate")
+                    (str/includes? doc "**Status:** deprecated")))
+  (assert-true "compat-docs lists known limitations when present"
+               (and (str/includes? doc "prefers tools") (str/includes? doc "retired")))
+  (assert-true "compat-docs says none recorded when limitations are absent"
+               (str/includes? doc "(none recorded)"))
+  (assert-true "compat-docs links to the role recommendation matrix section"
+               (str/includes? doc "#role-recommendation-matrix"))
+  (assert-true "compat-docs projects the role matrix"
+               (str/includes? doc "## Role recommendation matrix")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
