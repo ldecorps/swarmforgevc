@@ -7,6 +7,9 @@
 
 (load-file (str (fs/path (fs/parent *file*) "dispatch_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "reference_freshness_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
+
 
 ;; BL-640: pre-turn freshness guard. ready_for_next.sh is the one entry
 ;; point every role (task or batch mode, any pack) uses to start a turn
@@ -71,6 +74,59 @@
           (dispatch-lib/exit! 2 (reference-freshness-lib/staleness-report stale)))))))
 
 (enforce-reference-freshness-guard!)
+
+;; BL-1084: pre-turn supersede guard. Same posture as BL-640 — runs BEFORE
+;; dispatch decides task vs batch, so a recorded supersede stops every stage
+;; that next picks up a parcel for that task, not only the role a note reached.
+;; Function name must contain "supersede" (required_wiring).
+(defn- load-supersede-store [root]
+  (let [dir (fs/path root supersede-lib/store-dir-rel)]
+    (cond
+      (not (fs/exists? dir))
+      {:status :absent}
+
+      (not (fs/directory? dir))
+      {:status :unreadable :detail (str supersede-lib/store-dir-rel " exists but is not a directory")}
+
+      :else
+      (try
+        (let [files (for [f (fs/list-dir dir)
+                          :when (fs/regular-file? f)]
+                      (try
+                        {:name (fs/file-name f) :readable? true :body (slurp (str f))}
+                        (catch Exception _
+                          {:name (fs/file-name f) :readable? false :body nil})))]
+          (supersede-lib/entries-from-files files))
+        (catch Exception e
+          {:status :unreadable :detail (.getMessage e)})))))
+
+(defn- peek-candidate-task-names
+  "Task names on parcels this role already holds (in_process) or would next
+   dequeue (new/). Does not move or claim anything."
+  [_role-name]
+  (let [in-proc (handoff-lib/my-mailbox-dir :in_process)
+        new-dir (handoff-lib/my-mailbox-dir :new)
+        files (concat (handoff-lib/my-handoff-files in-proc)
+                      (handoff-lib/my-handoff-files new-dir))]
+    (->> files
+         (keep (fn [f]
+                 (try (supersede-lib/task-name-from-content (slurp (str f)))
+                      (catch Exception _ nil))))
+         (remove str/blank?)
+         vec)))
+
+(defn- enforce-supersede-guard! []
+  ;; Store lives on the shared project root (roles.tsv home), not a
+  ;; worktree-local .swarmforge — every stage must see the same marker.
+  (let [root (dispatch-lib/project-root)
+        role-name (dispatch-lib/role)
+        store (load-supersede-store root)
+        tasks (peek-candidate-task-names role-name)
+        verdict (supersede-lib/turn-verdict store tasks)]
+    (when (and (map? verdict) (= :refused (:status verdict)))
+      (dispatch-lib/exit! 2 (supersede-lib/refusal-exit-message verdict)))))
+
+(enforce-supersede-guard!)
 
 ;; BL-226: this receive helper's sole job is dispatch. Promoting paused
 ;; items into backlog/active/ is the coordinator's exclusive duty

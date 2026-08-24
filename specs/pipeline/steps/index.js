@@ -496,6 +496,7 @@ const DOMAINS = [
   require('./bl1101HandAuthoredSweepSkipFailsSteps'),
   require('./bl1019SwarmStatusAgreesWithHasSessionSteps'),
   require('./bl1020StaleMonoRouterMarkerSteps'),
+  require('./bl1084SupersedeStopsAtEveryStageSteps'),
   require('./bl930OrphanJanitorTmpOnboarderSteps'),
   require('./bl929LiveScreenPackLayoutSteps'),
   require('./bl931RotatePackGateSteps'),
