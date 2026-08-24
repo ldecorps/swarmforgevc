@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1090: a lost tick baseline never
+**Last Updated:** August 24, 2026 (BL-972: the pre-QA ancestry gate blocks
+only on dropped-work **path evidence**, not on a ticket id merely named in a
+commit subject. Subject-token recall stays; a stranded name-only match is a
+`PRE_QA_GATE WARNING` and does not refuse the send. Path overlap with the
+parcel (cited `merge-base..cited` plus acceptance / `required_wiring` paths)
+still blocks; `abandoned_commits:` still exempts. Complements BL-531/BL-761.
+Acceptance:
+`specs/features/BL-972-pre-qa-gate-blocks-on-evidence-not-subject-mentions.feature`.
+See Check A in `swarmforge/handoff-protocol.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command, setting, or UI
+change.)
+Prior entry —
+August 24, 2026 (BL-1090: a lost tick baseline never
 re-posts an approval ask that is already live. The concierge posts an
 Approvals ask in three writes — Telegram, ask store, then durable tick
 state. A crash after the first two leaves the edge path (`diffApprovalRequested`)

@@ -153,24 +153,29 @@
 
 ;; ── ancestry fact-gathering ───────────────────────────────────────────────
 
+(defn- git-name-only-paths
+  "Distinct non-blank path lines from a successful git name-only command, or nil."
+  [project-root args]
+  (let [res (run-git project-root args)]
+    (when (git-ok? res)
+      (vec (distinct (remove str/blank? (str/split-lines (:out res))))))))
+
 (defn commit-touched-paths
   "Paths changed by full-sha. Uses `git diff-tree -m` so merge commits list
    each parent's contribution (name-only without -m is blind to merges).
    nil when the commit cannot be read."
   [project-root full-sha]
-  (let [res (run-git project-root ["diff-tree" "-r" "--name-only" "-m" "--no-commit-id" full-sha])]
-    (when (git-ok? res)
-      (vec (distinct (remove str/blank? (str/split-lines (:out res))))))))
+  (git-name-only-paths project-root
+                       ["diff-tree" "-r" "--name-only" "-m" "--no-commit-id" full-sha]))
 
 (defn- merge-base-with-main
   "merge-base of cited-commit against main or origin/main, or nil."
   [project-root cited-commit]
-  (or (when (ref-exists? project-root "main")
-        (let [res (run-git project-root ["merge-base" cited-commit "main"])]
-          (when (git-ok? res) (str/trim (:out res)))))
-      (when (ref-exists? project-root "origin/main")
-        (let [res (run-git project-root ["merge-base" cited-commit "origin/main"])]
-          (when (git-ok? res) (str/trim (:out res)))))))
+  (some (fn [ref]
+          (when (ref-exists? project-root ref)
+            (let [res (run-git project-root ["merge-base" cited-commit ref])]
+              (when (git-ok? res) (str/trim (:out res))))))
+        ["main" "origin/main"]))
 
 (defn gather-ancestry-facts
   "role-branch-commits/main-reachable-set/cited-ancestors-set/warnings, all
@@ -232,9 +237,8 @@
   [project-root cited-commit yaml-content]
   (let [base (merge-base-with-main project-root cited-commit)
         from-diff (when base
-                    (let [res (run-git project-root ["diff" "--name-only" (str base "..." cited-commit)])]
-                      (when (git-ok? res)
-                        (remove str/blank? (str/split-lines (:out res))))))
+                    (git-name-only-paths project-root
+                                         ["diff" "--name-only" (str base "..." cited-commit)]))
         acceptance (when yaml-content (read-yaml-field yaml-content "acceptance"))
         wiring-paths (when yaml-content
                        (->> (pre-qa-gate-lib/read-required-wiring yaml-content)
