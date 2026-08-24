@@ -78,7 +78,38 @@
 (let [row (swarm-status-lib/agent-status-row
            {:role "coder" :session "swarmforge-coder" :agent "aider"
             :alive? false :now-ms 1000})]
-  (assert= "missing session is down" :down (:status row)))
+  (assert= "legacy alive? false is DOWN" :down (:status row)))
+
+;; BL-1019: path evidence triple
+(assert= "missing session is DOWN"
+         :down
+         (swarm-status-lib/agent-liveness-verdict
+          {:session-present? false :has-agent-process? false :process-gather-failed? false}))
+(assert= "session + agent child is UP"
+         :up
+         (swarm-status-lib/agent-liveness-verdict
+          {:session-present? true :has-agent-process? true :process-gather-failed? false}))
+(assert= "session without agent is DOWN"
+         :down
+         (swarm-status-lib/agent-liveness-verdict
+          {:session-present? true :has-agent-process? false :process-gather-failed? false}))
+(assert= "failed process gather is unknown, never DOWN"
+         :unknown
+         (swarm-status-lib/agent-liveness-verdict
+          {:session-present? true :has-agent-process? false :process-gather-failed? true}))
+
+(let [row (swarm-status-lib/agent-status-row
+           {:role "coder" :session "swarmforge-coder" :agent "claude"
+            :session-present? true :has-agent-process? true
+            :process-gather-failed? false :now-ms 20000 :created-epoch-sec 10})]
+  (assert= "row UP from liveness triple" :up (:status row))
+  (assert-true "UP row carries uptime" (some? (:uptime row))))
+
+(let [row (swarm-status-lib/agent-status-row
+           {:role "coder" :session "swarmforge-coder" :agent "claude"
+            :session-present? true :has-agent-process? false
+            :process-gather-failed? true :now-ms 1000})]
+  (assert= "row unknown when gather fails" :unknown (:status row)))
 
 (let [row (swarm-status-lib/agent-status-row
            {:role "QA" :session "swarmforge-QA" :agent "aider"

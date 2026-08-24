@@ -108,12 +108,25 @@
     (false? alive?) :down
     :else :unknown))
 
+(defn agent-liveness-verdict
+  "BL-1019: status agrees with babysitter's three-state discrimination —
+   missing session → :down; process gather failed → :unknown (never :down);
+   session present + agent child → :up; session present without agent → :down.
+   Pane command (zsh/bash) is irrelevant — claude runs as a child."
+  [{:keys [session-present? has-agent-process? process-gather-failed?]}]
+  (cond
+    (not session-present?) :down
+    (true? process-gather-failed?) :unknown
+    (true? has-agent-process?) :up
+    :else :down))
+
 (defn format-component-line
   [{:keys [name status uptime detail]}]
   (let [st (case status
              :up "UP"
              :down "DOWN"
              :dormant "DORMANT"
+             :unknown "unknown"
              ;; BL-958: the tmux server is gone while role metadata is still
              ;; present — one control-plane row instead of per-role DOWN.
              :control-plane-missing "control-plane-missing"
@@ -124,14 +137,24 @@
     (format "  %-10s %-28s uptime=%-12s%s" st (str name) up (or det ""))))
 
 (defn agent-status-row
-  "Merge role config with live tmux presence."
-  [{:keys [role session agent alive? created-epoch-sec now-ms dormant?]}]
-  (let [status (cond
-                 (true? alive?) :up
-                 (and (false? alive?) dormant?) :dormant
-                 (false? alive?) :down
-                 :else :unknown)
-        uptime (when (true? alive?)
+  "Merge role config with live liveness facts (BL-1019). Prefer the
+   session/process triple when present; fall back to legacy :alive? for
+   callers that have not yet adopted the triple."
+  [{:keys [role session agent created-epoch-sec now-ms dormant?
+           session-present? has-agent-process? process-gather-failed?
+           alive?]}]
+  (let [status (if (some? session-present?)
+                 (let [v (agent-liveness-verdict
+                          {:session-present? session-present?
+                           :has-agent-process? has-agent-process?
+                           :process-gather-failed? process-gather-failed?})]
+                   (if (and (= v :down) dormant?) :dormant v))
+                 (cond
+                   (true? alive?) :up
+                   (and (false? alive?) dormant?) :dormant
+                   (false? alive?) :down
+                   :else :unknown))
+        uptime (when (= status :up)
                  (uptime-from-epoch-sec now-ms created-epoch-sec))]
     {:name (str role)
      :status status
