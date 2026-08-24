@@ -161,4 +161,68 @@ priority: 5
                      {:kind :unreadable-acceptance :id "BL-995" :path "fixture.yaml"
                       :feature-path "specs/features/BL-042-example.feature"}))))
 
+;; ── BL-1105: duplicate ticket id ───────────────────────────────────────────
+
+(assert=
+ "duplicate-id keys on the id field across different filename slugs"
+ [{:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-new.yaml"
+   :others [{:path "paused/BL-4242-one-slug.yaml"}]}]
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-new.yaml"}]
+  {:ok {"BL-4242" [{:path "paused/BL-4242-one-slug.yaml"}]}}
+  {:ok {}}))
+
+(assert=
+ "an id present only in the published corpus is refused"
+ [{:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-new.yaml"
+   :others [{:path "done/BL-4242-published.yaml"}]}]
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-new.yaml"}]
+  {:ok {}}
+  {:ok {"BL-4242" [{:path "done/BL-4242-published.yaml"}]}}))
+
+(assert=
+ "an unreadable published corpus fails closed"
+ [{:kind :published-corpus-unreadable :message "published corpus could not be read"}]
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-new.yaml"}]
+  {:ok {}}
+  {:error "published corpus could not be read"}))
+
+(assert=
+ "a unique id against empty corpora has no duplicate-id violation"
+ []
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-new.yaml"}]
+  {:ok {}}
+  {:ok {}}))
+
+;; Two subjects in one gate run, neither yet in the corpus indexes — peer
+;; scan must refuse (dropping subject-peer-duplicates would silently pass).
+(assert=
+ "two subjects claiming the same id in one run are refused even with empty corpora"
+ [{:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-a.yaml"
+   :others [{:path "paused/BL-4242-b.yaml"}]}
+  {:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-b.yaml"
+   :others [{:path "paused/BL-4242-a.yaml"}]}]
+ (backlog-hygiene-lib/duplicate-id-violations
+  [{:id "BL-4242" :path "paused/BL-4242-a.yaml"}
+   {:id "BL-4242" :path "paused/BL-4242-b.yaml"}]
+  {:ok {}}
+  {:ok {}}))
+
+(assert=
+ "format-violation for duplicate-id names both files"
+ true
+ (boolean (re-find #"DUPLICATE-ID BL-4242.*new\.yaml.*one-slug\.yaml"
+                    (backlog-hygiene-lib/format-violation
+                     {:kind :duplicate-id :id "BL-4242" :path "paused/BL-4242-new.yaml"
+                      :others [{:path "paused/BL-4242-one-slug.yaml"}]}))))
+
+(assert=
+ "a missing local backlog root fails closed (never an empty corpus)"
+ true
+ (boolean (:error (backlog-hygiene-lib/read-local-id-index
+                   "/tmp/bl1105-no-such-backlog-root"))))
+
 (println "backlog_hygiene_lib_test: all passed")

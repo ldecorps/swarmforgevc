@@ -490,6 +490,7 @@ const DOMAINS = [
   require('./bl928OnboarderOrphanSiblingReapSteps'),
   require('./bl925ReconcileMergeOfPublishedTipSteps'),
   require('./bl1096PerPathImportProvenanceSteps'),
+  require('./bl1105DuplicateTicketIdSteps'),
   require('./bl930OrphanJanitorTmpOnboarderSteps'),
   require('./bl929LiveScreenPackLayoutSteps'),
   require('./bl931RotatePackGateSteps'),
