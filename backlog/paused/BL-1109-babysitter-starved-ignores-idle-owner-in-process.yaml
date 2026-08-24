@@ -58,3 +58,6 @@ notes: >
   (2026-08-23). Human sentences from the Ask section preserved above.
   Observed with QA on BL-1099 and documenter on BL-1087; assigned_to: coder
   was stale mono-router entry assignment.
+
+notes: |
+  2026-08-24 coordinator: specifier reports ready in paused/; holding — human_approval pending. Active cap full (BL-556/BL-682/BL-1089). Expedite lane applies after approval (high defects BL-1109/1110/1111).

@@ -54,3 +54,6 @@ notes: >
   Source intake: .swarmforge/operator/INTAKE-handoffd-stale-heartbeat-and-reply-relay-outage-20260823.md
   (human directive "Ok, intake." verbatim). Split from BL-1110 so neither
   co-occurring alert is lost (Article 5.3). Related done: BL-621, BL-320.
+
+notes: |
+  2026-08-24 coordinator: specifier reports ready in paused/; holding — human_approval pending. Active cap full (BL-556/BL-682/BL-1089). Expedite lane applies after approval (high defects BL-1109/1110/1111).

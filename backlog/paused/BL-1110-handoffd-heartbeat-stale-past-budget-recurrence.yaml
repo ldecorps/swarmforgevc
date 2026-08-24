@@ -58,3 +58,6 @@ notes: >
   co-occurring alert keeps its own acceptance surface (Article 5.3).
   Evidence paths from the intake preserved in qa_e2e and description.
   Related done: BL-967, BL-1021, BL-902-era storms. Cousin paused: BL-1102.
+
+notes: |
+  2026-08-24 coordinator: specifier reports ready in paused/; holding — human_approval pending. Active cap full (BL-556/BL-682/BL-1089). Expedite lane applies after approval (high defects BL-1109/1110/1111).
