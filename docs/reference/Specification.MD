@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1084: a superseded task stops at every
+**Last Updated:** August 24, 2026 (BL-1085: push-sweep caches a complete
+ahead-range gather keyed on `main` tip SHA + ordered ahead-SHA set, and walks
+that range at most once per tick for the QA and noop-merge gates. Replays only
+a prior complete enumeration — never BL-952's tip-only fast path; incomplete
+gathers are never cached. Verdict equivalence with a full re-gather is
+invariant. Complements BL-356/BL-630/BL-855/BL-952. Acceptance:
+`specs/features/BL-1085-push-sweep-caches-its-refusal-and-gathers-once.feature`.
+How-to: `docs/how-to/BL-1085-push-sweep-caches-its-refusal-and-gathers-once.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1084: a superseded task stops at every
 stage. Durable `.swarmforge/superseded/<task>` markers + a pre-dispatch guard
 in `ready_for_next.bb` (beside BL-640) refuse a turn when any candidate parcel
 names a recorded task — exit 2, parcel left in place, not a bounce. Absent
