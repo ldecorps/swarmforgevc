@@ -204,6 +204,8 @@ emit_labeled_list() {
 }
 fail=0
 # BL-1101: survivors or skips produced incomplete evidence — never certify.
+# Length-before-expand: under bash 3.2 + set -u, "${arr[@]}" on an empty
+# array is an unbound-variable error *before* emit_labeled_list runs.
 if [[ "${#SURVIVORS[@]}" -gt 0 ]]; then
   emit_labeled_list "SURVIVORS (each is a real test gap):" "${SURVIVORS[@]}"
   fail=1
