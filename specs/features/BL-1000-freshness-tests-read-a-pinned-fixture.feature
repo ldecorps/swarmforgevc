@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=040e2026b1d6103baaf41db0303a04829491eb4fadb8516c4bbfc6efe2162bd6
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T13:57:19.514719920Z","feature_name":"The freshness tests read a pinned fixture, not the operator's live conf","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1000-freshness-tests-read-a-pinned-fixture.feature","background_hash":"9b999902f31525711fc4eceb30b5db8369d4b019c9c776ebf7ba2b21173943f0","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Raising the live threshold leaves the suite green","scenario_hash":"063fac9be7088360335baaee38df596602e362bd0b9c546094dc913151b166d9","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-24T13:57:19.514719920Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The freshness tests read a pinned fixture, not the operator's live conf
 
   `swarmforge/scripts/daemon_log_freshness.conf` is, by its own header, "the
