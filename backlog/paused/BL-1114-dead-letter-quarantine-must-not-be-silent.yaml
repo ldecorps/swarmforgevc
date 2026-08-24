@@ -13,7 +13,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1114-dead-letter-quarantine-must-not-be-silent.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: a *.handoff.dead must never be a silent dead-end for the holding
   role after recovery is exhausted. Firm: corrupt quarantine and chase
