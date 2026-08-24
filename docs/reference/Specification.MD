@@ -1,6 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1113: stamp-off of Cursor hotfix
+**Last Updated:** August 24, 2026 (BL-1094: the dispatch-gap auto-route can
+deliver again. `dispatch-gap-draft-lines` cites HEAD as tip (not ticket work),
+so the BL-953 task/commit coherence gate refused almost every auto-route when
+HEAD's subject named a different ticket — 28 errors to 1 live success, and
+that success was coincidence. Fix (approval lean a): handoffd's `auto-route!`
+sets `SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1` for that one machine-generated
+`swarm_handoff` invocation; `check-enabled?` skips the coherence gate only
+then. Hand-authored stale-draft refusal is unchanged. A refused auto-route
+logs `gate=<name> reason=…` so operators can see which gate blocked it.
+Protocol: `swarmforge/handoff-protocol.md` (Task/Commit Coherence Gate).
+Acceptance:
+`specs/features/BL-1094-the-auto-route-cites-head-so-the-coherence-gate-blocks-it.feature`.
+No new extension command, setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1113: stamp-off of Cursor hotfix
 `27273f2b0a` — main-sync deadlock breaker, standing `cursor-forge` pack,
 Pipeline Board HTML spacing/slugs, CreatePlan confirm. Before the hotfix,
 coordinator bookkeeping could keep waking while local `main` stayed behind
