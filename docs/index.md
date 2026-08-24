@@ -51,6 +51,8 @@ expects them, and are not migrated or rewritten here.
 - [Non-stage backlog basename collision is proven](how-to/BL-752-residual-allowlist-non-stage-backlog-path-is-tested.md) — `backlog/topics/` same-basename is unexpected; dead step handler closed (BL-752).
 - [Malformed stage_skip_reasons is surfaced, never silently truncated](how-to/BL-754-stage-skip-reasons-never-silently-loses-a-stage.md) — unquoted comma → `skip_reasons_malformed=`; handoff still delivers (BL-754 / BL-661).
 - [Freshness shell tests pin a fixture conf, not the live ops file](how-to/BL-1000-freshness-tests-read-a-pinned-fixture.md) — `daemon_log_freshness.fixture.conf`; ops raise of live threshold cannot redden suite (BL-1000).
+- [Difficulty-aware coder seat routing](how-to/BL-1001-difficulty-aware-coder-seat-routing.md) — `mutation_cost` vs declared `--seat-tier`; hard work never spills to easy-only (BL-1001).
+- [Unit-lane budgets scale with recorded contention](how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md) — load-relative Vitest timeouts with a finite ceiling; quiet host keeps base (BL-1007).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)

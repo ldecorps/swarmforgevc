@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f201aeb4413f97974ab491e189ba381b2cb4511814f3a7ece2a658e84411de31
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T14:05:51.869659330Z","feature_name":"A stage's seats are chosen by ticket difficulty, not by whichever is idle","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1001-difficulty-aware-coder-seat-routing.feature","background_hash":"a581c3000aa716488c946fb9733f7f45631875d5a1218f841b6f802d2b5598e1","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The ticket's difficulty selects the seat when both are idle","scenario_hash":"30b728c31041b884b8089c0a96403c92b8befb5bd0a4dd55e6f987a55c972458","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-24T14:05:51.869659330Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A stage's seats are chosen by ticket difficulty, not by whichever is idle
 
   BL-983 delivers a stage-addressed parcel to whichever seat of that stage is
