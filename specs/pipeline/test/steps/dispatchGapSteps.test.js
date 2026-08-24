@@ -151,7 +151,7 @@ test('the assignee receives a routing handoff for the item fails loudly when not
   const ctx = { targetPath: mkTmp(), sweepOutput: 'GAPS: []' };
   assert.throws(
     () => resolveAndRun(registry, ctx, 'the assignee receives a routing handoff for the item'),
-    /expected an auto-routed parcel for BL-217/
+    /expected an auto-routed note for BL-217/
   );
 });
 
@@ -161,7 +161,7 @@ test('the assignee receives a routing handoff for the item fails loudly when que
   writeQueuedNote(ctx.targetPath, 'BL-217', 'cleaner');
   assert.throws(
     () => resolveAndRun(registry, ctx, 'the assignee receives a routing handoff for the item'),
-    /expected the queued parcel addressed to the assignee/
+    /expected the queued note addressed to the assignee/
   );
 });
 
@@ -180,7 +180,7 @@ test('the sweep sends no further routing handoff for the item fails loudly when 
   writeQueuedNote(ctx.targetPath, 'BL-217', 'coder');
   assert.throws(
     () => resolveAndRun(registry, ctx, 'the sweep sends no further routing handoff for the item'),
-    /expected no auto-routed parcel for BL-217/
+    /expected no auto-routed note for BL-217/
   );
 });
 
