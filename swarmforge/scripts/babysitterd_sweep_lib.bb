@@ -292,9 +292,9 @@
 ;; BL-1109: a non-abandoned in_process claim is motion even when the owning
 ;; pane is idle this sweep (Cursor Thinking pause, rotate gap, follow-up bar).
 ;; owner-busy? remains on the claim for stuck-in-process (BL-807); starved
-;; must not require it.
+;; must not require it. nil abandoned? counts as live (gather never abandons).
 (defn- motion-in-process? [{:keys [abandoned?]}]
-  (not (boolean abandoned?)))
+  (not abandoned?))
 
 (defn- swarm-starved-mailbox-clause [pending-claims in-process-claims]
   (let [n-pending (count (or pending-claims []))
