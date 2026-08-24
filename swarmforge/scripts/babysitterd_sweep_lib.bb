@@ -126,12 +126,28 @@
 (defn check-remote-control
   "Claude /rc only. Non-Claude seats (Cursor, gemini, …) set :rc-applicable?
    false in the gatherer — they never carry --remote-control and must not
-   WARN as RC-degraded when their agent is correctly alive."
-  [{:keys [role pane-exists? has-claude-process? has-remote-control? rc-applicable?]
+   WARN as RC-degraded when their agent is correctly alive.
+   BL-1070: when the liveness gate is unmet (agent absent, gather ok), emit
+   UNAVAILABLE naming that the check could not run — never go quiet (inv 3)."
+  [{:keys [role pane-exists? has-claude-process? has-remote-control? rc-applicable?
+           process-gather-failed?]
     :or {rc-applicable? true}}]
-  (when (and pane-exists? has-claude-process? rc-applicable? (not has-remote-control?))
+  (cond
+    (not (and pane-exists? rc-applicable?))
+    nil
+
+    process-gather-failed?
+    nil
+
+    (not has-claude-process?)
+    {:key (str "rc-" role) :severity "UNAVAILABLE"
+     :message (str "swarmforge-" role ": remote-control check could not be run — no agent process under the pane")}
+
+    (not has-remote-control?)
     {:key (str "rc-" role) :severity "WARN"
-     :message (str "swarmforge-" role ": claude alive but --remote-control flag missing (RC degraded)")}))
+     :message (str "swarmforge-" role ": claude alive but --remote-control flag missing (RC degraded)")}
+
+    :else nil))
 
 ;; ── check 3: handoffd-supervisor-fresh ───────────────────────────────────────
 

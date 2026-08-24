@@ -196,9 +196,10 @@
   (agent-process-marker-lib/agent-process-marker agent))
 
 (defn agent-process-line
-  "First child of pane-pid whose args match the expected agent marker, or nil.
-   Formerly claude-only (`claude `); Cursor seats run `cursor-agent` and were
-   false half-launch CRITs under the old needle."
+  "First process under pane-pid (any generation) whose args match the expected
+   agent marker, or nil. Formerly claude-only (`claude `); Cursor seats run
+   `cursor-agent` and were false half-launch CRITs under the old needle.
+   BL-1070: walks descendants, not only direct children."
   [pane-pid ps-output agent]
   (agent-process-marker-lib/agent-process-line pane-pid ps-output agent))
 

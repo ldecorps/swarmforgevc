@@ -169,8 +169,13 @@
 ;; ── check 2: remote-control-flag ─────────────────────────────────────────────
 (assert-nil "green role (rc flag present) produces no rc finding"
             (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true :has-remote-control? true}))
-(assert-nil "no rc finding when the process itself is already missing (check 1 owns that)"
-            (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? false :has-remote-control? false}))
+(assert-true "BL-1070: missing agent is UNAVAILABLE rc check (could not be run), never silent"
+             (let [f (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? false :has-remote-control? false})]
+               (and f (= "UNAVAILABLE" (:severity f)) (= "rc-coder" (:key f))
+                    (str/includes? (:message f) "could not be run"))))
+(assert-nil "gather failure leaves RC quiet (live-session owns UNAVAILABLE)"
+            (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? false
+                                      :has-remote-control? false :process-gather-failed? true}))
 (assert-true "live process missing --remote-control is WARN rc-<role>"
              (let [f (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true :has-remote-control? false})]
                (and f (= "WARN" (:severity f)) (= "rc-coder" (:key f)))))

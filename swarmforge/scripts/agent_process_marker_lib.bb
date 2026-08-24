@@ -3,9 +3,10 @@
 ;; load this so Cursor/`local-model`/… seats cannot drift between half-launch
 ;; CRIT wording and `./swarm ensure` heal probes.
 ;;
-;; Also owns the shared ps snapshot + child-of-pane argv probe (BL-1019) so
-;; `./swarm status` and babysitter cannot disagree on "is the agent under
-;; this pane?" — pane_current_command is never consulted.
+;; Also owns the shared ps snapshot + under-pane argv probe (BL-1019 / BL-1070)
+;; so `./swarm status` and babysitter cannot disagree on "is the agent under
+;; this pane?" — pane_current_command is never consulted. BL-1070: match any
+;; descendant of the pane, not only a direct child (wrapper shells sit between).
 ;;
 ;; Load:
 ;;   (load-file ... "agent_process_marker_lib.bb")
@@ -49,15 +50,39 @@
   (let [r (process/sh "ps" "-eo" "pid=,ppid=,args=")]
     (when (zero? (:exit r)) (:out r))))
 
+(defn- parse-ps-entries [ps-output]
+  (->> (str/split-lines (or ps-output ""))
+       (keep (fn [line]
+               (when-let [[_ pid ppid args] (re-find ps-line-pattern line)]
+                 {:pid pid :ppid ppid :args args})))))
+
+(defn- descendant-pid-set
+  "Pids reachable under root-pid via ppid edges (root itself excluded)."
+  [entries root-pid]
+  (let [by-ppid (group-by :ppid entries)
+        root (str root-pid)]
+    (loop [frontier [root]
+           seen #{}]
+      (if (empty? frontier)
+        seen
+        (let [pid (first frontier)
+              kids (map :pid (get by-ppid pid []))
+              fresh (remove seen kids)]
+          (recur (into (vec (rest frontier)) fresh)
+                 (into seen fresh)))))))
+
 (defn agent-process-line
-  "First child of pane-pid whose args match the expected agent marker, or nil.
-   Formerly claude-only (`claude `); Cursor seats run `cursor-agent`."
+  "First process under pane-pid (any generation) whose args match the expected
+   agent marker, or nil. BL-1070: wrapper shells put claude at depth 2+; a
+   direct-child-only match false-CRIT'd every healthy pack role. Never matches
+   a process outside this pane's own tree (invariant 2)."
   [pane-pid ps-output agent]
   (when (and pane-pid ps-output)
-    (let [marker (agent-process-marker agent)]
-      (->> (str/split-lines ps-output)
-           (keep (fn [line]
-                   (when-let [[_ _pid ppid args] (re-find ps-line-pattern line)]
-                     (when (= (str pane-pid) ppid) args))))
-           (filter #(str/includes? % marker))
+    (let [marker (agent-process-marker agent)
+          entries (parse-ps-entries ps-output)
+          under (descendant-pid-set entries pane-pid)]
+      (->> entries
+           (filter #(contains? under (:pid %)))
+           (filter #(str/includes? (:args %) marker))
+           (map :args)
            first))))
