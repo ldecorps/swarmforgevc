@@ -100,6 +100,13 @@ Keys:
 
 A skipped **required** stage with no declared reason appears in `skipped` but has no entry in `reasons` — a greppable anomaly (delivery is unchanged; enforcement is out of scope for BL-623).
 
+### Journal write failures do not withhold delivery (BL-748)
+
+Appending `routing-skips.jsonl` is observational. If create-dirs or spit fails,
+`log-routing-skip!` reports `ROUTING-SKIP RECORD FAILED:` on stderr and returns;
+`try-sync-deliver!` and draft cleanup still run. See
+`docs/how-to/BL-748-routing-skip-recording-failure-never-withholds-delivery.md`.
+
 **As of BL-991**, "delivery is unchanged" no longer holds once the sender's
 literal recipient is a *declared* stage later than the next declared stage
 after the sender — that hop is now redirected to the next declared stage
@@ -128,6 +135,7 @@ Stages **not** listed in `skipped` for a hop are the ones that ran on that hop. 
 ## Related
 
 - BL-606: required-stages routing, kill-switch, rewrite behaviour
+- BL-748: journal I/O failure never aborts sync inject or draft consume
 - BL-951: recording no longer gated on a valid/present declaration; adds `rejected="..."` / `rejection-reason`
 - BL-991: a *declared* stage can no longer be jumped even by the sender's own literal `to:` field — see the "binding, not just visible" guardrail in `swarmforge/handoff-protocol.md`
 - `swarmforge/handoff-protocol.md` — "Reading the Routing Log" section
