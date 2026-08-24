@@ -70,20 +70,23 @@ while IFS= read -r file; do
   fi
 done < <(git diff --cached --name-only)
 
+# BL-925 / BL-1096: import exemption is CONTENT PROVENANCE per path.
+# Ask is_qa_ancestor.sh about the commit that last touched THIS path on the
+# incoming side — never the merge tip standing in for every path (BL-1096).
+# Staged content must still match the incoming parent blob (BL-925).
+# Fail closed when the path has no incoming commit or the predicate is not 0.
+pipeline_path_import_exempt() {
+  local f="$1"
+  local merge_head="$2"
+  local path_anchor
+  path_anchor="$(git log -1 --format=%H "$merge_head" -- "$f" 2>/dev/null || true)"
+  [[ -n "$path_anchor" ]] || return 1
+  "$REPO_ROOT/swarmforge/scripts/is_qa_ancestor.sh" "$path_anchor" 2>/dev/null || return 1
+  [[ -z "$(git diff --cached "$merge_head" -- "$f")" ]] || return 1
+  return 0
+}
+
 if (( ${#offenders[@]} > 0 )); then
-  # BL-925: importing an already-QA-published tip is not a non-QA landing.
-  # A merge in progress whose incoming parent is already an ancestor of
-  # swarmforge-QA may carry pipeline-code paths - but ONLY when the staged
-  # content for each offending path is EXACTLY what that published parent
-  # holds. Being mid-merge is never on its own sufficient (invariant 1): a
-  # writer could stage fresh pipeline edits on top of a legitimate merge and
-  # ride through on its coat-tails, so every offending path's staged content
-  # is diffed against the incoming parent - any real difference keeps that
-  # path (and only that path) refused below. This calls is_qa_ancestor.sh,
-  # the ONE shared definition of "QA-approved tip" handoffd.bb's push-sweep
-  # wiring also calls (BL-925 invariant 2) - never a second, independently
-  # maintained ancestry check.
-  #
   # Finding the incoming merge parent: .git/MERGE_HEAD is reliable when the
   # merge was explicitly stopped (--no-commit, or a real conflict later
   # completed via `git commit --no-edit` - the pre-commit path) but is NOT
@@ -111,10 +114,10 @@ if (( ${#offenders[@]} > 0 )); then
       merge_head_sha="$githead_candidate"
     fi
   fi
-  if [[ -n "$merge_head_sha" ]] && "$REPO_ROOT/swarmforge/scripts/is_qa_ancestor.sh" "$merge_head_sha" 2>/dev/null; then
+  if [[ -n "$merge_head_sha" ]]; then
     non_matching=()
     for f in "${offenders[@]}"; do
-      if [[ -n "$(git diff --cached "$merge_head_sha" -- "$f")" ]]; then
+      if ! pipeline_path_import_exempt "$f" "$merge_head_sha"; then
         non_matching+=("$f")
       fi
     done
