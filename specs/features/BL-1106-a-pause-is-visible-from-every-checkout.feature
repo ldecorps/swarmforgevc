@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fe68ae28560951207f1216fb3f6c006c540d58b64d027bbe2a0a452ee81a4457
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T07:39:04.474871781Z","feature_name":"A control pause is visible from every checkout, not only from master","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1106-a-pause-is-visible-from-every-checkout.feature","background_hash":"793de2bf79d06d2d8e5999fec66e1b60f821dcd730787b5f296e31140d770689","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The pause dimension resolves identically from every checkout","scenario_hash":"0f05605ee36a1a1bc8c4fbe8b1be9d021f6d0ae0c6ff74bb86d6eab84f0e52d0","mutation_count":18,"result":{"Total":18,"Killed":18,"Survived":0,"Errors":0},"tested_at":"2026-08-24T07:39:04.474871781Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A control pause is visible from every checkout, not only from master
   BL-966 established that the effective-depth resolution must give the same
   answer from the master checkout and from any linked worktree, and fixed the
