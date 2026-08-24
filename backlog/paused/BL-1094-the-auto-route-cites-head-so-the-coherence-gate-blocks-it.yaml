@@ -17,7 +17,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1094-the-auto-route-cites-head-so-the-coherence-gate-blocks-it.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: the auto-route must be able to succeed. Today it structurally cannot,
   except by coincidence.
@@ -130,3 +130,6 @@ notes: >
   2026-08-24T06:19Z coordinator, open-slot nudge (BL-1094 awaiting approval):
   not promoted - human_approval still pending; single open slot (depth 1)
   filled by BL-548 after BL-1053 QA close.
+
+notes: |
+  2026-08-24 coordinator: open-slot nudge declined — human_approval not approved. Slots filled same turn by BL-556 (coder), BL-682 (specifier), BL-1089 (coder); cap=3. Holding this candidate in paused until approved.
