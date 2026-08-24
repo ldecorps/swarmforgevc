@@ -120,3 +120,68 @@ test('commitApprovalWrites: returns false (never throws) when the commit-integri
 
   assert.equal(await commitApprovalWrites(root, 'BL-892', 'msg'), false);
 });
+
+// BL-1091: Expedite rename must pathspec-commit the paused/ source deletion
+// alongside the active/ destination. extras land through uniqueRelPaths.
+test('BL-1091: commitApprovalWrites pathspecs destination plus rename source', async () => {
+  const root = gitFixture();
+  copyCommitIntegrityScripts(root);
+  const pausedDir = path.join(root, 'backlog', 'paused');
+  const activeDir = path.join(root, 'backlog', 'active');
+  fs.mkdirSync(pausedDir, { recursive: true });
+  fs.mkdirSync(activeDir, { recursive: true });
+  const pausedFile = path.join(pausedDir, 'BL-1091-fixture.yaml');
+  const activeFile = path.join(activeDir, 'BL-1091-fixture.yaml');
+  fs.writeFileSync(pausedFile, 'id: BL-1091\ntitle: t\nhuman_approval: pending\n');
+  execFileSync('git', ['add', '-A', 'backlog'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'seed BL-1091'], { cwd: root });
+  fs.renameSync(pausedFile, activeFile);
+  fs.writeFileSync(activeFile, 'id: BL-1091\ntitle: t\nhuman_approval: approved\n');
+
+  const ok = await commitApprovalWrites(root, 'BL-1091', 'Expedite BL-1091\n\nBy coder.', [pausedFile]);
+  assert.equal(ok, true);
+  const names = execFileSync('git', ['show', '--name-status', '--format=', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  assert.match(names, /backlog\/paused\/BL-1091/);
+  assert.match(names, /backlog\/active\/BL-1091/);
+  const status = execFileSync('git', ['status', '--porcelain', '--', 'backlog'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  assert.equal(status.trim(), '');
+});
+
+// uniqueRelPaths must drop empty relatives and dedupe — otherwise pathspec
+// lists grow vacuous duplicates (Stryker ConditionalExpression / LogicalOperator
+// on the `rel && !includes` guard).
+test('BL-1091: uniqueRelPaths dedupes extras and drops empty relatives', async () => {
+  const targetPath = mkTmpDir('sfvc-bl1091-unique-');
+  const cliPath = commitIntegrityCliPath(targetPath);
+  fs.mkdirSync(path.dirname(cliPath), { recursive: true });
+  const seenPath = path.join(targetPath, 'seen-paths.txt');
+  fs.writeFileSync(
+    cliPath,
+    `#!/usr/bin/env bb
+(require '[clojure.string :as str])
+(let [args *command-line-args*
+      paths (loop [xs args acc []]
+              (cond
+                (empty? xs) acc
+                (= (first xs) "--path") (recur (drop 2 xs) (conj acc (second xs)))
+                :else (recur (rest xs) acc)))]
+  (spit ${JSON.stringify(seenPath)} (str/join "\\n" paths))
+  (println "{\\"success\\":true}")
+  (System/exit 0))
+`
+  );
+  fs.mkdirSync(path.join(targetPath, 'backlog', 'active'), { recursive: true });
+  const file = path.join(targetPath, 'backlog', 'active', 'BL-1091-dedupe.yaml');
+  fs.writeFileSync(file, 'id: BL-1091\ntitle: t\n');
+  // Same abs twice + targetPath itself (relative "") must collapse to one --path.
+  const ok = await commitApprovalWrites(targetPath, 'BL-1091', 'msg', [file, targetPath]);
+  assert.equal(ok, true);
+  const seen = fs.readFileSync(seenPath, 'utf8').trim().split('\n').filter(Boolean);
+  assert.deepEqual(seen, ['backlog/active/BL-1091-dedupe.yaml']);
+});
