@@ -55,8 +55,10 @@
           (println (str "specifier_backlog_hygiene_gate: no such file: " p)))
         (System/exit 2)))
     (let [subjects (mapv subject-from-path paths)
+          root (repo-root)
           per-file (mapcat (fn [{:keys [text id path]}]
-                             (backlog-hygiene-lib/violations-for-text text {:id id :path path}))
+                             (backlog-hygiene-lib/violations-for-text text
+                                                                      {:id id :path path :repo-root root}))
                            subjects)
           local (backlog-hygiene-lib/read-local-id-index (backlog-root))
           published (published-id-index)
@@ -67,7 +69,7 @@
       (if (backlog-hygiene-lib/all-clean? violations)
         (do (println "specifier_backlog_hygiene_gate: ok")
             (System/exit 0))
-        (do (println "specifier_backlog_hygiene_gate: FAIL — assign epic: on slices; set milestone: on type: epic trackers; refuse duplicate ticket ids before handoff")
+        (do (println "specifier_backlog_hygiene_gate: FAIL — assign epic: on slices; set milestone: on type: epic trackers; refuse duplicate ticket ids; refuse dangling acceptance: pointers before handoff")
             (System/exit 1))))))
 
 (-main)
