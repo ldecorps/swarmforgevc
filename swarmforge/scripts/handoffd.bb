@@ -1985,6 +1985,37 @@
       (log! "dropped-parcel-sweep-error" (.getMessage e)))))
 
 
+;; ── BL-1104: landed-but-open QA re-notify (sibling of dispatch-gap) ─────────
+;; Subject-anchored QA approval on origin/main + still in active/ + no Close
+;; → one note to QA asking it to resend the coordinator notify. Never moves
+;; backlog files, never closes, never sends the notify on QA's behalf.
+
+(defn nudge-qa-landed-but-open! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/landed-but-open-draft-lines item))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "landed-but-open-nudge" (:id item) (:approval-commit item))
+      (log! "landed-but-open-nudge-error" (:id item) (str (:err result))))))
+
+(defn landed-but-open-sweep! [roles]
+  (try
+    (let [git-ref (chase-sweep-lib/resolve-landed-main-ref (str project-root))
+          commits (chase-sweep-lib/read-ref-subject-commits (str project-root) git-ref)
+          scan-dirs (dispatch-gap-scan-dirs roles)
+          items (chase-sweep-lib/landed-but-open-items
+                 (active-backlog-dir) commits scan-dirs)]
+      ;; Always one named boundary detail (action or none) — diagnosable without re-run.
+      (log! "landed-but-open" (chase-sweep-lib/landed-but-open-boundary-detail items))
+      (doseq [item items]
+        (try
+          (nudge-qa-landed-but-open! item)
+          (catch Exception e
+            (log! "landed-but-open-nudge-error" (:id item) (.getMessage e))))))
+    (catch Exception e
+      (log! "landed-but-open-error" (.getMessage e)))))
+
+
 ;; ── BL-678: batch-claim-progress suspect nudge (live-owner half of ─────────
 ;; BL-648's source near-miss) ─────────────────────────────────────────────────
 ;; Scoped to :receive-mode "batch" roles only (cleaner/hardender today) -
@@ -3558,6 +3589,10 @@
                       ;; cadence as its dispatch-gap/open-slot siblings.
                       (run-sweep! "dropped-parcel-sweep"
                           #(dropped-parcel-sweep! (load-roles)))
+                      ;; BL-1104: landed-but-open shares the same cadence —
+                      ;; name MUST be the literal `landed-but-open` (required_wiring).
+                      (run-sweep! "landed-but-open"
+                          #(landed-but-open-sweep! (load-roles)))
                       ;; BL-678: batch-claim-progress suspect nudge shares
                       ;; the same cadence as its dropped-parcel sibling.
                       (run-sweep! "batch-claim-progress-sweep"

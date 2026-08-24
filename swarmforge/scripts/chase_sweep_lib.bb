@@ -16,6 +16,7 @@
 
 (ns chase-sweep-lib
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -1598,3 +1599,169 @@
              acc)))))
    {:suspects [] :suppressed []}
    held))
+
+;; ── BL-1104: landed-but-open QA re-notify (sibling of BL-222 / unassigned) ─
+;; An active ticket whose QA approval is already on origin/main (or main)
+;; but that was never closed holds a depth-cap slot forever. dispatch-gap
+;; and unassigned-active both key on an ABSENT trail, so a ticket that
+;; walked the whole pipeline looks healthy to both. This third sibling asks
+;; the opposite question against subject-anchored git history only — never
+;; `git log --grep` (body match = trap (a) / scenario 04) and never
+;; backlog/evidence/*-qa-pass-*.md (trap (b)). Observe + nudge QA only.
+
+(def landed-but-open-nudge-phrase "landed-but-open")
+
+(def ticket-id-anywhere-pattern
+  "Same allowlist as leading-ticket-id-pattern / pipeline_stage_lib, but
+   matches anywhere in a subject line (QA-approved subjects rarely lead
+   with the id)."
+  (re-pattern (str "(?i)\\b(" (str/join "|" known-ticket-prefixes) ")-?(\\d+)\\b")))
+
+(defn ticket-ids-in-text
+  "Every ticket id named in text, upper-case, de-duplicated, first-seen
+   order. nil when none — mirrors pipeline_stage_lib/extract-ticket-ids."
+  [text]
+  (when text
+    (seq (into [] (comp (map (fn [[_ prefix digits]]
+                               (str/upper-case (str prefix "-" digits))))
+                        (distinct))
+               (re-seq ticket-id-anywhere-pattern text)))))
+
+(defn short-sha-10
+  "Swarm handoff convention: exactly 10 hex when the input is long enough."
+  [sha]
+  (when sha
+    (subs sha 0 (min 10 (count sha)))))
+
+(defn qa-approval-signal?
+  "Subject-level QA approval cue (not body). Live shapes: 'QA-approved
+   BL-####' landing/merge-up subjects and 'BL-####: QA pass inventory…'."
+  [subject]
+  (boolean (re-find #"(?i)QA[- ]approved|QA pass inventory" (or subject ""))))
+
+(defn qa-approval-subject?
+  "True when subject names ticket-id AND carries a QA approval signal."
+  [subject ticket-id]
+  (and (qa-approval-signal? subject)
+       (some #(= ticket-id %) (ticket-ids-in-text subject))))
+
+(defn close-subject?
+  "True when subject is a Close of ticket-id (subject only)."
+  [subject ticket-id]
+  (and (boolean (re-find #"(?i)\bClose\b" (or subject "")))
+       (some #(= ticket-id %) (ticket-ids-in-text subject))))
+
+(defn index-qa-approvals
+  "commits: seq of {:sha :subject}, newest-first (git log order). First
+   matching approval per ticket wins. Never inspects commit bodies."
+  [commits]
+  (reduce
+   (fn [acc {:keys [sha subject]}]
+     (reduce
+      (fn [a id]
+        (if (or (contains? a id) (not (qa-approval-signal? subject)))
+          a
+          (assoc a id (short-sha-10 sha))))
+      acc
+      (or (ticket-ids-in-text subject) [])))
+   {}
+   commits))
+
+(defn index-closed-tickets
+  "Set of ticket ids with a Close subject on the scanned ref."
+  [commits]
+  (reduce
+   (fn [acc {:keys [subject]}]
+     (if-not (re-find #"(?i)\bClose\b" (or subject ""))
+       acc
+       (into acc (or (ticket-ids-in-text subject) []))))
+   #{}
+   commits))
+
+(defn decide-landed-but-open
+  "Pure core. active-ids: collection of active ticket ids. approvals: map
+   id -> short-sha. closed-ids / nudged-ids: sets. Returns
+   [{:id :approval-commit} ...] for tickets that need a QA re-notify."
+  [active-ids approvals closed-ids nudged-ids]
+  (->> active-ids
+       (keep (fn [id]
+               (when-let [sha (get approvals id)]
+                 (when (and (not (contains? closed-ids id))
+                            (not (contains? nudged-ids id)))
+                   {:id id :approval-commit sha}))))
+       vec))
+
+(defn landed-but-open-note-message
+  [item]
+  (let [msg (str (:id item) " " landed-but-open-nudge-phrase " "
+                 (:approval-commit item) " - resend coordinator notify")]
+    (if (<= (count msg) dispatch-gap-note-max-length)
+      msg
+      (subs msg 0 dispatch-gap-note-max-length))))
+
+(defn landed-but-open-draft-lines
+  "Note to QA only — never closes, moves, or sends the coordinator notify."
+  [item]
+  ["type: note"
+   "to: QA"
+   "priority: 00"
+   (str "message: " (landed-but-open-note-message item))])
+
+(defn read-active-ticket-ids
+  "Every backlog/active/*.yaml id (assigned or not). Missing id skipped."
+  [active-dir]
+  (if-not (fs/exists? active-dir)
+    #{}
+    (->> (fs/list-dir active-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".yaml"))
+         (map read-active-item)
+         (keep :id)
+         set)))
+
+(defn collect-landed-but-open-nudged-ids
+  "Ticket ids that already have a landed-but-open nudge on record in any
+   scanned mailbox (the nudge itself is the idempotence trail)."
+  [dirs]
+  (->> dirs
+       (mapcat list-handoff-files-with-batches)
+       (keep (fn [fp]
+               (let [msg (read-header-field fp "message")]
+                 (when (and msg (str/includes? msg landed-but-open-nudge-phrase))
+                   (extract-ticket-id msg)))))
+       set))
+
+(defn resolve-landed-main-ref
+  "Prefer origin/main (durable remote tip); fall back to main."
+  [repo-root]
+  (let [r (process/sh ["git" "-C" (str repo-root) "rev-parse" "--verify" "origin/main"])]
+    (if (zero? (:exit r)) "origin/main" "main")))
+
+(defn read-ref-subject-commits
+  "Subject-only history for git-ref. Never returns body text — trap (a)."
+  [repo-root git-ref]
+  (let [r (process/sh ["git" "-C" (str repo-root) "log" "--format=%H%x00%s" git-ref])]
+    (if-not (zero? (:exit r))
+      []
+      (->> (str/split-lines (or (:out r) ""))
+           (remove str/blank?)
+           (keep (fn [line]
+                   (let [[sha subject] (str/split line #"\x00" 2)]
+                     (when (and (not (str/blank? sha)) (some? subject))
+                       {:sha sha :subject subject}))))
+           vec))))
+
+(defn landed-but-open-items
+  "Full pipeline: active ids × subject-anchored approvals/closes × nudge trail."
+  [active-dir commits scan-dirs]
+  (decide-landed-but-open
+   (read-active-ticket-ids active-dir)
+   (index-qa-approvals commits)
+   (index-closed-tickets commits)
+   (collect-landed-but-open-nudged-ids scan-dirs)))
+
+(defn landed-but-open-boundary-detail
+  "One diagnosable detail string for the per-cycle landed-but-open log line."
+  [items]
+  (if (empty? items)
+    "none"
+    (str/join "," (map #(str (:id %) "=" (:approval-commit %)) items))))
