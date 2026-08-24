@@ -222,6 +222,8 @@
 %% contention factor; finite ceiling; property lane untouched.
 %% BL-1009 (2026-08-24): one pipeline grid across swarms; caption s1/s2
 %% badges when multi-swarm; remote rows never show live held-by-role.
+%% BL-1008 (2026-08-24): bounded fs.watch deadline scales with BL-1007
+%% contention factor; always strictly below test effective budget.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
