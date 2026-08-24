@@ -173,12 +173,10 @@
       (when (zero? (:exit r))
         (parse-long (str/trim (first (str/split-lines (:out r)))))))))
 
-;; BL-802: `ps --ppid` is GNU-only (BSD/macOS ps rejects it outright). A
-;; single `ps -eo pid=,ppid=,args=` snapshot works on both dialects — filter
-;; by ppid in-process instead of asking ps to filter. One snapshot covers
-;; every role's pane (see ps-snapshot below), so this only ever parses text,
-;; never shells out itself.
-(def ^:private ps-line-pattern #"^\s*(\d+)\s+(\d+)\s+(.*)$")
+;; BL-802: `ps --ppid` is GNU-only. Snapshot still shells via sh! (bounded);
+;; child-of-pane argv parse lives in agent_process_marker_lib (BL-1019 ONE
+;; with ./swarm status).
+(def ps-line-pattern agent-process-marker-lib/ps-line-pattern)
 
 (defn ps-snapshot []
   (let [r (sh! "ps" "-eo" "pid=,ppid=,args=")]
@@ -200,14 +198,7 @@
    Formerly claude-only (`claude `); Cursor seats run `cursor-agent` and were
    false half-launch CRITs under the old needle."
   [pane-pid ps-output agent]
-  (when (and pane-pid ps-output)
-    (let [marker (agent-process-marker agent)]
-      (->> (str/split-lines ps-output)
-           (keep (fn [line]
-                   (when-let [[_ _pid ppid args] (re-find ps-line-pattern line)]
-                     (when (= (str pane-pid) ppid) args))))
-           (filter #(str/includes? % marker))
-           first))))
+  (agent-process-marker-lib/agent-process-line pane-pid ps-output agent))
 
 ;; Back-compat alias — older callers/tests still name the claude helper.
 (defn claude-process-line [pane-pid ps-output]

@@ -133,14 +133,6 @@
      (or (mono-router-lib/rotation-router-from-identity? identity-text)
          (mono-router-lib/conf-rotation-router? conf-text)))))
 
-(defn- ps-snapshot
-  "One ps table for all role agent-child probes (same shape babysitter uses)."
-  []
-  (let [r (process/sh "ps" "-eo" "pid=,ppid=,args=")]
-    (when (zero? (:exit r)) (:out r))))
-
-(def ^:private ps-line-pattern #"^\s*(\d+)\s+(\d+)\s+(.*)$")
-
 (defn- session-present?
   [sock session]
   (boolean
@@ -155,26 +147,16 @@
       (when (zero? (:exit r))
         (parse-long (str/trim (first (str/split-lines (:out r)))))))))
 
-(defn- agent-child-under-pane?
-  [pane-pid ps-output agent-token]
-  (when (and pane-pid ps-output)
-    (let [marker (agent-process-marker-lib/agent-process-marker agent-token)]
-      (->> (str/split-lines ps-output)
-           (keep (fn [line]
-                   (when-let [[_ _pid ppid args] (re-find ps-line-pattern line)]
-                     (when (= (str pane-pid) ppid) args))))
-           (filter #(str/includes? % marker))
-           first
-           boolean))))
-
 (defn- role-liveness-facts
-  "BL-1019: session presence + agent child under pane (not pane_current_command)."
+  "BL-1019: session presence + agent child under pane (not pane_current_command).
+   Agent-child probe is agent_process_marker_lib (same ONE babysitter uses)."
   [sock session agent ps-output]
   (let [present? (session-present? sock session)
         pid (when present? (pane-pid sock session))
         gather-failed? (boolean (and pid (nil? ps-output)))
         has-agent? (boolean (and (not gather-failed?)
-                                 (agent-child-under-pane? pid ps-output (or agent "claude"))))]
+                                 (agent-process-marker-lib/agent-process-line
+                                  pid ps-output (or agent "claude"))))]
     {:session-present? present?
      :has-agent-process? has-agent?
      :process-gather-failed? gather-failed?}))
@@ -186,7 +168,7 @@
         roles (or (parse-roles) [])
         ordered (mapv :role roles)
         router? (rotation-router-mode?)
-        ps-out (ps-snapshot)
+        ps-out (agent-process-marker-lib/ps-snapshot)
         ;; If roles.tsv missing, fall back to live sessions only.
         rows (if (seq roles)
                (map (fn [r]
