@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5fbe7b7e1e9135c28526876afc4c449e939e408287ecd37e4168665cf787cc30
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T12:42:07.607337217Z","feature_name":"swarm status stops reporting DOWN for a role that is demonstrably up","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1019-swarm-status-agrees-with-has-session.feature","background_hash":"605a058cc62b8dab5a87b7996aee89e3f25bbd57d5549a518785761b082e3691","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a shell pane with claude underneath reports UP","scenario_hash":"79ac5c394312ab0379e57d52b113ac5ed84465aa61ba8be1ff27343f6c699a04","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-24T12:42:07.607337217Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: swarm status stops reporting DOWN for a role that is demonstrably up
 
   BL-1019: `./swarm status` reports every agent DOWN while the panes are alive.

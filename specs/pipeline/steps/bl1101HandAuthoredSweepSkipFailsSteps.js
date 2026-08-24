@@ -108,17 +108,20 @@ ${mutateCalls}
 restore
 echo
 echo "mutants: killed=$killed survived=$survived skipped=$skipped"
+emit_labeled_list() {
+  local header="$1"
+  shift
+  if [[ "$#" -eq 0 ]]; then
+    return 1
+  fi
+  echo "$header"
+  local s
+  for s in "$@"; do echo "  - $s"; done
+  return 0
+}
 fail=0
-if [[ "\${#SURVIVORS[@]}" -gt 0 ]]; then
-  echo "SURVIVORS (each is a real test gap):"
-  for s in "\${SURVIVORS[@]}"; do echo "  - $s"; done
-  fail=1
-fi
-if [[ "\${#SKIPPED[@]}" -gt 0 ]]; then
-  echo "SKIPPED (anchors not found — no evidence produced):"
-  for s in "\${SKIPPED[@]}"; do echo "  - $s"; done
-  fail=1
-fi
+emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}" && fail=1
+emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "\${SKIPPED[@]}" && fail=1
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
@@ -136,6 +139,20 @@ function defaultMutants() {
   ];
 }
 
+const SITUATION_MUTANTS = {
+  "one mutant's anchor is absent from the library": [
+    { label: 'm-skip-missing', from: 'NO_SUCH_ANCHOR', to: 'X' },
+    { label: 'm-kill-anchor-one', from: 'ANCHOR_ONE', to: 'ANCHOR_XXX' },
+  ],
+  'one mutant survives both suites': [
+    { label: 'm-survive-other', from: 'ANCHOR_TWO', to: 'ANCHOR_TWO_X' },
+  ],
+  "one mutant's anchor is absent and a different mutant survives": [
+    { label: 'm-skip-missing', from: 'NO_SUCH_ANCHOR', to: 'X' },
+    { label: 'm-survive-other', from: 'ANCHOR_TWO', to: 'ANCHOR_TWO_X' },
+  ],
+};
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -147,11 +164,7 @@ function registerSteps(registry) {
       /SKIPPED \(anchors not found/,
       'live sweep must report skipped labels before failing'
     );
-    assert.match(
-      real,
-      /\$\{#SKIPPED\[@\]\}" -gt 0/,
-      'live sweep must fail when SKIPPED is non-empty'
-    );
+    assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must fail via emit_labeled_list for SKIPPED');
     ctx.bl1101 = {
       dir: fs.mkdtempSync(path.join(os.tmpdir(), 'bl1101-')),
       mutants: defaultMutants(),
@@ -160,29 +173,14 @@ function registerSteps(registry) {
   });
 
   scoped(/^every mutant's anchor is present in the library$/, (ctx) => {
-    // default mutants both match the fixture lib
     ctx.bl1101.mutants = defaultMutants();
   });
 
-  scoped(/^one mutant's anchor is absent from the library$/, (ctx) => {
-    ctx.bl1101.mutants = [
-      { label: 'm-skip-missing', from: 'NO_SUCH_ANCHOR', to: 'X' },
-      { label: 'm-kill-anchor-one', from: 'ANCHOR_ONE', to: 'ANCHOR_XXX' },
-    ];
-  });
-
-  scoped(/^one mutant survives both suites$/, (ctx) => {
-    ctx.bl1101.mutants = [
-      { label: 'm-survive-other', from: 'ANCHOR_TWO', to: 'ANCHOR_TWO_X' },
-    ];
-  });
-
-  scoped(/^one mutant's anchor is absent and a different mutant survives$/, (ctx) => {
-    ctx.bl1101.mutants = [
-      { label: 'm-skip-missing', from: 'NO_SUCH_ANCHOR', to: 'X' },
-      { label: 'm-survive-other', from: 'ANCHOR_TWO', to: 'ANCHOR_TWO_X' },
-    ];
-  });
+  for (const [phrase, mutants] of Object.entries(SITUATION_MUTANTS)) {
+    scoped(new RegExp(`^${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), (ctx) => {
+      ctx.bl1101.mutants = mutants;
+    });
+  }
 
   scoped(/^two mutants' anchors are absent from the library$/, (ctx) => {
     ctx.bl1101.mutants = [
@@ -192,9 +190,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^one mutant's anchor is absent and the library carries an uncommitted edit$/, (ctx) => {
-    ctx.bl1101.mutants = [
-      { label: 'm-skip-missing', from: 'NO_SUCH_ANCHOR', to: 'X' },
-    ];
+    ctx.bl1101.mutants = [{ label: 'm-skip-missing', from: 'NO_SUCH_ANCHOR', to: 'X' }];
     ctx.bl1101.uncommittedEdit = ';; uncommitted edit for BL-1101\n';
   });
 

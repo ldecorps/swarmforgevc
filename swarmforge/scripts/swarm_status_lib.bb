@@ -136,6 +136,17 @@
               (str "  " detail))]
     (format "  %-10s %-28s uptime=%-12s%s" st (str name) up (or det ""))))
 
+(defn- maybe-dormant
+  [status dormant?]
+  (if (and (= status :down) dormant?) :dormant status))
+
+(defn- alive-status
+  [alive?]
+  (cond
+    (true? alive?) :up
+    (false? alive?) :down
+    :else :unknown))
+
 (defn agent-status-row
   "Merge role config with live liveness facts (BL-1019). Prefer the
    session/process triple when present; fall back to legacy :alive? for
@@ -144,16 +155,13 @@
            session-present? has-agent-process? process-gather-failed?
            alive?]}]
   (let [status (if (some? session-present?)
-                 (let [v (agent-liveness-verdict
-                          {:session-present? session-present?
-                           :has-agent-process? has-agent-process?
-                           :process-gather-failed? process-gather-failed?})]
-                   (if (and (= v :down) dormant?) :dormant v))
-                 (cond
-                   (true? alive?) :up
-                   (and (false? alive?) dormant?) :dormant
-                   (false? alive?) :down
-                   :else :unknown))
+                 (maybe-dormant
+                  (agent-liveness-verdict
+                   {:session-present? session-present?
+                    :has-agent-process? has-agent-process?
+                    :process-gather-failed? process-gather-failed?})
+                  dormant?)
+                 (maybe-dormant (alive-status alive?) dormant?))
         uptime (when (= status :up)
                  (uptime-from-epoch-sec now-ms created-epoch-sec))]
     {:name (str role)
