@@ -75,12 +75,14 @@
   (get tier-ceiling (normalize-tier tier) 2))
 
 (defn- idle-better-fit-sibling?
-  "True when an idle sibling with a strictly lower ceiling also accepts cost."
+  "True when an idle sibling with a declared, strictly lower ceiling also
+   accepts cost. Undeclared siblings never count as a better fit."
   [me my-ceil cost sibling-states]
   (boolean
    (some (fn [{:keys [role tier busy?]}]
            (and (not busy?)
                 (not= role me)
+                (some? (normalize-tier tier))
                 (seat-accepts? tier cost)
                 (< (tier-ceil tier) my-ceil)))
          sibling-states)))
@@ -88,7 +90,9 @@
 (defn difficulty-claim-decision
   "Pure: may THIS seat claim this candidate now?
      :claim              - take it
-     :skip-ineligible    - cost above my tier (leave in queue)
+     :skip-ineligible    - cost above my tier, or I have no declared tier on a
+                           stage that uses tiers (declaration is mandatory to
+                           participate — BL-1001 architect bounce)
      :defer-better-fit   - an idle sibling with a lower ceiling also accepts
                            (prefer easy for low when both idle)
    When the stage has no declared tiers at all, always :claim (BL-983 path).
@@ -97,6 +101,10 @@
   (cond
     (not (stage-tiers-active? tiers stage))
     :claim
+
+    ;; Tier-active stage: undeclared seats do not participate (never infer open).
+    (nil? (normalize-tier my-tier))
+    :skip-ineligible
 
     (not (seat-accepts? my-tier cost))
     :skip-ineligible
