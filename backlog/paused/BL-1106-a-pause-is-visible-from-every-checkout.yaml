@@ -18,7 +18,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1106-a-pause-is-visible-from-every-checkout.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm, and measured rather than reasoned: with the pause marker that is active
   right now, `effective_backlog_depth_cli.bb` prints 0 for the master checkout
