@@ -1,6 +1,18 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-570: shared pre-commit property-suite
+**Last Updated:** August 24, 2026 (BL-1074: mean ticket time ends at the
+close, not a later done/→done/ re-file. `lastCycleBoundsMs` in
+`swarmMetrics.ts` walks rename arrivals from today's done path; the close is
+the hop whose `fromPath` is under `backlog/active/` (or the Add after walking
+re-files for a copy-close). Activation is looked up strictly before that
+close, so a reopen between close and re-file cannot steal the closed cycle.
+Same single shared git walk as BL-1066. Complements BL-1066. Acceptance:
+`specs/features/BL-1074-post-close-refile-inflates-measured-ticket-duration.feature`.
+How-to: `docs/how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-570: shared pre-commit property-suite
 drift guard runs `npm run test:properties` when staged paths can invalidate a
 property (`extension/src/*` or `*.property.test.js`); fails open if the
 toolchain is unavailable; `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` overrides
@@ -5401,7 +5413,7 @@ These writes are atomic — the extension uses a temporary file + rename mechani
 
 Beside the Backlog pane, the extension shows a collapsible Metrics section that monitors swarm health and performance:
 
-- **Mean ticket time**: How long on average a ticket takes to move from backlog/active/ to backlog/done/. Displayed with the sample count (e.g., "mean 4h 12m over 23 tickets"). Derived from the target repo's backlog git history — no new data collection needed.
+- **Mean ticket time**: How long on average a ticket takes to move from backlog/active/ to backlog/done/. Displayed with the sample count (e.g., "mean 4h 12m over 23 tickets"). Derived from the target repo's backlog git history — no new data collection needed. BL-1074: the end of the interval is the close hop (active→done), not a later re-file under `done/` that only relocates an already-closed ticket.
 - **Per-agent busyness**: For each role, the fraction of elapsed run time spent processing handoffs. Computed from `dequeued_at` and `completed_at` headers in `.swarmforge/handoffs/inbox/completed/` handoff files, plus any open interval from an in-process task. Shows 0% for idle agents and agents with no history.
 - **Retry count**: Total backward handoffs (messages where the sender sits later in the pipeline than the recipient — e.g., QA rejecting work back to coder). Displayed with per-ticket breakdown for tickets with retries, sorted by worst offenders.
 - **Suite duration**: How long the test suite takes to run (averaged over recent runs). Displayed with the latest duration, rolling mean, and sample count. Warns when the latest duration exceeds either the configured threshold (default 120 seconds, configurable via `swarmforge.metrics.suiteWarnSeconds`) or 2x the rolling mean, flagging potential performance creep. Tracks durations from all test runs across the main checkout and every role worktree.
