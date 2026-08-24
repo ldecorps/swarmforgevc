@@ -185,7 +185,7 @@ group is killed on overrun, not just the direct child.
 bb  swarmforge/scripts/test/expedite_lib_test_runner.bb       # 100 assertions
 bb  swarmforge/scripts/test/expedite_lib_property_runner.bb   # 8 properties x 500
 bash swarmforge/scripts/test/expedite_prove_nonvacuity.sh     # the properties can fail
-bash swarmforge/scripts/test/expedite_mutation_sweep.sh       # 41 mutants
+bash swarmforge/scripts/test/expedite_mutation_sweep.sh       # mutants; skipped anchors fail (BL-1101)
 bash swarmforge/scripts/test/test_expedite_cli.sh             # 53 assertions, real fixture
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature \
@@ -195,3 +195,7 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 `expedite_prove_nonvacuity.sh` is worth running whenever you change the lib: it
 breaks each invariant in turn and confirms the suite rejects it. A property suite
 that cannot fail is decoration.
+
+`expedite_mutation_sweep.sh` (BL-1101) fails the run if any mutant's anchor is
+missing after a rewrite — skipped labels are listed like survivors. Do not treat
+`ALL MUTANTS KILLED` as meaningful unless `skipped=0`.

@@ -111,21 +111,18 @@ echo "mutants: killed=$killed survived=$survived skipped=$skipped"
 emit_labeled_list() {
   local header="$1"
   shift
-  if [[ "$#" -eq 0 ]]; then
-    return 1
-  fi
   echo "$header"
   local s
   for s in "$@"; do echo "  - $s"; done
-  return 0
 }
 fail=0
-# Length-before-expand (bash 3.2 + set -u): never expand an empty array.
 if [[ "\${#SURVIVORS[@]}" -gt 0 ]]; then
-  emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}" && fail=1
+  emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}"
+  fail=1
 fi
 if [[ "\${#SKIPPED[@]}" -gt 0 ]]; then
-  emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "\${SKIPPED[@]}" && fail=1
+  emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "\${SKIPPED[@]}"
+  fail=1
 fi
 if [[ "$fail" -ne 0 ]]; then
   exit 1
@@ -166,20 +163,31 @@ function registerSteps(registry) {
     assert.match(real, /declare -a SKIPPED=\(\)/, 'live sweep must declare SKIPPED array');
     assert.match(
       real,
+      /SKIPPED\+=\("\$label"\)/,
+      'live sweep must append skipped labels (not silently ignore missing anchors)'
+    );
+    assert.match(
+      real,
       /SKIPPED \(anchors not found/,
       'live sweep must report skipped labels before failing'
     );
-    assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must fail via emit_labeled_list for SKIPPED');
-    // Architect bounce D1: empty-array expand under set -u must not precede the helper.
     assert.match(
       real,
-      /\[\[ "\$\{#SKIPPED\[@\]\}" -gt 0 \]\]/,
-      'live sweep must length-guard SKIPPED before expanding under set -u'
+      /\$\{#SKIPPED\[@\]\}" -gt 0/,
+      'live sweep must length-guard SKIPPED before expand (bash 3.2 + set -u)'
+    );
+    assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must name skips via emit_labeled_list');
+    // Soft/surgical lock: skip list must set fail=1 (not print-only), and
+    // the fail path must exit 1 before ALL MUTANTS KILLED.
+    assert.match(
+      real,
+      /if \[\[ "\$\{#SKIPPED\[@\]\}" -gt 0 \]\]; then\n[\s\S]*?fail=1\nfi/,
+      'live sweep must fail=1 when any mutant was skipped'
     );
     assert.match(
       real,
-      /\[\[ "\$\{#SURVIVORS\[@\]\}" -gt 0 \]\]/,
-      'live sweep must length-guard SURVIVORS before expanding under set -u'
+      /if \[\[ "\$fail" -ne 0 \]\]; then\n\s*exit 1\nfi\necho "ALL MUTANTS KILLED"/,
+      'live sweep must exit 1 on fail before certifying ALL MUTANTS KILLED'
     );
     ctx.bl1101 = {
       dir: fs.mkdtempSync(path.join(os.tmpdir(), 'bl1101-')),
