@@ -60,6 +60,17 @@ wait — never the heartbeat, never a restart.
 The line names the sweep it happened in, so a timeout is self-attributing: you
 get the sweep *and* the command in one line.
 
+**Update, BL-1102 (2026-08-24):** the same chokepoint used to throw when the
+binary could not be *started* at all (absent from PATH, missing path, or not
+executable). `handoffd`'s delivery loop has no `catch`, so that throw ran the
+`finally` (pid file gone, log line `stopped`) and ended delivery looking like
+an orderly shutdown. `sh!` now returns `{:exit 127 :spawn-failed? true …}` for
+a spawn that never happened — distinct from exit `124` (bound hit) and from a
+command that ran and exited non-zero — so the tick records the failure and the
+daemon keeps cycling. If the log ends on `stopped` with no further heartbeat
+after a PATH change, check that `tmux` (and other cycle binaries) are still
+reachable before treating it as a clean stop.
+
 **Update, BL-1021 (2026-08-21):** the bound above used to cover only the
 *exit-code* wait — `(deref proc bound ::timed-out)`. If the direct child
 exited promptly but something it spawned kept the inherited stdout/stderr
