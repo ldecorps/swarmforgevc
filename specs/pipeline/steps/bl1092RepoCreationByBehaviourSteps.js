@@ -24,11 +24,14 @@ const KNOWN_ROWS = new Set([
   'g|git|flagged',
   'runTar|tar|not flagged',
 ]);
-const KNOWN_SITUATIONS = new Set([
-  'a whole-line string literal describing file content',
-  "the shared fixture helper's own internal spawn",
-  'accompanied by a recorded exemption reason',
-]);
+const SITUATION_FIXTURES = {
+  'a whole-line string literal describing file content':
+    "  \"execFileSync('git', ['init', '-q'], { cwd: root });\",",
+  "the shared fixture helper's own internal spawn": "gitIn(dir, ['init', '-q']);",
+  'accompanied by a recorded exemption reason':
+    "// BL-1039-EXEMPT: asserts on a repo it must create itself\ngit(dir, ['init', '-q']);",
+};
+const KNOWN_SITUATIONS = new Set(Object.keys(SITUATION_FIXTURES));
 
 // Frozen pre-change corpus verdict (measured empty once exemptions apply).
 const PRE_CHANGE_VIOLATIONS = [];
@@ -82,14 +85,7 @@ function registerSteps(registry) {
     const cell = situation.trim();
     assert.ok(KNOWN_SITUATIONS.has(cell), `unknown <situation>: ${cell}`);
     ctx.situation = cell;
-    if (cell === 'a whole-line string literal describing file content') {
-      ctx.fileText = "  \"execFileSync('git', ['init', '-q'], { cwd: root });\",";
-    } else if (cell === "the shared fixture helper's own internal spawn") {
-      ctx.fileText = "gitIn(dir, ['init', '-q']);";
-    } else {
-      ctx.fileText =
-        "// BL-1039-EXEMPT: asserts on a repo it must create itself\ngit(dir, ['init', '-q']);";
-    }
+    ctx.fileText = SITUATION_FIXTURES[cell];
   });
 
   scoped(/^the unit-lane test corpus as it stands$/, (ctx) => {

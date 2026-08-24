@@ -33,6 +33,9 @@ const EXEMPTION_RE = /BL-1039-EXEMPT:[ \t]*(\S[^\n]*)/;
 
 const SPAWN_GIT = /(?:execFileSync|spawnSync|execFile|spawn|execSync)\s*\(\s*['"]git['"]/;
 
+// EXECUTING vs ASSERTING (BL-1032): a whole-line string literal that CONTAINS
+// a spawn is test DATA, not a spawn. Strip those before scanning so the guard
+// never goes red because a guard test quotes the needle correctly.
 function stripWholeLineStringLiterals(text) {
   return text
     .split('\n')
@@ -107,6 +110,9 @@ function violationFor(relativePath, text) {
   };
 }
 
+// Shared fixture creates a repo AS ITS PURPOSE; this guard's own source/test
+// carry the needle as data. Exclude explicitly or the gate fails open on
+// correct code (BL-1032 repeated).
 const SELF_EXEMPT = [
   'helpers/sharedRepoFixture.js',
   'helpers/repoCreationGuard.js',
