@@ -101,45 +101,54 @@
    On a wait-bound hit: the child's tree is destroyed, on-timeout! fires
    with {:context :cmd :bound-ms}, and {:exit 124 :out \"\" :err ...} is
    returned - callers' existing (:exit result) checks treat it as an
-   ordinary failure. 124 mirrors coreutils timeout(1)."
+   ordinary failure. 124 mirrors coreutils timeout(1).
+   BL-1102: a spawn that never happened (ENOENT/EACCES/…) returns
+   {:exit 127 :spawn-failed? true …} instead of throwing — distinguishable
+   from a real non-zero exit and from exit 124. Drain-time throws still
+   propagate unchanged."
   [& args]
   (let [[cmd opts] (split-sh-args args)
         bound (subprocess-wait-bound-ms)
-        proc (process/process cmd (merge {:out :string :err :string} opts))
-        ;; ONE deadline over the WHOLE call - BL-1021. `(deref proc bound ...)`
-        ;; bounds only the EXIT-CODE wait. When the direct child exits
-        ;; promptly the timeout branch is never taken, and babashka.process
-        ;; then resolves the :out/:err pump futures with NO bound; those block
-        ;; in read() forever if anything the child spawned inherited the write
-        ;; ends and outlived it, because the pipe never reaches EOF. That is
-        ;; the live 2026-08-21 handoffd deadlock, and it is invisible to a
-        ;; bound over the exit code: destroy-tree and on-timeout! are simply
-        ;; never reached, which is why the log carried no timeout line at all.
-        ;; Deref'ing the drain as a whole puts exit wait AND stream drain
-        ;; inside the same deadline, so the bound holds at ANY process depth.
-        ;; The try/catch keeps the pre-existing exception contract exact: a
-        ;; throw from the drain propagates to the caller as itself, never
-        ;; re-wrapped as the future's ExecutionException.
-        drain (future (try {::value (deref proc)} (catch Throwable t {::thrown t})))
-        outcome (deref drain bound ::timed-out)]
-    (cond
-      (= ::timed-out outcome)
-      (do
-        ;; Best-effort only, and deliberately not relied upon: destroy-tree
-        ;; reaches the child and its LIVE descendants, but a pipe-holder
-        ;; reparented when the child exited is no longer among them. Freeing
-        ;; the CALLER is what the bound guarantees; the abandoned drain
-        ;; releases itself when the pipe-holder finally exits. Not capturing
-        ;; the streams at all is the call site's fix, not the bound's.
-        (future-cancel drain)
-        (try (process/destroy-tree proc) (catch Exception _ nil))
-        ((deref on-timeout!) {:context @current-context :cmd cmd :bound-ms bound})
-        {:exit 124 :out ""
-         :err (str "daemon-cycle-guard: bounded-wait timeout after " bound "ms: "
-                   (str/join " " (take 4 cmd)))})
+        spawned (try
+                  {::ok (process/process cmd (merge {:out :string :err :string} opts))}
+                  (catch Exception e {::spawn-failed e}))]
+    (if-let [e (::spawn-failed spawned)]
+      {:exit 127 :out "" :err (or (.getMessage e) "exec-failed") :spawn-failed? true}
+      (let [proc (::ok spawned)
+            ;; ONE deadline over the WHOLE call - BL-1021. `(deref proc bound ...)`
+            ;; bounds only the EXIT-CODE wait. When the direct child exits
+            ;; promptly the timeout branch is never taken, and babashka.process
+            ;; then resolves the :out/:err pump futures with NO bound; those block
+            ;; in read() forever if anything the child spawned inherited the write
+            ;; ends and outlived it, because the pipe never reaches EOF. That is
+            ;; the live 2026-08-21 handoffd deadlock, and it is invisible to a
+            ;; bound over the exit code: destroy-tree and on-timeout! are simply
+            ;; never reached, which is why the log carried no timeout line at all.
+            ;; Deref'ing the drain as a whole puts exit wait AND stream drain
+            ;; inside the same deadline, so the bound holds at ANY process depth.
+            ;; The try/catch keeps the pre-existing exception contract exact: a
+            ;; throw from the drain propagates to the caller as itself, never
+            ;; re-wrapped as the future's ExecutionException.
+            drain (future (try {::value (deref proc)} (catch Throwable t {::thrown t})))
+            outcome (deref drain bound ::timed-out)]
+        (cond
+          (= ::timed-out outcome)
+          (do
+            ;; Best-effort only, and deliberately not relied upon: destroy-tree
+            ;; reaches the child and its LIVE descendants, but a pipe-holder
+            ;; reparented when the child exited is no longer among them. Freeing
+            ;; the CALLER is what the bound guarantees; the abandoned drain
+            ;; releases itself when the pipe-holder finally exits. Not capturing
+            ;; the streams at all is the call site's fix, not the bound's.
+            (future-cancel drain)
+            (try (process/destroy-tree proc) (catch Exception _ nil))
+            ((deref on-timeout!) {:context @current-context :cmd cmd :bound-ms bound})
+            {:exit 124 :out ""
+             :err (str "daemon-cycle-guard: bounded-wait timeout after " bound "ms: "
+                       (str/join " " (take 4 cmd)))})
 
-      (contains? outcome ::thrown) (throw (::thrown outcome))
-      :else (::value outcome))))
+          (contains? outcome ::thrown) (throw (::thrown outcome))
+          :else (::value outcome))))))
 
 (defn run-sweep!
   "Runs one sweep thunk under boundary observability (invariant 2): sets

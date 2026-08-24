@@ -57,6 +57,25 @@ rm -rf "$ROOT_GEM2" "$HOME_EMPTY"
 ancillary_provider_load "$ROOT_GEM"
 check "gemini front desk model" '[[ "$(ancillary_provider_default_model front_desk)" == gemini-2.5-flash ]]'
 
+ROOT_CUR="$(mktemp -d)"
+mkdir -p "$ROOT_CUR/.swarmforge"
+printf 'active_backlog_max_depth_conf_path\t%s\nlaunch_pack\tcursor-forge\n' \
+  "$PACKS/cursor-forge.conf" > "$ROOT_CUR/.swarmforge/swarm-identity"
+export CURSOR_API_KEY=cursor-test-key
+ancillary_provider_load "$ROOT_CUR"
+check "cursor-forge pack resolves family" '[[ "$(ancillary_provider_family)" == cursor ]]'
+check "cursor operator model is auto" '[[ "$(ancillary_provider_default_model operator)" == auto ]]'
+rm -rf "$ROOT_CUR"
+
+ROOT_COP="$(mktemp -d)"
+mkdir -p "$ROOT_COP/.swarmforge"
+printf 'active_backlog_max_depth_conf_path\t%s\nlaunch_pack\tcopilot-forge\n' \
+  "$PACKS/copilot-forge.conf" > "$ROOT_COP/.swarmforge/swarm-identity"
+ancillary_provider_load "$ROOT_COP"
+check "copilot pack resolves family" '[[ "$(ancillary_provider_family)" == copilot ]]'
+check "copilot operator model is auto" '[[ "$(ancillary_provider_default_model operator)" == auto ]]'
+rm -rf "$ROOT_COP"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "ancillary_provider_lib smoke: ALL CHECKS PASSED"
 else

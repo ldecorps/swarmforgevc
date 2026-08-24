@@ -47,6 +47,14 @@ if [[ "${OPERATOR_LAUNCH_DRYRUN:-}" == "1" ]]; then
       printf 'DRYRUN would run: claude --settings %s --dangerously-skip-permissions --remote-control %s --append-system-prompt-file %s --model %s --effort %s\n' \
         "$SETTINGS_TEMPLATE" "$RC_NAME" "$PROMPT" "$MODEL" "$EFFORT"
       ;;
+    copilot)
+      printf 'DRYRUN would run: copilot --yolo --allow-all-paths --add-dir %s -C %s --name %s -i <operator-kickoff>\n' \
+        "$ROOT" "$ROOT" "Operator"
+      ;;
+    cursor)
+      printf 'DRYRUN would run: cursor-agent --force --trust --workspace %s --model %s <operator-kickoff>\n' \
+        "$ROOT" "$MODEL"
+      ;;
   esac
   exit 0
 fi
@@ -109,6 +117,17 @@ export PATH='$ROOT/swarmforge/scripts':\$PATH
 exec codex -m '$MODEL' "\$(cat '$COMBINED_KICKOFF')"
 EOF
     ;;
+  copilot)
+    cat > "$RUNNER" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd '$ROOT'
+${PROVIDER_ENV}
+export PATH='$ROOT/swarmforge/scripts':\$PATH
+exec copilot --yolo --allow-all-paths --add-dir '$ROOT' -C '$ROOT' --name 'Operator' \
+  -i "\$(cat '$COMBINED_KICKOFF')"
+EOF
+    ;;
   openai_aider)
     cat > "$RUNNER" <<EOF
 #!/usr/bin/env bash
@@ -117,6 +136,20 @@ cd '$ROOT'
 ${PROVIDER_ENV}
 export PATH='$ROOT/swarmforge/scripts':\$PATH
 exec aider --yes --no-git --model '$MODEL' --message "\$(cat '$COMBINED_KICKOFF')"
+EOF
+    ;;
+  cursor)
+    # Interactive disposable Operator on Cursor — same kickoff contract as
+    # Claude (read events, act, touch operator.done). No --remote-control
+    # (Cursor has none); identity is the kickoff + roles/operator.prompt.
+    cat > "$RUNNER" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd '$ROOT'
+${PROVIDER_ENV}
+export PATH='$ROOT/swarmforge/scripts':\$PATH
+exec cursor-agent --force --trust --workspace '$ROOT' --model '$MODEL' \\
+  "\$(cat '$COMBINED_KICKOFF')"
 EOF
     ;;
   *)
