@@ -193,18 +193,22 @@ restore
 
 echo
 echo "mutants: killed=$killed survived=$survived skipped=$skipped"
+# Print a non-empty label list; return 0 when anything was printed (caller fails).
+emit_labeled_list() {
+  local header="$1"
+  shift
+  if [[ "$#" -eq 0 ]]; then
+    return 1
+  fi
+  echo "$header"
+  local s
+  for s in "$@"; do echo "  - $s"; done
+  return 0
+}
 fail=0
-if [[ "${#SURVIVORS[@]}" -gt 0 ]]; then
-  echo "SURVIVORS (each is a real test gap):"
-  for s in "${SURVIVORS[@]}"; do echo "  - $s"; done
-  fail=1
-fi
+emit_labeled_list "SURVIVORS (each is a real test gap):" "${SURVIVORS[@]}" && fail=1
 # BL-1101: a skipped mutant produced no evidence — never certify the run.
-if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
-  echo "SKIPPED (anchors not found — no evidence produced):"
-  for s in "${SKIPPED[@]}"; do echo "  - $s"; done
-  fail=1
-fi
+emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "${SKIPPED[@]}" && fail=1
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
