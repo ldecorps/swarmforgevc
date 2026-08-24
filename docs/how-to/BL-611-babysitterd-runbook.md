@@ -30,7 +30,7 @@ captures, an available-memory reading) against these checks, in
 | 7 | busy-but-frozen | busy footer present but the spinner-stripped content hash is unchanged across 3 consecutive sweeps |
 | 8 | memory-floor | available memory is below the configured floor; reports `UNAVAILABLE` (never a fabricated OK or CRIT) when no memory facility on the host is readable |
 | 9 | rotate-not-honored | the newest completed parcel's rotate instruction is older than a 10-minute grace period, its target differs from `.swarmforge/mono-router-active-role`, and the note is newer than that file's mtime (suppresses a false positive when the persona changed *after* the note completed) |
-| 10 | swarm-starved | active tickets exist, zero pending/in-process parcels across every mailbox, no pane shows a busy footer, sustained for **2 consecutive sweeps**; pending never counts abandoned or >120-minute-old parcels |
+| 10 | swarm-starved | active tickets exist, **no countable motion** in pending/in-process across every mailbox, no pane shows a busy footer, sustained for **2 consecutive sweeps**. A non-abandoned `in_process` claim is motion even when the owning pane is idle this sweep (BL-1109 — Thinking pause / rotate gap must not false-STARVE). Pending never counts abandoned or >120-minute-old parcels. CRIT text never claims "zero … parcels" when claims were gathered.
 | 11 | claim-risk | the salvaged `babysitter_assess_lib.bb` scan (a role heading for bounce/halt with HEAD unchanged) |
 | — | planned-pause awareness | while `.swarmforge/operator/control-pause.json` marks an active pause, checks 9 and 10 are suppressed (planned quiet is not starvation) |
 | 12 | resume-overdue | a pause is still marked active but its `untilMs` expired more than 15 minutes ago (the auto-resume sweep itself failed) |
@@ -354,17 +354,16 @@ now actually reachable.
 
 Check 5 used to be a pure file-age test: it never consulted whether the owning
 role was actually working, even though the same sweep already builds a
-`busy-by-role` map (from live pane classification) for check 10's
-`owner-busy?` gate. That let the same sweep decide "there is motion here"
-(check 10) and "this is stuck" (check 5) about the same parcel — and because
-`stuck-*` is the one `WARN` class that escalates to a coordinator-pane nudge,
-a false positive interrupted a live agent mid-parcel rather than just adding
-log noise. Long-running parcels (mutation runs, full suites, one resident
-working one parcel at a time under mono-router) routinely cross the 30-minute
-mark honestly.
+`busy-by-role` map (from live pane classification). That let the same sweep
+decide "there is motion here" and "this is stuck" about the same parcel —
+and because `stuck-*` is the one `WARN` class that escalates to a
+coordinator-pane nudge, a false positive interrupted a live agent mid-parcel
+rather than just adding log noise. Long-running parcels (mutation runs, full
+suites, one resident working one parcel at a time under mono-router)
+routinely cross the 30-minute mark honestly.
 
 `stuck-parcels` (`babysitter_check.bb`) now takes the same `busy-by-role` map
-check 10 already receives, resolves the owning role for each aged
+the sweep already builds, resolves the owning role for each aged
 `in_process` parcel, and attaches `:owner-busy?` to the finding.
 `check-stuck-in-process` (`babysitterd_sweep_lib.bb`) skips any finding where
 `:owner-busy?` is true — the parcel is still stuck if the owning role goes
@@ -380,12 +379,32 @@ worktree mailbox shape (`.worktrees/<role>/.swarmforge/handoffs/inbox/...`)
 and was blind to the role-nested master shape
 (`.swarmforge/handoffs/<role>/inbox/...`) that the specifier and coordinator
 use — an abandoned specifier or coordinator parcel raised no warning, ever.
-The glob (`"{,**/}inbox/in_process/*.handoff"`) and `owning-role-for-path`'s
-regex resolution now cover both shapes with one rule, each real parcel
-matched — and counted — exactly once.
+The glob (`"{,**/}inbox/in_process/{*.handoff,*/*.handoff}"`) and
+`owning-role-for-path`'s regex resolution now cover both shapes plus
+`batch_*` subdirectory parcels with one rule, each real parcel matched —
+and counted — exactly once. Check 10's starved gather uses that **same**
+glob (BL-1109).
 
 Acceptance feature:
 [`specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature`](../../specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature).
+
+## Swarm-starved counts live in_process even when the owner looks idle (BL-1109)
+
+Check 10 used to treat an `in_process` claim as motion only when
+`:owner-busy?` was true. A Cursor Thinking pause, rotate gap, or follow-up
+bar made the owner look idle for two sweeps while parcels were still held —
+STARVED CRIT fired and the message claimed "zero pending/in-process
+parcels" even though claims existed (measured 2026-08-23).
+
+`motion-in-process?` now keys on non-abandoned only; `:owner-busy?` remains
+on the claim for check 5 (BL-807) but does not gate starvation. When
+claims were gathered, the CRIT mailbox clause reports the real pending and
+in-process counts rather than claiming zero. True STARVED still fires when
+active tickets exist, every pane is idle for two sweeps, and there is no
+countable pending/in-process motion.
+
+Acceptance feature:
+[`specs/features/BL-1109-babysitter-starved-ignores-idle-owner-in-process.feature`](../../specs/features/BL-1109-babysitter-starved-ignores-idle-owner-in-process.feature).
 
 ## Operator's babysitterd freshness watchdog: tell, never restart (BL-906)
 

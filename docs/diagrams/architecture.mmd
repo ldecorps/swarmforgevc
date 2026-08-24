@@ -169,6 +169,9 @@
 %% BL-1100 (2026-08-24): promote_and_route_next candidacy — structured
 %% epic/blocked/hold/gates only; no whole-YAML prose grep; skips announce
 %% skip <id> gate=<gate>.
+%% BL-1109 (2026-08-24): babysitter check 10 — non-abandoned in_process is
+%% starved motion even when owner pane idle; CRIT mailbox copy truthful;
+%% gather shares stuck-in-process nested/batch_* glob.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
