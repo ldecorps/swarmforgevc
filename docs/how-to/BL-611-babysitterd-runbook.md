@@ -297,6 +297,12 @@ green" while it in fact knows nothing about the plane. `UNAVAILABLE` is
 never nudge-eligible, same as every other unavailable-gather case in this
 doc (memory floor, pane process), but it is never silence either.
 
+**Update, BL-1071 × BL-1102 (2026-08-24):** after the daemon's bounded
+`sh!` stopped throwing on an unspawnable binary, a missing `tmux` looked
+like a missing plane and queued `./swarm ensure`. `observe!` now maps
+`:spawn-failed?` to `:unavailable` with `:error` — cannot-observe is not
+plane-missing recovery.
+
 **Bounded in wall-clock, not only in attempts.** `./swarm ensure` is shelled
 under a wall-clock deadline (`BABYSITTER_ENSURE_TIMEOUT_MS`, default 5
 minutes) via a `run-bounded!` mirroring `expedite_cli.bb`'s own — `setsid` so

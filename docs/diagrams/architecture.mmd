@@ -172,6 +172,10 @@
 %% BL-1109 (2026-08-24): babysitter check 10 — non-abandoned in_process is
 %% starved motion even when owner pane idle; CRIT mailbox copy truthful;
 %% gather shares stuck-in-process nested/batch_* glob.
+%% BL-1071×BL-1102 (2026-08-24): control_plane observe! — tmux spawn-failed
+%% → unavailable (never control-plane-missing / ensure).
+%% BL-1114 (2026-08-24): exhausted dead-letter recovery — terminal note +
+%% wake holder; move .dead to handoffs/failed/ (not silent inbox debris).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
