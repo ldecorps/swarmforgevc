@@ -184,6 +184,12 @@
         "(echo ready >\"$s\"; exec sleep 5) & "
         "read _ <\"$s\"; rm -f \"$s\"; exit 0")])
 
+(assert-true "BL-1031 bounce: undrainable fixture must fifo-handshake before exit (not bare sleep &)"
+             (let [body (apply str undrainable-cmd)]
+               (and (str/includes? body "mkfifo")
+                    (str/includes? body "read _")
+                    (str/includes? body "echo ready"))))
+
 (let [fired (atom nil)]
   (reset! daemon-cycle-guard-lib/on-timeout! (fn [info] (reset! fired info)))
   (reset! daemon-cycle-guard-lib/current-context "dispatch-gap-sweep")
