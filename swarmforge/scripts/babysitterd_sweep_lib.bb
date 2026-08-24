@@ -289,8 +289,27 @@
 (defn- fresh-pending? [{:keys [abandoned? age-min]} pending-max-age-min]
   (and (not abandoned?) age-min (<= (long age-min) (long pending-max-age-min))))
 
-(defn- motion-in-process? [{:keys [owner-busy?]}]
-  (boolean owner-busy?))
+;; BL-1109: a non-abandoned in_process claim is motion even when the owning
+;; pane is idle this sweep (Cursor Thinking pause, rotate gap, follow-up bar).
+;; owner-busy? remains on the claim for stuck-in-process (BL-807); starved
+;; must not require it.
+(defn- motion-in-process? [{:keys [abandoned?]}]
+  (not (boolean abandoned?)))
+
+(defn- swarm-starved-mailbox-clause [pending-claims in-process-claims]
+  (let [n-pending (count (or pending-claims []))
+        n-ip (count (or in-process-claims []))]
+    (if (and (zero? n-pending) (zero? n-ip))
+      "zero pending/in-process parcels"
+      (str n-pending " pending and " n-ip
+           " in-process claim(s) with no countable motion"))))
+
+(defn- swarm-starved-message [active-ticket-count new-streak pending-claims in-process-claims]
+  (str "swarm appears STARVED: " active-ticket-count
+       " active ticket(s) but "
+       (swarm-starved-mailbox-clause pending-claims in-process-claims)
+       " and every pane idle for " new-streak
+       " consecutive sweeps — likely a lost instruction or stale assignment; check the newest completed notes and ticket assigned_to fields"))
 
 (def default-pending-max-age-min 120)
 
@@ -308,9 +327,8 @@
         new-streak (if idle-this-sweep? (inc (long (or prev-streak 0))) 0)]
     {:finding (when (>= new-streak 2)
                 {:key "swarm-starved" :severity "CRIT"
-                 :message (str "swarm appears STARVED: " active-ticket-count
-                               " active ticket(s) but zero pending/in-process parcels and every pane idle for "
-                               new-streak " consecutive sweeps — likely a lost instruction or stale assignment; check the newest completed notes and ticket assigned_to fields")})
+                 :message (swarm-starved-message active-ticket-count new-streak
+                                                 pending-claims in-process-claims)})
      :new-streak new-streak}))
 
 ;; BL-996: was a private whole-pane substring match (`(str/includes? text
