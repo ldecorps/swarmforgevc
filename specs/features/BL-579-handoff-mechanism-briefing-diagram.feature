@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T15:38:03.353226846Z","feature_name":"the morning briefing carries a handoff-MECHANISM diagram alongside architecture and swarm-flow","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-579-handoff-mechanism-briefing-diagram.feature","background_hash":"3fef60befccf93f4369d7271c25ed7a153d3b01c5d8e6db5a3c456db63327a24","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: the morning briefing carries a handoff-MECHANISM diagram alongside architecture and swarm-flow
 
   # BL-579. Human, 2026-07-23: "can an activity diagram be produced, and
