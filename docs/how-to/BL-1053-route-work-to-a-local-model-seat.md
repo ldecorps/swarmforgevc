@@ -55,7 +55,8 @@ bb -e '
 ```
 
 Expect `:known? true` and `:agent "local-model"`. Cloud keys stay unchanged
-(`anthropic`→`claude`, `openai`→`codex`, `cerebras`→`aider`). An unknown
+(`anthropic`→`claude`, `openai`→`codex`, `cerebras`→`aider`,
+`mistral`→`vibe`). An unknown
 key reports `:known? false` and `:agent nil` with a reason that names the
 provider and the known keys.
 
@@ -77,5 +78,6 @@ No edit to `provider->agent` is required. Both models stay under `local`.
 | [BL-1052 local-model seat](./BL-1052-local-model-seat-launch.md) | Pack, launch, health refusal |
 | [ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md) | Assign / cold-apply after registration |
 | [Model Steward overview](./BL-547-model-steward-overview.md) | Register / certify lifecycle |
+| [Wire Mistral Vibe into the Intelligence Layer](./BL-682-mistral-vibe-intelligence-layer-routing.md) | Parallel `mistral`→`vibe` map + seed |
 
 Acceptance: `specs/features/BL-1053-the-intelligence-layer-can-route-work-to-a-local-model-seat.feature`.
