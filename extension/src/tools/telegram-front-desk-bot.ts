@@ -2698,6 +2698,9 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       remainingSlices: item.remainingSlices,
       filename: item.filename,
       priority: item.priority,
+      // BL-1009: swarm: from ticket YAML (BL-090) — without this the board
+      // tick cannot badge or honesty-strip remote rows.
+      swarm: item.swarm,
     }));
   // BL-1045: hold/ was read by readBacklogFolders (BL-672) and dropped right
   // here, which is the other half of why held tickets fell off the board.
@@ -3100,6 +3103,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       pinMessage: (messageId) => pinChatMessage(botToken, chatId, messageId).then((r) => r.success),
     },
     readRootIntakeFiles: () => readRootIntakeFiles(targetPath),
+    readBoardProjectRoot: () => targetPath,
     readRepoBaseUrl: () => readRepoBaseUrl(targetPath),
     // BL-434: the standing "Approvals" topic's own roster sync - shares the
     // SAME ensureApprovalsTopic the ask-routing RouteAdapters above uses
