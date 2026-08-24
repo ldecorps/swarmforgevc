@@ -20,7 +20,7 @@ mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1101-hand-authored-sweep-reports-success-with-skipped-mutants.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   One decision needs sign-off: whether a skipped mutant HARD-FAILS the sweep
   (the direction below - non-zero exit, no success line) or merely prints a
