@@ -63,6 +63,7 @@ expects them, and are not migrated or rewritten here.
 - [Pre-commit property-suite drift guard](how-to/BL-570-property-suite-drift-guard.md) — runs `test:properties` on staged src/property paths; fail-open + override (BL-570).
 - [Morning briefing handoff-mechanism diagram](how-to/BL-579-handoff-mechanism-briefing-diagram.md) — HOW a parcel travels; allowlist entry `handoff-mechanism` (BL-579).
 - [Mean ticket time ends at close, not a later re-file](how-to/BL-1074-post-close-refile-inflates-measured-ticket-duration.md) — duration ignores post-close `done/` moves (BL-1074).
+- [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; no browser storage (BL-609).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
