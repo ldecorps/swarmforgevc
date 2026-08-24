@@ -122,6 +122,9 @@
 %% local-model-mono-router staffs every role window against that loopback
 %% OpenAI-compat base URL (default …/v1); first-quest binary qwen; launch
 %% refuses when the endpoint is not ready. Distinct from aider qwen-mono-router.
+%% BL-1053 (2026-08-24): ModelFactory provider->agent maps local -> local-model;
+%% Steward registers on-host candidates under local/… (cost class low);
+%% unknown providers report unknown (no agent) instead of name fallback.
 %% BL-1108 (2026-08-23): stamp-off of hotfix f02f6ae5b4 — shared
 %% agent_process_marker_lib.bb (roles.tsv token → argv needle) for
 %% babysitter live-session CRIT and ./swarm ensure agent:<role> heal;

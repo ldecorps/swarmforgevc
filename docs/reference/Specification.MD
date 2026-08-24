@@ -1,6 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 23, 2026 (BL-1108 QA bounce re-fix: `./swarm ensure`
+**Last Updated:** August 24, 2026 (BL-1053: the intelligence layer can route
+work to a local-model seat. ModelFactory's `provider->agent` map adds
+`local` → `local-model` so on-host models are not filed under `openai`
+(which still resolves to `codex`). `resolve-launch-agent` reports an
+unknown provider as unknown with `:agent nil` instead of falling through
+to the provider name; assign refuses a candidate whose provider has no
+map entry. Steward registers the first-quest candidate (and any later
+downloaded id) under `local/<model>` with cost class `low` — a second
+model is registration-only, never a new map entry. Registration alone
+changes no live seat. How-to:
+`docs/how-to/BL-1053-route-work-to-a-local-model-seat.md`. Cross-links:
+`docs/how-to/BL-525-model-factory-assign-and-apply.md`,
+`docs/how-to/BL-1052-local-model-seat-launch.md`,
+`docs/how-to/BL-1082-pull-and-serve-a-named-model.md`, `docs/index.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change. The earlier cloud `qwen` / Token Plan routing under
+this same ticket id remains historical only — see the superseded BL-1053
+entry below.)
+Prior entry —
+August 23, 2026 (BL-1108 QA bounce re-fix: `./swarm ensure`
 absent-flag `rc:<role>` is **agent-aware**. A Claude seat whose launch script
 omits `--remote-control` stays **HEALTHY** (BL-514 RC-6, no probe). Cursor /
 `local-model` / other non-Claude seats with no flag stay **OFF** with
