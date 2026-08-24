@@ -576,6 +576,7 @@ const DOMAINS = [
   require('./bl998ShellFixtureDispatchIsolationSteps'),
   require('./bl1026StageBudgetStatedOnceSteps'),
   require('./bl1022DaemonClosureFollowsSpawnEdgesSteps'),
+  require('./bl1031BoundedChokepointSpawnReachableSubtreeSteps'),
   require('./bl1010SecondarySwarmPublishesUnderItsOwnNameSteps'),
   require('./bl1011FreshnessAlarmNamesSwarmAndReasonSteps'),
   require('./bl1014BoyScoutScanRanksDebtSteps'),

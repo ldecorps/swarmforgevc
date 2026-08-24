@@ -330,25 +330,12 @@
   (assert= "bl1022: every spawn target in the daemon's closure resolved - an unresolvable one fails loudly, never silently"
            [] (:unresolved reach))
 
-  ;; 2b. What following spawn edges revealed, held as a RATCHET rather than
-  ;;    silently tolerated or silently fixed. Every file below is live code on
-  ;;    the daemon's critical path making an UNBOUNDED subprocess call - the
-  ;;    exact class that deadlocked production in BL-1021 - reached through
-  ;;    handoffd.bb -> (spawn) swarm_handoff.bb -> (load) ... Removing the
-  ;;    banned API from a specific script is explicitly out of BL-1022's scope
-  ;;    (it is BL-1021's), so this ticket makes the debt VISIBLE and gated
-  ;;    instead of leaving it invisible, and reports the spec gap by note.
-  ;;
-  ;;    This is strictly stronger than the gate it replaces: before BL-1022
-  ;;    these files were not checked at all. The assertion is an EQUALITY, not
-  ;;    a subset - a new offender fails it, and so does a fixed one still
-  ;;    listed, so the list cannot quietly go stale the way a hand-maintained
-  ;;    allowlist does.
-  (assert= "bl1022: the spawn-reachable subtree's banned-API debt is exactly the known set - a new offender fails, and so does a stale entry"
-           #{"handoff_inject_lib.bb"      ; unbounded process/sh on tmux
-             "pre_qa_gate_gather_lib.bb"  ; unbounded process/sh on git
-             "salvage_lib.bb"}            ; unbounded process/sh, generic
-           (set spawn-offender-files))
+  ;; 2b. BL-1031 retired the BL-1022 ratchet: the three spawn-reachable
+  ;;    offenders (handoff_inject / pre_qa_gate_gather / salvage) now route
+  ;;    through daemon-cycle-guard-lib/sh!. Equality on the empty set — a new
+  ;;    offender fails, and a stale ratchet entry would fail too.
+  (assert= "bl1031: spawn-reachable subtree carries no banned-API debt (ratchet retired empty)"
+           #{} (set spawn-offender-files))
 
   ;; 3. The gate reports what it covered, so a closure that silently SHRINKS is
   ;;    visible instead of passing for the wrong reason. Every file carries how
@@ -363,8 +350,7 @@
                                              (get-in reach [:reached-by f]))) closure))
                 " reached by spawn), non-bb spawns recorded: "
                 (pr-str (:non-bb reach))
-                "\n  BL-1022 spawn-only files: " (count spawn-only)
-                ", of which carry banned-API debt: " (pr-str (vec spawn-offender-files)))))
+                "\n  BL-1031 spawn-only banned-API debt: " (pr-str (vec spawn-offender-files)))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
