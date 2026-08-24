@@ -58,3 +58,6 @@ notes: >
   orphaned claim-progress/nudge sidecars cleared 2026-08-24 via
   handoff_lib/remove-sidecars-of! so false "continue TASK" wakes stop).
   Related: BL-353, BL-365, BL-122 recovery, BL-499.
+
+notes: |
+  2026-08-24 coordinator: ready in paused/; holding — human_approval pending. Active cap full (BL-556/BL-682/BL-1089). Expedite lane after approval (severity: high).
