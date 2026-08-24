@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=cb210d4adbf19f93d10c6057ace03428ca71b93cce63842191a210b9bf1f3b5c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T11:56:35.994992060Z","feature_name":"A duplicate ticket id is refused at mint, keyed on the id field","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1105-a-duplicate-ticket-id-is-refused-at-mint.feature","background_hash":"b1b04f44aada98dd90e25779c50b822dea85a80a7eb8996e97e5521ee6575049","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A second ticket claiming a live id is refused, whatever pool holds the first","scenario_hash":"025bef7deff63d1e7db942105055e8024cc0ef1a07d78a99511370bd64173473","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T11:56:35.994992060Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A duplicate ticket id is refused at mint, keyed on the id field
   Two sessions minting in parallel can pick the same next id, because the id is
   chosen by hand from whatever the miner can see and nothing checks it. Git does
