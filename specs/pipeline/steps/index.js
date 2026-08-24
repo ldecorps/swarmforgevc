@@ -614,6 +614,7 @@ const DOMAINS = [
   require('./bl1078CursorAgentTokenSteps'),
   require('./bl1079CursorStewardCertifySteps'),
   require('./bl1052LocalModelSeatSteps'),
+  require('./bl1053LocalProviderRoutingSteps'),
   require('./bl1087QwenCodeDocDriftSteps'),
   require('./bl1099GiveUpCooldownRetirementSteps'),
   require('./bl1108CursorSeatReadinessSteps')

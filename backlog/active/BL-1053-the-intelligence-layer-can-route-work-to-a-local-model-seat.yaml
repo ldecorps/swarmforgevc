@@ -4,8 +4,8 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-priority: 6
-direction: human-cursor
+priority: 1
+direction: queue-jump
 depends_on: [BL-1052]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -76,6 +76,7 @@ description: |
   every future local model.
 
 notes: |
+  Human 2026-08-23T21:32Z (Cursor): Q jump BL-1053 (after BL-1052). priority 1, direction queue-jump; stays paused until depends_on BL-1052 lands in done/ — then promote next.
   Human 2026-08-23T17:55Z (Cursor): RESERVATION LIFTED. Operator directed focus onto the Qwen-enabling chain on cursor-mono-router (no specifier). Promote/dispatch 1082→1052→1053 in that order; BL-1077 may run in parallel as credential hygiene.
   Coordinator 2026-08-23: bounced coder→cleaner BL-1082 and re-parked BL-1082/1052/1053 to hold — human reservation still in force (archive/INTAKE-cursor-seats-then-sleep); unauthorized active promote reversed.
   Human 2026-08-23 (Cursor): RESERVED for human/Cursor implementation after Cursor seat chain (1078→1079→1080[+1081]) lands. Swarm must NOT promote or dispatch these — operator will build 1082→1052→1053 in Cursor.
@@ -116,4 +117,4 @@ qa_e2e_procedure: |
      provider->agent edit was needed.
   6. Confirm registration alone changed no live seat.
 
-assigned_to: coordinator
+assigned_to: coder
