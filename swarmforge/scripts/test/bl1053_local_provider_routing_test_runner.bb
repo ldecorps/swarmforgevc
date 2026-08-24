@@ -29,6 +29,14 @@
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 (defn assert-true [msg expr] (when-not expr (swap! failures conj (str "FAIL: " msg))))
 
+(defn certified-provider-registry
+  "Minimal steward registry: one certified model under `provider`, ranked for `role`."
+  [provider model role score]
+  (-> model-steward-lib/empty-registry
+      (model-steward-lib/register-model provider model
+                                        {:status "certified" :cost_class "low"})
+      (model-steward-lib/add-role-ranking role provider model score "fixture")))
+
 ;; ── 01: the local provider resolves to the local-model seat agent ────────
 (assert= "provider 'local' resolves to the local-model seat agent"
          "local-model" (model-factory-lib/agent-for-provider "local"))
@@ -76,10 +84,7 @@
            "local-model" (:agent res)))
 
 ;; An assignment must never be handed downstream naming no agent.
-(let [reg (-> model-steward-lib/empty-registry
-              (model-steward-lib/register-model "not-a-provider" "m1"
-                                                {:status "certified" :cost_class "low"})
-              (model-steward-lib/add-role-ranking "coder" "not-a-provider" "m1" 0.9 "fixture"))
+(let [reg (certified-provider-registry "not-a-provider" "m1" "coder" 0.9)
       thrown (try (model-factory-lib/assign-role reg "coder" model-factory-lib/quality-mode)
                   nil
                   (catch Exception e (.getMessage e)))]
@@ -89,10 +94,7 @@
                (and thrown (str/includes? thrown "not-a-provider"))))
 
 ;; A registered provider still assigns normally.
-(let [reg (-> model-steward-lib/empty-registry
-              (model-steward-lib/register-model "local" "qwen2.5-coder:7b-instruct"
-                                                {:status "certified" :cost_class "low"})
-              (model-steward-lib/add-role-ranking "coder" "local" "qwen2.5-coder:7b-instruct" 0.9 "fixture"))
+(let [reg (certified-provider-registry "local" "qwen2.5-coder:7b-instruct" "coder" 0.9)
       entry (model-factory-lib/assign-role reg "coder" model-factory-lib/quality-mode)]
   (assert= "a local assignment names the local-model agent" "local-model" (:agent entry))
   (assert= "a local assignment keeps its own provider key" "local" (:provider entry)))

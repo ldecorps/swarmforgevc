@@ -69,29 +69,34 @@
   [provider]
   (get provider->agent provider))
 
+(defn- unknown-provider-reason
+  "Names the missing provider and every registered key so the fix is
+   always 'add the missing entry' (BL-1053)."
+  [provider]
+  (str "unknown provider " (pr-str provider)
+       " - no launch agent is registered for it. Known providers: "
+       (clojure.string/join ", " (sort (keys provider->agent)))))
+
 (defn resolve-launch-agent
   "Provider -> launch agent as a REPORT rather than a bare value, so an
-   unknown provider is impossible to mistake for a resolved one. The reason
-   names both the provider that failed and the keys that exist, because the
-   fix for this failure is always 'add the missing entry' (BL-1053)."
+   unknown provider is impossible to mistake for a resolved one (BL-1053)."
   [provider]
-  (if-let [agent (get provider->agent provider)]
+  (if-let [agent (agent-for-provider provider)]
     {:provider provider :agent agent :known? true}
     {:provider provider
      :agent nil
      :known? false
-     :reason (str "unknown provider " (pr-str provider)
-                  " - no launch agent is registered for it. Known providers: "
-                  (clojure.string/join ", " (sort (keys provider->agent))))}))
+     :reason (unknown-provider-reason provider)}))
 
-(defn- assert-known-launch-agent!
-  "Throws by name when `provider` has no provider->agent entry, so assign-role
+(defn- require-launch-agent!
+  "Returns the launch agent for `provider`, or throws by name so assign-role
    never hands downstream a descriptor with :agent nil (BL-1053)."
   [role provider model]
-  (let [{:keys [known? reason]} (resolve-launch-agent provider)]
+  (let [{:keys [known? reason agent]} (resolve-launch-agent provider)]
     (when-not known?
       (throw (ex-info (str "cannot assign role " role ": " reason)
-                      {:role role :provider provider :model model})))))
+                      {:role role :provider provider :model model})))
+    agent))
 
 (defn eligible-candidates
   "Role-recommendation entries for `role`, filtered to the certification gate
@@ -186,9 +191,8 @@
       ;; nothing between here and the pane checks that :agent names a runtime
       ;; that exists. A candidate whose provider has no entry is a
       ;; registry/config error, so it stops here, by name (BL-1053).
-      (assert-known-launch-agent! role (:provider chosen) (:model chosen))
       {:role role
-       :agent (agent-for-provider (:provider chosen))
+       :agent (require-launch-agent! role (:provider chosen) (:model chosen))
        :provider (:provider chosen)
        :model (:model chosen)
        :policy mode
