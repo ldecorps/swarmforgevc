@@ -120,31 +120,68 @@
 
 ;; ── ancestry findings ─────────────────────────────────────────────────
 
-(defn- ancestry-findings
+(defn paths-overlap?
+  "True when any path in candidate-paths is also in parcel-paths.
+   Empty on either side is never evidence."
+  [candidate-paths parcel-paths]
+  (boolean
+   (and (seq candidate-paths) (seq parcel-paths)
+        (some (set parcel-paths) candidate-paths))))
+
+(defn- abandoned-sha?
+  [sha abandoned]
+  (some #(str/starts-with? sha %) abandoned))
+
+(defn- stranded-ticket-commit?
+  "Subject-named, not on main, not an ancestor of the cited tip, not
+   abandoned, and not already excluded as carrying no dropped work."
+  [{:keys [sha message]} ticket-id main-reachable-set cited-ancestors-set
+   abandoned no-dropped-work-set]
+  (and (message-references-ticket? message ticket-id)
+       (not (contains? main-reachable-set sha))
+       (not (contains? cited-ancestors-set sha))
+       (not (abandoned-sha? sha abandoned))
+       (not (contains? no-dropped-work-set sha))))
+
+(defn- ancestry-verdict
+  "BL-972: block only with path evidence; subject-only → warning string;
+   abandoned already filtered by stranded-ticket-commit?."
+  [ticket-id branch {:keys [sha paths]} parcel-paths]
+  (if (paths-overlap? paths parcel-paths)
+    {:finding {:class :ancestry
+               :ticket-id ticket-id
+               :sha sha
+               :branch branch
+               :detail (format "%s stranded on %s" sha branch)}}
+    {:warning (format "ancestry %s %s subject-only on %s (no path overlap with parcel)"
+                      ticket-id sha branch)}))
+
+(defn- ancestry-findings-and-warnings
   [{:keys [ticket-id role-branch-commits main-reachable-set cited-ancestors-set
-           abandoned-commits no-dropped-work-set]}]
+           abandoned-commits no-dropped-work-set parcel-paths]}]
   (let [main-reachable-set (or main-reachable-set #{})
         cited-ancestors-set (or cited-ancestors-set #{})
         no-dropped-work-set (or no-dropped-work-set #{})
+        parcel-paths (or parcel-paths [])
         abandoned (remove str/blank? (or abandoned-commits []))
         branches (sort (keys (or role-branch-commits {})))]
-    (vec
-     (mapcat
-      (fn [branch]
-        (->> (get role-branch-commits branch)
-             (filter (fn [{:keys [sha message]}]
-                       (and (message-references-ticket? message ticket-id)
-                            (not (contains? main-reachable-set sha))
-                            (not (contains? cited-ancestors-set sha))
-                            (not (some #(str/starts-with? sha %) abandoned))
-                            (not (contains? no-dropped-work-set sha)))))
-             (map (fn [{:keys [sha]}]
-                    {:class :ancestry
-                     :ticket-id ticket-id
-                     :sha sha
-                     :branch branch
-                     :detail (format "%s stranded on %s" sha branch)}))))
-      branches))))
+    (reduce
+     (fn [acc branch]
+       (reduce
+        (fn [acc commit]
+          (if-not (stranded-ticket-commit? commit ticket-id main-reachable-set
+                                           cited-ancestors-set abandoned
+                                           no-dropped-work-set)
+            acc
+            (let [{:keys [finding warning]}
+                  (ancestry-verdict ticket-id branch commit parcel-paths)]
+              (cond-> acc
+                finding (update :findings conj finding)
+                warning (update :warnings conj warning)))))
+        acc
+        (get role-branch-commits branch)))
+     {:findings [] :warnings []}
+     branches)))
 
 ;; ── wiring findings ───────────────────────────────────────────────────
 
@@ -178,17 +215,18 @@
 (defn evaluate
   "opts: {:type :to :ticket-id :cited-commit :role-branch-commits
    :main-reachable-set :cited-ancestors-set :wiring-entries :file-contents
-   :abandoned-commits :no-dropped-work-set}. Returns {:armed? bool :findings
-   [...]} - unarmed drafts (not a QA-bound git_handoff) are never evaluated at
-   all, matching the fail-open-on-scope contract. Ancestry findings precede
-   wiring findings; each group's own order is otherwise stable (branches
-   sorted, entries in declared order). :no-dropped-work-set (condition 5) is
-   a set of candidate shas already known to carry no unique content - a merge
-   commit whose diff against its first parent is empty, or a commit whose
-   tree matches the cited commit - excluded from ancestry findings same as
-   an abandoned or already-landed commit."
+   :abandoned-commits :no-dropped-work-set :parcel-paths}.
+   role-branch-commits entries may carry :paths (touched paths).
+   parcel-paths is the cited parcel's path set (merge-base..cited, plus
+   acceptance/required_wiring paths). Returns {:armed? bool :findings [...]
+   :warnings [...]} - unarmed drafts are never evaluated. Ancestry findings
+   precede wiring findings. BL-972: a subject-only stranded commit is a
+   warning, never a finding; path overlap still blocks. :no-dropped-work-set
+   (condition 5) excludes empty-merge / tree-identical commits as before."
   [{:keys [type to] :as opts}]
   (if-not (gate-armed? {:type type :to to})
-    {:armed? false :findings []}
-    {:armed? true
-     :findings (vec (concat (ancestry-findings opts) (wiring-findings opts)))}))
+    {:armed? false :findings [] :warnings []}
+    (let [{:keys [findings warnings]} (ancestry-findings-and-warnings opts)]
+      {:armed? true
+       :findings (vec (concat findings (wiring-findings opts)))
+       :warnings (vec warnings)})))
