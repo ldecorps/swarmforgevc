@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 const {
   effectiveBudgetMs,
   UNIT_LANE_BUDGET_CEILING_MS,
-  resolveUnitLaneTimeout,
+  evidenceTestsAreAttributable,
 } = require('./lib/contentionBudget');
 
 const FEATURE = 'A unit-lane test budget is relative to recorded contention';
@@ -73,11 +73,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the unit lane completes a run$/, (ctx) => {
-    // Probe file carries an explicit timeout literal so setup wraps and
+    // Smoke file carries an explicit timeout literal so setup wraps and
     // records loadNormalizedDurationMs (architect bounce: no all-null tests[]).
     const res = spawnSync(
       'npx',
-      ['vitest', 'run', '--config', 'vitest.config.mjs', 'test/bl1007BudgetProbe.test.js'],
+      ['vitest', 'run', '--config', 'vitest.config.mjs', 'test/bl1007ContentionBudgetSmoke.test.js'],
       {
         cwd: path.join(REPO_ROOT, 'extension'),
         encoding: 'utf8',
@@ -86,7 +86,7 @@ function registerSteps(registry) {
       }
     );
     ctx.unitLaneOut = `${res.stdout || ''}${res.stderr || ''}`;
-    assert.equal(res.status, 0, `probe vitest failed:\n${ctx.unitLaneOut}`);
+    assert.equal(res.status, 0, `smoke unit lane failed:\n${ctx.unitLaneOut}`);
     const tmp = require('node:os').tmpdir();
     const files = fs
       .readdirSync(tmp)
@@ -105,14 +105,11 @@ function registerSteps(registry) {
     assert.ok(Array.isArray(ctx.evidence.tests));
     assert.ok(ctx.evidence.tests.length > 0, 'expected at least one budgeted test');
     assert.ok('suiteEffectiveMs' in ctx.evidence);
-    for (const t of ctx.evidence.tests) {
-      assert.equal(
-        typeof t.loadNormalizedDurationMs,
-        'number',
-        `expected non-null loadNormalizedDurationMs for ${t.name}`
-      );
-      assert.ok(Number.isFinite(t.loadNormalizedDurationMs));
-    }
+    assert.equal(
+      evidenceTestsAreAttributable(ctx.evidence.tests),
+      true,
+      `expected finite loadNormalizedDurationMs on every budgeted test, got: ${JSON.stringify(ctx.evidence.tests)}`
+    );
   });
 
   scoped(/^a unit-lane test file whose source declares an explicit base budget$/, (ctx) => {

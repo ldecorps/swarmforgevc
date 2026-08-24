@@ -68,6 +68,17 @@ function resolveUnitLaneTimeout(baseMs, opts = {}) {
   };
 }
 
+/** True iff every budgeted test entry carries a finite load-normalized duration. */
+function evidenceTestsAreAttributable(tests) {
+  if (!Array.isArray(tests) || tests.length === 0) return false;
+  return tests.every(
+    (t) =>
+      t != null &&
+      typeof t.loadNormalizedDurationMs === 'number' &&
+      Number.isFinite(t.loadNormalizedDurationMs)
+  );
+}
+
 module.exports = {
   UNIT_LANE_BUDGET_CEILING_MS,
   sampleContentionFactor,
@@ -75,4 +86,5 @@ module.exports = {
   loadNormalizedDurationMs,
   effectiveBudgetMs,
   resolveUnitLaneTimeout,
+  evidenceTestsAreAttributable,
 };

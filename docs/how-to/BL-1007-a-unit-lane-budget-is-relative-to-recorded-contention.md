@@ -17,7 +17,7 @@ Compile-free helper `specs/pipeline/steps/lib/contentionBudget.js` (usable from
 | Contention factor | `loadavg1m / cpuCount` (null / unusable → treat as quiet) |
 | Effective budget | `base` when factor ≤1 or unusable; else `min(ceiling, base × max(1, factor))` |
 | Ceiling | Finite absolute cap (`UNIT_LANE_BUDGET_CEILING_MS` = 120000) |
-| Attribution | Run evidence records the factor and each budgeted test's load-normalized duration (`wall ÷ max(1, factor)`) |
+| Attribution | Run evidence records the factor and each budgeted test's load-normalized duration (`wall ÷ max(1, factor)`). Setup instruments timed bodies so every budgeted entry is finite after the run — all-null evidence is rejected (`evidenceTestsAreAttributable`). |
 
 `vitest.config.mjs` sets the suite default via `resolveUnitLaneTimeout(20000)`.
 `contentionBudgetSetup.js` scales per-test numeric timeout literals at runtime
