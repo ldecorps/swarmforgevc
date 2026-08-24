@@ -16,7 +16,6 @@
 
 (ns chase-sweep-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -1639,17 +1638,21 @@
   [subject]
   (boolean (re-find #"(?i)QA[- ]approved|QA pass inventory" (or subject ""))))
 
+(defn- subject-names-ticket?
+  [subject ticket-id]
+  (boolean (some #(= ticket-id %) (ticket-ids-in-text subject))))
+
 (defn qa-approval-subject?
   "True when subject names ticket-id AND carries a QA approval signal."
   [subject ticket-id]
   (and (qa-approval-signal? subject)
-       (some #(= ticket-id %) (ticket-ids-in-text subject))))
+       (subject-names-ticket? subject ticket-id)))
 
 (defn close-subject?
   "True when subject is a Close of ticket-id (subject only)."
   [subject ticket-id]
   (and (boolean (re-find #"(?i)\bClose\b" (or subject "")))
-       (some #(= ticket-id %) (ticket-ids-in-text subject))))
+       (subject-names-ticket? subject ticket-id)))
 
 (defn index-qa-approvals
   "commits: seq of {:sha :subject}, newest-first (git log order). First
@@ -1659,7 +1662,7 @@
    (fn [acc {:keys [sha subject]}]
      (reduce
       (fn [a id]
-        (if (or (contains? a id) (not (qa-approval-signal? subject)))
+        (if (or (contains? a id) (not (qa-approval-subject? subject id)))
           a
           (assoc a id (short-sha-10 sha))))
       acc
@@ -1672,9 +1675,9 @@
   [commits]
   (reduce
    (fn [acc {:keys [subject]}]
-     (if-not (re-find #"(?i)\bClose\b" (or subject ""))
-       acc
-       (into acc (or (ticket-ids-in-text subject) []))))
+     (into acc
+           (filter #(close-subject? subject %)
+                   (or (ticket-ids-in-text subject) []))))
    #{}
    commits))
 
@@ -1733,13 +1736,15 @@
 (defn resolve-landed-main-ref
   "Prefer origin/main (durable remote tip); fall back to main."
   [repo-root]
-  (let [r (process/sh ["git" "-C" (str repo-root) "rev-parse" "--verify" "origin/main"])]
+  (let [r (daemon-cycle-guard-lib/sh!
+           ["git" "-C" (str repo-root) "rev-parse" "--verify" "origin/main"])]
     (if (zero? (:exit r)) "origin/main" "main")))
 
 (defn read-ref-subject-commits
   "Subject-only history for git-ref. Never returns body text — trap (a)."
   [repo-root git-ref]
-  (let [r (process/sh ["git" "-C" (str repo-root) "log" "--format=%H%x00%s" git-ref])]
+  (let [r (daemon-cycle-guard-lib/sh!
+           ["git" "-C" (str repo-root) "log" "--format=%H%x00%s" git-ref])]
     (if-not (zero? (:exit r))
       []
       (->> (str/split-lines (or (:out r) ""))
