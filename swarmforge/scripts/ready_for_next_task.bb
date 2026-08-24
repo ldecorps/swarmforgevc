@@ -11,6 +11,8 @@
 (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "seat_affinity_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "seat_difficulty_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -32,6 +34,56 @@
 (defn- mono-router-conf-text []
   (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
        (catch Exception _ nil)))
+
+(defn- active-ticket-yaml
+  "Working-tree active ticket whose id: matches ticket-id, or nil."
+  [root ticket-id]
+  (when ticket-id
+    (let [active-dir (fs/path root "backlog" "active")]
+      (when (fs/exists? active-dir)
+        (some (fn [f]
+                (let [content (try (slurp (str f)) (catch Exception _ nil))]
+                  (when (and content
+                             (re-find (re-pattern (str "(?m)^id:\\s*" (java.util.regex.Pattern/quote ticket-id) "\\s*$"))
+                                      content))
+                    content)))
+              (fs/glob active-dir "**.yaml"))))))
+
+(defn- mutation-cost-for-task
+  [task]
+  (let [root (handoff-lib/target-root)
+        tid (pipeline-stage-lib/extract-ticket-id task)
+        yaml (active-ticket-yaml root tid)]
+    (seat-difficulty-lib/parse-mutation-cost yaml)))
+
+(defn- sibling-busy?
+  [ri]
+  (boolean (seq (handoff-lib/handoff-files
+                 (apply fs/path (handoff-lib/mailbox-base-dir ri)
+                        (handoff-lib/mailbox-state->relative-segments :in_process))))))
+
+(defn- difficulty-sibling-states
+  [tiers]
+  (mapv (fn [ri]
+          {:role (:role ri)
+           :tier (get tiers (:role ri))
+           :busy? (sibling-busy? ri)})
+        (handoff-lib/stage-sibling-seats)))
+
+(defn- difficulty-allows-claim?
+  "BL-1001: leave the parcel in the stage queue when this seat must not take it."
+  [handoff-file tiers]
+  (let [me (handoff-lib/current-role)
+        stage (handoff-lib/seat-stage me)
+        cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))
+        decision (seat-difficulty-lib/difficulty-claim-decision
+                  {:me me
+                   :my-tier (get tiers me)
+                   :cost cost
+                   :stage stage
+                   :tiers tiers
+                   :sibling-states (difficulty-sibling-states tiers)})]
+    (= :claim decision)))
 
 (defn report-no-task-or-rotate! []
   (let [conf-text (mono-router-conf-text)
@@ -245,7 +297,13 @@
                                            dequeueable)
                 sibling-seat-ids     (mapv :role (handoff-lib/stage-sibling-seats))
                 deferred             (filterv #(= :defer (:action (second %))) decided)
-                claimable            (vec (remove #(= :defer (:action (second %))) decided))]
+                ;; BL-1001: drop candidates this seat must not take (tier /
+                ;; prefer-fit). They stay in the stage queue for a peer.
+                tiers                (seat-difficulty-lib/parse-seat-tiers (mono-router-conf-text))
+                claimable            (->> decided
+                                          (remove #(= :defer (:action (second %))))
+                                          (filter (fn [[f _]] (difficulty-allows-claim? f tiers)))
+                                          vec)]
             (doseq [[f decision] deferred]
               (println (seat-affinity-lib/deferral-line
                         {:basename (fs/file-name f)
