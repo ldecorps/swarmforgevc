@@ -193,22 +193,25 @@ restore
 
 echo
 echo "mutants: killed=$killed survived=$survived skipped=$skipped"
-# Print a non-empty label list; return 0 when anything was printed (caller fails).
+# Print a non-empty label list. Caller must not expand empty arrays under
+# bash 3.2 + set -u (stock macOS /bin/bash) — length-guard before "${arr[@]}".
 emit_labeled_list() {
   local header="$1"
   shift
-  if [[ "$#" -eq 0 ]]; then
-    return 1
-  fi
   echo "$header"
   local s
   for s in "$@"; do echo "  - $s"; done
-  return 0
 }
 fail=0
-emit_labeled_list "SURVIVORS (each is a real test gap):" "${SURVIVORS[@]}" && fail=1
-# BL-1101: a skipped mutant produced no evidence — never certify the run.
-emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "${SKIPPED[@]}" && fail=1
+# BL-1101: survivors or skips produced incomplete evidence — never certify.
+if [[ "${#SURVIVORS[@]}" -gt 0 ]]; then
+  emit_labeled_list "SURVIVORS (each is a real test gap):" "${SURVIVORS[@]}"
+  fail=1
+fi
+if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
+  emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "${SKIPPED[@]}"
+  fail=1
+fi
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi

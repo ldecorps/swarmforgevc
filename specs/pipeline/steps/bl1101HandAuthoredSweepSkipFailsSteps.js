@@ -111,17 +111,19 @@ echo "mutants: killed=$killed survived=$survived skipped=$skipped"
 emit_labeled_list() {
   local header="$1"
   shift
-  if [[ "$#" -eq 0 ]]; then
-    return 1
-  fi
   echo "$header"
   local s
   for s in "$@"; do echo "  - $s"; done
-  return 0
 }
 fail=0
-emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}" && fail=1
-emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "\${SKIPPED[@]}" && fail=1
+if [[ "\${#SURVIVORS[@]}" -gt 0 ]]; then
+  emit_labeled_list "SURVIVORS (each is a real test gap):" "\${SURVIVORS[@]}"
+  fail=1
+fi
+if [[ "\${#SKIPPED[@]}" -gt 0 ]]; then
+  emit_labeled_list "SKIPPED (anchors not found — no evidence produced):" "\${SKIPPED[@]}"
+  fail=1
+fi
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
@@ -164,7 +166,12 @@ function registerSteps(registry) {
       /SKIPPED \(anchors not found/,
       'live sweep must report skipped labels before failing'
     );
-    assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must fail via emit_labeled_list for SKIPPED');
+    assert.match(
+      real,
+      /\$\{#SKIPPED\[@\]\}" -gt 0/,
+      'live sweep must length-guard SKIPPED before expand (bash 3.2 + set -u)'
+    );
+    assert.match(real, /emit_labeled_list "SKIPPED/, 'live sweep must name skips via emit_labeled_list');
     ctx.bl1101 = {
       dir: fs.mkdtempSync(path.join(os.tmpdir(), 'bl1101-')),
       mutants: defaultMutants(),
