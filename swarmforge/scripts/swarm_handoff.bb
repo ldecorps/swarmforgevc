@@ -603,8 +603,10 @@
               (let [decision (when content
                                (required-stages-lib/resolve-effective
                                  (required-stages-lib/read-required-stages content)))
-                    reasons (when content
-                              (required-stages-lib/read-stage-skip-reasons content))
+                    reasons-read (when content
+                                   (required-stages-lib/read-stage-skip-reasons content))
+                    reasons (or (:reasons reasons-read) {})
+                    skip-reasons-malformed (:malformed reasons-read)
                     ;; BL-951: resolve-effective's own docstring requires a
                     ;; present-but-invalid declaration to be surfaced loudly
                     ;; by the caller, never folded into "no declaration at
@@ -623,7 +625,10 @@
                                              :to delivered
                                              :skipped skipped
                                              :reasons reasons}
-                                      rejection-reason (assoc :rejection-reason rejection-reason)))))
+                                      rejection-reason (assoc :rejection-reason rejection-reason)
+                                      ;; BL-754: present-but-malformed skip reasons
+                                      skip-reasons-malformed
+                                      (assoc :skip-reasons-malformed skip-reasons-malformed)))))
                     literal-to (first recipients)]
                 ;; BL-951: :default-full (absent, unparseable, or invalid
                 ;; declaration - and nil content) previously RETURNED here,
@@ -676,16 +681,23 @@
                            :routing-skipped (or (emit-skip next-stage literal-to)
                                                 ;; rewrite with empty between still names the
                                                 ;; rewritten-away literal (existing BL-606 contract)
-                                                {:ticket-id ticket-id
-                                                 :from sender
-                                                 :to next-stage
-                                                 :skipped [literal-to]
-                                                 :reasons reasons})}))))))))))))))
-(defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons rejection-reason]}]
+                                                (cond-> {:ticket-id ticket-id
+                                                         :from sender
+                                                         :to next-stage
+                                                         :skipped [literal-to]
+                                                         :reasons reasons}
+                                                  skip-reasons-malformed
+                                                  (assoc :skip-reasons-malformed
+                                                         skip-reasons-malformed)))}))))))))))))))
+(defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons rejection-reason
+                                       skip-reasons-malformed]}]
   (str ticket-id " " from "->" to
        " skipped=" (str/join "," skipped)
        (when (seq reasons)
          (str " reasons=" (str/join ";" (map (fn [[k v]] (str k ":" v)) reasons))))
+       ;; BL-754: observational — names the unparseable remainder, never blocks.
+       (when skip-reasons-malformed
+         (str " skip_reasons_malformed=\"" skip-reasons-malformed "\""))
        ;; BL-951: a present-but-invalid declaration's rejection travels on
        ;; the record (required_stages_lib's own loud-surfacing contract).
        (when rejection-reason
