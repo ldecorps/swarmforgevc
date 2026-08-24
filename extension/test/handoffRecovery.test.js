@@ -21,6 +21,10 @@ const {
   recoverDeadLetters,
   recoveryLogPath,
   appendRecoveryLog,
+  failedBoxDir,
+  truncateMessage,
+  installTerminalRecoveryNote,
+  disposeEscalatedDeadLetter,
 } = require('../out/swarm/handoffRecovery');
 const { readDaemonHealth } = require('../out/swarm/daemonHealth');
 const { computeLiveTransportHealth } = require('../out/swarm/transportHealth');
@@ -200,6 +204,79 @@ test('busy-holder-guard-03: recovery never re-delivers into an actively-processi
   assert.equal(fs.existsSync(filePath), true, 'the dead letter must be left untouched, not lost');
 });
 
+// ── BL-1114 helpers (failed box + terminal note + dispose) ───────────────
+
+test('BL-1114: failedBoxDir is handoffs/failed relative to inbox/new', () => {
+  const inboxNew = path.join('root', 'handoffs', 'inbox', 'new');
+  assert.equal(failedBoxDir(inboxNew), path.join('root', 'handoffs', 'failed'));
+});
+
+test('BL-1114: truncateMessage leaves short text alone and caps long text to maxLen', () => {
+  assert.equal(truncateMessage('hi', 80), 'hi');
+  assert.equal(truncateMessage('exact', 5), 'exact', 'length === maxLen must not truncate');
+  const long = 'x'.repeat(100);
+  const out = truncateMessage(long, 80);
+  assert.equal(out.length, 80);
+  assert.equal(out.endsWith('…'), true);
+  assert.equal(out.slice(0, 79), 'x'.repeat(79));
+});
+
+test('BL-1114: installTerminalRecoveryNote writes a typed note with TERMINAL header ≤80', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  fs.mkdirSync(inboxNewDir, { recursive: true });
+  const dead = path.join(inboxNewDir, '00_long_name_parcel.handoff.dead');
+  fs.writeFileSync(dead, 'x\n');
+  const dest = installTerminalRecoveryNote('coder', inboxNewDir, dead, 3);
+  const body = fs.readFileSync(dest, 'utf8');
+  assert.match(path.basename(dest), /^00_\d{8}T\d{6}Z_from_recovery_to_coder_for_coder\.handoff$/);
+  assert.match(body, /^id: recovery_exhausted_/m);
+  assert.match(body, /^from: recovery$/m);
+  assert.match(body, /^to: coder$/m);
+  assert.match(body, /^recipient: coder$/m);
+  assert.match(body, /^priority: 00$/m);
+  assert.match(body, /^type: note$/m);
+  assert.match(body, /^created_at: \d{4}-\d{2}-\d{2}T/m);
+  assert.match(body, /^Recovery exhausted for 00_long_name_parcel\.handoff\.dead \(3 attempts\)\.$/m);
+  assert.equal(body.includes('Stryker was here!'), false);
+  assert.ok(body.trimEnd().endsWith('Needs human.'));
+  const msgLine = body.split('\n').find((l) => l.startsWith('message: '));
+  assert.ok(msgLine);
+  const message = msgLine.slice('message: '.length);
+  assert.ok(message.startsWith('TERMINAL dead-letter '));
+  assert.ok(message.includes('after 3 recovery attempts'));
+  assert.ok(message.length <= 80);
+  assert.match(body, /handoffs\/failed/);
+});
+
+test('BL-1114: disposeEscalatedDeadLetter moves .dead and recovery sidecar into failed/', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  // Nested failed path requires mkdir recursive:true
+  const failedDir = path.join(target, 'nested', 'deep', 'failed');
+  fs.mkdirSync(inboxNewDir, { recursive: true });
+  const dead = writeDeadLetter(inboxNewDir, '00_x.handoff.dead', { from: 'a', recipient: 'b' });
+  writeRecoveryAttempts(dead, 3);
+  fs.writeFileSync(`${dead}.chase.json`, '{}');
+  const dest = disposeEscalatedDeadLetter(dead, failedDir);
+  assert.equal(dest, path.join(failedDir, '00_x.handoff.dead'));
+  assert.equal(fs.existsSync(dead), false);
+  assert.equal(fs.existsSync(dest), true);
+  assert.equal(fs.existsSync(path.join(failedDir, '00_x.handoff.recovery.json')), true);
+  assert.equal(fs.existsSync(`${dead}.chase.json`), false);
+});
+
+test('BL-1114: disposeEscalatedDeadLetter tolerates a missing recovery sidecar', () => {
+  const target = mkTmp();
+  const inboxNewDir = path.join(target, 'inbox', 'new');
+  const failedDir = path.join(target, 'failed');
+  fs.mkdirSync(inboxNewDir, { recursive: true });
+  const dead = writeDeadLetter(inboxNewDir, '00_noside.handoff.dead', { from: 'a', recipient: 'b' });
+  const dest = disposeEscalatedDeadLetter(dead, failedDir);
+  assert.equal(fs.existsSync(dest), true);
+  assert.equal(fs.existsSync(dead), false);
+});
+
 // ── escalation-04 ─────────────────────────────────────────────────────────
 
 test('escalation-04: exhausted retries escalate to a needs-human state instead of looping silently', () => {
@@ -212,18 +289,37 @@ test('escalation-04: exhausted retries escalate to a needs-human state instead o
   writeRecoveryAttempts(filePath, CFG.maxRecoveryAttempts);
 
   const escalations = [];
+  const wakes = [];
   const logged = [];
   const outcomes = recoverDeadLettersForRole('coder', inboxNewDir, CFG, noopAdapters({
     setNeedsHuman: (role, needsHuman) => escalations.push({ role, needsHuman }),
+    sendWakeUp: (role) => wakes.push(role),
     logRemediation: (o) => logged.push(o),
   }));
 
   assert.equal(outcomes.length, 1);
   assert.equal(outcomes[0].action, 'escalated');
-  assert.equal(fs.existsSync(filePath), true, 'an escalated parcel is surfaced, not silently discarded from failed/');
   assert.deepEqual(escalations, [{ role: 'coder', needsHuman: true }]);
+  assert.deepEqual(wakes, ['coder'], 'BL-1114: owning role must be woken on terminal escalation');
   assert.equal(logged.length, 1);
   assert.equal(logged[0].attempts, CFG.maxRecoveryAttempts);
+
+  // BL-1114: .dead leaves inbox/new (silent debris) for handoffs/failed/, and
+  // a terminal note tells the holder the parcel is exhausted.
+  assert.equal(fs.existsSync(filePath), false, 'escalated .dead must leave inbox/new');
+  // Fixture layout is target/inbox/new → failed box is target/failed
+  // (handoffs/inbox/new → handoffs/failed in production).
+  const failedPath = path.join(target, 'failed', path.basename(filePath));
+  assert.equal(fs.existsSync(failedPath), true, `escalated .dead must land in failed/: ${failedPath}`);
+  const notes = fs.readdirSync(inboxNewDir).filter((f) => f.endsWith('.handoff') && !f.endsWith('.dead'));
+  assert.equal(notes.length, 1, 'exactly one terminal note for the holder');
+  const noteBody = fs.readFileSync(path.join(inboxNewDir, notes[0]), 'utf8');
+  assert.match(noteBody, /^type: note$/m);
+  assert.match(noteBody, /^from: recovery$/m);
+  assert.match(noteBody, /^priority: 00$/m);
+  assert.match(noteBody, /TERMINAL dead-letter/);
+  assert.match(noteBody, /needs human/i);
+  assert.equal(outcomes[0].filePath, failedPath);
 });
 
 // ── recoverDeadLetters across multiple roles ──────────────────────────────

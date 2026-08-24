@@ -162,10 +162,9 @@ function writeStub(fixture, name, body) {
  *
  *   memory        no readable meminfo AND no `vm_stat` to fall back to.
  *   ps            a `ps` that exits non-zero.
- *   control-plane no `tmux` anywhere on PATH, so the probe's own sh! throws
- *                 IOException out of ProcessBuilder before any exit code
- *                 exists — a throw, not a non-zero exit, and the same class
- *                 of failure `vm_stat` caused.
+ *   control-plane no `tmux` anywhere on PATH, so the probe's own sh! returns
+ *                 spawn-failed? (BL-1102) and observe! classifies :unavailable —
+ *                 never a missing-plane CRIT that would queue ./swarm ensure.
  */
 function breakProbes(fixture, probes, { planeMissing = false } = {}) {
   const absent = [];
