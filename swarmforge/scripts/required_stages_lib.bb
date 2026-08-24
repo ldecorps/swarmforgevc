@@ -84,30 +84,53 @@
                   [(or (normalize-token stage) stage) reason])
                 pairs)))
 
+(defn- take-flow-reason-unquoted
+  [after]
+  (let [comma (.indexOf after ",")
+        next-pair (re-find #",\s*[A-Za-z]+\s*:" after)]
+    (cond
+      (neg? comma)
+      [(str/trim after) "" nil]
+
+      ;; Comma that opens the next `stage:` pair — simple unquoted reason.
+      (and next-pair (= comma (.indexOf after next-pair)))
+      [(str/trim (subs after 0 comma)) (str/trim (subs after (inc comma))) nil]
+
+      ;; Comma inside an unquoted reason — surface, never silent drop (BL-754).
+      :else
+      [nil nil (str "unquoted stage_skip_reasons reason contains a comma; unparseable remainder: "
+                    (str/trim after))])))
+
+(defn- take-flow-reason-quoted
+  "Quote char is \" or '. Unclosed quote keeps the rest as the reason (best-effort)."
+  [after quote-char]
+  (let [end (.indexOf after (str quote-char) 1)]
+    (if (neg? end)
+      [(subs after 1) "" nil]
+      (let [tail (str/trim (subs after (inc end)))
+            tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
+        [(subs after 1 end) tail nil]))))
+
 (defn- take-flow-reason
+  "Split the value after `stage:` into [reason rest malformed?].
+   Quoted forms keep commas inside the reason. Unquoted forms may only
+   contain a comma when it is the boundary before the next `stage:` —
+   any other comma is present-but-malformed (BL-754), never a silent drop."
   [after]
   (cond
-    (str/starts-with? after "\"")
-    (let [end (.indexOf after "\"" 1)]
-      (if (neg? end)
-        [(subs after 1) ""]
-        (let [tail (str/trim (subs after (inc end)))
-              tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
-          [(subs after 1 end) tail])))
-    (str/starts-with? after "'")
-    (let [end (.indexOf after "'" 1)]
-      (if (neg? end)
-        [(subs after 1) ""]
-        (let [tail (str/trim (subs after (inc end)))
-              tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
-          [(subs after 1 end) tail])))
-    :else
-    (let [comma (.indexOf after ",")]
-      (if (neg? comma)
-        [(str/trim after) ""]
-        [(str/trim (subs after 0 comma)) (str/trim (subs after (inc comma)))]))))
+    (str/starts-with? after "\"") (take-flow-reason-quoted after \")
+    (str/starts-with? after "'") (take-flow-reason-quoted after \')
+    :else (take-flow-reason-unquoted after)))
+
+(defn- flow-ok [pairs]
+  {:pairs pairs :malformed nil})
+
+(defn- flow-malformed [pairs msg]
+  {:pairs pairs :malformed msg})
 
 (defn- parse-flow-skip-reasons
+  "Parse `{ stage: reason, ... }` into {:pairs [[stage reason]...] :malformed nil-or-string}.
+   nil when the value is not a flow mapping at all."
   [after-colon]
   (let [s (str/trim (or after-colon ""))]
     (when (and (>= (count s) 2)
@@ -115,44 +138,50 @@
                (str/ends-with? s "}"))
       (let [inner (str/trim (subs s 1 (dec (count s))))]
         (if (str/blank? inner)
-          []
+          (flow-ok [])
           (loop [remaining inner
                  pairs []]
             (let [remaining (str/trim remaining)]
               (cond
                 (str/blank? remaining)
-                pairs
+                (flow-ok pairs)
+
                 :else
                 (let [m (re-matches #"^([A-Za-z]+)\s*:\s*(.*)$" remaining)]
                   (if (nil? m)
-                    pairs
+                    (flow-malformed pairs
+                                    (str "unparseable stage_skip_reasons remainder: " remaining))
                     (let [stage (nth m 1)
                           after (nth m 2)
-                          split (take-flow-reason after)
-                          reason (nth split 0)
-                          rest-after (nth split 1)]
-                      (recur rest-after (conj pairs [stage reason])))))))))))))
+                          [reason rest-after malformed] (take-flow-reason after)]
+                      (if malformed
+                        (flow-malformed pairs malformed)
+                        (recur rest-after (conj pairs [stage reason]))))))))))))))
 
 (defn read-stage-skip-reasons
-  "{stage -> reason} from an optional `stage_skip_reasons` field.
+  "Observational read of optional `stage_skip_reasons`.
+   Returns {:reasons {stage -> reason} :malformed nil-or-string}.
    Prefers a FLOW mapping on the header line (schema + live tickets);
    otherwise reads a BLOCK mapping of indented `  <stage>: <reason>` lines.
-   Returns {} when absent. Stage keys are normalized through normalize-token
-   (case + hardener/hardender alias); unrecognized keys stay verbatim."
+   Absent => {:reasons {} :malformed nil}. Stage keys are normalized through
+   normalize-token (case + hardener/hardender alias); unrecognized keys stay
+   verbatim. A present-but-malformed flow mapping never pretends to be
+   complete (BL-754) — :malformed names the unparseable remainder."
   [content]
   (let [lines (str/split-lines (or content ""))
         idx (some (fn [[i l]] (when (str/starts-with? l "stage_skip_reasons:") i))
                   (map-indexed vector lines))]
     (if (nil? idx)
-      {}
+      {:reasons {} :malformed nil}
       (let [header (nth lines idx)
             after (str/trim (subs header (count "stage_skip_reasons:")))
             flow (parse-flow-skip-reasons after)]
         (if (some? flow)
-          (normalize-reason-pairs flow)
+          {:reasons (normalize-reason-pairs (:pairs flow))
+           :malformed (:malformed flow)}
           (let [block (take-while #(re-matches #"^(\s+.*)?$" %) (drop (inc idx) lines))
                 pairs (keep skip-reason-line block)]
-            (normalize-reason-pairs pairs)))))))
+            {:reasons (normalize-reason-pairs pairs) :malformed nil}))))))
 
 ;; ── parse: the flow-list value after the colon -> raw tokens, or :invalid ──
 
