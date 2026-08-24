@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=755232d9c9e9d8ef0b0cb92b155ad94e8269613f6850374810be7bea4fea25b6
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T15:35:57.530510338Z","feature_name":"A shared pre-commit guard catches property-suite drift","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-570-property-suite-drift-guard.feature","background_hash":"04b5cfdbf4d7e46fccd6598ce0ff6292fe44ae760cd6eb7b8997c05d0037f3a7","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the guard runs the property suite only for staged changes that can invalidate a property","scenario_hash":"f891b49eabfb011a2dd4e7acfe25e192b9267ad38171b741f0d3a6666f793cba","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-08-24T15:35:57.530510338Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A shared pre-commit guard catches property-suite drift
 
   The property suite (`npm run test:properties`) is deliberately excluded from

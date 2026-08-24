@@ -117,9 +117,11 @@ cp "$SCRIPT_DIR/../check_ticket_deletion.sh" "$ROOT/swarmforge/scripts/check_tic
 cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/pre-commit"
-# Until the live hook calls the new guard, this assertion fails → TDD red.
-grep -q 'check_property_suite_drift.sh' "$ROOT/swarmforge/git-hooks/pre-commit" \
-  || fail "07: pre-commit must invoke check_property_suite_drift.sh"
+# Load-bearing: must be an executable line, not only the name in a comment
+# (commenting out the call otherwise survives a bare grep -q).
+grep -v '^[[:space:]]*#' "$ROOT/swarmforge/git-hooks/pre-commit" \
+  | grep -q 'check_property_suite_drift\.sh' \
+  || fail "07: pre-commit must invoke check_property_suite_drift.sh (non-comment)"
 git -C "$ROOT" config core.hooksPath swarmforge/git-hooks
 stage backlog/paused/BL-999-example.yaml
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m ordinary \

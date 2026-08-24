@@ -64,6 +64,17 @@ function registerSteps(registry) {
   registry.defineScoped(/^the shared pre-commit property guard is installed$/, (ctx) => {
     ctx.root = mkFixtureRepo();
     assert.ok(fs.existsSync(GUARD), `expected guard script at ${GUARD}`);
+    const hook = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
+    const hookBody = fs.readFileSync(hook, 'utf8');
+    const nonComment = hookBody
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n');
+    assert.match(
+      nonComment,
+      /check_property_suite_drift\.sh/,
+      'pre-commit must invoke check_property_suite_drift.sh (not only name it in a comment)'
+    );
   }, FEATURE);
 
   registry.defineScoped(/^the property suite is "([^"]+)"$/, (ctx, state) => {
