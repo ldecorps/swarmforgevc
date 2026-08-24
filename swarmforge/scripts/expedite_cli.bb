@@ -33,7 +33,6 @@
 (ns expedite-cli
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
-            [clojure.java.io :as io]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -41,6 +40,8 @@
 (load-file (str (fs/path scripts-dir "expedite_lib.bb")))
 (load-file (str (fs/path scripts-dir "prompt_engine_lib.bb")))
 (load-file (str (fs/path scripts-dir "expedite_progress_lib.bb")))
+;; BL-1103: one shared wall-clock-bounded runner (was a private copy here).
+(load-file (str (fs/path scripts-dir "bounded_run_lib.bb")))
 
 ;; ── args ──────────────────────────────────────────────────────────────────
 
@@ -59,52 +60,12 @@
 (defn- sh [opts & cmd]
   (apply process/sh (assoc opts :continue true) cmd))
 
-(defn- sh-bounded
-  "Like `sh` but ENFORCES a wall-clock bound: on overrun the child is destroyed
-   forcibly and {:timed-out? true} comes back.
-
-   This exists because the architect pass found the first implementation only
-   REPORTED the overrun — it called blocking `sh` and computed the verdict
-   afterwards, so a genuinely hung stage blocked the driver forever. That is the
-   worst place in this tool for a report-only timeout: by stopping the stack the
-   expeditor has killed the babysitter and the Operator, the two processes that
-   would otherwise notice it wedging. Its own design says it must observe itself,
-   and a post-hoc verdict cannot.
-
-   TWO details that a first fix got wrong and a genuinely-hung fixture exposed:
-
-     1. `.destroyForcibly` kills the direct child ONLY. A stage runner is a shell
-        script, so its own children (a `sleep`, a `claude`) survive and keep
-        running. So the command is wrapped in `setsid`, making it a process-group
-        leader, and the whole GROUP is killed via `kill -KILL -<pgid>`.
-     2. Deref-ing the process after destroying it BLOCKS when a surviving
-        grandchild still holds the stdout pipe open — EOF never arrives. So output
-        goes to FILES rather than :string pipes, and a timed-out process is never
-        deref'd."
-  [opts timeout-ms out-file err-file & cmd]
-  (let [proc (apply process/process
-                    ;; stdin from /dev/null: the real run logged
-                    ;; "no stdin data received in 3s" on EVERY stage, burning 3s
-                    ;; each time and filling each stderr.log with a warning whose
-                    ;; own text names the fix.
-                    (assoc opts :in (io/file "/dev/null")
-                           :out (io/file (str out-file)) :err (io/file (str err-file)))
-                    (concat ["setsid"] cmd))
-        pid (.pid (:proc proc))
-        finished? (.waitFor (:proc proc) (long timeout-ms) java.util.concurrent.TimeUnit/MILLISECONDS)]
-    (if finished?
-      {:exit (:exit @proc) :timed-out? false}
-      (do
-        ;; Negative pid = the whole process group. setsid made this pid the
-        ;; group leader, so this reaches the runner AND everything it spawned.
-        ;;
-        ;; The `--` is LOAD-BEARING and its absence is silent: without it
-        ;; `/usr/bin/kill` reads `-<pid>` as an option, exits 0, kills only the
-        ;; leader, and leaves every grandchild running. Measured: two orphaned
-        ;; `sleep` processes survived, with kill reporting success.
-        (sh {} "kill" "-KILL" "--" (str "-" pid))
-        (.destroyForcibly (:proc proc))
-        {:exit nil :timed-out? true}))))
+;; BL-1103: private name kept at call sites; body lives in bounded_run_lib.bb.
+;; The expeditor needs an ENFORCED bound (not a post-hoc report): by stopping
+;; the stack it has killed the babysitter and Operator that would otherwise
+;; notice it wedging.
+(defn- sh-bounded [& args]
+  (apply bounded-run-lib/run-bounded! args))
 
 (defn- log! [& parts]
   (println (str "expedite " (str/join " " (map str parts)))))

@@ -49,6 +49,8 @@
 (load-file (str (fs/path script-dir "provider_respawn_env_lib.bb")))
 ;; BL-1108: shared token→argv needles (also loaded by swarm_ensure.bb).
 (load-file (str (fs/path script-dir "agent_process_marker_lib.bb")))
+;; BL-1103: one shared wall-clock-bounded runner (was a hand-copy of expedite's).
+(load-file (str (fs/path script-dir "bounded_run_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -933,39 +935,10 @@
   (or (some-> (System/getenv "BABYSITTER_ENSURE_TIMEOUT_MS") str/trim parse-long)
       (* 5 60 1000)))
 
-(defn run-bounded!
-  "Run a command under a wall-clock bound, killing the whole process GROUP on
-   timeout. Mirrors expedite_cli.bb's run-bounded!, whose docstring records the
-   two traps a first implementation got wrong and a genuinely-hung fixture
-   exposed - both apply here unchanged:
-
-     1. `.destroyForcibly` kills the DIRECT child only. `./swarm ensure` is a
-        shell script, so everything it spawned survives and keeps running. The
-        command is wrapped in `setsid` to make it a process-group leader and
-        the whole group is killed via `kill -KILL -- -<pgid>`. The `--` is
-        load-bearing and its absence is SILENT: without it kill reads `-<pid>`
-        as an option, exits 0, and leaves every grandchild alive.
-     2. Deref-ing a destroyed process BLOCKS while a surviving grandchild holds
-        the stdout pipe open - EOF never arrives. So output goes to FILES, and
-        a timed-out process is never deref'd.
-
-   Mirrored rather than shared because the original is a `defn-` in another
-   script's namespace, and expedite_cli.bb is being edited by BL-1030 right
-   now; extracting a shared lib across both is a follow-up, not this ticket."
-  [opts timeout-ms out-file err-file & cmd]
-  (let [proc (apply process/process
-                    (assoc opts :in (io/file "/dev/null")
-                           :out (io/file (str out-file)) :err (io/file (str err-file)))
-                    (concat ["setsid"] cmd))
-        pid (.pid (:proc proc))
-        finished? (.waitFor (:proc proc) (long timeout-ms) java.util.concurrent.TimeUnit/MILLISECONDS)]
-    (if finished?
-      {:exit (:exit @proc) :timed-out? false}
-      (do
-        (try (process/sh {:continue true} "kill" "-KILL" "--" (str "-" pid))
-             (catch Exception _ nil))
-        (.destroyForcibly (:proc proc))
-        {:exit nil :timed-out? true}))))
+;; BL-1103: local name kept at the ensure call site; body lives in
+;; bounded_run_lib.bb (the hand-copy of expedite's runner is gone).
+(defn run-bounded! [& args]
+  (apply bounded-run-lib/run-bounded! args))
 
 (defn- ensure-output-tail
   "The last few lines the ensure wrote, for the REPAIR line. Reads the files
