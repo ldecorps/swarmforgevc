@@ -1,12 +1,17 @@
 {
   "models": [
-    { "provider": "anthropic", "model": "claude-sonnet-5", "status": "certified", "context_window": 200000, "cost_class": "medium" },
-    { "provider": "openai", "model": "gpt-5.3-codex", "status": "certified", "context_window": 128000, "cost_class": "medium" },
-    { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low" },
-    { "provider": "cursor", "model": "auto", "status": "candidate", "context_window": 200000, "cost_class": "medium" },
+    { "provider": "anthropic", "model": "claude-sonnet-5", "status": "certified", "context_window": 200000, "cost_class": "medium",
+      "known_limitations": ["Prefer structured tool use over free-form shell when both work"] },
+    { "provider": "openai", "model": "gpt-5.3-codex", "status": "certified", "context_window": 128000, "cost_class": "medium",
+      "known_limitations": ["Codex-leaning; weaker on long multi-role planning without a scorecard"] },
+    { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low",
+      "known_limitations": ["Not certified for production role assignment", "Smaller context window than swarm defaults"] },
+    { "provider": "cursor", "model": "auto", "status": "candidate", "context_window": 200000, "cost_class": "medium",
+      "known_limitations": ["Routing target is host-chosen; do not pin as a production default without certify"] },
     { "provider": "mistral", "model": "mistral-medium-3.5", "status": "candidate", "context_window": 200000, "cost_class": "medium",
       "underlying_name": "mistral-vibe-cli-latest",
-      "trace": "vibe-config alias=mistral-medium-3.5 name=mistral-vibe-cli-latest input_price=1.5 output_price=7.5 auto_compact_threshold=200000" }
+      "trace": "vibe-config alias=mistral-medium-3.5 name=mistral-vibe-cli-latest input_price=1.5 output_price=7.5 auto_compact_threshold=200000",
+      "known_limitations": ["Alias over vibe CLI latest — re-check underlying_name on price/name drift"] }
   ],
 
   "capabilities": {

@@ -8,7 +8,8 @@
     "context_window": "integer, tokens",
     "cost_class": "string, one of: low | medium | high",
     "certification_report_path": "string relative to the state dir (e.g. \"certification-reports/anthropic__claude-sonnet-5__<ts>.json\"), or null if never certified",
-    "last_regression_reason": "string, present only after a decertify; describes the regression that triggered it"
+    "last_regression_reason": "string, present only after a decertify; describes the regression that triggered it",
+    "known_limitations": "array of short strings (BL-557); operator-facing limits projected by compat-docs; omit or empty when none are recorded"
   },
 
   "capability_registry_entry": {
