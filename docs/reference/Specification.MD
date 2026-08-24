@@ -1,6 +1,16 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1103: one shared wall-clock-bounded
+**Last Updated:** August 24, 2026 (BL-1020: a leftover
+`.swarmforge/mono-router-active-role` on a **standing** (non-router) pack is
+not topology. `resolve-resident-role` honours the marker only on rotation-router
+packs; elsewhere pack config / home role wins and a present leftover is reported
+`BL-1020 STALE` (attach + `relaunch_resume_cli`). Router packs unchanged.
+Acceptance: `specs/features/BL-1020-stale-mono-router-marker-is-not-topology.feature`.
+How-to: `docs/how-to/BL-1020-stale-mono-router-marker-is-not-topology.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1103: one shared wall-clock-bounded
 subprocess runner. `expedite_cli.bb`'s former private `sh-bounded` and
 `babysitter_check.bb`'s hand-copied `run-bounded!` both load
 `bounded_run_lib.bb` — `setsid` + `kill -KILL -- -<pgid>` for group kill, and

@@ -31,7 +31,10 @@ session is created:
    already keeps up to date — and boots the resident **as that role** instead
    of home, provided the marker names a role the pack actually knows about.
    A missing, blank, or unrecognized marker falls back to booting at home, as
-   before.
+   before. (BL-1020: on a **standing** pack that same file is not topology —
+   attach and `resolve-resident-role` ignore leftovers and may print
+   `BL-1020 STALE`; see
+   [BL-1020 how-to](./BL-1020-stale-mono-router-marker-is-not-topology.md).)
 2. **Orphan-claim sweep** (every pack). Every role's `inbox/in_process/` is
    checked for a claim whose owning session is not alive. A claim belonging
    to the role being resumed in step 1 is left untouched — that role will

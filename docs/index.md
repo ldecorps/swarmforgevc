@@ -53,6 +53,7 @@ expects them, and are not migrated or rewritten here.
 - [Telegram Cursor Remote operator commands](how-to/BL-698-telegram-cursor-operator-commands.md) — phone-first slash verbs on the Cursor Remote topic, danger tiers, and (BL-1113) CreatePlan **Confirm plan** / **Reject plan** progress buttons.
 - [Reordering Epic Priority in the Mini App Console](how-to/BL-572-console-epic-priority-reorder.md)
 - [Relaunch Resume and the Orphan-Claim Sweep](how-to/BL-648-relaunch-resume-orphan-claims.md)
+- [Stale mono-router-active-role is not topology on standing packs](how-to/BL-1020-stale-mono-router-marker-is-not-topology.md) — marker honoured only on rotation-router packs; leftovers on full-forge are ignored and reported `BL-1020 STALE` (BL-1020).
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
