@@ -260,6 +260,7 @@ In production mode:
 All CLI commands read from and write to the runtime state, so changes persist across future invocations.
 
 Related: [Route work to a local-model seat](./BL-1053-route-work-to-a-local-model-seat.md),
+[Wire Mistral Vibe into the Intelligence Layer](./BL-682-mistral-vibe-intelligence-layer-routing.md),
 [ModelFactory assign and apply](./BL-525-model-factory-assign-and-apply.md).
 
 Acceptance (Slice 2): `specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature`.

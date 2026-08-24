@@ -1,6 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-556: Model Steward Slice 2 —
+**Last Updated:** August 24, 2026 (BL-682: wire Mistral Vibe into the
+Intelligence Layer. ModelFactory's `provider->agent` map adds
+`mistral` → `vibe`. Model Steward seeds `mistral/mistral-medium-3.5` from the
+live `~/.vibe/config.toml` alias (never the rolling `mistral-vibe-cli-latest`
+pointer), cost class `medium`, context window `200000`. Registration only —
+no certify, no pack/launcher edits; old aider-based mistral packs stay
+historical. How-to:
+`docs/how-to/BL-682-mistral-vibe-intelligence-layer-routing.md`. Cross-links:
+`docs/how-to/BL-547-model-steward-overview.md`,
+`docs/how-to/BL-525-model-factory-assign-and-apply.md`,
+`docs/how-to/BL-1053-route-work-to-a-local-model-seat.md`, `docs/index.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-556: Model Steward Slice 2 —
 `model-steward evaluate` ingests a captured recruiter scorecard JSON
 (optional bake-off) into the capability registry, role-matrix evidence
 pointer, and an evidence-backed certification report with non-empty gates.
