@@ -117,4 +117,4 @@ qa_e2e_procedure: |
      provider->agent edit was needed.
   6. Confirm registration alone changed no live seat.
 
-assigned_to: coder
+assigned_to: architect
