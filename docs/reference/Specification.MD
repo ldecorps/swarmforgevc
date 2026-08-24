@@ -1,6 +1,21 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1100: promotion candidacy is decided by
+**Last Updated:** August 24, 2026 (BL-1109: babysitter swarm-starved (check 10)
+treats a non-abandoned `in_process` claim as motion even when the owning pane
+is idle this sweep. Before the fix, a Cursor Thinking pause / rotate gap /
+follow-up bar made the owner look idle for two sweeps while parcels were
+still held — STARVED CRIT fired and the message claimed "zero
+pending/in-process parcels" despite claims existing. `motion-in-process?`
+now keys on non-abandoned only (`owner-busy?` stays for stuck-in-process
+BL-807); CRIT mailbox copy reports real pending/in-process counts when
+claims were gathered; starved gather shares stuck-in-process's nested and
+`batch_*` glob. Acceptance:
+`specs/features/BL-1109-babysitter-starved-ignores-idle-owner-in-process.feature`.
+Runbook: `docs/how-to/BL-611-babysitterd-runbook.md`. Diagram note:
+`docs/diagrams/architecture.mmd`. No new extension command, setting, or UI
+change.)
+Prior entry —
+August 24, 2026 (BL-1100: promotion candidacy is decided by
 structured fields, never by free prose. `promote_and_route_next.sh` used to
 grep the whole ticket YAML for a hold phrase, so an orthogonality caution, a
 `depends_on` wait written in notes, or a numbered acceptance step that merely
