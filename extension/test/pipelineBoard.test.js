@@ -242,7 +242,7 @@ test('computePipelineBoard: every activeIds entry is a row exactly once, even wi
 
 test('computePipelineBoard: a not-started row carries its ticket meta (epic/slug) same as a held row would', () => {
   const { rows } = computePipelineBoard({}, [], { 'BL-1': { epic: 'Alpha', title: 'fix the widget' } }, { activeIds: ['BL-1'] });
-  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the', title: 'fix the widget' }]);
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the-widget', title: 'fix the widget' }]);
 });
 
 test('renderPipelineBoardBody: a not-started row marks only the not-started column, no pipeline role column', () => {
@@ -253,12 +253,12 @@ test('renderPipelineBoardBody: a not-started row marks only the not-started colu
 
 test('computePipelineBoard: a role-held ticket with a title gets its derived (grid) kebab slug', () => {
   const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { title: 'fix the widget' } });
-  assert.equal(rows[0].slug, 'fix-the');
+  assert.equal(rows[0].slug, 'fix-the-widget');
 });
 
 test('computePipelineBoard: a paused ticket with a title gets its derived (list) kebab-only slug', () => {
   const { parked } = computePipelineBoard({}, [{ id: 'BL-2' }], { 'BL-2': { title: 'clean up docs' } });
-  assert.equal(parked[0].slug, 'clean-up');
+  assert.equal(parked[0].slug, 'clean-up-docs');
 });
 
 // BL-452/BL-455 pipeline-board-01: each ticket block lists every pipeline
@@ -285,6 +285,9 @@ function matrixLine(gutter, cells, cellWidth) {
 const STAGE_GLYPHS = ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA'];
 const STAGE_CELL_WIDTH = 2;
 const stageHeader = (gutterWidth) => matrixLine(NBSP.repeat(gutterWidth), STAGE_GLYPHS, STAGE_CELL_WIDTH);
+const stageHeaderHtml = (gutterWidth) => stageHeader(gutterWidth).replace(/\u00a0/g, '&nbsp;');
+const ticketRowHtml = (displayId, gutterWidth, heldGlyph) =>
+  ticketRow(displayId, gutterWidth, heldGlyph).replace(/\u00a0/g, '&nbsp;');
 const ticketRow = (displayId, gutterWidth, heldGlyph) =>
   matrixLine(
     displayId.padStart(gutterWidth, NBSP),
@@ -424,6 +427,14 @@ test('wrapPipelineBoardHtml: wraps the grid text in a <pre> block', () => {
   assert.equal(wrapPipelineBoardHtml('TICKET SP\nBL-1    X'), '<pre>TICKET SP\nBL-1    X</pre>');
 });
 
+test('wrapPipelineBoardHtml: emits &nbsp; for Unicode NBSP so Telegram keeps the stage header on one line', () => {
+  const NBSP = '\u00a0';
+  const header = `${NBSP.repeat(4)}${NBSP}NS${NBSP}SP${NBSP}CO${NBSP}CL${NBSP}AR${NBSP}HD${NBSP}DC${NBSP}QA`;
+  const html = wrapPipelineBoardHtml(header);
+  assert.ok(html.includes('DC&nbsp;QA'), `expected &nbsp; before QA, got: ${html}`);
+  assert.ok(!html.includes('DC QA'), 'must not use ASCII space between DC and QA');
+});
+
 test('wrapPipelineBoardHtml: escapes HTML-significant characters', () => {
   assert.equal(wrapPipelineBoardHtml('a & b < c > d'), '<pre>a &amp; b &lt; c &gt; d</pre>');
 });
@@ -478,12 +489,12 @@ test('renderPipelineBoard: two different lastChangeMs values a minute apart prod
 
 // ── BL-465: deriveKebabSlug / deriveListEntryText (pure) ──────────────────
 
-test('deriveKebabSlug: takes the first 2 significant words, lowercased and hyphenated', () => {
-  assert.equal(deriveKebabSlug('Pipeline Board: Post The New Message'), 'pipeline-board');
+test('deriveKebabSlug: takes the first 3 significant words, lowercased and hyphenated', () => {
+  assert.equal(deriveKebabSlug('Pipeline Board: Post The New Message'), 'pipeline-board-post');
 });
 
 test('deriveKebabSlug: strips punctuation rather than treating it as a word boundary only', () => {
-  assert.equal(deriveKebabSlug("BL-467: Pipeline board's own pin"), 'bl-467');
+  assert.equal(deriveKebabSlug("BL-467: Pipeline board's own pin"), 'bl-467-pipeline');
 });
 
 test('deriveKebabSlug: a short title (fewer than 2 words) uses every word it has', () => {
@@ -503,7 +514,7 @@ test('deriveKebabSlug: a custom maxWords bound is honoured', () => {
 });
 
 test('deriveListEntryText: is the short kebab slug only, no wider title tail', () => {
-  assert.equal(deriveListEntryText('clean up docs'), 'clean-up');
+  assert.equal(deriveListEntryText('clean up docs'), 'clean-up-docs');
 });
 
 test('deriveListEntryText: no title is an empty string (never throws)', () => {
@@ -564,7 +575,7 @@ test('renderPipelineBoardBody: a below-grid list line shows the short kebab slug
   const lines = text.split('\n');
   const entryLine = lines.find((l) => l.trim().split(/\s+/)[0] === '472');
   assert.ok(entryLine, `expected a "472" parked entry, got:\n${text}`);
-  assert.equal(entryLine.trim(), '472 pipeline-board', 'expected the kebab slug only, no further title words');
+  assert.equal(entryLine.trim(), '472 pipeline-board-shows', 'expected the kebab slug only, no further title words');
 });
 
 test('renderPipelineBoardBody: a root-intake list entry keeps its non-ticket id unchanged', () => {
@@ -1176,8 +1187,8 @@ test('composePipelineBoardHtml: status grid stays inside one <pre>; <a> tags nev
   assert.ok(preOpen >= 0 && preClose > preOpen, html);
   const preBody = html.slice(preOpen, preClose + '</pre>'.length);
   assert.ok(preBody.includes('528'), preBody);
-  assert.ok(preBody.includes(stageHeader(3)), preBody);
-  assert.ok(preBody.includes(ticketRow('528', 3, 'CO')), preBody);
+  assert.ok(preBody.includes(stageHeaderHtml(3)), preBody);
+  assert.ok(preBody.includes(ticketRowHtml('528', 3, 'CO')), preBody);
   assert.ok(!preBody.includes('<a href'), preBody);
   assert.ok(html.indexOf('<a href') > preClose, html);
 });

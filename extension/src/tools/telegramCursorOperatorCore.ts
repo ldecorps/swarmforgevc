@@ -239,3 +239,46 @@ export function operatorStopModeButtons(): Array<Array<{ text: string; callbackD
 export function formatOperatorStopModePrompt(): string {
   return 'Stop the swarm? Choose drain-stop (wait for empty pipeline, then kill) or emergency-stop (kill now).';
 }
+
+/** CreatePlan awaiting human confirmation on Telegram Cursor Remote. */
+export type PendingPlanConfirm = { plan: string; callId?: string; postedAtMs: number } | undefined;
+
+export const PLAN_CALLBACK_DATA = {
+  confirm: 'plan:confirm',
+  reject: 'plan:reject',
+} as const;
+
+export function formatPlanConfirmPrompt(plan: string): string {
+  const body = plan.length > 3500 ? `${plan.slice(0, 3497)}…` : plan;
+  return `Plan awaiting confirmation:\n\n${body}\n\nConfirm to execute, or Reject to revise.`;
+}
+
+export function planConfirmButtons(): Array<Array<{ text: string; callbackData: string }>> {
+  return [
+    [
+      { text: 'Confirm plan', callbackData: PLAN_CALLBACK_DATA.confirm },
+      { text: 'Reject plan', callbackData: PLAN_CALLBACK_DATA.reject },
+    ],
+  ];
+}
+
+export type PlanConfirmCallbackDecision =
+  | { action: 'ignore' }
+  | { action: 'confirm-plan' }
+  | { action: 'reject-plan' };
+
+export function decidePlanConfirmCallback(
+  pending: PendingPlanConfirm,
+  callbackData: string
+): PlanConfirmCallbackDecision {
+  if (!pending) {
+    return { action: 'ignore' };
+  }
+  if (callbackData === PLAN_CALLBACK_DATA.confirm) {
+    return { action: 'confirm-plan' };
+  }
+  if (callbackData === PLAN_CALLBACK_DATA.reject) {
+    return { action: 'reject-plan' };
+  }
+  return { action: 'ignore' };
+}

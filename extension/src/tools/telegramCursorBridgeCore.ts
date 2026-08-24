@@ -14,8 +14,10 @@ import {
   decideOperatorConfirmCallback,
   decideOperatorVerbConfirm,
   decideOperatorSpecialCallback,
+  decidePlanConfirmCallback,
   operatorDangerTier,
   type PendingOperatorConfirm,
+  type PendingPlanConfirm,
 } from './telegramCursorOperatorCore';
 
 export const CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE';
@@ -144,7 +146,9 @@ export type CursorBridgeDecision =
   | { action: 'stop-and-run'; verb: string; args?: string }
   | { action: 'run-anyway'; verb: string; args?: string }
   | { action: 'land-sleep'; answer: 'yes' | 'no' }
-  | { action: 'stop-mode'; mode: 'drain' | 'emergency' };
+  | { action: 'stop-mode'; mode: 'drain' | 'emergency' }
+  | { action: 'confirm-plan' }
+  | { action: 'reject-plan' };
 
 export type EnsureCursorTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
@@ -450,9 +454,17 @@ function decideInboundGate(
 function decideInboundContent(
   event: CursorBridgeInboundEvent,
   trimmed: string,
-  pending: PendingOperatorConfirm
+  pending: PendingOperatorConfirm,
+  pendingPlan: PendingPlanConfirm = undefined
 ): CursorBridgeDecision {
   if (event.kind === 'callback' && event.callbackData) {
+    const planDecision = decidePlanConfirmCallback(pendingPlan, event.callbackData);
+    if (planDecision.action === 'confirm-plan') {
+      return { action: 'confirm-plan' };
+    }
+    if (planDecision.action === 'reject-plan') {
+      return { action: 'reject-plan' };
+    }
     const special = decideOperatorSpecialCallback(event.callbackData);
     if (special.action === 'cancel-pending') {
       return { action: 'cancel-operator-pending' };
@@ -497,20 +509,21 @@ export function decideInboundAction(
   principalUserId: string | number,
   chatId: string | number,
   cursorTopicId: CursorBridgeTopicScope | number | undefined,
-  pending: PendingOperatorConfirm = undefined
+  pending: PendingOperatorConfirm = undefined,
+  pendingPlan: PendingPlanConfirm = undefined
 ): CursorBridgeDecision {
   const gated = decideInboundGate(event, principalUserId, chatId, cursorTopicId);
   if (gated) {
     return gated;
   }
   if (event.kind === 'callback') {
-    return decideInboundContent(event, '', pending);
+    return decideInboundContent(event, '', pending, pendingPlan);
   }
   const trimmed = event.text.trim();
   if (!trimmed && !event.photoFileId) {
     return { action: 'ignore' };
   }
-  return decideInboundContent(event, trimmed, pending);
+  return decideInboundContent(event, trimmed, pending, pendingPlan);
 }
 
 export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorBridgeDecision {

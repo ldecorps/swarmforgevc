@@ -7,6 +7,42 @@ import {
 
 export type CursorAgentProgressCallback = (line: string) => void | Promise<void>;
 
+/** Progress lines that carry a CreatePlan body for Telegram Confirm/Reject. */
+export const PLAN_AWAITING_PROGRESS_PREFIX = '📋 PLAN_AWAITING:\n';
+
+export type CreatePlanAwaiting = { plan: string; callId?: string };
+
+function toolCallName(event: Extract<SDKMessage, { type: 'tool_call' }>): string {
+  return String(event.name ?? '');
+}
+
+function toolCallArgs(event: Extract<SDKMessage, { type: 'tool_call' }>): Record<string, unknown> | undefined {
+  const args = (event as { args?: unknown }).args;
+  if (args && typeof args === 'object' && !Array.isArray(args)) {
+    return args as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+/** Detect a running CreatePlan tool_call and return its plan text, if any. */
+export function extractCreatePlanAwaiting(event: SDKMessage): CreatePlanAwaiting | undefined {
+  if (event.type !== 'tool_call' || event.status !== 'running') {
+    return undefined;
+  }
+  const name = toolCallName(event);
+  if (!/create\s*plan/i.test(name) && name !== 'CreatePlan' && name !== 'createPlan') {
+    return undefined;
+  }
+  const args = toolCallArgs(event);
+  const plan = typeof args?.plan === 'string' ? args.plan.trim() : '';
+  if (!plan) {
+    return undefined;
+  }
+  const callIdRaw = (event as unknown as { callId?: unknown }).callId;
+  const callId = typeof callIdRaw === 'string' ? callIdRaw : undefined;
+  return { plan, callId };
+}
+
 function toolLabel(name: string): string {
   return name.length > 48 ? `${name.slice(0, 45)}…` : name;
 }
@@ -40,6 +76,12 @@ function shouldPostThinkingProgress(text: string): boolean {
 
 /** Map one SDK stream event to a short user-facing progress line, if any. */
 export function summarizeSdkProgressLine(event: SDKMessage): string | undefined {
+  const planAwaiting = extractCreatePlanAwaiting(event);
+  if (planAwaiting) {
+    // Prefixed so Telegram Live can promote this to a Confirm/Reject prompt
+    // instead of a one-line progress drip (plan confirmation must surface).
+    return `${PLAN_AWAITING_PROGRESS_PREFIX}${planAwaiting.plan}`;
+  }
   switch (event.type) {
     case 'status':
       if (event.status === 'RUNNING') {

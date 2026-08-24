@@ -287,10 +287,10 @@ const STAGE_CELL_WIDTH = 2;
 // (a build-time/cosmetic detail per the ticket's own note) - in practice
 // close to the real on-disk slug, since a title and its filename slug are
 // authored together.
-// BL-505: default narrowed from 3 to 2 significant words (the grid's own
-// slug column, and - since deriveListEntryText below now delegates to this
-// same function - every below-grid list line too).
-export function deriveKebabSlug(title: string | undefined, maxWords = 2): string {
+// Default 3 significant words (BL-505 had narrowed to 2; phone captions
+// need the third word for enough context). Shared by the grid slug column
+// and deriveListEntryText below-grid list lines.
+export function deriveKebabSlug(title: string | undefined, maxWords = 3): string {
   if (!title) {
     return '';
   }
@@ -1480,7 +1480,14 @@ export function budgetPipelineBoardLinks(links: PipelineBoardLinkEntry[], repoBa
 // ticket ids and column glyphs never carry them in practice, but the wrap
 // must not corrupt the markup if they ever did.
 function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Emit &nbsp; for U+00A0 so Telegram HTML parse_mode keeps the Pipeline
+  // Board stage header on one phone line (raw NBSP alone still soft-wraps
+  // before QA on some clients).
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\u00a0/g, '&nbsp;');
 }
 
 // BL-465 / in-board links: prefer composePipelineBoardHtml for live posts.
