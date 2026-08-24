@@ -1068,6 +1068,39 @@ this ticket).
 Acceptance:
 `specs/features/BL-922-unreadable-acceptance-declaration-caught-at-mint.feature`.
 
+## Mint-Time Duplicate-Id Gate (BL-1105)
+
+Parallel mint sessions can pick the same next ticket id by hand. Git does
+not catch it: the filename carries the slug, so two differently-named YAMLs
+under one `id:` merge with no conflict. Live collisions were caught only
+incidentally (topic-record add/add), which is not a reliable detector.
+
+The refusal lives in the gate the specifier already runs on every minted
+ticket — `swarmforge/scripts/specifier_backlog_hygiene_gate.bb` (logic in
+`backlog_hygiene_lib.bb`). No new call site.
+
+### What it checks
+
+- **Key:** the YAML `id:` field, never the filename slug.
+- **Local corpus:** every ticket under `backlog/{paused,active,hold,done}/`.
+- **Published corpus:** by default `origin/main` via `git ls-tree` /
+  `git show` (override with `BACKLOG_HYGIENE_PUBLISHED_REF`, or a fixture
+  directory via `BACKLOG_HYGIENE_PUBLISHED_ROOT`).
+- **Peer subjects:** two paths in the same gate run claiming one id are
+  refused even when both corpora look empty for that id.
+- **Fail-closed:** an unreadable or partially-read local or published
+  corpus fails the gate; it is never treated as "no ids".
+- **Read-only:** reports and refuses; never renames, moves, or rewrites a
+  ticket.
+- **Orthogonal:** epic/milestone (and BL-922 unreadable-acceptance) checks
+  still run in the same invocation.
+
+On refusal the gate prints a `DUPLICATE-ID` line naming the subject path and
+the other holder(s).
+
+Acceptance:
+`specs/features/BL-1105-a-duplicate-ticket-id-is-refused-at-mint.feature`.
+
 ## Review-Forward Evidence Gate (BL-806, widened by BL-950)
 
 A structural backstop for Article 4.4's "commit your explicit-NONE evidence
