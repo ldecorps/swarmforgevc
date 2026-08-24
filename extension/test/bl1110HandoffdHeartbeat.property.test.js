@@ -16,9 +16,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeout');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -50,7 +50,7 @@ function run(root, now) {
 }
 
 function mkFixture(now, { ageSecs, markerAgeMs, sweep }) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1110-'));
+  const root = mkTmpDir('sfvc-bl1110-');
   fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'babysitterd'), { recursive: true });
   fs.writeFileSync(
