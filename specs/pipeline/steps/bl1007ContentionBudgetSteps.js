@@ -15,6 +15,20 @@ const {
 const FEATURE = 'A unit-lane test budget is relative to recorded contention';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 
+/** Case-exact Outline cells (BL-113 soft lock). */
+const KNOWN_BASES = new Set(['20000', '45000']);
+const KNOWN_FACTORS = new Set(['0.25', '1', '2', '3', '1000', 'unusable']);
+const KNOWN_EFFECTIVES = new Set(['20000', '40000', '60000', '90000', 'ceiling']);
+const KNOWN_ROWS = new Set([
+  '20000|0.25|20000',
+  '20000|1|20000',
+  '20000|2|40000',
+  '20000|3|60000',
+  '45000|2|90000',
+  '20000|1000|ceiling',
+  '20000|unusable|20000',
+]);
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -27,16 +41,24 @@ function registerSteps(registry) {
   });
 
   scoped(/^a unit-lane test whose base budget is (\d+) ms$/, (ctx, base) => {
+    assert.ok(KNOWN_BASES.has(base), `unknown Outline base cell: ${base}`);
     ctx.baseMs = Number(base);
+    ctx.baseRaw = base;
   });
 
   scoped(/^the recorded contention factor is (.+)$/, (ctx, raw) => {
-    ctx.factor = raw.trim() === 'unusable' ? 'unusable' : Number(raw);
+    const cell = raw.trim();
+    assert.ok(KNOWN_FACTORS.has(cell), `unknown Outline factor cell: ${cell}`);
+    ctx.factorRaw = cell;
+    ctx.factor = cell === 'unusable' ? 'unusable' : Number(cell);
   });
 
   scoped(/^its effective budget is (.+)$/, (ctx, raw) => {
-    const expected =
-      raw.trim() === 'ceiling' ? ctx.ceilingMs : Number(raw);
+    const cell = raw.trim();
+    assert.ok(KNOWN_EFFECTIVES.has(cell), `unknown Outline effective cell: ${cell}`);
+    const rowKey = `${ctx.baseRaw}|${ctx.factorRaw}|${cell}`;
+    assert.ok(KNOWN_ROWS.has(rowKey), `unknown Outline row: ${rowKey}`);
+    const expected = cell === 'ceiling' ? ctx.ceilingMs : Number(cell);
     const actual = effectiveBudgetMs(ctx.baseMs, ctx.factor, ctx.ceilingMs);
     assert.equal(actual, expected);
   });
@@ -51,11 +73,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the unit lane completes a run$/, (ctx) => {
-    // Drive a tiny vitest file with an explicit timeout literal so the setup
-    // wrapper records a budgeted test (resourceTelemetry has none).
+    // Probe file carries an explicit timeout literal so setup wraps and
+    // records loadNormalizedDurationMs (architect bounce: no all-null tests[]).
     const res = spawnSync(
       'npx',
-      ['vitest', 'run', '--config', 'vitest.config.mjs', 'test/bl1007ContentionBudgetSmoke.test.js'],
+      ['vitest', 'run', '--config', 'vitest.config.mjs', 'test/bl1007BudgetProbe.test.js'],
       {
         cwd: path.join(REPO_ROOT, 'extension'),
         encoding: 'utf8',
@@ -64,15 +86,15 @@ function registerSteps(registry) {
       }
     );
     ctx.unitLaneOut = `${res.stdout || ''}${res.stderr || ''}`;
-    assert.equal(res.status, 0, `smoke unit lane failed:\n${ctx.unitLaneOut}`);
+    assert.equal(res.status, 0, `probe vitest failed:\n${ctx.unitLaneOut}`);
     const tmp = require('node:os').tmpdir();
-    const files = fs.readdirSync(tmp).filter((f) => f.startsWith('sfvc-unit-lane-budget-'));
-    assert.ok(files.length > 0, 'expected budget evidence file');
-    // Prefer the newest file from this run.
-    const newest = files
+    const files = fs
+      .readdirSync(tmp)
+      .filter((f) => f.startsWith('sfvc-unit-lane-budget-'))
       .map((f) => ({ f, m: fs.statSync(path.join(tmp, f)).mtimeMs }))
-      .sort((a, b) => b.m - a.m)[0].f;
-    ctx.evidence = JSON.parse(fs.readFileSync(path.join(tmp, newest), 'utf8'));
+      .sort((a, b) => b.m - a.m);
+    assert.ok(files.length > 0, 'expected budget evidence file');
+    ctx.evidence = JSON.parse(fs.readFileSync(path.join(tmp, files[0].f), 'utf8'));
   });
 
   scoped(/^the run's evidence names the contention factor it applied$/, (ctx) => {
@@ -80,14 +102,17 @@ function registerSteps(registry) {
   });
 
   scoped(/^the run's evidence names each budgeted test's load-normalized duration$/, (ctx) => {
-    const { evidenceTestsAreAttributable } = require('./lib/contentionBudget');
     assert.ok(Array.isArray(ctx.evidence.tests));
     assert.ok(ctx.evidence.tests.length > 0, 'expected at least one budgeted test');
-    assert.equal(
-      evidenceTestsAreAttributable(ctx.evidence.tests),
-      true,
-      `expected finite loadNormalizedDurationMs on every budgeted test, got: ${JSON.stringify(ctx.evidence.tests)}`
-    );
+    assert.ok('suiteEffectiveMs' in ctx.evidence);
+    for (const t of ctx.evidence.tests) {
+      assert.equal(
+        typeof t.loadNormalizedDurationMs,
+        'number',
+        `expected non-null loadNormalizedDurationMs for ${t.name}`
+      );
+      assert.ok(Number.isFinite(t.loadNormalizedDurationMs));
+    }
   });
 
   scoped(/^a unit-lane test file whose source declares an explicit base budget$/, (ctx) => {

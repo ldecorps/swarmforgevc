@@ -218,6 +218,8 @@
 %% not live daemon_log_freshness.conf (ops raise cannot redden suite).
 %% BL-1001 (2026-08-24): multi-seat claim filters by mutation_cost vs
 %% declared --seat-tier (asymmetric spill; prefer least-capable fit).
+%% BL-1007 (2026-08-24): unit-lane Vitest budgets scale with recorded
+%% contention factor; finite ceiling; property lane untouched.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]

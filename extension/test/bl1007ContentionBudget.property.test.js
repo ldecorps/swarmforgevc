@@ -60,3 +60,37 @@ test('BL-1007 invariant 3: unusable factor leaves the base unchanged', () => {
   assert.equal(effectiveBudgetMs(20000, 'unusable'), 20000);
   assert.equal(effectiveBudgetMs(20000, 0.25), 20000);
 });
+
+test('BL-1007 architect bounce: load-normalized duration is never left null after a timed run', () => {
+  const { loadNormalizedDurationMs } = require('../../specs/pipeline/steps/lib/contentionBudget');
+  let reached = 0;
+  fc.assert(
+    fc.property(
+      fc.integer({ min: 0, max: 60000 }),
+      fc.oneof(fc.constant(null), fc.constant('unusable'), fc.double({ min: 0.1, max: 10, noNaN: true })),
+      (wall, factor) => {
+        reached += 1;
+        const n = loadNormalizedDurationMs(wall, factor);
+        assert.equal(typeof n, 'number');
+        assert.ok(Number.isFinite(n));
+        assert.notEqual(n, null);
+      }
+    ),
+    { numRuns: 30 }
+  );
+  assert.ok(reached >= 15);
+});
+
+test('BL-1007: load-normalized duration floors the divisor at 1 (quiet factor must not inflate)', () => {
+  const { loadNormalizedDurationMs } = require('../../specs/pipeline/steps/lib/contentionBudget');
+  let reached = 0;
+  fc.assert(
+    fc.property(fc.integer({ min: 1, max: 60000 }), fc.double({ min: 0.01, max: 0.99, noNaN: true }), (wall, factor) => {
+      reached += 1;
+      assert.equal(loadNormalizedDurationMs(wall, factor), wall);
+    }),
+    { numRuns: 20 }
+  );
+  assert.ok(reached >= 10);
+  assert.equal(loadNormalizedDurationMs(40000, 2), 20000);
+});
