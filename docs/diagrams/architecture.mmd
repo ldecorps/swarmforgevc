@@ -166,6 +166,9 @@
 %% on exit, sticky lastError keeps health unhealthy (BL-621 alert kept).
 %% BL-1091 (2026-08-24): Expedite paused→active rename pathspec-commits
 %% both source and destination (Approve/Reject/Amend stay single-path).
+%% BL-1100 (2026-08-24): promote_and_route_next candidacy — structured
+%% epic/blocked/hold/gates only; no whole-YAML prose grep; skips announce
+%% skip <id> gate=<gate>.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
