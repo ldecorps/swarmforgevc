@@ -133,6 +133,12 @@
 %% babysitter live-session CRIT and ./swarm ensure agent:<role> heal;
 %% absent-flag rc:<role> is agent-aware (Claude HEALTHY, non-Claude OFF);
 %% Cursor launch argv names a prompt file.
+%% BL-1113 (2026-08-24): stamp-off of hotfix 27273f2b0a — coordinator
+%% step-0 main_sync_status_cli + trip-once main-sync deadlock (suppresses
+%% drop-nudges until behind=0; BL-891 still owns non-ff joins); standing
+%% pack cursor-forge (depth 3, remote_control off, cursor windows);
+%% Pipeline Board escapeHtml &nbsp; + deriveKebabSlug maxWords=3;
+%% Telegram Cursor Remote CreatePlan Confirm/Reject.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -244,7 +250,7 @@ flowchart TB
   PANES -->|closing-ceremony-adjustment.js /\n-outcome.js record coordinator/specifier\ndecisions against the run (BL-820)| CEREMONYDIR
   CEREMONYDIR -->|note to specifier via\nswarm_handoff.sh (BL-820)| HANDOFFS
   DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip;\nBL-855 refuses a no-op landing merge;\nBL-1098 refuses a silent path revert)| TARGETREPO
-  TARGETREPO -->|handoffd.bb master-main-reconcile-sweep!:\ngit merge origin/main into the master\ncheckout local main (BL-891); never\nreset/rebase/stash/force; blocks only\non real dirty-path/merge overlap\n(BL-919), else a conflict; surfaces\na note naming the path instead| PANES
+  TARGETREPO -->|handoffd.bb master-main-reconcile-sweep!:\ngit merge origin/main into the master\ncheckout local main (BL-891); never\nreset/rebase/stash/force; blocks only\non real dirty-path/merge overlap\n(BL-919), else a conflict; surfaces\na note naming the path instead;\nBL-1113: trip-once main-sync deadlock\ngates coordinator step 0 / drop-nudges\nuntil behind=0| PANES
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
   TILES -->|postMessage: keystroke,\nclick, command| PANEL
