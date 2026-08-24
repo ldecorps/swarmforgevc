@@ -25,6 +25,8 @@ ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
 
 git -C "$ROOT" init -q -b main
+git -C "$ROOT" config user.email test@test
+git -C "$ROOT" config user.name test
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
 
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
@@ -375,5 +377,143 @@ grep -q 'merge-base.*--is-ancestor.*swarmforge-QA' "$GUARD" \
 grep -q '"merge-base".*"--is-ancestor"' "$HANDOFFD" \
   && fail "BL-925 invariant 2: handoffd.bb still runs its own inline ancestry git call"
 pass "BL-925 invariant2-one-shared-definition: both the bash guard and handoffd.bb call is_qa_ancestor.sh, not a second independent ancestry check"
+
+# ── BL-1096: exemption anchors per path, not the incoming merge tip ────────
+# Multi-hop shape: QA landing, then bookkeeping on origin so the TIP is not
+# a QA ancestor, while each pipeline path's last-touching incoming commit is.
+make_multi_hop_published_origin() {
+  make_published_tip
+  QA_LANDING="$(git -C "$ROOT" rev-parse published-tip)"
+  git -C "$ROOT" checkout -q published-tip
+  make_ahead_bookkeeping_commit "1096-hop1"
+  make_ahead_bookkeeping_commit "1096-hop2"
+  git -C "$ROOT" branch -f "$QA_REF" "$QA_LANDING" >/dev/null
+  git -C "$ROOT" checkout -q main
+}
+
+# ── BL-1096 multi-hop-import-completes-01 (pre-merge-commit path) ──────────
+reset_bl925_fixture
+make_multi_hop_published_origin
+make_ahead_bookkeeping_commit "1096-local-a"
+set +e
+OUT1096A="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS1096A=$?
+set -e
+[[ "$STATUS1096A" -eq 0 ]] || fail "BL-1096 multi-hop-import-completes-01: expected merge when tip is bookkeeping but paths are QA-published, got: $OUT1096A"
+echo "$OUT1096A" | grep -qi "refused\|pipeline code" && fail "BL-1096 multi-hop-import-completes-01: refusal leaked into a successful merge: $OUT1096A"
+[[ -f "$ROOT/extension/src/published.ts" ]] || fail "BL-1096 multi-hop-import-completes-01: published pipeline file missing after merge"
+pass "BL-1096 multi-hop-import-completes-01: the join completes when the incoming tip is not itself a QA landing"
+
+# ── BL-1096 multi-hop via pre-commit (git commit --no-edit) ────────────────
+reset_bl925_fixture
+make_multi_hop_published_origin
+make_ahead_bookkeeping_commit "1096-local-b"
+(cd "$ROOT" && env -u SWARMFORGE_ROLE git merge --no-commit --no-ff -q published-tip)
+set +e
+OUT1096B="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test commit --no-edit -q 2>&1)"
+STATUS1096B=$?
+set -e
+[[ "$STATUS1096B" -eq 0 ]] || fail "BL-1096 multi-hop pre-commit: expected commit --no-edit to succeed, got: $OUT1096B"
+pass "BL-1096 multi-hop-import-completes-01 (pre-commit): completing the multi-hop merge via git commit --no-edit is allowed"
+
+# ── BL-1096 per-path: QA-published last-touch → allowed ───────────────────
+# Covered by multi-hop-01 above (both pipeline paths last-touched at landing).
+pass "BL-1096 per-path: last touched by a commit QA published → allowed"
+
+# ── BL-1096 per-path: never-published last-touch → refused (sibling allowed)
+reset_bl925_fixture
+make_published_tip
+QA_LANDING="$(git -C "$ROOT" rev-parse published-tip)"
+git -C "$ROOT" checkout -q published-tip
+mkdir -p "$ROOT/extension/src"
+echo "never published on this path" > "$ROOT/extension/src/unpublished-sibling.ts"
+git -C "$ROOT" add extension/src/unpublished-sibling.ts
+git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "non-QA pipeline path on origin"
+make_ahead_bookkeeping_commit "1096-hop-mix"
+git -C "$ROOT" branch -f "$QA_REF" "$QA_LANDING" >/dev/null
+git -C "$ROOT" checkout -q main
+make_ahead_bookkeeping_commit "1096-local-mix"
+set +e
+OUT1096MIX="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS1096MIX=$?
+set -e
+[[ "$STATUS1096MIX" -ne 0 ]] || fail "BL-1096 per-path never-published: expected refusal when one path is unpublished"
+echo "$OUT1096MIX" | grep -q "extension/src/unpublished-sibling.ts" || fail "BL-1096 per-path never-published: must name unpublished path, got: $OUT1096MIX"
+echo "$OUT1096MIX" | grep -q "extension/src/published.ts" && fail "BL-1096 per-path never-published: must NOT name the QA-published sibling, got: $OUT1096MIX"
+echo "$OUT1096MIX" | grep -q "specs/pipeline/steps/published.js" && fail "BL-1096 per-path never-published: must NOT name the QA-published step sibling, got: $OUT1096MIX"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+pass "BL-1096 per-path: last touched by a commit QA never published → refused"
+
+# ── BL-1096 per-path: published then bounced → refused ────────────────────
+reset_bl925_fixture
+make_multi_hop_published_origin
+LANDING_SHA="$(git -C "$ROOT" rev-parse "$QA_REF")"
+mkdir -p "$ROOT/.swarmforge/bounces"
+printf '{"at":"2026-08-24T00:00:00Z","commit":"%s","by":"QA","role":"coder","failure_class":"correctness","ticket":"BL-1096"}\n' "${LANDING_SHA:0:10}" \
+  > "$ROOT/.swarmforge/bounces/2026-08.jsonl"
+make_ahead_bookkeeping_commit "1096-local-bounce"
+set +e
+OUT1096BOUNCE="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS1096BOUNCE=$?
+set -e
+[[ "$STATUS1096BOUNCE" -ne 0 ]] || fail "BL-1096 per-path bounced: expected refusal when path anchor is bounced"
+echo "$OUT1096BOUNCE" | grep -Eq "extension/src/published\.ts|specs/pipeline/steps/published\.js" \
+  || fail "BL-1096 per-path bounced: must name a bounced pipeline path, got: $OUT1096BOUNCE"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+rm -rf "$ROOT/.swarmforge/bounces"
+pass "BL-1096 per-path: last touched by a commit QA published and then bounced → refused"
+
+# ── BL-1096 per-path: absent from incoming history → refused ──────────────
+reset_bl925_fixture
+make_multi_hop_published_origin
+make_ahead_bookkeeping_commit "1096-local-absent"
+(cd "$ROOT" && env -u SWARMFORGE_ROLE git merge --no-commit --no-ff -q published-tip)
+mkdir -p "$ROOT/specs/pipeline/steps"
+echo "local only, never on incoming" > "$ROOT/specs/pipeline/steps/local-only.js"
+git -C "$ROOT" add specs/pipeline/steps/local-only.js
+set +e
+OUT1096ABSENT="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test commit -q -m "merge + local-only path" 2>&1)"
+STATUS1096ABSENT=$?
+set -e
+[[ "$STATUS1096ABSENT" -ne 0 ]] || fail "BL-1096 per-path absent: expected refusal for path with no incoming history"
+echo "$OUT1096ABSENT" | grep -q "specs/pipeline/steps/local-only.js" || fail "BL-1096 per-path absent: must name the local-only path, got: $OUT1096ABSENT"
+echo "$OUT1096ABSENT" | grep -q "extension/src/published.ts" && fail "BL-1096 per-path absent: must NOT name imported paths, got: $OUT1096ABSENT"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+pass "BL-1096 per-path: absent from the incoming side's history → refused"
+
+# ── BL-1096 per-path: undeterminable predicate → refused ──────────────────
+reset_bl925_fixture
+make_multi_hop_published_origin
+# Obstruct the bounce store directory (file where dir belongs) → exit neither 0 nor 1.
+mkdir -p "$ROOT/.swarmforge"
+printf 'not a directory\n' > "$ROOT/.swarmforge/bounces"
+make_ahead_bookkeeping_commit "1096-local-undet"
+set +e
+OUT1096UNDET="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test merge --no-edit published-tip 2>&1)"
+STATUS1096UNDET=$?
+set -e
+[[ "$STATUS1096UNDET" -ne 0 ]] || fail "BL-1096 per-path undeterminable: expected refusal when is_qa_ancestor cannot answer"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+rm -f "$ROOT/.swarmforge/bounces"
+pass "BL-1096 per-path: undeterminable, the approval predicate cannot answer → refused"
+
+# ── BL-1096 fresh-edit-still-refused-03 ───────────────────────────────────
+reset_bl925_fixture
+make_multi_hop_published_origin
+make_ahead_bookkeeping_commit "1096-local-edit"
+(cd "$ROOT" && env -u SWARMFORGE_ROLE git merge --no-commit --no-ff -q published-tip)
+echo "fresh edit on top of multi-hop import" > "$ROOT/extension/src/published.ts"
+git -C "$ROOT" add extension/src/published.ts
+set +e
+OUT1096EDIT="$(cd "$ROOT" && env -u SWARMFORGE_ROLE git -c user.email=test@test -c user.name=test commit -q -m "merge + fresh edit" 2>&1)"
+STATUS1096EDIT=$?
+set -e
+[[ "$STATUS1096EDIT" -ne 0 ]] || fail "BL-1096 fresh-edit-03: expected refusal for edit on top of multi-hop import"
+echo "$OUT1096EDIT" | grep -q "extension/src/published.ts" || fail "BL-1096 fresh-edit-03: must name the edited path, got: $OUT1096EDIT"
+echo "$OUT1096EDIT" | grep -q "specs/pipeline/steps/published.js" && fail "BL-1096 fresh-edit-03: must NOT name the untouched import, got: $OUT1096EDIT"
+(cd "$ROOT" && git merge --abort 2>/dev/null) || true
+pass "BL-1096 fresh-edit-still-refused-03: the edited path is refused and the imported paths are not"
+
+reset_bl925_fixture
 
 echo "ALL PASS"
