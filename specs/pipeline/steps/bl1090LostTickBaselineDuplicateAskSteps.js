@@ -19,6 +19,15 @@ const TICKET_ID = 'BL-1090';
 const LIVE_TOPIC = 750;
 const STALE_TOPIC = 100;
 
+/** Outline / Given location phrases → recorded ask map (or empty). */
+const ASK_BY_LOCATION = {
+  'against the live Approvals topic': { [TICKET_ID]: { topicId: LIVE_TOPIC } },
+  'against a topic id that is not the live Approvals topic': {
+    [TICKET_ID]: { topicId: STALE_TOPIC },
+  },
+  nowhere: {},
+};
+
 function emptyFolders() {
   return { active: [], paused: [], done: [] };
 }
@@ -122,15 +131,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^the ticket's ask is recorded (.+)$/, (ctx, location) => {
-    if (location === 'against the live Approvals topic') {
-      ctx.recordedAsks = { [TICKET_ID]: { topicId: LIVE_TOPIC } };
-    } else if (location === 'against a topic id that is not the live Approvals topic') {
-      ctx.recordedAsks = { [TICKET_ID]: { topicId: STALE_TOPIC } };
-    } else if (location === 'nowhere') {
-      ctx.recordedAsks = {};
-    } else {
+    if (!(location in ASK_BY_LOCATION)) {
       throw new Error(`BL-1090: unknown ask location "${location}"`);
     }
+    ctx.recordedAsks = { ...ASK_BY_LOCATION[location] };
   });
 
   scoped(/^the durable tick state was never written for that transition$/, (ctx) => {
