@@ -285,6 +285,48 @@
      :destination park-dir
      :nothing-to-park? (empty? to-park)}))
 
+;; ── BL-1023: run-ticket bookkeeping plan (decided at initiation) ──────────
+;; The done-move used to silent-noop when the run ticket was not in active/.
+;; That is the DEFAULT for an expedited ticket (specced into paused/, no
+;; coordinator to promote). Decide ONCE up front: adopt into active, or
+;; refuse — never finish claiming success with the ticket unmoved.
+
+(def run-ticket-folders
+  "Folders initiation will look in for the run ticket, in priority order."
+  ["active" "paused" "hold"])
+
+(defn bookkeep-plan
+  "Pure: given the folder the run ticket currently lives in (or nil), decide
+   how initiation prepares teardown bookkeeping.
+
+   Returns {:action :ready|:adopt|:refuse :ticket :folder ...}."
+  [{:keys [folder ticket]}]
+  (cond
+    (nil? folder)
+    {:action :refuse :ticket ticket :folder nil
+     :message (str "REFUSE run ticket " ticket
+                   " was not found in backlog/{active,paused,hold}/"
+                   " — cannot bookkeep at teardown")}
+
+    (= "active" folder)
+    {:action :ready :ticket ticket :folder "active"}
+
+    (#{"paused" "hold"} folder)
+    {:action :adopt :ticket ticket :folder folder :from folder :to "active"
+     :message (str "ADOPT run ticket " ticket " from backlog/" folder
+                   "/ into backlog/active/ so teardown can close it")}
+
+    :else
+    {:action :refuse :ticket ticket :folder folder
+     :message (str "REFUSE run ticket " ticket " is in backlog/" folder
+                   "/ — cannot bookkeep at teardown")}))
+
+(defn bookkeep-move-ok?
+  "True only when a move-ticket! result reports success. A nil or missing
+   :ok? is a failure — the pre-BL-1023 silent no-op shape."
+  [move-result]
+  (boolean (and (map? move-result) (true? (:ok? move-result)))))
+
 (def forbidden-stop-flags
   "Flags initiation must never pass. --sweep-inbox archives pending handoffs —
    i.e. exactly the parcels a parked ticket needs in order to resume;
