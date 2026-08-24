@@ -738,7 +738,7 @@ at.
 `chase_sweep_lib.bb` keeps its own, separate `extract-ticket-id` (unrelated
 to this guard, not in scope here) — the two are siblings by name only.
 
-## QA-Edge Durability Gate (BL-531, BL-761)
+## QA-Edge Durability Gate (BL-531, BL-761, BL-972)
 
 When `swarm_handoff.sh` sends a `git_handoff` to QA, it runs a durability gate
 to ensure the parcel satisfies three machine-checkable criteria before allowing
@@ -759,7 +759,7 @@ Other handoff types and non-QA forwards skip this gate entirely. A `note` to QA
 or a `git_handoff` to cleaner, architect, or any other role does not trigger
 the gate.
 
-### Check A — Dropped Commit Ancestry
+### Check A — Dropped Commit Ancestry (BL-972: block on path evidence)
 
 A ticket may declare commits on an agent's worktree branch that have never been
 merged into the parcel's lineage. This surfaces as a work defect: the coder
@@ -767,10 +767,10 @@ fixed an issue, committed it on `swarmforge-coder`, and never forwarded it —
 cleaner, architect, hardender, and documenter all continued from the broken
 ancestor, so the handoff to QA proves the fix was dropped.
 
-The gate detects such stranded commits by examining every branch whose
+The gate detects candidate stranded commits by examining every branch whose
 `.worktrees/<role>` path is recorded in `.swarmforge/roles.tsv`:
 
-1. Find all commits on each role branch that:
+1. **Recall (unchanged):** find commits on each role branch that:
    - Name the ticket ID in their message (whole-token match: `BL-49` does NOT
      match `BL-490`, and `BL-490-VIOLATION` does match),
    - Are not reachable from either `main` or `origin/main` (local main lags
@@ -783,10 +783,17 @@ The gate detects such stranded commits by examining every branch whose
      legitimate dropped fix has unique content and is exactly what this filter
      eliminates (condition from engineering.prompt).
 
-2. If any commits survive all four conditions, they are findings: the parcel is
-   missing work the ticket demanded.
+2. **Block vs warn (BL-972):** subject-token recall alone never blocks.
+   - **Block** only when the candidate's touched paths **overlap** the parcel's
+     path set (cited commit's `merge-base..cited` diff, plus the ticket's
+     acceptance feature and `required_wiring` paths when present).
+   - **Warn** (`PRE_QA_GATE WARNING` / ancestry subject-only line) when the
+     commit names the ticket but has no path overlap — reverts, topic records,
+     evidence commits, and cross-references stay visible without stopping the
+     send.
+   - **`abandoned_commits:`** still exempts even when paths overlap.
 
-The gate stops the send and prints each finding as:
+The gate stops the send and prints each **blocking** finding as:
 ```
 PRE_QA_GATE_FAIL ancestry <ticket-id> <sha> on <branch-name>
   remedy: merge commit <sha> into your branch and re-send, or
@@ -796,7 +803,10 @@ PRE_QA_GATE_FAIL ancestry <ticket-id> <sha> on <branch-name>
 Example: The coder committed fix `e57a237b` on `swarmforge-coder`, never
 forwarded it, and now attempts a QA-bound handoff for the same ticket from
 `a1d89aee` (which does not contain the fix). The gate finds `e57a237b` as a
-stranded commit and refuses.
+stranded commit **with path overlap** and refuses.
+
+Acceptance:
+`specs/features/BL-972-pre-qa-gate-blocks-on-evidence-not-subject-mentions.feature`.
 
 ### Check B — Wiring Never Landed (BL-419 Pattern)
 
