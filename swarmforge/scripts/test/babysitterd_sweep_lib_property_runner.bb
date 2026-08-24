@@ -111,7 +111,8 @@
                          [{:abandoned? false :age-min (rint 30)}]
                          [{:abandoned? true :age-min (+ 150 (rint 100))}])
         in-process-claims (if has-active-inprocess?
-                            [{:age-min (+ 40 (rint 60)) :owner-busy? true}]
+                            ;; BL-1109: owner-busy? no longer gates motion
+                            [{:age-min (+ 40 (rint 60)) :owner-busy? (rbool) :abandoned? false}]
                             [])
         progress-present? (or any-pane-busy? has-fresh-pending? has-active-inprocess?)]
     (swap! branches-hit conj (if progress-present? :progress :no-progress))

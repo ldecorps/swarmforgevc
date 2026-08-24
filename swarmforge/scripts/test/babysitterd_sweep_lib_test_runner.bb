@@ -483,20 +483,35 @@
            {:finding nil :new-streak 0}
            (sw/check-swarm-starved (merge base {:paused? true :prev-streak 1 :pending-claims [] :in-process-claims []}))))
 
-;; ── 6d-10: aged in_process claim under active work does not read as starvation ─
+;; ── 6d-10 / BL-1109: in_process claim is motion even when owner is idle ────
 (assert= "aged in_process claim whose owning resident is busy does not contribute to starvation"
          {:finding nil :new-streak 0}
          (sw/check-swarm-starved
           {:active-ticket-count 2 :any-pane-busy? false :paused? false :prev-streak 1
            :pending-claims []
            :in-process-claims [{:age-min 45 :owner-busy? true}]}))
-(assert-true "same-aged in_process claim whose owning resident is idle DOES contribute to starvation"
+(assert= "BL-1109: same-aged in_process claim whose owning resident is idle is still motion"
+         {:finding nil :new-streak 0}
+         (sw/check-swarm-starved
+          {:active-ticket-count 2 :any-pane-busy? false :paused? false :prev-streak 1
+           :pending-claims []
+           :in-process-claims [{:age-min 45 :owner-busy? false :abandoned? false}]}))
+(assert-true "BL-1109: abandoned in_process alone still allows starvation"
              (let [{:keys [finding new-streak]}
                    (sw/check-swarm-starved
                     {:active-ticket-count 2 :any-pane-busy? false :paused? false :prev-streak 1
                      :pending-claims []
-                     :in-process-claims [{:age-min 45 :owner-busy? false}]})]
+                     :in-process-claims [{:age-min 45 :owner-busy? false :abandoned? true}]})]
                (and finding (= 2 new-streak))))
+(assert-true "BL-1109: CRIT copy never claims zero parcels when claims were gathered"
+             (let [msg (:message (:finding
+                                  (sw/check-swarm-starved
+                                   {:active-ticket-count 2 :any-pane-busy? false :paused? false :prev-streak 1
+                                    :pending-claims [{:abandoned? true :age-min 5}]
+                                    :in-process-claims [{:age-min 45 :abandoned? true}]})))]
+               (and msg
+                    (not (re-find #"zero pending/in-process parcels" msg))
+                    (re-find #"in-process claim" msg))))
 
 ;; ── 6d-09: busy detection survives 80-column truncation ─────────────────────
 ;; BL-996: classify-pane-busy? now delegates to chase_sweep_lib.bb's own
