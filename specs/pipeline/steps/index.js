@@ -626,8 +626,7 @@ const DOMAINS = [
   require('./bl1097RouterNoOpOriginationSteps'),
   require('./bl1106PauseVisibleEverywhereSteps'),
   require('./bl1104LandedButOpenSteps'),
-  require('./bl1093NobodyAssigneeSteps'),
-  require('./bl1110HandoffdHeartbeatSteps')
+  require('./bl1093NobodyAssigneeSteps')
 ];
 
 function registerSteps(registry) {
