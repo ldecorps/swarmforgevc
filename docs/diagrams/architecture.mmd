@@ -198,6 +198,8 @@
 %% run (never ALL MUTANTS KILLED / exit 0 without evidence).
 %% BL-1103 (2026-08-24): shared bounded_run_lib — setsid/group-kill + no-deref
 %% after timeout; used by expedite_cli and babysitter_check.
+%% BL-1020 (2026-08-24): mono-router-active-role is topology only on router
+%% packs; standing packs ignore leftovers as stale (attach / resolve-resident).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
