@@ -17,8 +17,10 @@
     {:exit exit :out (str/trim (or out "")) :err (str/trim (or err ""))}))
 
 (defn- rev-counts! [root]
+  ;; Same range+binding as handoffd.bb rev-counts!: origin/main...main
+  ;; yields left=behind, right=ahead. (main...origin/main would invert them.)
   (let [fetch (sh-ok root "git" "fetch" "origin" "main")
-        counts (sh-ok root "git" "rev-list" "--left-right" "--count" "main...origin/main")]
+        counts (sh-ok root "git" "rev-list" "--left-right" "--count" "origin/main...main")]
     (when-not (zero? (:exit counts))
       (throw (ex-info "rev-list failed" counts)))
     (let [[behind ahead] (map parse-long (str/split (:out counts) #"\s+"))]
