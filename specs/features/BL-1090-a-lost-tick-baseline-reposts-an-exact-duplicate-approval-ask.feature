@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7013c53bd9e474f4cd45f19d8fb09355074ae63b52fe344852bb70bf5558f73c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T11:59:25.812672475Z","feature_name":"A lost tick baseline never re-posts an approval ask that is already live","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1090-a-lost-tick-baseline-reposts-an-exact-duplicate-approval-ask.feature","background_hash":"ac3357c376d881f19ffdab09c852684fd1dcf93061e9a6a7a59508d46453936d","implementation_hash":"unknown","scenarios":[{"index":3,"name":"the reconcile path and the edge path classify a recorded ask identically","scenario_hash":"821359332855890827cc1e309d38b59c2c7bbc513ac3fab7de94e27b6cbc2abe","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-24T11:59:25.812672475Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A lost tick baseline never re-posts an approval ask that is already live
 
   The concierge posts an approval ask in three separate writes: send it to the

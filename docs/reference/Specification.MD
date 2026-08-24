@@ -1,6 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1105: a duplicate ticket id is refused
+**Last Updated:** August 24, 2026 (BL-1090: a lost tick baseline never
+re-posts an approval ask that is already live. The concierge posts an
+Approvals ask in three writes — Telegram, ask store, then durable tick
+state. A crash after the first two leaves the edge path (`diffApprovalRequested`)
+re-deriving the same transition while reconcile already skips via the ask
+store. Shared `approvalAskRecordedOnLiveTopic` answers for both consumers;
+suppressing an edge event also marks it emitted so durable state catches up.
+Remint (ask recorded against a non-live topic id) is still re-posted.
+Acceptance:
+`specs/features/BL-1090-a-lost-tick-baseline-reposts-an-exact-duplicate-approval-ask.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1105: a duplicate ticket id is refused
 at mint. Parallel sessions can pick the same next `id:` by hand; git will not
 notice because filenames carry the slug, so two different YAMLs under one id
 merge cleanly. The specifier's existing per-ticket hygiene gate
