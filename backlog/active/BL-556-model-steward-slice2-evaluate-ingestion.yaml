@@ -3,6 +3,7 @@ title: "Model Steward Slice 2 — `evaluate` ingests captured recruiter/bakeoff 
 milestone: M5
 type: feature
 status: todo
+assigned_to: coder
 epic: swarm-intelligence-layer
 human_approval: approved
 approval_context: |
@@ -37,8 +38,7 @@ promotion_blockers: >
   Human directive 2026-07-22 (backlog/INTAKE-20260722-compaction-telemetry-priority.md):
   defer until GH-22 (context telemetry) is at minimum through the forward
   pipeline — compaction telemetry + dashboard outrank the rest of the
-  Swarm Intelligence Layer queue for now. Coordinator: do not promote
-  ahead of GH-22.
+  Swarm Intelligence Layer queue for now. Coordinator: GH-22/GH-23 are done on main (2026-08-24); this deferral is lifted.
 source: |
   Human directive 2026-07-22 (backlog/INTAKE-20260722-model-steward-continuation.md):
   "Model Steward Slices 2-3 (BL-547 follow-on): Slice 1 is done on main. Drain
@@ -140,6 +140,7 @@ description: |
 acceptance: specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature
 
 notes: |
+  2026-08-24 coordinator: promoted manually after lifting stale GH-22 deferral (GH-22/GH-23 done on main). Routed to coder as BL-547 Slice 2 evaluate ingestion.
   BL-922 bookkeeping only: acceptance: made a single-line pointer (was a block
   scalar hiding the pointer from the pre-QA gates until the documenter->QA
   hop). Nothing anyone builds changes; the text below is the same text,
