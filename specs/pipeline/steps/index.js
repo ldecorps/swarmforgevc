@@ -489,6 +489,7 @@ const DOMAINS = [
   require('./bl911RotationRecomposesRolePromptSteps'),
   require('./bl821BriefingWindowAndMarkerDurabilitySteps'),
   require('./bl632CommitTimeGuardSteps'),
+  require('./bl570PropertySuiteDriftGuardSteps'),
   require('./bl916BubbleColdStartExpandSwarmStampSteps'),
   require('./bl625OnboarderPromptsLaunchHandoffSteps'),
   require('./bl913PinnedShellClassifiedRetrySteps'),

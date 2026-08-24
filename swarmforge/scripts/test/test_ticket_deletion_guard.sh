@@ -100,10 +100,12 @@ git -C "$ROOT" checkout -q -- backlog/done/M8/BL-893-approvals-ambulance-choice.
 # BL-632: pre-commit also calls check_pipeline_code_on_main.sh
 # unconditionally; this fixture's default branch is never `main`, so that
 # guard is a no-op here, but the script must still exist to be invoked.
+# BL-570: same for check_property_suite_drift.sh.
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
 cp "$GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
 cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
 cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
+cp "$SCRIPT_DIR/../check_property_suite_drift.sh" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 cp "$COMMIT_MSG_HOOK" "$ROOT/swarmforge/git-hooks/commit-msg"
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/"*

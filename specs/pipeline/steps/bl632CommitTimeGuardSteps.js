@@ -31,6 +31,7 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const GUARD_SCRIPT = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_pipeline_code_on_main.sh');
 const SIZE_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_commit_size.sh');
 const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket_deletion.sh');
+const PROPERTY_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
 const PRE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
 const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-merge-commit');
 
@@ -64,6 +65,7 @@ function mkFixtureRepo() {
     [GUARD_SCRIPT, 'swarmforge/scripts/check_pipeline_code_on_main.sh'],
     [SIZE_GUARD, 'swarmforge/scripts/check_commit_size.sh'],
     [TICKET_GUARD, 'swarmforge/scripts/check_ticket_deletion.sh'],
+    [PROPERTY_GUARD, 'swarmforge/scripts/check_property_suite_drift.sh'],
     [PRE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-commit'],
     [PRE_MERGE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-merge-commit'],
   ]) {

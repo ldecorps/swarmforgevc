@@ -21,6 +21,7 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 const GUARD_SCRIPT = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_pipeline_code_on_main.sh');
 const SIZE_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_commit_size.sh');
 const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket_deletion.sh');
+const PROPERTY_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
 const PRE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
 const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-merge-commit');
 
@@ -28,12 +29,11 @@ const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'p
 // was macOS Gatekeeper assessing each freshly created executable on its
 // FIRST exec (~1.2-1.8s per file, per inode, worse under load; measured
 // 2026-08-20: first exec of a fresh guard-script copy 1.16-1.84s, second
-// exec of the same inode 55ms). Four hook/guard files exec'd per case =
-// ~7-9s per case, x10 cases = the 71-154s the lane saw. So the fixture
-// repo is BUILT once (template below), its five executable files are
-// WARMED once (one exec each seeds the per-inode assessment cache), and
-// each generated case gets a recursive copy whose five executables are
-// re-HARDLINKED to the template's warmed inodes - the assessment cache
+// exec of the same inode 55ms). Hook/guard executables exec'd per case
+// dominated runtime; the fixture repo is BUILT once (template below), its
+// executables are WARMED once (one exec each seeds the per-inode assessment
+// cache), and each generated case gets a recursive copy whose executables
+// are re-HARDLINKED to the template's warmed inodes - the assessment cache
 // keys on the inode, so every case's action pays git, the REAL hooks, and
 // the REAL guards, never a fresh Gatekeeper scan. Nothing about the
 // invariant weakens: the per-case action still runs real git against real
@@ -42,6 +42,7 @@ const EXEC_FIXTURE_FILES = [
   'swarmforge/scripts/check_pipeline_code_on_main.sh',
   'swarmforge/scripts/check_commit_size.sh',
   'swarmforge/scripts/check_ticket_deletion.sh',
+  'swarmforge/scripts/check_property_suite_drift.sh',
   'swarmforge/git-hooks/pre-commit',
   'swarmforge/git-hooks/pre-merge-commit',
 ];
@@ -61,6 +62,7 @@ function mkFixtureTemplate() {
     [GUARD_SCRIPT, 'swarmforge/scripts/check_pipeline_code_on_main.sh'],
     [SIZE_GUARD, 'swarmforge/scripts/check_commit_size.sh'],
     [TICKET_GUARD, 'swarmforge/scripts/check_ticket_deletion.sh'],
+    [PROPERTY_GUARD, 'swarmforge/scripts/check_property_suite_drift.sh'],
     [PRE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-commit'],
     [PRE_MERGE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-merge-commit'],
   ]) {
