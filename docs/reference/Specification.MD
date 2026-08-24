@@ -1,6 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1085: push-sweep caches a complete
+**Last Updated:** August 24, 2026 (BL-1023: the expeditor never finishes a
+passing run with its ticket's backlog state unchanged. Initiation adopts a run
+ticket from `paused/` or `hold/` into `active/` (or refuses when missing) before
+stages spend; `move-ticket!` returns `{:ok? …}` and callers fail loud — the old
+silent `when-let` no-op is gone. Dry-run still mutates nothing; parking siblings
+is unchanged. Complements BL-567. Acceptance:
+`specs/features/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.feature`.
+How-to: `docs/how-to/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.md`,
+`docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`.
+Manual: `docs/reference/BL-567-expeditor-manual.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1085: push-sweep caches a complete
 ahead-range gather keyed on `main` tip SHA + ordered ahead-SHA set, and walks
 that range at most once per tick for the QA and noop-merge gates. Replays only
 a prior complete enumeration — never BL-952's tip-only fast path; incomplete
