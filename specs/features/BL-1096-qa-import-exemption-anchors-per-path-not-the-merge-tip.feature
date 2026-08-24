@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fe3aed3414f7b9c4d1c88e3d5310c68a754208f5ce56b26f0d456d83dc569b56
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T11:27:00.673543845Z","feature_name":"the QA-import exemption is decided per path, not by the incoming merge tip","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1096-qa-import-exemption-anchors-per-path-not-the-merge-tip.feature","background_hash":"8b1c2acafefe446116a3afc5a99e17639d68a395556d2e86f478dd606de74003","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each offending path is judged on its own provenance","scenario_hash":"c4269710ef159f483e659f6ec6e579a697841b8b5a8e29fcfab867a511425459","mutation_count":10,"result":{"Total":10,"Killed":10,"Survived":0,"Errors":0},"tested_at":"2026-08-24T11:27:00.673543845Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the QA-import exemption is decided per path, not by the incoming merge tip
 
   # BL-1096 (deterministic-transit-assist). BL-925 taught
