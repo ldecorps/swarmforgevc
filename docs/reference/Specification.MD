@@ -1,6 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1031: every subprocess the handoff
+**Last Updated:** August 24, 2026 (BL-1107: a property-lane verdict turns on
+the code under test, not host load. bl796 invariants 2–3 oversampled tiny
+finite spaces (10/12 fast-check draws over 4/6 points) with real
+`spawnSync` work inside the lane's 20s default — under continuous shift
+load the lane reds on correct code. BL-1063 had already given invariant 1 a
+120s override and left its siblings on the default. Those two properties now
+enumerate their cartesian spaces by construction (at most one spawn per
+point), share invariant 1's 120s override, and still fail when the proven
+behaviour is broken. Complements BL-871/BL-1063. Acceptance:
+`specs/features/BL-1107-property-lane-verdict-turns-on-host-load-not-code.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1096: the QA-import exemption in
+`check_pipeline_code_on_main.sh` is decided per offending path, not by the
+incoming merge tip. BL-925 asked `is_qa_ancestor.sh` about `MERGE_HEAD` once
+for the whole merge — fine for a single-hop-behind reconcile, but a multi-hop
+reconcile whose tip is a later bookkeeping commit withdrew the exemption for
+every path, including those whose last-touching incoming commit QA did
+publish. Each path now asks the shared predicate about the commit that last
+touched that path on the incoming side, then still requires staged content to
+match that parent blob. Absent, undeterminable, bounced, or unpublished
+anchors fail closed. Complements BL-925/BL-632/BL-891. Acceptance:
+`specs/features/BL-1096-qa-import-exemption-anchors-per-path-not-the-merge-tip.feature`.
+Reference: `docs/reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1031: every subprocess the handoff
 daemon can reach — by load *or* spawn edge — runs under the bounded
 chokepoint. BL-1022 widened the closure and held three libraries
 (`handoff_inject_lib.bb`, `pre_qa_gate_gather_lib.bb`, `salvage_lib.bb`) as

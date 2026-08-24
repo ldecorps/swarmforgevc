@@ -46,7 +46,7 @@ The guard itself:
    is refused (exit 1) with the remaining offending path(s) and the remedy
    printed to stderr; otherwise exits 0.
 
-### Merge-import exemption (BL-925)
+### Merge-import exemption (BL-925 / BL-1096)
 
 Before BL-925, completing a merge that only **imports** an already
 QA-published `origin/main` was refused exactly like fresh non-QA
@@ -58,17 +58,28 @@ made that clean join never complete while `main` was ahead-and-behind —
 its steady state — so [BL-891's sweep](../how-to/BL-891-master-main-reconcile-sweep.md)
 aborted the same merge on every tick and logged a false conflict.
 
-The guard now checks, for each offending path, whether the incoming merge
-parent is already an ancestor of `swarmforge-QA` and, if so, whether that
-path's staged content is byte-identical to what that parent holds:
+The guard now checks, for each offending path, whether that path's
+**last-touching commit on the incoming side** is already an ancestor of
+`swarmforge-QA` and, if so, whether that path's staged content is
+byte-identical to what the incoming parent holds:
 
 - **Content provenance decides, not merge-in-progress.** Being mid-merge
   is never on its own sufficient — a writer could stage fresh pipeline
   edits on top of a legitimate merge of a published tip and ride through
-  on its coat-tails. Every offending path is diffed individually against
-  the incoming parent; only a path whose staged content exactly matches is
+  on its coat-tails. Every offending path is judged individually; only a
+  path whose staged content exactly matches the incoming parent is
   cleared. A path with any real difference stays refused, even inside an
   otherwise-exempt merge.
+- **Per-path anchor (BL-1096), not merge tip alone (BL-925).** Asking
+  `is_qa_ancestor.sh` about `MERGE_HEAD` once for the whole merge worked
+  when the tip *was* QA's landing (single-hop-behind). On a multi-hop
+  reconcile the tip is often a later bookkeeping commit — not a QA
+  ancestor — and the old tip-level gate withdrew the exemption for every
+  path, including those whose last-touching incoming commit QA did
+  publish. Each path now runs `git log -1` on the incoming parent for that
+  path, then asks the shared predicate about that commit. Absent,
+  undeterminable, bounced, or unpublished anchors fail closed for that
+  path only.
 - **Finding the incoming merge parent** needs two routes, because
   `.git/MERGE_HEAD` is not always written yet when the hook runs:
   reliable when the merge was explicitly stopped (`--no-commit`) or a
@@ -92,7 +103,9 @@ path's staged content is byte-identical to what that parent holds:
   into `swarmforge-QA` to review it, so a bounced parcel stays reachable
   from that ref and otherwise reads as approved forever. Neither caller
   re-implements the check; a "kept in sync" comment across that
-  bash/Babashka boundary was explicitly rejected as not a gate.
+  bash/Babashka boundary was explicitly rejected as not a gate. BL-1096
+  changes only *which* commit is asked about (per path), not the
+  predicate itself.
 - **A genuine conflict is untouched** — git itself fails the merge before
   any hook runs, so a real conflict still aborts exactly as before.
 
@@ -189,6 +202,9 @@ in series, not one claimed-perfect one.
   [the runbook](../how-to/BL-891-master-main-reconcile-sweep.md).
 - **BL-925:** Adds the merge-import exemption documented above and
   extracts `is_qa_ancestor.sh` as the one shared QA-ancestry definition.
+- **BL-1096:** Anchors that exemption per offending path's last-touching
+  incoming commit, not the merge tip alone — so multi-hop reconciles whose
+  tip is bookkeeping still import QA-published blobs path-by-path.
 - **BL-962:** Carries that same merge-import exemption into BL-631's
   history sweep, which had it only at commit time — `babysitter_check.bb`'s
   gatherer now adjudicates a merge's offending paths against its

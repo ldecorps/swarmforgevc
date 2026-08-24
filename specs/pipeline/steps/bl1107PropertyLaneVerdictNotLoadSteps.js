@@ -126,7 +126,7 @@ function registerSteps(registry) {
     const mine = lines.filter((l) => l.startsWith(`${ctx.bl1107.property} `));
     assert.ok(mine.length >= 1, `no spawn log line for property ${ctx.bl1107.property}: ${lines.join('|')}`);
     const count = Number(mine[mine.length - 1].split(/\s+/)[1]);
-    assert.ok(count <= max, `property ${ctx.bl1107.property} spawned ${count}, max ${max}`);
+    assert.equal(count, max, `property ${ctx.bl1107.property} spawned ${count}, expected exactly ${max}`);
   });
 
   scoped(/^property 3 whose space is every binary paired with every position$/, (ctx) => {
