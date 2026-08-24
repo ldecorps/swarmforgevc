@@ -1,6 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1101: the hand-authored
+**Last Updated:** August 24, 2026 (BL-1103: one shared wall-clock-bounded
+subprocess runner. `expedite_cli.bb`'s former private `sh-bounded` and
+`babysitter_check.bb`'s hand-copied `run-bounded!` both load
+`bounded_run_lib.bb` — `setsid` + `kill -KILL -- -<pgid>` for group kill, and
+file-backed stdout/stderr so a timed-out process is never deref'd while a
+grandchild holds the pipe. Callers keep their own timeout defaults; the
+runner is shared so the next trap fix lands once. Complements BL-567/BL-1071.
+Acceptance: `specs/features/BL-1103-one-shared-bounded-runner.feature`.
+How-to: `docs/how-to/BL-611-babysitterd-runbook.md`,
+`docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1101: the hand-authored
 `expedite_mutation_sweep.sh` never reports success while a mutant went
 unrun. A skipped anchor (fragment absent after a rewrite) used to increment
 `skipped` and still print `ALL MUTANTS KILLED` / exit 0 — no evidence, false

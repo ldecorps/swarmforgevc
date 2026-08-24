@@ -196,6 +196,8 @@
 %% pane_current_command); gather fail → unknown, never DOWN.
 %% BL-1101 (2026-08-24): expedite_mutation_sweep — skipped anchors fail the
 %% run (never ALL MUTANTS KILLED / exit 0 without evidence).
+%% BL-1103 (2026-08-24): shared bounded_run_lib — setsid/group-kill + no-deref
+%% after timeout; used by expedite_cli and babysitter_check.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
