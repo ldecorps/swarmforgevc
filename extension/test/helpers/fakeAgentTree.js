@@ -20,9 +20,12 @@ const { mkTmpDir } = require('./tmpDir');
 // the bare name "claude" is what both Darwin and Linux must see in args=.
 
 function shellScriptSource(binDir) {
+  const claudeAbs = path.join(binDir, 'claude');
   return [
     "const { spawn } = require('child_process');",
-    `spawn('claude', ['-e', 'setTimeout(() => {}, 30000)'], { env: { ...process.env, PATH: ${JSON.stringify(binDir)} + ':' + process.env.PATH } });`,
+    // Absolute argv0: listProcessTree must basename the first args= token
+    // (BL-1112); a bare PATH name would make basename a no-op soft survivor.
+    `spawn(${JSON.stringify(claudeAbs)}, ['-e', 'setTimeout(() => {}, 30000)'], { env: process.env });`,
     'setInterval(() => {}, 60000);',
   ].join('\n');
 }
@@ -34,7 +37,7 @@ function shellScriptSource(binDir) {
 function waitForChildPid(shellPid, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const table = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,comm='], { encoding: 'utf8' });
+    const table = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,args='], { encoding: 'utf8' });
     const hasChild = table
       .split('\n')
       .some((line) => {
