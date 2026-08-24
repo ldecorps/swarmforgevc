@@ -75,11 +75,9 @@ test('a ticket re-filed twice INSIDE done/ is still traced back to its activatio
   // then moved again when the milestone was renamed. Two rename hops sit
   // between the file's current path and the commit that activated it.
   //
-  // The measured END is the file's LATEST arrival at its current done path -
-  // here the milestone rename, not the close. That is the pre-BL-1066
-  // semantics exactly (the old per-file `--follow` read the newest arrival at
-  // the same path), preserved deliberately: this ticket is about what the
-  // computation COSTS, and changing what it means is a separate decision.
+  // BL-1074: END is the active→done close, not the latest done/→done/ re-file.
+  // Duration stays the 5h close−activation window even after two post-close
+  // re-files (previously asserted as 49h under the inflated pre-BL-1074 end).
   const repo = newRepo();
   writeTicket(repo, 'active', 'BL-019.yaml');
   git(repo, ['add', '-A']);
@@ -94,7 +92,7 @@ test('a ticket re-filed twice INSIDE done/ is still traced back to its activatio
   const result = computeMeanTicketTime(repo);
 
   assert.equal(result.sampleCount, 1);
-  assert.equal(result.meanMs, 49 * HOUR_MS);
+  assert.equal(result.meanMs, 5 * HOUR_MS);
 });
 
 test('a repo configured with rename detection off still yields durations', () => {

@@ -223,23 +223,27 @@ function arrivalBefore(byPath: Map<string, PathArrival[]>, filePath: string, bef
   return byPath.get(filePath)?.find((arrival) => arrival.timeMs < beforeMs) ?? null;
 }
 
-// When this ticket's file was last put into backlog/active/, read out of the
-// shared walk instead of a per-file `git log --follow`. Walks the rename
-// chain back from the closing commit through any re-files WITHIN done/ (the
+// When this ticket's file was last put into backlog/active/, and when it
+// next entered backlog/done/, read out of the shared walk instead of a
+// per-file `git log --follow`. Walks the rename chain back from the newest
+// arrival at the current done path through any re-files WITHIN done/ (the
 // live backlog has two-hop ones: done/ -> done/M3/ -> done/M3-<name>/).
+//
+// BL-1074: the close is the hop whose fromPath is under backlog/active/,
+// not the newest arrival at today's path (which may be a later re-file).
 //
 // The walk needs no hop limit: every step moves to a STRICTLY older arrival,
 // and there are finitely many, so it cannot cycle or run away.
-function activationTimeMs(
+function lastCycleBoundsMs(
   byPath: Map<string, PathArrival[]>,
   donePath: string,
-  closing: PathArrival
-): number | null {
-  let step = closing;
+  newestAtDone: PathArrival
+): { activatedAtMs: number; closedAtMs: number } | null {
+  let step = newestAtDone;
   while (step.fromPath !== null) {
     const previous = arrivalBefore(byPath, step.fromPath, step.timeMs);
     if (step.fromPath.startsWith(ACTIVE_PREFIX)) {
-      return previous?.timeMs ?? null;
+      return previous === null ? null : { activatedAtMs: previous.timeMs, closedAtMs: step.timeMs };
     }
     if (!previous) {
       break;
@@ -249,20 +253,24 @@ function activationTimeMs(
   // A close recorded as a COPY rather than a move (the active file deleted in
   // a separate, later commit) leaves git no rename to follow back, so the
   // lineage above dead-ends on an Add. The ticket's own file name under
-  // backlog/active/ is what `--follow` was effectively falling back on.
-  return arrivalBefore(byPath, ACTIVE_PREFIX + path.posix.basename(donePath), closing.timeMs)?.timeMs ?? null;
+  // backlog/active/ is what `--follow` was effectively falling back on; the
+  // Add at donePath is itself the close.
+  const activatedAtMs =
+    arrivalBefore(byPath, ACTIVE_PREFIX + path.posix.basename(donePath), newestAtDone.timeMs)?.timeMs ??
+    null;
+  return activatedAtMs === null ? null : { activatedAtMs, closedAtMs: newestAtDone.timeMs };
 }
 
 function ticketDurationMs(byPath: Map<string, PathArrival[]>, donePath: string): number | null {
-  const closing = byPath.get(donePath)?.[0];
-  if (!closing) {
+  const newestAtDone = byPath.get(donePath)?.[0];
+  if (!newestAtDone) {
     return null;
   }
-  const activatedAtMs = activationTimeMs(byPath, donePath, closing);
-  if (activatedAtMs === null) {
+  const bounds = lastCycleBoundsMs(byPath, donePath, newestAtDone);
+  if (!bounds) {
     return null;
   }
-  const durationMs = closing.timeMs - activatedAtMs;
+  const durationMs = bounds.closedAtMs - bounds.activatedAtMs;
   return durationMs > 0 ? durationMs : null;
 }
 
