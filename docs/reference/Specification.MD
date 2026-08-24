@@ -1,6 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-1097: the coordinator's router never
+**Last Updated:** August 24, 2026 (BL-1102: the daemon's bounded shell-out
+returns a spawn failure instead of throwing it. `daemon_cycle_guard_lib.bb`'s
+`sh!` already survived wait-bound hits as `{:exit 124}` (BL-967 / BL-1021),
+but an unspawnable binary — missing from PATH, absent path, or not executable —
+threw `IOException` before any of that ran. `handoffd`'s delivery loop has a
+`finally` and no `catch`, so one missing `tmux` ended delivery, chase, and the
+endless-loop halt while the last log line read like an orderly `stopped`.
+Spawn failures now return `{:exit 127 :spawn-failed? true …}` — distinguishable
+from a command that ran and failed and from a bound hit — so callers that
+already branch on failure keep ticking. Successful spawns are unchanged.
+Acceptance:
+`specs/features/BL-1102-bounded-sh-throws-on-spawn-failure.feature`.
+Runbook note: `docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-1097: the coordinator's router never
 originates a parcel for a ticket that already has a dispatch trail. Finished
 work stays in `backlog/active/` with mint `status: todo` until bookkeeping
 closes it, so `route_backlog_to_coder.sh` / `promote_and_route_next.sh` used to

@@ -155,6 +155,9 @@
 %% pack cursor-forge (depth 3, remote_control off, cursor windows);
 %% Pipeline Board escapeHtml &nbsp; + deriveKebabSlug maxWords=3;
 %% Telegram Cursor Remote CreatePlan Confirm/Reject.
+%% BL-1102 (2026-08-24): daemon_cycle_guard_lib/sh! returns
+%% {:exit 127 :spawn-failed? true} on unspawnable binaries (no throw);
+%% handoffd delivery loop survives a missing PATH entry.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
