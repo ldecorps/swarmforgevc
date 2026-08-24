@@ -2,7 +2,9 @@
 
 // BL-1096: step handlers for per-path QA-import provenance (not tip-anchored).
 // Drives the REAL test_pipeline_code_on_main_guard.sh — never a parallel
-// reimplementation. Same one-full-run-memoized pattern as bl925.
+// reimplementation. One full-suite run memoized for the process (every
+// scenario / outline row reads the same PASS lines).
+
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -36,20 +38,20 @@ const MULTI_HOP_CHECK =
 const FRESH_EDIT_CHECK =
   'BL-1096 fresh-edit-still-refused-03: the edited path is refused and the imported paths are not';
 
+let suiteResult;
+
 function runGuardTest() {
+  if (suiteResult) return suiteResult;
   const result = spawnSync('bash', [TEST_SCRIPT], { encoding: 'utf8', timeout: 180000 });
-  return { status: result.status, stdout: (result.stdout || '') + (result.stderr || '') };
+  suiteResult = { status: result.status, stdout: (result.stdout || '') + (result.stderr || '') };
+  return suiteResult;
 }
 
-function ensureResult(ctx) {
-  if (!ctx.bl1096.result) {
-    ctx.bl1096.result = runGuardTest();
+function requirePass(description) {
+  const { stdout, status } = runGuardTest();
+  if (status !== 0) {
+    throw new Error(`guard suite exited ${status}:\n${stdout}`);
   }
-  return ctx.bl1096.result;
-}
-
-function requirePass(ctx, description) {
-  const { stdout } = ensureResult(ctx);
   if (!stdout.includes(`PASS: ${description}`)) {
     throw new Error(`expected check to pass: "${description}"\n${stdout}`);
   }
@@ -72,16 +74,16 @@ function registerSteps(registry) {
     FEATURE
   );
 
-  registry.defineScoped(/^a non-QA writer completes the merge on `main`$/, (ctx) => {
-    ensureResult(ctx);
+  registry.defineScoped(/^a non-QA writer completes the merge on `main`$/, () => {
+    runGuardTest();
   }, FEATURE);
 
-  registry.defineScoped(/^the merge commit is created$/, (ctx) => {
-    requirePass(ctx, MULTI_HOP_CHECK);
+  registry.defineScoped(/^the merge commit is created$/, () => {
+    requirePass(MULTI_HOP_CHECK);
   }, FEATURE);
 
-  registry.defineScoped(/^no pipeline path is named as refused$/, (ctx) => {
-    requirePass(ctx, MULTI_HOP_CHECK);
+  registry.defineScoped(/^no pipeline path is named as refused$/, () => {
+    requirePass(MULTI_HOP_CHECK);
   }, FEATURE);
 
   registry.defineScoped(/^one offending pipeline path whose incoming provenance is (.+)$/, (ctx, provenance) => {
@@ -91,8 +93,8 @@ function registerSteps(registry) {
     ctx.bl1096 = { ...(ctx.bl1096 || {}), provenance };
   }, FEATURE);
 
-  registry.defineScoped(/^the commit-time guard runs$/, (ctx) => {
-    ensureResult(ctx);
+  registry.defineScoped(/^the commit-time guard runs$/, () => {
+    runGuardTest();
   }, FEATURE);
 
   registry.defineScoped(/^that path is (allowed|refused)$/, (ctx, outcome) => {
@@ -102,7 +104,7 @@ function registerSteps(registry) {
         `BL-1096: provenance "${provenance}" expects "${PROVENANCE_TO_OUTCOME[provenance]}", got "${outcome}"`
       );
     }
-    requirePass(ctx, PROVENANCE_TO_CHECK[provenance]);
+    requirePass(PROVENANCE_TO_CHECK[provenance]);
   }, FEATURE);
 
   registry.defineScoped(
@@ -113,8 +115,8 @@ function registerSteps(registry) {
     FEATURE
   );
 
-  registry.defineScoped(/^the edited path is refused and the imported paths are not$/, (ctx) => {
-    requirePass(ctx, FRESH_EDIT_CHECK);
+  registry.defineScoped(/^the edited path is refused and the imported paths are not$/, () => {
+    requirePass(FRESH_EDIT_CHECK);
   }, FEATURE);
 }
 

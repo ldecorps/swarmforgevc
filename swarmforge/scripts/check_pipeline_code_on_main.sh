@@ -71,8 +71,9 @@ while IFS= read -r file; do
 done < <(git diff --cached --name-only)
 
 # BL-925 / BL-1096: import exemption is CONTENT PROVENANCE per path.
-# Ask is_qa_ancestor.sh about the commit that last touched THIS path on the
-# incoming side — never the merge tip standing in for every path (BL-1096).
+# Ask is_qa_ancestor.sh (the ONE shared QA-ancestor predicate — BL-925
+# invariant 2) about the commit that last touched THIS path on the incoming
+# side — never the merge tip standing in for every path (BL-1096).
 # Staged content must still match the incoming parent blob (BL-925).
 # Fail closed when the path has no incoming commit or the predicate is not 0.
 pipeline_path_import_exempt() {
