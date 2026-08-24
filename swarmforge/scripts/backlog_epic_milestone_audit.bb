@@ -32,7 +32,8 @@
         ;; BL-922: all-clean? counts EVERY kind, so a kind added to the lib
         ;; alone would exit 1 having printed nothing about why - name it here.
         unreadable-acceptance (filter #(= :unreadable-acceptance (:kind %)) violations)
-        dangling-acceptance (filter #(= :dangling-acceptance (:kind %)) violations)]
+        dangling-acceptance (filter #(= :dangling-acceptance (:kind %)) violations)
+        retired-type (filter #(= :retired-ticket-type (:kind %)) violations)]
     (println (str "open tickets: " (count files)))
     (println (str "missing epic (non-epic): " (count missing-epic)))
     (doseq [v missing-epic]
@@ -45,6 +46,9 @@
       (println (str "  " (backlog-hygiene-lib/format-violation v))))
     (println (str "dangling acceptance (pointer missing on working tree): " (count dangling-acceptance)))
     (doseq [v dangling-acceptance]
+      (println (str "  " (backlog-hygiene-lib/format-violation v))))
+    (println (str "retired ticket type (type: bug): " (count retired-type)))
+    (doseq [v retired-type]
       (println (str "  " (backlog-hygiene-lib/format-violation v))))
     (if (backlog-hygiene-lib/all-clean? violations)
       (do (println "backlog_epic_milestone_audit: ok")
