@@ -67,37 +67,3 @@
   [task-ticket-id commit]
   (str "task-commit coherence check could not run for " task-ticket-id
        " (commit " commit " subject unreadable) - send allowed, unverified (BL-953)"))
-
-;; BL-1094: the daemon's dispatch-gap auto-route cites HEAD as "current tip",
-;; not "the work for this ticket". The coherence gate's stale-draft premise
-;; does not apply to that one machine-generated caller. Marked via env set
-;; only by handoffd/auto-route! (and its test harness) — never by loosening
-;; blocked? for hand-authored drafts.
-
-(def dispatch-gap-autoroute-env "SWARMFORGE_DISPATCH_GAP_AUTOROUTE")
-
-(defn check-enabled?
-  "Pure. False only for the daemon's own dispatch-gap auto-route (BL-1094)."
-  [{:keys [dispatch-gap-autoroute?]}]
-  (not dispatch-gap-autoroute?))
-
-(defn- coherence-refusal-stderr?
-  [s]
-  (or (str/includes? s "BL-953")
-      (str/includes? s "task-commit coherence")
-      (str/includes? s "stale field in a reused draft")))
-
-(defn- refusal-gate-name
-  "Classify stderr into the operator-facing gate= label (BL-1094)."
-  [s]
-  (cond
-    (coherence-refusal-stderr? s) "task-commit-coherence (BL-953)"
-    (str/includes? s "HANDOFF INVALID") "handoff-validation"
-    :else "unknown"))
-
-(defn operator-refusal-log-line
-  "Names the refusing gate in the operator-facing log (BL-1094 invariant 2)."
-  [stderr]
-  (let [s (str stderr)
-        reason (str/trim s)]
-    (str "gate=" (refusal-gate-name s) " reason=" reason)))

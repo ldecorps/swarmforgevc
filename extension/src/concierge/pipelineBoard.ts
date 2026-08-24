@@ -1480,16 +1480,14 @@ export function budgetPipelineBoardLinks(links: PipelineBoardLinkEntry[], repoBa
 // ticket ids and column glyphs never carry them in practice, but the wrap
 // must not corrupt the markup if they ever did.
 function escapeHtml(text: string): string {
-  // Emit numeric &#160; for U+00A0 so Telegram HTML parse_mode keeps the
-  // Pipeline Board stage header on one phone line. Named &nbsp; is NOT in
-  // Telegram's allowed named-entity set (&lt; &gt; &amp; &quot; only) and
-  // renders as the literal string "&nbsp;"; numeric entities are supported.
-  // (Raw NBSP alone still soft-wraps before QA on some clients.)
+  // Emit &nbsp; for U+00A0 so Telegram HTML parse_mode keeps the Pipeline
+  // Board stage header on one phone line (raw NBSP alone still soft-wraps
+  // before QA on some clients).
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/\u00a0/g, '&#160;');
+    .replace(/\u00a0/g, '&nbsp;');
 }
 
 // BL-465 / in-board links: prefer composePipelineBoardHtml for live posts.
