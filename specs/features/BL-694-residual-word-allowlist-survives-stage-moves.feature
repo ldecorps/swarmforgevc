@@ -44,9 +44,10 @@ Feature: a grandfathered ticket keeps its allowlist entry when it changes backlo
     Then the scan reports the different file as an unexpected match
 
     Examples:
-      | how             | location              |
-      | by its filename | outside the backlog   |
-      | by exact path   | elsewhere in the tree |
+      | how             | location                           |
+      | by its filename | outside the backlog                |
+      | by exact path   | elsewhere in the tree              |
+      | by its filename | a non-stage path under the backlog |
 
   # BL-694 residual-allowlist-05
   Scenario: an allowlist entry that matches nothing is not an error

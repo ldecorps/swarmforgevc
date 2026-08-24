@@ -37,6 +37,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   'docs/reference/BL-792-test-duration-profile.md',
   'specs/pipeline/steps/bl684OnboarderRenameSteps.js',
   'specs/pipeline/steps/bl694ResidualAllowlistSteps.js',
+  'specs/pipeline/steps/bl752ResidualAllowlistNonStageSteps.js',
   'swarmforge/scripts/test/test_launch_onboarder.sh',
   'swarmforge/scripts/test/test_onboarder_supervisor_ignores_old_heartbeat.sh',
   'swarmforge/scripts/test/test_stop_ancillary_services_onboarder_dual_clear.sh',
