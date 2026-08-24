@@ -49,11 +49,44 @@
       (when-let [feature-path (some #(re-find #"specs/features/[^\s*]+\.feature\b" %) body)]
         {:kind :unreadable-acceptance :id id :path path :feature-path feature-path}))))
 
-(defn violations-for-text [text {:keys [id path]}]
+(defn- hygiene-repo-root
+  "Working-tree root for mint-time path probes (BL-1027). Prefer an explicit
+   option/env; otherwise walk up from the ticket path looking for the
+   swarmforge/scripts sibling, else fall back to user.dir."
+  [{:keys [repo-root path]}]
+  (or repo-root
+      (System/getenv "BACKLOG_HYGIENE_REPO_ROOT")
+      (when path
+        (loop [dir (fs/parent (fs/absolutize path))]
+          (when dir
+            (if (fs/directory? (fs/path dir "swarmforge" "scripts"))
+              (str dir)
+              (recur (fs/parent dir))))))
+      (System/getProperty "user.dir")))
+
+(defn dangling-acceptance-violation
+  "BL-1027: a single-line acceptance: pointer that applicable? would check
+   at the pre-QA hop, but whose path is absent from the WORKING TREE, is
+   refused at mint. Uses acceptance-pointer-gate-lib/applicable? as the
+   sole checkability predicate (invariant 1) - never a second copy of
+   which declarations are real pointers. Reads the acceptance: LINE's own
+   tail (acceptance-line-tail-and-body), the SAME residue pre-QA/BL-922
+   see - not field/, which can span an indented body. Absent / block-scalar
+   / epic nested none: are never refused here (invariant 2)."
+  [text {:keys [id path] :as opts}]
+  (when-let [[tail _] (acceptance-line-tail-and-body text)]
+    (when (acceptance-pointer-gate-lib/applicable? tail)
+      (let [root (hygiene-repo-root opts)
+            abs (str (fs/path root tail))]
+        (when-not (fs/exists? abs)
+          {:kind :dangling-acceptance :id id :path path :feature-path tail})))))
+
+(defn violations-for-text [text {:keys [id path] :as opts}]
   (let [id (or id (field text "id") path)
         typ (or (field text "type") "")
         epic (field text "epic")
         ms (field text "milestone")
+        opts (assoc opts :id id :path path)
         out (atom [])]
     (if (= typ "epic")
       (do
@@ -63,7 +96,9 @@
           (swap! out conj {:kind :missing-milestone :id id :path path})))
       (when-not epic
         (swap! out conj {:kind :missing-epic :id id :path path})))
-    (when-let [v (unreadable-acceptance-violation text {:id id :path path})]
+    (when-let [v (unreadable-acceptance-violation text opts)]
+      (swap! out conj v))
+    (when-let [v (dangling-acceptance-violation text opts)]
       (swap! out conj v))
     @out))
 
@@ -79,6 +114,8 @@
     :missing-milestone (str "MISSING-MILESTONE " id "  " path "  (type: epic needs milestone:)")
     :unreadable-acceptance (str "UNREADABLE-ACCEPTANCE " id "  " path "  (acceptance: is a block"
                                  " scalar hiding " feature-path " - rewrite as a single-line pointer)")
+    :dangling-acceptance (str "DANGLING-ACCEPTANCE " id "  " path
+                              "  (acceptance: pointer \"" feature-path "\" does not exist on the working tree)")
     :duplicate-id (str "DUPLICATE-ID " id "  " path
                        "  also: " (str/join ", " (map :path others))
                        "  (duplicate ticket id — refuse at mint)")
