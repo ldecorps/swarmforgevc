@@ -161,6 +161,9 @@
 %% BL-1110 (2026-08-24): daemon_log_freshness_check.sh suppresses
 %% stale-heartbeat restart when handoffd.sweep-marker shows in-flight
 %% work under the BL-977 in-sweep budget (conf stays handoffd|120).
+%% BL-1111 (2026-08-24): reply-relay transport reconnect — 5s backoff
+%% cap for terminated/fetch-failed, assert OK /events body, cancel SSE
+%% on exit, sticky lastError keeps health unhealthy (BL-621 alert kept).
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
