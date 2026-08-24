@@ -11,6 +11,7 @@ const DOMAINS = [
   require('./launchSpawnFailureSteps'),
   require('./mailboxIntakeSteps'),
   require('./strykerSandboxSiblingsSteps'),
+  require('./bl1112StandingUnitRedsSteps'),
   require('./dispatchGapSteps'),
   require('./backlogDepthSteps'),
   require('./remoteWakeupSteps'),
