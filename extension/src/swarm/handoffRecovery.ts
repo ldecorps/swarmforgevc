@@ -69,7 +69,8 @@ export function failedBoxDir(inboxNewDir: string): string {
   return path.join(inboxNewDir, '..', '..', 'failed');
 }
 
-function truncateMessage(text: string, maxLen: number): string {
+/** Exported for mutation killers — message header must stay ≤ maxLen. */
+export function truncateMessage(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return `${text.slice(0, maxLen - 1)}…`;
 }
