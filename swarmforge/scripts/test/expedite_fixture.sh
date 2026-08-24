@@ -5,19 +5,23 @@
 # the acceptance run exercise the SAME fixture rather than two similar ones that
 # drift.
 #
-# Usage: expedite_fixture.sh <dest-dir> [--active BL-ID]...
+# Usage: expedite_fixture.sh <dest-dir> [--active BL-ID]... [--paused BL-ID]... [--hold BL-ID]...
 # Prints the dest dir on success.
 set -euo pipefail
 
-DEST="${1:?usage: expedite_fixture.sh <dest-dir> [--active BL-ID]...}"
+DEST="${1:?usage: expedite_fixture.sh <dest-dir> [--active BL-ID]... [--paused BL-ID]... [--hold BL-ID]...}"
 shift || true
 
 REAL_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ACTIVE=()
+PAUSED=()
+HOLD=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --active) ACTIVE+=("$2"); shift 2 ;;
+    --paused) PAUSED+=("$2"); shift 2 ;;
+    --hold) HOLD+=("$2"); shift 2 ;;
     *) shift ;;
   esac
 done
@@ -53,11 +57,16 @@ acceptance: |
 YAML
 }
 
-for t in "${ACTIVE[@]}"; do
-  ticket_yaml "$t" > "backlog/active/$t-fixture.yaml"
+place_ticket() {
+  local folder="$1" t="$2"
+  ticket_yaml "$t" > "backlog/$folder/$t-fixture.yaml"
   printf 'Feature: fixture %s\n\n  Scenario: it exists\n    Given a fixture\n' "$t" \
     > "specs/features/$t-fixture.feature"
-done
+}
+
+for t in "${ACTIVE[@]}"; do place_ticket active "$t"; done
+for t in "${PAUSED[@]}"; do place_ticket paused "$t"; done
+for t in "${HOLD[@]}"; do place_ticket hold "$t"; done
 
 # A per-role settings file, so the driver resolves model/effort the same way the
 # launch scripts do rather than parsing the pack conf.

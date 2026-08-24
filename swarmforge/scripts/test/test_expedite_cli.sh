@@ -335,6 +335,44 @@ check "15: no grandchild survived the kill (process GROUP, not just the child)" 
 # invent phantom survivors.
 ps -eo pid=,args= | awk '$2=="sleep" && $3=="3600" {print $1}' | xargs -r kill -KILL 2>/dev/null || true
 
+# ── BL-1023: run ticket not in active/ must not silent-succeed unmoved ─────
+echo "BL-1023: bookkeep adopt / refuse"
+# Pin a stopped probe: the live host swarm must not steal these cases.
+PROBE_STOPPED="$TMPROOT/probe-stopped-bl1023.json"
+cat > "$PROBE_STOPPED" <<'JSON'
+{"tmux-servers-answering":0,"handoffd":false,"handoffd-supervisor":false,"babysitterd":false,"operator":false,"role-agents":0}
+JSON
+export EXPEDITE_PROBE_FILE="$PROBE_STOPPED"
+RP="$(mkfix tp --paused BL-1023)"
+OUTP="$(run "$RP" BL-1023 --no-restart)"; EXITP=$?
+check "BL-1023a: paused run ticket still exits 0 when stages pass" "$EXITP" "0"
+check "BL-1023a: and lands in done/ (adopted then closed)" "$(ls "$RP/backlog/done/" | tr -d '\n')" "BL-1023-fixture.yaml"
+check "BL-1023a: paused/ is empty afterwards" "$(ls "$RP/backlog/paused/" | wc -l | tr -d ' ')" "0"
+contains "BL-1023a: initiation names the adopt from paused" "$OUTP" "ADOPT run ticket BL-1023 from backlog/paused/"
+
+RH="$(mkfix th --hold BL-1023 --active BL-590)"
+OUTH="$(run "$RH" BL-1023 --no-restart)"; EXITH=$?
+check "BL-1023b: hold run ticket exits 0" "$EXITH" "0"
+check "BL-1023b: lands in done/" "$(ls "$RH/backlog/done/" | tr -d '\n')" "BL-1023-fixture.yaml"
+check "BL-1023b: sibling still parked to hold/" "$(ls "$RH/backlog/hold/" | tr -d '\n')" "BL-590-fixture.yaml"
+contains "BL-1023b: park record names the sibling" "$(cat "$RH/.swarmforge/expedite/BL-1023/park-record.json")" "BL-590"
+
+RD="$(mkfix td --paused BL-1023)"
+OUTD23="$(run "$RD" BL-1023 --no-restart --dry-run)" || true
+check "BL-1023c: dry-run leaves ticket in paused/" "$(ls "$RD/backlog/paused/" | tr -d '\n')" "BL-1023-fixture.yaml"
+check "BL-1023c: dry-run writes nothing to done/" "$(ls "$RD/backlog/done/" | wc -l | tr -d ' ')" "0"
+check "BL-1023c: dry-run writes nothing to active/" "$(ls "$RD/backlog/active/" | wc -l | tr -d ' ')" "0"
+contains "BL-1023c: dry-run still decides adopt from paused" "$OUTD23" "ADOPT run ticket BL-1023 from backlog/paused/"
+
+RM="$(mkfix tm --active BL-590)"
+OUTM="$(run "$RM" BL-1023 --no-restart)"; EXITM=$?
+check "BL-1023d: missing run ticket refuses" "$EXITM" "1"
+contains "BL-1023d: refusal names the ticket" "$OUTM" "REFUSE run ticket BL-1023"
+check "BL-1023d: no stage ran" "$([[ -f "$RM/.swarmforge/expedite-fixture/ran.log" ]] && echo yes || echo no)" "no"
+check "BL-1023d: sibling stays in active/ (nothing parked before refuse)" \
+  "$(ls "$RM/backlog/active/" | tr -d '\n')" "BL-590-fixture.yaml"
+unset EXPEDITE_PROBE_FILE
+
 # ── report ─────────────────────────────────────────────────────────────────
 echo
 if [[ "$fails" -eq 0 ]]; then

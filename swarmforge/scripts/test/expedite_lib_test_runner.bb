@@ -174,6 +174,31 @@
 (assert-true "12: an empty active/ is a no-op, not an error"
              (:nothing-to-park? (expedite-lib/park-plan {:active-tickets [] :run-ticket "BL-567"})))
 
+;; ── BL-1023: bookkeep-plan ────────────────────────────────────────────────
+(assert= "BL-1023: already active is ready"
+         :ready (:action (expedite-lib/bookkeep-plan {:folder "active" :ticket "BL-1023"})))
+(assert= "BL-1023: paused adopts into active"
+         {:action :adopt :ticket "BL-1023" :folder "paused" :from "paused" :to "active"
+          :message "ADOPT run ticket BL-1023 from backlog/paused/ into backlog/active/ so teardown can close it"}
+         (expedite-lib/bookkeep-plan {:folder "paused" :ticket "BL-1023"}))
+(assert= "BL-1023: hold adopts into active"
+         :adopt (:action (expedite-lib/bookkeep-plan {:folder "hold" :ticket "BL-1023"})))
+(assert= "BL-1023: missing refuses"
+         :refuse (:action (expedite-lib/bookkeep-plan {:folder nil :ticket "BL-1023"})))
+(assert-true "BL-1023: refuse message names the ticket"
+             (str/includes? (:message (expedite-lib/bookkeep-plan {:folder nil :ticket "BL-1023"}))
+                            "BL-1023"))
+(assert-true "BL-1023: bookkeep-move-ok? requires :ok? true"
+             (expedite-lib/bookkeep-move-ok? {:ok? true}))
+(assert-false "BL-1023: nil move result is not ok"
+              (expedite-lib/bookkeep-move-ok? nil))
+(assert-false "BL-1023: :ok? false is not ok"
+              (expedite-lib/bookkeep-move-ok? {:ok? false}))
+(assert-false "BL-1023: truthy non-true :ok? is not ok (silent no-op shape)"
+              (expedite-lib/bookkeep-move-ok? {:ok? 1}))
+(assert-false "BL-1023: string :ok? is not ok"
+              (expedite-lib/bookkeep-move-ok? {:ok? "yes"}))
+
 
 ;; BL-1030. These four assertions used to pass PRE-SPLIT vectors - a shape the
 ;; only call site cannot produce. It wrapped the whole configured command in a
