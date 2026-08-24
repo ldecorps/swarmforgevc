@@ -38,8 +38,10 @@
         (when-not canonical
           (binding [*out* *err*] (println (str "Cannot resolve commit: " commit)))
           (System/exit 2))
-        (let [{:keys [findings]} (pre-qa-gate-gather-lib/findings-for-git-handoff
+        (let [{:keys [findings warnings]} (pre-qa-gate-gather-lib/findings-for-git-handoff
                                    project-root {:to "QA" :task-name task-name :cited-commit canonical})]
+          (doseq [w warnings]
+            (binding [*out* *err*] (println (str "PRE_QA_GATE WARNING: " w))))
           (if (seq findings)
             (do
               (doseq [f findings] (println (pre-qa-gate-lib/format-finding-line f)))

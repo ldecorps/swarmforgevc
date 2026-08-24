@@ -114,6 +114,21 @@ function draftFor(kind, ctx) {
   throw new Error(`unrecognized draft kind: "${kind}"`);
 }
 
+function ensureStrandedParcelPathEvidence(ctx) {
+  // BL-972: subject-only matches warn; blocking needs path overlap with the
+  // parcel reference set. The ticket's acceptance: path always widens that
+  // set — touch it on the role branch even when the worktree tip predates
+  // the Background commit that created the fixture feature on main.
+  const featPath = path.join(ctx.coderWt, ACCEPTANCE_FEATURE_PATH);
+  fs.mkdirSync(path.dirname(featPath), { recursive: true });
+  if (fs.existsSync(featPath)) {
+    fs.appendFileSync(featPath, '\n# stranded edit (BL-972 path evidence)\n');
+  } else {
+    fs.writeFileSync(featPath, 'Feature: BL-999 stranded path evidence\n');
+  }
+  return ACCEPTANCE_FEATURE_PATH;
+}
+
 function registerSteps(registry) {
   // ── Background ────────────────────────────────────────────────────────
   registry.define(/^a ticket in backlog\/active\/ whose parcel commit is ready to forward$/, (ctx) => {
@@ -135,7 +150,8 @@ function registerSteps(registry) {
   // ── ancestry: shared Given across scenarios 01/02/06/07 ─────────────────
   registry.define(/^a commit naming that ticket sits on a pipeline role branch$/, (ctx) => {
     fs.writeFileSync(path.join(ctx.coderWt, 'stray.txt'), 'never forwarded\n');
-    git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'stray.txt']);
+    const evidencePath = ensureStrandedParcelPathEvidence(ctx);
+    git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'stray.txt', evidencePath]);
     git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', `${TICKET_ID}: forgot to forward`]);
     ctx.strandedCommit = gitOut(ctx.coderWt, ['rev-parse', '--short=10', 'HEAD']);
     // citedCommit was pinned to main's tip in Background, BEFORE this
@@ -211,7 +227,8 @@ function registerSteps(registry) {
   // ── BL-531 acknowledged-abandoned-commit-allowed-06 / gate-scope-07 ─────
   registry.define(/^a commit naming that ticket is stranded off the parcel's lineage$/, (ctx) => {
     fs.writeFileSync(path.join(ctx.coderWt, 'stray.txt'), 'never forwarded\n');
-    git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'stray.txt']);
+    const evidencePath = ensureStrandedParcelPathEvidence(ctx);
+    git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'stray.txt', evidencePath]);
     git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', `${TICKET_ID}: forgot to forward`]);
     ctx.strandedCommit = gitOut(ctx.coderWt, ['rev-parse', '--short=10', 'HEAD']);
   });
@@ -397,7 +414,8 @@ function registerSteps(registry) {
   registry.define(/^the parcel (satisfies both checks|has a stranded ticket commit)$/, (ctx, parcelState) => {
     if (parcelState === 'has a stranded ticket commit') {
       fs.writeFileSync(path.join(ctx.coderWt, 'stray.txt'), 'never forwarded\n');
-      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'stray.txt']);
+      const evidencePath = ensureStrandedParcelPathEvidence(ctx);
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'stray.txt', evidencePath]);
       git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', `${TICKET_ID}: forgot to forward`]);
       // ctx.citedCommit stays at main's tip, which predates this commit.
     }
