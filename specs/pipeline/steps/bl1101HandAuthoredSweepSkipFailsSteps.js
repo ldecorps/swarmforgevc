@@ -184,11 +184,16 @@ function registerSteps(registry) {
       /\[\[ "\$\{#SURVIVORS\[@\]\}" -gt 0 \]\]/,
       'live sweep must length-guard SURVIVORS before expanding under set -u'
     );
-    // Soft/surgical lock: skip list must set fail=1, and fail path exits before certify.
+    // Soft/surgical lock: skip/survivor lists must set fail=1, and fail path exits before certify.
     assert.match(
       real,
-      /if \[\[ "\$\{#SKIPPED\[@\]\}" -gt 0 \]\]; then\n[\s\S]*?fail=1\nfi/,
+      /if \[\[ "\$\{#SKIPPED\[@\]\}" -gt 0 \]\]; then\n  emit_labeled_list "SKIPPED[^\n]*\n  fail=1\nfi/,
       'live sweep must fail=1 when any mutant was skipped'
+    );
+    assert.match(
+      real,
+      /if \[\[ "\$\{#SURVIVORS\[@\]\}" -gt 0 \]\]; then\n  emit_labeled_list "SURVIVORS[^\n]*\n  fail=1\nfi/,
+      'live sweep must fail=1 when any mutant survived'
     );
     assert.match(
       real,
