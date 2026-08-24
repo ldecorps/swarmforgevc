@@ -139,6 +139,7 @@ swarm_detach_lib_test_runner.bb	standing
 swarm_identity_lib_test_runner.bb	standing		
 swarm_socket_lib_test_runner.bb	standing		
 swarm_status_lib_test_runner.bb	standing		
+supersede_lib_test_runner.bb	standing		
 sync_worktree_scripts_lib_test_runner.bb	standing		
 task_commit_coherence_gate_lib_test_runner.bb	standing		
 telegram_topic_lib_test_runner.bb	standing		
@@ -355,6 +356,7 @@ test_stop_ancillary_services_onboarder_dual_clear.sh	standing
 test_stop_ancillary_services_tunnel_orphan_reap.sh	standing		
 test_stop_operator_runtime_watch_first.sh	standing		
 test_support_runtime_tick.sh	standing		
+test_supersede_guard.sh	standing		
 test_swarm_ensure.sh	standing		
 test_swarm_handoff_daemon_backup.sh	standing		
 test_swarm_handoff_sync_deliver.sh	standing		
