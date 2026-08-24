@@ -332,6 +332,32 @@
       :else
       {:role home-role :fallback? true :reason :unknown-role :recorded recorded})))
 
+(defn resolve-resident-role
+  "BL-1020: topology comes from the pack configuration, never from a leftover
+   mono-router-active-role marker on a standing pack.
+
+   Args: :rotation-router? - true only when this pack is a rotation router
+   (identity/conf). :recorded-role - raw marker content, or nil/blank when
+   absent. :home-role - the pack-config resident/home (first non-coordinator
+   role in roles.tsv).
+
+   Returns {:role :honour-marker? :stale? :recorded}. On a router pack the
+   marker is still the cache it has always been (honoured when present). On
+   any other pack the marker is ignored as topology (:honour-marker? false,
+   :role is home-role from pack config) and a present leftover is flagged
+   :stale? true so callers can surface it rather than silently obey."
+  [{:keys [rotation-router? recorded-role home-role]}]
+  (let [recorded (some-> recorded-role str str/trim not-empty)]
+    (if rotation-router?
+      {:role (or recorded home-role)
+       :honour-marker? (boolean recorded)
+       :stale? false
+       :recorded recorded}
+      {:role home-role
+       :honour-marker? false
+       :stale? (boolean recorded)
+       :recorded recorded})))
+
 (defn should-send-stuck-escalation-email?
   "Whether handoffd should email the human for a stuck-escalation edge.
    Mono-router dormant roles keep roles.tsv session names with no standing
