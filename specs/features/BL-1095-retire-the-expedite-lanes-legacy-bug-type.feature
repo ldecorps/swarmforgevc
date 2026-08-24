@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=73d31549b21d06459b2767395431f041a578fe137be8319136c51c0adeca111d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-24T14:43:20.988260505Z","feature_name":"The Article 3.2.4 expedite lane recognises only `type: defect`","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1095-retire-the-expedite-lanes-legacy-bug-type.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Only a defect of critical or high severity takes the expedite lane","scenario_hash":"ad273eb79f653898d6e89fd6c3e79227fa4c1e22c0055e1514a2e4362acae863","mutation_count":18,"result":{"Total":18,"Killed":18,"Survived":0,"Errors":0},"tested_at":"2026-08-24T14:43:20.988260505Z"},{"index":2,"name":"The mint gate refuses the retired type and accepts its replacement","scenario_hash":"2b838425f4768ef3da76327a5d419ef4e33b3f14084a98f9e8874a5dce686e4a","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-24T14:43:20.988260505Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The Article 3.2.4 expedite lane recognises only `type: defect`
 
   The `bug` ticket type is retired. Article 3.2.4 carried a transition clause
