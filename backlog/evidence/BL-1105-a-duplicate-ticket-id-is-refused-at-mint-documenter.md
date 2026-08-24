@@ -16,3 +16,6 @@ NONE (docs-only pass; production gate already hardened).
 
 ## Acceptance cross-check
 Aligned with `specs/features/BL-1105-a-duplicate-ticket-id-is-refused-at-mint.feature`.
+
+## Ancestry follow-up
+Also merged stranded hardener tip `ac0131ddcd` (Gherkin soft mutation stamp) for PRE_QA ancestry.
