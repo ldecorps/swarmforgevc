@@ -13,7 +13,7 @@ depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1112-standing-unit-reds-sample-resources-and-stryker-sandbox.feature
-human_approval: pending
+human_approval: approved
 approval_context: >
   Firm: do not leave these silent standing reds on npm test. Two failure
   shapes share one ticket because the ask was one restoration of green; the
