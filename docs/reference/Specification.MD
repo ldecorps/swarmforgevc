@@ -1,6 +1,17 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 24, 2026 (BL-754: a present-but-malformed flow
+**Last Updated:** August 24, 2026 (BL-1000: freshness shell tests bind
+`CONF` to tracked `daemon_log_freshness.fixture.conf`, not the operator-tunable
+live `daemon_log_freshness.conf`. An ops raise of handoffd's threshold no longer
+reddens stale-heartbeat asserts; restart behaviour still holds against pinned
+`handoffd|120`. Complements BL-675/BL-785. Acceptance:
+`specs/features/BL-1000-freshness-tests-read-a-pinned-fixture.feature`.
+How-to: `docs/how-to/BL-1000-freshness-tests-read-a-pinned-fixture.md`,
+`docs/how-to/BL-675-daemon-log-freshness-watchdog.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
+August 24, 2026 (BL-754: a present-but-malformed flow
 `stage_skip_reasons` is never read as complete. Unquoted reasons with an
 interior comma set `:malformed` (carried as `skip_reasons_malformed=` on the
 routing-skip record); single- and double-quoted reasons with commas stay
