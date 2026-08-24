@@ -54,3 +54,17 @@ test('BL-1007 architect bounce: load-normalized duration is never left null afte
   );
   assert.ok(reached >= 15);
 });
+
+test('BL-1007: load-normalized duration floors the divisor at 1 (quiet factor must not inflate)', () => {
+  const { loadNormalizedDurationMs } = require('../../specs/pipeline/steps/lib/contentionBudget');
+  let reached = 0;
+  fc.assert(
+    fc.property(fc.integer({ min: 1, max: 60000 }), fc.double({ min: 0.01, max: 0.99, noNaN: true }), (wall, factor) => {
+      reached += 1;
+      assert.equal(loadNormalizedDurationMs(wall, factor), wall);
+    }),
+    { numRuns: 20 }
+  );
+  assert.ok(reached >= 10);
+  assert.equal(loadNormalizedDurationMs(40000, 2), 20000);
+});
